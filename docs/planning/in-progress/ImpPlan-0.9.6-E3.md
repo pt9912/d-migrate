@@ -2,8 +2,9 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E3 (Sub-Plan zu Phase E — `Async-Executor Production-Tuning`)
-> **Status**: Entwurf (2026-05-05) — wartet auf Architektur-Approval
-> (§ 3 + § 10).
+> **Status**: Approved (2026-05-06) — Architektur-Approval § 3 erteilt,
+> § 10 Q1–Q6 entschieden (siehe § 10 „Resolved"). Vorlauf:
+> Entwurf (2026-05-05).
 > **Positionierung**: parallel zu `ImpPlan-0.9.6-E2.md` (persistente
 > Adapter); kein Hard-Dependency in beiden Richtungen — siehe § 0.
 > **Referenz**:
@@ -106,7 +107,9 @@ multiplizieren sich, wenn der Server mehrere Tenants bedient.
   benannte Threads (`d-migrate-worker-{n}`), uncaught-handler liftet
   Exceptions in Logs.
 - **Defaults**:
-  - `corePoolSize = maxPoolSize = max(4, Runtime.availableProcessors())`
+  - `corePoolSize = maxPoolSize = 4` (fixer Default; CPU-basierte
+    Werte nur per expliziter Config — verhindert überraschend große
+    Pools auf großen Hosts)
   - `queueCapacity = 1024`
   - `keepAliveSeconds = 60` (irrelevant bei core==max, falls aber per
     Config `allowCoreThreadTimeOut` aktiviert)
@@ -178,12 +181,12 @@ server:
   ignoriert.
 - `mode: async` ⇒ Async-Block validiert, Pool + Admission-Gate werden
   zur Bootstrap-Zeit erzeugt.
-- Der **typisierte** Adapter-Vertrag ist `McpServerConfig` plus
-  `McpJobExecutorConfig`; ein generischer `application.yaml`-Loader ist
-  nicht Teil von E3. Falls ein CLI-/Host-Entrypoint YAML/Env aufloest,
-  mappt er auf diese typisierte Config.
-- Override via Env ist Host-/Entrypoint-Scope, nicht
-  `hexagon/application`-Scope. Vorgeschlagene Namen:
+- **Lokation**: `JobExecutorConfig` lebt **adapter-neutral** in
+  `hexagon/application` (Executor-/Admission-Felder, keine YAML-/Env-
+  Kenntnisse). `McpJobExecutorConfig` im MCP-Adapter mappt darauf;
+  YAML/Env-Loader bleibt strikt im Host-/Entrypoint-Scope.
+- Vorgeschlagene Env-Namen (Host-/Entrypoint-Scope, nicht
+  `hexagon/application`):
   `D_MIGRATE_SERVER_JOBS_EXECUTOR_MODE`,
   `D_MIGRATE_SERVER_JOBS_EXECUTOR_CORE_THREADS` etc.
 
@@ -195,6 +198,10 @@ server:
   `RATE_LIMITED`; der `RateLimited`-DTO bekommt am Ende ein
   rueckwaertskompatibles Feld `reason: String = "ACTIVE_JOBS_QUOTA"`.
   Executor-Saturation setzt `reason = "EXECUTOR_SATURATED"`.
+- `reason` ist **immer** im Wire-Envelope sichtbar — auch für
+  bestehende Quota-Rejections (`ACTIVE_JOBS_QUOTA`). Operations
+  unterscheidet auf einen Blick zwischen Tenant-Quota und Pool-
+  Saturation, ohne Log-Korrelation.
 - Caller-POV bleibt identisch mit Quota-Reject: „später nochmal";
   `reason` dient nur zur Diagnose/Operations-Reaktion.
 - **Nicht**: `CallerRunsPolicy` (mischt Sync- und Async-Semantik —
@@ -269,6 +276,10 @@ server:
   Vertrag hat.
 - **Nicht**: Micrometer-/OpenTelemetry-Integration in E3
   (Folgeprojekt — siehe § 9).
+- **Kein Audit-Event pro Executor-Reject**: Wire-Code (`RATE_LIMITED`
+  + `reason=EXECUTOR_SATURATED`), strukturierte Logs und
+  `JobExecutorStatus`-Snapshot reichen für Diagnose. Audit unter
+  Saturation könnte selbst zum Bottleneck werden.
 
 ### 3.8 Keine Coroutines
 
@@ -727,36 +738,30 @@ Phase E3 gilt als done, wenn:
 - **Worker-Timeouts auf Pool-Ebene** — bestehen bereits via
   `OperationCancelSource.RUNNER_TIMEOUT` im Worker-Pfad.
 
-## 10. Offene Fragen (vor E3.1-Start zu klären)
+## 10. Resolved (Owner-Entscheidung 2026-05-06)
 
-- **Q1**: Pool-Default-Sizing — `max(4, CPU)` ok, oder soll der
-  Default kleiner sein (z.B. fixed `4`)? Übermäßige Threads bei
-  großen Hosts ohne Konfig könnten erstaunen.
-- **Q2**: Soll `JobExecutorConfig` als adapter-neutrales DTO in
-  `hexagon/application` leben und `McpJobExecutorConfig` nur darauf
-  mappen, oder reicht ein einziges DTO im MCP-Adapter? Vorschlag:
-  Application enthaelt nur Executor-/Admission-Config ohne YAML/Env-
-  Wissen; Adapter enthaelt `McpServerConfig.jobs.executor`.
-- **Q3** (Code-Schnitt): Soll `JobDispatcher.dispatch` ein optionales
-  `JobDispatchPermit` bekommen, oder soll der Orchestrator den
-  Runnable selbst in einen Permit-Releasing-Wrapper legen? Vorschlag:
-  Permit an Dispatcher uebergeben, weil nur dort sicher bekannt ist,
-  wann der Worker wirklich terminal/geskippt ist.
-- **Q4**: Soll der Async-Pool bei Reject auch eine Audit-Spur
-  schreiben (`audit.policy.deny`-style mit reason), oder reicht der
-  Wire-Code? Audit könnte unter Last selbst zum Bottleneck werden.
-- **Q5**: Soll `RateLimited.reason` auch fuer bestehende Quota-
-  Rejections im Wire sichtbar werden (`ACTIVE_JOBS_QUOTA`), oder soll
-  `reason` nur im Executor-Saturation-Fall emittiert werden?
-- **Q6**: Soll E3 von E2 (Persistenz) abhängen für die Definition
-  „Production"? Mein Vorschlag (§ 0): nein — Async-Executor ohne
-  persistente Stores ist immerhin „kein Block auf MCP-Request-
-  Thread", auch wenn ein Server-Restart Jobs verliert. Production-
-  Deploy will beides.
+- **Q1**: Fixed `4` als Default für `coreThreads = maxThreads = 4`.
+  CPU-basierte Werte nur per expliziter Config — verhindert
+  überraschend große Pools auf großen Hosts. Siehe § 3.2.
+- **Q2**: `JobExecutorConfig` lebt adapter-neutral in
+  `hexagon/application`; `McpJobExecutorConfig` mappt darauf.
+  YAML/Env-Wissen bleibt strikt im Adapter/Host. Siehe § 3.4.
+- **Q3**: `JobDispatcher.dispatch(..., permit)` bekommt den optionalen
+  Permit-Parameter. Der Dispatcher kennt den echten Terminal-/Skip-
+  Punkt und kann zuverlässig releasen. Siehe § 6.2.
+- **Q4**: Kein Audit-Event pro Executor-Reject in E3. Wire-Code +
+  strukturierte Logs + Status-Snapshot reichen; Audit unter
+  Saturation könnte selbst Last verstärken. Siehe § 3.7.
+- **Q5**: `RateLimited.reason` immer im Wire ausgeben — bestehende
+  Quota-Rejections mit `ACTIVE_JOBS_QUOTA`, Executor-Saturation mit
+  `EXECUTOR_SATURATED`. Siehe § 3.5 / § 6.4.
+- **Q6**: Keine harte E3 → E2-Abhängigkeit. E3 ist eigenständig
+  wertvoll (kein Block auf MCP-Request-Thread). Production-Deploy
+  will trotzdem E2 + E3 zusammen. Siehe § 0.
 
 ---
 
-**Nach Approval § 3 + § 10**: Start mit **E3.1**
+**Approval § 3 + § 10 erteilt**: Start mit **E3.1**
 (`JobDispatchAdmission` + `BoundedAsyncJobExecutor` +
 `JobExecutorLifecycle`-Interface + Unit-Tests) als isolierter,
 in-Module-Block ohne Wiring-Auswirkung.

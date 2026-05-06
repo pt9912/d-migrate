@@ -2,10 +2,11 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: E2 (Sub-Plan zu Phase E — `Persistente Phase-E-Port-Adapter`)
-> **Status**: Entwurf v2 (2026-05-05) — Review-1-Befunde eingearbeitet
-> (Recovery-CAS, InitResume-Schema, transitionStatus-Transformer,
+> **Status**: Approved (2026-05-06) — Architektur-Approval § 3 erteilt,
+> § 10 Q1–Q6 entschieden (siehe § 10 „Resolved"). Vorlauf:
+> Entwurf v2 (2026-05-05, Review-1-Befunde: Recovery-CAS,
+> InitResume-Schema, transitionStatus-Transformer,
 > Quota-Counter-UPSERT, Spec-Section-Refs, Tx-Primitive-Lokalisierung).
-> Wartet auf Architektur-Approval (§ 3 + § 10).
 > **Positionierung**: nach Phase E, **vor** Phase F (`ImpPlan-0.9.6-F.md`,
 > Datenoperationen) — siehe § 0 zur Begründung.
 > **Referenz**: `spec/phase-e-port-atomicity.md` (§§ 1–6 + § E + Cross-Refs);
@@ -97,9 +98,15 @@ keine DB-Transaktion. Phase E2 liefert:
 
 ### 3.1 DB-Backend: Postgres-only für Server-State
 
-- **Wahl**: PostgreSQL ≥ 14 (für `INSERT … ON CONFLICT … RETURNING`
-  inklusive des `WHERE`-Predicates auf `DO UPDATE`, `JSONB`,
-  `GREATEST` mit `timestamptz`, `SELECT … FOR UPDATE`).
+- **Wahl**: PostgreSQL ≥ 14 als technische Mindestversion (für
+  `INSERT … ON CONFLICT … RETURNING` inklusive des `WHERE`-Predicates
+  auf `DO UPDATE`, `JSONB`, `GREATEST` mit `timestamptz`,
+  `SELECT … FOR UPDATE`).
+- **Empfohlen für neue Production-Deployments**: PostgreSQL ≥ 16 als
+  Referenzversion. PG 14 erreicht laut offizieller Versions-Policy
+  (https://www.postgresql.org/support/versioning/) am 2026-11-12 EOL;
+  Operations-Doku in E2.9 weist darauf hin und nennt 16+ als
+  empfohlene Wahl.
 - **Nicht**: H2 (semantische Abweichungen bei `ON CONFLICT`, JSONB,
   `FOR UPDATE`); SQLite (kein gleichwertiges `RETURNING`-Verhalten,
   Single-Writer-Limit).
@@ -117,6 +124,11 @@ keine DB-Transaktion. Phase E2 liefert:
 - **Schema-Ownership**: Server-State-Schema liegt isoliert im neuen
   Modul, NICHT in `driver-postgresql` (das ist ein Migration-Target-
   Adapter, andere Verantwortung).
+- **Migration-Workflow**: Production-Pfad ist ein expliziter
+  `make migrate`-/Ops-Step gegen die Server-State-DB; der MCP-Server
+  fährt **nicht** automatisch Flyway beim Start. Dev/Test-Convenience
+  via `server.state.migrations.auto = true` (Default `false`); bei
+  `auto = false` und drift fährt der Server nicht hoch.
 
 ### 3.3 SQL-Framework: plain JDBC + Kotlin-Helpers
 
@@ -182,11 +194,29 @@ keine zweite Hierarchie im Hexagon.
 der jeweilige Atomicity-Vertrag es nachweislich braucht — pro Port-
 Operation in § 6 begründet.
 
-### 3.6 Connection-Pooling: HikariCP
+### 3.6 Connection-Pooling + Server-State-Config
 
-Existiert schon in `driver-common`, gleiche Wahl. Ein `HikariDataSource`
-pro Server-Instanz, von außen via `application.yaml`/Env konfiguriert
-(separate URL als die Migration-Targets).
+- **Pooling**: HikariCP — existiert schon in `driver-common`, gleiche
+  Wahl. Ein `HikariDataSource` pro Server-Instanz.
+- **Config-Shape**: dedizierte Sektion `server.state` in
+  `application.yaml`, getrennt von Migration-Target-DBs:
+
+  ```yaml
+  server:
+    state:
+      jdbcUrl: jdbc:postgresql://…           # required, no default
+      username: ${SERVER_STATE_USER}
+      password: ${SERVER_STATE_PASSWORD}
+      hikari:
+        maximumPoolSize: 10
+        connectionTimeoutMs: 30000
+      migrations:
+        auto: false                          # opt-in for dev/test
+  ```
+
+  Env-Overrides via `D_MIGRATE_SERVER_STATE_*`-Pattern; **nicht
+  Env-only** — die State-DB ist ein Server-Betriebsmittel, kein
+  Migration-Target, und gehört in die typisierte Server-Config.
 
 ### 3.7 Test-Strategie: Testcontainers-Postgres, geteilte Container-Instanz pro Test-Suite
 
@@ -314,7 +344,7 @@ CREATE TABLE quota_counters (
 | **E2.5** | `JdbcJobStore` (CRUD, Pagination, `transitionStatus` mit `transformer` + `NotFound`/`IllegalTransition`-Diskriminierung, `markCancelRequested`-CAS) | `JobStoreContractTests` grün; insbesondere die Contract-Tests, die `IllegalTransition.currentStatus` lesen, müssen passen |
 | **E2.6** | `JdbcJobStartTransaction` — komponiert E2.3+E2.5 in einer DB-TX über `JdbcTransactionRunner` | `JobStartTransactionContractTests` grün (inkl. parallel-commit-Test); Atomicity-Vertrag aus `spec/phase-e-port-atomicity.md` § 3 ausführbar verifiziert |
 | **E2.7** | `JdbcQuotaService` (Counter-UPSERT mit Limit-Check § 6.8) + `JdbcQuotaReservationOwnerStore` (markX-CAS § 6.9) + JDBC-Variante des `OwnerAwareQuotaService`-Wirings. Owner-aware `reserve`, `releaseForOwner`, `refundForOwner` und Sweeper-Refund laufen als gemeinsame DB-TX über Owner-Status + Counter. | (a) `QuotaStoreContractTests` aus `hexagon/ports-common/src/testFixtures/.../contract/QuotaStoreContractTests.kt` grün. (b) `QuotaReservationOwnerStoreContractTests` grün gegen Postgres. (c) `OwnerAwareQuotaService`-Atomicity-Tests (Reserve+Register, Double-Release, Double-Refund) laufen gegen das JDBC-Wiring grün. (d) Crash-Window-Test/Failure-Injection: Exception zwischen Owner-markX und Counter-Decrement rollbackt beides |
-| **E2.8** | End-to-End-Test: Phase-E §7.x-Akzeptanz-Pins gegen Postgres-Wiring (Job-Start → Dispatch → Cancel → Quota-Refund-Cycle); Sweeper findet orphane Owner-Einträge | E2E-Suite grün; `QuotaReservationSweeper` exactly-once-refunded gegen Postgres |
+| **E2.8** | Neues Integration-Modul `test/integration-server-state` für End-to-End-Tests gegen Postgres-Wiring (Job-Start → Dispatch → Cancel → Quota-Refund-Cycle); Sweeper findet orphane Owner-Einträge. Phase-E-Akzeptanz-Fixtures werden parametrisierbar wiederverwendet (kein Copy/Paste). Docker/Postgres-Isolation via Testcontainers bleibt im neuen Modul | Modul baut; E2E-Suite grün; `QuotaReservationSweeper` exactly-once-refunded gegen Postgres |
 | **E2.9** | Doku: `spec/phase-e2-persistence.md` — Implementor-Guide für andere Backings (MySQL/SQLite-Skizze als Folge), Flyway-Workflow, Operations-Hinweise (Backup, Connection-Limits); Cross-Refs in `spec/phase-e-port-atomicity.md` § Cross-Refs ergänzt | Doku reviewed; Spec-Cross-Ref-Eintrag „Persistente Implementoren siehe phase-e2-persistence.md" |
 
 Schätzung: E2.1–E2.7 je ~1 Sub-Commit-Zyklus wie Phase-E-APs;
@@ -670,28 +700,30 @@ Phase E2 gilt als done, wenn:
 - Performance-Tuning über Indizes hinaus (Partitionierung,
   Connection-Multiplexing)
 
-## 10. Offene Fragen (vor E2.1-Start zu klären)
+## 10. Resolved (Owner-Entscheidung 2026-05-06)
 
-- **Q1**: Postgres-Mindestversion 14 ok? (Plan setzt sie voraus
-  wegen `INSERT … ON CONFLICT … RETURNING`-Verhalten und JSONB.)
-- **Q2**: Server-State-DB-URL — separate Config-Sektion in
-  `application.yaml` (z.B. `server.state.jdbcUrl`) oder Env-Var-only?
-  Konsistent mit `connection-config-spec.md`?
-- **Q3**: Flyway-Migrationen automatisch beim Server-Start anwenden
-  oder separater `make migrate`-Step?
-- **Q4**: `JdbcTransactionRunner` adapter-intern (§ 3.5 Vorschlag)
-  bestätigen — oder wollen wir eine Hexagon-Port-Variante mit
-  abstraktem `TxHandle` (ohne `Connection`-Typ) für mögliche zweite
-  Backings (z.B. ein NATS- oder Redis-Adapter)?
-- **Q5**: Brauchen wir für E2.8 echte E2E-Tests in einem neuen Test-
-  Modul (`test/integration-server-state`?) oder reicht es, die
-  existierenden Phase-E-Akzeptanz-Tests mit einem JDBC-Wiring-Profil
-  parametrisierbar zu machen?
-- **Q6**: E2 vor F starten (siehe § 0) — muss F warten bis E2
-  fertig, oder darf F parallel auf InMemory laufen?
+- **Q1**: Postgres ≥ 14 als technische Mindestversion bleibt; für neue
+  Production-Deployments empfehlen wir 16+ (PG 14 EOL 2026-11-12 laut
+  https://www.postgresql.org/support/versioning/). Operations-Doku
+  in E2.9 weist darauf hin. Siehe § 3.1.
+- **Q2**: Separate Config-Sektion `server.state.*` in
+  `application.yaml` plus Env-Overrides — **nicht** Env-only. Die
+  State-DB ist ein Server-Betriebsmittel, kein Migration-Target.
+  Siehe § 3.6.
+- **Q3**: Production-Pfad ist ein expliziter `make migrate`-/Ops-Step.
+  Auto-Flyway nur explizit opt-in für Dev/Test über
+  `server.state.migrations.auto = true`. Siehe § 3.2.
+- **Q4**: `JdbcTransactionRunner` bleibt adapter-intern. Kein Hexagon-
+  Port-`TxHandle`; Cross-Port-Atomicity bleibt über die bestehenden
+  Ports + Contract-Tests abgesichert. Siehe § 3.5.
+- **Q5**: Neues Integration-Modul `test/integration-server-state` mit
+  wiederverwendeten/parametrisierbaren Phase-E-Akzeptanz-Fixtures.
+  Docker/Postgres-Isolation bleibt sauber. Siehe § 5 (E2.8).
+- **Q6**: F darf parallel auf InMemory starten. E2 ist Gate für
+  Production-Deploy/Release-Freigabe. Siehe § 0.
 
 ---
 
-**Nach Approval § 3 + § 10**: Start mit **E2.1** (Modul-Setup +
+**Approval § 3 + § 10 erteilt**: Start mit **E2.1** (Modul-Setup +
 `JdbcTransactionRunner` als isolierte adapter-interne Klasse) als
 kleinster, isolierter Schritt.
