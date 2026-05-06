@@ -59,6 +59,19 @@ object PhaseERegistries {
                     DataProfileStartHandler(orchestrator, clock)
                 SchemaCompareStartHandler.TOOL_NAME ->
                     SchemaCompareStartHandler(orchestrator, clock)
+                // Phase F § 8.7 (F.7 5/5): produktiver
+                // `data_import_start`-Handler. Reaktiviert den
+                // bisherigen UnsupportedToolHandler-Slot mit
+                // ArtifactStore-/ConnectionReferenceStore-/
+                // SchemaStore-Resolution + Phase-E-Job-Pipeline.
+                DataImportStartHandler.TOOL_NAME ->
+                    DataImportStartHandler(
+                        orchestrator = orchestrator,
+                        artifactStore = eWiring.phaseCWiring.artifactStore,
+                        connectionStore = eWiring.phaseCWiring.connectionStore,
+                        schemaStore = eWiring.phaseCWiring.schemaStore,
+                        clock = clock,
+                    )
                 JobCancelHandler.TOOL_NAME ->
                     cancelHandler
                 else ->

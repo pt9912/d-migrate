@@ -82,16 +82,25 @@ class PhaseERegistriesTest : FunSpec({
         handler.shouldNotBeInstanceOf<UnsupportedToolHandler>()
     }
 
-    test("defaultToolRegistry: nicht-E-Tools, die noch nicht implementiert sind, bleiben Unsupported") {
-        // data_export_start, data_import_start, data_transfer_start sind
-        // Phase-F-Carve-out. Plan §3.2 schliesst sie aus dieser Phase aus.
+    test("defaultToolRegistry: nicht-E/F-Tools, die noch nicht implementiert sind, bleiben Unsupported") {
+        // data_export_start und data_transfer_start bleiben weiter
+        // UnsupportedToolHandler — Plan §3.2 schliesst sie aus
+        // dieser Phase aus. Phase F § 8.7 (F.7 5/5) hat
+        // `data_import_start` produktiv gemacht; das Tool ist daher
+        // kein UnsupportedToolHandler mehr (eigener Test unten).
         val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
         registry.findHandler("data_export_start")
             .shouldBeInstanceOf<UnsupportedToolHandler>()
-        registry.findHandler("data_import_start")
-            .shouldBeInstanceOf<UnsupportedToolHandler>()
         registry.findHandler("data_transfer_start")
             .shouldBeInstanceOf<UnsupportedToolHandler>()
+    }
+
+    test("defaultToolRegistry: data_import_start ist Phase-F-aktiv (kein UnsupportedToolHandler)") {
+        // Phase F § 8.7 (F.7 5/5): produktiver Handler statt
+        // UnsupportedToolHandler.
+        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        registry.findHandler("data_import_start")
+            .shouldBeInstanceOf<DataImportStartHandler>()
     }
 
     test("defaultToolRegistry: alle Descriptors aus PhaseC bleiben sichtbar") {
