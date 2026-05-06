@@ -3,11 +3,14 @@ package dev.dmigrate.server.application.upload
 import dev.dmigrate.server.application.quota.QuotaReservation
 import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.upload.FinalizationOutcome
+import dev.dmigrate.server.core.upload.FinalizationOutcomeStatus
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
 import dev.dmigrate.server.core.upload.UploadSessionTransitions
 import dev.dmigrate.server.core.upload.UploadSessionTransitions.FinalizeValidation
 import dev.dmigrate.server.ports.ArtifactContentStore
+import dev.dmigrate.server.ports.PersistOutcome
 import dev.dmigrate.server.ports.TransitionOutcome
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
@@ -76,6 +79,61 @@ class UploadSessionService(
                 amount = session.sizeBytes,
             ),
         )
+    }
+
+    /**
+     * Phase F § 8.9 (F.9 2/3) — Sweeper-Hook fuer Upload-
+     * Finalisierungs-Timeouts.
+     *
+     * Findet alle `FINALIZING`-Sessions, deren `finalizingLeaseExpiresAt`
+     * vor [now] liegt, und bringt sie deterministisch in den durablen
+     * Failure-State:
+     *
+     * 1. Persistiert einen `FinalizationOutcome` mit
+     *    `status = FAILED` und `sanitizedErrorCode = "OPERATION_TIMEOUT"`
+     *    (claim-keyed CAS gegen den noch aktiven `finalizingClaimId`).
+     * 2. Transitioniert die Session auf `ABORTED` (Plan-Wortlaut
+     *    "Session FAILED" — der durable State ist `ABORTED` mit
+     *    `FailureOutcome.status=FAILED`, analog zu F.4 (3/3) und
+     *    F.6 (1/3)).
+     * 3. Loescht Zwischensegmente (Cleanup/Tombstone).
+     * 4. Gibt Init-Quotas frei (`ACTIVE_UPLOAD_SESSIONS` +
+     *    `UPLOAD_BYTES`).
+     *
+     * Idempotent: ein zweiter Sweep mit identischem [now] findet die
+     * Session bereits als ABORTED und ueberspringt sie.
+     *
+     * @return Anzahl der durabel zu Timeout gebrachten Sessions.
+     */
+    fun timeoutStaleFinalizingSessions(now: Instant): Int {
+        val stale = sessions.findStaleFinalizing(now)
+        var timedOut = 0
+        for (session in stale) {
+            val claimId = session.finalizingClaimId ?: continue
+            val outcome = FinalizationOutcome(
+                claimId = claimId,
+                payloadSha256 = "",
+                artifactId = "",
+                schemaId = null,
+                format = "",
+                status = FinalizationOutcomeStatus.FAILED,
+                sanitizedErrorCode = "OPERATION_TIMEOUT",
+                sanitizedErrorMessage = "finalisation lease expired",
+            )
+            val persisted = sessions.persistFinalizationOutcome(
+                tenantId = session.tenantId,
+                uploadSessionId = session.uploadSessionId,
+                claimId = claimId,
+                outcome = outcome,
+                now = now,
+            )
+            if (persisted !is PersistOutcome.Persisted) continue
+            sessions.transition(session.tenantId, session.uploadSessionId, UploadSessionState.ABORTED, now)
+            segments.deleteAllForSession(session.uploadSessionId)
+            releaseInitQuotas(session)
+            timedOut++
+        }
+        return timedOut
     }
 
     fun abort(tenantId: TenantId, uploadSessionId: String, now: Instant): TransitionOutcome {

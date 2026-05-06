@@ -87,6 +87,19 @@ class InMemoryUploadSessionStore : UploadSessionStore {
         return expired
     }
 
+    /**
+     * Phase F § 8.9 (F.9 2/3): findet alle FINALIZING-Sessions, deren
+     * Lease abgelaufen ist. Plan-konform iteriert die InMemory-Variante
+     * den gesamten Sessions-Snapshot — Production-Stores (PG) sollten
+     * eine indizierte Query hinterlegen.
+     */
+    override fun findStaleFinalizing(now: Instant): List<UploadSession> {
+        return sessions.values.filter { session ->
+            session.state == UploadSessionState.FINALIZING &&
+                (session.finalizingLeaseExpiresAt?.isBefore(now) == true)
+        }
+    }
+
     override fun tryClaimFinalization(
         tenantId: TenantId,
         uploadSessionId: String,

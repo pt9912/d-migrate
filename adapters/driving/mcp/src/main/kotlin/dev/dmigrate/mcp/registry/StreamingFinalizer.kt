@@ -328,6 +328,16 @@ internal class StreamingFinalizer(
                 ),
             )
             "PAYLOAD_TOO_LARGE" -> throw PayloadTooLargeException(0, 0)
+            // Phase F § 8.9 (F.9 2/3): Upload-Finalisierungs-Timeout
+            // -> OPERATION_TIMEOUT. Der Sweeper aus
+            // `UploadSessionService.timeoutStaleFinalizingSessions`
+            // persistiert den Outcome; ein Replay-Call (z.B. erneuter
+            // `artifact_upload`) bekommt deterministisch denselben
+            // Fehler.
+            "OPERATION_TIMEOUT" -> throw dev.dmigrate.server.application.error.OperationTimeoutException(
+                operation = "upload_finalisation",
+                budget = java.time.Duration.ZERO,
+            )
             else -> throw InternalAgentErrorException()
         }
     }

@@ -39,6 +39,25 @@ interface UploadSessionStore {
     fun expireDue(now: Instant): List<UploadSession>
 
     /**
+     * Phase F § 8.9 (F.9 2/3): findet alle `FINALIZING`-Sessions,
+     * deren `finalizingLeaseExpiresAt < [now]` ist. Liefert die
+     * Sessions im pre-Transition-Zustand zurueck — der Aufrufer
+     * (typisch [dev.dmigrate.server.application.upload.UploadSessionService.timeoutStaleFinalizingSessions])
+     * persistiert dann den FailureOutcome (`OPERATION_TIMEOUT`),
+     * transitioniert zu `ABORTED`, raeumt Segmente und gibt Quotas
+     * frei.
+     *
+     * Default-Implementierung nutzt eine list+filter-Kombination
+     * ueber Tenant-Grenzen hinweg, damit Bestands-Implementoren
+     * (PG/SQLite) ihre Listen-API wiederverwenden koennen, ohne
+     * eine neue indizierte Query zu bauen. Production-Implementoren
+     * KOENNEN die Methode mit einer dedizierten Index-Query
+     * ueberschreiben (Plan-Akzeptanz: Sweeper-Cost ist O(stale-
+     * count), nicht O(total-finalizing-count)).
+     */
+    fun findStaleFinalizing(now: Instant): List<UploadSession> = emptyList()
+
+    /**
      * AP 6.22: atomic compare-and-set claim of an `ACTIVE` session
      * for finalisation. On success the session is moved to
      * `FINALIZING` with the supplied claim id and lease, and the
