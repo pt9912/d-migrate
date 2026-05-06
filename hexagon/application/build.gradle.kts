@@ -24,6 +24,12 @@ dependencies {
     // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
 
+    // Phase E3.6: ILoggingEvent fuer LogbackCapture.events. Logback ist
+    // im subprojects-Block bereits testRuntimeOnly fuer alle Module —
+    // hier erweitert auf testImplementation, damit der Test-Code den
+    // Event-Typ direkt referenzieren kann.
+    testImplementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
+
     // Phase E2.7: Contract-Test-Fixture fuer QuotaReservationOwnerStore
     // braucht Kotest fuer abstract FunSpec-Definition.
     testFixturesApi(project(":hexagon:ports-common"))

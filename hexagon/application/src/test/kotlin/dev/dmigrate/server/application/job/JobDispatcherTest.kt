@@ -11,6 +11,8 @@ import dev.dmigrate.server.ports.memory.InMemoryJobStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldStartWith
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Clock
 import java.time.Instant
@@ -403,6 +405,83 @@ class JobDispatcherTest : FunSpec({
         ).get()
 
         closeCount.get() shouldBe 1
+    }
+
+    // ── Phase E3 § 3.7 (E3.6): Observability-Log-Events ─────────────
+
+    test("dispatch emittiert scheduled + started + finished mit Plan-§-3.7-Feldern") {
+        val store = seedQueued("j-obs")
+        val dispatcher = JobDispatcher(
+            jobStore = store,
+            clock = clock,
+            executorStatusSnapshot = { JobExecutorStatus(active = 0, queued = 7, completed = 0, rejected = 0, capacity = 32) },
+        )
+        val record = store.findById(tenant, "j-obs")!!
+
+        val capture = LogbackCapture.during {
+            dispatcher.dispatch(
+                record = record,
+                worker = JobWorker { _, _ -> JobWorkerOutcome.Succeeded() },
+                token = CancellationToken.none(),
+            ).get()
+        }
+        val lines = capture.events
+            .filter { it.formattedMessage.startsWith("job.dispatch.") }
+            .map { it.formattedMessage }
+        // Reihenfolge: scheduled -> started -> finished, alle drei Events.
+        lines.size shouldBe 3
+        lines[0] shouldStartWith "job.dispatch.scheduled jobId=j-obs"
+        lines[0] shouldContain "tenant=acme"
+        lines[0] shouldContain "tool=data.export"
+        lines[0] shouldContain "queueDepth=7"
+        lines[1] shouldStartWith "job.dispatch.started jobId=j-obs"
+        lines[1] shouldContain "waitMs="
+        lines[2] shouldStartWith "job.dispatch.finished jobId=j-obs"
+        lines[2] shouldContain "status=SUCCEEDED"
+        lines[2] shouldContain "durationMs="
+    }
+
+    test("Failed-Outcome: finished-Event enthaelt errorCode") {
+        val store = seedQueued("j-fail")
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val record = store.findById(tenant, "j-fail")!!
+        val capture = LogbackCapture.during {
+            dispatcher.dispatch(
+                record = record,
+                worker = JobWorker { _, _ -> JobWorkerOutcome.Failed("DB_TIMEOUT", "boom") },
+                token = CancellationToken.none(),
+            ).get()
+        }
+        val finished = capture.events.first { it.formattedMessage.startsWith("job.dispatch.finished") }
+        finished.formattedMessage shouldContain "status=FAILED"
+        finished.formattedMessage shouldContain "errorCode=DB_TIMEOUT"
+    }
+
+    test("Cancel-while-queued: scheduled + finished, kein started-Event") {
+        // Seed direkt als CANCELLED (analog E3.4-Test).
+        val cancelledRecord = Fixtures.jobRecord("j-cancelled-obs").copy(
+            managedJob = Fixtures.jobRecord("j-cancelled-obs").managedJob.copy(
+                status = JobStatus.CANCELLED,
+                cancelRequest = dev.dmigrate.server.core.job.JobCancelRequest(
+                    requested = true, signalAcked = true,
+                ),
+            ),
+        )
+        val store = InMemoryJobStore().apply { save(cancelledRecord) }
+        val dispatcher = JobDispatcher(store, clock = clock)
+        val capture = LogbackCapture.during {
+            dispatcher.dispatch(
+                record = cancelledRecord,
+                worker = JobWorker { _, _ -> error("worker must not run") },
+                token = CancellationToken.none(),
+            ).get()
+        }
+        val events = capture.events.filter { it.formattedMessage.startsWith("job.dispatch.") }
+        events.map { it.formattedMessage.substringBefore(" ") } shouldBe listOf(
+            "job.dispatch.scheduled",
+            "job.dispatch.finished",
+        )
+        events[1].formattedMessage shouldContain "status=CANCELLED"
     }
 
     test("dispatch ohne permit (Default null) ist Bestands-Verhalten") {

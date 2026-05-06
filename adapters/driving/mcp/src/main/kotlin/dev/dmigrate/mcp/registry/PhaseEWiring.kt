@@ -124,6 +124,10 @@ data class PhaseEWiring(
         executor = workerExecutor,
         clock = phaseCWiring.clock,
         quotaService = ownerAwareQuotaService,
+        // Plan E3 § 3.7 (E3.6): scheduled-Event nutzt queueDepth aus
+        // dem Lifecycle-Snapshot. Dispatcher kennt den Lifecycle-Typ
+        // selbst nicht — er bekommt nur die Funktion.
+        executorStatusSnapshot = { executorBundle.lifecycle.status() },
     ),
     val jobCancelService: JobCancelService = JobCancelService(
         jobStore = phaseCWiring.jobStore,

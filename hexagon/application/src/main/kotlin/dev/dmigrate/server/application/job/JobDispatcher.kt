@@ -73,7 +73,20 @@ class JobDispatcher(
      * Plan §7.9 line 1291-1292.
      */
     private val quotaService: OwnerAwareQuotaService? = null,
+    /**
+     * Phase E3 § 3.7 (E3.6): optionaler Snapshot-Provider fuer
+     * Pool-Telemetrie im `job.dispatch.scheduled`-Log-Event
+     * (`queueDepth`-Feld). Default `null` -> queueDepth = 0
+     * (Sync-Pfad hat keine Queue). Production-Wiring uebergibt
+     * typischerweise `executorBundle.lifecycle::status` — der
+     * Dispatcher kennt den [JobExecutorLifecycle]-Typ NICHT, sondern
+     * akzeptiert nur die Funktionssignatur (Plan §3.3 dispatcher-
+     * agnostic).
+     */
+    private val executorStatusSnapshot: () -> JobExecutorStatus? = { null },
 ) {
+
+    private val log = org.slf4j.LoggerFactory.getLogger(JobDispatcher::class.java)
 
     fun dispatch(
         record: JobRecord,
@@ -94,10 +107,22 @@ class JobDispatcher(
          */
         permit: JobDispatchPermit? = null,
     ): CompletableFuture<JobWorkerOutcome> {
+        val scheduledAt = clock.instant()
+        // Plan E3 § 3.7 Log-Event #1: am Boundary, BEVOR der Runnable
+        // im Pool landet. queueDepth ist die aktuelle Queue-Tiefe vor
+        // dem Submit (nicht nach), aus dem Snapshot-Provider.
+        log.info(
+            EVENT_DISPATCH_SCHEDULED +
+                " jobId={} tenant={} tool={} queueDepth={}",
+            record.managedJob.jobId,
+            record.tenantId.value,
+            record.managedJob.operation,
+            executorStatusSnapshot()?.queued ?: 0L,
+        )
         val future = CompletableFuture<JobWorkerOutcome>()
         executor.execute {
             try {
-                future.complete(runOnce(record, worker, token))
+                future.complete(runOnce(record, worker, token, scheduledAt))
             } catch (t: Throwable) {
                 // Defensive: applyTerminal-Folgefehler oder
                 // unerwartete jobStore-Exceptions erreichen den Caller.
@@ -113,6 +138,7 @@ class JobDispatcher(
         record: JobRecord,
         worker: JobWorker,
         token: CancellationToken,
+        scheduledAt: Instant,
     ): JobWorkerOutcome {
         val startedAt = clock.instant()
         val running = jobStore.transitionStatus(
@@ -136,20 +162,38 @@ class JobDispatcher(
                 // 1291-1292). Nur fuer andere IllegalTransition-Quellen
                 // (z.B. RUNNING, SUCCEEDED) bleibt das DISPATCH_RACE-
                 // Failed-Mapping aktiv.
-                if (running.currentStatus == JobStatus.CANCELLED) {
-                    return JobWorkerOutcome.Cancelled(reason = REASON_GENERIC_CANCEL)
+                val skipOutcome = if (running.currentStatus == JobStatus.CANCELLED) {
+                    JobWorkerOutcome.Cancelled(reason = REASON_GENERIC_CANCEL)
+                } else {
+                    JobWorkerOutcome.Failed(
+                        errorCode = REASON_DISPATCH_RACE,
+                        errorMessage = "Job not in QUEUED (current=${running.currentStatus})",
+                    )
                 }
-                return JobWorkerOutcome.Failed(
-                    errorCode = REASON_DISPATCH_RACE,
-                    errorMessage = "Job not in QUEUED (current=${running.currentStatus})",
-                )
+                logFinished(record, skipOutcome, scheduledAt, clock.instant())
+                return skipOutcome
             }
-            is JobTransitionOutcome.NotFound ->
-                return JobWorkerOutcome.Failed(
+            is JobTransitionOutcome.NotFound -> {
+                val notFoundOutcome = JobWorkerOutcome.Failed(
                     errorCode = REASON_DISPATCH_NOT_FOUND,
                     errorMessage = "Job not found: ${record.managedJob.jobId}",
                 )
+                logFinished(record, notFoundOutcome, scheduledAt, clock.instant())
+                return notFoundOutcome
+            }
         }
+
+        // Plan E3 § 3.7 Log-Event #2: nach erfolgreichem QUEUED -> RUNNING.
+        // waitMs ist die Zeit zwischen dispatch()-Aufruf und dem realen
+        // Worker-Start (queue-Wait fuer Async-Pool, ~0 fuer Sync).
+        log.info(
+            EVENT_DISPATCH_STARTED +
+                " jobId={} tenant={} tool={} waitMs={}",
+            record.managedJob.jobId,
+            record.tenantId.value,
+            record.managedJob.operation,
+            java.time.Duration.between(scheduledAt, startedAt).toMillis(),
+        )
 
         val outcome = try {
             worker.execute(runningRecord, token)
@@ -173,8 +217,42 @@ class JobDispatcher(
                 errorMessage = e.message ?: e::class.simpleName.orEmpty(),
             )
         }
-        applyTerminal(record, outcome, clock.instant())
+        val terminalAt = clock.instant()
+        applyTerminal(record, outcome, terminalAt)
+        logFinished(record, outcome, startedAt, terminalAt)
         return outcome
+    }
+
+    /**
+     * Plan E3 § 3.7 Log-Event #3: terminaler Outcome aus Worker-Sicht.
+     * `status` reflektiert die Job-Lifecycle-Variante, `errorCode` nur
+     * fuer [JobWorkerOutcome.Failed] (ansonsten leer fuer
+     * slf4j-Kompatibilitaet). Wird VON ALLEN runOnce-Pfaden gerufen
+     * (worker-run UND skip-Branches), sodass jeder `scheduled`-Event
+     * genau ein `finished`-Event hat.
+     */
+    private fun logFinished(
+        record: JobRecord,
+        outcome: JobWorkerOutcome,
+        startedAt: Instant,
+        terminalAt: Instant,
+    ) {
+        log.info(
+            EVENT_DISPATCH_FINISHED +
+                " jobId={} tenant={} tool={} status={} durationMs={} errorCode={}",
+            record.managedJob.jobId,
+            record.tenantId.value,
+            record.managedJob.operation,
+            statusOf(outcome),
+            java.time.Duration.between(startedAt, terminalAt).toMillis(),
+            (outcome as? JobWorkerOutcome.Failed)?.errorCode ?: "",
+        )
+    }
+
+    private fun statusOf(outcome: JobWorkerOutcome): String = when (outcome) {
+        is JobWorkerOutcome.Succeeded -> "SUCCEEDED"
+        is JobWorkerOutcome.Cancelled -> "CANCELLED"
+        is JobWorkerOutcome.Failed -> "FAILED"
     }
 
     private fun applyTerminal(
@@ -242,6 +320,11 @@ class JobDispatcher(
 
         /** Plan §7.7: error.code-Wert fuer RUNNER_TIMEOUT-induzierten FAILED. */
         const val ERROR_CODE_OPERATION_TIMEOUT: String = "OPERATION_TIMEOUT"
+
+        /** Plan E3 § 3.7 Log-Event-Namen (E3.6). */
+        const val EVENT_DISPATCH_SCHEDULED: String = "job.dispatch.scheduled"
+        const val EVENT_DISPATCH_STARTED: String = "job.dispatch.started"
+        const val EVENT_DISPATCH_FINISHED: String = "job.dispatch.finished"
     }
 }
 
