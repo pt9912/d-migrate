@@ -34,6 +34,11 @@ object PhaseERegistries {
             quotaService = eWiring.ownerAwareQuotaService,
             jobDispatcher = eWiring.jobDispatcher,
             jobWorkerFactory = eWiring.jobWorkerFactory,
+            // Phase E3 § 3.5 + § 6.5 (E3.5): admission ans Pre-commit-Gate;
+            // jobStore an markExecutorSetupFailed (post-commit Setup-
+            // Failure -> pollbares FAILED).
+            dispatchAdmission = eWiring.executorBundle.admission,
+            jobStore = eWiring.phaseCWiring.jobStore,
         )
         val clock = eWiring.phaseCWiring.clock
 

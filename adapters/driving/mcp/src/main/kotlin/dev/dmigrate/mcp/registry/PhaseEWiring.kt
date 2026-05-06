@@ -11,10 +11,12 @@ import dev.dmigrate.server.application.fingerprint.PayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
 import dev.dmigrate.server.application.job.JobCancelService
 import dev.dmigrate.server.application.job.JobDispatcher
+import dev.dmigrate.server.application.job.JobExecutorBundle
+import dev.dmigrate.server.application.job.JobExecutorConfig
+import dev.dmigrate.server.application.job.JobExecutorFactory
 import dev.dmigrate.server.application.job.JobStartService
 import dev.dmigrate.server.application.job.JobWorkerFactory
 import dev.dmigrate.server.application.job.PassthroughJobWorkerFactory
-import dev.dmigrate.server.application.job.SyncExecutor
 import dev.dmigrate.server.application.quota.InMemoryQuotaReservationOwnerStore
 import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
 import dev.dmigrate.server.application.quota.QuotaReservationOwnerStore
@@ -101,7 +103,22 @@ data class PhaseEWiring(
         cancellationSourceFactory = cancellationSourceFactory,
         quotaService = ownerAwareQuotaService,
     ),
-    val workerExecutor: java.util.concurrent.Executor = SyncExecutor,
+    /**
+     * Phase E3 § 4 + § 5 (E3.5): Executor + Admission + Lifecycle als
+     * konsistent verkabeltes Tripel. Default ist `Sync` — gleicher
+     * Bestands-Effekt wie `SyncExecutor` plus no-op Admission. Production-
+     * Wiring ueberschreibt mit `JobExecutorFactory.create(Async(...))`;
+     * der CLI-Bootstrap registriert dann zusaetzlich
+     * [JobExecutorBundle.lifecycle].`shutdown(...)` auf den Shutdown-Hook.
+     */
+    val executorBundle: JobExecutorBundle = JobExecutorFactory.create(JobExecutorConfig.SYNC_DEFAULT),
+    /**
+     * Backward-compat-Shortcut: zeigte vor E3.5 auf `SyncExecutor`. Heute
+     * abgeleitet aus [executorBundle], damit Bestands-Caller
+     * (PhaseEWiring(workerExecutor = ...)) weiter funktionieren — ein
+     * expliziter Override hier gewinnt gegenueber `executorBundle.executor`.
+     */
+    val workerExecutor: java.util.concurrent.Executor = executorBundle.executor,
     val jobDispatcher: JobDispatcher = JobDispatcher(
         jobStore = phaseCWiring.jobStore,
         executor = workerExecutor,

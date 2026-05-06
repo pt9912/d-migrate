@@ -274,8 +274,11 @@ class McpPhaseECancelScenarioTest : FunSpec({
             JobWorkerOutcome.Succeeded()
         }
         val dispatchOutcome = w.jobDispatcher.dispatch(record, worker, CancellationToken.none()).get()
-        dispatchOutcome.shouldBeInstanceOf<JobWorkerOutcome.Failed>()
-        dispatchOutcome.errorCode shouldBe dev.dmigrate.server.application.job.JobDispatcher.REASON_DISPATCH_RACE
+        // Plan E3 § 3.6 + § 6.3 (E3.4): cancel-while-queued mappt
+        // IllegalTransition(currentStatus=CANCELLED) auf JobWorkerOutcome.Cancelled,
+        // NICHT auf Failed(DISPATCH_RACE). Der Worker darf trotzdem
+        // nicht laufen, und der Cancel-Record bleibt unangetastet.
+        dispatchOutcome.shouldBeInstanceOf<JobWorkerOutcome.Cancelled>()
         workerInvoked shouldBe false
 
         // Job-Record bleibt CANCELLED — kein FAILED-Overlay durch den fehlgeschlagenen Dispatch.

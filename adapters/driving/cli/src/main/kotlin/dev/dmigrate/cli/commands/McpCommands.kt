@@ -478,6 +478,10 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 jobStore = jobStore,
                 quotaService = quotaService,
             )
+            // Phase E3.5: server.jobs.executor + Env-Overrides aufloesen,
+            // Bundle bauen. Default ist Sync — Bestands-MVP.
+            val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
+            val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
             val phaseE = PhaseEWiring(
                 phaseCWiring = phaseCWithJdbc,
                 idempotencyStore = idempotencyStore,
@@ -491,16 +495,26 @@ class McpServeCommand : CliktCommand(name = "serve") {
                     jdbcOwnerStore = ownerStore,
                     limitFor = { Long.MAX_VALUE },
                 ),
+                executorBundle = executorBundle,
             )
             val components = PhaseCRegistries.defaultComponents(phaseCWithJdbc, config.scopeMapping).copy(
                 toolRegistry = PhaseERegistries.defaultToolRegistry(phaseE, config.scopeMapping),
             )
             echo(
                 "MCP server-state: JDBC/Postgres enabled " +
-                    "(migrations.auto=${state.migrationsAuto}).",
+                    "(migrations.auto=${state.migrationsAuto}, " +
+                    "executor=${if (executor.isAsync) "async" else "sync"}).",
                 err = true,
             )
-            return McpCliRuntimeWiring(phaseCWithJdbc, components, dataSource)
+            val asyncCfg = executor.config as? dev.dmigrate.server.application.job.JobExecutorConfig.Async
+            return McpCliRuntimeWiring(
+                phaseCWiring = phaseCWithJdbc,
+                components = components,
+                closeable = dataSource,
+                executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
+                executorShutdownTimeout = asyncCfg?.shutdownTimeout
+                    ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
+            )
         } catch (failure: Throwable) {
             dataSource.close()
             throw failure
@@ -560,8 +574,18 @@ private data class McpCliRuntimeWiring(
     val phaseCWiring: PhaseCWiring,
     val components: PhaseCRegistries.McpServiceComponents,
     private val closeable: AutoCloseable?,
+    /**
+     * Phase E3 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
+     * hat, wird das Lifecycle hier gehalten — `close()` ruft
+     * `shutdown(timeout)` vor `closeable.close()`. So drainen in-flight
+     * Jobs sauber, bevor die DataSource zugemacht wird.
+     */
+    private val executorLifecycle: dev.dmigrate.server.application.job.JobExecutorLifecycle? = null,
+    private val executorShutdownTimeout: java.time.Duration =
+        dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
 ) : AutoCloseable {
     override fun close() {
+        executorLifecycle?.shutdown(executorShutdownTimeout)
         closeable?.close()
     }
 }
