@@ -20,9 +20,9 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         capabilitySupport.generateCustomTypes(types)
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = capabilitySupport.generateSequences(sequences, skipped)
+    ): List<DdlStatement> = capabilitySupport.generateSequences(schema.sequences, skipped)
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.SPATIALITE

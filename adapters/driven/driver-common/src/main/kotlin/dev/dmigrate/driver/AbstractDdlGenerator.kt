@@ -16,7 +16,7 @@ abstract class AbstractDdlGenerator(
         statements += generateCustomTypes(schema.customTypes)
 
         var preSkipCount = skipped.size
-        statements += generateSequences(schema.sequences, skipped)
+        statements += generateSequences(schema, skipped)
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
         val (sorted, circularEdges) = topologicalSort(schema.tables)
@@ -98,7 +98,7 @@ abstract class AbstractDdlGenerator(
         options: DdlGenerationOptions = DdlGenerationOptions(),
     ): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>
-    abstract fun generateSequences(sequences: Map<String, SequenceDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>
+    abstract fun generateSequences(schema: SchemaDefinition, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement>
     abstract fun handleCircularReferences(edges: List<CircularFkEdge>, skipped: MutableList<SkippedObject>): List<DdlStatement>
     abstract fun generateViews(views: Map<String, ViewDefinition>, skipped: MutableList<SkippedObject>): List<DdlStatement>

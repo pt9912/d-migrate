@@ -1,6 +1,6 @@
 # Follow-up-Plan: BIGSERIAL, BigIdentifier und neutrale Identity-Breite
 
-> Status: In Progress, AP 3 umgesetzt (2026-05-07)
+> Status: In Progress, AP 4 umgesetzt (2026-05-07)
 >
 > Kontext: Ausgangspunkt war, dass der PostgreSQL-Reverse-Pfad `bigserial`
 > bewusst auf `NeutralType.BigInteger` mit Diagnose `R300` mappte. Aeltere
@@ -234,15 +234,19 @@ Verworfene Alternativen:
 - `R300` wird fuer strukturiert erkannte `bigserial`/`bigint identity` nicht
   mehr erzeugt.
 
-### AP 4: PostgreSQL Forward
+### AP 4: PostgreSQL Forward (erledigt 2026-05-07)
 
-- `PostgresTypeMapper` bzw. DDL-Generator so erweitern, dass 64-bit generated
-  identifier deterministisch `BIGSERIAL` oder `BIGINT GENERATED ... AS
-  IDENTITY` erzeugen.
-- Normales `BigInteger` bleibt `BIGINT`.
-- Gebundene implizite/owned Sequences werden nicht zusaetzlich als
-  eigenstaendige `CREATE SEQUENCE` erzeugt. Eigenstaendige Sequenzen bleiben
-  unveraendert im Sequence-Generator.
+- Der PostgreSQL-DDL-Generator rendert `ColumnGeneration.Identity` explizit:
+  - `Integer + Identity(legacySerialSyntax=true)` -> `SERIAL`
+  - `Integer + Identity(legacySerialSyntax=false)` ->
+    `INTEGER GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY`
+  - `BigInteger + Identity(legacySerialSyntax=true)` -> `BIGSERIAL`
+  - `BigInteger + Identity(legacySerialSyntax=false)` ->
+    `BIGINT GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY`
+- Normales `BigInteger` ohne Generation bleibt `BIGINT`.
+- Gebundene implizite/owned Sequences werden vor der Sequence-DDL-Erzeugung
+  herausgefiltert. Eigenstaendige Sequenzen bleiben unveraendert im
+  Sequence-Generator.
 
 ### AP 5: Weitere Dialekte
 

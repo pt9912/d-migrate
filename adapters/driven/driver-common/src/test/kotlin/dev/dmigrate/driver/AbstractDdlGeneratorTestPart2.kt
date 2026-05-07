@@ -380,7 +380,7 @@ internal class TestDdlGenerator(
     }
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>,
     ): List<DdlStatement> {
         callOrder += "sequences"

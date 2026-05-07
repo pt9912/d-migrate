@@ -16,6 +16,8 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 private val IntegrationTag = NamedTag("integration")
@@ -244,6 +246,16 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             )
             result.notes.none { it.code == "R300" } shouldBe true
             result.schema.sequences.containsKey("orders_id_seq") shouldBe false
+        }
+    }
+
+    test("bigserial reverse to forward generates BIGSERIAL without duplicate sequence DDL") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val ddl = PostgresDdlGenerator().generate(result.schema).render()
+            ddl shouldContain "\"id\" BIGSERIAL"
+            ddl shouldNotContain "CREATE SEQUENCE \"orders_id_seq\""
+            ddl shouldContain "CREATE SEQUENCE \"invoice_seq\""
         }
     }
 

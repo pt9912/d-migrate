@@ -32,9 +32,25 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     // ── Sequences ────────────────────────────────
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = typeSequenceSupport.generateSequences(sequences)
+    ): List<DdlStatement> = typeSequenceSupport.generateSequences(sequencesForGeneration(schema))
+
+    private fun sequencesForGeneration(schema: SchemaDefinition): Map<String, SequenceDefinition> {
+        val ownedSequenceKeys = schema.tables.values
+            .asSequence()
+            .flatMap { it.columns.values.asSequence() }
+            .mapNotNull { (it.generation as? ColumnGeneration.Identity)?.sequenceName }
+            .flatMap { sequenceName ->
+                sequence {
+                    yield(sequenceName)
+                    yield(sequenceName.substringAfterLast("."))
+                }
+            }
+            .toSet()
+        if (ownedSequenceKeys.isEmpty()) return schema.sequences
+        return schema.sequences.filterKeys { it !in ownedSequenceKeys }
+    }
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.POSTGIS

@@ -53,9 +53,9 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
     // ── Sequences ────────────────────────────────
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = sequenceSupport.generateSequences(sequences, skipped)
+    ): List<DdlStatement> = sequenceSupport.generateSequences(schema.sequences, skipped)
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.NATIVE
