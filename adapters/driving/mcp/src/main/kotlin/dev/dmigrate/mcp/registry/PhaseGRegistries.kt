@@ -1,7 +1,11 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.mcp.cursor.McpCursorCodec
+import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.application.ai.DefaultAiProviderRegistry
 import dev.dmigrate.server.application.ai.AiToolOrchestrator
+import dev.dmigrate.server.application.audit.AuditScope
 
 /**
  * Phase G § 6 G.6 (G.6.g) — Tool-Registry-Overlay parallel zu
@@ -37,6 +41,35 @@ object PhaseGRegistries {
     fun defaultToolRegistry(
         gWiring: PhaseGWiring,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    ): ToolRegistry = defaultToolRegistry(
+        gWiring = gWiring,
+        scopeMapping = scopeMapping,
+        capabilitiesHandler = capabilitiesHandler(gWiring, scopeMapping),
+    )
+
+    fun defaultComponents(
+        gWiring: PhaseGWiring,
+        scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
+    ): PhaseCRegistries.McpServiceComponents {
+        val capabilitiesHandler = capabilitiesHandler(gWiring, scopeMapping)
+        return PhaseCRegistries.McpServiceComponents(
+            toolRegistry = defaultToolRegistry(gWiring, scopeMapping, capabilitiesHandler),
+            responseLimitEnforcer = PhaseCRegistries.defaultResponseLimitEnforcer(gWiring.phaseEWiring.phaseCWiring),
+            auditScope = gWiring.phaseEWiring.phaseCWiring.auditSink?.let {
+                AuditScope(it, gWiring.phaseEWiring.phaseCWiring.clock)
+            },
+            capabilitiesProvider = capabilitiesHandler::staticPayload,
+            cursorCodec = McpCursorCodec(
+                keyring = gWiring.phaseEWiring.phaseCWiring.cursorKeyring,
+                clock = gWiring.phaseEWiring.phaseCWiring.clock,
+            ),
+        )
+    }
+
+    private fun defaultToolRegistry(
+        gWiring: PhaseGWiring,
+        scopeMapping: Map<String, Set<String>>,
+        capabilitiesHandler: CapabilitiesListReadOnlyHandler,
     ): ToolRegistry {
         val phaseE = gWiring.phaseEWiring
         val phaseC = phaseE.phaseCWiring
@@ -54,6 +87,7 @@ object PhaseGRegistries {
         val builder = ToolRegistry.builder()
         for (descriptor in baseRegistry.all()) {
             val handler = when (descriptor.name) {
+                "capabilities_list" -> capabilitiesHandler
                 ProcedureTransformPlanHandler.TOOL_NAME -> ProcedureTransformPlanHandler(
                     orchestrator = orchestrator,
                     artifactStore = phaseC.artifactStore,
@@ -98,5 +132,22 @@ object PhaseGRegistries {
             builder.register(descriptor, handler)
         }
         return builder.build()
+    }
+
+    private fun capabilitiesHandler(
+        gWiring: PhaseGWiring,
+        scopeMapping: Map<String, Set<String>>,
+    ): CapabilitiesListReadOnlyHandler {
+        val toolRegistry = PhaseERegistries.defaultToolRegistry(gWiring.phaseEWiring, scopeMapping)
+        val providerDescriptions =
+            (gWiring.aiProviderRegistry as? DefaultAiProviderRegistry)?.describe().orEmpty()
+        val prompts = DefaultPromptRegistry.mandatory().list()
+        return CapabilitiesListReadOnlyHandler(
+            tools = toolRegistry.all(),
+            scopeMapping = scopeMapping,
+            limits = gWiring.phaseEWiring.phaseCWiring.limits,
+            aiProviders = providerDescriptions,
+            prompts = prompts,
+        )
     }
 }

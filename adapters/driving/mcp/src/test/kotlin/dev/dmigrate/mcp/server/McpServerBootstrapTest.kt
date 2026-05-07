@@ -2,7 +2,9 @@ package dev.dmigrate.mcp.server
 
 import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.auth.StdioTokenFingerprint
+import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
+import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.StdioTokenGrant
@@ -162,6 +164,27 @@ class McpServerBootstrapTest : FunSpec({
             val resolution = rpc.principalResolution
             resolution.shouldBeInstanceOf<StdioPrincipalResolution.Resolved>()
             resolution.principal.principalId shouldBe PrincipalId("alice")
+        } finally {
+            outcome.handle.close()
+        }
+    }
+
+    test("startStdio wires optional Phase-G prompt registry into initialize capabilities") {
+        val frame = """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"${dev.dmigrate.mcp.protocol.McpProtocol.MCP_PROTOCOL_VERSION}","clientInfo":{"name":"t","version":"1"},"capabilities":{}}}
+        """.trimIndent() + "\n"
+        val output = ByteArrayOutputStream()
+        val outcome = McpServerBootstrap.startStdio(
+            McpServerConfig(authMode = AuthMode.DISABLED),
+            input = ByteArrayInputStream(frame.toByteArray(Charsets.UTF_8)),
+            output = output,
+            promptRegistry = DefaultPromptRegistry.mandatory(),
+            promptHygieneService = DefaultPromptHygieneService(),
+        )
+        outcome.shouldBeInstanceOf<McpStartOutcome.Started>()
+        try {
+            handleRpc(outcome.handle).awaitTermination()
+            output.toString(Charsets.UTF_8) shouldContain "\"prompts\":{\"listChanged\":false}"
         } finally {
             outcome.handle.close()
         }

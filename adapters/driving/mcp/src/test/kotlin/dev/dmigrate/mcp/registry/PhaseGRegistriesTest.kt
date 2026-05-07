@@ -258,4 +258,32 @@ class PhaseGRegistriesTest : FunSpec({
         (gWiring.aiToolOutcomeStore is InProcessAiToolOutcomeStore) shouldBe true
         (gWiring.aiArtifactMetadataStore is InProcessAiArtifactMetadataStore) shouldBe true
     }
+
+    test("PhaseG defaultComponents erweitert capabilities_list um Provider- und Prompt-Discovery") {
+        val gWiring = phaseGWiring()
+        val components = PhaseGRegistries.defaultComponents(gWiring)
+        val capabilities = components.capabilitiesProvider()
+
+        val asJson = JsonParser.parseString(
+            com.google.gson.GsonBuilder().disableHtmlEscaping().create().toJson(capabilities),
+        ).asJsonObject
+        val ai = asJson.getAsJsonObject("ai")
+        ai.get("providerQuotaDimension").asString shouldBe "PROVIDER_CALLS"
+        val providers = ai.getAsJsonArray("providers")
+        providers.size() shouldBe 1
+        providers[0].asJsonObject.get("providerId").asString shouldBe "noop"
+        providers[0].asJsonObject.toString() shouldNotContain "secret"
+
+        val prompts = asJson.getAsJsonArray("prompts").map {
+            it.asJsonObject.get("name").asString
+        }.toSet()
+        prompts shouldBe setOf("procedure_analysis", "procedure_transformation", "testdata_planning")
+
+        val registryHandler = components.toolRegistry.findHandler("capabilities_list")
+        val outcome = registryHandler!!.handle(ToolCallContext("capabilities_list", null, aiPrincipal()))
+        outcome as ToolCallOutcome.Success
+        val wireJson = JsonParser.parseString(outcome.content.single().text!!).asJsonObject
+        wireJson.getAsJsonObject("ai").getAsJsonArray("providers")[0]
+            .asJsonObject.get("providerId").asString shouldBe "noop"
+    }
 })

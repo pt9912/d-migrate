@@ -55,7 +55,10 @@ data class ResourceStores(
          * `resources/read` is never wired against [empty] when a
          * Phase-C wiring is in scope.
          */
-        fun fromPhaseCWiring(wiring: PhaseCWiring): ResourceStores = ResourceStores(
+        fun fromPhaseCWiring(
+            wiring: PhaseCWiring,
+            aiArtifactMetadataStore: AiArtifactMetadataStore? = null,
+        ): ResourceStores = ResourceStores(
             jobStore = wiring.jobStore,
             artifactStore = wiring.artifactStore,
             schemaStore = wiring.schemaStore,
@@ -70,7 +73,7 @@ data class ResourceStores(
             // discovery surface with secret-free connection records.
             connectionStore = wiring.connectionStore,
             artifactContentStore = wiring.artifactContentStore,
-            aiArtifactMetadataStore = null,
+            aiArtifactMetadataStore = aiArtifactMetadataStore,
         )
     }
 }

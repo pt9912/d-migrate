@@ -9,7 +9,10 @@ import dev.dmigrate.cli.commands.McpStateDirLock
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import kotlin.io.path.deleteRecursively
 
@@ -162,5 +165,35 @@ class CliMcpServeSmokeTest : FunSpec({
         // stderr message containing "stdioTokenFile not readable"
         // (and NOT "JWT_JWKS requires …") is asserted by the
         // McpServerConfigStdioValidationTest in the mcp module.
+    }
+
+    test("mcp serve stdio wires Phase-G prompts into initialize capabilities") {
+        @OptIn(kotlin.io.path.ExperimentalPathApi::class)
+        val dir = Files.createTempDirectory("dmigrate-mcp-cli-phase-g-")
+        val input = ByteArrayInputStream(
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"t","version":"1"},"capabilities":{}}}
+            """.trimIndent().plus("\n").toByteArray(Charsets.UTF_8),
+        )
+        val output = ByteArrayOutputStream()
+        val oldIn = System.`in`
+        val oldOut = System.out
+        try {
+            System.setIn(input)
+            System.setOut(java.io.PrintStream(output, true, Charsets.UTF_8))
+            cli().parse(
+                listOf(
+                    "mcp", "serve",
+                    "--transport", "stdio",
+                    "--mcp-state-dir", dir.toString(),
+                ),
+            )
+            output.toString(Charsets.UTF_8) shouldContain "\"prompts\":{\"listChanged\":false}"
+        } finally {
+            System.setIn(oldIn)
+            System.setOut(oldOut)
+            @OptIn(kotlin.io.path.ExperimentalPathApi::class)
+            dir.deleteRecursively()
+        }
     }
 })

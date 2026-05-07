@@ -14,10 +14,13 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.cliVersion
 import dev.dmigrate.mcp.cursor.CursorKeyring
+import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.registry.PhaseCRegistries
 import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
 import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.PhaseGRegistries
+import dev.dmigrate.mcp.registry.PhaseGWiring
+import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -38,6 +41,8 @@ import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
@@ -410,6 +415,9 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 config = config,
                 phaseCWiring = runtime.phaseCWiring,
                 components = runtime.components,
+                resourceStores = runtime.resourceStores,
+                promptRegistry = runtime.promptRegistry,
+                promptHygieneService = runtime.phaseGWiring.promptHygieneService,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -436,6 +444,9 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 config = config,
                 phaseCWiring = runtime.phaseCWiring,
                 components = runtime.components,
+                resourceStores = runtime.resourceStores,
+                promptRegistry = runtime.promptRegistry,
+                promptHygieneService = runtime.phaseGWiring.promptHygieneService,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -464,9 +475,19 @@ class McpServeCommand : CliktCommand(name = "serve") {
         )
         val state = resolveServerStateConfigOrExit() ?: run {
             val artifactRetention = startArtifactRetentionLoop(phaseC)
+            val idempotencyStore = InMemoryIdempotencyStore()
+            val phaseE = PhaseEWiring(
+                phaseCWiring = phaseC,
+                idempotencyStore = idempotencyStore,
+                jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
+                workerHandleRegistry = InMemoryWorkerHandleRegistry(),
+                approvalGrantStore = InMemoryApprovalGrantStore(),
+            )
+            val phaseG = PhaseGWiring(phaseEWiring = phaseE)
             return McpCliRuntimeWiring(
                 phaseCWiring = phaseC,
-                components = PhaseCRegistries.defaultComponents(phaseC, config.scopeMapping),
+                phaseGWiring = phaseG,
+                components = PhaseGRegistries.defaultComponents(phaseG, config.scopeMapping),
                 closeable = artifactRetention,
             )
         }
@@ -507,9 +528,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver(),
                 dataRunnerTempDirectory = owner.resolved.path,
             )
-            val components = PhaseCRegistries.defaultComponents(phaseCWithJdbc, config.scopeMapping).copy(
-                toolRegistry = PhaseERegistries.defaultToolRegistry(phaseE, config.scopeMapping),
-            )
+            val phaseG = PhaseGWiring(phaseEWiring = phaseE)
+            val components = PhaseGRegistries.defaultComponents(phaseG, config.scopeMapping)
             echo(
                 "MCP server-state: JDBC/Postgres enabled " +
                     "(migrations.auto=${state.migrationsAuto}, " +
@@ -519,6 +539,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
             val asyncCfg = executor.config as? dev.dmigrate.server.application.job.JobExecutorConfig.Async
             return McpCliRuntimeWiring(
                 phaseCWiring = phaseCWithJdbc,
+                phaseGWiring = phaseG,
                 components = components,
                 closeable = CloseStack(listOfNotNull(artifactRetention, dataSource)),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
@@ -622,8 +643,14 @@ private const val ARTIFACT_RETENTION_SWEEP_SECONDS: Long = 300
 
 private data class McpCliRuntimeWiring(
     val phaseCWiring: PhaseCWiring,
+    val phaseGWiring: PhaseGWiring,
     val components: PhaseCRegistries.McpServiceComponents,
     private val closeable: AutoCloseable?,
+    val resourceStores: ResourceStores = ResourceStores.fromPhaseCWiring(
+        phaseCWiring,
+        phaseGWiring.aiArtifactMetadataStore,
+    ),
+    val promptRegistry: DefaultPromptRegistry = DefaultPromptRegistry.mandatory(),
     /**
      * Phase E3 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
      * hat, wird das Lifecycle hier gehalten — `close()` ruft

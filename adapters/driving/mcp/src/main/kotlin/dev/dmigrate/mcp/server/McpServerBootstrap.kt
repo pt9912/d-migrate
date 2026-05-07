@@ -1,6 +1,7 @@
 package dev.dmigrate.mcp.server
 
 import dev.dmigrate.mcp.auth.FileStdioTokenStore
+import dev.dmigrate.mcp.prompts.PromptRegistry
 import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
@@ -13,6 +14,7 @@ import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
+import dev.dmigrate.server.application.audit.prompt.PromptHygieneService
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.ports.StdioTokenStore
 import io.ktor.server.cio.CIO
@@ -104,6 +106,8 @@ object McpServerBootstrap {
             PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
         resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+        promptRegistry: PromptRegistry? = null,
+        promptHygieneService: PromptHygieneService? = null,
         // §6.24: integration tests inject a custom DisabledAuthValidator
         // (with a per-run principal) so AP-6.24 per-transport-run
         // principal isolation works on AuthMode.DISABLED. Production
@@ -147,6 +151,8 @@ object McpServerBootstrap {
                             capabilitiesProvider = components.capabilitiesProvider,
                             limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
                             cursorCodec = components.cursorCodec,
+                            promptRegistry = promptRegistry,
+                            promptHygieneService = promptHygieneService,
                         )
                     },
                     authValidatorOverride = authValidatorOverride,
@@ -181,6 +187,8 @@ object McpServerBootstrap {
             PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
         resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
         resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+        promptRegistry: PromptRegistry? = null,
+        promptHygieneService: PromptHygieneService? = null,
     ): McpStartOutcome {
         val toolRegistry = components.toolRegistry
         val responseLimitEnforcer = components.responseLimitEnforcer
@@ -210,6 +218,8 @@ object McpServerBootstrap {
             capabilitiesProvider = components.capabilitiesProvider,
             limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
             cursorCodec = components.cursorCodec,
+            promptRegistry = promptRegistry,
+            promptHygieneService = promptHygieneService,
         )
         val rpc = StdioJsonRpc(input, output, service, principalResolution = resolution)
             .apply { start() }

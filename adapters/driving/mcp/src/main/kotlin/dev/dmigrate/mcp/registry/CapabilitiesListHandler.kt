@@ -2,9 +2,12 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.mcp.protocol.PromptListEntry
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.ai.AiProviderDescription
+import dev.dmigrate.server.ports.quota.QuotaDimension
 
 /**
  * AP 6.2: Phase-C `capabilities_list` per
@@ -43,6 +46,8 @@ internal class CapabilitiesListReadOnlyHandler(
     limits: McpLimitsConfig = McpLimitsConfig(),
     private val dialects: List<String> = DatabaseDialect.entries.map { it.name },
     private val formats: List<String> = SchemaFileResolver.SUPPORTED_FORMATS,
+    private val aiProviders: List<AiProviderDescription> = emptyList(),
+    private val prompts: List<PromptListEntry> = emptyList(),
 ) : ToolHandler {
 
     private val gson = GsonBuilder().disableHtmlEscaping().create()
@@ -66,6 +71,8 @@ internal class CapabilitiesListReadOnlyHandler(
         "dialects" to dialects,
         "formats" to formats,
         "limits" to projectedLimits,
+        "ai" to projectAiCapabilities(),
+        "prompts" to prompts.map(::projectPrompt),
     )
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
@@ -132,6 +139,31 @@ internal class CapabilitiesListReadOnlyHandler(
         "maxArtifactChunkBytes" to limits.maxArtifactChunkBytes,
         "maxInlineFindings" to limits.maxInlineFindings,
         "maxArtifactUploadBytes" to limits.maxArtifactUploadBytes,
+    )
+
+    private fun projectAiCapabilities(): Map<String, Any?> = mapOf(
+        "providers" to aiProviders.map(::projectProvider),
+        "providerQuotaDimension" to QuotaDimension.PROVIDER_CALLS.name,
+    )
+
+    private fun projectProvider(provider: AiProviderDescription): Map<String, Any?> = mapOf(
+        "providerId" to provider.providerId.value,
+        "kind" to provider.kind.name,
+        "allowedModels" to provider.allowedModels.toList(),
+        "maxPromptBytes" to provider.maxPromptBytes,
+        "maxOutputBytes" to provider.maxOutputBytes,
+    )
+
+    private fun projectPrompt(prompt: PromptListEntry): Map<String, Any?> = mapOf(
+        "name" to prompt.name,
+        "description" to prompt.description,
+        "arguments" to prompt.arguments.map {
+            mapOf(
+                "name" to it.name,
+                "description" to it.description,
+                "required" to it.required,
+            )
+        },
     )
 
 }
