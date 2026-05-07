@@ -400,6 +400,49 @@ read-only und braucht keinen vorgelagerten Upload und keine
 Policy-Freigabe; zu grosse Inline-Schemas muessen `PAYLOAD_TOO_LARGE`
 liefern.
 
+Beispiel `data_import_start` (CSV-Artefakt + tenant-scoped Ziel):
+
+```json
+{
+  "idempotencyKey": "imp-2026-05-07-acme-events-load",
+  "targetConnectionRef": "dmigrate://tenants/acme/connections/warehouse",
+  "artifactId": "art-7af2…",
+  "table": "analytics.events",
+  "format": "csv",
+  "csvNoHeader": false,
+  "csvNullString": "\\N",
+  "onError": "skip",
+  "onConflict": "update",
+  "chunkSize": 1000,
+  "approvalToken": "atk-…"
+}
+```
+
+Das Artefakt wurde zuvor ueber `artifact_upload_init` (Intent
+`job_input`, `mimeType=text/csv` oder `application/csv`,
+`artifactKind=seed-data`) und folgende `artifact_upload`-Aufrufe
+hochgeladen. Beide CSV-MIME-Schreibweisen sind contracttreu und
+werden serverseitig auf dasselbe `format=csv` normalisiert; das
+JSON-Schema-Feld `format` bleibt der kanonische Override fuer
+den Importpfad.
+
+Beispiel `data_transfer_start` (DB-zu-DB-Inkrement):
+
+```json
+{
+  "idempotencyKey": "trf-2026-05-07-orders-incremental",
+  "sourceConnectionRef": "dmigrate://tenants/acme/connections/legacy-pg",
+  "targetConnectionRef": "dmigrate://tenants/acme/connections/warehouse",
+  "tables": ["public.orders", "public.order_items"],
+  "filter": "tenant_id = 'acme'",
+  "sinceColumn": "updated_at",
+  "since": "2026-05-01T00:00:00Z",
+  "onConflict": "update",
+  "chunkSize": 5000,
+  "approvalToken": "atk-…"
+}
+```
+
 Antworten sollten standardmaessig liefern:
 
 - ein kurzes, maschinenlesbares `summary`
@@ -582,6 +625,13 @@ verbindlich:
 - Segmentbytes werden in MCP-`tools/call`-Argumenten als
   `contentBase64` uebertragen; streambares HTTP bleibt ein normaler
   JSON-RPC-POST und verwendet keinen separaten binaeren Upload-Body.
+  Diese Festlegung ist fuer 0.9.6 verbindlich: separate binaere
+  Nicht-MCP-Upload-Bodies (Multipart, raw octet-stream Bodies etc.)
+  sind **nicht Teil von 0.9.6** und werden auch fuer Phase F nicht
+  eingefuehrt — sowohl `stdio` als auch HTTP-Transport bleiben
+  ueber denselben JSON-RPC-`contentBase64`-Pfad. Eine spaetere
+  Erweiterung kann additiv einen separaten Upload-Body-Pfad
+  einfuehren, sobald MCP-Clients das einheitlich unterstuetzen.
   - Segmentierte Uploads sind verbindlich mit:
     - `uploadSessionId` (verbindlich, opak, sichtbar ASCII/URL-sicher,
       mindestens 128 Bit Entropie, maximal 128 Zeichen)
@@ -635,7 +685,11 @@ verbindlich:
   - max. decodierte Segmentgroesse: `4 MiB`
   - max. serialisierter `artifact_upload`-Request: `6 MiB`
   - erlaubte `mimeType`: `application/json`, `application/sql`,
-    `application/yaml`, `text/plain`, `text/yaml`
+    `application/yaml`, `text/plain`, `text/yaml`, `text/csv`,
+    `application/csv` (CSV ist seit Phase F erlaubt, weil
+    `data_import_start` CSV-Import-Artefakte akzeptiert; beide
+    Schreibweisen sind contracttreu und werden serverseitig auf
+    dasselbe `format=csv` normalisiert)
   - erlaubte `artifactKind`: `schema`, `ddl`, `transform-script`,
     `seed-data`, `rules`, `generic`
   - `sizeBytes` ist verpflichtende Referenzgroesse fuer die erwartete

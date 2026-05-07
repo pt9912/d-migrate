@@ -1,15 +1,19 @@
-# MCP-Server (Phase B + C + D)
+# MCP-Server (Phase B + C + D + E + F)
 
 > **Status (0.9.6):** Phase B (Transport / Auth / Discovery /
 > JSON-Schemas), Phase C (typisierte Schema-Tools, Upload-Flow,
-> `job_status_get`, `artifact_chunk_get`) und Phase D (Discovery-
+> `job_status_get`, `artifact_chunk_get`), Phase D (Discovery-
 > Listen-Tools, produktives `resources/read`, HMAC-Cursor,
-> Connection-Ref-Bootstrap) sind abgeschlossen. Verbleibende
-> `UNSUPPORTED_TOOL_OPERATION`-Tools sind die Phase-E Job-Start-
-> Tools (`schema_reverse_start`, `data_profile_start`,
-> `schema_compare_start`, `data_export_start`) und die Phase-F
-> AI-Tools. Details der jeweiligen Phase: §"Phase D: Discovery und
-> Ressourcen" unten + die done-Pläne unter `docs/planning/done/`.
+> Connection-Ref-Bootstrap), Phase E (Async-Job-Start-Tools,
+> Idempotency, Policy, Quota, `job_cancel`) und Phase F
+> (policy-gesteuerter `job_input`-Upload, `data_import_start`,
+> `data_transfer_start`) sind abgeschlossen. Verbleibend bleiben
+> die KI-nahen Spezialtools (`procedure_transform_*`,
+> `testdata_*`) — Phase G. Details der jeweiligen Phase: §"Phase
+> D: Discovery und Ressourcen", §"Phase E: Async-Jobs,
+> Idempotency, Policy" und §"Phase F: Policy-gesteuerte
+> Datenoperationen" unten + die done-Pläne unter
+> `docs/planning/done/`.
 
 Der MCP-Server ist ein Driving-Adapter zu d-migrate
 (`adapters/driving/mcp`) und implementiert
@@ -236,8 +240,9 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 | `subscribe`/`listChanged` Capabilities      | Beide `false` (§12.16, §12.17)                              |
 | `connections/list` (Admin-Filter)           | **Phase D**: Connection-Refs erscheinen in `resources/list` und sind via `resources/read` lesbar (secret-frei). |
 | `job_cancel`                                 | Registry-Eintrag — Handler folgt Phase E (Job-Lifecycle).   |
-| Upload-Session-Tools                         | **Phase C produktiv** (`artifact_upload_init`, `artifact_upload`, `artifact_upload_abort`). |
-| AI-Tools (procedure_transform_*, testdata_*) | Registry-Einträge — Handler folgen Phase F (AI-Tools).      |
+| Upload-Session-Tools                         | **Phase C + F produktiv** — `schema_staging_readonly` (Phase C, Quota/Audit) + `job_input` (Phase F, policy-gesteuert mit `approvalKey` + Init-Fingerprint). `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` decken beide Intents. |
+| Data-write Start-Tools                       | **Phase F produktiv** — `data_import_start` und `data_transfer_start` (idempotent, policy-gesteuert, `targetConnectionRef`/`sourceConnectionRef` als tenant-scoped Resource-URI). |
+| AI-Tools (procedure_transform_*, testdata_*) | Registry-Einträge — Handler folgen Phase G (KI-nahe Spezialtools). |
 | Resource-Stores (Real-Backends)              | **Phase D**: `ResourceStores.fromPhaseCWiring(...)` lädt Job/Artifact/Schema/Profile/Diff/Connection aus produktiver Wiring. |
 | Cross-Tenant-Reads                           | **Phase D**: Tenant-Scope ueber `allowedTenantIds`; Cross-Tenant-Reads erlaubt, wenn der URI-Tenant in `allowedTenantIds` liegt. |
 | OAuth Authorization Server / DCR             | **Nicht implementiert**                                      |
@@ -571,6 +576,171 @@ Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
 
 ---
 
+## Phase F: Policy-gesteuerte Datenoperationen
+
+Phase F (`docs/planning/done/ImpPlan-0.9.6-F.md`) ergänzt Phase
+C/D/E um drei produktive Bausteine:
+
+1. den **policy-gesteuerten `job_input`-Upload** über
+   `artifact_upload_init` / `artifact_upload` /
+   `artifact_upload_abort` (zusätzlich zum read-only
+   `schema_staging_readonly`-Pfad aus Phase C),
+2. **`data_import_start`** — startet einen Importjob, der ein
+   hochgeladenes `UPLOAD_INPUT`-Artefakt in eine tenant-scoped
+   Zielverbindung schreibt,
+3. **`data_transfer_start`** — startet einen DB-zu-DB-Transferjob
+   zwischen zwei tenant-scoped Verbindungen.
+
+Alle drei Pfade sind idempotent, brauchen entweder einen
+`approvalKey` (Upload-Init / synchrone Side-Effects) oder einen
+`idempotencyKey` (Job-Starts) plus optional `approvalToken` für
+den Approved-Retry. Die Approval-Fingerprints binden Tenant,
+Caller, Tool, Korrelations-Kind und den normalisierten
+Payload-Fingerprint (Plan §5).
+
+### Upload-Intent-Trennung
+
+`uploadIntent` separiert read-only Schema-Staging und
+write-nahe `job_input`-Uploads:
+
+| Intent                        | Scope-Gate                                | Default-Schutz                                                                                |
+| ----------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `schema_staging_readonly`     | `dmigrate:read`                           | nur Quota + Audit; idempotent über `clientRequestId` (Phase C).                               |
+| `job_input`                   | `dmigrate:artifact:upload`                | policy-gesteuert mit `approvalKey` + Init-Fingerprint; finalisiertes Artefakt ist `UPLOAD_INPUT` (Phase F). |
+
+Read-only Staging-Artefakte (`SCHEMA`-Kind) dürfen nicht still
+als `job_input` weiterverwendet werden — der `data_import_start`-
+Handler erzwingt `kind=UPLOAD_INPUT` und liefert sonst
+`VALIDATION_ERROR` (Plan §6.1).
+
+### `artifact_upload_init` — Phase-F-Felder
+
+Zusätzlich zu den Phase-C-Feldern (`uploadIntent`,
+`expectedSizeBytes`/`sizeBytes`, `checksumSha256`, `filename`)
+nimmt der Init-Pfad in Phase F entgegen:
+
+- `approvalKey` — verbindlich für `uploadIntent=job_input`;
+  bindet Idempotenz und Policy-Challenge an
+  (`tenantId`,`callerId`,`approvalKey`,Init-Fingerprint).
+- `mimeType` — optional, default `application/octet-stream`.
+  Allowlist siehe `spec/ki-mcp.md` §8.3 (CSV ist seit Phase F
+  erlaubt: `text/csv` / `application/csv`).
+- `artifactKind` — verpflichtend, eines aus `schema`, `ddl`,
+  `transform-script`, `seed-data`, `rules`, `generic`.
+- `targetTable` — optional Tabellenbindung für Single-File-
+  Imports; verboten für `schema_staging_readonly`.
+- `clientRequestId` — optional, nur für `schema_staging_readonly`
+  resumable.
+
+`sizeBytes=0` ist nur für nicht-Schema-`job_input` als Single-
+Empty-Segment erlaubt; `artifactKind=schema` mit `sizeBytes=0`
+liefert `VALIDATION_ERROR` (Plan §8.4 / F.4 2/3).
+
+`uploadSessionTtlSeconds` startet bei 900s mit absoluter Hard-
+Cap 3600s ab Session-Erzeugung; jede erfolgreiche Segmentannahme
+darf bis 3600s verlängern. Idle-Timeout 300s. Session-Quota
+`STORED_ARTIFACT_BYTES` wird beim Übergang nach `COMPLETED`
+gegen das Init-Reserve-Bucket umgebucht (F.9 1/3).
+
+### Administrative Abort-Pipeline
+
+`artifact_upload_abort` deckt zwei Pfade:
+
+- **Owner-Abort** — eigene aktive Session, ohne Approval-Token,
+  über `dmigrate:artifact:upload`-Scope.
+- **Administrative Abort** — `reason` + `approvalKey` + Admin-
+  Scope; Outcome wird als `AbortOutcome` in einem persistenten
+  Store geschrieben und über `correlationKey=approvalKey` +
+  Fingerprint dedupliziert (F.6). Approval-Reuse für andere
+  Session, anderen Caller oder anderen `reason` liefert
+  `IDEMPOTENCY_CONFLICT`.
+
+### `data_import_start` und `data_transfer_start`
+
+Wire-Verträge (Auszug):
+
+```jsonc
+// data_import_start
+{
+  "idempotencyKey": "imp-2026-05-01-acme-warehouse-load",
+  "targetConnectionRef": "dmigrate://tenants/acme/connections/warehouse",
+  "artifactId": "art-…",                 // oder sourceArtifactRef
+  "table": "events.click_events",        // Single-File-Import
+  "format": "csv",                       // optional override (json/yaml/csv)
+  "onError": "skip",
+  "onConflict": "update",
+  "chunkSize": 1000
+}
+
+// data_transfer_start
+{
+  "idempotencyKey": "trf-2026-05-01-acme-orders",
+  "sourceConnectionRef": "dmigrate://tenants/acme/connections/legacy-pg",
+  "targetConnectionRef": "dmigrate://tenants/acme/connections/warehouse",
+  "tables": ["public.orders", "public.order_items"],
+  "filter": "tenant_id = 'acme'",
+  "sinceColumn": "updated_at",
+  "since": "2026-04-01T00:00:00Z",
+  "chunkSize": 5000
+}
+```
+
+Beide Tools liefern bei Erfolg den symmetrischen Job-Start-
+Envelope (`jobId`, `resourceUri`, `executionMeta.requestId`).
+
+Validierung erfolgt zweistufig: das JSON-Schema gated
+strukturelle Felder + `additionalProperties=false`, der Handler
+prüft semantisch (Tabellen-/Topology-Eignung, Artefakt-
+Eligibility, ConnectionRef-Resolution + Tenant-Scope, `chunkSize
+<= 10000`, `sinceColumn`/`since` paarweise).
+
+### Fingerprint-Vertrag
+
+Der MCP-spezifische Import-/Transfer-Fingerprint enthält
+**niemals**:
+
+- materialisierte JDBC-URLs oder Connection-Secrets,
+- temporäre Spool-Pfade oder lokale CLI-Pfade,
+- rohe SQL-/Filter-Strings ohne Kanonisierung (Whitespace-
+  Normalisierung ist Runner-Concern, F.8 Carve-out).
+
+Fingerprint-Pflichtfelder (Plan §8.7 / §8.8): Artefakt-sha256 +
+persistente Upload-Metadaten (mimeType, filename) für Imports;
+beide Connection-Refs für Transfers; normalisierte Optionswerte;
+Tenant + Principal.
+
+### Quota + Timeout
+
+Phase F erweitert die Quota-Modellierung um
+`STORED_ARTIFACT_BYTES` (Plan §8.9 / F.9 1/3): beim Übergang
+einer Upload-Session nach `COMPLETED` wird die Reservierung des
+Init-Buckets gegen das STORED-Bucket umgebucht; Expiry oder
+Finalisations-Failure releasen beide Buckets sofort.
+
+Der `FinalisationTimeoutSweeper` (F.9 2/3) verschiebt verwaiste
+`FINALIZING`-Sessions nach `OPERATION_TIMEOUT` und releast die
+beanspruchte Quota; der Wert wird über
+`McpServerConfig.operationTimeout` gepflegt.
+
+`AuditFields.resourceRefs` (F.9 3/3) trägt für Upload-Handler
+die finalisierten/aborted Resource-URIs (`uploadSession`-,
+`artifact`-, `abortOutcome`-Refs), damit Audit-Reader ohne
+Cross-Lookups die wirksame Wirkung sehen.
+
+### Wire-Bytes: ausschliesslich `contentBase64`
+
+`artifact_upload` überträgt Segmentbytes immer als
+`contentBase64` im JSON-RPC-Argument. **Separate binäre
+Upload-Bodies (Multipart, Streamable Binary) sind nicht Teil
+von 0.9.6** — auch das HTTP-Transport bleibt ein normaler
+JSON-RPC-POST. Diese Festlegung ist absichtlich konservativ und
+hält den Wire-Vertrag identisch zwischen `stdio`- und HTTP-
+Transport. Eine spätere Erweiterung kann additiv einen separaten
+Upload-Body-Pfad einführen, sobald MCP-Clients das einheitlich
+unterstützen.
+
+---
+
 ## Weiterführend
 
 - [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
@@ -584,4 +754,8 @@ Cancel-Pfad) werden über `SecretScrubber` gescrubbed bevor sie in
 - [`docs/planning/done/ImpPlan-0.9.6-E.md`](../docs/planning/done/ImpPlan-0.9.6-E.md) —
   Phase-E: Async-Jobs, Idempotency, Policy, Quotas, Cancel (siehe oben
   "Phase E: Async-Jobs, Idempotency, Policy").
-- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase F+.
+- [`docs/planning/done/ImpPlan-0.9.6-F.md`](../docs/planning/done/ImpPlan-0.9.6-F.md) —
+  Phase-F: policy-gesteuerter `job_input`-Upload, `data_import_start`,
+  `data_transfer_start`, administrative Abort-Pipeline, STORED-Quota
+  (siehe oben "Phase F: Policy-gesteuerte Datenoperationen").
+- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase G+.

@@ -162,6 +162,41 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
         finalisation.payloadSha256 shouldBe sha
     }
 
+    test("Phase F § 8.10 (F.10): application/csv und text/csv liefern denselben artifactId (format=csv)") {
+        // CSV-Import-Artefakte sind in Phase F erlaubt; beide
+        // MIME-Allowlist-Schreibweisen muessen serverseitig auf
+        // dasselbe `format=csv` normalisieren, damit Caller mit
+        // `application/csv` denselben deterministischen `art-...`-Id
+        // wiederbekommen wie mit `text/csv`. `idMaterial` =
+        // "tenant|sessionId|payloadSha|format" — bei identischem
+        // Payload + Session bleibt nur `format` als variable Achse.
+        val payload = "id,name\n1,Alice\n".toByteArray()
+        val sha = sha256Hex(payload)
+        val body = """{"uploadSessionId":"ups-job","segmentIndex":1,"segmentOffset":0,""" +
+            """"segmentTotal":1,"isFinalSegment":true,"segmentSha256":"$sha",""" +
+            """"contentBase64":"${b64(payload)}"}"""
+
+        val textCsv = Fixture(sizeBytes = payload.size.toLong(), checksum = sha, mimeType = "text/csv")
+        val textOutcome = textCsv.handler.handle(
+            ToolCallContext("artifact_upload", args(body), uploader, requestId = "req-text"),
+        ).shouldBeInstanceOf<ToolCallOutcome.Success>()
+        val textRef = JsonParser.parseString(textOutcome.content.single().text!!).asJsonObject
+            .get("schemaRef").asString
+
+        val appCsv = Fixture(sizeBytes = payload.size.toLong(), checksum = sha, mimeType = "application/csv")
+        val appOutcome = appCsv.handler.handle(
+            ToolCallContext("artifact_upload", args(body), uploader, requestId = "req-app"),
+        ).shouldBeInstanceOf<ToolCallOutcome.Success>()
+        val appRef = JsonParser.parseString(appOutcome.content.single().text!!).asJsonObject
+            .get("schemaRef").asString
+
+        appRef shouldBe textRef
+        // contentType bleibt 1:1 erhalten — Wire-Klient sieht volle Information.
+        val appArtifactId = appRef.substringAfterLast("/")
+        appCsv.artifactStore.findById(tenant, appArtifactId)!!
+            .managedArtifact.contentType shouldBe "application/csv"
+    }
+
     test("job_input ohne JobInputFinalizer-Wiring faellt auf legacy COMPLETED ohne Materialise") {
         // Simuliert Test-Konstellation, in der der Handler ohne
         // jobInputFinalizer konfiguriert ist (z.B. F.5-(2/3)-Edge-

@@ -258,7 +258,12 @@ internal class ArtifactUploadHandler(
     private fun formatFromMimeType(mimeType: String): String = when {
         mimeType.equals("application/json", ignoreCase = true) ||
             mimeType.endsWith("+json", ignoreCase = true) -> "json"
-        mimeType.equals("text/csv", ignoreCase = true) -> "csv"
+        // Phase F § 8.10 (F.10): CSV-Import-Artefakte werden in Phase F
+        // erlaubt; beide Allowlist-Schreibweisen mappen auf dasselbe
+        // Format, damit Caller mit `application/csv` denselben
+        // deterministischen `art-...`-Id erhalten wie mit `text/csv`.
+        mimeType.equals("text/csv", ignoreCase = true) ||
+            mimeType.equals("application/csv", ignoreCase = true) -> "csv"
         mimeType.equals("text/plain", ignoreCase = true) -> "txt"
         mimeType.equals("application/x-ndjson", ignoreCase = true) -> "ndjson"
         mimeType.equals("application/yaml", ignoreCase = true) ||
