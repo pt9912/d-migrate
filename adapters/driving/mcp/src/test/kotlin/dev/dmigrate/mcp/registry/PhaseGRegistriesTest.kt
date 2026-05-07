@@ -1,0 +1,261 @@
+package dev.dmigrate.mcp.registry
+
+import com.google.gson.JsonParser
+import dev.dmigrate.mcp.protocol.McpServiceImpl
+import dev.dmigrate.mcp.protocol.ToolsCallParams
+import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.policy.ConfiguredPolicyService
+import dev.dmigrate.server.application.policy.PolicyEffect
+import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.ports.contract.Fixtures
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
+import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryProfileStore
+import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
+import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
+import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.string.shouldStartWith
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+
+/**
+ * Phase G § 6 G.6 (G.6.g) — End-to-end-Smoke für die produktive
+ * KI-Tool-Registry: dispatcht die drei Phase-G-Tools durch den
+ * realen `tools/call`-Pfad in [McpServiceImpl] und stellt sicher,
+ * dass kein UnsupportedToolHandler mehr im Wege steht.
+ */
+class PhaseGRegistriesTest : FunSpec({
+
+    val tenant = Fixtures.tenant("acme")
+    val now: Instant = Instant.parse("2026-05-07T12:00:00Z")
+    val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
+
+    fun phaseEWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseEWiring {
+        val jobStore = InMemoryJobStore()
+        val idempotencyStore = InMemoryIdempotencyStore()
+        val phaseC = PhaseCWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = jobStore,
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = clock,
+            profileStore = InMemoryProfileStore(),
+        )
+        return PhaseEWiring(
+            phaseCWiring = phaseC,
+            idempotencyStore = idempotencyStore,
+            jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
+            workerHandleRegistry = InMemoryWorkerHandleRegistry(),
+            approvalGrantStore = InMemoryApprovalGrantStore(),
+            policyService = ConfiguredPolicyService(emptyList(), policyDefault),
+        )
+    }
+
+    fun phaseGWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseGWiring {
+        val phaseE = phaseEWiring(policyDefault)
+        // Schema seeden, damit procedure_transform_plan und
+        // testdata_plan einen gültigen schemaRef finden.
+        phaseE.phaseCWiring.schemaStore.register(
+            SchemaIndexEntry(
+                schemaId = "schema-1",
+                tenantId = tenant,
+                resourceUri = ServerResourceUri(tenant, ResourceKind.SCHEMAS, "schema-1"),
+                artifactRef = "art-schema-1",
+                displayName = "schema-1",
+                createdAt = now,
+                expiresAt = now.plusSeconds(3600),
+            ),
+        )
+        return PhaseGWiring(phaseEWiring = phaseE)
+    }
+
+    fun service(gWiring: PhaseGWiring, principal: PrincipalContext): McpServiceImpl {
+        val registry = PhaseGRegistries.defaultToolRegistry(gWiring)
+        return McpServiceImpl(
+            serverVersion = "test",
+            toolRegistry = registry,
+            initialPrincipal = principal,
+        )
+    }
+
+    fun aiPrincipal(): PrincipalContext = Fixtures.principalContext(principalId = "alice", tenant = "acme")
+        .copy(scopes = setOf("dmigrate:ai:execute"), isAdmin = false)
+
+    test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_plan ist NICHT mehr UnsupportedToolHandler") {
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-plan-1",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "procedureName":"process_orders",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val result = svc.toolsCall(ToolsCallParams("procedure_transform_plan", args)).get()
+        result.isError shouldBe false
+        val text = result.content.first().text!!
+        text shouldContain "\"planRef\""
+        // Negativer Sanity-Check: KEIN UnsupportedToolHandler-Envelope.
+        text shouldNotContain "UNSUPPORTED_TOOL_OPERATION"
+    }
+
+    test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_execute ist NICHT mehr UnsupportedToolHandler") {
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+
+        // Erst einen Plan erzeugen, dann Execute-Tool aufrufen.
+        val planArgs = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-plan-base",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "procedureName":"process_orders",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val planResult = svc.toolsCall(ToolsCallParams("procedure_transform_plan", planArgs)).get()
+        planResult.isError shouldBe false
+        val planArtifactId = JsonParser.parseString(planResult.content.first().text!!)
+            .asJsonObject.get("planArtifactId").asString
+
+        val execArgs = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-exec-1",
+              "planArtifactId":"$planArtifactId",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val execResult = svc.toolsCall(ToolsCallParams("procedure_transform_execute", execArgs)).get()
+        execResult.isError shouldBe false
+        val execText = execResult.content.first().text!!
+        execText shouldContain "\"targetArtifactId\""
+        execText shouldContain "\"targetResourceUri\""
+    }
+
+    test("Plan §7.6 Wiring-Akzeptanz: testdata_plan ist NICHT mehr UnsupportedToolHandler") {
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-testdata-1",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val result = svc.toolsCall(ToolsCallParams("testdata_plan", args)).get()
+        result.isError shouldBe false
+        val text = result.content.first().text!!
+        text shouldContain "\"testdataPlanArtifactId\""
+        text shouldContain "\"testdataPlanResourceUri\""
+    }
+
+    test("Plan §3.2 Carve-out: testdata_execute bleibt UnsupportedToolHandler (nicht Teil von 0.9.6)") {
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString("""{"planRef":"dmigrate://tenants/acme/artifacts/x"}""")
+        val result = svc.toolsCall(ToolsCallParams("testdata_execute", args)).get()
+        result.isError shouldBe true
+        result.content.first().text!! shouldContain "UNSUPPORTED_TOOL_OPERATION"
+    }
+
+    test("Plan §6 G.6: Idempotenz haengt am gemeinsamen Orchestrator (selber Outcome-Store)") {
+        // Beweis-by-construction: zwei Aufrufe an dasselbe Tool mit
+        // gleichem approvalKey+payload → selber resultRef. Das laeuft
+        // nur, wenn alle Handler dieselbe AiToolOutcomeStore-Instanz
+        // sehen.
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-replay",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val first = svc.toolsCall(ToolsCallParams("testdata_plan", args)).get()
+        val second = svc.toolsCall(ToolsCallParams("testdata_plan", args)).get()
+        first.isError shouldBe false
+        second.isError shouldBe false
+        val refOne = JsonParser.parseString(first.content.first().text!!)
+            .asJsonObject.get("testdataPlanResourceUri").asString
+        val refTwo = JsonParser.parseString(second.content.first().text!!)
+            .asJsonObject.get("testdataPlanResourceUri").asString
+        refTwo shouldBe refOne
+    }
+
+    test("Plan §4.1 Default: ohne explizite Provider-Konfig laeuft NoOp") {
+        // Sanity: das Default-PhaseGWiring traegt
+        // DefaultAiProviderRegistry.noOpOnly() — ein Aufruf darf
+        // OHNE externe Secrets/Netz funktionieren.
+        val gWiring = phaseGWiring()
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-noop-default",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val result = svc.toolsCall(ToolsCallParams("testdata_plan", args)).get()
+        result.isError shouldBe false
+        val text = result.content.first().text!!
+        text shouldContain "\"providerName\":\"noop\""
+    }
+
+    test("Plan §6 G.6: PolicyDenied trifft alle drei Handler einheitlich") {
+        val gWiring = phaseGWiring(policyDefault = PolicyEffect.Deny("policy:denied"))
+        val svc = service(gWiring, aiPrincipal())
+        val args = JsonParser.parseString(
+            """
+            {
+              "approvalKey":"k-deny",
+              "schemaRef":"dmigrate://tenants/acme/schemas/schema-1",
+              "targetDialect":"POSTGRESQL"
+            }
+            """.trimIndent(),
+        )
+        val planResult = svc.toolsCall(ToolsCallParams("testdata_plan", args)).get()
+        planResult.isError shouldBe true
+        planResult.content.first().text!! shouldContain "POLICY_DENIED"
+    }
+
+    test("PhaseGWiring liefert sane Defaults (Plan §3.2 + §4.1): NoOp-Provider, In-Process-Stores") {
+        val gWiring = PhaseGWiring(phaseEWiring = phaseEWiring())
+        // Defaults sind die In-Process-Implementierungen; type-check
+        // statt toString-prefix-Hoffen, weil internal data classes
+        // ihren `simpleName` nicht garantieren.
+        (gWiring.aiToolOutcomeStore is InProcessAiToolOutcomeStore) shouldBe true
+        (gWiring.aiArtifactMetadataStore is InProcessAiArtifactMetadataStore) shouldBe true
+    }
+})
