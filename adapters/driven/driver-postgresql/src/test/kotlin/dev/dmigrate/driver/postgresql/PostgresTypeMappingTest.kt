@@ -11,6 +11,7 @@ class PostgresTypeMappingTest : FunSpec({
 
     fun map(dataType: String, udtName: String = dataType, isPk: Boolean = false,
             isIdentity: Boolean = false, colDefault: String? = null,
+            identityGeneration: String? = null, generatedSequenceName: String? = null,
             charMaxLen: Int? = null, numP: Int? = null, numS: Int? = null) =
         PostgresTypeMapping.mapColumn(
             PostgresTypeMapping.ColumnInput(
@@ -18,7 +19,9 @@ class PostgresTypeMappingTest : FunSpec({
                 udtName = udtName,
                 isPkCol = isPk,
                 isIdentity = isIdentity,
+                identityGeneration = identityGeneration,
                 colDefault = colDefault,
+                generatedSequenceName = generatedSequenceName,
                 charMaxLen = charMaxLen,
                 numPrecision = numP,
                 numScale = numS,
@@ -75,11 +78,21 @@ class PostgresTypeMappingTest : FunSpec({
             NeutralType.Identifier(autoIncrement = true)
     }
 
-    test("bigserial PK → BigInteger with note") {
-        val result = map("bigint", udtName = "int8", isPk = true, colDefault = "nextval('t_id_seq'::regclass)")
+    test("bigserial PK → BigInteger with identity generation") {
+        val result = map(
+            "bigint",
+            udtName = "int8",
+            isPk = true,
+            colDefault = "nextval('t_id_seq'::regclass)",
+            generatedSequenceName = "public.t_id_seq",
+        )
         result.type shouldBe NeutralType.BigInteger
-        result.note.shouldNotBeNull()
-        result.note!!.code shouldBe "R300"
+        result.generation shouldBe ColumnGeneration.Identity(
+            mode = IdentityMode.BY_DEFAULT,
+            sequenceName = "public.t_id_seq",
+            legacySerialSyntax = true,
+        )
+        result.note.shouldBeNull()
     }
 
     test("identity PK integer → Identifier") {
@@ -87,10 +100,22 @@ class PostgresTypeMappingTest : FunSpec({
             NeutralType.Identifier(autoIncrement = true)
     }
 
-    test("identity PK bigint → BigInteger with note") {
-        val result = map("bigint", udtName = "int8", isPk = true, isIdentity = true)
+    test("identity PK bigint → BigInteger with identity generation") {
+        val result = map(
+            "bigint",
+            udtName = "int8",
+            isPk = true,
+            isIdentity = true,
+            identityGeneration = "ALWAYS",
+            generatedSequenceName = "public.t_id_seq",
+        )
         result.type shouldBe NeutralType.BigInteger
-        result.note.shouldNotBeNull()
+        result.generation shouldBe ColumnGeneration.Identity(
+            mode = IdentityMode.ALWAYS,
+            sequenceName = "public.t_id_seq",
+            legacySerialSyntax = false,
+        )
+        result.note.shouldBeNull()
     }
 
     // ── Array ───────────────────────────────────

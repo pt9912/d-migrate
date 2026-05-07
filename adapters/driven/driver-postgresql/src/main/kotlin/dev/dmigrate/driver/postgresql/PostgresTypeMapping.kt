@@ -12,6 +12,7 @@ internal object PostgresTypeMapping {
 
     data class MappingResult(
         val type: NeutralType,
+        val generation: ColumnGeneration? = null,
         val note: SchemaReadNote? = null,
     )
 
@@ -20,7 +21,9 @@ internal object PostgresTypeMapping {
         val udtName: String,
         val isPkCol: Boolean,
         val isIdentity: Boolean,
+        val identityGeneration: String?,
         val colDefault: String?,
+        val generatedSequenceName: String?,
         val charMaxLen: Int?,
         val numPrecision: Int?,
         val numScale: Int?,
@@ -32,21 +35,19 @@ internal object PostgresTypeMapping {
         val dt = input.dataType.lowercase()
         val udt = input.udtName.lowercase()
 
-        // Serial/identity → Identifier for integer, BigInteger for bigint
-        if (input.isPkCol && (input.isIdentity || isSerialDefault(input.colDefault))) {
+        val isGenerated = input.isIdentity || isSerialDefault(input.colDefault)
+        if (isGenerated && (udt == "int8" || dt == "bigint")) {
+            return MappingResult(
+                NeutralType.BigInteger,
+                generation = identityGeneration(input),
+            )
+        }
+
+        // Legacy 32-bit serial/identity PKs keep the existing Identifier contract.
+        if (input.isPkCol && isGenerated) {
             return when {
                 udt == "int4" || udt == "int2" || dt == "integer" || dt == "smallint" ->
                     MappingResult(NeutralType.Identifier(autoIncrement = true))
-                udt == "int8" || dt == "bigint" ->
-                    MappingResult(
-                        NeutralType.BigInteger,
-                        SchemaReadNote(
-                            severity = SchemaReadSeverity.INFO,
-                            code = "R300",
-                            objectName = "${input.tableName}.${input.colName}",
-                            message = "bigint auto-increment mapped to BigInteger (not Identifier) to preserve type width",
-                        ),
-                    )
                 else -> MappingResult(NeutralType.Identifier(autoIncrement = true))
             }
         }
@@ -57,14 +58,24 @@ internal object PostgresTypeMapping {
             ?: mapTemporalTypes(dt)
             ?: mapSpecialTypes(dt, udt, input.tableName, input.colName)
             ?: MappingResult(
-                NeutralType.Text(),
-                SchemaReadNote(
+                type = NeutralType.Text(),
+                note = SchemaReadNote(
                     severity = SchemaReadSeverity.WARNING, code = "R301",
                     objectName = "${input.tableName}.${input.colName}",
                     message = "Unknown PostgreSQL type '${input.dataType}' (udt: ${input.udtName}) mapped to text",
                 ),
             )
     }
+
+    private fun identityGeneration(input: ColumnInput): ColumnGeneration.Identity =
+        ColumnGeneration.Identity(
+            mode = when (input.identityGeneration?.lowercase()) {
+                "always" -> IdentityMode.ALWAYS
+                else -> IdentityMode.BY_DEFAULT
+            },
+            sequenceName = input.generatedSequenceName,
+            legacySerialSyntax = !input.isIdentity && isSerialDefault(input.colDefault),
+        )
 
     private fun mapIntegerTypes(dt: String): MappingResult? = when (dt) {
         "integer" -> MappingResult(NeutralType.Integer)
@@ -112,8 +123,8 @@ internal object PostgresTypeMapping {
 
     fun mapUserDefined(udtName: String, tableName: String, colName: String): MappingResult {
         if (udtName == "geometry") return MappingResult(
-            NeutralType.Geometry(),
-            SchemaReadNote(
+            type = NeutralType.Geometry(),
+            note = SchemaReadNote(
                 severity = SchemaReadSeverity.INFO,
                 code = "R401",
                 objectName = "$tableName.$colName",

@@ -1,19 +1,19 @@
 # Follow-up-Plan: BIGSERIAL, BigIdentifier und neutrale Identity-Breite
 
-> Status: In Progress, AP 2 umgesetzt (2026-05-07)
+> Status: In Progress, AP 3 umgesetzt (2026-05-07)
 >
-> Kontext: Der produktive PostgreSQL-Reverse-Pfad mapped `bigserial` bewusst
-> auf `NeutralType.BigInteger` mit Diagnose `R300`. Aeltere Specs zeigen
-> dagegen `NeutralType.BigIdentifier -> BIGSERIAL`. Dieser Plan klaert die
-> Abweichung und beschreibt einen belastbaren Aenderungspfad.
+> Kontext: Ausgangspunkt war, dass der PostgreSQL-Reverse-Pfad `bigserial`
+> bewusst auf `NeutralType.BigInteger` mit Diagnose `R300` mappte. Aeltere
+> Specs zeigen dagegen `NeutralType.BigIdentifier -> BIGSERIAL`. Dieser Plan
+> klaert die Abweichung und beschreibt den Aenderungspfad.
 
 ---
 
 ## 1. Befund
 
-### Produktiver Stand
+### Ausgangsstand vor AP 3
 
-Aktueller Code:
+Bisheriger Code:
 
 - `NeutralType` enthaelt `Identifier(autoIncrement: Boolean)` und
   `BigInteger`, aber keinen `BigIdentifier`.
@@ -35,13 +35,12 @@ Der umgesetzte 0.6.0-Plan begruendet das so:
 - Die Auto-Increment-Eigenschaft sollte ueber Sequence/default `nextval(...)`
   transportiert werden, nicht ueber `NeutralType.Identifier`.
 
-Wichtig: Das ist die historische Planbegruendung, nicht vollstaendig die
-heutige strukturierte Modellrealitaet. Der aktuelle PostgreSQL-Reverse-Pfad
-entscheidet die Spaltenabbildung ueber `information_schema.columns.is_identity`
-und `column_default`/`nextval(...)`. Sequenzen werden separat in
-`SchemaDefinition.sequences` gelesen, aber nicht belastbar als
-Owned-Sequence-/Identity-Metadatum an die konkrete Spalte gebunden. Genau diese
-fehlende Bindung ist Teil der Luecke.
+Wichtig: Das ist die historische Planbegruendung. Vor AP 3 entschied der
+PostgreSQL-Reverse-Pfad die Spaltenabbildung ueber
+`information_schema.columns.is_identity` und `column_default`/`nextval(...)`.
+Sequenzen wurden separat in `SchemaDefinition.sequences` gelesen, aber nicht
+belastbar als Owned-Sequence-/Identity-Metadatum an die konkrete Spalte
+gebunden. Genau diese fehlende Bindung war Teil der Luecke.
 
 ### Problem
 
@@ -224,17 +223,16 @@ Verworfene Alternativen:
   - Validator
   - Transfer-Type-Kompatibilitaet
 
-### AP 3: PostgreSQL Reverse
+### AP 3: PostgreSQL Reverse (erledigt 2026-05-07)
 
-- `PostgresTypeMapping` so erweitern, dass `bigserial`/`bigint identity`
-  nicht nur als `BigInteger` mit `R300`, sondern gemaess neuem Vertrag als
-  64-bit generated identifier modelliert wird.
-- Owned-Sequence-Erkennung strukturiert implementieren. Der Reverse-Pfad darf
-  sich nicht nur auf eine `R300`-Note verlassen; er muss Default/Identity,
-  Sequence-Ownership und Spaltenbindung so weit abbilden, wie es fuer
-  Forward-Generate noetig ist.
-- `R300` entweder entfernen, abschwaechen oder auf Legacy-/Fallback-Faelle
-  beschraenken.
+- `PostgresTypeMapping` modelliert `bigserial`/`bigint identity` als
+  `NeutralType.BigInteger` plus `ColumnGeneration.Identity`.
+- Der PostgreSQL-Column-Reader liest `identity_generation` und
+  `pg_get_serial_sequence(...)` als Generation-Kontext.
+- Owned Serial-/Identity-Sequences werden aus `SchemaDefinition.sequences`
+  herausgefiltert; eigenstaendige Business-Sequences bleiben sichtbar.
+- `R300` wird fuer strukturiert erkannte `bigserial`/`bigint identity` nicht
+  mehr erzeugt.
 
 ### AP 4: PostgreSQL Forward
 

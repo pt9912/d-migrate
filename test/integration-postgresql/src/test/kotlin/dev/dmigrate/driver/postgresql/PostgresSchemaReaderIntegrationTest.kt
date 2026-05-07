@@ -230,15 +230,20 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── Bigserial → BigInteger (not Identifier) ──
+    // ── Bigserial → BigInteger + generation ──
 
-    test("bigserial preserves BigInteger type width") {
+    test("bigserial preserves BigInteger type width and generation") {
         pool().use { pool ->
             val result = reader.read(pool)
             val orderId = result.schema.tables["orders"]!!.columns["id"]!!
             orderId.type shouldBe NeutralType.BigInteger
-            // Note should document the AI property
-            result.notes.any { it.code == "R300" && it.objectName.contains("orders.id") } shouldBe true
+            orderId.generation shouldBe ColumnGeneration.Identity(
+                mode = IdentityMode.BY_DEFAULT,
+                sequenceName = "public.orders_id_seq",
+                legacySerialSyntax = true,
+            )
+            result.notes.none { it.code == "R300" } shouldBe true
+            result.schema.sequences.containsKey("orders_id_seq") shouldBe false
         }
     }
 

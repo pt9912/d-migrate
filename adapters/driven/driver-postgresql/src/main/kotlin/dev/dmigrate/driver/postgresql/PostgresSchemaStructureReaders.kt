@@ -45,7 +45,9 @@ private fun readPostgresTable(
                 udtName = (row["udt_name"] as? String) ?: (row["data_type"] as String),
                 isPkCol = isPrimaryKeyColumn,
                 isIdentity = isIdentity,
+                identityGeneration = row["identity_generation"] as? String,
                 colDefault = row["column_default"] as? String,
+                generatedSequenceName = row["generated_sequence_name"] as? String,
                 charMaxLen = (row["character_maximum_length"] as? Number)?.toInt(),
                 numPrecision = (row["numeric_precision"] as? Number)?.toInt(),
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
@@ -72,6 +74,7 @@ private fun readPostgresTable(
             unique = unique,
             default = defaultValue,
             references = singleColumnForeignKeys[columnName],
+            generation = mapping.generation,
         )
     }
 

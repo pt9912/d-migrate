@@ -387,6 +387,42 @@ class PostgresSchemaReaderTest : FunSpec({
         table.columns["id"].shouldNotBeNull()
     }
 
+    test("read table with bigserial column maps generation") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "orders", "table_schema" to "public", "table_type" to "BASE TABLE"),
+        )
+        stubTableQueries(listOf(
+            mapOf(
+                "column_name" to "id",
+                "data_type" to "bigint",
+                "udt_name" to "int8",
+                "is_nullable" to "NO",
+                "column_default" to "nextval('orders_id_seq'::regclass)",
+                "ordinal_position" to 1,
+                "character_maximum_length" to null,
+                "numeric_precision" to 64,
+                "numeric_scale" to 0,
+                "is_identity" to "NO",
+                "identity_generation" to null,
+                "generated_sequence_name" to "public.orders_id_seq",
+            ),
+        ), listOf("id"))
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        val id = result.schema.tables["orders"]!!.columns["id"]!!
+        id.type shouldBe NeutralType.BigInteger
+        id.default.shouldBeNull()
+        id.generation shouldBe ColumnGeneration.Identity(
+            sequenceName = "public.orders_id_seq",
+            legacySerialSyntax = true,
+        )
+        result.notes.none { it.code == "R300" } shouldBe true
+    }
+
     test("readPartitioning with LIST and HASH strategies") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(

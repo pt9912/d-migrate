@@ -32,7 +32,9 @@ internal object PostgresTableMetadataQueries {
             SELECT column_name, data_type, udt_name, is_nullable,
                    column_default, ordinal_position,
                    character_maximum_length, numeric_precision, numeric_scale,
-                   is_identity, identity_generation
+                   is_identity, identity_generation,
+                   pg_get_serial_sequence(format('%I.%I', table_schema, table_name), column_name)
+                       AS generated_sequence_name
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
@@ -175,6 +177,16 @@ internal object PostgresTableMetadataQueries {
             LEFT JOIN pg_sequences ps
               ON ps.schemaname = s.sequence_schema AND ps.sequencename = s.sequence_name
             WHERE s.sequence_schema = ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM pg_class seq
+                  JOIN pg_namespace seq_ns ON seq_ns.oid = seq.relnamespace
+                  JOIN pg_depend dep ON dep.objid = seq.oid
+                  WHERE seq.relkind = 'S'
+                    AND seq_ns.nspname = s.sequence_schema
+                    AND seq.relname = s.sequence_name
+                    AND dep.deptype IN ('a', 'i')
+              )
             ORDER BY s.sequence_name
             """.trimIndent(), schemaName,
         )
