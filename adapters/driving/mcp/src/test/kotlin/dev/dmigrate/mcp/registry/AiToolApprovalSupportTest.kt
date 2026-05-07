@@ -16,6 +16,7 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
@@ -54,14 +55,14 @@ class AiToolApprovalSupportTest : FunSpec({
         requiredScopes = setOf("ai:plan"),
     )
 
-    test("RequiresApproval wird als retrybare Challenge mit Details modelliert") {
+    test("RequiresApproval wird als retrybare Challenge mit aggregierten Details modelliert") {
         val result = AiToolApprovalSupport.requiresApproval(
             PolicyDecision.RequiresApproval(
                 approvalRequestId = "apr-1",
                 correlationKind = ApprovalCorrelationKind.APPROVAL_KEY,
                 correlationKey = "approval-key-1",
-                requiredScopes = setOf("ai:plan", "artifact:read"),
-                reasons = listOf("policy:manual-review"),
+                requiredScopes = setOf("artifact:read", "ai:plan"),
+                reasons = listOf("policy:manual-review", "policy:second-reason"),
             ),
         )
 
@@ -71,18 +72,40 @@ class AiToolApprovalSupportTest : FunSpec({
         result.correlationKind shouldBe ApprovalCorrelationKind.APPROVAL_KEY
         result.correlationKey shouldBe "approval-key-1"
         result.requiredScopes shouldBe setOf("ai:plan", "artifact:read")
-        result.reasons shouldBe listOf("policy:manual-review")
+        result.reasons shouldBe listOf("policy:manual-review", "policy:second-reason")
+        // Follow-up AP 1: aggregierte Felder, analog zu JobStartHandlerSupport
+        // (`requiredScopes` sortiert + komma-, `reasons` pipe-getrennt).
         result.details shouldContain ToolErrorDetail("approvalRequestId", "apr-1")
-        result.details shouldContain ToolErrorDetail("requiredScope", "ai:plan")
+        result.details shouldContain ToolErrorDetail(
+            "correlationKind",
+            ApprovalCorrelationKind.APPROVAL_KEY.name,
+        )
+        result.details shouldContain ToolErrorDetail("correlationKey", "approval-key-1")
+        result.details shouldContain ToolErrorDetail("requiredScopes", "ai:plan,artifact:read")
+        result.details shouldContain ToolErrorDetail(
+            "reasons",
+            "policy:manual-review|policy:second-reason",
+        )
+        // Follow-up AP 1: keine wiederholten Singular-Schlüssel mehr.
+        val keys = result.details.map { it.key }
+        keys shouldNotContain "requiredScope"
+        keys shouldNotContain "reason"
     }
 
-    test("Replay uebernimmt bestehende Challenge-Daten unveraendert") {
+    test("Replay rebuildet Approval-Details aus strukturierten Feldern (AP 1)") {
+        // Follow-up AP 1: stored Challenge-Details aus älterem Codepfad
+        // (Singular-Form) dürfen nicht durchschlagen — der Replay erzeugt die
+        // aggregierte AP-1-Form aus den strukturierten Feldern, damit der
+        // Wire-Vertrag konsistent bleibt.
         val challenge = AiToolOutcome.FailedRetryable(
             scope = scope,
             payloadFingerprint = fingerprint,
             toolErrorCode = ToolErrorCode.POLICY_REQUIRED,
             scrubbedMessage = "approval required",
-            details = listOf(ToolErrorDetail("reason", "policy:manual-review")),
+            details = listOf(
+                ToolErrorDetail("requiredScope", "ai:plan"),
+                ToolErrorDetail("reason", "policy:manual-review"),
+            ),
             attemptCount = 1,
             lastAttemptAt = now,
             approvalRequestId = "apr-1",
@@ -96,10 +119,33 @@ class AiToolApprovalSupportTest : FunSpec({
 
         replay.toolErrorCode shouldBe challenge.toolErrorCode
         replay.scrubbedMessage shouldBe challenge.scrubbedMessage
-        replay.details shouldBe challenge.details
         replay.approvalRequestId shouldBe challenge.approvalRequestId
         replay.requiredScopes shouldBe challenge.requiredScopes
         replay.reasons shouldBe challenge.reasons
+        // Aggregierte Form, nicht die ursprünglichen Singular-Einträge.
+        replay.details shouldContain ToolErrorDetail("requiredScopes", "ai:plan")
+        replay.details shouldContain ToolErrorDetail("reasons", "policy:manual-review")
+        val replayKeys = replay.details.map { it.key }
+        replayKeys shouldNotContain "requiredScope"
+        replayKeys shouldNotContain "reason"
+    }
+
+    test("Replay laesst Details unveraendert, wenn Challenge keine Approval-Felder traegt") {
+        // Wenn die durable Failed-Retryable kein Approval-Challenge ist
+        // (z. B. OPERATION_TIMEOUT-Reclaim), bleiben die ursprünglichen
+        // Details bestehen — wir rebuilden nur Approval-Form.
+        val challenge = AiToolOutcome.FailedRetryable(
+            scope = scope,
+            payloadFingerprint = fingerprint,
+            toolErrorCode = ToolErrorCode.OPERATION_TIMEOUT,
+            scrubbedMessage = "claim lease expired without commit",
+            details = listOf(ToolErrorDetail("info", "lease-expired")),
+            attemptCount = 1,
+            lastAttemptAt = now,
+        )
+
+        val replay = AiToolApprovalSupport.replayChallenge(challenge)
+        replay.details shouldBe challenge.details
     }
 
     test("Ungueltiger Approval-Grant wird in terminale POLICY_DENIED-Antwort uebersetzt") {

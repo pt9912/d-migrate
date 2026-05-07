@@ -306,9 +306,21 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.message shouldContain "policy:tool-blocked"
     }
 
-    test("Plan §6 G.6: PolicyRequiresApproval -> retrybarer POLICY_REQUIRED mit Challenge-Feldern") {
+    test("Follow-up AP 1: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
+        // Provider darf bei POLICY_REQUIRED nicht aufgerufen werden — Provider-,
+        // Quota- und Artefakt-Schritte folgen erst nach Policy-Allow/Grant.
+        val providerCalls = AtomicInteger(0)
+        val countingProvider = AiProviderPort {
+            providerCalls.incrementAndGet()
+            // Defensiv: ein Provider-Aufruf wäre AP-1-Fehler.
+            error("provider must not be invoked when POLICY_REQUIRED")
+        }
         val fx = Fixture(
-            policyDefault = PolicyEffect.Challenge(setOf("ai.execute")),
+            policyDefault = PolicyEffect.Challenge(
+                requiredScopes = setOf("artifact.read", "ai.execute"),
+                reasons = listOf("policy:manual-review", "policy:audit-required"),
+            ),
+            provider = countingProvider,
         )
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(
@@ -323,7 +335,14 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         details["approvalRequestId"].isNullOrBlank() shouldBe false
         details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
         details["correlationKey"] shouldBe "k"
-        err.envelope.details.any { it.key == "requiredScope" && it.value == "ai.execute" } shouldBe true
+        // Follow-up AP 1: aggregierte Felder analog Job-/Upload-Pfade.
+        details["requiredScopes"] shouldBe "ai.execute,artifact.read"
+        details["reasons"] shouldBe "policy:manual-review|policy:audit-required"
+        // Keine wiederholten Singular-Schlüssel.
+        val keys = err.envelope.details.map { it.key }
+        keys.contains("requiredScope") shouldBe false
+        keys.contains("reason") shouldBe false
+        providerCalls.get() shouldBe 0
     }
 
     test("Plan §6 G.6: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {

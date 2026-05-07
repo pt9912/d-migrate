@@ -18,7 +18,13 @@ internal object AiToolApprovalSupport {
         AiToolWorkResult.FailedRetryable(
             ToolErrorCode.POLICY_REQUIRED,
             "approval required",
-            details = approvalDetails(decision),
+            details = buildApprovalDetails(
+                approvalRequestId = decision.approvalRequestId,
+                correlationKind = decision.correlationKind,
+                correlationKey = decision.correlationKey,
+                requiredScopes = decision.requiredScopes,
+                reasons = decision.reasons,
+            ),
             approvalRequestId = decision.approvalRequestId,
             correlationKind = decision.correlationKind,
             correlationKey = decision.correlationKey,
@@ -26,17 +32,25 @@ internal object AiToolApprovalSupport {
             reasons = decision.reasons,
         )
 
-    fun replayChallenge(challenge: AiToolOutcome.FailedRetryable): AiToolWorkResult.FailedRetryable =
-        AiToolWorkResult.FailedRetryable(
+    fun replayChallenge(challenge: AiToolOutcome.FailedRetryable): AiToolWorkResult.FailedRetryable {
+        // Follow-up AP 1: KI-Approval-Challenges müssen denselben aggregierten
+        // Detailvertrag liefern wie Job-/Upload-Pfade (`requiredScopes`,
+        // `reasons` als kommagetrennte/pipegetrennte aggregierte Felder, nicht
+        // wiederholte Singular-Einträge). Der Replay rebuilded die Details aus
+        // den strukturierten Feldern, damit auch durable Challenges aus älteren
+        // Codepfaden den AP-1-Vertrag erfüllen.
+        val rebuiltDetails = rebuildApprovalDetails(challenge) ?: challenge.details
+        return AiToolWorkResult.FailedRetryable(
             toolErrorCode = challenge.toolErrorCode,
             scrubbedMessage = challenge.scrubbedMessage,
-            details = challenge.details,
+            details = rebuiltDetails,
             approvalRequestId = challenge.approvalRequestId,
             correlationKind = challenge.correlationKind,
             correlationKey = challenge.correlationKey,
             requiredScopes = challenge.requiredScopes,
             reasons = challenge.reasons,
         )
+    }
 
     fun validateGrant(
         rawToken: String,
@@ -68,13 +82,48 @@ internal object AiToolApprovalSupport {
         }
     }
 
-    private fun approvalDetails(decision: PolicyDecision.RequiresApproval): List<ToolErrorDetail> = buildList {
-        add(ToolErrorDetail("approvalRequestId", decision.approvalRequestId))
-        add(ToolErrorDetail("correlationKind", decision.correlationKind.name))
-        add(ToolErrorDetail("correlationKey", decision.correlationKey))
-        decision.requiredScopes.sorted().forEach { add(ToolErrorDetail("requiredScope", it)) }
-        decision.reasons.forEach { add(ToolErrorDetail("reason", it)) }
+    /**
+     * Liefert die aggregierten AP-1-Details für ein durable
+     * `POLICY_REQUIRED`-Outcome — oder `null`, wenn die Challenge keine
+     * vollständigen Approval-Felder trägt (dann erhält der Caller die
+     * gespeicherten `details` unverändert).
+     */
+    private fun rebuildApprovalDetails(
+        challenge: AiToolOutcome.FailedRetryable,
+    ): List<ToolErrorDetail>? {
+        if (challenge.toolErrorCode != ToolErrorCode.POLICY_REQUIRED) return null
+        val approvalRequestId = challenge.approvalRequestId ?: return null
+        val correlationKind = challenge.correlationKind ?: return null
+        val correlationKey = challenge.correlationKey ?: return null
+        return buildApprovalDetails(
+            approvalRequestId = approvalRequestId,
+            correlationKind = correlationKind,
+            correlationKey = correlationKey,
+            requiredScopes = challenge.requiredScopes,
+            reasons = challenge.reasons,
+        )
     }
+
+    /**
+     * Follow-up AP 1: Detail-Form ist aggregiert (`requiredScopes` als
+     * sortierte, kommagetrennte Liste; `reasons` pipegetrennt) — analog zu
+     * [JobStartHandlerSupport.toToolCallOutcome] für Job-Start-Pfade. So
+     * sehen Clients dieselbe Approval-Challenge-Form für KI-Tools wie für
+     * Job-/Upload-Operationen.
+     */
+    private fun buildApprovalDetails(
+        approvalRequestId: String,
+        correlationKind: ApprovalCorrelationKind,
+        correlationKey: String,
+        requiredScopes: Set<String>,
+        reasons: List<String>,
+    ): List<ToolErrorDetail> = listOf(
+        ToolErrorDetail("approvalRequestId", approvalRequestId),
+        ToolErrorDetail("correlationKind", correlationKind.name),
+        ToolErrorDetail("correlationKey", correlationKey),
+        ToolErrorDetail("requiredScopes", requiredScopes.sorted().joinToString(",")),
+        ToolErrorDetail("reasons", reasons.joinToString("|")),
+    )
 
     private fun invalidApprovalReason(validation: ApprovalGrantValidation.Invalid): String =
         when (validation) {
