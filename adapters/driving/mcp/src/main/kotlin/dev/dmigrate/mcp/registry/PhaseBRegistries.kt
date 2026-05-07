@@ -143,10 +143,20 @@ object PhaseBRegistries {
         "data_import_start" to "Start data import job",
         "data_transfer_start" to "Start data transfer job",
         "job_cancel" to "Cancel a running job",
-        "procedure_transform_plan" to "Plan procedure transform (AI)",
-        "procedure_transform_execute" to "Execute procedure transform (AI)",
-        "testdata_plan" to "Plan test data generation (AI)",
-        "testdata_execute" to "Execute test data generation (AI)",
+        "procedure_transform_plan" to (
+            "Analyse and plan a stored-procedure transformation against a target dialect. " +
+                "Approval-driven, AI-backed; produces an immutable plan artifact (no executable target code)."
+            ),
+        "procedure_transform_execute" to (
+            "Execute a previously approved procedure-transform plan and produce the target " +
+                "artifact. Approval-driven; the plan reference is the only source of truth — " +
+                "no source refs in this payload."
+            ),
+        "testdata_plan" to (
+            "Plan synthetic test data from a schema, optional profiling summary and structured " +
+                "rules. Approval-driven; produces an immutable plan artifact, not actual database writes."
+            ),
+        "testdata_execute" to "Execute test data generation (AI) — not part of 0.9.6 scope",
     )
 
     private val DESCRIPTIONS: Map<String, String> = mapOf(

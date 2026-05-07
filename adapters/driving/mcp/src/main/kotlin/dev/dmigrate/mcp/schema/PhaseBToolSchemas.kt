@@ -418,25 +418,118 @@ internal object PhaseBToolSchemas {
             ).required("jobId", "operation", "status", "terminal", "resourceUri", "executionMeta"),
         ))
 
-        // AI tools
+        // Phase G § 5.4 + § 8.5 (G.5): vollstaendiges
+        // `procedure_transform_plan`-Schema. Plan-§-5.4-Eingaben
+        // werden flat unter dem Input gefuehrt (nicht in einem
+        // Wrapper), damit `additionalProperties=false` unbekannte
+        // Felder direkt am Schema-Gate blockiert. Die fachliche
+        // Validierung (genau eine Source-Variante, schemaRef +
+        // procedureName paarweise, Provider-Resolution) liegt im
+        // Handler, sodass strukturelle vs. semantische Fehler
+        // getrennt diagnostizierbar bleiben.
         put("procedure_transform_plan", schemaPair(
             input = obj(
-                "sourceProcedureRef" to stringField(),
-                "targetDialect" to stringField(),
-            ).required("sourceProcedureRef", "targetDialect"),
-            output = obj("planRef" to stringField()).required("planRef"),
+                // Plan §5.4 Pflicht-Identitaet:
+                "approvalKey" to stringField(),
+                // Plan §5.5: Caller liefert Token nach
+                // `RequiresApproval` nach.
+                "approvalToken" to stringField(),
+                // Plan §5.4: genau EINE Source-Variante. Schema
+                // listet alle drei; Handler erzwingt exactly-one.
+                "procedureRef" to stringField(),
+                "artifactRef" to artifactRefField(),
+                "schemaRef" to stringField(),
+                "procedureName" to stringField(),
+                // Plan §5.4 Pflichtfeld:
+                "targetDialect" to enumField(*DIALECT_NAMES),
+                // Plan §5.4 Optionsfelder:
+                "rules" to objectField(),
+                "profileRef" to stringField(),
+                "diffRef" to stringField(),
+                // Optionale Provider-Auswahl (Plan §5.4 + §5.2):
+                "providerId" to stringField(),
+                "model" to stringField(),
+            ).required("approvalKey", "targetDialect"),
+            output = obj(
+                "summary" to stringField(),
+                "findings" to findingArray(),
+                // Plan §5.4 Output: `planRef` ODER `planArtifactId`.
+                // Schema listet beide; Handler garantiert min. einen.
+                "planRef" to artifactRefField(),
+                "planArtifactId" to stringField(),
+                "planResourceUri" to artifactRefField(),
+                "providerMeta" to providerMetaField(),
+                "executionMeta" to executionMetaField(),
+            ).required("summary", "findings", "providerMeta", "executionMeta"),
         ))
+
+        // Phase G § 5.5 + § 8.5 (G.5): vollstaendiges
+        // `procedure_transform_execute`-Schema. Plan §5.5 Z. 770:
+        // `planRef` ODER `planArtifactId` referenziert das
+        // freigegebene Plan-Artefakt aus `procedure_transform_plan`;
+        // Schema listet beide, Handler erzwingt exactly-one.
+        // Source-Refs sind hier bewusst NICHT — Plan §5.5 Z. 794-799:
+        // Source-Refs werden ausschliesslich aus der Provenance des
+        // Plan-Artefakts validiert; der Execute-Payload enthaelt
+        // keine eigenen Source-Refs.
         put("procedure_transform_execute", schemaPair(
-            input = obj("planRef" to stringField()).required("planRef"),
-            output = obj("artifactId" to stringField()).required("artifactId"),
+            input = obj(
+                "approvalKey" to stringField(),
+                "approvalToken" to stringField(),
+                "planRef" to artifactRefField(),
+                "planArtifactId" to stringField(),
+                "targetDialect" to enumField(*DIALECT_NAMES),
+                "executionOptions" to objectField(),
+                "providerId" to stringField(),
+                "model" to stringField(),
+            ).required("approvalKey", "targetDialect"),
+            output = obj(
+                "summary" to stringField(),
+                "findings" to findingArray(),
+                "targetArtifactId" to stringField(),
+                "targetResourceUri" to artifactRefField(),
+                "providerMeta" to providerMetaField(),
+                "executionMeta" to executionMetaField(),
+            ).required(
+                "summary", "findings",
+                "targetArtifactId", "targetResourceUri",
+                "providerMeta", "executionMeta",
+            ),
         ))
+
+        // Phase G § 5.6 + § 8.5 (G.5): vollstaendiges
+        // `testdata_plan`-Schema. Plan §5.6 Pflichtfelder:
+        // `approvalKey`, `schemaRef`, `targetDialect`. Optional:
+        // `profileRef`, `rules`, Provider-Auswahl.
         put("testdata_plan", schemaPair(
             input = obj(
-                "schemaId" to stringField(),
-                "sizeHint" to integerField(),
-            ).required("schemaId"),
-            output = obj("planRef" to stringField()).required("planRef"),
+                "approvalKey" to stringField(),
+                "approvalToken" to stringField(),
+                "schemaRef" to stringField(),
+                "profileRef" to stringField(),
+                "rules" to objectField(),
+                "targetDialect" to enumField(*DIALECT_NAMES),
+                "providerId" to stringField(),
+                "model" to stringField(),
+            ).required("approvalKey", "schemaRef", "targetDialect"),
+            output = obj(
+                "summary" to stringField(),
+                "findings" to findingArray(),
+                "testdataPlanArtifactId" to stringField(),
+                "testdataPlanResourceUri" to artifactRefField(),
+                "providerMeta" to providerMetaField(),
+                "executionMeta" to executionMetaField(),
+            ).required(
+                "summary", "findings",
+                "providerMeta", "executionMeta",
+            ),
         ))
+
+        // Phase G § 3.2 Carve-out: `testdata_execute` (separate
+        // Daten-Schreiboperation) ist NICHT Teil von 0.9.6. Der
+        // Slot bleibt registriert, das Schema-Stub bleibt schmal,
+        // damit `tools/list` ihn als bekannt aber unsupported
+        // ausweist.
         put("testdata_execute", schemaPair(
             input = obj("planRef" to stringField()).required("planRef"),
             output = obj("artifactId" to stringField()).required("artifactId"),
@@ -659,6 +752,27 @@ internal object PhaseBToolSchemas {
     internal fun findingArray(detailsSchema: Map<String, Any>? = null): Map<String, Any> = mapOf(
         "type" to "array",
         "items" to findingItem(detailsSchema),
+    )
+
+    /**
+     * Phase G § 5.1 (G.5): closed-shape `providerMeta`-Objekt für
+     * KI-nahe Tool-Outputs. `providerName` und `model` sind Pflicht
+     * (sonst wäre keine Provenance möglich); `modelVersion` und
+     * `requestId` sind optional, weil lokale Provider keine
+     * Versionierung/Korrelation liefern müssen. **Enthält bewusst
+     * keinen Endpoint, keinen `secretRef` und keine API-Keys**
+     * (Plan §4.8 + §5.2 Z. 611-612: Secrets nie in Wire-Antworten).
+     */
+    internal fun providerMetaField(): Map<String, Any> = mapOf(
+        "type" to "object",
+        "additionalProperties" to false,
+        "properties" to mapOf(
+            "providerName" to stringField(),
+            "model" to stringField(),
+            "modelVersion" to nullableStringField(),
+            "requestId" to nullableStringField(),
+        ),
+        "required" to listOf("providerName", "model"),
     )
 
     // arrayField/enumField extracted to SchemaPrimitives.kt;

@@ -1353,12 +1353,41 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
         "planRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "executionOptions": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
           "type": "string"
         }
       },
       "required": [
-        "planRef"
+        "approvalKey",
+        "targetDialect"
       ]
     },
     "outputSchema": {
@@ -1366,12 +1395,96 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "artifactId": {
+        "summary": {
           "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "targetArtifactId": {
+          "type": "string"
+        },
+        "targetResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "artifactId"
+        "summary",
+        "findings",
+        "targetArtifactId",
+        "targetResourceUri",
+        "providerMeta",
+        "executionMeta"
       ]
     }
   },
@@ -1381,15 +1494,52 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "sourceProcedureRef": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "procedureRef": {
+          "type": "string"
+        },
+        "artifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "procedureName": {
           "type": "string"
         },
         "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "profileRef": {
+          "type": "string"
+        },
+        "diffRef": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
           "type": "string"
         }
       },
       "required": [
-        "sourceProcedureRef",
+        "approvalKey",
         "targetDialect"
       ]
     },
@@ -1398,12 +1548,98 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "planRef": {
+        "summary": {
           "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "planRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "planResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "planRef"
+        "summary",
+        "findings",
+        "providerMeta",
+        "executionMeta"
       ]
     }
   },
@@ -2265,16 +2501,41 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "schemaId": {
+        "approvalKey": {
           "type": "string"
         },
-        "sizeHint": {
-          "type": "integer",
-          "minimum": 0
+        "approvalToken": {
+          "type": "string"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "profileRef": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
         }
       },
       "required": [
-        "schemaId"
+        "approvalKey",
+        "schemaRef",
+        "targetDialect"
       ]
     },
     "outputSchema": {
@@ -2282,12 +2543,94 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "planRef": {
+        "summary": {
           "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "testdataPlanArtifactId": {
+          "type": "string"
+        },
+        "testdataPlanResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
         }
       },
       "required": [
-        "planRef"
+        "summary",
+        "findings",
+        "providerMeta",
+        "executionMeta"
       ]
     }
   }

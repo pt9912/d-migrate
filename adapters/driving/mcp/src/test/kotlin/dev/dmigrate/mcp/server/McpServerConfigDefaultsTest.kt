@@ -64,4 +64,23 @@ class McpServerConfigDefaultsTest : FunSpec({
         // admin
         map["connections/list"] shouldBe setOf("dmigrate:admin")
     }
+
+    test("Plan §6 G.5 Akzeptanz: alle drei KI-nahen Tools sind mit dmigrate:ai:execute registriert") {
+        // Die drei produktiven KI-Tools aus Plan §5.4-5.6 muessen
+        // strikt auf `dmigrate:ai:execute` gemappt sein und duerfen
+        // weder auf den fail-closed `dmigrate:admin`-Fallback noch
+        // auf den read-only `dmigrate:read`-Bereich fallen. Wenn ein
+        // zukuenftiger Refactor die Mappings versehentlich entfernt,
+        // schlaegt dieser Test an, bevor ein read-only Caller in den
+        // KI-Pfad rutscht.
+        val map = McpServerConfig.DEFAULT_SCOPE_MAPPING
+        val aiExecute = setOf("dmigrate:ai:execute")
+        map["procedure_transform_plan"] shouldBe aiExecute
+        map["procedure_transform_execute"] shouldBe aiExecute
+        map["testdata_plan"] shouldBe aiExecute
+        // testdata_execute ist als Phase-G-Carve-out ebenfalls
+        // KI-Scope (Slot bleibt registriert; Handler ist
+        // UnsupportedToolHandler bis zum 0.9.7-Erweiterungs-AP).
+        map["testdata_execute"] shouldBe aiExecute
+    }
 })

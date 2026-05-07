@@ -195,6 +195,59 @@ class PhaseBToolSchemasTest : FunSpec({
             props["cursor"] shouldNotBe null
         }
     }
+
+    test("Plan §6 G.5: KI-nahe Tools verlangen approvalKey + targetDialect als Pflichtfelder") {
+        // Plan §5.4-5.6: alle drei produktiven KI-Tools haben
+        // approvalKey als sync-Idempotency-Key und targetDialect als
+        // Pflichtfeld. Schema-Goldenness ist in der Golden-JSON
+        // gepinnt; dieser Test pin't zusaetzlich die required-Liste,
+        // damit ein Refactor, der ein Pflichtfeld vergisst, hier
+        // sofort sichtbar wird.
+        for (toolName in listOf(
+            "procedure_transform_plan",
+            "procedure_transform_execute",
+            "testdata_plan",
+        )) {
+            val input = PhaseBToolSchemas.forTool(toolName)!!.inputSchema
+            stringListValue(input["required"]) shouldContainAll listOf("approvalKey", "targetDialect")
+            input["additionalProperties"] shouldBe false
+        }
+    }
+
+    test("Plan §6 G.5: KI-nahe Tool-Outputs tragen Pflicht-providerMeta + executionMeta") {
+        // Plan §5.4-5.6 Output: providerMeta + executionMeta sind
+        // bei jedem Erfolgsfall Pflicht — sie tragen die Provenance
+        // ins Audit (Plan §4.8). Ohne diese Pflicht-Bindung waere
+        // ein Output-Goldenness-Drift moeglich, der die Provenance
+        // unterschlaegt.
+        for (toolName in listOf(
+            "procedure_transform_plan",
+            "procedure_transform_execute",
+            "testdata_plan",
+        )) {
+            val output = PhaseBToolSchemas.forTool(toolName)!!.outputSchema
+            stringListValue(output["required"]) shouldContainAll listOf(
+                "summary", "findings", "providerMeta", "executionMeta",
+            )
+        }
+    }
+
+    test("Plan §5.1: providerMetaField ist closed-shape mit modelVersion + requestId nullable") {
+        // Plan §5.1: providerMeta darf weder Endpoint noch secretRef
+        // enthalten. Pin den shape strukturell, damit ein zukuenftiger
+        // Helper-Refactor nicht versehentlich einen Endpoint/Secret-Slot
+        // einfuehrt.
+        val meta = PhaseBToolSchemas.providerMetaField()
+        meta["type"] shouldBe "object"
+        meta["additionalProperties"] shouldBe false
+        val props = mapValue(meta["properties"])
+        props.keys shouldBe setOf("providerName", "model", "modelVersion", "requestId")
+        stringListValue(meta["required"]) shouldBe listOf("providerName", "model")
+        // modelVersion und requestId sind nullable (Plan §5.1: lokale
+        // Provider liefern keine modelVersion/requestId).
+        mapValue(props["modelVersion"])["type"] shouldBe listOf("string", "null")
+        mapValue(props["requestId"])["type"] shouldBe listOf("string", "null")
+    }
 })
 
 private fun assertNoForbiddenKeyword(schema: Any?, location: String) {
