@@ -189,7 +189,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
               "idempotencyKey": "k-transfer-incremental",
               "sourceConnectionRef": "dmigrate://tenants/acme/connections/source-db",
               "targetConnectionRef": "dmigrate://tenants/acme/connections/target-db",
-              "filter": "tenant_id = :tenant",
+              "filter": "tenant_id = 'tenant'",
               "sinceColumn": "updated_at",
               "since": "2026-05-01T00:00:00Z",
               "chunkSize": 5000

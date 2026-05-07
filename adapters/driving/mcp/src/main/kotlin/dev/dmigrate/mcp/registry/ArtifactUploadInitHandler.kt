@@ -212,6 +212,7 @@ internal class ArtifactUploadInitHandler(
                 checksumSha256 = checksum,
                 uploadIntent = intent,
                 targetTable = targetTable,
+                wireArtifactKind = parseWireArtifactKind(raw, artifactKind),
             ),
             segmentTotal = policySegmentCount(sizeBytes, limits.maxUploadSegmentBytes),
             now = options.clock.instant(),
@@ -280,13 +281,30 @@ internal class ArtifactUploadInitHandler(
 
     private fun parseArtifactKind(obj: JsonObject): ArtifactKind {
         val raw = obj.optString("artifactKind") ?: return ArtifactKind.UPLOAD_INPUT
-        return runCatching { ArtifactKind.valueOf(raw.uppercase(Locale.US)) }.getOrElse {
-            throw ValidationErrorException(
-                listOf(ValidationViolation(
-                    "artifactKind",
-                    "must be one of ${ArtifactKind.entries.map { it.name }.sorted()}",
-                )),
-            )
+        return when (raw.lowercase(Locale.US)) {
+            "seed-data", "generic" -> ArtifactKind.UPLOAD_INPUT
+            "schema" -> ArtifactKind.SCHEMA
+            "ddl", "transform-script", "rules" -> ArtifactKind.OTHER
+            else -> runCatching { ArtifactKind.valueOf(raw.uppercase(Locale.US)) }.getOrElse {
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        "artifactKind",
+                        "must be one of ${ArtifactKind.entries.map { it.name }.sorted()} plus " +
+                            "[ddl, generic, rules, schema, seed-data, transform-script]",
+                    )),
+                )
+            }
+        }
+    }
+
+    private fun parseWireArtifactKind(obj: JsonObject, artifactKind: ArtifactKind): String {
+        val raw = obj.optString("artifactKind") ?: return "seed-data"
+        val lower = raw.lowercase(Locale.US)
+        return when (lower) {
+            "seed-data", "generic", "schema", "ddl", "transform-script", "rules" -> lower
+            "upload_input" -> "seed-data"
+            "other" -> "generic"
+            else -> artifactKind.name.lowercase(Locale.US)
         }
     }
 

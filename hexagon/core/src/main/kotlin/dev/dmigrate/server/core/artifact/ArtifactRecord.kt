@@ -15,6 +15,21 @@ enum class ArtifactKind {
     OTHER,
 }
 
+data class ArtifactUploadMetadata(
+    val artifactId: String,
+    val resourceUri: String,
+    val uploadIntent: String,
+    val wireArtifactKind: String,
+    val contentType: String,
+    val format: String? = null,
+    val targetTable: String? = null,
+    val targetTables: List<String>? = null,
+    val sourceUploadSessionId: String,
+    val policyFingerprint: String? = null,
+    val sizeBytes: Long,
+    val sha256: String,
+)
+
 data class ArtifactRecord(
     val managedArtifact: ManagedArtifact,
     val kind: ArtifactKind,
@@ -24,6 +39,7 @@ data class ArtifactRecord(
     val resourceUri: ServerResourceUri,
     val adminScope: String? = null,
     val jobRef: String? = null,
+    val uploadMetadata: ArtifactUploadMetadata? = null,
 ) {
     fun isReadableBy(
         principal: PrincipalContext,

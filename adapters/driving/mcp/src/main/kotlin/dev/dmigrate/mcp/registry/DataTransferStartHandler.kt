@@ -1,6 +1,8 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonObject
+import dev.dmigrate.cli.commands.FilterParseException
+import dev.dmigrate.cli.commands.parseFilter
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.server.application.error.ResourceNotFoundException
@@ -103,6 +105,7 @@ internal class DataTransferStartHandler(
             refs = refs,
             now = now,
             auditFields = context.auditFields,
+            principalContext = context.principal,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
                     managedJob = ManagedJob(
@@ -173,13 +176,14 @@ internal class DataTransferStartHandler(
                 listOf(ValidationViolation("filter", "must not be blank")),
             )
         }
-        val canonical = canonicalizeFilter(primitive.asString)
-        if (canonical.isBlank()) {
+        val parsed = try {
+            parseFilter(stripLeadingWhere(primitive.asString))
+        } catch (e: FilterParseException) {
             throw ValidationErrorException(
-                listOf(ValidationViolation("filter", "must not be blank")),
+                listOf(ValidationViolation("filter", e.parseError.message)),
             )
         }
-        return canonical
+        return parsed?.canonical
     }
 
     private fun canonicalPayload(args: JsonObject, canonicalFilter: String?): JsonObject {
@@ -190,61 +194,14 @@ internal class DataTransferStartHandler(
         return payload
     }
 
-    private fun canonicalizeFilter(raw: String): String {
+    private fun stripLeadingWhere(raw: String): String {
         val trimmed = raw.trim()
-        val withoutWhere = if (trimmed.regionMatches(0, "where", 0, 5, ignoreCase = true) &&
+        return if (trimmed.regionMatches(0, "where", 0, 5, ignoreCase = true) &&
             (trimmed.length == 5 || trimmed[5].isWhitespace())
         ) {
             trimmed.drop(5).trim()
         } else {
             trimmed
-        }
-        val lowered = lowercaseOutsideQuotes(withoutWhere)
-        return collapseWhitespaceOutsideQuotes(lowered)
-            .replace(Regex("\\s*(<=|>=|<>|!=|=|<|>)\\s*")) { match -> match.groupValues[1] }
-    }
-
-    private fun lowercaseOutsideQuotes(value: String): String = buildString(value.length) {
-        var quote: Char? = null
-        for (ch in value) {
-            when {
-                quote == null && (ch == '\'' || ch == '"') -> {
-                    quote = ch
-                    append(ch)
-                }
-                quote == ch -> {
-                    quote = null
-                    append(ch)
-                }
-                quote == null -> append(ch.lowercaseChar())
-                else -> append(ch)
-            }
-        }
-    }
-
-    private fun collapseWhitespaceOutsideQuotes(value: String): String = buildString(value.length) {
-        var quote: Char? = null
-        var pendingWhitespace = false
-        for (ch in value.trim()) {
-            when {
-                quote == null && (ch == '\'' || ch == '"') -> {
-                    if (pendingWhitespace && isNotEmpty()) append(' ')
-                    pendingWhitespace = false
-                    quote = ch
-                    append(ch)
-                }
-                quote == ch -> {
-                    quote = null
-                    append(ch)
-                }
-                quote == null && ch.isWhitespace() -> pendingWhitespace = true
-                quote == null -> {
-                    if (pendingWhitespace && isNotEmpty()) append(' ')
-                    pendingWhitespace = false
-                    append(ch)
-                }
-                else -> append(ch)
-            }
         }
     }
 

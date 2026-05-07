@@ -14,6 +14,7 @@ import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ArtifactUploadMetadata
 import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.job.JobVisibility
@@ -142,6 +143,10 @@ class DataImportStartHandlerTest : FunSpec({
             artifactId: String,
             kind: ArtifactKind = ArtifactKind.UPLOAD_INPUT,
             mimeType: String = "text/csv",
+            includeUploadMetadata: Boolean = true,
+            uploadIntent: String = ArtifactUploadInitHandler.INTENT_JOB_INPUT,
+            wireArtifactKind: String = "seed-data",
+            metadataTargetTable: String? = "warehouse.events",
         ) {
             artifactStore.save(
                 ArtifactRecord(
@@ -159,6 +164,28 @@ class DataImportStartHandlerTest : FunSpec({
                     ownerPrincipalId = Fixtures.principal("alice"),
                     visibility = JobVisibility.TENANT,
                     resourceUri = ServerResourceUri(tenant, ResourceKind.ARTIFACTS, artifactId),
+                    uploadMetadata = if (kind == ArtifactKind.UPLOAD_INPUT && includeUploadMetadata) {
+                        ArtifactUploadMetadata(
+                            artifactId = artifactId,
+                            resourceUri = ServerResourceUri(tenant, ResourceKind.ARTIFACTS, artifactId).render(),
+                            uploadIntent = uploadIntent,
+                            wireArtifactKind = wireArtifactKind,
+                            contentType = mimeType,
+                            format = when (mimeType.substringBefore(";")) {
+                                "text/csv", "application/csv", "application/vnd.ms-excel" -> "csv"
+                                "application/json", "text/json", "application/x-ndjson" -> "json"
+                                "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml" -> "yaml"
+                                else -> null
+                            },
+                            targetTable = metadataTargetTable,
+                            sourceUploadSessionId = "ups-1",
+                            policyFingerprint = "fp-upload",
+                            sizeBytes = 1024,
+                            sha256 = "deadbeef".repeat(8),
+                        )
+                    } else {
+                        null
+                    },
                 ),
             )
         }
@@ -332,6 +359,73 @@ class DataImportStartHandlerTest : FunSpec({
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(ctx(args(artifactId = "art-profile-1")))
         }
+    }
+
+    test("UPLOAD_INPUT ohne persistente Upload-Metadaten -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-no-metadata",
+            includeUploadMetadata = false,
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-no-metadata")))
+        }
+        ex.violations.first().field shouldBe "artifactId"
+        ex.violations.first().reason shouldContain "uploadMetadata"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("UPLOAD_INPUT mit falschem uploadIntent -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-wrong-intent",
+            uploadIntent = "profile_input",
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-wrong-intent")))
+        }
+        ex.violations.first().field shouldBe "artifactId"
+        ex.violations.first().reason shouldContain "uploadIntent=job_input"
+    }
+
+    test("wireArtifactKind=generic ohne explizites format -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-generic",
+            wireArtifactKind = "generic",
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-generic")))
+        }
+        ex.violations.first().field shouldBe "format"
+        ex.violations.first().reason shouldContain "wireArtifactKind=generic"
+    }
+
+    test("table muss persistentem Upload-targetTable entsprechen") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-table-bound",
+            metadataTargetTable = "warehouse.expected",
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(
+                ctx(args(artifactId = "art-table-bound", extraFields = mapOf("table" to "warehouse.other"))),
+            )
+        }
+        ex.violations.first().field shouldBe "table"
+        ex.violations.first().reason shouldContain "warehouse.expected"
+    }
+
+    test("table ist erforderlich, wenn Upload-Metadaten kein targetTable enthalten") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-table-free",
+            metadataTargetTable = null,
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-table-free")))
+        }
+        ex.violations.first().field shouldBe "table"
     }
 
     test("format kompatibel mit Artefakt-MIME -> Success") {

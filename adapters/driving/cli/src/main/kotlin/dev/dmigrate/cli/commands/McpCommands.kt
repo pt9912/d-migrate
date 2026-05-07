@@ -496,6 +496,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
                     limitFor = { Long.MAX_VALUE },
                 ),
                 executorBundle = executorBundle,
+                connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver(),
+                dataRunnerTempDirectory = owner.resolved.path,
             )
             val components = PhaseCRegistries.defaultComponents(phaseCWithJdbc, config.scopeMapping).copy(
                 toolRegistry = PhaseERegistries.defaultToolRegistry(phaseE, config.scopeMapping),

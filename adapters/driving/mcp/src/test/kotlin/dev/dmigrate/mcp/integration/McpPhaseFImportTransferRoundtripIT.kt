@@ -4,6 +4,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
+import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.PhaseERegistries
 import dev.dmigrate.mcp.registry.PhaseEWiring
@@ -14,6 +15,7 @@ import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ArtifactUploadMetadata
 import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.connection.ConnectionSensitivity
@@ -77,6 +79,19 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
                 ownerPrincipalId = Fixtures.principal("alice"),
                 visibility = JobVisibility.TENANT,
                 resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId),
+                uploadMetadata = ArtifactUploadMetadata(
+                    artifactId = artifactId,
+                    resourceUri = ServerResourceUri(tenantId, ResourceKind.ARTIFACTS, artifactId).render(),
+                    uploadIntent = ArtifactUploadInitHandler.INTENT_JOB_INPUT,
+                    wireArtifactKind = "seed-data",
+                    contentType = "text/csv",
+                    format = "csv",
+                    targetTable = "warehouse.events",
+                    sourceUploadSessionId = "ups-1",
+                    policyFingerprint = "fp-upload",
+                    sizeBytes = 1024,
+                    sha256 = "deadbeef".repeat(8),
+                ),
             ),
         )
     }

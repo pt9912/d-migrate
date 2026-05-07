@@ -14,7 +14,7 @@ dependencies {
     // Phase C/D Ports brauchen).
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:streaming"))
-    runtimeOnly(project(":adapters:driven:driver-common"))
+    implementation(project(":adapters:driven:driver-common"))
     runtimeOnly(project(":adapters:driven:driver-postgresql"))
     runtimeOnly(project(":adapters:driven:driver-postgresql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mysql"))

@@ -20,6 +20,7 @@ import dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome
 import dev.dmigrate.server.core.idempotency.IdempotencyScope
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.policy.PolicyDecision
+import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.ApprovalGrantStore
@@ -636,6 +637,7 @@ data class JobStartRequest(
     val refs: List<RefField>,
     val now: Instant,
     val jobBuilder: (jobId: String, createdAt: Instant) -> JobRecord,
+    val principalContext: PrincipalContext? = null,
     /**
      * Phase E §7.10 (Review-Fix #8): optionaler AuditFields-Sink. Wenn
      * gesetzt, schreibt der Orchestrator den berechneten

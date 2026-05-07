@@ -63,10 +63,14 @@ class InMemoryArtifactStore : ArtifactStore {
     }
 
     override fun deleteExpired(now: Instant): Int {
+        return deleteExpiredRecords(now).size
+    }
+
+    override fun deleteExpiredRecords(now: Instant): List<ArtifactRecord> {
         val expired = records.entries
             .filter { it.value.managedArtifact.expiresAt.isBefore(now) }
-            .map { it.key }
-        expired.forEach { records.remove(it) }
-        return expired.size
+            .map { it.key to it.value }
+        expired.forEach { (key, _) -> records.remove(key) }
+        return expired.map { it.second }
     }
 }

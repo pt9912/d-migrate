@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.upload
 
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ArtifactUploadMetadata
 import dev.dmigrate.server.core.artifact.ManagedArtifact
 import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.principal.PrincipalContext
@@ -131,9 +132,30 @@ class DefaultJobInputFinalizer(
                 // Tenant-Service-Account und braucht Lesezugriff.
                 visibility = JobVisibility.TENANT,
                 resourceUri = resourceUri,
+                uploadMetadata = ArtifactUploadMetadata(
+                    artifactId = artifactId,
+                    resourceUri = resourceUri.render(),
+                    uploadIntent = session.uploadIntent,
+                    wireArtifactKind = session.wireArtifactKind ?: "seed-data",
+                    contentType = session.mimeType,
+                    format = inferFormat(session.mimeType),
+                    targetTable = session.targetTable,
+                    sourceUploadSessionId = session.uploadSessionId,
+                    policyFingerprint = session.approvalFingerprint,
+                    sizeBytes = payload.sizeBytes,
+                    sha256 = payload.sha256,
+                ),
             ),
         )
     }
+
+    private fun inferFormat(mimeType: String): String? =
+        when (mimeType.lowercase().substringBefore(";").trim()) {
+            "text/csv", "application/csv", "application/vnd.ms-excel" -> "csv"
+            "application/json", "text/json", "application/x-ndjson" -> "json"
+            "application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml" -> "yaml"
+            else -> null
+        }
 
     companion object {
         val ARTIFACT_TTL: Duration = Duration.ofDays(7)

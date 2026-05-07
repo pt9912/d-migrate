@@ -37,6 +37,7 @@ class UploadInitApprovalFingerprint(
     fun fingerprint(attempt: UploadInitApprovalAttempt): String {
         val extras = buildMap<String, JsonValue> {
             put("artifactKind", JsonValue.str(attempt.artifactKind.name))
+            attempt.wireArtifactKind?.let { put("wireArtifactKind", JsonValue.str(it)) }
             put("mimeType", JsonValue.str(attempt.mimeType))
             put("sizeBytes", JsonValue.num(attempt.sizeBytes))
             put("checksumSha256", JsonValue.str(attempt.checksumSha256))
@@ -77,4 +78,5 @@ data class UploadInitApprovalAttempt(
     val checksumSha256: String,
     val uploadIntent: String,
     val targetTable: String? = null,
+    val wireArtifactKind: String? = null,
 )

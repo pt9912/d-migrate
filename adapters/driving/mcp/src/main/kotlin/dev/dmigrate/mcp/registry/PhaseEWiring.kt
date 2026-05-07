@@ -27,11 +27,13 @@ import dev.dmigrate.server.application.upload.UploadInitApprovalFingerprint
 import dev.dmigrate.server.application.upload.UploadInitOrchestrator
 import dev.dmigrate.server.ports.AbortOutcomeStore
 import dev.dmigrate.server.ports.ApprovalGrantStore
+import dev.dmigrate.server.ports.ConnectionSecretResolver
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.SyncEffectIdempotencyStore
 import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.WorkerHandleRegistry
+import java.nio.file.Path
 import java.util.UUID
 
 /**
@@ -165,9 +167,23 @@ data class PhaseEWiring(
     val fallbackJobWorkerFactory: JobWorkerFactory = PassthroughJobWorkerFactory,
     val dataImportWorkerFactory: JobWorkerFactory? = null,
     val dataTransferWorkerFactory: JobWorkerFactory? = null,
+    val connectionSecretResolver: ConnectionSecretResolver? = null,
+    val dataRunnerTempDirectory: Path? = null,
+    val dataRunnerDependencies: PhaseFDataRunnerDependencies? =
+        connectionSecretResolver?.let {
+            PhaseFDataRunnerDependencies(
+                artifactStore = phaseCWiring.artifactStore,
+                artifactContentStore = phaseCWiring.artifactContentStore,
+                connectionStore = phaseCWiring.connectionStore,
+                schemaStore = phaseCWiring.schemaStore,
+                connectionSecretResolver = it,
+                tempDirectory = dataRunnerTempDirectory,
+            )
+        },
     val jobWorkerFactory: JobWorkerFactory = PhaseFDataOperationWorkerFactory(
         fallback = fallbackJobWorkerFactory,
         dataImportWorkerFactory = dataImportWorkerFactory,
         dataTransferWorkerFactory = dataTransferWorkerFactory,
+        dataRunnerDependencies = dataRunnerDependencies,
     ),
 )

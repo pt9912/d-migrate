@@ -11,6 +11,7 @@ import dev.dmigrate.server.application.job.JobStartRequest
 import dev.dmigrate.server.application.job.RefField
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ArtifactUploadMetadata
 import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.job.JobVisibility
@@ -73,8 +74,9 @@ internal class DataImportStartHandler(
         // Reservierung gemeldet werden.
         val tenantId = context.principal.effectiveTenantId
         val record = resolveArtifact(artifactSource, tenantId)
-        validateArtifactEligibility(record)
-        validateFormatCompatibility(args, record)
+        val metadata = validateArtifactEligibility(record)
+        val effectiveFormat = validateFormatCompatibility(args, metadata)
+        validateTargetTable(args, metadata)
         // Phase F § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
         // VOR der Idempotency-Reservierung. ConnectionReferenceStore
         // liefert nur secret-frei (kein JDBC-URL-Materialise) — der
@@ -118,10 +120,11 @@ internal class DataImportStartHandler(
             callerId = context.principal.principalId,
             idempotencyKey = idempotencyKey,
             approvalToken = approvalToken,
-            payload = enrichPayloadForFingerprint(args, record),
+            payload = enrichPayloadForFingerprint(args, record, metadata, effectiveFormat),
             refs = refs,
             now = now,
             auditFields = context.auditFields,
+            principalContext = context.principal,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
                     managedJob = ManagedJob(
@@ -333,7 +336,7 @@ internal class DataImportStartHandler(
      * `format`/`mimeType`-Kompatibilitaet wird anschliessend gegen die
      * persistenten [ManagedArtifact.contentType]-Metadaten geprueft.
      */
-    private fun validateArtifactEligibility(record: ArtifactRecord) {
+    private fun validateArtifactEligibility(record: ArtifactRecord): ArtifactUploadMetadata {
         if (record.kind != ArtifactKind.UPLOAD_INPUT) {
             throw ValidationErrorException(
                 listOf(ValidationViolation(
@@ -343,11 +346,52 @@ internal class DataImportStartHandler(
                 )),
             )
         }
+        val metadata = record.uploadMetadata
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "artifactId",
+                    "import requires persistent uploadMetadata from uploadIntent=job_input",
+                )),
+            )
+        if (metadata.uploadIntent != ArtifactUploadInitHandler.INTENT_JOB_INPUT) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "artifactId",
+                    "import requires uploadIntent=job_input, got ${metadata.uploadIntent}",
+                )),
+            )
+        }
+        when (metadata.wireArtifactKind) {
+            "seed-data", "generic" -> Unit
+            else -> throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "artifactId",
+                    "wireArtifactKind=${metadata.wireArtifactKind} is not importable",
+                )),
+            )
+        }
+        return metadata
     }
 
-    private fun validateFormatCompatibility(args: JsonObject, record: ArtifactRecord) {
-        val format = args.optString("format")?.lowercase(Locale.US) ?: return
-        val mimeType = record.managedArtifact.contentType.lowercase(Locale.US).substringBefore(";").trim()
+    private fun validateFormatCompatibility(args: JsonObject, metadata: ArtifactUploadMetadata): String {
+        val explicitFormat = args.optString("format")?.lowercase(Locale.US)
+        if (metadata.wireArtifactKind == "generic" && explicitFormat == null) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "format",
+                    "is required for wireArtifactKind=generic",
+                )),
+            )
+        }
+        val inferredFormat = metadata.format ?: inferFormat(metadata.contentType)
+        val format = explicitFormat ?: inferredFormat
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "format",
+                    "is required because artifact mimeType '${metadata.contentType}' is ambiguous",
+                )),
+            )
+        val mimeType = metadata.contentType.lowercase(Locale.US).substringBefore(";").trim()
         val compatible = when (format) {
             "csv" -> mimeType in CSV_MIME_TYPES
             "json" -> mimeType in JSON_MIME_TYPES
@@ -361,6 +405,38 @@ internal class DataImportStartHandler(
                     "format '$format' is not compatible with artifact mimeType '$mimeType'",
                 )),
             )
+        }
+        return format
+    }
+
+    private fun validateTargetTable(args: JsonObject, metadata: ArtifactUploadMetadata) {
+        val requested = args.optString("table")
+        val persisted = metadata.targetTable
+        if (!requested.isNullOrBlank() && !persisted.isNullOrBlank() && requested != persisted) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "table",
+                    "must match upload targetTable '$persisted'",
+                )),
+            )
+        }
+        if (requested.isNullOrBlank() && persisted.isNullOrBlank()) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "table",
+                    "is required when upload metadata has no targetTable",
+                )),
+            )
+        }
+    }
+
+    private fun inferFormat(mimeType: String): String? {
+        val canonical = mimeType.lowercase(Locale.US).substringBefore(";").trim()
+        return when {
+            canonical in CSV_MIME_TYPES -> "csv"
+            canonical in JSON_MIME_TYPES -> "json"
+            canonical in YAML_MIME_TYPES -> "yaml"
+            else -> null
         }
     }
 
@@ -481,6 +557,8 @@ internal class DataImportStartHandler(
     private fun enrichPayloadForFingerprint(
         args: JsonObject,
         record: ArtifactRecord,
+        metadata: ArtifactUploadMetadata,
+        effectiveFormat: String,
     ): dev.dmigrate.server.application.fingerprint.JsonValue.Obj {
         // Args-Klon, sodass der originale args-Tree (Wire-Eingabe)
         // nicht mutiert wird. Server-Seitige Felder werden mit
@@ -488,10 +566,18 @@ internal class DataImportStartHandler(
         // kollidieren — Schema additionalProperties=false weist
         // `_artifactSha256` an der Wire-Layer ohnehin ab.
         val enriched = args.deepCopy()
+        enriched.addProperty("format", effectiveFormat)
+        if (enriched.optString("table").isNullOrBlank()) {
+            metadata.targetTable?.let { enriched.addProperty("table", it) }
+        }
         enriched.addProperty("_artifactSha256", record.managedArtifact.sha256)
         enriched.addProperty("_artifactMimeType", record.managedArtifact.contentType)
         enriched.addProperty("_artifactFilename", record.managedArtifact.filename)
         enriched.addProperty("_artifactSizeBytes", record.managedArtifact.sizeBytes)
+        enriched.addProperty("_uploadIntent", metadata.uploadIntent)
+        enriched.addProperty("_wireArtifactKind", metadata.wireArtifactKind)
+        enriched.addProperty("_sourceUploadSessionId", metadata.sourceUploadSessionId)
+        metadata.policyFingerprint?.let { enriched.addProperty("_policyFingerprint", it) }
         return JobStartHandlerSupport.toJsonValueObj(enriched)
     }
 

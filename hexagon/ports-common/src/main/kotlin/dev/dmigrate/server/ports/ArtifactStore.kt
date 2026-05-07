@@ -46,4 +46,18 @@ interface ArtifactStore {
     ): PageResult<ArtifactRecord>
 
     fun deleteExpired(now: Instant): Int
+
+    /**
+     * Phase F retention hook for callers that must release byte quotas
+     * and content-store payloads after metadata expiry. Implementations
+     * return the deleted records so the sweeper can delete corresponding
+     * bytes and release `STORED_ARTIFACT_BYTES`.
+     *
+     * Default delegates to the legacy count-only method for older stores;
+     * such stores cannot provide per-record cleanup data.
+     */
+    fun deleteExpiredRecords(now: Instant): List<ArtifactRecord> {
+        deleteExpired(now)
+        return emptyList()
+    }
 }

@@ -116,4 +116,11 @@ data class UploadSession(
      * via SyncEffect-/Idempotency-Conflict abgewiesen werden.
      */
     val targetTable: String? = null,
+    /**
+     * Phase F keeps the stable wire artifact taxonomy separate from
+     * [artifactKind], because the core enum does not contain values such
+     * as `seed-data` or `generic`. Finalised job-input artifacts persist
+     * this value in [dev.dmigrate.server.core.artifact.ArtifactUploadMetadata].
+     */
+    val wireArtifactKind: String? = null,
 )

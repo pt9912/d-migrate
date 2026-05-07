@@ -198,6 +198,7 @@ class UploadInitOrchestrator(
             approvalKey = request.approvalKey,
             approvalFingerprint = fingerprint,
             targetTable = request.attempt.targetTable,
+            wireArtifactKind = request.attempt.wireArtifactKind,
         )
         try {
             sessionStore.save(session)

@@ -271,6 +271,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
                 checksumSha256 = sha256,
                 uploadIntent = "job_input",
                 targetTable = "warehouse.events",
+                wireArtifactKind = "seed-data",
             ),
         )
         // Pre-populate: aktiver Claim eines anderen Owners auf demselben

@@ -20,15 +20,22 @@ internal class PhaseFDataOperationWorkerFactory(
     private val fallback: JobWorkerFactory,
     private val dataImportWorkerFactory: JobWorkerFactory? = null,
     private val dataTransferWorkerFactory: JobWorkerFactory? = null,
+    private val dataRunnerDependencies: PhaseFDataRunnerDependencies? = null,
 ) : JobWorkerFactory {
 
     override fun create(record: JobRecord, request: JobStartRequest): JobWorker? =
         when (record.managedJob.operation) {
             DataImportStartHandler.OPERATION ->
                 dataImportWorkerFactory?.create(record, request)
+                    ?: dataRunnerDependencies?.let {
+                        McpDataImportJobWorker(request.payload, request.principalContext, it)
+                    }
                     ?: missingRunnerWorker(record.managedJob.operation)
             DataTransferStartHandler.OPERATION ->
                 dataTransferWorkerFactory?.create(record, request)
+                    ?: dataRunnerDependencies?.let {
+                        McpDataTransferJobWorker(request.payload, request.principalContext, it)
+                    }
                     ?: missingRunnerWorker(record.managedJob.operation)
             else -> fallback.create(record, request)
         }

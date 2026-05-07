@@ -227,7 +227,7 @@ class DataTransferStartHandlerTest : FunSpec({
     test("non-blank filter ist zulaessig und wird fuer Fingerprint kanonisiert") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val result = fx.handler.handle(
-            ctx(args(extraFields = mapOf("filter" to "tenant_id = :tenant"))),
+            ctx(args(extraFields = mapOf("filter" to "tenant_id = 'tenant'"))),
         )
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
     }
@@ -235,11 +235,11 @@ class DataTransferStartHandlerTest : FunSpec({
     test("semantisch gleicher filter mit whitespace und WHERE-case replayt denselben Job") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val first = fx.handler.handle(
-            ctx(args(idempotencyKey = "k-filter-canon", extraFields = mapOf("filter" to "WHERE tenant_id = :tenant"))),
+            ctx(args(idempotencyKey = "k-filter-canon", extraFields = mapOf("filter" to "WHERE tenant_id = 'tenant'"))),
         )
         first.shouldBeInstanceOf<ToolCallOutcome.Success>()
         val second = fx.handler.handle(
-            ctx(args(idempotencyKey = "k-filter-canon", extraFields = mapOf("filter" to "where  tenant_id=:tenant"))),
+            ctx(args(idempotencyKey = "k-filter-canon", extraFields = mapOf("filter" to "where  tenant_id='tenant'"))),
         )
         second.shouldBeInstanceOf<ToolCallOutcome.Success>()
         second.content.single().text!! shouldContain "\"jobId\":\"job_1\""
