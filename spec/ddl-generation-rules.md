@@ -1124,7 +1124,7 @@ Wenn `srid` nicht angegeben ist, wird `0` als Platzhalter verwendet.
 
 ```sql
 CREATE TABLE "places" (
-    "id"       BIGSERIAL,
+    "id"       SERIAL,
     "location" geometry(Point, 4326),
     PRIMARY KEY ("id")
 );

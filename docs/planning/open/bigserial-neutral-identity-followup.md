@@ -60,12 +60,12 @@ erzeugt, darf dieselbe implizite/owned Sequence nicht nochmal als eigenstaendige
 
 ## 2. Veraltete oder widerspruechliche Dokumentstellen
 
-### Echte Abweichungen zum Code
+### Mit AP 1 korrigierte Abweichungen zum Code
 
-- `spec/architecture.md` §3.4 zeigt einen alten Beispiel-Mapper mit
+- `spec/architecture.md` §3.4 zeigte einen alten Beispiel-Mapper mit
   `NeutralType.BigIdentifier(autoIncrement=true)` und
   `BigIdentifier -> BIGSERIAL`.
-- Dasselbe Beispiel ist auch jenseits von `BigIdentifier` nicht mehr
+- Dasselbe Beispiel war auch jenseits von `BigIdentifier` nicht mehr
   code-nah:
   - Interface heisst im Code `TypeMapper.toSql(...)` und
     `toDefaultSql(...)`; Reverse-Mapping liegt in den driver-spezifischen
@@ -74,9 +74,11 @@ erzeugt, darf dieselbe implizite/owned Sequence nicht nochmal als eigenstaendige
     `NeutralType.Float(precision=...)` und
     `DateTime(withTimezone=...)`; der Code verwendet `BooleanType`,
     `floatPrecision` und `timezone`.
-- `spec/design.md` und `spec/neutral-model-spec.md` listen
-  `identifier` fuer PostgreSQL als `SERIAL / BIGSERIAL`. Das ist zu grob,
+- `spec/design.md` und `spec/neutral-model-spec.md` listeten
+  `identifier` fuer PostgreSQL als `SERIAL / BIGSERIAL`. Das war zu grob,
   weil der aktuelle `identifier`-Typ nur `SERIAL` eindeutig erzeugt.
+- `spec/ddl-generation-rules.md` enthielt ein neutrales PostGIS-Generate-
+  Beispiel mit `BIGSERIAL`; dieses Beispiel wurde auf `SERIAL` korrigiert.
 
 ### Keine direkte Abweichung
 
@@ -86,10 +88,9 @@ erzeugt, darf dieselbe implizite/owned Sequence nicht nochmal als eigenstaendige
 - `docs/planning/done/implementation-plan-0.4.0.md` beschreibt
   Identity-/Sequence-Support fuer Import/Sync. Das widerspricht nicht
   zwingend dem fehlenden `BIGSERIAL`-Forward-Mapping.
-- `docs/planning/done/change-request-spatial-types.md` und
-  `spec/ddl-generation-rules.md` enthalten SQL-Beispiele mit `BIGSERIAL`.
-  Diese Beispiele koennen fachlich korrekt sein, belegen aber nicht, dass der
-  neutrale Generator `BIGSERIAL` bereits modellieren kann.
+- `docs/planning/done/change-request-spatial-types.md` enthaelt SQL-Beispiele
+  mit `BIGSERIAL`. Diese Beispiele koennen fachlich korrekt sein, belegen aber
+  nicht, dass der neutrale Generator `BIGSERIAL` bereits modellieren kann.
 - `docs/planning/done/ImpPlan-0.6.0-D-claude.md` ist historisch konsistent mit
   dem aktuellen Code und sollte nicht rueckwirkend umgeschrieben werden.
 
@@ -196,15 +197,16 @@ Verworfene Alternativen:
 
 ## 5. Arbeitsplan
 
-### AP 1: Spec-Korrektur
+### AP 1: Spec-Korrektur (erledigt 2026-05-07)
 
-- `spec/architecture.md` §3.4 auf aktuelle API oder bewusst neues Zielmodell
-  umstellen.
+- `spec/architecture.md` §3.4 auf die aktuelle `TypeMapper`-API umgestellt
+  und den geplanten `ColumnGeneration.Identity`-Vertrag statt
+  `NeutralType.BigIdentifier` beschrieben.
 - `spec/design.md` und `spec/neutral-model-spec.md` praezisieren:
   `identifier` erzeugt heute `SERIAL`; 64-bit Identity braucht den neuen
   Vertrag aus diesem Follow-up.
-- SQL-Beispiele mit `BIGSERIAL` nur dort stehen lassen, wo sie echte
-  Ziel-DB-Beispiele sind; bei neutralem Generate-Kontext klar markieren.
+- Neutrale Generate-Beispiele verwenden kein `BIGSERIAL` mehr ohne
+  expliziten Generation-Kontext.
 
 ### AP 2: Modellumsetzung
 

@@ -96,7 +96,7 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 
 | Neutraler Typ         | PostgreSQL                                | MySQL                                    | SQLite                                           |
 | --------------------- | ----------------------------------------- | ---------------------------------------- | ------------------------------------------------ |
-| `identifier`          | SERIAL / BIGSERIAL                        | INT AUTO_INCREMENT                       | INTEGER PRIMARY KEY AUTOINCREMENT                |
+| `identifier`          | SERIAL                                    | INT AUTO_INCREMENT                       | INTEGER PRIMARY KEY AUTOINCREMENT                |
 | `text`                | VARCHAR(n) / TEXT                         | VARCHAR(n) / TEXT                        | TEXT                                             |
 | `integer`             | INTEGER                                   | INT                                      | INTEGER                                          |
 | `biginteger`          | BIGINT                                    | BIGINT                                   | INTEGER                                          |
@@ -116,6 +116,14 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 | `enum(values)`        | CREATE TYPE ... ENUM                      | ENUM(...)                                | TEXT + CHECK                                     |
 | `array(type)`         | type[]                                    | JSON                                     | TEXT (JSON)                                      |
 | `geometry(type,srid)` | `geometry(type, srid)` *(PostGIS-Profil)* | native Spatial Types *(Profil `native`)* | `AddGeometryColumn(...)` *(Profil `spatialite`)* |
+
+`identifier` beschreibt im aktuellen neutralen Modell den bestehenden
+32-bit-Auto-Increment-Vertrag. PostgreSQL `BIGSERIAL` und
+`BIGINT GENERATED ... AS IDENTITY` brauchen zusaetzlich eine explizite
+Generierungssemantik an der Spalte; dieser Vertrag ist im Follow-up
+`docs/planning/open/bigserial-neutral-identity-followup.md` als
+`ColumnGeneration.Identity` beschrieben. `biginteger` ohne dieses Metadatum
+bleibt `BIGINT`.
 
 Das heutige Typsystem deckt die erweiterten Typen `uuid`, `json`, `binary`,
 `array` und `geometry` ab. Das

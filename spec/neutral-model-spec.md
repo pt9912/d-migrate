@@ -133,7 +133,7 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 
 | Neutraler Typ | PostgreSQL              | MySQL                 | SQLite                            |
 | ------------- | ----------------------- | --------------------- | --------------------------------- |
-| `identifier`  | SERIAL / BIGSERIAL      | INT AUTO_INCREMENT    | INTEGER PRIMARY KEY AUTOINCREMENT |
+| `identifier`  | SERIAL                  | INT AUTO_INCREMENT    | INTEGER PRIMARY KEY AUTOINCREMENT |
 | `text`        | VARCHAR(n) / TEXT       | VARCHAR(n) / TEXT     | TEXT                              |
 | `char`        | CHAR(n)                 | CHAR(n)               | TEXT                              |
 | `integer`     | INTEGER                 | INT                   | INTEGER                           |
@@ -157,6 +157,14 @@ Jeder Spaltentyp im neutralen Modell wird pro Zieldatenbank in den passenden nat
 \* Spatial-Mapping haengt vom gewaehlten `--spatial-profile` ab. Details in
 `spec/ddl-generation-rules.md`. Bei Profil `none` wird die Spalte nicht als
 DDL generiert, sondern als `action_required` gemeldet.
+
+`identifier` ist der aktuelle 32-bit-Auto-Increment-Vertrag. PostgreSQL
+`BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
+`NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
+Spaltenmetadatum fuer Generation/Identity. Der geplante Vertrag ist im
+Follow-up `docs/planning/open/bigserial-neutral-identity-followup.md` als
+`ColumnGeneration.Identity` festgelegt. Bis diese Modell-Erweiterung umgesetzt
+ist, bleibt `biginteger` im Forward-Generate `BIGINT`.
 
 Die Tabelle verwendet die kanonischen Typnamen. Parameter wie `length`, `precision`, `scale`, `values`, `ref_type`, `element_type`, `geometry_type` oder `srid` werden als separate YAML-Attribute angegeben.
 
@@ -255,9 +263,13 @@ Neben den technischen Typen bietet das Modell semantische Typen, die als Alias m
 | Semantischer Typ | Technischer Typ    | Eingebaute Einschränkung                            |
 | ---------------- | ------------------ | --------------------------------------------------- |
 | `email`          | `text(254)`        | Feste Maximallänge 254 (Singleton, keine Parameter) |
-| `identifier`     | `integer`/`bigint` | Auto-Increment, Primary Key                         |
+| `identifier`     | `integer`          | Auto-Increment, Primary Key                         |
 
-Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst. `email` ist als Singleton implementiert (`data object Email` mit `MAX_LENGTH = 254`) — die Länge ist nicht konfigurierbar.
+Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst.
+`email` ist als Singleton implementiert (`data object Email` mit `MAX_LENGTH =
+254`) — die Länge ist nicht konfigurierbar. 64-bit-Identity-Spalten sind kein
+eigener semantischer Typ, sondern werden ueber `biginteger` plus geplantes
+`ColumnGeneration.Identity`-Metadatum modelliert.
 
 ---
 

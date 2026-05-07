@@ -471,67 +471,51 @@ Die vollständige Typ-Mapping-Tabelle (18 neutrale Typen mit Attributen) und die
 
 ```kotlin
 /**
- * Bidirektionales Type-Mapping zwischen neutralem Typ und DB-spezifischem Typ.
+ * Forward Type-Mapping vom neutralen Typ zum DB-spezifischen Typ.
  * Pure Function — kein State, vollständig testbar.
  */
 interface TypeMapper {
-    fun toNeutral(dbType: String, metadata: ColumnMetadata): NeutralType
-    fun fromNeutral(neutralType: NeutralType): String
+    val dialect: DatabaseDialect
+    fun toSql(type: NeutralType): String
+    fun toDefaultSql(default: DefaultValue, type: NeutralType): String
 }
 
-// Beispiel: PostgreSQL Type Mapper
+// Beispiel: PostgreSQL Forward Type Mapper
 class PostgresTypeMapper : TypeMapper {
-    override fun toNeutral(dbType: String, metadata: ColumnMetadata): NeutralType =
-        when (dbType.uppercase()) {
-            "SERIAL"         -> NeutralType.Identifier(autoIncrement = true)
-            "BIGSERIAL"      -> NeutralType.BigIdentifier(autoIncrement = true)
-            "INTEGER", "INT" -> NeutralType.Integer
-            "BIGINT"         -> NeutralType.BigInteger
-            "TEXT"           -> NeutralType.Text()
-            "VARCHAR"        -> NeutralType.Text(maxLength = metadata.length)
-            "CHAR"           -> NeutralType.Char(length = metadata.length ?: 1)
-            "SMALLINT"       -> NeutralType.SmallInt
-            "REAL"           -> NeutralType.Float(precision = FloatPrecision.SINGLE)
-            "DOUBLE PRECISION" -> NeutralType.Float(precision = FloatPrecision.DOUBLE)
-            "XML"            -> NeutralType.Xml
-            "BOOLEAN"        -> NeutralType.Boolean
-            "JSONB", "JSON"  -> NeutralType.Json
-            "BYTEA"          -> NeutralType.Binary
-            "UUID"           -> NeutralType.Uuid
-            "TIMESTAMP"      -> NeutralType.DateTime(withTimezone = false)
-            "TIMESTAMPTZ"    -> NeutralType.DateTime(withTimezone = true)
-            else             -> NeutralType.Text() // Fallback mit Warnung
-        }
+    override val dialect = DatabaseDialect.POSTGRESQL
 
-    override fun fromNeutral(neutralType: NeutralType): String =
-        when (neutralType) {
-            is NeutralType.Identifier    -> "SERIAL"
-            is NeutralType.BigIdentifier -> "BIGSERIAL"
-            is NeutralType.Integer       -> "INTEGER"
-            is NeutralType.BigInteger    -> "BIGINT"
-            is NeutralType.Text         -> if (neutralType.maxLength != null)
-                                              "VARCHAR(${neutralType.maxLength})"
-                                           else "TEXT"
-            is NeutralType.Char          -> "CHAR(${neutralType.length})"
-            is NeutralType.SmallInt      -> "SMALLINT"
-            is NeutralType.Float         -> when (neutralType.precision) {
-                                              FloatPrecision.SINGLE -> "REAL"
-                                              FloatPrecision.DOUBLE -> "DOUBLE PRECISION"
-                                           }
-            is NeutralType.Xml           -> "XML"
-            is NeutralType.Boolean       -> "BOOLEAN"
-            is NeutralType.Json          -> "JSONB"
-            is NeutralType.Binary        -> "BYTEA"
-            is NeutralType.Uuid          -> "UUID"
-            is NeutralType.DateTime      -> if (neutralType.withTimezone)
-                                              "TIMESTAMP WITH TIME ZONE"
-                                           else "TIMESTAMP"
-            is NeutralType.Decimal       -> "DECIMAL(${neutralType.precision},${neutralType.scale})"
-            is NeutralType.Enum          -> "TEXT" // PostgreSQL ENUM via CREATE TYPE
-            // ...
+    override fun toSql(type: NeutralType): String = when (type) {
+        is NeutralType.Identifier -> if (type.autoIncrement) "SERIAL" else "INTEGER"
+        is NeutralType.Integer -> "INTEGER"
+        is NeutralType.BigInteger -> "BIGINT"
+        is NeutralType.Text -> if (type.maxLength != null) "VARCHAR(${type.maxLength})" else "TEXT"
+        is NeutralType.Char -> "CHAR(${type.length})"
+        is NeutralType.SmallInt -> "SMALLINT"
+        is NeutralType.Float -> when (type.floatPrecision) {
+            FloatPrecision.SINGLE -> "REAL"
+            FloatPrecision.DOUBLE -> "DOUBLE PRECISION"
         }
+        is NeutralType.Xml -> "XML"
+        is NeutralType.BooleanType -> "BOOLEAN"
+        is NeutralType.Json -> "JSONB"
+        is NeutralType.Binary -> "BYTEA"
+        is NeutralType.Uuid -> "UUID"
+        is NeutralType.DateTime -> if (type.timezone) "TIMESTAMP WITH TIME ZONE" else "TIMESTAMP"
+        is NeutralType.Decimal -> "DECIMAL(${type.precision},${type.scale})"
+        is NeutralType.Enum -> "TEXT" // PostgreSQL ENUM via CREATE TYPE
+        // ...
+    }
 }
 ```
+
+Reverse-Mapping ist nicht Teil von `TypeMapper`; es liegt in den
+driver-spezifischen Metadata-Mapping-Komponenten. Der aktuelle PostgreSQL-Pfad
+mapped 32-bit `serial`/Identity auf `NeutralType.Identifier(autoIncrement =
+true)`. 64-bit `bigserial`/`bigint identity` wird bewusst als
+`NeutralType.BigInteger` plus Diagnose transportiert, damit die Breite nicht zu
+`SERIAL` kollabiert. `NeutralType.BigIdentifier` existiert nicht. Der geplante
+64-bit-Identity-Vertrag wird als separates Spaltenmetadatum
+`ColumnGeneration.Identity` modelliert, nicht als weiterer `NeutralType`.
 
 ### 3.5 Generator-Options-Pfad und Spatial-Profil (0.5.5)
 
