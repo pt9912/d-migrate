@@ -264,25 +264,41 @@ Verworfene Alternativen:
 
 ---
 
-## 6. Tests
+## 6. Tests (erledigt 2026-05-07)
 
 - Modell-/Serialisierungstests fuer den neuen Vertrag.
+  - `SchemaNodeParserTest` und `SchemaNodeBuilderTest` decken
+    `generation.type`, `mode`, `sequence_name` und
+    `legacy_serial_syntax` ab.
+  - Core-Tests decken Diff und Validierung fuer
+    `ColumnGeneration.Identity` ab.
 - PostgreSQL TypeMapper-Test:
   - 32-bit generated identifier -> `SERIAL` oder gewaehlter Identity-Ausdruck.
   - 64-bit generated identifier -> `BIGSERIAL` oder gewaehlter
     Identity-Ausdruck.
   - `BigInteger` ohne Generation -> `BIGINT`.
+  - Abgedeckt in `PostgresTypeMappingTest` und
+    `PostgresDdlGeneratorTableTest`.
 - PostgreSQL Reverse-Test:
   - `serial` roundtript als 32-bit generated identifier.
   - `bigserial` roundtript als 64-bit generated identifier.
   - `bigint` ohne Default/Identity bleibt `BigInteger`.
+  - Abgedeckt in `PostgresSchemaReaderTest` und
+    `PostgresSchemaReaderIntegrationTest`.
 - Integrationstest fuer Reverse -> Generate ohne Kollaps von `BIGSERIAL` zu
   `SERIAL`.
 - Integrationstest fuer Reverse -> Generate ohne doppelte Sequence-DDL bei
   `SERIAL`/`BIGSERIAL`/Identity-Spalten.
 - Test fuer eigenstaendige Sequence: nicht an eine Spalte gebundene Sequenzen
   bleiben `CREATE SEQUENCE`.
+  - Abgedeckt in `PostgresSchemaReaderIntegrationTest` und
+    `PostgresDdlGeneratorTableTest`.
 - MySQL-Test fuer `BIGINT AUTO_INCREMENT`.
+  - Abgedeckt in `MysqlTypeMappingTest`, `MysqlSchemaReaderTest`,
+    `MysqlDdlGeneratorTableTest` und `MysqlSchemaReaderIntegrationTest`.
+- SQLite-Test fuer den expliziten Rowid-Vertrag:
+  `BigInteger + Identity` erzeugt `INTEGER PRIMARY KEY AUTOINCREMENT`.
+  - Abgedeckt in `SqliteDdlGeneratorTableTest`.
 
 ---
 
