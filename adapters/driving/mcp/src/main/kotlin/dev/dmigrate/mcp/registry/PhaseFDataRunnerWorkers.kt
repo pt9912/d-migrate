@@ -42,6 +42,50 @@ data class PhaseFDataRunnerDependencies(
     val tempDirectory: Path? = null,
 )
 
+/**
+ * Follow-up AP 2 — rekursiver Cleanup eines Bundle-Extraktions-
+ * Verzeichnisses. Plan §4 fordert "Cleanup im finally-Pfad" für jeden
+ * Bundle-Job, damit Disk-Space nicht zwischen Job-Runs leakt.
+ *
+ * Top-Level statt Worker-Member, weil Detekt sonst das
+ * `TooManyFunctions`-Limit ausschlägt (Worker hat bereits viele
+ * Pipeline-Schritte).
+ */
+internal fun recursivelyDeleteBundleDir(root: Path) {
+    if (!Files.exists(root)) return
+    Files.walk(root).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+}
+
+/**
+ * Follow-up AP 2 — synchron extrahieren und Manifest-Konsistenz
+ * gegen den Caller-supplied `tables`-Payload prüfen. `null` bei
+ * Extraktionsfehler oder bei Tabellen-Drift.
+ */
+internal fun extractBundleArchive(
+    bundleZip: Path,
+    bundleRoot: Path,
+    callerTables: List<String>,
+): BundleExtractionOk? {
+    val outcome = Files.newInputStream(bundleZip).use { stream ->
+        dev.dmigrate.mcp.upload.bundle.BundleExtractor().extract(stream, bundleRoot)
+    }
+    val valid = outcome as? dev.dmigrate.mcp.upload.bundle.BundleExtractionOutcome.Valid ?: return null
+    val callerNorm = callerTables.map { it.lowercase() }.toSortedSet()
+    val manifestNorm = valid.manifest.tables.map { it.name.lowercase() }.toSortedSet()
+    if (callerNorm != manifestNorm) return null
+    return BundleExtractionOk(
+        manifest = valid.manifest,
+        extractedFiles = valid.extractedFiles,
+        manifestFingerprint = valid.manifestFingerprint,
+    )
+}
+
+internal data class BundleExtractionOk(
+    val manifest: dev.dmigrate.server.core.upload.bundle.BundleManifest,
+    val extractedFiles: Map<String, Path>,
+    val manifestFingerprint: String,
+)
+
 internal class McpDataImportJobWorker(
     private val requestPayload: JsonValue.Obj,
     private val principal: PrincipalContext?,
@@ -54,66 +98,154 @@ internal class McpDataImportJobWorker(
         val artifactId = artifactId(job)
         val artifact = dependencies.artifactStore.findById(job.tenantId, artifactId)
             ?: return JobWorkerOutcome.Failed("MCP_ARTIFACT_NOT_FOUND", "Artifact not found: $artifactId")
-        val source = spoolArtifact(artifactId, artifact.managedArtifact.sizeBytes, suffixFor(format()))
+        return if (isBundleImport()) {
+            executeBundleImport(job, artifactId, artifact.managedArtifact.sizeBytes, token)
+        } else {
+            executeSingleFileImport(job, artifactId, artifact.managedArtifact.sizeBytes, token)
+        }
+    }
+
+    private fun executeSingleFileImport(
+        job: JobRecord,
+        artifactId: String,
+        artifactSize: Long,
+        token: dev.dmigrate.core.cancel.CancellationToken,
+    ): JobWorkerOutcome {
+        val source = spoolArtifact(artifactId, artifactSize, suffixFor(format()))
         val schema = spoolSchemaIfPresent(job)
         return try {
             token.throwIfCancellationRequested()
-            val runner = DataImportRunner(
-                targetResolver = { target, _ -> resolveConnection(target, job) },
-                urlParser = ConnectionUrlParser::parse,
-                poolFactory = HikariConnectionPoolFactory::create,
-                writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
-                schemaPreflight = { schemaPath, input, importFormat ->
-                    val schemaFormat = schema?.format ?: schemaPath.toString().substringAfterLast('.', "json")
-                    SchemaRefImportPreflightAdapter.prepare(schemaPath, schemaFormat, input, importFormat)
-                },
-                schemaTargetValidator = SchemaRefImportPreflightAdapter::validateTargetTable,
-                importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
-                    val writerLookup = { dialect: dev.dmigrate.driver.DatabaseDialect ->
-                        DatabaseDriverRegistry.get(dialect).dataWriter()
-                    }
-                    StreamingImporter(
-                        readerFactory = DefaultDataChunkReaderFactory(),
-                        writerLookup = writerLookup,
-                        onTableOpened = callbacks.onTableOpened,
-                    ).import(
-                        pool = ctx.pool,
-                        input = ctx.input,
-                        format = opts.format,
-                        options = opts.options,
-                        readOptions = opts.readOptions,
-                        config = opts.config,
-                        progressReporter = callbacks.progressReporter,
-                        operationId = resume.operationId,
-                        resuming = resume.resuming,
-                        skippedTables = resume.skippedTables,
-                        resumeStateByTable = resume.resumeStateByTable,
-                        onChunkCommitted = callbacks.onChunkCommitted,
-                        onTableCompleted = callbacks.onTableCompleted,
-                        cancellationToken = ctx.cancellationToken,
-                    )
-                },
-                stderr = { },
-            )
-            when (val exit = runner.execute(importRequest(source, schema?.path), token)) {
-                0 -> JobWorkerOutcome.Succeeded()
-                DataImportRunner.CANCELLED_EXIT_CODE -> JobWorkerOutcome.Cancelled("job cancelled")
-                else -> JobWorkerOutcome.Failed("MCP_DATA_IMPORT_FAILED", "data import runner exited with $exit", exit)
-            }
+            val runner = buildRunner(job, schema)
+            runRunnerWithMapping(runner, importRequest(source, schema?.path, table = string("table")), token)
         } finally {
             Files.deleteIfExists(source)
             schema?.path?.let { Files.deleteIfExists(it) }
         }
     }
 
-    private fun importRequest(source: Path, schema: Path?): DataImportRequest =
+    /**
+     * Follow-up AP 2 — Bundle-Import.
+     *
+     * Plan §4 wortlaut: "Bundle-Extraktion erfolgt in ein job-lokales
+     * Temp-Verzeichnis mit Cleanup im finally-Pfad." Pro Manifest-Eintrag
+     * läuft der bestehende [DataImportRunner] mit der Bundle-Datei als
+     * Source und dem Manifest-Tabellennamen als `table`. Eine
+     * fehlgeschlagene Tabelle bricht den Job mit ihrem Exit-Code ab —
+     * die nachfolgenden Tabellen werden nicht angefasst (Plan §4
+     * "stable VALIDATION_ERROR-Details ohne lokale Pfade" für
+     * Inkonsistenzen).
+     */
+    private fun executeBundleImport(
+        job: JobRecord,
+        artifactId: String,
+        artifactSize: Long,
+        token: dev.dmigrate.core.cancel.CancellationToken,
+    ): JobWorkerOutcome {
+        val bundleZip = spoolArtifact(artifactId, artifactSize, ".zip")
+        val bundleRoot = createBundleRoot()
+        val schema = spoolSchemaIfPresent(job)
+        return try {
+            val extraction = extractBundleArchive(
+                bundleZip = bundleZip,
+                bundleRoot = bundleRoot,
+                callerTables = strings("tables").orEmpty(),
+            ) ?: return JobWorkerOutcome.Failed(
+                ERROR_BUNDLE_INVALID,
+                "bundle extraction failed or table drift",
+            )
+            runner@ for (entry in extraction.manifest.tables) {
+                token.throwIfCancellationRequested()
+                val sourcePath = extraction.extractedFiles[entry.path]
+                    ?: return JobWorkerOutcome.Failed(
+                        ERROR_BUNDLE_INVALID,
+                        "manifest entry '${entry.name}' has no extracted bytes",
+                    )
+                val runner = buildRunner(job, schema)
+                val request = importRequest(
+                    source = sourcePath,
+                    schema = schema?.path,
+                    table = entry.name,
+                    formatOverride = extraction.manifest.format,
+                )
+                when (val outcome = runRunnerWithMapping(runner, request, token)) {
+                    is JobWorkerOutcome.Succeeded -> Unit
+                    else -> return outcome
+                }
+            }
+            JobWorkerOutcome.Succeeded()
+        } finally {
+            Files.deleteIfExists(bundleZip)
+            schema?.path?.let { Files.deleteIfExists(it) }
+            recursivelyDeleteBundleDir(bundleRoot)
+        }
+    }
+
+    private fun runRunnerWithMapping(
+        runner: DataImportRunner,
+        request: DataImportRequest,
+        token: dev.dmigrate.core.cancel.CancellationToken,
+    ): JobWorkerOutcome = when (val exit = runner.execute(request, token)) {
+        0 -> JobWorkerOutcome.Succeeded()
+        DataImportRunner.CANCELLED_EXIT_CODE -> JobWorkerOutcome.Cancelled("job cancelled")
+        else -> JobWorkerOutcome.Failed("MCP_DATA_IMPORT_FAILED", "data import runner exited with $exit", exit)
+    }
+
+    private fun buildRunner(
+        job: JobRecord,
+        schema: Spool?,
+    ): DataImportRunner = DataImportRunner(
+        targetResolver = { target, _ -> resolveConnection(target, job) },
+        urlParser = ConnectionUrlParser::parse,
+        poolFactory = HikariConnectionPoolFactory::create,
+        writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
+        schemaPreflight = { schemaPath, input, importFormat ->
+            val schemaFormat = schema?.format ?: schemaPath.toString().substringAfterLast('.', "json")
+            SchemaRefImportPreflightAdapter.prepare(schemaPath, schemaFormat, input, importFormat)
+        },
+        schemaTargetValidator = SchemaRefImportPreflightAdapter::validateTargetTable,
+        importExecutor = buildImportExecutor(),
+        stderr = { },
+    )
+
+    private fun buildImportExecutor(): ImportExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
+        val writerLookup = { dialect: dev.dmigrate.driver.DatabaseDialect ->
+            DatabaseDriverRegistry.get(dialect).dataWriter()
+        }
+        StreamingImporter(
+            readerFactory = DefaultDataChunkReaderFactory(),
+            writerLookup = writerLookup,
+            onTableOpened = callbacks.onTableOpened,
+        ).import(
+            pool = ctx.pool,
+            input = ctx.input,
+            format = opts.format,
+            options = opts.options,
+            readOptions = opts.readOptions,
+            config = opts.config,
+            progressReporter = callbacks.progressReporter,
+            operationId = resume.operationId,
+            resuming = resume.resuming,
+            skippedTables = resume.skippedTables,
+            resumeStateByTable = resume.resumeStateByTable,
+            onChunkCommitted = callbacks.onChunkCommitted,
+            onTableCompleted = callbacks.onTableCompleted,
+            cancellationToken = ctx.cancellationToken,
+        )
+    }
+
+    private fun importRequest(
+        source: Path,
+        schema: Path?,
+        table: String?,
+        formatOverride: String? = null,
+    ): DataImportRequest =
         DataImportRequest(
             target = string("targetConnectionRef"),
             source = source.toString(),
-            format = format(),
+            format = formatOverride ?: format(),
             schema = schema,
-            table = string("table"),
-            tables = strings("tables"),
+            table = table,
+            tables = if (table == null) strings("tables") else null,
             onError = string("onError") ?: "abort",
             onConflict = string("onConflict"),
             triggerMode = string("triggerMode") ?: "fire",
@@ -128,6 +260,15 @@ internal class McpDataImportJobWorker(
             quiet = true,
             noProgress = true,
         )
+
+    private fun isBundleImport(): Boolean =
+        string("_wireArtifactKind") ==
+            ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE
+
+    private fun createBundleRoot(): Path {
+        val baseDir = dependencies.tempDirectory ?: Files.createTempDirectory("mcp-import-bundle-").parent
+        return Files.createTempDirectory(baseDir, "mcp-import-bundle-")
+    }
 
     private fun spoolArtifact(artifactId: String, size: Long, suffix: String): Path {
         val target = tempFile("mcp-import-artifact-", suffix)
@@ -207,6 +348,10 @@ internal class McpDataImportJobWorker(
             authSource = AuthSource.SERVICE_ACCOUNT,
             expiresAt = Instant.MAX,
         )
+
+    companion object {
+        const val ERROR_BUNDLE_INVALID: String = "MCP_BUNDLE_INVALID"
+    }
 }
 
 internal class McpDataTransferJobWorker(
