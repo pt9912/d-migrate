@@ -41,4 +41,21 @@ interface McpService {
 
     @JsonRequest("resources/read")
     fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult>
+
+    /**
+     * Phase G § 6 G.7: MCP-`prompts/list`. Scope-gated auf
+     * `dmigrate:read`. Discovery aller server-seitig registrierten
+     * Prompts.
+     */
+    @JsonRequest("prompts/list")
+    fun promptsList(params: PromptsListParams?): CompletableFuture<PromptsListResult>
+
+    /**
+     * Phase G § 6 G.7: MCP-`prompts/get`. Scope-gated auf
+     * `dmigrate:read`. Validiert Argumente, läuft Hygiene und
+     * liefert die Prompt-Nachrichten zurück. **Keine** versteckte
+     * Tool-Ausführung (Plan §4.5).
+     */
+    @JsonRequest("prompts/get")
+    fun promptsGet(params: PromptsGetParams): CompletableFuture<PromptsGetResult>
 }

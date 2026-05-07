@@ -173,6 +173,11 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "resources/list" to read,
         "resources/templates/list" to read,
         "resources/read" to read,
+        // Phase G § 6 G.7: prompts/list und prompts/get sind
+        // Read-Pfade — Plan §6 G.7 verlangt explizit dmigrate:read,
+        // nicht den fail-closed Fallback dmigrate:admin.
+        "prompts/list" to read,
+        "prompts/get" to read,
         // Read-only tools
         "schema_validate" to read,
         "schema_compare" to read,

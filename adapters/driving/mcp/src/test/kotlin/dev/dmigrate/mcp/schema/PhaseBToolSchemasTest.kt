@@ -20,6 +20,11 @@ private val PROTOCOL_METHODS: Set<String> = setOf(
     "resources/templates/list",
     "resources/read",
     "connections/list",
+    // Phase G § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+    // Protokoll-Slots (im DEFAULT_SCOPE_MAPPING gelistet), nicht
+    // Tools.
+    "prompts/list",
+    "prompts/get",
 )
 
 private fun expectedToolNames(): Set<String> =

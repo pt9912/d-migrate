@@ -46,6 +46,12 @@ object PhaseBRegistries {
         "resources/templates/list",
         "resources/read",
         "connections/list",
+        // Phase G § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+        // Protokoll-Slots, NICHT Tools. Sie laufen ueber den
+        // [PromptsHandler] in [McpServiceImpl], nicht ueber die
+        // Tool-Registry.
+        "prompts/list",
+        "prompts/get",
     )
 
     /**

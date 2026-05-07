@@ -95,6 +95,19 @@ class McpServiceImpl(
      * codec via the Phase-C wiring's keyring.
      */
     private val cursorCodec: dev.dmigrate.mcp.cursor.McpCursorCodec? = null,
+    /**
+     * Phase G § 6 G.7: Prompt-Registry für `prompts/list` und
+     * `prompts/get`. `null` deaktiviert beide Methoden — sie
+     * antworten dann mit JSON-RPC `MethodNotFound`. Bootstrap mit
+     * Phase-G-Wiring liefert eine [dev.dmigrate.mcp.prompts.DefaultPromptRegistry.mandatory].
+     */
+    private val promptRegistry: dev.dmigrate.mcp.prompts.PromptRegistry? = null,
+    /**
+     * Phase G § 6 G.7 + § 6 G.4: Hygiene-Service, der `prompts/get`
+     * über die assemblierte Prompt-Nachricht laufen lässt. Pflicht,
+     * wenn [promptRegistry] gesetzt ist.
+     */
+    private val promptHygieneService: dev.dmigrate.server.application.audit.prompt.PromptHygieneService? = null,
 ) : McpService {
 
     private val negotiated = AtomicReference<String?>(null)
@@ -105,6 +118,12 @@ class McpServiceImpl(
     private val sealedListCursor = cursorCodec?.let {
         dev.dmigrate.mcp.resources.SealedResourcesListCursor(it)
     }
+    private val promptsHandler: dev.dmigrate.mcp.prompts.PromptsHandler? =
+        if (promptRegistry != null && promptHygieneService != null) {
+            dev.dmigrate.mcp.prompts.PromptsHandler(promptRegistry, promptHygieneService)
+        } else {
+            null
+        }
 
     /** Negotiated `protocolVersion` after a successful initialize, or null. */
     fun negotiatedProtocolVersion(): String? = negotiated.get()
@@ -137,6 +156,12 @@ class McpServiceImpl(
             // listChanged stays false until subscriptions ship.
             tools = mapOf("listChanged" to false),
             resources = mapOf("listChanged" to false, "subscribe" to false),
+            // Phase G § 6 G.7: capabilities.prompts wird nur
+            // ausgewiesen, wenn der Bootstrap eine Prompt-Registry
+            // eingehaengt hat. Plan §6 G.7 Akzeptanz: "initialize
+            // enthaelt capabilities.prompts" sobald promptsHandler
+            // verfuegbar ist.
+            prompts = if (promptsHandler != null) mapOf("listChanged" to false) else null,
         )
         val result = InitializeResult(
             protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION,
@@ -460,6 +485,79 @@ class McpServiceImpl(
                 nextCursor = null,
             ),
         )
+    }
+
+    override fun promptsList(params: PromptsListParams?): CompletableFuture<PromptsListResult> {
+        val handler = promptsHandler
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.MethodNotFound.value,
+                        "prompts/list is not enabled on this server",
+                        null,
+                    ),
+                ),
+            )
+        // Plan §6 G.7: prompts/list verlangt dmigrate:read.
+        enforceScope("prompts/list")?.let { return CompletableFuture.failedFuture(it) }
+        return CompletableFuture.completedFuture(handler.list(params))
+    }
+
+    override fun promptsGet(params: PromptsGetParams): CompletableFuture<PromptsGetResult> {
+        val handler = promptsHandler
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(
+                        ResponseErrorCode.MethodNotFound.value,
+                        "prompts/get is not enabled on this server",
+                        null,
+                    ),
+                ),
+            )
+        // Plan §6 G.7: prompts/get verlangt dmigrate:read.
+        enforceScope("prompts/get")?.let { return CompletableFuture.failedFuture(it) }
+        val principal = currentPrincipal.get()
+            ?: return CompletableFuture.failedFuture(
+                ResponseErrorException(
+                    ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
+                ),
+            )
+        return when (val outcome = handler.get(params, principal)) {
+            is dev.dmigrate.mcp.prompts.PromptsLookupOutcome.Found ->
+                CompletableFuture.completedFuture(outcome.result)
+            is dev.dmigrate.mcp.prompts.PromptsLookupOutcome.NotFound ->
+                CompletableFuture.failedFuture(
+                    ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InvalidParams.value,
+                            "unknown prompt '${outcome.name}'",
+                            // Plan §6 G.7: dmigrateCode-Mapping.
+                            mapOf("dmigrateCode" to "RESOURCE_NOT_FOUND"),
+                        ),
+                    ),
+                )
+            is dev.dmigrate.mcp.prompts.PromptsLookupOutcome.InvalidArguments ->
+                CompletableFuture.failedFuture(
+                    ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InvalidParams.value,
+                            "invalid prompt arguments: " +
+                                outcome.violations.joinToString(", ") { "${it.field}: ${it.reason}" },
+                            mapOf("dmigrateCode" to "VALIDATION_ERROR"),
+                        ),
+                    ),
+                )
+            is dev.dmigrate.mcp.prompts.PromptsLookupOutcome.HygieneBlocked ->
+                CompletableFuture.failedFuture(
+                    ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InvalidParams.value,
+                            outcome.publicMessage,
+                            mapOf("dmigrateCode" to "PROMPT_HYGIENE_BLOCKED"),
+                        ),
+                    ),
+                )
+        }
     }
 
     /**
