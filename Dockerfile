@@ -106,6 +106,33 @@ RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
 
 ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
 
+# ---- Stage: golden-update --------------------------------------------------
+# Helper stage for regenerating pinned JSON-Schema golden snapshots after a
+# Phase-B/C/D/E/F/G tool-schema change. Runs the goldenness tests with
+# UPDATE_GOLDEN=true (which makes the test write the regenerated file
+# instead of comparing), then tars all `src/test/resources/golden/**` files
+# so the host can extract them into the source tree without a volume mount.
+#
+# This stage MUST NOT fail on golden drift — `UPDATE_GOLDEN=true` makes the
+# test return successfully after the rewrite, so no `|| true` is needed.
+#
+# Usage (or via `make golden-update`):
+#   docker build --target golden-update -t d-migrate:golden-update .
+#   docker run --rm d-migrate:golden-update | tar xf -
+FROM compile AS golden-update
+
+ENV UPDATE_GOLDEN=true
+
+RUN gradle --no-daemon \
+    :adapters:driving:mcp:test \
+    --tests "*GoldenTest*" \
+    --rerun-tasks
+
+RUN find /src -path "*/src/test/resources/golden/*" -type f \
+      -printf '%P\n' | tar cf /src/goldens.tar -C /src -T -
+
+ENTRYPOINT ["cat", "/src/goldens.tar"]
+
 # ---- Stage: detekt ---------------------------------------------------------
 # Actual static-analysis gate. This stage MUST fail on detekt violations.
 FROM compile AS detekt

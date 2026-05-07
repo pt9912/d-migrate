@@ -22,7 +22,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-coverage-gate docker-smoke docker-gates docker-full-gates clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-coverage-gate docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -48,6 +48,7 @@ help:
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
+		'  make golden-update    Regenerate pinned tool-schema golden snapshots via Docker' \
 		'  make clean            Run Gradle clean' \
 		'' \
 		'Variables:' \
@@ -124,6 +125,14 @@ docker-test:
 
 docker-coverage-gate:
 	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+
+# Regenerate pinned JSON-Schema golden snapshots without volume mounts.
+# Builds the `golden-update` Docker stage (which runs the goldenness tests
+# with UPDATE_GOLDEN=true), then streams the tarball of refreshed
+# `src/test/resources/golden/**` files into the source tree.
+golden-update:
+	$(DOCKER) build --target golden-update -t $(IMAGE):golden-update .
+	$(DOCKER) run --rm $(IMAGE):golden-update | tar xf -
 
 docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
