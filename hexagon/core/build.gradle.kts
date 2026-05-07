@@ -86,6 +86,23 @@ kover {
                     // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
                     "dev.dmigrate.server.core.audit.AuditEvent",
                     "dev.dmigrate.server.core.audit.AuditOutcome",
+                    // Server-core AI types (0.9.6 Phase G G.6.a/b) —
+                    // Datentraeger fuer Outcome-Lifecycle und KI-Artefakt-
+                    // Provenance. Init-Blocks pruefen Form-Invarianten;
+                    // semantische Pfade sind in adapters/driving/mcp und
+                    // hexagon/application abgedeckt. Wildcards umfassen
+                    // den sealed-Marker plus jeden Sub-Typ.
+                    "dev.dmigrate.server.core.ai.AiToolScope",
+                    "dev.dmigrate.server.core.ai.AiToolClaimId",
+                    "dev.dmigrate.server.core.ai.AiToolOutcome",
+                    "dev.dmigrate.server.core.ai.AiToolOutcome\$*",
+                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome",
+                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome\$*",
+                    "dev.dmigrate.server.core.ai.AiArtifactMetadata",
+                    "dev.dmigrate.server.core.ai.AiArtifactProvenance",
+                    "dev.dmigrate.server.core.ai.AiArtifactProvenance\$*",
+                    "dev.dmigrate.server.core.ai.AiWireArtifactKind",
+                    "dev.dmigrate.server.core.ai.AiIntent",
                 )
             }
         }
