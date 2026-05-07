@@ -47,6 +47,17 @@ class UploadInitApprovalFingerprint(
             // einen leeren String "verfaelscht" werden — das Feld wird
             // dann gar nicht in das _bind-Objekt aufgenommen.
             attempt.targetTable?.let { put("targetTable", JsonValue.str(it)) }
+            // Follow-up AP 2: Bundle-Init-Hints werden in den
+            // Approval-Fingerprint eingerechnet, sodass der spaetere
+            // `data_import_start.tables`-Wert mit dem gleichen
+            // Bundle-Vertrag bindet, mit dem `artifact_upload_init`
+            // freigegeben wurde. `intendedTables` wird sortiert/dedupt
+            // serialisiert (Reihenfolge irrelevant fuer Fingerprint).
+            attempt.bundleFormat?.let { put("bundleFormat", JsonValue.str(it)) }
+            attempt.intendedTables?.let { tables ->
+                val normalized = tables.map { it.lowercase() }.distinct().sorted()
+                put("intendedTables", JsonValue.Arr(normalized.map { JsonValue.str(it) }))
+            }
         }
         return payloadFingerprintService.fingerprint(
             scope = FingerprintScope.UPLOAD_INIT,
@@ -79,4 +90,17 @@ data class UploadInitApprovalAttempt(
     val uploadIntent: String,
     val targetTable: String? = null,
     val wireArtifactKind: String? = null,
+    /**
+     * Follow-up AP 2: versionierter Bundle-Format-Hint
+     * (z. B. `seed-bundle.v1.zip`). Bindet die Init-Approval an den
+     * gleichen Bundle-Vertrag, den `data_import_start` spaeter
+     * konsumiert. `null` fuer Single-File-Uploads.
+     */
+    val bundleFormat: String? = null,
+    /**
+     * Follow-up AP 2: per Init-Vertrag deklarierte Zieltabellen fuer
+     * Mehrtabellen-Bundle-Uploads. Reihenfolge ist im Fingerprint
+     * irrelevant (sortiert+dedupt vor dem Hashing).
+     */
+    val intendedTables: List<String>? = null,
 )

@@ -183,6 +183,10 @@ internal class ArtifactUploadInitHandler(
         val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
         val artifactKind = parseArtifactKind(raw)
         val targetTable = raw.optString("targetTable")
+        // Follow-up AP 2: Bundle-Init-Vertrag (Plan §4). bundleFormat ist
+        // pflicht, sobald tables gesetzt ist; targetTable und tables sind
+        // gegenseitig exklusiv.
+        val bundleHints = parseBundleInitHints(raw, targetTable)
         // Phase F § 8.4 (F.4 2/3): `sizeBytes=0` ist nur fuer
         // nicht-Schema-`job_input` als Single-Empty-Segment gueltig
         // (Plan: "leeres finales Segment + Empty-SHA"). Schema-Artefakte
@@ -212,7 +216,9 @@ internal class ArtifactUploadInitHandler(
                 checksumSha256 = checksum,
                 uploadIntent = intent,
                 targetTable = targetTable,
-                wireArtifactKind = parseWireArtifactKind(raw, artifactKind),
+                wireArtifactKind = parseWireArtifactKind(raw, artifactKind, bundleHints),
+                bundleFormat = bundleHints?.bundleFormat,
+                intendedTables = bundleHints?.intendedTables,
             ),
             segmentTotal = policySegmentCount(sizeBytes, limits.maxUploadSegmentBytes),
             now = options.clock.instant(),
@@ -297,7 +303,15 @@ internal class ArtifactUploadInitHandler(
         }
     }
 
-    private fun parseWireArtifactKind(obj: JsonObject, artifactKind: ArtifactKind): String {
+    private fun parseWireArtifactKind(
+        obj: JsonObject,
+        artifactKind: ArtifactKind,
+        bundleHints: BundleInitHints? = null,
+    ): String {
+        // Follow-up AP 2: Bundle-Uploads bekommen einen separaten
+        // Wire-Marker, damit `data_import_start` Bundle- vs. Single-File-
+        // Artefakte ohne metadata-Schnüffeln unterscheiden kann.
+        if (bundleHints != null) return WIRE_KIND_SEED_DATA_BUNDLE
         val raw = obj.optString("artifactKind") ?: return "seed-data"
         val lower = raw.lowercase(Locale.US)
         return when (lower) {
@@ -307,6 +321,82 @@ internal class ArtifactUploadInitHandler(
             else -> artifactKind.name.lowercase(Locale.US)
         }
     }
+
+    /**
+     * Follow-up AP 2 — Bundle-Init-Vertrag.
+     *
+     * Plan §4 wortlaut:
+     *
+     * - `tables`: nicht-leere Liste von Tabellen.
+     * - `bundleFormat`: Pflicht, wenn `tables` gesetzt ist.
+     * - `table` und `tables` bleiben gegenseitig exklusiv.
+     * - `bundleFormat` ist ein versionierter Wert; freie Strings werden
+     *   nicht akzeptiert.
+     */
+    private fun parseBundleInitHints(raw: JsonObject, targetTable: String?): BundleInitHints? {
+        val bundleFormat = raw.optString("bundleFormat")
+        val tablesElement = raw.get("tables")?.takeUnless { it.isJsonNull }
+        if (bundleFormat == null && tablesElement == null) return null
+        validateBundlePresenceAndExclusivity(bundleFormat, tablesElement, targetTable)
+        return BundleInitHints(
+            bundleFormat = bundleFormat!!,
+            intendedTables = parseBundleTablesArray(tablesElement!!),
+        )
+    }
+
+    private fun validateBundlePresenceAndExclusivity(
+        bundleFormat: String?,
+        tablesElement: JsonElement?,
+        targetTable: String?,
+    ) {
+        val violation = when {
+            bundleFormat == null -> ValidationViolation(
+                "bundleFormat",
+                "is required when 'tables' is set",
+            )
+            bundleFormat !in dev.dmigrate.server.core.upload.bundle.BundleFormat.ALL ->
+                ValidationViolation(
+                    "bundleFormat",
+                    "must be one of " +
+                        dev.dmigrate.server.core.upload.bundle.BundleFormat.ALL.joinToString(","),
+                )
+            !targetTable.isNullOrBlank() -> ValidationViolation(
+                "targetTable",
+                "must not be set together with 'tables' (use either single-file or bundle)",
+            )
+            tablesElement == null || !tablesElement.isJsonArray -> ValidationViolation(
+                "tables",
+                "is required when 'bundleFormat' is set; must be an array of strings",
+            )
+            else -> null
+        }
+        if (violation != null) throw ValidationErrorException(listOf(violation))
+    }
+
+    private fun parseBundleTablesArray(tablesElement: JsonElement): List<String> {
+        val arr = tablesElement.asJsonArray
+        val violation = when {
+            arr.isEmpty -> ValidationViolation("tables", "must not be empty")
+            arr.any { entry ->
+                val isString = entry.isJsonPrimitive && entry.asJsonPrimitive.isString
+                !isString || entry.asString.isBlank()
+            } -> ValidationViolation("tables", "items must be non-blank strings")
+            else -> null
+        }
+        if (violation != null) throw ValidationErrorException(listOf(violation))
+        val tables = arr.map { it.asString }
+        if (tables.distinct().size != tables.size) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation("tables", "must not contain duplicates")),
+            )
+        }
+        return tables
+    }
+
+    private data class BundleInitHints(
+        val bundleFormat: String,
+        val intendedTables: List<String>,
+    )
 
     /**
      * Phase F § 8.3: `sizeBytes=0` ist fuer `job_input` ein gueltiger
@@ -511,6 +601,13 @@ internal class ArtifactUploadInitHandler(
 
         /** Phase F § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
+
+        /**
+         * Follow-up AP 2 — Wire-Marker für Bundle-/Mehrtabellen-Uploads.
+         * `data_import_start` akzeptiert dieses Wire-Kind als Bundle-
+         * Quelle; Single-File-Uploads behalten `seed-data`.
+         */
+        const val WIRE_KIND_SEED_DATA_BUNDLE: String = "seed-data-bundle"
 
         /**
          * Phase F § 8.3 (F.3 4/4): Default-MIME-Type fuer den

@@ -140,10 +140,16 @@ class DefaultJobInputFinalizer(
                     contentType = session.mimeType,
                     format = inferFormat(session.mimeType),
                     targetTable = session.targetTable,
+                    // Follow-up AP 2: Bundle-Init-Hints aus der Session
+                    // werden 1:1 in das persistente Artefakt-Metadatum
+                    // uebertragen, sodass `data_import_start.tables`
+                    // gegen den durable Init-Vertrag validiert wird.
+                    targetTables = session.intendedTables,
                     sourceUploadSessionId = session.uploadSessionId,
                     policyFingerprint = session.approvalFingerprint,
                     sizeBytes = payload.sizeBytes,
                     sha256 = payload.sha256,
+                    bundleFormat = session.bundleFormat,
                 ),
             ),
         )

@@ -343,6 +343,12 @@ internal object PhaseBToolSchemas {
                 // Optional Tabellen-Bindung (Single-File / Bundle).
                 "table" to stringField(),
                 "tables" to arrayField("string"),
+                // Follow-up AP 2: Bundle-/Mehrtabellen-Import.
+                // `bundleFormat` ist Pflicht, sobald `tables` gesetzt
+                // ist; akzeptierte Werte sind die versionierten
+                // Bundle-Format-Marker aus
+                // [dev.dmigrate.server.core.upload.bundle.BundleFormat.ALL].
+                "bundleFormat" to stringField(),
                 // Optional Schema-Preflight + Format-Override.
                 "schemaRef" to stringField(),
                 "format" to enumField("json", "yaml", "csv"),

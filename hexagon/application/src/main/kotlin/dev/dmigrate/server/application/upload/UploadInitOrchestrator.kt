@@ -200,6 +200,8 @@ class UploadInitOrchestrator(
             approvalFingerprint = fingerprint,
             targetTable = request.attempt.targetTable,
             wireArtifactKind = request.attempt.wireArtifactKind,
+            bundleFormat = request.attempt.bundleFormat,
+            intendedTables = request.attempt.intendedTables?.map { it.lowercase() }?.distinct()?.sorted(),
         )
         try {
             sessionStore.save(session)

@@ -554,14 +554,14 @@ class DataImportStartHandlerTest : FunSpec({
         fx.jobIdSeq.get() shouldBe 0
     }
 
-    test("tables in Phase F nicht erlaubt (kein Bundle-Format) -> VALIDATION_ERROR") {
+    test("tables ohne bundleFormat -> VALIDATION_ERROR(bundleFormat) (Follow-up AP 2)") {
         val fx = Fixture()
         val tablesArr = JsonArray().apply { add("warehouse.events"); add("warehouse.users") }
         val ex = shouldThrow<ValidationErrorException> {
             fx.handler.handle(ctx(args(extraFields = mapOf("tables" to tablesArr))))
         }
-        ex.violations.first().field shouldBe "tables"
-        ex.violations.first().reason shouldContain "bundle format"
+        ex.violations.first().field shouldBe "bundleFormat"
+        ex.violations.first().reason shouldContain "is required when 'tables' is set"
     }
 
     test("tables als leeres Array -> VALIDATION_ERROR (auch ohne Bundle-Format-Carve-out)") {

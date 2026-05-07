@@ -218,16 +218,13 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 6.1 (F.7 3/5): table/tables-Topologie.
+     * Phase F § 6.1 (F.7 3/5) + Follow-up AP 2 — table/tables-Topologie.
      *
      * - Beide gleichzeitig: VALIDATION_ERROR (mehrdeutig).
-     * - `tables`: in Phase F nicht erlaubt — Plan § 6.1 wortlaeufig
-     *   "ImportInput.Directory und tables fuer Mehrtabellenimporte
-     *   sind in Phase F nur erlaubt, wenn ein Bundle-Format ...
-     *   explizit eingefuehrt wird. Solange dieses Bundle-Format
-     *   nicht definiert ist, sind tables und Directory-/
-     *   Mehrtabellen-Topologien fuer Upload-Importe
-     *   VALIDATION_ERROR." `table` allein bleibt zulaessig.
+     * - Follow-up AP 2: `tables` ist erlaubt, wenn `bundleFormat`
+     *   gesetzt ist und einen versionierten Wert aus
+     *   [BundleFormat.ALL] trägt. Ohne `bundleFormat` bleibt `tables`
+     *   `VALIDATION_ERROR`.
      * - `tables` als leeres Array oder mit leeren Strings:
      *   VALIDATION_ERROR (Plan: "leere oder syntaktisch ungueltige
      *   tables -> VALIDATION_ERROR").
@@ -235,46 +232,66 @@ internal class DataImportStartHandler(
     private fun validateTableTopology(args: JsonObject) {
         val table = args.optString("table")
         val tablesElement = args.get("tables")?.takeUnless { it.isJsonNull }
+        val bundleFormat = args.optString("bundleFormat")
 
-        if (!table.isNullOrBlank() && tablesElement != null) {
-            throw ValidationErrorException(
-                listOf(ValidationViolation(
-                    "table",
-                    "'table' and 'tables' are mutually exclusive",
-                )),
-            )
-        }
+        validateTableExclusivity(table, tablesElement, bundleFormat)
         if (tablesElement != null) {
-            // Plan § 6.1: Phase F hat noch kein Bundle-Format ->
-            // `tables` immer abweisen. Defensiv inklusive Form-
-            // Check (leere Liste / leere Strings).
-            if (!tablesElement.isJsonArray) {
-                throw ValidationErrorException(
-                    listOf(ValidationViolation("tables", "must be an array of strings")),
-                )
-            }
-            val arr = tablesElement.asJsonArray
-            if (arr.isEmpty) {
-                throw ValidationErrorException(
-                    listOf(ValidationViolation("tables", "must not be empty")),
-                )
-            }
-            arr.forEach { entry ->
+            validateTablesArrayShape(tablesElement)
+            validateBundleFormatPresence(bundleFormat)
+        }
+    }
+
+    private fun validateTableExclusivity(
+        table: String?,
+        tablesElement: com.google.gson.JsonElement?,
+        bundleFormat: String?,
+    ) {
+        val violation = when {
+            !table.isNullOrBlank() && tablesElement != null -> ValidationViolation(
+                "table", "'table' and 'tables' are mutually exclusive",
+            )
+            !table.isNullOrBlank() && !bundleFormat.isNullOrBlank() -> ValidationViolation(
+                "bundleFormat",
+                "must not be combined with 'table' — use 'tables' for bundle imports",
+            )
+            else -> null
+        }
+        if (violation != null) throw ValidationErrorException(listOf(violation))
+    }
+
+    private fun validateTablesArrayShape(tablesElement: com.google.gson.JsonElement) {
+        val violation = when {
+            !tablesElement.isJsonArray -> ValidationViolation("tables", "must be an array of strings")
+            tablesElement.asJsonArray.isEmpty -> ValidationViolation("tables", "must not be empty")
+            tablesElement.asJsonArray.any { entry ->
                 val isString = entry.isJsonPrimitive && entry.asJsonPrimitive.isString
-                if (!isString || entry.asString.isBlank()) {
-                    throw ValidationErrorException(
-                        listOf(ValidationViolation("tables", "items must be non-blank strings")),
-                    )
-                }
-            }
+                !isString || entry.asString.isBlank()
+            } -> ValidationViolation("tables", "items must be non-blank strings")
+            else -> null
+        }
+        if (violation != null) throw ValidationErrorException(listOf(violation))
+        val items = tablesElement.asJsonArray.map { it.asString }
+        if (items.distinct().size != items.size) {
             throw ValidationErrorException(
-                listOf(ValidationViolation(
-                    "tables",
-                    "Bundle-/Directory-Imports require an explicit bundle format " +
-                        "(not yet defined in Phase F); use 'table' for single-file artifacts",
-                )),
+                listOf(ValidationViolation("tables", "must not contain duplicates")),
             )
         }
+    }
+
+    private fun validateBundleFormatPresence(bundleFormat: String?) {
+        val violation = when {
+            bundleFormat.isNullOrBlank() -> ValidationViolation(
+                "bundleFormat", "is required when 'tables' is set",
+            )
+            bundleFormat !in dev.dmigrate.server.core.upload.bundle.BundleFormat.ALL ->
+                ValidationViolation(
+                    "bundleFormat",
+                    "must be one of " +
+                        dev.dmigrate.server.core.upload.bundle.BundleFormat.ALL.joinToString(","),
+                )
+            else -> null
+        }
+        if (violation != null) throw ValidationErrorException(listOf(violation))
     }
 
     /**
@@ -373,7 +390,7 @@ internal class DataImportStartHandler(
             )
         }
         when (metadata.wireArtifactKind) {
-            "seed-data", "generic" -> Unit
+            "seed-data", "generic", ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE -> Unit
             else -> throw ValidationErrorException(
                 listOf(ValidationViolation(
                     "artifactId",
@@ -396,6 +413,14 @@ internal class DataImportStartHandler(
     }
 
     private fun validateFormatCompatibility(args: JsonObject, metadata: ArtifactUploadMetadata): String {
+        // Follow-up AP 2: Bundle-Imports tragen ihr Daten-Format im
+        // Manifest, nicht im MIME-Type. Der Bundle-Marker spezifiziert
+        // ZIP-Container; das `format`-Wire-Argument wird ignoriert
+        // (Caller liefert ggf. den per-Bundle-Format-Hint, der vom
+        // Runner aus dem Manifest verifiziert wird).
+        if (metadata.wireArtifactKind == ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE) {
+            return metadata.bundleFormat ?: dev.dmigrate.server.core.upload.bundle.BundleFormat.SEED_BUNDLE_V1_ZIP
+        }
         val explicitFormat = args.optString("format")?.lowercase(Locale.US)
         if (metadata.wireArtifactKind == "generic" && explicitFormat == null) {
             throw ValidationErrorException(
@@ -432,6 +457,13 @@ internal class DataImportStartHandler(
     }
 
     private fun validateTargetTable(args: JsonObject, metadata: ArtifactUploadMetadata) {
+        // Follow-up AP 2: für Bundle-Artefakte wird `tables` (Plural) gegen
+        // die persistierten `targetTables` aus der Init-Session validiert;
+        // `table` (Singular) ist hier verboten.
+        if (metadata.wireArtifactKind == ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE) {
+            validateBundleTables(args, metadata)
+            return
+        }
         val requested = args.optString("table")
         val persisted = metadata.targetTable
         if (!requested.isNullOrBlank() && !persisted.isNullOrBlank() && requested != persisted) {
@@ -449,6 +481,65 @@ internal class DataImportStartHandler(
                     "is required when upload metadata has no targetTable",
                 )),
             )
+        }
+    }
+
+    /**
+     * Follow-up AP 2 — Bundle-Tabellen-Konsistenz.
+     *
+     * Plan §4 wortlaut: "`targetTables` in `ArtifactUploadMetadata` muss
+     * mit Manifest und Tool-`tables` konsistent sein, falls der Upload
+     * bereits Tabellenbindung mitbringt." Diese Validierung deckt den
+     * Tool-vs-Init-Vertrag; die Manifest-Konsistenz wird im Runner
+     * geprüft, sobald das Bundle extrahiert ist.
+     */
+    private fun validateBundleTables(args: JsonObject, metadata: ArtifactUploadMetadata) {
+        val singleTable = args.optString("table")
+        if (!singleTable.isNullOrBlank()) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "table",
+                    "must not be set for bundle artifacts (use 'tables')",
+                )),
+            )
+        }
+        val tablesElement = args.get("tables")?.takeUnless { it.isJsonNull }
+            ?: throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "tables",
+                    "is required for bundle artifacts (wireArtifactKind=${metadata.wireArtifactKind})",
+                )),
+            )
+        val requested = tablesElement.asJsonArray.map { it.asString }
+        val callerBundleFormat = args.optString("bundleFormat")
+        if (callerBundleFormat.isNullOrBlank()) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "bundleFormat",
+                    "is required for bundle artifacts",
+                )),
+            )
+        }
+        if (metadata.bundleFormat != null && metadata.bundleFormat != callerBundleFormat) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "bundleFormat",
+                    "must match upload bundleFormat '${metadata.bundleFormat}'",
+                )),
+            )
+        }
+        val persistedTables = metadata.targetTables
+        if (persistedTables != null) {
+            val callerNorm = requested.map { it.lowercase(Locale.US) }.toSortedSet()
+            val initNorm = persistedTables.map { it.lowercase(Locale.US) }.toSortedSet()
+            if (callerNorm != initNorm) {
+                throw ValidationErrorException(
+                    listOf(ValidationViolation(
+                        "tables",
+                        "must match upload intendedTables (case-insensitive)",
+                    )),
+                )
+            }
         }
     }
 
@@ -592,6 +683,23 @@ internal class DataImportStartHandler(
         enriched.addProperty("format", effectiveFormat)
         if (enriched.optString("table").isNullOrBlank()) {
             metadata.targetTable?.let { enriched.addProperty("table", it) }
+        }
+        // Follow-up AP 2: Bundle-Felder kanonisch in den Fingerprint
+        // einrechnen (sortiert + lowercased), damit identische Tabellen-
+        // Listen in unterschiedlicher Reihenfolge denselben Fingerprint
+        // ergeben.
+        if (metadata.wireArtifactKind == ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE) {
+            val tablesElement = enriched.get("tables")
+            if (tablesElement != null && tablesElement.isJsonArray) {
+                val normalized = tablesElement.asJsonArray
+                    .map { it.asString.lowercase(Locale.US) }
+                    .distinct()
+                    .sorted()
+                val canonical = com.google.gson.JsonArray()
+                normalized.forEach { canonical.add(it) }
+                enriched.add("tables", canonical)
+            }
+            metadata.bundleFormat?.let { enriched.addProperty("_bundleFormat", it) }
         }
         enriched.addProperty("_artifactSha256", record.managedArtifact.sha256)
         enriched.addProperty("_artifactMimeType", record.managedArtifact.contentType)

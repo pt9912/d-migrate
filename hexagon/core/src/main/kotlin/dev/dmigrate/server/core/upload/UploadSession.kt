@@ -123,4 +123,27 @@ data class UploadSession(
      * this value in [dev.dmigrate.server.core.artifact.ArtifactUploadMetadata].
      */
     val wireArtifactKind: String? = null,
+    /**
+     * Follow-up AP 2: Bundle-Init-Hint. Wenn der Caller per
+     * `artifact_upload_init` ein versioniertes Seed-Bundle ankündigt
+     * (Plan §4 verbindlicher `bundleFormat`-Wert wie
+     * `seed-bundle.v1.zip`), bindet diese Session-Spalte den
+     * Init-Vertrag durable an das spätere Finalisat. Der
+     * [dev.dmigrate.mcp.upload.JobInputFinalizer] propagiert den Wert
+     * in `ArtifactUploadMetadata.bundleFormat`. `null` für
+     * Single-File-Uploads.
+     */
+    val bundleFormat: String? = null,
+    /**
+     * Follow-up AP 2: per Init-Vertrag deklarierte Zieltabellen für
+     * einen Mehrtabellen-Bundle-Upload. Der spätere
+     * `data_import_start.tables` muss mit diesem persistierten Set
+     * übereinstimmen — andernfalls liefert der Import-Handler
+     * `VALIDATION_ERROR` oder bei gleichem `idempotencyKey` mit
+     * abweichendem Fingerprint `IDEMPOTENCY_CONFLICT`. Die
+     * Reihenfolge ist normalisiert (sortiert, Duplikate entfernt),
+     * sodass `["a","b"]` und `["b","a"]` denselben Init-Fingerprint
+     * ergeben. `null` für Single-File-Uploads.
+     */
+    val intendedTables: List<String>? = null,
 )
