@@ -12,7 +12,7 @@ import java.nio.file.Path
  * to schema definitions, and returns a topologically sorted order
  * based on FK dependencies.
  */
-internal object ImportDirectoryResolver {
+object ImportDirectoryResolver {
 
     fun resolveTableOrder(
         schemaPath: Path,

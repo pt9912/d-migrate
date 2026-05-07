@@ -98,4 +98,123 @@ class McpServerStateConfigResolverTest : FunSpec({
 
         failure.message shouldContain "server.state.jdbcUrl is required"
     }
+
+    test("rejects malformed YAML shapes and field types") {
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig("- nope\n"),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "top-level YAML must be a mapping"
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: jdbc:postgresql://localhost/db
+                        hikari: 7
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "server.state.hikari"
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: 7
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "server.state.jdbcUrl must be a string"
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: jdbc:postgresql://localhost/db
+                        hikari:
+                          maximumPoolSize: nope
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "maximumPoolSize must be an integer"
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: jdbc:postgresql://localhost/db
+                        migrations:
+                          auto: maybe
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "migrations.auto must be a boolean"
+    }
+
+    test("expands env refs and rejects missing or empty refs") {
+        val expanded = McpServerStateConfigResolver(
+            configPath = tempConfig(
+                """
+                server:
+                  state:
+                    jdbcUrl: ${'$'}{STATE_JDBC_URL}
+                    hikari:
+                      connectionTimeoutMs: ${'$'}{STATE_TIMEOUT}
+                    migrations:
+                      auto: off
+                """.trimIndent(),
+            ),
+            envLookup = { name ->
+                when (name) {
+                    "STATE_JDBC_URL" -> "jdbc:postgresql://env/db"
+                    "STATE_TIMEOUT" -> "1234"
+                    else -> null
+                }
+            },
+        ).resolve()
+
+        expanded!!.jdbcUrl shouldBe "jdbc:postgresql://env/db"
+        expanded.connectionTimeoutMs shouldBe 1234
+        expanded.migrationsAuto shouldBe false
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: ${'$'}{}
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "empty env reference"
+
+        shouldThrow<McpServerStateConfigError> {
+            McpServerStateConfigResolver(
+                configPath = tempConfig(
+                    """
+                    server:
+                      state:
+                        jdbcUrl: ${'$'}{MISSING_STATE_URL}
+                    """.trimIndent(),
+                ),
+                envLookup = { null },
+            ).resolve()
+        }.message shouldContain "missing environment variable"
+    }
 })

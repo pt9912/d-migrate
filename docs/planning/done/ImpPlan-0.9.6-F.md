@@ -16,13 +16,12 @@
 > `AuditFields.resourceRefs`. F.10 zieht Specs (mcp-server.md +
 > ki-mcp.md), Tool-Schemas, Beispiele und Integrationstests
 > (stdio-/HTTP-Multi-Segment-Upload, Import/Transfer-Roundtrip)
-> nach. Plan-Carve-outs aus F.5/F.7/F.8/F.9: Init-Orchestrator-
-> Wiring in PhaseCRegistries, administrative Abort-Pipeline-
-> Wiring, `wireArtifactKind`/`format-mimeType`-Kompatibilitaet,
-> Filter-DSL-Kanonisierung im Transfer-Fingerprint, `truncate=true`
-> im Policy-Fingerprint, Retention-Cleanup-Release fuer
-> `STORED_ARTIFACT_BYTES` und `preAbortState`/`preAbortBytes` im
-> AbortOutcome — alle bewusst Folge-AP / Phase-G-Concern.
+> nach. Die frueheren Plan-Carve-outs aus F.5/F.7/F.8/F.9
+> (produktives Registry-Wiring, policy-pflichtige Quota-Leases,
+> administrative Abort-Pipeline, Artefaktformat-Kompatibilitaet,
+> Transfer-Filter-Kanonisierung, Retention-Cleanup-Release,
+> AbortOutcome-State/Bytes und `schemaRef`-Import-Preflight) sind
+> mit dem Phase-F-Abschluss geschlossen.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.5, Abschnitt 4.6, Abschnitt 5.4, Abschnitt 6.1a,
 > Abschnitt 6.7, Abschnitt 6.8, Abschnitt 8 Phase F, Abschnitt 9.1,

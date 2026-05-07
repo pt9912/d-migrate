@@ -9,7 +9,7 @@ import dev.dmigrate.driver.data.TargetColumn
  * definition before import. Checks column presence, nullability, and
  * type compatibility.
  */
-internal object ImportTableValidator {
+object ImportTableValidator {
 
     fun validateTargetTable(
         schema: SchemaDefinition,

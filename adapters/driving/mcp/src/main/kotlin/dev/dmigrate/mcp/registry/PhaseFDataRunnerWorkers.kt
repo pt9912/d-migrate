@@ -5,12 +5,10 @@ import dev.dmigrate.cli.commands.DataImportRunner
 import dev.dmigrate.cli.commands.DataTransferRequest
 import dev.dmigrate.cli.commands.DataTransferRunner
 import dev.dmigrate.cli.commands.ImportExecutor
-import dev.dmigrate.cli.commands.SchemaPreflightResult
 import dev.dmigrate.cli.commands.parseFilter
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import dev.dmigrate.server.application.fingerprint.JsonValue
@@ -65,16 +63,11 @@ internal class McpDataImportJobWorker(
                 urlParser = ConnectionUrlParser::parse,
                 poolFactory = HikariConnectionPoolFactory::create,
                 writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
-                schemaPreflight = { schemaPath, input, _ ->
+                schemaPreflight = { schemaPath, input, importFormat ->
                     val schemaFormat = schema?.format ?: schemaPath.toString().substringAfterLast('.', "json")
-                    SchemaPreflightResult(
-                        input = input,
-                        schema = Files.newInputStream(schemaPath).use { stream ->
-                            SchemaFileResolver.codecForFormat(schemaFormat).read(stream)
-                        },
-                    )
+                    SchemaRefImportPreflightAdapter.prepare(schemaPath, schemaFormat, input, importFormat)
                 },
-                schemaTargetValidator = { _, _, _ -> },
+                schemaTargetValidator = SchemaRefImportPreflightAdapter::validateTargetTable,
                 importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                     val writerLookup = { dialect: dev.dmigrate.driver.DatabaseDialect ->
                         DatabaseDriverRegistry.get(dialect).dataWriter()
