@@ -145,38 +145,25 @@ internal class McpDataImportJobWorker(
         val bundleRoot = createBundleRoot()
         val schema = spoolSchemaIfPresent(job)
         return try {
-            val extraction = extractBundleArchive(
+            BundleImportPipeline().execute(
                 bundleZip = bundleZip,
                 bundleRoot = bundleRoot,
                 callerTables = strings("tables").orEmpty(),
-            ) ?: return JobWorkerOutcome.Failed(
-                ERROR_BUNDLE_INVALID,
-                "bundle extraction failed or table drift",
-            )
-            runner@ for (entry in extraction.manifest.tables) {
-                token.throwIfCancellationRequested()
-                val sourcePath = extraction.extractedFiles[entry.path]
-                    ?: return JobWorkerOutcome.Failed(
-                        ERROR_BUNDLE_INVALID,
-                        "manifest entry '${entry.name}' has no extracted bytes",
+                cancellationToken = token,
+                importTable = { sourcePath, table, format ->
+                    val runner = buildRunner(job, schema)
+                    val request = importRequest(
+                        source = sourcePath,
+                        schema = schema?.path,
+                        table = table,
+                        formatOverride = format,
                     )
-                val runner = buildRunner(job, schema)
-                val request = importRequest(
-                    source = sourcePath,
-                    schema = schema?.path,
-                    table = entry.name,
-                    formatOverride = extraction.manifest.format,
-                )
-                when (val outcome = runRunnerWithMapping(runner, request, token)) {
-                    is JobWorkerOutcome.Succeeded -> Unit
-                    else -> return outcome
-                }
-            }
-            JobWorkerOutcome.Succeeded()
+                    runRunnerWithMapping(runner, request, token)
+                },
+            )
         } finally {
             Files.deleteIfExists(bundleZip)
             schema?.path?.let { Files.deleteIfExists(it) }
-            recursivelyDeleteBundleDir(bundleRoot)
         }
     }
 
@@ -349,9 +336,6 @@ internal class McpDataImportJobWorker(
             expiresAt = Instant.MAX,
         )
 
-    companion object {
-        const val ERROR_BUNDLE_INVALID: String = "MCP_BUNDLE_INVALID"
-    }
 }
 
 internal class McpDataTransferJobWorker(
