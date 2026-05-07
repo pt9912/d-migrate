@@ -75,6 +75,14 @@ class AiToolOrchestrator(
         )
         return when (acquire) {
             is AiToolAcquireOutcome.Existing -> projectExisting(acquire.outcome)
+            is AiToolAcquireOutcome.ExistingRetryable ->
+                AiToolDispatchOutcome.WireFailure(
+                    toolErrorCode = acquire.outcome.toolErrorCode,
+                    scrubbedMessage = acquire.outcome.scrubbedMessage,
+                    replayed = true,
+                    retryable = true,
+                    details = acquire.outcome.details,
+                )
             is AiToolAcquireOutcome.InProgress ->
                 AiToolDispatchOutcome.WireFailure(
                     toolErrorCode = ToolErrorCode.OPERATION_TIMEOUT,

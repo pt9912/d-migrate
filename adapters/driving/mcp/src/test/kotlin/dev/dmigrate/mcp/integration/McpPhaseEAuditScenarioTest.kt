@@ -144,20 +144,16 @@ class McpPhaseEAuditScenarioTest : FunSpec({
 
     test("job_cancel auf unbekannten jobId: AuditEvent mit FAILURE (RESOURCE_NOT_FOUND ueber direkte Error-Outcome)") {
         // job_cancel mappt NotFound auf ToolCallOutcome.Error direkt
-        // (nicht via Exception). AuditScope catcht keine Exception, sieht
-        // also outcome=success — aber der Wire-Output ist isError=true.
-        // Dieses Verhalten ist konsistent mit dem Phase-B-Modell:
-        // ToolCallOutcome.Error wird als "successful Tool-Run that
-        // returned an error envelope" gewertet (kein Exception-Throw).
-        // Dokumentiert das Verhalten als Pin.
+        // (nicht via Exception). McpServiceImpl setzt den Fehlercode
+        // trotzdem in AuditFields, damit direkte Error-Outcomes als
+        // Audit-Failure sichtbar bleiben.
         val fx = Fixture()
         val args = JsonObject().apply { addProperty("jobId", "j-missing") }
         fx.service.toolsCall(ToolsCallParams("job_cancel", args)).get()
         val events = fx.auditSink.recorded()
         events shouldHaveSize 1
-        // ToolCallOutcome.Error -> AuditScope sieht keine Exception, Outcome=SUCCESS.
-        // Wire-Output isError=true ist davon entkoppelt.
-        events.first().outcome shouldBe AuditOutcome.SUCCESS
+        events.first().outcome shouldBe AuditOutcome.FAILURE
+        events.first().errorCode shouldBe ToolErrorCode.RESOURCE_NOT_FOUND
         events.first().toolName shouldBe "job_cancel"
     }
 

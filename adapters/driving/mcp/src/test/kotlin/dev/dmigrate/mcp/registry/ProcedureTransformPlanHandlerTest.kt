@@ -46,6 +46,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Phase G § 6 G.6 (G.6.d) — Akzeptanztests fuer den
@@ -437,6 +438,41 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         )
         val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
         err.envelope.code shouldBe ToolErrorCode.OPERATION_TIMEOUT
+    }
+
+    test("Provider-Failure (TIMEOUT) retry mit gleichem Payload replayt ohne zweiten Provider-Aufruf") {
+        val calls = AtomicInteger(0)
+        val failing = AiProviderPort {
+            calls.incrementAndGet()
+            AiProviderResult.Failure(
+                error = AiProviderError.TIMEOUT,
+                message = "simulated timeout",
+            )
+        }
+        val fx = Fixture(provider = failing)
+        fx.seedSchema("schema-1")
+        val args = """{"approvalKey":"k-timeout-replay","targetDialect":"POSTGRESQL",""" +
+            """"schemaRef":"dmigrate://tenants/acme/schemas/schema-1","procedureName":"p"}"""
+        val first = fx.handler.handle(ctx(args)).shouldBeInstanceOf<ToolCallOutcome.Error>()
+        val second = fx.handler.handle(ctx(args)).shouldBeInstanceOf<ToolCallOutcome.Error>()
+
+        first.envelope.code shouldBe ToolErrorCode.OPERATION_TIMEOUT
+        second.envelope.code shouldBe ToolErrorCode.OPERATION_TIMEOUT
+        calls.get() shouldBe 1
+    }
+
+    test("Provider-Konfigurationsfehler gewinnt vor Hygiene und Quota") {
+        val fx = Fixture(providerCallLimit = 0)
+        fx.seedSchema("schema-1")
+        val outcome = fx.handler.handle(
+            ctx(
+                """{"approvalKey":"k-provider-before-hygiene","targetDialect":"POSTGRESQL","providerId":"openai",""" +
+                    """"schemaRef":"dmigrate://tenants/acme/schemas/schema-1","procedureName":"p",""" +
+                    """"rules":{"note":"secret_key=abcdefghijklmnop"}}""",
+            ),
+        )
+        val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        err.envelope.code shouldBe ToolErrorCode.FORBIDDEN_PRINCIPAL
     }
 
     test("Plan §7.4 Output-Hygiene: Provider liefert API-Key-Pattern -> PROMPT_HYGIENE_BLOCKED") {

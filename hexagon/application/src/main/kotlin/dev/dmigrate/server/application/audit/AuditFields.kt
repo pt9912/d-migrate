@@ -10,4 +10,5 @@ package dev.dmigrate.server.application.audit
 class AuditFields {
     var payloadFingerprint: String? = null
     var resourceRefs: List<String> = emptyList()
+    var errorCode: dev.dmigrate.server.core.error.ToolErrorCode? = null
 }

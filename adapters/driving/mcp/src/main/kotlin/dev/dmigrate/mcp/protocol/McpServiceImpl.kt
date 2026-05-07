@@ -287,7 +287,10 @@ class McpServiceImpl(
                 content = outcome.content.map(::toWireContent),
                 isError = false,
             )
-            is ToolCallOutcome.Error -> errorEnvelopeResult(outcome.envelope)
+            is ToolCallOutcome.Error -> {
+                context.auditFields.errorCode = outcome.envelope.code
+                errorEnvelopeResult(outcome.envelope)
+            }
         }
     }
 

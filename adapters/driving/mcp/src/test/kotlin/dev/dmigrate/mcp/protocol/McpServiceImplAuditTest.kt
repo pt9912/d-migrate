@@ -137,6 +137,23 @@ class McpServiceImplAuditTest : FunSpec({
         event.errorCode shouldBe ToolErrorCode.POLICY_DENIED
     }
 
+    test("Phase G: a returned ToolCallOutcome.Error emits FAILURE with the tool error code") {
+        val handler = ToolHandler {
+            ToolCallOutcome.Error(
+                dev.dmigrate.server.core.error.ToolErrorEnvelope(
+                    code = ToolErrorCode.PROMPT_HYGIENE_BLOCKED,
+                    message = "secret pattern detected",
+                    requestId = "req-fixed",
+                ),
+            )
+        }
+        val f = fixture(handler = handler)
+        f.sut.toolsCall(ToolsCallParams(name = "test_tool")).get()
+        val event = f.sink.recorded().single()
+        event.outcome shouldBe AuditOutcome.FAILURE
+        event.errorCode shouldBe ToolErrorCode.PROMPT_HYGIENE_BLOCKED
+    }
+
     test("AP 6.20: a non-ApplicationException Throwable emits FAILURE with INTERNAL_AGENT_ERROR") {
         val handler = ToolHandler {
             throw IllegalStateException("boom")

@@ -209,6 +209,15 @@ sealed interface AiToolAcquireOutcome {
         }
     }
 
+    data class ExistingRetryable(
+        override val scope: AiToolScope,
+        val outcome: AiToolOutcome.FailedRetryable,
+    ) : AiToolAcquireOutcome {
+        init {
+            require(outcome.scope == scope) { "outcome scope must match" }
+        }
+    }
+
     data class InProgress(
         override val scope: AiToolScope,
         val leaseExpiresAt: Instant,

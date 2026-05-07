@@ -54,7 +54,7 @@ class AuditScope(
             errorCode = ToolErrorCode.INTERNAL_AGENT_ERROR
             throw ex
         } finally {
-            sink.emit(buildEvent(context, fields, errorCode, startedAt))
+            sink.emit(buildEvent(context, fields, fields.errorCode ?: errorCode, startedAt))
         }
     }
 

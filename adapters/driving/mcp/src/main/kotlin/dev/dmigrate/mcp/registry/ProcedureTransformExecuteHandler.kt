@@ -246,35 +246,11 @@ internal class ProcedureTransformExecuteHandler(
 
         decidePolicyOrFail(parsed, envelope, payloadFingerprint, planResolution, claim)?.let { return it }
 
-        // Plan §6 G.8: Provider-Quota VOR Provider-Resolution +
-        // Hygiene + Provider-Aufruf reservieren. RATE_LIMITED darf
-        // weder Secrets lesen, noch einen Provider-Client erzeugen,
-        // noch den Provider aufrufen.
-        val quotaKey = QuotaKey(
-            tenantId = envelope.tenantId,
-            dimension = QuotaDimension.PROVIDER_CALLS,
-            principalId = envelope.callerId,
-            operation = envelope.toolName,
-        )
-        when (val outcome = quotaService.reserve(quotaKey, 1)) {
-            is QuotaOutcome.RateLimited -> return AiToolWorkResult.FailedRetryable(
-                ToolErrorCode.RATE_LIMITED,
-                "provider quota exceeded (${outcome.current}/${outcome.limit}, " +
-                    "retryAfter=${outcome.retryAfter.seconds}s)",
-            )
-            is QuotaOutcome.Granted -> Unit
-        }
-        val reservation = QuotaReservation(quotaKey, 1)
-
-        return try {
-            performAfterQuota(parsed, principal, envelope, payloadFingerprint, planResolution)
-        } finally {
-            quotaService.release(reservation)
-        }
+        return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, planResolution)
     }
 
     @Suppress("ReturnCount", "LongParameterList")
-    private fun performAfterQuota(
+    private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,
         envelope: AiToolEnvelope,
@@ -491,20 +467,41 @@ internal class ProcedureTransformExecuteHandler(
             )
         }
         val allow = hygiene as PromptHygieneResult.Allow
-        val providerResult = resolved.port.invoke(
-            AiProviderRequest(
-                prompt = allow.sanitizedPrompt,
-                model = parsed.model,
-                promptFingerprint = allow.promptFingerprint,
-                payloadFingerprint = allow.payloadFingerprint,
-                timeout = cfg.defaultTimeout,
-                maxOutputBytes = cfg.maxOutputBytes,
-            ),
+        val quotaKey = QuotaKey(
+            tenantId = envelope.tenantId,
+            dimension = QuotaDimension.PROVIDER_CALLS,
+            principalId = envelope.callerId,
+            operation = envelope.toolName,
         )
-        val success = when (providerResult) {
-            is AiProviderResult.Failure ->
-                return ProviderInvocation.Failure(mapProviderFailure(providerResult))
-            is AiProviderResult.Success -> providerResult
+        when (val outcome = quotaService.reserve(quotaKey, 1)) {
+            is QuotaOutcome.RateLimited -> return ProviderInvocation.Failure(
+                AiToolWorkResult.FailedRetryable(
+                    ToolErrorCode.RATE_LIMITED,
+                    "provider quota exceeded (${outcome.current}/${outcome.limit}, " +
+                        "retryAfter=${outcome.retryAfter.seconds}s)",
+                ),
+            )
+            is QuotaOutcome.Granted -> Unit
+        }
+        val reservation = QuotaReservation(quotaKey, 1)
+        val success = try {
+            val providerResult = resolved.port.invoke(
+                AiProviderRequest(
+                    prompt = allow.sanitizedPrompt,
+                    model = parsed.model,
+                    promptFingerprint = allow.promptFingerprint,
+                    payloadFingerprint = allow.payloadFingerprint,
+                    timeout = cfg.defaultTimeout,
+                    maxOutputBytes = cfg.maxOutputBytes,
+                ),
+            )
+            when (providerResult) {
+                is AiProviderResult.Failure ->
+                    return ProviderInvocation.Failure(mapProviderFailure(providerResult))
+                is AiProviderResult.Success -> providerResult
+            }
+        } finally {
+            quotaService.release(reservation)
         }
         // Plan §7.4: Output-Hygiene über die Provider-Antwort.
         val outputCheck = hygieneService.sanitize(

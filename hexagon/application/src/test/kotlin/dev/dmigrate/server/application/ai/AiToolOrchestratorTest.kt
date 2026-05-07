@@ -127,6 +127,29 @@ class AiToolOrchestratorTest : FunSpec({
         workCalled.get() shouldBe 0
     }
 
+    test("Plan §6 G.6: ExistingRetryable -> WireFailure(replayed=true), work() wird NICHT aufgerufen") {
+        val existing = AiToolOutcome.FailedRetryable(
+            scope = envelope().scope(),
+            payloadFingerprint = payloadFp,
+            toolErrorCode = ToolErrorCode.OPERATION_TIMEOUT,
+            scrubbedMessage = "provider timeout",
+            attemptCount = 1,
+            lastAttemptAt = now,
+        )
+        val store = ScriptedStore(listOf(AiToolAcquireOutcome.ExistingRetryable(envelope().scope(), existing)))
+        val orchestrator = AiToolOrchestrator(store)
+        val workCalled = AtomicInteger(0)
+        val result = orchestrator.dispatch(envelope()) {
+            workCalled.incrementAndGet()
+            AiToolWorkResult.Succeeded(resultRef, outputFp, "noop", "noop:default", null)
+        }
+        val failure = result.shouldBeInstanceOf<AiToolDispatchOutcome.WireFailure>()
+        failure.replayed shouldBe true
+        failure.retryable shouldBe true
+        failure.toolErrorCode shouldBe ToolErrorCode.OPERATION_TIMEOUT
+        workCalled.get() shouldBe 0
+    }
+
     test("Plan §6 G.6: InProgress -> WireFailure(OPERATION_TIMEOUT, retryable=true)") {
         val store = ScriptedStore(
             listOf(AiToolAcquireOutcome.InProgress(envelope().scope(), now.plusSeconds(60))),

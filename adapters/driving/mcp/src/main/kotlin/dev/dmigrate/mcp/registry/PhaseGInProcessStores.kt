@@ -155,11 +155,17 @@ internal class InProcessAiToolOutcomeStore(
             null -> freshClaim(scope, payloadFingerprint, leaseDuration, now, attemptCount = 1)
             is AiToolOutcome.Succeeded -> existing to AiToolAcquireOutcome.Existing(scope, existing)
             is AiToolOutcome.FailedTerminal -> existing to AiToolAcquireOutcome.Existing(scope, existing)
-            is AiToolOutcome.FailedRetryable -> freshClaim(
-                scope, payloadFingerprint, leaseDuration, now,
-                attemptCount = existing.attemptCount + 1,
-                previousRetryable = existing,
-            )
+            is AiToolOutcome.FailedRetryable -> {
+                if (existing.canStartNewAttempt()) {
+                    freshClaim(
+                        scope, payloadFingerprint, leaseDuration, now,
+                        attemptCount = existing.attemptCount + 1,
+                        previousRetryable = existing,
+                    )
+                } else {
+                    existing to AiToolAcquireOutcome.ExistingRetryable(scope, existing)
+                }
+            }
             is AiToolOutcome.Pending -> if (existing.leaseExpiresAt.isAfter(now)) {
                 existing to AiToolAcquireOutcome.InProgress(scope, existing.leaseExpiresAt)
             } else {
@@ -201,6 +207,13 @@ internal class InProcessAiToolOutcomeStore(
             previousRetryable = previousRetryable,
         )
     }
+
+    private fun AiToolOutcome.FailedRetryable.canStartNewAttempt(): Boolean =
+        approvalRequestId != null ||
+            (toolErrorCode == ToolErrorCode.OPERATION_TIMEOUT &&
+                providerName == null &&
+                promptFingerprint == null &&
+                scrubbedMessage == "claim lease expired without commit")
 }
 
 /**

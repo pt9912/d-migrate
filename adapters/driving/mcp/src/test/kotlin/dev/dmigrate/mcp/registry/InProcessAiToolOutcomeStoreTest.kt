@@ -105,7 +105,7 @@ class InProcessAiToolOutcomeStoreTest : FunSpec({
         existing.outcome shouldBe terminal
     }
 
-    test("Acquire nach FailedRetryable startet neuen Versuch (kein Existing-Replay)") {
+    test("Acquire nach provider-seitigem FailedRetryable replayt retryable Status ohne neuen Versuch") {
         val store = deterministicStore()
         val first = store.acquire(scope, fp, lease, now) as AiToolAcquireOutcome.Acquired
         val retryable = AiToolOutcome.FailedRetryable(
@@ -119,8 +119,28 @@ class InProcessAiToolOutcomeStoreTest : FunSpec({
         store.commit(scope, first.claimId, retryable, now.plusSeconds(1)) shouldBe true
 
         val retry = store.acquire(scope, fp, lease, now.plusSeconds(2))
+        val existing = retry.shouldBeInstanceOf<AiToolAcquireOutcome.ExistingRetryable>()
+        existing.outcome shouldBe retryable
+    }
+
+    test("Acquire nach Policy-Challenge FailedRetryable startet neuen Versuch mit previousRetryable") {
+        val store = deterministicStore()
+        val first = store.acquire(scope, fp, lease, now) as AiToolAcquireOutcome.Acquired
+        val retryable = AiToolOutcome.FailedRetryable(
+            scope = scope,
+            payloadFingerprint = fp,
+            toolErrorCode = ToolErrorCode.POLICY_REQUIRED,
+            scrubbedMessage = "approval required",
+            attemptCount = first.attemptCount,
+            lastAttemptAt = now.plusSeconds(1),
+            approvalRequestId = "apr-1",
+        )
+        store.commit(scope, first.claimId, retryable, now.plusSeconds(1)) shouldBe true
+
+        val retry = store.acquire(scope, fp, lease, now.plusSeconds(2))
         val acquired = retry.shouldBeInstanceOf<AiToolAcquireOutcome.Acquired>()
         acquired.attemptCount shouldBe 2
+        acquired.previousRetryable shouldBe retryable
     }
 
     test("Acquire mit anderem Fingerprint im Pending-Scope -> Conflict") {
