@@ -193,11 +193,14 @@ class InProcessAiArtifactMetadataStoreTest : FunSpec({
             "procedure-transform-plan",
             "procedure-transform-output",
             "testdata-plan",
+            "generated-testdata",
+            "seed-data-bundle",
         )
         AiIntent.ALL shouldBe setOf(
             "procedure_transform_plan",
             "procedure_transform_execute",
             "testdata_plan",
+            "testdata_execute",
         )
     }
 })

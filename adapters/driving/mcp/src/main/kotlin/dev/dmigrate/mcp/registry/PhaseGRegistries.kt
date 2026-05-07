@@ -127,6 +127,19 @@ object PhaseGRegistries {
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )
+                // Follow-up AP 3: testdata_execute jetzt produktiv (Plan §5).
+                TestdataExecuteHandler.TOOL_NAME -> TestdataExecuteHandler(
+                    orchestrator = orchestrator,
+                    artifactStore = phaseC.artifactStore,
+                    artifactContentStore = phaseC.artifactContentStore,
+                    aiArtifactMetadataStore = gWiring.aiArtifactMetadataStore,
+                    providerRegistry = gWiring.aiProviderRegistry,
+                    hygieneService = gWiring.promptHygieneService,
+                    policyService = phaseE.policyService,
+                    approvalGrantService = gWiring.approvalGrantService,
+                    quotaService = phaseC.quotaService,
+                    clock = clock,
+                )
                 else -> baseRegistry.findHandler(descriptor.name)!!
             }
             builder.register(descriptor, handler)

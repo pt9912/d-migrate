@@ -141,6 +141,19 @@ data class AiArtifactMetadata(
                     "aiIntent=${AiIntent.TESTDATA_PLAN} requires TestdataPlan provenance"
                 }
             }
+            AiIntent.TESTDATA_EXECUTE -> {
+                require(
+                    wireArtifactKind == AiWireArtifactKind.GENERATED_TESTDATA ||
+                        wireArtifactKind == AiWireArtifactKind.SEED_DATA_BUNDLE
+                ) {
+                    "aiIntent=${AiIntent.TESTDATA_EXECUTE} requires wireArtifactKind in " +
+                        "{${AiWireArtifactKind.GENERATED_TESTDATA}," +
+                        "${AiWireArtifactKind.SEED_DATA_BUNDLE}}"
+                }
+                require(provenance is AiArtifactProvenance.TestdataExecute) {
+                    "aiIntent=${AiIntent.TESTDATA_EXECUTE} requires TestdataExecute provenance"
+                }
+            }
         }
     }
 

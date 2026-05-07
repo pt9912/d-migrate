@@ -2476,12 +2476,58 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
         "planRef": {
+          "type": "string"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "outputFormat": {
+          "type": "string",
+          "enum": [
+            "csv",
+            "json",
+            "yaml"
+          ]
+        },
+        "bundleFormat": {
+          "type": "string"
+        },
+        "targetTable": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "rowLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
           "type": "string"
         }
       },
       "required": [
-        "planRef"
+        "approvalKey",
+        "targetDialect"
       ]
     },
     "outputSchema": {
@@ -2489,12 +2535,27 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "artifactId": {
+        "summary": {
           "type": "string"
+        },
+        "testdataArtifactId": {
+          "type": "string"
+        },
+        "testdataResourceUri": {
+          "type": "string"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
         }
       },
       "required": [
-        "artifactId"
+        "testdataArtifactId",
+        "testdataResourceUri"
       ]
     }
   },

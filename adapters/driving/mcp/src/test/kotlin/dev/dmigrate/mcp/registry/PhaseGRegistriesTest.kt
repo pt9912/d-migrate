@@ -176,13 +176,17 @@ class PhaseGRegistriesTest : FunSpec({
         text shouldContain "\"testdataPlanResourceUri\""
     }
 
-    test("Plan §3.2 Carve-out: testdata_execute bleibt UnsupportedToolHandler (nicht Teil von 0.9.6)") {
+    test("Follow-up AP 3: testdata_execute ist produktiv (kein UnsupportedToolHandler mehr)") {
+        // Plan §3.2 Carve-out wurde durch Follow-up-Plan AP 3 geschlossen.
+        // Der Handler ist jetzt produktiv; ein Aufruf ohne approvalKey
+        // muss ein VALIDATION_ERROR mit `approvalKey`-Feld liefern, nicht
+        // mehr UNSUPPORTED_TOOL_OPERATION.
         val gWiring = phaseGWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString("""{"planRef":"dmigrate://tenants/acme/artifacts/x"}""")
         val result = svc.toolsCall(ToolsCallParams("testdata_execute", args)).get()
         result.isError shouldBe true
-        result.content.first().text!! shouldContain "UNSUPPORTED_TOOL_OPERATION"
+        result.content.first().text!! shouldNotContain "UNSUPPORTED_TOOL_OPERATION"
     }
 
     test("Plan §6 G.6: Idempotenz haengt am gemeinsamen Orchestrator (selber Outcome-Store)") {

@@ -531,14 +531,34 @@ internal object PhaseBToolSchemas {
             ),
         ))
 
-        // Phase G § 3.2 Carve-out: `testdata_execute` (separate
-        // Daten-Schreiboperation) ist NICHT Teil von 0.9.6. Der
-        // Slot bleibt registriert, das Schema-Stub bleibt schmal,
-        // damit `tools/list` ihn als bekannt aber unsupported
-        // ausweist.
+        // Follow-up AP 3 (Plan §5): `testdata_execute` ist jetzt
+        // produktiv. Das Tool konsumiert ein freigegebenes
+        // testdata-plan-Artefakt und veröffentlicht ein importierbares
+        // Datenartefakt mit synthetischer ArtifactUploadMetadata
+        // (Pfad-A); kein direkter Datenbank-Write.
         put("testdata_execute", schemaPair(
-            input = obj("planRef" to stringField()).required("planRef"),
-            output = obj("artifactId" to stringField()).required("artifactId"),
+            input = obj(
+                "approvalKey" to stringField(),
+                "targetDialect" to stringField(),
+                "approvalToken" to stringField(),
+                "planRef" to stringField(),
+                "planArtifactId" to stringField(),
+                "outputFormat" to enumField("csv", "json", "yaml"),
+                "bundleFormat" to stringField(),
+                "targetTable" to stringField(),
+                "tables" to arrayField("string"),
+                "providerId" to stringField(),
+                "model" to stringField(),
+                "rowLimit" to integerField(minimum = 1),
+                "seed" to stringField(),
+            ).required("approvalKey", "targetDialect"),
+            output = obj(
+                "summary" to stringField(),
+                "testdataArtifactId" to stringField(),
+                "testdataResourceUri" to stringField(),
+                "providerMeta" to objectField(),
+                "executionMeta" to objectField(),
+            ).required("testdataArtifactId", "testdataResourceUri"),
         ))
     }
 

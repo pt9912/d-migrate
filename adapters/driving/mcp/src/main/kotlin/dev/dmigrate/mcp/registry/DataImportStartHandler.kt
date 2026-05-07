@@ -390,7 +390,10 @@ internal class DataImportStartHandler(
             )
         }
         when (metadata.wireArtifactKind) {
-            "seed-data", "generic", ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE -> Unit
+            "seed-data", "generic",
+            ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE,
+            // Follow-up AP 3: AI-generierte Testdaten sind importierbar.
+            dev.dmigrate.server.core.ai.AiWireArtifactKind.GENERATED_TESTDATA -> Unit
             else -> throw ValidationErrorException(
                 listOf(ValidationViolation(
                     "artifactId",

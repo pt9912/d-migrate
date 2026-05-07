@@ -261,6 +261,13 @@ internal object ResourceContentProjector {
                 "testdataPromptFingerprint" to provenance.promptFingerprint,
                 "testdataPayloadFingerprint" to provenance.payloadFingerprint,
             )
+            is AiArtifactProvenance.TestdataExecute -> mapOf(
+                "type" to "testdata_execute",
+                "testdataExecutePromptFingerprint" to provenance.promptFingerprint,
+                "testdataExecutePayloadFingerprint" to provenance.payloadFingerprint,
+                "planRef" to provenance.planRef.render(),
+                "planArtifactFingerprint" to provenance.planArtifactFingerprint,
+            )
         }
 }
 

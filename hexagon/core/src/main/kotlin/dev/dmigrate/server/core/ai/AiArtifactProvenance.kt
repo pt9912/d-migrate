@@ -104,6 +104,38 @@ sealed interface AiArtifactProvenance {
         }
     }
 
+    /**
+     * Follow-up AP 3 (Plan §5): Provenance für `testdata_execute`-
+     * Datenartefakte. **Pflicht-Bindung an das Testdata-Plan-Artefakt**
+     * (analog zu [Execute]). Der Execute-Aufruf bringt keine eigenen
+     * Source-Refs mit; Tabellenbindung und Schema-Provenance kommen
+     * aus dem Plan.
+     *
+     * @param planRef Tenant-scoped Resource-URI auf das freigegebene
+     *   `testdata_plan`-Artefakt.
+     * @param planArtifactFingerprint hex-codierter SHA-256 über die
+     *   durable persistierten Plan-Bytes — bindet die Execute-
+     *   Provenance an einen exakten Plan-Snapshot.
+     */
+    data class TestdataExecute(
+        override val promptFingerprint: String,
+        override val payloadFingerprint: String,
+        val planRef: ServerResourceUri,
+        val planArtifactFingerprint: String,
+    ) : AiArtifactProvenance {
+        init {
+            require(promptFingerprint.length == FP_LEN) {
+                "testdataExecutePromptFingerprint must be a $FP_LEN-char hex SHA-256"
+            }
+            require(payloadFingerprint.length == FP_LEN) {
+                "testdataExecutePayloadFingerprint must be a $FP_LEN-char hex SHA-256"
+            }
+            require(planArtifactFingerprint.length == FP_LEN) {
+                "planArtifactFingerprint must be a $FP_LEN-char hex SHA-256"
+            }
+        }
+    }
+
     private companion object {
         const val FP_LEN: Int = 64
     }
