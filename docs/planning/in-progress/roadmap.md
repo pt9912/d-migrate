@@ -407,7 +407,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](../done/ImpPlan-0.9.4-6.1.md),
 | Server  | Phase E2: Persistente Phase-E-Port-Adapter (JDBC/Postgres) — `JdbcTransactionRunner`, `JdbcIdempotencyStore`, `JdbcJobStore`, `JdbcJobStartTransaction`, `JdbcQuotaService`/`JdbcQuotaReservationOwnerStore` mit Flyway-Initial-Migration und Contract-Test-Lauf gegen Testcontainers-Postgres — siehe `../done/ImpPlan-0.9.6-E2.md` und `spec/phase-e-port-atomicity.md` | —      | ✅ (2026-05-06) |
 | Server  | Phase E3: Async-Executor Production-Tuning — `BoundedAsyncJobExecutor` mit `JobExecutorLifecycle`, `JobDispatchAdmission`-Gate, Backpressure (`RateLimited` reason `EXECUTOR_SATURATED`), Cancel-while-queued, graceful Shutdown; `SyncExecutor` bleibt Default, Async ist opt-in via `server.jobs.executor.mode` — siehe `../done/ImpPlan-0.9.6-E3.md` | —      | ✅ (2026-05-06) |
 | Server  | Phase F: Policy-gesteuerte Datenoperationen (`data_import_start`, `data_transfer_start`) + policy-pflichtige `artifact_upload_init`-Variante mit Session-Metadaten und Approval-Flow + administrative Abort-Pipeline + STORED_ARTIFACT_BYTES-Quota + Finalisations-Timeout-Sweeper — siehe `../done/ImpPlan-0.9.6-F.md` | —      | ✅ (2026-05-07) |
-| Server  | Phase G: KI-nahe MCP-Tools (`procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`) + MCP-Prompts + abschliessende Integrationstests und Fehler-Envelope-Haertung — siehe `ImpPlan-0.9.6-G.md` | —      | 🔄 (2026-05-07) |
+| Server  | Phase G: KI-nahe MCP-Tools (`procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`) + MCP-Prompts (`prompts/list`, `prompts/get`) + AiProviderPort/NoOp + Provider-Quota + Prompt-Hygiene + abschliessende Integrationstests — siehe `../done/ImpPlan-0.9.6-G.md` | —      | ✅ (2026-05-07) |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
 ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
@@ -667,6 +667,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.40
+**Version**: 3.41
 **Stand**: 2026-05-07
-**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7/E/E2/E3/F abgeschlossen; geplant: 0.9.6 Phase G, 0.9.7, 0.9.8, 0.9.9
+**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7/E/E2/E3/F/G abgeschlossen — der MCP-Server-Milestone ist damit komplett. Geplant: 0.9.7, 0.9.8, 0.9.9

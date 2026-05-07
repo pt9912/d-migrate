@@ -1,18 +1,20 @@
-# MCP-Server (Phase B + C + D + E + F)
+# MCP-Server (Phase B + C + D + E + F + G)
 
 > **Status (0.9.6):** Phase B (Transport / Auth / Discovery /
 > JSON-Schemas), Phase C (typisierte Schema-Tools, Upload-Flow,
 > `job_status_get`, `artifact_chunk_get`), Phase D (Discovery-
 > Listen-Tools, produktives `resources/read`, HMAC-Cursor,
 > Connection-Ref-Bootstrap), Phase E (Async-Job-Start-Tools,
-> Idempotency, Policy, Quota, `job_cancel`) und Phase F
+> Idempotency, Policy, Quota, `job_cancel`), Phase F
 > (policy-gesteuerter `job_input`-Upload, `data_import_start`,
-> `data_transfer_start`) sind abgeschlossen. Verbleibend bleiben
-> die KI-nahen Spezialtools (`procedure_transform_*`,
-> `testdata_*`) — Phase G. Details der jeweiligen Phase: §"Phase
-> D: Discovery und Ressourcen", §"Phase E: Async-Jobs,
-> Idempotency, Policy" und §"Phase F: Policy-gesteuerte
-> Datenoperationen" unten + die done-Pläne unter
+> `data_transfer_start`) und Phase G (KI-nahe Tools
+> `procedure_transform_plan/execute`, `testdata_plan` +
+> MCP-Prompts `prompts/list`/`prompts/get`) sind abgeschlossen.
+> Damit ist der 0.9.6-MCP-Vertrag vollständig produktiv.
+> Details der jeweiligen Phase: §"Phase D: Discovery und
+> Ressourcen", §"Phase E: Async-Jobs, Idempotency, Policy",
+> §"Phase F: Policy-gesteuerte Datenoperationen" und §"Phase G:
+> KI-nahe Tools und MCP-Prompts" unten + die done-Pläne unter
 > `docs/planning/done/`.
 
 Der MCP-Server ist ein Driving-Adapter zu d-migrate
@@ -242,7 +244,8 @@ dmigrate://tenants/{tenantId}/connections/{connectionId}
 | `job_cancel`                                 | Registry-Eintrag — Handler folgt Phase E (Job-Lifecycle).   |
 | Upload-Session-Tools                         | **Phase C + F produktiv** — `schema_staging_readonly` (Phase C, Quota/Audit) + `job_input` (Phase F, policy-gesteuert mit `approvalKey` + Init-Fingerprint). `artifact_upload_init`, `artifact_upload`, `artifact_upload_abort` decken beide Intents. |
 | Data-write Start-Tools                       | **Phase F produktiv** — `data_import_start` und `data_transfer_start` (idempotent, policy-gesteuert, `targetConnectionRef`/`sourceConnectionRef` als tenant-scoped Resource-URI). |
-| AI-Tools (procedure_transform_*, testdata_*) | Registry-Einträge — Handler folgen Phase G (KI-nahe Spezialtools). |
+| AI-Tools (procedure_transform_*, testdata_*) | **Phase G produktiv** — `procedure_transform_plan`, `procedure_transform_execute` und `testdata_plan` mit AiProviderPort, NoOp-Default-Provider, Prompt-Hygiene, Provider-Quota (`PROVIDER_CALLS`), AiArtifactMetadataStore (Provenance) und AiToolOutcomeStore (Single-Writer-Lease + Replay). `testdata_execute` bleibt Carve-out (separate Daten-Schreiboperation, nicht in 0.9.6). |
+| MCP-Prompts (prompts/list, prompts/get) | **Phase G produktiv** — drei Pflichtprompts (`procedure_analysis`, `procedure_transformation`, `testdata_planning`) mit JSON-Schema-Argumentvalidierung, Plan-Hygiene auf Argument + zusammengebaute Prompt-Nachricht, dmigrate:read-Scope-Gate, JSON-RPC-Fehler mit `error.data.dmigrateCode`. |
 | Resource-Stores (Real-Backends)              | **Phase D**: `ResourceStores.fromPhaseCWiring(...)` lädt Job/Artifact/Schema/Profile/Diff/Connection aus produktiver Wiring. |
 | Cross-Tenant-Reads                           | **Phase D**: Tenant-Scope ueber `allowedTenantIds`; Cross-Tenant-Reads erlaubt, wenn der URI-Tenant in `allowedTenantIds` liegt. |
 | OAuth Authorization Server / DCR             | **Nicht implementiert**                                      |
@@ -741,6 +744,145 @@ unterstützen.
 
 ---
 
+## Phase G: KI-nahe Tools und MCP-Prompts
+
+Phase G (`docs/planning/done/ImpPlan-0.9.6-G.md`) schließt den
+0.9.6-MCP-Vertrag ab. Drei produktive Bausteine:
+
+1. **AI-Tools** — `procedure_transform_plan`,
+   `procedure_transform_execute`, `testdata_plan` als
+   approval-driven, audit-pflichtige Tools.
+2. **MCP-Prompts** — `prompts/list` + `prompts/get` mit drei
+   Pflichtprompts (`procedure_analysis`,
+   `procedure_transformation`, `testdata_planning`).
+3. **Provider-Schicht** — `AiProviderPort` mit fail-closed-
+   Konfiguration; NoOp-Default ohne Netzwerk und Secrets.
+
+### Provider-Schicht (Plan §5.1 + §5.2)
+
+- `AiProviderPort` ist eine sync-Funktion `(AiProviderRequest)
+  → AiProviderResult` (Success/Failure-Sealed). Provider-
+  spezifische Exceptions werden durch den Adapter in
+  `AiProviderError` normalisiert; der Tool-Handler sieht nie
+  einen Stacktrace.
+- `DefaultAiProviderRegistry` erzwingt fail-closed-Konfiguration:
+  - **NoOp-Default** wird automatisch ergänzt, wenn keine
+    `AiProviderConfig.noOpDefault()` geliefert wurde — Plan §4.1
+    "NoOp ist immer verfügbar".
+  - `EXTERNAL`-Provider verlangen HTTPS-Endpoint, `secretRef` und
+    `allowExternalNetwork=true`. `LOCAL_LOOPBACK` (Ollama, LM
+    Studio) erlaubt `secretRef=null`, verlangt aber Loopback-Host.
+  - Invalide Configs schlagen den Server-Start fehl
+    (`AiProviderConfigValidator`).
+- Außenseiten (Wire, `capabilities_list`, Audit) sehen
+  ausschließlich `providerName`, `model`, `modelVersion` —
+  niemals Endpoints oder `secretRef` (Plan §5.2 Z. 611-612).
+
+### KI-Tool-Pipeline (Plan §6 G.6)
+
+Jeder der drei Handler folgt demselben 7-stufigen Aufbau:
+
+1. **Phase-1-Form-Validation** (materialisierungsfrei) —
+   Required-Felder, exactly-one-Source-Variante,
+   Resource-URI-Syntax. Throws `ValidationErrorException` vor
+   Scope-Gate.
+2. **Scope-Check** `dmigrate:ai:execute`.
+3. **Single-Writer-Acquire** über `AiToolOrchestrator` +
+   `AiToolOutcomeStore` (Plan §6 G.6 Z. 1071-1073). Terminale
+   Outcomes (Succeeded, FailedTerminal) werden replayt; parallele
+   identische Caller bekommen `OPERATION_TIMEOUT` (`InProgress`),
+   abweichende Payloads `IDEMPOTENCY_CONFLICT`.
+4. **Semantische Resolution** + **Policy** (`PolicyAttempt`).
+5. **Provider-Quota** (`PROVIDER_CALLS`-Dimension) — Plan §6 G.8
+   verbindlich: keine Secrets, kein Provider-Client, kein
+   Provider-Aufruf bei `RATE_LIMITED`.
+6. **Provider-Aufruf** mit Input-Hygiene (`PromptHygieneService`)
+   + Output-Hygiene (Plan §7.4 — Provider-Output wird ebenfalls
+   geprüft).
+7. **Artefakt-Publish**: `ArtifactStore.save` +
+   `ArtifactContentStore.write` + `AiArtifactMetadataStore.save`
+   (atomisch zusammen). Deterministischer `artifactId` aus
+   `(tenant, approvalKey, payloadFingerprint, op)`-Hash.
+
+### KI-Artefakt-Provenance (Plan §5.4)
+
+KI-Artefakte werden als `ArtifactKind.OTHER` gespeichert; die
+fachliche Typisierung lebt in `AiArtifactMetadata`:
+
+- `wireArtifactKind` ∈ {`procedure-transform-plan`,
+  `procedure-transform-output`, `testdata-plan`}
+- `aiIntent` ∈ {`procedure_transform_plan`,
+  `procedure_transform_execute`, `testdata_plan`}
+- `provenance` als `AiArtifactProvenance` sealed (`Plan` /
+  `Execute` / `TestdataPlan`) mit operations-spezifischen
+  Fingerprints
+- `Execute`-Provenance bindet zusätzlich `planRef` +
+  `planArtifactFingerprint`: Plan §5.5 Z. 794-799 — Source-Refs
+  kommen ausschließlich aus der Plan-Provenance, nicht aus dem
+  Execute-Payload.
+
+### MCP-Prompts (Plan §5.7 + §6 G.7)
+
+`prompts/list` und `prompts/get` sind reine Read-Methoden
+(`dmigrate:read`). Pflichtprompts:
+
+| Prompt | Pflichtargumente |
+|---|---|
+| `procedure_analysis` | `schemaRef` oder `artifactRef`, optional `procedureName` |
+| `procedure_transformation` | `planRef`/`planArtifactId`, `targetDialect` |
+| `testdata_planning` | `schemaRef`, `targetDialect`, optional `profileRef` + `rulesSummary` |
+
+Argumentvalidierung (`PromptArgumentValidator`) prüft
+required-Felder, `additionalProperties=false`-Äquivalent,
+URI-Syntax, ResourceKind-Match und Tenant-Scope. Die
+zusammengebaute Prompt-Nachricht läuft durch
+`PromptHygieneService` — Secrets oder bulk-Daten in Argumenten
+führen zu `PROMPT_HYGIENE_BLOCKED`.
+
+Plan §4.5 verbindlich: **Prompts führen keine Tools aus**. Der
+`PromptsHandler`-Konstruktor hat keinen Zugriff auf die
+`ToolRegistry` — strukturell unmöglich, einen Tool-Aufruf zu
+verstecken.
+
+### Sicherheitsmodell (Plan §6 G.10)
+
+- **Keine Secrets im Payload** — JDBC-URLs, Bearer-Tokens, API-
+  Keys werden vom Hygiene-Service blockiert (Plan §6 G.4).
+- **Policy für Write- und KI-Tools** — alle Tool-Handler
+  laufen durch `PolicyService.decide`; `RequiresApproval`
+  liefert `POLICY_REQUIRED` ohne verwendbares `approvalToken`.
+- **`approvalKey` vs. `idempotencyKey`** — `approvalKey` für
+  synchrone Side-Effects (Upload-Init, KI-Tools);
+  `idempotencyKey` für Async-Job-Starts. Beide deduplizieren
+  über `(tenant, caller, tool, key, payloadFingerprint)`.
+- **Provider fail-closed** — externe Provider sind nur mit
+  expliziter Konfig + `secretRef` + Policy aktivierbar; ohne
+  Konfig läuft NoOp.
+- **Prompt-Hygiene** — Input und Output (Plan §7.4) werden gegen
+  Secret-Pattern gescannt.
+
+### Bekannte Grenzen 0.9.6
+
+- **NoOp ist Default** — produktive externe Provider (OpenAI,
+  Anthropic, Ollama, LM Studio) brauchen explizite YAML-
+  Konfiguration und sind nicht Teil des 0.9.6-Tests.
+- **Externe Provider optional** — Bootstrap ohne Provider-Config
+  hält den NoOp-Default; jeder Tool-Aufruf produziert
+  deterministische Marker-Outputs.
+- **Keine freie SQL-Ausführung** — KI-Tools produzieren Plan-
+  Artefakte, keine direkten DB-Schreiboperationen.
+  `procedure_transform_execute` erzeugt ein Output-Artefakt,
+  führt aber keinen Ziel-DB-Code aus (Plan §5.5 Z. 778).
+- **Keine Rohdaten im Prompt** — Profiling-Daten und Schema-
+  Inhalte werden referenziert (`profileRef`, `schemaRef`), nicht
+  inline serialisiert.
+- **Keine versteckten Tool-Ausführungen durch Prompts** —
+  `PromptsHandler` hat keinen Zugriff auf `ToolRegistry`.
+- **`testdata_execute`** bleibt Carve-out (separate Daten-
+  Schreiboperation, nicht in 0.9.6).
+
+---
+
 ## Weiterführend
 
 - [`docs/planning/ImpPlan-0.9.6-B.md`](../docs/planning/done/ImpPlan-0.9.6-B.md) — Komplette
@@ -758,4 +900,7 @@ unterstützen.
   Phase-F: policy-gesteuerter `job_input`-Upload, `data_import_start`,
   `data_transfer_start`, administrative Abort-Pipeline, STORED-Quota
   (siehe oben "Phase F: Policy-gesteuerte Datenoperationen").
-- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Plan für Phase G+.
+- [`docs/planning/done/ImpPlan-0.9.6-G.md`](../docs/planning/done/ImpPlan-0.9.6-G.md) —
+  Phase-G: KI-nahe Tools, MCP-Prompts, Provider-Schicht (siehe oben
+  "Phase G: KI-nahe Tools und MCP-Prompts").
+- [`docs/planning/in-progress/roadmap.md`](../docs/planning/in-progress/roadmap.md) — Roadmap für 0.9.7+.
