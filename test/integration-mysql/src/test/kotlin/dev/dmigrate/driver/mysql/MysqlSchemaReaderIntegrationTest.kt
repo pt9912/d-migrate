@@ -15,6 +15,7 @@ import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
 import org.testcontainers.mysql.MySQLContainer
 
 private val IntegrationTag = NamedTag("integration")
@@ -169,14 +170,23 @@ class MysqlSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── Bigint AUTO_INCREMENT → BigInteger ──────
+    // ── Bigint AUTO_INCREMENT → BigInteger + generation ──────
 
-    test("bigint auto_increment preserves BigInteger type width") {
+    test("bigint auto_increment preserves BigInteger type width and generation") {
         pool().use { pool ->
             val result = reader.read(pool)
             val orderId = result.schema.tables["orders"]!!.columns["id"]!!
             orderId.type shouldBe NeutralType.BigInteger
-            result.notes.any { it.code == "R300" && it.objectName.contains("orders.id") } shouldBe true
+            orderId.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+            result.notes.none { it.code == "R300" && it.objectName.contains("orders.id") } shouldBe true
+        }
+    }
+
+    test("bigint auto_increment reverse to forward generates BIGINT AUTO_INCREMENT") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val ddl = MysqlDdlGenerator().generate(result.schema).render()
+            ddl shouldContain "`id` BIGINT NOT NULL AUTO_INCREMENT"
         }
     }
 

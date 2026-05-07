@@ -1,6 +1,6 @@
 # Follow-up-Plan: BIGSERIAL, BigIdentifier und neutrale Identity-Breite
 
-> Status: In Progress, AP 4 umgesetzt (2026-05-07)
+> Status: Done (2026-05-07)
 >
 > Kontext: Ausgangspunkt war, dass der PostgreSQL-Reverse-Pfad `bigserial`
 > bewusst auf `NeutralType.BigInteger` mit Diagnose `R300` mappte. Aeltere
@@ -248,11 +248,19 @@ Verworfene Alternativen:
   herausgefiltert. Eigenstaendige Sequenzen bleiben unveraendert im
   Sequence-Generator.
 
-### AP 5: Weitere Dialekte
+### AP 5: Weitere Dialekte (erledigt 2026-05-07)
 
-- MySQL `BIGINT AUTO_INCREMENT` analog behandeln.
-- SQLite-Vertrag explizit klaeren, weil SQLite nur `INTEGER PRIMARY KEY`
-  als Rowid-Autoincrement-Spezialfall kennt.
+- MySQL `BIGINT AUTO_INCREMENT` wird im Reverse-Pfad als
+  `BigInteger + ColumnGeneration.Identity(legacySerialSyntax=true)` gelesen
+  und im Forward-Pfad als `BIGINT NOT NULL AUTO_INCREMENT` erzeugt.
+- MySQL `BigInteger` ohne Generation bleibt `BIGINT`.
+- MySQL `INT AUTO_INCREMENT` bleibt aus Kompatibilitaetsgruenden weiter
+  `Identifier(autoIncrement=true)`.
+- SQLite hat keinen separaten `BIGINT AUTO_INCREMENT`-Vertrag. Der einzige
+  native Auto-Increment-/Rowid-Pfad ist `INTEGER PRIMARY KEY AUTOINCREMENT`.
+  `Integer`/`BigInteger + ColumnGeneration.Identity` wird deshalb fuer SQLite
+  genau in diese Rowid-Form gerendert; `BigInteger` ohne Generation bleibt
+  der normale SQLite-Integer-Affinity-Pfad.
 
 ---
 

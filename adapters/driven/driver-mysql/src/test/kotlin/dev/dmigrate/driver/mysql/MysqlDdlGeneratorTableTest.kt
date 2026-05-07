@@ -37,13 +37,15 @@ class MysqlDdlGeneratorTableTest : FunSpec({
         required: Boolean = false,
         unique: Boolean = false,
         default: DefaultValue? = null,
-        references: ReferenceDefinition? = null
+        references: ReferenceDefinition? = null,
+        generation: ColumnGeneration? = null,
     ) = ColumnDefinition(
         type = type,
         required = required,
         unique = unique,
         default = default,
-        references = references
+        references = references,
+        generation = generation,
     )
 
     fun table(
@@ -97,6 +99,47 @@ class MysqlDdlGeneratorTableTest : FunSpec({
 
         ddl shouldContain "`id` INT NOT NULL AUTO_INCREMENT"
         ddl shouldContain "PRIMARY KEY (`id`)"
+    }
+
+    test("biginteger identity generation renders BIGINT AUTO_INCREMENT") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf(
+                        "id" to col(
+                            NeutralType.BigInteger,
+                            generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+                        )
+                    ),
+                    primaryKey = listOf("id")
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "`id` BIGINT NOT NULL AUTO_INCREMENT"
+        ddl shouldNotContain "`id` INT NOT NULL AUTO_INCREMENT"
+        ddl shouldContain "PRIMARY KEY (`id`)"
+    }
+
+    test("plain biginteger renders BIGINT without AUTO_INCREMENT") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "measurements" to table(
+                    columns = mapOf(
+                        "value" to col(NeutralType.BigInteger, required = true)
+                    )
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "`value` BIGINT NOT NULL"
+        ddl shouldNotContain "`value` BIGINT NOT NULL AUTO_INCREMENT"
     }
 
     test("all identifiers are quoted with backticks") {

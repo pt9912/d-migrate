@@ -52,13 +52,15 @@ class SqliteDdlGeneratorTableTest : FunSpec({
         required: Boolean = false,
         unique: Boolean = false,
         default: DefaultValue? = null,
-        references: ReferenceDefinition? = null
+        references: ReferenceDefinition? = null,
+        generation: ColumnGeneration? = null,
     ) = ColumnDefinition(
         type = type,
         required = required,
         unique = unique,
         default = default,
-        references = references
+        references = references,
+        generation = generation,
     )
 
     fun ref(
@@ -99,6 +101,28 @@ class SqliteDdlGeneratorTableTest : FunSpec({
                 "items" to table(
                     columns = mapOf(
                         "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "label" to col(NeutralType.Text(), required = true)
+                    ),
+                    primaryKey = listOf("id")
+                )
+            )
+        )
+        val result = generator.generate(s)
+        val sql = result.tableSql()
+
+        sql shouldContain "\"id\" INTEGER PRIMARY KEY AUTOINCREMENT"
+        sql shouldNotContain "PRIMARY KEY (\"id\")"
+    }
+
+    test("biginteger identity uses SQLite rowid autoincrement contract") {
+        val s = schema(
+            tables = mapOf(
+                "items" to table(
+                    columns = mapOf(
+                        "id" to col(
+                            NeutralType.BigInteger,
+                            generation = ColumnGeneration.Identity(legacySerialSyntax = true),
+                        ),
                         "label" to col(NeutralType.Text(), required = true)
                     ),
                     primaryKey = listOf("id")

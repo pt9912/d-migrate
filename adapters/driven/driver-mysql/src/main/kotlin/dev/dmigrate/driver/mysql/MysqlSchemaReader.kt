@@ -163,6 +163,7 @@ class MysqlSchemaReader(
                 unique = unique,
                 default = defaultVal,
                 references = references,
+                generation = mapping.generation,
             )
         }
 

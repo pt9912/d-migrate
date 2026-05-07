@@ -21,6 +21,8 @@ internal class MysqlColumnConstraintHelper(
         tableName: String,
         notes: MutableList<TransformationNote>,
     ): String = when {
+        col.generation is ColumnGeneration.Identity && supportsIdentityGeneration(col.type) ->
+            columnGeneratedIdentity(colName, col)
         col.type is NeutralType.Identifier && (col.type as NeutralType.Identifier).autoIncrement ->
             columnAutoIncrement(colName, col)
         col.type is NeutralType.Enum -> columnEnum(tableName, colName, col, schema)
@@ -28,9 +30,22 @@ internal class MysqlColumnConstraintHelper(
         else -> columnSql(tableName, colName, col, schema)
     }
 
+    private fun supportsIdentityGeneration(type: NeutralType): Boolean =
+        type is NeutralType.Integer || type is NeutralType.BigInteger
+
     private fun columnAutoIncrement(colName: String, col: ColumnDefinition): String {
         val parts = mutableListOf(quoteIdentifier(colName), typeMapper.toSql(col.type))
         if (col.default != null) parts += "DEFAULT ${typeMapper.toDefaultSql(col.default!!, col.type)}"
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
+    }
+
+    private fun columnGeneratedIdentity(colName: String, col: ColumnDefinition): String {
+        val sqlType = when (col.type) {
+            is NeutralType.BigInteger -> "BIGINT"
+            else -> "INT"
+        }
+        val parts = mutableListOf(quoteIdentifier(colName), "$sqlType NOT NULL AUTO_INCREMENT")
         if (col.unique) parts += "UNIQUE"
         return parts.joinToString(" ")
     }

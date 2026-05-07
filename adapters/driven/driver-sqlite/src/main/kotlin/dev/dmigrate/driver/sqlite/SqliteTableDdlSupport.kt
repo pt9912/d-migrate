@@ -93,7 +93,8 @@ internal class SqliteTableDdlSupport(
             lines += columnConstraintHelper.generateConstraintClause(constraint, notes)
         }
         val skipPrimaryKey = table.primaryKey.size == 1 && table.primaryKey.all { primaryKey ->
-            table.columns[primaryKey]?.type is NeutralType.Identifier
+            val column = table.columns[primaryKey]
+            column?.type is NeutralType.Identifier || column?.generation is ColumnGeneration.Identity
         }
         if (table.primaryKey.isNotEmpty() && !skipPrimaryKey) {
             lines += "PRIMARY KEY (${table.primaryKey.joinToString(", ") { quoteIdentifier(it) }})"
