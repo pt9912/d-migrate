@@ -80,6 +80,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val outcome = fx.orchestrator.init(fx.request())
         val initialized = outcome.shouldBeInstanceOf<UploadInitOutcome.Initialized>()
         initialized.uploadSessionId shouldBe "session-1"
+        initialized.ttlSeconds shouldBe 900L
         initialized.expectedFirstSegmentIndex shouldBe 1
         initialized.expectedFirstSegmentOffset shouldBe 0L
 
@@ -87,6 +88,8 @@ class UploadInitOrchestratorTest : FunSpec({
         session.state shouldBe UploadSessionState.ACTIVE
         session.approvalKey shouldBe "key-1"
         session.approvalFingerprint.shouldNotBeNull()
+        session.idleTimeoutAt shouldBe now.plusSeconds(300)
+        session.absoluteLeaseExpiresAt shouldBe now.plusSeconds(3_600)
     }
 
     test("Identischer Retry liefert AlreadyInitialized mit derselben sessionId") {
@@ -97,6 +100,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val second = fx.orchestrator.init(fx.request())
         val replay = second.shouldBeInstanceOf<UploadInitOutcome.AlreadyInitialized>()
         replay.uploadSessionId shouldBe sessionId
+        replay.ttlSeconds shouldBe 900L
     }
 
     test("Abweichender Payload mit gleichem approvalKey -> IdempotencyConflict") {

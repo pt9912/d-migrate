@@ -27,6 +27,7 @@ import dev.dmigrate.mcp.server.validateForStdio
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayload
+import dev.dmigrate.server.application.artifact.ArtifactRetentionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
@@ -41,6 +42,8 @@ import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * MCP-server entry point per `ImpPlan-0.9.6-B.md` §6.11 +
@@ -459,13 +462,17 @@ class McpServeCommand : CliktCommand(name = "serve") {
             connectionConfigPath = effectiveConnectionConfigPath(),
             cursorKeyring = cursorKeyring,
         )
-        val state = resolveServerStateConfigOrExit() ?: return McpCliRuntimeWiring(
-            phaseCWiring = phaseC,
-            components = PhaseCRegistries.defaultComponents(phaseC, config.scopeMapping),
-            closeable = null,
-        )
+        val state = resolveServerStateConfigOrExit() ?: run {
+            val artifactRetention = startArtifactRetentionLoop(phaseC)
+            return McpCliRuntimeWiring(
+                phaseCWiring = phaseC,
+                components = PhaseCRegistries.defaultComponents(phaseC, config.scopeMapping),
+                closeable = artifactRetention,
+            )
+        }
 
         val dataSource = createServerStateDataSource(state)
+        var artifactRetention: AutoCloseable? = null
         try {
             applyOrValidateMigrations(dataSource, state)
             val runner = JdbcTransactionRunner(dataSource)
@@ -478,6 +485,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 jobStore = jobStore,
                 quotaService = quotaService,
             )
+            artifactRetention = startArtifactRetentionLoop(phaseCWithJdbc)
             // Phase E3.5: server.jobs.executor + Env-Overrides aufloesen,
             // Bundle bauen. Default ist Sync — Bestands-MVP.
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
@@ -512,15 +520,53 @@ class McpServeCommand : CliktCommand(name = "serve") {
             return McpCliRuntimeWiring(
                 phaseCWiring = phaseCWithJdbc,
                 components = components,
-                closeable = dataSource,
+                closeable = CloseStack(listOfNotNull(artifactRetention, dataSource)),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
                 executorShutdownTimeout = asyncCfg?.shutdownTimeout
                     ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
             )
         } catch (failure: Throwable) {
-            dataSource.close()
+            try {
+                artifactRetention?.close()
+            } finally {
+                dataSource.close()
+            }
             throw failure
         }
+    }
+
+    private fun startArtifactRetentionLoop(phaseC: PhaseCWiring): AutoCloseable {
+        val service = ArtifactRetentionService(
+            artifactStore = phaseC.artifactStore,
+            contentStore = phaseC.artifactContentStore,
+            quotaService = phaseC.quotaService,
+        )
+        val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "dmigrate-mcp-artifact-retention").apply { isDaemon = true }
+        }
+        val sweep = Runnable {
+            service.deleteExpired(phaseC.clock.instant())
+        }
+        try {
+            service.deleteExpired(phaseC.clock.instant())
+        } catch (failure: RuntimeException) {
+            executor.shutdownNow()
+            echo("MCP startup sweep: artifact retention failed: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+        executor.scheduleWithFixedDelay(
+            {
+                try {
+                    sweep.run()
+                } catch (failure: RuntimeException) {
+                    echo("MCP artifact retention sweep failed: ${failure.message}", err = true)
+                }
+            },
+            ARTIFACT_RETENTION_SWEEP_SECONDS,
+            ARTIFACT_RETENTION_SWEEP_SECONDS,
+            TimeUnit.SECONDS,
+        )
+        return AutoCloseable { executor.shutdownNow() }
     }
 
     private fun resolveServerStateConfigOrExit(): McpServerStateConfig? = try {
@@ -572,6 +618,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
     }
 }
 
+private const val ARTIFACT_RETENTION_SWEEP_SECONDS: Long = 300
+
 private data class McpCliRuntimeWiring(
     val phaseCWiring: PhaseCWiring,
     val components: PhaseCRegistries.McpServiceComponents,
@@ -590,6 +638,24 @@ private data class McpCliRuntimeWiring(
     override fun close() {
         executorLifecycle?.shutdown(executorShutdownTimeout)
         closeable?.close()
+    }
+}
+
+private class CloseStack(private val closeables: List<AutoCloseable>) : AutoCloseable {
+    override fun close() {
+        var first: Throwable? = null
+        for (closeable in closeables) {
+            try {
+                closeable.close()
+            } catch (failure: Throwable) {
+                if (first == null) {
+                    first = failure
+                } else {
+                    first.addSuppressed(failure)
+                }
+            }
+        }
+        first?.let { throw it }
     }
 }
 

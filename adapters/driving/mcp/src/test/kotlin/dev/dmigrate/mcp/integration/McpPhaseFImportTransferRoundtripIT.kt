@@ -40,6 +40,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
+import java.io.ByteArrayInputStream
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -62,7 +63,12 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
     val now: Instant = Instant.parse("2026-05-07T12:00:00Z")
     val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
 
-    fun seedArtifact(store: InMemoryArtifactStore, tenantId: TenantId, artifactId: String) {
+    fun seedArtifact(
+        store: InMemoryArtifactStore,
+        contentStore: InMemoryArtifactContentStore,
+        tenantId: TenantId,
+        artifactId: String,
+    ) {
         store.save(
             ArtifactRecord(
                 managedArtifact = ManagedArtifact(
@@ -94,6 +100,11 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
                 ),
             ),
         )
+        contentStore.write(
+            artifactId = artifactId,
+            source = ByteArrayInputStream(ByteArray(1024) { 'x'.code.toByte() }),
+            expectedSizeBytes = 1024,
+        )
     }
 
     fun seedConnection(store: InMemoryConnectionReferenceStore, tenantId: TenantId, connectionId: String) {
@@ -113,8 +124,9 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val artifactStore = InMemoryArtifactStore()
+        val artifactContentStore = InMemoryArtifactContentStore()
         val connectionStore = InMemoryConnectionReferenceStore()
-        seedArtifact(artifactStore, tenant, "art-rt-1")
+        seedArtifact(artifactStore, artifactContentStore, tenant, "art-rt-1")
         seedConnection(connectionStore, tenant, "warehouse")
         seedConnection(connectionStore, tenant, "source-db")
         seedConnection(connectionStore, tenant, "target-db")
@@ -122,7 +134,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
-            artifactContentStore = InMemoryArtifactContentStore(),
+            artifactContentStore = artifactContentStore,
             schemaStore = InMemorySchemaStore(),
             jobStore = jobStore,
             quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },

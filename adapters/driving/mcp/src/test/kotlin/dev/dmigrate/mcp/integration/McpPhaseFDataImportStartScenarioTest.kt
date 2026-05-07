@@ -38,6 +38,7 @@ import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import java.io.ByteArrayInputStream
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -64,7 +65,12 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
     val now: Instant = Instant.parse("2026-05-06T12:00:00Z")
     val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
 
-    fun seedArtifact(store: InMemoryArtifactStore, tenantId: TenantId, artifactId: String) {
+    fun seedArtifact(
+        store: InMemoryArtifactStore,
+        contentStore: InMemoryArtifactContentStore,
+        tenantId: TenantId,
+        artifactId: String,
+    ) {
         store.save(
             ArtifactRecord(
                 managedArtifact = ManagedArtifact(
@@ -96,6 +102,11 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
                 ),
             ),
         )
+        contentStore.write(
+            artifactId = artifactId,
+            source = ByteArrayInputStream(ByteArray(1024) { 'x'.code.toByte() }),
+            expectedSizeBytes = 1024,
+        )
     }
 
     fun seedConnection(store: InMemoryConnectionReferenceStore, tenantId: TenantId, connectionId: String) {
@@ -115,14 +126,15 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val artifactStore = InMemoryArtifactStore()
+        val artifactContentStore = InMemoryArtifactContentStore()
         val connectionStore = InMemoryConnectionReferenceStore()
-        seedArtifact(artifactStore, tenant, "art-import-1")
+        seedArtifact(artifactStore, artifactContentStore, tenant, "art-import-1")
         seedConnection(connectionStore, tenant, "warehouse")
         val phaseC = PhaseCWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
-            artifactContentStore = InMemoryArtifactContentStore(),
+            artifactContentStore = artifactContentStore,
             schemaStore = InMemorySchemaStore(),
             jobStore = jobStore,
             quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },

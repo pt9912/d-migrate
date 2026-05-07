@@ -1,6 +1,7 @@
 package dev.dmigrate.mcp.registry
 
 import com.google.gson.JsonObject
+import dev.dmigrate.mcp.registry.JsonArgs.optEnum
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.server.application.error.ResourceNotFoundException
@@ -21,6 +22,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.ArtifactStore
+import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.SchemaStore
 import java.time.Clock
@@ -54,6 +56,7 @@ import java.util.Locale
 internal class DataImportStartHandler(
     private val orchestrator: JobStartOrchestrator,
     private val artifactStore: ArtifactStore,
+    private val artifactContentStore: ArtifactContentStore,
     private val connectionStore: ConnectionReferenceStore,
     private val schemaStore: SchemaStore,
     private val clock: Clock,
@@ -68,6 +71,7 @@ internal class DataImportStartHandler(
         val artifactSource = parseArtifactSource(args)
         validateChunkSize(args)
         validateTableTopology(args)
+        validateOptionEnums(args)
         // Phase F § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix.
         // Lookup vor Idempotency, damit "unbekanntes Artefakt" und
         // "falsche Kind/Intent" deterministisch ohne Job-/SyncEffect-
@@ -75,6 +79,7 @@ internal class DataImportStartHandler(
         val tenantId = context.principal.effectiveTenantId
         val record = resolveArtifact(artifactSource, tenantId)
         val metadata = validateArtifactEligibility(record)
+        validateArtifactContent(record)
         val effectiveFormat = validateFormatCompatibility(args, metadata)
         validateTargetTable(args, metadata)
         // Phase F § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
@@ -204,6 +209,12 @@ internal class DataImportStartHandler(
                 )),
             )
         }
+    }
+
+    private fun validateOptionEnums(args: JsonObject) {
+        args.optEnum("onError", IMPORT_ON_ERROR_VALUES)
+        args.optEnum("onConflict", IMPORT_ON_CONFLICT_VALUES)
+        args.optEnum("triggerMode", IMPORT_TRIGGER_MODE_VALUES)
     }
 
     /**
@@ -371,6 +382,17 @@ internal class DataImportStartHandler(
             )
         }
         return metadata
+    }
+
+    private fun validateArtifactContent(record: ArtifactRecord) {
+        if (!artifactContentStore.exists(record.managedArtifact.artifactId)) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "artifactId",
+                    "artifact bytes are missing for persistent uploadMetadata",
+                )),
+            )
+        }
     }
 
     private fun validateFormatCompatibility(args: JsonObject, metadata: ArtifactUploadMetadata): String {
@@ -595,5 +617,8 @@ internal class DataImportStartHandler(
         private val CSV_MIME_TYPES = setOf("text/csv", "application/csv", "application/vnd.ms-excel")
         private val JSON_MIME_TYPES = setOf("application/json", "text/json", "application/x-ndjson")
         private val YAML_MIME_TYPES = setOf("application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml")
+        private val IMPORT_ON_ERROR_VALUES = setOf("abort", "skip", "log")
+        private val IMPORT_ON_CONFLICT_VALUES = setOf("abort", "skip", "update")
+        private val IMPORT_TRIGGER_MODE_VALUES = setOf("fire", "disable", "strict")
     }
 }

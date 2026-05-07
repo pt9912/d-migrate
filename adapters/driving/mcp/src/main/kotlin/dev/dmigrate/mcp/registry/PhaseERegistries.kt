@@ -93,6 +93,7 @@ object PhaseERegistries {
                     DataImportStartHandler(
                         orchestrator = orchestrator,
                         artifactStore = eWiring.phaseCWiring.artifactStore,
+                        artifactContentStore = eWiring.phaseCWiring.artifactContentStore,
                         connectionStore = eWiring.phaseCWiring.connectionStore,
                         schemaStore = eWiring.phaseCWiring.schemaStore,
                         clock = clock,

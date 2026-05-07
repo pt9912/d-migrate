@@ -151,6 +151,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         )
         val payload = parseSuccess(outcome)
         payload.get("uploadSessionId").asString shouldBe "ups-1"
+        payload.get("uploadSessionTtlSeconds").asLong shouldBe 900L
         payload.get("expectedFirstSegmentIndex").asInt shouldBe 1
         payload.get("expectedFirstSegmentOffset").asLong shouldBe 0L
         payload.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-allow"
@@ -162,6 +163,8 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         session.targetTable shouldBe "warehouse.events"
         session.checksumSha256 shouldBe sha256
         session.sizeBytes shouldBe 1024L
+        session.idleTimeoutAt shouldBe now.plusSeconds(300)
+        session.absoluteLeaseExpiresAt shouldBe now.plusSeconds(3_600)
         fx.quotaStore.current(
             dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice),
         ) shouldBe 1L

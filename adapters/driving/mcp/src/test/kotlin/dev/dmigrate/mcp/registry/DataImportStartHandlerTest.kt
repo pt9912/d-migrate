@@ -24,6 +24,7 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
 import dev.dmigrate.server.ports.memory.InMemoryConnectionReferenceStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
@@ -36,6 +37,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
 import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
@@ -74,6 +76,7 @@ class DataImportStartHandlerTest : FunSpec({
         val workerHandleRegistry = InMemoryWorkerHandleRegistry()
         val approvalGrantStore = InMemoryApprovalGrantStore()
         val artifactStore = InMemoryArtifactStore()
+        val artifactContentStore = InMemoryArtifactContentStore()
         val connectionStore = InMemoryConnectionReferenceStore()
         val schemaStore = InMemorySchemaStore()
         val transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore)
@@ -98,6 +101,7 @@ class DataImportStartHandlerTest : FunSpec({
         val handler = DataImportStartHandler(
             orchestrator = orchestrator,
             artifactStore = artifactStore,
+            artifactContentStore = artifactContentStore,
             connectionStore = connectionStore,
             schemaStore = schemaStore,
             clock = clock,
@@ -147,6 +151,7 @@ class DataImportStartHandlerTest : FunSpec({
             uploadIntent: String = ArtifactUploadInitHandler.INTENT_JOB_INPUT,
             wireArtifactKind: String = "seed-data",
             metadataTargetTable: String? = "warehouse.events",
+            includeContent: Boolean = true,
         ) {
             artifactStore.save(
                 ArtifactRecord(
@@ -188,6 +193,13 @@ class DataImportStartHandlerTest : FunSpec({
                     },
                 ),
             )
+            if (kind == ArtifactKind.UPLOAD_INPUT && includeContent) {
+                artifactContentStore.write(
+                    artifactId = artifactId,
+                    source = ByteArrayInputStream(ByteArray(1024) { 'x'.code.toByte() }),
+                    expectedSizeBytes = 1024,
+                )
+            }
         }
     }
 
@@ -375,6 +387,20 @@ class DataImportStartHandlerTest : FunSpec({
         fx.jobIdSeq.get() shouldBe 0
     }
 
+    test("UPLOAD_INPUT mit Metadaten aber ohne Artefaktbytes -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(
+            artifactId = "art-no-bytes",
+            includeContent = false,
+        )
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-no-bytes")))
+        }
+        ex.violations.first().field shouldBe "artifactId"
+        ex.violations.first().reason shouldContain "bytes are missing"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
     test("UPLOAD_INPUT mit falschem uploadIntent -> VALIDATION_ERROR") {
         val fx = Fixture(seedDefaultArtifact = false)
         fx.seedArtifact(
@@ -433,6 +459,33 @@ class DataImportStartHandlerTest : FunSpec({
         fx.seedArtifact(artifactId = "art-csv", mimeType = "text/csv; charset=utf-8")
         val result = fx.handler.handle(ctx(args(artifactId = "art-csv", extraFields = mapOf("format" to "csv"))))
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
+    }
+
+    test("ungueltiger onError-Wert -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("onError" to "continue"))))
+        }
+        ex.violations.first().field shouldBe "onError"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("ungueltiger onConflict-Wert -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("onConflict" to "replace"))))
+        }
+        ex.violations.first().field shouldBe "onConflict"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("ungueltiger triggerMode-Wert -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("triggerMode" to "validate_only"))))
+        }
+        ex.violations.first().field shouldBe "triggerMode"
+        fx.jobIdSeq.get() shouldBe 0
     }
 
     test("format inkompatibel mit Artefakt-MIME -> VALIDATION_ERROR") {

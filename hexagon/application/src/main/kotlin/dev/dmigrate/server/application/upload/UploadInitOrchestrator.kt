@@ -72,6 +72,7 @@ class UploadInitOrchestrator(
     private val sessionIdFactory: () -> String = { "up-${UUID.randomUUID()}" },
     private val claimIdFactory: () -> String = { "claim-${UUID.randomUUID()}" },
     private val claimLeaseDuration: Duration = DEFAULT_CLAIM_LEASE,
+    private val sessionInitialTtl: Duration = DEFAULT_INITIAL_TTL,
     private val sessionIdleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
     private val sessionAbsoluteLease: Duration = DEFAULT_ABSOLUTE_LEASE,
     private val quotaService: QuotaService? = null,
@@ -92,7 +93,7 @@ class UploadInitOrchestrator(
             is SyncEffectReserveOutcome.Existing ->
                 UploadInitOutcome.AlreadyInitialized(
                     uploadSessionId = reserve.resultRef,
-                    ttlSeconds = sessionAbsoluteLease.seconds,
+                    ttlSeconds = replayTtlSeconds(request, reserve.resultRef),
                 )
             is SyncEffectReserveOutcome.Conflict ->
                 UploadInitOutcome.IdempotencyConflict(reserve.existingFingerprint)
@@ -217,11 +218,23 @@ class UploadInitOrchestrator(
         }
         return UploadInitOutcome.Initialized(
             uploadSessionId = sessionId,
-            ttlSeconds = sessionAbsoluteLease.seconds,
+            ttlSeconds = effectiveTtlSeconds(now, session.absoluteLeaseExpiresAt),
             expectedFirstSegmentIndex = 1,
             expectedFirstSegmentOffset = 0,
         )
     }
+
+    private fun replayTtlSeconds(request: UploadInitRequest, uploadSessionId: String): Long {
+        val existing = sessionStore.findById(request.tenantId, uploadSessionId)
+        return if (existing != null) {
+            effectiveTtlSeconds(request.now, existing.absoluteLeaseExpiresAt)
+        } else {
+            sessionInitialTtl.seconds
+        }
+    }
+
+    private fun effectiveTtlSeconds(now: Instant, absoluteLeaseExpiresAt: Instant): Long =
+        minOf(sessionInitialTtl.seconds, Duration.between(now, absoluteLeaseExpiresAt).seconds).coerceAtLeast(0L)
 
     private data class InitQuotaReservations(
         val activeSession: QuotaReservation,
@@ -274,8 +287,9 @@ class UploadInitOrchestrator(
     companion object {
         const val TOOL_NAME: String = "artifact_upload_init"
         val DEFAULT_CLAIM_LEASE: Duration = Duration.ofSeconds(60)
-        val DEFAULT_IDLE_TIMEOUT: Duration = Duration.ofMinutes(30)
-        val DEFAULT_ABSOLUTE_LEASE: Duration = Duration.ofHours(24)
+        val DEFAULT_INITIAL_TTL: Duration = Duration.ofSeconds(900)
+        val DEFAULT_IDLE_TIMEOUT: Duration = Duration.ofSeconds(300)
+        val DEFAULT_ABSOLUTE_LEASE: Duration = Duration.ofSeconds(3_600)
     }
 }
 

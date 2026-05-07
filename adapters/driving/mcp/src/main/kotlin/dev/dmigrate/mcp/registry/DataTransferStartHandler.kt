@@ -3,6 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.JsonObject
 import dev.dmigrate.cli.commands.FilterParseException
 import dev.dmigrate.cli.commands.parseFilter
+import dev.dmigrate.mcp.registry.JsonArgs.optEnum
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.registry.JsonArgs.requireString
 import dev.dmigrate.server.application.error.ResourceNotFoundException
@@ -67,6 +68,7 @@ internal class DataTransferStartHandler(
         val sourceConnectionRef = args.requireString("sourceConnectionRef")
         val targetConnectionRef = args.requireString("targetConnectionRef")
         validateChunkSize(args)
+        validateOptionEnums(args)
         val canonicalFilter = validateFilter(args)
         validateSincePair(args)
 
@@ -155,6 +157,11 @@ internal class DataTransferStartHandler(
                 )),
             )
         }
+    }
+
+    private fun validateOptionEnums(args: JsonObject) {
+        args.optEnum("onConflict", TRANSFER_ON_CONFLICT_VALUES)
+        args.optEnum("triggerMode", TRANSFER_TRIGGER_MODE_VALUES)
     }
 
     /**
@@ -305,5 +312,7 @@ internal class DataTransferStartHandler(
         // CLI-Identifier-konsistente Validierung — alphanumerisch
         // plus `.` (qualified columns) und `_` (snake_case).
         private val IDENTIFIER_PATTERN: Regex = Regex("""^[A-Za-z_][A-Za-z0-9_.]*$""")
+        private val TRANSFER_ON_CONFLICT_VALUES = setOf("abort", "skip", "update")
+        private val TRANSFER_TRIGGER_MODE_VALUES = setOf("fire", "disable", "strict")
     }
 }

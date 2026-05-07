@@ -216,6 +216,24 @@ class DataTransferStartHandlerTest : FunSpec({
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
     }
 
+    test("ungueltiger onConflict-Wert -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("onConflict" to "replace"))))
+        }
+        ex.violations.first().field shouldBe "onConflict"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
+    test("ungueltiger triggerMode-Wert -> VALIDATION_ERROR") {
+        val fx = Fixture()
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(extraFields = mapOf("triggerMode" to "copy"))))
+        }
+        ex.violations.first().field shouldBe "triggerMode"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
     test("blanker filter -> VALIDATION_ERROR(filter)") {
         val fx = Fixture()
         val ex = shouldThrow<ValidationErrorException> {
