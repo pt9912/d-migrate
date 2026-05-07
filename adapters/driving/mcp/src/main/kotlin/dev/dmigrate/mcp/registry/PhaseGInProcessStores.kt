@@ -1,11 +1,16 @@
 package dev.dmigrate.mcp.registry
 
+import dev.dmigrate.server.core.ai.AiArtifactMetadata
 import dev.dmigrate.server.core.ai.AiToolAcquireOutcome
 import dev.dmigrate.server.core.ai.AiToolClaimId
 import dev.dmigrate.server.core.ai.AiToolOutcome
 import dev.dmigrate.server.core.ai.AiToolScope
 import dev.dmigrate.server.core.error.ToolErrorCode
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.AiArtifactMetadataStore
 import dev.dmigrate.server.ports.AiToolOutcomeStore
+import dev.dmigrate.server.ports.SaveAiArtifactMetadataOutcome
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -187,5 +192,84 @@ internal class InProcessAiToolOutcomeStore(
             leaseExpiresAt = expiresAt,
             attemptCount = attemptCount,
         )
+    }
+}
+
+/**
+ * Phase G § 5.4 + § 6 G.6 (G.6.b 2/2) — in-process
+ * [AiArtifactMetadataStore].
+ *
+ * Persistiert KI-Artefakt-Metadaten parallel zum
+ * [dev.dmigrate.server.ports.ArtifactStore]. Plan §5.4 Z. 748-752:
+ *
+ * - `save` ist idempotent pro `(tenantId, artifactId)` —
+ *   identische Metadaten kollabieren auf
+ *   [SaveAiArtifactMetadataOutcome.AlreadyExists] (No-Op-Replay
+ *   nach Crash zwischen Provider-Aufruf und Outcome-Commit);
+ *   abweichende Metadaten unter demselben Tupel liefern
+ *   [SaveAiArtifactMetadataOutcome.Conflict] (Server-State-Drift,
+ *   nie an Caller leaken).
+ * - `findByArtifactId` und `findByResourceUri` laufen über
+ *   getrennte Indexes; `resourceUri.id == artifactId` ist als
+ *   `AiArtifactMetadata`-Init-Invariante garantiert, die beiden
+ *   Indexes bleiben so im Schritt.
+ * - `deleteByArtifactId` ist idempotent (Sweeper-fähig).
+ *
+ * Concurrency: einzelne Mutationen über
+ * [java.util.concurrent.ConcurrentHashMap.compute] sind atomar pro
+ * Schlüssel. Der Sekundär-Index ist beim `save`-Erfolg in derselben
+ * `compute`-Phase aktualisiert, beim `delete` ebenfalls — keine
+ * Race-Condition zwischen Primär- und Sekundär-Lookup.
+ */
+internal class InProcessAiArtifactMetadataStore : AiArtifactMetadataStore {
+
+    private data class Index(val tenantId: TenantId, val key: String)
+
+    private val byArtifactId = ConcurrentHashMap<Index, AiArtifactMetadata>()
+    private val byResourceUri = ConcurrentHashMap<Index, String>()
+
+    override fun save(metadata: AiArtifactMetadata): SaveAiArtifactMetadataOutcome {
+        val artifactKey = Index(metadata.tenantId, metadata.artifactId)
+        val uriKey = Index(metadata.tenantId, metadata.resourceUri.render())
+
+        var outcome: SaveAiArtifactMetadataOutcome? = null
+        byArtifactId.compute(artifactKey) { _, existing ->
+            outcome = when {
+                existing == null -> {
+                    byResourceUri[uriKey] = metadata.artifactId
+                    SaveAiArtifactMetadataOutcome.Saved(metadata)
+                }
+                existing == metadata -> SaveAiArtifactMetadataOutcome.AlreadyExists(existing)
+                else -> SaveAiArtifactMetadataOutcome.Conflict(
+                    existing = existing,
+                    attempted = metadata,
+                )
+            }
+            // Bei Conflict / AlreadyExists: existing-Wert unverändert lassen.
+            if (outcome is SaveAiArtifactMetadataOutcome.Saved) metadata else existing
+        }
+        return outcome!!
+    }
+
+    override fun findByArtifactId(tenantId: TenantId, artifactId: String): AiArtifactMetadata? =
+        byArtifactId[Index(tenantId, artifactId)]
+
+    override fun findByResourceUri(
+        tenantId: TenantId,
+        resourceUri: ServerResourceUri,
+    ): AiArtifactMetadata? {
+        val artifactId = byResourceUri[Index(tenantId, resourceUri.render())] ?: return null
+        return byArtifactId[Index(tenantId, artifactId)]
+    }
+
+    override fun deleteByArtifactId(tenantId: TenantId, artifactId: String): Boolean {
+        val artifactKey = Index(tenantId, artifactId)
+        var deleted = false
+        byArtifactId.computeIfPresent(artifactKey) { _, existing ->
+            byResourceUri.remove(Index(tenantId, existing.resourceUri.render()))
+            deleted = true
+            null
+        }
+        return deleted
     }
 }
