@@ -2,13 +2,27 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: F (`Datenoperationen und policy-pflichtige Uploads`)
-> **Status**: in Arbeit (2026-05-06) — AP F.1 (Phase-E-Verträge-Gate)
-> grün durch Abschluss von Phase E inkl. E2 (persistente JDBC-Adapter)
-> und E3 (Async-Executor); Sub-Pläne in
-> [`../done/`](../done/). Phase-E-`job_cancel` und Cancel-Propagation
-> für Reverse/Profile/Compare aus AP E0 + AP E.7/E.8 verfügbar; Import-
-> und Transfer-Worker bekommen Cancel-Token via E0.3 ebenfalls. Damit
-> ist die F.1-Akzeptanz aus § 8.1 erfüllt.
+> **Status**: ✅ abgeschlossen (2026-05-07) — alle APs F.1–F.10 grün.
+> F.1 (Phase-E-Verträge-Gate) durch Abschluss von Phase E inkl. E2
+> (persistente JDBC-Adapter) und E3 (Async-Executor) erfüllt; Sub-
+> Pläne in [`../done/`](../done/). F.2–F.6 liefern den policy-
+> pflichtigen Upload-Pfad (`uploadIntent=job_input`,
+> `UploadInitOrchestrator`, `JobInputFinalizer`, administrative
+> Abort-Pipeline). F.7 + F.8 reaktivieren `data_import_start` und
+> `data_transfer_start` als produktive, idempotente Job-Starts mit
+> tenant-scoped ConnectionRef-Resolution + MCP-spezifischem
+> Fingerprint. F.9 erweitert die Quota-Modellierung um
+> `STORED_ARTIFACT_BYTES` + Finalisations-Timeout-Sweeper +
+> `AuditFields.resourceRefs`. F.10 zieht Specs (mcp-server.md +
+> ki-mcp.md), Tool-Schemas, Beispiele und Integrationstests
+> (stdio-/HTTP-Multi-Segment-Upload, Import/Transfer-Roundtrip)
+> nach. Plan-Carve-outs aus F.5/F.7/F.8/F.9: Init-Orchestrator-
+> Wiring in PhaseCRegistries, administrative Abort-Pipeline-
+> Wiring, `wireArtifactKind`/`format-mimeType`-Kompatibilitaet,
+> Filter-DSL-Kanonisierung im Transfer-Fingerprint, `truncate=true`
+> im Policy-Fingerprint, Retention-Cleanup-Release fuer
+> `STORED_ARTIFACT_BYTES` und `preAbortState`/`preAbortBytes` im
+> AbortOutcome — alle bewusst Folge-AP / Phase-G-Concern.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.5, Abschnitt 4.6, Abschnitt 5.4, Abschnitt 6.1a,
 > Abschnitt 6.7, Abschnitt 6.8, Abschnitt 8 Phase F, Abschnitt 9.1,

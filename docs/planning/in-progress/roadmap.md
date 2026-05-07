@@ -406,7 +406,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](../done/ImpPlan-0.9.4-6.1.md),
 | Server  | Phase E: Async-Jobs, Idempotenz und Policy — Job-Start-Service fuer `schema_reverse_start`/`data_profile_start`/`schema_compare_start`, produktiver `job_cancel` mit Worker-Handle-Registry, Idempotency-Zustandsautomat, Policy/Approval-Grants, Quotas und Timeouts; produktive Persistenz und Async-Executor in den Sub-Plaenen **E2**/**E3** — siehe `../done/ImpPlan-0.9.6-E.md` und `spec/phase-e-port-atomicity.md` | —      | ✅ (2026-05-06) |
 | Server  | Phase E2: Persistente Phase-E-Port-Adapter (JDBC/Postgres) — `JdbcTransactionRunner`, `JdbcIdempotencyStore`, `JdbcJobStore`, `JdbcJobStartTransaction`, `JdbcQuotaService`/`JdbcQuotaReservationOwnerStore` mit Flyway-Initial-Migration und Contract-Test-Lauf gegen Testcontainers-Postgres — siehe `../done/ImpPlan-0.9.6-E2.md` und `spec/phase-e-port-atomicity.md` | —      | ✅ (2026-05-06) |
 | Server  | Phase E3: Async-Executor Production-Tuning — `BoundedAsyncJobExecutor` mit `JobExecutorLifecycle`, `JobDispatchAdmission`-Gate, Backpressure (`RateLimited` reason `EXECUTOR_SATURATED`), Cancel-while-queued, graceful Shutdown; `SyncExecutor` bleibt Default, Async ist opt-in via `server.jobs.executor.mode` — siehe `../done/ImpPlan-0.9.6-E3.md` | —      | ✅ (2026-05-06) |
-| Server  | Phase F: Policy-gesteuerte Datenoperationen (`data_import_start`, `data_transfer_start`) + policy-pflichtige `artifact_upload_init`-Variante mit Session-Metadaten und Approval-Flow — siehe `ImpPlan-0.9.6-F.md` | —      | 🔄 (2026-05-06) |
+| Server  | Phase F: Policy-gesteuerte Datenoperationen (`data_import_start`, `data_transfer_start`) + policy-pflichtige `artifact_upload_init`-Variante mit Session-Metadaten und Approval-Flow + administrative Abort-Pipeline + STORED_ARTIFACT_BYTES-Quota + Finalisations-Timeout-Sweeper — siehe `../done/ImpPlan-0.9.6-F.md` | —      | ✅ (2026-05-07) |
 | Server  | Phase G: KI-nahe MCP-Tools (`procedure_transform_plan`, `procedure_transform_execute`, `testdata_plan`) + MCP-Prompts + abschliessende Integrationstests und Fehler-Envelope-Haertung — siehe `ImpPlan-0.9.6-G.md` | —      | ⏳             |
 
 **Ergebnis**: d-migrate ist als MCP-Server nutzbar und kann von KI-Agenten
@@ -667,6 +667,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.39
-**Stand**: 2026-05-05
-**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7/E2 abgeschlossen; 0.9.6 Phase E aktiv (Atomicity-Vertrag dokumentiert, persistente Phase-E-Port-Adapter umgesetzt); geplant: 0.9.6 Phase E3/F/G, 0.9.7, 0.9.8, 0.9.9
+**Version**: 3.40
+**Stand**: 2026-05-07
+**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7/E/E2/E3/F abgeschlossen; geplant: 0.9.6 Phase G, 0.9.7, 0.9.8, 0.9.9
