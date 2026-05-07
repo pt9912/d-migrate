@@ -53,6 +53,31 @@ object PhaseERegistries {
         val builder = ToolRegistry.builder()
         for (descriptor in baseRegistry.all()) {
             val handler = when (descriptor.name) {
+                ArtifactUploadInitHandler.TOOL_NAME ->
+                    ArtifactUploadInitHandler(
+                        sessionStore = eWiring.phaseCWiring.uploadSessionStore,
+                        quotaService = eWiring.phaseCWiring.quotaService,
+                        limits = eWiring.phaseCWiring.limits,
+                        options = ArtifactUploadInitHandler.Options(clock = clock),
+                        uploadInitOrchestrator = eWiring.uploadInitOrchestrator,
+                    )
+                ArtifactUploadAbortHandler.TOOL_NAME ->
+                    ArtifactUploadAbortHandler(
+                        sessionStore = eWiring.phaseCWiring.uploadSessionStore,
+                        segmentStore = eWiring.phaseCWiring.uploadSegmentStore,
+                        quotaService = eWiring.phaseCWiring.quotaService,
+                        clock = clock,
+                        administrativeAbortPipeline = AdministrativeAbortPipeline(
+                            sessionStore = eWiring.phaseCWiring.uploadSessionStore,
+                            segmentStore = eWiring.phaseCWiring.uploadSegmentStore,
+                            quotaService = eWiring.phaseCWiring.quotaService,
+                            syncEffectStore = eWiring.syncEffectStore,
+                            abortOutcomeStore = eWiring.abortOutcomeStore,
+                            abortApprovalFingerprint = eWiring.abortApprovalFingerprint,
+                            policyService = eWiring.policyService,
+                            clock = clock,
+                        ),
+                    )
                 SchemaReverseStartHandler.TOOL_NAME ->
                     SchemaReverseStartHandler(orchestrator, clock)
                 DataProfileStartHandler.TOOL_NAME ->

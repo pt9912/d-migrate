@@ -23,6 +23,7 @@ import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.ConnectionReferenceStore
 import dev.dmigrate.server.ports.SchemaStore
 import java.time.Clock
+import java.util.Locale
 
 /**
  * Phase F § 6.1 + § 8.7 (F.7 2/5) — `data_import_start`-Handler.
@@ -44,12 +45,10 @@ import java.time.Clock
  *   Policy-Decision, Quota-Reservierung, durable Job-Anlage; der
  *   Handler liefert nur das Tool-Mapping.
  *
- * **Carve-out F.7 (2/5)**: Artefakt-Eignung (`kind=UPLOAD_INPUT`,
- * `uploadIntent=job_input`, wireArtifactKind-Matrix) und
- * `table`/`tables`/`targetTable`-Semantik werden in F.7 (3/5)
- * eingebaut. ConnectionRef-Resolution + SchemaRef-Resolution +
- * MCP-Import-Fingerprint folgen in F.7 (4/5). Production-Wiring +
- * E2E-Test in F.7 (5/5).
+ * Der Handler prueft die Artefakt-Eignung (`kind=UPLOAD_INPUT`),
+ * `format`/MIME-Kompatibilitaet, Tabellen-Topologie sowie
+ * Connection-/Schema-Refs vor Idempotency ohne Store-Write. Der Runner
+ * materialisiert erst spaeter Secrets und fuehrt das JDBC-I/O aus.
  */
 internal class DataImportStartHandler(
     private val orchestrator: JobStartOrchestrator,
@@ -75,6 +74,7 @@ internal class DataImportStartHandler(
         val tenantId = context.principal.effectiveTenantId
         val record = resolveArtifact(artifactSource, tenantId)
         validateArtifactEligibility(record)
+        validateFormatCompatibility(args, record)
         // Phase F § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
         // VOR der Idempotency-Reservierung. ConnectionReferenceStore
         // liefert nur secret-frei (kein JDBC-URL-Materialise) — der
@@ -330,11 +330,8 @@ internal class DataImportStartHandler(
      * - Visibility-Check ist bewusst nicht hier — der Tenant-Scope
      *   ist bereits ueber den findById-Lookup erzwungen.
      *
-     * **Carve-out F.7 (3/5)**: `wireArtifactKind` (schema, ddl,
-     * transform-script, rules, seed-data, generic) und
-     * `format`/`mimeType`-Kompatibilitaet werden in F.7 (4/5)
-     * abgedeckt — sie benoetigen einen ArtifactUploadMetadataStore
-     * oder eine Erweiterung von ArtifactRecord.
+     * `format`/`mimeType`-Kompatibilitaet wird anschliessend gegen die
+     * persistenten [ManagedArtifact.contentType]-Metadaten geprueft.
      */
     private fun validateArtifactEligibility(record: ArtifactRecord) {
         if (record.kind != ArtifactKind.UPLOAD_INPUT) {
@@ -343,6 +340,25 @@ internal class DataImportStartHandler(
                     "artifactId",
                     "import requires artifactKind=UPLOAD_INPUT, got ${record.kind.name} " +
                         "(read-only schema-staging artefacts cannot be imported)",
+                )),
+            )
+        }
+    }
+
+    private fun validateFormatCompatibility(args: JsonObject, record: ArtifactRecord) {
+        val format = args.optString("format")?.lowercase(Locale.US) ?: return
+        val mimeType = record.managedArtifact.contentType.lowercase(Locale.US).substringBefore(";").trim()
+        val compatible = when (format) {
+            "csv" -> mimeType in CSV_MIME_TYPES
+            "json" -> mimeType in JSON_MIME_TYPES
+            "yaml" -> mimeType in YAML_MIME_TYPES
+            else -> false
+        }
+        if (!compatible) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation(
+                    "format",
+                    "format '$format' is not compatible with artifact mimeType '$mimeType'",
                 )),
             )
         }
@@ -490,5 +506,8 @@ internal class DataImportStartHandler(
         const val DEFAULT_JOB_RETENTION_SECONDS: Long = 24 * 60 * 60
         // Plan § 6.1: chunkSize "positive Ganzzahl bis 10000".
         const val MAX_CHUNK_SIZE: Long = 10_000
+        private val CSV_MIME_TYPES = setOf("text/csv", "application/csv", "application/vnd.ms-excel")
+        private val JSON_MIME_TYPES = setOf("application/json", "text/json", "application/x-ndjson")
+        private val YAML_MIME_TYPES = setOf("application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml")
     }
 }

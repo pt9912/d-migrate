@@ -34,6 +34,7 @@ import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.time.Clock
 import java.time.Duration
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -66,9 +67,8 @@ internal class ArtifactUploadInitHandler(
      * Phase F § 5.1 + § 8.3 (F.3 4/4): wenn gesetzt, faengt der Handler
      * `uploadIntent=job_input` und delegiert an den
      * [dev.dmigrate.server.application.upload.UploadInitOrchestrator].
-     * Default `null` haelt den Phase-C Read-only-Pfad unveraendert —
-     * Bestands-Tests, die keinen Orchestrator wiren, bekommen weiterhin
-     * `POLICY_REQUIRED` fuer non-readonly Intents.
+     * Registry-Defaults wiren den Orchestrator; `null` bleibt nur fuer
+     * isolierte Handler-Tests oder bewusstes Legacy-Wiring moeglich.
      */
     private val uploadInitOrchestrator: dev.dmigrate.server.application.upload.UploadInitOrchestrator? = null,
 ) : ToolHandler {
@@ -79,9 +79,7 @@ internal class ArtifactUploadInitHandler(
         // Phase F § 5.1 (F.3 4/4): policy-pflichtige Intents werden vor
         // dem Phase-C Read-only-Pfad abgefangen. Wenn ein
         // `UploadInitOrchestrator` gewired ist, geht `uploadIntent=
-        // job_input` durch die F.3-Pipeline; ohne Orchestrator faellt
-        // der Pfad weiter auf das Phase-C `POLICY_REQUIRED`-Verhalten
-        // zurueck (Bestands-Caller unveraendert).
+        // job_input` durch die F.3-Pipeline.
         if (uploadInitOrchestrator != null) {
             policyInitOutcomeOrNull(context)?.let { return it }
         }
@@ -282,7 +280,7 @@ internal class ArtifactUploadInitHandler(
 
     private fun parseArtifactKind(obj: JsonObject): ArtifactKind {
         val raw = obj.optString("artifactKind") ?: return ArtifactKind.UPLOAD_INPUT
-        return runCatching { ArtifactKind.valueOf(raw) }.getOrElse {
+        return runCatching { ArtifactKind.valueOf(raw.uppercase(Locale.US)) }.getOrElse {
             throw ValidationErrorException(
                 listOf(ValidationViolation(
                     "artifactKind",
@@ -489,6 +487,8 @@ internal class ArtifactUploadInitHandler(
     }
 
     companion object {
+        const val TOOL_NAME: String = "artifact_upload_init"
+
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
 
         /** Phase F § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */

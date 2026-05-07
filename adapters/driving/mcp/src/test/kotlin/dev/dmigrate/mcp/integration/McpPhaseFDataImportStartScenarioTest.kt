@@ -52,10 +52,9 @@ import java.time.ZoneOffset
  * - Plan-§-8.7-Pflichten am Wire: VALIDATION_ERROR fuer fehlenden
  *   `targetConnectionRef`, RESOURCE_NOT_FOUND fuer unbekanntes
  *   Artefakt.
- * - Phase-F-Carve-out aus F.7 (5/5): das Tool wird als Job in
- *   QUEUED angelegt; Runner-Pipeline (Streaming-Read aus
- *   ArtifactContentStore -> Import-Worker) bleibt einer Folge-AP
- *   vorbehalten.
+ * - Runner-Boundary aus F.7 (5/5): das Tool wird als Job durabel
+ *   angelegt; ohne explizit injizierten Import-Runner terminiert der
+ *   Datenjob fail-closed, statt erfolgreichen JDBC-I/O zu simulieren.
  */
 class McpPhaseFDataImportStartScenarioTest : FunSpec({
 

@@ -215,4 +215,7 @@ internal class ArtifactUploadAbortHandler(
         )
     }
 
+    companion object {
+        const val TOOL_NAME: String = "artifact_upload_abort"
+    }
 }

@@ -2,6 +2,9 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.policy.PolicyAttempt
 import dev.dmigrate.server.application.policy.PolicyService
+import dev.dmigrate.server.application.quota.QuotaReservation
+import dev.dmigrate.server.application.quota.QuotaService
+import dev.dmigrate.server.application.quota.RateLimitedDetail
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome
 import dev.dmigrate.server.core.idempotency.SyncEffectScope
@@ -17,6 +20,9 @@ import dev.dmigrate.server.ports.UploadInitClaimOutcome
 import dev.dmigrate.server.ports.UploadInitClaimScope
 import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
+import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
@@ -51,12 +57,11 @@ import java.util.UUID
  *    `UploadInitClaimStore.release(scope, claimId)` schliessen den
  *    Single-Writer-Claim ab.
  *
- * Quota-Integration (Plan § 5.1 "aktive Upload-Session-Quota +
- * reservierte Upload-Bytes vor durablem Session-Commit") kommt in einer
- * Folge-AP, sobald die Quota-Dimension `ACTIVE_UPLOAD_SESSIONS` +
- * `UPLOAD_BYTES` produktiv durchgewoben ist (E2.7-Stack erweitert).
- * Aktuell beleibt die Pipeline atomar fuer den Session-/Claim-Pfad;
- * Quota-Hooks werden additive eingehaengt.
+ * Quota-Integration: nach erfolgreicher Policy-Entscheidung und vor dem
+ * durablem Session-Commit werden `ACTIVE_UPLOAD_SESSIONS` und `UPLOAD_BYTES`
+ * reserviert. Erst nach Session- und SyncEffect-Commit werden die
+ * Reservierungen committed; bei Fehlern vor diesem Punkt werden sie
+ * refunded.
  */
 class UploadInitOrchestrator(
     private val syncEffectStore: SyncEffectIdempotencyStore,
@@ -69,6 +74,7 @@ class UploadInitOrchestrator(
     private val claimLeaseDuration: Duration = DEFAULT_CLAIM_LEASE,
     private val sessionIdleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
     private val sessionAbsoluteLease: Duration = DEFAULT_ABSOLUTE_LEASE,
+    private val quotaService: QuotaService? = null,
 ) {
 
     fun init(request: UploadInitRequest): UploadInitOutcome {
@@ -170,6 +176,7 @@ class UploadInitOrchestrator(
         claimScope: UploadInitClaimScope,
         claimId: String,
     ): UploadInitOutcome {
+        val quotaReservations = reserveInitQuotas(request)
         val sessionId = sessionIdFactory()
         val now = request.now
         val session = UploadSession(
@@ -192,15 +199,21 @@ class UploadInitOrchestrator(
             approvalFingerprint = fingerprint,
             targetTable = request.attempt.targetTable,
         )
-        sessionStore.save(session)
-        val syncEffectScope = SyncEffectScope(
-            tenantId = request.tenantId,
-            callerId = request.callerId,
-            toolName = TOOL_NAME,
-            approvalKey = request.approvalKey,
-        )
-        syncEffectStore.commit(syncEffectScope, sessionId, now)
-        claimStore.release(claimScope, claimId)
+        try {
+            sessionStore.save(session)
+            val syncEffectScope = SyncEffectScope(
+                tenantId = request.tenantId,
+                callerId = request.callerId,
+                toolName = TOOL_NAME,
+                approvalKey = request.approvalKey,
+            )
+            syncEffectStore.commit(syncEffectScope, sessionId, now)
+            commitInitQuotas(quotaReservations)
+            claimStore.release(claimScope, claimId)
+        } catch (failure: RuntimeException) {
+            refundInitQuotas(quotaReservations)
+            throw failure
+        }
         return UploadInitOutcome.Initialized(
             uploadSessionId = sessionId,
             ttlSeconds = sessionAbsoluteLease.seconds,
@@ -208,6 +221,54 @@ class UploadInitOrchestrator(
             expectedFirstSegmentOffset = 0,
         )
     }
+
+    private data class InitQuotaReservations(
+        val activeSession: QuotaReservation,
+        val uploadBytes: QuotaReservation,
+    )
+
+    private fun reserveInitQuotas(request: UploadInitRequest): InitQuotaReservations? {
+        val quota = quotaService ?: return null
+        val sessionsKey = QuotaKey(
+            tenantId = request.tenantId,
+            dimension = QuotaDimension.ACTIVE_UPLOAD_SESSIONS,
+            principalId = request.callerId,
+        )
+        val bytesKey = QuotaKey(
+            tenantId = request.tenantId,
+            dimension = QuotaDimension.UPLOAD_BYTES,
+            principalId = request.callerId,
+        )
+        val activeSession = when (val outcome = quota.reserve(sessionsKey, amount = 1)) {
+            is QuotaOutcome.Granted -> QuotaReservation.of(outcome)
+            is QuotaOutcome.RateLimited -> return throwRateLimited(outcome)
+        }
+        val uploadBytes = when (val outcome = quota.reserve(bytesKey, amount = request.attempt.sizeBytes)) {
+            is QuotaOutcome.Granted -> QuotaReservation.of(outcome)
+            is QuotaOutcome.RateLimited -> {
+                quota.refund(activeSession)
+                return throwRateLimited(outcome)
+            }
+        }
+        return InitQuotaReservations(activeSession, uploadBytes)
+    }
+
+    private fun commitInitQuotas(reservations: InitQuotaReservations?) {
+        val quota = quotaService ?: return
+        if (reservations == null) return
+        quota.commit(reservations.activeSession)
+        quota.commit(reservations.uploadBytes)
+    }
+
+    private fun refundInitQuotas(reservations: InitQuotaReservations?) {
+        val quota = quotaService ?: return
+        if (reservations == null) return
+        quota.refund(reservations.uploadBytes)
+        quota.refund(reservations.activeSession)
+    }
+
+    private fun throwRateLimited(outcome: QuotaOutcome.RateLimited): Nothing =
+        throw dev.dmigrate.server.application.error.RateLimitedException(RateLimitedDetail.from(outcome))
 
     companion object {
         const val TOOL_NAME: String = "artifact_upload_init"

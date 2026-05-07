@@ -10,11 +10,20 @@ import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.upload.DefaultJobInputFinalizer
 import dev.dmigrate.mcp.upload.JobInputFinalizer
+import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
+import dev.dmigrate.server.application.fingerprint.PayloadFingerprintService
+import dev.dmigrate.server.application.policy.ConfiguredPolicyService
+import dev.dmigrate.server.application.policy.PolicyEffect
+import dev.dmigrate.server.application.policy.PolicyService
 import dev.dmigrate.server.application.quota.QuotaService
+import dev.dmigrate.server.application.upload.AbortApprovalFingerprint
+import dev.dmigrate.server.application.upload.UploadInitApprovalFingerprint
+import dev.dmigrate.server.application.upload.UploadInitOrchestrator
 import dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory
 import dev.dmigrate.mcp.resources.EmptyConnectionStore
 import dev.dmigrate.mcp.resources.EmptyDiffStore
 import dev.dmigrate.mcp.resources.EmptyProfileStore
+import dev.dmigrate.server.ports.AbortOutcomeStore
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.AuditSink
@@ -23,6 +32,8 @@ import dev.dmigrate.server.ports.DiffStore
 import dev.dmigrate.server.ports.JobStore
 import dev.dmigrate.server.ports.ProfileStore
 import dev.dmigrate.server.ports.SchemaStore
+import dev.dmigrate.server.ports.SyncEffectIdempotencyStore
+import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
 import java.security.SecureRandom
@@ -147,6 +158,29 @@ data class PhaseCWiring(
      * production wiring without an override is a misconfig.
      */
     val cursorKeyring: CursorKeyring = DEV_DEFAULT,
+    val policyService: PolicyService = ConfiguredPolicyService(
+        rules = emptyList(),
+        defaultEffect = PolicyEffect.Challenge(
+            requiredScopes = setOf("dmigrate:artifact:upload"),
+            reasons = listOf("policy:no-rule"),
+        ),
+    ),
+    val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(),
+    val syncEffectStore: SyncEffectIdempotencyStore = InProcessSyncEffectIdempotencyStore(),
+    val uploadInitClaimStore: UploadInitClaimStore = InProcessUploadInitClaimStore(),
+    val abortOutcomeStore: AbortOutcomeStore = InProcessAbortOutcomeStore(),
+    val uploadInitApprovalFingerprint: UploadInitApprovalFingerprint =
+        UploadInitApprovalFingerprint(payloadFingerprintService),
+    val abortApprovalFingerprint: AbortApprovalFingerprint =
+        AbortApprovalFingerprint(payloadFingerprintService),
+    val uploadInitOrchestrator: UploadInitOrchestrator = UploadInitOrchestrator(
+        syncEffectStore = syncEffectStore,
+        claimStore = uploadInitClaimStore,
+        sessionStore = uploadSessionStore,
+        policyService = policyService,
+        approvalFingerprintService = uploadInitApprovalFingerprint,
+        quotaService = quotaService,
+    ),
 ) {
     companion object {
 

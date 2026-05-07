@@ -334,6 +334,23 @@ class DataImportStartHandlerTest : FunSpec({
         }
     }
 
+    test("format kompatibel mit Artefakt-MIME -> Success") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(artifactId = "art-csv", mimeType = "text/csv; charset=utf-8")
+        val result = fx.handler.handle(ctx(args(artifactId = "art-csv", extraFields = mapOf("format" to "csv"))))
+        result.shouldBeInstanceOf<ToolCallOutcome.Success>()
+    }
+
+    test("format inkompatibel mit Artefakt-MIME -> VALIDATION_ERROR") {
+        val fx = Fixture(seedDefaultArtifact = false)
+        fx.seedArtifact(artifactId = "art-json", mimeType = "application/json")
+        val ex = shouldThrow<ValidationErrorException> {
+            fx.handler.handle(ctx(args(artifactId = "art-json", extraFields = mapOf("format" to "csv"))))
+        }
+        ex.violations.first().field shouldBe "format"
+        fx.jobIdSeq.get() shouldBe 0
+    }
+
     test("sourceArtifactRef wird tenant-scoped aufgeloest und gegen ArtifactStore validiert") {
         val fx = Fixture()
         val result = fx.handler.handle(

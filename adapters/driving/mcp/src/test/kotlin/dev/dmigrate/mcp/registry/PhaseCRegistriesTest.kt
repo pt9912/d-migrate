@@ -1,12 +1,25 @@
 package dev.dmigrate.mcp.registry
 
+import com.google.gson.JsonParser
 import dev.dmigrate.mcp.schema.JsonSchemaDialect
 import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.UnsupportedToolOperationException
+import dev.dmigrate.server.application.policy.ConfiguredPolicyService
+import dev.dmigrate.server.application.policy.PolicyEffect
+import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.AuthSource
 import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
@@ -14,7 +27,9 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import io.kotest.matchers.types.shouldBeSameInstanceAs
+import java.time.Clock
 import java.time.Instant
+import java.time.ZoneOffset
 
 private val PRINCIPAL = PrincipalContext(
     principalId = PrincipalId("alice"),
@@ -133,5 +148,48 @@ class PhaseCRegistriesTest : FunSpec({
                 (tool in McpServerConfig.DEFAULT_SCOPE_MAPPING.keys) shouldBe true
             }
         }
+    }
+
+    test("defaultToolRegistry wires policy upload init orchestrator in Phase-C path") {
+        val sessionStore = InMemoryUploadSessionStore()
+        val quotaStore = InMemoryQuotaStore()
+        val wiring = PhaseCWiring(
+            uploadSessionStore = sessionStore,
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = Clock.fixed(Instant.parse("2026-05-07T12:00:00Z"), ZoneOffset.UTC),
+            policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = PolicyEffect.Allow),
+        )
+        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val args = JsonParser.parseString(
+            """
+            {
+              "uploadIntent": "job_input",
+              "artifactKind": "upload_input",
+              "mimeType": "text/csv",
+              "sizeBytes": 42,
+              "checksumSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "segmentTotal": 1,
+              "approvalKey": "appr-phase-c-init",
+              "targetTable": "public.events"
+            }
+            """.trimIndent(),
+        ).asJsonObject
+
+        val outcome = registry.findHandler("artifact_upload_init")!!.handle(
+            ToolCallContext("artifact_upload_init", args, PRINCIPAL),
+        )
+        outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
+        val payload = JsonParser.parseString(outcome.content.single().text!!).asJsonObject
+        val session = sessionStore.findById(TenantId("acme"), payload.get("uploadSessionId").asString)!!
+        session.uploadIntent shouldBe ArtifactUploadInitHandler.INTENT_JOB_INPUT
+        session.artifactKind shouldBe ArtifactKind.UPLOAD_INPUT
+        session.approvalKey shouldBe "appr-phase-c-init"
+        session.targetTable shouldBe "public.events"
     }
 })

@@ -92,6 +92,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         val claimStore = InMemoryUploadInitClaimStore()
         val sessionStore = InMemoryUploadSessionStore()
         val quotaStore = InMemoryQuotaStore()
+        val quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE }
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
         val orchestrator = UploadInitOrchestrator(
@@ -103,10 +104,11 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
             approvalFingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService()),
             sessionIdFactory = { "ups-${sessionSeq.incrementAndGet()}" },
             claimIdFactory = { "claim-${claimSeq.incrementAndGet()}" },
+            quotaService = quotaService,
         )
         val handler = ArtifactUploadInitHandler(
             sessionStore = sessionStore,
-            quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+            quotaService = quotaService,
             limits = McpLimitsConfig(),
             options = ArtifactUploadInitHandler.Options(
                 clock = clock,
@@ -160,6 +162,12 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         session.targetTable shouldBe "warehouse.events"
         session.checksumSha256 shouldBe sha256
         session.sizeBytes shouldBe 1024L
+        fx.quotaStore.current(
+            dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice),
+        ) shouldBe 1L
+        fx.quotaStore.current(
+            dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.UPLOAD_BYTES, alice),
+        ) shouldBe 1024L
     }
 
     test("Identischer Retry liefert AlreadyInitialized als Success mit derselben uploadSessionId") {

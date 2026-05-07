@@ -46,10 +46,10 @@ import java.util.Base64
  * jeden ueber den `ArtifactUploadHandler` der produktiven
  * [PhaseCRegistries.defaultToolRegistry]-Verdrahtung dispatcht und
  * am Final-Segment den finalisierten `UPLOAD_INPUT`-Artefakt-Ref im
- * Wire-Antwortenvelope ausweist. Init wird bewusst manuell gesetzt
- * — der `UploadInitOrchestrator`-Wiring-Carve-out (F.5 5/5) ist
- * eine separate Aenderung, der Upload-/Finalisationspfad pin't
- * sich hier ueber stdio.
+ * Wire-Antwortenvelope ausweist. Init wird bewusst manuell gesetzt,
+ * weil dieser Test den Upload-/Finalisationspfad ueber stdio pin't;
+ * der policy-gesteuerte `artifact_upload_init`-Pfad wird separat
+ * ueber Registry-Tests abgedeckt.
  */
 class McpPhaseFStdioMultiSegmentUploadIT : FunSpec({
 
@@ -111,9 +111,8 @@ class McpPhaseFStdioMultiSegmentUploadIT : FunSpec({
         )
 
         // 3. Pre-seed: durable Session mit drei Segmenten + CSV-MIME-Type.
-        // Der policy-Init-Pfad selbst ist im PhaseCRegistries-Wiring
-        // noch nicht produktiv (Carve-out F.5 5/5); F.10 pin't den
-        // mehrsegmentigen Upload + Finalisation, nicht den Init.
+        // F.10 pin't den mehrsegmentigen Upload + Finalisation, nicht
+        // den separat getesteten policy-gesteuerten Init.
         val payload = "id,name,age\n1,Alice,42\n2,Bob,37\n4,Eve,31\n".toByteArray()
         val sha = sha256Hex(payload)
         val sessionId = "ups-stdio-multiseg"

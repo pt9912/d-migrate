@@ -45,12 +45,11 @@ import java.time.Clock
  * - [JobStartOrchestrator] uebernimmt Idempotency-Reservierung,
  *   Policy-Decision, Quota-Reservierung und durable Job-Anlage.
  *
- * **Carve-outs F.8 (2/4)**: ConnectionRef-Resolution gegen den
- * [dev.dmigrate.server.ports.ConnectionReferenceStore] und der
- * MCP-Transfer-Fingerprint folgen in F.8 (3/4). Filter-DSL-Parsing
- * (kanonische Form fuer den Fingerprint) ist Runner-side concern;
- * Phase F MVP rejects nur blanke/ungueltige Top-Level-Strings.
- * Production-Wiring + E2E-Test in F.8 (4/4).
+ * ConnectionRefs werden tenant-scoped gegen den
+ * [dev.dmigrate.server.ports.ConnectionReferenceStore] aufgeloest.
+ * `filter` wird vor dem Fingerprint in eine stabile, whitespace- und
+ * keyword-case-unabhaengige Form gebracht; der Runner fuehrt spaeter
+ * erst die datenbankspezifische Filterauswertung aus.
  */
 internal class DataTransferStartHandler(
     private val orchestrator: JobStartOrchestrator,
@@ -66,7 +65,7 @@ internal class DataTransferStartHandler(
         val sourceConnectionRef = args.requireString("sourceConnectionRef")
         val targetConnectionRef = args.requireString("targetConnectionRef")
         validateChunkSize(args)
-        validateFilter(args)
+        val canonicalFilter = validateFilter(args)
         validateSincePair(args)
 
         val tenantId = context.principal.effectiveTenantId
@@ -100,7 +99,7 @@ internal class DataTransferStartHandler(
             callerId = context.principal.principalId,
             idempotencyKey = idempotencyKey,
             approvalToken = approvalToken,
-            payload = JobStartHandlerSupport.toJsonValueObj(args),
+            payload = JobStartHandlerSupport.toJsonValueObj(canonicalPayload(args, canonicalFilter)),
             refs = refs,
             now = now,
             auditFields = context.auditFields,
@@ -157,12 +156,12 @@ internal class DataTransferStartHandler(
 
     /**
      * Plan § 8.8: "blanker oder ungueltiger filter -> VALIDATION_ERROR".
-     * Phase-F-MVP prueft nur "non-blank"; Filter-DSL-Parsing
-     * (kanonische Form fuer den Fingerprint) ist Runner-side
-     * concern und out-of-scope F.8.
+     * Der Rueckgabewert ist die kanonische Form fuer den
+     * MCP-Transfer-Fingerprint; datenbankspezifisches SQL-/DSL-Binding
+     * bleibt Runner-Aufgabe.
      */
-    private fun validateFilter(args: JsonObject) {
-        val raw = args.get("filter")?.takeUnless { it.isJsonNull } ?: return
+    private fun validateFilter(args: JsonObject): String? {
+        val raw = args.get("filter")?.takeUnless { it.isJsonNull } ?: return null
         val primitive = raw as? com.google.gson.JsonPrimitive
         if (primitive == null || !primitive.isString) {
             throw ValidationErrorException(
@@ -173,6 +172,79 @@ internal class DataTransferStartHandler(
             throw ValidationErrorException(
                 listOf(ValidationViolation("filter", "must not be blank")),
             )
+        }
+        val canonical = canonicalizeFilter(primitive.asString)
+        if (canonical.isBlank()) {
+            throw ValidationErrorException(
+                listOf(ValidationViolation("filter", "must not be blank")),
+            )
+        }
+        return canonical
+    }
+
+    private fun canonicalPayload(args: JsonObject, canonicalFilter: String?): JsonObject {
+        val payload = args.deepCopy()
+        if (canonicalFilter != null) {
+            payload.addProperty("filter", canonicalFilter)
+        }
+        return payload
+    }
+
+    private fun canonicalizeFilter(raw: String): String {
+        val trimmed = raw.trim()
+        val withoutWhere = if (trimmed.regionMatches(0, "where", 0, 5, ignoreCase = true) &&
+            (trimmed.length == 5 || trimmed[5].isWhitespace())
+        ) {
+            trimmed.drop(5).trim()
+        } else {
+            trimmed
+        }
+        val lowered = lowercaseOutsideQuotes(withoutWhere)
+        return collapseWhitespaceOutsideQuotes(lowered)
+            .replace(Regex("\\s*(<=|>=|<>|!=|=|<|>)\\s*")) { match -> match.groupValues[1] }
+    }
+
+    private fun lowercaseOutsideQuotes(value: String): String = buildString(value.length) {
+        var quote: Char? = null
+        for (ch in value) {
+            when {
+                quote == null && (ch == '\'' || ch == '"') -> {
+                    quote = ch
+                    append(ch)
+                }
+                quote == ch -> {
+                    quote = null
+                    append(ch)
+                }
+                quote == null -> append(ch.lowercaseChar())
+                else -> append(ch)
+            }
+        }
+    }
+
+    private fun collapseWhitespaceOutsideQuotes(value: String): String = buildString(value.length) {
+        var quote: Char? = null
+        var pendingWhitespace = false
+        for (ch in value.trim()) {
+            when {
+                quote == null && (ch == '\'' || ch == '"') -> {
+                    if (pendingWhitespace && isNotEmpty()) append(' ')
+                    pendingWhitespace = false
+                    quote = ch
+                    append(ch)
+                }
+                quote == ch -> {
+                    quote = null
+                    append(ch)
+                }
+                quote == null && ch.isWhitespace() -> pendingWhitespace = true
+                quote == null -> {
+                    if (pendingWhitespace && isNotEmpty()) append(' ')
+                    pendingWhitespace = false
+                    append(ch)
+                }
+                else -> append(ch)
+            }
         }
     }
 
@@ -227,18 +299,12 @@ internal class DataTransferStartHandler(
      * MCP-Transfer-Fingerprint: der Plan-§-8.8-Fingerprint-Vertrag
      * (sourceConnectionRef, targetConnectionRef, kanonische
      * Filterform, normalisierte since-Optionen, weitere
-     * normalisierte Transfer-Optionen, Tenant + Principal) wird
-     * automatisch durch den existierenden
+     * normalisierte Transfer-Optionen, Tenant + Principal) wird durch
+     * den existierenden
      * [dev.dmigrate.server.application.fingerprint.PayloadFingerprintService]
-     * via JobStartOrchestrator gebildet — die Args fliessen 1:1 in
-     * den Hash, Tenant + Principal kommen ueber `BindContext`.
-     * Carve-out: kanonische Filter-DSL-Normalisierung
-     * (`WHERE x=1` == `where  x  = 1`) ist Runner-side concern;
-     * der MVP-Fingerprint nutzt die Roh-Eingabe — abweichende
-     * Whitespaces zwischen Calls produzieren unterschiedliche
-     * Fingerprints, was nicht idempotenz-falsch (Plan-konforme
-     * VALIDATION_ERROR oder IDEMPOTENCY_CONFLICT auf abweichendem
-     * Whitespace ist akzeptabel).
+     * via JobStartOrchestrator gebildet. Die `filter`-Roh-Eingabe wird
+     * vorher durch [canonicalizeFilter] ersetzt; Tenant + Principal
+     * kommen ueber `BindContext`.
      */
     private fun resolveConnectionRef(refValue: String, tenantId: TenantId, fieldName: String) {
         val parsed = ServerResourceUri.parse(refValue)

@@ -144,6 +144,7 @@ object PhaseCRegistries {
                 quotaService = wiring.quotaService,
                 limits = wiring.limits,
                 options = ArtifactUploadInitHandler.Options(clock = wiring.clock),
+                uploadInitOrchestrator = wiring.uploadInitOrchestrator,
             ),
             "artifact_upload" to ArtifactUploadHandler(
                 sessionStore = wiring.uploadSessionStore,
@@ -172,6 +173,16 @@ object PhaseCRegistries {
                 segmentStore = wiring.uploadSegmentStore,
                 quotaService = wiring.quotaService,
                 clock = wiring.clock,
+                administrativeAbortPipeline = AdministrativeAbortPipeline(
+                    sessionStore = wiring.uploadSessionStore,
+                    segmentStore = wiring.uploadSegmentStore,
+                    quotaService = wiring.quotaService,
+                    syncEffectStore = wiring.syncEffectStore,
+                    abortOutcomeStore = wiring.abortOutcomeStore,
+                    abortApprovalFingerprint = wiring.abortApprovalFingerprint,
+                    policyService = wiring.policyService,
+                    clock = wiring.clock,
+                ),
             ),
             "job_status_get" to JobStatusGetHandler(jobStore = wiring.jobStore),
             // AP D6 + AP D8: discovery list tools with HMAC-sealed

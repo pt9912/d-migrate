@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.protocol.ToolsCallParams
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.PhaseERegistries
 import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.PhaseFDataOperationWorkerFactory
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -48,15 +49,10 @@ import java.time.ZoneOffset
  *
  * Pin't, dass die Phase-F-Start-Handler ihre Job-Records in
  * denselben Store schreiben, den `job_status_get` und `job_cancel`
- * lesen, und dass die Phase-E-Job-Pipeline (Passthrough-Worker
- * via SyncExecutor) auch fuer F-Operationen geschlossen wird —
- * ohne dass ein realer JDBC-Driver gebraucht wird (Plan-Carve-out
- * F.7 5/5: Runner-seitiger Streaming-Read bleibt eine Folge-AP).
- *
- * Der "Fake-/Test-Driver" ist hier der bereits in den Phase-E-
- * Tests bewaehrte Passthrough-Worker — er materialisiert kein
- * echtes Connection-Secret, fasst aber den ganzen Tool-zu-Job-
- * Lebenszyklus von der MCP-Wire-Seite aus an.
+ * lesen, und dass Phase-F-Datenoperationen im Default ohne explizit
+ * injizierten Runner fail-closed terminieren. Dadurch wird kein
+ * erfolgreicher JDBC-/Secret-Materialisierungs-Pfad simuliert, wenn
+ * er im Bootstrap nicht wirklich verdrahtet ist.
  */
 class McpPhaseFImportTransferRoundtripIT : FunSpec({
 
@@ -175,8 +171,10 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         statusById.get("jobId").asString shouldBe jobId
         statusById.get("operation").asString shouldBe "data_import"
         statusById.get("resourceUri").asString shouldBe resourceUri
-        statusById.has("status") shouldBe true
-        statusById.has("terminal") shouldBe true
+        statusById.get("status").asString shouldBe "FAILED"
+        statusById.get("terminal").asBoolean shouldBe true
+        statusById.getAsJsonObject("error").get("code").asString shouldBe
+            PhaseFDataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
 
         // Roundtrip via resourceUri (zweiter Adressierungspfad).
         val statusByUriArgs = JsonParser.parseString(
@@ -207,8 +205,10 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
             JsonParser.parseString("""{"jobId":"$jobId"}""").asJsonObject,
         )
         status.get("operation").asString shouldBe "data_transfer"
-        status.has("status") shouldBe true
-        status.has("terminal") shouldBe true
+        status.get("status").asString shouldBe "FAILED"
+        status.get("terminal").asBoolean shouldBe true
+        status.getAsJsonObject("error").get("code").asString shouldBe
+            PhaseFDataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
     }
 
     test("data_import_start -> job_cancel ueber tools/call (idempotenter Replay)") {
@@ -227,8 +227,8 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
 
         // Cancel via jobId — der CancelHandler liest aus demselben
         // Store und schreibt eine Cancel-Markierung. Bei einem schon
-        // terminalen Job (Auto-Dispatch via Passthrough-Worker) liefert
-        // er ein replay-faehiges Ergebnis ohne State-Mutation; bei
+        // terminalen fail-closed Datenjob liefert er ein replay-faehiges
+        // Ergebnis ohne State-Mutation; bei
         // einem laufenden Job markiert er Cancel-Pending. Pin't, dass
         // der Roundtrip ueber tools/call durchlaeuft (kein
         // UNSUPPORTED_TOOL_OPERATION oder Validation-Fehler).

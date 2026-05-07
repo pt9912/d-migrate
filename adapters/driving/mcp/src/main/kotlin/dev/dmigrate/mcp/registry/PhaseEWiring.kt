@@ -22,9 +22,15 @@ import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
 import dev.dmigrate.server.application.quota.QuotaReservationOwnerStore
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyService
+import dev.dmigrate.server.application.upload.AbortApprovalFingerprint
+import dev.dmigrate.server.application.upload.UploadInitApprovalFingerprint
+import dev.dmigrate.server.application.upload.UploadInitOrchestrator
+import dev.dmigrate.server.ports.AbortOutcomeStore
 import dev.dmigrate.server.ports.ApprovalGrantStore
 import dev.dmigrate.server.ports.IdempotencyStore
 import dev.dmigrate.server.ports.JobStartTransaction
+import dev.dmigrate.server.ports.SyncEffectIdempotencyStore
+import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.WorkerHandleRegistry
 import java.util.UUID
 
@@ -71,6 +77,21 @@ data class PhaseEWiring(
         validator = approvalGrantValidator,
     ),
     val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(),
+    val syncEffectStore: SyncEffectIdempotencyStore = InProcessSyncEffectIdempotencyStore(),
+    val uploadInitClaimStore: UploadInitClaimStore = InProcessUploadInitClaimStore(),
+    val abortOutcomeStore: AbortOutcomeStore = InProcessAbortOutcomeStore(),
+    val uploadInitApprovalFingerprint: UploadInitApprovalFingerprint =
+        UploadInitApprovalFingerprint(payloadFingerprintService),
+    val abortApprovalFingerprint: AbortApprovalFingerprint =
+        AbortApprovalFingerprint(payloadFingerprintService),
+    val uploadInitOrchestrator: UploadInitOrchestrator = UploadInitOrchestrator(
+        syncEffectStore = syncEffectStore,
+        claimStore = uploadInitClaimStore,
+        sessionStore = phaseCWiring.uploadSessionStore,
+        policyService = policyService,
+        approvalFingerprintService = uploadInitApprovalFingerprint,
+        quotaService = phaseCWiring.quotaService,
+    ),
     val jobIdFactory: () -> String = { "job_${UUID.randomUUID()}" },
     val cancellationSourceFactory: () -> CancellationTokenSource = { CancellationTokenSource.create() },
     val jobStartService: JobStartService = JobStartService(
@@ -135,13 +156,18 @@ data class PhaseEWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * Phase E §7.7 Worker-Factory fuer Auto-Dispatch (Review-Fix
-     * Blocker #1). Default ist [PassthroughJobWorkerFactory] — ein
-     * no-op-Worker, der sofort succeeded und damit den Job-Lifecycle
-     * QUEUED -> SUCCEEDED schliesst, OHNE echte Reader/Profiler/
-     * Compare-Adapter. Production-Wiring uebergibt eine Operation-
-     * basierte Factory mit echten SchemaReverse-/DataProfile-/
-     * SchemaCompare-Workern.
+     * Phase E §7.7 Worker-Factory fuer Auto-Dispatch. Der generische
+     * Fallback bleibt [PassthroughJobWorkerFactory] fuer nicht verdrahtete
+     * Bestandsoperationen; Phase-F-Datenoperationen laufen jedoch ueber
+     * [PhaseFDataOperationWorkerFactory] und failen geschlossen, solange
+     * kein echter Import-/Transfer-Runner injiziert wurde.
      */
-    val jobWorkerFactory: JobWorkerFactory = PassthroughJobWorkerFactory,
+    val fallbackJobWorkerFactory: JobWorkerFactory = PassthroughJobWorkerFactory,
+    val dataImportWorkerFactory: JobWorkerFactory? = null,
+    val dataTransferWorkerFactory: JobWorkerFactory? = null,
+    val jobWorkerFactory: JobWorkerFactory = PhaseFDataOperationWorkerFactory(
+        fallback = fallbackJobWorkerFactory,
+        dataImportWorkerFactory = dataImportWorkerFactory,
+        dataTransferWorkerFactory = dataTransferWorkerFactory,
+    ),
 )
