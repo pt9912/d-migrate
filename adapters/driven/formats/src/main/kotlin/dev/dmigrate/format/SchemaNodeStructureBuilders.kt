@@ -89,6 +89,9 @@ private fun buildColumn(mapper: ObjectMapper, column: ColumnDefinition): ObjectN
     if (column.references != null) {
         node.set<ObjectNode>("references", buildReference(mapper, column.references!!))
     }
+    if (column.generation != null) {
+        node.set<ObjectNode>("generation", buildGeneration(mapper, column.generation!!))
+    }
     return node
 }
 
@@ -120,6 +123,19 @@ private fun buildReference(mapper: ObjectMapper, reference: ReferenceDefinition)
     node.put("column", reference.column)
     if (reference.onDelete != null) node.put("on_delete", reference.onDelete!!.name.lowercase())
     if (reference.onUpdate != null) node.put("on_update", reference.onUpdate!!.name.lowercase())
+    return node
+}
+
+private fun buildGeneration(mapper: ObjectMapper, generation: ColumnGeneration): ObjectNode {
+    val node = mapper.createObjectNode()
+    when (generation) {
+        is ColumnGeneration.Identity -> {
+            node.put("type", "identity")
+            node.put("mode", generation.mode.name.lowercase())
+            if (generation.sequenceName != null) node.put("sequence_name", generation.sequenceName)
+            if (generation.legacySerialSyntax) node.put("legacy_serial_syntax", true)
+        }
+    }
     return node
 }
 

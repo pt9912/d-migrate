@@ -80,6 +80,13 @@ columns:
     ref_type: order_status     # nur bei enum (Verweis auf custom_types)
     element_type: text         # nur bei array (Pflicht)
 
+    # Identity/Generation (optional; nur integer oder biginteger)
+    generation:
+      type: identity           # aktuell einzige Generation-Form
+      mode: by_default         # by_default | always
+      sequence_name: users_id_seq
+      legacy_serial_syntax: true
+
     # Foreign Key (optional)
     references:
       table: <tabellenname>
@@ -87,6 +94,11 @@ columns:
       on_delete: restrict      # restrict | cascade | set_null | set_default | no_action
       on_update: cascade       # (gleiche Optionen)
 ```
+
+`generation` ist mit `default` gegenseitig ausgeschlossen. Ein
+`generation.sequence_name` beschreibt eine an die Spalte gebundene
+owned/implizite Sequence; dieselbe Sequence darf nicht zusaetzlich unter
+`sequences:` als eigenstaendige Business-Sequence definiert werden.
 
 ### Default-Werte
 

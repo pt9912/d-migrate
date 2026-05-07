@@ -126,6 +126,7 @@ data class ColumnChangeView(
     val default: NullableStringChange? = null,
     val unique: StringChange? = null,
     val references: NullableStringChange? = null,
+    val generation: NullableStringChange? = null,
 )
 
 data class ViewSummaryView(val name: String, val materialized: Boolean)

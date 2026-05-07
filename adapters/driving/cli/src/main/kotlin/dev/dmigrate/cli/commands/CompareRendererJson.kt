@@ -142,6 +142,7 @@ internal object CompareRendererJson {
                 c.default?.let { fields += """"default": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
                 c.unique?.let { fields += """"unique": {"before": "${esc(it.before)}", "after": "${esc(it.after)}"}""" }
                 c.references?.let { fields += """"references": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
+                c.generation?.let { fields += """"generation": {"before": ${nullable(it.before)}, "after": ${nullable(it.after)}}""" }
                 "{${fields.joinToString(", ")}}"
             }
             append(""", "columns_changed": [$cols]""")

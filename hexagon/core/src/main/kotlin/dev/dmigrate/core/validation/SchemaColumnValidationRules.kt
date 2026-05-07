@@ -17,6 +17,7 @@ internal object SchemaColumnValidationRules {
         validateRefTypeExists(path, column, schema, errors)
         validateDefaultTypeCompatibility(path, column, errors)
         validateSequenceDefaultReference(path, column, schema, errors)
+        validateGeneration(path, column, schema, errors)
         return errors
     }
 
@@ -199,6 +200,57 @@ internal object SchemaColumnValidationRules {
                     "Sequence '${default.sequenceName}' referenced in default does not exist. " +
                         "Available sequences: $available",
                     path,
+                )
+            }
+        }
+    }
+
+    private fun validateGeneration(
+        path: String,
+        column: ColumnDefinition,
+        schema: SchemaDefinition,
+        errors: MutableList<ValidationError>,
+    ) {
+        val generation = column.generation ?: return
+        when (generation) {
+            is ColumnGeneration.Identity -> validateIdentityGeneration(path, column, generation, schema, errors)
+        }
+    }
+
+    private fun validateIdentityGeneration(
+        path: String,
+        column: ColumnDefinition,
+        identity: ColumnGeneration.Identity,
+        schema: SchemaDefinition,
+        errors: MutableList<ValidationError>,
+    ) {
+        if (column.type !is NeutralType.Integer && column.type !is NeutralType.BigInteger) {
+            errors += ValidationError(
+                "E130",
+                "identity generation is only valid for integer or biginteger columns",
+                "$path.generation",
+            )
+        }
+        if (column.default != null) {
+            errors += ValidationError(
+                "E131",
+                "identity generation and default are mutually exclusive",
+                "$path.generation",
+            )
+        }
+        val sequenceName = identity.sequenceName
+        if (sequenceName != null) {
+            if (sequenceName.isBlank()) {
+                errors += ValidationError(
+                    "E132",
+                    "identity sequence_name must not be blank",
+                    "$path.generation.sequence_name",
+                )
+            } else if (sequenceName in schema.sequences) {
+                errors += ValidationError(
+                    "E133",
+                    "identity sequence '$sequenceName' is owned by the column and must not also be a standalone sequence",
+                    "$path.generation.sequence_name",
                 )
             }
         }

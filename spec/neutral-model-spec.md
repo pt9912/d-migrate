@@ -161,10 +161,10 @@ DDL generiert, sondern als `action_required` gemeldet.
 `identifier` ist der aktuelle 32-bit-Auto-Increment-Vertrag. PostgreSQL
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
 `NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
-Spaltenmetadatum fuer Generation/Identity. Der geplante Vertrag ist im
-Follow-up `docs/planning/open/bigserial-neutral-identity-followup.md` als
-`ColumnGeneration.Identity` festgelegt. Bis diese Modell-Erweiterung umgesetzt
-ist, bleibt `biginteger` im Forward-Generate `BIGINT`.
+Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist im
+Follow-up `docs/planning/in-progress/bigserial-neutral-identity-followup.md` als
+`ColumnGeneration.Identity` festgelegt. `biginteger` ohne dieses Metadatum
+bleibt im Forward-Generate `BIGINT`.
 
 Die Tabelle verwendet die kanonischen Typnamen. Parameter wie `length`, `precision`, `scale`, `values`, `ref_type`, `element_type`, `geometry_type` oder `srid` werden als separate YAML-Attribute angegeben.
 
@@ -268,7 +268,7 @@ Neben den technischen Typen bietet das Modell semantische Typen, die als Alias m
 Semantische Typen werden beim DDL-Export in ihren technischen Typ aufgelöst.
 `email` ist als Singleton implementiert (`data object Email` mit `MAX_LENGTH =
 254`) — die Länge ist nicht konfigurierbar. 64-bit-Identity-Spalten sind kein
-eigener semantischer Typ, sondern werden ueber `biginteger` plus geplantes
+eigener semantischer Typ, sondern werden ueber `biginteger` plus
 `ColumnGeneration.Identity`-Metadatum modelliert.
 
 ---

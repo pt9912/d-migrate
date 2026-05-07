@@ -117,6 +117,7 @@ internal object CompareRendererPlain {
             c.default?.let { sb.appendLine("          default: ${it.before ?: "null"} -> ${it.after ?: "null"}") }
             c.unique?.let { sb.appendLine("          unique: ${it.before} -> ${it.after}") }
             c.references?.let { sb.appendLine("          references: ${it.before ?: "null"} -> ${it.after ?: "null"}") }
+            c.generation?.let { sb.appendLine("          generation: ${it.before ?: "null"} -> ${it.after ?: "null"}") }
         }
         t.primaryKey?.let {
             sb.appendLine("      ~ primary_key: [${it.before.joinToString(", ")}] -> [${it.after.joinToString(", ")}]")

@@ -33,6 +33,7 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     unique = node.boolOrDefault("unique", false),
     default = parseDefault(node["default"]),
     references = parseReference(node["references"]),
+    generation = parseGeneration(node["generation"]),
 )
 
 private fun parseNeutralType(node: JsonNode): NeutralType {
@@ -139,6 +140,26 @@ private fun parseReference(node: JsonNode?): ReferenceDefinition? {
         onUpdate = node.optionalText("on_update")?.toReferentialAction(),
     )
 }
+
+private fun parseGeneration(node: JsonNode?): ColumnGeneration? {
+    if (node == null || node.isNull) return null
+    require(node.isObject) { "Column generation must be an object" }
+    return when (val type = node.requiredText("type")) {
+        "identity" -> ColumnGeneration.Identity(
+            mode = parseIdentityMode(node.optionalText("mode")),
+            sequenceName = node.optionalText("sequence_name"),
+            legacySerialSyntax = node.boolOrDefault("legacy_serial_syntax", false),
+        )
+        else -> throw IllegalArgumentException("Unknown column generation type: $type")
+    }
+}
+
+private fun parseIdentityMode(value: String?): IdentityMode =
+    when (value ?: "by_default") {
+        "always" -> IdentityMode.ALWAYS
+        "by_default" -> IdentityMode.BY_DEFAULT
+        else -> throw IllegalArgumentException("Unknown identity mode: $value")
+    }
 
 private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
     if (node == null || !node.isArray) return emptyList()

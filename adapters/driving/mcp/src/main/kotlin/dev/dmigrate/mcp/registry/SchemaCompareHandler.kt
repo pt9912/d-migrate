@@ -441,6 +441,17 @@ internal class SchemaCompareHandler(
                 ),
             )
         }
+        diff.generation?.let {
+            add(
+                finding(
+                    SchemaFindingSeverity.WARNING,
+                    "TABLE_COLUMN_GENERATION_CHANGED",
+                    "$colPath.generation",
+                    "generation changed from ${it.before} to ${it.after}",
+                    beforeAfter(it.before, it.after),
+                ),
+            )
+        }
     }
 
     private fun projectRequired(colPath: String, change: ValueChange<Boolean>): Map<String, Any?> =

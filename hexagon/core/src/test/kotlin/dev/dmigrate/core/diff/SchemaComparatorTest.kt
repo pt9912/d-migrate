@@ -195,6 +195,26 @@ class SchemaComparatorTest : FunSpec({
         colDiff.default!!.after shouldBe DefaultValue.StringLiteral("hello")
     }
 
+    test("column changed - generation") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.BigInteger)),
+        )))
+        val generation = ColumnGeneration.Identity(
+            mode = IdentityMode.ALWAYS,
+            sequenceName = "t_id_seq",
+            legacySerialSyntax = true,
+        )
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.BigInteger, generation = generation)),
+        )))
+
+        val diff = comparator.compare(left, right)
+        val colDiff = diff.tablesChanged[0].columnsChanged[0]
+        colDiff.generation.shouldNotBeNull()
+        colDiff.generation!!.before shouldBe null
+        colDiff.generation!!.after shouldBe generation
+    }
+
     test("primary key change") {
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf(

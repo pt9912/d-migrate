@@ -5,5 +5,6 @@ data class ColumnDefinition(
     val required: Boolean = false,
     val unique: Boolean = false,
     val default: DefaultValue? = null,
-    val references: ReferenceDefinition? = null
+    val references: ReferenceDefinition? = null,
+    val generation: ColumnGeneration? = null,
 )

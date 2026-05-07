@@ -1,6 +1,6 @@
 # Follow-up-Plan: BIGSERIAL, BigIdentifier und neutrale Identity-Breite
 
-> Status: Draft, Option C entschieden (2026-05-07)
+> Status: In Progress, AP 2 umgesetzt (2026-05-07)
 >
 > Kontext: Der produktive PostgreSQL-Reverse-Pfad mapped `bigserial` bewusst
 > auf `NeutralType.BigInteger` mit Diagnose `R300`. Aeltere Specs zeigen
@@ -208,7 +208,7 @@ Verworfene Alternativen:
 - Neutrale Generate-Beispiele verwenden kein `BIGSERIAL` mehr ohne
   expliziten Generation-Kontext.
 
-### AP 2: Modellumsetzung
+### AP 2: Modellumsetzung (erledigt 2026-05-07)
 
 - Option C als neuen neutralen Vertrag implementieren:
   `ColumnDefinition.generation: ColumnGeneration?`.
