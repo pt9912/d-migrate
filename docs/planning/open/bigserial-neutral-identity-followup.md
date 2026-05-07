@@ -1,6 +1,6 @@
 # Follow-up-Plan: BIGSERIAL, BigIdentifier und neutrale Identity-Breite
 
-> Status: Draft (2026-05-07)
+> Status: Draft, Option C entschieden (2026-05-07)
 >
 > Kontext: Der produktive PostgreSQL-Reverse-Pfad mapped `bigserial` bewusst
 > auf `NeutralType.BigInteger` mit Diagnose `R300`. Aeltere Specs zeigen
@@ -113,101 +113,84 @@ Nicht-Ziel:
 
 ---
 
-## 4. Entscheidungsoptionen
+## 4. Entscheidung: separates Identity-/Generation-Metadatum
 
-### Option A: `NeutralType.BigIdentifier`
-
-Neuen Typ einfuehren:
-
-```kotlin
-data class BigIdentifier(val autoIncrement: Boolean = false) : NeutralType()
-```
-
-Mapping:
-
-- PostgreSQL `BigIdentifier(autoIncrement=true)` -> `BIGSERIAL`
-- PostgreSQL `BigIdentifier(autoIncrement=false)` -> `BIGINT`
-- Reverse `bigserial`/`bigint identity` -> `BigIdentifier(autoIncrement=true)`
-
-Vorteile:
-
-- Nahe an den alten Specs.
-- Einfacher Forward-Mapper.
-
-Nachteile:
-
-- Wiederholt das Breitenkonzept in separaten Typen.
-- Identity-Details wie `GENERATED ALWAYS` vs. `BY DEFAULT`, Sequence-Name oder
-  Default-Ausdruck passen nur begrenzt in einen Typ.
-
-### Option B: Breite am `Identifier`
-
-`Identifier` bekommt eine Breite:
+Option C ist verbindlich umzusetzen. Der neutrale Typ bleibt fuer die
+Datenbreite verantwortlich; die Generierungsstrategie wird als eigenes
+Spaltenmetadatum modelliert. Damit kann `BigInteger` weiter eindeutig `BIGINT`
+bedeuten, waehrend `BigInteger + ColumnGeneration.Identity(...)` eine
+64-bit-Identity-/Serial-Spalte beschreibt.
 
 ```kotlin
-data class Identifier(
-    val autoIncrement: Boolean = false,
-    val width: IdentifierWidth = IdentifierWidth.INT32,
-) : NeutralType()
-```
-
-Mapping:
-
-- PostgreSQL `Identifier(true, INT32)` -> `SERIAL`
-- PostgreSQL `Identifier(true, INT64)` -> `BIGSERIAL`
-- PostgreSQL `Identifier(false, INT64)` -> `BIGINT`
-
-Vorteile:
-
-- Ein Identifier-Konzept, explizite Breite.
-- Passt besser als `BigInteger`, wenn die Spalte semantisch eine ID ist.
-
-Nachteile:
-
-- Breaking Change fuer Serialisierung, Parser, Builder, Tests und Specs.
-- Identity-Details bleiben weiterhin nur teilweise modelliert.
-
-### Option C: Separates Identity-/Generation-Metadatum
-
-Typ bleibt Breite, Generation wird an der Spalte modelliert:
-
-```kotlin
-ColumnDefinition(
-    type = NeutralType.BigInteger,
-    generated = ColumnGeneration.Identity(...)
+data class ColumnDefinition(
+    val type: NeutralType,
+    val required: Boolean = false,
+    val unique: Boolean = false,
+    val default: DefaultValue? = null,
+    val references: ReferenceDefinition? = null,
+    val generation: ColumnGeneration? = null,
 )
+
+sealed interface ColumnGeneration {
+    data class Identity(
+        val mode: IdentityMode = IdentityMode.BY_DEFAULT,
+        val sequenceName: String? = null,
+        val legacySerialSyntax: Boolean = false,
+    ) : ColumnGeneration
+}
+
+enum class IdentityMode {
+    ALWAYS,
+    BY_DEFAULT,
+}
 ```
 
-Mapping:
+PostgreSQL-Mapping:
 
-- PostgreSQL `BigInteger + Identity/SerialGeneration` -> `BIGSERIAL` oder
-  `BIGINT GENERATED ... AS IDENTITY`
+- PostgreSQL `Identifier(autoIncrement=true)` bleibt fuer
+  Rueckwaertskompatibilitaet der bestehende 32-bit-Serial-Vertrag.
+- PostgreSQL `Integer + Identity(legacySerialSyntax=true)` -> `SERIAL`.
+- PostgreSQL `Integer + Identity(legacySerialSyntax=false)` ->
+  `INTEGER GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY`.
+- PostgreSQL `BigInteger + Identity(legacySerialSyntax=true)` -> `BIGSERIAL`.
+- PostgreSQL `BigInteger + Identity(legacySerialSyntax=false)` ->
+  `BIGINT GENERATED {ALWAYS|BY DEFAULT} AS IDENTITY`.
 - PostgreSQL `BigInteger` ohne Generation -> `BIGINT`
-- Owned serial/identity sequences muessen entweder in `ColumnGeneration`
-  gebunden oder aus der eigenstaendigen Sequence-Liste herausgefiltert werden,
-  damit Generate keine doppelte Sequence-DDL erzeugt.
+- Reverse PostgreSQL `bigserial` -> `BigInteger +
+  Identity(legacySerialSyntax=true, sequenceName=...)`.
+- Reverse PostgreSQL `bigint GENERATED ... AS IDENTITY` -> `BigInteger +
+  Identity(legacySerialSyntax=false, mode=...)`.
 
-Vorteile:
+Owned-/Generated-Sequence-Policy:
 
-- Trennung von Datentyp und Generierungsstrategie.
-- Kann `SERIAL`, `BIGSERIAL`, `GENERATED ALWAYS`, `BY DEFAULT`, Sequence-Namen
-  und Defaults sauberer ausdruecken.
-- Verhindert das urspruengliche Problem, `BigInteger` ohne Kontext auf
-  `BIGSERIAL` zu heben.
-- Erlaubt eine explizite Owned-Sequence-Policy: gebundene implizite Sequences
-  gehoeren zur Spalte, eigenstaendige Business-Sequences bleiben
-  `SchemaDefinition.sequences`.
+- Eine implizite oder owned Serial-/Identity-Sequence gehoert zum
+  `ColumnGeneration.Identity`-Metadatum der Spalte.
+- Ein solcher Sequence-Name darf sichtbar bleiben, damit Roundtrip, Diagnose
+  und Ziel-DDL deterministisch bleiben.
+- Eine an `ColumnGeneration.Identity` gebundene Sequence wird nicht als
+  eigenstaendige `CREATE SEQUENCE` aus `SchemaDefinition.sequences` emittiert.
+- Eigenstaendige Business-Sequences bleiben `SchemaDefinition.sequences` und
+  werden weiter separat erzeugt.
 
-Nachteile:
+Begruendung:
 
-- Groesserer Modell- und Persistenzumbau.
-- Mehr Migration in YAML/JSON-Formaten, Diff, Validator und DDL-Generator.
+- Datentyp und Generierungsstrategie bleiben getrennt.
+- `SERIAL`, `BIGSERIAL`, `GENERATED ALWAYS`, `BY DEFAULT`, Sequence-Namen und
+  Defaults koennen ohne neue Typvarianten ausgedrueckt werden.
+- Das urspruengliche Problem bleibt geloest: `BigInteger` ohne
+  Generation-Kontext wird nicht zu `BIGSERIAL`.
+- Der Vertrag legt zugleich fest, wie doppelte Sequence-DDL vermieden wird.
 
-### Empfehlung
+Verworfene Alternativen:
 
-Option C ist fachlich am saubersten. Falls der Scope klein bleiben soll, ist
-Option B ein vertretbarer Zwischenschritt. Option A ist nur dann sinnvoll, wenn
-bewusst die alten Specs mit minimalem Modellumbau nachgezogen werden sollen.
+- Option A, `NeutralType.BigIdentifier`, wird nicht umgesetzt. Sie waere nah an
+  den alten Specs, wiederholt aber das Breitenkonzept in separaten Typen und
+  kann Identity-Details wie `GENERATED ALWAYS`, `BY DEFAULT`, Sequence-Name
+  oder Default-Ausdruck nur unzureichend transportieren.
+- Option B, Breite am `Identifier`, wird nicht umgesetzt. Sie waere ein
+  einheitlicheres Identifier-Konzept, mischt aber weiterhin Datentyp und
+  Generierung und waere ein groesserer Breaking Change fuer Serialisierung,
+  Parser, Builder, Tests und Specs.
 
 ---
 
@@ -223,11 +206,11 @@ bewusst die alten Specs mit minimalem Modellumbau nachgezogen werden sollen.
 - SQL-Beispiele mit `BIGSERIAL` nur dort stehen lassen, wo sie echte
   Ziel-DB-Beispiele sind; bei neutralem Generate-Kontext klar markieren.
 
-### AP 2: Modellentscheidung
+### AP 2: Modellumsetzung
 
-- Eine der Optionen A/B/C verbindlich festlegen.
-- Falls Option C gewaehlt wird, muss der Vertrag fuer owned/generated
-  Sequences Bestandteil der Modellentscheidung sein:
+- Option C als neuen neutralen Vertrag implementieren:
+  `ColumnDefinition.generation: ColumnGeneration?`.
+- Der Vertrag fuer owned/generated Sequences ist Bestandteil der Umsetzung:
   - Wie wird die Sequence der Spalte zugeordnet?
   - Bleibt der Sequence-Name sichtbar?
   - Wird `SERIAL` als Legacy-Syntax oder als Identity-Form gerendert?
