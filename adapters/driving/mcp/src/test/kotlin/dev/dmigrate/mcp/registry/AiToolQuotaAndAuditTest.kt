@@ -10,6 +10,8 @@ import dev.dmigrate.server.application.ai.NoOpAiProvider
 import dev.dmigrate.server.application.audit.AuditFields
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
+import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.quota.DefaultQuotaService
@@ -20,6 +22,7 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.SchemaIndexEntry
@@ -101,6 +104,10 @@ class AiToolQuotaAndAuditTest : FunSpec({
         )
         val hygieneService = DefaultPromptHygieneService()
         val policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow)
+        val approvalGrantService = DefaultApprovalGrantService(
+            InMemoryApprovalGrantStore(),
+            ApprovalGrantValidator(),
+        )
         val quotaStore = InMemoryQuotaStore()
         val quotaService = DefaultQuotaService(quotaStore) { providerCallLimit }
         val orchestrator = AiToolOrchestrator(outcomeStore)
@@ -127,6 +134,7 @@ class AiToolQuotaAndAuditTest : FunSpec({
             providerRegistry = providerRegistry,
             hygieneService = hygieneService,
             policyService = policyService,
+            approvalGrantService = approvalGrantService,
             quotaService = quotaService,
             clock = clock,
         )

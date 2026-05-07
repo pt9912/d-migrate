@@ -9,6 +9,10 @@ import dev.dmigrate.server.application.ai.DefaultAiProviderRegistry
 import dev.dmigrate.server.application.ai.NoOpAiProvider
 import dev.dmigrate.server.application.ai.AiProviderError
 import dev.dmigrate.server.application.ai.AiProviderPort
+import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
+import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
+import dev.dmigrate.server.application.audit.AuditFields
 import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -16,6 +20,8 @@ import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.core.ai.AiIntent
 import dev.dmigrate.server.core.ai.AiWireArtifactKind
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.approval.ApprovalGrant
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.artifact.ManagedArtifact
@@ -29,6 +35,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -79,6 +86,11 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         )
         val hygieneService = DefaultPromptHygieneService()
         val policyService = ConfiguredPolicyService(emptyList(), policyDefault)
+        val approvalGrantStore = InMemoryApprovalGrantStore()
+        val approvalGrantService = DefaultApprovalGrantService(
+            approvalGrantStore,
+            ApprovalGrantValidator(),
+        )
         val quotaStore = dev.dmigrate.server.ports.memory.InMemoryQuotaStore()
         val quotaService = dev.dmigrate.server.application.quota.DefaultQuotaService(
             quotaStore,
@@ -93,6 +105,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
             providerRegistry = providerRegistry,
             hygieneService = hygieneService,
             policyService = policyService,
+            approvalGrantService = approvalGrantService,
             quotaService = quotaService,
             clock = clock,
         )
@@ -133,11 +146,16 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         }
     }
 
-    fun ctx(args: String, principalCtx: PrincipalContext = principal) = ToolCallContext(
+    fun ctx(
+        args: String,
+        principalCtx: PrincipalContext = principal,
+        auditFields: AuditFields = AuditFields(),
+    ) = ToolCallContext(
         name = "procedure_transform_plan",
         arguments = JsonParser.parseString(args),
         principal = principalCtx,
         requestId = "req-test",
+        auditFields = auditFields,
     )
 
     test("Plan §6 G.5: gueltiger Minimalaufruf -> Success-Envelope mit planRef + providerMeta + executionMeta") {
@@ -287,7 +305,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.message shouldContain "policy:tool-blocked"
     }
 
-    test("Plan §6 G.6: PolicyRequiresApproval -> POLICY_REQUIRED (Challenge-Felder als G.6.e/f-Carve-out)") {
+    test("Plan §6 G.6: PolicyRequiresApproval -> retrybarer POLICY_REQUIRED mit Challenge-Feldern") {
         val fx = Fixture(
             policyDefault = PolicyEffect.Challenge(setOf("ai.execute")),
         )
@@ -300,6 +318,45 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         )
         val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
         err.envelope.code shouldBe ToolErrorCode.POLICY_REQUIRED
+        val details = err.envelope.details.associate { it.key to it.value }
+        details["approvalRequestId"].isNullOrBlank() shouldBe false
+        details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
+        details["correlationKey"] shouldBe "k"
+        err.envelope.details.any { it.key == "requiredScope" && it.value == "ai.execute" } shouldBe true
+    }
+
+    test("Plan §6 G.6: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
+        val fx = Fixture(policyDefault = PolicyEffect.Challenge(setOf("ai.execute")))
+        fx.seedSchema("schema-1")
+        val args = """{"approvalKey":"k-approved","targetDialect":"POSTGRESQL",""" +
+            """"schemaRef":"dmigrate://tenants/acme/schemas/schema-1","procedureName":"p"}"""
+        val auditFields = AuditFields()
+        val first = fx.handler.handle(ctx(args, auditFields = auditFields))
+            .shouldBeInstanceOf<ToolCallOutcome.Error>()
+        first.envelope.code shouldBe ToolErrorCode.POLICY_REQUIRED
+        val approvalRequestId = first.envelope.details.single { it.key == "approvalRequestId" }.value
+
+        fx.approvalGrantStore.save(
+            ApprovalGrant(
+                approvalRequestId = approvalRequestId,
+                correlationKind = ApprovalCorrelationKind.APPROVAL_KEY,
+                correlationKey = "k-approved",
+                approvalTokenFingerprint = ApprovalTokenFingerprint.compute("token-ok"),
+                toolName = ProcedureTransformPlanHandler.TOOL_NAME,
+                tenantId = tenant,
+                callerId = alice,
+                payloadFingerprint = auditFields.payloadFingerprint!!,
+                issuerFingerprint = "issuer-test",
+                issuedScopes = setOf("ai.execute"),
+                grantSource = "test",
+                expiresAt = now.plusSeconds(3600),
+            ),
+        )
+
+        val approvedArgs = args.dropLast(1) + ""","approvalToken":"token-ok"}"""
+        val approved = fx.handler.handle(ctx(approvedArgs))
+            .shouldBeInstanceOf<ToolCallOutcome.Success>()
+        approved.content.single().text.shouldContain("\"summary\":\"plan generated\"")
     }
 
     test("Unbekannter Provider -> FORBIDDEN_PRINCIPAL") {
@@ -408,5 +465,20 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.PROMPT_HYGIENE_BLOCKED
         // Plan §6 G.4 Akzeptanz: Fehlerdetails enthalten KEINE Secrets.
         err.envelope.message shouldContain "provider output blocked"
+    }
+
+    test("Plan §7.4 Input-Hygiene scannt verschachtelte rules im Payload") {
+        val fx = Fixture()
+        fx.seedSchema("schema-1")
+        val outcome = fx.handler.handle(
+            ctx(
+                """{"approvalKey":"k-rules-hyg","targetDialect":"POSTGRESQL",""" +
+                    """"schemaRef":"dmigrate://tenants/acme/schemas/schema-1","procedureName":"p",""" +
+                    """"rules":{"note":"secret_key=abcdefghijklmnop"}}""",
+            ),
+        )
+        val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
+        err.envelope.code shouldBe ToolErrorCode.PROMPT_HYGIENE_BLOCKED
+        err.envelope.message shouldContain "secret pattern detected"
     }
 })

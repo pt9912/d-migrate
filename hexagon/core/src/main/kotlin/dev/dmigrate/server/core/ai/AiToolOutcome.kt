@@ -1,6 +1,8 @@
 package dev.dmigrate.server.core.ai
 
 import dev.dmigrate.server.core.error.ToolErrorCode
+import dev.dmigrate.server.core.error.ToolErrorDetail
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import java.time.Instant
 
 /**
@@ -41,6 +43,8 @@ sealed interface AiToolOutcome {
         val claimId: AiToolClaimId,
         val leaseExpiresAt: Instant,
         val attemptCount: Int,
+        val createdAt: Instant = leaseExpiresAt,
+        val updatedAt: Instant = leaseExpiresAt,
     ) : AiToolOutcome {
         init {
             require(attemptCount >= 1) { "attemptCount must be >= 1" }
@@ -56,6 +60,11 @@ sealed interface AiToolOutcome {
         val model: String,
         val providerRequestId: String?,
         val committedAt: Instant,
+        val promptFingerprint: String? = null,
+        val modelVersion: String? = null,
+        val createdAt: Instant = committedAt,
+        val updatedAt: Instant = committedAt,
+        val completedAt: Instant = committedAt,
     ) : AiToolOutcome {
         init {
             require(resultRef.isNotBlank()) { "resultRef must not be blank" }
@@ -67,6 +76,12 @@ sealed interface AiToolOutcome {
             require(providerRequestId?.isNotBlank() != false) {
                 "providerRequestId must be non-blank or null"
             }
+            require(promptFingerprint == null || promptFingerprint.length == FINGERPRINT_HEX_LENGTH) {
+                "promptFingerprint must be null or a $FINGERPRINT_HEX_LENGTH-char hex SHA-256"
+            }
+            require(modelVersion?.isNotBlank() != false) {
+                "modelVersion must be non-blank or null"
+            }
         }
     }
 
@@ -76,9 +91,28 @@ sealed interface AiToolOutcome {
         val toolErrorCode: ToolErrorCode,
         val scrubbedMessage: String,
         val committedAt: Instant,
+        val details: List<ToolErrorDetail> = emptyList(),
+        val providerName: String? = null,
+        val model: String? = null,
+        val modelVersion: String? = null,
+        val providerRequestId: String? = null,
+        val promptFingerprint: String? = null,
+        val retryable: Boolean = false,
+        val createdAt: Instant = committedAt,
+        val updatedAt: Instant = committedAt,
+        val completedAt: Instant = committedAt,
     ) : AiToolOutcome {
         init {
             require(scrubbedMessage.isNotBlank()) { "scrubbedMessage must not be blank" }
+            require(providerName?.isNotBlank() != false) { "providerName must be non-blank or null" }
+            require(model?.isNotBlank() != false) { "model must be non-blank or null" }
+            require(modelVersion?.isNotBlank() != false) { "modelVersion must be non-blank or null" }
+            require(providerRequestId?.isNotBlank() != false) {
+                "providerRequestId must be non-blank or null"
+            }
+            require(promptFingerprint == null || promptFingerprint.length == FINGERPRINT_HEX_LENGTH) {
+                "promptFingerprint must be null or a $FINGERPRINT_HEX_LENGTH-char hex SHA-256"
+            }
         }
     }
 
@@ -89,10 +123,40 @@ sealed interface AiToolOutcome {
         val scrubbedMessage: String,
         val attemptCount: Int,
         val lastAttemptAt: Instant,
+        val details: List<ToolErrorDetail> = emptyList(),
+        val providerName: String? = null,
+        val model: String? = null,
+        val modelVersion: String? = null,
+        val providerRequestId: String? = null,
+        val promptFingerprint: String? = null,
+        val retryable: Boolean = true,
+        val approvalRequestId: String? = null,
+        val correlationKind: ApprovalCorrelationKind? = null,
+        val correlationKey: String? = null,
+        val requiredScopes: Set<String> = emptySet(),
+        val reasons: List<String> = emptyList(),
+        val createdAt: Instant = lastAttemptAt,
+        val updatedAt: Instant = lastAttemptAt,
+        val completedAt: Instant? = null,
     ) : AiToolOutcome {
         init {
             require(scrubbedMessage.isNotBlank()) { "scrubbedMessage must not be blank" }
             require(attemptCount >= 1) { "attemptCount must be >= 1" }
+            require(providerName?.isNotBlank() != false) { "providerName must be non-blank or null" }
+            require(model?.isNotBlank() != false) { "model must be non-blank or null" }
+            require(modelVersion?.isNotBlank() != false) { "modelVersion must be non-blank or null" }
+            require(providerRequestId?.isNotBlank() != false) {
+                "providerRequestId must be non-blank or null"
+            }
+            require(promptFingerprint == null || promptFingerprint.length == FINGERPRINT_HEX_LENGTH) {
+                "promptFingerprint must be null or a $FINGERPRINT_HEX_LENGTH-char hex SHA-256"
+            }
+            require(approvalRequestId?.isNotBlank() != false) {
+                "approvalRequestId must be non-blank or null"
+            }
+            require(correlationKey?.isNotBlank() != false) {
+                "correlationKey must be non-blank or null"
+            }
         }
     }
 
@@ -124,6 +188,7 @@ sealed interface AiToolAcquireOutcome {
         val claimId: AiToolClaimId,
         val leaseExpiresAt: Instant,
         val attemptCount: Int,
+        val previousRetryable: AiToolOutcome.FailedRetryable? = null,
     ) : AiToolAcquireOutcome {
         init {
             require(attemptCount >= 1) { "attemptCount must be >= 1" }

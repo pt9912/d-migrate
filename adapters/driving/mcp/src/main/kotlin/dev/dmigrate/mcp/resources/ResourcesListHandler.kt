@@ -103,7 +103,18 @@ internal class ResourcesListHandler(
     private fun projectArtifacts(principal: PrincipalContext, page: PageRequest): StorePageProjection {
         val result = stores.artifactStore.list(principal.effectiveTenantId, page)
         val readable = result.items.filter { it.isReadableBy(principal) }
-        return StorePageProjection(readable.map(ResourceProjector::project), result.nextPageToken)
+        return StorePageProjection(
+            readable.map { artifact ->
+                ResourceProjector.project(
+                    artifact = artifact,
+                    aiMetadata = stores.aiArtifactMetadataStore?.findByArtifactId(
+                        artifact.tenantId,
+                        artifact.managedArtifact.artifactId,
+                    ),
+                )
+            },
+            result.nextPageToken,
+        )
     }
 
     private fun projectSchemas(principal: PrincipalContext, page: PageRequest): StorePageProjection {

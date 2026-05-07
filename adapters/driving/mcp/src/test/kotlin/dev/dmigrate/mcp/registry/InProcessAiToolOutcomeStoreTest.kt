@@ -46,7 +46,7 @@ class InProcessAiToolOutcomeStoreTest : FunSpec({
         acquired.claimId shouldBe AiToolClaimId("claim-1")
     }
 
-    test("Plan §6 G.6 Carve-out: parallele identische Pending-Reserves liefern InProgress") {
+    test("Plan §6 G.6: parallele identische Pending-Reserves liefern InProgress") {
         // Hier liegt der Phase-F-SyncEffectIdempotencyStore-Bug
         // (`PhaseFInProcessStores.kt:51`) — bei aktiver Lease mit
         // gleichem Fingerprint wird `Reserved` erneut zurueckgegeben.

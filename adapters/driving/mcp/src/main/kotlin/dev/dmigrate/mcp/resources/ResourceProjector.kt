@@ -4,6 +4,8 @@ import dev.dmigrate.mcp.protocol.Resource
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
 import dev.dmigrate.mcp.schema.PhaseBToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
+import dev.dmigrate.server.core.ai.AiArtifactMetadata
+import dev.dmigrate.server.core.ai.AiArtifactProvenance
 import dev.dmigrate.server.core.artifact.ArtifactRecord
 import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.job.JobRecord
@@ -36,11 +38,15 @@ internal object ResourceProjector {
         description = "Job '${job.managedJob.operation}' (status=${job.managedJob.status.name})",
     )
 
-    fun project(artifact: ArtifactRecord): Resource = Resource(
+    fun project(artifact: ArtifactRecord, aiMetadata: AiArtifactMetadata? = null): Resource = Resource(
         uri = artifact.resourceUri.render(),
         name = artifact.managedArtifact.filename,
         mimeType = JSON_MIME,
-        description = "Artifact (${artifact.kind.name}, ${artifact.managedArtifact.sizeBytes} bytes)",
+        description = if (aiMetadata == null) {
+            "Artifact (${artifact.kind.name}, ${artifact.managedArtifact.sizeBytes} bytes)"
+        } else {
+            "AI artifact (${aiMetadata.wireArtifactKind}, ${artifact.managedArtifact.sizeBytes} bytes)"
+        },
     )
 
     fun project(schema: SchemaIndexEntry): Resource = Resource(
@@ -138,25 +144,29 @@ internal object ResourceContentProjector {
         },
     )
 
-    fun projectContent(artifact: ArtifactRecord): Map<String, Any?> = mapOf(
-        "uri" to artifact.resourceUri.render(),
-        "tenantId" to artifact.tenantId.value,
-        "artifactId" to artifact.managedArtifact.artifactId,
-        "filename" to scrub(artifact.managedArtifact.filename),
-        "kind" to artifact.kind.name,
+    fun projectContent(
+        artifact: ArtifactRecord,
+        aiMetadata: AiArtifactMetadata? = null,
+    ): Map<String, Any?> = buildMap {
+        put("uri", artifact.resourceUri.render())
+        put("tenantId", artifact.tenantId.value)
+        put("artifactId", artifact.managedArtifact.artifactId)
+        put("filename", scrub(artifact.managedArtifact.filename))
+        put("kind", artifact.kind.name)
         // contentType is operator-supplied via the multipart header
         // on `artifact_upload_init` — same scrubbing contract as
         // filename. Asymmetric scrubbing here would let a planted
         // Bearer/JDBC value slip through the resources/read path
         // (AP 6.24 final-review finding).
-        "contentType" to scrub(artifact.managedArtifact.contentType),
-        "sizeBytes" to artifact.managedArtifact.sizeBytes,
-        "sha256" to artifact.managedArtifact.sha256,
-        "visibility" to artifact.visibility.name,
-        "createdAt" to artifact.managedArtifact.createdAt.toString(),
-        "expiresAt" to artifact.managedArtifact.expiresAt.toString(),
-        "jobRef" to artifact.jobRef,
-    )
+        put("contentType", scrub(artifact.managedArtifact.contentType))
+        put("sizeBytes", artifact.managedArtifact.sizeBytes)
+        put("sha256", artifact.managedArtifact.sha256)
+        put("visibility", artifact.visibility.name)
+        put("createdAt", artifact.managedArtifact.createdAt.toString())
+        put("expiresAt", artifact.managedArtifact.expiresAt.toString())
+        put("jobRef", artifact.jobRef)
+        aiMetadata?.let { put("aiMetadata", projectAiMetadata(it)) }
+    }
 
     fun projectContent(schema: SchemaIndexEntry): Map<String, Any?> = mapOf(
         "uri" to schema.resourceUri.render(),
@@ -216,6 +226,42 @@ internal object ResourceContentProjector {
 
     private fun scrubLabels(labels: Map<String, String>): Map<String, String> =
         labels.mapValues { (_, v) -> SecretScrubber.scrub(v) }
+
+    private fun projectAiMetadata(metadata: AiArtifactMetadata): Map<String, Any?> = mapOf(
+        "wireArtifactKind" to metadata.wireArtifactKind,
+        "aiIntent" to metadata.aiIntent,
+        "originToolName" to metadata.originToolName,
+        "policyIntent" to metadata.policyIntent,
+        "sourceRefs" to metadata.sourceRefs.map { it.render() },
+        "targetDialect" to metadata.targetDialect,
+        "providerName" to metadata.providerName,
+        "model" to metadata.model,
+        "modelVersion" to metadata.modelVersion,
+        "outputFingerprint" to metadata.outputFingerprint,
+        "createdAt" to metadata.createdAt.toString(),
+        "provenance" to projectProvenance(metadata.provenance),
+    )
+
+    private fun projectProvenance(provenance: AiArtifactProvenance): Map<String, Any?> =
+        when (provenance) {
+            is AiArtifactProvenance.Plan -> mapOf(
+                "type" to "plan",
+                "promptFingerprint" to provenance.promptFingerprint,
+                "payloadFingerprint" to provenance.payloadFingerprint,
+            )
+            is AiArtifactProvenance.Execute -> mapOf(
+                "type" to "execute",
+                "executePromptFingerprint" to provenance.promptFingerprint,
+                "executePayloadFingerprint" to provenance.payloadFingerprint,
+                "planRef" to provenance.planRef.render(),
+                "planArtifactFingerprint" to provenance.planArtifactFingerprint,
+            )
+            is AiArtifactProvenance.TestdataPlan -> mapOf(
+                "type" to "testdata_plan",
+                "testdataPromptFingerprint" to provenance.promptFingerprint,
+                "testdataPayloadFingerprint" to provenance.payloadFingerprint,
+            )
+        }
 }
 
 /**

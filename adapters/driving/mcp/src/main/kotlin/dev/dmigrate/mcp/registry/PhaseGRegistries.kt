@@ -63,6 +63,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    approvalGrantService = gWiring.approvalGrantService,
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )
@@ -74,6 +75,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    approvalGrantService = gWiring.approvalGrantService,
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )
@@ -87,6 +89,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    approvalGrantService = gWiring.approvalGrantService,
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )

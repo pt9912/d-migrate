@@ -2,6 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import dev.dmigrate.server.application.ai.AiProviderRegistry
 import dev.dmigrate.server.application.ai.DefaultAiProviderRegistry
+import dev.dmigrate.server.application.approval.ApprovalGrantService
 import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneService
 import dev.dmigrate.server.ports.AiArtifactMetadataStore
@@ -48,5 +49,6 @@ data class PhaseGWiring(
     val aiArtifactMetadataStore: AiArtifactMetadataStore = InProcessAiArtifactMetadataStore(),
     val aiProviderRegistry: AiProviderRegistry = DefaultAiProviderRegistry.noOpOnly(),
     val promptHygieneService: PromptHygieneService = DefaultPromptHygieneService(),
+    val approvalGrantService: ApprovalGrantService = phaseEWiring.approvalGrantService,
     val aiToolLeaseDuration: Duration = Duration.ofSeconds(60),
 )

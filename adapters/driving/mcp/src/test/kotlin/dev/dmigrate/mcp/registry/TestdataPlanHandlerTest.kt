@@ -6,6 +6,8 @@ import dev.dmigrate.server.application.ai.AiProviderId
 import dev.dmigrate.server.application.ai.AiToolOrchestrator
 import dev.dmigrate.server.application.ai.DefaultAiProviderRegistry
 import dev.dmigrate.server.application.ai.NoOpAiProvider
+import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
 import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.ValidationErrorException
@@ -25,6 +27,7 @@ import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.SchemaIndexEntry
 import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
 import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryProfileStore
 import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import io.kotest.assertions.throwables.shouldThrow
@@ -75,6 +78,10 @@ class TestdataPlanHandlerTest : FunSpec({
         )
         val hygieneService = DefaultPromptHygieneService()
         val policyService = ConfiguredPolicyService(emptyList(), policyDefault)
+        val approvalGrantService = DefaultApprovalGrantService(
+            InMemoryApprovalGrantStore(),
+            ApprovalGrantValidator(),
+        )
         val quotaStore = dev.dmigrate.server.ports.memory.InMemoryQuotaStore()
         val quotaService = dev.dmigrate.server.application.quota.DefaultQuotaService(
             quotaStore,
@@ -90,6 +97,7 @@ class TestdataPlanHandlerTest : FunSpec({
             providerRegistry = providerRegistry,
             hygieneService = hygieneService,
             policyService = policyService,
+            approvalGrantService = approvalGrantService,
             quotaService = quotaService,
             clock = clock,
         )

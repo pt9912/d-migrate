@@ -704,8 +704,10 @@ Der MCP-spezifische Import-/Transfer-Fingerprint enthält
 
 - materialisierte JDBC-URLs oder Connection-Secrets,
 - temporäre Spool-Pfade oder lokale CLI-Pfade,
-- rohe SQL-/Filter-Strings ohne Kanonisierung (Whitespace-
-  Normalisierung ist Runner-Concern, F.8 Carve-out).
+- rohe SQL-/Filter-Strings ohne Kanonisierung. `data_transfer_start`
+  ersetzt Caller-Filter vor der Fingerprint-Bildung durch die
+  kanonische Filter-DSL-Form; datenbankspezifisches Binding bleibt
+  Runner-Concern.
 
 Fingerprint-Pflichtfelder (Plan §8.7 / §8.8): Artefakt-sha256 +
 persistente Upload-Metadaten (mimeType, filename) für Imports;

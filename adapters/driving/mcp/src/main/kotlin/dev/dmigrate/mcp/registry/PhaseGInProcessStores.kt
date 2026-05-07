@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Phase G § 6 G.6 (G.6.a 2/2) — in-process [AiToolOutcomeStore]
  * mit Single-Writer-Lease + Reclaim.
  *
- * Plan-§-6-G.6-Carve-out, den dieser Store explizit löst:
+ * Plan-§-6-G.6-Anforderung, die dieser Store explizit erfüllt:
  *
  * > "Der bestehende SyncEffectIdempotencyStore reicht unverändert
  * > nicht aus, wenn parallele gleiche Pending-Reserves erneut
@@ -29,8 +29,9 @@ import java.util.concurrent.ConcurrentHashMap
  * Phase F's [InProcessSyncEffectIdempotencyStore.reserve] fällt bei
  * einer aktiven Lease und identischem Fingerprint auf
  * `Reserved(existing.expiresAt)` zurück (`PhaseFInProcessStores.kt:51`).
- * Das ist für sequenzielle Upload-Init-Pfade okay; für KI-Pfade
- * bedeutet es einen zweiten Provider-Aufruf + ein zweites Artefakt.
+ * Das bleibt für sequenzielle Upload-Init-Pfade passend; KI-Pfade
+ * brauchen dagegen Single-Writer-Semantik, damit kein zweiter
+ * Provider-Aufruf und kein zweites Artefakt entstehen.
  *
  * Hier blockiert der zweite Caller stattdessen mit
  * [AiToolAcquireOutcome.InProgress]; nur ein Caller pro Lease darf
@@ -126,6 +127,8 @@ internal class InProcessAiToolOutcomeStore(
                         scrubbedMessage = "claim lease expired without commit",
                         attemptCount = existing.attemptCount,
                         lastAttemptAt = existing.leaseExpiresAt,
+                        createdAt = existing.createdAt,
+                        updatedAt = now,
                     )
                 } else {
                     existing
@@ -155,6 +158,7 @@ internal class InProcessAiToolOutcomeStore(
             is AiToolOutcome.FailedRetryable -> freshClaim(
                 scope, payloadFingerprint, leaseDuration, now,
                 attemptCount = existing.attemptCount + 1,
+                previousRetryable = existing,
             )
             is AiToolOutcome.Pending -> if (existing.leaseExpiresAt.isAfter(now)) {
                 existing to AiToolAcquireOutcome.InProgress(scope, existing.leaseExpiresAt)
@@ -176,6 +180,7 @@ internal class InProcessAiToolOutcomeStore(
         leaseDuration: Duration,
         now: Instant,
         attemptCount: Int,
+        previousRetryable: AiToolOutcome.FailedRetryable? = null,
     ): Pair<AiToolOutcome, AiToolAcquireOutcome> {
         val claimId = claimIdFactory()
         val expiresAt = now.plus(leaseDuration)
@@ -185,12 +190,15 @@ internal class InProcessAiToolOutcomeStore(
             claimId = claimId,
             leaseExpiresAt = expiresAt,
             attemptCount = attemptCount,
+            createdAt = previousRetryable?.createdAt ?: now,
+            updatedAt = now,
         )
         return pending to AiToolAcquireOutcome.Acquired(
             scope = scope,
             claimId = claimId,
             leaseExpiresAt = expiresAt,
             attemptCount = attemptCount,
+            previousRetryable = previousRetryable,
         )
     }
 }

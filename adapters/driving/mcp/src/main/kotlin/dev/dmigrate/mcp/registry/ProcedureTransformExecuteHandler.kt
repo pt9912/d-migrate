@@ -13,6 +13,7 @@ import dev.dmigrate.server.application.ai.AiToolDispatchOutcome
 import dev.dmigrate.server.application.ai.AiToolEnvelope
 import dev.dmigrate.server.application.ai.AiToolOrchestrator
 import dev.dmigrate.server.application.ai.AiToolWorkResult
+import dev.dmigrate.server.application.approval.ApprovalGrantService
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneRequest
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneResult
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneService
@@ -26,6 +27,7 @@ import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.ai.AiArtifactMetadata
 import dev.dmigrate.server.core.ai.AiArtifactProvenance
 import dev.dmigrate.server.core.ai.AiIntent
+import dev.dmigrate.server.core.ai.AiToolAcquireOutcome
 import dev.dmigrate.server.core.ai.AiWireArtifactKind
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import dev.dmigrate.server.core.artifact.ArtifactKind
@@ -87,6 +89,7 @@ internal class ProcedureTransformExecuteHandler(
     private val providerRegistry: AiProviderRegistry,
     private val hygieneService: PromptHygieneService,
     private val policyService: PolicyService,
+    private val approvalGrantService: ApprovalGrantService,
     private val quotaService: QuotaService,
     private val clock: Clock,
     private val artifactTtl: Duration = Duration.ofDays(30),
@@ -109,8 +112,8 @@ internal class ProcedureTransformExecuteHandler(
         context.auditFields.payloadFingerprint = payloadFingerprint
         context.auditFields.resourceRefs = context.auditFields.resourceRefs + parsed.resourceRefHints()
 
-        val dispatch = orchestrator.dispatch(envelope) { _ ->
-            performWork(parsed, context.principal, envelope, payloadFingerprint)
+        val dispatch = orchestrator.dispatch(envelope) { claim ->
+            performWork(parsed, context.principal, envelope, payloadFingerprint, claim)
         }
 
         // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
@@ -233,6 +236,7 @@ internal class ProcedureTransformExecuteHandler(
         principal: PrincipalContext,
         envelope: AiToolEnvelope,
         payloadFingerprint: String,
+        claim: AiToolAcquireOutcome.Acquired,
     ): AiToolWorkResult {
         val planResolution = try {
             resolvePlanProvenance(parsed, principal, envelope)
@@ -240,7 +244,7 @@ internal class ProcedureTransformExecuteHandler(
             return AiToolWorkResult.FailedTerminal(e.code, e.message ?: e.code.name)
         }
 
-        decidePolicyOrFail(envelope, payloadFingerprint, planResolution)?.let { return it }
+        decidePolicyOrFail(parsed, envelope, payloadFingerprint, planResolution, claim)?.let { return it }
 
         // Plan §6 G.8: Provider-Quota VOR Provider-Resolution +
         // Hygiene + Provider-Aufruf reservieren. RATE_LIMITED darf
@@ -373,10 +377,34 @@ internal class ProcedureTransformExecuteHandler(
     // ---- Policy -------------------------------------------------------
 
     private fun decidePolicyOrFail(
+        parsed: ParsedArgs,
         envelope: AiToolEnvelope,
         payloadFingerprint: String,
         plan: PlanResolution,
+        claim: AiToolAcquireOutcome.Acquired,
     ): AiToolWorkResult? {
+        val previousChallenge = claim.previousRetryable?.takeIf {
+            it.toolErrorCode == ToolErrorCode.POLICY_REQUIRED && it.approvalRequestId != null
+        }
+        if (previousChallenge != null) {
+            return if (parsed.approvalToken == null) {
+                AiToolApprovalSupport.replayChallenge(previousChallenge)
+            } else {
+                AiToolApprovalSupport.validateGrant(
+                    rawToken = parsed.approvalToken,
+                    challenge = previousChallenge,
+                    envelope = envelope,
+                    payloadFingerprint = payloadFingerprint,
+                    approvalGrantService = approvalGrantService,
+                )
+            }
+        }
+        if (parsed.approvalToken != null) {
+            return AiToolWorkResult.FailedTerminal(
+                ToolErrorCode.POLICY_DENIED,
+                "approval token supplied without a pending approval challenge",
+            )
+        }
         // Plan §5.5: Policy sieht die aus dem Plan abgeleiteten
         // Source-Refs PLUS den planRef selbst. So kann eine
         // Allowlist-Regel den Execute-Pfad gegen die Plan-Quelle
@@ -399,10 +427,7 @@ internal class ProcedureTransformExecuteHandler(
                 ToolErrorCode.POLICY_DENIED,
                 "policy decision: ${decision.reasonCode}",
             )
-            is PolicyDecision.RequiresApproval -> AiToolWorkResult.FailedTerminal(
-                ToolErrorCode.POLICY_REQUIRED,
-                "approval required (challenge-fields wired in G.6.f follow-up)",
-            )
+            is PolicyDecision.RequiresApproval -> AiToolApprovalSupport.requiresApproval(decision)
         }
     }
 
@@ -613,6 +638,9 @@ internal class ProcedureTransformExecuteHandler(
             providerName = ok.success.providerMeta.providerName,
             model = ok.success.providerMeta.model,
             providerRequestId = ok.success.providerMeta.requestId,
+            promptFingerprint = ok.allow.promptFingerprint,
+            payloadFingerprint = ok.allow.payloadFingerprint,
+            modelVersion = ok.success.providerMeta.modelVersion,
         )
     }
 
@@ -636,6 +664,7 @@ internal class ProcedureTransformExecuteHandler(
             append(",\"plan\":\"").append(parsed.planSource.canonicalForm()).append('"')
             append(",\"providerId\":\"").append(parsed.providerId.value).append('"')
             append(",\"model\":\"").append(parsed.model).append('"')
+            parsed.executionOptionsJson?.let { append(",\"executionOptions\":").append(it) }
             append('}')
         }
 
@@ -695,6 +724,7 @@ internal class ProcedureTransformExecuteHandler(
             envelope = dev.dmigrate.server.core.error.ToolErrorEnvelope(
                 code = outcome.toolErrorCode,
                 message = outcome.scrubbedMessage,
+                details = outcome.details,
                 requestId = context.requestId,
             ),
         )

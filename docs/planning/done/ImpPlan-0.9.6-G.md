@@ -2,12 +2,20 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: G (`KI-nahe Tools, Prompts, Tests und Dokumentation`)
-> **Status**: in Arbeit (2026-05-07) — Phase F (F.1–F.10) abgeschlossen
-> inkl. Folge-Fixes (Init-Orchestrator-Wiring, fail-closed-Default für
-> data_import/data_transfer, Retention-Service, schemaRef-Preflight),
-> damit liegt der vollständige Sicherheits-, Policy-, Idempotency-,
-> Resource-, Upload- und Job-Vertragsrahmen fest, auf den Phase G
-> aufbaut.
+> **Status**: ✅ abgeschlossen (2026-05-07) — alle APs G.1–G.10 grün.
+> G.1 Bestandsaufnahme + Vertragsschnitt; G.2 AiProviderPort +
+> NoOpAiProvider; G.3 Provider-Konfiguration fail-closed (NoOp-Default,
+> EXTERNAL-Pflichtfelder, LOCAL_LOOPBACK-Erlaubnis ohne secretRef);
+> G.4 PromptHygieneService mit Secret-Pattern (JDBC, Bearer, AWS,
+> generic api_key, PEM/SSH); G.5 vollständige Tool-Schemas + Registry-
+> Beschreibungen + Goldenness; G.6 (a-g) Single-Writer-Outcome-Store +
+> AiArtifactMetadataStore + Orchestrator + drei Tool-Handler +
+> PhaseGRegistries-Wiring; G.7 PromptRegistry + drei Pflichtprompts +
+> prompts/list + prompts/get mit dmigrate:read-Scope und
+> dmigrateCode-Mapping; G.8 Provider-Quota (`PROVIDER_CALLS`-Dimension)
+> mit fail-closed-RATE_LIMITED-Pfad + Audit-Provider-Metadaten + Output-
+> Hygiene; G.9 stdio + HTTP E2E-ITs; G.10 Doku + Roadmap-Closing. Damit
+> ist der 0.9.6-MCP-Vertrag (Phase A bis G) vollständig abgeschlossen.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.3, Abschnitt 4.4, Abschnitt 4.5, Abschnitt 4.8,
 > Abschnitt 5.4, Abschnitt 6.10, Abschnitt 6.11, Abschnitt 8 Phase G,

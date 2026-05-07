@@ -124,6 +124,8 @@ class AiToolOrchestrator(
                 providerName = result.providerName,
                 model = result.model,
                 providerRequestId = result.providerRequestId,
+                promptFingerprint = result.promptFingerprint,
+                modelVersion = result.modelVersion,
                 committedAt = envelope.now,
             )
             is AiToolWorkResult.FailedTerminal -> AiToolOutcome.FailedTerminal(
@@ -131,6 +133,12 @@ class AiToolOrchestrator(
                 payloadFingerprint = envelope.payloadFingerprint,
                 toolErrorCode = result.toolErrorCode,
                 scrubbedMessage = result.scrubbedMessage,
+                details = result.details,
+                providerName = result.providerName,
+                model = result.model,
+                modelVersion = result.modelVersion,
+                providerRequestId = result.providerRequestId,
+                promptFingerprint = result.promptFingerprint,
                 committedAt = envelope.now,
             )
             is AiToolWorkResult.FailedRetryable -> AiToolOutcome.FailedRetryable(
@@ -140,6 +148,17 @@ class AiToolOrchestrator(
                 scrubbedMessage = result.scrubbedMessage,
                 attemptCount = claim.attemptCount,
                 lastAttemptAt = envelope.now,
+                details = result.details,
+                providerName = result.providerName,
+                model = result.model,
+                modelVersion = result.modelVersion,
+                providerRequestId = result.providerRequestId,
+                promptFingerprint = result.promptFingerprint,
+                approvalRequestId = result.approvalRequestId,
+                correlationKind = result.correlationKind,
+                correlationKey = result.correlationKey,
+                requiredScopes = result.requiredScopes,
+                reasons = result.reasons,
             )
         }
         // Plan §6 G.6: ein `commit==false` (Lease wurde an einen
@@ -158,6 +177,8 @@ class AiToolOrchestrator(
             providerName = outcome.providerName,
             model = outcome.model,
             providerRequestId = outcome.providerRequestId,
+            promptFingerprint = outcome.promptFingerprint,
+            modelVersion = outcome.modelVersion,
             replayed = true,
         )
         is AiToolOutcome.FailedTerminal -> AiToolDispatchOutcome.WireFailure(
@@ -165,6 +186,7 @@ class AiToolOrchestrator(
             scrubbedMessage = outcome.scrubbedMessage,
             replayed = true,
             retryable = false,
+            details = outcome.details,
         )
         // Existing erlaubt nur terminale Outcomes — aber kotlinc
         // sieht das nicht durchgängig. Defensiv handhaben.
@@ -178,6 +200,9 @@ class AiToolOrchestrator(
             providerName = result.providerName,
             model = result.model,
             providerRequestId = result.providerRequestId,
+            promptFingerprint = result.promptFingerprint,
+            payloadFingerprint = result.payloadFingerprint,
+            modelVersion = result.modelVersion,
             replayed = false,
         )
         is AiToolWorkResult.FailedTerminal -> AiToolDispatchOutcome.WireFailure(
@@ -185,12 +210,14 @@ class AiToolOrchestrator(
             scrubbedMessage = result.scrubbedMessage,
             replayed = false,
             retryable = false,
+            details = result.details,
         )
         is AiToolWorkResult.FailedRetryable -> AiToolDispatchOutcome.WireFailure(
             toolErrorCode = result.toolErrorCode,
             scrubbedMessage = result.scrubbedMessage,
             replayed = false,
             retryable = true,
+            details = result.details,
         )
     }
 }

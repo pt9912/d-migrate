@@ -512,12 +512,13 @@ internal class DataImportStartHandler(
      * SchemaRefImportPreflightAdapter materialisieren; keine lokalen
      * Schema-Pfade aus Tool-Payloads verwenden."
      *
-     * **Carve-out F.7 (4/5)**: der `SchemaRefImportPreflightAdapter`
-     * (Schema-Validierung + Tabellenreihenfolge) ist Runner-side
-     * Concern und wird im Phase-F-Import-Worker eingehaengt.
-     * Hier wird nur die Existenz im SchemaStore geprueft — fehlende
-     * Refs bekommen RESOURCE_NOT_FOUND, lokale Pfade fallen schon
-     * an der ServerResourceUri-Parse-Phase aus.
+     * Die Tool-Phase prueft nur die Existenz im SchemaStore:
+     * fehlende Refs bekommen RESOURCE_NOT_FOUND, lokale Pfade fallen
+     * schon an der ServerResourceUri-Parse-Phase aus. Die
+     * Schema-Validierung und Tabellenreihenfolge laufen spaeter im
+     * Phase-F-Import-Worker ueber `SchemaRefImportPreflightAdapter`,
+     * nachdem die tenant-scoped Schema-Bytes aus den Stores
+     * materialisiert wurden.
      */
     private fun resolveSchemaRef(refValue: String, tenantId: TenantId) {
         val parsed = ServerResourceUri.parse(refValue)

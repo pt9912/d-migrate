@@ -269,7 +269,12 @@ internal class ResourcesReadHandler(
 
         ResourceKind.ARTIFACTS -> stores.artifactStore.findById(uri.tenantId, uri.id)
             ?.takeIf { it.isReadableBy(principal, uri.tenantId) }
-            ?.let(ResourceContentProjector::projectContent)
+            ?.let { artifact ->
+                ResourceContentProjector.projectContent(
+                    artifact = artifact,
+                    aiMetadata = stores.aiArtifactMetadataStore?.findByArtifactId(uri.tenantId, uri.id),
+                )
+            }
 
         ResourceKind.SCHEMAS -> stores.schemaStore.findById(uri.tenantId, uri.id)
             ?.let(ResourceContentProjector::projectContent)

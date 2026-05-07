@@ -1,6 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 import dev.dmigrate.server.core.error.ToolErrorCode
+import dev.dmigrate.server.core.error.ToolErrorDetail
 
 /**
  * Phase G § 6 G.6 (G.6.c) — Ergebnis von
@@ -27,6 +28,9 @@ sealed interface AiToolDispatchOutcome {
         val providerName: String,
         val model: String,
         val providerRequestId: String?,
+        val promptFingerprint: String? = null,
+        val payloadFingerprint: String? = null,
+        val modelVersion: String? = null,
         val replayed: Boolean,
     ) : AiToolDispatchOutcome
 
@@ -35,5 +39,6 @@ sealed interface AiToolDispatchOutcome {
         val scrubbedMessage: String,
         val replayed: Boolean,
         val retryable: Boolean,
+        val details: List<ToolErrorDetail> = emptyList(),
     ) : AiToolDispatchOutcome
 }

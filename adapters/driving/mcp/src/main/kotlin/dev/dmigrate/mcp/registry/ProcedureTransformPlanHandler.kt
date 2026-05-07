@@ -14,6 +14,7 @@ import dev.dmigrate.server.application.ai.AiToolOrchestrator
 import dev.dmigrate.server.application.ai.AiToolWorkResult
 import dev.dmigrate.server.application.ai.AiToolDispatchOutcome
 import dev.dmigrate.server.application.ai.AiProviderId
+import dev.dmigrate.server.application.approval.ApprovalGrantService
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneRequest
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneResult
 import dev.dmigrate.server.application.audit.prompt.PromptHygieneService
@@ -27,6 +28,7 @@ import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.ai.AiArtifactMetadata
 import dev.dmigrate.server.core.ai.AiArtifactProvenance
 import dev.dmigrate.server.core.ai.AiIntent
+import dev.dmigrate.server.core.ai.AiToolAcquireOutcome
 import dev.dmigrate.server.core.ai.AiWireArtifactKind
 import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import dev.dmigrate.server.core.artifact.ArtifactKind
@@ -95,6 +97,7 @@ internal class ProcedureTransformPlanHandler(
     private val providerRegistry: AiProviderRegistry,
     private val hygieneService: PromptHygieneService,
     private val policyService: PolicyService,
+    private val approvalGrantService: ApprovalGrantService,
     private val quotaService: QuotaService,
     private val clock: Clock,
     private val artifactTtl: Duration = Duration.ofDays(30),
@@ -124,8 +127,8 @@ internal class ProcedureTransformPlanHandler(
         context.auditFields.payloadFingerprint = payloadFingerprint
         context.auditFields.resourceRefs = context.auditFields.resourceRefs + parsed.allResourceRefs()
 
-        val dispatch = orchestrator.dispatch(envelope) { _ ->
-            performWork(parsed, context.principal, envelope, payloadFingerprint)
+        val dispatch = orchestrator.dispatch(envelope) { claim ->
+            performWork(parsed, context.principal, envelope, payloadFingerprint, claim)
         }
 
         // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
@@ -286,6 +289,7 @@ internal class ProcedureTransformPlanHandler(
         principal: PrincipalContext,
         envelope: AiToolEnvelope,
         payloadFingerprint: String,
+        claim: AiToolAcquireOutcome.Acquired,
     ): AiToolWorkResult {
         val sourceRefs: List<ServerResourceUri> = try {
             resolveSources(parsed, principal)
@@ -293,7 +297,7 @@ internal class ProcedureTransformPlanHandler(
             return AiToolWorkResult.FailedTerminal(e.code, e.message ?: e.code.name)
         }
 
-        decidePolicyOrFail(envelope, payloadFingerprint, sourceRefs)?.let { return it }
+        decidePolicyOrFail(parsed, envelope, payloadFingerprint, sourceRefs, claim)?.let { return it }
 
         // Plan §6 G.8: Provider-Quota VOR Provider-Resolution +
         // Hygiene + Provider-Aufruf reservieren. RATE_LIMITED darf
@@ -346,10 +350,34 @@ internal class ProcedureTransformPlanHandler(
     }
 
     private fun decidePolicyOrFail(
+        parsed: ParsedArgs,
         envelope: AiToolEnvelope,
         payloadFingerprint: String,
         sourceRefs: List<ServerResourceUri>,
+        claim: AiToolAcquireOutcome.Acquired,
     ): AiToolWorkResult? {
+        val previousChallenge = claim.previousRetryable?.takeIf {
+            it.toolErrorCode == ToolErrorCode.POLICY_REQUIRED && it.approvalRequestId != null
+        }
+        if (previousChallenge != null) {
+            return if (parsed.approvalToken == null) {
+                AiToolApprovalSupport.replayChallenge(previousChallenge)
+            } else {
+                AiToolApprovalSupport.validateGrant(
+                    rawToken = parsed.approvalToken,
+                    challenge = previousChallenge,
+                    envelope = envelope,
+                    payloadFingerprint = payloadFingerprint,
+                    approvalGrantService = approvalGrantService,
+                )
+            }
+        }
+        if (parsed.approvalToken != null) {
+            return AiToolWorkResult.FailedTerminal(
+                ToolErrorCode.POLICY_DENIED,
+                "approval token supplied without a pending approval challenge",
+            )
+        }
         val decision = policyService.decide(
             PolicyAttempt(
                 tenantId = envelope.tenantId,
@@ -367,10 +395,7 @@ internal class ProcedureTransformPlanHandler(
                 ToolErrorCode.POLICY_DENIED,
                 "policy decision: ${decision.reasonCode}",
             )
-            is PolicyDecision.RequiresApproval -> AiToolWorkResult.FailedTerminal(
-                ToolErrorCode.POLICY_REQUIRED,
-                "approval required (challenge-fields wired in G.6.e/f follow-up)",
-            )
+            is PolicyDecision.RequiresApproval -> AiToolApprovalSupport.requiresApproval(decision)
         }
     }
 
@@ -538,6 +563,9 @@ internal class ProcedureTransformPlanHandler(
             providerName = ok.success.providerMeta.providerName,
             model = ok.success.providerMeta.model,
             providerRequestId = ok.success.providerMeta.requestId,
+            promptFingerprint = ok.allow.promptFingerprint,
+            payloadFingerprint = ok.allow.payloadFingerprint,
+            modelVersion = ok.success.providerMeta.modelVersion,
         )
     }
 
@@ -660,58 +688,6 @@ internal class ProcedureTransformPlanHandler(
         message: String,
     ) : RuntimeException(message)
 
-    // ---- Prompt + Artifact --------------------------------------------
-
-    private fun buildPrompt(parsed: ParsedArgs, sourceRefs: List<ServerResourceUri>): String =
-        buildString {
-            append("d-migrate procedure-transform-plan\n")
-            append("targetDialect=").append(parsed.targetDialect).append('\n')
-            // Source-Typ-Marker bewusst OHNE Pipe, damit die
-            // Hygiene-DMIGRATE_REF-Regex Resource-URIs sauber
-            // erkennt und gegen `allowedResourceRefs` matchen kann.
-            append("sourceType=").append(parsed.source.kindLabel()).append('\n')
-            sourceRefs.forEach { append("ref=").append(it.render()).append('\n') }
-            parsed.profileRef?.let { append("profileRef=").append(it).append('\n') }
-            parsed.diffRef?.let { append("diffRef=").append(it).append('\n') }
-            // rules sind im fingerprint enthalten; im prompt referenzieren wir nur
-            // die anwesenheit, nicht den (potentiell sensitiven) inhalt.
-            if (parsed.rulesJson != null) append("rules=present\n")
-        }
-
-    private fun canonicalPayloadJson(parsed: ParsedArgs): String =
-        buildString {
-            append("{\"targetDialect\":\"").append(parsed.targetDialect).append('"')
-            append(",\"source\":\"").append(parsed.source.canonicalForm()).append('"')
-            parsed.profileRef?.let { append(",\"profileRef\":\"").append(it).append('"') }
-            parsed.diffRef?.let { append(",\"diffRef\":\"").append(it).append('"') }
-            append(",\"providerId\":\"").append(parsed.providerId.value).append('"')
-            append(",\"model\":\"").append(parsed.model).append('"')
-            append('}')
-        }
-
-    private fun serializePlanArtifact(
-        parsed: ParsedArgs,
-        success: AiProviderResult.Success,
-        allow: PromptHygieneResult.Allow,
-    ): ByteArray {
-        // Schmale, deterministische Plan-JSON — keine inline-Findings;
-        // die Wire-Antwort liefert `summary` + leere `findings`. Plan §5.4
-        // Z. 689-690: "Inline-Daten in summary und findings sind nur
-        // Preview" — das vollstaendige Plan-Resultat ist immer in den
-        // Artefakt-Bytes.
-        val text = buildString {
-            append("{\"summary\":\"plan generated\"")
-            append(",\"providerOutput\":\"").append(escapeJson(success.output)).append('"')
-            append(",\"targetDialect\":\"").append(parsed.targetDialect).append('"')
-            append(",\"promptFingerprint\":\"").append(allow.promptFingerprint).append('"')
-            append(",\"payloadFingerprint\":\"").append(allow.payloadFingerprint).append('"')
-            append(",\"providerName\":\"").append(success.providerMeta.providerName).append('"')
-            append(",\"model\":\"").append(success.providerMeta.model).append('"')
-            append('}')
-        }
-        return text.toByteArray(Charsets.UTF_8)
-    }
-
     private fun deterministicArtifactId(
         envelope: AiToolEnvelope,
         payloadFingerprint: String,
@@ -748,6 +724,7 @@ internal class ProcedureTransformPlanHandler(
             envelope = dev.dmigrate.server.core.error.ToolErrorEnvelope(
                 code = outcome.toolErrorCode,
                 message = outcome.scrubbedMessage,
+                details = outcome.details,
                 requestId = context.requestId,
                 // `retryable`-Hint wandert nicht in den
                 // ToolErrorEnvelope (Plan §5.4: Wire-Caller kann
@@ -758,95 +735,132 @@ internal class ProcedureTransformPlanHandler(
         )
     }
 
-    private fun buildSuccessJson(
-        resultRef: String,
-        artifactId: String,
-        providerName: String,
-        model: String,
-        providerRequestId: String?,
-        requestId: String,
-        replayed: Boolean,
-    ): String = buildString {
-        append("{\"summary\":\"")
-        append(if (replayed) "replayed plan" else "plan generated")
-        append("\"")
-        append(",\"findings\":[]")
-        append(",\"planRef\":\"").append(resultRef).append('"')
-        append(",\"planArtifactId\":\"").append(artifactId).append('"')
-        append(",\"planResourceUri\":\"").append(resultRef).append('"')
-        append(",\"providerMeta\":{\"providerName\":\"").append(providerName).append('"')
-        append(",\"model\":\"").append(model).append('"')
-        append(",\"modelVersion\":null")
-        append(",\"requestId\":")
-        if (providerRequestId == null) append("null") else {
-            append('"').append(providerRequestId).append('"')
-        }
-        append('}')
-        append(",\"executionMeta\":{\"requestId\":\"").append(requestId).append("\"}")
-        append('}')
-    }
-
-    // ---- helpers -------------------------------------------------------
-
-    private fun escapeJson(text: String): String =
-        text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-
-    // ---- Parsed args + source variants --------------------------------
-
-    private data class ParsedArgs(
-        val approvalKey: String,
-        val approvalToken: String?,
-        val targetDialect: String,
-        val source: SourceVariant,
-        val profileRef: String?,
-        val diffRef: String?,
-        val providerId: AiProviderId,
-        val model: String,
-        val rulesJson: String?,
-    ) {
-        fun allResourceRefs(): List<String> = buildList {
-            when (source) {
-                is SourceVariant.Procedure -> add(source.value)
-                is SourceVariant.Artifact -> add(source.value)
-                is SourceVariant.SchemaWithProcedure -> {
-                    add(source.schemaRef)
-                    add(source.procedureName)
-                }
-            }
-            profileRef?.let { add(it) }
-            diffRef?.let { add(it) }
-        }
-    }
-
-    private sealed interface SourceVariant {
-        fun canonicalForm(): String
-        fun kindLabel(): String
-
-        data class Procedure(val value: String) : SourceVariant {
-            override fun canonicalForm(): String = "procedureRef:$value"
-            override fun kindLabel(): String = "procedureRef"
-        }
-
-        data class Artifact(val value: String) : SourceVariant {
-            override fun canonicalForm(): String = "artifactRef:$value"
-            override fun kindLabel(): String = "artifactRef"
-        }
-
-        data class SchemaWithProcedure(
-            val schemaRef: String,
-            val procedureName: String,
-        ) : SourceVariant {
-            override fun canonicalForm(): String = "schemaRef:$schemaRef|procedureName:$procedureName"
-            override fun kindLabel(): String = "schemaRef+procedureName"
-        }
-    }
-
     companion object {
         const val TOOL_NAME: String = "procedure_transform_plan"
         const val REQUIRED_SCOPE: String = "dmigrate:ai:execute"
         private const val ARTIFACT_ID_HEX_LENGTH: Int = 32
+    }
+}
+
+private fun buildPrompt(parsed: ParsedArgs, sourceRefs: List<ServerResourceUri>): String =
+    buildString {
+        append("d-migrate procedure-transform-plan\n")
+        append("targetDialect=").append(parsed.targetDialect).append('\n')
+        append("sourceType=").append(parsed.source.kindLabel()).append('\n')
+        sourceRefs.forEach { append("ref=").append(it.render()).append('\n') }
+        parsed.profileRef?.let { append("profileRef=").append(it).append('\n') }
+        parsed.diffRef?.let { append("diffRef=").append(it).append('\n') }
+        if (parsed.rulesJson != null) append("rules=present\n")
+    }
+
+private fun canonicalPayloadJson(parsed: ParsedArgs): String =
+    buildString {
+        append("{\"targetDialect\":\"").append(parsed.targetDialect).append('"')
+        append(",\"source\":\"").append(parsed.source.canonicalForm()).append('"')
+        parsed.profileRef?.let { append(",\"profileRef\":\"").append(it).append('"') }
+        parsed.diffRef?.let { append(",\"diffRef\":\"").append(it).append('"') }
+        append(",\"providerId\":\"").append(parsed.providerId.value).append('"')
+        append(",\"model\":\"").append(parsed.model).append('"')
+        parsed.rulesJson?.let { append(",\"rules\":").append(it) }
+        append('}')
+    }
+
+private fun serializePlanArtifact(
+    parsed: ParsedArgs,
+    success: AiProviderResult.Success,
+    allow: PromptHygieneResult.Allow,
+): ByteArray {
+    val text = buildString {
+        append("{\"summary\":\"plan generated\"")
+        append(",\"providerOutput\":\"").append(escapeJson(success.output)).append('"')
+        append(",\"targetDialect\":\"").append(parsed.targetDialect).append('"')
+        append(",\"promptFingerprint\":\"").append(allow.promptFingerprint).append('"')
+        append(",\"payloadFingerprint\":\"").append(allow.payloadFingerprint).append('"')
+        append(",\"providerName\":\"").append(success.providerMeta.providerName).append('"')
+        append(",\"model\":\"").append(success.providerMeta.model).append('"')
+        append('}')
+    }
+    return text.toByteArray(Charsets.UTF_8)
+}
+
+private fun buildSuccessJson(
+    resultRef: String,
+    artifactId: String,
+    providerName: String,
+    model: String,
+    providerRequestId: String?,
+    requestId: String,
+    replayed: Boolean,
+): String = buildString {
+    append("{\"summary\":\"")
+    append(if (replayed) "replayed plan" else "plan generated")
+    append("\"")
+    append(",\"findings\":[]")
+    append(",\"planRef\":\"").append(resultRef).append('"')
+    append(",\"planArtifactId\":\"").append(artifactId).append('"')
+    append(",\"planResourceUri\":\"").append(resultRef).append('"')
+    append(",\"providerMeta\":{\"providerName\":\"").append(providerName).append('"')
+    append(",\"model\":\"").append(model).append('"')
+    append(",\"modelVersion\":null")
+    append(",\"requestId\":")
+    if (providerRequestId == null) append("null") else {
+        append('"').append(providerRequestId).append('"')
+    }
+    append('}')
+    append(",\"executionMeta\":{\"requestId\":\"").append(requestId).append("\"}")
+    append('}')
+}
+
+private fun escapeJson(text: String): String =
+    text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
+
+private fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+private data class ParsedArgs(
+    val approvalKey: String,
+    val approvalToken: String?,
+    val targetDialect: String,
+    val source: SourceVariant,
+    val profileRef: String?,
+    val diffRef: String?,
+    val providerId: AiProviderId,
+    val model: String,
+    val rulesJson: String?,
+) {
+    fun allResourceRefs(): List<String> = buildList {
+        when (source) {
+            is SourceVariant.Procedure -> add(source.value)
+            is SourceVariant.Artifact -> add(source.value)
+            is SourceVariant.SchemaWithProcedure -> {
+                add(source.schemaRef)
+                add(source.procedureName)
+            }
+        }
+        profileRef?.let { add(it) }
+        diffRef?.let { add(it) }
+    }
+}
+
+private sealed interface SourceVariant {
+    fun canonicalForm(): String
+    fun kindLabel(): String
+
+    data class Procedure(val value: String) : SourceVariant {
+        override fun canonicalForm(): String = "procedureRef:$value"
+        override fun kindLabel(): String = "procedureRef"
+    }
+
+    data class Artifact(val value: String) : SourceVariant {
+        override fun canonicalForm(): String = "artifactRef:$value"
+        override fun kindLabel(): String = "artifactRef"
+    }
+
+    data class SchemaWithProcedure(
+        val schemaRef: String,
+        val procedureName: String,
+    ) : SourceVariant {
+        override fun canonicalForm(): String = "schemaRef:$schemaRef|procedureName:$procedureName"
+        override fun kindLabel(): String = "schemaRef+procedureName"
     }
 }
