@@ -2,7 +2,12 @@
 
 > **Milestone**: 0.9.6 - Beta: MCP-Server
 > **Phase**: G (`KI-nahe Tools, Prompts, Tests und Dokumentation`)
-> **Status**: Draft (2026-05-03)
+> **Status**: in Arbeit (2026-05-07) — Phase F (F.1–F.10) abgeschlossen
+> inkl. Folge-Fixes (Init-Orchestrator-Wiring, fail-closed-Default für
+> data_import/data_transfer, Retention-Service, schemaRef-Preflight),
+> damit liegt der vollständige Sicherheits-, Policy-, Idempotency-,
+> Resource-, Upload- und Job-Vertragsrahmen fest, auf den Phase G
+> aufbaut.
 > **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
 > Abschnitt 4.3, Abschnitt 4.4, Abschnitt 4.5, Abschnitt 4.8,
 > Abschnitt 5.4, Abschnitt 6.10, Abschnitt 6.11, Abschnitt 8 Phase G,
@@ -13,7 +18,7 @@
 > `docs/planning/done/ImpPlan-0.9.6-D.md`;
 > `docs/planning/done/ImpPlan-0.9.6-E0.md`;
 > `docs/planning/done/ImpPlan-0.9.6-E.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-F.md`; `spec/ki-mcp.md`;
+> `docs/planning/done/ImpPlan-0.9.6-F.md`; `spec/ki-mcp.md`;
 > `spec/job-contract.md`; `spec/architecture.md`; `spec/design.md`;
 > `docs/user/guide.md`; `docs/planning/in-progress/roadmap.md`;
 > `adapters/driving/mcp`; `hexagon/application`;
