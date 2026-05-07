@@ -22,7 +22,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-coverage-gate docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -44,7 +44,10 @@ help:
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
 		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
+		'  make docker-detekt    Run Detekt inside Docker' \
+		'  make docker-coverage  Build Kover HTML coverage image' \
 		'  make docker-coverage-gate  Run Kover verification inside Docker' \
+		'  make docker-coverage-json  Build Kover JSON coverage image' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
@@ -123,8 +126,17 @@ docker-test:
 	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
 	  -t $(DOCKER_TAG) .
 
+docker-detekt:
+	$(DOCKER) build --target detekt -t $(IMAGE):detekt .
+
+docker-coverage:
+	$(DOCKER) build --target coverage -t $(IMAGE):coverage .
+
 docker-coverage-gate:
 	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+
+docker-coverage-json:
+	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
 
 # Regenerate pinned JSON-Schema golden snapshots without volume mounts.
 # Builds the `golden-update` Docker stage (which runs the goldenness tests

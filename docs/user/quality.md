@@ -61,10 +61,10 @@ wird.
 
 ### Lokale Befehle
 
-| Befehl                 | Zweck                                      |
-| ---------------------- | ------------------------------------------ |
-| `make coverage-gate`   | Fuehrt `test koverVerify` aus              |
-| `make coverage-report` | Erzeugt Kover-HTML- und XML-Reports        |
+| Befehl                 | Zweck                               |
+| ---------------------- | ----------------------------------- |
+| `make coverage-gate`   | Fuehrt `test koverVerify` aus       |
+| `make coverage-report` | Erzeugt Kover-HTML- und XML-Reports |
 
 Die Docker-Stages `coverage`, `coverage-json` und `coverage-verify` sind in
 der [README](../../README.md) beschrieben. Das erledigte Analyse-Dokument
