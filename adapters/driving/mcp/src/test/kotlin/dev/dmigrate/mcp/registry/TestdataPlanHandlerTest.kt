@@ -59,7 +59,10 @@ class TestdataPlanHandlerTest : FunSpec({
         expiresAt = Instant.MAX,
     )
 
-    class Fixture(policyDefault: PolicyEffect = PolicyEffect.Allow) {
+    class Fixture(
+        policyDefault: PolicyEffect = PolicyEffect.Allow,
+        providerCallLimit: Long = Long.MAX_VALUE,
+    ) {
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
         val schemaStore = InMemorySchemaStore()
@@ -72,6 +75,10 @@ class TestdataPlanHandlerTest : FunSpec({
         )
         val hygieneService = DefaultPromptHygieneService()
         val policyService = ConfiguredPolicyService(emptyList(), policyDefault)
+        val quotaStore = dev.dmigrate.server.ports.memory.InMemoryQuotaStore()
+        val quotaService = dev.dmigrate.server.application.quota.DefaultQuotaService(
+            quotaStore,
+        ) { providerCallLimit }
         val orchestrator = AiToolOrchestrator(outcomeStore)
         val handler = TestdataPlanHandler(
             orchestrator = orchestrator,
@@ -83,6 +90,7 @@ class TestdataPlanHandlerTest : FunSpec({
             providerRegistry = providerRegistry,
             hygieneService = hygieneService,
             policyService = policyService,
+            quotaService = quotaService,
             clock = clock,
         )
 

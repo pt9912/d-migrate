@@ -63,6 +63,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    quotaService = phaseC.quotaService,
                     clock = clock,
                 )
                 ProcedureTransformExecuteHandler.TOOL_NAME -> ProcedureTransformExecuteHandler(
@@ -73,6 +74,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    quotaService = phaseC.quotaService,
                     clock = clock,
                 )
                 TestdataPlanHandler.TOOL_NAME -> TestdataPlanHandler(
@@ -85,6 +87,7 @@ object PhaseGRegistries {
                     providerRegistry = gWiring.aiProviderRegistry,
                     hygieneService = gWiring.promptHygieneService,
                     policyService = phaseE.policyService,
+                    quotaService = phaseC.quotaService,
                     clock = clock,
                 )
                 else -> baseRegistry.findHandler(descriptor.name)!!

@@ -22,6 +22,8 @@ import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.application.policy.PolicyAttempt
 import dev.dmigrate.server.application.policy.PolicyService
+import dev.dmigrate.server.application.quota.QuotaReservation
+import dev.dmigrate.server.application.quota.QuotaService
 import dev.dmigrate.server.core.ai.AiArtifactMetadata
 import dev.dmigrate.server.core.ai.AiArtifactProvenance
 import dev.dmigrate.server.core.ai.AiIntent
@@ -41,6 +43,9 @@ import dev.dmigrate.server.ports.AiArtifactMetadataStore
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.SchemaStore
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
+import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
 import java.security.MessageDigest
 import java.time.Clock
@@ -90,6 +95,7 @@ internal class ProcedureTransformPlanHandler(
     private val providerRegistry: AiProviderRegistry,
     private val hygieneService: PromptHygieneService,
     private val policyService: PolicyService,
+    private val quotaService: QuotaService,
     private val clock: Clock,
     private val artifactTtl: Duration = Duration.ofDays(30),
 ) : ToolHandler {
@@ -120,6 +126,17 @@ internal class ProcedureTransformPlanHandler(
 
         val dispatch = orchestrator.dispatch(envelope) { _ ->
             performWork(parsed, context.principal, envelope, payloadFingerprint)
+        }
+
+        // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
+        // gilt fuer Live-Aufrufe und Replay (orchestrator kopiert
+        // die Werte beim Replay aus dem terminalen Outcome).
+        if (dispatch is AiToolDispatchOutcome.WireSuccess) {
+            context.auditFields.resourceRefs = context.auditFields.resourceRefs + listOf(
+                "provider:${dispatch.providerName}",
+                "model:${dispatch.model}",
+                "providerRequestId:${dispatch.providerRequestId ?: "null"}",
+            )
         }
 
         return projectToWire(dispatch, context)
@@ -278,6 +295,45 @@ internal class ProcedureTransformPlanHandler(
 
         decidePolicyOrFail(envelope, payloadFingerprint, sourceRefs)?.let { return it }
 
+        // Plan §6 G.8: Provider-Quota VOR Provider-Resolution +
+        // Hygiene + Provider-Aufruf reservieren. RATE_LIMITED darf
+        // weder Secrets lesen, noch einen Provider-Client erzeugen,
+        // noch den Provider aufrufen — der frühe Reserve-Check
+        // sichert das.
+        val quotaKey = QuotaKey(
+            tenantId = envelope.tenantId,
+            dimension = QuotaDimension.PROVIDER_CALLS,
+            principalId = envelope.callerId,
+            operation = envelope.toolName,
+        )
+        when (val outcome = quotaService.reserve(quotaKey, 1)) {
+            is QuotaOutcome.RateLimited -> return AiToolWorkResult.FailedRetryable(
+                ToolErrorCode.RATE_LIMITED,
+                "provider quota exceeded (${outcome.current}/${outcome.limit}, " +
+                    "retryAfter=${outcome.retryAfter.seconds}s)",
+            )
+            is QuotaOutcome.Granted -> Unit
+        }
+        val reservation = QuotaReservation(quotaKey, 1)
+
+        return try {
+            performAfterQuota(parsed, principal, envelope, payloadFingerprint, sourceRefs)
+        } finally {
+            // Plan §6 G.8: jede terminale Ausgabe (Erfolg, Fehler,
+            // Retryable) gibt den Slot wieder frei — gleiche
+            // Semantik wie ACTIVE_JOBS in Phase E.
+            quotaService.release(reservation)
+        }
+    }
+
+    @Suppress("ReturnCount", "LongParameterList")
+    private fun performAfterQuota(
+        parsed: ParsedArgs,
+        principal: PrincipalContext,
+        envelope: AiToolEnvelope,
+        payloadFingerprint: String,
+        sourceRefs: List<ServerResourceUri>,
+    ): AiToolWorkResult {
         val provider = resolveProviderOrFail(parsed)
         if (provider is ProviderResolution.Failure) return provider.result
         val resolved = (provider as ProviderResolution.Resolved).outcome
