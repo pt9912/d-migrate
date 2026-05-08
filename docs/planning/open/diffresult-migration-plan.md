@@ -225,6 +225,11 @@ Der erste interne Vertrag bettet `schemaDiff` bewusst ein:
 - `DiffResult.operations` ist die ausfuehrbare Migrationsebene.
 - Reports koennen beide Ebenen zeigen, ohne den Operationsplan zu
   ueberfrachten.
+- Reine Schema-Metadaten-Diffs (`name`, `version`) erzeugen keine
+  DDL-Operation. Fuer Live-DB-Operanden muessen reverse-generierte Marker vor
+  Compare/Planning mit derselben Semantik wie `schema compare` normalisiert
+  werden, damit synthetische `__dmigrate_reverse__`-Werte keine Scheinmigration
+  ausloesen.
 - Falls `DiffResult` spaeter als oeffentliches Artefakt serialisiert wird,
   kann diese Einbettung durch eine versionierte Projektion oder einen
   Fingerprint ersetzt werden. Das ist keine Entscheidung fuer den ersten
@@ -385,6 +390,21 @@ Das ist besonders wichtig fuer Drop-Operationen. Beispiele:
 - Create-Operationen laufen in der natuerlichen Richtung: referenzierte Typen,
   Tabellen und Spalten vor Constraints, Indizes, Views und Triggern.
 
+View-Abhaengigkeiten duerfen dabei nicht aus reinen Namens-Heuristiken geraten
+werden. Der erste Slice braucht entweder explizite Abhaengigkeitsdaten aus dem
+Reverse-/Reader-Pfad oder eine klare Diagnose mit Blocker fuer betroffene
+Operationen. Konkret:
+
+- `ViewDefinition.dependencies` muss fuer planungsrelevante Tabellen- und
+  Spaltenabhaengigkeiten ausreichen oder durch einen separaten
+  Dependency-Index ergaenzt werden.
+- Kann der Planner bei `DropColumn`, `AlterColumnType`,
+  `AlterColumnNullability` oder `DropTable` nicht beweisen, welche Views
+  betroffen sind, darf der Generator diese Operation nicht blind rendern.
+- Routine-Abhaengigkeiten von Views bleiben separat zu behandeln; fehlende
+  Routine-Migration darf nicht zu einem unvollstaendigen View-Replacement
+  fuehren.
+
 Ein Generator darf diese Reihenfolge nicht rein nach Phase neu sortieren.
 
 ### 4.5 Reversibilitaet
@@ -455,8 +475,21 @@ Beispiel:
 d-migrate schema migrate ... --allow-destructive
 ```
 
-Ohne diesen Schalter erzeugt der Runner bei destruktiven Operationen nur einen
-Fehler bzw. einen Plan-Report, aber keine ausfuehrbare Migration.
+Ohne diesen Schalter ist die Semantik verbindlich getrennt:
+
+- `--plan-only` darf einen Plan- und Risiko-Report erzeugen und mit Exit `0`
+  enden, solange Planning selbst erfolgreich war.
+- Ein normaler Dry-Run ohne `--execute` versucht bereits, ein
+  ausfuehrbares Up-SQL-Artefakt zu rendern. Enthaelt der Plan destruktive oder
+  bestaetigungspflichtige Operationen und fehlt `--allow-destructive`, endet
+  der Lauf mit Exit `8` und
+  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; es wird kein
+  ausfuehrbares Up-SQL geschrieben.
+- `--execute` darf destruktive oder bestaetigungspflichtige Operationen nur mit
+  `--allow-destructive` ausfuehren.
+
+Damit bleibt ein Risiko-Report ohne Freigabe moeglich, aber ein SQL-Artefakt,
+das wie eine freigegebene Migration aussieht, entsteht nicht versehentlich.
 
 ---
 
@@ -467,6 +500,9 @@ Fehler bzw. einen Plan-Report, aber keine ausfuehrbare Migration.
 ```text
 current schema  -> materialisiertes Ist-Schema
 desired schema  -> materialisiertes Soll-Schema
+                         |
+                         v
+         reverse marker / metadata normalization
                          |
                          v
          SchemaComparator.compare(current, desired)
@@ -493,6 +529,8 @@ Der Planner:
 
 - konsumiert `SchemaDiff`
 - nutzt bei Bedarf beide kompletten Schema-Zustaende
+- erhaelt bereits normalisierte Schema-Zustaende, wenn ein Operand aus
+  Reverse/Live-Introspection stammt
 - erzeugt Operationen mit stabilen IDs
 - sortiert Operationen deterministisch
 - markiert Risiken und Reversibilitaet
@@ -505,6 +543,11 @@ Der Dialektgenerator:
 - rendert Up-DDL
 - rendert optional Down-DDL aus invertierbaren Operationen
 - erzeugt `SkippedObject`/Diagnostics fuer nicht renderbare Operationen
+- rendert Down-DDL in inverser, dependency-sicherer Reihenfolge. Die
+  Up-Toposortierung darf nicht einfach wiederverwendet werden; zuerst muessen
+  abhaengige Down-Operationen laufen, danach ihre Voraussetzungen. Beispiel:
+  Down fuer `CreateTable` + `CreateView` muss `DROP VIEW` vor `DROP TABLE`
+  rendern.
 
 ### 5.2 Warum `SchemaDiff` nicht genuegt
 
@@ -589,6 +632,15 @@ nach den referenzierten Tabellen, Spalten und Routinen wieder erzeugen. Views
 mit nicht aufloesbaren Routine- oder Materialized-View-Abhaengigkeiten werden
 diagnostiziert statt blind gerendert.
 
+Fuer PostgreSQL ist dafuer vor der View-Migration mindestens ein belastbarer
+Tabellen-/Spalten-Dependency-Index noetig, zum Beispiel ueber `pg_depend` /
+`pg_rewrite` oder eine gleichwertige Projektion. Der heute vorhandene
+Function-Dependency-Anteil reicht fuer `DropColumn`/`AlterColumn`/`DropTable`
+nicht aus. Fehlt dieser Index im ersten Slice, muessen betroffene
+View-Replacements und schemaaendernde Operationen mit
+`DIALECT_UNSUPPORTED_OPERATION` bzw. einer spezifischen Planner-Diagnose
+blockieren, statt SQL mit unbekannten Abhaengigkeiten zu erzeugen.
+
 Bewusst nicht in der ersten PostgreSQL-Zielmatrix:
 
 - `CREATE/ALTER/DROP SEQUENCE`
@@ -622,6 +674,12 @@ Erste Zieloperationen:
 
 Auch fuer MySQL gilt: View-Replacement ist im ersten Slice auf einfache Views
 mit aufloesbaren Tabellen-/Spaltenabhaengigkeiten begrenzt.
+
+Fuer MySQL muss die Abhaengigkeitsquelle ebenfalls explizit sein, zum Beispiel
+ueber `information_schema.VIEW_TABLE_USAGE` /
+`information_schema.VIEW_COLUMN_USAGE`, soweit fuer die Zielversion verfuegbar.
+Wenn der Dialekt oder die Version diese Information nicht belastbar liefern
+kann, sind abhaengige View-Replacements im ersten Slice nicht renderbar.
 
 Bewusst nicht in der ersten MySQL-Zielmatrix:
 
@@ -727,16 +785,24 @@ ausfuehrbaren Up-Pfad tragen:
 
 1. Ist-Zustand aus `--target` introspektieren.
 2. Soll-Zustand aus `--source` laden und validieren.
-3. `DiffResult` in Richtung `current -> desired` planen.
-4. Up-DDL rendern.
-5. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
-6. Bei `--execute` Up-DDL gegen `--target` ausfuehren.
-7. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
+3. Reverse-generierte Marker und synthetische Metadaten beider Operanden
+   normalisieren, bevor verglichen wird. Der Codepfad soll die bestehende
+   `schema compare`-Semantik teilen statt eine zweite Normalisierung zu
+   erfinden.
+4. `DiffResult` in Richtung `current -> desired` planen.
+5. Up-DDL rendern, sofern kein Risiko-, Rollback- oder Dialektblocker greift.
+6. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
+7. Bei `--execute` Up-DDL gegen `--target` ausfuehren.
+8. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
    `desired` vergleichen.
 
 `--dry-run` ist der Default, solange `--execute` nicht gesetzt ist. Damit kann
 der gleiche Befehl zuerst den Plan und beide SQL-Artefakte erzeugen und danach
-bewusst ausgefuehrt werden.
+bewusst ausgefuehrt werden. Diese Aussage gilt fuer renderbare Plaene. Ist der
+Plan destruktiv oder bestaetigungspflichtig und fehlt `--allow-destructive`,
+endet der normale Dry-Run mit Exit `8` nach Plan-/Report-Erzeugung, aber ohne
+ausfuehrbares Up-SQL. Wer nur den Risiko-Report ohne Freigabe sehen will, nutzt
+`--plan-only`.
 
 Exit-Codes sollten sich an bestehenden Mustern orientieren:
 
@@ -749,13 +815,20 @@ Exit-Codes sollten sich an bestehenden Mustern orientieren:
 | `7` | I/O-, Planungs- oder Renderfehler |
 | `8` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar |
 
+Exit `8` ist ein neuer geplanter CLI-Code fuer blockierte Migrationen. Phase A
+muss deshalb nicht nur den lokalen `schema migrate`-Abschnitt, sondern auch die
+globale Exit-Code-Tabelle in `spec/cli-spec.md` erweitern. Bis diese
+Spezifikationsaenderung erfolgt ist, darf keine Implementierung den Code
+stillschweigend verwenden.
+
 Exit `0` gilt auch fuer erfolgreiche No-op-Laeufe, wenn kein Diff vorhanden
 ist, und fuer erfolgreiche `--plan-only`-Laeufe. Das unterscheidet
 `schema migrate` bewusst von `schema compare`, wo Exit `1` "Unterschiede
-gefunden" bedeutet. Ein Plan mit Risiken bleibt erfolgreich, solange er nicht
-als ausfuehrbare Migration gerendert werden soll oder durch fehlende Freigaben,
-nicht moeglichen Rollback oder nicht renderbare Dialektoperationen blockiert
-wird.
+gefunden" bedeutet. Ein Plan mit Risiken bleibt nur dann erfolgreich, wenn er
+ausschliesslich als Plan-/Risiko-Report angefordert wurde. Sobald der Lauf ein
+ausfuehrbares Up- oder Down-SQL-Artefakt rendern oder ausfuehren soll, fuehren
+fehlende Freigaben, nicht moeglicher Rollback oder nicht renderbare
+Dialektoperationen zu Exit `8`.
 
 Exit `8` muss im strukturierten Fehler mindestens folgende Faelle
 unterscheiden:
@@ -846,6 +919,10 @@ Ein erfolgreicher 0.9.6-Up/Down-Lauf besteht aus zusammenpassenden Artefakten:
 - Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist
 - strukturierter Report aus `--report`
 
+Bei einem durch Risiken blockierten Dry-Run ohne `--allow-destructive` darf der
+Report geschrieben werden, das Up-SQL-Artefakt aber nicht. Ein vorhandener
+Ausgabepfad darf nicht mit teilweise gerendertem SQL ueberschrieben werden.
+
 Der Report muss mindestens enthalten:
 
 - Fingerprint des Ist-Zustands vor Up
@@ -858,6 +935,11 @@ Der Report muss mindestens enthalten:
 Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
 automatisch renderbar sind. Fuer `NOT_REVERSIBLE` bleibt das Verhalten strikt:
 Exit `8` mit `blockedReason = ROLLBACK_NOT_POSSIBLE`.
+
+Die Reihenfolge des Down-SQL entsteht aus den inversen Operationen und deren
+umgekehrten Abhaengigkeiten. Sie ist nicht identisch mit der Up-Reihenfolge.
+Akzeptanzbeispiel: Wenn Up eine Tabelle und danach eine View erzeugt, muss Down
+zuerst die View und danach die Tabelle entfernen.
 
 Fuer `MANUAL_REQUIRED` gilt im ersten Slice ebenfalls strikt: Es wird kein
 automatisches Down-SQL erzeugt. Der Lauf endet mit Exit `8` und
@@ -904,6 +986,9 @@ Report-Inhalte:
 ### Phase A - Spezifikation und Namensbereinigung
 
 - `spec/cli-spec.md` fuer `schema migrate`/`schema rollback` schaerfen
+- globale Exit-Code-Tabelle in `spec/cli-spec.md` um den geplanten
+  Migrations-Blocker-Code `8` ergaenzen oder einen bestehenden Code verbindlich
+  wiederverwenden
 - `spec/design.md` um `DiffResult` als Zwischenvertrag ergaenzen
 - private `SchemaComparator.DiffResult<N, D>` umbenennen
 - klare Begriffe festlegen:
@@ -926,14 +1011,23 @@ Report-Inhalte:
 - deterministische ID-Bildung aus Operationstyp, Objektpfad und
   Payload-Fingerprint
 - Operation-Payloads fuer Rendering und Rollback
+- gemeinsamer Normalizer fuer reverse-generierte Schema-Metadaten, den
+  `schema compare` und `schema migrate` nutzen
+- planungsfaehiger Dependency-Vertrag fuer Views, mindestens Tabellen- und
+  Spaltenabhaengigkeiten fuer `DropTable`, `DropColumn` und `AlterColumn*`
 - Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
-  Payload-Mapping und Risiko-Mapping
+  inverse Down-Sortierung, Payload-Mapping, Risiko-Mapping und
+  Reverse-Marker-Normalisierung
 
 ### Phase C - Planner
 
 - `DiffPlanner` implementieren
 - Mapping von `SchemaDiff` zu Operationen
 - Dependency-/Phasen-Sortierung
+- inverse Dependency-/Phasen-Sortierung fuer Down-Operationen spezifizieren
+  und testen
+- View-Abhaengigkeiten aus Reader-/Dependency-Daten nutzen; bei fehlender
+  belastbarer Abhaengigkeitsinformation blockierende Diagnosen erzeugen
 - Reversibilitaetsklassifizierung
 - destruktive Operationen markieren
 - Rename-Kandidaten nur diagnostizieren, nicht automatisch migrieren
@@ -958,6 +1052,7 @@ Nicht in der ersten Matrix:
 - `SchemaMigrateRunner`
 - Operand-Aufloesung fuer Soll-Schema und Ist-Datenbank
 - Reverse des Ist-Zustands
+- Normalisierung reverse-generierter Schema-Metadaten vor Compare/Planning
 - Compare
 - Planner
 - Dialekt-DDL
@@ -1012,12 +1107,24 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - Dependency-Sortierung gewinnt gegen reine Phasenreihenfolge, insbesondere bei
   Drop-Operationen fuer Views, Trigger, Constraints, Indizes, Spalten und
   Tabellen.
-- Destruktive Operationen werden ohne Freigabe nicht ausfuehrbar gerendert.
+- Down-DDL wird in inverser, dependency-sicherer Reihenfolge gerendert; abhaengige
+  Down-Operationen laufen vor ihren Voraussetzungen.
+- Reverse-generierte Schema-Metadaten werden vor Compare/Planning normalisiert,
+  sodass synthetische `name`-/`version`-Werte keine Migrationsoperationen
+  ausloesen.
+- View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
+  entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
+  blockiert.
+- Destruktive Operationen werden ohne Freigabe nicht als ausfuehrbares SQL
+  gerendert oder ausgefuehrt; `--plan-only` darf weiterhin einen Risiko-Report
+  erzeugen.
 - `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
   `NOT_REVERSIBLE` oder `MANUAL_REQUIRED`.
 - Operation-IDs sind deterministisch aus fachlicher Semantik abgeleitet und in
   Up-, Down- und Report-Artefakten referenzierbar.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
+- Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
+  kein `--output`-Artefakt mit teilweise gerendertem SQL.
 - `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
   Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
   `d-migrate`-Metadatenblock.
@@ -1067,6 +1174,8 @@ Verbindlich fuer den ersten Slice:
   - `--source` ist das Soll-Schema als Datei.
   - `--target` ist die Ist-Datenbank.
   - Datei-zu-Datei als reiner SQL-Plan bleibt spaeterer Scope.
+- Reverse-generierte Schema-Metadaten werden vor Compare/Planning mit dem
+  gemeinsamen Compare-Normalizer neutralisiert.
 - `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
   Stattdessen gibt es einen stabilen Report-Vertrag.
 - `--generate-rollback` ist streng:
@@ -1087,8 +1196,10 @@ Verbindlich fuer den ersten Slice:
   `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
   erzeugten Down-SQL-Artefakt.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
-  Ohne diesen Schalter endet Rendering mit Exit `8` und
-  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`.
+  Ohne diesen Schalter endet ein SQL-rendernder Lauf mit Exit `8` und
+  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; es wird kein
+  Up-SQL-Artefakt geschrieben. `--plan-only` bleibt als reiner Risiko-Report
+  erlaubt.
 - Non-TTY-Betrieb nutzt keine interaktive Rueckfrage. Die Bestaetigung erfolgt
   ausschliesslich ueber explizite Flags wie `--allow-destructive`.
 - Rename-Hints bleiben reine Diagnose. Es gibt kein automatisches Rename und
