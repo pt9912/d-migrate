@@ -1,6 +1,6 @@
 # Refactoring-Plan: ICU4J hinter einen Hexagon-Port ziehen
 
-> Status: Draft (2026-04-25)
+> Status: Done (2026-05-08; Draft 2026-04-25)
 >
 > Anlass: `hexagon/application/build.gradle.kts` referenziert ICU4J direkt.
 > Das ist nach der aktuellen Architektur-Doku erlaubt, weil ICU4J in der
