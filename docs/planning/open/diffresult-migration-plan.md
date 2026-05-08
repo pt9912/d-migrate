@@ -859,9 +859,15 @@ Fehlerverhalten:
 
 Down-Rebuild:
 
-- Fuer reversible Rebuilds wird der Down-Plan aus demselben
-  `RebuildTable`-Vertrag erzeugt, aber mit `oldTable` und `newTable`
-  vertauscht.
+- Fuer reversible Rebuilds wird ein eigener inverser `RebuildTable`-Plan
+  erzeugt. `oldTable` und `newTable` des Up-Rebuilds sind dafuer nur die
+  Quellinformation fuer die Down-Tabellendefinitionen; die richtungsabhaengigen
+  Felder duerfen nicht durch blosses Vertauschen wiederverwendet werden.
+- Das inverse `RebuildTable` muss `preservedColumns`, `addedColumns`,
+  `droppedColumns`, `dependentViewsToRecreate`, `dependentTriggersToRecreate`,
+  `indexesToRecreate`, Preflights und Risiko aus der Down-Richtung neu
+  bestimmen. Alternativ darf der Generator den Down-Rebuild aus den inversen
+  fachlichen Operationen komplett neu planen.
 - Das Down-Mapping ist nur automatisch erlaubt, wenn alle Up-Schritte
   reversibel sind und keine verworfenen Daten rekonstruiert werden muessen.
 - Enthaelt der Up-Rebuild `droppedColumns` oder manuelle Casts, blockiert
@@ -882,6 +888,7 @@ d-migrate schema migrate \
   --target db:staging \
   --output migration.sql \
   --generate-rollback \
+  --rollback-output rollback.sql \
   --report migration-report.yaml
 ```
 
@@ -893,7 +900,7 @@ Flag-Skizze:
 | `--target` | Ja | Operand | Ist-Datenbank oder Ist-Schema-Datei |
 | `--dialect` | Bedingt | Dialekt | Zieldialekt fuer SQL-Rendering; Pflicht bei Datei-zu-Datei, bei DB-Target aus der Connection ableitbar |
 | `--output` | Nein | Pfad | Up-SQL-Ausgabe |
-| `--rollback-output` | Nein | Pfad | Down-SQL-Ausgabe, wenn getrennt |
+| `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht, wenn `--generate-rollback` gesetzt ist |
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen |
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
 | `--plan-only` | Nein | Boolean | nur stabilen Plan-/Risiko-Report schreiben, kein SQL |
@@ -921,6 +928,11 @@ mit Exit `2`. Der Report und der SQL-Metadatenblock enthalten in diesem Modus
 den Fingerprint der aktuellen Schema-Datei als erwarteten Vorzustand und den
 Fingerprint des Soll-Schemas als erwarteten Post-Up-Zustand.
 
+Wenn `--generate-rollback` gesetzt ist, ist `--rollback-output` im ersten Slice
+Pflicht. Es gibt keinen impliziten Default-Pfad und kein Einbetten des
+Down-SQL in das Up-SQL-Artefakt. Fehlt `--rollback-output`, endet der Lauf als
+ungueltiger CLI-Aufruf mit Exit `2`.
+
 Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
 ausfuehrbaren Up-Pfad fuer DB-Targets und einen vollstaendigen Plan-/Renderpfad
 fuer Datei-Targets tragen:
@@ -938,10 +950,16 @@ fuer Datei-Targets tragen:
    - DB-Target: aus der Connection, optional gegen `--dialect` validiert.
    - Datei-Target: aus dem Pflichtflag `--dialect`.
 6. Up-DDL rendern, sofern kein Risiko-, Rollback- oder Dialektblocker greift.
-7. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
+7. Bei `--generate-rollback` die Down-Renderbarkeit aus demselben Plan pruefen
+   und das Down-SQL vorbereiten. Ohne `--execute` wird es sofort mit dem
+   erwarteten Soll-Fingerprint als Post-Up-Fingerprint geschrieben.
 8. Bei `--execute` Up-DDL gegen das DB-Target ausfuehren.
 9. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
    `desired` vergleichen.
+10. Bei `--execute --generate-rollback` das Down-SQL erst nach erfolgreicher
+   Nach-Introspection atomar nach `--rollback-output` schreiben. Der
+   Metadatenblock enthaelt dann den tatsaechlich beobachteten
+   Post-Up-Fingerprint.
 
 `--dry-run` ist der Default, solange `--execute` nicht gesetzt ist. Damit kann
 der gleiche Befehl zuerst den Plan und beide SQL-Artefakte erzeugen und danach
@@ -1046,6 +1064,14 @@ Fehlt dieser Metadatenblock, darf `schema rollback` das SQL im ersten Slice nur
 als Preview/Validierung behandeln. Eine Ausfuehrung ohne Metadatenblock ist
 nicht Bestandteil dieses Plans.
 
+Bei `schema migrate --execute --generate-rollback` darf das finale
+Rollback-Artefakt erst nach erfolgreicher Up-Ausfuehrung und Nach-Compare
+geschrieben werden, weil der Metadatenblock den tatsaechlichen
+Post-Up-Fingerprint referenziert. Ein vorbereiteter Down-Plan darf vor der
+Ausfuehrung nur in Memory oder in einer temporaeren Datei existieren und muss
+vor dem finalen Schreiben erneut mit dem beobachteten Zielzustand verbunden
+werden.
+
 Nicht Bestandteil dieses Plans:
 
 1. Rollback aus gespeichertem `DiffResult`/Plan-Artefakt:
@@ -1066,9 +1092,16 @@ Ein erfolgreicher 0.9.6-Up/Down-Lauf besteht aus zusammenpassenden Artefakten:
 - Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist
 - strukturierter Report aus `--report`
 
+`--rollback-output` ist bei `--generate-rollback` verbindlich. Der Runner darf
+keinen impliziten Dateinamen ableiten und darf Down-SQL nicht in das
+Up-SQL-Artefakt mischen.
+
 Bei einem durch Risiken blockierten Dry-Run ohne `--allow-destructive` darf der
 Report geschrieben werden, das Up-SQL-Artefakt aber nicht. Ein vorhandener
 Ausgabepfad darf nicht mit teilweise gerendertem SQL ueberschrieben werden.
+Dasselbe gilt fuer Rollback-Artefakte: Bei Blockern oder fehlgeschlagener
+Up-Ausfuehrung darf ein vorhandenes `--rollback-output` nicht mit einem
+unvollstaendigen oder fingerprint-falschen Down-SQL ueberschrieben werden.
 
 Der Report muss mindestens enthalten:
 
@@ -1201,7 +1234,8 @@ Zusaetzlich fuer SQLite verbindlich:
   erzeugen
 - `PRAGMA foreign_keys`-Handling, `foreign_key_check`, `BEGIN IMMEDIATE`,
   `COMMIT` und `ROLLBACK` als Runner-Vertrag abbilden
-- Down-Rebuild aus reversiblem Up-Rebuild erzeugen und bei Datenverlust- oder
+- Down-Rebuild aus reversiblem Up-Rebuild als eigenen inversen Rebuild-Plan
+  erzeugen, richtungsabhaengige Felder neu bestimmen und bei Datenverlust- oder
   Manual-Faellen blockieren
 
 Nicht in der ersten Matrix:
@@ -1225,12 +1259,13 @@ Nicht in der ersten Matrix:
 - `--plan-only`
 - `--allow-destructive`
 - `--generate-rollback`
-- `--rollback-output`
+- `--rollback-output` als Pflichtausgabe fuer `--generate-rollback`
 - `--execute`
 - `--dry-run` als Default ohne Ausfuehrung
 - `--execute` mit Datei-Target als Exit `2` ablehnen
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
-- Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist
+- Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
+  `--execute` erst nach erfolgreichem Nach-Compare final schreiben
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
 - Zielzustands-Pruefung vor `schema rollback --execute`
 - Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
@@ -1293,6 +1328,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
   deterministisch beschrieben und getestet.
+- SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
+  blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
+  Down-Vertrag.
 - Destruktive Operationen werden ohne Freigabe nicht als ausfuehrbares SQL
   gerendert oder ausgefuehrt; `--plan-only` darf weiterhin einen Risiko-Report
   erzeugen.
@@ -1309,6 +1347,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
   Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
   `d-migrate`-Metadatenblock.
+- `schema migrate --generate-rollback` ohne `--rollback-output` endet mit
+  Exit `2`.
+- `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
+  das finale Down-SQL-Artefakt erst nach erfolgreichem Up und Nach-Compare; der
+  Metadatenblock enthaelt den beobachteten Post-Up-Fingerprint.
 - `schema rollback --source rollback.sql --target ... --execute` wendet
   nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
 - `schema rollback --source rollback.sql --target ... --execute` prueft vor der
