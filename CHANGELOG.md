@@ -9,11 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`adapters:driven:text-icu` module** with `IcuUnicodeTextService`
+  — production ICU4J implementation behind the new
+  `dev.dmigrate.text.UnicodeTextService` port in
+  `hexagon:ports-common`. CLI and MCP composition roots inject this
+  service; `hexagon:application` no longer depends on
+  `com.ibm.icu:icu4j` directly.
+- **`FakeUnicodeTextService` test fixture** in
+  `hexagon:ports-common` (JDK-only, backed by `java.text.Normalizer`
+  and `BreakIterator`) so application-side tests stay free of the
+  ICU4J runtime.
+
 ### Changed
+
+- **`JsonCanonicalizer`**: converted from `internal object` to
+  `internal class JsonCanonicalizer(unicodeText: UnicodeTextService)`
+  so JCS NFC normalization runs through the port instead of a
+  static ICU4J facade.
+- **`DefaultPayloadFingerprintService`** and **`OutputFormatter`**
+  take `UnicodeTextService` as a required constructor argument.
+- **`spec/architecture.md`**: ICU4J now belongs to
+  `adapters/driven/text-icu`, not `application/cli`.
 
 ### Fixed
 
-## [0.9.6] - 2026-05-08
+
 
 ### Added
 
