@@ -370,7 +370,7 @@ Vorgeschlagene Phasen:
 | `TYPES` | Custom Types / Domains / Enums |
 | `TABLES` | Tabellen erzeugen oder entfernen |
 | `COLUMNS` | Spalten hinzufuegen, aendern, entfernen |
-| `CONSTRAINTS` | PK/FK/Unique/Check/Exclude |
+| `CONSTRAINTS` | PK/FK/Unique; Check/Exclude erst, wenn `SchemaDiff` sie verlustfrei liefert |
 | `INDEXES` | Indizes |
 | `SEQUENCES` | Sequences und Sequence-Metadaten |
 | `ROUTINES` | Functions / Procedures |
@@ -648,9 +648,19 @@ Erste Zieloperationen:
 - `ALTER TABLE ALTER COLUMN TYPE`
 - `ALTER TABLE ALTER COLUMN SET/DROP DEFAULT`
 - `ALTER TABLE ALTER COLUMN SET/DROP NOT NULL`
-- `ALTER TABLE ADD/DROP CONSTRAINT`
+- `ALTER TABLE ADD/DROP CONSTRAINT` fuer PK/FK/Unique
 - `CREATE/DROP INDEX`
-- `CREATE OR REPLACE VIEW`
+- `CREATE OR REPLACE VIEW` nur fuer kompatible View-Aenderungen
+- `DROP VIEW` + `CREATE VIEW` fuer View-Replacements, die vor
+  Tabellen-/Spaltenaenderungen entfernt und danach wieder aufgebaut werden
+
+`CHECK`- und `EXCLUDE`-Constraints gehoeren nicht zur ersten PostgreSQL-
+Rendermatrix, solange der Compare-Kern sie nicht verlustfrei als `SchemaDiff`
+liefert. Der aktuelle Comparator normalisiert diese Constraint-Arten fuer den
+Compare-Pfad weg; Phase A/B muss diese Luecke explizit schliessen, bevor
+`AddConstraint`/`DropConstraint` fuer `CHECK` oder `EXCLUDE` als renderbar gelten
+duerfen. Bis dahin werden solche Aenderungen entweder nicht geplant oder als
+Planner-/Comparator-Gap diagnostiziert, aber nicht als SQL gerendert.
 
 Views sind im ersten Slice nur fuer einfache, nicht materialisierte Views
 enthalten, deren Abhaengigkeiten im Plan eindeutig aufloesbar sind. Der Planner
@@ -658,6 +668,18 @@ muss betroffene Views vor abhaengigen Drop-/Alter-Operationen entfernen bzw.
 nach den referenzierten Tabellen, Spalten und Routinen wieder erzeugen. Views
 mit nicht aufloesbaren Routine- oder Materialized-View-Abhaengigkeiten werden
 diagnostiziert statt blind gerendert.
+
+Die View-Strategie ist fuer PostgreSQL zweigeteilt:
+
+- `ReplaceView` darf als `CREATE OR REPLACE VIEW` gerendert werden, wenn die
+  Aenderung ohne Drop semantisch kompatibel ist, insbesondere keine
+  inkompatible Aenderung der sichtbaren Spaltenform benoetigt und keine
+  vorgelagerte Tabellen-/Spaltenoperation blockiert.
+- Muss eine View wegen `DropColumn`, `AlterColumnType`,
+  `AlterColumnNullability`, `DropTable` oder wegen inkompatibler View-
+  Signaturaenderung entfernt werden, plant der Dialektgenerator explizite
+  `DROP VIEW`- und `CREATE VIEW`-Schritte in dependency-sicherer Reihenfolge.
+  Ein blosses `CREATE OR REPLACE VIEW` reicht fuer diesen Fall nicht.
 
 Fuer PostgreSQL ist dafuer vor der View-Migration mindestens ein belastbarer
 Tabellen-/Spalten-Dependency-Index noetig, zum Beispiel ueber `pg_depend` /
@@ -695,7 +717,8 @@ Erste Zieloperationen:
 - `ALTER TABLE DROP COLUMN`
 - `MODIFY COLUMN`
 - `ALTER TABLE ADD/DROP INDEX`
-- `ALTER TABLE ADD CONSTRAINT`
+- `ALTER TABLE ADD CONSTRAINT` fuer vom Compare-Kern verlustfrei gelieferte
+  FK-/Unique-Constraints
 - `ALTER TABLE DROP FOREIGN KEY`
 - View-Replacement mit bestehenden Helpern
 
@@ -1003,6 +1026,20 @@ Rendering und erfolgreicher Blocker-Pruefung finalisiert:
 - Bei `--execute --generate-rollback` gilt zusaetzlich: das finale Down-SQL
   darf erst nach erfolgreichem Up, Nach-Introspection und Nach-Compare
   finalisiert werden.
+- Schlaegt `--execute --generate-rollback` nach erfolgreicher Up-Ausfuehrung
+  beim Nach-Introspection-, Nach-Compare- oder Rollback-Finalisierungsschritt
+  fehl, ist der Zielzustand bereits veraendert. In diesem Fall darf ein
+  bestehendes `--rollback-output` weiterhin nicht ueberschrieben werden. Der
+  Runner schreibt stattdessen, soweit technisch moeglich, ein separates
+  Recovery-Artefakt mit eindeutigem Suffix wie
+  `.recovery.<timestamp>.rollback.sql` in dasselbe Zielverzeichnis. Dieses
+  Artefakt muss im Metadatenblock als `recovery = true` und
+  `postUpVerified = false` markiert sein und darf von
+  `schema rollback --execute` nur nach erneuter Zielzustandspruefung akzeptiert
+  werden. Kann auch dieses Recovery-Artefakt nicht geschrieben werden, endet der
+  Lauf mit Exit `7` und einem strukturierten lokalen Fehler, der klar ausweist,
+  dass Up bereits ausgefuehrt wurde und kein finalisiertes Rollback-Artefakt
+  vorliegt.
 - Falls das Dateisystem keine atomare Ersetzung im Zielverzeichnis erlaubt,
   endet der Lauf mit Exit `7`, bevor ein bestehendes Artefakt veraendert wird.
 
@@ -1189,6 +1226,29 @@ Ausfuehrung nur in Memory oder in einer temporaeren Datei existieren und muss
 vor dem finalen Schreiben erneut mit dem beobachteten Zielzustand verbunden
 werden.
 
+Fehler nach bereits ausgefuehrtem Up sind ein eigener Recovery-Fall:
+
+- Schlaegt die Nach-Introspection, der Nach-Compare oder das atomare Schreiben
+  des finalen `--rollback-output` fehl, darf der Runner nicht so tun, als sei
+  der gesamte Befehl ohne Seiteneffekt fehlgeschlagen.
+- Der Report und der strukturierte Fehler muessen `upExecuted = true`,
+  `rollbackFinalized = false` und die letzte erfolgreich abgeschlossene Phase
+  ausweisen.
+- Soweit der vorbereitete Down-Plan renderbar war, wird ein separates
+  Recovery-Rollback-Artefakt geschrieben, das den erwarteten Soll-Fingerprint
+  und, falls verfuegbar, den beobachteten Post-Up-Fingerprint enthaelt. Das
+  Artefakt ist nicht das normale `--rollback-output`, sondern ein eindeutig
+  markiertes Recovery-Artefakt.
+- `schema rollback --execute` darf ein solches Recovery-Artefakt nur ausfuehren,
+  wenn der Metadatenblock strikt parsebar ist, `recovery = true` enthaelt und
+  die aktuelle Ziel-Datenbank mit einem der im Artefakt erlaubten
+  Post-Up-Fingerprints uebereinstimmt. Bei fehlender Uebereinstimmung gilt
+  weiterhin `TARGET_STATE_MISMATCH`.
+- Kann kein Recovery-Artefakt geschrieben werden, ist das ein lokaler Fehler
+  nach Side Effect. Der Exit-Code bleibt `7`; die Meldung muss den Nutzer darauf
+  hinweisen, dass manuelle Sicherung/Pruefung der Ziel-Datenbank erforderlich
+  ist.
+
 Nicht Bestandteil dieses Plans:
 
 1. Rollback aus gespeichertem `DiffResult`/Plan-Artefakt:
@@ -1294,6 +1354,10 @@ Report-Inhalte:
   wiederverwenden
 - `spec/design.md` um `DiffResult` als Zwischenvertrag ergaenzen
 - private `SchemaComparator.DiffResult<N, D>` umbenennen
+- Comparator-Luecke fuer `CHECK`-/`EXCLUDE`-Constraints entscheiden:
+  entweder `SchemaDiff`/`TableComparator` so erweitern, dass diese Constraints
+  verlustfrei diffbar sind, oder sie explizit aus der ersten renderbaren
+  Constraint-Matrix ausschliessen
 - klare Begriffe festlegen:
   - `SchemaDiff` = struktureller Unterschied
   - `DiffView` = stabiler Compare-Output
@@ -1341,17 +1405,27 @@ Report-Inhalte:
 - Reversibilitaetsklassifizierung
 - destruktive Operationen markieren
 - Rename-Kandidaten nur diagnostizieren, nicht automatisch migrieren
+- `CHECK`-/`EXCLUDE`-Constraint-Aenderungen nur planen, wenn der Compare-Kern
+  sie verlustfrei liefert; andernfalls blockierende Diagnose statt SQL-
+  Rendering
 
 ### Phase D - Dialekt-DDL fuer erste Matrix
 
 Erste realistische Matrix:
 
-- PostgreSQL: Tabellen, Spalten, Constraints, Indizes, Views
-- MySQL: Tabellen, Spalten, Constraints, Indizes, Views nur mit explizit
-  belegbaren table-level Dependencies; spaltenveraendernde Operationen unter
-  Views nur mit expliziten column-level Dependencies
+- PostgreSQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views mit
+  getrennter Strategie fuer kompatibles `CREATE OR REPLACE VIEW` und explizites
+  Drop/Recreate
+- MySQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views nur mit
+  explizit belegbaren table-level Dependencies; spaltenveraendernde Operationen
+  unter Views nur mit expliziten column-level Dependencies
 - SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
   RebuildTable-Planung fuer SQLite-pflichtige Table-Rebuilds
+
+`CHECK`- und `EXCLUDE`-Constraints sind in dieser Matrix nur dann enthalten,
+wenn Phase A/B den Compare-Kern so erweitert, dass diese Aenderungen als
+verlustfreier `SchemaDiff` vorliegen. Ohne diese Erweiterung gehoeren sie nicht
+zur renderbaren ersten Matrix.
 
 Zusaetzlich fuer SQLite verbindlich:
 
@@ -1399,6 +1473,11 @@ Nicht in der ersten Matrix:
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
 - Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
   `--execute` erst nach erfolgreichem Nach-Compare final schreiben
+- Recovery-Fall fuer `--execute --generate-rollback` nach bereits
+  ausgefuehrtem Up abbilden: Nach-Introspection-/Nach-Compare-/
+  Finalisierungsfehler duerfen bestehende Rollback-Pfade nicht ueberschreiben
+  und muessen, soweit moeglich, ein markiertes Recovery-Rollback-Artefakt plus
+  strukturierten Fehler mit `upExecuted = true` erzeugen
 - gemeinsamer Artefakt-Writer fuer Up-SQL, Down-SQL und Reports mit temporaerer
   Datei im Zielverzeichnis und atomarer Finalisierung
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
@@ -1430,6 +1509,9 @@ Nicht in der ersten Matrix:
 - Artefakt-Writer-Tests fuer atomare Finalisierung und unveraenderte
   bestehende Zielpfade bei Planungs-, Render-, Blocker- und
   Ausfuehrungsfehlern
+- Recovery-Tests fuer `schema migrate --execute --generate-rollback`, bei denen
+  Up erfolgreich war, aber Nach-Compare oder finale Rollback-Artefakt-
+  Finalisierung fehlschlaegt
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
   ungueltiges JSON, Fingerprint-Algorithmus-Mismatch und Secret-Scrubbing
@@ -1472,9 +1554,18 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
+- PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
+  die View-Aenderung kompatibel ist. Muss eine View wegen abhaengiger Tabellen-/
+  Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
+  entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
+  Reihenfolge.
 - MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
   `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
   Views werden ohne explizite column-level Dependencies blockiert.
+- `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
+  Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
+  abbildet; andernfalls gelten sie als diagnostizierter Gap und duerfen nicht
+  still als SQL gerendert werden.
 - SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
@@ -1521,6 +1612,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
   das finale Down-SQL-Artefakt erst nach erfolgreichem Up und Nach-Compare; der
   Metadatenblock enthaelt den beobachteten Post-Up-Fingerprint.
+- Schlaegt `schema migrate --execute --generate-rollback` nach erfolgreichem Up,
+  aber vor finalisiertem Rollback-Artefakt fehl, wird der Side Effect
+  strukturiert ausgewiesen (`upExecuted = true`, `rollbackFinalized = false`).
+  Ein bestehendes `--rollback-output` bleibt unveraendert; soweit moeglich wird
+  ein markiertes Recovery-Rollback-Artefakt geschrieben.
 - `schema rollback --source rollback.sql --target ... --execute` wendet
   nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
 - `schema rollback --source rollback.sql --target ... --execute` prueft vor der
@@ -1586,6 +1682,11 @@ Verbindlich fuer den ersten Slice:
   gemeinsamen Compare-Normalizer neutralisiert.
 - `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
   Stattdessen gibt es einen stabilen Report-Vertrag.
+- `CHECK`- und `EXCLUDE`-Constraints sind kein renderbarer erster Slice, solange
+  der Compare-Kern sie nicht verlustfrei diffen kann.
+- PostgreSQL-Views nutzen `CREATE OR REPLACE VIEW` nur fuer kompatible
+  Replacements; dependency-bedingte oder signaturinkompatible Replacements
+  werden als explizites Drop/Recreate geplant oder blockiert.
 - `--generate-rollback` ist streng:
   - enthaelt der Plan mindestens eine `NOT_REVERSIBLE`-Operation, bricht
     Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
@@ -1607,6 +1708,10 @@ Verbindlich fuer den ersten Slice:
 - Destruktive Down-SQL-Ausfuehrung braucht ebenfalls explizit
   `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
   erzeugten Down-SQL-Artefakt.
+- Wenn `schema migrate --execute --generate-rollback` nach ausgefuehrtem Up, aber
+  vor finalem Rollback-Artefakt fehlschlaegt, bleibt ein bestehendes
+  `--rollback-output` unveraendert. Der Runner schreibt soweit moeglich ein
+  markiertes Recovery-Rollback-Artefakt und meldet den Side Effect strukturiert.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
   Ohne diesen Schalter endet ein SQL-rendernder Lauf mit Exit `8` und
   `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; es wird kein
