@@ -354,8 +354,7 @@ class PostgresSchemaReaderTest : FunSpec({
 
         val table = result.schema.tables["orders"]!!
         val userIdCol = table.columns["user_id"]!!
-        userIdCol.references.shouldNotBeNull()
-        userIdCol.references!!.table shouldBe "users"
+        userIdCol.references.shouldBeNull()
         userIdCol.required shouldBe true // non-PK, NOT NULL
 
         val noteCol = table.columns["note"]!!
@@ -364,6 +363,14 @@ class PostgresSchemaReaderTest : FunSpec({
 
         table.indices shouldHaveSize 1
         table.indices[0].type shouldBe IndexType.BTREE
+        table.constraints.any {
+            it.name == "fk_user" &&
+                it.type == ConstraintType.FOREIGN_KEY &&
+                it.columns == listOf("user_id") &&
+                it.references!!.table == "users" &&
+                it.references!!.columns == listOf("id") &&
+                it.references!!.onDelete == ReferentialAction.CASCADE
+        } shouldBe true
         table.constraints.any { it.type == ConstraintType.CHECK } shouldBe true
     }
 

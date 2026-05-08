@@ -146,18 +146,23 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
-    // ── Single-column FK on ColumnDefinition.references ──
+    // ── Single-column FK constraint ──
 
-    test("single-column FK is lifted to ColumnDefinition.references") {
+    test("single-column FK is preserved as table constraint") {
         withDb(
             "CREATE TABLE parent (id INTEGER PRIMARY KEY)",
             "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE)",
         ) { pool ->
             val result = reader.read(pool)
-            val ref = result.schema.tables["child"]!!.columns["parent_id"]!!.references!!
-            ref.table shouldBe "parent"
-            ref.column shouldBe "id"
-            ref.onDelete shouldBe ReferentialAction.CASCADE
+            val child = result.schema.tables["child"]!!
+            child.columns["parent_id"]!!.references shouldBe null
+            child.constraints.any {
+                it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("parent_id") &&
+                    it.references!!.table == "parent" &&
+                    it.references!!.columns == listOf("id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
         }
     }
 

@@ -65,6 +65,22 @@ class SchemaReaderUtilsTest : FunSpec({
         SchemaReaderUtils.liftSingleColumnFks(fks).shouldBeEmpty()
     }
 
+    // ── buildForeignKeyConstraints ───────────────
+
+    test("single-column FK becomes named constraint") {
+        val fks = listOf(
+            ForeignKeyProjection("fk1", listOf("user_id"), "users", listOf("id"), "CASCADE", null),
+        )
+        val result = SchemaReaderUtils.buildForeignKeyConstraints(fks)
+        result shouldHaveSize 1
+        result[0].name shouldBe "fk1"
+        result[0].type shouldBe ConstraintType.FOREIGN_KEY
+        result[0].columns shouldBe listOf("user_id")
+        result[0].references!!.table shouldBe "users"
+        result[0].references!!.columns shouldBe listOf("id")
+        result[0].references!!.onDelete shouldBe ReferentialAction.CASCADE
+    }
+
     // ── buildMultiColumnFkConstraints ───────────────
 
     test("multi-column FK becomes constraint") {

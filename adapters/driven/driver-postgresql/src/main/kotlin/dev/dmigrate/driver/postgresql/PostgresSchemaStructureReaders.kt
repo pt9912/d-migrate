@@ -31,7 +31,6 @@ private fun readPostgresTable(
     val checkConstraints = PostgresMetadataQueries.listCheckConstraints(session, schema, tableName)
     val indexRows = PostgresMetadataQueries.listIndices(session, schema, tableName)
 
-    val singleColumnForeignKeys = SchemaReaderUtils.liftSingleColumnFks(foreignKeys)
     val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
 
     val columns = LinkedHashMap<String, ColumnDefinition>()
@@ -73,13 +72,12 @@ private fun readPostgresTable(
             required = required,
             unique = unique,
             default = defaultValue,
-            references = singleColumnForeignKeys[columnName],
             generation = mapping.generation,
         )
     }
 
     val constraints = mutableListOf<ConstraintDefinition>()
-    constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(foreignKeys)
+    constraints += SchemaReaderUtils.buildForeignKeyConstraints(foreignKeys)
     constraints += SchemaReaderUtils.buildMultiColumnUniqueFromConstraints(uniqueConstraints)
     constraints += SchemaReaderUtils.buildCheckConstraints(checkConstraints)
 

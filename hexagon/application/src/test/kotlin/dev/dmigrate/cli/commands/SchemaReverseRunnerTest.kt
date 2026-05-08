@@ -92,9 +92,12 @@ class SchemaReverseRunnerTest : FunSpec({
         quiet: Boolean = false,
         verbose: Boolean = false,
         includeAll: Boolean = false,
+        schemaName: String? = null,
+        schemaVersion: String? = null,
     ) = SchemaReverseRequest(
         source = source, output = output, format = format, report = report,
         outputFormat = outputFormat, quiet = quiet, verbose = verbose, includeAll = includeAll,
+        schemaName = schemaName, schemaVersion = schemaVersion,
     )
 
     // ── Success ─────────────────────────────────
@@ -132,6 +135,22 @@ class SchemaReverseRunnerTest : FunSpec({
         val (runner, _, _) = buildRunner(stdout = stdout)
         runner.execute(request(output = Path.of("/tmp/schema.yaml"))) shouldBe 0
         stdout.joined() shouldContain "schema.report.yaml"
+    }
+
+    test("schema metadata overrides are applied before writing schema and report") {
+        var writtenSchema: SchemaDefinition? = null
+        var reportedSchema: SchemaDefinition? = null
+        val (runner, _, _) = buildRunner(
+            schemaWriter = { _, schema, _ -> writtenSchema = schema },
+            reportWriter = { _, input -> reportedSchema = input.result.schema },
+        )
+
+        runner.execute(request(schemaName = "bess-ems", schemaVersion = "1.0.0")) shouldBe 0
+
+        writtenSchema!!.name shouldBe "bess-ems"
+        writtenSchema!!.version shouldBe "1.0.0"
+        reportedSchema!!.name shouldBe "bess-ems"
+        reportedSchema!!.version shouldBe "1.0.0"
     }
 
     // ── Output format json/yaml ─────────────────

@@ -127,7 +127,6 @@ class MysqlSchemaReader(
             indices += idx
         }
 
-        val singleColFks = SchemaReaderUtils.liftSingleColumnFks(fks)
         val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
 
         val columns = LinkedHashMap<String, ColumnDefinition>()
@@ -152,8 +151,6 @@ class MysqlSchemaReader(
             val required = if (isPkCol) false else (row["is_nullable"] as String) == "NO"
             val unique = if (isPkCol) false else colName in singleColUnique
 
-            val references = singleColFks[colName]
-
             val defaultVal = if (isAutoIncrement) null
             else MysqlTypeMapping.parseDefault(row["column_default"] as? String, neutralType)
 
@@ -162,13 +159,12 @@ class MysqlSchemaReader(
                 required = required,
                 unique = unique,
                 default = defaultVal,
-                references = references,
                 generation = mapping.generation,
             )
         }
 
         val constraints = mutableListOf<ConstraintDefinition>()
-        constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
+        constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 

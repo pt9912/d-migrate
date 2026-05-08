@@ -35,6 +35,8 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
     val includeFunctions by option("--include-functions", help = "Include user-defined functions").flag()
     val includeTriggers by option("--include-triggers", help = "Include triggers").flag()
     val includeAll by option("--include-all", help = "Include all optional object types").flag()
+    val schemaName by option("--name", help = "Schema name to write instead of the reverse-generated default")
+    val schemaVersion by option("--version", help = "Schema version to write instead of 0.0.0-reverse")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -54,6 +56,8 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
             outputFormat = ctx.outputFormat,
             quiet = ctx.quiet,
             verbose = ctx.verbose,
+            schemaName = schemaName,
+            schemaVersion = schemaVersion,
         )
         val runner = SchemaReverseRunner(
             sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },

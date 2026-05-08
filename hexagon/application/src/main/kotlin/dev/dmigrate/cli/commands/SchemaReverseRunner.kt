@@ -24,6 +24,8 @@ data class SchemaReverseRequest(
     val outputFormat: String = "plain",
     val quiet: Boolean = false,
     val verbose: Boolean = false,
+    val schemaName: String? = null,
+    val schemaVersion: String? = null,
 )
 
 /**
@@ -159,12 +161,26 @@ class SchemaReverseRunner(
                     includeTriggers = request.includeAll || request.includeTriggers,
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
-                reader.read(p, options)
+                val result = reader.read(p, options)
+                applySchemaMetadataOverrides(result, request)
             }
         } catch (e: Exception) {
             userFacingPrintError("Connection or metadata error: ${e.message}", ctx.userFacingSource)
             null
         }
+    }
+
+    private fun applySchemaMetadataOverrides(
+        result: SchemaReadResult,
+        request: SchemaReverseRequest,
+    ): SchemaReadResult {
+        if (request.schemaName == null && request.schemaVersion == null) return result
+        return result.copy(
+            schema = result.schema.copy(
+                name = request.schemaName ?: result.schema.name,
+                version = request.schemaVersion ?: result.schema.version,
+            )
+        )
     }
 
     private fun writeSchemaFile(request: SchemaReverseRequest, result: SchemaReadResult, userFacingSource: String): Int? {

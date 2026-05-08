@@ -41,11 +41,15 @@ object SchemaReaderUtils {
             }
 
     /**
-     * Builds multi-column FK constraints from foreign key projections.
-     * Only includes FKs with more than one column.
+     * Builds FK constraints from foreign key projections.
+     *
+     * Reverse output keeps FK names at table constraint level even for
+     * single-column FKs. Column-level references remain supported for
+     * hand-written schemas, but database metadata models FKs as named
+     * constraints.
      */
-    fun buildMultiColumnFkConstraints(fks: List<ForeignKeyProjection>): List<ConstraintDefinition> =
-        fks.filter { it.columns.size > 1 }.map { fk ->
+    fun buildForeignKeyConstraints(fks: List<ForeignKeyProjection>): List<ConstraintDefinition> =
+        fks.map { fk ->
             ConstraintDefinition(
                 name = fk.name,
                 type = ConstraintType.FOREIGN_KEY,
@@ -58,6 +62,13 @@ object SchemaReaderUtils {
                 ),
             )
         }
+
+    /**
+     * Builds multi-column FK constraints from foreign key projections.
+     * Only includes FKs with more than one column.
+     */
+    fun buildMultiColumnFkConstraints(fks: List<ForeignKeyProjection>): List<ConstraintDefinition> =
+        buildForeignKeyConstraints(fks).filter { (it.columns?.size ?: 0) > 1 }
 
     /**
      * Builds multi-column UNIQUE constraints from unique constraint

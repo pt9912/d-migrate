@@ -15,7 +15,6 @@ import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.nulls.shouldBeNull
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -239,12 +238,16 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
             table.columns["name"]!!.required shouldBe true
             table.columns["position"]!!.required shouldBe true
 
-            val ref = table.columns["run_id"]!!.references
-            ref.shouldNotBeNull()
-            ref.table shouldBe "optimization_runs"
-            ref.column shouldBe "run_id"
-            ref.onDelete shouldBe ReferentialAction.CASCADE
+            table.columns["run_id"]!!.references.shouldBeNull()
 
+            table.constraints.any {
+                it.name == "optimization_objective_breakdowns_run_id_fkey" &&
+                    it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("run_id") &&
+                    it.references!!.table == "optimization_runs" &&
+                    it.references!!.columns == listOf("run_id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
             table.constraints.any {
                 it.type == ConstraintType.UNIQUE &&
                     it.columns == listOf("run_id", "position")
@@ -261,16 +264,20 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── Single-column FK lifted ─────────────────
+    // ── Single-column FK constraint ─────────────────
 
-    test("single-column FK lifted to ColumnDefinition.references") {
+    test("single-column FK is preserved as named table constraint") {
         pool().use { pool ->
             val result = reader.read(pool)
-            val ref = result.schema.tables["orders"]!!.columns["customer_id"]!!.references
-            ref.shouldNotBeNull()
-            ref.table shouldBe "customers"
-            ref.column shouldBe "id"
-            ref.onDelete shouldBe ReferentialAction.CASCADE
+            val orders = result.schema.tables["orders"]!!
+            orders.columns["customer_id"]!!.references.shouldBeNull()
+            orders.constraints.any {
+                it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("customer_id") &&
+                    it.references!!.table == "customers" &&
+                    it.references!!.columns == listOf("id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
         }
     }
 
