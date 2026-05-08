@@ -415,10 +415,12 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](../../../spec/ki-mcp.md).
 
-### Milestone 0.9.7 — Diff-basierte Migrationen und SQLite-Sequence-Emulation
+### Milestone 0.9.7 — Refactoring, Diff-basierte Migrationen und SQLite-Sequence-Emulation
 
-| Bereich | Aufgabe                                                                                                                                                                                                       | LF-Ref |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Bereich  | Aufgabe                                                                                                                                                                                                                                                                                                          | LF-Ref |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Refactor | ICU4J hinter einen Hexagon-Port — `hexagon:application` haengt nicht mehr direkt von `com.ibm.icu:icu4j` ab; Unicode-Normalisierung und Grapheme-Counting laufen ueber adapterneutrale Abstraktion. Details: [`refactoring-icu4j.md`](../open/refactoring-icu4j.md)                                               | —      |
+| Refactor | SHA-256 / Hex-Encoding konsolidieren — zentrale Top-Level-Extension in `hexagon:core`, ersetzt 11 Fundstellen mit vier verschiedenen Schreibweisen (`%02x`-Format, Lookup-Table, joinToString-Varianten). Details: [`refactoring-sha256Hex.md`](../open/refactoring-sha256Hex.md)                                 | —      |
 | Docs    | Migrate Phase A: Spezifikations- und Namensbereinigung — `spec/cli-spec.md` fuer `schema migrate`/`schema rollback`, Exit-Code-Tabelle (Migrations-Blocker `8`, DDL-Fehler `5`), `spec/design.md` um `DiffResult` | —      |
 | Core    | Migrate Phase B: Core-Vertrag — `DiffResult`, `DiffOperation`, `DiffObjectRef`, `DiffPhase`, `Reversibility`, `OperationRisks`, stabile Operation-IDs, Operation-Payloads, kanonische Fingerprint-Projektion   | —      |
 | Core    | Migrate Phase C: Planner — `DiffPlanner` mit Mapping `SchemaDiff` → Operationen, Dependency-/Phasen-Sortierung, inverse Down-Sortierung, Reversibilitaetsklassifizierung, blockierende Diagnose                | —      |
@@ -707,4 +709,4 @@ Datenbanksystem.
 
 **Version**: 3.43
 **Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Diff-basierte Migrationen + SQLite-Sequence-Emulation), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Refactorings + Diff-basierte Migrationen + SQLite-Sequence-Emulation), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
