@@ -227,7 +227,7 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 > beschriebene semantische Analyse ist bewusst **nicht** Teil von 0.7.5.
 > Zuerst wird das deterministische Kern-Profiling stabilisiert; die opt-in
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
-> Infrastruktur in [1.1.0](#milestone-110--ki-integration).
+> Infrastruktur in [1.5.5](#milestone-155--ki-integration).
 
 ### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
@@ -415,37 +415,6 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](../../../spec/ki-mcp.md).
 
-### Milestone 0.9.7 — REST-API
-
-| Bereich | Aufgabe                                                                                          | LF-Ref |
-| ------- | ------------------------------------------------------------------------------------------------ | ------ |
-| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
-| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
-| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
-| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
-| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
-| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
-| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
-
-**Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
-programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
-[`rest-service.md`](../../../spec/rest-service.md).
-
-### Milestone 0.9.8 — gRPC-API
-
-| Bereich | Aufgabe                                                                          | LF-Ref |
-| ------- | -------------------------------------------------------------------------------- | ------ |
-| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung    | —      |
-| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume | —      |
-| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling         | —      |
-| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs           | —      |
-| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen | —      |
-| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes      | —      |
-
-**Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
-Low-Latency-Integration und Streaming-Szenarien. Details:
-[`grpc-service.md`](../../../spec/grpc-service.md).
-
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
@@ -520,36 +489,36 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 **Ziel**: Feature-Completeness und Ökosystem-Wachstum
 
-### Milestone 1.1.0 — KI-Integration
+### Milestone 1.1.8 — gRPC-API
 
-| Bereich | Aufgabe                                                                                                                   | LF-Ref         |
-| ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| AI      | AiProvider-Interface und Plugin-System                                                                                    | LF-017, LN-041 |
-| AI      | OllamaProvider (lokale Modelle)                                                                                           | LF-017         |
-| AI      | OpenAiProvider (GPT-4)                                                                                                    | LF-017         |
-| AI      | AnthropicProvider (Claude)                                                                                                | LF-017         |
-| AI      | XaiProvider (Grok), GoogleProvider (Gemini)                                                                               | LF-017         |
-| AI      | RuleBasedProvider (Fallback ohne KI)                                                                                      | LN-035         |
-| AI      | Stored Procedure → Markdown-Zwischenformat                                                                                | LF-017         |
-| AI      | Markdown-Zwischenformat → Ziel-DB-Code                                                                                    | LF-017         |
-| AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse                                       | —              |
-| AI      | Semantische Profiling-Vorschlaege fuer Mapping, Transformation und Normalisierung auf Basis verdichteter Profil-Summaries | —              |
-| AI      | Datenschutz: prefer_local, allow_external Flags                                                                           | LN-032, LN-033 |
-| AI      | Caching häufiger Transformationen                                                                                         | LN-035         |
-| CLI     | `d-migrate transform procedure` Kommando                                                                                  | LF-017         |
-| CLI     | `d-migrate generate procedure` Kommando                                                                                   | LF-017         |
-| QA      | Semantische Äquivalenzprüfung (Testausführung)                                                                            | LN-034         |
+| Bereich | Aufgabe                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------- | ------ |
+| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung    | —      |
+| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume | —      |
+| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling         | —      |
+| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs           | —      |
+| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen | —      |
+| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes      | —      |
 
-**Ergebnis**: KI-gestützte Migration von Stored Procedures zwischen Datenbanken.
-Zusätzlich wird die gemeinsame KI-Provider-Infrastruktur für opt-in
-Profiling-Erweiterungen genutzt: semantische Vorschläge für Mapping,
-Transformation und Normalisierung, während Kennzahlen, Warnungen und harte
-Validierung deterministisch im Profiling-Kern bleiben.
+**Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
+Low-Latency-Integration und Streaming-Szenarien. Details:
+[`grpc-service.md`](../../../spec/grpc-service.md).
 
-> **Abgrenzung**: Die semantische Analyse ergänzt das Profiling nur um
-> Vorschläge. Rohe Daten müssen dafür nicht an das Modell gegeben werden; der
-> Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
-> Privacy-by-Design und der Trennung aus `spec/profiling.md` §10.
+### Milestone 1.2.0 — REST-API
+
+| Bereich | Aufgabe                                                                                          | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------ | ------ |
+| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
+| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
+| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
+| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
+| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
+| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
+| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
+
+**Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
+programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
+[`rest-service.md`](../../../spec/rest-service.md).
 
 ### Milestone 1.3.0 — Testdaten-Generierung
 
@@ -579,6 +548,37 @@ Validierung deterministisch im Profiling-Kern bleiben.
 | Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../open/profiling-data-quality-export.md) | —      |
 | Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../open/orchestrator-examples.md) | —      |
 | Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../open/bi-demo-compose.md) | —      |
+
+### Milestone 1.5.5 — KI-Integration
+
+| Bereich | Aufgabe                                                                                                                   | LF-Ref         |
+| ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| AI      | AiProvider-Interface und Plugin-System                                                                                    | LF-017, LN-041 |
+| AI      | OllamaProvider (lokale Modelle)                                                                                           | LF-017         |
+| AI      | OpenAiProvider (GPT-4)                                                                                                    | LF-017         |
+| AI      | AnthropicProvider (Claude)                                                                                                | LF-017         |
+| AI      | XaiProvider (Grok), GoogleProvider (Gemini)                                                                               | LF-017         |
+| AI      | RuleBasedProvider (Fallback ohne KI)                                                                                      | LN-035         |
+| AI      | Stored Procedure → Markdown-Zwischenformat                                                                                | LF-017         |
+| AI      | Markdown-Zwischenformat → Ziel-DB-Code                                                                                    | LF-017         |
+| AI      | SemanticAnalysisPort und strukturierte Profiling-Contracts fuer semantische Analyse                                       | —              |
+| AI      | Semantische Profiling-Vorschlaege fuer Mapping, Transformation und Normalisierung auf Basis verdichteter Profil-Summaries | —              |
+| AI      | Datenschutz: prefer_local, allow_external Flags                                                                           | LN-032, LN-033 |
+| AI      | Caching häufiger Transformationen                                                                                         | LN-035         |
+| CLI     | `d-migrate transform procedure` Kommando                                                                                  | LF-017         |
+| CLI     | `d-migrate generate procedure` Kommando                                                                                   | LF-017         |
+| QA      | Semantische Äquivalenzprüfung (Testausführung)                                                                            | LN-034         |
+
+**Ergebnis**: KI-gestützte Migration von Stored Procedures zwischen Datenbanken.
+Zusätzlich wird die gemeinsame KI-Provider-Infrastruktur für opt-in
+Profiling-Erweiterungen genutzt: semantische Vorschläge für Mapping,
+Transformation und Normalisierung, während Kennzahlen, Warnungen und harte
+Validierung deterministisch im Profiling-Kern bleiben.
+
+> **Abgrenzung**: Die semantische Analyse ergänzt das Profiling nur um
+> Vorschläge. Rohe Daten müssen dafür nicht an das Modell gegeben werden; der
+> Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
+> Privacy-by-Design und der Trennung aus `spec/profiling.md` §10.
 
 ### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
 
@@ -667,6 +667,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.42
+**Version**: 3.43
 **Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7, 0.9.8, 0.9.9
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.9, 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
