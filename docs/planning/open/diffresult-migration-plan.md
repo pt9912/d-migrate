@@ -505,8 +505,9 @@ Ohne diesen Schalter ist die Semantik verbindlich getrennt:
   ausfuehrbares Up-SQL-Artefakt zu rendern. Enthaelt der Plan destruktive oder
   bestaetigungspflichtige Operationen und fehlt `--allow-destructive`, endet
   der Lauf mit Exit `8` und
-  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; es wird kein
-  ausfuehrbares Up-SQL geschrieben.
+  `primaryBlockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`;
+  die vollstaendige Blocker-Liste enthaelt alle betroffenen Operationen. Es
+  wird kein ausfuehrbares Up-SQL geschrieben.
 - `--execute` darf destruktive oder bestaetigungspflichtige Operationen nur mit
   `--allow-destructive` ausfuehren.
 - Destruktive Down-Operationen, die aus einem reversiblen Up-Plan entstehen,
@@ -615,15 +616,43 @@ interface DiffDdlGenerator {
 `MigrationDdlResult` sollte `DdlResult` nicht blind ersetzen. Es braucht
 zusaetzliche Felder:
 
+- `statements` mit Rueckverweis auf die Operation-IDs, aus denen ein Statement
+  entstanden ist
 - `operationsRendered`
 - `operationsSkipped`
 - `manualActions`
 - `destructiveOperations`
 - `nonReversibleOperations`
 - `requiresConfirmation`
-- `blockedReason`
+- `blockers`
+- optional `primaryBlockedReason` fuer kompakte CLI-Fehler
 
-`blockedReason` trennt mindestens:
+Die Statements duerfen nicht als nackte SQL-Strings modelliert werden. Der
+Runner braucht pro gerendertem Statement mindestens:
+
+```kotlin
+data class MigrationDdlStatement(
+    val sql: String,
+    val operationIds: Set<String>,
+    val risk: OperationRisk,
+    val phase: DiffPhase,
+    val notes: List<DiffDiagnostic> = emptyList(),
+)
+```
+
+Damit koennen Ausfuehrungsfehler, Reports und Rollback-Metadaten praezise auf
+die fachlichen Operationen zurueckverweisen. Ein einzelnes SQL-Statement darf
+mehrere Operation-IDs tragen, zum Beispiel bei zusammengefassten `ALTER TABLE`-
+Statements oder SQLite-Rebuild-Schritten. Ein einzelner fachlicher
+`DiffOperation` darf umgekehrt mehrere SQL-Statements erzeugen.
+
+`blockers` ist eine Liste, weil ein Plan gleichzeitig mehrere Ursachen haben
+kann, zum Beispiel destruktive Up-Operationen, nicht rollbackfaehige
+Operationen und eine dialektseitig nicht renderbare Operation. Ein optionaler
+`primaryBlockedReason` darf fuer knappe CLI-Ausgaben genutzt werden, darf aber
+die vollstaendige Blocker-Liste nicht ersetzen.
+
+`MigrationBlockedReason` trennt mindestens:
 
 - `DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`
 - `ROLLBACK_NOT_POSSIBLE`
@@ -638,7 +667,17 @@ Damit kann ein Runner unterscheiden, ob der Up-Plan wegen fehlendem
 einen unerwarteten Zielzustand oder falschen Dialekt laufen wuerde, oder ob der
 Ziel-Dialekt eine Operation nicht rendern kann.
 
-Ausfuehrungsfehler gehoeren nicht in `blockedReason`. Sobald der Runner
+Skizze:
+
+```kotlin
+data class MigrationBlocker(
+    val reason: MigrationBlockedReason,
+    val operationIds: Set<String> = emptySet(),
+    val diagnostics: List<DiffDiagnostic> = emptyList(),
+)
+```
+
+Ausfuehrungsfehler gehoeren nicht in `blockers`. Sobald der Runner
 begonnen hat, DDL gegen eine Ziel-Datenbank auszufuehren, sind Fehler
 terminaler Migrationszustand und werden separat berichtet, zum Beispiel mit:
 
@@ -1184,8 +1223,9 @@ Nicht moeglicher Rollback fuehrt nur dann zu Exit `8`, wenn
 Down-Schritte blockieren dagegen erst `schema rollback --execute`, nicht die
 Erzeugung eines korrekt markierten Down-SQL-Artefakts.
 
-Exit `8` muss im strukturierten Fehler mindestens folgende Faelle
-unterscheiden:
+Exit `8` muss im strukturierten Fehler eine vollstaendige `blockers`-Liste und
+einen optionalen `primaryBlockedReason` enthalten. Die Blocker muessen
+mindestens folgende Faelle unterscheiden:
 
 - destruktive Up-Operation ohne `--allow-destructive`
 - `--generate-rollback` angefordert, aber mindestens eine Operation ist
@@ -1237,20 +1277,24 @@ Der Runner:
 1. liest ausschliesslich das gespeicherte Down-SQL aus `--source`,
 2. liest daraus den von `schema migrate --generate-rollback` erzeugten
    maschinenlesbaren `d-migrate`-Metadatenblock,
-3. bestimmt bei `--execute` den Dialekt des Ziel-Connectors und vergleicht ihn
+3. prueft in allen Modi den Metadatenblock, die Pflichtfelder und den
+   `bodyHash` des SQL-Bodys strikt,
+4. bestimmt bei `--execute` den Dialekt des Ziel-Connectors und vergleicht ihn
    mit dem im Metadatenblock gespeicherten Dialekt,
-4. bricht bei Dialektabweichung mit Exit `8` und
-   `blockedReason = TARGET_DIALECT_MISMATCH` ab,
-5. introspektiert bei `--execute` den aktuellen Zielzustand und vergleicht ihn
+5. bricht bei Dialektabweichung mit Exit `8`,
+   `primaryBlockedReason = TARGET_DIALECT_MISMATCH` und einem entsprechenden
+   Blocker ab,
+6. introspektiert bei `--execute` den aktuellen Zielzustand und vergleicht ihn
    bei normalen Artefakten mit `postUpFingerprint`, bei Recovery-Artefakten mit
    `allowedPostUpFingerprints`,
-6. bricht bei fehlender Uebereinstimmung mit Exit `8` und
-   `blockedReason = TARGET_STATE_MISMATCH` ab,
-7. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
+7. bricht bei fehlender Uebereinstimmung mit Exit `8`,
+   `primaryBlockedReason = TARGET_STATE_MISMATCH` und einem entsprechenden
+   Blocker ab,
+8. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
    Down-Operationen ausweist,
-8. fuehrt es bei `--execute` gegen `--target` aus,
-9. protokolliert ausgefuehrte Statements und Fehler,
-10. fuehrt ohne `--execute` nur Validierung/Preview aus.
+9. fuehrt es bei `--execute` gegen `--target` aus,
+10. protokolliert ausgefuehrte Statements und Fehler,
+11. fuehrt ohne `--execute` nur lokale Validierung/Preview aus.
 
 Der Metadatenblock ist kein oeffentliches `DiffResult`-Artefakt. Er ist ein
 schmaler Header im SQL-Artefakt, der mindestens enthaelt:
@@ -1266,8 +1310,8 @@ schmaler Header im SQL-Artefakt, der mindestens enthaelt:
 - Ziel-Dialekt
 
 Der Metadatenblock braucht trotzdem einen stabilen technischen Vertrag, weil
-`schema rollback --execute` ihm fuer Drift-Schutz und Freigabepruefung
-vertraut:
+`schema rollback` ihm fuer Artefaktvalidierung und bei `--execute` zusaetzlich
+fuer Drift-Schutz und Freigabepruefung vertraut:
 
 - Er steht am Anfang des Down-SQL-Artefakts vor dem ersten ausfuehrbaren
   Statement.
@@ -1289,9 +1333,11 @@ vertraut:
   finale Newline, und der Hash deckt Kommentare sowie ausfuehrbare Statements im
   Body ab. Der Metadatenblock selbst ist nicht Teil des Hashes.
 - `bodyHashAlgorithm` benennt den Algorithmus und die kanonische Byte-Regel, zum
-  Beispiel `sha256-lf-body-v1`. `schema rollback --execute` muss den Hash vor
-  jeder Zielzustands- oder Dialektpruefung neu berechnen. Eine Abweichung macht
-  das Artefakt ungueltig und endet ohne DB-Zugriff mit Exit `7`.
+  Beispiel `sha256-lf-body-v1`. `schema rollback` muss den Hash in Preview-,
+  Validierungs- und Execute-Pfaden neu berechnen, bevor es das Artefakt als
+  gueltig behandelt. Bei `--execute` passiert diese Pruefung vor jeder
+  Zielzustands- oder Dialektpruefung. Eine Abweichung macht das Artefakt
+  ungueltig und endet ohne DB-Zugriff mit Exit `7`.
 - Dieser Hash ist ein Integritaets- und Drift-Schutz fuer versehentlich oder
   manuell veraenderte Artefakte, keine kryptografische Signatur gegen einen
   Angreifer, der Header und Body gemeinsam neu schreiben kann. Signierte
@@ -1316,8 +1362,10 @@ vertraut:
   `bodyHash`, widerspruechliche Dialekt-/Fingerprint-Felder oder mehrere
   Metadatenbloecke machen das Artefakt fuer `--execute` ungueltig. Bei
   `recovery = true` sind fehlende oder leere
-  `allowedPostUpFingerprints` ebenfalls ungueltig. Preview/Validierung darf den
-  Fehler berichten, aber nicht ausfuehren.
+  `allowedPostUpFingerprints` ebenfalls ungueltig. Preview/Validierung muss
+  dieselben lokalen Artefaktpruefungen ausfuehren und darf den Fehler berichten,
+  aber nicht ausfuehren. DB-Zustands- und Dialektpruefung bleiben dagegen
+  `--execute`-gebunden.
 - Fingerprints werden aus derselben kanonischen Schema-Projektion gebildet, die
   auch der Nach-Compare verwendet: reverse-generierte Marker und synthetische
   Metadaten werden vorher normalisiert, Map-/Listenreihenfolgen werden
@@ -1417,7 +1465,8 @@ Der Report muss mindestens enthalten:
 
 Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
 automatisch renderbar sind. Fuer `NOT_REVERSIBLE` bleibt das Verhalten strikt:
-Exit `8` mit `blockedReason = ROLLBACK_NOT_POSSIBLE`.
+Exit `8` mit `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE` und mindestens
+einem Blocker fuer die betroffenen Operationen.
 
 Die Reihenfolge des Down-SQL entsteht aus den inversen Operationen und deren
 umgekehrten Abhaengigkeiten. Sie ist nicht identisch mit der Up-Reihenfolge.
@@ -1426,7 +1475,8 @@ zuerst die View und danach die Tabelle entfernen.
 
 Fuer `MANUAL_REQUIRED` gilt im ersten Slice ebenfalls strikt: Es wird kein
 automatisches Down-SQL erzeugt. Der Lauf endet mit Exit `8` und
-`blockedReason = MANUAL_ACTION_REQUIRED`. Manuelle Down-Bloecke oder partielle
+`primaryBlockedReason = MANUAL_ACTION_REQUIRED`; die Blocker-Liste weist die
+betroffenen Operationen aus. Manuelle Down-Bloecke oder partielle
 Rollback-Artefakte sind nicht Bestandteil dieses Plans.
 
 Automatisch renderbar heisst nicht automatisch risikofrei. Down-Schritte wie
@@ -1764,8 +1814,8 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   kanonisches JSON-Objekt mit Pflichtfeldern und wird von `schema rollback`
   strikt geparst.
 - Der Down-SQL-Metadatenblock enthaelt `bodyHashAlgorithm` und `bodyHash`; der
-  Rollback-Runner berechnet den Hash des SQL-Bodys vor Ausfuehrung neu und
-  lehnt veraenderte Artefakte ohne DB-Zugriff ab.
+  Rollback-Runner berechnet den Hash des SQL-Bodys in Preview-, Validierungs-
+  und Execute-Pfaden neu und lehnt veraenderte Artefakte ohne DB-Zugriff ab.
 - Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
   Nach-Compare und Driftpruefung und enthaelt die verwendete
   Fingerprint-Algorithmus-ID.
@@ -1818,7 +1868,7 @@ Zur Vermeidung von Missverstaendnissen ist die Milestone-Grenze:
 |---|---|---|
 | 0.7.0 full-state | `schema generate`, Tool-Exports, full-state Rollback-Artefakte | diff-basierte `schema migrate`-Ausfuehrung |
 | 0.9.6 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Datei-zu-Datei-Planung ohne Live-Datenbank, Up-DDL-Ausfuehrung fuer DB-Targets, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings |
-| nicht fuer den ersten Slice benoetigt | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows | automatische Datenrekonstruktion nach destruktiven Operationen |
+| Nach 0.9.6 separat zu entscheiden | noch kein verbindlicher Umfang | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows, automatische Datenrekonstruktion nach destruktiven Operationen |
 
 Damit ist `migrate up/down` verbindlicher Bestandteil von 0.9.6: Up wird aus
 dem Diff geplant und fuer den Zieldialekt gerendert. Bei DB-Targets wird Up
@@ -1867,11 +1917,13 @@ Verbindlich fuer den ersten Slice:
   `VIEW_ROUTINE_USAGE`-Projektion belegen kann.
 - `--generate-rollback` ist streng:
   - enthaelt der Plan mindestens eine `NOT_REVERSIBLE`-Operation, bricht
-    Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
-    ab.
+    Rollback-Erzeugung mit Exit `8`,
+    `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE` und Blockern fuer die
+    betroffenen Operationen ab.
   - enthaelt der Plan mindestens eine `MANUAL_REQUIRED`-Operation, bricht
-    Rollback-Erzeugung mit Exit `8` und `blockedReason = MANUAL_ACTION_REQUIRED`
-    ab.
+    Rollback-Erzeugung mit Exit `8`,
+    `primaryBlockedReason = MANUAL_ACTION_REQUIRED` und Blockern fuer die
+    betroffenen Operationen ab.
   - Teil-Rollbacks mit Warn-/Manual-Blocks sind nicht Bestandteil dieses Plans.
 - `schema rollback` unterstuetzt im ersten Slice die Ausfuehrung von
   gespeichertem Down-SQL aus `--rollback-output`.
@@ -1884,10 +1936,10 @@ Verbindlich fuer den ersten Slice:
 - `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
   Zielzustand und vergleicht ihn mit dem im Down-SQL-Metadatenblock erwarteten
   Post-Up-/Soll-Fingerprint. Bei Abweichung endet der Lauf mit Exit `8` und
-  `blockedReason = TARGET_STATE_MISMATCH`.
+  `primaryBlockedReason = TARGET_STATE_MISMATCH`.
 - `schema rollback --execute` prueft vor der Ausfuehrung den Ziel-Dialekt gegen
   den im Metadatenblock gespeicherten Dialekt. Bei Abweichung endet der Lauf mit
-  Exit `8` und `blockedReason = TARGET_DIALECT_MISMATCH`.
+  Exit `8` und `primaryBlockedReason = TARGET_DIALECT_MISMATCH`.
 - Destruktive Down-SQL-Ausfuehrung braucht ebenfalls explizit
   `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
   erzeugten Down-SQL-Artefakt.
@@ -1897,7 +1949,8 @@ Verbindlich fuer den ersten Slice:
   markiertes Recovery-Rollback-Artefakt und meldet den Side Effect strukturiert.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
   Ohne diesen Schalter endet ein SQL-rendernder Lauf mit Exit `8` und
-  `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; es wird kein
+  `primaryBlockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; die
+  Blocker-Liste weist alle betroffenen Operationen aus. Es wird kein
   Up-SQL-Artefakt geschrieben. `--plan-only` bleibt als reiner Risiko-Report
   erlaubt.
 - Non-TTY-Betrieb nutzt keine interaktive Rueckfrage. Die Bestaetigung erfolgt
