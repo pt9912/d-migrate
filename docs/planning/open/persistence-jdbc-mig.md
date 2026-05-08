@@ -104,7 +104,7 @@ server-state/
 Flyway soll weiterhin fertige SQL-Dateien ausfuehren. Zur Laufzeit wird nicht
 d-migrate gestartet, um sein eigenes Server-State-Schema zu erzeugen.
 
-Stattdessen werden generierte SQL-Dateien eingecheckt:
+Stattdessen werden generierte SQL-Dateien als Golden Files eingecheckt:
 
 ```text
 db/migration/postgresql/V1__server_state_initial.sql
@@ -119,6 +119,56 @@ Die Generierung ist ein Maintainer-Schritt, aehnlich Golden-File-Updates:
 
 Ein Drift-Check stellt sicher, dass `schema.yaml` und die eingecheckten SQLs
 zusammenpassen.
+
+Verbindlich: Die aktuell veroeffentlichte PostgreSQL-`V1` ist fuer Flyway
+immutable. Eine bereits migrierte produktive Server-State-DB enthaelt die
+Checksumme von `V1__server_state_initial.sql` in
+`flyway_server_state_history`; jede nachtraegliche Aenderung an Inhalt,
+Whitespace, Kommentaren oder Statement-Reihenfolge wuerde `validate()` brechen.
+
+Der erste Generator-Slice muss deshalb eine der beiden Varianten explizit
+waehlen:
+
+- **Byte-identische V1**: Der PostgreSQL-Generator erzeugt exakt dieselben Bytes
+  wie die vorhandene `V1__server_state_initial.sql`. Dann darf V1 als generiertes
+  Golden File gelten.
+- **Eingefrorene Legacy-V1**: Die bestehende V1 bleibt unveraendert und wird
+  nicht durch Generator-Output ersetzt. Das neutrale Schema wird auf den
+  beobachteten V1-Zielzustand validiert; automatisch generierte Aenderungen
+  beginnen erst ab `V2__...`.
+
+Ein Drift-Check darf V1 nur dann neu schreiben oder als veraltet melden, wenn
+die Byte-identische-V1-Variante umgesetzt ist. Andernfalls prueft er V1 gegen
+einen festgehaltenen Legacy-Hash und prueft nur V2+ gegen Generator-Output.
+
+### 3.4 Dialektabhaengige Flyway-Locations
+
+Der aktuelle `JdbcMigrationRunner` verwendet `classpath:db/migration` als
+Default-Location. Das ist fuer den heutigen PostgreSQL-only-Pfad korrekt, wird
+aber falsch, sobald mehrere Dialekte im selben Artefakt liegen: Flyway duerfte
+nicht versehentlich PostgreSQL- und Oracle-`V1` gleichzeitig scannen.
+
+Vor dem Einchecken mehrerer Dialekt-Unterverzeichnisse braucht der Runner einen
+expliziten Dialekt-/Location-Vertrag, zum Beispiel:
+
+```text
+postgresql -> classpath:db/migration/postgresql
+oracle     -> classpath:db/migration/oracle
+```
+
+Die Umstellung darf bestehende PostgreSQL-Installationen nicht brechen:
+
+- Entweder bleibt der PostgreSQL-Pfad bis zum Location-Switch bei
+  `classpath:db/migration`, und Oracle wird in einem separaten Modul oder Runner
+  mit eigener Location eingefuehrt.
+- Oder der PostgreSQL-Pfad wird auf `classpath:db/migration/postgresql`
+  umgestellt, aber nur zusammen mit einem Kompatibilitaetstest: mit der alten V1
+  migrieren, danach den neuen Runner gegen dieselbe DB mit
+  `flyway_server_state_history` validieren. `validate()` muss ohne Repair,
+  Baseline oder History-Migration erfolgreich sein.
+
+Der Runner muss fuer jeden Dialekt nur dessen Migrationen sehen. Tests muessen
+belegen, dass PostgreSQL keine Oracle-Migrationen scannt und umgekehrt.
 
 ---
 
@@ -190,7 +240,15 @@ Hilfen und ggf. Jdbi-Basisklassen. Die dialektspezifischen Module enthalten:
 
 - Es gibt ein neutrales internes Server-State-Schema als Source of Truth.
 - PostgreSQL-Flyway-SQL kann daraus reproduzierbar generiert werden.
-- Ein Drift-Check faellt fehl, wenn generierte SQL-Dateien veraltet sind.
+- Ein Drift-Check faellt fehl, wenn generierte SQL-Dateien veraltet sind. Fuer
+  eine eingefrorene Legacy-V1 prueft er den bekannten V1-Hash statt die Datei
+  aus Generator-Output neu zu schreiben.
+- Die bestehende PostgreSQL-V1 bleibt Flyway-kompatibel: Eine DB, die mit der
+  alten V1 migriert wurde, besteht `JdbcMigrationRunner.validate()` auch nach der
+  Generator-/Location-Umstellung.
+- Der MigrationRunner scannt pro Dialekt genau eine Flyway-Location und fuehrt
+  nicht mehrere gleichnamige `V1`-Migrationen aus verschiedenen Dialekten
+  zusammen.
 - Die bestehenden Store-Contract-Tests laufen unveraendert gegen PostgreSQL.
 - Eine Oracle-Erweiterung kann dieselben Ports und Contract-Tests verwenden.
 - Dialekt-Overlays sind explizit, nicht implizit in String-Ersetzungen versteckt.
@@ -204,12 +262,22 @@ Hilfen und ggf. Jdbi-Basisklassen. Die dialektspezifischen Module enthalten:
 2. Fehlende Modellfaehigkeiten inventarisieren: JSON, Timestamp, partielle
    Indizes, TTL-/Expiry-Indexe.
 3. PostgreSQL-Overlay definieren.
-4. Generator fuer PostgreSQL-Flyway-V1 implementieren.
-5. Drift-Check in Gradle einhaengen.
-6. Bestehende Migration gegen generierten Output abgleichen.
-7. Jdbi3-Einsatz fuer Store-Implementierungen evaluieren.
-8. Oracle-Overlay und Oracle-Store-Prototyp planen.
-9. Contract-Test-Matrix fuer PostgreSQL und Oracle definieren.
+4. V1-Strategie festlegen:
+   - PostgreSQL-V1 byte-identisch generieren, oder
+   - bestehende PostgreSQL-V1 als Legacy-Baseline einfrieren und Generator erst
+     fuer V2+ verwenden.
+5. Generator fuer PostgreSQL-Flyway-Artefakte implementieren.
+6. Drift-Check in Gradle einhaengen, inklusive Legacy-V1-Hash oder
+   byte-identischem V1-Vergleich.
+7. Bestehende Migration gegen generierten Output bzw. Legacy-Hash abgleichen.
+8. Dialekt-/Location-Vertrag im `JdbcMigrationRunner` einfuehren oder die
+   Modultrennung so festlegen, dass pro Runner nur eine Dialekt-Location
+   sichtbar ist.
+9. Kompatibilitaetstest fuer bestehende PostgreSQL-History ergaenzen: alte V1
+   anwenden, neuen Runner/Location-Vertrag validieren.
+10. Jdbi3-Einsatz fuer Store-Implementierungen evaluieren.
+11. Oracle-Overlay und Oracle-Store-Prototyp planen.
+12. Contract-Test-Matrix fuer PostgreSQL und Oracle definieren.
 
 ---
 
@@ -217,10 +285,8 @@ Hilfen und ggf. Jdbi-Basisklassen. Die dialektspezifischen Module enthalten:
 
 - Soll das interne Server-State-Schema dasselbe neutrale Modell wie
   Anwender-Schemata nutzen oder ein kleineres internes Modell?
-- Werden generierte SQLs committed oder nur im Build erzeugt?
-- Wie wird eine bestehende produktive `flyway_server_state_history` bei
-  Umstellung der Dateipfade behandelt?
+- Wird die bestehende PostgreSQL-V1 byte-identisch generiert oder als
+  eingefrorene Legacy-Baseline behandelt?
 - Welche Oracle-Version ist Mindestziel?
 - Ist Jdbi3 ein eigener Refactoring-Schritt vor Oracle oder Teil der
   Oracle-Einfuehrung?
-
