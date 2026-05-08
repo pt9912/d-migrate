@@ -273,7 +273,7 @@ sealed interface DiffOperation {
     val phase: DiffPhase
     val dependencies: Set<String>
     val reversibility: Reversibility
-    val risk: OperationRisk
+    val risks: OperationRisks
 }
 
 data class DiffObjectRef(
@@ -283,6 +283,16 @@ data class DiffObjectRef(
     val displayName: String = path.joinToString(".")
 }
 ```
+
+`risks` ist bewusst richtungsabhaengig:
+
+- `risks.up` beschreibt die Operation in Planrichtung `current -> desired`.
+- `risks.down` beschreibt den automatisch renderbaren inversen Schritt, falls
+  es ihn gibt.
+- Bei `NOT_REVERSIBLE` oder `MANUAL_REQUIRED` darf `risks.down` fehlen; der
+  Blocker entsteht dann aus `reversibility` und den Generator-Diagnosen.
+- Ein `AddColumn` kann deshalb Up-seitig nicht destruktiv sein, aber fuer den
+  Down-Schritt ein destruktives `DropColumn`-Risiko tragen.
 
 `objectRef.path` ist die qualifizierte fachliche Identitaet:
 
@@ -452,6 +462,11 @@ Destruktive Operationen muessen maschinenlesbar markiert werden.
 Skizze:
 
 ```kotlin
+data class OperationRisks(
+    val up: OperationRisk,
+    val down: OperationRisk? = null,
+)
+
 data class OperationRisk(
     val destructive: Boolean,
     val dataLossPossible: Boolean,
@@ -460,6 +475,12 @@ data class OperationRisk(
     val notes: List<DiffDiagnostic> = emptyList(),
 )
 ```
+
+`OperationRisk` beschreibt immer genau eine Ausfuehrungsrichtung. Der
+Up-Generator wertet `operation.risks.up` aus. Der Down-Generator erzeugt
+inverse Operationen bzw. inverse Dialektschritte und muss deren Risiko aus
+`operation.risks.down` oder aus der neu geplanten Down-Richtung ableiten. Ein
+Down-Schritt darf nicht still das Up-Risiko wiederverwenden.
 
 Beispiele fuer `requiresManualConfirmation = true`:
 
@@ -679,13 +700,25 @@ Erste Zieloperationen:
 - View-Replacement mit bestehenden Helpern
 
 Auch fuer MySQL gilt: View-Replacement ist im ersten Slice auf einfache Views
-mit aufloesbaren Tabellen-/Spaltenabhaengigkeiten begrenzt.
+mit belastbar aufloesbaren Abhaengigkeiten begrenzt. MySQL liefert fuer den
+Live-DB-Pfad im ersten Slice nur eine tabellenbezogene View-Abhaengigkeitsquelle
+ueber `information_schema.VIEW_TABLE_USAGE` (ab MySQL 8.0.13) und eine
+Routine-Quelle ueber `information_schema.VIEW_ROUTINE_USAGE`. Eine
+spaltenpraezise `VIEW_COLUMN_USAGE`-Quelle darf nicht vorausgesetzt werden.
 
-Fuer MySQL muss die Abhaengigkeitsquelle ebenfalls explizit sein, zum Beispiel
-ueber `information_schema.VIEW_TABLE_USAGE` /
-`information_schema.VIEW_COLUMN_USAGE`, soweit fuer die Zielversion verfuegbar.
-Wenn der Dialekt oder die Version diese Information nicht belastbar liefern
-kann, sind abhaengige View-Replacements im ersten Slice nicht renderbar.
+Die Konsequenz fuer MySQL ist verbindlich:
+
+- `DropTable` und Tabellen-Replacements duerfen table-level View-Dependencies
+  aus `VIEW_TABLE_USAGE` nutzen.
+- `DropColumn`, `AlterColumnType` und `AlterColumnNullability` duerfen bei
+  Views auf derselben Tabelle nur gerendert werden, wenn spaltenbezogene
+  Abhaengigkeiten aus einer expliziten Schema-Datei oder einer gleichwertigen
+  Adapter-Projektion bekannt sind.
+- Gibt es nur table-level Dependencies, muss der Planner solche
+  spaltenveraendernden Operationen mit einer Diagnose blockieren. SQL auf Basis
+  einer Query-Text-Heuristik ist nicht zulaessig.
+- Auf MySQL-Versionen ohne `VIEW_TABLE_USAGE` sind abhaengige View-Replacements
+  im ersten Slice nicht renderbar.
 
 Bewusst nicht in der ersten MySQL-Zielmatrix:
 
@@ -959,6 +992,20 @@ Ausgabeziele sind im ersten Slice bewusst explizit:
 - `--execute` und `--dry-run` sind gegenseitig exklusiv. Die Kombination endet
   als ungueltiger CLI-Aufruf mit Exit `2`.
 
+Alle Datei-Ausgaben werden erst nach erfolgreichem Planning, vollstaendigem
+Rendering und erfolgreicher Blocker-Pruefung finalisiert:
+
+- Up-SQL, Down-SQL und Report-Dateien werden in eine temporaere Datei im
+  Zielverzeichnis geschrieben und erst danach atomar auf den Zielpfad
+  verschoben.
+- Existierende Zielpfade duerfen bei Render-, Planungs-, Blocker- oder
+  Ausfuehrungsfehlern nicht mit Teilinhalten ueberschrieben werden.
+- Bei `--execute --generate-rollback` gilt zusaetzlich: das finale Down-SQL
+  darf erst nach erfolgreichem Up, Nach-Introspection und Nach-Compare
+  finalisiert werden.
+- Falls das Dateisystem keine atomare Ersetzung im Zielverzeichnis erlaubt,
+  endet der Lauf mit Exit `7`, bevor ein bestehendes Artefakt veraendert wird.
+
 Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
 ausfuehrbaren Up-Pfad fuer DB-Targets und einen vollstaendigen Plan-/Renderpfad
 fuer Datei-Targets tragen:
@@ -1174,6 +1221,8 @@ Ausgabepfad darf nicht mit teilweise gerendertem SQL ueberschrieben werden.
 Dasselbe gilt fuer Rollback-Artefakte: Bei Blockern oder fehlgeschlagener
 Up-Ausfuehrung darf ein vorhandenes `--rollback-output` nicht mit einem
 unvollstaendigen oder fingerprint-falschen Down-SQL ueberschrieben werden.
+Der in §7.1 beschriebene temporaere Schreibpfad mit atomarer Finalisierung gilt
+fuer Up-SQL, Down-SQL und Report-Dateien gleichermassen.
 
 Der Report muss mindestens enthalten:
 
@@ -1263,6 +1312,7 @@ Report-Inhalte:
 - `DiffPhase`
 - `DiffObjectType`
 - `Reversibility`
+- `OperationRisks`
 - `OperationRisk`
 - `DiffDiagnostic`
 - stabile Operation-IDs
@@ -1276,7 +1326,7 @@ Report-Inhalte:
 - planungsfaehiger Dependency-Vertrag fuer Views, mindestens Tabellen- und
   Spaltenabhaengigkeiten fuer `DropTable`, `DropColumn` und `AlterColumn*`
 - Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
-  inverse Down-Sortierung, Payload-Mapping, Risiko-Mapping und
+  inverse Down-Sortierung, Payload-Mapping, Up-/Down-Risiko-Mapping und
   Reverse-Marker-Normalisierung
 
 ### Phase C - Planner
@@ -1297,7 +1347,9 @@ Report-Inhalte:
 Erste realistische Matrix:
 
 - PostgreSQL: Tabellen, Spalten, Constraints, Indizes, Views
-- MySQL: Tabellen, Spalten, Constraints, Indizes, Views
+- MySQL: Tabellen, Spalten, Constraints, Indizes, Views nur mit explizit
+  belegbaren table-level Dependencies; spaltenveraendernde Operationen unter
+  Views nur mit expliziten column-level Dependencies
 - SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
   RebuildTable-Planung fuer SQLite-pflichtige Table-Rebuilds
 
@@ -1347,6 +1399,8 @@ Nicht in der ersten Matrix:
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
 - Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
   `--execute` erst nach erfolgreichem Nach-Compare final schreiben
+- gemeinsamer Artefakt-Writer fuer Up-SQL, Down-SQL und Reports mit temporaerer
+  Datei im Zielverzeichnis und atomarer Finalisierung
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
 - strikter Parser fuer den `d-migrate rollback-sql v1`-Metadatenblock:
   Begrenzungskommentare, kanonisches JSON, Pflichtfelder,
@@ -1373,6 +1427,9 @@ Nicht in der ersten Matrix:
   `schema migrate --execute --dry-run` und
   `schema rollback --execute --dry-run` als Exit `2`,
   stdout-/Datei-Ausgabeziele und fehlende implizite Report-Sidecars
+- Artefakt-Writer-Tests fuer atomare Finalisierung und unveraenderte
+  bestehende Zielpfade bei Planungs-, Render-, Blocker- und
+  Ausfuehrungsfehlern
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
   ungueltiges JSON, Fingerprint-Algorithmus-Mismatch und Secret-Scrubbing
@@ -1401,8 +1458,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 
 - `SchemaDiff` bleibt als Compare-Kernvertrag erhalten.
 - Der neue `DiffResult` enthaelt deterministisch sortierte Operationen.
-- Jede Operation hat Phase, ID, qualifizierte `DiffObjectRef`, Risiko,
-  Reversibilitaet und den fuer Rendering/Rollback notwendigen Payload.
+- Jede Operation hat Phase, ID, qualifizierte `DiffObjectRef`,
+  richtungsabhaengige Up-/Down-Risiken, Reversibilitaet und den fuer
+  Rendering/Rollback notwendigen Payload.
 - Dependency-Sortierung gewinnt gegen reine Phasenreihenfolge, insbesondere bei
   Drop-Operationen fuer Views, Trigger, Constraints, Indizes, Spalten und
   Tabellen.
@@ -1414,6 +1472,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
+- MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
+  `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
+  Views werden ohne explizite column-level Dependencies blockiert.
 - SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
@@ -1443,6 +1504,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
 - Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
   kein `--output`-Artefakt mit teilweise gerendertem SQL.
+- Up-SQL-, Down-SQL- und Report-Dateien werden erst nach vollstaendigem
+  Rendering und erfolgreicher Blocker-Pruefung atomar finalisiert; bestehende
+  Artefakte bleiben bei Fehlern unveraendert.
 - `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
   Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
   `d-migrate`-Metadatenblock.
