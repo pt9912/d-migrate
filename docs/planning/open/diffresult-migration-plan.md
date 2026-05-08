@@ -700,7 +700,8 @@ Erste Zieloperationen:
 - `DROP TABLE`
 - `ALTER TABLE ADD COLUMN`
 - `ALTER TABLE DROP COLUMN`
-- `ALTER TABLE ALTER COLUMN TYPE`
+- `ALTER TABLE ALTER COLUMN TYPE` nur fuer Typaenderungen, die der PostgreSQL-
+  Generator als implizit castbar und ohne `USING` renderbar klassifizieren kann
 - `ALTER TABLE ALTER COLUMN SET/DROP DEFAULT`
 - `ALTER TABLE ALTER COLUMN SET/DROP NOT NULL`
 - `ALTER TABLE ADD/DROP CONSTRAINT` fuer PK/FK/Unique
@@ -719,6 +720,15 @@ Compare-Pfad weg; Phase A/B muss diese Luecke explizit schliessen, bevor
 `AddConstraint`/`DropConstraint` fuer `CHECK` oder `EXCLUDE` als renderbar gelten
 duerfen. Bis dahin werden solche Aenderungen entweder nicht geplant oder als
 Planner-/Comparator-Gap diagnostiziert, aber nicht als SQL gerendert.
+
+`AlterColumnType` ist im ersten PostgreSQL-Slice bewusst eng begrenzt. Der
+Generator darf die Operation nur rendern, wenn er anhand einer expliziten,
+getesteten Cast-Matrix belegen kann, dass PostgreSQL die Aenderung ohne
+`USING`-Ausdruck akzeptiert. Aenderungen, die einen `USING`-Ausdruck,
+datenabhaengige Transformationen oder eine Nutzerentscheidung ueber
+Konvertierungssemantik brauchen, werden als `MANUAL_REQUIRED` oder
+`DIALECT_UNSUPPORTED_OPERATION` blockiert. Der Planner darf dafuer kein
+generisches `USING` erfinden.
 
 Views sind im ersten Slice nur fuer einfache, nicht materialisierte Views
 enthalten, deren Abhaengigkeiten im Plan eindeutig aufloesbar sind. Der Planner
@@ -762,7 +772,7 @@ ersten DDL-Slice aber nur geplant bzw. als nicht renderbar diagnostiziert.
 Offene Punkte:
 
 - Locking-/Transactional-DDL-Hinweise
-- Typkonvertierungen mit `USING`
+- erweiterte Typkonvertierungen mit `USING`
 - Extension-/Spatial-Abhaengigkeiten
 - Materialized View Refresh/Dependencies
 
@@ -1030,7 +1040,7 @@ Flag-Skizze:
 | `--target` | Ja | Operand | Ist-Datenbank oder Ist-Schema-Datei |
 | `--dialect` | Bedingt | Dialekt | Zieldialekt fuer SQL-Rendering; Pflicht bei Datei-zu-Datei, bei DB-Target aus der Connection ableitbar |
 | `--output` | Nein | Pfad | Up-SQL-Ausgabe |
-| `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht, wenn `--generate-rollback` gesetzt ist |
+| `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht, wenn `--generate-rollback` gesetzt ist und nicht `--plan-only` genutzt wird |
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen |
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
 | `--plan-only` | Nein | Boolean | nur stabilen Plan-/Risiko-Report schreiben, kein SQL |
@@ -1059,10 +1069,16 @@ und der SQL-Metadatenblock enthalten in diesem Modus den Fingerprint der
 aktuellen Schema-Datei als erwarteten Vorzustand und den Fingerprint des
 Soll-Schemas als erwarteten Post-Up-Zustand.
 
-Wenn `--generate-rollback` gesetzt ist, ist `--rollback-output` im ersten Slice
-Pflicht. Es gibt keinen impliziten Default-Pfad und kein Einbetten des
-Down-SQL in das Up-SQL-Artefakt. Fehlt `--rollback-output`, endet der Lauf als
-ungueltiger CLI-Aufruf mit Exit `2`.
+Wenn `--generate-rollback` gesetzt ist und der Lauf SQL-Artefakte erzeugen
+soll, ist `--rollback-output` im ersten Slice Pflicht. Es gibt keinen
+impliziten Default-Pfad und kein Einbetten des Down-SQL in das
+Up-SQL-Artefakt. Fehlt `--rollback-output`, endet der Lauf als ungueltiger
+CLI-Aufruf mit Exit `2`.
+
+Bei `--plan-only --generate-rollback` wird dagegen nur die Down-Renderbarkeit
+und Rollback-Risiko-Lage in den Plan-/Risiko-Report aufgenommen. Es wird kein
+Down-SQL geschrieben, `--rollback-output` ist in dieser Kombination
+unzulaessig und endet mit Exit `2`.
 
 Ausgabeziele sind im ersten Slice bewusst explizit:
 
@@ -1076,8 +1092,9 @@ Ausgabeziele sind im ersten Slice bewusst explizit:
 - Bei `--plan-only` gibt es kein SQL. Ohne `--report` wird der strukturierte
   Plan-/Risiko-Report nach `stdout` geschrieben; mit `--report` wird er in
   diese Datei geschrieben.
-- Wenn `--generate-rollback` gesetzt ist, ist `--rollback-output` immer der
-  einzige Zielpfad fuer Down-SQL. Down-SQL wird nie nach `stdout` geschrieben.
+- Wenn `--generate-rollback` gesetzt ist und der Lauf nicht `--plan-only` ist,
+  ist `--rollback-output` immer der einzige Zielpfad fuer Down-SQL. Down-SQL
+  wird nie nach `stdout` geschrieben.
 - `--execute` ohne `--output` ist zulaessig: die Migration wird ausgefuehrt,
   aber kein Up-SQL-Artefakt persistiert.
 - `--execute` verlangt im ersten Slice zwingend `--report`. Ein DB-seitiger
@@ -1102,18 +1119,24 @@ Rendering und erfolgreicher Blocker-Pruefung finalisiert:
   beim Nach-Introspection-, Nach-Compare- oder Rollback-Finalisierungsschritt
   fehl, ist der Zielzustand bereits veraendert. In diesem Fall darf ein
   bestehendes `--rollback-output` weiterhin nicht ueberschrieben werden. Der
-  Runner schreibt stattdessen, soweit technisch moeglich, ein separates
-  Recovery-Artefakt mit eindeutigem Suffix wie
-  `.recovery.<timestamp>.rollback.sql` in dasselbe Zielverzeichnis. Dieses
-  Artefakt muss im Metadatenblock als `recovery = true` markiert sein.
-  `postUpVerified` richtet sich danach, ob bereits ein beobachteter
-  Post-Up-Fingerprint aus erfolgreicher Nach-Introspection vorliegt. Das
-  Artefakt darf von `schema rollback --execute` nur nach erneuter
-  Zielzustandspruefung gegen `allowedPostUpFingerprints` akzeptiert werden.
-  Kann auch dieses Recovery-Artefakt nicht geschrieben werden, endet der
-  Lauf mit Exit `7` und einem strukturierten lokalen Fehler, der klar ausweist,
-  dass Up bereits ausgefuehrt wurde und kein finalisiertes Rollback-Artefakt
-  vorliegt.
+  Runner darf stattdessen nur dann ein separates Recovery-Artefakt mit
+  eindeutigem Suffix wie `.recovery.<timestamp>.rollback.sql` in dasselbe
+  Zielverzeichnis schreiben, wenn kein beobachteter Post-Up-Fingerprint dem
+  Soll-Fingerprint widerspricht. Dieses Artefakt muss im Metadatenblock als
+  `recovery = true` markiert sein.
+  `postUpVerified` ist nur dann `true`, wenn ein beobachteter
+  Post-Up-Fingerprint aus erfolgreicher Nach-Introspection vorliegt und der
+  Nach-Compare gegen `desired` erfolgreich war. Das Artefakt darf von
+  `schema rollback --execute` nur nach erneuter Zielzustandspruefung gegen
+  `allowedPostUpFingerprints` akzeptiert werden. Ist ein beobachteter
+  Post-Up-Fingerprint vorhanden, der nicht zum Soll-Fingerprint passt, darf der
+  Runner kein automatisch ausfuehrbares Recovery-Rollback-Artefakt
+  finalisieren; der strukturierte Fehler muss dann den beobachteten Fingerprint
+  und `rollbackFinalized = false` ausweisen.
+  Kann ein nach diesen Regeln zulaessiges Recovery-Artefakt nicht geschrieben
+  werden, endet der Lauf mit Exit `7` und einem strukturierten lokalen Fehler,
+  der klar ausweist, dass Up bereits ausgefuehrt wurde und kein finalisiertes
+  Rollback-Artefakt vorliegt.
 - Falls das Dateisystem keine atomare Ersetzung im Zielverzeichnis erlaubt,
   endet der Lauf mit Exit `7`, bevor ein bestehendes Artefakt veraendert wird.
 - Reports sind ebenfalls atomar zu schreiben. Bei einem terminalen
@@ -1140,10 +1163,11 @@ fuer Datei-Targets tragen:
    - Datei-Target: aus dem Pflichtflag `--dialect`.
 6. Up-DDL rendern, sofern kein Up-Risiko- oder Dialektblocker greift. Rollback-
    Blocker wirken nur, wenn `--generate-rollback` gesetzt ist.
-7. Bei `--generate-rollback` die Down-Renderbarkeit aus demselben Plan pruefen
-   und das Down-SQL vorbereiten. Ohne `--execute` wird es sofort mit dem
-   erwarteten Soll-Fingerprint als Post-Up-Fingerprint nach
-   `--rollback-output` geschrieben.
+7. Bei `--generate-rollback` die Down-Renderbarkeit aus demselben Plan pruefen.
+   Bei `--plan-only` werden nur Rollback-Faehigkeit, Risiken und Blocker
+   berichtet. In SQL-rendernden Laeufen wird das Down-SQL vorbereitet; ohne
+   `--execute` wird es sofort mit dem erwarteten Soll-Fingerprint als
+   Post-Up-Fingerprint nach `--rollback-output` geschrieben.
 8. Bei `--execute` Up-DDL gegen das DB-Target ausfuehren.
 9. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
    `desired` vergleichen.
@@ -1349,12 +1373,17 @@ fuer Drift-Schutz und Freigabepruefung vertraut:
   `postUpVerified = false`, weil `postUpFingerprint` dort der erwartete
   Soll-Fingerprint ist.
 - Fuer `recovery = true` enthaelt das JSON zusaetzlich
-  `allowedPostUpFingerprints` als nicht leere Liste. Sie enthaelt den
-  beobachteten Post-Up-Fingerprint, soweit verfuegbar, und kann den erwarteten
-  Soll-Fingerprint enthalten, wenn die Nach-Introspection nicht erfolgreich
-  abgeschlossen wurde. `schema rollback --execute` akzeptiert Recovery-
-  Artefakte nur, wenn der aktuelle Zielzustand zu einem dieser Fingerprints
-  passt.
+  `allowedPostUpFingerprints` als nicht leere Liste. Konnte nach vollstaendigem
+  Up kein Post-Up-Fingerprint beobachtet werden, darf die Liste den erwarteten
+  Soll-Fingerprint enthalten; `postUpVerified` bleibt dann `false`. Wurde ein
+  Post-Up-Fingerprint beobachtet und passt er zum Soll-Fingerprint, enthaelt
+  die Liste den beobachteten Fingerprint. Wurde ein Post-Up-Fingerprint
+  beobachtet, der nicht zum Soll-Fingerprint passt, darf kein automatisch
+  ausfuehrbares Recovery-Rollback-Artefakt finalisiert werden, weil der
+  vorbereitete Down-Plan fuer den erwarteten Soll-Zustand nicht nachweislich
+  zum beobachteten Zielzustand passt. `schema rollback --execute` akzeptiert
+  Recovery-Artefakte nur, wenn der aktuelle Zielzustand zu einem der erlaubten
+  Fingerprints passt.
 - `risk` enthaelt mindestens `destructive`, `dataLossPossible`,
   `requiresManualConfirmation` und die betroffenen Operation-IDs.
 - Der Parser ist strikt: fehlende Pflichtfelder, unbekannte `formatVersion`,
@@ -1395,11 +1424,19 @@ Fehler nach bereits ausgefuehrtem Up sind ein eigener Recovery-Fall:
 - Der Report und der strukturierte Fehler muessen `upExecuted = true`,
   `rollbackFinalized = false` und die letzte erfolgreich abgeschlossene Phase
   ausweisen.
-- Soweit der vorbereitete Down-Plan renderbar war, wird ein separates
-  Recovery-Rollback-Artefakt geschrieben, das den erwarteten Soll-Fingerprint
-  und, falls verfuegbar, den beobachteten Post-Up-Fingerprint enthaelt. Das
-  Artefakt ist nicht das normale `--rollback-output`, sondern ein eindeutig
-  markiertes Recovery-Artefakt.
+- Soweit der vorbereitete Down-Plan renderbar war und kein beobachteter
+  Post-Up-Fingerprint dem erwarteten Soll-Fingerprint widerspricht, wird ein
+  separates Recovery-Rollback-Artefakt geschrieben. Wenn kein beobachteter
+  Fingerprint verfuegbar ist, enthaelt `allowedPostUpFingerprints` den
+  erwarteten Soll-Fingerprint. Wenn ein beobachteter Fingerprint verfuegbar ist
+  und zum Soll passt, enthaelt `allowedPostUpFingerprints` den beobachteten
+  Fingerprint. Das Artefakt ist nicht das normale `--rollback-output`, sondern
+  ein eindeutig markiertes Recovery-Artefakt.
+- Wurde ein abweichender Post-Up-Fingerprint beobachtet, wird kein automatisch
+  ausfuehrbares Recovery-Rollback-Artefakt geschrieben. Der Report und der
+  strukturierte Fehler muessen dann `upExecuted = true`,
+  `rollbackFinalized = false`, den beobachteten Fingerprint und eine klare
+  manuelle Pruefpflicht ausweisen.
 - `schema rollback --execute` darf ein solches Recovery-Artefakt nur ausfuehren,
   wenn der Metadatenblock strikt parsebar ist, `recovery = true` enthaelt und
   die aktuelle Ziel-Datenbank mit einem der im Artefakt erlaubten
@@ -1429,16 +1466,19 @@ Ausgabeziele angefordert wurden, aus zusammenpassenden Artefakten:
 
 - Up-SQL aus `--output` oder aus `stdout`, wenn kein `--output` gesetzt ist
   und der Lauf nicht `--execute`-only ist
-- Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist
+- Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist und
+  der Lauf nicht `--plan-only` ist
 - strukturierter Report aus `--report`
 
 Bei `--execute` ist `--report` Pflicht. Der Report ist dann nicht nur ein
 optionales Begleitartefakt, sondern das Audit-Artefakt des DB-seitigen
 Schemawechsels.
 
-`--rollback-output` ist bei `--generate-rollback` verbindlich. Der Runner darf
-keinen impliziten Dateinamen ableiten und darf Down-SQL nicht in das
-Up-SQL-Artefakt mischen.
+`--rollback-output` ist bei `--generate-rollback` verbindlich, sobald der Lauf
+SQL-Artefakte erzeugt. Bei `--plan-only --generate-rollback` wird nur
+Rollback-Faehigkeit berichtet; `--rollback-output` ist dort unzulaessig. Der
+Runner darf keinen impliziten Dateinamen ableiten und darf Down-SQL nicht in
+das Up-SQL-Artefakt mischen.
 
 Bei einem durch Risiken blockierten Dry-Run ohne `--allow-destructive` darf der
 Report geschrieben werden, das Up-SQL-Artefakt aber nicht. Ein vorhandener
@@ -1535,8 +1575,9 @@ Report-Inhalte:
   - `MigrationDdlResult` = gerenderte Up-/Down-DDL
 - CLI-Ausgabeziele fuer `schema migrate`/`schema rollback` verbindlich
   spezifizieren: stdout-Fallback fuer Up-SQL, kein impliziter Report-Sidecar,
-  `--rollback-output` als einziger Down-SQL-Pfad und
-  `--execute --dry-run` als Exit `2`
+  `--rollback-output` als einziger Down-SQL-Pfad fuer SQL-rendernde
+  Rollback-Laeufe, `--plan-only --generate-rollback` ohne Down-SQL-Artefakt
+  und `--execute --dry-run` als Exit `2`
 - `--execute` als auditpflichtigen Pfad spezifizieren: ohne explizites
   `--report` Exit `2`, bei DDL-Ausfuehrungsfehlern Exit `5` mit strukturiertem
   Ausfuehrungsstatus statt Exit `7` oder `8`
@@ -1588,8 +1629,8 @@ Erste realistische Matrix:
 
 - PostgreSQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views mit
   getrennter Strategie fuer kompatibles `CREATE OR REPLACE VIEW` und explizites
-  Drop/Recreate, einfache Enum-Custom-Types ohne nicht triviale `ALTER TYPE`-
-  Semantik
+  Drop/Recreate, `AlterColumnType` nur fuer getestete implizite Casts ohne
+  `USING`, einfache Enum-Custom-Types ohne nicht triviale `ALTER TYPE`-Semantik
 - MySQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views nur mit
   explizit belegbaren table-level Dependencies; spaltenveraendernde Operationen
   unter Views nur mit expliziten column-level Dependencies und ausreichenden
@@ -1639,7 +1680,10 @@ Nicht in der ersten Matrix:
 - `--plan-only`
 - `--allow-destructive`
 - `--generate-rollback`
-- `--rollback-output` als Pflichtausgabe fuer `--generate-rollback`
+- `--rollback-output` als Pflichtausgabe fuer SQL-rendernde
+  `--generate-rollback`-Laeufe
+- `--plan-only --generate-rollback` als reine Rollback-Faehigkeitspruefung ohne
+  Down-SQL-Artefakt behandeln und mit `--rollback-output` als Exit `2` ablehnen
 - `--execute`
 - `--execute` ohne `--report` als Exit `2` ablehnen
 - `--dry-run` als Default ohne Ausfuehrung
@@ -1657,9 +1701,9 @@ Nicht in der ersten Matrix:
   `--execute` erst nach erfolgreichem Nach-Compare final schreiben
 - Recovery-Fall fuer `--execute --generate-rollback` nach bereits
   ausgefuehrtem Up abbilden: Nach-Introspection-/Nach-Compare-/
-  Finalisierungsfehler duerfen bestehende Rollback-Pfade nicht ueberschreiben
-  und muessen, soweit moeglich, ein markiertes Recovery-Rollback-Artefakt plus
-  strukturierten Fehler mit `upExecuted = true` erzeugen
+  Finalisierungsfehler duerfen bestehende Rollback-Pfade nicht ueberschreiben;
+  ein markiertes Recovery-Rollback-Artefakt darf nur entstehen, wenn kein
+  beobachteter Post-Up-Fingerprint dem Soll-Fingerprint widerspricht
 - gemeinsamer Artefakt-Writer fuer Up-SQL, Down-SQL und Reports mit temporaerer
   Datei im Zielverzeichnis und atomarer Finalisierung
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
@@ -1691,6 +1735,8 @@ Nicht in der ersten Matrix:
   `schema migrate --execute --dry-run` und
   `schema rollback --execute --dry-run` als Exit `2`,
   `schema migrate --execute` ohne `--report` als Exit `2`,
+  `--plan-only --generate-rollback` ohne Down-SQL-Artefakt,
+  `--plan-only --generate-rollback --rollback-output ...` als Exit `2`,
   stdout-/Datei-Ausgabeziele und fehlende implizite Report-Sidecars
 - Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler nach Beginn
   der DDL-Ausfuehrung endet mit Exit `5`, enthaelt strukturierten
@@ -1701,7 +1747,8 @@ Nicht in der ersten Matrix:
   Ausfuehrungsfehlern
 - Recovery-Tests fuer `schema migrate --execute --generate-rollback`, bei denen
   Up erfolgreich war, aber Nach-Compare oder finale Rollback-Artefakt-
-  Finalisierung fehlschlaegt
+  Finalisierung fehlschlaegt; bei beobachtetem Post-Up-Fingerprint ungleich
+  Soll darf kein automatisch ausfuehrbares Recovery-Rollback-Artefakt entstehen
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
   ungueltiges JSON, Fingerprint-Algorithmus-Mismatch, Body-Hash-Mismatch,
@@ -1758,6 +1805,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
   planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
   blind gerendert.
+- PostgreSQL rendert `AlterColumnType` im ersten Slice nur fuer getestete
+  implizite Casts ohne `USING`; alle anderen Typaenderungen werden als
+  `MANUAL_REQUIRED` oder `DIALECT_UNSUPPORTED_OPERATION` blockiert.
 - MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
   `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
   Views werden ohne explizite column-level Dependencies blockiert.
@@ -1795,6 +1845,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   `--output` schreibt er Up-SQL nur in diese Datei.
 - `--report` erzeugt nur dann ein Report-Artefakt, wenn es explizit gesetzt
   ist; es gibt keinen impliziten Report-Sidecar.
+- `--plan-only --generate-rollback` erzeugt kein Down-SQL-Artefakt, berichtet
+  aber Down-Renderbarkeit, Rollback-Risiken und Rollback-Blocker.
+- `--plan-only --generate-rollback --rollback-output ...` endet mit Exit `2`.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
 - `schema migrate --execute` verlangt ein explizites `--report`; ohne Report-
   Pfad endet der Lauf mit Exit `2`.
@@ -1821,16 +1874,18 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Fingerprint-Algorithmus-ID.
 - Der Metadatenblock enthaelt `recovery` und `postUpVerified`; Recovery-
   Artefakte enthalten zusaetzlich nicht leere `allowedPostUpFingerprints`.
-- `schema migrate --generate-rollback` ohne `--rollback-output` endet mit
-  Exit `2`.
+- `schema migrate --generate-rollback` ohne `--rollback-output` endet in
+  SQL-rendernden Laeufen mit Exit `2`; ausgenommen ist
+  `--plan-only --generate-rollback`, weil dort kein Down-SQL-Artefakt entsteht.
 - `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
   das finale Down-SQL-Artefakt erst nach erfolgreichem Up und Nach-Compare; der
   Metadatenblock enthaelt den beobachteten Post-Up-Fingerprint.
 - Schlaegt `schema migrate --execute --generate-rollback` nach erfolgreichem Up,
   aber vor finalisiertem Rollback-Artefakt fehl, wird der Side Effect
   strukturiert ausgewiesen (`upExecuted = true`, `rollbackFinalized = false`).
-  Ein bestehendes `--rollback-output` bleibt unveraendert; soweit moeglich wird
-  ein markiertes Recovery-Rollback-Artefakt geschrieben.
+  Ein bestehendes `--rollback-output` bleibt unveraendert. Ein markiertes
+  Recovery-Rollback-Artefakt wird nur geschrieben, wenn kein beobachteter
+  Post-Up-Fingerprint dem Soll-Fingerprint widerspricht.
 - `schema rollback --source rollback.sql --target ... --execute` wendet
   nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
 - `schema rollback --source rollback.sql --target ... --execute` prueft vor der
@@ -1893,7 +1948,10 @@ Verbindlich fuer den ersten Slice:
   - ohne `--output` wird renderbares Up-SQL nach `stdout` geschrieben;
   - mit `--output` wird Up-SQL nur in diese Datei geschrieben;
   - `--report` erzeugt nur bei gesetztem Flag ein Report-Artefakt;
-  - `--rollback-output` ist bei `--generate-rollback` der einzige Down-SQL-Pfad.
+  - `--rollback-output` ist bei SQL-rendernden `--generate-rollback`-Laeufen der
+    einzige Down-SQL-Pfad;
+  - `--plan-only --generate-rollback` schreibt kein Down-SQL-Artefakt und
+    berichtet nur die Rollback-Faehigkeit.
 - `schema migrate --execute --dry-run` ist unzulaessig und endet mit Exit `2`.
 - `schema migrate --execute` ist auditpflichtig und verlangt `--report`; ohne
   expliziten Report-Pfad endet der Lauf mit Exit `2`.
@@ -1912,6 +1970,9 @@ Verbindlich fuer den ersten Slice:
 - PostgreSQL rendert im ersten Slice einfache Enum-Custom-Types, soweit sie
   verlustfrei diffbar und dependency-sicher planbar sind; nicht triviale
   `ALTER TYPE`-Faelle bleiben blockierende Diagnosen.
+- PostgreSQL rendert `AlterColumnType` im ersten Slice nur fuer explizit
+  getestete implizite Casts ohne `USING`; andere Typaenderungen bleiben
+  blockierende Diagnosen oder manuelle Schritte.
 - MySQL-View-Dependency-Daten gelten nur dann als belastbar, wenn der Adapter
   ausreichende Privilegien fuer die relevante `VIEW_TABLE_USAGE`-/
   `VIEW_ROUTINE_USAGE`-Projektion belegen kann.
@@ -1945,8 +2006,9 @@ Verbindlich fuer den ersten Slice:
   erzeugten Down-SQL-Artefakt.
 - Wenn `schema migrate --execute --generate-rollback` nach ausgefuehrtem Up, aber
   vor finalem Rollback-Artefakt fehlschlaegt, bleibt ein bestehendes
-  `--rollback-output` unveraendert. Der Runner schreibt soweit moeglich ein
-  markiertes Recovery-Rollback-Artefakt und meldet den Side Effect strukturiert.
+  `--rollback-output` unveraendert. Der Runner schreibt nur dann ein markiertes
+  Recovery-Rollback-Artefakt, wenn kein beobachteter Post-Up-Fingerprint dem
+  Soll-Fingerprint widerspricht, und meldet den Side Effect strukturiert.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
   Ohne diesen Schalter endet ein SQL-rendernder Lauf mit Exit `8` und
   `primaryBlockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`; die
