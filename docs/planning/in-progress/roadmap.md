@@ -415,6 +415,28 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](../../../spec/ki-mcp.md).
 
+### Milestone 0.9.7 — Diff-basierte Migrationen (`schema migrate`/`schema rollback`)
+
+| Bereich | Aufgabe                                                                                                                                                                                                       | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Docs    | Phase A: Spezifikations- und Namensbereinigung — `spec/cli-spec.md` fuer `schema migrate`/`schema rollback`, Exit-Code-Tabelle (Migrations-Blocker `8`, DDL-Fehler `5`), `spec/design.md` um `DiffResult`      | —      |
+| Core    | Phase B: Core-Vertrag — `DiffResult`, `DiffOperation`, `DiffObjectRef`, `DiffPhase`, `Reversibility`, `OperationRisks`, stabile Operation-IDs, Operation-Payloads, kanonische Fingerprint-Projektion           | —      |
+| Core    | Phase C: Planner — `DiffPlanner` mit Mapping `SchemaDiff` → Operationen, Dependency-/Phasen-Sortierung, inverse Down-Sortierung, Reversibilitaetsklassifizierung, blockierende Diagnose statt stiller Verluste | —      |
+| Driver  | Phase D: Dialekt-DDL erste Matrix — PostgreSQL (Tabellen/Spalten/Constraints/Indizes/Views), MySQL (analog mit Dependency-Vorbedingungen), SQLite (RebuildTable mit `PRAGMA foreign_keys`-Vertrag)             | —      |
+| CLI     | Phase E: `SchemaMigrateRunner` und `SchemaRollbackRunner` — Operand-Aufloesung, Reverse-Normalisierung, `--plan-only`, `--rollback-output`, `--execute --report` (Pflicht), `--dry-run`, Rollback-State-Guard  | —      |
+| Test    | Phase F: Tests und Smokes — Round-Trip Soll→DB, Drift-Pruefung, SQLite-Rebuild-Smoke, Cross-Dialekt-Matrix                                                                                                     | —      |
+
+**Ergebnis**: `schema migrate` liest Ist-Zustand (DB oder Schema-Datei),
+diffed gegen Soll-Schema, plant einen migrationsfaehigen Operationsplan
+(`DiffResult`) und rendert dialektbewusste Up-DDL. `schema rollback`
+fuehrt den Down-Plan gegen die Datenbank aus, mit Driftpruefung und
+Audit-Reports. Details:
+[`diffresult-migration-plan.md`](../open/diffresult-migration-plan.md).
+
+> Hinweis: Die erste Matrix umfasst Tabellen/Spalten/Constraints/Indizes
+> und einfache Views. Nicht enthalten: vollstaendige Routine-/Trigger-
+> Migration, Sequence-Migrationen und automatische Daten-Transformationen.
+
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
@@ -669,4 +691,4 @@ Datenbanksystem.
 
 **Version**: 3.43
 **Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.9, 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Diff-basierte Migrationen), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
