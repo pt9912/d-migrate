@@ -27,7 +27,7 @@ import java.nio.file.Path
  * carry bare-URL connections continue to work via this legacy
  * parser; Phase-D deployments use the richer schema.
  */
-object PhaseCConnectionConfigParser {
+object ConnectionConfigParser {
 
     /**
      * Loads the YAML and returns the connections map keyed by
@@ -57,14 +57,14 @@ object PhaseCConnectionConfigParser {
      * Returns the raw `database.<key>` value (typically
      * `database.default_source` / `database.default_target`).
      * Returns `null` when the key is absent. Throws
-     * [PhaseCConnectionConfigException] when present-but-not-a-
+     * [ConnectionConfigException] when present-but-not-a-
      * string.
      */
     fun parseDefault(configPath: Path, key: String): String? {
         val root = parseRoot(configPath) ?: return null
         val database = root["database"] as? Map<*, *> ?: return null
         val value = database[key] ?: return null
-        return value as? String ?: throw PhaseCConnectionConfigException(
+        return value as? String ?: throw ConnectionConfigException(
             "database.$key in $configPath must be a string, got ${value::class.simpleName}",
         )
     }
@@ -77,12 +77,12 @@ object PhaseCConnectionConfigParser {
                 Load(settings).loadFromInputStream(input)
             }
         } catch (t: Throwable) {
-            throw PhaseCConnectionConfigException(
+            throw ConnectionConfigException(
                 "Failed to parse $configPath: ${t.message ?: t::class.simpleName}",
                 cause = t,
             )
         }
-        return parsed as? Map<*, *> ?: throw PhaseCConnectionConfigException(
+        return parsed as? Map<*, *> ?: throw ConnectionConfigException(
             "Failed to parse $configPath: top-level YAML must be a mapping",
         )
     }
@@ -95,7 +95,7 @@ object PhaseCConnectionConfigParser {
  * `ConfigResolveException` so the operator-facing CLI exit-code
  * mapping stays unchanged.
  */
-open class PhaseCConnectionConfigException(
+open class ConnectionConfigException(
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)

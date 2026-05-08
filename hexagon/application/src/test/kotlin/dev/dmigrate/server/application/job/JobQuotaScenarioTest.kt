@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * AP E.9 (3/3) End-to-End-Akzeptanz-Pins fuer Plan §7.9 ueber den
  * vollen Orchestrator → Dispatcher → JobCancelService-Pfad mit
  * InMemory-Stores. Komplementiert die Wire-Tests aus
- * `McpPhaseEStartScenarioTest` und die Sweeper-Tests aus AP E.9 (1/3).
+ * `McpJobStartScenarioTest` und die Sweeper-Tests aus AP E.9 (1/3).
  *
  * Plan §7.9-Tests, die hier abgedeckt werden:
  *

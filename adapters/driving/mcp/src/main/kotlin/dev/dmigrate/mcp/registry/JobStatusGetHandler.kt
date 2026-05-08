@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.registry
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.registry.JsonArgs.optString
-import dev.dmigrate.mcp.schema.PhaseBToolSchemas
+import dev.dmigrate.mcp.schema.McpToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
 import org.slf4j.LoggerFactory
 import dev.dmigrate.server.application.error.ResourceNotFoundException
@@ -200,13 +200,13 @@ internal class JobStatusGetHandler(
     // connection refs. Scrubbing keeps accidental token /
     // connection-URL leakage out of the wire response.
     // AP 6.23: numericValues is filtered through a curated allowlist
-    // (PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS); unknown internal
+    // (McpToolSchemas.JOB_PROGRESS_NUMERIC_KEYS); unknown internal
     // counter names are dropped so the wire output validates against
     // the closed schema. Dropped keys are logged at WARN so operators
     // notice when a worker emits a counter the allowlist doesn't yet
     // know about (review W2).
     private fun projectProgress(progress: JobProgress): Map<String, Any?> {
-        val allowed = PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
+        val allowed = McpToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
         val dropped = progress.numericValues.keys.filterNot { it in allowed }
         if (dropped.isNotEmpty()) {
             // AP 6.24 final-review: scrub the dropped keys before

@@ -18,11 +18,11 @@ class I18nSettingsResolver(
     private val systemLocaleProvider: () -> Locale = Locale::getDefault,
     private val systemTimezoneProvider: () -> ZoneId = ZoneId::systemDefault,
     /**
-     * 0.9.0 Phase A (`docs/ImpPlan-0.9.0-A.md` §4.1): expliziter Wert
-     * fuer das Root-CLI-Flag `--lang`. Wird in `resolveLocale` als
+     * LF-006 / LN-022 / LN-023: expliziter Wert fuer das Root-CLI-Flag
+     * `--lang`. Wird in `resolveLocale` als
      * hoechste Prioritaet vor `D_MIGRATE_LANG`/`LC_ALL`/`LANG`/Config/
      * System-Locale behandelt und durchlaeuft die strenge
-     * [ensureSupportedProductLanguage]-Validierung (§4.2). Unsupported
+     * [ensureSupportedProductLanguage]-Validierung. Unsupported
      * Werte werfen [UnsupportedLanguageException] und mappen in der
      * CLI-Schicht auf Exit 2.
      */
@@ -43,8 +43,8 @@ class I18nSettingsResolver(
     }
 
     private fun resolveLocale(config: ParsedI18nConfig): Locale {
-        // 0.9.0 Phase A §4.1: explizites `--lang` hat Vorrang vor allen
-        // anderen Quellen und wird strenger validiert (§4.2) als der
+        // LF-006 / LN-022 / LN-023: explizites `--lang` hat Vorrang vor allen
+        // anderen Quellen und wird strenger validiert als der
         // allgemeine Locale-Parse-Pfad.
         if (!langFromCli.isNullOrBlank()) {
             val locale = parseLocale(langFromCli, "--lang")
@@ -70,7 +70,7 @@ class I18nSettingsResolver(
     }
 
     /**
-     * 0.9.0 Phase A §4.2: strikte Validierung fuer explizites `--lang`.
+     * LF-006 / LN-022 / LN-023: strikte Validierung fuer explizites `--lang`.
      * Produktsprachen fuer 0.9.0 sind die gebundelten Messages-Sprachen
      * — derzeit Deutsch und Englisch. Andere Werte (z.B. `fr`, `zh`)
      * werden hier hart abgewiesen, nicht still auf das Englisch-Root-
@@ -218,7 +218,7 @@ class I18nSettingsResolver(
         private val COUNTRY_PATTERN = Regex("[A-Za-z]{2}|\\d{3}")
 
         /**
-         * 0.9.0 Phase A §4.2: Produktsprachen fuer den expliziten
+         * LF-006 / LN-022 / LN-023: Produktsprachen fuer den expliziten
          * `--lang`-Pfad. Deckungsgleich mit den gebundelten Messages-
          * Ressourcen (`messages.properties` als Root/Englisch und
          * `messages_de.properties` fuer Deutsch). Ein Sprachausbau fuehrt
@@ -229,8 +229,8 @@ class I18nSettingsResolver(
 }
 
 /**
- * 0.9.0 Phase A §4.2: geworfen, wenn der explizite `--lang`-Wert nicht zu
- * einer fuer 0.9.0 gebundelten Produktsprache kanonisierbar ist. Die
+ * LF-006 / LN-022 / LN-023: geworfen, wenn der explizite `--lang`-Wert
+ * nicht zu einer gebundelten Produktsprache kanonisierbar ist. Die
  * Root-CLI faengt das in [DMigrate.run] ab und mappt es auf Exit 2 —
  * deckungsgleich mit anderen lokalen CLI-Validierungsfehlern.
  */

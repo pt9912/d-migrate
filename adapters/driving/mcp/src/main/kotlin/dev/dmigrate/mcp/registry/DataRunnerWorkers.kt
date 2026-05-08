@@ -33,7 +33,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 
-data class PhaseFDataRunnerDependencies(
+data class DataRunnerDependencies(
     val artifactStore: ArtifactStore,
     val artifactContentStore: ArtifactContentStore,
     val connectionStore: ConnectionReferenceStore,
@@ -89,7 +89,7 @@ internal data class BundleExtractionOk(
 internal class McpDataImportJobWorker(
     private val requestPayload: JsonValue.Obj,
     private val principal: PrincipalContext?,
-    private val dependencies: PhaseFDataRunnerDependencies,
+    private val dependencies: DataRunnerDependencies,
 ) : JobWorker {
 
     override fun execute(job: JobRecord, token: dev.dmigrate.core.cancel.CancellationToken): JobWorkerOutcome {
@@ -341,7 +341,7 @@ internal class McpDataImportJobWorker(
 internal class McpDataTransferJobWorker(
     private val requestPayload: JsonValue.Obj,
     private val principal: PrincipalContext?,
-    private val dependencies: PhaseFDataRunnerDependencies,
+    private val dependencies: DataRunnerDependencies,
 ) : JobWorker {
 
     override fun execute(job: JobRecord, token: dev.dmigrate.core.cancel.CancellationToken): JobWorkerOutcome {

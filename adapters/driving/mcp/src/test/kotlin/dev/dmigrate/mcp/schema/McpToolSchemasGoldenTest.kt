@@ -6,11 +6,11 @@ import io.kotest.core.spec.style.FunSpec
 /**
  * Golden-file pin for the Phase B tool-schema set per
  * `ImpPlan-0.9.6-B.md` §6.10. Any unintentional drift in
- * [PhaseBToolSchemas] fails this test; intentional changes go through
+ * [McpToolSchemas] fails this test; intentional changes go through
  * `UPDATE_GOLDEN=true` (regenerates the file) and a code review of the
  * resulting diff.
  */
-class PhaseBToolSchemasGoldenTest : FunSpec({
+class McpToolSchemasGoldenTest : FunSpec({
 
     test("serialised schemas match the pinned golden file") {
         val actual = renderGolden()
@@ -56,11 +56,11 @@ private val GSON = GsonBuilder()
     .create()
 
 private fun renderGolden(): String {
-    // Iterate in the deterministic tool order PhaseBToolSchemas
+    // Iterate in the deterministic tool order McpToolSchemas
     // exposes — alphabetical — so the file is reviewable as a diff.
     val payload = LinkedHashMap<String, Any>()
-    for (name in PhaseBToolSchemas.toolNames()) {
-        val pair = PhaseBToolSchemas.forTool(name)!!
+    for (name in McpToolSchemas.toolNames()) {
+        val pair = McpToolSchemas.forTool(name)!!
         payload[name] = mapOf(
             "inputSchema" to pair.inputSchema,
             "outputSchema" to pair.outputSchema,
@@ -70,7 +70,7 @@ private fun renderGolden(): String {
 }
 
 private fun readGolden(): String? =
-    PhaseBToolSchemasGoldenTest::class.java.getResource(GOLDEN_RESOURCE)?.readText()
+    McpToolSchemasGoldenTest::class.java.getResource(GOLDEN_RESOURCE)?.readText()
 
 private fun writeGolden(content: String) {
     // Resolve the source-tree path defensively: most build setups put

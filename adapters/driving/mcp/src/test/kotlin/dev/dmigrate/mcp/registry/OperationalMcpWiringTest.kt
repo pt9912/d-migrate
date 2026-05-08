@@ -33,16 +33,16 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 
-class PhaseEWiringTest : FunSpec({
+class OperationalMcpWiringTest : FunSpec({
 
     val clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC)
 
-    fun phaseCWiring(jobStore: InMemoryJobStore = InMemoryJobStore()): PhaseCWiring {
+    fun runtimeWiring(jobStore: InMemoryJobStore = InMemoryJobStore()): McpRuntimeWiring {
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
         val schemaStore = InMemorySchemaStore()
         val quotaStore = InMemoryQuotaStore()
-        return PhaseCWiring(
+        return McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -55,7 +55,7 @@ class PhaseEWiringTest : FunSpec({
         )
     }
 
-    fun phaseEWiring(
+    fun operationalWiring(
         idempotencyStore: InMemoryIdempotencyStore = InMemoryIdempotencyStore(),
         jobStore: InMemoryJobStore = InMemoryJobStore(),
         approvalGrantStore: InMemoryApprovalGrantStore = InMemoryApprovalGrantStore(),
@@ -63,8 +63,8 @@ class PhaseEWiringTest : FunSpec({
         policyService: dev.dmigrate.server.application.policy.PolicyService =
             ConfiguredPolicyService(rules = emptyList()),
         grantIssuer: GrantIssuer = FailClosedGrantIssuer,
-    ): PhaseEWiring = PhaseEWiring(
-        phaseCWiring = phaseCWiring(jobStore),
+    ): OperationalMcpWiring = OperationalMcpWiring(
+        runtimeWiring = runtimeWiring(jobStore),
         idempotencyStore = idempotencyStore,
         jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
         workerHandleRegistry = workerHandleRegistry,
@@ -74,7 +74,7 @@ class PhaseEWiringTest : FunSpec({
     )
 
     test("Bundle laesst sich mit den Pflichtfeldern allein konstruieren") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         // Composed services existieren.
         w.approvalGrantService.shouldBeInstanceOf<ApprovalGrantService>()
         w.jobStartService
@@ -83,7 +83,7 @@ class PhaseEWiringTest : FunSpec({
     }
 
     test("Default-PolicyService ist fail-closed (Plan §7.4)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         val attempt = PolicyAttempt(
             tenantId = TenantId("acme"),
             callerId = PrincipalId("alice"),
@@ -97,7 +97,7 @@ class PhaseEWiringTest : FunSpec({
     }
 
     test("Default-GrantIssuer ist FailClosed (Plan §7.4)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         w.grantIssuer shouldBeSameInstanceAs FailClosedGrantIssuer
     }
 
@@ -110,7 +110,7 @@ class PhaseEWiringTest : FunSpec({
             rules = emptyList(),
             issuerFingerprint = "test",
         )
-        val w = phaseEWiring(policyService = customPolicy, grantIssuer = customIssuer)
+        val w = operationalWiring(policyService = customPolicy, grantIssuer = customIssuer)
         w.policyService shouldBeSameInstanceAs customPolicy
         w.grantIssuer shouldBeSameInstanceAs customIssuer
     }
@@ -119,22 +119,22 @@ class PhaseEWiringTest : FunSpec({
         // Beide Services bekommen IDENTISCHE Factory-Instanzen, sodass
         // ein per-Bundle-Default oder per-Test-Override konsistent fuer
         // beide Pfade greift.
-        val w = phaseEWiring()
+        val w = operationalWiring()
         // Smoke: via Reflection-freie API kein direkter Vergleich der
         // Factories moeglich (sind private im Service); stattdessen
         // pruefen wir, dass die Bundle-Felder nicht null sind.
         w.jobIdFactory.invoke().startsWith("job_") shouldBe true
     }
 
-    test("phaseCWiring bleibt zugaenglich fuer Tool-Handler") {
-        val pc = phaseCWiring()
-        val w = PhaseEWiring(
-            phaseCWiring = pc,
+    test("runtimeWiring bleibt zugaenglich fuer Tool-Handler") {
+        val pc = runtimeWiring()
+        val w = OperationalMcpWiring(
+            runtimeWiring = pc,
             idempotencyStore = InMemoryIdempotencyStore(),
             jobStartTransaction = InMemoryJobStartTransaction(pc.jobStore as InMemoryJobStore, InMemoryIdempotencyStore()),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
             approvalGrantStore = InMemoryApprovalGrantStore(),
         )
-        w.phaseCWiring shouldBeSameInstanceAs pc
+        w.runtimeWiring shouldBeSameInstanceAs pc
     }
 })

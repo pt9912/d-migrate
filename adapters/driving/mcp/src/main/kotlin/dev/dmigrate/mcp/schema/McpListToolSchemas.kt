@@ -11,15 +11,15 @@ package dev.dmigrate.mcp.schema
  * from [listOutputObj]. Each tool publishes a per-resource
  * `*ListItem` shape that pins the §6.4 minimum-field set.
  *
- * Lives outside [PhaseBToolSchemas] so the registry registry
+ * Lives outside [McpToolSchemas] so the registry registry
  * stays under the LargeClass threshold and the §10.5 contract
  * has a single, focused home.
  */
-internal object PhaseDListToolSchemas {
+internal object McpListToolSchemas {
 
     /**
      * Returns the five `*_list` schema pairs keyed by tool name.
-     * [PhaseBToolSchemas] merges this map into the central
+     * [McpToolSchemas] merges this map into the central
      * `SCHEMAS` table so `forTool(...)` continues to surface
      * Phase-D tools through the same lookup API.
      */

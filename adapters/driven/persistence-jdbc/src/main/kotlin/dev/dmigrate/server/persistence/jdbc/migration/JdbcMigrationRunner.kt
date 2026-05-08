@@ -18,7 +18,7 @@ import javax.sql.DataSource
  * History-Tabelle `flyway_phase_e_history` haelt das Phase-E-Schema
  * von eventuellen Co-Mietern in derselben DB getrennt.
  */
-class PhaseEMigrationRunner(
+class JdbcMigrationRunner(
     private val dataSource: DataSource,
     private val schemaHistoryTable: String = DEFAULT_HISTORY_TABLE,
     private val migrationLocations: Array<String> = arrayOf(DEFAULT_LOCATION),

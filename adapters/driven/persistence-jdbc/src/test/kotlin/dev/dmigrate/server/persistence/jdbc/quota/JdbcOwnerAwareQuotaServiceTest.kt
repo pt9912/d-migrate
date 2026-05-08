@@ -6,7 +6,7 @@ import dev.dmigrate.server.application.quota.QuotaReservationStatus
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
@@ -60,7 +60,7 @@ class JdbcOwnerAwareQuotaServiceTest : FunSpec({
             poolName = "phase-e-ownerquota-tests"
         }
         ownerAwareTestDataSource = HikariDataSource(cfg)
-        PhaseEMigrationRunner(ownerAwareTestDataSource!!).migrate()
+        JdbcMigrationRunner(ownerAwareTestDataSource!!).migrate()
     }
 
     afterSpec {

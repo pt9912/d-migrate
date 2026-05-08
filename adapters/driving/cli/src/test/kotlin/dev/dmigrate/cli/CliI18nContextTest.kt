@@ -54,7 +54,7 @@ class CliI18nContextTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.1 / §4.2 / §4.5):
+    // LF-006 / LN-022 / LN-023:
     // --lang ist jetzt ein aktiver Override mit Produktsprachen-
     // Validierung; Unsupported-Werte mappen auf Exit 2.
     // ────────────────────────────────────────────────────────────

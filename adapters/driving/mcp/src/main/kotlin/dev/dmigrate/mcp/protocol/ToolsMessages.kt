@@ -3,10 +3,10 @@ package dev.dmigrate.mcp.protocol
 import com.google.gson.JsonElement
 
 /**
- * MCP `tools/list` request shape per the 2025-11-25 specification +
- * `ImpPlan-0.9.6-B.md` §6.8. `cursor` is optional pagination — Phase
- * B always returns the full list (no pagination needed for ~25
- * tools), so the cursor is accepted but not honored.
+ * LF-012 / LN-038: MCP `tools/list` request shape per the
+ * 2025-11-25 specification. `cursor` is optional pagination; the
+ * current registry returns the full list, so the cursor is accepted
+ * but not honored.
  */
 data class ToolsListParams(
     val cursor: String? = null,

@@ -10,10 +10,10 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * 0.8.0 Phase E — temporaler Format- und Zonen-Vertrag.
+ * LF-006 / LN-022 / LN-023: temporaler Format- und Zonen-Vertrag.
  *
- * Referenz: `docs/ImpPlan-0.8.0-E.md`. Dieser Typ ist der benannte Einstieg
- * in den Phase-E-Vertrag; er hat **keinen globalen Zustand** und liefert nur
+ * Dieser Typ ist der benannte Einstieg in den i18n-Formatvertrag; er hat
+ * **keinen globalen Zustand** und liefert nur
  * Konstanten und reine Funktionen.
  *
  * Verbindliche Regeln (siehe Plan §4):

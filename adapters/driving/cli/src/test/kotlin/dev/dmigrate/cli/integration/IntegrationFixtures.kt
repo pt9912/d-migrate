@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.integration
 
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
@@ -55,7 +55,7 @@ import java.time.Instant
  *
  * Plan §6.24 explicitly forbids HTTP from inheriting the file-backed
  * wiring from the stdio CLI path — both transports build their own
- * `PhaseCWiring` here, sharing no in-memory state.
+ * `McpRuntimeWiring` here, sharing no in-memory state.
  */
 internal object IntegrationFixtures {
 
@@ -124,13 +124,13 @@ internal object IntegrationFixtures {
 
     /**
      * Builds a Phase-C wiring identical in shape to the production
-     * `McpCliPhaseCWiring.phaseCWiring(stateDir)` but with an
+     * `McpCliRuntimeWiring.runtimeWiring(stateDir)` but with an
      * [InMemoryAuditSink] swapped in so the integration test can
      * assert audit-event counts. The `auditSink` reference is also
      * exposed so the spec can read events back per-transport.
      */
     data class IntegrationWiring(
-        val wiring: PhaseCWiring,
+        val wiring: McpRuntimeWiring,
         val auditSink: InMemoryAuditSink,
         val stateDir: Path,
     )
@@ -142,7 +142,7 @@ internal object IntegrationFixtures {
     ): IntegrationWiring {
         val auditSink = InMemoryAuditSink()
         val quotaStore = InMemoryQuotaStore()
-        val wiring = PhaseCWiring(
+        val wiring = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = FileBackedUploadSegmentStore(stateDir),
             artifactStore = InMemoryArtifactStore(),
@@ -169,7 +169,7 @@ internal object IntegrationFixtures {
     /**
      * AP 6.24 E3: stages a schema-staging-readonly artefact + the
      * matching `SchemaIndexEntry` directly via the in-memory stores
-     * exposed by [PhaseCWiring]. Returns the wire-shape `schemaRef`
+     * exposed by [McpRuntimeWiring]. Returns the wire-shape `schemaRef`
      * (`dmigrate://tenants/<tenant>/schemas/<schemaId>`) the test can
      * pass to `schema_compare` / `schema_generate`.
      *
@@ -177,7 +177,7 @@ internal object IntegrationFixtures {
      * transports' stores pre-populated with parsable schemas.
      */
     fun stageSchema(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         schemaId: String,
         json: String,
@@ -229,7 +229,7 @@ internal object IntegrationFixtures {
      * the test passes back to `artifact_chunk_get`.
      */
     fun stageArtifact(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         artifactId: String,
         content: ByteArray,
@@ -270,7 +270,7 @@ internal object IntegrationFixtures {
      * needs an entry to lift onto a `ServerResourceUri`).
      */
     fun stageJob(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         jobId: String,
         operation: String = "schema_validate",
@@ -307,7 +307,7 @@ internal object IntegrationFixtures {
      * upload flow end-to-end.
      */
     fun stageProfile(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         profileId: String,
         artifactRef: String? = null,
@@ -336,7 +336,7 @@ internal object IntegrationFixtures {
      * by hand for now.
      */
     fun stageDiff(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         diffId: String,
         clock: Clock = Clock.systemUTC(),
@@ -367,7 +367,7 @@ internal object IntegrationFixtures {
      * `credentialRef` string but never expands it.
      */
     fun stageConnection(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         principal: PrincipalContext,
         connectionId: String,
         credentialRef: String? = "env:INTEGRATION_PASS",

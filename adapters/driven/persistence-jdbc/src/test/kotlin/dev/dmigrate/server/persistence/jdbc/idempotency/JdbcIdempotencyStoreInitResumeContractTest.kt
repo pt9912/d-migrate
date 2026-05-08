@@ -3,7 +3,7 @@ package dev.dmigrate.server.persistence.jdbc.idempotency
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.ReadOnlyInitResumeContractTests
 import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -46,7 +46,7 @@ class JdbcIdempotencyStoreInitResumeContractTest : ReadOnlyInitResumeContractTes
                 poolName = "phase-e-init-resume-contract"
             }
             initResumeTestDataSource = HikariDataSource(cfg)
-            PhaseEMigrationRunner(initResumeTestDataSource!!).migrate()
+            JdbcMigrationRunner(initResumeTestDataSource!!).migrate()
         }
 
         afterSpec {

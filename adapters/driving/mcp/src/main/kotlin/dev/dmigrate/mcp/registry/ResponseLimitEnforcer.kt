@@ -3,7 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
-import dev.dmigrate.mcp.schema.PhaseBToolSchemas
+import dev.dmigrate.mcp.schema.McpToolSchemas
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.error.InternalAgentErrorException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
@@ -155,9 +155,9 @@ class ResponseLimitEnforcer internal constructor(
     }
 
     // The "artifact_upload" literal is also the registry/scope-mapping
-    // key for the segment-upload tool — see PhaseBRegistries,
-    // PhaseCRegistries, McpServerConfig.DEFAULT_SCOPE_MAPPING, and
-    // PhaseBToolSchemas. Project convention is inline strings; if a
+    // key for the segment-upload tool — see McpContractRegistries,
+    // McpRuntimeRegistries, McpServerConfig.DEFAULT_SCOPE_MAPPING, and
+    // McpToolSchemas. Project convention is inline strings; if a
     // future rename happens, all five sites move together.
     private fun capForTool(toolName: String): Int = when (toolName) {
         "artifact_upload" -> limits.maxUploadToolRequestBytes
@@ -185,12 +185,12 @@ class ResponseLimitEnforcer internal constructor(
         init {
             // Review N4: detect drift between this hardcoded set and
             // the registered tool catalogue. If a tool is renamed in
-            // PhaseBToolSchemas without updating SCHEMA_AWARE_TOOLS,
+            // McpToolSchemas without updating SCHEMA_AWARE_TOOLS,
             // the wrong path would silently activate at runtime.
-            val unknown = SCHEMA_AWARE_TOOLS.filter { PhaseBToolSchemas.forTool(it) == null }
+            val unknown = SCHEMA_AWARE_TOOLS.filter { McpToolSchemas.forTool(it) == null }
             require(unknown.isEmpty()) {
                 "SCHEMA_AWARE_TOOLS references tools not registered in " +
-                    "PhaseBToolSchemas: $unknown"
+                    "McpToolSchemas: $unknown"
             }
         }
     }

@@ -39,16 +39,16 @@ import java.time.ZoneOffset
  * realen `tools/call`-Pfad in [McpServiceImpl] und stellt sicher,
  * dass kein UnsupportedToolHandler mehr im Wege steht.
  */
-class PhaseGRegistriesTest : FunSpec({
+class AiMcpRegistriesTest : FunSpec({
 
     val tenant = Fixtures.tenant("acme")
     val now: Instant = Instant.parse("2026-05-07T12:00:00Z")
     val clock: Clock = Clock.fixed(now, ZoneOffset.UTC)
 
-    fun phaseEWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseEWiring {
+    fun operationalWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -60,8 +60,8 @@ class PhaseGRegistriesTest : FunSpec({
             clock = clock,
             profileStore = InMemoryProfileStore(),
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -70,11 +70,11 @@ class PhaseGRegistriesTest : FunSpec({
         )
     }
 
-    fun phaseGWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseGWiring {
-        val phaseE = phaseEWiring(policyDefault)
+    fun aiWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): AiMcpWiring {
+        val phaseE = operationalWiring(policyDefault)
         // Schema seeden, damit procedure_transform_plan und
         // testdata_plan einen gültigen schemaRef finden.
-        phaseE.phaseCWiring.schemaStore.register(
+        phaseE.runtimeWiring.schemaStore.register(
             SchemaIndexEntry(
                 schemaId = "schema-1",
                 tenantId = tenant,
@@ -85,11 +85,11 @@ class PhaseGRegistriesTest : FunSpec({
                 expiresAt = now.plusSeconds(3600),
             ),
         )
-        return PhaseGWiring(phaseEWiring = phaseE)
+        return AiMcpWiring(operationalWiring = phaseE)
     }
 
-    fun service(gWiring: PhaseGWiring, principal: PrincipalContext): McpServiceImpl {
-        val registry = PhaseGRegistries.defaultToolRegistry(gWiring)
+    fun service(gWiring: AiMcpWiring, principal: PrincipalContext): McpServiceImpl {
+        val registry = AiMcpRegistries.defaultToolRegistry(gWiring)
         return McpServiceImpl(
             serverVersion = "test",
             toolRegistry = registry,
@@ -101,7 +101,7 @@ class PhaseGRegistriesTest : FunSpec({
         .copy(scopes = setOf("dmigrate:ai:execute"), isAdmin = false)
 
     test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_plan ist NICHT mehr UnsupportedToolHandler") {
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
             """
@@ -122,7 +122,7 @@ class PhaseGRegistriesTest : FunSpec({
     }
 
     test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_execute ist NICHT mehr UnsupportedToolHandler") {
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
 
         // Erst einen Plan erzeugen, dann Execute-Tool aufrufen.
@@ -158,7 +158,7 @@ class PhaseGRegistriesTest : FunSpec({
     }
 
     test("Plan §7.6 Wiring-Akzeptanz: testdata_plan ist NICHT mehr UnsupportedToolHandler") {
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
             """
@@ -181,7 +181,7 @@ class PhaseGRegistriesTest : FunSpec({
         // Der Handler ist jetzt produktiv; ein Aufruf ohne approvalKey
         // muss ein VALIDATION_ERROR mit `approvalKey`-Feld liefern, nicht
         // mehr UNSUPPORTED_TOOL_OPERATION.
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString("""{"planRef":"dmigrate://tenants/acme/artifacts/x"}""")
         val result = svc.toolsCall(ToolsCallParams("testdata_execute", args)).get()
@@ -194,7 +194,7 @@ class PhaseGRegistriesTest : FunSpec({
         // gleichem approvalKey+payload → selber resultRef. Das laeuft
         // nur, wenn alle Handler dieselbe AiToolOutcomeStore-Instanz
         // sehen.
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
             """
@@ -217,10 +217,10 @@ class PhaseGRegistriesTest : FunSpec({
     }
 
     test("Plan §4.1 Default: ohne explizite Provider-Konfig laeuft NoOp") {
-        // Sanity: das Default-PhaseGWiring traegt
+        // Sanity: das Default-AiMcpWiring traegt
         // DefaultAiProviderRegistry.noOpOnly() — ein Aufruf darf
         // OHNE externe Secrets/Netz funktionieren.
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
             """
@@ -238,7 +238,7 @@ class PhaseGRegistriesTest : FunSpec({
     }
 
     test("Plan §6 G.6: PolicyDenied trifft alle drei Handler einheitlich") {
-        val gWiring = phaseGWiring(policyDefault = PolicyEffect.Deny("policy:denied"))
+        val gWiring = aiWiring(policyDefault = PolicyEffect.Deny("policy:denied"))
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
             """
@@ -254,8 +254,8 @@ class PhaseGRegistriesTest : FunSpec({
         planResult.content.first().text!! shouldContain "POLICY_DENIED"
     }
 
-    test("PhaseGWiring liefert sane Defaults (Plan §3.2 + §4.1): NoOp-Provider, In-Process-Stores") {
-        val gWiring = PhaseGWiring(phaseEWiring = phaseEWiring())
+    test("AiMcpWiring liefert sane Defaults (Plan §3.2 + §4.1): NoOp-Provider, In-Process-Stores") {
+        val gWiring = AiMcpWiring(operationalWiring = operationalWiring())
         // Defaults sind die In-Process-Implementierungen; type-check
         // statt toString-prefix-Hoffen, weil internal data classes
         // ihren `simpleName` nicht garantieren.
@@ -263,9 +263,9 @@ class PhaseGRegistriesTest : FunSpec({
         (gWiring.aiArtifactMetadataStore is InProcessAiArtifactMetadataStore) shouldBe true
     }
 
-    test("PhaseG defaultComponents erweitert capabilities_list um Provider- und Prompt-Discovery") {
-        val gWiring = phaseGWiring()
-        val components = PhaseGRegistries.defaultComponents(gWiring)
+    test("AI defaultComponents erweitert capabilities_list um Provider- und Prompt-Discovery") {
+        val gWiring = aiWiring()
+        val components = AiMcpRegistries.defaultComponents(gWiring)
         val capabilities = components.capabilitiesProvider()
 
         val asJson = JsonParser.parseString(

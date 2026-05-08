@@ -46,7 +46,7 @@ Alles lebt im Adapter-Modul **`adapters/driven/persistence-jdbc`**
 | `JdbcQuotaReservationOwnerStore` | `quota/JdbcQuotaReservationOwnerStore.kt` | `QuotaReservationOwnerStore` |
 | `JdbcOwnerAwareQuotaService` | `quota/JdbcOwnerAwareQuotaService.kt` | TX-aware Komposite |
 | `QuotaJson` | `quota/QuotaJson.kt` | Wire-Codec für `QuotaKey` + `QuotaReservation` |
-| `PhaseEMigrationRunner` | `migration/PhaseEMigrationRunner.kt` | Flyway-Wrapper |
+| `JdbcMigrationRunner` | `migration/JdbcMigrationRunner.kt` | Flyway-Wrapper |
 
 ### 1.1 Sichtbarkeits-Konventionen (Plan-§-3.5-Carve-out)
 
@@ -104,7 +104,7 @@ Index/SQL-Query-Performance. JSONB ist source-of-truth.
 **Production (Plan-§-3.2 + §-10 Q3):** expliziter Ops-Step vor dem
 Server-Start.
 
-Der Operator ruft `PhaseEMigrationRunner(dataSource).migrate()` aus
+Der Operator ruft `JdbcMigrationRunner(dataSource).migrate()` aus
 einem Deployment-Script oder einem aequivalenten Ops-Job gegen die
 Server-State-DB auf. Der Repo-`Makefile` bietet fuer E2 bewusst nur
 Build-/Test-/Gate-Targets; ein generisches `make migrate` ohne
@@ -112,7 +112,7 @@ umgebungsspezifische Secret- und JDBC-URL-Uebergabe ist kein Teil der
 0.9.6-E2-Implementierung.
 
 Der Server selbst ruft Flyway **nicht** automatisch beim Start. Bei
-Drift schlägt der Bootstrap fehl (`PhaseEMigrationRunner.validate()`
+Drift schlägt der Bootstrap fehl (`JdbcMigrationRunner.validate()`
 beim Start, oder gleichwertig).
 
 **Dev/Test:** opt-in über `server.state.migrations.auto = true`. Der

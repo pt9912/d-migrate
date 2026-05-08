@@ -6,9 +6,9 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.cancel.CancellationTokenSource
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -46,7 +46,7 @@ import java.time.ZoneOffset
 
 /**
  * AP E.8 (3/3) Integration: dispatcht `job_cancel` durch
- * [McpServiceImpl] mit produktiver [PhaseERegistries] und prueft die
+ * [McpServiceImpl] mit produktiver [OperationalMcpRegistries] und prueft die
  * Plan-§7.8-Akzeptanz-Pins, die nur durch den vollen Wire-Pfad
  * sichtbar werden:
  *
@@ -64,14 +64,14 @@ import java.time.ZoneOffset
  * Bewusst nicht abgedeckt: Scope-Check (Phase-B upstream im Service-
  * Layer); Audit-Event-Korrelation (AP E.10).
  */
-class McpPhaseECancelScenarioTest : FunSpec({
+class McpJobCancelScenarioTest : FunSpec({
 
     val clock: Clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC)
 
-    fun phaseEWiring(): PhaseEWiring {
+    fun operationalWiring(): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -82,8 +82,8 @@ class McpPhaseECancelScenarioTest : FunSpec({
             limits = McpLimitsConfig(),
             clock = clock,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -92,8 +92,8 @@ class McpPhaseECancelScenarioTest : FunSpec({
         )
     }
 
-    fun service(wiring: PhaseEWiring, principal: PrincipalContext): McpServiceImpl {
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+    fun service(wiring: OperationalMcpWiring, principal: PrincipalContext): McpServiceImpl {
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         return McpServiceImpl(
             serverVersion = "test",
             toolRegistry = registry,
@@ -105,7 +105,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
         Fixtures.principalContext(principalId = name, tenant = tenant)
             .copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
 
-    fun seedQueued(wiring: PhaseEWiring, jobId: String = "j1", owner: String = "alice"): JobRecord {
+    fun seedQueued(wiring: OperationalMcpWiring, jobId: String = "j1", owner: String = "alice"): JobRecord {
         val tenant = Fixtures.tenant("acme")
         val record = JobRecord(
             managedJob = ManagedJob(
@@ -122,7 +122,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
             visibility = JobVisibility.OWNER,
             resourceUri = ServerResourceUri(tenant, ResourceKind.JOBS, jobId),
         )
-        wiring.phaseCWiring.jobStore.save(record)
+        wiring.runtimeWiring.jobStore.save(record)
         return record
     }
 
@@ -134,7 +134,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
         }
 
     test("QUEUED-Cancel via tools/call: status=CANCELLED, terminal=true, kein Ack-Pending") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         seedQueued(w)
         val principal = adminPrincipal()
             .copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
@@ -153,10 +153,10 @@ class McpPhaseECancelScenarioTest : FunSpec({
     }
 
     test("RUNNING-Cancel via tools/call: status=RUNNING, terminal=false, cancelAckPending=true, retryAfter=2") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         // Job direkt RUNNING anlegen + Worker-Handle registrieren.
         val record = seedQueued(w)
-        w.phaseCWiring.jobStore.transitionStatus(
+        w.runtimeWiring.jobStore.transitionStatus(
             tenantId = record.tenantId,
             jobId = "j1",
             allowedFromStatuses = setOf(JobStatus.QUEUED),
@@ -178,7 +178,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
     }
 
     test("Unbekannter jobId via tools/call: Error-Envelope RESOURCE_NOT_FOUND ohne URI-Echo") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         val principal = adminPrincipal()
         val svc = service(w, principal)
 
@@ -191,7 +191,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
     }
 
     test("Cross-tenant resourceUri: TENANT_SCOPE_DENIED mit targetTenant-Detail") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         // Job in Fremd-Tenant.
         val record = JobRecord(
             managedJob = ManagedJob(
@@ -206,7 +206,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
             visibility = JobVisibility.OWNER,
             resourceUri = ServerResourceUri(Fixtures.tenant("initech"), ResourceKind.JOBS, "j-other"),
         )
-        w.phaseCWiring.jobStore.save(record)
+        w.runtimeWiring.jobStore.save(record)
 
         val principal = adminPrincipal()
         val svc = service(w, principal)
@@ -220,7 +220,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
     }
 
     test("Validation: beide jobId UND resourceUri → VALIDATION_ERROR") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         seedQueued(w)
         val principal = adminPrincipal()
         val svc = service(w, principal)
@@ -235,10 +235,10 @@ class McpPhaseECancelScenarioTest : FunSpec({
     }
 
     test("Idempotenter Retry: zweiter cancel mit gleichem Reason aendert persisted Reason nicht (Plan §7.2)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         seedQueued(w)
         // RUNNING setzen + Worker registrieren (durable Phase).
-        w.phaseCWiring.jobStore.transitionStatus(
+        w.runtimeWiring.jobStore.transitionStatus(
             tenantId = Fixtures.tenant("acme"),
             jobId = "j1",
             allowedFromStatuses = setOf(JobStatus.QUEUED),
@@ -252,19 +252,19 @@ class McpPhaseECancelScenarioTest : FunSpec({
         // Zweiter cancel mit anderem Reason — der zweite Reason landet NICHT im Store.
         svc.toolsCall(ToolsCallParams("job_cancel", argsObj(jobId = "j1", reason = "second"))).get()
 
-        val final = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
+        val final = w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
         final.managedJob.cancelRequest.requestedReason shouldBe "first"
     }
 
     test("Dispatcher-Barriere: nach QUEUED→CANCELLED via tools/call startet kein Worker (Plan §7.8 line 1213-1214)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         val record = seedQueued(w)
         val principal = adminPrincipal()
         val svc = service(w, principal)
 
         // Cancel via tools/call.
         svc.toolsCall(ToolsCallParams("job_cancel", argsObj(jobId = "j1"))).get()
-        w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!.managedJob.status shouldBe JobStatus.CANCELLED
+        w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!.managedJob.status shouldBe JobStatus.CANCELLED
 
         // Versuche, den Worker explizit zu dispatchen — die transitionStatus-CAS
         // (QUEUED→RUNNING) muss fehlschlagen, der Worker darf NICHT laufen.
@@ -282,13 +282,13 @@ class McpPhaseECancelScenarioTest : FunSpec({
         workerInvoked shouldBe false
 
         // Job-Record bleibt CANCELLED — kein FAILED-Overlay durch den fehlgeschlagenen Dispatch.
-        val final = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
+        val final = w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
         final.managedJob.status shouldBe JobStatus.CANCELLED
         final.managedJob.artifacts shouldBe emptyList()
     }
 
     test("Reason-Scrubbing: Bearer-Token im Reason wird redigiert (Plan §7.7 line 1182-1183)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         seedQueued(w)
         val principal = adminPrincipal()
         val svc = service(w, principal)
@@ -297,7 +297,7 @@ class McpPhaseECancelScenarioTest : FunSpec({
             ToolsCallParams("job_cancel", argsObj(jobId = "j1", reason = "leak Bearer abc.def.ghi token")),
         ).get()
 
-        val final = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
+        val final = w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), "j1")!!
         final.managedJob.cancelRequest.requestedReason!! shouldContain "Bearer ***"
         final.managedJob.cancelRequest.requestedReason!! shouldNotContain "abc.def.ghi"
     }

@@ -18,11 +18,11 @@ import dev.dmigrate.cli.cliVersion
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseEWiring
-import dev.dmigrate.mcp.registry.PhaseGRegistries
-import dev.dmigrate.mcp.registry.PhaseGWiring
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.registry.AiMcpRegistries
+import dev.dmigrate.mcp.registry.AiMcpWiring
 import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.server.AuthMode
@@ -41,7 +41,7 @@ import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction
 import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
@@ -225,7 +225,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         // Plan-D §10.3 review: a deployment that runs HTTP with
         // any non-disabled auth-mode (i.e. jwt-jwks / jwt-
         // introspection — the production paths) MUST NOT silently
-        // fall through to PhaseCWiring's `DEV_DEFAULT` keyring.
+        // fall through to McpRuntimeWiring's `DEV_DEFAULT` keyring.
         // The DEV_DEFAULT secret is publicly known (`0x00..0x1F`);
         // signing production cursors with it is a security flaw.
         // stdio + HTTP-disabled (loopback dev) keep working with
@@ -408,7 +408,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
      * `--auth-mode` is one of the production modes, the
      * deployment MUST supply a deterministic
      * `--cursor-keyring-file`. Otherwise the wiring would fall
-     * through to `PhaseCWiring.DEV_DEFAULT` — a publicly-known
+     * through to `McpRuntimeWiring.DEV_DEFAULT` — a publicly-known
      * secret. Loopback / stdio dev paths keep working: those
      * surfaces are explicit single-instance dev contracts.
      */
@@ -437,11 +437,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
         buildRuntimeWiringOrExit(config, owner, cursorKeyring).use { runtime ->
             when (val outcome = McpServerBootstrap.startStdio(
                 config = config,
-                phaseCWiring = runtime.phaseCWiring,
+                runtimeWiring = runtime.runtimeWiring,
                 components = runtime.components,
                 resourceStores = runtime.resourceStores,
                 promptRegistry = runtime.promptRegistry,
-                promptHygieneService = runtime.phaseGWiring.promptHygieneService,
+                promptHygieneService = runtime.aiWiring.promptHygieneService,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -466,11 +466,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
         buildRuntimeWiringOrExit(config, owner, cursorKeyring).use { runtime ->
             when (val outcome = McpServerBootstrap.startHttp(
                 config = config,
-                phaseCWiring = runtime.phaseCWiring,
+                runtimeWiring = runtime.runtimeWiring,
                 components = runtime.components,
                 resourceStores = runtime.resourceStores,
                 promptRegistry = runtime.promptRegistry,
-                promptHygieneService = runtime.phaseGWiring.promptHygieneService,
+                promptHygieneService = runtime.aiWiring.promptHygieneService,
             )) {
                 is McpStartOutcome.ConfigError -> reportConfigErrors(outcome.errors)
                 is McpStartOutcome.Started -> {
@@ -489,10 +489,10 @@ class McpServeCommand : CliktCommand(name = "serve") {
         config: McpServerConfig,
         owner: StateDirOwner,
         cursorKeyring: CursorKeyring?,
-    ): McpCliRuntimeWiring {
+    ): McpCliServerWiring {
         // AP 6.14 / 6.20 / 6.21: the base wiring keeps byte content
         // file-backed under the locked state dir.
-        val phaseC = McpCliPhaseCWiring.phaseCWiring(
+        val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath(),
             cursorKeyring = cursorKeyring,
@@ -503,8 +503,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
             val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
             val idempotencyStore = InMemoryIdempotencyStore()
             val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
-            val phaseE = PhaseEWiring(
-                phaseCWiring = phaseC,
+            val phaseE = OperationalMcpWiring(
+                runtimeWiring = phaseC,
                 idempotencyStore = idempotencyStore,
                 jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
                 workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -513,11 +513,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 connectionSecretResolver = connectionSecretResolver,
                 dataRunnerTempDirectory = owner.resolved.path,
             )
-            val phaseG = PhaseGWiring(phaseEWiring = phaseE)
-            return McpCliRuntimeWiring(
-                phaseCWiring = phaseC,
-                phaseGWiring = phaseG,
-                components = PhaseGRegistries.defaultComponents(phaseG, config.scopeMapping),
+            val phaseG = AiMcpWiring(operationalWiring = phaseE)
+            return McpCliServerWiring(
+                runtimeWiring = phaseC,
+                aiWiring = phaseG,
+                components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping),
                 closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
             )
         }
@@ -544,8 +544,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
             val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
             val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
-            val phaseE = PhaseEWiring(
-                phaseCWiring = phaseCWithJdbc,
+            val phaseE = OperationalMcpWiring(
+                runtimeWiring = phaseCWithJdbc,
                 idempotencyStore = idempotencyStore,
                 jobStartTransaction = JdbcJobStartTransaction(runner, idempotencyStore, jobStore),
                 workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -562,8 +562,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 connectionSecretResolver = connectionSecretResolver,
                 dataRunnerTempDirectory = owner.resolved.path,
             )
-            val phaseG = PhaseGWiring(phaseEWiring = phaseE)
-            val components = PhaseGRegistries.defaultComponents(phaseG, config.scopeMapping)
+            val phaseG = AiMcpWiring(operationalWiring = phaseE)
+            val components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping)
             echo(
                 "MCP server-state: JDBC/Postgres enabled " +
                     "(migrations.auto=${state.migrationsAuto}, " +
@@ -571,9 +571,9 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 err = true,
             )
             val asyncCfg = executor.config as? dev.dmigrate.server.application.job.JobExecutorConfig.Async
-            return McpCliRuntimeWiring(
-                phaseCWiring = phaseCWithJdbc,
-                phaseGWiring = phaseG,
+            return McpCliServerWiring(
+                runtimeWiring = phaseCWithJdbc,
+                aiWiring = phaseG,
                 components = components,
                 closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, dataSource)),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
@@ -598,7 +598,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         approvalGrantsFile?.let(::FileBackedApprovalGrantStore) ?: InMemoryApprovalGrantStore()
 
     private fun mcpCoreJobWorkerFactory(
-        phaseC: PhaseCWiring,
+        phaseC: McpRuntimeWiring,
         connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver,
     ) = McpCoreJobWorkerFactory(
         connectionStore = phaseC.connectionStore,
@@ -612,7 +612,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         clock = phaseC.clock,
     )
 
-    private fun startArtifactRetentionLoop(phaseC: PhaseCWiring): AutoCloseable {
+    private fun startArtifactRetentionLoop(phaseC: McpRuntimeWiring): AutoCloseable {
         val service = ArtifactRetentionService(
             artifactStore = phaseC.artifactStore,
             contentStore = phaseC.artifactContentStore,
@@ -646,7 +646,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         return AutoCloseable { executor.shutdownNow() }
     }
 
-    private fun startFinalisationTimeoutLoop(phaseC: PhaseCWiring): AutoCloseable {
+    private fun startFinalisationTimeoutLoop(phaseC: McpRuntimeWiring): AutoCloseable {
         val service = UploadSessionService(
             sessions = phaseC.uploadSessionStore,
             segments = phaseC.uploadSegmentStore,
@@ -707,7 +707,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         state: McpServerStateConfig,
     ) {
         try {
-            val migrations = PhaseEMigrationRunner(dataSource)
+            val migrations = JdbcMigrationRunner(dataSource)
             if (state.migrationsAuto) {
                 migrations.migrate()
             } else {
@@ -859,14 +859,14 @@ private data class GrantCorrelation(
 
 private const val ARTIFACT_RETENTION_SWEEP_SECONDS: Long = 300
 
-private data class McpCliRuntimeWiring(
-    val phaseCWiring: PhaseCWiring,
-    val phaseGWiring: PhaseGWiring,
-    val components: PhaseCRegistries.McpServiceComponents,
+private data class McpCliServerWiring(
+    val runtimeWiring: McpRuntimeWiring,
+    val aiWiring: AiMcpWiring,
+    val components: McpRuntimeRegistries.McpServiceComponents,
     private val closeable: AutoCloseable?,
-    val resourceStores: ResourceStores = ResourceStores.fromPhaseCWiring(
-        phaseCWiring,
-        phaseGWiring.aiArtifactMetadataStore,
+    val resourceStores: ResourceStores = ResourceStores.fromMcpRuntimeWiring(
+        runtimeWiring,
+        aiWiring.aiArtifactMetadataStore,
     ),
     val promptRegistry: DefaultPromptRegistry = DefaultPromptRegistry.mandatory(),
     /**

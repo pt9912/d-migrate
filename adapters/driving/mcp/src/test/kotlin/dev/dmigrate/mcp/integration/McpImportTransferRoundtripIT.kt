@@ -5,10 +5,10 @@ import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
 import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
-import dev.dmigrate.mcp.registry.PhaseFDataOperationWorkerFactory
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.registry.DataOperationWorkerFactory
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -57,7 +57,7 @@ import java.time.ZoneOffset
  * erfolgreicher JDBC-/Secret-Materialisierungs-Pfad simuliert, wenn
  * er im Bootstrap nicht wirklich verdrahtet ist.
  */
-class McpPhaseFImportTransferRoundtripIT : FunSpec({
+class McpImportTransferRoundtripIT : FunSpec({
 
     val tenant = Fixtures.tenant("acme")
     val now: Instant = Instant.parse("2026-05-07T12:00:00Z")
@@ -120,7 +120,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         )
     }
 
-    fun phaseEWiring(): PhaseEWiring {
+    fun operationalWiring(): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val artifactStore = InMemoryArtifactStore()
@@ -130,7 +130,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         seedConnection(connectionStore, tenant, "warehouse")
         seedConnection(connectionStore, tenant, "source-db")
         seedConnection(connectionStore, tenant, "target-db")
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -142,8 +142,8 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
             clock = clock,
             connectionStore = connectionStore,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -152,8 +152,8 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         )
     }
 
-    fun service(wiring: PhaseEWiring): McpServiceImpl {
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+    fun service(wiring: OperationalMcpWiring): McpServiceImpl {
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val principal = Fixtures.principalContext(principalId = "alice", tenant = "acme")
             .copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
         return McpServiceImpl(
@@ -174,7 +174,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         svc.toolsCall(ToolsCallParams(name = tool, arguments = args)).get()
 
     test("data_import_start -> job_status_get round-trip ueber tools/call") {
-        val svc = service(phaseEWiring())
+        val svc = service(operationalWiring())
         val startArgs = JsonParser.parseString(
             """
             {
@@ -201,7 +201,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         statusById.get("status").asString shouldBe "FAILED"
         statusById.get("terminal").asBoolean shouldBe true
         statusById.getAsJsonObject("error").get("code").asString shouldBe
-            PhaseFDataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
+            DataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
 
         // Roundtrip via resourceUri (zweiter Adressierungspfad).
         val statusByUriArgs = JsonParser.parseString(
@@ -212,7 +212,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
     }
 
     test("data_transfer_start -> job_status_get round-trip ueber tools/call") {
-        val svc = service(phaseEWiring())
+        val svc = service(operationalWiring())
         val startArgs = JsonParser.parseString(
             """
             {
@@ -235,11 +235,11 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         status.get("status").asString shouldBe "FAILED"
         status.get("terminal").asBoolean shouldBe true
         status.getAsJsonObject("error").get("code").asString shouldBe
-            PhaseFDataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
+            DataOperationWorkerFactory.ERROR_CODE_DATA_RUNNER_NOT_CONFIGURED
     }
 
     test("data_import_start -> job_cancel ueber tools/call (idempotenter Replay)") {
-        val w = phaseEWiring()
+        val w = operationalWiring()
         val svc = service(w)
         val startArgs = JsonParser.parseString(
             """
@@ -278,7 +278,7 @@ class McpPhaseFImportTransferRoundtripIT : FunSpec({
         // Connection-Refs liefert VALIDATION_ERROR (nicht
         // RESOURCE_NOT_FOUND), sodass eine fremde Tenant-ID nicht via
         // Existenz-Test eruiert werden kann.
-        val svc = service(phaseEWiring())
+        val svc = service(operationalWiring())
         val args = JsonParser.parseString(
             """
             {

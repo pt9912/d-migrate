@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.protocol
 
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.McpContractRegistries
 import dev.dmigrate.mcp.registry.ToolCallContext
 import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolDescriptor
@@ -43,7 +43,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("tools/list returns all registered tools with stub schemas") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val result = sut.toolsList(null).get()
@@ -57,7 +57,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("tools/call capabilities_list returns Phase-B contract snapshot") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
@@ -71,7 +71,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("tools/call on unknown name fails with JSON-RPC -32601 (Method not found)") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val ex = shouldThrow<ExecutionException> {
@@ -84,7 +84,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("tools/call on registered-but-unimplemented tool returns isError envelope") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "schema_validate")).get()
@@ -127,7 +127,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("missing principal -> AUTH_REQUIRED envelope on tools/call") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = null,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
@@ -142,7 +142,7 @@ class McpServiceImplToolsTest : FunSpec({
         // auth failures. We assert that ordering.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = null,
         )
         val ex = shouldThrow<ExecutionException> {
@@ -166,7 +166,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("tools/list never advertises MCP-protocol method names as tools") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val result = sut.toolsList(null).get()
@@ -346,7 +346,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("AUTH_REQUIRED envelope carries toolName in structured details") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = null,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
@@ -362,7 +362,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("bindPrincipal updates the principal used by subsequent dispatches") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = null,
         )
         // Without a bound principal, AUTH_REQUIRED.
@@ -384,7 +384,7 @@ class McpServiceImplToolsTest : FunSpec({
         val emptyScopePrincipal = PRINCIPAL.copy(scopes = emptySet())
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = emptyScopePrincipal,
         )
         val ex = shouldThrow<ExecutionException> { sut.toolsList(null).get() }
@@ -397,7 +397,7 @@ class McpServiceImplToolsTest : FunSpec({
         val emptyScopePrincipal = PRINCIPAL.copy(scopes = emptySet())
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = emptyScopePrincipal,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
@@ -409,7 +409,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("ServerCapabilities.tools is set with listChanged=false post-AP6.8") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val initOut = sut.initialize(InitializeParams(McpProtocol.MCP_PROTOCOL_VERSION)).get()
@@ -421,7 +421,7 @@ class McpServiceImplToolsTest : FunSpec({
     test("ToolsCallContent for a successful call propagates type/text/mimeType") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val result = sut.toolsCall(ToolsCallParams(name = "capabilities_list")).get()
@@ -467,7 +467,7 @@ class McpServiceImplToolsTest : FunSpec({
         // the published input-schema.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val args = JsonObject().apply {
@@ -487,7 +487,7 @@ class McpServiceImplToolsTest : FunSpec({
         // refactor that drifts the allowlist breaks loudly.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
-            toolRegistry = PhaseBRegistries.toolRegistry(),
+            toolRegistry = McpContractRegistries.toolRegistry(),
             initialPrincipal = PRINCIPAL,
         )
         val args = JsonObject().apply {

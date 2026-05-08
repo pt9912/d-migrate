@@ -120,10 +120,9 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
-    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
-    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
-    // Phase B bis D des Milestones.
+    // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
+    // Directory-Importe. Stdin bleibt ausgeschlossen, weil kein
+    // stabiler Input-Pfad fuer Wiederaufnahme existiert.
     val resume by option(
         "--resume",
         help = "Resume an earlier import from a checkpoint reference " +
@@ -211,9 +210,8 @@ class DataImportCommand : CliktCommand(name = "import") {
                 )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
-            // 0.9.0 Phase D.1 (docs/ImpPlan-0.9.0-D.md §5.1):
-            // dateibasierter CheckpointStore + Config-Resolver —
-            // symmetrisch zum Export-Pfad.
+            // LF-010 / LF-013 / LN-012: dateibasierter CheckpointStore +
+            // Config-Resolver, symmetrisch zum Export-Pfad.
             checkpointStoreFactory = { dir ->
                 dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
             },

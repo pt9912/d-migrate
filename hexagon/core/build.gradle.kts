@@ -86,7 +86,7 @@ kover {
                     // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
                     "dev.dmigrate.server.core.audit.AuditEvent",
                     "dev.dmigrate.server.core.audit.AuditOutcome",
-                    // Server-core AI types (0.9.6 Phase G G.6.a/b) —
+                    // LF-017 / LF-024 / LN-030 / LN-031: Server-core AI types —
                     // Datentraeger fuer Outcome-Lifecycle und KI-Artefakt-
                     // Provenance. Init-Blocks pruefen Form-Invarianten;
                     // semantische Pfade sind in adapters/driving/mcp und

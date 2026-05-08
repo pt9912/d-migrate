@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.protocol
 
 import com.google.gson.GsonBuilder
 import dev.dmigrate.mcp.auth.ScopeChecker
-import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.McpContractRegistries
 import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
 import dev.dmigrate.mcp.registry.ResponseLimitEnforcer
@@ -60,7 +60,7 @@ class McpServiceImpl(
     initialPrincipal: PrincipalContext? = null,
     private val errorMapper: ErrorMapper = DefaultErrorMapper(),
     resourceStores: ResourceStores = ResourceStores.empty(),
-    private val resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+    private val resourceRegistry: ResourceRegistry = McpContractRegistries.resourceRegistry(),
     private val scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     private val responseLimitEnforcer: ResponseLimitEnforcer? = null,
     private val auditScope: AuditScope? = null,
@@ -314,7 +314,7 @@ class McpServiceImpl(
         args: com.google.gson.JsonElement?,
     ) {
         if (args == null || !args.isJsonObject) return
-        val schemaPair = dev.dmigrate.mcp.schema.PhaseBToolSchemas.forTool(toolName) ?: return
+        val schemaPair = dev.dmigrate.mcp.schema.McpToolSchemas.forTool(toolName) ?: return
         val inputSchema = schemaPair.inputSchema
         // The `obj()` helper sets `additionalProperties=false` by
         // default; tools that need a permissive schema set it to

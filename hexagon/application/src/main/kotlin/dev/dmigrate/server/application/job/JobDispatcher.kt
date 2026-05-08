@@ -19,11 +19,11 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
 
 /**
- * Phase E §7.7 Job-Dispatcher.
+ * LF-012 / LN-011 / LN-017: Job-Dispatcher.
  *
  * Faedet das produktive Worker-Lifecycle durch den
  * [dev.dmigrate.server.ports.JobStore] und nimmt einem konkreten
- * Tool-Adapter die Status-Pflege ab. Verwendet die in AP E.2
+ * Tool-Adapter die Status-Pflege ab. Verwendet die im JobStore
  * etablierten CAS-Methoden ([JobStore.transitionStatus]):
  *
  * 1. `QUEUED -> RUNNING` — atomar; Race-Konflikte (z.B. paralleler
@@ -31,7 +31,7 @@ import java.util.concurrent.Executor
  *    Fehler-Code `DISPATCH_RACE`, ohne den Worker auszufuehren.
  * 2. `worker.execute(record, token)` — der Worker ist verantwortlich
  *    fuer Cancel-Propagation, Artefakt-Publish und Connection-
- *    Materialisierung (Plan §7.7).
+ *    Materialisierung.
  * 3. `RUNNING -> {SUCCEEDED | FAILED | CANCELLED}` — Outcome wird
  *    deterministisch auf Job-Felder gemapped (`artifacts`, `error`,
  *    `cancelRequest.signalAcked` + `ackedAt`).
@@ -49,16 +49,15 @@ import java.util.concurrent.Executor
  * `CompletableFuture` an den Caller weiter, damit der Job-Lifecycle
  * stets vollstaendig geschlossen wird.
  *
- * Cancel-Source-Klassifikation (JOB_CANCEL vs. RUNNER_TIMEOUT) lebt in
- * AP E.7 (2/6); diese AP-Stufe behandelt jede [OperationCancelledException]
- * als generischen Cancel-Branch.
+ * Cancel-Source-Klassifikation unterscheidet echte Job-Cancels von
+ * Runner-Timeouts, damit der Job-Lifecycle geschlossen bleibt.
  */
 class JobDispatcher(
     private val jobStore: JobStore,
     private val executor: Executor = SyncExecutor,
     private val clock: Clock = Clock.systemUTC(),
     /**
-     * Plan §7.7 line 1182-1183: Cancel-Reason wandert nur SCRUBBED in
+     * LN-027 / LN-030: Cancel-Reason wandert nur SCRUBBED in
      * Job-/Audit-Metadaten. Default ist [SecretScrubber.scrub], die
      * Bearer-/Approval-Token-/JDBC-URL-Marker entfernt. Tests koennen
      * die Identitaet `{ it }` setzen, wenn sie den rohen Reason
@@ -66,22 +65,20 @@ class JobDispatcher(
      */
     private val cancelReasonScrubber: (String) -> String = SecretScrubber::scrub,
     /**
-     * Phase E §7.9: optionaler owner-aware Quota-Service. Wenn gesetzt,
+     * LF-012 / LN-011: optionaler owner-aware Quota-Service. Wenn gesetzt,
      * gibt der Dispatcher beim Terminal-Pfad (succeeded/failed/cancelled
      * + Runner-Timeout-Cleanup) den Slot via
      * `releaseForOwner(record.quotaReservationOwnerId, now)` frei.
-     * Plan §7.9 line 1291-1292.
      */
     private val quotaService: OwnerAwareQuotaService? = null,
     /**
-     * Phase E3 § 3.7 (E3.6): optionaler Snapshot-Provider fuer
+     * LN-017 / LN-027: optionaler Snapshot-Provider fuer
      * Pool-Telemetrie im `job.dispatch.scheduled`-Log-Event
      * (`queueDepth`-Feld). Default `null` -> queueDepth = 0
      * (Sync-Pfad hat keine Queue). Production-Wiring uebergibt
      * typischerweise `executorBundle.lifecycle::status` — der
      * Dispatcher kennt den [JobExecutorLifecycle]-Typ NICHT, sondern
-     * akzeptiert nur die Funktionssignatur (Plan §3.3 dispatcher-
-     * agnostic).
+     * akzeptiert nur die Funktionssignatur.
      */
     private val executorStatusSnapshot: () -> JobExecutorStatus? = { null },
 ) {
@@ -150,7 +147,7 @@ class JobDispatcher(
         val runningRecord = when (running) {
             is JobTransitionOutcome.Applied -> running.record
             is JobTransitionOutcome.IllegalTransition -> {
-                // Plan E3 § 3.6 + § 6.3: cancel-while-queued. Wenn der
+                // LF-012 / LN-011: cancel-while-queued. Wenn der
                 // Job zwischen Submit und Worker-Start durch
                 // JobCancelService.cancelQueuedJob auf CANCELLED gesetzt
                 // wurde, fuehren wir den Worker NICHT aus. Der finale
@@ -158,8 +155,7 @@ class JobDispatcher(
                 // wurde bereits beim QUEUED -> CANCELLED CAS persistiert;
                 // applyTerminal wird hier NICHT gerufen, weshalb auch
                 // kein zweiter Quota-Release stattfindet (JobCancelService
-                // hat den Slot bereits freigegeben — Plan §7.9 line
-                // 1291-1292). Nur fuer andere IllegalTransition-Quellen
+                // hat den Slot bereits freigegeben). Nur fuer andere IllegalTransition-Quellen
                 // (z.B. RUNNING, SUCCEEDED) bleibt das DISPATCH_RACE-
                 // Failed-Mapping aktiv.
                 val skipOutcome = if (running.currentStatus == JobStatus.CANCELLED) {
@@ -183,7 +179,7 @@ class JobDispatcher(
             }
         }
 
-        // Plan E3 § 3.7 Log-Event #2: nach erfolgreichem QUEUED -> RUNNING.
+        // LN-017 / LN-027: Log-Event nach erfolgreichem QUEUED -> RUNNING.
         // waitMs ist die Zeit zwischen dispatch()-Aufruf und dem realen
         // Worker-Start (queue-Wait fuer Async-Pool, ~0 fuer Sync).
         log.info(
@@ -198,7 +194,7 @@ class JobDispatcher(
         val outcome = try {
             worker.execute(runningRecord, token)
         } catch (e: OperationCancelledException) {
-            // Plan §7.7: Source-Klassifikation. JOB_CANCEL ist eine
+            // LF-012 / LN-011: Source-Klassifikation. JOB_CANCEL ist eine
             // echte Cancel-Operation -> job-status CANCELLED.
             // RUNNER_TIMEOUT ist eine Budget-Grenze -> job-status
             // FAILED(error.code=OPERATION_TIMEOUT).
@@ -269,11 +265,11 @@ class JobDispatcher(
                 )
             }
             is JobWorkerOutcome.Cancelled -> { mj ->
-                // Plan §7.2 Idempotenz: ein bereits durabel gespeicherter
+                // LF-012 / LN-011: ein bereits durabel gespeicherter
                 // requestedReason (via JobStore.markCancelRequested aus
                 // job_cancel) wird NICHT ueberschrieben. Der Worker-
                 // Reason ist nur ein Fallback fuer Worker-internen Cancel.
-                // Plan §7.7 line 1182-1183: Reason wandert nur SCRUBBED in
+                // LN-027 / LN-030: Reason wandert nur SCRUBBED in
                 // die Job-Metadaten.
                 val scrubbed = cancelReasonScrubber(outcome.reason)
                 mj.copy(
@@ -304,7 +300,7 @@ class JobDispatcher(
             allowedFromStatuses = setOf(JobStatus.RUNNING),
             transformer = transformer,
         )
-        // Plan §7.9 line 1291-1292: release nach succeeded/failed/cancelled.
+        // LF-012 / LN-011: release nach succeeded/failed/cancelled.
         // Wenn KEIN OwnerId auf dem Record (Bestands-Pfad ohne Quota) -> no-op.
         record.quotaReservationOwnerId?.let { ownerId ->
             quotaService?.releaseForOwner(ownerId, terminalAt)
@@ -318,10 +314,10 @@ class JobDispatcher(
         const val REASON_GENERIC_CANCEL: String = "operation cancelled"
         const val REASON_GENERIC_TIMEOUT: String = "runner timeout"
 
-        /** Plan §7.7: error.code-Wert fuer RUNNER_TIMEOUT-induzierten FAILED. */
+        /** LF-012 / LN-011: error.code-Wert fuer RUNNER_TIMEOUT-induzierten FAILED. */
         const val ERROR_CODE_OPERATION_TIMEOUT: String = "OPERATION_TIMEOUT"
 
-        /** Plan E3 § 3.7 Log-Event-Namen (E3.6). */
+        /** LN-017 / LN-027: Log-Event-Namen. */
         const val EVENT_DISPATCH_SCHEDULED: String = "job.dispatch.scheduled"
         const val EVENT_DISPATCH_STARTED: String = "job.dispatch.started"
         const val EVENT_DISPATCH_FINISHED: String = "job.dispatch.finished"

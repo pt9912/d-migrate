@@ -9,11 +9,10 @@ import io.kotest.matchers.string.shouldNotContain
 /**
  * Verifiziert die JDBC-URL-Konstruktion in HikariConnectionPoolFactory pro
  * Dialekt — insbesondere die Default-Parameter, die beim Mergen mit User-
- * Parametern gesetzt werden (Plan §6.13 + Phase B.3).
+ * Parametern gesetzt werden (LF-008 / LN-009 / LN-010).
  *
  * Diese Tests bauen die URL nur — sie öffnen keine echten Connections, weil
- * für PostgreSQL/MySQL kein Treiber im Test-Classpath ist (das wäre Phase B
- * Testcontainers-Scope).
+ * für PostgreSQL/MySQL kein Treiber im Test-Classpath ist.
  */
 class HikariJdbcUrlTest : FunSpec({
 
@@ -68,7 +67,7 @@ class HikariJdbcUrlTest : FunSpec({
         HikariConnectionPoolFactory.buildJdbcUrl(cfg) shouldContain ":5432/"
     }
 
-    // ─── MySQL defaults (F8 from plan §3.3 / §6.13) ─────────────
+    // ─── LF-008 / LN-009 / LN-010: MySQL streaming defaults ──────
 
     test("MySQL JDBC URL injects useCursorFetch=true by default") {
         val url = HikariConnectionPoolFactory.buildJdbcUrl(mysqlConfig())

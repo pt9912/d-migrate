@@ -14,7 +14,7 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 /**
- * 0.8.0 Phase E — Kontraktabdeckung fuer [TemporalFormatPolicy].
+ * LF-006 / LN-022 / LN-023: Kontraktabdeckung fuer [TemporalFormatPolicy].
  *
  * Referenz: `docs/ImpPlan-0.8.0-E.md` Abschnitt 4 (Leitlinien) und
  * Abschnitt 6 (Teststrategie).

@@ -9,7 +9,7 @@ package dev.dmigrate.mcp.registry
  *
  * Phase B (AP 6.9) registers the 7 standard resource templates
  * (jobs, artifacts, artifact-chunks, schemas, profiles, diffs,
- * connections) via `PhaseBRegistries.resourceRegistry()`. Concrete
+ * connections) via `McpContractRegistries.resourceRegistry()`. Concrete
  * resource projections are NOT registered here — they're produced on
  * the fly by `ResourcesListHandler` from the configured
  * `ResourceStores`. Phase C/D can register concrete resources here

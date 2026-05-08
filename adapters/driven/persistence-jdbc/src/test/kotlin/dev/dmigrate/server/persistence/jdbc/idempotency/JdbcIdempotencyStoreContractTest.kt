@@ -3,7 +3,7 @@ package dev.dmigrate.server.persistence.jdbc.idempotency
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.IdempotencyStoreContractTests
 import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -30,7 +30,7 @@ private var testDataSource: HikariDataSource? = null
 class JdbcIdempotencyStoreContractTest : IdempotencyStoreContractTests({
     val ds = testDataSource
         ?: error("DataSource not initialised — beforeSpec hook missed?")
-    truncatePhaseETables(ds)
+    truncateServerStateTables(ds)
     JdbcIdempotencyStore(JdbcTransactionRunner(ds))
 }) {
     init {
@@ -46,7 +46,7 @@ class JdbcIdempotencyStoreContractTest : IdempotencyStoreContractTests({
                 poolName = "phase-e-idempotency-contract"
             }
             testDataSource = HikariDataSource(cfg)
-            PhaseEMigrationRunner(testDataSource!!).migrate()
+            JdbcMigrationRunner(testDataSource!!).migrate()
         }
 
         afterSpec {
@@ -57,7 +57,7 @@ class JdbcIdempotencyStoreContractTest : IdempotencyStoreContractTests({
     }
 }
 
-private fun truncatePhaseETables(ds: HikariDataSource) {
+private fun truncateServerStateTables(ds: HikariDataSource) {
     ds.connection.use { conn ->
         conn.createStatement().use { stmt ->
             stmt.execute(

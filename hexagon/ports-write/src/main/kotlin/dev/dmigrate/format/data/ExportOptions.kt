@@ -22,7 +22,7 @@ data class ExportOptions(
     /**
      * CSV: ob ein BOM am Dateianfang geschrieben wird.
      *
-     * 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4 / Entscheidung D1):
+     * LF-009 / LF-013:
      * Das geschriebene BOM passt zum ausgewaehlten [encoding] — also
      * `EF BB BF` fuer UTF-8, `FE FF` fuer UTF-16 BE und `FF FE` fuer
      * UTF-16 LE. Fuer andere Encodings (z.B. ISO-8859-1, Windows-1252)

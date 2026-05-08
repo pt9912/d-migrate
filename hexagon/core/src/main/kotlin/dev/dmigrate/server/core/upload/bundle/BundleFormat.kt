@@ -45,7 +45,7 @@ object BundleFormat {
  * `VALIDATION_ERROR`-Details ohne lokale Pfade (Plan §4 wortlaut).
  *
  * Defaults sind bewusst konservativ — Operator kann sie pro Deployment
- * über [PhaseFDataRunnerDependencies] hochsetzen, sollte aber nie über
+ * über [DataRunnerDependencies] hochsetzen, sollte aber nie über
  * 1 GiB / 100 MiB pro Entry / 1000 Entries hinausgehen ohne
  * Quota-/Disk-Audit.
  */

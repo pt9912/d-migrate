@@ -28,7 +28,7 @@ private val IntegrationTag = NamedTag("integration")
  * Tagged `integration` so the default `./gradlew test` excludes it.
  * Activated via `./gradlew test -PintegrationTests`.
  */
-class PhaseEMigrationRunnerIntegrationTest : FunSpec({
+class JdbcMigrationRunnerIntegrationTest : FunSpec({
 
     tags(IntegrationTag)
 
@@ -58,7 +58,7 @@ class PhaseEMigrationRunnerIntegrationTest : FunSpec({
 
     test("first migrate() applies V1 and reports success=true with 1 migration") {
         val ds = dataSource!!
-        val runner = PhaseEMigrationRunner(ds)
+        val runner = JdbcMigrationRunner(ds)
 
         val result = runner.migrate()
 
@@ -118,7 +118,7 @@ class PhaseEMigrationRunnerIntegrationTest : FunSpec({
 
     test("running migrate() again is idempotent — zero new migrations applied") {
         val ds = dataSource!!
-        val runner = PhaseEMigrationRunner(ds)
+        val runner = JdbcMigrationRunner(ds)
 
         val rerun = runner.migrate()
 
@@ -129,7 +129,7 @@ class PhaseEMigrationRunnerIntegrationTest : FunSpec({
     test("validate() reports no drift after migrate") {
         val ds = dataSource!!
         // Throws FlywayValidateException on drift; success is reaching here.
-        PhaseEMigrationRunner(ds).validate()
+        JdbcMigrationRunner(ds).validate()
     }
 })
 

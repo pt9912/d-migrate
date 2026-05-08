@@ -1,8 +1,8 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * Low-level JSON-Schema primitives shared by [PhaseBToolSchemas]
- * and [PhaseDListToolSchemas]. Lives at top-level of the schema
+ * Low-level JSON-Schema primitives shared by [McpToolSchemas]
+ * and [McpListToolSchemas]. Lives at top-level of the schema
  * package so both schema registries can use the same builders
  * without one importing internal members of the other — keeps
  * each registry under the detekt LargeClass / TooManyFunctions

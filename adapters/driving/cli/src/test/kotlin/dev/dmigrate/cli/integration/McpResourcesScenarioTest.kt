@@ -15,7 +15,7 @@ private val IntegrationTag = NamedTag("integration")
  * `resources/templates/list`).
  *
  * The discovery `*_list` tools have their own scenario test
- * (`McpPhaseDDiscoveryScenarioTest`); this spec focuses on:
+ * (`McpDiscoveryScenarioTest`); this spec focuses on:
  *
  * - the `resources/list` walker round-trips the HMAC-sealed cursor
  *   from AP D8 sub-commit 1 across both transports
@@ -32,7 +32,7 @@ private val IntegrationTag = NamedTag("integration")
  *   the pinned counts and field expectations.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-class McpPhaseDResourcesScenarioTest : FunSpec({
+class McpResourcesScenarioTest : FunSpec({
 
     tags(IntegrationTag)
 

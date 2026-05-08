@@ -4,9 +4,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -39,9 +39,9 @@ import java.time.ZoneOffset
 /**
  * Phase F § 8.8 (F.8 4/4) — End-to-End-Integration des
  * `data_transfer_start`-Tools durch den realen `tools/call`-Pfad in
- * [McpServiceImpl] mit der produktiven [PhaseERegistries]-Registry.
+ * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  */
-class McpPhaseFDataTransferStartScenarioTest : FunSpec({
+class McpDataTransferStartScenarioTest : FunSpec({
 
     val tenant = Fixtures.tenant("acme")
     val now: Instant = Instant.parse("2026-05-06T12:00:00Z")
@@ -60,13 +60,13 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
         )
     }
 
-    fun phaseEWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseEWiring {
+    fun operationalWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val connectionStore = InMemoryConnectionReferenceStore()
         seedConnection(connectionStore, tenant, "source-db")
         seedConnection(connectionStore, tenant, "target-db")
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -78,8 +78,8 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
             clock = clock,
             connectionStore = connectionStore,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -88,8 +88,8 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
         )
     }
 
-    fun service(wiring: PhaseEWiring): McpServiceImpl {
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+    fun service(wiring: OperationalMcpWiring): McpServiceImpl {
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val principal = Fixtures.principalContext(principalId = "alice", tenant = "acme")
             .copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
         return McpServiceImpl(
@@ -103,7 +103,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
         svc.toolsCall(ToolsCallParams(name = tool, arguments = args)).get()
 
     test("Allow-Policy + gueltige Args -> Success-Envelope mit jobId/resourceUri/executionMeta + JobStore-Eintrag") {
-        val w = phaseEWiring(PolicyEffect.Allow)
+        val w = operationalWiring(PolicyEffect.Allow)
         val svc = service(w)
         val args = JsonParser.parseString(
             """
@@ -124,13 +124,13 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
         payload.getAsJsonObject("executionMeta").has("requestId") shouldBe true
 
         val jobId = payload.get("jobId").asString
-        val record = w.phaseCWiring.jobStore.findById(tenant, jobId)
+        val record = w.runtimeWiring.jobStore.findById(tenant, jobId)
             ?: error("expected JobRecord $jobId in store")
         record.managedJob.operation shouldBe "data_transfer"
     }
 
     test("Idempotenter Retry liefert dieselbe jobId") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -150,7 +150,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
     }
 
     test("targetConnectionRef fehlt -> VALIDATION_ERROR") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -166,7 +166,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
     }
 
     test("Unbekannte sourceConnectionRef -> RESOURCE_NOT_FOUND") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -182,7 +182,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
     }
 
     test("Transfer mit filter + sinceColumn/since -> Success") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -201,7 +201,7 @@ class McpPhaseFDataTransferStartScenarioTest : FunSpec({
     }
 
     test("data_transfer_start ist im Wire-Schema vom Phase-F-Output (resourceUri + executionMeta)") {
-        val schemas = dev.dmigrate.mcp.schema.PhaseBToolSchemas.forTool("data_transfer_start")
+        val schemas = dev.dmigrate.mcp.schema.McpToolSchemas.forTool("data_transfer_start")
             ?: error("data_transfer_start schema missing")
         val output = schemas.outputSchema
         @Suppress("UNCHECKED_CAST")

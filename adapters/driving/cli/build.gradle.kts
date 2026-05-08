@@ -57,7 +57,7 @@ dependencies {
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:audit-logging"))
     // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
-    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliPhaseCWiring)
+    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliRuntimeWiring)
     // konsumieren denselben YamlConnectionReferenceLoader.
     implementation(project(":adapters:driven:connection-config"))
     // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
@@ -91,7 +91,7 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.14.0")
 
     // AP 6.24 E8: validate Phase-C tool runtime outputs against the
-    // PhaseBToolSchemas output schemas (JSON Schema 2020-12). Test-
+    // McpToolSchemas output schemas (JSON Schema 2020-12). Test-
     // scope only — the production server publishes the schemas via
     // tools/list but does not validate dispatch responses against them.
     testImplementation("com.networknt:json-schema-validator:1.5.4")

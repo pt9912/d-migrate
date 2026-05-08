@@ -5,7 +5,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 
 /**
- * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.1):
+ * LF-008 / LF-013 / LN-006 / LN-012:
  * deterministische Vertragstests fuer den Options-Fingerprint.
  */
 class ExportOptionsFingerprintTest : FunSpec({

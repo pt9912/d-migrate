@@ -37,16 +37,16 @@ import java.nio.file.Path
 import java.util.UUID
 
 /**
- * Phase-E Wiring-Bundle parallel zu [PhaseCWiring]. Komponiert die
+ * Phase-E Wiring-Bundle parallel zu [McpRuntimeWiring]. Komponiert die
  * Services, die die Phase-E-Tool-Handler aus AP E.6 (3/4) brauchen,
  * sodass das Bootstrap nur die Ports und (optional) Konfigurationen
  * uebergibt — Service-Konstruktion erfolgt mit defaults-rueckwaerts.
  *
- * Zusammenspiel mit [PhaseCWiring]:
+ * Zusammenspiel mit [McpRuntimeWiring]:
  *
- * - [PhaseEWiring] traegt das gemeinsame [PhaseCWiring] (`jobStore`,
+ * - [OperationalMcpWiring] traegt das gemeinsame [McpRuntimeWiring] (`jobStore`,
  *   `quotaService`, `auditSink`, `clock`, `connectionStore`, …) als
- *   Pflichtfeld; Tool-Handler greifen via `phaseCWiring.<x>` darauf zu.
+ *   Pflichtfeld; Tool-Handler greifen via `runtimeWiring.<x>` darauf zu.
  * - Phase-E-eigene Ports (Idempotency, JobStart-Transaction, Worker-
  *   Handle-Registry, ApprovalGrantStore) sind separate Pflichtfelder,
  *   weil sie keine Phase-C-Vorgaenger haben.
@@ -59,14 +59,14 @@ import java.util.UUID
  * - [grantIssuer] defaultet auf [FailClosedGrantIssuer] — keine Grants
  *   ohne explizite Konfiguration.
  *
- * Die Konstruktion folgt dem [PhaseCWiring]-Muster: spaetere Default-
+ * Die Konstruktion folgt dem [McpRuntimeWiring]-Muster: spaetere Default-
  * Werte verwenden frueher deklarierte Parameter, sodass die ganze
  * Service-Kette aus den Pflichtfeldern allein eine voll funktionsfaehige
  * Bundle liefert.
  */
-data class PhaseEWiring(
+data class OperationalMcpWiring(
     /** Phase-C-Bundle (jobStore, quotaService, auditSink, clock, connectionStore, …). */
-    val phaseCWiring: PhaseCWiring,
+    val runtimeWiring: McpRuntimeWiring,
     val idempotencyStore: IdempotencyStore,
     val jobStartTransaction: JobStartTransaction,
     val workerHandleRegistry: WorkerHandleRegistry,
@@ -89,10 +89,10 @@ data class PhaseEWiring(
     val uploadInitOrchestrator: UploadInitOrchestrator = UploadInitOrchestrator(
         syncEffectStore = syncEffectStore,
         claimStore = uploadInitClaimStore,
-        sessionStore = phaseCWiring.uploadSessionStore,
+        sessionStore = runtimeWiring.uploadSessionStore,
         policyService = policyService,
         approvalFingerprintService = uploadInitApprovalFingerprint,
-        quotaService = phaseCWiring.quotaService,
+        quotaService = runtimeWiring.quotaService,
         approvalGrantStore = approvalGrantStore,
         approvalGrantService = approvalGrantService,
     ),
@@ -107,7 +107,7 @@ data class PhaseEWiring(
     ),
     /**
      * Phase E §7.9 owner-aware Quota-Service. Default-Komposition:
-     * delegate auf [PhaseCWiring.quotaService], owner-Store als
+     * delegate auf [McpRuntimeWiring.quotaService], owner-Store als
      * In-Memory. Production-Wiring kann eine persistente OwnerStore-
      * Implementierung injizieren.
      *
@@ -116,7 +116,7 @@ data class PhaseEWiring(
      */
     val quotaReservationOwnerStore: QuotaReservationOwnerStore = InMemoryQuotaReservationOwnerStore(),
     val ownerAwareQuotaService: OwnerAwareQuotaService = OwnerAwareQuotaService(
-        delegate = phaseCWiring.quotaService,
+        delegate = runtimeWiring.quotaService,
         ownerStore = quotaReservationOwnerStore,
     ),
     val approvedRetryService: ApprovedRetryService = ApprovedRetryService(
@@ -140,14 +140,14 @@ data class PhaseEWiring(
     /**
      * Backward-compat-Shortcut: zeigte vor E3.5 auf `SyncExecutor`. Heute
      * abgeleitet aus [executorBundle], damit Bestands-Caller
-     * (PhaseEWiring(workerExecutor = ...)) weiter funktionieren — ein
+     * (OperationalMcpWiring(workerExecutor = ...)) weiter funktionieren — ein
      * expliziter Override hier gewinnt gegenueber `executorBundle.executor`.
      */
     val workerExecutor: java.util.concurrent.Executor = executorBundle.executor,
     val jobDispatcher: JobDispatcher = JobDispatcher(
-        jobStore = phaseCWiring.jobStore,
+        jobStore = runtimeWiring.jobStore,
         executor = workerExecutor,
-        clock = phaseCWiring.clock,
+        clock = runtimeWiring.clock,
         quotaService = ownerAwareQuotaService,
         // Plan E3 § 3.7 (E3.6): scheduled-Event nutzt queueDepth aus
         // dem Lifecycle-Snapshot. Dispatcher kennt den Lifecycle-Typ
@@ -155,7 +155,7 @@ data class PhaseEWiring(
         executorStatusSnapshot = { executorBundle.lifecycle.status() },
     ),
     val jobCancelService: JobCancelService = JobCancelService(
-        jobStore = phaseCWiring.jobStore,
+        jobStore = runtimeWiring.jobStore,
         workerHandleRegistry = workerHandleRegistry,
         quotaService = ownerAwareQuotaService,
     ),
@@ -163,7 +163,7 @@ data class PhaseEWiring(
      * Phase E §7.7 Worker-Factory fuer Auto-Dispatch. Der generische
      * Fallback bleibt [PassthroughJobWorkerFactory] fuer nicht verdrahtete
      * Bestandsoperationen; Phase-F-Datenoperationen laufen jedoch ueber
-     * [PhaseFDataOperationWorkerFactory] und failen geschlossen, solange
+     * [DataOperationWorkerFactory] und failen geschlossen, solange
      * kein echter Import-/Transfer-Runner injiziert wurde.
      */
     val fallbackJobWorkerFactory: JobWorkerFactory = PassthroughJobWorkerFactory,
@@ -171,18 +171,18 @@ data class PhaseEWiring(
     val dataTransferWorkerFactory: JobWorkerFactory? = null,
     val connectionSecretResolver: ConnectionSecretResolver? = null,
     val dataRunnerTempDirectory: Path? = null,
-    val dataRunnerDependencies: PhaseFDataRunnerDependencies? =
+    val dataRunnerDependencies: DataRunnerDependencies? =
         connectionSecretResolver?.let {
-            PhaseFDataRunnerDependencies(
-                artifactStore = phaseCWiring.artifactStore,
-                artifactContentStore = phaseCWiring.artifactContentStore,
-                connectionStore = phaseCWiring.connectionStore,
-                schemaStore = phaseCWiring.schemaStore,
+            DataRunnerDependencies(
+                artifactStore = runtimeWiring.artifactStore,
+                artifactContentStore = runtimeWiring.artifactContentStore,
+                connectionStore = runtimeWiring.connectionStore,
+                schemaStore = runtimeWiring.schemaStore,
                 connectionSecretResolver = it,
                 tempDirectory = dataRunnerTempDirectory,
             )
         },
-    val jobWorkerFactory: JobWorkerFactory = PhaseFDataOperationWorkerFactory(
+    val jobWorkerFactory: JobWorkerFactory = DataOperationWorkerFactory(
         fallback = fallbackJobWorkerFactory,
         dataImportWorkerFactory = dataImportWorkerFactory,
         dataTransferWorkerFactory = dataTransferWorkerFactory,

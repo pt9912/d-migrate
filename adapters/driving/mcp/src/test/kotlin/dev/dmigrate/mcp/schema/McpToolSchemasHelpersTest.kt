@@ -12,7 +12,7 @@ import io.kotest.matchers.shouldBe
  * change cannot regress strictness without an explicit Goldenfile
  * diff.
  */
-class PhaseBToolSchemasHelpersTest : FunSpec({
+class McpToolSchemasHelpersTest : FunSpec({
 
     test("artifactRefField is a string field constrained by the resource-URI pattern") {
         val field = artifactRefField()
@@ -29,7 +29,7 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
     }
 
     test("executionMetaField requires requestId and forbids additional properties") {
-        val field = PhaseBToolSchemas.executionMetaField()
+        val field = McpToolSchemas.executionMetaField()
         field["type"] shouldBe "object"
         field["additionalProperties"] shouldBe false
         field["required"] shouldBe listOf("requestId")
@@ -38,7 +38,7 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
     }
 
     test("findingItem without details slot has the four required keys + closed shape") {
-        val item = PhaseBToolSchemas.findingItem()
+        val item = McpToolSchemas.findingItem()
         item["type"] shouldBe "object"
         item["additionalProperties"] shouldBe false
         val required = stringListValue(item["required"])
@@ -48,7 +48,7 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
     }
 
     test("findingItem severity enum uses the wire constants from SchemaFindingSeverity") {
-        val severity = mapValue(mapValue(PhaseBToolSchemas.findingItem()["properties"])["severity"])
+        val severity = mapValue(mapValue(McpToolSchemas.findingItem()["properties"])["severity"])
         val values = stringListValue(severity["enum"])
         values shouldBe listOf(
             SchemaFindingSeverity.ERROR,
@@ -63,15 +63,15 @@ class PhaseBToolSchemasHelpersTest : FunSpec({
             "additionalProperties" to false,
             "properties" to mapOf("foo" to mapOf("type" to "string")),
         )
-        val item = PhaseBToolSchemas.findingItem(detailsSchema = customDetails)
+        val item = McpToolSchemas.findingItem(detailsSchema = customDetails)
         val properties = mapValue(item["properties"])
         properties["details"] shouldBe customDetails
     }
 
     test("findingArray wraps the findingItem under array.items") {
-        val arr = PhaseBToolSchemas.findingArray()
+        val arr = McpToolSchemas.findingArray()
         arr["type"] shouldBe "array"
-        arr["items"] shouldBe PhaseBToolSchemas.findingItem()
+        arr["items"] shouldBe McpToolSchemas.findingItem()
     }
 })
 

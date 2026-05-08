@@ -4,8 +4,8 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.quota.DefaultQuotaService
@@ -44,14 +44,14 @@ import java.util.Base64
  * Validiert, dass der NDJSON-stdio-Transport mehrere
  * `tools/call artifact_upload`-Frames hintereinander entgegennimmt,
  * jeden ueber den `ArtifactUploadHandler` der produktiven
- * [PhaseCRegistries.defaultToolRegistry]-Verdrahtung dispatcht und
+ * [McpRuntimeRegistries.defaultToolRegistry]-Verdrahtung dispatcht und
  * am Final-Segment den finalisierten `UPLOAD_INPUT`-Artefakt-Ref im
  * Wire-Antwortenvelope ausweist. Init wird bewusst manuell gesetzt,
  * weil dieser Test den Upload-/Finalisationspfad ueber stdio pin't;
  * der policy-gesteuerte `artifact_upload_init`-Pfad wird separat
  * ueber Registry-Tests abgedeckt.
  */
-class McpPhaseFStdioMultiSegmentUploadIT : FunSpec({
+class McpStdioMultiSegmentUploadIT : FunSpec({
 
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
@@ -74,13 +74,13 @@ class McpPhaseFStdioMultiSegmentUploadIT : FunSpec({
     }
 
     test("F.10: mehrsegmentiger CSV-Upload (job_input) ueber stdio liefert COMPLETED + Bytes via artifact_chunk_get") {
-        // 1. PhaseCWiring + Registry — produktive Default-Verdrahtung
+        // 1. McpRuntimeWiring + Registry — produktive Default-Verdrahtung
         // (inkl. JobInputFinalizer-Wiring aus F.5 3/3).
         val sessionStore = InMemoryUploadSessionStore()
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
         val quotaStore = InMemoryQuotaStore()
-        val wiring = PhaseCWiring(
+        val wiring = McpRuntimeWiring(
             uploadSessionStore = sessionStore,
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -91,7 +91,7 @@ class McpPhaseFStdioMultiSegmentUploadIT : FunSpec({
             limits = McpLimitsConfig(maxUploadSegmentBytes = 16),
             clock = clock,
         )
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
         // 2. Stdio-bound Principal — die Token-Registry haengt Phase B/C
         // an; fuer den IT genuegt das pre-bound Principal. `dmigrate:read`

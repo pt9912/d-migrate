@@ -53,7 +53,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Bewusst NICHT in diesem Test:
  *
- * - MCP-Tool-Handler-Pfad (das deckt McpPhaseEStartScenarioTest aus
+ * - MCP-Tool-Handler-Pfad (das deckt McpJobStartScenarioTest aus
  *   E.6 (4/4) ab; der hier testet die rein application-seitige Kette).
  * - Produktive ConnectionMaterializer-/JobArtifactPublisher-Adapter
  *   (Stub-Lambdas reichen fuer den Wire-Beweis).

@@ -3,7 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.connection.LoaderBackedConnectionReferenceStore
 import dev.dmigrate.connection.YamlConnectionReferenceLoader
 import dev.dmigrate.mcp.cursor.CursorKeyring
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
 import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
@@ -33,7 +33,7 @@ import java.time.Duration
  * - `FileSpoolAssembledUploadPayloadFactory(stateDir)` keeps the
  *   AP-6.22 streaming-finalisation spool off-heap under
  *   `<stateDir>/assembly/<uploadSessionId>/<uuid>.bin`. The default
- *   `AssembledUploadPayloadFactory.inMemory()` from `PhaseCWiring`
+ *   `AssembledUploadPayloadFactory.inMemory()` from `McpRuntimeWiring`
  *   would defeat the AP-6.22 heap guarantee — production CLI MUST
  *   inject the file-spool factory here.
  *
@@ -58,7 +58,7 @@ import java.time.Duration
  * the wiring from a state dir that the caller has already validated
  * and locked.
  */
-internal object McpCliPhaseCWiring {
+internal object McpCliRuntimeWiring {
     /**
      * @param connectionConfigPath optional path to the project YAML
      *  carrying Phase-D connection references (Plan-D §8 + §10.10).
@@ -73,7 +73,7 @@ internal object McpCliPhaseCWiring {
      *  Multi-tenant deployments wire one CLI invocation per tenant or
      *  override this helper.
      */
-    fun phaseCWiring(
+    fun runtimeWiring(
         stateDir: Path,
         limits: McpLimitsConfig = McpLimitsConfig(),
         clock: Clock = Clock.systemUTC(),
@@ -81,9 +81,9 @@ internal object McpCliPhaseCWiring {
         tenantId: TenantId = TenantId("default"),
         cursorKeyring: CursorKeyring? = null,
         operationTimeout: Duration = Duration.ofMinutes(5),
-    ): PhaseCWiring {
+    ): McpRuntimeWiring {
         val quotaStore = InMemoryQuotaStore()
-        val baseWiring = PhaseCWiring(
+        val baseWiring = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = FileBackedUploadSegmentStore(stateDir),
             artifactStore = InMemoryArtifactStore(),
@@ -100,7 +100,7 @@ internal object McpCliPhaseCWiring {
         val keyedWiring = cursorKeyring?.let { baseWiring.copy(cursorKeyring = it) } ?: baseWiring
         // AP D10: when a YAML config path is provided, wrap the
         // base wiring with a `LoaderBackedConnectionReferenceStore`.
-        // Default branch keeps PhaseCWiring's Empty default — Phase-C-
+        // Default branch keeps McpRuntimeWiring's Empty default — Phase-C-
         // only deployments without a YAML migrate untouched.
         return if (connectionConfigPath != null) {
             keyedWiring.copy(

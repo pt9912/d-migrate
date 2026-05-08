@@ -31,7 +31,7 @@ private val IntegrationTag = NamedTag("integration")
  *   surface `credentialRef` / `providerRef`.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-class McpPhaseDDiscoveryScenarioTest : FunSpec({
+class McpDiscoveryScenarioTest : FunSpec({
 
     tags(IntegrationTag)
 

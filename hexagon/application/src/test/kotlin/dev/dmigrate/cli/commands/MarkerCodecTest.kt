@@ -10,7 +10,7 @@ import java.time.LocalDate
 import java.time.OffsetDateTime
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1): Roundtrip-Tests
+ * LF-013 / LN-006 / LN-012: Roundtrip-Tests
  * fuer den Marker-Codec. Der Codec wiederverwendet
  * `TemporalFormatPolicy.parseSinceLiteral` fuer die Decode-Seite, damit
  * der Manifest-Vertrag keine eigene Typ-Annotation tragen muss.

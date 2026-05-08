@@ -267,8 +267,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
     }
 
     // ───────────────────────────────────────────────────────────────────
-    // 0.9.0 Phase C.2: ResumeMarker — Fresh-Track + Resume-Position
-    // (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.1)
+    // LF-013 / LN-006 / LN-012: ResumeMarker fresh track + position
     // ───────────────────────────────────────────────────────────────────
 
     test("C.2 ResumeMarker fresh-track: ORDER BY is enforced, no WHERE cascade") {

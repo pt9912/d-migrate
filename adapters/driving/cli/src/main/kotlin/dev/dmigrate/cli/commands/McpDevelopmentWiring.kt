@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.adapter.audit.logging.LoggingAuditSink
 import dev.dmigrate.server.application.quota.DefaultQuotaService
@@ -14,12 +14,12 @@ import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import java.time.Clock
 
 /**
- * Builds a [PhaseCWiring] backed entirely by in-memory ports + the
+ * Builds a [McpRuntimeWiring] backed entirely by in-memory ports + the
  * `dev.dmigrate.audit` log appender.
  *
  * **Test/dev only.** Per `ImpPlan-0.9.6-C.md` §6.21 this helper is no
  * longer the production anchor for `mcp serve` — production CLI
- * wiring goes through [McpCliPhaseCWiring.phaseCWiring], which puts
+ * wiring goes through [McpCliRuntimeWiring.runtimeWiring], which puts
  * upload segments and artefact content on disk under the resolved
  * state dir. Use this helper for Phase-C handler unit tests and for
  * embedded smoke tests where byte content does not need to survive
@@ -30,12 +30,12 @@ import java.time.Clock
  * want real quota policing wire a [DefaultQuotaService] with the
  * desired `limitFor` lambda before reaching this helper.
  */
-internal fun developmentPhaseCWiring(
+internal fun developmentMcpRuntimeWiring(
     limits: McpLimitsConfig = McpLimitsConfig(),
     clock: Clock = Clock.systemUTC(),
-): PhaseCWiring {
+): McpRuntimeWiring {
     val quotaStore = InMemoryQuotaStore()
-    return PhaseCWiring(
+    return McpRuntimeWiring(
         uploadSessionStore = InMemoryUploadSessionStore(),
         uploadSegmentStore = InMemoryUploadSegmentStore(),
         artifactStore = InMemoryArtifactStore(),

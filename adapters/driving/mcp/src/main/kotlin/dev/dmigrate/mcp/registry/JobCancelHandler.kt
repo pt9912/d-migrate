@@ -25,7 +25,7 @@ import java.time.Clock
  * - Outcome-Mapping auf das `job_cancel`-Output-Schema (E.6 (1/4)):
  *   `{jobId, operation, status, terminal, resourceUri, executionMeta}`.
  *   `executionMeta` projiziert die Cancel-Felder gemaess
- *   `executionMetaJobField` aus `PhaseBToolSchemas` einheitlich
+ *   `executionMetaJobField` aus `McpToolSchemas` einheitlich
  *   mit `job_status_get`.
  * - Fehlerpfade: NotFound -> `RESOURCE_NOT_FOUND` (no-oracle, ohne
  *   resourceUri-Echo); ForbiddenPrincipal -> `FORBIDDEN_PRINCIPAL`;

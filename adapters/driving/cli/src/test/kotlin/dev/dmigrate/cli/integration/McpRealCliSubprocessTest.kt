@@ -26,7 +26,7 @@ private val IntegrationTag = NamedTag("integration")
  *   - `McpCommand.run()` parses Clikt args
  *   - `StateDirOwner.resolve(...)` materialises the state dir
  *   - `McpStateDirLock.tryAcquire(...)` acquires `.lock`
- *   - `McpCliPhaseCWiring.phaseCWiring(stateDir)` builds the
+ *   - `McpCliRuntimeWiring.runtimeWiring(stateDir)` builds the
  *     production file-backed wiring (NOT the test-only
  *     `IntegrationFixtures.integrationWiring`)
  *   - `McpServerBootstrap.startStdio(...)` enters the NDJSON loop

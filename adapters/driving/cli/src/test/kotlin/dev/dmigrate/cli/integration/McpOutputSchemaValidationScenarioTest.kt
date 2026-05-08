@@ -28,7 +28,7 @@ private val IntegrationTag = NamedTag("integration")
  * BOTH transports and validates the runtime response payload against
  * the OUTPUT SCHEMA the server itself publishes through `tools/list`.
  *
- * Why pull the schemas off the wire (not from `PhaseBToolSchemas`):
+ * Why pull the schemas off the wire (not from `McpToolSchemas`):
  * - `tools/list` is the contract surface clients see; validating
  *   against it covers a real "server announces X, delivers X" loop
  *   instead of just reaching into mcp-internal data
@@ -217,7 +217,7 @@ private fun collectOutputSchemas(harness: McpClientHarness): Map<String, JsonSch
     return tools.associateBy(ToolMetadata::name) { tool ->
         val schemaJson = gson.toJson(tool.outputSchema)
         val node: JsonNode = jackson.readTree(schemaJson)
-        // 2020-12 dialect is enforced by PhaseBToolSchemasTest at the
+        // 2020-12 dialect is enforced by McpToolSchemasTest at the
         // unit level; this factory commits the test runner to that
         // dialect so a future schema that drops `$schema` still
         // validates with the same semantics.

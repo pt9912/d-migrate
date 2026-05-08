@@ -453,10 +453,10 @@ class DataExportRunnerValidationTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.4 / §4.5):
+    // LF-008 / LF-013 / LN-012:
     // Resume-CLI-Preflight. Der Runner akzeptiert `--resume` fuer
     // file-basierte Exports und lehnt stdout-Pfade mit Exit 2 ab.
-    // Die Resume-Runtime selbst folgt in Phase B/C/D.
+    // Die Resume-Runtime wird ueber den Checkpoint-Vertrag verdrahtet.
     // ────────────────────────────────────────────────────────────
 
     test("Phase A §4.4: --resume ohne --output (stdout) endet mit Exit 2") {
@@ -498,7 +498,7 @@ class DataExportRunnerValidationTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────────
-    // 0.9.0 Phase C.1 (docs/ImpPlan-0.9.0-C1.md):
+    // LF-008 / LF-013 / LN-006 / LN-012:
     // Manifest-Lifecycle + Resume-Preflight + Skipped-COMPLETED.
     // ────────────────────────────────────────────────────────────────
 

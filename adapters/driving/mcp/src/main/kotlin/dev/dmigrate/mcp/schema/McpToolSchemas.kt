@@ -22,7 +22,7 @@ package dev.dmigrate.mcp.schema
  */
 /**
  * File-level constant so it is initialised before the
- * [PhaseBToolSchemas] object's `SCHEMAS` builder runs (which
+ * [McpToolSchemas] object's `SCHEMAS` builder runs (which
  * references it via `jobProgressField()` → `jobProgressNumericValuesField()`
  * → here).
  */
@@ -36,11 +36,11 @@ private val JOB_PROGRESS_NUMERIC_KEYS_DATA: List<String> = listOf(
     "bytesWritten",
 )
 
-internal object PhaseBToolSchemas {
+internal object McpToolSchemas {
     // Schema-builder primitives (stringField, obj, schemaPair, …)
     // live as top-level functions in `SchemaPrimitives.kt`.
     // List-tool schemas (job_list / artifact_list / schema_list /
-    // profile_list / diff_list) live in `PhaseDListToolSchemas` —
+    // profile_list / diff_list) live in `McpListToolSchemas` —
     // this object stays focused on Phase-B/C tool registrations
     // and the AP-6.23 D1-D6 building blocks the typed Phase-C
     // tools share.
@@ -138,10 +138,10 @@ internal object PhaseBToolSchemas {
                 .required("dialect", "statementCount", "summary", "findings", "truncated"),
         ))
         // Phase-D §10.5 + §6.4: typed list-tool schemas live in
-        // `PhaseDListToolSchemas`; the registry merges them in
+        // `McpListToolSchemas`; the registry merges them in
         // through one putAll so the lookup-by-tool-name surface
         // stays unified.
-        putAll(PhaseDListToolSchemas.allPairs())
+        putAll(McpListToolSchemas.allPairs())
 
         put("job_status_get", schemaPair(
             input = obj(
@@ -796,7 +796,7 @@ internal object PhaseBToolSchemas {
 
     // arrayField/enumField extracted to SchemaPrimitives.kt;
     // list-tool schemas + their items extracted to
-    // PhaseDListToolSchemas.kt (Plan-D §10.5/§6.4).
+    // McpListToolSchemas.kt (Plan-D §10.5/§6.4).
 
     /**
      * Phase-E §7.6 Job-Start-Tools (`schema_reverse_start`,

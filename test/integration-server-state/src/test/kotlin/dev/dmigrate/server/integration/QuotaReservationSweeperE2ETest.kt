@@ -7,7 +7,7 @@ import dev.dmigrate.server.application.quota.QuotaReservationSweeper
 import dev.dmigrate.server.application.quota.QuotaReservationStatus
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
@@ -57,7 +57,7 @@ class QuotaReservationSweeperE2ETest : FunSpec({
             poolName = "phase-e-sweeper-e2e"
         }
         sweeperTestDataSource = HikariDataSource(cfg)
-        PhaseEMigrationRunner(sweeperTestDataSource!!).migrate()
+        JdbcMigrationRunner(sweeperTestDataSource!!).migrate()
     }
 
     afterSpec {

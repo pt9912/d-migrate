@@ -4,7 +4,7 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.application.quota.QuotaReservationOwnerStoreContractTests
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
 
@@ -42,7 +42,7 @@ class JdbcQuotaReservationOwnerStoreContractTest : QuotaReservationOwnerStoreCon
                 poolName = "phase-e-ownerstore-contract"
             }
             ownerStoreTestDataSource = HikariDataSource(cfg)
-            PhaseEMigrationRunner(ownerStoreTestDataSource!!).migrate()
+            JdbcMigrationRunner(ownerStoreTestDataSource!!).migrate()
         }
 
         afterSpec {

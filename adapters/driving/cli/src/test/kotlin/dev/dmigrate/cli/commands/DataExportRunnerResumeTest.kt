@@ -497,7 +497,7 @@ class DataExportRunnerResumeTest : FunSpec({
             resumeStore.completeCount shouldBe 1
         }
 
-        // 0.9.0 Phase C.1 Review-Fix (§4.4 / §5.2):
+        // LF-008 / LF-013 / LN-012:
         // pipeline.checkpoint.directory aus der Config wird jetzt ueber
         // CheckpointConfig.merge(...) verdrahtet.
 

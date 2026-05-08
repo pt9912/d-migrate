@@ -276,11 +276,11 @@ class ValueDeserializerTest : FunSpec({
             OffsetDateTime.parse(input)
     }
 
-    // 0.8.0 Phase E (`docs/ImpPlan-0.8.0-E.md` §4.1):
+    // LF-006 / LN-022 / LN-023:
     // Der Lesepfad folgt exakt den JDK-ISO-Profilen; reduzierte Zeitformen
     // ohne Sekunden sind dort legal und werden akzeptiert.
     // Der Schreibpfad bleibt demgegenueber kanonisch mit Sekunden.
-    test("Phase E §4.1: TIMESTAMP ohne Sekunden-Anteil wird akzeptiert (Lesepfad-Toleranz)") {
+    test("TIMESTAMP ohne Sekunden-Anteil wird akzeptiert (Lesepfad-Toleranz)") {
         forCol(Types.TIMESTAMP).deserialize(tableName, "c", "2026-04-07T10:15") shouldBe
             LocalDateTime.parse("2026-04-07T10:15")
     }

@@ -1,6 +1,6 @@
 package dev.dmigrate.mcp.resources
 
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.server.ports.AiArtifactMetadataStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.ArtifactContentStore
@@ -45,24 +45,24 @@ data class ResourceStores(
         )
 
         /**
-         * Builds a [ResourceStores] from a [PhaseCWiring]. Job,
+         * Builds a [ResourceStores] from a [McpRuntimeWiring]. Job,
          * artifact and schema stores are taken from the wiring so
          * `resources/read` sees the same records the Phase-C tools
          * write. Profile, diff and connection stores fall back to
-         * empty placeholders because [PhaseCWiring] does not carry
+         * empty placeholders because [McpRuntimeWiring] does not carry
          * them — Phase-C tools never touch those families. AP 6.9
          * acceptance: production bootstrap uses this factory so
          * `resources/read` is never wired against [empty] when a
          * Phase-C wiring is in scope.
          */
-        fun fromPhaseCWiring(
-            wiring: PhaseCWiring,
+        fun fromMcpRuntimeWiring(
+            wiring: McpRuntimeWiring,
             aiArtifactMetadataStore: AiArtifactMetadataStore? = null,
         ): ResourceStores = ResourceStores(
             jobStore = wiring.jobStore,
             artifactStore = wiring.artifactStore,
             schemaStore = wiring.schemaStore,
-            // AP D6 added profile/diff stores to PhaseCWiring (default
+            // AP D6 added profile/diff stores to McpRuntimeWiring (default
             // Empty); wire them through so Phase-D `resources/read` and
             // the discovery list handlers see the same backing store.
             profileStore = wiring.profileStore,

@@ -159,7 +159,7 @@ class EncodingDetectorTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────────
-    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // LF-009 / LF-013:
     // BOM-/Encoding-Pfade werden mit nicht-lateinischen Payloads abgesichert.
     // ──────────────────────────────────────────────────────────────────
 

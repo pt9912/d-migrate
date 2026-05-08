@@ -1,6 +1,6 @@
 package dev.dmigrate.mcp.protocol
 
-import dev.dmigrate.mcp.registry.PhaseBRegistries
+import dev.dmigrate.mcp.registry.McpContractRegistries
 import dev.dmigrate.mcp.registry.ToolCallContext
 import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.registry.ToolContent

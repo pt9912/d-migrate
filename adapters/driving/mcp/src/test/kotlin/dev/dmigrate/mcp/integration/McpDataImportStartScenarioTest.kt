@@ -5,9 +5,9 @@ import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
 import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -46,7 +46,7 @@ import java.time.ZoneOffset
 /**
  * Phase F § 8.7 (F.7 5/5) — End-to-End-Integration des
  * `data_import_start`-Tools durch den realen `tools/call`-Pfad in
- * [McpServiceImpl] mit der produktiven [PhaseERegistries]-Registry.
+ * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  *
  * Pin't:
  *
@@ -59,7 +59,7 @@ import java.time.ZoneOffset
  *   angelegt; ohne explizit injizierten Import-Runner terminiert der
  *   Datenjob fail-closed, statt erfolgreichen JDBC-I/O zu simulieren.
  */
-class McpPhaseFDataImportStartScenarioTest : FunSpec({
+class McpDataImportStartScenarioTest : FunSpec({
 
     val tenant = Fixtures.tenant("acme")
     val now: Instant = Instant.parse("2026-05-06T12:00:00Z")
@@ -122,7 +122,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         )
     }
 
-    fun phaseEWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): PhaseEWiring {
+    fun operationalWiring(policyDefault: PolicyEffect = PolicyEffect.Allow): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val artifactStore = InMemoryArtifactStore()
@@ -130,7 +130,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         val connectionStore = InMemoryConnectionReferenceStore()
         seedArtifact(artifactStore, artifactContentStore, tenant, "art-import-1")
         seedConnection(connectionStore, tenant, "warehouse")
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -142,8 +142,8 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
             clock = clock,
             connectionStore = connectionStore,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -152,8 +152,8 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         )
     }
 
-    fun service(wiring: PhaseEWiring): McpServiceImpl {
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+    fun service(wiring: OperationalMcpWiring): McpServiceImpl {
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val principal = Fixtures.principalContext(principalId = "alice", tenant = "acme")
             .copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
         return McpServiceImpl(
@@ -167,7 +167,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         svc.toolsCall(ToolsCallParams(name = tool, arguments = args)).get()
 
     test("Allow-Policy + gueltige Args -> Success-Envelope mit jobId/resourceUri/executionMeta + JobStore-Eintrag") {
-        val w = phaseEWiring(PolicyEffect.Allow)
+        val w = operationalWiring(PolicyEffect.Allow)
         val svc = service(w)
         val args = JsonParser.parseString(
             """
@@ -190,13 +190,13 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
 
         // Plan-§-8.7 Akzeptanz: durabler JobRecord mit operation=data_import.
         val jobId = payload.get("jobId").asString
-        val record = w.phaseCWiring.jobStore.findById(tenant, jobId)
+        val record = w.runtimeWiring.jobStore.findById(tenant, jobId)
             ?: error("expected JobRecord $jobId in store")
         record.managedJob.operation shouldBe "data_import"
     }
 
     test("Idempotenter Retry liefert dieselbe jobId") {
-        val w = phaseEWiring(PolicyEffect.Allow)
+        val w = operationalWiring(PolicyEffect.Allow)
         val svc = service(w)
         val args = JsonParser.parseString(
             """
@@ -217,7 +217,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
     }
 
     test("targetConnectionRef fehlt -> VALIDATION_ERROR (vor Store-Write)") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """{"idempotencyKey":"k-noref","artifactId":"art-import-1"}""",
         ).asJsonObject
@@ -228,7 +228,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
     }
 
     test("Unbekanntes artifactId -> RESOURCE_NOT_FOUND") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -249,7 +249,7 @@ class McpPhaseFDataImportStartScenarioTest : FunSpec({
         // executionMeta. Der Allow-Pfad oben hat das verifiziert —
         // dieser Test pin't zusaetzlich, dass beide Felder im
         // Tool-Schema deklariert sind.
-        val schemas = dev.dmigrate.mcp.schema.PhaseBToolSchemas.forTool("data_import_start")
+        val schemas = dev.dmigrate.mcp.schema.McpToolSchemas.forTool("data_import_start")
             ?: error("data_import_start schema missing")
         val output = schemas.outputSchema
         @Suppress("UNCHECKED_CAST")

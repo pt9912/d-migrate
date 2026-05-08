@@ -6,8 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * 0.9.0 Phase D.4 (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4):
- * scannt ein Directory und erzeugt eine stabile, reihenfolge-
+ * LF-010 / LF-013 / LN-009: scannt ein Directory und erzeugt eine stabile, reihenfolge-
  * deterministische `table -> inputFile`-Zuordnung fuer Directory-
  * Importe.
  *
@@ -26,7 +25,7 @@ import java.nio.file.Path
  * 2. Mehrdeutigkeiten (mehrere Dateien mit demselben tableName in
  *    unterschiedlichen unterstuetzten Extensions) werden als Fehler
  *    gemeldet — der Importer bricht den Lauf spaeter identisch ab,
- *    aber Phase D.4 faengt es schon im Preflight.
+ *    der Preflight faengt es aber frueher.
  * 3. `tableFilter` / `tableOrder` werden angewendet wie in
  *    [ImportInput.Directory].
  *

@@ -36,20 +36,20 @@ import java.time.Clock
 import java.time.Instant
 import java.time.ZoneOffset
 
-class PhaseERegistriesTest : FunSpec({
+class OperationalMcpRegistriesTest : FunSpec({
 
     val clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC)
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
     val bob = PrincipalId("bob")
 
-    fun phaseEWiring(
+    fun operationalWiring(
         policyEffect: PolicyEffect = PolicyEffect.Allow,
-    ): PhaseEWiring {
+    ): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val quotaStore = InMemoryQuotaStore()
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -60,8 +60,8 @@ class PhaseERegistriesTest : FunSpec({
             limits = McpLimitsConfig(),
             clock = clock,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -83,7 +83,7 @@ class PhaseERegistriesTest : FunSpec({
     )
 
     test("defaultToolRegistry: Phase-E Start-Tools + job_cancel sind produktive Handler") {
-        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("schema_reverse_start")
             .shouldBeInstanceOf<SchemaReverseStartHandler>()
         registry.findHandler("data_profile_start")
@@ -95,7 +95,7 @@ class PhaseERegistriesTest : FunSpec({
     }
 
     test("defaultToolRegistry: Start-Tools + job_cancel sind nicht mehr UnsupportedToolHandler") {
-        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("schema_reverse_start")
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
         registry.findHandler("data_profile_start")
@@ -107,7 +107,7 @@ class PhaseERegistriesTest : FunSpec({
     }
 
     test("defaultToolRegistry: Phase-C-Handler bleiben unveraendert (Sample: schema_validate)") {
-        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         // schema_validate ist Phase-C, kein UnsupportedToolHandler.
         val handler = registry.findHandler("schema_validate")
         handler shouldNotBe null
@@ -117,7 +117,7 @@ class PhaseERegistriesTest : FunSpec({
     test("defaultToolRegistry: data_import_start ist Phase-F-aktiv (kein UnsupportedToolHandler)") {
         // Phase F § 8.7 (F.7 5/5): produktiver Handler statt
         // UnsupportedToolHandler.
-        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_import_start")
             .shouldBeInstanceOf<DataImportStartHandler>()
     }
@@ -125,14 +125,14 @@ class PhaseERegistriesTest : FunSpec({
     test("defaultToolRegistry: data_transfer_start ist Phase-F-aktiv (kein UnsupportedToolHandler)") {
         // Phase F § 8.8 (F.8 4/4): produktiver Handler statt
         // UnsupportedToolHandler.
-        val registry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
+        val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_transfer_start")
             .shouldBeInstanceOf<DataTransferStartHandler>()
     }
 
     test("defaultToolRegistry: artifact_upload_init job_input nutzt Phase-F-Orchestrator und reserviert Init-Quotas") {
-        val wiring = phaseEWiring(PolicyEffect.Allow)
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+        val wiring = operationalWiring(PolicyEffect.Allow)
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val args = JsonParser.parseString(
             """
             {
@@ -153,17 +153,17 @@ class PhaseERegistriesTest : FunSpec({
         val payload = JsonParser.parseString(outcome.content.single().text!!).asJsonObject
         val sessionId = payload.get("uploadSessionId").asString
 
-        val session = wiring.phaseCWiring.uploadSessionStore.findById(tenant, sessionId)!!
+        val session = wiring.runtimeWiring.uploadSessionStore.findById(tenant, sessionId)!!
         session.uploadIntent shouldBe ArtifactUploadInitHandler.INTENT_JOB_INPUT
         session.approvalKey shouldBe "upload-key-1"
         session.targetTable shouldBe "public.events"
-        wiring.phaseCWiring.quotaService.let {
-            wiring.phaseCWiring.uploadSessionStore.findById(tenant, sessionId)!!.state shouldBe UploadSessionState.ACTIVE
+        wiring.runtimeWiring.quotaService.let {
+            wiring.runtimeWiring.uploadSessionStore.findById(tenant, sessionId)!!.state shouldBe UploadSessionState.ACTIVE
         }
     }
 
     test("defaultToolRegistry: administrativer artifact_upload_abort nutzt Phase-F-Policy-Pipeline") {
-        val wiring = phaseEWiring(PolicyEffect.Allow)
+        val wiring = operationalWiring(PolicyEffect.Allow)
         val session = UploadSession(
             uploadSessionId = "ups-admin-abort",
             tenantId = tenant,
@@ -181,12 +181,12 @@ class PhaseERegistriesTest : FunSpec({
             idleTimeoutAt = clock.instant().plusSeconds(300),
             absoluteLeaseExpiresAt = clock.instant().plusSeconds(3600),
         )
-        wiring.phaseCWiring.uploadSessionStore.save(session)
+        wiring.runtimeWiring.uploadSessionStore.save(session)
         val quotaKey = QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice)
-        wiring.phaseCWiring.quotaService.reserve(quotaKey, 1)
-        wiring.phaseCWiring.quotaService.commit(dev.dmigrate.server.application.quota.QuotaReservation(quotaKey, 1))
+        wiring.runtimeWiring.quotaService.reserve(quotaKey, 1)
+        wiring.runtimeWiring.quotaService.commit(dev.dmigrate.server.application.quota.QuotaReservation(quotaKey, 1))
 
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val args = JsonParser.parseString(
             """{"uploadSessionId":"ups-admin-abort","approvalKey":"abort-key-1","reason":"cleanup"}""",
         ).asJsonObject
@@ -196,14 +196,14 @@ class PhaseERegistriesTest : FunSpec({
         ).shouldBeInstanceOf<ToolCallOutcome.Success>()
         val payload = JsonParser.parseString(outcome.content.single().text!!).asJsonObject
         payload.get("uploadSessionState").asString shouldBe "ABORTED"
-        wiring.phaseCWiring.uploadSessionStore.findById(tenant, "ups-admin-abort")!!.state shouldBe
+        wiring.runtimeWiring.uploadSessionStore.findById(tenant, "ups-admin-abort")!!.state shouldBe
             UploadSessionState.ABORTED
     }
 
-    test("defaultToolRegistry: alle Descriptors aus PhaseC bleiben sichtbar") {
-        val phaseCRegistry = PhaseCRegistries.defaultToolRegistry(phaseEWiring().phaseCWiring)
-        val phaseERegistry = PhaseERegistries.defaultToolRegistry(phaseEWiring())
-        phaseERegistry.all().map { it.name }.toSet() shouldBe
-            phaseCRegistry.all().map { it.name }.toSet()
+    test("defaultToolRegistry: alle Runtime-Descriptors bleiben sichtbar") {
+        val runtimeRegistry = McpRuntimeRegistries.defaultToolRegistry(operationalWiring().runtimeWiring)
+        val operationalRegistry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
+        operationalRegistry.all().map { it.name }.toSet() shouldBe
+            runtimeRegistry.all().map { it.name }.toSet()
     }
 })

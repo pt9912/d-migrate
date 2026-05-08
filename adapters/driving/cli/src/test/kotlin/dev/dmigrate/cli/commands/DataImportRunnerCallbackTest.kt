@@ -540,8 +540,7 @@ class DataImportRunnerCallbackTest : FunSpec({
         }
     }
 
-    // ─── 0.9.0 Phase D.4: Directory-Topologie ───────────────────
-    // (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4)
+    // ─── LF-010 / LF-013 / LN-009: Directory-Topologie ─────────────
     // ──────────────────────────────────────────────────────────────
 
 })

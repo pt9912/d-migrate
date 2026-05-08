@@ -235,7 +235,7 @@ class DataExportHelpersTest : FunSpec({
             DataExportHelpers.parseSinceLiteral("release-42") shouldBe "release-42"
         }
 
-        // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.4):
+        // LF-006 / LN-022 / LN-023:
         // Keine Auto-Zonierung — ein lokaler ISO-DateTime bleibt
         // LocalDateTime, auch wenn die JVM-Default-Zone abweicht oder
         // `ResolvedI18nSettings.timezone` gesetzt waere.

@@ -4,7 +4,7 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.JobStartTransactionContractTests
 import dev.dmigrate.server.ports.contract.JobStartTransactionFixture
 import io.kotest.core.NamedTag
@@ -35,7 +35,7 @@ private var txTestDataSource: HikariDataSource? = null
 class JdbcJobStartTransactionContractTest : JobStartTransactionContractTests({
     val ds = txTestDataSource
         ?: error("DataSource not initialised — beforeSpec hook missed?")
-    truncatePhaseETables(ds)
+    truncateServerStateTables(ds)
     val runner = JdbcTransactionRunner(ds)
     val idempotencyStore = JdbcIdempotencyStore(runner)
     val jobStore = JdbcJobStore(runner)
@@ -58,7 +58,7 @@ class JdbcJobStartTransactionContractTest : JobStartTransactionContractTests({
                 poolName = "phase-e-jobstart-tx-contract"
             }
             txTestDataSource = HikariDataSource(cfg)
-            PhaseEMigrationRunner(txTestDataSource!!).migrate()
+            JdbcMigrationRunner(txTestDataSource!!).migrate()
         }
 
         afterSpec {
@@ -69,7 +69,7 @@ class JdbcJobStartTransactionContractTest : JobStartTransactionContractTests({
     }
 }
 
-private fun truncatePhaseETables(ds: HikariDataSource) {
+private fun truncateServerStateTables(ds: HikariDataSource) {
     ds.connection.use { conn ->
         conn.createStatement().use { stmt ->
             stmt.execute(

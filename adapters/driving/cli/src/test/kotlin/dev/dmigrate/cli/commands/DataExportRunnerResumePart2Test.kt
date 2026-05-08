@@ -315,7 +315,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
             storeDir shouldBe cliDir
         }
 
-        // 0.9.0 Phase C.1 Review-Fix (§5.5): Single-File-Resume mit der
+        // LF-008 / LF-013 / LN-006: Single-File-Resume mit der
         // einzigen Tabelle bereits COMPLETED → Exit 3 statt silent success.
 
         test("--resume bei single-file + einziger Tabelle COMPLETED endet mit Exit 3") {
@@ -483,8 +483,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
         }
     }
 
-    // ─── 0.9.0 Phase C.2: 3 Fallunterscheidungen + fingerprint ────
-    // (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.3)
+    // ─── LF-013 / LN-006 / LN-012: Resume-Fingerprints ─────────────
     // ──────────────────────────────────────────────────────────────
 
 })

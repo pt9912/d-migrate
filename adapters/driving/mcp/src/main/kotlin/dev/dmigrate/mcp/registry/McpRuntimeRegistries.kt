@@ -11,7 +11,7 @@ import dev.dmigrate.server.application.audit.AuditScope
  * Phase-C wiring entry point per `ImpPlan-0.9.6-C.md` §6.1.
  *
  * Override semantics worth pinning down:
- * - keys MUST be tool names already registered by [PhaseBRegistries] —
+ * - keys MUST be tool names already registered by [McpContractRegistries] —
  *   an unknown name would otherwise become a silent `tools/call -32601`
  *   at runtime instead of failing fast at boot.
  * - keys MUST NOT be MCP-protocol method names (`tools/list`,
@@ -26,25 +26,25 @@ import dev.dmigrate.server.application.audit.AuditScope
  * Transport"). Build once, pass into both
  * `McpServerBootstrap.startStdio` and `startHttp`.
  */
-object PhaseCRegistries {
+object McpRuntimeRegistries {
 
     fun toolRegistry(
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
         handlerOverrides: Map<String, ToolHandler> = emptyMap(),
     ): ToolRegistry {
-        if (handlerOverrides.isEmpty()) return PhaseBRegistries.toolRegistry(scopeMapping)
+        if (handlerOverrides.isEmpty()) return McpContractRegistries.toolRegistry(scopeMapping)
 
-        val protocolHits = handlerOverrides.keys.intersect(PhaseBRegistries.PROTOCOL_METHODS)
+        val protocolHits = handlerOverrides.keys.intersect(McpContractRegistries.PROTOCOL_METHODS)
         check(protocolHits.isEmpty()) {
             "handlerOverrides target MCP-protocol methods ${protocolHits.sorted()} — " +
                 "those are dispatched by the protocol layer, not the tool registry"
         }
 
-        val base = PhaseBRegistries.toolRegistry(scopeMapping)
+        val base = McpContractRegistries.toolRegistry(scopeMapping)
         val unknown = handlerOverrides.keys.filter { base.find(it) == null }
         check(unknown.isEmpty()) {
             "handlerOverrides target unregistered tools: ${unknown.sorted()} " +
-                "(register them via scopeMapping + PhaseBToolSchemas first)"
+                "(register them via scopeMapping + McpToolSchemas first)"
         }
 
         val builder = ToolRegistry.builder()
@@ -60,20 +60,20 @@ object PhaseCRegistries {
      * instantiating every fachlichen Handler from §3.1 and routing
      * them through [toolRegistry]. The bootstrap calls this once at
      * server start so `tools/call` dispatches into the real handlers
-     * instead of the Phase-B `UnsupportedToolHandler` fallback.
+     * instead of the contract-only `UnsupportedToolHandler` fallback.
      *
      * Stays a separate entry point from [toolRegistry] so existing
-     * Phase-B tests (which call `toolRegistry()` with no overrides)
+     * contract tests (which call `toolRegistry()` with no overrides)
      * keep their incremental-fallback semantics — backwards-
      * compatible per AP 6.14 acceptance.
      */
     fun defaultToolRegistry(
-        wiring: PhaseCWiring,
+        wiring: McpRuntimeWiring,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): ToolRegistry {
         // Capabilities first: it surfaces the registered tools list,
         // so it must be built from the SAME descriptors the
-        // PhaseB-registry hands back. We let PhaseBRegistries seed
+        // contract registry hands back. We let McpContractRegistries seed
         // the descriptor universe and then override every handler
         // via this layer's contract.
         val resolver = SchemaSourceResolver(wiring.schemaStore, wiring.limits)
@@ -87,7 +87,7 @@ object PhaseCRegistries {
             wiring.artifactContentStore,
             wiring.clock,
         )
-        val descriptors = PhaseBRegistries.toolRegistry(scopeMapping).all()
+        val descriptors = McpContractRegistries.toolRegistry(scopeMapping).all()
         val capabilitiesHandler = CapabilitiesListReadOnlyHandler(
             tools = descriptors,
             scopeMapping = scopeMapping,
@@ -214,7 +214,7 @@ object PhaseCRegistries {
      * artefact split. Phase-B-only deployments can leave the
      * enforcer null — `dispatch` then behaves as before.
      */
-    fun defaultResponseLimitEnforcer(wiring: PhaseCWiring): ResponseLimitEnforcer =
+    fun defaultResponseLimitEnforcer(wiring: McpRuntimeWiring): ResponseLimitEnforcer =
         ResponseLimitEnforcer(
             limits = wiring.limits,
             artifactSink = ArtifactSink(
@@ -230,8 +230,8 @@ object PhaseCRegistries {
      * enforcer that brackets it, and (AP 6.20) the audit scope that
      * records one event per call. The bootstrap takes one of these
      * instead of three correlated parameters with cross-defaults so
-     * the `phaseCWiring?.let { ... }`-fallback expression lives in
-     * one place. Phase-B-only callers (no `PhaseCWiring`) get a
+     * the `runtimeWiring?.let { ... }`-fallback expression lives in
+     * one place. Phase-B-only callers (no `McpRuntimeWiring`) get a
      * registry with no enforcer and no audit — the same shape
      * `dispatch` already handles.
      */
@@ -252,7 +252,7 @@ object PhaseCRegistries {
         /**
          * AP D8: HMAC cursor codec backing `resources/list` and the
          * `*_list` discovery tools. Null in Phase-B-only deployments
-         * (no PhaseCWiring) — the dispatcher then falls back to the
+         * (no McpRuntimeWiring) — the dispatcher then falls back to the
          * legacy unsigned Base64 cursor for resources/list and to
          * `nextCursor=null` for the discovery tools (AP D6 no-op).
          */
@@ -260,28 +260,28 @@ object PhaseCRegistries {
     )
 
     fun defaultComponents(
-        phaseCWiring: PhaseCWiring?,
+        runtimeWiring: McpRuntimeWiring?,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
-    ): McpServiceComponents = if (phaseCWiring != null) {
-        val toolRegistry = defaultToolRegistry(phaseCWiring, scopeMapping)
+    ): McpServiceComponents = if (runtimeWiring != null) {
+        val toolRegistry = defaultToolRegistry(runtimeWiring, scopeMapping)
         val capabilitiesHandler = CapabilitiesListReadOnlyHandler(
             tools = toolRegistry.all(),
             scopeMapping = scopeMapping,
-            limits = phaseCWiring.limits,
+            limits = runtimeWiring.limits,
         )
         McpServiceComponents(
             toolRegistry = toolRegistry,
-            responseLimitEnforcer = defaultResponseLimitEnforcer(phaseCWiring),
-            auditScope = phaseCWiring.auditSink?.let { AuditScope(it, phaseCWiring.clock) },
+            responseLimitEnforcer = defaultResponseLimitEnforcer(runtimeWiring),
+            auditScope = runtimeWiring.auditSink?.let { AuditScope(it, runtimeWiring.clock) },
             capabilitiesProvider = capabilitiesHandler::staticPayload,
             cursorCodec = McpCursorCodec(
-                keyring = phaseCWiring.cursorKeyring,
-                clock = phaseCWiring.clock,
+                keyring = runtimeWiring.cursorKeyring,
+                clock = runtimeWiring.clock,
             ),
         )
     } else {
         McpServiceComponents(
-            toolRegistry = PhaseBRegistries.toolRegistry(scopeMapping),
+            toolRegistry = McpContractRegistries.toolRegistry(scopeMapping),
             responseLimitEnforcer = null,
             auditScope = null,
         )

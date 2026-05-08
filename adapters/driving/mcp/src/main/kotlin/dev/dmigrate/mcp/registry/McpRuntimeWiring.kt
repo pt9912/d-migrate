@@ -49,7 +49,7 @@ import java.util.UUID
  *
  * The bundle is meant to be assembled once at server start by the
  * caller (CLI, embed-test, future driver wiring), then passed
- * verbatim into [PhaseCRegistries.defaultToolRegistry]. Individual
+ * verbatim into [McpRuntimeRegistries.defaultToolRegistry]. Individual
  * fields stay accessible so a deployment can swap, e.g., a
  * file-backed `ArtifactContentStore` for the in-memory default
  * without rebuilding every handler.
@@ -64,7 +64,7 @@ import java.util.UUID
  * loads drivers via `ServiceLoader`) before constructing the
  * bundle.
  */
-data class PhaseCWiring(
+data class McpRuntimeWiring(
     val uploadSessionStore: UploadSessionStore,
     val uploadSegmentStore: UploadSegmentStore,
     val artifactStore: ArtifactStore,

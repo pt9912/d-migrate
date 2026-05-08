@@ -279,7 +279,7 @@ class I18nSettingsResolverTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.1 / §4.2):
+    // LF-006 / LN-022 / LN-023:
     // explizites `--lang` hat hoechste Prioritaet und strenge Validierung.
     // ────────────────────────────────────────────────────────────────
 

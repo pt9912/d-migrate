@@ -4,10 +4,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.audit.AuditScope
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
@@ -55,7 +55,7 @@ import java.time.ZoneOffset
  * Code-Kommentar). Das ist eine Folge-AP-Verbesserung, nicht ein
  * Plan-§7.10-Akzeptanz-Bullet.
  */
-class McpPhaseEAuditScenarioTest : FunSpec({
+class McpAuditScenarioTest : FunSpec({
 
     val clock: Clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC)
 
@@ -69,7 +69,7 @@ class McpPhaseEAuditScenarioTest : FunSpec({
         val auditSink = InMemoryAuditSink()
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -81,8 +81,8 @@ class McpPhaseEAuditScenarioTest : FunSpec({
             clock = clock,
             auditSink = auditSink,
         )
-        val eWiring = PhaseEWiring(
-            phaseCWiring = phaseC,
+        val eWiring = OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -90,10 +90,10 @@ class McpPhaseEAuditScenarioTest : FunSpec({
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyEffect),
         )
         val service: McpServiceImpl = run {
-            val components = PhaseCRegistries.defaultComponents(phaseC)
+            val components = McpRuntimeRegistries.defaultComponents(phaseC)
             // Phase-E-Handler ueberlagern; auditSink + auditScope kommen
-            // aus PhaseCRegistries.defaultComponents.
-            val registry = PhaseERegistries.defaultToolRegistry(eWiring)
+            // aus McpRuntimeRegistries.defaultComponents.
+            val registry = OperationalMcpRegistries.defaultToolRegistry(eWiring)
             McpServiceImpl(
                 serverVersion = "test",
                 toolRegistry = registry,

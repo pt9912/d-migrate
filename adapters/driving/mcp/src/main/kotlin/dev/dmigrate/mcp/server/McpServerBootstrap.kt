@@ -6,9 +6,9 @@ import dev.dmigrate.mcp.auth.StdioPrincipalResolution
 import dev.dmigrate.mcp.auth.StdioPrincipalResolver
 import dev.dmigrate.mcp.protocol.McpService
 import dev.dmigrate.mcp.protocol.McpServiceImpl
-import dev.dmigrate.mcp.registry.PhaseBRegistries
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpContractRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.registry.ResourceRegistry
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.transport.http.installMcpHttpRoute
@@ -87,11 +87,11 @@ object McpServerBootstrap {
     /**
      * @param toolRegistry transport-neutral registry per §4.7 — same
      *  instance is reused for stdio when both transports run in the
-     *  same process. Defaults to [PhaseBRegistries.toolRegistry] which
+     *  same process. Defaults to [McpContractRegistries.toolRegistry] which
      *  registers every 0.9.6 tool with `capabilities_list` as the
      *  only real handler.
-     * @param phaseCWiring AP 6.14: when supplied, the bootstrap
-     *  builds the registry via [PhaseCRegistries.defaultToolRegistry]
+     * @param runtimeWiring AP 6.14: when supplied, the bootstrap
+     *  builds the registry via [McpRuntimeRegistries.defaultToolRegistry]
      *  so every Phase-C handler from §3.1 dispatches to its real
      *  implementation (instead of `UnsupportedToolHandler`). The
      *  explicit `toolRegistry` parameter still wins if both are
@@ -101,11 +101,11 @@ object McpServerBootstrap {
     fun startHttp(
         config: McpServerConfig,
         serverVersion: String = "0.0.0",
-        phaseCWiring: PhaseCWiring? = null,
-        components: PhaseCRegistries.McpServiceComponents =
-            PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
-        resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
-        resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+        runtimeWiring: McpRuntimeWiring? = null,
+        components: McpRuntimeRegistries.McpServiceComponents =
+            McpRuntimeRegistries.defaultComponents(runtimeWiring, config.scopeMapping),
+        resourceStores: ResourceStores = runtimeWiring?.let(ResourceStores::fromMcpRuntimeWiring) ?: ResourceStores.empty(),
+        resourceRegistry: ResourceRegistry = McpContractRegistries.resourceRegistry(),
         promptRegistry: PromptRegistry? = null,
         promptHygieneService: PromptHygieneService? = null,
         // §6.24: integration tests inject a custom DisabledAuthValidator
@@ -149,7 +149,7 @@ object McpServerBootstrap {
                             responseLimitEnforcer = responseLimitEnforcer,
                             auditScope = auditScope,
                             capabilitiesProvider = components.capabilitiesProvider,
-                            limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
+                            limitsConfig = runtimeWiring?.limits ?: McpLimitsConfig(),
                             cursorCodec = components.cursorCodec,
                             promptRegistry = promptRegistry,
                             promptHygieneService = promptHygieneService,
@@ -182,11 +182,11 @@ object McpServerBootstrap {
         serverVersion: String = "0.0.0",
         tokenStoreOverride: StdioTokenStore? = null,
         tokenSupplier: () -> String? = { System.getenv(STDIO_TOKEN_ENV) },
-        phaseCWiring: PhaseCWiring? = null,
-        components: PhaseCRegistries.McpServiceComponents =
-            PhaseCRegistries.defaultComponents(phaseCWiring, config.scopeMapping),
-        resourceStores: ResourceStores = phaseCWiring?.let(ResourceStores::fromPhaseCWiring) ?: ResourceStores.empty(),
-        resourceRegistry: ResourceRegistry = PhaseBRegistries.resourceRegistry(),
+        runtimeWiring: McpRuntimeWiring? = null,
+        components: McpRuntimeRegistries.McpServiceComponents =
+            McpRuntimeRegistries.defaultComponents(runtimeWiring, config.scopeMapping),
+        resourceStores: ResourceStores = runtimeWiring?.let(ResourceStores::fromMcpRuntimeWiring) ?: ResourceStores.empty(),
+        resourceRegistry: ResourceRegistry = McpContractRegistries.resourceRegistry(),
         promptRegistry: PromptRegistry? = null,
         promptHygieneService: PromptHygieneService? = null,
     ): McpStartOutcome {
@@ -216,7 +216,7 @@ object McpServerBootstrap {
             responseLimitEnforcer = responseLimitEnforcer,
             auditScope = auditScope,
             capabilitiesProvider = components.capabilitiesProvider,
-            limitsConfig = phaseCWiring?.limits ?: McpLimitsConfig(),
+            limitsConfig = runtimeWiring?.limits ?: McpLimitsConfig(),
             cursorCodec = components.cursorCodec,
             promptRegistry = promptRegistry,
             promptHygieneService = promptHygieneService,

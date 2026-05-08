@@ -3,7 +3,7 @@ package dev.dmigrate.server.persistence.jdbc.job
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.JobStoreContractTests
 import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -45,7 +45,7 @@ class JdbcJobStoreContractTest : JobStoreContractTests({
                 poolName = "phase-e-jobstore-contract"
             }
             jobStoreTestDataSource = HikariDataSource(cfg)
-            PhaseEMigrationRunner(jobStoreTestDataSource!!).migrate()
+            JdbcMigrationRunner(jobStoreTestDataSource!!).migrate()
         }
 
         afterSpec {

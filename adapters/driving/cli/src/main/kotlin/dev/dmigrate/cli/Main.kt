@@ -106,7 +106,7 @@ class DMigrate(
                 langFromCli = lang,
             ).resolve()
         } catch (e: UnsupportedLanguageException) {
-            // 0.9.0 Phase A §4.5: unsupported explicit --lang ist ein
+            // LF-006 / LN-022 / LN-023: unsupported explicit --lang ist ein
             // lokaler CLI-Validierungsfehler (Exit 2), kein Config-/
             // Checkpoint-Problem.
             printLocalError(e.message ?: "Unsupported --lang value", "--lang")
@@ -142,11 +142,10 @@ class DMigrate(
 }
 
 /**
- * Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
+ * LF-003 / LF-004 / LF-008 / LF-010: Treiber registrieren ihre JdbcUrlBuilder,
  * DataReader und TableLister einmal beim Programmstart vor dem ersten
- * Command-Dispatch. Seit 0.9.6 Phase B (§6.3) delegiert die CLI auf
- * den gemeinsamen `RuntimeBootstrap`, damit MCP und CLI denselben
- * Pfad nutzen.
+ * Command-Dispatch. Die CLI delegiert auf den gemeinsamen
+ * `RuntimeBootstrap`, damit MCP und CLI denselben Pfad nutzen.
  *
  * `internal` für [Main.kt]-Tests, die die Bootstrap-Sequenz ohne
  * `exitProcess` ausführen wollen.

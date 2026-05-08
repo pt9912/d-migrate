@@ -48,7 +48,7 @@ class InProcessAiToolOutcomeStoreTest : FunSpec({
 
     test("Plan §6 G.6: parallele identische Pending-Reserves liefern InProgress") {
         // Hier liegt der Phase-F-SyncEffectIdempotencyStore-Bug
-        // (`PhaseFInProcessStores.kt:51`) — bei aktiver Lease mit
+        // (`InProcessUploadControlStores.kt:51`) — bei aktiver Lease mit
         // gleichem Fingerprint wird `Reserved` erneut zurueckgegeben.
         // Der KI-Store loest das mit InProgress.
         val store = deterministicStore()

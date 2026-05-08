@@ -361,7 +361,7 @@ class JobStatusGetHandlerTest : FunSpec({
     }
 
     test("missing optional fields are omitted from the payload (not emitted as JSON null)") {
-        // Wire-vs-schema alignment: PhaseBToolSchemas declares
+        // Wire-vs-schema alignment: McpToolSchemas declares
         // `progress` and `error` as `"type":"object"` (not nullable).
         // When the underlying ManagedJob has neither, the handler
         // must omit the keys rather than emit JSON null — otherwise

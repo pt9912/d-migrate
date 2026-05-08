@@ -213,7 +213,7 @@ class McpHttpAuthTest : FunSpec({
                     serviceFactory = {
                         McpServiceImpl(
                             serverVersion = "0.1.0",
-                            toolRegistry = dev.dmigrate.mcp.registry.PhaseBRegistries.toolRegistry(),
+                            toolRegistry = dev.dmigrate.mcp.registry.McpContractRegistries.toolRegistry(),
                         )
                     },
                     authValidatorOverride = validator,

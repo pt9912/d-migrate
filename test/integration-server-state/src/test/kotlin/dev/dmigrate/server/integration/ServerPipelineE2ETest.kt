@@ -28,7 +28,7 @@ import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction
 import dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
@@ -72,7 +72,7 @@ private var pipelineTestDataSource: HikariDataSource? = null
  *
  * Tagged `integration` — laeuft nur unter `-PintegrationTests`.
  */
-class PhaseEPipelineE2ETest : FunSpec({
+class ServerPipelineE2ETest : FunSpec({
 
     tags(IntegrationTag)
 
@@ -91,7 +91,7 @@ class PhaseEPipelineE2ETest : FunSpec({
             poolName = "phase-e-pipeline-e2e"
         }
         pipelineTestDataSource = HikariDataSource(cfg)
-        PhaseEMigrationRunner(pipelineTestDataSource!!).migrate()
+        JdbcMigrationRunner(pipelineTestDataSource!!).migrate()
     }
 
     afterSpec {

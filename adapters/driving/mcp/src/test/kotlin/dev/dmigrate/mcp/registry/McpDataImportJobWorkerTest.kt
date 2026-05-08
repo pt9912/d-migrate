@@ -167,7 +167,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Bundle-Pfad: unknown artifact -> MCP_ARTIFACT_NOT_FOUND") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = InMemoryConnectionReferenceStore(),
@@ -259,7 +259,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Single-File-Pfad: artefact wird gespoolt, Connection-Resolution-Failure -> Failed") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = stubConnectionStore(),
@@ -279,7 +279,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Single-File-Pfad: sourceArtifactRef anstelle artifactId wird ebenfalls aufgelöst") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = stubConnectionStore(),
@@ -322,7 +322,7 @@ class McpDataImportJobWorkerTest : FunSpec({
                 allowedPrincipalIds = setOf(alice),
             ),
         )
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = connectionStore,

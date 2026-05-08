@@ -8,8 +8,8 @@ unintentional drift. The full contract lives in
 ## `phase-b-tool-schemas.json`
 
 Serialised JSON-Schemas (`inputSchema` + `outputSchema`) for every
-0.9.6 tool registered by `PhaseBToolSchemas`. Pinned by
-`PhaseBToolSchemasGoldenTest`.
+0.9.6 tool registered by `McpToolSchemas`. Pinned by
+`McpToolSchemasGoldenTest`.
 
 ### When the test fails
 
@@ -25,11 +25,11 @@ After an intentional schema change, regenerate the file:
 # inside Docker (preferred per the project's build policy)
 docker run --rm -v "$PWD":/src -w /src -e UPDATE_GOLDEN=true \
   gradle:8.12-jdk21 \
-  gradle --no-daemon :adapters:driving:mcp:test --tests '*PhaseBToolSchemasGoldenTest*'
+  gradle --no-daemon :adapters:driving:mcp:test --tests '*McpToolSchemasGoldenTest*'
 
 # or via -D system property
 docker build --target build \
-  --build-arg GRADLE_TASKS=":adapters:driving:mcp:test --tests *PhaseBToolSchemasGoldenTest* -DUPDATE_GOLDEN=true" \
+  --build-arg GRADLE_TASKS=":adapters:driving:mcp:test --tests *McpToolSchemasGoldenTest* -DUPDATE_GOLDEN=true" \
   -t d-migrate:golden-update .
 ```
 

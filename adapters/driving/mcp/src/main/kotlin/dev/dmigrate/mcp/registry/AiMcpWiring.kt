@@ -13,8 +13,8 @@ import java.time.Duration
  * Phase G § 6 G.6 (G.6.g) — Wiring-Bundle für die KI-nahen
  * MCP-Tools.
  *
- * Baut auf [PhaseEWiring] auf (das wiederum [PhaseCWiring] hält):
- * Tool-Handler greifen auf `phaseEWiring.phaseCWiring.artifactStore`,
+ * Baut auf [OperationalMcpWiring] auf (das wiederum [McpRuntimeWiring] hält):
+ * Tool-Handler greifen auf `operationalWiring.runtimeWiring.artifactStore`,
  * `.artifactContentStore`, `.schemaStore`, `.profileStore`,
  * `.connectionStore`, `.clock` zurück. Phase-G ergänzt nur die
  * KI-spezifischen Stores und Services.
@@ -26,7 +26,7 @@ import java.time.Duration
  * werden erst durch eine angereicherte [aiProviderRegistry]
  * aktiviert.
  *
- * @param phaseEWiring Phase-E + Phase-C Wiring (Job-Start-Tools,
+ * @param operationalWiring Phase-E + Phase-C Wiring (Job-Start-Tools,
  *   Cancel, Upload-Init, Artifact-Stores, Connection-Refs).
  * @param aiToolOutcomeStore Single-Writer-Outcome-Store mit
  *   Lease/Reclaim (G.6.a). Default = [InProcessAiToolOutcomeStore].
@@ -43,12 +43,12 @@ import java.time.Duration
  *   Provider-Aufruf inkl. Hygiene + Publish; Tests können einen
  *   kurzen Wert injizieren, um Reclaim-Pfade zu pinnen.
  */
-data class PhaseGWiring(
-    val phaseEWiring: PhaseEWiring,
+data class AiMcpWiring(
+    val operationalWiring: OperationalMcpWiring,
     val aiToolOutcomeStore: AiToolOutcomeStore = InProcessAiToolOutcomeStore(),
     val aiArtifactMetadataStore: AiArtifactMetadataStore = InProcessAiArtifactMetadataStore(),
     val aiProviderRegistry: AiProviderRegistry = DefaultAiProviderRegistry.noOpOnly(),
     val promptHygieneService: PromptHygieneService = DefaultPromptHygieneService(),
-    val approvalGrantService: ApprovalGrantService = phaseEWiring.approvalGrantService,
+    val approvalGrantService: ApprovalGrantService = operationalWiring.approvalGrantService,
     val aiToolLeaseDuration: Duration = Duration.ofSeconds(60),
 )

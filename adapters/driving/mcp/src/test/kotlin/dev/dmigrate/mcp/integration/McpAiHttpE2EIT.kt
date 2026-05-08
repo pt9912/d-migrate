@@ -6,10 +6,10 @@ import dev.dmigrate.mcp.auth.DisabledAuthValidator
 import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpServiceImpl
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseEWiring
-import dev.dmigrate.mcp.registry.PhaseGRegistries
-import dev.dmigrate.mcp.registry.PhaseGWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.registry.AiMcpRegistries
+import dev.dmigrate.mcp.registry.AiMcpWiring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -65,7 +65,7 @@ import java.time.ZoneOffset
  * - prompts/get mit Hygiene-Verletzung -> JSON-RPC mit
  *   dmigrateCode=PROMPT_HYGIENE_BLOCKED.
  */
-class McpPhaseGHttpE2EIT : FunSpec({
+class McpAiHttpE2EIT : FunSpec({
 
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
@@ -84,7 +84,7 @@ class McpPhaseGHttpE2EIT : FunSpec({
         expiresAt = Instant.MAX,
     )
 
-    fun phaseGWiring(): PhaseGWiring {
+    fun aiWiring(): AiMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val schemaStore = InMemorySchemaStore()
@@ -99,7 +99,7 @@ class McpPhaseGHttpE2EIT : FunSpec({
                 expiresAt = now.plusSeconds(3600),
             ),
         )
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -111,15 +111,15 @@ class McpPhaseGHttpE2EIT : FunSpec({
             clock = clock,
             profileStore = InMemoryProfileStore(),
         )
-        val phaseE = PhaseEWiring(
-            phaseCWiring = phaseC,
+        val phaseE = OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
             approvalGrantStore = InMemoryApprovalGrantStore(),
             policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow),
         )
-        return PhaseGWiring(phaseEWiring = phaseE)
+        return AiMcpWiring(operationalWiring = phaseE)
     }
 
     fun parseResultObj(text: String): JsonObject =
@@ -139,10 +139,10 @@ class McpPhaseGHttpE2EIT : FunSpec({
     }
 
     fun serviceFactory(): () -> McpServiceImpl = {
-        val gWiring = phaseGWiring()
+        val gWiring = aiWiring()
         McpServiceImpl(
             serverVersion = "0.9.6-it",
-            toolRegistry = PhaseGRegistries.defaultToolRegistry(gWiring),
+            toolRegistry = AiMcpRegistries.defaultToolRegistry(gWiring),
             initialPrincipal = principal,
             promptRegistry = DefaultPromptRegistry.mandatory(),
             promptHygieneService = DefaultPromptHygieneService(),

@@ -1,19 +1,18 @@
 package dev.dmigrate.mcp.registry
 
 /**
- * MCP resource projection per `ImpPlan-0.9.6-B.md` §5.5 + §6.9. Phase
- * B's [ResourceRegistry] does not persist live `ResourceDescriptor`
- * instances — those follow in AP 6.9 from store projections. This
- * class is the type contract Phase C/D handlers will populate.
+ * LF-012 / LN-038: MCP resource projection. [ResourceRegistry] does
+ * not persist live `ResourceDescriptor` instances; concrete resources
+ * are projected from stores.
  *
  * @param uri canonical MCP URI (e.g.
  *  `dmigrate://tenants/{tenantId}/jobs/{jobId}`). `tenantId` in the
- *  URI is addressing, NOT authorisation (§5.5).
+ *  URI is addressing, NOT authorisation.
  * @param name human-readable label.
  * @param mimeType MIME type for `resources/read` payload negotiation.
  * @param description optional description; ends up in `resources/list`.
  * @param requiredScopes scope set the principal must hold for
- *  `resources/read` to succeed. Read-list is `dmigrate:read` (§12.9).
+ *  `resources/read` to succeed. Read-list is `dmigrate:read`.
  */
 data class ResourceDescriptor(
     val uri: String,
@@ -24,7 +23,7 @@ data class ResourceDescriptor(
 )
 
 /**
- * MCP resource template per §5.5 + §6.9 — supplies the URI shape with
+ * MCP resource template — supplies the URI shape with
  * `{placeholder}` slots so clients can construct concrete resource
  * URIs without out-of-band knowledge.
  *

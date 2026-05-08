@@ -84,7 +84,7 @@ class MessageResolverTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────────
-    // 0.8.0 Phase G R4 (docs/ImpPlan-0.8.0-G.md §2.2 / §6):
+    // LF-006 / LN-022 / LN-023:
     // Direkter Nachweis, dass ein Key, der NUR im Root-Bundle liegt und
     // im DE-Bundle absichtlich fehlt, unter Locale.GERMAN ueber den
     // ResourceBundle-Parent-Chain-Fallback den englischen Wert liefert.

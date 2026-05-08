@@ -11,8 +11,8 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §6): Vertragstests fuer den
- * dateibasierten [FileCheckpointStore]. Phase B prueft vor allem:
+ * LF-013 / LN-012 / LN-013: Vertragstests fuer den dateibasierten
+ * [FileCheckpointStore]. Geprueft werden vor allem:
  *
  * - Roundtrip: gespeichertes Manifest laesst sich wieder laden und hat
  *   dieselben Felder
@@ -394,8 +394,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    // ─── 0.9.0 Phase C.2: CheckpointResumePosition roundtrip ──────
-    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ─── LF-013 / LN-006 / LN-012: CheckpointResumePosition roundtrip ─
     // ──────────────────────────────────────────────────────────────
 
     test("C.2: save + load roundtrips a slice with resumePosition + tie-breakers") {

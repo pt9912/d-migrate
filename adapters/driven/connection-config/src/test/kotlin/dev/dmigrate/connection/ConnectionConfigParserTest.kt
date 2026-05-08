@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.nio.file.Path
 
-class PhaseCConnectionConfigParserTest : FunSpec({
+class ConnectionConfigParserTest : FunSpec({
 
     fun tempYaml(content: String): Path {
         val path = Files.createTempFile("phase-c-conn-", ".yaml")
@@ -24,7 +24,7 @@ class PhaseCConnectionConfigParserTest : FunSpec({
                 pg-prod: "jdbc:postgresql://localhost:5432/db?password=${'$'}{PG_PASS}"
                 sqlite-dev: "jdbc:sqlite:./dev.db"
         """.trimIndent()
-        val parsed = PhaseCConnectionConfigParser.parseConnections(tempYaml(yaml))
+        val parsed = ConnectionConfigParser.parseConnections(tempYaml(yaml))
         parsed shouldBe mapOf(
             "pg-prod" to "jdbc:postgresql://localhost:5432/db?password=\${PG_PASS}",
             "sqlite-dev" to "jdbc:sqlite:./dev.db",
@@ -43,7 +43,7 @@ class PhaseCConnectionConfigParserTest : FunSpec({
                   dialectId: postgresql
                   sensitivity: PRODUCTION
         """.trimIndent()
-        val parsed = PhaseCConnectionConfigParser.parseConnections(tempYaml(yaml))
+        val parsed = ConnectionConfigParser.parseConnections(tempYaml(yaml))
         parsed shouldBe mapOf("legacy" to "jdbc:sqlite:./dev.db")
     }
 
@@ -52,18 +52,18 @@ class PhaseCConnectionConfigParserTest : FunSpec({
             other:
               key: value
         """.trimIndent())
-        PhaseCConnectionConfigParser.parseConnections(withoutDatabase) shouldBe emptyMap()
+        ConnectionConfigParser.parseConnections(withoutDatabase) shouldBe emptyMap()
 
         val withoutConnections = tempYaml("""
             database:
               default_source: pg
         """.trimIndent())
-        PhaseCConnectionConfigParser.parseConnections(withoutConnections) shouldBe emptyMap()
+        ConnectionConfigParser.parseConnections(withoutConnections) shouldBe emptyMap()
     }
 
     test("parseConnections returns empty when the file does not exist") {
         val absent = Path.of("/tmp/phase-c-absent-${'$'}{System.nanoTime()}.yaml")
-        PhaseCConnectionConfigParser.parseConnections(absent) shouldBe emptyMap()
+        ConnectionConfigParser.parseConnections(absent) shouldBe emptyMap()
     }
 
     test("parseDefault returns the default value when set") {
@@ -75,14 +75,14 @@ class PhaseCConnectionConfigParserTest : FunSpec({
                 pg: "jdbc:postgresql://x/y"
         """.trimIndent()
         val path = tempYaml(yaml)
-        PhaseCConnectionConfigParser.parseDefault(path, "default_source") shouldBe "pg"
-        PhaseCConnectionConfigParser.parseDefault(path, "default_target") shouldBe "sqlite"
-        PhaseCConnectionConfigParser.parseDefault(path, "default_unknown") shouldBe null
+        ConnectionConfigParser.parseDefault(path, "default_source") shouldBe "pg"
+        ConnectionConfigParser.parseDefault(path, "default_target") shouldBe "sqlite"
+        ConnectionConfigParser.parseDefault(path, "default_unknown") shouldBe null
     }
 
     test("parseDefault returns null when database block is absent") {
         val yaml = "other: value"
-        PhaseCConnectionConfigParser.parseDefault(tempYaml(yaml), "default_source") shouldBe null
+        ConnectionConfigParser.parseDefault(tempYaml(yaml), "default_source") shouldBe null
     }
 
     test("parseDefault throws when the value is not a string") {
@@ -90,22 +90,22 @@ class PhaseCConnectionConfigParserTest : FunSpec({
             database:
               default_source: 12345
         """.trimIndent()
-        shouldThrow<PhaseCConnectionConfigException> {
-            PhaseCConnectionConfigParser.parseDefault(tempYaml(yaml), "default_source")
+        shouldThrow<ConnectionConfigException> {
+            ConnectionConfigParser.parseDefault(tempYaml(yaml), "default_source")
         }
     }
 
     test("parseConnections throws on top-level non-mapping YAML") {
         val yaml = "- not\n- a\n- mapping"
-        shouldThrow<PhaseCConnectionConfigException> {
-            PhaseCConnectionConfigParser.parseConnections(tempYaml(yaml))
+        shouldThrow<ConnectionConfigException> {
+            ConnectionConfigParser.parseConnections(tempYaml(yaml))
         }
     }
 
     test("parseConnections throws on malformed YAML") {
         val yaml = "this is\n  : not: balanced:"
-        shouldThrow<PhaseCConnectionConfigException> {
-            PhaseCConnectionConfigParser.parseConnections(tempYaml(yaml))
+        shouldThrow<ConnectionConfigException> {
+            ConnectionConfigParser.parseConnections(tempYaml(yaml))
         }
     }
 })

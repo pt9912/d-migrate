@@ -89,7 +89,7 @@ internal class ArtifactUploadHandler(
      * threads `FileSpoolAssembledUploadPayloadFactory` all the way to
      * the handler — a guard against the original review-#1
      * regression where the file-spool factory only landed in the
-     * `PhaseCWiring` DTO but was substituted by the in-memory default
+     * `McpRuntimeWiring` DTO but was substituted by the in-memory default
      * during handler construction.
      */
     internal val payloadFactory: AssembledUploadPayloadFactory = options.payloadFactory

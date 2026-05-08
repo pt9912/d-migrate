@@ -28,10 +28,10 @@ private val PRINCIPAL = PrincipalContext(
     expiresAt = Instant.MAX,
 )
 
-class PhaseBRegistriesTest : FunSpec({
+class McpContractRegistriesTest : FunSpec({
 
     test("default registry registers every 0.9.6 tool from the scope mapping") {
-        val registry = PhaseBRegistries.toolRegistry()
+        val registry = McpContractRegistries.toolRegistry()
         // capabilities_list is in
         registry.find("capabilities_list") shouldNotBe null
         // representative tools from each scope class
@@ -44,7 +44,7 @@ class PhaseBRegistriesTest : FunSpec({
     }
 
     test("MCP-protocol methods are NOT registered as tools") {
-        val registry = PhaseBRegistries.toolRegistry()
+        val registry = McpContractRegistries.toolRegistry()
         registry.names() shouldNotContain "tools/list"
         registry.names() shouldNotContain "resources/list"
         registry.names() shouldNotContain "resources/templates/list"
@@ -53,14 +53,14 @@ class PhaseBRegistriesTest : FunSpec({
     }
 
     test("capabilities_list has a real handler that does NOT throw UnsupportedToolOperationException") {
-        val registry = PhaseBRegistries.toolRegistry()
+        val registry = McpContractRegistries.toolRegistry()
         val handler = registry.findHandler("capabilities_list")!!
         val outcome = handler.handle(ToolCallContext("capabilities_list", null, PRINCIPAL))
         outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
     }
 
     test("non-capabilities tools dispatch to UnsupportedToolHandler") {
-        val registry = PhaseBRegistries.toolRegistry()
+        val registry = McpContractRegistries.toolRegistry()
         val handler = registry.findHandler("schema_validate")!!
         shouldThrow<UnsupportedToolOperationException> {
             handler.handle(ToolCallContext("schema_validate", null, PRINCIPAL))
@@ -68,7 +68,7 @@ class PhaseBRegistriesTest : FunSpec({
     }
 
     test("descriptors carry typed JSON-Schema 2020-12 input + output (AP 6.10)") {
-        val registry = PhaseBRegistries.toolRegistry()
+        val registry = McpContractRegistries.toolRegistry()
         val descriptor = registry.find("schema_validate")!!
         descriptor.inputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
         descriptor.outputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
@@ -85,7 +85,7 @@ class PhaseBRegistriesTest : FunSpec({
     }
 
     test("requiredScopes mirror the supplied scopeMapping") {
-        val registry = PhaseBRegistries.toolRegistry(McpServerConfig.DEFAULT_SCOPE_MAPPING)
+        val registry = McpContractRegistries.toolRegistry(McpServerConfig.DEFAULT_SCOPE_MAPPING)
         registry.find("schema_validate")!!.requiredScopes shouldBe setOf("dmigrate:read")
         registry.find("schema_reverse_start")!!.requiredScopes shouldBe setOf("dmigrate:job:start")
         registry.find("data_import_start")!!.requiredScopes shouldBe setOf("dmigrate:data:write")
@@ -98,7 +98,7 @@ class PhaseBRegistriesTest : FunSpec({
             "capabilities_list" to setOf("dmigrate:read"),
             "schema_validate" to setOf("dmigrate:admin"),
         )
-        val registry = PhaseBRegistries.toolRegistry(custom)
+        val registry = McpContractRegistries.toolRegistry(custom)
         registry.names() shouldContain "schema_validate"
         registry.find("schema_validate")!!.requiredScopes shouldBe setOf("dmigrate:admin")
         // job_cancel is NOT in the custom map so it shouldn't be there
@@ -107,15 +107,15 @@ class PhaseBRegistriesTest : FunSpec({
 
     test("scopeMapping without capabilities_list is rejected at build time (§12.11)") {
         val incomplete = mapOf("schema_validate" to setOf("dmigrate:read"))
-        shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(incomplete) }
+        shouldThrow<IllegalStateException> { McpContractRegistries.toolRegistry(incomplete) }
     }
 
-    test("scopeMapping with an unknown tool name is rejected (no PhaseBToolSchemas entry)") {
+    test("scopeMapping with an unknown tool name is rejected (no McpToolSchemas entry)") {
         val rogue = mapOf(
             "capabilities_list" to setOf("dmigrate:read"),
             "unregistered_tool" to setOf("dmigrate:read"),
         )
-        shouldThrow<IllegalStateException> { PhaseBRegistries.toolRegistry(rogue) }
+        shouldThrow<IllegalStateException> { McpContractRegistries.toolRegistry(rogue) }
     }
 
     test("custom scopeMapping that includes tools/call drops it (§12.16 PROTOCOL_METHODS)") {
@@ -127,7 +127,7 @@ class PhaseBRegistriesTest : FunSpec({
             "capabilities_list" to setOf("dmigrate:read"),
             "tools/call" to setOf("dmigrate:read"),
         )
-        val registry = PhaseBRegistries.toolRegistry(custom)
+        val registry = McpContractRegistries.toolRegistry(custom)
         registry.find("tools/call") shouldBe null
         registry.find("capabilities_list") shouldNotBe null
     }
@@ -136,9 +136,9 @@ class PhaseBRegistriesTest : FunSpec({
         // §4.7: stdio + HTTP MUST read templates from the same
         // registry instance. The registry is no longer empty in Phase
         // B — AP 6.9 fills it with the 7 standard templates from
-        // PhaseBResourceTemplates.ALL so resources/templates/list and
+        // McpResourceTemplates.ALL so resources/templates/list and
         // any future template-driven projection can't diverge.
-        val registry = PhaseBRegistries.resourceRegistry()
+        val registry = McpContractRegistries.resourceRegistry()
         registry.templates().size shouldBe 7
         registry.templates().any { it.uriTemplate.endsWith("/jobs/{jobId}") } shouldBe true
         registry.templates().any { it.uriTemplate.endsWith("/chunks/{chunkId}") } shouldBe true

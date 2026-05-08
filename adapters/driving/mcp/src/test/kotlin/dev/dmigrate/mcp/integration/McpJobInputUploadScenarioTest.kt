@@ -3,8 +3,8 @@ package dev.dmigrate.mcp.integration
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.registry.ToolCallContext
 import dev.dmigrate.mcp.registry.ToolCallOutcome
 import dev.dmigrate.mcp.server.McpLimitsConfig
@@ -39,8 +39,8 @@ import java.util.Base64
 /**
  * Phase F § 8.5 (F.5 3/3) — End-to-End Integrationstest fuer den
  * `job_input`-Upload-Pfad ueber die produktive
- * [PhaseCRegistries.defaultToolRegistry]-Verdrahtung. Pin't, dass
- * der `JobInputFinalizer` aus [PhaseCWiring] tatsaechlich an den
+ * [McpRuntimeRegistries.defaultToolRegistry]-Verdrahtung. Pin't, dass
+ * der `JobInputFinalizer` aus [McpRuntimeWiring] tatsaechlich an den
  * `artifact_upload`-Handler gewired wird und dass die finalisierten
  * Bytes via `artifact_chunk_get` lesbar sind.
  *
@@ -49,7 +49,7 @@ import java.util.Base64
  * (F.3 4/4) ist eine separate Aenderung; F.5 (3/3) konzentriert
  * sich auf den Finalisations- und Lesepfad.
  */
-class McpPhaseFJobInputUploadScenarioTest : FunSpec({
+class McpJobInputUploadScenarioTest : FunSpec({
 
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
@@ -75,13 +75,13 @@ class McpPhaseFJobInputUploadScenarioTest : FunSpec({
     fun args(s: String): JsonElement = JsonParser.parseString(s)
 
     test("F.5 (3/3) E2E: artifact_upload (job_input) -> bytes lesbar via artifact_chunk_get") {
-        // 1. Wiring + Registry — produktive PhaseCWiring inkl.
+        // 1. Wiring + Registry — produktive McpRuntimeWiring inkl.
         // automatischem JobInputFinalizer-Default.
         val sessionStore = InMemoryUploadSessionStore()
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
         val quotaStore = InMemoryQuotaStore()
-        val wiring = PhaseCWiring(
+        val wiring = McpRuntimeWiring(
             uploadSessionStore = sessionStore,
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -92,7 +92,7 @@ class McpPhaseFJobInputUploadScenarioTest : FunSpec({
             limits = McpLimitsConfig(),
             clock = clock,
         )
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
         // 2. Session manuell anlegen (Init-Orchestrator-Wiring ist
         // separater Concern). Plan-konform: durable Session mit

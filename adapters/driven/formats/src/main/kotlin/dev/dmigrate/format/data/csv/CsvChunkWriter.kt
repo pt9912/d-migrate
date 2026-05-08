@@ -130,7 +130,7 @@ class CsvChunkWriter(
     }
 
     private fun writeBomBytes() {
-        // 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4 / Entscheidung D1):
+        // LF-009 / LF-013:
         // `--csv-bom` schreibt das BOM, das zum ausgewaehlten `--encoding`
         // passt. Fuer Encodings ohne definiertes BOM (ISO-8859-1,
         // Windows-1252, ...) ist das Flag ein No-op — das BOM-Konzept

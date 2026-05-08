@@ -22,7 +22,7 @@ class ProgressRendererTest : FunSpec({
         line shouldBe "Importing 2 table(s)"
     }
 
-    // 0.9.0 Phase C.1 (docs/ImpPlan-0.9.0-C1.md §5.3):
+    // LF-012 / LF-013 / LN-017:
     // ProgressRenderer zeigt operationId + Starting/Resuming-Label, wenn
     // die ID im Event gesetzt ist. Bestehende Snapshot-Faelle bleiben
     // unveraendert (operationId defaultet auf null).

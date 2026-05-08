@@ -4,10 +4,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.protocol.ToolsCallParams
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseERegistries
-import dev.dmigrate.mcp.registry.PhaseEWiring
-import dev.dmigrate.mcp.schema.PhaseBToolSchemas
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpRegistries
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.schema.McpToolSchemas
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -38,12 +38,12 @@ import java.time.ZoneOffset
 /**
  * AP E.6 (4/4) Integration: dispatcht die drei Phase-E Start-Tools
  * durch den realen `tools/call`-Pfad in [McpServiceImpl] mit der
- * produktiven [PhaseERegistries] Registry.
+ * produktiven [OperationalMcpRegistries] Registry.
  *
  * Belegt Plan §7.6 Akzeptanzpunkte:
  *
  * - "Tool-Registry von Unsupported-Handlern auf produktive Handler
- *   umstellen" — die drei E-Slots werden via [PhaseERegistries] zu
+ *   umstellen" — die drei E-Slots werden via [OperationalMcpRegistries] zu
  *   echten Handlern aufgeloest und liefern Job-Outcomes statt
  *   `UNSUPPORTED_TOOL_OPERATION`.
  * - Output-Schema `{jobId, resourceUri, executionMeta}` (E.6 (1/4)).
@@ -56,16 +56,16 @@ import java.time.ZoneOffset
  * Test fokussiert sich auf Handler-/Registry-Integration. Der
  * Runner-Pfad (Worker-Dispatch) folgt in AP E.7.
  */
-class McpPhaseEStartScenarioTest : FunSpec({
+class McpJobStartScenarioTest : FunSpec({
 
     val clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC)
 
-    fun phaseEWiring(
+    fun operationalWiring(
         policyDefault: PolicyEffect = PolicyEffect.Allow,
-    ): PhaseEWiring {
+    ): OperationalMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -76,8 +76,8 @@ class McpPhaseEStartScenarioTest : FunSpec({
             limits = McpLimitsConfig(),
             clock = clock,
         )
-        return PhaseEWiring(
-            phaseCWiring = phaseC,
+        return OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
@@ -89,8 +89,8 @@ class McpPhaseEStartScenarioTest : FunSpec({
         )
     }
 
-    fun service(wiring: PhaseEWiring): McpServiceImpl {
-        val registry = PhaseERegistries.defaultToolRegistry(wiring)
+    fun service(wiring: OperationalMcpWiring): McpServiceImpl {
+        val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         // Initial-Principal mit dmigrate:admin (bypassed Scope-Check in
         // ScopeChecker.isSatisfied) — entspricht AuthMode.DISABLED-
         // Lokalbetrieb.
@@ -117,7 +117,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("schema_reverse_start: Allow-Policy → Success-Envelope mit jobId/resourceUri/executionMeta") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -134,7 +134,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("data_profile_start: Allow-Policy → Success") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-profile-1"}""",
         ).asJsonObject
@@ -144,7 +144,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("schema_compare_start mit zwei Schema-Refs → Success") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """
             {
@@ -160,7 +160,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("idempotencyKey fehlt → VALIDATION_ERROR mit Feldname") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1"}""",
         ).asJsonObject
@@ -172,7 +172,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("freie JDBC-URL als connectionId → VALIDATION_ERROR (vor Idempotency-Store-Write)") {
-        val w = phaseEWiring(PolicyEffect.Allow)
+        val w = operationalWiring(PolicyEffect.Allow)
         val svc = service(w)
         val args = JsonParser.parseString(
             """{"connectionId":"jdbc:postgresql://localhost/db","idempotencyKey":"k-jdbc"}""",
@@ -185,11 +185,11 @@ class McpPhaseEStartScenarioTest : FunSpec({
         // Plan §7.6: keine Idempotency-Store-Write fuer fruehe Validation-
         // Fehler. Der Job-Store bleibt leer; der Idempotency-Eintrag
         // existiert nicht (er wurde nie reserve()'d).
-        w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), "job_1") shouldBe null
+        w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), "job_1") shouldBe null
     }
 
     test("Idempotenter Retry liefert dieselbe jobId") {
-        val svc = service(phaseEWiring(PolicyEffect.Allow))
+        val svc = service(operationalWiring(PolicyEffect.Allow))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-dedup"}""",
         ).asJsonObject
@@ -199,7 +199,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("Denied-Policy → POLICY_DENIED-Error-Envelope") {
-        val svc = service(phaseEWiring(PolicyEffect.Deny("policy:tool-blocked")))
+        val svc = service(operationalWiring(PolicyEffect.Deny("policy:tool-blocked")))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-denied"}""",
         ).asJsonObject
@@ -210,7 +210,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("RequiresApproval ohne Token → POLICY_REQUIRED mit approvalRequestId") {
-        val svc = service(phaseEWiring(PolicyEffect.Challenge(setOf("data.read"))))
+        val svc = service(operationalWiring(PolicyEffect.Challenge(setOf("data.read"))))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-challenge"}""",
         ).asJsonObject
@@ -223,7 +223,7 @@ class McpPhaseEStartScenarioTest : FunSpec({
     }
 
     test("Auto-Dispatch (Review-Fix Blocker #1): Worker laeuft synchron via SyncExecutor; Job ist SUCCEEDED") {
-        val w = phaseEWiring(PolicyEffect.Allow)
+        val w = operationalWiring(PolicyEffect.Allow)
         val svc = service(w)
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-auto-dispatch"}""",
@@ -234,21 +234,21 @@ class McpPhaseEStartScenarioTest : FunSpec({
 
         // Plan §7.7: nach Auto-Dispatch + SyncExecutor ist der Job
         // bereits SUCCEEDED, NICHT mehr QUEUED. Dieses Szenario nutzt
-        // bewusst das PhaseEWiring-Default-Test-Fallback; der CLI-
+        // bewusst das OperationalMcpWiring-Default-Test-Fallback; der CLI-
         // Bootstrap injiziert fuer die echten Read-Side-Start-Tools den
         // produktiven McpCoreJobWorkerFactory.
-        val finalRecord = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), jobId)!!
+        val finalRecord = w.runtimeWiring.jobStore.findById(Fixtures.tenant("acme"), jobId)!!
         finalRecord.managedJob.status shouldBe dev.dmigrate.server.core.job.JobStatus.SUCCEEDED
         // Counter freigegeben (Slot released).
         finalRecord.quotaReservationOwnerId.shouldNotBeNull()
     }
 
-    test("Schema in PhaseBToolSchemas reflektiert die produktiven Handler") {
+    test("Schema in McpToolSchemas reflektiert die produktiven Handler") {
         // Sanity: das Schema fuer schema_reverse_start hat idempotencyKey
         // als Pflichtfeld (E.6 (1/4)) und der Handler erzwingt das. Wenn
         // jemand das Schema ohne Migration aendert, schlaegt dieser Test
         // an, weil die Handler-Validierung divergiert.
-        val pair = PhaseBToolSchemas.forTool("schema_reverse_start")!!
+        val pair = McpToolSchemas.forTool("schema_reverse_start")!!
         val required = (pair.inputSchema["required"] as List<*>).filterIsInstance<String>()
         required shouldContainItem "idempotencyKey"
         required shouldContainItem "connectionId"

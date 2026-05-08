@@ -102,10 +102,10 @@ class ValueSerializerTest : FunSpec({
         serializer.serialize("t", "c", odt) shouldBe SerializedValue.Text("2024-01-15T14:30:00+02:00")
     }
 
-    // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.2 / §8 R3):
+    // LF-006 / LN-022 / LN-023:
     // ZonedDateTime wird offsetbasiert serialisiert; die ZoneId ist in 0.8.0
     // nicht Teil des garantierten Vertrags — der Offset bleibt aber erhalten.
-    test("ZonedDateTime → ISO 8601 mit Offset, ZoneId-Region entfaellt (Phase E §4.2)") {
+    test("ZonedDateTime → ISO 8601 mit Offset, ZoneId-Region entfaellt") {
         val zdt = ZonedDateTime.of(
             LocalDateTime.of(2024, 1, 15, 14, 30, 0),
             ZoneId.of("Europe/Berlin"),

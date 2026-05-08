@@ -92,7 +92,7 @@ class JobStartOrchestrator(
      * Phase E §7.9 owner-aware Quota-Service. Wenn `null`, ueberspringt
      * der Orchestrator die Quota-Reserve/Commit/Refund-Schritte
      * komplett — sinnvoll fuer Bestands-Tests, die keine Quota-Logik
-     * unter sich haben. Phase-E-Production-Wiring (PhaseEWiring) setzt
+     * unter sich haben. Phase-E-Production-Wiring (OperationalMcpWiring) setzt
      * eine echte Instanz.
      */
     private val quotaService: OwnerAwareQuotaService? = null,
@@ -137,7 +137,7 @@ class JobStartOrchestrator(
      * `null`-Default haelt Bestands-Tests unveraendert: ohne JobStore
      * faellt der Setup-Failure-Pfad auf "Permit close + Started zurueck"
      * zurueck (kein pollbares FAILED, Job bleibt QUEUED). Production-
-     * Wiring (PhaseEWiring) MUSS den jobStore mitliefern, damit
+     * Wiring (OperationalMcpWiring) MUSS den jobStore mitliefern, damit
      * Plan § 3.5 Setup-Failure-Akzeptanz greift.
      */
     private val jobStore: JobStore? = null,

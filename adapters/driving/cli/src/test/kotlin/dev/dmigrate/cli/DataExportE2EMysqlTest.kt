@@ -22,7 +22,7 @@ private val MysqlIntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data export` gegen einen realen MySQL-
- * Container (Testcontainers). Plan §4 Phase F Schritt 29.
+ * Container (Testcontainers). LF-008 / LF-009 / LN-043.
  *
  * Geht den vollständigen Pfad inkl. echter MySQL-spezifischer Datentypen,
  * Cursor-Streaming via `useCursorFetch=true` und der `information_schema.tables`-
@@ -33,10 +33,10 @@ private val MysqlIntegrationTag = NamedTag("integration")
  *
  * Verifiziert (analog zum PostgreSQL-Test, aber mit MySQL-Quirks):
  * - Round-Trip JSON/YAML/CSV mit echten MySQL-Typen (INT, VARCHAR, DECIMAL, TINYINT, DATETIME)
- * - §6.17 Empty-Table-Vertrag pro Format gegen eine echte leere MySQL-Tabelle
+ * - LF-009 Empty-Table-Vertrag pro Format gegen eine echte leere MySQL-Tabelle
  * - `--split-files` mit Auto-Discovery via `MysqlTableLister`
  * - `--filter` (DSL, parametrisiert seit 0.9.3) wird server-seitig angewendet
- * - Cursor-Streaming `useCursorFetch=true` (Plan §3.3 / §6.13)
+ * - Cursor-Streaming `useCursorFetch=true` (LF-008 / LN-009 / LN-010)
  */
 class DataExportE2EMysqlTest : FunSpec({
 

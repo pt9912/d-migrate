@@ -9,9 +9,9 @@ import io.kotest.matchers.shouldNotBe
 
 /**
  * §12.16 verbindlich: MCP-protocol method names that must NOT be
- * registered as tools. Mirror of `PhaseBRegistries.PROTOCOL_METHODS`;
+ * registered as tools. Mirror of `McpContractRegistries.PROTOCOL_METHODS`;
  * the test asserts that every one of these is absent from
- * `PhaseBToolSchemas.toolNames()`.
+ * `McpToolSchemas.toolNames()`.
  */
 private val PROTOCOL_METHODS: Set<String> = setOf(
     "tools/list",
@@ -30,65 +30,65 @@ private val PROTOCOL_METHODS: Set<String> = setOf(
 private fun expectedToolNames(): Set<String> =
     McpServerConfig.DEFAULT_SCOPE_MAPPING.keys.minus(PROTOCOL_METHODS)
 
-class PhaseBToolSchemasTest : FunSpec({
+class McpToolSchemasTest : FunSpec({
 
     test("registered tools match the default scope mapping minus protocol methods exactly") {
         // §12.18 "Tool-Universum (verbindlich)": equality, not superset —
         // an accidentally-registered surplus tool would be a contract
         // breach and must fail this test.
-        PhaseBToolSchemas.toolNames().toSet() shouldBe expectedToolNames()
+        McpToolSchemas.toolNames().toSet() shouldBe expectedToolNames()
     }
 
-    test("PhaseBToolSchemas does not register protocol-method names") {
-        val registered = PhaseBToolSchemas.toolNames()
+    test("McpToolSchemas does not register protocol-method names") {
+        val registered = McpToolSchemas.toolNames()
         PROTOCOL_METHODS.forAll { method ->
             registered.contains(method) shouldBe false
         }
     }
 
     test("every schema sets \$schema to the 2020-12 dialect URI exactly") {
-        for (name in PhaseBToolSchemas.toolNames()) {
-            val pair = PhaseBToolSchemas.forTool(name)!!
+        for (name in McpToolSchemas.toolNames()) {
+            val pair = McpToolSchemas.forTool(name)!!
             pair.inputSchema[JsonSchemaDialect.SCHEMA_KEYWORD] shouldBe JsonSchemaDialect.SCHEMA_URI
             pair.outputSchema[JsonSchemaDialect.SCHEMA_KEYWORD] shouldBe JsonSchemaDialect.SCHEMA_URI
         }
     }
 
     test("every schema's root type is 'object'") {
-        for (name in PhaseBToolSchemas.toolNames()) {
-            val pair = PhaseBToolSchemas.forTool(name)!!
+        for (name in McpToolSchemas.toolNames()) {
+            val pair = McpToolSchemas.forTool(name)!!
             pair.inputSchema["type"] shouldBe "object"
             pair.outputSchema["type"] shouldBe "object"
         }
     }
 
     test("no schema contains a Draft-07-only forbidden keyword at any nesting level") {
-        for (name in PhaseBToolSchemas.toolNames()) {
-            val pair = PhaseBToolSchemas.forTool(name)!!
+        for (name in McpToolSchemas.toolNames()) {
+            val pair = McpToolSchemas.forTool(name)!!
             assertNoForbiddenKeyword(pair.inputSchema, "$name.input")
             assertNoForbiddenKeyword(pair.outputSchema, "$name.output")
         }
     }
 
     test("no schema admits a secret-shaped property name") {
-        for (name in PhaseBToolSchemas.toolNames()) {
-            val pair = PhaseBToolSchemas.forTool(name)!!
+        for (name in McpToolSchemas.toolNames()) {
+            val pair = McpToolSchemas.forTool(name)!!
             SchemaSecretGuard.findSecretLeaks(pair.inputSchema) shouldBe emptyList()
             SchemaSecretGuard.findSecretLeaks(pair.outputSchema) shouldBe emptyList()
         }
     }
 
     test("forTool(unknown) returns null") {
-        PhaseBToolSchemas.forTool("definitely_not_a_tool") shouldBe null
+        McpToolSchemas.forTool("definitely_not_a_tool") shouldBe null
     }
 
     test("toolNames is alphabetically sorted (deterministic for golden tests)") {
-        val names = PhaseBToolSchemas.toolNames()
+        val names = McpToolSchemas.toolNames()
         names shouldBe names.sorted()
     }
 
     test("capabilities_list input is the empty-object marker (no arguments)") {
-        val pair = PhaseBToolSchemas.forTool("capabilities_list")!!
+        val pair = McpToolSchemas.forTool("capabilities_list")!!
         pair.inputSchema["properties"] shouldBe null
         pair.inputSchema["required"] shouldBe null
         pair.inputSchema["additionalProperties"] shouldBe false
@@ -97,8 +97,8 @@ class PhaseBToolSchemasTest : FunSpec({
     test("schemas are stable across instances (no per-call mutation)") {
         // The schemas table is a single immutable map; calling forTool
         // twice MUST return the same content.
-        val first = PhaseBToolSchemas.forTool("schema_validate")!!
-        val second = PhaseBToolSchemas.forTool("schema_validate")!!
+        val first = McpToolSchemas.forTool("schema_validate")!!
+        val second = McpToolSchemas.forTool("schema_validate")!!
         first.inputSchema shouldBe second.inputSchema
         first.outputSchema shouldBe second.outputSchema
     }
@@ -108,7 +108,7 @@ class PhaseBToolSchemasTest : FunSpec({
         // runtime by SchemaSourceResolver — JSON Schema's oneOf would
         // duplicate that contract on the wire. Pin only the field set
         // and the optional enum constraints.
-        val pair = PhaseBToolSchemas.forTool("schema_validate")!!
+        val pair = McpToolSchemas.forTool("schema_validate")!!
         val props = mapValue(pair.inputSchema["properties"])
         mapValue(props["schema"])["type"] shouldBe "object"
         mapValue(props["schemaRef"])["type"] shouldBe "string"
@@ -119,20 +119,20 @@ class PhaseBToolSchemasTest : FunSpec({
     }
 
     test("AP 6.23: schema_generate output uses generatorFindings + truncated→artifactRef") {
-        val output = PhaseBToolSchemas.forTool("schema_generate")!!.outputSchema
+        val output = McpToolSchemas.forTool("schema_generate")!!.outputSchema
 
         val props = mapValue(output["properties"])
 
         // Findings carry the generator-specific item (base + hint).
-        props["findings"] shouldBe PhaseBToolSchemas.generatorFindingArray()
+        props["findings"] shouldBe McpToolSchemas.generatorFindingArray()
         props["artifactRef"] shouldBe artifactRefField()
-        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+        props["executionMeta"] shouldBe McpToolSchemas.executionMetaField()
 
-        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+        output["allOf"] shouldBe listOf(McpToolSchemas.truncatedRequiresField("artifactRef"))
     }
 
     test("AP 6.23: generatorFindingItem extends findingItem with optional hint") {
-        val item = PhaseBToolSchemas.generatorFindingItem()
+        val item = McpToolSchemas.generatorFindingItem()
         item["additionalProperties"] shouldBe false
         val props = mapValue(item["properties"])
         props.keys shouldBe setOf("severity", "code", "path", "message", "hint")
@@ -142,24 +142,24 @@ class PhaseBToolSchemasTest : FunSpec({
     }
 
     test("AP 6.23: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
-        val output = PhaseBToolSchemas.forTool("schema_compare")!!.outputSchema
+        val output = McpToolSchemas.forTool("schema_compare")!!.outputSchema
 
         val props = mapValue(output["properties"])
 
         // findings carry the compare-specific details (before/after).
         val findings = mapValue(props["findings"])
-        findings shouldBe PhaseBToolSchemas.findingArray(
-            detailsSchema = PhaseBToolSchemas.compareDetailsSchema(),
+        findings shouldBe McpToolSchemas.findingArray(
+            detailsSchema = McpToolSchemas.compareDetailsSchema(),
         )
 
         props["diffArtifactRef"] shouldBe artifactRefField()
-        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+        props["executionMeta"] shouldBe McpToolSchemas.executionMetaField()
 
-        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("diffArtifactRef"))
+        output["allOf"] shouldBe listOf(McpToolSchemas.truncatedRequiresField("diffArtifactRef"))
     }
 
     test("AP 6.23: compareDetailsSchema closes details and rejects empty / blank slots") {
-        val schema = PhaseBToolSchemas.compareDetailsSchema()
+        val schema = McpToolSchemas.compareDetailsSchema()
         schema["type"] shouldBe "object"
         schema["additionalProperties"] shouldBe false
         // minProperties=1 means `details: {}` is structurally invalid.
@@ -173,28 +173,28 @@ class PhaseBToolSchemasTest : FunSpec({
     }
 
     test("AP 6.23: schema_validate output is strict and pins truncated→artifactRef") {
-        val output = PhaseBToolSchemas.forTool("schema_validate")!!.outputSchema
+        val output = McpToolSchemas.forTool("schema_validate")!!.outputSchema
 
         val props = mapValue(output["properties"])
 
         // findings: array of findingItem
         val findings = mapValue(props["findings"])
         findings["type"] shouldBe "array"
-        findings["items"] shouldBe PhaseBToolSchemas.findingItem()
+        findings["items"] shouldBe McpToolSchemas.findingItem()
 
         // artifactRef: URI-pattern string
         props["artifactRef"] shouldBe artifactRefField()
 
         // executionMeta: closed (additionalProperties=false), required requestId
-        props["executionMeta"] shouldBe PhaseBToolSchemas.executionMetaField()
+        props["executionMeta"] shouldBe McpToolSchemas.executionMetaField()
 
         // allOf carries the truncated → artifactRef coupling
-        output["allOf"] shouldBe listOf(PhaseBToolSchemas.truncatedRequiresField("artifactRef"))
+        output["allOf"] shouldBe listOf(McpToolSchemas.truncatedRequiresField("artifactRef"))
     }
 
     test("listing tools share a stable input shape") {
         for (name in listOf("schema_list", "profile_list", "diff_list", "job_list", "artifact_list")) {
-            val pair = PhaseBToolSchemas.forTool(name)!!
+            val pair = McpToolSchemas.forTool(name)!!
             val props = mapValue(pair.inputSchema["properties"])
             props["pageSize"] shouldNotBe null
             props["cursor"] shouldNotBe null
@@ -213,7 +213,7 @@ class PhaseBToolSchemasTest : FunSpec({
             "procedure_transform_execute",
             "testdata_plan",
         )) {
-            val input = PhaseBToolSchemas.forTool(toolName)!!.inputSchema
+            val input = McpToolSchemas.forTool(toolName)!!.inputSchema
             stringListValue(input["required"]) shouldContainAll listOf("approvalKey", "targetDialect")
             input["additionalProperties"] shouldBe false
         }
@@ -230,7 +230,7 @@ class PhaseBToolSchemasTest : FunSpec({
             "procedure_transform_execute",
             "testdata_plan",
         )) {
-            val output = PhaseBToolSchemas.forTool(toolName)!!.outputSchema
+            val output = McpToolSchemas.forTool(toolName)!!.outputSchema
             stringListValue(output["required"]) shouldContainAll listOf(
                 "summary", "findings", "providerMeta", "executionMeta",
             )
@@ -242,7 +242,7 @@ class PhaseBToolSchemasTest : FunSpec({
         // enthalten. Pin den shape strukturell, damit ein zukuenftiger
         // Helper-Refactor nicht versehentlich einen Endpoint/Secret-Slot
         // einfuehrt.
-        val meta = PhaseBToolSchemas.providerMetaField()
+        val meta = McpToolSchemas.providerMetaField()
         meta["type"] shouldBe "object"
         meta["additionalProperties"] shouldBe false
         val props = mapValue(meta["properties"])

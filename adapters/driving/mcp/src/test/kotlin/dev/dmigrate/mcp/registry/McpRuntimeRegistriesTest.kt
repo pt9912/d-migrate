@@ -46,12 +46,12 @@ private val PRINCIPAL = PrincipalContext(
 private val NOOP_HANDLER: ToolHandler = ToolHandler { _ -> ToolCallOutcome.Success(emptyList()) }
 
 /**
- * Phase-C read-only tools per `ImpPlan-0.9.6-C.md` §3.1. AP 6.6.5
- * aligned the registry with the spec by collapsing the legacy
+ * LF-012 / LN-027 / LN-028 / LN-038: runtime tool surface. The registry
+ * collapsed the legacy
  * `artifact_upload_chunk`/`artifact_upload_complete` pair into a
  * single `artifact_upload` segment tool with implicit finalisation.
  */
-private val PHASE_C_READ_ONLY_TOOLS: List<String> = listOf(
+private val RUNTIME_TOOL_NAMES: List<String> = listOf(
     "capabilities_list",
     "schema_validate",
     "schema_generate",
@@ -63,21 +63,21 @@ private val PHASE_C_READ_ONLY_TOOLS: List<String> = listOf(
     "artifact_upload_abort",
 )
 
-class PhaseCRegistriesTest : FunSpec({
+class McpRuntimeRegistriesTest : FunSpec({
 
-    test("with no overrides the registry equals the Phase-B baseline") {
-        val phaseC = PhaseCRegistries.toolRegistry()
-        val phaseB = PhaseBRegistries.toolRegistry()
-        phaseC.names() shouldBe phaseB.names()
-        for (name in phaseB.names()) {
-            phaseC.find(name) shouldBe phaseB.find(name)
+    test("with no overrides the registry equals the contract baseline") {
+        val runtime = McpRuntimeRegistries.toolRegistry()
+        val contract = McpContractRegistries.toolRegistry()
+        runtime.names() shouldBe contract.names()
+        for (name in contract.names()) {
+            runtime.find(name) shouldBe contract.find(name)
         }
     }
 
-    test("every Phase-C read-only tool is visible on the default registry (§6.1 acceptance)") {
-        val registry = PhaseCRegistries.toolRegistry()
+    test("every runtime tool is visible on the default registry") {
+        val registry = McpRuntimeRegistries.toolRegistry()
         val names = registry.names().toSet()
-        for (tool in PHASE_C_READ_ONLY_TOOLS) {
+        for (tool in RUNTIME_TOOL_NAMES) {
             withClue(tool) { (tool in names) shouldBe true }
         }
     }
@@ -86,7 +86,7 @@ class PhaseCRegistriesTest : FunSpec({
         val custom: ToolHandler = ToolHandler { _ ->
             ToolCallOutcome.Success(listOf(ToolContent(type = "text", text = "stub")))
         }
-        val registry = PhaseCRegistries.toolRegistry(
+        val registry = McpRuntimeRegistries.toolRegistry(
             handlerOverrides = mapOf("schema_validate" to custom),
         )
 
@@ -101,7 +101,7 @@ class PhaseCRegistriesTest : FunSpec({
     }
 
     test("non-overridden tools keep dispatching to UnsupportedToolHandler") {
-        val registry = PhaseCRegistries.toolRegistry(
+        val registry = McpRuntimeRegistries.toolRegistry(
             handlerOverrides = mapOf("schema_validate" to NOOP_HANDLER),
         )
         val handler = registry.findHandler("schema_generate")!!
@@ -112,7 +112,7 @@ class PhaseCRegistriesTest : FunSpec({
 
     test("overrides for unregistered tool names are rejected at build time") {
         shouldThrow<IllegalStateException> {
-            PhaseCRegistries.toolRegistry(
+            McpRuntimeRegistries.toolRegistry(
                 handlerOverrides = mapOf("schema_validate_v999" to NOOP_HANDLER),
             )
         }
@@ -123,37 +123,37 @@ class PhaseCRegistriesTest : FunSpec({
         // dispatched by the protocol layer, not the tool registry —
         // an override would silently no-op (§12.16).
         val ex = shouldThrow<IllegalStateException> {
-            PhaseCRegistries.toolRegistry(
+            McpRuntimeRegistries.toolRegistry(
                 handlerOverrides = mapOf("tools/list" to NOOP_HANDLER),
             )
         }
         ex.message!! shouldContain "MCP-protocol methods"
     }
 
-    test("custom scopeMapping is forwarded to the underlying Phase-B builder") {
+    test("custom scopeMapping is forwarded to the underlying contract builder") {
         val custom = mapOf(
             "capabilities_list" to setOf("dmigrate:read"),
             "schema_validate" to setOf("dmigrate:admin"),
         )
-        val registry = PhaseCRegistries.toolRegistry(scopeMapping = custom)
+        val registry = McpRuntimeRegistries.toolRegistry(scopeMapping = custom)
         registry.find("schema_validate")!!.requiredScopes shouldBe setOf("dmigrate:admin")
     }
 
-    test("the default scope mapping declares every Phase-C read-only tool") {
-        // Defense-in-depth: if the default map ever drops a Phase-C
-        // tool, AP 6.1 visibility breaks — fail here so the cause is
+    test("the default scope mapping declares every runtime tool") {
+        // Defense-in-depth: if the default map ever drops a runtime
+        // tool, MCP visibility breaks — fail here so the cause is
         // obvious instead of surfacing as a missing `tools/list` entry.
-        for (tool in PHASE_C_READ_ONLY_TOOLS) {
+        for (tool in RUNTIME_TOOL_NAMES) {
             withClue(tool) {
                 (tool in McpServerConfig.DEFAULT_SCOPE_MAPPING.keys) shouldBe true
             }
         }
     }
 
-    test("defaultToolRegistry wires policy upload init orchestrator in Phase-C path") {
+    test("defaultToolRegistry wires policy upload init orchestrator in runtime path") {
         val sessionStore = InMemoryUploadSessionStore()
         val quotaStore = InMemoryQuotaStore()
-        val wiring = PhaseCWiring(
+        val wiring = McpRuntimeWiring(
             uploadSessionStore = sessionStore,
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -165,7 +165,7 @@ class PhaseCRegistriesTest : FunSpec({
             clock = Clock.fixed(Instant.parse("2026-05-07T12:00:00Z"), ZoneOffset.UTC),
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = PolicyEffect.Allow),
         )
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
         val args = JsonParser.parseString(
             """
             {

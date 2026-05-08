@@ -23,7 +23,7 @@ import java.time.ZoneOffset
 
 private val FIXED_CLOCK: Clock = Clock.fixed(Instant.parse("2026-05-02T12:00:00Z"), ZoneOffset.UTC)
 
-private val PHASE_C_TOOLS: List<String> = listOf(
+private val RUNTIME_TOOLS: List<String> = listOf(
     "capabilities_list",
     "schema_validate",
     "schema_generate",
@@ -37,12 +37,12 @@ private val PHASE_C_TOOLS: List<String> = listOf(
 
 private fun inMemoryWiring(
     finalizer: SchemaStagingFinalizer? = null,
-): PhaseCWiring {
+): McpRuntimeWiring {
     val artifactStore = InMemoryArtifactStore()
     val artifactContentStore = InMemoryArtifactContentStore()
     val schemaStore = InMemorySchemaStore()
     val quotaStore = InMemoryQuotaStore()
-    return PhaseCWiring(
+    return McpRuntimeWiring(
         uploadSessionStore = InMemoryUploadSessionStore(),
         uploadSegmentStore = InMemoryUploadSegmentStore(),
         artifactStore = artifactStore,
@@ -52,7 +52,7 @@ private fun inMemoryWiring(
         quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
         limits = McpLimitsConfig(),
         clock = FIXED_CLOCK,
-        finalizer = finalizer ?: PhaseCWiring(
+        finalizer = finalizer ?: McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -66,11 +66,11 @@ private fun inMemoryWiring(
     )
 }
 
-class PhaseCWiringTest : FunSpec({
+class McpRuntimeWiringTest : FunSpec({
 
-    test("AP 6.14: every Phase-C tool dispatches to a real handler (not UnsupportedToolHandler)") {
-        val registry = PhaseCRegistries.defaultToolRegistry(inMemoryWiring())
-        for (tool in PHASE_C_TOOLS) {
+    test("every runtime tool dispatches to a real handler (not UnsupportedToolHandler)") {
+        val registry = McpRuntimeRegistries.defaultToolRegistry(inMemoryWiring())
+        for (tool in RUNTIME_TOOLS) {
             val handler = registry.findHandler(tool)
             withClue("tool=$tool") {
                 handler shouldNotBe null
@@ -79,32 +79,31 @@ class PhaseCWiringTest : FunSpec({
         }
     }
 
-    test("AP 6.14: Phase-B default still keeps the unsupported-handler fallback for everything except capabilities_list") {
-        // Backwards-compat assertion: existing Phase-B tests rely on
+    test("contract default still keeps the unsupported-handler fallback for everything except capabilities_list") {
+        // Backwards-compat assertion: existing contract tests rely on
         // the bare `toolRegistry()` returning UnsupportedToolHandler
-        // for every non-capabilities tool. AP 6.14 must not change
-        // that — clients without a wiring keep the Phase-B
+        // for every non-capabilities tool. Clients without a wiring keep the
         // contract.
-        val phaseBRegistry = PhaseCRegistries.toolRegistry()
-        phaseBRegistry.findHandler("capabilities_list")!!
+        val contractRegistry = McpRuntimeRegistries.toolRegistry()
+        contractRegistry.findHandler("capabilities_list")!!
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
-        for (tool in PHASE_C_TOOLS - "capabilities_list") {
+        for (tool in RUNTIME_TOOLS - "capabilities_list") {
             withClue("tool=$tool") {
-                phaseBRegistry.findHandler(tool)!!.shouldBeInstanceOf<UnsupportedToolHandler>()
+                contractRegistry.findHandler(tool)!!.shouldBeInstanceOf<UnsupportedToolHandler>()
             }
         }
     }
 
-    test("AP 6.14: defaultToolRegistry honours a custom scopeMapping subset") {
+    test("defaultToolRegistry honours a custom scopeMapping subset") {
         // The wiring registers handlers via the underlying
-        // PhaseBRegistries scope universe — a scope mapping that
-        // omits some Phase-C tools must still produce a working
+        // McpContractRegistries scope universe — a scope mapping that
+        // omits some runtime tools must still produce a working
         // registry that contains exactly the supplied tools.
         val custom = mapOf(
             "capabilities_list" to setOf("dmigrate:read"),
             "schema_validate" to setOf("dmigrate:read"),
         )
-        val registry = PhaseCRegistries.defaultToolRegistry(
+        val registry = McpRuntimeRegistries.defaultToolRegistry(
             wiring = inMemoryWiring(),
             scopeMapping = custom,
         )
@@ -116,13 +115,13 @@ class PhaseCWiringTest : FunSpec({
 
     test("AP 6.22: defaultToolRegistry threads the AssembledUploadPayloadFactory into ArtifactUploadHandler") {
         // Regression guard for the AP-6.22 review: it is not enough
-        // for `PhaseCWiring.assembledUploadPayloadFactory` to hold the
+        // for `McpRuntimeWiring.assembledUploadPayloadFactory` to hold the
         // file-spool variant — the field must also reach the actual
-        // `ArtifactUploadHandler` constructed by `PhaseCRegistries`.
+        // `ArtifactUploadHandler` constructed by `McpRuntimeRegistries`.
         // A pin on the wiring DTO alone is a false-positive guard.
         val customFactory = dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory.inMemory()
         val wiring = inMemoryWiring().copy(assembledUploadPayloadFactory = customFactory)
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
         val handler = registry.findHandler("artifact_upload") as ArtifactUploadHandler
         handler.payloadFactory shouldBe customFactory
     }
@@ -130,10 +129,10 @@ class PhaseCWiringTest : FunSpec({
     test("Plan-D §10.3 review: cursorKeyring default is the deterministic dev keyring (NOT a fresh random)") {
         // A random per-process default makes integration tests
         // and dev workflows non-reproducible — a cursor minted
-        // by one PhaseCWiring instance can't be verified by
+        // by one McpRuntimeWiring instance can't be verified by
         // another. Pin that the default is the explicit
         // dev keyring so the value is observable and stable.
-        val a = PhaseCWiring(
+        val a = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -144,7 +143,7 @@ class PhaseCWiringTest : FunSpec({
             limits = McpLimitsConfig(),
             clock = FIXED_CLOCK,
         )
-        val b = PhaseCWiring(
+        val b = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -156,7 +155,7 @@ class PhaseCWiringTest : FunSpec({
             clock = FIXED_CLOCK,
         )
         a.cursorKeyring shouldBe b.cursorKeyring
-        a.cursorKeyring shouldBe PhaseCWiring.DEV_DEFAULT
+        a.cursorKeyring shouldBe McpRuntimeWiring.DEV_DEFAULT
         a.cursorKeyring.signing.kid shouldBe "dev-default"
     }
 
@@ -166,12 +165,12 @@ class PhaseCWiringTest : FunSpec({
         // that two calls produce different `kid`s + secrets
         // — proves the helper is actually random and not the
         // shared dev default.
-        val a = PhaseCWiring.randomCursorKeyring()
-        val b = PhaseCWiring.randomCursorKeyring()
+        val a = McpRuntimeWiring.randomCursorKeyring()
+        val b = McpRuntimeWiring.randomCursorKeyring()
         a.signing.kid shouldNotBe b.signing.kid
     }
 
-    test("AP 6.14: a custom finalizer in the wiring is honoured by the artifact_upload handler") {
+    test("a custom finalizer in the wiring is honoured by the artifact_upload handler") {
         // Defensive: the wiring exposes `finalizer` as a seam so
         // tests / future deployments can swap in a different
         // staging strategy. The default-registry must thread it
@@ -188,7 +187,7 @@ class PhaseCWiringTest : FunSpec({
         val wiring = inMemoryWiring(finalizer = stub)
         // Smoke-test only: the registry must still construct
         // without errors when a custom finalizer is supplied.
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
         registry.findHandler("artifact_upload")!!
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
         // The recorder is only invoked when an upload completes —

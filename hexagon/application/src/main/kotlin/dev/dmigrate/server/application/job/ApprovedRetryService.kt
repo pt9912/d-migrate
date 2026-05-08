@@ -51,7 +51,7 @@ class ApprovedRetryService(
     /**
      * Phase E §7.9 Quota-Integration (Review-Fix Blocker #2). Wenn null,
      * ueberspringt der ApprovedRetryService die Quota-Reservierung —
-     * sinnvoll fuer Bestands-Tests. Production-Wiring (PhaseEWiring)
+     * sinnvoll fuer Bestands-Tests. Production-Wiring (OperationalMcpWiring)
      * setzt eine echte Instanz. Approved-Retry erzeugt einen NEUEN Job
      * (Plan §7.9 line 1264) und MUSS daher die aktive-Job-Quota
      * reservieren, bevor JobStartTransaction.commit laeuft.

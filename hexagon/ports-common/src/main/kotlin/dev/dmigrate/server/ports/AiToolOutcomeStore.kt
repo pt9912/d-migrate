@@ -16,7 +16,7 @@ import java.time.Instant
  * `approvalKey` an Agent-Retry-Loops, die häufig parallel
  * identische Aufrufe absetzen. Der Phase-F-Store gibt für solche
  * parallele Pending-Reserves erneut `Reserved` zurück (siehe
- * `PhaseFInProcessStores.kt:51`) — was bei KI-Tools doppelte
+ * `InProcessUploadControlStores.kt:51`) — was bei KI-Tools doppelte
  * Provider-Kosten und doppelte Artefakt-Publishes erzeugt. Der
  * KI-Store löst das mit einer Single-Writer-Lease + Reclaim:
  *

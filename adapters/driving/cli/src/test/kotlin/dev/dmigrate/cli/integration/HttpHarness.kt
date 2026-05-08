@@ -49,7 +49,7 @@ internal class HttpHarness(
     override val stateDir: Path,
     override val principal: PrincipalContext,
     private val auditSinkRef: InMemoryAuditSink,
-    private val wiringRef: dev.dmigrate.mcp.registry.PhaseCWiring,
+    private val wiringRef: dev.dmigrate.mcp.registry.McpRuntimeWiring,
     private val handle: dev.dmigrate.mcp.server.McpServerHandle,
     private val baseUri: URI,
     private val stateDirLock: McpStateDirLock,
@@ -60,7 +60,7 @@ internal class HttpHarness(
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
     /** Test-only wiring access; see [StdioHarness.wiring]. */
-    internal val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
+    internal val wiring: dev.dmigrate.mcp.registry.McpRuntimeWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
@@ -263,7 +263,7 @@ internal class HttpHarness(
             }
 
             val wiringBundle = IntegrationFixtures.integrationWiring(stateDir, limits = limits)
-            // Default scope mapping: PhaseCRegistries.defaultToolRegistry
+            // Default scope mapping: McpRuntimeRegistries.defaultToolRegistry
             // requires `capabilities_list` (and the rest of the Phase-C
             // tools) to be present in the scope mapping at registration
             // time, even though `AuthMode.DISABLED` short-circuits the
@@ -282,7 +282,7 @@ internal class HttpHarness(
             // non-DISABLED auth flow.
             val outcome = McpServerBootstrap.startHttp(
                 config = config,
-                phaseCWiring = wiringBundle.wiring,
+                runtimeWiring = wiringBundle.wiring,
                 authValidatorOverride = DisabledAuthValidator(principal = principal),
             )
             val started = when (outcome) {

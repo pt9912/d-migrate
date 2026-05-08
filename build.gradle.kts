@@ -117,7 +117,7 @@ subprojects {
         outputs.cacheIf { false }
 
         // Forward UPDATE_GOLDEN to the forked test JVM so golden-pinned
-        // tests (PhaseBToolSchemasGoldenTest, AP-6.24-Goldens, …)
+        // tests (McpToolSchemasGoldenTest, AP-6.24-Goldens, …)
         // regenerate via `gradle -DUPDATE_GOLDEN=true ...` without manual
         // env wiring per task.
         val updateGolden = System.getProperty("UPDATE_GOLDEN") ?: System.getenv("UPDATE_GOLDEN")

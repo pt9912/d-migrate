@@ -19,8 +19,7 @@ class PipelineConfigTest : FunSpec({
         shouldThrow<IllegalArgumentException> { PipelineConfig(chunkSize = -100) }
     }
 
-    // 0.9.0 Phase B (docs/ImpPlan-0.9.0-B.md §4.3): Checkpoint-Defaults
-    // und Validierung.
+    // LF-013 / LN-012 / LN-013: Checkpoint-Defaults und Validierung.
 
     test("Phase B §4.3: checkpoint defaults match LN-012 (disabled; 10k rows; 5min)") {
         val cfg = PipelineConfig()
@@ -44,7 +43,7 @@ class PipelineConfigTest : FunSpec({
         }
     }
 
-    // 0.9.0 Phase B §4.4: zentraler Merge CLI > Config > Default.
+    // LF-013 / LN-012: zentraler Merge CLI > Config > Default.
 
     test("Phase B §4.4: merge — CLI directory sticht Config directory") {
         val config = CheckpointConfig(

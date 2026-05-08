@@ -13,12 +13,12 @@ import java.nio.file.Files
 import kotlin.io.path.deleteRecursively
 
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
-class McpCliPhaseCWiringTest : FunSpec({
+class McpCliRuntimeWiringTest : FunSpec({
 
-    test("phaseCWiring uses file-backed byte stores under the supplied state dir") {
+    test("runtimeWiring uses file-backed byte stores under the supplied state dir") {
         val dir = Files.createTempDirectory("dmigrate-mcp-wiring-")
         try {
-            val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = dir)
+            val wiring = McpCliRuntimeWiring.runtimeWiring(stateDir = dir)
 
             wiring.uploadSegmentStore.shouldBeInstanceOf<FileBackedUploadSegmentStore>()
             wiring.artifactContentStore.shouldBeInstanceOf<FileBackedArtifactContentStore>()
@@ -27,14 +27,14 @@ class McpCliPhaseCWiringTest : FunSpec({
         }
     }
 
-    test("phaseCWiring uses the file-spool assembly factory (AP 6.22 heap guarantee)") {
-        // Regression guard: PhaseCWiring's default for
+    test("runtimeWiring uses the file-spool assembly factory (AP 6.22 heap guarantee)") {
+        // Regression guard: McpRuntimeWiring's default for
         // assembledUploadPayloadFactory is the in-memory variant,
         // which would defeat the AP-6.22 streaming guarantee. The
         // CLI-production wiring MUST inject the file-spool factory.
         val dir = Files.createTempDirectory("dmigrate-mcp-wiring-spool-")
         try {
-            val wiring = McpCliPhaseCWiring.phaseCWiring(stateDir = dir)
+            val wiring = McpCliRuntimeWiring.runtimeWiring(stateDir = dir)
             wiring.assembledUploadPayloadFactory
                 .shouldBeInstanceOf<FileSpoolAssembledUploadPayloadFactory>()
         } finally {
@@ -42,7 +42,7 @@ class McpCliPhaseCWiringTest : FunSpec({
         }
     }
 
-    test("phaseCWiring loads secret-free connection refs from connectionConfigPath") {
+    test("runtimeWiring loads secret-free connection refs from connectionConfigPath") {
         val dir = Files.createTempDirectory("dmigrate-mcp-wiring-conn-")
         try {
             val config = dir.resolve(".d-migrate.yaml")
@@ -59,7 +59,7 @@ class McpCliPhaseCWiringTest : FunSpec({
                       providerRef: env
                 """.trimIndent(),
             )
-            val wiring = McpCliPhaseCWiring.phaseCWiring(
+            val wiring = McpCliRuntimeWiring.runtimeWiring(
                 stateDir = dir,
                 connectionConfigPath = config,
             )
@@ -76,13 +76,13 @@ class McpCliPhaseCWiringTest : FunSpec({
         }
     }
 
-    test("phaseCWiring uses configured deterministic cursor keyring when supplied") {
+    test("runtimeWiring uses configured deterministic cursor keyring when supplied") {
         val dir = Files.createTempDirectory("dmigrate-mcp-wiring-cursor-")
         try {
             val keyring = CursorKeyring(
                 signing = CursorKey("cursor-active", ByteArray(32) { 7 }),
             )
-            val wiring = McpCliPhaseCWiring.phaseCWiring(
+            val wiring = McpCliRuntimeWiring.runtimeWiring(
                 stateDir = dir,
                 cursorKeyring = keyring,
             )

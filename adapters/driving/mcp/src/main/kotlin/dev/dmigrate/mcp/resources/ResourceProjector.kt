@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.resources
 
 import dev.dmigrate.mcp.protocol.Resource
 import dev.dmigrate.mcp.registry.ResourceTemplateDescriptor
-import dev.dmigrate.mcp.schema.PhaseBToolSchemas
+import dev.dmigrate.mcp.schema.McpToolSchemas
 import dev.dmigrate.server.application.audit.SecretScrubber
 import dev.dmigrate.server.core.ai.AiArtifactMetadata
 import dev.dmigrate.server.core.ai.AiArtifactProvenance
@@ -138,7 +138,7 @@ internal object ResourceContentProjector {
             mapOf(
                 "phase" to scrub(it.phase),
                 "numericValues" to it.numericValues.filterKeys { k ->
-                    k in PhaseBToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
+                    k in McpToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
                 },
             )
         },
@@ -272,19 +272,18 @@ internal object ResourceContentProjector {
 }
 
 /**
- * Static templates per `ImpPlan-0.9.6-B.md` §5.5 + §6.9. Phase B
- * publishes one template per resource family plus the chunk template
- * (acceptance: "Templates enthalten Chunk-URIs"). The list is ordered
+ * LF-012 / LN-038: static templates. Publishes one template per
+ * resource family plus the chunk template. The list is ordered
  * deterministically — important for golden-test stability and for
  * client UIs that surface templates in registration order.
  *
  * The list is `ResourceTemplateDescriptor` (registry-shape, with
  * `requiredScopes`) rather than the `ResourceTemplate` wire shape, so
- * `PhaseBRegistries.resourceRegistry()` can register them as the
+ * `McpContractRegistries.resourceRegistry()` can register them as the
  * single source of truth for `resources/templates/list`. The wire
  * projection happens in `McpServiceImpl.toWireTemplate(...)`.
  */
-internal object PhaseBResourceTemplates {
+internal object McpResourceTemplates {
 
     private const val JSON_MIME = "application/json"
     private val READ_SCOPE: Set<String> = setOf("dmigrate:read")

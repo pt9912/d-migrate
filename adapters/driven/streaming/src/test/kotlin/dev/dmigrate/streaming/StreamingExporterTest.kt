@@ -54,8 +54,7 @@ class StreamingExporterTest : FunSpec({
 
     val pool = NoopConnectionPool
 
-    // ─── 0.9.0 Phase C.2: Mid-Table-Resume-Pfad ─────────────────
-    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ─── LF-013 / LN-006 / LN-012: Mid-Table-Resume-Pfad ─────────
     // ────────────────────────────────────────────────────────────
 
     test("C.2: resumeMarkers triggers the 5-param streamTable overload") {

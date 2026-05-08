@@ -9,8 +9,7 @@ import java.nio.file.Paths
 import java.time.Duration
 
 /**
- * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §5.2 / §4.4 Ueberplan):
- * parst den `pipeline.checkpoint.*`-Block aus der effektiven
+ * LF-013 / LN-012: parst den `pipeline.checkpoint.*`-Block aus der effektiven
  * `.d-migrate.yaml` und erzeugt daraus eine [CheckpointConfig].
  *
  * Wird vom [DataExportCommand][dev.dmigrate.cli.commands.DataExportCommand]
@@ -19,10 +18,10 @@ import java.time.Duration
  * damit der Runner ueber [CheckpointConfig.merge] CLI-Override
  * (`--checkpoint-dir`) und Config-Default zusammenfuehren kann.
  *
- * Pfad-Aufloesung folgt dem Phase-A-Vertrag (gleiche Prioritaeten wie
- * andere Config-Abschnitte): `--config` > `D_MIGRATE_CONFIG` > Default.
+ * Pfad-Aufloesung folgt den gleichen Prioritaeten wie andere
+ * Config-Abschnitte: `--config` > `D_MIGRATE_CONFIG` > Default.
  *
- * Mappings (Phase B §4.3):
+ * Mappings:
  *
  * - `pipeline.checkpoint.enabled` -> [CheckpointConfig.enabled]
  * - `pipeline.checkpoint.interval` -> [CheckpointConfig.rowInterval]

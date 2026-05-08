@@ -25,7 +25,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.postgresql:postgresql:${rootProject.properties["postgresqlJdbcVersion"]}")
     testImplementation("com.zaxxer:HikariCP:${rootProject.properties["hikariVersion"]}")
-    // Flyway-Core fuer den MigrateResult-Typ im PhaseEMigrationRunner-
+    // Flyway-Core fuer den MigrateResult-Typ im JdbcMigrationRunner-
     // Aufruf (auch wenn der Test das Ergebnis ignoriert).
     testImplementation("org.flywaydb:flyway-core:11.8.2")
 }

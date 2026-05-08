@@ -28,7 +28,7 @@ interface AssembledUploadPayloadFactory {
         /**
          * Heap-resident factory for handler-near tests. Production
          * wiring must NOT use this — the AP-6.21 file-spool factory is
-         * the only valid CLI implementation. Tests / `developmentPhaseCWiring`
+         * the only valid CLI implementation. Tests / `developmentMcpRuntimeWiring`
          * may use it because the assembled bytes there are small
          * fixtures.
          */

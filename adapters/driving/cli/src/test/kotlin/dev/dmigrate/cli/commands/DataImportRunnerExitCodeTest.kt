@@ -539,11 +539,10 @@ class DataImportRunnerExitCodeTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A / Phase D.1 (docs/ImpPlan-0.9.0-D.md §4.8):
+    // LF-010 / LF-013 / LN-012:
     // Resume-CLI-Preflight fuer Import. Stdin-Quelle (`source == "-"`)
-    // kann nicht wiederaufgenommen werden → Exit 2. Die Phase-A-
-    // Warning („accepted but ignored") ist in Phase D.1 entfernt; der
-    // Runner setzt den Resume-Vertrag jetzt aktiv um.
+    // kann nicht wiederaufgenommen werden -> Exit 2. Der Runner setzt den
+    // Resume-Vertrag aktiv um.
     // ────────────────────────────────────────────────────────────
 
     test("Phase A §4.4: --resume mit stdin-Quelle endet mit Exit 2") {
@@ -572,8 +571,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
         stderr.joined() shouldNotContain "Warning: --resume"
     }
 
-    // ─── 0.9.0 Phase D.1: Resume-Preflight + Manifest-Lifecycle ──
-    // (`docs/ImpPlan-0.9.0-D.md` §5.1)
+    // ─── LF-010 / LF-013 / LN-012: Resume-Preflight + Lifecycle ─────
     // ──────────────────────────────────────────────────────────────
 
 })

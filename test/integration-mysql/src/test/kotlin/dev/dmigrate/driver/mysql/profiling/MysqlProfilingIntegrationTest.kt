@@ -183,7 +183,7 @@ class MysqlProfilingIntegrationTest : FunSpec({
         }
     }
 
-    // ── Security: malicious identifiers (0.9.1 Phase A §5.4) ───
+    // ── LN-009 / LN-043: malicious identifiers ─────────────────
 
     test("security: table with embedded backtick is profiled safely") {
         pool().use { p ->

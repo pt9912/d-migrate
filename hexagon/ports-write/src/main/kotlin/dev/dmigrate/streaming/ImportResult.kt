@@ -47,8 +47,8 @@ data class TableImportSummary(
 )
 
 /**
- * 0.9.0 Phase D.2/D.3 (`docs/ImpPlan-0.9.0-D.md` §5.2 / §5.3):
- * Resume-Zustand fuer eine Tabelle bzw. einen Input-Slice, den der
+ * LF-010 / LF-013 / LN-009 / LN-012: Resume-Zustand fuer eine Tabelle
+ * bzw. einen Input-Slice, den der
  * [StreamingImporter] vom [DataImportRunner] per Map erhaelt. Ein
  * Eintrag signalisiert: die Tabelle wurde in einem frueheren Lauf
  * bereits teilweise oder ganz importiert.
@@ -59,7 +59,7 @@ data class TableImportSummary(
  * Chunk wird wieder regulaer geschrieben. Das vermeidet
  * Doppel-Inserts fuer bereits bestaetigte Grenzen.
  *
- * Der zugehoerige Truncate-Guard (§4.4): fuer Tabellen mit
+ * Der zugehoerige Truncate-Guard: fuer Tabellen mit
  * `committedChunks > 0` laesst der Importer `truncate` **nicht**
  * laufen — sonst wuerden bereits bestaetigte Zeilen wieder
  * verschwinden.
@@ -82,8 +82,8 @@ data class ImportTableResumeState(
 }
 
 /**
- * 0.9.0 Phase D.3 (`docs/ImpPlan-0.9.0-D.md` §5.3): chunk-granularer
- * Commit-Fortschritt. Der [StreamingImporter] emittiert diesen
+ * LF-010 / LF-013 / LN-009 / LN-012: chunk-granularer Commit-Fortschritt.
+ * Der [StreamingImporter] emittiert diesen
  * Datensatz **nur** nachdem `session.commitChunk()` erfolgreich war;
  * Mid-Write- oder Mid-Commit-Fehler erzeugen **keinen** Commit-
  * Callback. Damit kann der [DataImportRunner] das Manifest so
@@ -135,10 +135,7 @@ data class ImportResult(
     val totalRowsUnknown: Long,
     val totalRowsFailed: Long,
     val durationMs: Long,
-    /**
-     * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
-     * `operationId` des Laufs. Symmetrisch zu [ExportResult.operationId].
-     */
+    /** LF-013 / LN-012: stabile `operationId` des Laufs. Symmetrisch zu [ExportResult.operationId]. */
     val operationId: String? = null,
 ) {
     val success: Boolean get() = tables.all { it.error == null && it.failedFinish == null }

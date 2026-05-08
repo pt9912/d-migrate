@@ -4,7 +4,7 @@ import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 
 /**
- * Phase-E Tool-Registry-Overlay parallel zu [PhaseCRegistries].
+ * Phase-E Tool-Registry-Overlay parallel zu [McpRuntimeRegistries].
  *
  * Umstellung gemaess Plan §7.6 line 1132 ("Tool-Registry von
  * Unsupported-Handlern auf produktive Handler umstellen") fuer die
@@ -15,10 +15,10 @@ import dev.dmigrate.server.application.job.JobStartOrchestrator
  * ueberschreibt nur die drei E-Slots. Phase-B/C-Tools bleiben
  * unveraendert.
  */
-object PhaseERegistries {
+object OperationalMcpRegistries {
 
     fun defaultToolRegistry(
-        eWiring: PhaseEWiring,
+        eWiring: OperationalMcpWiring,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): ToolRegistry {
         val orchestrator = JobStartOrchestrator(
@@ -38,15 +38,15 @@ object PhaseERegistries {
             // jobStore an markExecutorSetupFailed (post-commit Setup-
             // Failure -> pollbares FAILED).
             dispatchAdmission = eWiring.executorBundle.admission,
-            jobStore = eWiring.phaseCWiring.jobStore,
+            jobStore = eWiring.runtimeWiring.jobStore,
         )
-        val clock = eWiring.phaseCWiring.clock
+        val clock = eWiring.runtimeWiring.clock
 
         // Phase-C-Basis nimmt die Phase-B/C-Handler. Wir ueberschreiben nur
         // die drei E-Slots mit produktiven Handlern; alles andere bleibt
-        // wie von PhaseCRegistries gewired.
-        val baseRegistry = PhaseCRegistries.defaultToolRegistry(
-            wiring = eWiring.phaseCWiring,
+        // wie von McpRuntimeRegistries gewired.
+        val baseRegistry = McpRuntimeRegistries.defaultToolRegistry(
+            wiring = eWiring.runtimeWiring,
             scopeMapping = scopeMapping,
         )
         val cancelHandler = JobCancelHandler(eWiring.jobCancelService, clock)
@@ -55,22 +55,22 @@ object PhaseERegistries {
             val handler = when (descriptor.name) {
                 ArtifactUploadInitHandler.TOOL_NAME ->
                     ArtifactUploadInitHandler(
-                        sessionStore = eWiring.phaseCWiring.uploadSessionStore,
-                        quotaService = eWiring.phaseCWiring.quotaService,
-                        limits = eWiring.phaseCWiring.limits,
+                        sessionStore = eWiring.runtimeWiring.uploadSessionStore,
+                        quotaService = eWiring.runtimeWiring.quotaService,
+                        limits = eWiring.runtimeWiring.limits,
                         options = ArtifactUploadInitHandler.Options(clock = clock),
                         uploadInitOrchestrator = eWiring.uploadInitOrchestrator,
                     )
                 ArtifactUploadAbortHandler.TOOL_NAME ->
                     ArtifactUploadAbortHandler(
-                        sessionStore = eWiring.phaseCWiring.uploadSessionStore,
-                        segmentStore = eWiring.phaseCWiring.uploadSegmentStore,
-                        quotaService = eWiring.phaseCWiring.quotaService,
+                        sessionStore = eWiring.runtimeWiring.uploadSessionStore,
+                        segmentStore = eWiring.runtimeWiring.uploadSegmentStore,
+                        quotaService = eWiring.runtimeWiring.quotaService,
                         clock = clock,
                         administrativeAbortPipeline = AdministrativeAbortPipeline(
-                            sessionStore = eWiring.phaseCWiring.uploadSessionStore,
-                            segmentStore = eWiring.phaseCWiring.uploadSegmentStore,
-                            quotaService = eWiring.phaseCWiring.quotaService,
+                            sessionStore = eWiring.runtimeWiring.uploadSessionStore,
+                            segmentStore = eWiring.runtimeWiring.uploadSegmentStore,
+                            quotaService = eWiring.runtimeWiring.quotaService,
                             syncEffectStore = eWiring.syncEffectStore,
                             abortOutcomeStore = eWiring.abortOutcomeStore,
                             abortApprovalFingerprint = eWiring.abortApprovalFingerprint,
@@ -92,10 +92,10 @@ object PhaseERegistries {
                 DataImportStartHandler.TOOL_NAME ->
                     DataImportStartHandler(
                         orchestrator = orchestrator,
-                        artifactStore = eWiring.phaseCWiring.artifactStore,
-                        artifactContentStore = eWiring.phaseCWiring.artifactContentStore,
-                        connectionStore = eWiring.phaseCWiring.connectionStore,
-                        schemaStore = eWiring.phaseCWiring.schemaStore,
+                        artifactStore = eWiring.runtimeWiring.artifactStore,
+                        artifactContentStore = eWiring.runtimeWiring.artifactContentStore,
+                        connectionStore = eWiring.runtimeWiring.connectionStore,
+                        schemaStore = eWiring.runtimeWiring.schemaStore,
                         clock = clock,
                     )
                 // Phase F § 8.8 (F.8 4/4): produktiver
@@ -105,7 +105,7 @@ object PhaseERegistries {
                 DataTransferStartHandler.TOOL_NAME ->
                     DataTransferStartHandler(
                         orchestrator = orchestrator,
-                        connectionStore = eWiring.phaseCWiring.connectionStore,
+                        connectionStore = eWiring.runtimeWiring.connectionStore,
                         clock = clock,
                     )
                 JobCancelHandler.TOOL_NAME ->

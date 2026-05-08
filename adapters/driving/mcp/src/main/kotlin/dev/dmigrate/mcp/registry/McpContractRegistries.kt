@@ -1,25 +1,23 @@
 package dev.dmigrate.mcp.registry
 
-import dev.dmigrate.mcp.resources.PhaseBResourceTemplates
-import dev.dmigrate.mcp.schema.PhaseBToolSchemas
+import dev.dmigrate.mcp.resources.McpResourceTemplates
+import dev.dmigrate.mcp.schema.McpToolSchemas
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.core.error.ToolErrorCode
 
 /**
- * Builds the Phase-B default tool/resource registries per
- * `ImpPlan-0.9.6-B.md` §3.1 + §6.8 + §12.11.
+ * LF-012 / LN-027 / LN-028 / LN-038: builds the default MCP
+ * tool/resource registries.
  *
- * Phase B registers EVERY 0.9.6 tool so `tools/list` advertises the
- * full contract; only `capabilities_list` is wired to a real handler
- * (per §12.11). All other tools dispatch through
+ * The contract registry registers every advertised tool so
+ * `tools/list` exposes the full contract; only `capabilities_list`
+ * is wired to a real handler in this layer. All other tools dispatch through
  * [UnsupportedToolHandler], which raises
  * `UnsupportedToolOperationException` — translated to a tool result
  * with `isError=true` and a `ToolErrorEnvelope` (§12.8).
  *
  * The descriptor metadata (titles, descriptions, error-codes,
- * inline-limit hints) is stable and reviewed for the contract; AP
- * 6.10 will replace the placeholder JSON-Schemas with real 2020-12
- * definitions and add the golden-test gate.
+ * inline-limit hints) is stable and reviewed for the contract.
  *
  * Tool universe: every entry in `McpServerConfig.scopeMapping` that is
  * not an MCP-protocol method (`tools/list`, `resources/list`,
@@ -28,7 +26,7 @@ import dev.dmigrate.server.core.error.ToolErrorCode
  * same `McpServerConfig.scopeMapping` but are not listed in
  * `tools/list`.
  */
-object PhaseBRegistries {
+object McpContractRegistries {
 
     /**
      * §12.16 verbindlich: MCP-protocol method names that must NOT be
@@ -65,12 +63,12 @@ object PhaseBRegistries {
     fun toolRegistry(
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): ToolRegistry {
-        // §12.11: capabilities_list MUST be present in Phase B —
+        // LF-012 / LN-038: capabilities_list MUST be present —
         // it's the only tool with a real handler. A scopeMapping that
         // omits it would silently produce a server with zero working
         // tools; fail fast at build time instead.
         check("capabilities_list" in scopeMapping) {
-            "scopeMapping must register 'capabilities_list' (§12.11 — Phase B's only fachlicher Handler)"
+            "scopeMapping must register 'capabilities_list' (required MCP contract handler)"
         }
         val descriptors = scopeMapping
             .filterKeys { it !in PROTOCOL_METHODS }
@@ -89,13 +87,12 @@ object PhaseBRegistries {
     }
 
     /**
-     * Phase B resource registry. §4.7 + §5.5: stdio and HTTP MUST
+     * LF-012 / LN-038: stdio and HTTP MUST
      * read templates from the same registry instance; the registry is
      * the single source of truth so `resources/templates/list` and
-     * any future `resources/list`-template-driven projection in Phase
-     * C/D can't drift apart.
-     *
-     * Phase B registers the 7 templates from [PhaseBResourceTemplates]
+     * any future `resources/list`-template-driven projection can't drift apart.
+ *
+     * Registers the 7 templates from [McpResourceTemplates]
      * (jobs / artifacts / artifact-chunks / schemas / profiles /
      * diffs / connections) and ZERO concrete resources — concrete
      * resources are projected on the fly by `ResourcesListHandler`
@@ -103,21 +100,21 @@ object PhaseBRegistries {
      */
     fun resourceRegistry(): ResourceRegistry {
         val builder = ResourceRegistry.builder()
-        for (template in PhaseBResourceTemplates.ALL) {
+        for (template in McpResourceTemplates.ALL) {
             builder.registerTemplate(template)
         }
         return builder.build()
     }
 
     private fun describe(name: String, scopes: Set<String>): ToolDescriptor {
-        val schemas = PhaseBToolSchemas.forTool(name) ?: error(
-            "no schema registered for tool '$name' — PhaseBToolSchemas must cover every entry in scopeMapping",
+        val schemas = McpToolSchemas.forTool(name) ?: error(
+            "no schema registered for tool '$name' — McpToolSchemas must cover every entry in scopeMapping",
         )
         return ToolDescriptor(
             name = name,
             title = TITLES[name] ?: name,
             description = DESCRIPTIONS[name]
-                ?: "0.9.6 contract tool '$name' (Phase B: registered, not implemented).",
+                ?: "0.9.6 contract tool '$name' (registered, not implemented).",
             requiredScopes = scopes,
             inputSchema = schemas.inputSchema,
             outputSchema = schemas.outputSchema,

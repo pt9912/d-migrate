@@ -6,8 +6,8 @@ import dev.dmigrate.mcp.auth.DisabledAuthValidator
 import dev.dmigrate.mcp.protocol.McpProtocol
 import dev.dmigrate.mcp.protocol.McpServiceImpl
 import dev.dmigrate.mcp.registry.ArtifactUploadInitHandler
-import dev.dmigrate.mcp.registry.PhaseCRegistries
-import dev.dmigrate.mcp.registry.PhaseCWiring
+import dev.dmigrate.mcp.registry.McpRuntimeRegistries
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.server.McpServerConfig
@@ -56,10 +56,10 @@ import java.util.Base64
  * MCP-Session bleibt zwischen den Segment-POSTs persistent
  * (`MCP-Session-Id`-Header), und die finale Wirkung
  * (`UPLOAD_INPUT`-Artefakt + Bytes im ArtifactContentStore) ist
- * ueber denselben `PhaseCWiring`-Stores beobachtbar wie der
+ * ueber denselben `McpRuntimeWiring`-Stores beobachtbar wie der
  * stdio-Pfad.
  */
-class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
+class McpHttpMultiSegmentUploadIT : FunSpec({
 
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
@@ -100,7 +100,7 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
         val quotaStore = InMemoryQuotaStore()
-        val wiring = PhaseCWiring(
+        val wiring = McpRuntimeWiring(
             uploadSessionStore = sessionStore,
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = artifactStore,
@@ -111,7 +111,7 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
             limits = McpLimitsConfig(maxUploadSegmentBytes = 16),
             clock = clock,
         )
-        val registry = PhaseCRegistries.defaultToolRegistry(wiring)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
         // Pre-seed: durable Session mit drei Segmenten + application/csv-MIME.
         // CSV ist seit Phase F erlaubt; sowohl `text/csv` als auch
@@ -220,7 +220,7 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
             val artifactRef = seg3Json.get("schemaRef").asString
             artifactRef shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
 
-            // 3. Persistente Wirkung pin't durch denselben PhaseCWiring-Store.
+            // 3. Persistente Wirkung pin't durch denselben McpRuntimeWiring-Store.
             val artifactId = artifactRef.substringAfterLast("/")
             artifactContentStore.exists(artifactId) shouldBe true
             val record = artifactStore.findById(tenant, artifactId)!!

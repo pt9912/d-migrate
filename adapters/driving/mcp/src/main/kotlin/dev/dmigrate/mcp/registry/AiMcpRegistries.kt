@@ -9,7 +9,7 @@ import dev.dmigrate.server.application.audit.AuditScope
 
 /**
  * Phase G § 6 G.6 (G.6.g) — Tool-Registry-Overlay parallel zu
- * [PhaseERegistries].
+ * [OperationalMcpRegistries].
  *
  * Plan §7.6 line 1132 sinngemäß: "Tool-Registry von Unsupported-
  * Handlern auf produktive Handler umstellen". Phase G überschreibt
@@ -36,10 +36,10 @@ import dev.dmigrate.server.application.audit.AuditScope
  * Beide Transports (stdio + HTTP) MÜSSEN dieselbe Registry-Instanz
  * teilen — Plan-§-6.1-Akzeptanz parallel zu Phase C.
  */
-object PhaseGRegistries {
+object AiMcpRegistries {
 
     fun defaultToolRegistry(
-        gWiring: PhaseGWiring,
+        gWiring: AiMcpWiring,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
     ): ToolRegistry = defaultToolRegistry(
         gWiring = gWiring,
@@ -48,31 +48,31 @@ object PhaseGRegistries {
     )
 
     fun defaultComponents(
-        gWiring: PhaseGWiring,
+        gWiring: AiMcpWiring,
         scopeMapping: Map<String, Set<String>> = McpServerConfig.DEFAULT_SCOPE_MAPPING,
-    ): PhaseCRegistries.McpServiceComponents {
+    ): McpRuntimeRegistries.McpServiceComponents {
         val capabilitiesHandler = capabilitiesHandler(gWiring, scopeMapping)
-        return PhaseCRegistries.McpServiceComponents(
+        return McpRuntimeRegistries.McpServiceComponents(
             toolRegistry = defaultToolRegistry(gWiring, scopeMapping, capabilitiesHandler),
-            responseLimitEnforcer = PhaseCRegistries.defaultResponseLimitEnforcer(gWiring.phaseEWiring.phaseCWiring),
-            auditScope = gWiring.phaseEWiring.phaseCWiring.auditSink?.let {
-                AuditScope(it, gWiring.phaseEWiring.phaseCWiring.clock)
+            responseLimitEnforcer = McpRuntimeRegistries.defaultResponseLimitEnforcer(gWiring.operationalWiring.runtimeWiring),
+            auditScope = gWiring.operationalWiring.runtimeWiring.auditSink?.let {
+                AuditScope(it, gWiring.operationalWiring.runtimeWiring.clock)
             },
             capabilitiesProvider = capabilitiesHandler::staticPayload,
             cursorCodec = McpCursorCodec(
-                keyring = gWiring.phaseEWiring.phaseCWiring.cursorKeyring,
-                clock = gWiring.phaseEWiring.phaseCWiring.clock,
+                keyring = gWiring.operationalWiring.runtimeWiring.cursorKeyring,
+                clock = gWiring.operationalWiring.runtimeWiring.clock,
             ),
         )
     }
 
     private fun defaultToolRegistry(
-        gWiring: PhaseGWiring,
+        gWiring: AiMcpWiring,
         scopeMapping: Map<String, Set<String>>,
         capabilitiesHandler: CapabilitiesListReadOnlyHandler,
     ): ToolRegistry {
-        val phaseE = gWiring.phaseEWiring
-        val phaseC = phaseE.phaseCWiring
+        val phaseE = gWiring.operationalWiring
+        val phaseC = phaseE.runtimeWiring
         val clock = phaseC.clock
 
         // Plan §6 G.6: ein gemeinsamer Orchestrator über die drei
@@ -83,7 +83,7 @@ object PhaseGRegistries {
             leaseDuration = gWiring.aiToolLeaseDuration,
         )
 
-        val baseRegistry = PhaseERegistries.defaultToolRegistry(phaseE, scopeMapping)
+        val baseRegistry = OperationalMcpRegistries.defaultToolRegistry(phaseE, scopeMapping)
         val builder = ToolRegistry.builder()
         for (descriptor in baseRegistry.all()) {
             val handler = when (descriptor.name) {
@@ -148,17 +148,17 @@ object PhaseGRegistries {
     }
 
     private fun capabilitiesHandler(
-        gWiring: PhaseGWiring,
+        gWiring: AiMcpWiring,
         scopeMapping: Map<String, Set<String>>,
     ): CapabilitiesListReadOnlyHandler {
-        val toolRegistry = PhaseERegistries.defaultToolRegistry(gWiring.phaseEWiring, scopeMapping)
+        val toolRegistry = OperationalMcpRegistries.defaultToolRegistry(gWiring.operationalWiring, scopeMapping)
         val providerDescriptions =
             (gWiring.aiProviderRegistry as? DefaultAiProviderRegistry)?.describe().orEmpty()
         val prompts = DefaultPromptRegistry.mandatory().list()
         return CapabilitiesListReadOnlyHandler(
             tools = toolRegistry.all(),
             scopeMapping = scopeMapping,
-            limits = gWiring.phaseEWiring.phaseCWiring.limits,
+            limits = gWiring.operationalWiring.runtimeWiring.limits,
             aiProviders = providerDescriptions,
             prompts = prompts,
         )

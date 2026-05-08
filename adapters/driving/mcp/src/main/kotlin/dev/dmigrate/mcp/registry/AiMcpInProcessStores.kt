@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * Phase F's [InProcessSyncEffectIdempotencyStore.reserve] fällt bei
  * einer aktiven Lease und identischem Fingerprint auf
- * `Reserved(existing.expiresAt)` zurück (`PhaseFInProcessStores.kt:51`).
+ * `Reserved(existing.expiresAt)` zurück (`InProcessUploadControlStores.kt:51`).
  * Das bleibt für sequenzielle Upload-Init-Pfade passend; KI-Pfade
  * brauchen dagegen Single-Writer-Semantik, damit kein zweiter
  * Provider-Aufruf und kein zweites Artefakt entstehen.

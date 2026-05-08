@@ -152,7 +152,7 @@ internal interface McpClientHarness : AutoCloseable {
  * AP 6.24 §6.24 final-review (Z. 1849): the harness's CLIENT-FACING
  * surface (`McpClientHarness`) is restricted to the methods a real
  * MCP client would use — `initialize`, `toolsList`, `toolsCall`,
- * `resourcesRead`, `close` plus metadata. Direct `PhaseCWiring`
+ * `resourcesRead`, `close` plus metadata. Direct `McpRuntimeWiring`
  * access is NOT on that surface.
  *
  * Tests that pre-stage server-side state (schemas, jobs, artefacts)
@@ -161,7 +161,7 @@ internal interface McpClientHarness : AutoCloseable {
  * client could ever observe. The narrowing fails fast if a future
  * harness type forgets to register here.
  */
-internal fun McpClientHarness.testWiring(): dev.dmigrate.mcp.registry.PhaseCWiring = when (this) {
+internal fun McpClientHarness.testWiring(): dev.dmigrate.mcp.registry.McpRuntimeWiring = when (this) {
     is StdioHarness -> wiring
     is HttpHarness -> wiring
     else -> error("McpClientHarness.testWiring(): unsupported harness type ${this::class}")

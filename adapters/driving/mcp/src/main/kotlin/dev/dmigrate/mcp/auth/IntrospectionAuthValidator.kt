@@ -45,9 +45,9 @@ internal class IntrospectionAuthValidator(
 
     override suspend fun validate(token: String): BearerValidationResult {
         val body = try {
-            // TODO(0.9.7): RFC 7662 §2.1 client authentication. Phase B
-            // assumes a trusted internal Introspection endpoint; production
-            // setups with client_credentials need to add Authorization here.
+            // TODO(0.9.7): RFC 7662 §2.1 client authentication. LN-025 /
+            // LN-028 deployments with client_credentials need to add
+            // Authorization here.
             val response = httpClient.submitForm(
                 url = introspectionUrl,
                 formParameters = parameters { append("token", token) },

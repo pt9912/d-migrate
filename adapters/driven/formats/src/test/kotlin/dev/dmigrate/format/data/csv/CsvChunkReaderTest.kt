@@ -264,10 +264,10 @@ class CsvChunkReaderTest : FunSpec({
         }
     }
 
-    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // LF-009 / LF-013:
     // BOM-/Encoding-Pfade werden mit nicht-lateinischen Payloads gefahren.
 
-    test("Phase F §4.5: UTF-8 BOM + kyrillisch/CJK/Emoji bleibt byte- und zeichenstabil") {
+    test("UTF-8 BOM + kyrillisch/CJK/Emoji bleibt byte- und zeichenstabil") {
         val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
         val csv = "name,note\nМосква,東京 🇯🇵".toByteArray(Charsets.UTF_8)
         val input = ByteArrayInputStream(bom + csv)

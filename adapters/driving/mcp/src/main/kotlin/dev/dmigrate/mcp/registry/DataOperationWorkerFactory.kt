@@ -16,11 +16,11 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * ausfuehrt. Solange ein Bootstrap keinen solchen Worker injiziert,
  * failen diese Jobs geschlossen und sichtbar.
  */
-internal class PhaseFDataOperationWorkerFactory(
+internal class DataOperationWorkerFactory(
     private val fallback: JobWorkerFactory,
     private val dataImportWorkerFactory: JobWorkerFactory? = null,
     private val dataTransferWorkerFactory: JobWorkerFactory? = null,
-    private val dataRunnerDependencies: PhaseFDataRunnerDependencies? = null,
+    private val dataRunnerDependencies: DataRunnerDependencies? = null,
 ) : JobWorkerFactory {
 
     override fun create(record: JobRecord, request: JobStartRequest): JobWorker? =

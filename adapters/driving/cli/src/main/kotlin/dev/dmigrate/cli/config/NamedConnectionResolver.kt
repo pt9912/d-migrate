@@ -1,7 +1,7 @@
 package dev.dmigrate.cli.config
 
-import dev.dmigrate.connection.PhaseCConnectionConfigException
-import dev.dmigrate.connection.PhaseCConnectionConfigParser
+import dev.dmigrate.connection.ConnectionConfigException
+import dev.dmigrate.connection.ConnectionConfigParser
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -149,14 +149,14 @@ class NamedConnectionResolver(
     /**
      * Liest `database.<key>` aus der bereits geparsten Config-Datei.
      * Gibt `null` zurück wenn der Key nicht gesetzt ist. Plan-D §8.2:
-     * delegiert an den adapter-neutralen [PhaseCConnectionConfigParser]
+     * delegiert an den adapter-neutralen [ConnectionConfigParser]
      * und übersetzt dessen typisierte Fehler in
      * [ConfigResolveException], damit der CLI-Exit-Code-Vertrag
      * unverändert bleibt.
      */
     private fun lookupDefaultValue(configPath: Path, key: String): String? = try {
-        PhaseCConnectionConfigParser.parseDefault(configPath, key)
-    } catch (e: PhaseCConnectionConfigException) {
+        ConnectionConfigParser.parseDefault(configPath, key)
+    } catch (e: ConnectionConfigException) {
         throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
     }
 
@@ -173,7 +173,7 @@ class NamedConnectionResolver(
 
     /**
      * Plan-D §8.2: das eigentliche YAML-Parsing wandert in den
-     * adapter-neutralen [PhaseCConnectionConfigParser]; dieser
+     * adapter-neutralen [ConnectionConfigParser]; dieser
      * Resolver behält nur noch die CLI-spezifische
      * Pfad-Resolution und die ENV-Substitution. Das `${VAR}`-
      * Expansion bleibt CLI-only — der Discovery-Pfad (MCP) darf
@@ -181,8 +181,8 @@ class NamedConnectionResolver(
      */
     private fun lookupConnectionUrl(configPath: Path, name: String): String {
         val connections = try {
-            PhaseCConnectionConfigParser.parseConnections(configPath)
-        } catch (e: PhaseCConnectionConfigException) {
+            ConnectionConfigParser.parseConnections(configPath)
+        } catch (e: ConnectionConfigException) {
             throw ConfigResolveException(e.message ?: "config parse failure", cause = e)
         }
         return connections[name] ?: throw ConfigResolveException(

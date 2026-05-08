@@ -50,13 +50,13 @@ kover {
             excludes {
                 // Phase E2.2: Thin Flyway-Wrapper — die produktive Logik
                 // (Migration-Anwendung gegen ein echtes Postgres) wird durch
-                // PhaseEMigrationRunnerIntegrationTest unter
+                // JdbcMigrationRunnerIntegrationTest unter
                 // -PintegrationTests gedeckt. Im Default-Test-Lauf gibt es
                 // keine in-process-Postgres-Alternative, die JSONB +
                 // partielle Indizes (siehe V1__phase_e_initial.sql) versteht.
                 classes(
-                    "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner",
-                    "dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner\$Companion",
+                    "dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner",
+                    "dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner\$Companion",
                     // Phase E2.3: Postgres-only JDBC-Logik (JSONB,
                     // SELECT FOR UPDATE, INSERT…ON CONFLICT…RETURNING) —
                     // gedeckt durch JdbcIdempotencyStoreContractTest unter

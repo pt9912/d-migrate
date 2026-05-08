@@ -18,7 +18,7 @@ private val IntegrationTag = NamedTag("integration")
  * read-only discovery / validation tools per §7.3 (Pflichtflüsse):
  *
  *  - `tools/list` MUST advertise every tool from
- *    [PhaseCToolMatrix.PHASE_C_TOOLS] on both transports
+ *    [McpToolMatrix.RUNTIME_TOOLS] on both transports
  *  - `capabilities_list` MUST return a transport-equivalent payload
  *  - `schema_validate` MUST return a transport-equivalent payload
  *    for a small valid inline schema
@@ -35,29 +35,29 @@ class McpDiscoveryAndValidateScenarioTest : FunSpec({
 
     tags(IntegrationTag)
 
-    test("tools/list advertises the Phase-C tool matrix on both transports") {
+    test("tools/list advertises the runtime tool matrix on both transports") {
         val (stdioTools, httpTools) = withFreshTransports { stdio, http ->
             stdio.toolsList() to http.toolsList()
         }
-        val stdioNames = PhaseCToolMatrix.toolNames(stdioTools.tools)
-        val httpNames = PhaseCToolMatrix.toolNames(httpTools.tools)
+        val stdioNames = McpToolMatrix.toolNames(stdioTools.tools)
+        val httpNames = McpToolMatrix.toolNames(httpTools.tools)
         // §6.24 final-review: pin against the CANONICAL superset
         // (McpServerConfig.DEFAULT_SCOPE_MAPPING minus PROTOCOL_METHODS),
         // not against the union of what the transports happen to
         // advertise. The union form would silently accept a
         // common-extra-tool regression where BOTH transports gain
         // the same surplus tool.
-        val expectedSuperset = PhaseCToolMatrix.EXPECTED_TOOL_SUPERSET
-        val stdioDrift = PhaseCToolMatrix.drift(stdioNames, expectedSuperset = expectedSuperset)
-        val httpDrift = PhaseCToolMatrix.drift(httpNames, expectedSuperset = expectedSuperset)
+        val expectedSuperset = McpToolMatrix.EXPECTED_TOOL_SUPERSET
+        val stdioDrift = McpToolMatrix.drift(stdioNames, expectedSuperset = expectedSuperset)
+        val httpDrift = McpToolMatrix.drift(httpNames, expectedSuperset = expectedSuperset)
         if (!stdioDrift.isEmpty() || !httpDrift.isEmpty()) {
             fail(
                 listOf(stdioDrift.render("stdio"), httpDrift.render("http")).joinToString("\n"),
             )
         }
         // Drift guard handled E1; here we only pin the matrix-side
-        // contract: every Phase-C tool must be on each transport.
-        for (tool in PhaseCToolMatrix.PHASE_C_TOOLS) {
+        // contract: every runtime tool must be on each transport.
+        for (tool in McpToolMatrix.RUNTIME_TOOLS) {
             withClue("stdio missing $tool") { stdioNames.shouldContain(tool) }
             withClue("http missing $tool") { httpNames.shouldContain(tool) }
         }

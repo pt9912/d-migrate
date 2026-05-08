@@ -3,8 +3,8 @@ package dev.dmigrate.server.application.job
 import java.time.Duration
 
 /**
- * Lifecycle-Vertrag fuer den Phase-E Job-Executor (Plan §3.3 in
- * `ImpPlan-0.9.6-E3.md`). Der Host (MCP-Server-Bootstrap) registriert
+ * LF-012 / LN-011 / LN-017: Lifecycle-Vertrag fuer den Job-Executor.
+ * Der Host (MCP-Server-Bootstrap) registriert
  * die Lifecycle-Instanz fuer JVM-Shutdown-Hooks — der
  * [JobDispatcher] selbst kennt das Interface nicht und sieht nur
  * [java.util.concurrent.Executor].

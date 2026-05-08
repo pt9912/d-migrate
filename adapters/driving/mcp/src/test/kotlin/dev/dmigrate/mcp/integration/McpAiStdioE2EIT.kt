@@ -4,10 +4,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.protocol.McpServiceImpl
-import dev.dmigrate.mcp.registry.PhaseCWiring
-import dev.dmigrate.mcp.registry.PhaseEWiring
-import dev.dmigrate.mcp.registry.PhaseGRegistries
-import dev.dmigrate.mcp.registry.PhaseGWiring
+import dev.dmigrate.mcp.registry.McpRuntimeWiring
+import dev.dmigrate.mcp.registry.OperationalMcpWiring
+import dev.dmigrate.mcp.registry.AiMcpRegistries
+import dev.dmigrate.mcp.registry.AiMcpWiring
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import dev.dmigrate.mcp.transport.stdio.StdioJsonRpc
 import dev.dmigrate.server.application.audit.prompt.DefaultPromptHygieneService
@@ -55,7 +55,7 @@ import java.time.ZoneOffset
  * - prompts/get -> Success über stdio.
  * - prompts/get unbekannter Name -> JSON-RPC-Fehler (RESOURCE_NOT_FOUND).
  */
-class McpPhaseGStdioE2EIT : FunSpec({
+class McpAiStdioE2EIT : FunSpec({
 
     val tenant = TenantId("acme")
     val alice = PrincipalId("alice")
@@ -74,7 +74,7 @@ class McpPhaseGStdioE2EIT : FunSpec({
         expiresAt = Instant.MAX,
     )
 
-    fun phaseGWiring(): PhaseGWiring {
+    fun aiWiring(): AiMcpWiring {
         val jobStore = InMemoryJobStore()
         val idempotencyStore = InMemoryIdempotencyStore()
         val schemaStore = InMemorySchemaStore()
@@ -90,7 +90,7 @@ class McpPhaseGStdioE2EIT : FunSpec({
                 expiresAt = now.plusSeconds(3600),
             ),
         )
-        val phaseC = PhaseCWiring(
+        val phaseC = McpRuntimeWiring(
             uploadSessionStore = InMemoryUploadSessionStore(),
             uploadSegmentStore = InMemoryUploadSegmentStore(),
             artifactStore = InMemoryArtifactStore(),
@@ -102,20 +102,20 @@ class McpPhaseGStdioE2EIT : FunSpec({
             clock = clock,
             profileStore = InMemoryProfileStore(),
         )
-        val phaseE = PhaseEWiring(
-            phaseCWiring = phaseC,
+        val phaseE = OperationalMcpWiring(
+            runtimeWiring = phaseC,
             idempotencyStore = idempotencyStore,
             jobStartTransaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
             workerHandleRegistry = InMemoryWorkerHandleRegistry(),
             approvalGrantStore = InMemoryApprovalGrantStore(),
             policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow),
         )
-        return PhaseGWiring(phaseEWiring = phaseE)
+        return AiMcpWiring(operationalWiring = phaseE)
     }
 
     fun runStdioRoundtrip(frames: List<String>): List<String> {
-        val gWiring = phaseGWiring()
-        val registry = PhaseGRegistries.defaultToolRegistry(gWiring)
+        val gWiring = aiWiring()
+        val registry = AiMcpRegistries.defaultToolRegistry(gWiring)
         val service = McpServiceImpl(
             serverVersion = "0.9.6-it",
             toolRegistry = registry,
@@ -269,8 +269,8 @@ class McpPhaseGStdioE2EIT : FunSpec({
 
     test("Plan §6 G.9: KI-Tool ohne dmigrate:ai:execute -> ForbiddenPrincipal-Wire-Envelope") {
         // Custom-Wiring mit read-only-Principal.
-        val gWiring = phaseGWiring()
-        val registry = PhaseGRegistries.defaultToolRegistry(gWiring)
+        val gWiring = aiWiring()
+        val registry = AiMcpRegistries.defaultToolRegistry(gWiring)
         val readOnlyPrincipal = principal().copy(scopes = setOf("dmigrate:read"))
         val service = McpServiceImpl(
             serverVersion = "test",

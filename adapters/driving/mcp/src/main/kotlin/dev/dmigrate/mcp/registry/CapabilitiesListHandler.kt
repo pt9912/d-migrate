@@ -33,7 +33,7 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
  * fallback hints stay in so agents can plan large-payload paths.
  *
  * The descriptor list is supplied at construction time (NOT via the
- * registry) so [PhaseBRegistries] can build the registry in a single
+ * registry) so [McpContractRegistries] can build the registry in a single
  * pass without a back-reference cycle.
  *
  * Tools, scope table, and limits are precomputed in the constructor

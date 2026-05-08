@@ -425,8 +425,7 @@ class DataImportRunnerResumeTest : FunSpec({
         }
     }
 
-    // ─── 0.9.0 Phase D.3: Callback-Wiring + Truncate-Guard ──────
-    // (`docs/ImpPlan-0.9.0-D.md` §5.3)
+    // ─── LF-010 / LF-013 / LN-009 / LN-012: Callback-Wiring + Guard ─
     // ──────────────────────────────────────────────────────────────
 
 })

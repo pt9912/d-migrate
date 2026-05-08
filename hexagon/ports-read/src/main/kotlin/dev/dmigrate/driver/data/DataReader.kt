@@ -44,8 +44,8 @@ interface DataReader {
     ): ChunkSequence
 
     /**
-     * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.1):
-     * Mid-Table-Resume-Variante. Startet den Stream ab dem letzten
+     * LF-013 / LN-006 / LN-012: Mid-Table-Resume-Variante. Startet
+     * den Stream ab dem letzten
      * chunk-bestaetigten Composite-Marker und sortiert deterministisch
      * nach `(markerColumn, tieBreakers)`.
      *
@@ -54,7 +54,8 @@ interface DataReader {
      * Mid-Table-Pfad nicht umsetzen, koennen diese Default-Impl
      * unveraendert erben — dann greift fuer jeden Caller mit gesetztem
      * [resumeMarker] der `UnsupportedOperationException`-Pfad; der
-     * Runner faengt das ab und faellt auf den C.1-Kontrakt zurueck.
+     * Runner faengt das ab und faellt auf table-granulares Resume
+     * zurueck.
      *
      * Vertragliche Ergaenzungen gegenueber der Basis-Variante:
      *

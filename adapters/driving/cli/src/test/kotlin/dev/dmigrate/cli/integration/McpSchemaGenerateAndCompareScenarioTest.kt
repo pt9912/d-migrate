@@ -221,7 +221,7 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
         // findings overflow `maxInlineFindings`. The remaining
         // findings spill to the artefact; the inline tail keeps the
         // structured `details.before/after` on each finding so the
-        // PhaseBToolSchemas compareDetailsSchema (`{ before, after }`,
+        // McpToolSchemas compareDetailsSchema (`{ before, after }`,
         // additionalProperties=false) coupling holds end-to-end.
         // Size-based truncation triggers diffArtifactRef when the
         // serialised diff exceeds `maxToolResponseBytes/2`. Setting

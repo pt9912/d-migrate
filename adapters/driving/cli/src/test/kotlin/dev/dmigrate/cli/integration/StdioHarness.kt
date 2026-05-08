@@ -43,7 +43,7 @@ internal class StdioHarness(
     override val stateDir: Path,
     override val principal: PrincipalContext,
     private val auditSinkRef: InMemoryAuditSink,
-    private val wiringRef: dev.dmigrate.mcp.registry.PhaseCWiring,
+    private val wiringRef: dev.dmigrate.mcp.registry.McpRuntimeWiring,
     private val handle: dev.dmigrate.mcp.server.McpServerHandle,
     private val clientToServer: PipedOutputStream,
     private val serverToClient: PipedInputStream,
@@ -65,7 +65,7 @@ internal class StdioHarness(
      * state via [testWiring]; not visible to test code that types
      * `harness: McpClientHarness`.
      */
-    internal val wiring: dev.dmigrate.mcp.registry.PhaseCWiring get() = wiringRef
+    internal val wiring: dev.dmigrate.mcp.registry.McpRuntimeWiring get() = wiringRef
 
     private val rpc = JsonRpcClient()
     private val gson: Gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
@@ -237,7 +237,7 @@ internal class StdioHarness(
                 config = config,
                 input = serverIn,
                 output = serverOut,
-                phaseCWiring = wiringBundle.wiring,
+                runtimeWiring = wiringBundle.wiring,
                 tokenStoreOverride = tokenStore,
                 tokenSupplier = { token },
             )
