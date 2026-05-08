@@ -153,6 +153,7 @@ object PhaseCRegistries {
                 limits = wiring.limits,
                 options = ArtifactUploadHandler.Options(
                     clock = wiring.clock,
+                    finalizingLeaseTtl = wiring.operationTimeout,
                     finalizer = wiring.finalizer,
                     // Phase F § 8.5 (F.5 3/3): wire the policy-init
                     // (`job_input`) Finaliser, sodass durable Bytes

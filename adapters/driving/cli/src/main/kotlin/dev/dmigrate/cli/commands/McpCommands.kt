@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
+import com.github.ajalt.clikt.core.UsageError
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.multiple
@@ -34,6 +35,7 @@ import dev.dmigrate.server.adapter.storage.file.FileBackedArtifactContentStore
 import dev.dmigrate.server.adapter.storage.file.FileBackedUploadSegmentStore
 import dev.dmigrate.server.adapter.storage.file.FileSpoolAssembledUploadPayload
 import dev.dmigrate.server.application.artifact.ArtifactRetentionService
+import dev.dmigrate.server.application.upload.UploadSessionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
 import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
@@ -56,6 +58,7 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
 import java.security.SecureRandom
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -192,6 +195,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
         "--approval-grants-file",
         help = "JSON/YAML ApprovalGrant store. Use with 'd-migrate mcp approval-grant issue' to approve pending jobs.",
     ).path()
+
+    private val operationTimeoutSeconds by option(
+        "--operation-timeout-seconds",
+        help = "Timeout in seconds for upload finalisation leases and the stale-finalisation sweeper.",
+    ).long().default(McpServerConfig.DEFAULT_OPERATION_TIMEOUT.toSeconds())
 
     override fun run() {
         val config = buildConfig()
@@ -334,6 +342,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
             jwksUrl = jwksUrl?.let(URI::create),
             introspectionUrl = introspectionUrl?.let(URI::create),
             audience = audience,
+            operationTimeout = Duration.ofSeconds(operationTimeoutSeconds),
             stdioTokenFile = stdioTokenFile,
         )
     }
@@ -487,9 +496,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
             stateDir = owner.resolved.path,
             connectionConfigPath = effectiveConnectionConfigPath(),
             cursorKeyring = cursorKeyring,
+            operationTimeout = config.operationTimeout,
         )
         val state = resolveServerStateConfigOrExit() ?: run {
             val artifactRetention = startArtifactRetentionLoop(phaseC)
+            val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
             val idempotencyStore = InMemoryIdempotencyStore()
             val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
             val phaseE = PhaseEWiring(
@@ -507,12 +518,13 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 phaseCWiring = phaseC,
                 phaseGWiring = phaseG,
                 components = PhaseGRegistries.defaultComponents(phaseG, config.scopeMapping),
-                closeable = artifactRetention,
+                closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
             )
         }
 
         val dataSource = createServerStateDataSource(state)
         var artifactRetention: AutoCloseable? = null
+        var finalisationTimeout: AutoCloseable? = null
         try {
             applyOrValidateMigrations(dataSource, state)
             val runner = JdbcTransactionRunner(dataSource)
@@ -526,6 +538,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 quotaService = quotaService,
             )
             artifactRetention = startArtifactRetentionLoop(phaseCWithJdbc)
+            finalisationTimeout = startFinalisationTimeoutLoop(phaseCWithJdbc)
             // Phase E3.5: server.jobs.executor + Env-Overrides aufloesen,
             // Bundle bauen. Default ist Sync — Bestands-MVP.
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
@@ -562,7 +575,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 phaseCWiring = phaseCWithJdbc,
                 phaseGWiring = phaseG,
                 components = components,
-                closeable = CloseStack(listOfNotNull(artifactRetention, dataSource)),
+                closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, dataSource)),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
                 executorShutdownTimeout = asyncCfg?.shutdownTimeout
                     ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
@@ -571,7 +584,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
             try {
                 artifactRetention?.close()
             } finally {
-                dataSource.close()
+                try {
+                    finalisationTimeout?.close()
+                } finally {
+                    dataSource.close()
+                }
             }
             throw failure
         }
@@ -624,6 +641,42 @@ class McpServeCommand : CliktCommand(name = "serve") {
             },
             ARTIFACT_RETENTION_SWEEP_SECONDS,
             ARTIFACT_RETENTION_SWEEP_SECONDS,
+            TimeUnit.SECONDS,
+        )
+        return AutoCloseable { executor.shutdownNow() }
+    }
+
+    private fun startFinalisationTimeoutLoop(phaseC: PhaseCWiring): AutoCloseable {
+        val service = UploadSessionService(
+            sessions = phaseC.uploadSessionStore,
+            segments = phaseC.uploadSegmentStore,
+            artifacts = phaseC.artifactContentStore,
+            quotaService = phaseC.quotaService,
+        )
+        val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "dmigrate-mcp-finalisation-timeout").apply { isDaemon = true }
+        }
+        val sweep = Runnable {
+            service.timeoutStaleFinalizingSessions(phaseC.clock.instant())
+        }
+        try {
+            sweep.run()
+        } catch (failure: RuntimeException) {
+            executor.shutdownNow()
+            echo("MCP startup sweep: finalisation timeout failed: ${failure.message}", err = true)
+            throw ProgramResult(2)
+        }
+        val delaySeconds = maxOf(1L, phaseC.operationTimeout.toSeconds())
+        executor.scheduleWithFixedDelay(
+            {
+                try {
+                    sweep.run()
+                } catch (failure: RuntimeException) {
+                    echo("MCP finalisation timeout sweep failed: ${failure.message}", err = true)
+                }
+            },
+            delaySeconds,
+            delaySeconds,
             TimeUnit.SECONDS,
         )
         return AutoCloseable { executor.shutdownNow() }
@@ -711,7 +764,12 @@ class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
     private val idempotencyKey by option(
         "--idempotency-key",
         help = "idempotencyKey used for the pending start call.",
-    ).required()
+    )
+
+    private val approvalKey by option(
+        "--approval-key",
+        help = "approvalKey used for a pending synchronous policy-required call.",
+    )
 
     private val payloadFingerprint by option(
         "--payload-fingerprint",
@@ -751,10 +809,11 @@ class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
     override fun run() {
         val rawToken = token ?: generatedToken()
         val expiry = expiresAt?.let(Instant::parse) ?: Instant.now().plusSeconds(ttlSeconds)
+        val correlation = resolveCorrelation()
         val grant = ApprovalGrant(
             approvalRequestId = approvalRequestId,
-            correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
-            correlationKey = idempotencyKey,
+            correlationKind = correlation.kind,
+            correlationKey = correlation.key,
             approvalTokenFingerprint = ApprovalTokenFingerprint.compute(rawToken),
             toolName = tool,
             tenantId = TenantId(tenant),
@@ -770,6 +829,18 @@ class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
         echo("expiresAt=${grant.expiresAt}")
     }
 
+    private fun resolveCorrelation(): GrantCorrelation {
+        val idempotency = idempotencyKey
+        val approval = approvalKey
+        return when {
+            idempotency != null && approval != null ->
+                throw UsageError("Use exactly one of --idempotency-key or --approval-key")
+            idempotency != null -> GrantCorrelation(ApprovalCorrelationKind.IDEMPOTENCY_KEY, idempotency)
+            approval != null -> GrantCorrelation(ApprovalCorrelationKind.APPROVAL_KEY, approval)
+            else -> throw UsageError("One of --idempotency-key or --approval-key is required")
+        }
+    }
+
     private fun generatedToken(): String {
         val bytes = ByteArray(32)
         SECURE_RANDOM.nextBytes(bytes)
@@ -780,6 +851,11 @@ class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
         val SECURE_RANDOM: SecureRandom = SecureRandom()
     }
 }
+
+private data class GrantCorrelation(
+    val kind: ApprovalCorrelationKind,
+    val key: String,
+)
 
 private const val ARTIFACT_RETENTION_SWEEP_SECONDS: Long = 300
 

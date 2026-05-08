@@ -180,6 +180,7 @@ internal class ArtifactUploadInitHandler(
             ?: throw ValidationErrorException(
                 listOf(ValidationViolation("approvalKey", "is required for uploadIntent=job_input")),
             )
+        val approvalToken = raw.optString("approvalToken")
         val sizeBytes = parsePolicySize(raw)
         val checksum = parsePolicyChecksum(raw)
         val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
@@ -224,6 +225,7 @@ internal class ArtifactUploadInitHandler(
             ),
             segmentTotal = policySegmentCount(sizeBytes, limits.maxUploadSegmentBytes),
             now = options.clock.instant(),
+            approvalToken = approvalToken,
         )
         // !! Safe: handle() guards on uploadInitOrchestrator != null
         // before invoking this helper. The redundant !! satisfies the

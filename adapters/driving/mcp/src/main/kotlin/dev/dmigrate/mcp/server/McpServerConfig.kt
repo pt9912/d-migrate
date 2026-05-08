@@ -29,9 +29,11 @@ data class McpServerConfig(
     val clockSkew: Duration = Duration.ofSeconds(60),
     val scopeMapping: Map<String, Set<String>> = DEFAULT_SCOPE_MAPPING,
     val sessionIdleTimeout: Duration = Duration.ofMinutes(30),
+    val operationTimeout: Duration = DEFAULT_OPERATION_TIMEOUT,
     val stdioTokenFile: Path? = null,
 ) {
     companion object {
+        val DEFAULT_OPERATION_TIMEOUT: Duration = Duration.ofMinutes(5)
         val DEFAULT_LOOPBACK_ORIGINS: Set<String> = setOf(
             "http://localhost:*",
             "http://127.0.0.1:*",
@@ -124,6 +126,9 @@ private fun McpServerConfig.sharedErrors(): List<String> {
     }
     if (clockSkew.isNegative || clockSkew > McpServerConfig.MAX_CLOCK_SKEW) {
         errors += "clockSkew must be in [0, ${McpServerConfig.MAX_CLOCK_SKEW}] (got $clockSkew)"
+    }
+    if (operationTimeout.isNegative || operationTimeout.isZero) {
+        errors += "operationTimeout must be positive (got $operationTimeout)"
     }
     if (publicBaseUrl != null && publicBaseUrl.scheme != "https") {
         errors += "publicBaseUrl must use https scheme (got '${publicBaseUrl.scheme}')"

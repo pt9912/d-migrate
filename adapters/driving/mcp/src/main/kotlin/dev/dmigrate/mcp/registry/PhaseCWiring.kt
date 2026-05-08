@@ -38,6 +38,7 @@ import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
 import java.security.SecureRandom
 import java.time.Clock
+import java.time.Duration
 import java.util.UUID
 
 /**
@@ -73,6 +74,7 @@ data class PhaseCWiring(
     val quotaService: QuotaService,
     val limits: McpLimitsConfig,
     val clock: Clock,
+    val operationTimeout: Duration = Duration.ofMinutes(5),
     val finalizer: SchemaStagingFinalizer = DefaultSchemaStagingFinalizer(
         artifactStore = artifactStore,
         artifactContentStore = artifactContentStore,

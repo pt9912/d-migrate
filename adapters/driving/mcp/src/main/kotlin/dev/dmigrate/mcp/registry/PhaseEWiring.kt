@@ -93,6 +93,8 @@ data class PhaseEWiring(
         policyService = policyService,
         approvalFingerprintService = uploadInitApprovalFingerprint,
         quotaService = phaseCWiring.quotaService,
+        approvalGrantStore = approvalGrantStore,
+        approvalGrantService = approvalGrantService,
     ),
     val jobIdFactory: () -> String = { "job_${UUID.randomUUID()}" },
     val cancellationSourceFactory: () -> CancellationTokenSource = { CancellationTokenSource.create() },

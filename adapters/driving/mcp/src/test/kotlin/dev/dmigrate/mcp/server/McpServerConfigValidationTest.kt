@@ -205,6 +205,11 @@ class McpServerConfigValidationTest : FunSpec({
         errs.forAtLeastOne { it shouldContain "clockSkew" }
     }
 
+    test("non-positive operationTimeout rejects") {
+        val errs = validJwks().copy(operationTimeout = Duration.ZERO).validate()
+        errs.forAtLeastOne { it shouldContain "operationTimeout" }
+    }
+
     test("publicBaseUrl with non-https scheme rejects (§4.4)") {
         val errs = validJwks().copy(
             bindAddress = "0.0.0.0",

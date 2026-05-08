@@ -31,6 +31,7 @@ class McpServerConfigDefaultsTest : FunSpec({
         cfg.clockSkew shouldBe Duration.ofSeconds(60)
         // §12.5 — MCP session idle TTL default 30 min.
         cfg.sessionIdleTimeout shouldBe Duration.ofMinutes(30)
+        cfg.operationTimeout shouldBe Duration.ofMinutes(5)
         cfg.stdioTokenFile shouldBe null
     }
 

@@ -18,6 +18,7 @@ import dev.dmigrate.server.ports.memory.InMemorySchemaStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import java.nio.file.Path
 import java.time.Clock
+import java.time.Duration
 
 /**
  * Production CLI wiring for `mcp serve` per `ImpPlan-0.9.6-C.md`
@@ -79,6 +80,7 @@ internal object McpCliPhaseCWiring {
         connectionConfigPath: Path? = null,
         tenantId: TenantId = TenantId("default"),
         cursorKeyring: CursorKeyring? = null,
+        operationTimeout: Duration = Duration.ofMinutes(5),
     ): PhaseCWiring {
         val quotaStore = InMemoryQuotaStore()
         val baseWiring = PhaseCWiring(
@@ -91,6 +93,7 @@ internal object McpCliPhaseCWiring {
             quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
             limits = limits,
             clock = clock,
+            operationTimeout = operationTimeout,
             auditSink = LoggingAuditSink(),
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
         )

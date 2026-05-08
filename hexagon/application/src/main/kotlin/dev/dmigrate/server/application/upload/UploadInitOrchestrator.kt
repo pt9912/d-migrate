@@ -1,5 +1,9 @@
 package dev.dmigrate.server.application.upload
 
+import dev.dmigrate.server.application.approval.ApprovalAttempt
+import dev.dmigrate.server.application.approval.ApprovalGrantService
+import dev.dmigrate.server.application.approval.ApprovalGrantValidation
+import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
 import dev.dmigrate.server.application.policy.PolicyAttempt
 import dev.dmigrate.server.application.policy.PolicyService
 import dev.dmigrate.server.application.quota.QuotaReservation
@@ -20,6 +24,7 @@ import dev.dmigrate.server.ports.UploadInitClaimOutcome
 import dev.dmigrate.server.ports.UploadInitClaimScope
 import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import dev.dmigrate.server.ports.ApprovalGrantStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
@@ -76,6 +81,8 @@ class UploadInitOrchestrator(
     private val sessionIdleTimeout: Duration = DEFAULT_IDLE_TIMEOUT,
     private val sessionAbsoluteLease: Duration = DEFAULT_ABSOLUTE_LEASE,
     private val quotaService: QuotaService? = null,
+    private val approvalGrantStore: ApprovalGrantStore? = null,
+    private val approvalGrantService: ApprovalGrantService? = null,
 ) {
 
     fun init(request: UploadInitRequest): UploadInitOutcome {
@@ -142,6 +149,17 @@ class UploadInitOrchestrator(
         claimScope: UploadInitClaimScope,
         claimId: String,
     ): UploadInitOutcome {
+        val approvalToken = request.approvalToken
+        if (approvalToken != null) {
+            return when (val validation = validateApprovalToken(request, fingerprint, approvalToken)) {
+                is ApprovalGrantValidation.Valid -> materializeSession(request, fingerprint, claimScope, claimId)
+                is ApprovalGrantValidation.Invalid -> {
+                    claimStore.release(claimScope, claimId)
+                    UploadInitOutcome.PolicyDenied(invalidToReason(validation))
+                }
+            }
+        }
+
         val attempt = PolicyAttempt(
             tenantId = request.tenantId,
             callerId = request.callerId,
@@ -169,6 +187,44 @@ class UploadInitOrchestrator(
             }
             PolicyDecision.Allowed -> materializeSession(request, fingerprint, claimScope, claimId)
         }
+    }
+
+    private fun validateApprovalToken(
+        request: UploadInitRequest,
+        fingerprint: String,
+        rawToken: String,
+    ): ApprovalGrantValidation {
+        val grantService = approvalGrantService ?: return ApprovalGrantValidation.Invalid.Unknown
+        val tokenFingerprint = ApprovalTokenFingerprint.compute(rawToken)
+        val grant = approvalGrantStore?.findByTokenFingerprint(request.tenantId, tokenFingerprint)
+            ?: return ApprovalGrantValidation.Invalid.Unknown
+        return grantService.validate(
+            ApprovalAttempt(
+                tokenFingerprint = tokenFingerprint,
+                approvalRequestId = grant.approvalRequestId,
+                tenantId = request.tenantId,
+                callerId = request.callerId,
+                toolName = TOOL_NAME,
+                correlationKind = ApprovalCorrelationKind.APPROVAL_KEY,
+                correlationKey = request.approvalKey,
+                payloadFingerprint = fingerprint,
+                requiredScopes = grant.issuedScopes,
+            ),
+            request.now,
+        )
+    }
+
+    private fun invalidToReason(invalid: ApprovalGrantValidation.Invalid): String = when (invalid) {
+        ApprovalGrantValidation.Invalid.Unknown -> "policy:grant-unknown"
+        ApprovalGrantValidation.Invalid.Expired -> "policy:grant-expired"
+        ApprovalGrantValidation.Invalid.TenantMismatch -> "policy:tenant-mismatch"
+        ApprovalGrantValidation.Invalid.CallerMismatch -> "policy:caller-mismatch"
+        ApprovalGrantValidation.Invalid.ToolMismatch -> "policy:tool-mismatch"
+        ApprovalGrantValidation.Invalid.ApprovalRequestIdMismatch -> "policy:approval-request-mismatch"
+        ApprovalGrantValidation.Invalid.CorrelationMismatch -> "policy:correlation-mismatch"
+        ApprovalGrantValidation.Invalid.PayloadMismatch -> "policy:payload-mismatch"
+        is ApprovalGrantValidation.Invalid.ScopeMismatch -> "policy:scope-mismatch"
+        ApprovalGrantValidation.Invalid.IssuerMismatch -> "policy:issuer-mismatch"
     }
 
     private fun materializeSession(
@@ -302,6 +358,7 @@ data class UploadInitRequest(
     val attempt: UploadInitApprovalAttempt,
     val segmentTotal: Int = 1,
     val now: Instant,
+    val approvalToken: String? = null,
 )
 
 sealed interface UploadInitOutcome {

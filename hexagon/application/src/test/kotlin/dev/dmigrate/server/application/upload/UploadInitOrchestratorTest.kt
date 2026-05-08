@@ -1,13 +1,19 @@
 package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
+import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
+import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyRule
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.approval.ApprovalGrant
 import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSessionState
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemorySyncEffectIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadInitClaimStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
@@ -36,6 +42,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val syncEffectStore = InMemorySyncEffectIdempotencyStore()
         val claimStore = InMemoryUploadInitClaimStore()
         val sessionStore = InMemoryUploadSessionStore()
+        val grantStore = InMemoryApprovalGrantStore()
         val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
@@ -47,6 +54,8 @@ class UploadInitOrchestratorTest : FunSpec({
             approvalFingerprintService = fingerprintService,
             sessionIdFactory = { "session-${sessionSeq.incrementAndGet()}" },
             claimIdFactory = { "claim-${claimSeq.incrementAndGet()}" },
+            approvalGrantStore = grantStore,
+            approvalGrantService = DefaultApprovalGrantService(grantStore, ApprovalGrantValidator()),
         )
 
         fun request(
@@ -72,6 +81,7 @@ class UploadInitOrchestratorTest : FunSpec({
                 targetTable = targetTable,
             ),
             now = now,
+            approvalToken = null,
         )
     }
 
@@ -132,6 +142,56 @@ class UploadInitOrchestratorTest : FunSpec({
                 approvalKey = "key-policy",
             ),
         ).shouldBeNull()
+    }
+
+    test("RequiresApproval mit gueltigem approvalToken -> Initialized via genehmigtem Retry") {
+        val fx = Fixture(
+            policyDefault = PolicyEffect.Challenge(
+                requiredScopes = setOf("dmigrate:artifact:upload"),
+                reasons = listOf("policy:upload-needs-approval"),
+            ),
+        )
+        val firstRequest = fx.request(approvalKey = "key-approved", uploadIntent = "job_input")
+        val required = fx.orchestrator.init(firstRequest).shouldBeInstanceOf<UploadInitOutcome.PolicyRequired>()
+        val rawToken = "appr_upload_init_ok"
+        val fingerprint = fx.fingerprintService.fingerprint(firstRequest.attempt)
+        fx.grantStore.save(
+            ApprovalGrant(
+                approvalRequestId = required.approvalRequestId,
+                correlationKind = ApprovalCorrelationKind.APPROVAL_KEY,
+                correlationKey = "key-approved",
+                approvalTokenFingerprint = ApprovalTokenFingerprint.compute(rawToken),
+                toolName = "artifact_upload_init",
+                tenantId = tenant,
+                callerId = principal,
+                payloadFingerprint = fingerprint,
+                issuerFingerprint = "test-admin",
+                issuedScopes = required.requiredScopes,
+                grantSource = "test",
+                expiresAt = now.plusSeconds(300),
+            ),
+        )
+
+        val approved = fx.orchestrator.init(firstRequest.copy(approvalToken = rawToken))
+            .shouldBeInstanceOf<UploadInitOutcome.Initialized>()
+        approved.uploadSessionId shouldBe "session-1"
+        fx.sessionStore.findById(tenant, "session-1").shouldNotBeNull()
+    }
+
+    test("RequiresApproval mit unbekanntem approvalToken -> PolicyDenied ohne Session") {
+        val fx = Fixture(
+            policyDefault = PolicyEffect.Challenge(
+                requiredScopes = setOf("dmigrate:artifact:upload"),
+                reasons = listOf("policy:upload-needs-approval"),
+            ),
+        )
+        val request = fx.request(approvalKey = "key-bogus", uploadIntent = "job_input")
+        fx.orchestrator.init(request).shouldBeInstanceOf<UploadInitOutcome.PolicyRequired>()
+
+        val denied = fx.orchestrator.init(request.copy(approvalToken = "bogus"))
+            .shouldBeInstanceOf<UploadInitOutcome.PolicyDenied>()
+        denied.reasonCode shouldBe "policy:grant-unknown"
+        fx.sessionStore.findById(tenant, "session-1").shouldBeNull()
     }
 
     test("Denied -> PolicyDenied; keine Session, kein Claim") {

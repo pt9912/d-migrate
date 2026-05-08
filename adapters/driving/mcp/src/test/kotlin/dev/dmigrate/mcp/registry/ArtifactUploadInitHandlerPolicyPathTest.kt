@@ -9,6 +9,9 @@ import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.application.error.PolicyDeniedException
 import dev.dmigrate.server.application.error.PolicyRequiredException
 import dev.dmigrate.server.application.error.ValidationErrorException
+import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
+import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -20,6 +23,8 @@ import dev.dmigrate.server.application.upload.UploadInitOrchestrator
 import dev.dmigrate.server.application.upload.UploadInitOutcome
 import dev.dmigrate.server.application.upload.UploadInitRequest
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.approval.ApprovalGrant
 import dev.dmigrate.server.core.error.ToolErrorCode
 import dev.dmigrate.server.core.policy.PolicyDecision
 import dev.dmigrate.server.core.principal.AuthSource
@@ -27,6 +32,7 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSessionState
+import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
 import dev.dmigrate.server.ports.memory.InMemorySyncEffectIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryUploadInitClaimStore
@@ -92,8 +98,10 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         val syncEffectStore = InMemorySyncEffectIdempotencyStore()
         val claimStore = InMemoryUploadInitClaimStore()
         val sessionStore = InMemoryUploadSessionStore()
+        val grantStore = InMemoryApprovalGrantStore()
         val quotaStore = InMemoryQuotaStore()
         val quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE }
+        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
         val orchestrator = UploadInitOrchestrator(
@@ -102,10 +110,12 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
             sessionStore = sessionStore,
             policyService = policyService
                 ?: ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyDefault),
-            approvalFingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService()),
+            approvalFingerprintService = fingerprintService,
             sessionIdFactory = { "ups-${sessionSeq.incrementAndGet()}" },
             claimIdFactory = { "claim-${claimSeq.incrementAndGet()}" },
             quotaService = quotaService,
+            approvalGrantStore = grantStore,
+            approvalGrantService = DefaultApprovalGrantService(grantStore, ApprovalGrantValidator()),
         )
         val handler = ArtifactUploadInitHandler(
             sessionStore = sessionStore,
@@ -126,10 +136,12 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         targetTable: String? = "warehouse.events",
         artifactKind: String = "UPLOAD_INPUT",
         mimeType: String = "application/json",
+        approvalToken: String? = null,
     ): JsonObject {
         val body = buildString {
             append("""{"uploadIntent":"job_input"""")
             append(""","approvalKey":"$approvalKey"""")
+            if (approvalToken != null) append(""","approvalToken":"$approvalToken"""")
             append(""","sizeBytes":$size""")
             append(""","checksumSha256":"$checksum"""")
             append(""","artifactKind":"$artifactKind"""")
@@ -244,6 +256,78 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         fx.quotaStore.current(
             dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice),
         ) shouldBe 0L
+    }
+
+    test("Challenge + gueltiges approvalToken -> zweiter job_input-Aufruf erzeugt genau eine Session") {
+        val fx = Fixture(
+            policyDefault = PolicyEffect.Challenge(
+                requiredScopes = setOf("dmigrate:artifact:upload"),
+                reasons = listOf("policy:job-input-needs-approval"),
+            ),
+        )
+        val first = fx.handler.handle(
+            ToolCallContext(
+                "artifact_upload_init",
+                jobInputArgs(approvalKey = "key-approved"),
+                principal,
+                requestId = "req-policy-1",
+            ),
+        ).shouldBeInstanceOf<ToolCallOutcome.Error>()
+        first.envelope.code shouldBe ToolErrorCode.POLICY_REQUIRED
+        val approvalRequestId = first.envelope.details.first { it.key == "approvalRequestId" }.value
+        val rawToken = "appr_job_input_ok"
+        val fingerprint = fx.fingerprintService.fingerprint(
+            UploadInitApprovalAttempt(
+                tenantId = tenant,
+                callerId = alice,
+                artifactKind = ArtifactKind.UPLOAD_INPUT,
+                mimeType = "application/json",
+                sizeBytes = 1024,
+                checksumSha256 = sha256,
+                uploadIntent = "job_input",
+                targetTable = "warehouse.events",
+                wireArtifactKind = "seed-data",
+            ),
+        )
+        fx.grantStore.save(
+            ApprovalGrant(
+                approvalRequestId = approvalRequestId,
+                correlationKind = ApprovalCorrelationKind.APPROVAL_KEY,
+                correlationKey = "key-approved",
+                approvalTokenFingerprint = ApprovalTokenFingerprint.compute(rawToken),
+                toolName = "artifact_upload_init",
+                tenantId = tenant,
+                callerId = alice,
+                payloadFingerprint = fingerprint,
+                issuerFingerprint = "test-admin",
+                issuedScopes = setOf("dmigrate:artifact:upload"),
+                grantSource = "test",
+                expiresAt = now.plusSeconds(300),
+            ),
+        )
+
+        val approved = parseSuccess(
+            fx.handler.handle(
+                ToolCallContext(
+                    "artifact_upload_init",
+                    jobInputArgs(approvalKey = "key-approved", approvalToken = rawToken),
+                    principal,
+                    requestId = "req-policy-2",
+                ),
+            ),
+        )
+        approved.get("uploadSessionId").asString shouldBe "ups-1"
+
+        val replay = parseSuccess(
+            fx.handler.handle(
+                ToolCallContext(
+                    "artifact_upload_init",
+                    jobInputArgs(approvalKey = "key-approved", approvalToken = rawToken),
+                    principal,
+                ),
+            ),
+        )
+        replay.get("uploadSessionId").asString shouldBe "ups-1"
     }
 
     test("Deny -> PolicyDeniedException mit reasonCode") {

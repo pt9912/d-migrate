@@ -5,7 +5,7 @@
 > macht `d-migrate` fuer KI-Agenten ueber das Model Context Protocol
 > steuerbar.
 >
-> Status: Draft (2026-04-25)
+> Status: Implementiert (2026-05-08)
 > Referenzen: `docs/planning/roadmap.md` Abschnitt "Milestone 0.9.6",
 > `spec/ki-mcp.md`,
 > `spec/job-contract.md`,
