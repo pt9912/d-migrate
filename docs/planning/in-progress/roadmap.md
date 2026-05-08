@@ -455,6 +455,43 @@ Muster. Details:
 > `NeutralType.Identifier`) und migriert keine handgeschriebenen
 > SQLite-Sequence-Loesungen.
 
+### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
+
+| Bereich | Aufgabe                                                                                                                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Arch    | Parquet: JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten pruefen                                                                                              | —      |
+| Formats | Parquet: `ParquetChunkWriter`-Prototyp fuer `data export` mit minimalem Typmapping (Decimal, Temporal, Binary, UUID, JSON, Arrays, Geometry-Sidecar)                             | —      |
+| Test    | Parquet: Prototyp gegen DuckDB lesen lassen (`read_parquet`) und Typen inspizieren                                                                                               | —      |
+| Formats | Parquet: Importpfad (`ParquetChunkReader`) pruefen, chunk-weises Streaming und Schema-/Nullability-Erhalt validieren                                                             | —      |
+| Arch    | Parquet: Manifest-Format fuer Multi-Table-Exports skizzieren (stabile Dateinamen, Schema-Sidecar)                                                                                | —      |
+| Docs    | Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope                                                                                                         | —      |
+| Arch    | Object-Storage: Bestehende Artefakt- und Checkpoint-Pfade inventarisieren, minimalen `ArtifactStore`-Port entwerfen, File-Implementierung als Referenz                           | —      |
+| Arch    | Object-Storage: S3-kompatible Implementierung evaluieren, Konfigurations-/Security-Regeln skizzieren, Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen         | —      |
+| Demo    | BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + MinIO (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten             | —      |
+| Demo    | BI-Demo: Smoke-Script fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
+
+**Ergebnis**: Drei verzahnte Anschluss-Tracks fuer Phase 4 vorbereitet.
+(1) Parquet-Evaluierung liefert Prototyp, DuckDB-Kompatibilitaetsbeleg und
+Entscheidungsvorlage fuer eine spaetere Vollumsetzung. Dies ist bewusst
+keine Lakehouse-Implementierung — Iceberg/Delta/Hudi bleiben ausserhalb
+des Scopes (siehe
+[`parquet-export-import-evaluation.md`](../open/parquet-export-import-evaluation.md) §3.2).
+(2) Object-Storage-ArtifactStore-Plan erstellt einen minimalen
+`ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
+plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
+Artifact-Refs (siehe
+[`object-storage-artifact-store.md`](../open/object-storage-artifact-store.md)).
+(3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
+komponierbaren Analytics-Stack mit PostgreSQL, Metabase und MinIO als
+gemeinsamem Object-Storage-Endpunkt — als reproduzierbares Beispiel,
+nicht als Enterprise-BI-Plattform (siehe
+[`bi-demo-compose.md`](../open/bi-demo-compose.md)).
+
+> Hinweis: Positive Parquet-Evaluierung fuehrt zu einem Folge-
+> Implementierungsmilestone in Phase 4 (vermutlich neben 1.6.0 Metadata
+> Catalog und Lakehouse Targets). Object-Storage- und BI-Demo-Plaene
+> bilden die Grundlage fuer Storage- und Showcase-Pfade ab Phase 3/4.
+
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
 | Bereich | Aufgabe                                   | LF-Ref |
@@ -463,8 +500,6 @@ Muster. Details:
 | Docs    | Administrationshandbuch                   | —      |
 | Docs    | Migrations-Leitfaden                      | —      |
 | Docs    | API-Dokumentation                         | —      |
-| Arch    | Parquet-Export/-Import evaluieren, um DuckDB-, Arrow- und Lakehouse-Anschlussfähigkeit zu prüfen — siehe [`parquet-export-import-evaluation.md`](../open/parquet-export-import-evaluation.md) | —      |
-| Arch    | Object-Storage-ArtifactStore fuer Checkpoints, Reports und grosse Exporte planen — siehe [`object-storage-artifact-store.md`](../open/object-storage-artifact-store.md) | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
 
@@ -709,4 +744,4 @@ Datenbanksystem.
 
 **Version**: 3.43
 **Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Refactorings + Diff-basierte Migrationen + SQLite-Sequence-Emulation), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Refactorings + Diff-basierte Migrationen + SQLite-Sequence-Emulation), 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
