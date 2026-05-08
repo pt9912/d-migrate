@@ -230,6 +230,30 @@ Der erste interne Vertrag bettet `schemaDiff` bewusst ein:
   Fingerprint ersetzt werden. Das ist keine Entscheidung fuer den ersten
   internen Core-Vertrag.
 
+### 4.2.1 Stabile Operation-IDs
+
+Operation-IDs muessen deterministisch und artefaktfaehig sein. Sie duerfen
+nicht von nicht stabilen Laufzeitdetails wie Objektidentitaet, HashMap-
+Iteration oder zufaelligen UUIDs abhaengen.
+
+Verbindlich fuer den ersten Slice:
+
+- Eine Operation-ID wird aus stabiler fachlicher Semantik abgeleitet:
+  - Planrichtung, zum Beispiel `current->desired`
+  - Operationstyp, zum Beispiel `AddColumn`
+  - `objectRef.type`
+  - kanonisch normalisierte `objectRef.path`
+  - kanonischer Payload-Fingerprint der fuer Rendering/Rollback relevanten
+    Vorher-/Nachher-Werte
+- Kollidieren zwei IDs, erhaelt die spaetere Operation nach deterministischer
+  Sortierung einen stabilen Suffix wie `#2`, `#3`.
+- Eine reine Listenposition nach Toposortierung reicht nicht als ID, darf aber
+  als Tie-Breaker fuer Kollisionssuffixe verwendet werden.
+- Die IDs bleiben innerhalb eines Plan-Artefakts und seiner Up-/Down-/Report-
+  Artefakte referenzierbar. Eine langfristige, release-uebergreifende
+  Kompatibilitaetsgarantie fuer IDs entsteht erst, wenn `DiffResult`
+  oeffentlich serialisiert wird.
+
 ### 4.3 Operationen
 
 Vorgeschlagene Basiskategorien:
@@ -395,6 +419,8 @@ Wichtig:
 - `NOT_REVERSIBLE` verhindert nicht zwingend den Up-Plan.
 - `--generate-rollback` darf fuer solche Operationen aber kein falsches
   Down-SQL erfinden.
+- `MANUAL_REQUIRED` blockiert im ersten Slice die automatische Down-Erzeugung.
+  Teil-Rollbacks oder manuell ergaenzte Down-Schritte sind spaeterer Scope.
 - Der Runner muss den Nutzer ueber nicht reversible Operationen informieren.
 
 ### 4.6 Risiko- und Bestaetigungsmodell
@@ -531,12 +557,15 @@ zusaetzliche Felder:
 
 - `DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`
 - `ROLLBACK_NOT_POSSIBLE`
+- `MANUAL_ACTION_REQUIRED`
+- `TARGET_STATE_MISMATCH`
 - `DIALECT_UNSUPPORTED_OPERATION`
 
 Damit kann ein Runner unterscheiden, ob der Up-Plan wegen fehlendem
 `--allow-destructive` blockiert ist, ob nur `--generate-rollback` wegen
-`NOT_REVERSIBLE` scheitert, oder ob der Ziel-Dialekt eine Operation nicht
-rendern kann.
+`NOT_REVERSIBLE` oder manueller Arbeit scheitert, ob `schema rollback` gegen
+einen unerwarteten Zielzustand laufen wuerde, oder ob der Ziel-Dialekt eine
+Operation nicht rendern kann.
 
 ### 6.2 PostgreSQL
 
@@ -728,12 +757,16 @@ als ausfuehrbare Migration gerendert werden soll oder durch fehlende Freigaben,
 nicht moeglichen Rollback oder nicht renderbare Dialektoperationen blockiert
 wird.
 
-Exit `8` muss im strukturierten Fehler zwischen mindestens drei Faellen
+Exit `8` muss im strukturierten Fehler mindestens folgende Faelle
 unterscheiden:
 
 - destruktive Up-Operation ohne `--allow-destructive`
 - `--generate-rollback` angefordert, aber mindestens eine Operation ist
   `NOT_REVERSIBLE`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist
+  `MANUAL_REQUIRED`
+- `schema rollback --execute` angefordert, aber die Ziel-Datenbank entspricht
+  nicht dem erwarteten Post-Up-/Soll-Fingerprint
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
 
 Die konkrete Exit-Code-Matrix muss vor Implementierung mit `spec/cli-spec.md`
@@ -766,11 +799,15 @@ Der Runner:
 1. liest ausschliesslich das gespeicherte Down-SQL aus `--source`,
 2. liest daraus den von `schema migrate --generate-rollback` erzeugten
    maschinenlesbaren `d-migrate`-Metadatenblock,
-3. fuehrt es bei `--execute` gegen `--target` aus,
-4. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
+3. introspektiert bei `--execute` den aktuellen Zielzustand und vergleicht ihn
+   mit dem im Metadatenblock erwarteten Post-Up-/Soll-Fingerprint,
+4. bricht bei abweichendem Zielzustand mit Exit `8` und
+   `blockedReason = TARGET_STATE_MISMATCH` ab,
+5. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
    Down-Operationen ausweist,
-5. protokolliert ausgefuehrte Statements und Fehler,
-6. fuehrt ohne `--execute` nur Validierung/Preview aus.
+6. fuehrt es bei `--execute` gegen `--target` aus,
+7. protokolliert ausgefuehrte Statements und Fehler,
+8. fuehrt ohne `--execute` nur Validierung/Preview aus.
 
 Der Metadatenblock ist kein oeffentliches `DiffResult`-Artefakt. Er ist ein
 schmaler Header im SQL-Artefakt, der mindestens enthaelt:
@@ -778,6 +815,8 @@ schmaler Header im SQL-Artefakt, der mindestens enthaelt:
 - Formatkennung und Version, zum Beispiel `d-migrate rollback-sql v1`
 - Fingerprint des Ist-Zustands vor Up
 - Fingerprint des Soll-Zustands
+- Fingerprint des Zielzustands nach Up, wenn `schema migrate --execute` genutzt
+  wurde; ohne Ausfuehrung ist dies der erwartete Soll-Fingerprint
 - Operation-IDs, aus denen Down-SQL gerendert wurde
 - Risiko-Zusammenfassung fuer Down, insbesondere `destructive` und
   `dataLossPossible`
@@ -819,6 +858,11 @@ Der Report muss mindestens enthalten:
 Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
 automatisch renderbar sind. Fuer `NOT_REVERSIBLE` bleibt das Verhalten strikt:
 Exit `8` mit `blockedReason = ROLLBACK_NOT_POSSIBLE`.
+
+Fuer `MANUAL_REQUIRED` gilt im ersten Slice ebenfalls strikt: Es wird kein
+automatisches Down-SQL erzeugt. Der Lauf endet mit Exit `8` und
+`blockedReason = MANUAL_ACTION_REQUIRED`. Manuelle Down-Bloecke oder partielle
+Rollback-Artefakte bleiben spaeterer Scope.
 
 Automatisch renderbar heisst nicht automatisch risikofrei. Down-Schritte wie
 `DropTable` oder `DropColumn`, die aus reversiblen Up-Operationen entstehen,
@@ -879,6 +923,8 @@ Report-Inhalte:
 - `OperationRisk`
 - `DiffDiagnostic`
 - stabile Operation-IDs
+- deterministische ID-Bildung aus Operationstyp, Objektpfad und
+  Payload-Fingerprint
 - Operation-Payloads fuer Rendering und Rollback
 - Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
   Payload-Mapping und Risiko-Mapping
@@ -924,6 +970,7 @@ Nicht in der ersten Matrix:
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
 - Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
+- Zielzustands-Pruefung vor `schema rollback --execute`
 - Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
   genutzt wird
 - `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
@@ -967,13 +1014,18 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Tabellen.
 - Destruktive Operationen werden ohne Freigabe nicht ausfuehrbar gerendert.
 - `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
-  `NOT_REVERSIBLE`.
+  `NOT_REVERSIBLE` oder `MANUAL_REQUIRED`.
+- Operation-IDs sind deterministisch aus fachlicher Semantik abgeleitet und in
+  Up-, Down- und Report-Artefakten referenzierbar.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
 - `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
   Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
   `d-migrate`-Metadatenblock.
 - `schema rollback --source rollback.sql --target ... --execute` wendet
   nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
+- `schema rollback --source rollback.sql --target ... --execute` prueft vor der
+  Ausfuehrung, dass der aktuelle Zielzustand zum im Metadatenblock erwarteten
+  Post-Up-/Soll-Fingerprint passt, und bricht bei Drift ab.
 - `schema rollback --source rollback.sql --target ... --execute` mit
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
@@ -1021,9 +1073,16 @@ Verbindlich fuer den ersten Slice:
   - enthaelt der Plan mindestens eine `NOT_REVERSIBLE`-Operation, bricht
     Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
     ab.
+  - enthaelt der Plan mindestens eine `MANUAL_REQUIRED`-Operation, bricht
+    Rollback-Erzeugung mit Exit `8` und `blockedReason = MANUAL_ACTION_REQUIRED`
+    ab.
   - Teil-Rollbacks mit Warn-/Manual-Blocks sind spaeterer Scope.
 - `schema rollback` unterstuetzt im ersten Slice die Ausfuehrung von
   gespeichertem Down-SQL aus `--rollback-output`.
+- `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
+  Zielzustand und vergleicht ihn mit dem im Down-SQL-Metadatenblock erwarteten
+  Post-Up-/Soll-Fingerprint. Bei Abweichung endet der Lauf mit Exit `8` und
+  `blockedReason = TARGET_STATE_MISMATCH`.
 - Destruktive Down-SQL-Ausfuehrung braucht ebenfalls explizit
   `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
   erzeugten Down-SQL-Artefakt.
