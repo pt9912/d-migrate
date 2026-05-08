@@ -86,7 +86,7 @@ private fun readPostgresTable(
     val indices = indexRows.map { index ->
         IndexDefinition(
             name = index.name,
-            columns = index.columns,
+            columns = index.indexColumns,
             type = when (index.type) {
                 "btree" -> IndexType.BTREE
                 "hash" -> IndexType.HASH

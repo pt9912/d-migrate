@@ -187,12 +187,12 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     // ── Indices ──────────────────────────────────
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
-        return table.indices.map { index -> generateIndex(tableName, index) }
+        val generatedNames = generatedIndexNames(tableName, table.indices)
+        return table.indices.mapIndexed { position, index -> generateIndex(tableName, index, generatedNames[position]) }
     }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition): DdlStatement {
-        val indexName = index.name ?: "idx_${tableName}_${index.columns.joinToString("_")}"
-        val cols = index.columns.joinToString(", ") { quoteIdentifier(it) }
+    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement {
+        val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
@@ -205,6 +205,39 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         }
         return DdlStatement(sql)
     }
+
+    private fun renderIndexColumn(column: IndexColumn): String =
+        buildString {
+            val direction = column.direction
+            append(quoteIdentifier(column.name))
+            if (direction != null) append(" ${direction.name}")
+        }
+
+    private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
+        val baseNames = indices.map { index ->
+            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        }
+        val baseCounts = baseNames.groupingBy { it }.eachCount()
+        val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
+        return indices.mapIndexed { position, index ->
+            index.name ?: disambiguateGeneratedIndexName(baseNames[position], index, baseCounts.getValue(baseNames[position]), used)
+        }
+    }
+
+    private fun disambiguateGeneratedIndexName(
+        baseName: String,
+        index: IndexDefinition,
+        baseCount: Int,
+        used: MutableMap<String, Int>,
+    ): String {
+        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDirectionSuffix(index)}"
+        val seen = used.getOrDefault(candidate, 0)
+        used[candidate] = seen + 1
+        return if (seen == 0) candidate else "${candidate}_${seen + 1}"
+    }
+
+    private fun indexDirectionSuffix(index: IndexDefinition): String =
+        index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
 
     // ── Circular FK references ───────────────────
 

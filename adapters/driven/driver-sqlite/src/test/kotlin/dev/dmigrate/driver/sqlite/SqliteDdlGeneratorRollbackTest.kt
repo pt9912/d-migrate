@@ -101,7 +101,7 @@ class SqliteDdlGeneratorRollbackTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -152,7 +152,7 @@ class SqliteDdlGeneratorRollbackTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_name",
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )

@@ -421,6 +421,16 @@ CONSTRAINT "uq_customer_date" UNIQUE ("customer_id", "order_date")
 CREATE INDEX "<name>" ON "<table>" ("<col1>", "<col2>");
 ```
 
+Indexspalten koennen optional eine Richtung tragen:
+
+```sql
+CREATE INDEX "<name>" ON "<table>" ("<col1>" DESC, "<col2>" ASC);
+```
+
+Ohne explizite Richtung wird nur der Identifier gerendert. Reverse-Reader
+normalisieren aufsteigende/default Metadaten zu keiner expliziten Richtung und
+transportieren `DESC` verlustarm.
+
 ### 5.2 Index-Typen pro Dialekt
 
 | Neutral | PostgreSQL | MySQL (InnoDB) | SQLite |
@@ -872,7 +882,7 @@ CREATE TABLE "orders" (
     CONSTRAINT "chk_total_positive" CHECK ("total_amount" >= 0)
 );
 
-CREATE INDEX "idx_orders_customer_date" ON "orders" ("customer_id", "order_date");
+CREATE INDEX "idx_orders_customer_date" ON "orders" ("customer_id", "order_date" DESC);
 ```
 
 ---

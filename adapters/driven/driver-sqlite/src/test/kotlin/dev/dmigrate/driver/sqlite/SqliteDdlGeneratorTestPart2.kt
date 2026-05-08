@@ -286,7 +286,7 @@ class SqliteDdlGeneratorTestPart2 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -447,7 +447,7 @@ class SqliteDdlGeneratorTestPart2 : FunSpec({
                     primaryKey = listOf("id"),
                     indices = listOf(
                         IndexDefinition(
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )

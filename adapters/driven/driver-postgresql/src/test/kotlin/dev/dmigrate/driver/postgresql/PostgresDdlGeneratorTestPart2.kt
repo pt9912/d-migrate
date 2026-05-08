@@ -278,7 +278,7 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
                 "logs" to table(
                     columns = mapOf("level" to col(NeutralType.Text())),
                     indices = listOf(
-                        IndexDefinition(columns = listOf("level"))
+                        IndexDefinition(columns = listOf("level").map(::IndexColumn))
                     )
                 )
             )
@@ -379,7 +379,7 @@ class PostgresDdlGeneratorTestPart2 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_orders_cust_date",
-                            columns = listOf("customer_id", "order_date")
+                            columns = listOf("customer_id", "order_date").map(::IndexColumn)
                         )
                     )
                 )

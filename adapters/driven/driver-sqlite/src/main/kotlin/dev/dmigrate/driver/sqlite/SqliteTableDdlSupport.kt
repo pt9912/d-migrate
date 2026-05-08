@@ -43,7 +43,9 @@ internal class SqliteTableDdlSupport(
     }
 
     fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
-        table.indices.mapNotNull { index -> generateIndex(tableName, index) }
+        generatedIndexNames(tableName, table.indices).mapIndexedNotNull { position, indexName ->
+            generateIndex(tableName, table.indices[position], indexName)
+        }
 
     private fun checkSpatialMetadataBlocks(
         name: String,
@@ -67,7 +69,7 @@ internal class SqliteTableDdlSupport(
             }
         }
         for (index in table.indices) {
-            val blockingColumn = index.columns.firstOrNull { it in geometryColumnNames }
+            val blockingColumn = index.columnNames.firstOrNull { it in geometryColumnNames }
             if (blockingColumn != null) {
                 return blockTableForSpatialMetadata(name, blockingColumn, "index on geometry column")
             }
@@ -125,8 +127,7 @@ internal class SqliteTableDdlSupport(
             )
         }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition): DdlStatement? {
-        val indexName = index.name ?: "idx_${tableName}_${index.columns.joinToString("_")}"
+    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement? {
         if (index.type != IndexType.BTREE) {
             return DdlStatement(
                 "-- Index ${quoteIdentifier(indexName)} skipped: ${index.type.name} index type is not supported in SQLite",
@@ -149,7 +150,7 @@ internal class SqliteTableDdlSupport(
             )
         }
 
-        val columns = index.columns.joinToString(", ") { quoteIdentifier(it) }
+        val columns = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
@@ -157,6 +158,39 @@ internal class SqliteTableDdlSupport(
         }
         return DdlStatement(sql)
     }
+
+    private fun renderIndexColumn(column: IndexColumn): String =
+        buildString {
+            val direction = column.direction
+            append(quoteIdentifier(column.name))
+            if (direction != null) append(" ${direction.name}")
+        }
+
+    private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
+        val baseNames = indices.map { index ->
+            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        }
+        val baseCounts = baseNames.groupingBy { it }.eachCount()
+        val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
+        return indices.mapIndexed { position, index ->
+            index.name ?: disambiguateGeneratedIndexName(baseNames[position], index, baseCounts.getValue(baseNames[position]), used)
+        }
+    }
+
+    private fun disambiguateGeneratedIndexName(
+        baseName: String,
+        index: IndexDefinition,
+        baseCount: Int,
+        used: MutableMap<String, Int>,
+    ): String {
+        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDirectionSuffix(index)}"
+        val seen = used.getOrDefault(candidate, 0)
+        used[candidate] = seen + 1
+        return if (seen == 0) candidate else "${candidate}_${seen + 1}"
+    }
+
+    private fun indexDirectionSuffix(index: IndexDefinition): String =
+        index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
 
     private fun blockTableForSpatialMetadata(
         table: String,

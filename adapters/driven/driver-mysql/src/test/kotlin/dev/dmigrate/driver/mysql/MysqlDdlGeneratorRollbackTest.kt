@@ -132,7 +132,7 @@ class MysqlDdlGeneratorRollbackTest : FunSpec({
                         "code" to col(NeutralType.Text(maxLength = 20))
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_items_code", columns = listOf("code"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_items_code", columns = listOf("code").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -154,7 +154,7 @@ class MysqlDdlGeneratorRollbackTest : FunSpec({
                     ),
                     primaryKey = listOf("id"),
                     indices = listOf(
-                        IndexDefinition(name = "idx_users_name", columns = listOf("name"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_users_name", columns = listOf("name").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )

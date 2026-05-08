@@ -172,7 +172,7 @@ class MysqlDdlGeneratorTestPart3 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_cache_hash",
-                            columns = listOf("hash_key"),
+                            columns = listOf("hash_key").map(::IndexColumn),
                             type = IndexType.HASH,
                             unique = true
                         )

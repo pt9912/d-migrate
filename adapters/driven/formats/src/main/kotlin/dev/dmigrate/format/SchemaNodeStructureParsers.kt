@@ -166,10 +166,26 @@ private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
     return node.map { childNode ->
         IndexDefinition(
             name = childNode.optionalText("name"),
-            columns = childNode["columns"]?.toStringList() ?: emptyList(),
+            columns = parseIndexColumns(childNode["columns"]),
             type = childNode.optionalText("type")?.toIndexType() ?: IndexType.BTREE,
             unique = childNode.boolOrDefault("unique", false),
         )
+    }
+}
+
+private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
+    if (node == null || !node.isArray) return emptyList()
+    return node.map { columnNode ->
+        when {
+            columnNode.isTextual -> IndexColumn(columnNode.asText())
+            columnNode.isObject -> IndexColumn(
+                name = columnNode.requiredText("name"),
+                direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
+            )
+            else -> throw IllegalArgumentException(
+                "Index columns must be strings or objects with 'name' and optional 'direction'"
+            )
+        }
     }
 }
 

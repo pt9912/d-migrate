@@ -2,6 +2,7 @@ package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.*
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -70,7 +71,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.HASH
                         )
                     )
@@ -99,7 +100,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_docs_content",
-                            columns = listOf("content"),
+                            columns = listOf("content").map(::IndexColumn),
                             type = IndexType.GIN
                         )
                     )
@@ -123,7 +124,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_locations_geom",
-                            columns = listOf("geom"),
+                            columns = listOf("geom").map(::IndexColumn),
                             type = IndexType.GIST
                         )
                     )
@@ -147,7 +148,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_logs_ts",
-                            columns = listOf("ts"),
+                            columns = listOf("ts").map(::IndexColumn),
                             type = IndexType.BRIN
                         )
                     )
@@ -171,7 +172,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -198,7 +199,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email_uniq",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         )
@@ -214,6 +215,53 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
         indexSql shouldBe "CREATE UNIQUE INDEX \"idx_users_email_uniq\" ON \"users\" (\"email\");"
     }
 
+    test("index column directions are rendered") {
+        val s = schema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf(
+                        "created_at" to col(NeutralType.DateTime()),
+                        "id" to col(NeutralType.Identifier()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_created",
+                            columns = listOf(
+                                IndexColumn("created_at", IndexSortDirection.DESC),
+                                IndexColumn("id", IndexSortDirection.ASC),
+                            ),
+                        )
+                    ),
+                )
+            )
+        )
+
+        val indexSql = generator.generate(s).statements
+            .map { it.sql.trim() }
+            .first { it.startsWith("CREATE INDEX") }
+
+        indexSql shouldBe "CREATE INDEX \"idx_orders_created\" ON \"orders\" (\"created_at\" DESC, \"id\" ASC);"
+    }
+
+    test("unnamed index name collision includes direction suffix") {
+        val s = schema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf("created_at" to col(NeutralType.DateTime())),
+                    indices = listOf(
+                        IndexDefinition(columns = listOf(IndexColumn("created_at"))),
+                        IndexDefinition(columns = listOf(IndexColumn("created_at", IndexSortDirection.DESC))),
+                    ),
+                )
+            )
+        )
+
+        val indexSql = generator.generate(s).statements.map { it.sql.trim() }
+
+        indexSql shouldContain "CREATE INDEX \"idx_orders_created_at_default\" ON \"orders\" (\"created_at\");"
+        indexSql shouldContain "CREATE INDEX \"idx_orders_created_at_desc\" ON \"orders\" (\"created_at\" DESC);"
+    }
+
     test("index without explicit name gets auto-generated name") {
         val s = schema(
             tables = mapOf(
@@ -225,7 +273,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     primaryKey = listOf("id"),
                     indices = listOf(
                         IndexDefinition(
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -253,13 +301,13 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         ),
                         IndexDefinition(
                             name = "idx_users_name",
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -287,7 +335,7 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_events_user_date",
-                            columns = listOf("user_id", "created_at"),
+                            columns = listOf("user_id", "created_at").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )

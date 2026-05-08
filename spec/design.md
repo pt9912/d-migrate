@@ -531,7 +531,9 @@ tables:
         max_length: 100
         required: true
     indices:
-      - columns: [email]
+      - columns:
+          - name: email
+            direction: asc
         type: btree
         unique: true
 

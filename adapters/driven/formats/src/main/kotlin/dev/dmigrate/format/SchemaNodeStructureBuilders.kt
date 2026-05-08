@@ -147,10 +147,29 @@ private fun buildIndices(
     for (index in indices) {
         val node = mapper.createObjectNode()
         if (index.name != null) node.put("name", index.name)
-        node.set<ArrayNode>("columns", stringArray(mapper, index.columns))
+        node.set<ArrayNode>("columns", buildIndexColumns(mapper, index.columns))
         if (index.type != IndexType.BTREE) node.put("type", index.type.name.lowercase())
         if (index.unique) node.put("unique", true)
         arrayNode.add(node)
+    }
+    return arrayNode
+}
+
+private fun buildIndexColumns(
+    mapper: ObjectMapper,
+    columns: List<IndexColumn>,
+): ArrayNode {
+    val arrayNode = mapper.createArrayNode()
+    for (column in columns) {
+        val direction = column.direction
+        if (direction == null) {
+            arrayNode.add(column.name)
+        } else {
+            val columnNode = mapper.createObjectNode()
+            columnNode.put("name", column.name)
+            columnNode.put("direction", direction.name.lowercase())
+            arrayNode.add(columnNode)
+        }
     }
     return arrayNode
 }

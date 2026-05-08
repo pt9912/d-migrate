@@ -54,12 +54,27 @@ internal object SchemaStructureValidationRules {
         errors: MutableList<ValidationError>,
     ) {
         for (index in table.indices) {
+            if (index.columns.isEmpty()) {
+                val indexName = index.name ?: "<unnamed>"
+                errors += ValidationError(
+                    "E005",
+                    "Index '$indexName' has no columns",
+                    "tables.$tableName.indices",
+                )
+            }
             for (column in index.columns) {
-                if (column !in table.columns) {
+                if (column.name.isBlank()) {
                     val indexName = index.name ?: index.columns.joinToString(",")
                     errors += ValidationError(
                         "E005",
-                        "Index '$indexName' references non-existent column '$column'",
+                        "Index '$indexName' contains an empty column name",
+                        "tables.$tableName.indices",
+                    )
+                } else if (column.name !in table.columns) {
+                    val indexName = index.name ?: index.columns.joinToString(",")
+                    errors += ValidationError(
+                        "E005",
+                        "Index '$indexName' references non-existent column '${column.name}'",
                         "tables.$tableName.indices",
                     )
                 }

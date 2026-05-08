@@ -33,6 +33,39 @@ class JsonSchemaCodecTest : FunSpec({
         fromJson shouldBe fromYaml
     }
 
+    test("read JSON index columns accepts object form with direction") {
+        val json = """
+            {
+              "name": "Test",
+              "version": "1.0",
+              "tables": {
+                "orders": {
+                  "columns": {
+                    "id": { "type": "identifier" },
+                    "created_at": { "type": "datetime" }
+                  },
+                  "indices": [
+                    {
+                      "name": "idx_orders_created",
+                      "columns": [
+                        "created_at",
+                        { "name": "id", "direction": "desc" }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        val schema = jsonCodec.read(ByteArrayInputStream(json.toByteArray()))
+
+        schema.tables.getValue("orders").indices.single().columns shouldBe listOf(
+            IndexColumn("created_at"),
+            IndexColumn("id", IndexSortDirection.DESC),
+        )
+    }
+
     // ── JSON Round-Trip ─────────────────────────
 
     test("JSON round-trip minimal schema") {

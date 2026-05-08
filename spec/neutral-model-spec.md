@@ -318,7 +318,10 @@ tables:
     # ── Indizes ──────────────────────
     indices:
       - name: idx_orders_customer_date
-        columns: [customer_id, order_date]
+        columns:
+          - customer_id
+          - name: order_date
+            direction: desc              # optional: asc | desc
         type: btree                      # btree | hash | gin | gist | brin
         unique: false
       - name: idx_orders_status
@@ -789,7 +792,7 @@ CREATE TABLE orders (
     notes           TEXT
 );
 
-CREATE INDEX idx_orders_customer_date ON orders (customer_id, order_date);
+CREATE INDEX idx_orders_customer_date ON orders (customer_id, order_date DESC);
 
 CREATE OR REPLACE FUNCTION calculate_order_total(p_order_id INT)
 RETURNS DECIMAL(10,2) AS $$
@@ -878,7 +881,10 @@ tables:
     primary_key: [id]
     indices:
       - name: idx_orders_customer_date
-        columns: [customer_id, order_date]
+        columns:
+          - customer_id
+          - name: order_date
+            direction: desc
         type: btree
     constraints:
       - name: chk_total_positive
@@ -956,7 +962,7 @@ CREATE TABLE `orders` (
     CONSTRAINT `chk_total_positive` CHECK (`total_amount` >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
-CREATE INDEX `idx_orders_customer_date` ON `orders` (`customer_id`, `order_date`);
+CREATE INDEX `idx_orders_customer_date` ON `orders` (`customer_id`, `order_date` DESC);
 
 CREATE OR REPLACE VIEW `active_orders` AS
     SELECT o.*, c.`name` AS customer_name
@@ -992,7 +998,7 @@ CREATE TABLE "orders" (
     CHECK ("total_amount" >= 0)
 );
 
-CREATE INDEX "idx_orders_customer_date" ON "orders" ("customer_id", "order_date");
+CREATE INDEX "idx_orders_customer_date" ON "orders" ("customer_id", "order_date" DESC);
 
 CREATE VIEW "active_orders" AS
     SELECT o.*, c."name" AS customer_name

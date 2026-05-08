@@ -129,7 +129,10 @@ tables:
     # Indizes (optional)
     indices:
       - name: idx_name
-        columns: [col1, col2]
+        columns:
+          - col1
+          - name: col2
+            direction: desc   # Optional: asc | desc
         type: btree            # btree | hash | gin | gist | brin
         unique: false          # Default: false
 

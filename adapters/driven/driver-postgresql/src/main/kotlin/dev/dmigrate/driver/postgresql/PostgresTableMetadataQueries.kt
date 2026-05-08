@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.ConstraintProjection
 import dev.dmigrate.driver.metadata.ForeignKeyProjection
@@ -138,6 +139,10 @@ internal object PostgresTableMetadataQueries {
             """
             SELECT i.relname AS index_name,
                    array_agg(a.attname ORDER BY k.n) AS columns,
+                   array_agg(
+                       CASE WHEN (ix.indoption[k.n - 1] & 1) = 1 THEN 'DESC' ELSE NULL END
+                       ORDER BY k.n
+                   ) AS directions,
                    ix.indisunique AS is_unique,
                    am.amname AS index_type
             FROM pg_index ix
@@ -163,6 +168,7 @@ internal object PostgresTableMetadataQueries {
                 columns = parseArrayColumn(row["columns"]),
                 isUnique = row["is_unique"] as Boolean,
                 type = row["index_type"] as? String,
+                directions = parseDirectionArrayColumn(row["directions"]),
             )
         }
     }
@@ -218,6 +224,15 @@ internal object PostgresTableMetadataQueries {
         is String -> value.removeSurrounding("{", "}").split(",").map { it.trim() }
         else -> emptyList()
     }
+
+    private fun parseDirectionArrayColumn(value: Any?): List<IndexSortDirection?> = when (value) {
+        is java.sql.Array -> (value.array as Array<*>).map { parseIndexSortDirection(it?.toString()) }
+        is String -> value.removeSurrounding("{", "}").split(",").map { parseIndexSortDirection(it.trim()) }
+        else -> emptyList()
+    }
+
+    private fun parseIndexSortDirection(value: String?): IndexSortDirection? =
+        if (value.equals("DESC", ignoreCase = true)) IndexSortDirection.DESC else null
 
     private fun mapPgAction(code: String?): String? = when (code) {
         "c" -> "CASCADE"

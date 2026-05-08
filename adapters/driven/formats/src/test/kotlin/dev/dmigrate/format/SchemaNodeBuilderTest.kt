@@ -11,6 +11,7 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ParameterDefinition
@@ -72,7 +73,13 @@ class SchemaNodeBuilderTest : FunSpec({
                         ),
                     ),
                     primaryKey = listOf("id"),
-                    indices = listOf(IndexDefinition(name = "idx_orders_status", columns = listOf("status"), unique = true)),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_status",
+                            columns = listOf("status").map(::IndexColumn),
+                            unique = true,
+                        )
+                    ),
                     constraints = listOf(
                         ConstraintDefinition(
                             name = "chk_orders_status",

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
@@ -76,14 +77,18 @@ object SqliteMetadataQueries {
             val indexName = idx["name"] as String
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints)
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
-            val colRows = session.queryList("PRAGMA index_info(${SqlIdentifiers.quoteStringLiteral(indexName)})")
-            val cols = colRows.sortedBy { (it["seqno"] as Number).toInt() }
-                .mapNotNull { it["name"] as? String }
+            val colRows = session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
+                .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
+                .sortedBy { (it["seqno"] as Number).toInt() }
+            val cols = colRows.mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
             IndexProjection(
                 name = indexName,
                 columns = cols,
                 isUnique = (idx["unique"] as Number).toInt() == 1,
+                directions = colRows.map { row ->
+                    if (((row["desc"] as? Number)?.toInt() ?: 0) == 1) IndexSortDirection.DESC else null
+                },
             )
         }
     }

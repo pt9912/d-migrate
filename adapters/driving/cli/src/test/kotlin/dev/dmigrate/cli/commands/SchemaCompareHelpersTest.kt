@@ -303,12 +303,12 @@ Tables:
     // --- Canonical signatures ---
 
     test("index signature is stable") {
-        val idx = IndexDefinition(name = "idx_a", columns = listOf("a"), type = IndexType.BTREE)
+        val idx = IndexDefinition(name = "idx_a", columns = listOf("a").map(::IndexColumn), type = IndexType.BTREE)
         SchemaCompareHelpers.indexSignature(idx) shouldBe "idx_a [btree]"
     }
 
     test("unnamed index signature uses columns") {
-        val idx = IndexDefinition(name = null, columns = listOf("a", "b"),
+        val idx = IndexDefinition(name = null, columns = listOf("a", "b").map(::IndexColumn),
             type = IndexType.HASH, unique = true)
         SchemaCompareHelpers.indexSignature(idx) shouldBe "a,b [hash,unique]"
     }
@@ -384,7 +384,7 @@ Tables:
                     name = "name",
                     type = ValueChange(NeutralType.Text(100), NeutralType.Text(200)),
                 )),
-                indicesAdded = listOf(IndexDefinition(name = "idx_a", columns = listOf("a"))),
+                indicesAdded = listOf(IndexDefinition(name = "idx_a", columns = listOf("a").map(::IndexColumn))),
                 constraintsAdded = listOf(ConstraintDefinition(
                     name = "uq_email", type = ConstraintType.UNIQUE, columns = listOf("email"))),
             )),

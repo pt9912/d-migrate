@@ -379,12 +379,12 @@ class SchemaComparatorTest : FunSpec({
     test("index changed") {
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf("c" to col()),
-            indices = listOf(IndexDefinition(name = "idx_c", columns = listOf("c"),
+            indices = listOf(IndexDefinition(name = "idx_c", columns = listOf("c").map(::IndexColumn),
                 type = IndexType.BTREE)),
         )))
         val right = schema(tables = mapOf("t" to table(
             columns = mapOf("c" to col()),
-            indices = listOf(IndexDefinition(name = "idx_c", columns = listOf("c"),
+            indices = listOf(IndexDefinition(name = "idx_c", columns = listOf("c").map(::IndexColumn),
                 type = IndexType.HASH)),
         )))
 
@@ -395,14 +395,53 @@ class SchemaComparatorTest : FunSpec({
         diff.tablesChanged[0].indicesChanged[0].after.type shouldBe IndexType.HASH
     }
 
+    test("index direction change is detected") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("c" to col()),
+            indices = listOf(IndexDefinition(name = "idx_c", columns = listOf(IndexColumn("c")))),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("c" to col()),
+            indices = listOf(
+                IndexDefinition(
+                    name = "idx_c",
+                    columns = listOf(IndexColumn("c", IndexSortDirection.DESC)),
+                )
+            ),
+        )))
+
+        val diff = comparator.compare(left, right)
+
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesChanged[0].after.columns[0].direction shouldBe IndexSortDirection.DESC
+    }
+
+    test("unnamed index direction is part of signature") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("c" to col()),
+            indices = listOf(IndexDefinition(columns = listOf(IndexColumn("c")))),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("c" to col()),
+            indices = listOf(IndexDefinition(columns = listOf(IndexColumn("c", IndexSortDirection.DESC)))),
+        )))
+
+        val diff = comparator.compare(left, right)
+
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesAdded shouldHaveSize 1
+        diff.tablesChanged[0].indicesRemoved shouldHaveSize 1
+    }
+
     test("index added and removed") {
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf("a" to col(), "b" to col()),
-            indices = listOf(IndexDefinition(name = "idx_a", columns = listOf("a"))),
+            indices = listOf(IndexDefinition(name = "idx_a", columns = listOf("a").map(::IndexColumn))),
         )))
         val right = schema(tables = mapOf("t" to table(
             columns = mapOf("a" to col(), "b" to col()),
-            indices = listOf(IndexDefinition(name = "idx_b", columns = listOf("b"))),
+            indices = listOf(IndexDefinition(name = "idx_b", columns = listOf("b").map(::IndexColumn))),
         )))
 
         val diff = comparator.compare(left, right)
@@ -574,7 +613,7 @@ class SchemaComparatorTest : FunSpec({
     }
 
     test("unnamed index uses stable signature") {
-        val idx = IndexDefinition(name = null, columns = listOf("a", "b"),
+        val idx = IndexDefinition(name = null, columns = listOf("a", "b").map(::IndexColumn),
             type = IndexType.BTREE, unique = false)
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf("a" to col(), "b" to col()),
@@ -592,12 +631,12 @@ class SchemaComparatorTest : FunSpec({
     test("unnamed index change detected by signature") {
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf("a" to col(), "b" to col()),
-            indices = listOf(IndexDefinition(name = null, columns = listOf("a"),
+            indices = listOf(IndexDefinition(name = null, columns = listOf("a").map(::IndexColumn),
                 type = IndexType.BTREE, unique = false)),
         )))
         val right = schema(tables = mapOf("t" to table(
             columns = mapOf("a" to col(), "b" to col()),
-            indices = listOf(IndexDefinition(name = null, columns = listOf("b"),
+            indices = listOf(IndexDefinition(name = null, columns = listOf("b").map(::IndexColumn),
                 type = IndexType.BTREE, unique = false)),
         )))
 

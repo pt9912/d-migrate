@@ -1,6 +1,6 @@
 # Follow-up-Plan: Index-Spalten mit ASC/DESC-Reihenfolge
 
-> Status: Draft (2026-05-07)
+> Status: Done (2026-05-08)
 >
 > Kontext: `CREATE INDEX ... (col ASC|DESC)` ist in PostgreSQL, MySQL und
 > SQLite relevant. Das aktuelle neutrale Indexmodell speichert aber nur eine

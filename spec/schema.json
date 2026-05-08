@@ -213,7 +213,12 @@
         "name": { "type": "string" },
         "columns": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "oneOf": [
+              { "type": "string", "minLength": 1 },
+              { "$ref": "#/$defs/indexColumn" }
+            ]
+          },
           "minItems": 1
         },
         "type": {
@@ -224,6 +229,18 @@
         "unique": {
           "type": "boolean",
           "default": false
+        }
+      }
+    },
+    "indexColumn": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "direction": {
+          "type": "string",
+          "enum": ["asc", "desc"]
         }
       }
     },

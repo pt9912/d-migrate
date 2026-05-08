@@ -295,7 +295,7 @@ class MysqlDdlGeneratorTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_lookups_key",
-                            columns = listOf("key"),
+                            columns = listOf("key").map(::IndexColumn),
                             type = IndexType.HASH
                         )
                     )

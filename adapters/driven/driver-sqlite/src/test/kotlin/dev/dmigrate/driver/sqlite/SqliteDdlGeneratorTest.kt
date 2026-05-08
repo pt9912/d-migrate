@@ -303,7 +303,7 @@ class SqliteDdlGeneratorTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.HASH
                         )
                     )

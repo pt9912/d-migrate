@@ -8,6 +8,8 @@ import io.kotest.matchers.maps.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 class YamlSchemaCodecTest : FunSpec({
 
@@ -54,6 +56,69 @@ class YamlSchemaCodecTest : FunSpec({
         val customType = schema.customTypes["order_status"]!!
         customType.kind shouldBe CustomTypeKind.ENUM
         customType.values shouldBe listOf("pending", "processing", "shipped", "delivered", "cancelled")
+    }
+
+    test("parse index columns accepts string and object forms") {
+        val yaml = """
+            name: Test
+            version: "1.0"
+            tables:
+              orders:
+                columns:
+                  id:
+                    type: identifier
+                  created_at:
+                    type: datetime
+                indices:
+                  - name: idx_orders_created
+                    columns:
+                      - created_at
+                      - name: id
+                        direction: desc
+        """.trimIndent()
+
+        val schema = codec.read(ByteArrayInputStream(yaml.toByteArray()))
+        val index = schema.tables.getValue("orders").indices.single()
+
+        index.columns shouldBe listOf(
+            IndexColumn("created_at"),
+            IndexColumn("id", IndexSortDirection.DESC),
+        )
+    }
+
+    test("write index columns uses short form unless direction is explicit") {
+        val schema = SchemaDefinition(
+            name = "Test",
+            version = "1.0",
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Identifier()),
+                        "created_at" to ColumnDefinition(type = NeutralType.DateTime()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_created",
+                            columns = listOf(
+                                IndexColumn("created_at"),
+                                IndexColumn("id", IndexSortDirection.ASC),
+                            ),
+                        )
+                    ),
+                )
+            ),
+        )
+        val out = ByteArrayOutputStream()
+
+        codec.write(out, schema)
+
+        val yaml = out.toString(Charsets.UTF_8)
+        yaml shouldContain "created_at"
+        yaml shouldContain "name"
+        yaml shouldContain "id"
+        yaml shouldContain "direction"
+        yaml shouldContain "asc"
+        codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 
     test("parse all-types schema covers pre-0.5.5 neutral types (geometry tested separately in spatial.yaml)") {

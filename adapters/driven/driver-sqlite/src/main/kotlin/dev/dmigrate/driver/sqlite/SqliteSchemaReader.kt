@@ -131,7 +131,7 @@ class SqliteSchemaReader : SchemaReader {
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
-                    columns = idx.columns,
+                    columns = idx.indexColumns,
                     unique = idx.isUnique,
                 )
             }

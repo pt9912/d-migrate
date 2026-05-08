@@ -177,7 +177,7 @@ class MysqlSchemaReader(
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
-                    columns = idx.columns,
+                    columns = idx.indexColumns,
                     type = when (idx.type?.uppercase()) {
                         "HASH" -> IndexType.HASH
                         else -> IndexType.BTREE

@@ -221,6 +221,21 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("index descending direction is read from index_xinfo") {
+        withDb(
+            "CREATE TABLE orders (id INTEGER PRIMARY KEY, created_at TEXT)",
+            "CREATE INDEX idx_orders_created ON orders (created_at DESC, id ASC)",
+        ) { pool ->
+            val result = reader.read(pool)
+            val index = result.schema.tables.getValue("orders").indices.single()
+
+            index.columns shouldBe listOf(
+                IndexColumn("created_at", IndexSortDirection.DESC),
+                IndexColumn("id"),
+            )
+        }
+    }
+
     // ── Views under include flag ────────────────
 
     test("views are read when includeViews is true") {
