@@ -133,7 +133,20 @@ docker-coverage:
 	$(DOCKER) build --target coverage -t $(IMAGE):coverage .
 
 docker-coverage-gate:
-	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+	@if ! $(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .; then \
+		echo ""; \
+		echo "=== docker-coverage-gate FAILED — building reports for diagnosis ==="; \
+		$(MAKE) docker-coverage; \
+		$(MAKE) docker-coverage-json; \
+		echo ""; \
+		echo "=== Packages below 90% line coverage ==="; \
+		$(DOCKER) run --rm $(IMAGE):coverage-json | \
+			jq -r '.report.packages[] | (.counters.LINE.covered / (.counters.LINE.covered + .counters.LINE.missed) * 100) as $$p | select($$p < 90) | "\($$p | floor)% \(.name) (covered=\(.counters.LINE.covered) missed=\(.counters.LINE.missed))"' | \
+			sort -n; \
+		echo ""; \
+		echo "Full HTML report: docker run --rm -p 8080:8080 $(IMAGE):coverage  # http://localhost:8080"; \
+		exit 1; \
+	fi
 
 docker-coverage-json:
 	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
