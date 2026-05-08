@@ -36,8 +36,13 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Build release assets
+        # --no-build-cache spiegelt build.yml: ohne das Flag bekommt
+        # :hexagon:core:koverVerify hier stale Coverage-Daten aus dem
+        # gradle Task-Output-Cache und scheitert am 90%-Gate, obwohl
+        # der parallele build.yml-Lauf gruen ist (vgl. v0.9.6 Tag-Lauf
+        # 25552688700, 75.509%).
         run: >-
-          ./gradlew --no-daemon
+          ./gradlew --no-daemon --no-build-cache
           -PreleaseVersion=${{ steps.meta.outputs.version }}
           build
           :adapters:driving:cli:assembleReleaseAssets

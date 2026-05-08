@@ -13,6 +13,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.6.1] - 2026-05-08
+
+### Fixed
+
+- **`release-homebrew.yml`** now passes `--no-build-cache` to the
+  release-asset Gradle build so the workflow no longer hits stale
+  Gradle task-output state on a fresh runner. Without the flag the
+  `:hexagon:core:koverVerify` rule was failing at ~75.5%
+  (vs ≥90% required) on the v0.9.6 tag run while the parallel
+  `build.yml` (which already used `--no-build-cache`) was green —
+  the result was a phantom v0.9.6 tag with neither GitHub release
+  assets nor a Homebrew formula update.
+- **`MysqlSchemaReaderIntegrationTest`** is aligned with the 0.9.6
+  reverse contract from commit `da73bf61`: single-column FKs are
+  preserved as named entries in `TableDefinition.constraints`
+  instead of `ColumnDefinition.references`. The test was missed in
+  0.9.6 and broke `Integration Tests` on every branch.
+- **`AbstractDdlGenerator.getVersion()`** returns `0.9.6.1`.
+
 ## [0.9.6] - 2026-05-08
 
 ### Added
