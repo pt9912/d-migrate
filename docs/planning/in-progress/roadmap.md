@@ -415,12 +415,14 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](../../../spec/ki-mcp.md).
 
-### Milestone 0.9.7 — Refactoring, Diff-basierte Migrationen und SQLite-Sequence-Emulation
+### Milestone 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen und SQLite-Sequence-Emulation
 
 | Bereich  | Aufgabe                                                                                                                                                                                                                                                                                                          | LF-Ref |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
 | Refactor | ICU4J hinter einen Hexagon-Port — `hexagon:application` haengt nicht mehr direkt von `com.ibm.icu:icu4j` ab; Unicode-Normalisierung und Grapheme-Counting laufen ueber adapterneutrale Abstraktion. Details: [`refactoring-icu4j.md`](../open/refactoring-icu4j.md)                                               | —      |
 | Refactor | SHA-256 / Hex-Encoding konsolidieren — zentrale Top-Level-Extension in `hexagon:core`, ersetzt 11 Fundstellen mit vier verschiedenen Schreibweisen (`%02x`-Format, Lookup-Table, joinToString-Varianten). Details: [`refactoring-sha256Hex.md`](../open/refactoring-sha256Hex.md)                                 | —      |
+| Hardening | RFC-7662 Client-Auth fuer Token-Introspection (`IntrospectionAuthValidator.kt:48`) — `Authorization`-Header (Basic / client_secret) am Introspection-POST setzen, damit Production-Deployments mit `client_credentials` LN-025/LN-028-konform laufen                                                              | LN-025, LN-028 |
+| Hardening | Idempotency-Key fuer read-only Schema-Staging-Uploads (`ArtifactUploadInitHandler.kt:88`, AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`) — same-checksum Replay trifft die bestehende Session statt eine neue zu minten und Quota zu verbrennen                                                                              | —      |
 | Docs    | Migrate Phase A: Spezifikations- und Namensbereinigung — `spec/cli-spec.md` fuer `schema migrate`/`schema rollback`, Exit-Code-Tabelle (Migrations-Blocker `8`, DDL-Fehler `5`), `spec/design.md` um `DiffResult` | —      |
 | Core    | Migrate Phase B: Core-Vertrag — `DiffResult`, `DiffOperation`, `DiffObjectRef`, `DiffPhase`, `Reversibility`, `OperationRisks`, stabile Operation-IDs, Operation-Payloads, kanonische Fingerprint-Projektion   | —      |
 | Core    | Migrate Phase C: Planner — `DiffPlanner` mit Mapping `SchemaDiff` → Operationen, Dependency-/Phasen-Sortierung, inverse Down-Sortierung, Reversibilitaetsklassifizierung, blockierende Diagnose                | —      |
