@@ -716,10 +716,20 @@ Erste Zieloperationen:
 `CHECK`- und `EXCLUDE`-Constraints gehoeren nicht zur ersten PostgreSQL-
 Rendermatrix, solange der Compare-Kern sie nicht verlustfrei als `SchemaDiff`
 liefert. Der aktuelle Comparator normalisiert diese Constraint-Arten fuer den
-Compare-Pfad weg; Phase A/B muss diese Luecke explizit schliessen, bevor
-`AddConstraint`/`DropConstraint` fuer `CHECK` oder `EXCLUDE` als renderbar gelten
-duerfen. Bis dahin werden solche Aenderungen entweder nicht geplant oder als
-Planner-/Comparator-Gap diagnostiziert, aber nicht als SQL gerendert.
+Compare-Pfad weg. Dadurch sind Aenderungen an diesen Constraints nach dem
+normalisierten `SchemaDiff` nicht mehr beobachtbar. Phase A/B muss diese Luecke
+deshalb verbindlich schliessen, bevor `schema migrate` auf Tabellen mit
+`CHECK`-/`EXCLUDE`-Constraints als renderbar gelten darf:
+
+- Bevorzugt erweitert Phase A/B `SchemaDiff`/`TableComparator` so, dass
+  `CHECK`-/`EXCLUDE`-Constraints verlustfrei diffbar sind.
+- Falls diese Erweiterung nicht im ersten Slice umgesetzt wird, braucht der
+  Planner einen separaten Vor-Normalisierungs-Detector, der betroffene Tabellen
+  als nicht vollstaendig diffbar markiert und mit blockierender Diagnose
+  ausweist.
+- Ein blosses Ausschliessen aus der renderbaren Matrix reicht nicht, wenn die
+  Aenderung dadurch still verschwindet. Unbeobachtete Constraint-Diffs duerfen
+  nicht zu SQL fuer dieselbe Tabelle fuehren.
 
 `AlterColumnType` ist im ersten PostgreSQL-Slice bewusst eng begrenzt. Der
 Generator darf die Operation nur rendern, wenn er anhand einer expliziten,
@@ -927,10 +937,14 @@ Spaltenmapping:
 
 - Unveraenderte Spalten werden 1:1 kopiert:
   `sourceColumn = targetColumn`, `expressionSql = quote(sourceColumn)`.
-- `AlterColumnType` kopiert standardmaessig mit `CAST`, wenn der
-  Typmapper eine sichere SQLite-Zielaffinitaet bestimmen kann. Ist kein
-  sicherer Cast moeglich, wird die Operation `MANUAL_REQUIRED` und blockiert
-  automatisches Up/Down-SQL.
+- `AlterColumnType` darf nicht allein aufgrund gleicher oder bestimmbarer
+  SQLite-Zielaffinitaet automatisch mit `CAST` gerendert werden. SQLite kann
+  Werte bei `CAST` still normalisieren oder verlustbehaftet veraendern. Ein
+  automatischer Cast ist im ersten Slice nur erlaubt, wenn eine explizite,
+  getestete Quell-/Ziel-Cast-Matrix die Konvertierung als sicher klassifiziert
+  und der Generator die noetigen Daten-Preflights ausfuehren kann. Fehlt eine
+  solche Matrix oder ein noetiger Preflight, wird die Operation
+  `MANUAL_REQUIRED` und blockiert automatisches Up/Down-SQL.
 - `AlterColumnDefault` und Constraint-/PK-Aenderungen aendern nur die
   Zieltabellen-Definition; bestehende Werte werden 1:1 kopiert.
 - Hinzugefuegte nullable Spalten werden mit `NULL` gefuellt, sofern kein
@@ -1302,7 +1316,7 @@ Der Runner:
 2. liest daraus den von `schema migrate --generate-rollback` erzeugten
    maschinenlesbaren `d-migrate`-Metadatenblock,
 3. prueft in allen Modi den Metadatenblock, die Pflichtfelder und den
-   `bodyHash` des SQL-Bodys strikt,
+   `artifactHash` des kanonischen Header-/Body-Artefakts strikt,
 4. bestimmt bei `--execute` den Dialekt des Ziel-Connectors und vergleicht ihn
    mit dem im Metadatenblock gespeicherten Dialekt,
 5. bricht bei Dialektabweichung mit Exit `8`,
@@ -1349,18 +1363,24 @@ fuer Drift-Schutz und Freigabepruefung vertraut:
 - Das JSON-Objekt enthaelt mindestens:
   `format`, `formatVersion`, `dialect`, `currentFingerprint`,
   `desiredFingerprint`, `postUpFingerprint`, `operationIds`,
-  `risk`, `createdByVersion`, `fingerprintAlgorithm`, `bodyHashAlgorithm`,
-  `bodyHash`, `recovery` und `postUpVerified`.
-- `bodyHash` bindet den Metadatenblock an den tatsaechlichen SQL-Body. Der Hash
-  wird ueber die kanonischen Bytes aller Zeilen nach dem End-Begrenzer gebildet:
+  `risk`, `createdByVersion`, `fingerprintAlgorithm`, `artifactHashAlgorithm`,
+  `artifactHash`, `recovery` und `postUpVerified`.
+- `artifactHash` bindet den Metadatenblock und den SQL-Body aneinander. Der Hash
+  wird ueber kanonische Bytes aus zwei Teilen gebildet:
+  1. das kanonische JSON-Objekt des Metadatenblocks ohne das Feld
+     `artifactHash`, aber inklusive sicherheitsrelevanter Header-Felder wie
+     `dialect`, Fingerprints, `operationIds`, `risk`, `recovery` und
+     `postUpVerified`;
+  2. alle Zeilen nach dem End-Begrenzer als kanonischer SQL-Body.
   Zeilenenden werden als LF normalisiert, der Generator schreibt genau eine
   finale Newline, und der Hash deckt Kommentare sowie ausfuehrbare Statements im
-  Body ab. Der Metadatenblock selbst ist nicht Teil des Hashes.
-- `bodyHashAlgorithm` benennt den Algorithmus und die kanonische Byte-Regel, zum
-  Beispiel `sha256-lf-body-v1`. `schema rollback` muss den Hash in Preview-,
-  Validierungs- und Execute-Pfaden neu berechnen, bevor es das Artefakt als
-  gueltig behandelt. Bei `--execute` passiert diese Pruefung vor jeder
-  Zielzustands- oder Dialektpruefung. Eine Abweichung macht das Artefakt
+  Body ab. Eine manuelle Aenderung des Risikoblocks, der Fingerprints, des
+  Dialekts oder des SQL-Bodys muss dadurch den Hash brechen.
+- `artifactHashAlgorithm` benennt den Algorithmus und die kanonische Byte-Regel,
+  zum Beispiel `sha256-rollback-artifact-v1`. `schema rollback` muss den Hash in
+  Preview-, Validierungs- und Execute-Pfaden neu berechnen, bevor es das
+  Artefakt als gueltig behandelt. Bei `--execute` passiert diese Pruefung vor
+  jeder Zielzustands- oder Dialektpruefung. Eine Abweichung macht das Artefakt
   ungueltig und endet ohne DB-Zugriff mit Exit `7`.
 - Dieser Hash ist ein Integritaets- und Drift-Schutz fuer versehentlich oder
   manuell veraenderte Artefakte, keine kryptografische Signatur gegen einen
@@ -1387,8 +1407,8 @@ fuer Drift-Schutz und Freigabepruefung vertraut:
 - `risk` enthaelt mindestens `destructive`, `dataLossPossible`,
   `requiresManualConfirmation` und die betroffenen Operation-IDs.
 - Der Parser ist strikt: fehlende Pflichtfelder, unbekannte `formatVersion`,
-  syntaktisch ungueltiges JSON, unbekannte `bodyHashAlgorithm`, abweichender
-  `bodyHash`, widerspruechliche Dialekt-/Fingerprint-Felder oder mehrere
+  syntaktisch ungueltiges JSON, unbekannte `artifactHashAlgorithm`, abweichender
+  `artifactHash`, widerspruechliche Dialekt-/Fingerprint-Felder oder mehrere
   Metadatenbloecke machen das Artefakt fuer `--execute` ungueltig. Bei
   `recovery = true` sind fehlende oder leere
   `allowedPostUpFingerprints` ebenfalls ungueltig. Preview/Validierung muss
@@ -1566,8 +1586,10 @@ Report-Inhalte:
 - private `SchemaComparator.DiffResult<N, D>` umbenennen
 - Comparator-Luecke fuer `CHECK`-/`EXCLUDE`-Constraints entscheiden:
   entweder `SchemaDiff`/`TableComparator` so erweitern, dass diese Constraints
-  verlustfrei diffbar sind, oder sie explizit aus der ersten renderbaren
-  Constraint-Matrix ausschliessen
+  verlustfrei diffbar sind, oder einen Vor-Normalisierungs-Detector einfuehren,
+  der betroffene Tabellen als nicht vollstaendig diffbar blockiert. Ein
+  stilles Wegnormalisieren mit anschliessendem SQL-Rendering fuer dieselbe
+  Tabelle ist nicht zulaessig.
 - klare Begriffe festlegen:
   - `SchemaDiff` = struktureller Unterschied
   - `DiffView` = stabiler Compare-Output
@@ -1620,8 +1642,9 @@ Report-Inhalte:
 - destruktive Operationen markieren
 - Rename-Kandidaten nur diagnostizieren, nicht automatisch migrieren
 - `CHECK`-/`EXCLUDE`-Constraint-Aenderungen nur planen, wenn der Compare-Kern
-  sie verlustfrei liefert; andernfalls blockierende Diagnose statt SQL-
-  Rendering
+  sie verlustfrei liefert; andernfalls muss ein Vor-Normalisierungs-Detector
+  betroffene Tabellen als nicht vollstaendig diffbar blockieren statt die
+  Aenderung still verschwinden zu lassen
 
 ### Phase D - Dialekt-DDL fuer erste Matrix
 
@@ -1641,7 +1664,9 @@ Erste realistische Matrix:
 `CHECK`- und `EXCLUDE`-Constraints sind in dieser Matrix nur dann enthalten,
 wenn Phase A/B den Compare-Kern so erweitert, dass diese Aenderungen als
 verlustfreier `SchemaDiff` vorliegen. Ohne diese Erweiterung gehoeren sie nicht
-zur renderbaren ersten Matrix.
+zur renderbaren ersten Matrix; betroffene Tabellen muessen dann vor der
+Constraint-Normalisierung erkannt und mit blockierender Diagnose aus der
+SQL-Erzeugung ausgeschlossen werden.
 
 Zusaetzlich fuer SQLite verbindlich:
 
@@ -1649,7 +1674,9 @@ Zusaetzlich fuer SQLite verbindlich:
 - Rebuild-Gruppierung pro Tabelle implementieren
 - deterministische Temp-Namen und Kollisionssuffixe erzeugen
 - Spaltenmapping inklusive `CAST`, Default-/NULL-Fill und Blocker fuer
-  nicht automatisch fuellbare `NOT NULL`-Spalten rendern
+  nicht automatisch fuellbare `NOT NULL`-Spalten rendern; automatische
+  SQLite-Casts fuer `AlterColumnType` nur mit expliziter, getesteter
+  Quell-/Ziel-Cast-Matrix und den noetigen Daten-Preflights erlauben
 - alte/neue Tabellenconstraints in `CREATE TABLE` korrekt abbilden
 - Indizes, Trigger und bekannte abhaengige Views nach dem Rebuild wieder
   erzeugen
@@ -1709,8 +1736,9 @@ Nicht in der ersten Matrix:
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
 - strikter Parser fuer den `d-migrate rollback-sql v1`-Metadatenblock:
   Begrenzungskommentare, kanonisches JSON, Pflichtfelder,
-  Fingerprint-Algorithmus, `bodyHashAlgorithm`, `bodyHash`, SQL-Body-
-  Integritaetspruefung und Secret-Scrubbing
+  Fingerprint-Algorithmus, `artifactHashAlgorithm`, `artifactHash`,
+  Integritaetspruefung ueber kanonischen Header ohne `artifactHash` plus
+  SQL-Body und Secret-Scrubbing
 - Zielzustands-Pruefung vor `schema rollback --execute`
 - Zieldialekt-Pruefung vor `schema rollback --execute`; Abweichungen vom
   Metadatenblock enden mit `TARGET_DIALECT_MISMATCH`
@@ -1751,9 +1779,10 @@ Nicht in der ersten Matrix:
   Soll darf kein automatisch ausfuehrbares Recovery-Rollback-Artefakt entstehen
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
-  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch, Body-Hash-Mismatch,
-  Dialekt-Mismatch, Recovery-Felder (`recovery`, `postUpVerified`,
-  `allowedPostUpFingerprints`) und Secret-Scrubbing
+  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch,
+  Artifact-Hash-Mismatch bei Header- oder Body-Aenderungen, Dialekt-Mismatch,
+  Recovery-Felder (`recovery`, `postUpVerified`, `allowedPostUpFingerprints`)
+  und Secret-Scrubbing
 - MySQL-Dependency-Tests fuer fehlende oder unvollstaendige View-Dependency-
   Privilegien; betroffene View-Replacements und spaltenveraendernde Operationen
   muessen blockieren
@@ -1817,12 +1846,17 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   spaltenveraendernde Operationen mit Diagnose.
 - `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
-  abbildet; andernfalls gelten sie als diagnostizierter Gap und duerfen nicht
-  still als SQL gerendert werden.
+  abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
+  blockieren. Die Aenderung darf weder still verschwinden noch darf fuer dieselbe
+  Tabelle SQL aus einem unvollstaendigen Diff entstehen.
 - SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
   deterministisch beschrieben und getestet.
+- SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
+  expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
+  Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
+  sonst blockiert die Operation als `MANUAL_REQUIRED`.
 - SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
   blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
   Down-Vertrag.
@@ -1866,9 +1900,10 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - Der Down-SQL-Metadatenblock hat stabile Begrenzungskommentare, enthaelt ein
   kanonisches JSON-Objekt mit Pflichtfeldern und wird von `schema rollback`
   strikt geparst.
-- Der Down-SQL-Metadatenblock enthaelt `bodyHashAlgorithm` und `bodyHash`; der
-  Rollback-Runner berechnet den Hash des SQL-Bodys in Preview-, Validierungs-
-  und Execute-Pfaden neu und lehnt veraenderte Artefakte ohne DB-Zugriff ab.
+- Der Down-SQL-Metadatenblock enthaelt `artifactHashAlgorithm` und
+  `artifactHash`; der Rollback-Runner berechnet den Hash ueber kanonischen
+  Header ohne `artifactHash` plus SQL-Body in Preview-, Validierungs- und
+  Execute-Pfaden neu und lehnt veraenderte Artefakte ohne DB-Zugriff ab.
 - Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
   Nach-Compare und Driftpruefung und enthaelt die verwendete
   Fingerprint-Algorithmus-ID.
@@ -1963,7 +1998,9 @@ Verbindlich fuer den ersten Slice:
 - `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
   Stattdessen gibt es einen stabilen Report-Vertrag.
 - `CHECK`- und `EXCLUDE`-Constraints sind kein renderbarer erster Slice, solange
-  der Compare-Kern sie nicht verlustfrei diffen kann.
+  der Compare-Kern sie nicht verlustfrei diffen kann. Ohne Compare-Erweiterung
+  muss ein Vor-Normalisierungs-Detector betroffene Tabellen blockieren, damit
+  solche Aenderungen nicht still verschwinden.
 - PostgreSQL-Views nutzen `CREATE OR REPLACE VIEW` nur fuer kompatible
   Replacements; dependency-bedingte oder signaturinkompatible Replacements
   werden als explizites Drop/Recreate geplant oder blockiert.
@@ -1991,7 +2028,8 @@ Verbindlich fuer den ersten Slice:
 - `schema rollback --execute --dry-run` ist unzulaessig und endet mit Exit `2`.
 - Das Down-SQL enthaelt einen strikt parsebaren
   `d-migrate rollback-sql v1`-Metadatenblock mit kanonischem JSON,
-  Pflichtfeldern, Fingerprint-Algorithmus-ID, SQL-Body-Hash,
+  Pflichtfeldern, Fingerprint-Algorithmus-ID, Artifact-Hash ueber Header und
+  Body,
   `recovery`, `postUpVerified` und ohne Secrets. Recovery-Artefakte enthalten
   zusaetzlich nicht leere `allowedPostUpFingerprints`.
 - `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
