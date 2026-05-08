@@ -5,31 +5,31 @@ import io.kotest.matchers.shouldBe
 
 class AcceptHeaderHandlerTest : FunSpec({
 
-    test("absent / blank header accepts JSON") {
-        AcceptHeaderHandler.acceptsJson(null) shouldBe true
-        AcceptHeaderHandler.acceptsJson("") shouldBe true
-        AcceptHeaderHandler.acceptsJson("   ") shouldBe true
+    test("absent / blank header is rejected") {
+        AcceptHeaderHandler.acceptsJson(null) shouldBe false
+        AcceptHeaderHandler.acceptsJson("") shouldBe false
+        AcceptHeaderHandler.acceptsJson("   ") shouldBe false
     }
 
-    test("`*/*` accepts JSON") {
-        AcceptHeaderHandler.acceptsJson("*/*") shouldBe true
+    test("wildcard without explicit streamable types is rejected") {
+        AcceptHeaderHandler.acceptsJson("*/*") shouldBe false
     }
 
-    test("`application/json` accepts JSON") {
-        AcceptHeaderHandler.acceptsJson("application/json") shouldBe true
+    test("`application/json` alone is rejected") {
+        AcceptHeaderHandler.acceptsJson("application/json") shouldBe false
     }
 
-    test("`application/*` accepts JSON") {
-        AcceptHeaderHandler.acceptsJson("application/*") shouldBe true
+    test("`application/*` alone is rejected") {
+        AcceptHeaderHandler.acceptsJson("application/*") shouldBe false
     }
 
-    test("multi-value with JSON accepts") {
+    test("multi-value with JSON and event-stream accepts") {
         AcceptHeaderHandler.acceptsJson("application/json, text/event-stream") shouldBe true
         AcceptHeaderHandler.acceptsJson("text/event-stream, application/json") shouldBe true
-        AcceptHeaderHandler.acceptsJson("text/html, application/json;q=0.5") shouldBe true
+        AcceptHeaderHandler.acceptsJson("text/event-stream; charset=utf-8, application/json;q=0.5") shouldBe true
     }
 
-    test("SSE-only rejects JSON") {
+    test("event-stream alone is rejected") {
         AcceptHeaderHandler.acceptsJson("text/event-stream") shouldBe false
     }
 
@@ -37,7 +37,7 @@ class AcceptHeaderHandlerTest : FunSpec({
         AcceptHeaderHandler.acceptsJson("text/html") shouldBe false
     }
 
-    test("quality factor on JSON does not invalidate") {
-        AcceptHeaderHandler.acceptsJson("application/json;q=0.9") shouldBe true
+    test("quality factor on both required values does not invalidate") {
+        AcceptHeaderHandler.acceptsJson("application/json;q=0.9, text/event-stream;q=0.5") shouldBe true
     }
 })

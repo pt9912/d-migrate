@@ -4,7 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.SqlIdentifiers
 
-class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
+class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), DeferredForeignKeyDdlSupport {
 
     override val dialect = DatabaseDialect.POSTGRESQL
 
@@ -84,6 +84,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns) {
             val ref = col.references ?: continue
+            if (options.deferForeignKeys) continue
             if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
@@ -91,6 +92,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
         // Explicit constraints
         for (constraint in table.constraints) {
+            if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
             columnLines += generateConstraintClause(constraint)
         }
 
@@ -260,6 +262,26 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             DdlStatement(sql)
         }
     }
+
+    override fun generateDeferredForeignKeys(
+        foreignKeys: List<DeferredForeignKey>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> =
+        foreignKeys.map { fk ->
+            val sql = buildString {
+                append("ALTER TABLE ${quoteIdentifier(fk.fromTable)} ADD ")
+                append(buildForeignKeyClause(
+                    fk.constraintName,
+                    fk.fromColumns,
+                    fk.toTable,
+                    fk.toColumns,
+                    fk.onDelete,
+                    fk.onUpdate,
+                ))
+                append(";")
+            }
+            DdlStatement(sql)
+        }
 
     // ── Views ────────────────────────────────────
 

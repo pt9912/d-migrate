@@ -245,13 +245,6 @@ internal object PhaseBToolSchemas {
             output = jobStartOut(),
         ))
         put("data_profile_start", jobStart("connectionId"))
-        put("data_export_start", schemaPair(
-            input = obj(
-                "sourceConnectionId" to stringField(),
-                "querySpecRef" to stringField(),
-            ).required("sourceConnectionId"),
-            output = jobIdOut(),
-        ))
 
         // Upload-session tools
         put("artifact_upload_init", schemaPair(
@@ -835,21 +828,6 @@ internal object PhaseBToolSchemas {
             "resourceUri" to jobResourceUriField(),
             "executionMeta" to executionMetaJobField(),
         ).required("jobId", "resourceUri", "executionMeta")
-
-    /**
-     * Phase-B-Output fuer noch nicht E-/F-aktive Start-Tools
-     * (`data_export_start`). Bleibt schmal `{jobId}`, weil dieses
-     * Tool noch `UnsupportedToolHandler` ist (Plan §3.2 Carve-out).
-     *
-     * Phase F § 8.7 (F.7 1/5): `data_import_start` ist NICHT mehr in
-     * dieser Liste — der vollstaendige `jobStartOut()`-Output mit
-     * `resourceUri` + `executionMeta` ist Phase-F-aktiv.
-     *
-     * Phase F § 8.8 (F.8 1/4): `data_transfer_start` ebenfalls
-     * Phase-F-aktiv und nutzt jetzt `jobStartOut()`.
-     */
-    private fun jobIdOut(): Map<String, Any> =
-        obj("jobId" to stringField()).required("jobId")
 
     /** capabilities_list output is open-ended JSON; output schema reflects that. */
     private fun capabilitiesOutput(): Map<String, Any> = mapOf(

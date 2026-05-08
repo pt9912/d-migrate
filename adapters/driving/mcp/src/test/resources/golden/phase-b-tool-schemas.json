@@ -468,37 +468,6 @@
       }
     }
   },
-  "data_export_start": {
-    "inputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "sourceConnectionId": {
-          "type": "string"
-        },
-        "querySpecRef": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "sourceConnectionId"
-      ]
-    },
-    "outputSchema": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "jobId": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "jobId"
-      ]
-    }
-  },
   "data_import_start": {
     "inputSchema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

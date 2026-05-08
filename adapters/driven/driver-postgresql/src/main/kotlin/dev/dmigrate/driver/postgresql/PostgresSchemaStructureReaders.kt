@@ -57,7 +57,7 @@ private fun readPostgresTable(
         )
         if (mapping.note != null) notes += mapping.note
 
-        val required = if (isPrimaryKeyColumn) false else (row["is_nullable"] as String) == "NO"
+        val required = (row["is_nullable"] as String) == "NO"
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
         val defaultValue = if (
             isPrimaryKeyColumn &&

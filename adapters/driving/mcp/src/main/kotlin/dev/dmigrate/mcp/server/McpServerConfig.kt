@@ -193,7 +193,6 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "schema_reverse_start" to jobStart,
         "schema_compare_start" to jobStart,
         "data_profile_start" to jobStart,
-        "data_export_start" to jobStart,
         // Upload session — single segment tool with implicit
         // finalisation per spec/ki-mcp.md §5.3 + ImpPlan-0.9.6-C.md
         // §12.4. The completing segment returns the final
@@ -201,13 +200,13 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         // separate `artifact_upload_complete` tool.
         //
         // Phase F § 8.4 (F.4 1/3): das method-level Gate fuer
-        // `artifact_upload` ist `dmigrate:read` — der intentabhaengige
-        // Scope-Check passiert im Handler nach dem no-oracle Session-/
-        // Owner-Lookup. `job_input`-Sessions erzwingen dort zusaetzlich
-        // `dmigrate:artifact:upload`, wahrend `schema_staging_readonly`
-        // mit reinem `dmigrate:read` zulaessig bleibt (Plan § 8.4).
-        // `init`/`abort` behalten das strenge upload-Scope-Gate.
-        "artifact_upload_init" to artifactUpload,
+        // `artifact_upload_init` und `artifact_upload` sind method-level
+        // `dmigrate:read`, weil `schema_staging_readonly` ohne Write-
+        // Policy startbar sein muss. Intent-abhaengige Write-Gates
+        // passieren in den Handlern: `job_input` erzwingt zusaetzlich
+        // `dmigrate:artifact:upload`.
+        // `artifact_upload_abort` behaelt das strenge upload-Scope-Gate.
+        "artifact_upload_init" to read,
         "artifact_upload" to read,
         "artifact_upload_abort" to artifactUpload,
         // Data-write tools

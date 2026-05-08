@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.DdlPhase
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -230,6 +232,82 @@ class PostgresDdlGeneratorTableTest : FunSpec({
         ddl shouldContain "CONSTRAINT \"fk_employees_dept_id\" FOREIGN KEY (\"dept_id\") REFERENCES \"departments\" (\"id\")"
         ddl shouldContain "ON DELETE CASCADE"
         ddl shouldContain "ON UPDATE SET NULL"
+    }
+
+    test("composite foreign key constraints drive topological CREATE TABLE order") {
+        val s = schema(
+            tables = linkedMapOf(
+                "schedule_windows" to table(
+                    columns = mapOf(
+                        "asset_id" to col(NeutralType.Text()),
+                        "type" to col(NeutralType.Text()),
+                        "window_start" to col(NeutralType.DateTime()),
+                    ),
+                    primaryKey = listOf("asset_id", "type", "window_start"),
+                    constraints = listOf(
+                        ConstraintDefinition(
+                            name = "schedule_windows_asset_id_type_fkey",
+                            type = ConstraintType.FOREIGN_KEY,
+                            columns = listOf("asset_id", "type"),
+                            references = ConstraintReferenceDefinition(
+                                table = "schedules",
+                                columns = listOf("asset_id", "type"),
+                                onDelete = ReferentialAction.CASCADE,
+                            ),
+                        ),
+                    ),
+                ),
+                "schedules" to table(
+                    columns = mapOf(
+                        "asset_id" to col(NeutralType.Text()),
+                        "type" to col(NeutralType.Text()),
+                    ),
+                    primaryKey = listOf("asset_id", "type"),
+                ),
+            ),
+        )
+
+        val ddl = generator.generate(s).render()
+
+        (ddl.indexOf("CREATE TABLE \"schedules\"") < ddl.indexOf("CREATE TABLE \"schedule_windows\"")) shouldBe true
+        ddl shouldContain "CONSTRAINT \"schedule_windows_asset_id_type_fkey\" FOREIGN KEY (\"asset_id\", \"type\")"
+    }
+
+    test("deferForeignKeys moves column and constraint FKs to POST_DATA ALTER TABLE statements") {
+        val s = schema(
+            tables = mapOf(
+                "parents" to table(
+                    columns = mapOf("id" to col(NeutralType.Integer), "kind" to col(NeutralType.Text())),
+                    primaryKey = listOf("id", "kind"),
+                ),
+                "children" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Integer),
+                        "parent_id" to col(NeutralType.Integer, references = ReferenceDefinition("parents", "id")),
+                        "parent_kind" to col(NeutralType.Text()),
+                    ),
+                    primaryKey = listOf("id"),
+                    constraints = listOf(
+                        ConstraintDefinition(
+                            name = "children_parent_id_kind_fkey",
+                            type = ConstraintType.FOREIGN_KEY,
+                            columns = listOf("parent_id", "parent_kind"),
+                            references = ConstraintReferenceDefinition("parents", listOf("id", "kind")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = generator.generate(s, DdlGenerationOptions(deferForeignKeys = true))
+        val pre = result.renderPhase(DdlPhase.PRE_DATA)
+        val post = result.renderPhase(DdlPhase.POST_DATA)
+
+        pre shouldContain "CREATE TABLE \"children\""
+        pre shouldNotContain "FOREIGN KEY"
+        post shouldContain "ALTER TABLE \"children\" ADD CONSTRAINT \"fk_children_parent_id\""
+        post shouldContain "ALTER TABLE \"children\" ADD CONSTRAINT \"children_parent_id_kind_fkey\""
+        post shouldContain "FOREIGN KEY (\"parent_id\", \"parent_kind\") REFERENCES \"parents\" (\"id\", \"kind\")"
     }
 
     test("enum with ref_type generates CREATE TYPE AS ENUM and column uses quoted type name") {

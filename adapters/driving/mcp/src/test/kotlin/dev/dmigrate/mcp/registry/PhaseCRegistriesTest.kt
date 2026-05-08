@@ -182,7 +182,11 @@ class PhaseCRegistriesTest : FunSpec({
         ).asJsonObject
 
         val outcome = registry.findHandler("artifact_upload_init")!!.handle(
-            ToolCallContext("artifact_upload_init", args, PRINCIPAL),
+            ToolCallContext(
+                "artifact_upload_init",
+                args,
+                PRINCIPAL.copy(scopes = setOf("dmigrate:read", "dmigrate:artifact:upload")),
+            ),
         )
         outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
         val payload = JsonParser.parseString(outcome.content.single().text!!).asJsonObject

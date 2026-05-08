@@ -4,15 +4,16 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DdlGenerationOptions
-import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfilePolicy
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.DateTimeException
 import java.time.Instant
-import java.nio.file.Path
 import kotlin.io.path.writeText
 
 /** DDL output split mode for `schema generate` (0.9.2). */
@@ -59,7 +60,10 @@ class SchemaGenerateRunner(
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
     private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, DdlGenerationOptions) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
-        { path, content -> path.writeText(content) },
+        { path, content ->
+            path.parent?.let { Files.createDirectories(it) }
+            path.writeText(content)
+        },
     private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
@@ -150,6 +154,7 @@ class SchemaGenerateRunner(
             mysqlNamedSequenceMode = mysqlSeqMode.value,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,
+            deferForeignKeys = request.splitMode == SplitMode.PRE_POST,
         )
 
         return Preflight.Ok(dialect, options, mysqlSeqMode.value)

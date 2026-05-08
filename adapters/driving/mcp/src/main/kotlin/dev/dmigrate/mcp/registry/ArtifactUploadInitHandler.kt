@@ -6,6 +6,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import dev.dmigrate.mcp.registry.JsonArgs.optString
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.application.error.PolicyDeniedException
@@ -173,6 +174,7 @@ internal class ArtifactUploadInitHandler(
         val raw = JsonArgs.requireObject(context.arguments)
         val intent = raw.optString("uploadIntent") ?: return null
         if (intent != INTENT_JOB_INPUT) return null
+        requireArtifactUploadScope(context.principal, intent)
 
         val approvalKey = raw.optString("approvalKey")
             ?: throw ValidationErrorException(
@@ -228,6 +230,14 @@ internal class ArtifactUploadInitHandler(
         // nullable field type without leaking the guard up here.
         val outcome = uploadInitOrchestrator!!.init(request)
         return mapPolicyInitOutcome(outcome, context.requestId)
+    }
+
+    private fun requireArtifactUploadScope(principal: PrincipalContext, intent: String) {
+        if (principal.isAdmin || SCOPE_ARTIFACT_UPLOAD in principal.scopes) return
+        throw ForbiddenPrincipalException(
+            principal.principalId,
+            reason = "missing scope for uploadIntent=$intent: $SCOPE_ARTIFACT_UPLOAD",
+        )
     }
 
     private fun parsePolicySize(obj: JsonObject): Long {
@@ -601,6 +611,8 @@ internal class ArtifactUploadInitHandler(
 
         /** Phase F § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
+
+        private const val SCOPE_ARTIFACT_UPLOAD: String = "dmigrate:artifact:upload"
 
         /**
          * Follow-up AP 2 — Wire-Marker für Bundle-/Mehrtabellen-Uploads.

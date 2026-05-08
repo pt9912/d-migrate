@@ -14,6 +14,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
@@ -28,6 +29,11 @@ import java.time.Instant
 private const val INITIALIZE_BODY = """{"jsonrpc":"2.0","id":1,"method":"initialize",""" +
     """"params":{"protocolVersion":"2025-11-25",""" +
     """"clientInfo":{"name":"t","version":"1"},"capabilities":{}}}"""
+private const val STREAMABLE_ACCEPT = "application/json, text/event-stream"
+
+private fun HttpRequestBuilder.mcpAccept() {
+    headers { append(HttpHeaders.Accept, STREAMABLE_ACCEPT) }
+}
 
 private val JWKS_CONFIG = McpServerConfig(
     authMode = AuthMode.JWT_JWKS,
@@ -72,7 +78,10 @@ class McpHttpAuthTest : FunSpec({
                     authValidatorOverride = FakeAuthValidator(BearerValidationResult.Invalid("unused")),
                 )
             }
-            val resp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             resp.status shouldBe HttpStatusCode.Unauthorized
             val challenge = resp.headers[HttpHeaders.WWWAuthenticate]!!
             challenge shouldStartWith "Bearer realm=\"dmigrate-mcp\""
@@ -96,6 +105,7 @@ class McpHttpAuthTest : FunSpec({
                 )
             }
             val resp = client.post("/mcp?access_token=some-bearer") {
+                mcpAccept()
                 setBody(INITIALIZE_BODY)
             }
             resp.status shouldBe HttpStatusCode.Unauthorized
@@ -117,6 +127,7 @@ class McpHttpAuthTest : FunSpec({
                 )
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Authorization, "Bearer some-token") }
                 setBody(INITIALIZE_BODY)
             }
@@ -140,6 +151,7 @@ class McpHttpAuthTest : FunSpec({
                 )
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Authorization, "Bearer good-token") }
                 setBody(INITIALIZE_BODY)
             }
@@ -164,12 +176,14 @@ class McpHttpAuthTest : FunSpec({
             }
             // Initialize first (scope-free) so the session is set up.
             val initResp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Authorization, "Bearer good-token") }
                 setBody(INITIALIZE_BODY)
             }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             // Call a method whose mapping requires dmigrate:read (tools/list).
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append(HttpHeaders.Authorization, "Bearer good-token")
                     append("MCP-Session-Id", sessionId)
@@ -206,11 +220,13 @@ class McpHttpAuthTest : FunSpec({
                 )
             }
             val initResp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Authorization, "Bearer good-token") }
                 setBody(INITIALIZE_BODY)
             }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append(HttpHeaders.Authorization, "Bearer good-token")
                     append("MCP-Session-Id", sessionId)
@@ -250,11 +266,13 @@ class McpHttpAuthTest : FunSpec({
                 )
             }
             val initResp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Authorization, "Bearer good-token") }
                 setBody(INITIALIZE_BODY)
             }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append(HttpHeaders.Authorization, "Bearer good-token")
                     append("MCP-Session-Id", sessionId)
@@ -279,7 +297,10 @@ class McpHttpAuthTest : FunSpec({
                     serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") },
                 )
             }
-            val resp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             resp.status shouldBe HttpStatusCode.OK
             resp.bodyAsText() shouldContain McpProtocol.MCP_PROTOCOL_VERSION
         }

@@ -14,6 +14,8 @@ data class DdlGenerationOptions(
     val generatedAt: Instant? = null,
     /** Omit volatile provenance fields from generated artifacts. */
     val deterministic: Boolean = false,
+    /** Emit foreign keys as deferred ALTER TABLE statements instead of inline CREATE TABLE clauses. */
+    val deferForeignKeys: Boolean = false,
 )
 
 /**

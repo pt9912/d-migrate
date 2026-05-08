@@ -15,6 +15,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Comparator
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -166,6 +167,42 @@ class CliGenerateTestPart2 : FunSpec({
             Files.deleteIfExists(Path.of("$base.post-data.sql"))
             Files.deleteIfExists(Path.of("$base.report.yaml"))
             Files.deleteIfExists(outFile)
+            Files.deleteIfExists(source)
+        }
+    }
+
+    test("--split pre-post creates missing output parent directory") {
+        val source = writeTempSchema("""
+            schema_format: "1.0"
+            name: "SplitMissingDir"
+            version: "1.0.0"
+            tables:
+              t:
+                columns:
+                  id:
+                    type: identifier
+                    auto_increment: true
+                primary_key: [id]
+        """.trimIndent())
+        val root = Files.createTempDirectory("d-migrate-split-parent-")
+        val outFile = root.resolve("missing-subdir/split.sql")
+        try {
+            captureStreams {
+                shouldNotThrowAny {
+                    cli().parse(listOf(
+                        "--quiet",
+                        "schema", "generate",
+                        "--source", source.toString(),
+                        "--target", "postgresql",
+                        "--output", outFile.toString(),
+                        "--split", "pre-post",
+                    ))
+                }
+            }
+            root.resolve("missing-subdir/split.pre-data.sql").exists() shouldBe true
+            root.resolve("missing-subdir/split.post-data.sql").exists() shouldBe true
+        } finally {
+            Files.walk(root).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
             Files.deleteIfExists(source)
         }
     }

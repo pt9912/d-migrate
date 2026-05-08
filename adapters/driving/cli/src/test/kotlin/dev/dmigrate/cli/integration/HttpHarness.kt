@@ -164,6 +164,9 @@ internal class HttpHarness(
             .timeout(REQUEST_TIMEOUT)
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(body, Charsets.UTF_8))
+        if ("Accept" !in extraHeaders) {
+            builder.header("Accept", STREAMABLE_ACCEPT)
+        }
         // Default Origin if caller didn't override.
         if ("Origin" !in extraHeaders) {
             builder.header("Origin", baseUri.scheme + "://" + baseUri.authority)
@@ -195,6 +198,7 @@ internal class HttpHarness(
         val builder = HttpRequest.newBuilder(baseUri)
             .timeout(REQUEST_TIMEOUT)
             .header("Content-Type", "application/json")
+            .header("Accept", STREAMABLE_ACCEPT)
             .header("Origin", baseUri.scheme + "://" + baseUri.authority)
             .POST(HttpRequest.BodyPublishers.ofString(body, Charsets.UTF_8))
         if (allowSessionHeaders) {
@@ -223,6 +227,7 @@ internal class HttpHarness(
         private const val STATUS_ACCEPTED: Int = 202
         private const val HEADER_SESSION_ID: String = "MCP-Session-Id"
         private const val HEADER_PROTOCOL_VERSION: String = "MCP-Protocol-Version"
+        private const val STREAMABLE_ACCEPT: String = "application/json, text/event-stream"
 
         fun start(
             stateDir: Path,

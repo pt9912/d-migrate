@@ -51,9 +51,9 @@ class McpServerConfigDefaultsTest : FunSpec({
             "tools/list", "resources/list", "resources/templates/list", "resources/read",
         )
         // job:start scopes
-        map["data_export_start"] shouldBe setOf("dmigrate:job:start")
+        map.containsKey("data_export_start") shouldBe false
         // upload scopes
-        map["artifact_upload_init"] shouldBe setOf("dmigrate:artifact:upload")
+        map["artifact_upload_init"] shouldBe setOf("dmigrate:read")
         // data-write scopes
         map["data_import_start"] shouldBe setOf("dmigrate:data:write")
         map["data_transfer_start"] shouldBe setOf("dmigrate:data:write")

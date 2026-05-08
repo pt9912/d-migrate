@@ -80,6 +80,25 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                     )
                 """)
 
+                stmt.execute("""
+                    CREATE TABLE optimization_runs (
+                        run_id UUID PRIMARY KEY
+                    )
+                """)
+
+                stmt.execute("""
+                    CREATE TABLE optimization_objective_breakdowns (
+                        run_id UUID NOT NULL,
+                        position INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        value DOUBLE PRECISION NOT NULL,
+                        unit TEXT NOT NULL,
+                        PRIMARY KEY (run_id, name),
+                        UNIQUE (run_id, position),
+                        FOREIGN KEY (run_id) REFERENCES optimization_runs(run_id) ON DELETE CASCADE
+                    )
+                """)
+
                 stmt.execute("CREATE INDEX idx_orders_customer ON orders (customer_id)")
                 stmt.execute("CREATE INDEX idx_orders_status ON orders USING hash (status)")
 
@@ -199,14 +218,37 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── PK-implicit required/unique not duplicated ──
+    // ── PK required preserved, PK-implicit unique not duplicated ──
 
-    test("PK columns do not have redundant required or unique") {
+    test("PK columns preserve required but do not duplicate unique") {
         pool().use { pool ->
             val result = reader.read(pool)
             val customers = result.schema.tables["customers"]!!
-            customers.columns["id"]!!.required shouldBe false
+            customers.columns["id"]!!.required shouldBe true
             customers.columns["id"]!!.unique shouldBe false
+        }
+    }
+
+    test("composite PK plus overlapping UNIQUE and single-column FK are preserved") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val table = result.schema.tables["optimization_objective_breakdowns"]!!
+
+            table.primaryKey shouldBe listOf("run_id", "name")
+            table.columns["run_id"]!!.required shouldBe true
+            table.columns["name"]!!.required shouldBe true
+            table.columns["position"]!!.required shouldBe true
+
+            val ref = table.columns["run_id"]!!.references
+            ref.shouldNotBeNull()
+            ref.table shouldBe "optimization_runs"
+            ref.column shouldBe "run_id"
+            ref.onDelete shouldBe ReferentialAction.CASCADE
+
+            table.constraints.any {
+                it.type == ConstraintType.UNIQUE &&
+                    it.columns == listOf("run_id", "position")
+            } shouldBe true
         }
     }
 

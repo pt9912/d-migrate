@@ -7,6 +7,7 @@ import dev.dmigrate.mcp.server.McpServerConfig
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
@@ -20,9 +21,14 @@ import io.ktor.server.testing.testApplication
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 
 private val LOOPBACK_CONFIG = McpServerConfig(authMode = AuthMode.DISABLED)
+private const val STREAMABLE_ACCEPT = "application/json, text/event-stream"
 private const val INITIALIZE_BODY = """{"jsonrpc":"2.0","id":1,"method":"initialize",""" +
     """"params":{"protocolVersion":"2025-11-25",""" +
     """"clientInfo":{"name":"t","version":"1"},"capabilities":{}}}"""
+
+private fun HttpRequestBuilder.mcpAccept() {
+    headers { append(HttpHeaders.Accept, STREAMABLE_ACCEPT) }
+}
 
 /**
  * AP 6.5 Streamable HTTP — POST/GET/DELETE, Origin, Session-Id,
@@ -35,7 +41,10 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "9.9.9") })
             }
-            val resp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             resp.status shouldBe HttpStatusCode.OK
             resp.headers["MCP-Session-Id"]!!.let { java.util.UUID.fromString(it) }
             resp.headers["MCP-Protocol-Version"] shouldBe McpProtocol.MCP_PROTOCOL_VERSION
@@ -51,6 +60,7 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 setBody(
                     """{"jsonrpc":"2.0","id":11,"method":"initialize",""" +
                         """"params":{"protocolVersion":"1999-01-01",""" +
@@ -71,9 +81,13 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             // Initialize first to get a session id
-            val initResp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", sessionId)
                     append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
@@ -93,6 +107,7 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append("MCP-Session-Id", java.util.UUID.randomUUID().toString()) }
                 setBody(INITIALIZE_BODY)
             }
@@ -108,6 +123,7 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION) }
                 setBody(INITIALIZE_BODY)
             }
@@ -122,6 +138,7 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION) }
                 setBody("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
             }
@@ -136,6 +153,7 @@ class McpHttpRouteTest : FunSpec({
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", java.util.UUID.randomUUID().toString())
                     append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
@@ -152,9 +170,13 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val initResp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", sessionId)
                     append("MCP-Protocol-Version", "1999-01-01")
@@ -171,9 +193,13 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val initResp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append("MCP-Session-Id", sessionId) }
                 setBody("""{"jsonrpc":"2.0","method":"notifications/initialized"}""")
             }
@@ -192,6 +218,7 @@ class McpHttpRouteTest : FunSpec({
                 )
             }
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers { append(HttpHeaders.Origin, "https://evil.example") }
                 setBody(INITIALIZE_BODY)
             }
@@ -214,12 +241,28 @@ class McpHttpRouteTest : FunSpec({
         }
     }
 
+    test("POST /mcp without Accept header returns 406 + -32600") {
+        testApplication {
+            application {
+                installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
+            }
+            val resp = client.post("/mcp") {
+                setBody(INITIALIZE_BODY)
+            }
+            resp.status shouldBe HttpStatusCode.NotAcceptable
+            resp.bodyAsText() shouldContain "\"code\":${ResponseErrorCode.InvalidRequest.value}"
+        }
+    }
+
     test("POST /mcp with malformed body returns 400 + -32700") {
         testApplication {
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val resp = client.post("/mcp") { setBody("not even json") }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("not even json")
+            }
             resp.status shouldBe HttpStatusCode.BadRequest
             resp.bodyAsText() shouldContain "\"code\":${ResponseErrorCode.ParseError.value}"
         }
@@ -230,7 +273,10 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val resp = client.post("/mcp") { setBody("") }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody("")
+            }
             resp.status shouldBe HttpStatusCode.BadRequest
             resp.bodyAsText() shouldContain "\"code\":${ResponseErrorCode.InvalidRequest.value}"
         }
@@ -259,7 +305,10 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val initResp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val deleteResp = client.delete("/mcp") {
                 headers { append("MCP-Session-Id", sessionId) }
@@ -267,6 +316,7 @@ class McpHttpRouteTest : FunSpec({
             deleteResp.status shouldBe HttpStatusCode.OK
             // After delete, follow-up requests against the same id must fail.
             val followUp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", sessionId)
                     append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)
@@ -282,8 +332,14 @@ class McpHttpRouteTest : FunSpec({
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })
             }
-            val a = client.post("/mcp") { setBody(INITIALIZE_BODY) }
-            val b = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val a = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
+            val b = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val idA = a.headers["MCP-Session-Id"]!!
             val idB = b.headers["MCP-Session-Id"]!!
             check(idA != idB) { "expected distinct session ids, got $idA and $idB" }
@@ -302,11 +358,15 @@ class McpHttpRouteTest : FunSpec({
                     },
                 )
             }
-            val initResp = client.post("/mcp") { setBody(INITIALIZE_BODY) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(INITIALIZE_BODY)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             // Two follow-up notifications — neither must invoke the factory.
             repeat(2) {
                 client.post("/mcp") {
+                    mcpAccept()
                     headers {
                         append("MCP-Session-Id", sessionId)
                         append("MCP-Protocol-Version", McpProtocol.MCP_PROTOCOL_VERSION)

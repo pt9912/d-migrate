@@ -46,14 +46,15 @@ internal object PostgresTableMetadataQueries {
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(
             """
-            SELECT kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-            WHERE tc.constraint_type = 'PRIMARY KEY'
-              AND tc.table_schema = ? AND tc.table_name = ?
-            ORDER BY kcu.ordinal_position
+            SELECT a.attname AS column_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS pos(attnum, n)
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = pos.attnum
+            WHERE c.contype = 'p'
+              AND n.nspname = ? AND t.relname = ?
+            ORDER BY pos.n
             """.trimIndent(), schemaName, table,
         ).map { it["column_name"] as String }
     }
@@ -98,14 +99,16 @@ internal object PostgresTableMetadataQueries {
     ): Map<String, List<String>> {
         val rows = session.queryList(
             """
-            SELECT tc.constraint_name, kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-            WHERE tc.constraint_type = 'UNIQUE'
-              AND tc.table_schema = ? AND tc.table_name = ?
-            ORDER BY tc.constraint_name, kcu.ordinal_position
+            SELECT c.conname AS constraint_name,
+                   a.attname AS column_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS pos(attnum, n)
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = pos.attnum
+            WHERE c.contype = 'u'
+              AND n.nspname = ? AND t.relname = ?
+            ORDER BY c.conname, pos.n
             """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["constraint_name"] as String }

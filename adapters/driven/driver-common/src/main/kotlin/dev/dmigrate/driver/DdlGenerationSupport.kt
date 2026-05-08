@@ -1,8 +1,10 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.dependency.FkEdge
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.ReferentialAction
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
-import dev.dmigrate.core.dependency.FkEdge
 
 data class TopologicalSortResult(
     val sorted: List<Pair<String, TableDefinition>>,
@@ -21,16 +23,27 @@ data class CircularFkEdge(
     val toColumn: String,
 )
 
+data class DeferredForeignKey(
+    val constraintName: String,
+    val fromTable: String,
+    val fromColumns: List<String>,
+    val toTable: String,
+    val toColumns: List<String>,
+    val onDelete: ReferentialAction? = null,
+    val onUpdate: ReferentialAction? = null,
+)
+
+interface DeferredForeignKeyDdlSupport {
+    fun generateDeferredForeignKeys(
+        foreignKeys: List<DeferredForeignKey>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement>
+}
+
 internal object DdlGenerationSupport {
 
     fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult {
-        val edges = tables.flatMap { (tableName, table) ->
-            table.columns.mapNotNull { (columnName, column) ->
-                column.references?.let { reference ->
-                    FkEdge(tableName, columnName, reference.table, reference.column)
-                }
-            }
-        }
+        val edges = foreignKeyEdges(tables)
         val result = dev.dmigrate.core.dependency.sortTablesByDependency(tables.keys, edges)
         return TopologicalSortResult(
             sorted = result.sorted.map { it to tables.getValue(it) },
@@ -39,6 +52,46 @@ internal object DdlGenerationSupport {
             },
         )
     }
+
+    fun deferredForeignKeys(tables: Map<String, TableDefinition>): List<DeferredForeignKey> =
+        tables.flatMap { (tableName, table) ->
+            val columnFks = table.columns.mapNotNull { (columnName, column) ->
+                val ref = column.references ?: return@mapNotNull null
+                DeferredForeignKey(
+                    constraintName = "fk_${tableName}_$columnName",
+                    fromTable = tableName,
+                    fromColumns = listOf(columnName),
+                    toTable = ref.table,
+                    toColumns = listOf(ref.column),
+                    onDelete = ref.onDelete,
+                    onUpdate = ref.onUpdate,
+                )
+            }
+            val constraintFks = table.constraints.mapNotNull { constraint ->
+                if (constraint.type != ConstraintType.FOREIGN_KEY) return@mapNotNull null
+                val ref = constraint.references ?: return@mapNotNull null
+                DeferredForeignKey(
+                    constraintName = constraint.name,
+                    fromTable = tableName,
+                    fromColumns = constraint.columns.orEmpty(),
+                    toTable = ref.table,
+                    toColumns = ref.columns,
+                    onDelete = ref.onDelete,
+                    onUpdate = ref.onUpdate,
+                )
+            }
+            columnFks + constraintFks
+        }
+
+    private fun foreignKeyEdges(tables: Map<String, TableDefinition>): List<FkEdge> =
+        deferredForeignKeys(tables).map { fk ->
+            FkEdge(
+                fromTable = fk.fromTable,
+                fromColumn = fk.fromColumns.firstOrNull(),
+                toTable = fk.toTable,
+                toColumn = fk.toColumns.firstOrNull(),
+            )
+        }
 
     fun sortViewsByDependencies(views: Map<String, ViewDefinition>): ViewSortResult {
         if (views.isEmpty()) return ViewSortResult(views)

@@ -1,6 +1,9 @@
 package dev.dmigrate.driver
 
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintReferenceDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.DependencyInfo
@@ -60,6 +63,32 @@ class AbstractDdlGeneratorTest : FunSpec({
         )
         gen.generate(schema)
         (gen.tableOrder.indexOf("users") < gen.tableOrder.indexOf("orders")) shouldBe true
+    }
+
+    test("topologicalSort orders composite FK constraints before their dependents") {
+        val gen = TestDdlGenerator()
+        val schema = schema(
+            "schedule_windows" to TableDefinition(
+                columns = mapOf(
+                    "asset_id" to col(),
+                    "type" to col(),
+                    "window_start" to col(),
+                ),
+                constraints = listOf(
+                    ConstraintDefinition(
+                        name = "schedule_windows_asset_id_type_fkey",
+                        type = ConstraintType.FOREIGN_KEY,
+                        columns = listOf("asset_id", "type"),
+                        references = ConstraintReferenceDefinition("schedules", listOf("asset_id", "type")),
+                    ),
+                ),
+            ),
+            "schedules" to table("asset_id" to col(), "type" to col()),
+        )
+
+        gen.generate(schema)
+
+        (gen.tableOrder.indexOf("schedules") < gen.tableOrder.indexOf("schedule_windows")) shouldBe true
     }
 
     test("topologicalSort detects circular FKs and reports them via handleCircularReferences") {

@@ -41,10 +41,12 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldStartWith
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import java.time.Clock
@@ -132,6 +134,10 @@ class McpPhaseGHttpE2EIT : FunSpec({
 
     val cfg = McpServerConfig(authMode = AuthMode.DISABLED)
 
+    fun HttpRequestBuilder.mcpAccept() {
+        headers { append(HttpHeaders.Accept, "application/json, text/event-stream") }
+    }
+
     fun serviceFactory(): () -> McpServiceImpl = {
         val gWiring = phaseGWiring()
         McpServiceImpl(
@@ -152,7 +158,10 @@ class McpPhaseGHttpE2EIT : FunSpec({
                     authValidatorOverride = DisabledAuthValidator(principal = principal),
                 )
             }
-            val resp = client.post("/mcp") { setBody(initBody) }
+            val resp = client.post("/mcp") {
+                mcpAccept()
+                setBody(initBody)
+            }
             resp.status shouldBe HttpStatusCode.OK
             val body = resp.bodyAsText()
             val capabilities = parseResultObj(body).getAsJsonObject("capabilities")
@@ -169,7 +178,10 @@ class McpPhaseGHttpE2EIT : FunSpec({
                     authValidatorOverride = DisabledAuthValidator(principal = principal),
                 )
             }
-            val initResp = client.post("/mcp") { setBody(initBody) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(initBody)
+            }
             initResp.status shouldBe HttpStatusCode.OK
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val protocolVersion = initResp.headers["MCP-Protocol-Version"]!!
@@ -177,6 +189,7 @@ class McpPhaseGHttpE2EIT : FunSpec({
 
             suspend fun rpc(body: String): String {
                 val r = client.post("/mcp") {
+                    mcpAccept()
                     headers {
                         append("MCP-Session-Id", sessionId)
                         append("MCP-Protocol-Version", protocolVersion)
@@ -224,11 +237,15 @@ class McpPhaseGHttpE2EIT : FunSpec({
                     authValidatorOverride = DisabledAuthValidator(principal = principal),
                 )
             }
-            val initResp = client.post("/mcp") { setBody(initBody) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(initBody)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val protocolVersion = initResp.headers["MCP-Protocol-Version"]!!
 
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", sessionId)
                     append("MCP-Protocol-Version", protocolVersion)
@@ -256,11 +273,15 @@ class McpPhaseGHttpE2EIT : FunSpec({
                     authValidatorOverride = DisabledAuthValidator(principal = principal),
                 )
             }
-            val initResp = client.post("/mcp") { setBody(initBody) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(initBody)
+            }
             val sessionId = initResp.headers["MCP-Session-Id"]!!
             val protocolVersion = initResp.headers["MCP-Protocol-Version"]!!
 
             val resp = client.post("/mcp") {
+                mcpAccept()
                 headers {
                     append("MCP-Session-Id", sessionId)
                     append("MCP-Protocol-Version", protocolVersion)

@@ -45,8 +45,20 @@ abstract class AbstractDdlGenerator(
         }
 
         preSkipCount = skipped.size
-        statements += handleCircularReferences(circularEdges, skipped)
-        tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+        if (options.deferForeignKeys) {
+            val sortedTables = sorted.toMap()
+            statements += ((this as? DeferredForeignKeyDdlSupport)
+                ?.generateDeferredForeignKeys(
+                    DdlGenerationSupport.deferredForeignKeys(sortedTables),
+                    skipped,
+                )
+                .orEmpty())
+                .withPhase(DdlPhase.POST_DATA)
+            tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
+        } else {
+            statements += handleCircularReferences(circularEdges, skipped)
+            tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
+        }
 
         // ─── Views (split into PRE_DATA / POST_DATA) ───────────
         val sortedViews = sortViewsByDependencies(schema.views)

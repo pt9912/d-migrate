@@ -3,6 +3,7 @@ package dev.dmigrate.mcp.registry
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.ForbiddenPrincipalException
 import dev.dmigrate.server.application.error.IdempotencyConflictException
 import dev.dmigrate.server.application.error.PayloadTooLargeException
 import dev.dmigrate.server.application.error.PolicyDeniedException
@@ -137,6 +138,30 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
             append("}")
         }
         return args(body)
+    }
+
+    test("job_input ohne dmigrate:artifact:upload -> Forbidden vor Policy/Quota/Session") {
+        val fx = Fixture(policyDefault = PolicyEffect.Allow)
+        val readOnly = principal.copy(scopes = setOf("dmigrate:read"))
+        val ex = shouldThrow<ForbiddenPrincipalException> {
+            fx.handler.handle(
+                ToolCallContext(
+                    "artifact_upload_init",
+                    jobInputArgs(approvalKey = "key-readonly"),
+                    readOnly,
+                    requestId = "req-readonly",
+                ),
+            )
+        }
+        ex.reason!! shouldContain "uploadIntent=job_input"
+
+        fx.sessionStore.findById(tenant, "ups-1") shouldBe null
+        fx.quotaStore.current(
+            dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice),
+        ) shouldBe 0L
+        fx.quotaStore.current(
+            dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.UPLOAD_BYTES, alice),
+        ) shouldBe 0L
     }
 
     test("Allow + job_input -> Success mit uploadSessionId; Session traegt approvalKey/Fingerprint/targetTable durabel") {

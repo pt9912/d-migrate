@@ -55,7 +55,7 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listPrimaryKeyColumns ──────────────────────
 
     test("listPrimaryKeyColumns returns column names") {
-        every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns listOf(
             mapOf("column_name" to "id"),
             mapOf("column_name" to "tenant_id"),
         )
@@ -136,7 +136,7 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listUniqueConstraintColumns ────────────────
 
     test("listUniqueConstraintColumns groups by constraint name") {
-        every { jdbc.queryList(match { it.contains("UNIQUE") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "uq_email", "column_name" to "email"),
             mapOf("constraint_name" to "uq_name", "column_name" to "first_name"),
             mapOf("constraint_name" to "uq_name", "column_name" to "last_name"),

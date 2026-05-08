@@ -65,7 +65,8 @@ import java.util.concurrent.CompletableFuture
  * Validation order (§12.14):
  *
  * 1. Origin → 403 if not in allowlist
- * 2. Accept → 406 if SSE-only
+ * 2. Accept → 406 unless `application/json` and `text/event-stream`
+ *    are both advertised
  * 3. Body parse → 400 -32600 / -32700
  * 4. JSON-RPC parse (method + id known)
  * 5. Bearer-validation → 401 (skipped for `AuthMode.DISABLED`)
@@ -216,7 +217,7 @@ private suspend fun checkAccept(call: ApplicationCall): Boolean {
         HttpStatusCode.NotAcceptable,
         id = null,
         code = ResponseErrorCode.InvalidRequest.value,
-        message = "Phase B answers application/json only; SSE is not implemented",
+        message = "Accept header must include application/json and text/event-stream",
     )
     return false
 }

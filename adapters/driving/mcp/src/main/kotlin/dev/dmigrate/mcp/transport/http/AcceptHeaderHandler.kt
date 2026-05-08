@@ -3,18 +3,18 @@ package dev.dmigrate.mcp.transport.http
 /**
  * `Accept`-Header parser per `ImpPlan-0.9.6-B.md` §12.13.
  *
- * Phase B answers JSON only; SSE is not implemented. An `Accept`
- * header that mentions ONLY `text/event-stream` (no JSON fallback,
- * no wildcard media type) must be rejected with HTTP `406`. All
- * other shapes — absent, wildcard, `application/json`, or any
- * combination that includes one of those — are accepted.
+ * Streamable HTTP requires POST callers to advertise both response
+ * shapes from MCP 2025-11-25: `application/json` and
+ * `text/event-stream`. The server still answers JSON-only today, but
+ * the Accept contract is strict so remote clients negotiate the
+ * standard transport surface rather than a d-migrate-specific subset.
  */
 internal object AcceptHeaderHandler {
 
-    /** Returns true when the request can be answered with JSON. */
+    /** Returns true when the request advertises both streamable shapes. */
     fun acceptsJson(acceptHeader: String?): Boolean {
-        if (acceptHeader.isNullOrBlank()) return true
+        if (acceptHeader.isNullOrBlank()) return false
         val mediaTypes = acceptHeader.split(',').map { it.substringBefore(';').trim().lowercase() }
-        return mediaTypes.any { it == "*/*" || it == "application/*" || it == "application/json" }
+        return "application/json" in mediaTypes && "text/event-stream" in mediaTypes
     }
 }

@@ -32,10 +32,12 @@ import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
+import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.testing.testApplication
 import java.security.MessageDigest
@@ -80,6 +82,10 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
+
+    fun HttpRequestBuilder.mcpAccept() {
+        headers { append(HttpHeaders.Accept, "application/json, text/event-stream") }
+    }
 
     fun extractToolText(responseBody: String): JsonObject {
         val response = JsonParser.parseString(responseBody).asJsonObject
@@ -165,7 +171,10 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
             // 1. Initialize -> erhaelt MCP-Session-Id + MCP-Protocol-Version.
             val initBody = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":""" +
                 """{"protocolVersion":"2025-11-25","clientInfo":{"name":"http-it","version":"0.9.6"},"capabilities":{}}}"""
-            val initResp = client.post("/mcp") { setBody(initBody) }
+            val initResp = client.post("/mcp") {
+                mcpAccept()
+                setBody(initBody)
+            }
             initResp.status shouldBe HttpStatusCode.OK
             val mcpSessionId = initResp.headers["MCP-Session-Id"]!!
             val protocolVersion = initResp.headers["MCP-Protocol-Version"]!!
@@ -183,6 +192,7 @@ class McpPhaseFHttpMultiSegmentUploadIT : FunSpec({
 
             suspend fun postUpload(body: String): String {
                 val resp = client.post("/mcp") {
+                    mcpAccept()
                     headers {
                         append("MCP-Session-Id", mcpSessionId)
                         append("MCP-Protocol-Version", protocolVersion)

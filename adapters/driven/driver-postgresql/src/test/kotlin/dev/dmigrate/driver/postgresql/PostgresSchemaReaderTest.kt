@@ -62,10 +62,10 @@ class PostgresSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
-        every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns
+        every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
-        every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns emptyList()
-        every { jdbc.queryList(match { "UNIQUE" in it && "pg_constraint" !in it }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_index") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
@@ -102,7 +102,7 @@ class PostgresSchemaReaderTest : FunSpec({
         table.columns.mapShouldHaveSize(2)
 
         val idCol = table.columns["id"]!!
-        idCol.required shouldBe false // PK columns have required=false
+        idCol.required shouldBe true
         idCol.unique shouldBe false   // PK columns have unique=false
 
         val nameCol = table.columns["name"]!!
@@ -329,13 +329,13 @@ class PostgresSchemaReaderTest : FunSpec({
                 "is_identity" to "NO", "identity_generation" to null),
         ), listOf("id"))
         // FK on user_id
-        every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "fk_user", "columns" to "{user_id}",
                 "referenced_table" to "users", "referenced_columns" to "{id}",
                 "confdeltype" to "c", "confupdtype" to "a"),
         )
         // Unique constraint on note
-        every { jdbc.queryList(match { "UNIQUE" in it && "pg_constraint" !in it }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "uq_note", "column_name" to "note"),
         )
         // Check constraint
