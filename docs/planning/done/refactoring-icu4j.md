@@ -311,15 +311,15 @@ Gegenmassnahme:
 
 Das Refactoring ist abgeschlossen, wenn:
 
-- `hexagon/application/build.gradle.kts` keine ICU4J-Dependency mehr enthaelt
-- `hexagon/application` keine `com.ibm.icu.*` Imports mehr enthaelt
-- ein innerer Port die benoetigten Unicode-Funktionen beschreibt
-- eine ICU4J-basierte driven Implementierung existiert
-- CLI-Produktpfad die ICU-Implementierung verdrahtet
-- Application-Tests ohne ICU4J laufen koennen
-- ICU-Contract-Tests die bisherigen Unicode-/Grapheme-Faelle abdecken
-- `spec/architecture.md` die neue Modulgrenze dokumentiert
-  - Tech-Stack-Scope fuer ICU4J von `application/cli` auf driven ICU-Modul
+- [x] `hexagon/application/build.gradle.kts` keine ICU4J-Dependency mehr enthaelt
+- [x] `hexagon/application` keine `com.ibm.icu.*` Imports mehr enthaelt
+- [x] ein innerer Port die benoetigten Unicode-Funktionen beschreibt
+- [x] eine ICU4J-basierte driven Implementierung existiert
+- [x] CLI-Produktpfad die ICU-Implementierung verdrahtet
+- [x] Application-Tests ohne ICU4J laufen koennen
+- [x] ICU-Contract-Tests die bisherigen Unicode-/Grapheme-Faelle abdecken
+- [x] `spec/architecture.md` die neue Modulgrenze dokumentiert
+  - [x] Tech-Stack-Scope fuer ICU4J von `application/cli` auf driven ICU-Modul
     und driving Composition Root umstellen
-  - historische Implementierungsplaene duerfen abweichen, sofern
+  - [x] historische Implementierungsplaene duerfen abweichen, sofern
     `spec/architecture.md` als aktuelle Norm festgelegt ist
