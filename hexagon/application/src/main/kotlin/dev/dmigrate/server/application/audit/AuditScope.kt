@@ -31,7 +31,7 @@ class AuditScope(
 ) {
 
     /**
-     * Phase E §7.10 (Review-Fix #8): erlaubt optional eine vorhandene
+     * LF-012 / LN-011 / LN-017 / LN-027: erlaubt optional eine vorhandene
      * [AuditFields]-Instanz zu uebergeben. Der McpServiceImpl reicht
      * dieselbe Instanz an [ToolCallContext.auditFields], sodass der
      * Handler die Felder waehrend der Bearbeitung populieren kann und

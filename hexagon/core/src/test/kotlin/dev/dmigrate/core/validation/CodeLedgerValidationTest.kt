@@ -10,7 +10,7 @@ import java.io.File
 
 /**
  * Validates the error-code and warn-code ledger YAML files against
- * structural rules from docs/ImpPlan-0.9.2-6.7.md section 4.3.
+ * structural ledger rules.
  *
  * Validates: code uniqueness, completeness (E001-E121), test_path existence,
  * evidence_paths presence, path_type values, level values, entry_type

@@ -870,7 +870,7 @@ private data class McpCliServerWiring(
     ),
     val promptRegistry: DefaultPromptRegistry = DefaultPromptRegistry.mandatory(),
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
+     * LF-012 / LN-011 / LN-017 / LN-027: wenn der JDBC-Pfad einen Async-Bundle gebaut
      * hat, wird das Lifecycle hier gehalten — `close()` ruft
      * `shutdown(timeout)` vor `closeable.close()`. So drainen in-flight
      * Jobs sauber, bevor die DataSource zugemacht wird; bei Timeout

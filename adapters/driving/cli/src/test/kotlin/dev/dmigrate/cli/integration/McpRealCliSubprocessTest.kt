@@ -34,7 +34,7 @@ private val IntegrationTag = NamedTag("integration")
  *     then runs the cleanup hook (idempotent stop + lock release +
  *     CLI-owned-tempdir deletion)
  *
- * The harness used by E1–E8 stops at `McpServerBootstrap.startStdio`
+ * The harness used by E1–LF-017 / LF-024 / LN-030 / LN-031 stops at `McpServerBootstrap.startStdio`
  * and bypasses everything above it; this spec is the only one that
  * proves those upper layers actually run end-to-end.
  *

@@ -31,7 +31,7 @@ class InMemoryIdempotencyStore(
         // Internal-only: distinguishes a fresh PENDING (from `reserve`)
         // from a claimed PENDING (from `claimApproved` after policy
         // approval). The public IdempotencyState stays at the documented
-        // states per Plan §5.2; this flag never crosses the port boundary.
+        // states per LF-012 / LN-011 / LN-017 / LN-027; this flag never crosses the port boundary.
         val claimed: Boolean = false,
         /**
          * LF-012 / LN-011 / LN-017 / LN-027: durable Approval-
@@ -196,7 +196,7 @@ class InMemoryIdempotencyStore(
                 existing.copy(
                     state = IdempotencyState.AWAITING_APPROVAL,
                     expiresAt = now.plusSeconds(awaitingApprovalSeconds),
-                    // Plan §5.5 (Review-Fix Blocker #3): die durable
+                    // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): die durable
                     // Challenge wird hier gespeichert. Wenn der Caller
                     // null uebergibt (Bestands-Pfad), bleibt das Feld
                     // leer und der spaetere reserve liefert
@@ -224,7 +224,7 @@ class InMemoryIdempotencyStore(
             ) {
                 transitioned = true
                 val defaultExpiresAt = now.plusSeconds(committedRetentionSeconds)
-                // Plan §7.2: COMMITTED-retention MUST cover the linked
+                // LF-012 / LN-011 / LN-017 / LN-027: COMMITTED-retention MUST cover the linked
                 // job's retention. Take the later of the store default
                 // and the caller-supplied `retentionUntil`.
                 val expiresAt = if (retentionUntil != null && retentionUntil.isAfter(defaultExpiresAt)) {

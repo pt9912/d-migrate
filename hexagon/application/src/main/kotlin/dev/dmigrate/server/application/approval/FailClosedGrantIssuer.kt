@@ -4,12 +4,11 @@ import dev.dmigrate.server.core.approval.GrantRequest
 import java.time.Instant
 
 /**
- * Phase E §7.4 fail-closed Default.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Lehnt jede [issue]-Anfrage mit `policy:no-issuer-configured` ab. Das
  * Bootstrap-Wiring MUSS diesen Issuer als Default einsetzen, sodass eine
  * laufende Instanz ohne explizite Konfiguration nie Grants ausstellt.
- * Direkte `Allow`-Policies (Plan §7.4) bleiben unberuehrt — sie laufen
+ * Direkte `Allow`-Policies (LF-012 / LN-011 / LN-017 / LN-027) bleiben unberuehrt — sie laufen
  * gar nicht erst durch den Issuer.
  */
 object FailClosedGrantIssuer : GrantIssuer {

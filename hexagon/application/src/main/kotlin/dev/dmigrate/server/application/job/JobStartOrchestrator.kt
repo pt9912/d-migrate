@@ -36,14 +36,14 @@ import java.time.Instant
 import java.util.concurrent.RejectedExecutionException
 
 /**
- * Phase E §7.6 Orchestrator: kombiniert die Phase-E-Bausteine zu einem
+ * LF-012 / LN-011 / LN-017 / LN-027: kombiniert die server-state Bausteine zu einem
  * ausfuehrbaren Start-Tool-Vertrag.
  *
- * Ablauf gemaess Plan §7.6 / §7.5:
+ * Ablauf gemaess LF-012 / LN-011 / LN-017 / LN-027:
  *
  * 1. Pre-Idempotency-Validation ueber [JobStartInputValidator]. Bei
  *    [JobStartInputValidation.Invalid] kein Store-Write; Caller mappt auf
- *    `INVALID_PARAMS` o.ae. (Plan §7.6 line 1118-1121).
+ *    `INVALID_PARAMS` o.ae. (LF-012 / LN-011 / LN-017 / LN-027).
  * 2. Payload-Fingerprint via [PayloadFingerprintService] mit
  *    [FingerprintScope.START_TOOL] und tenant-/caller-/tool-Bind.
  * 3. `IdempotencyStore.reserve(...)` — atomar.
@@ -54,27 +54,27 @@ import java.util.concurrent.RejectedExecutionException
  *      - Denied → `deny` + `POLICY_DENIED`
  *    - `AwaitingApproval` (existiert) →
  *      - mit Token: `ApprovedRetryService.retry` (Grant-Lookup +
- *        validate + claim + commit; siehe AP E.5)
- *      - ohne Token: re-decide Policy → neue Challenge (Plan §5.5
+ *        validate + claim + commit; siehe LF-012 / LN-011 / LN-017 / LN-027)
+ *      - ohne Token: re-decide Policy → neue Challenge (LF-012 / LN-011 / LN-017 / LN-027
  *        "Retry liefert erneut POLICY_REQUIRED mit der aktuellen
  *        Challenge"). Der Approval-Request-ID-Anti-Replay-Check des
  *        Validators wird durch Lookup von `grant.approvalRequestId`
  *        umgangen, weil die Idempotency-Tabelle die aktuelle Challenge
  *        in dieser AP-Stufe noch nicht persistiert (TODO: store-
- *        extension fuer Plan §5.5 echte Anti-Replay-Bindung).
+ *        extension fuer LF-012 / LN-011 / LN-017 / LN-027 echte Anti-Replay-Bindung).
  *    - `Committed` → `AlreadyStarted(jobId)`
  *    - `ExistingPending` → `Pending(leaseExpiresAt)`
  *    - `Denied` → `PolicyDenied(reason, expiresAt)` (Replay)
  *    - `Failed` → `Failed(reason, expiresAt)` (Replay)
  *    - `Conflict` → `IdempotencyConflict(existingFingerprint)` —
- *      Plan §7.5 "Idempotency-Konflikt prueft keine Policy".
+ *      LF-012 / LN-011 / LN-017 / LN-027 "Idempotency-Konflikt prueft keine Policy".
  *
  * Nicht in diesem Orchestrator:
  *
- * - Quota-Reservation (AP E.9 — Caller fuegt Quota.reserve VOR/NACH der
+ * - Quota-Reservation (LF-012 / LN-011 / LN-017 / LN-027 — Caller fuegt Quota.reserve VOR/NACH der
  *   Allowed-Branch ein, sobald die Quota-Felder produktiv sind).
- * - Audit-Threading (AP E.10).
- * - Runner-Dispatch (AP E.7 — der Job ist hier `QUEUED`, ein Worker
+ * - Audit-Threading (LF-012 / LN-011 / LN-017 / LN-027).
+ * - Runner-Dispatch (LF-012 / LN-011 / LN-017 / LN-027 — der Job ist hier `QUEUED`, ein Worker
  *   uebernimmt spaeter).
  */
 class JobStartOrchestrator(
@@ -89,17 +89,15 @@ class JobStartOrchestrator(
     private val cancellationSourceFactory: () -> CancellationTokenSource =
         { CancellationTokenSource.create() },
     /**
-     * Phase E §7.9 owner-aware Quota-Service. Wenn `null`, ueberspringt
-     * der Orchestrator die Quota-Reserve/Commit/Refund-Schritte
+     * LF-012 / LN-011 / LN-017 / LN-027     * der Orchestrator die Quota-Reserve/Commit/Refund-Schritte
      * komplett — sinnvoll fuer Bestands-Tests, die keine Quota-Logik
-     * unter sich haben. Phase-E-Production-Wiring (OperationalMcpWiring) setzt
+     * unter sich haben. server-state-production-Wiring (OperationalMcpWiring) setzt
      * eine echte Instanz.
      */
     private val quotaService: OwnerAwareQuotaService? = null,
     private val quotaLeaseDuration: Duration = DEFAULT_QUOTA_LEASE,
     /**
-     * Phase E §7.7 Auto-Dispatch-Hook (Review-Fix Blocker #1). Wenn
-     * beide gesetzt sind, ruft der Orchestrator unmittelbar nach
+     * LF-012 / LN-011 / LN-017 / LN-027     * beide gesetzt sind, ruft der Orchestrator unmittelbar nach
      * `JobStartTransaction.commit` die [jobWorkerFactory] und reicht
      * den entstehenden Worker an den [jobDispatcher] — fire-and-forget,
      * Resultat wird NICHT awaited. Fuer SyncExecutor laeuft der Worker
@@ -113,14 +111,14 @@ class JobStartOrchestrator(
     private val jobDispatcher: JobDispatcher? = null,
     private val jobWorkerFactory: JobWorkerFactory? = null,
     /**
-     * Phase E3 § 3.5 + § 6.2: Admission-Gate fuer den Auto-Dispatch.
+     * LF-012 / LN-011 / LN-017 / LN-027: Admission-Gate fuer den Auto-Dispatch.
      * Wird **nur** befragt, wenn [jobDispatcher] und [jobWorkerFactory]
      * gesetzt sind — sonst kein Permit-Acquire (Bestands-Wiring ohne
      * Auto-Dispatch hat keinen Pool, der saturieren koennte). Bei
      * `Saturated` liefert der Orchestrator `RateLimited` mit
      * `reason = EXECUTOR_SATURATED`; bei `Closed` wird die
      * Idempotency-Reservation via `markFailed` deterministisch
-     * terminalisiert (Plan § 3.5: kein stale PENDING-Slot bei
+     * terminalisiert (LF-012 / LN-011 / LN-017 / LN-027: kein stale PENDING-Slot bei
      * Shutdown-Race).
      *
      * Default [SyncJobDispatchAdmission] vergibt unbeschraenkt Permits
@@ -128,7 +126,7 @@ class JobStartOrchestrator(
      */
     private val dispatchAdmission: JobDispatchAdmission = SyncJobDispatchAdmission,
     /**
-     * Phase E3 § 6.5: optionaler [JobStore] fuer
+     * LF-012 / LN-011 / LN-017 / LN-027: optionaler [JobStore] fuer
      * `markExecutorSetupFailed` — eine `QUEUED -> FAILED`-CAS-Transition,
      * die einen post-commit Setup-Fehler (worker == null,
      * factory.create-Throw, dispatcher.dispatch-Throw,
@@ -138,7 +136,7 @@ class JobStartOrchestrator(
      * faellt der Setup-Failure-Pfad auf "Permit close + Started zurueck"
      * zurueck (kein pollbares FAILED, Job bleibt QUEUED). Production-
      * Wiring (OperationalMcpWiring) MUSS den jobStore mitliefern, damit
-     * Plan § 3.5 Setup-Failure-Akzeptanz greift.
+     * LF-012 / LN-011 / LN-017 / LN-027 Setup-Failure-Akzeptanz greift.
      */
     private val jobStore: JobStore? = null,
 ) {
@@ -166,7 +164,7 @@ class JobStartOrchestrator(
             ),
         )
 
-        // Phase E §7.10 (Review-Fix #8): AuditFields populieren, sobald
+        // LF-012 / LN-011 / LN-017 / LN-027: AuditFields populieren, sobald
         // bekannt. payloadFingerprint deterministisch aus dem Payload,
         // resourceRefs aus den expliziten RefField-Eintraegen des
         // Requests. Schreibt nur wenn der Caller eine AuditFields-
@@ -223,7 +221,7 @@ class JobStartOrchestrator(
         val factory = jobWorkerFactory
         val dispatcher = jobDispatcher
 
-        // Phase E3 § 6.2: Admission-Acquire NUR wenn Auto-Dispatch
+        // LF-012 / LN-011 / LN-017 / LN-027: Admission-Acquire NUR wenn Auto-Dispatch
         // verkabelt ist. Ohne Dispatcher+Factory landet kein Runnable
         // im Pool, also kein Permit-Acquire. So bleiben Bestands-Tests
         // (kein jobDispatcher) unveraendert.
@@ -238,7 +236,7 @@ class JobStartOrchestrator(
                         reason = JobStartReason.EXECUTOR_SATURATED,
                     )
                 JobDispatchAdmissionOutcome.Closed -> {
-                    // Plan E3 § 3.5: Closed darf nicht als syntethisches
+                    // LF-012 / LN-011 / LN-017 / LN-027 § 3.5: Closed darf nicht als syntethisches
                     // Failed retournieren — die Idempotency-Reservation
                     // muss in einen terminalen FAILED-Replay-Zustand,
                     // sonst bleibt sie als stale PENDING haengen.
@@ -259,9 +257,9 @@ class JobStartOrchestrator(
             null
         }
 
-        // Phase E §7.9: Quota.reserve VOR jobBuilder + JobStartTransaction.commit.
+        // LF-012 / LN-011 / LN-017 / LN-027: Quota.reserve VOR jobBuilder + JobStartTransaction.commit.
         // RateLimited liefert sofort zurueck — keine Job-Erzeugung, keine
-        // Secret-Store-Reads (Plan §7.9 line 1270-1273). Plan E3 § 3.5:
+        // Secret-Store-Reads (LF-012 / LN-011 / LN-017 / LN-027). Admission-Gate-Vertrag:
         // bei Quota-Reject muss das bereits-vergebene Permit synchron
         // zurueck.
         val quotaReservation = reserveQuota(request, scope)
@@ -280,7 +278,7 @@ class JobStartOrchestrator(
                 if (ownerId != null) quotaService?.commitForOwner(ownerId, request.now)
                 val source = cancellationSourceFactory()
 
-                // Phase E §7.7 Auto-Dispatch + Plan E3 § 6.2/§ 6.5:
+                // LF-012 / LN-011 / LN-017 / LN-027:
                 // Setup-Steps (register + factory.create + dispatch) sind
                 // im Auto-Dispatch-Pfad in einem try-catch verpackt — bei
                 // post-commit Fehler markiert `markExecutorSetupFailed`
@@ -308,7 +306,7 @@ class JobStartOrchestrator(
             }
             is JobStartTransactionOutcome.IdempotencyNotEligible -> {
                 // Race: parallel commit zwischen reserve und transaction-commit.
-                // Plan §7.9 line 1282-1284: refund nur fuer pre-commit Fehler
+                // LF-012 / LN-011 / LN-017 / LN-027: refund nur fuer pre-commit Fehler
                 // dieses Pipeline-Owners. Sweeper kann auf Lease-Ablauf NICHT
                 // refunden, weil der OwnerStore-Eintrag PENDING ist.
                 if (ownerId != null) quotaService?.refundForOwner(ownerId, request.now)
@@ -361,7 +359,7 @@ class JobStartOrchestrator(
         decision: PolicyDecision.RequiresApproval,
         fingerprint: String,
     ): JobStartHandlerOutcome {
-        // Plan §5.5 (Review-Fix Blocker #3): die durable Challenge wird
+        // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): die durable Challenge wird
         // beim Statuswechsel persistiert, damit der Approved-Retry den
         // approvalRequestId-Anti-Replay-Check echt durchfuehren kann.
         val challenge = dev.dmigrate.server.core.approval.ApprovalChallenge(
@@ -400,7 +398,7 @@ class JobStartOrchestrator(
         return if (token != null) {
             handleApprovedRetry(request, scope, fingerprint, token, durableChallenge)
         } else if (durableChallenge != null) {
-            // Plan §5.5 (Review-Fix Blocker #3): Replay-Pfad ohne Token
+            // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): Replay-Pfad ohne Token
             // liefert die DURABLE-gespeicherte Challenge zurueck — gleicher
             // approvalRequestId, gleiche requiredScopes, kein
             // re-decide-Drift.
@@ -415,7 +413,7 @@ class JobStartOrchestrator(
         } else {
             // Bestands-Pfad ohne durable Challenge (z.B. wenn ein
             // Bestands-Caller markAwaitingApproval ohne challenge gerufen
-            // hat): re-decide Policy. Defensive — die Phase-E-Production-
+            // hat): re-decide Policy. Defensive — die server-state-production-
             // Wirebahn liefert immer eine durable Challenge.
             val attempt = PolicyAttempt(
                 tenantId = request.tenantId,
@@ -450,11 +448,11 @@ class JobStartOrchestrator(
         durableChallenge: dev.dmigrate.server.core.approval.ApprovalChallenge?,
     ): JobStartHandlerOutcome {
         val tokenFingerprint = ApprovalTokenFingerprint.compute(rawToken)
-        // Plan §5.5 (Review-Fix Blocker #3): die Challenge wurde beim
+        // LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): die Challenge wurde beim
         // markAwaitingApproval durabel gespeichert. ApprovalAttempt
         // benutzt JETZT die durable approvalRequestId + requiredScopes —
         // damit greift der ApprovalGrantValidator-Anti-Replay-Check
-        // (Plan §5.5 "Ein Grant fuer eine alte oder erneuerte
+        // (LF-012 / LN-011 / LN-017 / LN-027 "Ein Grant fuer eine alte oder erneuerte
         // approvalRequestId ist ungueltig") echt: ein Grant fuer einen
         // anderen approvalRequestId wird via ApprovalRequestIdMismatch
         // abgelehnt. ScopeMismatch greift ebenfalls — die durable
@@ -462,7 +460,7 @@ class JobStartOrchestrator(
         //
         // durableChallenge == null ist Bestands-Compat (Stores ohne
         // Challenge-Persistierung); dann faellt der Service auf das
-        // alte E.6-(3a)-Verhalten zurueck (Approval-Request-Id-Lookup
+        // alte LF-012 / LN-011 / LN-017 / LN-027-(3a)-Verhalten zurueck (Approval-Request-Id-Lookup
         // im Grant — Anti-Replay-Bypass).
         val approvalRequestId = durableChallenge?.approvalRequestId
             ?: approvalGrantStore.findByTokenFingerprint(request.tenantId, tokenFingerprint)
@@ -485,7 +483,7 @@ class JobStartOrchestrator(
     }
 
     /**
-     * Plan E3 § 6.2: setup-Steps fuer Auto-Dispatch — register + factory
+     * LF-012 / LN-011 / LN-017 / LN-027 § 6.2: setup-Steps fuer Auto-Dispatch — register + factory
      * + dispatch — laufen in einem try-catch. Bei jedem Throwable wird
      * der Permit best-effort geschlossen und `markExecutorSetupFailed`
      * persistiert die FAILED-Transition. Der Aufrufer returnt weiter
@@ -514,7 +512,7 @@ class JobStartOrchestrator(
     }
 
     /**
-     * Plan E3 § 6.5: CAS-Transition `QUEUED -> FAILED` mit error-code-
+     * LF-012 / LN-011 / LN-017 / LN-027 § 6.5: CAS-Transition `QUEUED -> FAILED` mit error-code-
      * Mapping (RejectedExecutionException -> EXECUTOR_CLOSED,
      * WorkerNotRegisteredException -> WORKER_NOT_REGISTERED, sonst
      * EXECUTOR_SETUP_FAILED). JobStore-Fehler propagieren — der Handler
@@ -594,7 +592,7 @@ class JobStartOrchestrator(
 
     @Suppress("UNUSED_PARAMETER")
     private fun logSetupCleanupFailure(jobId: String, stage: String, cleanup: Throwable) {
-        // Plan E3 § 6.5: Cleanup-Fehler werden NIE in den Start-Catch
+        // LF-012 / LN-011 / LN-017 / LN-027 § 6.5: Cleanup-Fehler werden NIE in den Start-Catch
         // zurueckgeworfen, sonst wuerde der Cleanup-Pfad rekursiv laufen.
         // Logging-Routing (slf4j) lebt zentral im Adapter — hier nur
         // deterministisches Suppress zur Vertragssicherheit.
@@ -608,7 +606,7 @@ class JobStartOrchestrator(
         const val QUOTA_AMOUNT_PER_JOB: Long = 1L
         val DEFAULT_QUOTA_LEASE: Duration = Duration.ofSeconds(60)
 
-        /** Plan E3 § 3.5: Reason fuer Idempotency-FAILED bei Closed-Admission. */
+        /** LF-012 / LN-011 / LN-017 / LN-027 § 3.5: Reason fuer Idempotency-FAILED bei Closed-Admission. */
         const val REASON_EXECUTOR_CLOSED: String = "executor:closed"
 
         /**
@@ -619,7 +617,7 @@ class JobStartOrchestrator(
          */
         const val EXECUTOR_CLOSED_RETENTION_SECONDS: Long = 1
 
-        /** Plan E3 § 6.5: error-code-Werte fuer setup-Failure-Pfade. */
+        /** LF-012 / LN-011 / LN-017 / LN-027 § 6.5: error-code-Werte fuer setup-Failure-Pfade. */
         const val ERROR_CODE_EXECUTOR_CLOSED: String = "EXECUTOR_CLOSED"
         const val ERROR_CODE_WORKER_NOT_REGISTERED: String = "WORKER_NOT_REGISTERED"
         const val ERROR_CODE_EXECUTOR_SETUP_FAILED: String = "EXECUTOR_SETUP_FAILED"
@@ -628,7 +626,7 @@ class JobStartOrchestrator(
 
 /**
  * Eingabe-Bundle fuer [JobStartOrchestrator.start]. Die MCP-Tool-Handler
- * aus AP E.6 (3b) konstruieren diese Struktur aus dem geparsten
+ * aus LF-012 / LN-011 / LN-017 / LN-027 (3b) konstruieren diese Struktur aus dem geparsten
  * `tools/call`-Argument plus dem aktuellen Principal.
  */
 data class JobStartRequest(
@@ -643,7 +641,7 @@ data class JobStartRequest(
     val jobBuilder: (jobId: String, createdAt: Instant) -> JobRecord,
     val principalContext: PrincipalContext? = null,
     /**
-     * Phase E §7.10 (Review-Fix #8): optionaler AuditFields-Sink. Wenn
+     * LF-012 / LN-011 / LN-017 / LN-027: optionaler AuditFields-Sink. Wenn
      * gesetzt, schreibt der Orchestrator den berechneten
      * payloadFingerprint und die resourceRefs in dieses Objekt — der
      * `AuditScope.around`-finally-Pfad sieht die populated Werte beim
@@ -660,7 +658,7 @@ data class JobStartRequest(
 sealed interface JobStartHandlerOutcome {
 
     /**
-     * Phase E §7.7: Job ist commited und (bei wired Auto-Dispatch) an
+     * LF-012 / LN-011 / LN-017 / LN-027: Job ist commited und (bei wired Auto-Dispatch) an
      * den Worker uebergeben.
      *
      * **WICHTIG (Re-Review B2):** [record] ist der Snapshot UNMITTELBAR
@@ -670,7 +668,7 @@ sealed interface JobStartHandlerOutcome {
      * echte aktuelle Status liegt dann im
      * [dev.dmigrate.server.ports.JobStore] (z.B. SUCCEEDED). Caller,
      * die den Endstatus brauchen, muessen den Job-Store erneut
-     * abfragen. [record] spiegelt nur den Commit-Zeitpunkt — Plan §7.7
+     * abfragen. [record] spiegelt nur den Commit-Zeitpunkt — LF-012 / LN-011 / LN-017 / LN-027
      * async-Charakter, der Wire-Response gibt `jobId + QUEUED + poll`
      * zurueck.
      */
@@ -702,7 +700,7 @@ sealed interface JobStartHandlerOutcome {
     data class ValidationError(val invalid: JobStartInputValidation.Invalid) : JobStartHandlerOutcome
 
     /**
-     * Phase E §7.9: aktive Jobquote ueberschritten. Plan §7.9 line
+     * LF-012 / LN-011 / LN-017 / LN-027: aktive Jobquote ueberschritten. Die Detailzeile
      * 1294-1295: `retryAfter` ist Pflichtfeld; Tool-Handler projiziert
      * es in den `RATE_LIMITED`-Envelope und richtet die Idempotency-
      * Lease auf maximal `now + retryAfter` aus.
@@ -712,10 +710,10 @@ sealed interface JobStartHandlerOutcome {
         val current: Long,
         val limit: Long,
         /**
-         * Phase E3 § 3.5 / § 10 Q5: Diskriminator zwischen
-         * Tenant-/Caller-Quota (`ACTIVE_JOBS_QUOTA`, Default — Phase-E
+         * LF-012 / LN-011 / LN-017 / LN-027: Diskriminator zwischen
+         * Tenant-/Caller-Quota (`ACTIVE_JOBS_QUOTA`, Default — server-state
          * Quota-Pfad) und Executor-Pool-Saturation (`EXECUTOR_SATURATED`,
-         * Phase-E3 Admission-Pfad). Wire-Caller sehen das Feld immer in
+         * server-state Admission-Pfad). Wire-Caller sehen das Feld immer in
          * den `RATE_LIMITED`-Details.
          */
         val reason: String = JobStartReason.ACTIVE_JOBS_QUOTA,

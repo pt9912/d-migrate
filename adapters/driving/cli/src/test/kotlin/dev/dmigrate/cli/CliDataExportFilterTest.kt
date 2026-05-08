@@ -26,7 +26,7 @@ import kotlin.io.path.readText
 /**
  * CLI-Round-Trip-Tests für `d-migrate data export`.
  *
- * Plan §4 Phase E Schritt 27 — Integration-Tests gegen SQLite (kein Container
+ * LF-008 / LF-009 / LF-013 — Integration-Tests gegen SQLite (kein Container
  * nötig). Verifiziert den vollständigen Pfad CLI-Args → NamedConnectionResolver
  * → ConnectionUrlParser → HikariConnectionPoolFactory → DataReaderRegistry →
  * StreamingExporter → Output-Stream.
@@ -102,7 +102,7 @@ class CliDataExportFilterTest : FunSpec({
     }
 
     beforeSpec {
-        // Plan §6.18 / Phase E Bootstrap — die echte Main.kt macht das beim
+        // LF-012 — die echte Main.kt macht das beim
         // Programmstart, im Test-JVM müssen wir es selbst aufrufen.
         registerDrivers()
     }

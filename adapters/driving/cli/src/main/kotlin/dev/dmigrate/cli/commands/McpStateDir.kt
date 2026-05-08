@@ -10,7 +10,7 @@ import kotlin.io.path.ExperimentalPathApi
 import kotlin.io.path.deleteRecursively
 
 /**
- * State-dir helpers for `mcp serve` per `ImpPlan-0.9.6-C.md` §6.21.
+ * State-dir helpers for `mcp serve` per LF-012 / LN-038.
  *
  * Three concerns live here, intentionally kept off [McpServeCommand]:
  *

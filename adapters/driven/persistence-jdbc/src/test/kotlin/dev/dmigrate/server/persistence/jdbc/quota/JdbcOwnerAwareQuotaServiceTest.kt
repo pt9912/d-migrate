@@ -31,7 +31,7 @@ private val ownerAwareTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var ownerAwareTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.7 — `JdbcOwnerAwareQuotaService`-spezifische Atomicity-Tests
+ * LF-012 / LN-011 / LN-017 / LN-027 — `JdbcOwnerAwareQuotaService`-spezifische Atomicity-Tests
  * (Plan-Akzeptanz (c) + (d)):
  *
  * (c) Reserve+Register, Double-Release/Refund laufen gegen das JDBC-Wiring.
@@ -167,7 +167,7 @@ class JdbcOwnerAwareQuotaServiceTest : FunSpec({
 
         // releaseForOwner: markReleasedOnConnection schreibt RELEASED in
         // die DB (innerhalb der TX), dann throwt ReleaseFailingQuotaStore.
-        // Plan § 6.9: TX MUSS beides rollbacken → Owner bleibt COMMITTED,
+        // LF-012 / LN-011 / LN-017 / LN-027: TX MUSS beides rollbacken → Owner bleibt COMMITTED,
         // Counter bleibt unveraendert.
         shouldThrow<RuntimeException> {
             service.releaseForOwner("o-crash", now.plusSeconds(2))

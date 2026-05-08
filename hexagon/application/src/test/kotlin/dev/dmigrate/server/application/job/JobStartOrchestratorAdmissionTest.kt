@@ -27,7 +27,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E3 § 3.5 + § 6.2: Admission-Integration im
+ * LF-012 / LN-011 / LN-017 / LN-027: Admission-Integration im
  * [JobStartOrchestrator.commitJob]-Pfad.
  *
  * Sub-AP-Scope (3/4) — pre-commit Granted/Saturated/Closed-Pfade,
@@ -140,7 +140,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
         fx.jobStore.findById(tenant, "job_1") shouldBe null
         fx.workerHandleRegistry.signal("job_1", "noop")
             .shouldBeInstanceOf<dev.dmigrate.server.ports.SignalOutcome.NotFound>()
-        // Plan E3 § 3.5 "Idempotency-Reservation expired regulaer": die
+        // LF-012 / LN-011 / LN-017 / LN-027 "Idempotency-Reservation expired regulaer": die
         // Saturated-Antwort markiert die Reservation NICHT terminal. Sie
         // bleibt in einem nicht-terminalen Zustand (PENDING) und expired
         // regulaer. Wir bestaetigen das negativ — kein Failed/Denied/
@@ -204,7 +204,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
 
     test("IdempotencyNotEligible nach Granted → Permit wird synchron geschlossen") {
         // Fake-Transaction immer IdempotencyNotEligible: simuliert die
-        // post-reserve / pre-commit race (Plan §7.9 line 1282-1284).
+        // post-reserve / pre-commit race (LF-012 / LN-011 / LN-017 / LN-027).
         val permit = CountingPermit()
         val admission = FixedAdmission.granted(permit)
         val jobStore = InMemoryJobStore()

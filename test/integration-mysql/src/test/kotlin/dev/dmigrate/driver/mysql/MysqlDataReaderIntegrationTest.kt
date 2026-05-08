@@ -23,7 +23,7 @@ private val IntegrationTag = NamedTag("integration")
  * (build.gradle.kts root config). Run with `./gradlew test -PintegrationTests`
  * or via `.github/workflows/integration.yml`.
  *
- * Verifies (Plan §4 Phase B Schritt 12 + 13):
+ * Verifies (LF-008):
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
  * - Empty-table contract from §6.17
  * - Multi-chunk streaming with chunkSize splitting

@@ -8,7 +8,7 @@ import com.github.ajalt.clikt.core.subcommands
  * `data` Top-Level-Kommando — bündelt alle Subcommands rund um Datenexport
  * (0.3.0) und Datenimport (0.4.0).
  *
- * Plan §3.6 — die Hierarchie ist `d-migrate → data → {export, import}`.
+ * LF-012 — die Hierarchie ist `d-migrate → data → {export, import}`.
  * Beim Zugriff auf das Root-Command `DMigrate` aus einem Subcommand müssen
  * deshalb ZWEI parent-hops über den `currentContext` gemacht werden.
  */

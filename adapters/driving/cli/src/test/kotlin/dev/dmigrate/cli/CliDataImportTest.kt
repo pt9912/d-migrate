@@ -23,7 +23,7 @@ import kotlin.io.path.deleteIfExists
 /**
  * CLI-E2E-Tests für `d-migrate data import`.
  *
- * Plan §4 Phase E Schritt 28 — Integration-Tests gegen SQLite (kein Container
+ * LF-008 / LF-009 / LF-013 LF-012 / LN-011 / LN-017 / LN-027 Schritt 28 — Integration-Tests gegen SQLite (kein Container
  * nötig). Verifiziert den vollständigen Pfad CLI-Args → DataImportRunner →
  * StreamingImporter → SqliteDataWriter.
  *

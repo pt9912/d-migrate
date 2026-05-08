@@ -18,7 +18,7 @@ import dev.dmigrate.server.core.job.JobRecord
  * - Connection-/Schema-Refs aus dem Job autorisiert materialisieren
  *   (Secret-Resolver). Discovery-Pfade sehen die Refs secret-frei.
  * - Cancel-Token an alle Stufen propagieren (LF-012 / LN-011 / LN-017 / LN-027 +
- *   E0-Checkpoints).
+ *   Cancel-Checkpoints).
  * - Artefakte ueber [ArtifactStore]/[ArtifactContentStore] selbst
  *   persistieren; in [JobWorkerOutcome.Succeeded.artifactRefs] nur
  *   die wire-shape `dmigrate://...artifacts/...`-URIs liefern.

@@ -14,7 +14,7 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin:${rootProject.properties["jacksonVersion"]}")
     implementation("com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:${rootProject.properties["jacksonVersion"]}")
 
-    // 0.3.0 Phase D — performance-orientierte Format-Writer für den
+    // LF-009 — performance-orientierte Format-Writer fuer den
     // Daten-Schreibpfad. Siehe docs/archive/implementation-plan-0.3.0.md §11.5 für die
     // Begründung der Wahl gegen die Jackson-Toolchain.
     implementation("com.dslplatform:dsl-json-java8:${rootProject.properties["dslJsonVersion"]}")

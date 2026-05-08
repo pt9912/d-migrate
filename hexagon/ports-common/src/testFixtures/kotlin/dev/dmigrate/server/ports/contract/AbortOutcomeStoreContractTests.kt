@@ -17,7 +17,7 @@ import java.time.Instant
  * 2. Zweiter Save mit gleichem `resultRef` UND gleichem
  *    `abortFingerprint` -> `AlreadyStored` (Replay-Idempotenz).
  * 3. Zweiter Save mit gleichem `resultRef` aber abweichendem
- *    Fingerprint -> `Conflict` (Plan § 5.3 deterministische
+ *    Fingerprint -> `Conflict` (LF-010 / LF-013 / LN-009 / LN-011 deterministische
  *    Ablehnung).
  * 4. `findByResultRef` liefert die durabel gespeicherte Variante.
  */
@@ -64,7 +64,7 @@ abstract class AbortOutcomeStoreContractTests(factory: () -> AbortOutcomeStore) 
         conflict.existingFingerprint shouldBe "fp-orig"
         conflict.attemptedFingerprint shouldBe "fp-different"
 
-        // Plan § 5.3: bei Conflict bleibt der gespeicherte Outcome
+        // LF-010 / LF-013 / LN-009 / LN-011: bei Conflict bleibt der gespeicherte Outcome
         // unangetastet — kein silent overwrite.
         store.findByResultRef("rr-3")!!.abortFingerprint shouldBe "fp-orig"
     }

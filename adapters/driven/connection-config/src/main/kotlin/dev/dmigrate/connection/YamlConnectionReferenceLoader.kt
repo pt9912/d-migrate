@@ -14,7 +14,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Plan-D §8 + §10.10 YAML-backed implementation of
+ * LF-012 / LN-038 YAML-backed implementation of
  * [ConnectionReferenceConfigLoader]. Reads a project / server YAML
  * file shaped like:
  *
@@ -34,9 +34,9 @@ import java.nio.file.Path
  *         - dmigrate:data:write
  * ```
  *
- * **Phase-C compatibility**: a string-form entry
+ * **legacy compatibility**: a string-form entry
  * (`pg-prod: jdbc:postgresql://...`) is the legacy CLI shape.
- * Plan-D §3.7 forbids materialising bare URLs into the discovery
+ * LF-012 / LN-038 forbids materialising bare URLs into the discovery
  * surface, so the loader silently drops bare-string entries — they
  * stay invisible to `resources/list`, `resources/read`, and the
  * `*_list` discovery tools. CLI flows that need to resolve a bare
@@ -53,7 +53,7 @@ import java.nio.file.Path
  * loader stays single-tenant on purpose so the bootstrap can
  * compose multiple loaders safely.
  *
- * **Missing file**: returns an empty list (Plan-D §10.10: "MCP-
+ * **Missing file**: returns an empty list (LF-012 / LN-038: "MCP-
  * Bootstrap laedt nur secret-freie ConnectionReference-Records" —
  * a missing config is a "no records" outcome, not a hard failure).
  */
@@ -69,11 +69,11 @@ class YamlConnectionReferenceLoader(
         val connectionsRaw = database["connections"] as? Map<*, *> ?: return emptyList()
         return connectionsRaw.entries.mapNotNull { (key, value) ->
             val name = key as? String ?: return@mapNotNull null
-            // String-form is the Phase-C compat shape — drop it
-            // from the Phase-D discovery universe.
+            // String-form is the legacy compat shape — drop it
+            // from the LF-012 / LN-038 discovery universe.
             if (value is String) return@mapNotNull null
             val asMap = value as? Map<*, *> ?: throw ConnectionReferenceConfigException(
-                "connection '$name' must be a string (Phase-C compat) or a mapping (Phase-D record), " +
+                "connection '$name' must be a string (legacy compat) or a mapping (LF-012 / LN-038 record), " +
                     "got ${value?.let { it::class.simpleName }}",
             )
             buildReference(name, asMap)

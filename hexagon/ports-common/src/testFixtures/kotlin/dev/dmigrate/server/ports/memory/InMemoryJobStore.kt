@@ -110,7 +110,7 @@ class InMemoryJobStore : JobStore {
                 current
             } else if (current.managedJob.cancelRequest.requested) {
                 // Idempotent retry: keep first reason + first metadata,
-                // do not overwrite (Plan §7.2).
+                // do not overwrite (LF-012 / LN-011 / LN-017 / LN-027).
                 outcome = JobTransitionOutcome.Applied(current)
                 current
             } else {

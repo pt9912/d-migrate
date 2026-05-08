@@ -18,7 +18,7 @@ private val quotaStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var quotaStoreTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.7 — laesst die [QuotaStoreContractTests]-Suite gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [QuotaStoreContractTests]-Suite gegen
  * Testcontainers-Postgres laufen. Plan-Akzeptanz (a):
  * `QuotaStoreContractTests` gruen gegen Postgres inklusive
  * parallele-reserves-never-exceed-limit-Test.

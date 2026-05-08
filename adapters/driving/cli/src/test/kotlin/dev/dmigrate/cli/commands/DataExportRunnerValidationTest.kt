@@ -36,7 +36,7 @@ import java.time.LocalDateTime
  * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
- * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
  * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
  * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
  * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
@@ -459,7 +459,7 @@ class DataExportRunnerValidationTest : FunSpec({
     // Die Resume-Runtime wird ueber den Checkpoint-Vertrag verdrahtet.
     // ────────────────────────────────────────────────────────────
 
-    test("Phase A §4.4: --resume ohne --output (stdout) endet mit Exit 2") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: --resume ohne --output (stdout) endet mit Exit 2") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(
@@ -470,8 +470,8 @@ class DataExportRunnerValidationTest : FunSpec({
         stderr.joined() shouldContain "stdout"
     }
 
-    test("Phase C.1: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
-        // Phase A §4.4-Warning ist in C.1 §4.7 entfernt: `--resume` darf
+    test("LF-008 / LF-009 / LF-013: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
+        // LF-006 / LF-007 / LN-022 / LN-023-Warning ist in LF-008 / LF-009 / LF-013 §4.7 entfernt: `--resume` darf
         // nicht mehr stumm akzeptiert und ignoriert werden. Ohne
         // Checkpoint-Dir (kein --checkpoint-dir gesetzt, keine
         // checkpointStoreFactory injiziert) hat der Runner keinen Store
@@ -489,7 +489,7 @@ class DataExportRunnerValidationTest : FunSpec({
         stderr.joined() shouldContain "checkpoint"
     }
 
-    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning)") {
+    test("LF-006 / LF-007: leeres --resume wird als abwesend behandelt (kein Warning)") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(request(resume = ""))

@@ -18,7 +18,7 @@ private val initResumeTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var initResumeTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.4 — laesst die [ReadOnlyInitResumeContractTests]-Suite gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [ReadOnlyInitResumeContractTests]-Suite gegen
  * Testcontainers-Postgres laufen. Plan-Akzeptanz:
  * `ReadOnlyInitResumeContractTests` gruen gegen Postgres
  * (Reserved/Existing/Conflict-Pfade plus Scope-Independence).

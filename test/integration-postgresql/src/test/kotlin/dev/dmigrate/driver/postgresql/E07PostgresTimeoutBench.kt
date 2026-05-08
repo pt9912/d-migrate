@@ -17,7 +17,7 @@ import java.sql.SQLException
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E0.7.4 Bench-Test: belegt empirisch, dass das Cancel-Reaktions-
+ * LF-012 / LN-011 / LN-017 / LN-027 Bench-Test: belegt empirisch, dass das Cancel-Reaktions-
  * Budget aus implementation-plan-0.9.6 §4.1 (`<= statementTimeoutMs`) für
  * langlaufende PostgreSQL-Queries respektiert wird, ohne Connection-Leak.
  *

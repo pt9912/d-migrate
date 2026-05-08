@@ -19,7 +19,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(A): output-schema validation per
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(A): output-schema validation per
  * LF-012 / LN-027 / LN-028 / LN-038 Akzeptanz Z. 2077-2081.
  *
  * For the four tools that publish a typed output schema —
@@ -200,7 +200,7 @@ class McpOutputSchemaValidationScenarioTest : FunSpec({
     }
 })
 
-// --- E8(A) helpers ----------------------------------------------------------
+// --- LF-017 / LF-024 / LN-030 / LN-031(A) helpers ----------------------------------------------------------
 
 private val gson = GsonBuilder().disableHtmlEscaping().serializeNulls().create()
 private val jackson = ObjectMapper()
@@ -208,7 +208,7 @@ private val jackson = ObjectMapper()
 /**
  * Pulls the per-tool output schema off the wire (`tools/list` →
  * `outputSchema`). Keyed by tool name. Tools without an
- * `outputSchema` field are skipped — the four E8(A) tools all
+ * `outputSchema` field are skipped — the four LF-017 / LF-024 / LN-030 / LN-031(A) tools all
  * publish one.
  */
 private fun collectOutputSchemas(harness: McpClientHarness): Map<String, JsonSchema> {
@@ -255,7 +255,7 @@ private fun dev.dmigrate.mcp.protocol.ToolsCallResult.text(): String {
 }
 
 /**
- * E8 reuses the E2-E7 transport-pair pattern. Block does its own
+ * LF-017 / LF-024 / LN-030 / LN-031 reuses the LF-012 / LN-011 / LN-017 / LN-027-E7 transport-pair pattern. Block does its own
  * assertions; cleanup runs even on failure.
  */
 private fun withFreshTransports(

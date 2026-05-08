@@ -62,8 +62,8 @@ private val pipelineTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var pipelineTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.8 — End-to-End-Akzeptanzpfade gegen das voll-JDBC-gewirte
- * Phase-E-Stack (Plan-Refs: ImpPlan-0.9.6-E2.md § 7 + § 8).
+ * LF-012 / LN-011 / LN-017 / LN-027 — End-to-End-Akzeptanzpfade gegen das voll-JDBC-gewirte
+ * Server-State-Stack.
  *
  * Pinned ist die Vertrags-Bruecke zwischen den InMemory-Akzeptanztests
  * (`JobQuotaScenarioTest` etc.) und der echten Postgres-Persistenz: die
@@ -120,7 +120,7 @@ class ServerPipelineE2ETest : FunSpec({
         return Fixture(ds, tenant, principal, now, clock, jobLimit)
     }
 
-    test("Happy-Path: Start -> Auto-Dispatch -> Worker.Succeeded -> Quota released (Plan §7.9 line 1313)") {
+    test("Happy-Path: Start -> Auto-Dispatch -> Worker.Succeeded -> Quota released (LF-012 / LN-011 / LN-017 / LN-027)") {
         val fx = freshFixture()
         val outcome = fx.orchestrator.start(fx.startRequest("k1"))
         outcome.shouldBeInstanceOf<JobStartHandlerOutcome.Started>()
@@ -151,7 +151,7 @@ class ServerPipelineE2ETest : FunSpec({
         val second = fx.orchestrator.start(fx.startRequest("k-second"))
         second.shouldBeInstanceOf<JobStartHandlerOutcome.RateLimited>()
 
-        // Plan §7.9 line 1302-1304: kein jobBuilder, kein JobStore-Eintrag,
+        // LF-012 / LN-011 / LN-017 / LN-027: kein jobBuilder, kein JobStore-Eintrag,
         // kein Owner-Eintrag fuer die zweite Reservation.
         fx.jobStore.findById(tenant, "job_2") shouldBe null
         fx.ownerStore.findById(fx.expectedOwnerId("k-second")) shouldBe null
@@ -181,7 +181,7 @@ class ServerPipelineE2ETest : FunSpec({
         )
         cancelOutcome.shouldBeInstanceOf<JobCancelOutcome.Cancelled>()
         fx.jobStore.findById(tenant, jobId)!!.managedJob.status shouldBe JobStatus.CANCELLED
-        // Plan §7.9 line 1291-1292: queued-Cancel released Owner + Counter.
+        // LF-012 / LN-011 / LN-017 / LN-027: queued-Cancel released Owner + Counter.
         fx.ownerStore.findById(fx.expectedOwnerId("k-queued"))!!.status shouldBe QuotaReservationStatus.RELEASED
         fx.quotaStore.current(fx.activeJobsKey()) shouldBe 0L
     }
@@ -196,7 +196,7 @@ class ServerPipelineE2ETest : FunSpec({
         awaitCondition { fx.quotaStore.current(fx.activeJobsKey()) == 0L }
 
         // Zweiter Start mit gleichem Scope: Idempotency liefert COMMITTED ->
-        // AlreadyStarted. Plan §7.9 line 1312: weder reserve noch refund.
+        // AlreadyStarted. LF-012 / LN-011 / LN-017 / LN-027: weder reserve noch refund.
         val replay = fx.orchestrator.start(fx.startRequest("k-replay"))
         replay.shouldBeInstanceOf<JobStartHandlerOutcome.AlreadyStarted>()
         replay.jobId shouldBe firstJobId
@@ -222,7 +222,7 @@ private fun awaitCondition(
 }
 
 /**
- * Vollstaendig JDBC-gewirtes Phase-E-Setup fuer einen E2E-Test. Spiegelt
+ * Vollstaendig JDBC-gewirtes LF-012 / LN-011 / LN-017 / LN-027-Setup fuer einen E2E-Test. Spiegelt
  * das InMemory-Fixture aus `JobQuotaScenarioTest` 1:1, ersetzt aber alle
  * Stores durch ihre Postgres-Implementationen.
  */

@@ -22,7 +22,7 @@ import java.nio.file.Path
  * require subprocess execution of `mcp serve` for every scenario.
  * That trade-off was rejected because:
  *
- *  1. Audit-event correlation tests (E8(C)) inspect
+ *  1. Audit-event correlation tests (LF-017 / LF-024 / LN-030 / LN-031(C)) inspect
  *     [InMemoryAuditSink] in the same JVM. A subprocess JVM has its
  *     own heap; lifting the audit stream out would need a side-channel
  *     (file or socket) that doubles the harness footprint and adds
@@ -104,7 +104,7 @@ internal interface McpClientHarness : AutoCloseable {
     fun resourcesTemplatesListRaw(): JsonRpcResponse
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 E8(C): compact diagnostic dump per
+     * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): compact diagnostic dump per
      * LF-012 / LN-027 / LN-028 / LN-038. Returns a
      * multi-line text report intended for `System.err` printing
      * when a scenario test fails. Contents:
@@ -168,7 +168,7 @@ internal fun McpClientHarness.testWiring(): dev.dmigrate.mcp.registry.McpRuntime
 }
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(C): one entry in the harness diagnostic ring buffer.
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): one entry in the harness diagnostic ring buffer.
  *
  * @property method JSON-RPC method name (`tools/call`,
  *   `resources/read`, `initialize`, ...).

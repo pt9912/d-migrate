@@ -18,8 +18,8 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.4: Cancel inside the profiling pipeline must surface as exit 130
- * — never as the generic `5` profiling-error path. Plan §4.5 forbids the
+ * LF-012 / LN-011 / LN-017 / LN-027: Cancel inside the profiling pipeline must surface as exit 130
+ * — never as the generic `5` profiling-error path. LF-012 / LN-011 / LN-017 / LN-027 forbids the
  * `OperationCancelledException` from being mapped to a fachlicher error
  * even when it travels through a `catch (e: ProfilingException)` neighbor.
  */

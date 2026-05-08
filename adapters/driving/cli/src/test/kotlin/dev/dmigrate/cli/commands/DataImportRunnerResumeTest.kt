@@ -37,7 +37,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerResumeTest : FunSpec({
 
@@ -210,7 +210,7 @@ class DataImportRunnerResumeTest : FunSpec({
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
 
-    context("D.1 Resume-Preflight") {
+    context("LF-010 / LF-013 / LN-009 / LN-011 Resume-Preflight") {
         test("fresh run without --resume saves initial manifest") {
             val storeDir = Files.createTempDirectory("d-migrate-d1-init-")
             val store = dev.dmigrate.streaming.checkpoint.FileCheckpointStore(storeDir)

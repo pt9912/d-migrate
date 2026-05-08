@@ -5,7 +5,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 /**
  * Shared runtime bootstrap for driving adapters (CLI, MCP, …).
  *
- * Phase B §6.3 (`ImpPlan-0.9.6-B.md`) requires a single bootstrap entry
+ * LF-012 / LN-038 requires a single bootstrap entry
  * point that:
  * - registers all `DatabaseDriver` implementations available on the
  *   classpath via `ServiceLoader` (idempotent)

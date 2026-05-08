@@ -21,7 +21,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(B): security-scrubbing canary per
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(B): security-scrubbing canary per
  * LF-012 / LN-027 / LN-028 / LN-038 Akzeptanz Z. 2086-2091.
  *
  * Plants three deterministic fixture secrets — a Bearer token, a
@@ -251,7 +251,7 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
     }
 })
 
-// --- E8(B) fixtures + helpers -----------------------------------------------
+// --- LF-017 / LF-024 / LN-030 / LN-031(B) fixtures + helpers -----------------------------------------------
 
 /** Bearer-token raw value planted into job state. */
 private const val BEARER_CANARY: String = "Bearer e8b-canary-bearer-abcdef0123456789"

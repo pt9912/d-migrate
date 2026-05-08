@@ -25,7 +25,7 @@ class ApprovedRetryServiceTest : FunSpec({
     val tool = "data_profile_start"
 
     // ApprovalFixtures uses correlationKey = "idem-1" by default; the
-    // scope's idempotencyKey IS the correlation key per Plan §5.5, so we
+    // scope's idempotencyKey IS the correlation key per LF-012 / LN-011 / LN-017 / LN-027, so we
     // align the two here.
     fun scope(key: String = "idem-1") = IdempotencyScope(
         tenantId = tenant,
@@ -126,7 +126,7 @@ class ApprovedRetryServiceTest : FunSpec({
         )
         outcome.shouldBeInstanceOf<JobStartOutcome.Denied>()
         outcome.reason shouldBe "policy:grant-unknown"
-        // Plan §7.5: DENIED enthaelt denialExpiresAt; Default-Retention 600s.
+        // LF-012 / LN-011 / LN-017 / LN-027: DENIED enthaelt denialExpiresAt; Default-Retention 600s.
         outcome.expiresAt shouldBe fx.now.plusSeconds(600)
         // Kein Job allokiert.
         fx.jobIdSeq.get() shouldBe 0
@@ -198,7 +198,7 @@ class ApprovedRetryServiceTest : FunSpec({
     }
 
     test("AlreadyClaimed (Race) -> Pending mit lease-expiresAt") {
-        // Plan §7.5: parallele genehmigte Retries erzeugen genau einen Job.
+        // LF-012 / LN-011 / LN-017 / LN-027: parallele genehmigte Retries erzeugen genau einen Job.
         // Erste Claim gewinnt, zweite Claim auf demselben Scope sieht
         // AlreadyClaimed waehrend der erste Caller noch im Commit ist.
         val fx = Fixture()

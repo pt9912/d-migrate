@@ -84,7 +84,7 @@ object HikariConnectionPoolFactory {
      *   Statements (SELECT/INSERT/UPDATE/DDL) der jeweiligen Connection.
      * - MySQL: `SET SESSION MAX_EXECUTION_TIME = $ms` — wirkt **nur auf
      *   SELECTs** (MySQL-Quirk). Write-Pfade benötigen zusätzlich den
-     *   gemeinsamen JDBC-Timeout-Layer aus E0.7.3.
+     *   gemeinsamen JDBC-Timeout-Layer aus LF-012 / LN-011 / LN-017 / LN-027.
      * - SQLite: `PRAGMA busy_timeout = $ms` — Lock-Wait-Timeout. Lange
      *   Range-Scans benötigen zusätzlich `setQueryTimeout` aus dem
      *   gemeinsamen Layer.

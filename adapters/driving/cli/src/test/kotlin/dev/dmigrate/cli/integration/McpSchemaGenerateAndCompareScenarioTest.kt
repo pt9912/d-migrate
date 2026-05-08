@@ -124,10 +124,10 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
     // driver-specific and brittle to pin in an integration test.
     //
     // The truncated/artifactRef-coupling that the bullet protects is
-    // already exercised end-to-end by E2's
+    // already exercised end-to-end by LF-012 / LN-011 / LN-017 / LN-027's
     // `schema_validate truncation produces transport-equivalent
     // artifactRef shape` (same `maxInlineFindings` boundary, same
-    // `allOf` enforced by the typed output schema). E8(A)'s
+    // `allOf` enforced by the typed output schema). LF-017 / LF-024 / LN-030 / LN-031(A)'s
     // `schema_compare truncated=true output (diffArtifactRef
     // coupling) validates against the schema` covers the variant
     // for `schema_compare`. Re-deriving the same coupling for
@@ -375,7 +375,7 @@ private fun compareArgs(leftRef: String, rightRef: String): JsonObject =
     ).asJsonObject
 
 /**
- * E3 reuses the E2 transport-pair pattern. Kept private here so each
+ * E3 reuses the LF-012 / LN-011 / LN-017 / LN-027 transport-pair pattern. Kept private here so each
  * scenario file owns its own setup/teardown shape — they may diverge
  * in later APs (E4 Upload-Flow, E7 Lock-Konkurrenz).
  */

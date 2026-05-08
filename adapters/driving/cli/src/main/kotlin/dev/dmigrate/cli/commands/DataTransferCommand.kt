@@ -78,7 +78,7 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
             driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
             urlScrubber = LogScrubber::maskUrl,
             // data transfer uses plain stderr for errors — no structured
-            // json/yaml error envelope via OutputFormatter (see Plan §4.8)
+            // json/yaml error envelope via OutputFormatter (see LF-012 / LN-016)
             printError = { msg, src ->
                 val msgs = MessageResolver(ctx.locale)
                 System.err.println(msgs.text("cli.error.source_format", src, msg))

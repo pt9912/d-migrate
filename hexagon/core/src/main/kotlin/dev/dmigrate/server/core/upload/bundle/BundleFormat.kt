@@ -3,12 +3,12 @@ package dev.dmigrate.server.core.upload.bundle
 /**
  * Follow-up AP 2 — versionierte Bundle-Format-Identitäten.
  *
- * Plan §4: "`bundleFormat` ist ein versionierter Wert, z. B.
+ * LF-010 / LF-013 / LN-009 / LN-011: "`bundleFormat` ist ein versionierter Wert, z. B.
  * `seed-bundle.v1.zip` oder `seed-bundle.v1.tar`; freie Strings werden
  * nicht akzeptiert." Diese Konstanten sind die einzigen erlaubten Werte.
  *
  * v1 deckt explizit nur `.zip` ab — TAR ist als zukünftige Erweiterung
- * vorgesehen, aber nicht Teil dieses APs (Scope-Carve-out, Plan §1
+ * vorgesehen, aber nicht Teil dieses APs (Scope-Carve-out, LF-010 / LF-013 / LN-009 / LN-011
  * "Nicht-Ziele"). Die `ALL`-Map dient als Wire-Whitelist für die
  * Validierung in `artifact_upload_init` und `data_import_start`.
  */
@@ -38,11 +38,11 @@ object BundleFormat {
 /**
  * Follow-up AP 2 — Sicherheitsgrenzen für die Bundle-Extraktion.
  *
- * Plan §4 Tests: "absolute Pfade, Traversal, Symlink, doppelte Entries,
+ * LF-010 / LF-013 / LN-009 / LN-011 Tests: "absolute Pfade, Traversal, Symlink, doppelte Entries,
  * zu viele Entries, zu grosse entpackte Daten und unbekannte Entry-
  * Typen liefern VALIDATION_ERROR." Diese Grenzen werden vom
  * Bundle-Extractor enforced; Überschreitungen liefern stabile
- * `VALIDATION_ERROR`-Details ohne lokale Pfade (Plan §4 wortlaut).
+ * `VALIDATION_ERROR`-Details ohne lokale Pfade (LF-010 / LF-013 / LN-009 / LN-011 wortlaut).
  *
  * Defaults sind bewusst konservativ — Operator kann sie pro Deployment
  * über [DataRunnerDependencies] hochsetzen, sollte aber nie über

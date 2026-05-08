@@ -5,7 +5,7 @@ plugins {
 dependencies {
     api(project(":hexagon:ports"))
 
-    // Phase E: runtime validation — test-only dependencies
+    // LF-011: runtime validation — test-only dependencies
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:application"))
     testImplementation(project(":adapters:driven:driver-common"))

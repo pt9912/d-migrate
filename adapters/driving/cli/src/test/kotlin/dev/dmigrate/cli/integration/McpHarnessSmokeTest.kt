@@ -15,7 +15,7 @@ private val IntegrationTag = NamedTag("integration")
  * via the [McpClientHarness] surface, and asserts the
  * advertised tool set is identical between stdio and HTTP.
  *
- * The full LF-012 / LN-038 scenario lands in E2-E8; E1 only pins the
+ * The full LF-012 / LN-038 scenario lands in LF-012 / LN-011 / LN-017 / LN-027-LF-017 / LF-024 / LN-030 / LN-031; E1 only pins the
  * harness plumbing.
  *
  * Tagged `integration` so the default fast-test loop skips it

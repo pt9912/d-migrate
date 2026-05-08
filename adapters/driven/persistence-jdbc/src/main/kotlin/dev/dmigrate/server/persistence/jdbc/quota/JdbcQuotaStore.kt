@@ -11,7 +11,7 @@ import java.time.Clock
 
 /**
  * Postgres-/JDBC-Implementierung des [QuotaStore]-Vertrags. SQL-Patterns:
- * Plan § 6.8 in `docs/planning/done/ImpPlan-0.9.6-E2.md`.
+ * LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Atomicity:
  * - `reserve` nutzt `INSERT … ON CONFLICT DO UPDATE WHERE limit-check`,
@@ -21,7 +21,7 @@ import java.time.Clock
  *
  * Cross-TX-Komposition: jede Methode hat eine `*OnConnection`-Variante
  * (internal), die [JdbcOwnerAwareQuotaService] in einer geteilten
- * DB-TX aufruft. Plan § 6.9: Counter-Decrement und Owner-Status-CAS
+ * DB-TX aufruft. LF-012 / LN-011 / LN-017 / LN-027: Counter-Decrement und Owner-Status-CAS
  * MUESSEN gemeinsam atomar sein.
  */
 open class JdbcQuotaStore(
@@ -39,7 +39,7 @@ open class JdbcQuotaStore(
         transactionRunner.inTransaction { conn -> currentOnConnection(conn, key) }
 
     /**
-     * Plan § 6.8 atomarer Reserve-Pfad: INSERT-or-UPDATE mit Limit-Check
+     * LF-012 / LN-011 / LN-017 / LN-027 atomarer Reserve-Pfad: INSERT-or-UPDATE mit Limit-Check
      * im SQL. 0 affected rows ⇒ Limit ueberschritten ⇒ RateLimited mit
      * Follow-up SELECT fuer den aktuellen Counter-Wert.
      */
@@ -76,11 +76,11 @@ open class JdbcQuotaStore(
     }
 
     /**
-     * Plan § 6.8 release: floored UPDATE. Bei fehlender Zeile (kein
+     * LF-012 / LN-011 / LN-017 / LN-027 release: floored UPDATE. Bei fehlender Zeile (kein
      * Counter angelegt) liefert die Funktion 0 — das ist die im Contract
      * geforderte „release fuer unbekannten Key ist no-op".
      *
-     * `open` fuer Failure-Injection-Tests aus Plan § 7.9 Akzeptanz (d)
+     * `open` fuer Failure-Injection-Tests aus LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz (d)
      * (Crash-Window zwischen Owner-markX und Counter-Decrement).
      */
     internal open fun releaseOnConnection(conn: Connection, key: QuotaKey, amount: Long): Long {

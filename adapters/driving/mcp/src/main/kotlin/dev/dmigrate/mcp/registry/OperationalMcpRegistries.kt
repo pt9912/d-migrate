@@ -34,7 +34,7 @@ object OperationalMcpRegistries {
             quotaService = eWiring.ownerAwareQuotaService,
             jobDispatcher = eWiring.jobDispatcher,
             jobWorkerFactory = eWiring.jobWorkerFactory,
-            // LF-012 / LN-011 / LN-017 / LN-027 (E3.5): admission ans Pre-commit-Gate;
+            // LF-012 / LN-011 / LN-017 / LN-027: admission ans Pre-commit-Gate;
             // jobStore an markExecutorSetupFailed (post-commit Setup-
             // Failure -> pollbares FAILED).
             dispatchAdmission = eWiring.executorBundle.admission,

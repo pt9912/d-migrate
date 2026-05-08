@@ -71,7 +71,7 @@ data class UploadSession(
     /**
      * AP 6.22: wall-clock cutoff after which the current claim is
      * stale and may be reclaimed by a fresh completing call. Compared
-     * against the injected `Clock` of the Phase-C wiring; negative
+     * against the injected `Clock` of the legacy wiring; negative
      * clock jumps must NOT extend the stored value.
      */
     val finalizingLeaseExpiresAt: Instant? = null,
@@ -84,7 +84,7 @@ data class UploadSession(
      */
     val finalizationOutcome: FinalizationOutcome? = null,
     /**
-     * Phase F § 4.2 + § 5.1 (F.2): durable Bindung an die Approval-
+     * LF-010 / LF-013 / LN-009 / LN-011: durable Bindung an die Approval-
      * Freigabe fuer policy-pflichtige Init-Pfade
      * (`uploadIntent = job_input`). Teil des SyncEffect-Scopes
      * `(tenant, caller, artifact_upload_init, approvalKey)` aus § 8.3 —
@@ -97,27 +97,27 @@ data class UploadSession(
      */
     val approvalKey: String? = null,
     /**
-     * Phase F § 4.2 (F.2): durable SHA-256 Fingerprint der Init-
+     * LF-010 / LF-013 / LN-009 / LN-011: durable SHA-256 Fingerprint der Init-
      * Metadaten (`artifactKind`, `mimeType`, `sizeBytes`,
      * `checksumSha256`, `uploadIntent`, optional `targetTable`,
      * Tenant, Principal, optionaler Zielkontext). Wird beim
      * `markAwaitingApproval`/Approval-Grant gespeichert; `reserve`-
-     * Replays vergleichen gegen diesen Wert (Plan § 5.1
+     * Replays vergleichen gegen diesen Wert (LF-010 / LF-013 / LN-009 / LN-011
      * "abweichender Payload -> IDEMPOTENCY_CONFLICT"). `null` fuer
      * Bestands-Sessions ohne policy-Pfad.
      */
     val approvalFingerprint: String? = null,
     /**
-     * Phase F § 5.1 (F.2): optionaler `targetTable`-Hint fuer
+     * LF-010 / LF-013 / LN-009 / LN-011: optionaler `targetTable`-Hint fuer
      * Single-File-`job_input`-Uploads. Faellt ohne `targetTable` auf
-     * den `data_import_start.table`-Pflichtpfad zurueck (Plan § 5.1).
+     * den `data_import_start.table`-Pflichtpfad zurueck (LF-010 / LF-013 / LN-009 / LN-011).
      * Wird in den Approval-/Payload-Fingerprint eingerechnet (§ 4.2),
      * sodass abweichende `targetTable`-Werte zwischen Init und Import
      * via SyncEffect-/Idempotency-Conflict abgewiesen werden.
      */
     val targetTable: String? = null,
     /**
-     * Phase F keeps the stable wire artifact taxonomy separate from
+     * LF-010 / LF-013 / LN-009 / LN-011 keeps the stable wire artifact taxonomy separate from
      * [artifactKind], because the core enum does not contain values such
      * as `seed-data` or `generic`. Finalised job-input artifacts persist
      * this value in [dev.dmigrate.server.core.artifact.ArtifactUploadMetadata].
@@ -126,7 +126,7 @@ data class UploadSession(
     /**
      * Follow-up AP 2: Bundle-Init-Hint. Wenn der Caller per
      * `artifact_upload_init` ein versioniertes Seed-Bundle ankündigt
-     * (Plan §4 verbindlicher `bundleFormat`-Wert wie
+     * (LF-010 / LF-013 / LN-009 / LN-011 verbindlicher `bundleFormat`-Wert wie
      * `seed-bundle.v1.zip`), bindet diese Session-Spalte den
      * Init-Vertrag durable an das spätere Finalisat. Der
      * [dev.dmigrate.mcp.upload.JobInputFinalizer] propagiert den Wert

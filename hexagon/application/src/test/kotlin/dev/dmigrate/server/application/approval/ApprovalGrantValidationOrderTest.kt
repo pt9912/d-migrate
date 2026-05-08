@@ -6,8 +6,8 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 /**
- * Pins the deterministic Reject-Reason order from `ImpPlan-0.9.6-A.md`
- * §6.5: every test feeds a grant that has *several* mismatches at once
+ * Pins the deterministic LF-012 / LN-011 / LN-017 / LN-027 Reject-Reason order:
+ * every test feeds a grant that has *several* mismatches at once
  * and asserts the earlier-listed reason wins.
  */
 class ApprovalGrantValidationOrderTest : FunSpec({

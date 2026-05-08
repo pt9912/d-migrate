@@ -3,8 +3,7 @@ package dev.dmigrate.server.application.job
 import dev.dmigrate.server.core.job.JobRecord
 
 /**
- * Phase E §7.7 Job-Artefakt-Publishing-Port.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Tool-spezifische Worker (Schema-Reverse, Data-Profile, Schema-Compare)
  * delegieren das tatsaechliche Persistieren ihres Output-Artefakts
  * (Schema-YAML, Profile-Report, Diff-JSON) an eine

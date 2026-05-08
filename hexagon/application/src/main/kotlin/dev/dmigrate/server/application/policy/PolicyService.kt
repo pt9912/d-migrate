@@ -3,15 +3,14 @@ package dev.dmigrate.server.application.policy
 import dev.dmigrate.server.core.policy.PolicyDecision
 
 /**
- * Phase E §5.4 Policy-Service-Port.
- *
- * Entscheidet pro Start-Versuch eines Tool-Handlers (AP E.6), ob ein Job
+ * LF-012 / LN-011 / LN-017 / LN-027 *
+ * Entscheidet pro Start-Versuch eines Tool-Handlers (LF-012 / LN-011 / LN-017 / LN-027), ob ein Job
  * direkt starten darf, eine Approval-Challenge benoetigt oder abgelehnt
  * wird. Die konkrete Entscheidung darf keine fremden Ressourcendetails
- * oder Secrets leaken (Plan §5.4); Implementierungen pruefen ausschliesslich
+ * oder Secrets leaken (LF-012 / LN-011 / LN-017 / LN-027); Implementierungen pruefen ausschliesslich
  * gegen [PolicyAttempt] und konfigurierte Regeln.
  *
- * Beispiel-Compose-Kette (AP E.6):
+ * Beispiel-Compose-Kette (LF-012 / LN-011 / LN-017 / LN-027):
  *
  *     val decision = policyService.decide(attempt)
  *     when (decision) {

@@ -26,7 +26,7 @@ private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data import` gegen einen realen PostgreSQL-
- * Container (Testcontainers). Plan §4 Phase F Schritt 29 + 32.
+ * Container (Testcontainers). LF-008 / LF-009 / LF-013 LF-010 / LF-013 / LN-009 / LN-011 Schritt 29 + 32.
  *
  * Tagged `integration` — läuft nur mit `./gradlew test -PintegrationTests`
  * und im `.github/workflows/integration.yml`-Workflow.

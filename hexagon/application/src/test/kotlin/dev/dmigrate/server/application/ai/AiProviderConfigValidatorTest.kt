@@ -7,7 +7,7 @@ import io.kotest.matchers.shouldBe
 import java.time.Duration
 
 /**
- * Phase G § 5.2 (G.3) — semantische Config-Validierung pro
+ * LF-017 / LF-024 / LN-030 / LN-031— semantische Config-Validierung pro
  * Provider-Kind.
  */
 class AiProviderConfigValidatorTest : FunSpec({
@@ -33,7 +33,7 @@ class AiProviderConfigValidatorTest : FunSpec({
         auditMode = AiProviderAuditMode.FULL,
     )
 
-    test("Plan §4.1: NoOp default config validiert ohne Fehler") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: NoOp default config validiert ohne Fehler") {
         AiProviderConfigValidator.validate(AiProviderConfig.noOpDefault()).shouldBeEmpty()
     }
 
@@ -62,7 +62,7 @@ class AiProviderConfigValidatorTest : FunSpec({
         errors[0].reason shouldBe "is required for kind=LOCAL_LOOPBACK"
     }
 
-    test("Plan §6 G.3: lokaler Provider mit Loopback-Endpoint und ohne secretRef ist gueltig") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: lokaler Provider mit Loopback-Endpoint und ohne secretRef ist gueltig") {
         AiProviderConfigValidator.validate(
             cfg(
                 AiProviderId.OLLAMA, AiProviderKind.LOCAL_LOOPBACK,
@@ -80,7 +80,7 @@ class AiProviderConfigValidatorTest : FunSpec({
         ).shouldBeEmpty()
     }
 
-    test("Plan §6 G.3: lokaler Provider mit nicht-loopback Endpoint wird fail-closed abgewiesen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: lokaler Provider mit nicht-loopback Endpoint wird fail-closed abgewiesen") {
         val errors = AiProviderConfigValidator.validate(
             cfg(
                 AiProviderId.OLLAMA, AiProviderKind.LOCAL_LOOPBACK,
@@ -104,7 +104,7 @@ class AiProviderConfigValidatorTest : FunSpec({
         errors.map { it.field } shouldContain "allowExternalNetwork"
     }
 
-    test("Plan §6 G.3: auth-pflichtiger externer Provider ohne secretRef wird fail-closed abgewiesen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: auth-pflichtiger externer Provider ohne secretRef wird fail-closed abgewiesen") {
         val errors = AiProviderConfigValidator.validate(
             cfg(
                 AiProviderId("openai"), AiProviderKind.EXTERNAL,

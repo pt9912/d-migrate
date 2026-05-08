@@ -4,8 +4,7 @@ import dev.dmigrate.mcp.server.McpServerHandle
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Single-shot lifecycle wrap for a started `mcp serve` per
- * `ImpPlan-0.9.6-C.md` §6.21 (Z. 1150–1169).
+ * Single-shot lifecycle wrap for a started `mcp serve` per LF-012 / LN-038.
  *
  * Wires three idempotent cleanup actions — `handle.stop()`,
  * `lock.close()`, and `owner.cleanupIfOwned()` — into both a JVM

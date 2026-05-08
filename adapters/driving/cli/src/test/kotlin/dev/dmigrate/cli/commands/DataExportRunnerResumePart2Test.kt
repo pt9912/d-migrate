@@ -37,7 +37,7 @@ import java.time.LocalDateTime
  * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
- * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
  * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
  * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
  * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
@@ -228,7 +228,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
         }
     }
 
-    context("Phase C.1 — Resume-Preflight (continued)") {
+    context("LF-008 / LF-009 / LF-013 — Resume-Preflight (continued)") {
 
         test("checkpointConfigResolver-Directory gewinnt, wenn kein CLI-Override gesetzt ist") {
             val store = InMemoryCheckpointStore()
@@ -328,7 +328,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
             val warmRunner = newRunner(
                 StderrCapture(),
                 exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
-                    // Phase C.2 §5.4: der Runner leitet Single-File-Laeufe
+                    // LF-008 / LF-009 / LF-013: der Runner leitet Single-File-Laeufe
                     // in eine Staging-Datei im Checkpoint-Verzeichnis um.
                     // Der Fake simuliert den echten Writer, indem er die
                     // uebergebene Output-Datei anlegt, damit die
@@ -396,7 +396,7 @@ class DataExportRunnerResumePart2Test : FunSpec({
             stderr.joined() shouldContain "already completed"
         }
 
-        test("E2: simulated export abort — resume skips completed table and finishes") {
+        test("LF-012 / LN-011 / LN-017 / LN-027: simulated export abort — resume skips completed table and finishes") {
             // Scenario: two-table export where table 1 completes but
             // table 2 triggers an executor failure (simulated abort).
             // A second run with --resume must skip the already-completed

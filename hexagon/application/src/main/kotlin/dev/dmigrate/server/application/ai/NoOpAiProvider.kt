@@ -3,11 +3,11 @@ package dev.dmigrate.server.application.ai
 import java.security.MessageDigest
 
 /**
- * Phase G § 4.1 + § 5.1 — deterministischer Default-Provider.
+ * LF-017 / LF-024 / LN-030 / LN-031— deterministischer Default-Provider.
  *
  * `NoOpAiProvider` ist der **verbindliche Default** für jeden
  * Tenant ohne explizit konfigurierten externen Provider. Die
- * Akzeptanz aus Plan §6 G.2:
+ * Akzeptanz aus LF-017 / LF-024 / LN-030 / LN-031:
  *
  * - liefert deterministische Ergebnisse (gleicher Request →
  *   gleicher Output, byte-identisch)
@@ -18,7 +18,7 @@ import java.security.MessageDigest
  *
  * Der Output ist eine kurze, maschinenlesbare Marker-Antwort, die
  * die Eingabe-Fingerprints widerspiegelt. Tests und der
- * Default-Tool-Pfad in G.6 nutzen ihn, um den ganzen
+ * Default-Tool-Pfad in LF-017 / LF-024 / LN-030 / LN-031 nutzen ihn, um den ganzen
  * Provider-→-Hygiene-→-Artefakt-Pfad zu validieren, ohne einen
  * realen Modell-Aufruf zu brauchen.
  *
@@ -26,7 +26,7 @@ import java.security.MessageDigest
  * Random-Output: alle drei würden Test-Flake einführen oder die
  * Determinismus-Akzeptanz brechen. Tests, die Timeout-/Failure-
  * Pfade pinnen wollen, nutzen [FakeFailingAiProvider] aus den
- * Test-Fixtures (Phase G.6).
+ * Test-Fixtures (LF-017 / LF-024 / LN-030 / LN-031).
  */
 class NoOpAiProvider(
     private val providerName: String = DEFAULT_PROVIDER_NAME,
@@ -35,12 +35,12 @@ class NoOpAiProvider(
 
     override fun invoke(request: AiProviderRequest): AiProviderResult {
         val output = renderOutput(request)
-        // Plan §6 G.2: maxOutputBytes ist Provider-Vertrag —
+        // LF-017 / LF-024 / LN-030 / LN-031: maxOutputBytes ist Provider-Vertrag —
         // schon der NoOp respektiert die Cap. Die Marker-Antwort
         // ist klein (deterministisch <512 Zeichen für jeden
         // Eingabe-Fingerprint), aber wir halten den Vertrag
         // explizit, damit die Akzeptanz für externe Provider
-        // (G.3) gleich aussieht.
+        // (LF-017 / LF-024 / LN-030 / LN-031) gleich aussieht.
         if (output.toByteArray(Charsets.UTF_8).size > request.maxOutputBytes) {
             return AiProviderResult.Failure(
                 error = AiProviderError.OUTPUT_TOO_LARGE,
@@ -67,7 +67,7 @@ class NoOpAiProvider(
     /**
      * Deterministische Marker-Form. Format hält sich kurz, ist
      * aber strukturiert genug, dass Tool-Handler ihn als
-     * "Plan-Inhalt" weiterverarbeiten können (Plan §5.4: NoOp-
+     * "Plan-Inhalt" weiterverarbeiten können (LF-017 / LF-024 / LN-030 / LN-031: NoOp-
      * Antwort fließt in `procedure_transform_plan`-Plan-Artefakt
      * ein).
      */

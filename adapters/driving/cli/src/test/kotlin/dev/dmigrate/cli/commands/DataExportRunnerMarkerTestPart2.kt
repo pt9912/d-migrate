@@ -167,9 +167,9 @@ class DataExportRunnerMarkerTestPart2 : FunSpec({
         primaryKeyLookup = primaryKeyLookup,
     )
 
-    // ─── C.2 Fall 1 — ohne --since-column bleibt alles C.1-Verhalten ─
+    // ─── LF-008 / LF-009 / LF-013 Fall 1 — ohne --since-column bleibt alles Legacy-Verhalten ─
 
-    context("C.2 Fall 1 — ohne --since-column bleibt alles C.1-Verhalten") {
+    context("LF-008 / LF-009 / LF-013 Fall 1 — ohne --since-column bleibt alles Legacy-Verhalten") {
 
         test("PK change invalidates resume (fingerprint mismatch → Exit 3)") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-fp-")
@@ -225,7 +225,7 @@ class DataExportRunnerMarkerTestPart2 : FunSpec({
         }
     }
 
-    context("C.2.6 Single-File staging → atomic rename to target") {
+    context("LF-008 / LF-009 / LF-013 Single-File staging → atomic rename to target") {
         test("fresh single-file run goes through staging, target only appears on success") {
             val storeDir = Files.createTempDirectory("d-migrate-c26-fresh-")
             val targetPath = storeDir.resolve("users.json")

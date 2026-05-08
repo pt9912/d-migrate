@@ -186,7 +186,7 @@ internal class ArtifactUploadInitHandler(
         val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
         val artifactKind = parseArtifactKind(raw)
         val targetTable = raw.optString("targetTable")
-        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Init-Vertrag (LF-010 / LF-013 / LN-009 / LN-011). bundleFormat ist
+        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Init-Vertrag. bundleFormat ist
         // pflicht, sobald tables gesetzt ist; targetTable und tables sind
         // gegenseitig exklusiv.
         val bundleHints = parseBundleInitHints(raw, targetTable)

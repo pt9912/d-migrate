@@ -24,19 +24,18 @@ data class JobProgress(
 /**
  * Cancel-request- und Cancel-Ack-Metadaten für einen [ManagedJob].
  *
- * Der zweistufige Pattern aus Phase E §7.2 trennt:
+ * Der zweistufige Pattern aus LF-012 / LN-011 / LN-017 / LN-027:
  *
  * - **Request-Phase**: `requested = true` wird durabel via CAS gesetzt
  *   (siehe `JobStore.markCancelRequested`). `signalAcked = false` heißt
- *   "Cancel-Request liegt vor, Worker hat noch nicht bestätigt". Phase E
+ *   "Cancel-Request liegt vor, Worker hat noch nicht bestätigt". LF-012 / LN-011 / LN-017 / LN-027
  *   `job_cancel` retried in diesem Zustand idempotent ohne Reason oder
  *   Request-Metadaten zu überschreiben.
  *
  * - **Ack-Phase**: `signalAcked = true` mit `ackedAt`-Zeitstempel wird
  *   gesetzt, sobald der Worker den Cancel-Punkt verarbeitet hat. Das
  *   ist orthogonal zum Job-Status-Übergang nach `CANCELLED` —
- *   Phase E §7.2 fordert beide Felder als beobachtbar im
- *   `job_status_get`-Response.
+ *   LF-012 / LN-011 / LN-017 / LN-027 *   `job_status_get`-Response.
  *
  * Alle Felder sind nullable bzw. `false` im Default, damit
  * Bestands-Code, der `ManagedJob` ohne Cancel-Metadaten konstruiert,

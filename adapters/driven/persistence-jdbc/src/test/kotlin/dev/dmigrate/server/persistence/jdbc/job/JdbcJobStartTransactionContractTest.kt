@@ -20,7 +20,7 @@ private val txTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var txTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.6 — laesst die [JobStartTransactionContractTests]-Suite gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [JobStartTransactionContractTests]-Suite gegen
  * Testcontainers-Postgres laufen. Plan-Akzeptanz:
  * `JobStartTransactionContractTests` gruen gegen Postgres inklusive
  * parallel-commit-Test; Atomicity-Vertrag aus
@@ -29,7 +29,7 @@ private var txTestDataSource: HikariDataSource? = null
  * Pro Test-Aufruf liefert das Fixture-Lambda eine frisch truncated DB
  * mit konsistent verkabelten JdbcIdempotencyStore + JdbcJobStore +
  * JdbcJobStartTransaction (alle ueber denselben JdbcTransactionRunner,
- * alle gegen denselben DataSource). So greift Plan §7.2 atomicity:
+ * alle gegen denselben DataSource). So greift LF-012 / LN-011 / LN-017 / LN-027 atomicity:
  * `commitOnConnection` und `saveOnConnection` teilen sich die TX.
  */
 class JdbcJobStartTransactionContractTest : JobStartTransactionContractTests({

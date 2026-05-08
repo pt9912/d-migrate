@@ -13,7 +13,7 @@ import java.nio.file.Files
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E: Flyway runtime validation against PostgreSQL.
+ * LF-011: Flyway runtime validation against PostgreSQL.
  *
  * Generates Flyway artifacts via the production export path, then runs
  * Flyway.migrate() against a real PostgreSQL container and verifies
@@ -42,7 +42,7 @@ class FlywayRuntimeTest : FunSpec({
     // requires Flyway Teams or Enterprise edition. The open-source Flyway API
     // used here does not support undo, so this test validates only the forward
     // V-migration. The undo artifact's content correctness is covered by the
-    // renderer unit tests in Phase C.
+    // renderer unit tests in LF-011.
 
     test("Flyway applies generated V-migration against PostgreSQL") {
         val tempDir = Files.createTempDirectory("flyway-runtime")

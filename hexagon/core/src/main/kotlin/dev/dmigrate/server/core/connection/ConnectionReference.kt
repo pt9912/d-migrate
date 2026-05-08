@@ -20,13 +20,13 @@ data class ConnectionReference(
     val allowedScopes: Set<String>? = null,
 ) {
     /**
-     * Plan-D §6.4 + §10.10 visibility check. Mirrors the
+     * LF-012 / LN-038 visibility check. Mirrors the
      * `LoaderBackedConnectionReferenceStore.list()` allowlist
      * filter so that `resources/read` and `resources/list` agree
      * on whether a principal may see a connection ref:
      *
      * - Tenant must match the addressed tenant
-     *   (Plan-D §4.2 broadens this from `effectiveTenantId` to
+     *   (LF-012 / LN-038 broadens this from `effectiveTenantId` to
      *   `allowedTenantIds`; the caller passes the addressed
      *   tenant as the override)
      * - When [allowedPrincipalIds] is set: the principal MUST be

@@ -18,7 +18,7 @@ private val jobStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var jobStoreTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.5 — laesst die [JobStoreContractTests]-Suite gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [JobStoreContractTests]-Suite gegen
  * Testcontainers-Postgres laufen. Plan-Akzeptanz:
  * `JobStoreContractTests` gruen gegen Postgres inklusive
  * `IllegalTransition.currentStatus`-Diskriminierung und

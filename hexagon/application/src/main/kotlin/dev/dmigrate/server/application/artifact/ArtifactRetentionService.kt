@@ -10,7 +10,7 @@ import java.time.Instant
 
 /**
  * Deletes expired artifact metadata together with immutable content bytes
- * and releases the Phase-F `STORED_ARTIFACT_BYTES` quota.
+ * and releases the LF-010 / LF-013 / LN-009 / LN-011 `STORED_ARTIFACT_BYTES` quota.
  */
 class ArtifactRetentionService(
     private val artifactStore: ArtifactStore,

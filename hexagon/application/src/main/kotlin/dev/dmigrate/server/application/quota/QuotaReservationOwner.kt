@@ -3,7 +3,7 @@ package dev.dmigrate.server.application.quota
 import java.time.Instant
 
 /**
- * Phase E §7.9 line 1280-1287: persistente Reservation-Owner-
+ * LF-012 / LN-011 / LN-017 / LN-027: persistente Reservation-Owner-
  * Bindung fuer Crash-Recovery zwischen `quota.reserve` und
  * `JobStartTransaction.commit`.
  *
@@ -27,7 +27,7 @@ data class QuotaReservationOwner(
 /**
  * Lifecycle-Status einer persistenten Quota-Reservierung.
  *
- * Uebergaenge (Plan §7.9):
+ * Uebergaenge (LF-012 / LN-011 / LN-017 / LN-027):
  *
  * ```
  * PENDING --(JobStartTransaction.commit)--> COMMITTED

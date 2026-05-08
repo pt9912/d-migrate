@@ -90,7 +90,7 @@ class JobDispatcher(
         worker: JobWorker,
         token: CancellationToken,
         /**
-         * Phase E3 § 3.5 + § 6.2: optionaler [JobDispatchPermit] aus dem
+         * LF-012 / LN-011 / LN-017 / LN-027: optionaler [JobDispatchPermit] aus dem
          * Admission-Gate. Der Dispatcher schliesst ihn im `finally` der
          * Worker-Runnable — also exakt nach `applyTerminal` oder einem
          * Defensive-Catch. Default `null` haelt Bestands-Tests/Wiring
@@ -105,7 +105,7 @@ class JobDispatcher(
         permit: JobDispatchPermit? = null,
     ): CompletableFuture<JobWorkerOutcome> {
         val scheduledAt = clock.instant()
-        // Plan E3 § 3.7 Log-Event #1: am Boundary, BEVOR der Runnable
+        // LF-012 / LN-011 / LN-017 / LN-027 § 3.7 Log-Event #1: am Boundary, BEVOR der Runnable
         // im Pool landet. queueDepth ist die aktuelle Queue-Tiefe vor
         // dem Submit (nicht nach), aus dem Snapshot-Provider.
         log.info(
@@ -220,7 +220,7 @@ class JobDispatcher(
     }
 
     /**
-     * Plan E3 § 3.7 Log-Event #3: terminaler Outcome aus Worker-Sicht.
+     * LF-012 / LN-011 / LN-017 / LN-027 § 3.7 Log-Event #3: terminaler Outcome aus Worker-Sicht.
      * `status` reflektiert die Job-Lifecycle-Variante, `errorCode` nur
      * fuer [JobWorkerOutcome.Failed] (ansonsten leer fuer
      * slf4j-Kompatibilitaet). Wird VON ALLEN runOnce-Pfaden gerufen

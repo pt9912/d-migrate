@@ -12,7 +12,7 @@ package dev.dmigrate.driver.connection
  * [statementTimeoutMs] und [networkTimeoutMs] sind die Cancel-Reaktions-
  * Schranken aus implementation-plan-0.9.6 §4.1: jede atomar-nicht-cancelbare
  * Driver-Operation bricht innerhalb dieses Budgets nach einem Cancel-Signal
- * ab. Default `30000ms` = obere Schranke aus Plan §4.1 (E0.7 Pre-Phase-E-
+ * ab. Default `30000ms` = obere Schranke aus LF-012 / LN-011 / LN-017 / LN-027 (pre-server-state-
  * Konfiguration). Wert `0` deaktiviert das jeweilige Timeout (Test-/
  * Bench-Szenarien); negative Werte sind Konstruktionsfehler.
  */

@@ -18,7 +18,7 @@ private val ownerStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var ownerStoreTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.7 — laesst die [QuotaReservationOwnerStoreContractTests]-
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [QuotaReservationOwnerStoreContractTests]-
  * Suite gegen Testcontainers-Postgres laufen. Plan-Akzeptanz (b):
  * `QuotaReservationOwnerStoreContractTests` gruen gegen Postgres
  * inklusive parallel-markX-CAS und parallel-register-PK-Verletzung.

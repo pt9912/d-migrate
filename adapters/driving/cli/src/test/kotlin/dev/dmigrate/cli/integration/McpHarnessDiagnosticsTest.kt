@@ -11,7 +11,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(C): proves the harness diagnostic dump per
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): proves the harness diagnostic dump per
  * LF-012 / LN-027 / LN-028 / LN-038("kompaktes
  * Diagnosepaket pro Transport bei Fehlschlag") works end-to-end.
  *

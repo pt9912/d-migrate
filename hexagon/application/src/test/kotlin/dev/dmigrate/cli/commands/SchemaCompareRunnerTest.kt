@@ -361,7 +361,7 @@ class SchemaCompareRunnerTest : FunSpec({
 
     // ── Reverse marker normalization ────────────
 
-    // ── Cancel-Token (E.7 (5/6) — Compare-Cancel-Gate Followup) ──
+    // ── Cancel-Token (LF-012 / LN-011 / LN-017 / LN-027 (5/6) — Compare-Cancel-Gate Followup) ──
 
     test("pre-cancelled token wirft OperationCancelledException vor parse") {
         val h = Harness()

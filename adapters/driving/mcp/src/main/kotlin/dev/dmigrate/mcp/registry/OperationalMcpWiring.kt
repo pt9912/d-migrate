@@ -132,7 +132,7 @@ data class OperationalMcpWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 (E3.5): Executor + Admission + Lifecycle als
+     * LF-012 / LN-011 / LN-017 / LN-027: Executor + Admission + Lifecycle als
      * konsistent verkabeltes Tripel. Default ist `Sync` — gleicher
      * Bestands-Effekt wie `SyncExecutor` plus no-op Admission. Production-
      * Wiring ueberschreibt mit `JobExecutorFactory.create(Async(...))`;
@@ -141,7 +141,7 @@ data class OperationalMcpWiring(
      */
     val executorBundle: JobExecutorBundle = JobExecutorFactory.create(JobExecutorConfig.SYNC_DEFAULT),
     /**
-     * Backward-compat-Shortcut: zeigte vor E3.5 auf `SyncExecutor`. Heute
+     * Backward-compat-Shortcut: zeigte vor LF-012 / LN-011 / LN-017 / LN-027 auf `SyncExecutor`. Heute
      * abgeleitet aus [executorBundle], damit Bestands-Caller
      * (OperationalMcpWiring(workerExecutor = ...)) weiter funktionieren — ein
      * expliziter Override hier gewinnt gegenueber `executorBundle.executor`.

@@ -7,7 +7,7 @@ import java.nio.file.Path
 import java.util.Locale
 
 /**
- * Phase E2 server-state configuration for `mcp serve`.
+ * LF-012 / LN-011 / LN-017 / LN-027 server-state configuration for `mcp serve`.
  *
  * Resolution order per field: `D_MIGRATE_SERVER_STATE_*` env override,
  * then `server.state.*` from the effective YAML config. If neither

@@ -85,7 +85,7 @@ class JobRecordJsonTest : FunSpec({
 
     test("JSON contains tenantId/ownerPrincipalId at the JobRecord level — list-filter relevant") {
         val json = JobRecordJson.toJson(sample())
-        // Plan § 6.7 list()-Pfad filtert via managed_job->>'ownerPrincipalId'.
+        // LF-012 / LN-011 / LN-017 / LN-027 list()-Pfad filtert via managed_job->>'ownerPrincipalId'.
         // Pin: das Feld liegt oben (NICHT verschachtelt im managedJob).
         json shouldContain "\"ownerPrincipalId\":\"alice\""
         json shouldContain "\"tenantId\":\"acme\""

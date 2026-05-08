@@ -48,7 +48,7 @@ internal object TransportNormalisation {
         }
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 E2: walks [node] recursively and replaces every string
+     * LF-012 / LN-027 / LN-028 / LN-038 LF-012 / LN-011 / LN-017 / LN-027: walks [node] recursively and replaces every string
      * value that matches a LF-012 / LN-038 resource-URI shape with its
      * normalised form (dynamic id → `<masked>`). Used for transport-
      * neutral equality of payloads that carry per-call dynamic ids in

@@ -132,7 +132,7 @@ class DataImportRunner(
         return try {
             executeWithCancel(request, cancellationToken)
         } catch (_: OperationCancelledException) {
-            // Plan §4.5 — Cancel maps to CLI exit 130, never to the generic
+            // LF-008 / LF-009 / LF-013 — Cancel maps to CLI exit 130, never to the generic
             // 5 (import failure) path that the inner catch-Throwable produces.
             CANCELLED_EXIT_CODE
         }

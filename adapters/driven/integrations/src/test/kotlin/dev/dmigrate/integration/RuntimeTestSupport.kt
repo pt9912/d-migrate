@@ -13,7 +13,7 @@ import java.nio.file.Path
 import kotlin.io.path.writeText
 
 /**
- * Shared infrastructure for Phase E runtime-validation tests.
+ * Shared infrastructure for LF-007 runtime-validation tests.
  * Generates export artifacts via the production [ToolExportRunner] path.
  */
 internal object RuntimeTestSupport {

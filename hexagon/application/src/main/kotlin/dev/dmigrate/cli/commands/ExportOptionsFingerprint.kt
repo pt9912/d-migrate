@@ -17,7 +17,7 @@ import java.security.MessageDigest
  *   (`CheckpointManifest.CURRENT_SCHEMA_VERSION`).
  * - Die Tabellenliste geht **in Reihenfolge** in den Hash ein
  *   (`--tables a,b` erzeugt einen anderen Hash als `--tables b,a`),
- *   weil der Ueberplan §4.3 „Tabellenmenge **und** Reihenfolge" als
+     *   weil LF-008 / LF-009 / LF-013 „Tabellenmenge **und** Reihenfolge" als
  *   Kompatibilitaetskriterium verlangt.
  * - `null`-Werte werden als eigener Marker (`<null>`) kodiert, damit
  *   `filter = null` und `filter = "<null>"` nicht dieselbe Signatur
@@ -87,7 +87,7 @@ object ExportOptionsFingerprint {
          * Ein Wechsel des Primaerschluessels invalidiert den Resume-
          * Marker (Resume stuetzt sich auf den PK als Tie-Breaker). Leere
          * PK-Listen sind erlaubt: die Tabelle hat dann keinen
-         * Tie-Breaker und kann ohnehin nur C.1-granular resumen.
+         * Tie-Breaker und kann ohnehin nur LF-008 / LF-009 / LF-013-granular resumen.
          *
          * Fuer Call-sites, die noch keine PK-Kenntnis haben, bleibt
          * der Default `emptyMap()` — der Fingerprint bleibt dann

@@ -13,7 +13,7 @@ import kotlin.io.path.writeText
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E: Django runtime validation against SQLite.
+ * LF-011: Django runtime validation against SQLite.
  *
  * Generates a Django RunSQL migration via the production export path,
  * creates a minimal Django project, runs `python manage.py migrate`,

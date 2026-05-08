@@ -5,7 +5,7 @@ import dev.dmigrate.text.UnicodeTextService
 
 /**
  * RFC 8785 (JCS) compliant canonicalization for the [JsonValue] AST.
- * Phase A restriction: numbers are integer-only ([JsonValue.Num.value]
+ * LF-012 / LN-038 restriction: numbers are integer-only ([JsonValue.Num.value]
  * is `Long`); floats and big-integers cannot enter this canonicalizer
  * because they have no representation in the AST.
  *

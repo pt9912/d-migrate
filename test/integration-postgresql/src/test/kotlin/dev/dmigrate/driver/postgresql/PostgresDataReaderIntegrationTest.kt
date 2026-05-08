@@ -23,7 +23,7 @@ private val IntegrationTag = NamedTag("integration")
  * (build.gradle.kts root config). Run with `./gradlew test -PintegrationTests`
  * or via `.github/workflows/integration.yml`.
  *
- * Verifies (Plan §4 Phase B Schritt 12 + 13):
+ * Verifies (LF-008):
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
  * - Empty-table contract from §6.17 (one chunk with columns + emptyList rows)
  * - Multi-chunk streaming with chunkSize splitting
@@ -49,7 +49,7 @@ class PostgresDataReaderIntegrationTest : FunSpec({
         container.start()
         // Treiber-Bootstrap für die Test-JVM — registriert JdbcUrlBuilder,
         // DataReader und TableLister auf einmal in den globalen Registries.
-        // In Phase E wird das in dev.dmigrate.cli.Main zentral gemacht.
+        // LF-012 / LN-011 / LN-017 / LN-027 wird das in dev.dmigrate.cli.Main zentral gemacht.
         DatabaseDriverRegistry.register(PostgresDriver())
 
         val cfg = ConnectionConfig(

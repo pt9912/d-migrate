@@ -84,7 +84,7 @@ class JobDispatcherTest : FunSpec({
     }
 
     test("OperationCancelledException RUNNER_TIMEOUT → Failed(OPERATION_TIMEOUT), kein Cancelled") {
-        // Plan §7.7: RUNNER_TIMEOUT-Source darf NICHT als generischer
+        // LF-012 / LN-011 / LN-017 / LN-027: RUNNER_TIMEOUT-Source darf NICHT als generischer
         // Cancel gemapped werden; Job-Status wird FAILED mit
         // error.code=OPERATION_TIMEOUT.
         val store = seedQueued()
@@ -125,7 +125,7 @@ class JobDispatcherTest : FunSpec({
         outcome.reason shouldBe "user-cancel"
     }
 
-    test("Cancel-Reason wird SCRUBBED in cancelRequest.requestedReason projiziert (Plan §7.7)") {
+    test("Cancel-Reason wird SCRUBBED in cancelRequest.requestedReason projiziert (LF-012 / LN-011 / LN-017 / LN-027)") {
         val store = seedQueued()
         val dispatcher = JobDispatcher(store, clock = clock)
         val record = store.findById(tenant, "j1")!!
@@ -141,7 +141,7 @@ class JobDispatcherTest : FunSpec({
         final.managedJob.cancelRequest.requestedReason shouldBe "leak Bearer *** token"
     }
 
-    test("Cancel-Reason ueberschreibt NICHT einen schon durabel gesetzten requestedReason (Plan §7.2)") {
+    test("Cancel-Reason ueberschreibt NICHT einen schon durabel gesetzten requestedReason (LF-012 / LN-011 / LN-017 / LN-027)") {
         val store = InMemoryJobStore()
         store.save(
             Fixtures.jobRecord("j-pre-cancelled").copy(
@@ -253,10 +253,10 @@ class JobDispatcherTest : FunSpec({
         outcome.errorCode shouldBe JobDispatcher.REASON_DISPATCH_NOT_FOUND
     }
 
-    // ── Phase E3 § 3.6 + § 6.3: cancel-while-queued ──
+    // ── LF-012 / LN-011 / LN-017 / LN-027: cancel-while-queued ──
 
     test("Cancel-while-queued: Job auf CANCELLED → kein Worker-Aufruf, kein applyTerminal-Overwrite") {
-        // Plan E3 § 3.6: JobCancelService.cancelQueuedJob hat den Job schon
+        // LF-012 / LN-011 / LN-017 / LN-027: JobCancelService.cancelQueuedJob hat den Job schon
         // terminalisiert (status=CANCELLED, signalAcked=true, ackedAt,
         // requestedReason). Der Dispatcher sieht IllegalTransition(CANCELLED)
         // und skippt den Worker, OHNE die Cancel-Metadaten zu ueberschreiben.
@@ -301,7 +301,7 @@ class JobDispatcherTest : FunSpec({
     }
 
     test("Cancel-while-queued: kein Doppel-Quota-Release durch dispatcher") {
-        // Plan E3 § 3.6 + § 7.9 line 1291-1292: queued-cancel released
+        // LF-012 / LN-011 / LN-017 / LN-027 + § 7.9 line 1291-1292: queued-cancel released
         // Quota direkt im JobCancelService. Der Dispatcher darf NICHT
         // erneut releasen, sonst entsteht ein Doppel-Decrement.
         val cancelledRecord = Fixtures.jobRecord("j-q").copy(
@@ -369,7 +369,7 @@ class JobDispatcherTest : FunSpec({
         executorThread shouldBe callerThread
     }
 
-    // ── Phase E3 § 3.5 + § 6.2: Permit-Release im Dispatcher-finally ─
+    // ── LF-012 / LN-011 / LN-017 / LN-027: Permit-Release im Dispatcher-finally ─
 
     test("dispatch(...,permit) schliesst Permit nach Worker-Erfolg") {
         val store = seedQueued("j-permit-ok")
@@ -407,9 +407,9 @@ class JobDispatcherTest : FunSpec({
         closeCount.get() shouldBe 1
     }
 
-    // ── Phase E3 § 3.7 (E3.6): Observability-Log-Events ─────────────
+    // ── LF-012 / LN-011 / LN-017 / LN-027): Observability-Log-Events ─────────────
 
-    test("dispatch emittiert scheduled + started + finished mit Plan-§-3.7-Feldern") {
+    test("dispatch emittiert scheduled + started + finished mit LF-012 / LN-011 / LN-017 / LN-027-Feldern") {
         val store = seedQueued("j-obs")
         val dispatcher = JobDispatcher(
             jobStore = store,
@@ -458,7 +458,7 @@ class JobDispatcherTest : FunSpec({
     }
 
     test("Cancel-while-queued: scheduled + finished, kein started-Event") {
-        // Seed direkt als CANCELLED (analog E3.4-Test).
+        // Seed direkt als CANCELLED (analog LF-012 / LN-011 / LN-017 / LN-027-Test).
         val cancelledRecord = Fixtures.jobRecord("j-cancelled-obs").copy(
             managedJob = Fixtures.jobRecord("j-cancelled-obs").managedJob.copy(
                 status = JobStatus.CANCELLED,

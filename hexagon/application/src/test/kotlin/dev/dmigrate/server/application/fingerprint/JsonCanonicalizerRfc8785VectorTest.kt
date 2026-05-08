@@ -5,7 +5,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
 /**
- * Test vectors derived from RFC 8785 (JCS) — adapted to the Phase A
+ * Test vectors derived from RFC 8785 (JCS) — adapted to the LF-012 / LN-038
  * integer-only restriction. Each vector exercises one normative
  * requirement: lexicographic key sort by UTF-16 code unit, control
  * character escaping (lowercase hex), and NFC normalization of strings

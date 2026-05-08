@@ -10,7 +10,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
 
 /**
- * Phase F § 4.2 (F.3 1/4) — Pin't Determinismus, Field-Isolation und
+ * LF-010 / LF-013 / LN-009 / LN-011— Pin't Determinismus, Field-Isolation und
  * targetTable-Optionalitaet des Approval-Fingerprints.
  */
 class UploadInitApprovalFingerprintTest : FunSpec({
@@ -93,7 +93,7 @@ class UploadInitApprovalFingerprintTest : FunSpec({
     }
 
     test("targetTable=null vs targetTable=\"\" sind verschiedene Fingerprints") {
-        // Plan § 5.1: targetTable ist optional; ein leerer String ist
+        // LF-010 / LF-013 / LN-009 / LN-011: targetTable ist optional; ein leerer String ist
         // kein gueltiger CLI-Identifier. Trotzdem soll der Fingerprint
         // den semantischen Unterschied "Feld nicht gesetzt" vs "Feld
         // explizit leerstring" pinnen, damit Caller nicht stillschweigend

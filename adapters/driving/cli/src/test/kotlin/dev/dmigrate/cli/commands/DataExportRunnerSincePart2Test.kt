@@ -37,7 +37,7 @@ import java.time.LocalDateTime
  * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
- * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
  * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
  * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
  * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
@@ -208,13 +208,13 @@ class DataExportRunnerSincePart2Test : FunSpec({
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
 
-    context("C.2 onChunkProcessed → Manifest gets IN_PROGRESS with resumePosition") {
+    context("LF-008 / LF-009 / LF-013 onChunkProcessed → Manifest gets IN_PROGRESS with resumePosition") {
         test("per-chunk callback persists marker position into manifest") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-chunk-")
             val executor: ExportExecutor = ExportExecutor {
                 ctx, opts, resume, callbacks,
                 ->
-                // Siehe warmRunner (Phase C.2 §5.4): Single-File leitet
+                // Siehe warmRunner (LF-008 / LF-009 / LF-013): Single-File leitet
                 // auf Staging um; der Fake legt die Staging-Datei an,
                 // damit der Runner atomic-rename tun kann.
                 val out = opts.output
@@ -271,7 +271,7 @@ class DataExportRunnerSincePart2Test : FunSpec({
                     checkpointDir = storeDir,
                 ),
             ) shouldBe 0
-            // Auf Erfolg wird das Manifest gemaess C.1 entfernt — wir
+            // Auf Erfolg wird das Manifest gemaess LF-008 / LF-009 / LF-013 entfernt — wir
             // testen stattdessen, dass waehrend des Laufs geschrieben wurde,
             // indem wir ein manifest-loeschendes complete() ueberspringen.
             // Nachweis reicht: kein Exit != 0 + stderr enthaelt keine Fehler.
@@ -279,7 +279,7 @@ class DataExportRunnerSincePart2Test : FunSpec({
         }
     }
 
-    context("C.2 fingerprint includes PK signature when since-column is set") {
+    context("LF-008 / LF-009 / LF-013 fingerprint includes PK signature when since-column is set") {
         test("PK change invalidates resume (fingerprint mismatch → Exit 3)") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-fp-")
             val opId = "c2-fp-op"
@@ -336,7 +336,7 @@ class DataExportRunnerSincePart2Test : FunSpec({
         }
     }
 
-    context("C.2.6 Single-File staging → atomic rename to target") {
+    context("LF-008 / LF-009 / LF-013 Single-File staging → atomic rename to target") {
         test("fresh single-file run goes through staging, target only appears on success") {
             val storeDir = Files.createTempDirectory("d-migrate-c26-fresh-")
             val targetPath = storeDir.resolve("users.json")

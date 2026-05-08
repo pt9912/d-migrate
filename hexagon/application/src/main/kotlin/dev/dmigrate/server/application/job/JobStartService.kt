@@ -11,8 +11,7 @@ import dev.dmigrate.server.ports.WorkerHandleRegistry
 import java.time.Instant
 
 /**
- * Phase E §5.1 / §7.2 Job-Start-Service.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Orchestriert die gemeinsame Start-Pipeline für die drei Read-Start-Tools
  * (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`):
  *
@@ -21,7 +20,7 @@ import java.time.Instant
  *    Variante über [jobBuilder] erzeugen, dann atomar via
  *    [JobStartTransaction.commit] persistieren.
  * 3. `WorkerHandleRegistry.register(jobId, source)` für späteres
- *    Cancel-Signal über [WorkerHandleRegistry.signal] (AP E.8).
+ *    Cancel-Signal über [WorkerHandleRegistry.signal] (LF-012 / LN-011 / LN-017 / LN-027).
  * 4. Wenn bereits `Committed`: deduplizierte Antwort mit existierendem
  *    `jobId` aus `IdempotencyReserveOutcome.Committed.resultRef`.
  *
@@ -30,18 +29,18 @@ import java.time.Instant
  * [JobStartOutcome.Pending], [JobStartOutcome.AwaitingApproval],
  * [JobStartOutcome.Denied] und [JobStartOutcome.Conflict] zurück. Die
  * konkrete Tool-/MCP-Mapping-Logik (Wartezeiten, Approval-Token-
- * Challenges, Conflict-Response) lebt in den Tool-Handlern aus AP E.6.
+ * Challenges, Conflict-Response) lebt in den Tool-Handlern aus LF-012 / LN-011 / LN-017 / LN-027.
  *
- * Phase E §5.1 nicht in dieser Klasse:
+ * LF-012 / LN-011 / LN-017 / LN-027:
  *
- * - Policy-Service-Aufruf (AP E.4) — der Caller (Tool-Handler) muss
+ * - Policy-Service-Aufruf (LF-012 / LN-011 / LN-017 / LN-027) — der Caller (Tool-Handler) muss
  *   `claimApproved` anrufen, bevor er `start(...)` ruft, falls eine
  *   Approval-Challenge offen war.
- * - Quota-/Rate-Limit-Pruefung (AP E.9) — Caller-Verantwortung.
- * - Timeout-Budget (AP E.9) — Caller-Verantwortung.
+ * - Quota-/Rate-Limit-Pruefung (LF-012 / LN-011 / LN-017 / LN-027) — Caller-Verantwortung.
+ * - Timeout-Budget (LF-012 / LN-011 / LN-017 / LN-027) — Caller-Verantwortung.
  *
  * Design: kleine Service-Oberfläche, keine versteckten Side-Effects.
- * Die Phase-E-Tool-Handler (AP E.6) komponieren `JobStartService` mit
+ * Die LF-012 / LN-011 / LN-017 / LN-027-Tool-Handler komponieren `JobStartService` mit
  * `PolicyService`, `QuotaService` und `PayloadFingerprintService`.
  */
 class JobStartService(
@@ -109,8 +108,7 @@ class JobStartService(
 }
 
 /**
- * Phase E §5.1 outcome of [JobStartService.start]. Tool-Handler aus AP E.6
- * mappen jeden Branch auf den passenden MCP-Response (jobId,
+ * LF-012 / LN-011 / LN-017 / LN-027 * mappen jeden Branch auf den passenden MCP-Response (jobId,
  * `IDEMPOTENCY_CONFLICT`, `POLICY_REQUIRED`, `RATE_LIMITED`,
  * `OPERATION_TIMEOUT`).
  */
@@ -136,7 +134,7 @@ sealed interface JobStartOutcome {
     data class Denied(val reason: String, val expiresAt: Instant) : JobStartOutcome
 
     /**
-     * Endgültige, nicht-retrybare Reservierung ohne Job (Plan §5.2).
+     * Endgültige, nicht-retrybare Reservierung ohne Job (LF-012 / LN-011 / LN-017 / LN-027).
      * Identische Retries liefern deterministisch dieselbe Antwort bis
      * [expiresAt].
      */
@@ -146,7 +144,7 @@ sealed interface JobStartOutcome {
     data class Conflict(val existingFingerprint: String) : JobStartOutcome
 
     /**
-     * Phase E §7.9 Rate-Limit-Branch (Review-Fix Blocker #2): aktive
+     * LF-012 / LN-011 / LN-017 / LN-027: aktive
      * Jobquote ueberschritten. ApprovedRetryService produziert das, wenn
      * `quota.reserve` vor `JobStartTransaction.commit` ablehnt.
      * JobStartService selbst erzeugt diesen Branch nicht — Quota-
@@ -157,7 +155,7 @@ sealed interface JobStartOutcome {
         val current: Long,
         val limit: Long,
         /**
-         * Phase E3 § 3.5 / § 10 Q5: Diskriminator zwischen
+         * LF-012 / LN-011 / LN-017 / LN-027: Diskriminator zwischen
          * Tenant-/Caller-Quota (`ACTIVE_JOBS_QUOTA`, Default — Bestands-
          * Pfad) und Executor-Pool-Saturation (`EXECUTOR_SATURATED`).
          * Wire-Caller sehen das Feld immer in den `RATE_LIMITED`-Details.

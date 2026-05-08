@@ -23,7 +23,7 @@ private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data export` gegen einen realen PostgreSQL-
- * Container (Testcontainers). Plan §4 Phase F Schritt 28.
+ * Container (Testcontainers). LF-008 / LF-009 / LF-013.
  *
  * Anders als die SQLite-CLI-Tests in [CliDataExportTest] gehen diese Tests
  * den vollständigen Pfad inkl. echter PostgreSQL-spezifischer Datentypen,

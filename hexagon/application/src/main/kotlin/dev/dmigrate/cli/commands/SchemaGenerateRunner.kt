@@ -47,7 +47,7 @@ data class SchemaGenerateRequest(
  * are constructor-injected so every branch is unit-testable without a
  * CLI framework, filesystem, or real DDL generator.
  *
- * Exit codes (Plan §6.10):
+ * Exit codes (LF-008 / LF-009 / LF-013 / LN-012):
  * - 0 success
  * - 2 invalid --target, invalid spatial profile, or invalid --split combination
  * - 3 validation failure

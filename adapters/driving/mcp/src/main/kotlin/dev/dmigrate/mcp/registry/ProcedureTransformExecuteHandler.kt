@@ -612,7 +612,7 @@ internal class ProcedureTransformExecuteHandler(
                 policyIntent = "ai.execute.$TOOL_NAME",
                 // LF-012 / LN-011 / LN-017 / LN-027 Z. 794-799: Source-Refs werden aus der
                 // Plan-Provenance uebernommen (NICHT aus dem
-                // Execute-Payload), plus der Plan-Ref selbst.
+                // Execute-Payload), plus der LF-012 / LN-011 / LN-017 / LN-027 Ref selbst.
                 sourceRefs = plan.planSourceRefs + plan.planResourceUri,
                 targetDialect = parsed.targetDialect,
                 provenance = AiArtifactProvenance.Execute(

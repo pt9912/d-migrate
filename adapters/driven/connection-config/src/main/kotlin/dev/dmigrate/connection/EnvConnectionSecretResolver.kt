@@ -6,14 +6,14 @@ import dev.dmigrate.server.ports.ConnectionSecretResolver
 import dev.dmigrate.server.ports.ResolvedConnection
 
 /**
- * Plan-D §8.1 default [ConnectionSecretResolver] that expands the
+ * LF-012 / LN-038 default [ConnectionSecretResolver] that expands the
  * `env:VAR_NAME` provider scheme by reading from the process
  * environment.
  *
  * The resolver expects [ConnectionReference.credentialRef] in the
  * shape `"env:<VAR_NAME>"`. Anything else surfaces as
  * [ResolvedConnection.Failure] with [ResolvedConnection.REASON_PROVIDER_MISSING]
- * — Plan-D's fail-closed contract: a connection record without
+ * — LF-012 / LN-038 fail-closed contract: a connection record without
  * a wired secret provider MUST NOT silently degrade to a no-secret
  * connection.
  *

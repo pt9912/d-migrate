@@ -64,7 +64,7 @@ class ConfiguredPolicyServiceTest : FunSpec({
     }
 
     test("zwei Challenges erzeugen verschiedene approvalRequestIds") {
-        // Plan §5.5: Grant fuer alte/erneuerte Challenge ist ungueltig.
+        // LF-012 / LN-011 / LN-017 / LN-027: Grant fuer alte/erneuerte Challenge ist ungueltig.
         // Jede Entscheidung MUSS ihre eigene Id bekommen.
         val svc = service(
             listOf(PolicyRule(effect = PolicyEffect.Challenge(setOf("a")))),

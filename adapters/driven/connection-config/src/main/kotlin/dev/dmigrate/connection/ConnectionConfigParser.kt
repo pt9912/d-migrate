@@ -6,7 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Plan-D §8.2 + §10.10 adapter-neutral parser for the **Phase-C
+ * LF-012 / LN-038 adapter-neutral parser for the **legacy
  * legacy** YAML format that the CLI's
  * `database.connections: { name: "jdbc-url-mit-${ENV}" }` shape
  * uses. Lives in `adapters/driven/connection-config` so both the
@@ -21,11 +21,11 @@ import java.nio.file.Path
  * authoritative runner path that needs the resolved URL).
  *
  * Distinct from [YamlConnectionReferenceLoader] which parses the
- * **Phase-D** map-form (with `displayName` / `dialectId` /
+ * **LF-012 / LN-038** map-form (with `displayName` / `dialectId` /
  * `sensitivity` / `credentialRef`) and emits
- * `ConnectionReference` records. Phase-C deployments that still
+ * `ConnectionReference` records. legacy deployments that still
  * carry bare-URL connections continue to work via this legacy
- * parser; Phase-D deployments use the richer schema.
+ * parser; LF-012 / LN-038 deployments use the richer schema.
  */
 object ConnectionConfigParser {
 
@@ -45,10 +45,10 @@ object ConnectionConfigParser {
                 if (value is String) {
                     put(name, value)
                 }
-                // Object-form entries belong to the Phase-D
+                // Object-form entries belong to the LF-012 / LN-038
                 // `YamlConnectionReferenceLoader`; the legacy
                 // parser ignores them so a YAML can carry both
-                // shapes during the Phase-C → Phase-D migration.
+                // shapes during the legacy → LF-012 / LN-038 migration.
             }
         }
     }
@@ -89,7 +89,7 @@ object ConnectionConfigParser {
 }
 
 /**
- * Thrown when the legacy Phase-C YAML cannot be parsed or the
+ * Thrown when the legacy legacy YAML cannot be parsed or the
  * structure violates the documented format. The CLI-adapter's
  * `NamedConnectionResolver` wraps this into its
  * `ConfigResolveException` so the operator-facing CLI exit-code

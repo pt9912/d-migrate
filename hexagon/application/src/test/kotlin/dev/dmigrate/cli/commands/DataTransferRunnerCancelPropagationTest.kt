@@ -23,9 +23,9 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase E0.3 propagation guard: a token passed to [DataTransferRunner.execute]
+ * LF-012 / LN-011 / LN-017 / LN-027 propagation guard: a token passed to [DataTransferRunner.execute]
  * must reach the [TransferExecutor] via [TransferExecutionContext.cancellationToken].
- * Phase E0.5 will use the same field at reader/writer boundaries.
+ * LF-012 / LN-011 / LN-017 / LN-027 will use the same field at reader/writer boundaries.
  */
 class DataTransferRunnerCancelPropagationTest : FunSpec({
 

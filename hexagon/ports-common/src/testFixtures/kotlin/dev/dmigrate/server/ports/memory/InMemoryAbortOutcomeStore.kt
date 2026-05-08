@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * LF-010 / LF-013 / LN-009 / LN-011 — In-Memory-Backing fuer
- * [AbortOutcomeStore] hinter dem Test/Dev-Wiring der Phase-F-
+ * [AbortOutcomeStore] hinter dem Test/Dev-Wiring der LF-010 / LF-013 / LN-009 / LN-011-
  * Adapter. Atomare Save-Semantik via `ConcurrentHashMap.compute`
  * gewaehrleistet, dass parallele `(resultRef, fingerprint)`-Requests
  * deterministisch in `Stored | AlreadyStored | Conflict` aufloesen.

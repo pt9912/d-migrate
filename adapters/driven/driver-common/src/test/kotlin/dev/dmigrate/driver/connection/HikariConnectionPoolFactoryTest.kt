@@ -198,7 +198,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         cfg.params.keys.toList() shouldContainExactly listOf("a", "b", "c")
     }
 
-    // ─── E0.7.2: connectionInitSqlFor ──────────────────────────
+    // ─── LF-012 / LN-011 / LN-017 / LN-027: connectionInitSqlFor ──────────────────────────
 
     test("connectionInitSqlFor builds PostgreSQL statement_timeout SQL") {
         HikariConnectionPoolFactory.connectionInitSqlFor(
@@ -261,7 +261,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         }
     }
 
-    // ─── E0.7.3: timeoutSecondsOf rounding ─────────────────────
+    // ─── LF-012 / LN-011 / LN-017 / LN-027: timeoutSecondsOf rounding ─────────────────────
 
     test("timeoutSecondsOf rounds sub-second values up — keeps 500ms above zero") {
         HikariConnectionPoolFactory.timeoutSecondsOf(0) shouldBe 0
@@ -274,7 +274,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         HikariConnectionPoolFactory.timeoutSecondsOf(30_000) shouldBe 30
     }
 
-    // ─── E0.7.3: borrow returns a TimeoutDecoratedConnection ──
+    // ─── LF-012 / LN-011 / LN-017 / LN-027: borrow returns a TimeoutDecoratedConnection ──
 
     test("borrow returns a connection that applies queryTimeout to created statements") {
         // statementTimeoutMs = 4500 → ceil(4.5) = 5 seconds
@@ -317,7 +317,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
     test("create with statementTimeoutMs == 0 does not set our PRAGMA — driver default applies") {
         // Compare against the value we would get if init-SQL ran. With
         // `statementTimeoutMs = 0` the factory must skip both the PRAGMA
-        // (E0.7.2) and the per-statement setQueryTimeout (E0.7.3 decorator).
+        // (JDBC init timeout) and the per-statement setQueryTimeout decorator.
         // Pick `ourValue` as a multiple of 1000 so the decorator's
         // ceil(ms/1000)*1000 doesn't drift the assertion (xerial maps
         // setQueryTimeout(s) → busy_timeout = s*1000).

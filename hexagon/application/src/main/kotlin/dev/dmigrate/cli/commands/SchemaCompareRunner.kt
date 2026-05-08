@@ -52,12 +52,12 @@ class SchemaCompareRunner(
         request: SchemaCompareRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
     ): Int {
-        // Phase E §7.7 Compare-Cancel-Gate (E.1-Followup): Cancel-Checkpoints
+        // LF-012 / LN-011 / LN-017 / LN-027: Cancel-Checkpoints
         // an den Materialisierungs-, Diff- und Publish-Grenzen. Zwischen
         // den Phasen kann der Aufrufer (CLI oder Job-Worker) den Token
         // signalisieren; eine geworfene OperationCancelledException
         // wandert ueber den catch-all-Pfad ohne Generic-Mapping
-        // (Plan §4.5).
+        // (LF-008 / LF-009 / LF-013).
         cancellationToken.throwIfCancellationRequested()
         // 1. Parse operands
         val sourceOp: CompareOperand

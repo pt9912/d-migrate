@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * Vertraege fuer [JobStartTransaction]-Implementoren.
  *
  * Jede Implementation muss diese Suite durchlaufen, sonst ist der
- * Job-Lifecycle nicht wie in Plan §7.2 spezifiziert sichtbar:
+ * Job-Lifecycle nicht wie in LF-012 / LN-011 / LN-017 / LN-027 spezifiziert sichtbar:
  * `IdempotencyStore.commit` und `JobStore.save` MUESSEN gemeinsam
  * sichtbar werden.
  *
@@ -166,7 +166,7 @@ abstract class JobStartTransactionContractTests(
  * Fixture-Tripel fuer [JobStartTransactionContractTests]. Implementoren
  * konstruieren konsistent verkabelte Stores + Transaction (Production-
  * Adapter teilen typischerweise denselben DB-Konnektor, damit
- * Plan §7.2-Atomicity greift).
+ * LF-012 / LN-011 / LN-017 / LN-027-Atomicity greift).
  */
 data class JobStartTransactionFixture(
     val idempotencyStore: IdempotencyStore,

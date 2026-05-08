@@ -37,7 +37,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerExitCodeTest : FunSpec({
 
@@ -545,7 +545,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
     // Resume-Vertrag aktiv um.
     // ────────────────────────────────────────────────────────────
 
-    test("Phase A §4.4: --resume mit stdin-Quelle endet mit Exit 2") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: --resume mit stdin-Quelle endet mit Exit 2") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(
@@ -556,7 +556,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
         stderr.joined() shouldContain "stdin"
     }
 
-    test("Phase D.1 §4.8: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(request(resume = "some-op-id"))
@@ -564,7 +564,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
         stderr.joined() shouldContain "checkpoint directory"
     }
 
-    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning, Happy-Path)") {
+    test("LF-006 / LF-007: leeres --resume wird als abwesend behandelt (kein Warning, Happy-Path)") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         runner.execute(request(resume = ""))

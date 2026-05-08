@@ -177,7 +177,7 @@ class AiMcpRegistriesTest : FunSpec({
     }
 
     test("LF-017 / LF-024 / LN-030 / LN-031: testdata_execute ist produktiv (kein UnsupportedToolHandler mehr)") {
-        // LF-017 / LF-024 / LN-030 / LN-031 Carve-out wurde durch LF-017 / LF-024 / LN-030 / LN-031 geschlossen.
+        // LF-017 / LF-024 / LN-030 / LN-031: Carve-out wurde geschlossen.
         // Der Handler ist jetzt produktiv; ein Aufruf ohne approvalKey
         // muss ein VALIDATION_ERROR mit `approvalKey`-Feld liefern, nicht
         // mehr UNSUPPORTED_TOOL_OPERATION.

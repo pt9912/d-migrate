@@ -9,11 +9,10 @@ import dev.dmigrate.server.ports.JobWorker
 import dev.dmigrate.server.ports.JobWorkerOutcome
 
 /**
- * Phase E §7.7 `data_profile_start`-Worker.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Symmetrisch zu [SchemaReverseJobWorker]: drei Schritte (Materialize
  * → Profile → Publish) mit Cancel-Checkpoints zwischen den Phasen,
- * Token-Propagation in den Profiling-Pfad fuer interne E0-Checkpoints,
+ * Token-Propagation in den Profiling-Pfad fuer interne Cancel-Checkpoints,
  * unverpackte Exception-Propagation an den Dispatcher.
  *
  * Eingabe-Beschraenkungen wie `tables`, `schema` oder `topN` sind

@@ -7,17 +7,17 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import java.time.Instant
 
 /**
- * Phase G § 5.4 (G.6.b) — durable Provenance-Metadaten für ein
+ * LF-017 / LF-024 / LN-030 / LN-031— durable Provenance-Metadaten für ein
  * KI-Artefakt.
  *
- * Plan §5.4 Z. 739-747 listet die Pflichtfelder; dieser Record
+ * LF-017 / LF-024 / LN-030 / LN-031 listet die Pflichtfelder; dieser Record
  * spiegelt sie 1:1 wider plus das passende
  * [AiArtifactProvenance]-Sub-Pattern. Wird zusammen mit dem
  * `ArtifactRecord` (Core-`ArtifactKind.OTHER` plus
  * `wireArtifactKind`-Marker) im Artefakt-Publish-Schritt
- * geschrieben (G.6.d/e/f).
+ * geschrieben (LF-017 / LF-024 / LN-030 / LN-031/f).
  *
- * Plan §5.4 Z. 748-752 Store-Vertrag:
+ * LF-017 / LF-024 / LN-030 / LN-031 Store-Vertrag:
  *
  * - `save` ist atomar zusammen mit dem Artefakt-Publish oder vor
  *   der Freigabe der `resultRef`.
@@ -28,7 +28,7 @@ import java.time.Instant
  *   wird als Resource-Read-Fehler gemeldet.
  *
  * **Verboten in jedem Feld**: Roh-Secrets, expandierte API-Keys,
- * Connection-Secrets. Plan §4.8: Audit speichert Fingerprints,
+ * Connection-Secrets. LF-017 / LF-024 / LN-030 / LN-031: Audit speichert Fingerprints,
  * keine Secrets.
  *
  * @param tenantId Eigentuemer-Tenant. Pflicht-Lookup-Komponente.
@@ -43,12 +43,12 @@ import java.time.Instant
  *   fuer Audit-Spuren bei zukuenftigen Tool-Aliasen.
  * @param ownerPrincipalId Caller, der das Artefakt erzeugt hat
  *   (= `PrincipalContext.principalId` zur Erzeugungszeit).
- * @param policyIntent Plan §5.4 Z. 740: Approval-Scope-Identifier
+ * @param policyIntent LF-017 / LF-024 / LN-030 / LN-031: Approval-Scope-Identifier
  *   (etwa `"ai.execute.procedure_transform_plan"` oder ein
  *   Policy-Rule-Name). Wird ins Audit gespiegelt.
  * @param sourceRefs Tenant-scoped Resource-URIs, aus denen das
  *   Artefakt erzeugt wurde — etwa `schemaRef`, `profileRef`,
- *   `diffRef`, `procedureRef`, `artifactRef`. Plan §5.5: bei
+ *   `diffRef`, `procedureRef`, `artifactRef`. LF-017 / LF-024 / LN-030 / LN-031: bei
  *   Execute-Artefakten kommen Source-Refs aus der Plan-Provenance,
  *   nicht aus dem Execute-Payload.
  * @param targetDialect zugehoeriger `DatabaseDialect`-Wert (etwa
@@ -56,7 +56,7 @@ import java.time.Instant
  * @param provenance operations-spezifische Fingerprints.
  * @param providerName / [model] / [modelVersion] — Provider-/
  *   Modell-Identitaet aus dem produzierenden Provider-Aufruf.
- *   Plan §4.8: keine Endpoints, keine secretRef-Werte.
+ *   LF-017 / LF-024 / LN-030 / LN-031: keine Endpoints, keine secretRef-Werte.
  * @param outputFingerprint hex-codierter SHA-256 ueber den
  *   Provider-Output. Bindet die Resource-Bytes an eine
  *   nachpruefbare Identitaet.
@@ -108,7 +108,7 @@ data class AiArtifactMetadata(
         require(outputFingerprint.length == FP_LEN) {
             "outputFingerprint must be a $FP_LEN-char hex SHA-256"
         }
-        // Plan §5.4 verbindliches Mapping: aiIntent ↔ wireArtifactKind ↔ Provenance.
+        // LF-017 / LF-024 / LN-030 / LN-031 verbindliches Mapping: aiIntent ↔ wireArtifactKind ↔ Provenance.
         validateIntentKindProvenance()
     }
 

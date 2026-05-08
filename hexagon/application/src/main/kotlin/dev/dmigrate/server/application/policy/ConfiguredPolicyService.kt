@@ -4,8 +4,7 @@ import dev.dmigrate.server.core.policy.PolicyDecision
 import java.util.UUID
 
 /**
- * Phase E §5.4 / §7.4 Konfigurations-Backed [PolicyService].
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Wertet [rules] in Reihenfolge aus; erste passende Regel gewinnt. Wenn
  * keine Regel matcht, faellt der Service auf [defaultEffect] zurueck —
  * Default ist `Deny("policy:no-rule")`, also fail-closed.
@@ -14,8 +13,8 @@ import java.util.UUID
  * [PolicyDecision.RequiresApproval.approvalRequestId] ueber
  * [approvalRequestIdFactory]. Dieser Wert bindet den spaeter ausgestellten
  * Grant: ein Grant fuer eine alte/erneuerte Challenge ist ungueltig
- * (Plan §5.5). Die Challenge replayt deterministisch nur dann, wenn der
- * Caller (Tool-Handler aus AP E.6) sie aus dem Idempotency-Store
+ * (LF-012 / LN-011 / LN-017 / LN-027). Die Challenge replayt deterministisch nur dann, wenn der
+ * Caller (Tool-Handler aus LF-012 / LN-011 / LN-017 / LN-027) sie aus dem Idempotency-Store
  * `AWAITING_APPROVAL`-Outcome rekonstruiert; der Service selbst hat keinen
  * Cross-Request-State.
  *

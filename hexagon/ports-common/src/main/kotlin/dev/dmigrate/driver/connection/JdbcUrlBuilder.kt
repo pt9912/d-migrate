@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets
  * Port: baut die finale JDBC-URL für einen Dialekt aus einer
  * [ConnectionConfig]. Wird vom [HikariConnectionPoolFactory] verwendet.
  *
- * Plan §3.2 / §3.3 / §3.4: jeder Treiber bringt einen eigenen `*JdbcUrlBuilder`
+ * LF-012 / LN-038: jeder Treiber bringt einen eigenen `*JdbcUrlBuilder`
  * mit, der dialekt-spezifische Default-Parameter (PostgreSQL `ApplicationName`,
  * MySQL `useCursorFetch`, SQLite `journal_mode`/`foreign_keys`) injiziert,
  * ohne explizit gesetzte User-Werte zu überschreiben.

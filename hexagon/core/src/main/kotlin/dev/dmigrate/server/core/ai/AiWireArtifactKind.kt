@@ -1,12 +1,12 @@
 package dev.dmigrate.server.core.ai
 
 /**
- * Phase G § 5.4 (G.6.b) — verbindliche Wertkonstanten für das
+ * LF-017 / LF-024 / LN-030 / LN-031— verbindliche Wertkonstanten für das
  * `wireArtifactKind`-Metadatenfeld an KI-Artefakten.
  *
- * Plan §5.4 Z. 712-721 listet drei Werte. Solange der Core-
- * `ArtifactKind`-Enum nicht erweitert wird (Plan-§-5.4-Pfad-A,
- * G.1-Bestandsaufnahme §3.2 — Default-Pfad), ist `wireArtifactKind`
+ * LF-017 / LF-024 / LN-030 / LN-031 listet drei Werte. Solange der Core-
+ * `ArtifactKind`-Enum nicht erweitert wird (LF-017 / LF-024 / LN-030 / LN-031 Pfad-A,
+ * LF-017 / LF-024 / LN-030 / LN-031-Bestandsaufnahme §3.2 — Default-Pfad), ist `wireArtifactKind`
  * Pflicht-Metadatum, damit Resource-Reads, Execute-Lookups und
  * Prompt-Argumentvalidierung KI-Artefakte zuverlässig erkennen.
  *
@@ -23,7 +23,7 @@ object AiWireArtifactKind {
 
     /**
      * Follow-up AP 3 — von `testdata_execute` erzeugtes importierbares
-     * Datenartefakt (Single-Table-CSV/JSON). Plan §5 Pfad-A: Ergebnis
+     * Datenartefakt (Single-Table-CSV/JSON). LF-017 / LF-024 / LN-030 / LN-031 Pfad-A: Ergebnis
      * trägt zusätzlich [dev.dmigrate.server.core.artifact.ArtifactUploadMetadata]
      * mit `uploadIntent=job_input`, sodass `data_import_start` es als
      * normales Upload-Artefakt akzeptiert.
@@ -40,7 +40,7 @@ object AiWireArtifactKind {
 
     /**
      * Sentinel-Set für Resource-Read- und Execute-Lookup-Pruefungen
-     * (G.6.d/e/f). Ein KI-Artefakt mit `wireArtifactKind` ausserhalb
+     * (LF-017 / LF-024 / LN-030 / LN-031/f). Ein KI-Artefakt mit `wireArtifactKind` ausserhalb
      * dieses Sets ist `RESOURCE_NOT_FOUND` für KI-spezifische
      * Konsumenten.
      */
@@ -54,11 +54,11 @@ object AiWireArtifactKind {
 }
 
 /**
- * Phase G § 5.4 (G.6.b) — verbindliche Werte für das
+ * LF-017 / LF-024 / LN-030 / LN-031— verbindliche Werte für das
  * `aiIntent`-Metadatenfeld.
  *
  * `aiIntent` ist die Maschinenversion des Tool-Namens, der das
- * Artefakt erzeugt hat. Plan §5.4 Z. 716-721:
+ * Artefakt erzeugt hat. LF-017 / LF-024 / LN-030 / LN-031:
  *
  * - `PROCEDURE_TRANSFORM_PLAN` — Plan-Artefakte aus
  *   `procedure_transform_plan`.

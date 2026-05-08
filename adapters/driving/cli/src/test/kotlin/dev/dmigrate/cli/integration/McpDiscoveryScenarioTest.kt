@@ -178,7 +178,7 @@ private fun readResource(harness: McpClientHarness, uri: String): JsonObject {
 }
 
 /**
- * D11 reuses the E2 / E6 transport-pair scaffold. Cleanup runs even
+ * D11 reuses the LF-012 / LN-011 / LN-017 / LN-027 / E6 transport-pair scaffold. Cleanup runs even
  * on a failed assertion via the try/finally in [runWithTransports].
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)

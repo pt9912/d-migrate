@@ -3,12 +3,11 @@ package dev.dmigrate.server.application.quota
 import java.time.Clock
 
 /**
- * Phase E §7.9 line 1285-1287 Sweeper fuer abgelaufene Quota-
- * Reservierungen.
+ * LF-012 / LN-011 / LN-017 / LN-027 * Reservierungen.
  *
  * Findet PENDING-Eintraege im [QuotaReservationOwnerStore] mit
  * `leaseExpiresAt <= now`, refunded den Slot ueber [delegate] und
- * markiert den Owner als REFUNDED. Plan §7.9 line 1311 verlangt
+ * markiert den Owner als REFUNDED. LF-012 / LN-011 / LN-017 / LN-027 verlangt
  * exactly-once-Refund — der [QuotaReservationOwnerStore.markRefunded]-
  * CAS gibt `null` zurueck, wenn der Eintrag bereits in einem terminalen
  * Zustand war (z.B. weil parallel `markCommitted` lief), und dann

@@ -37,7 +37,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerCallbackTest : FunSpec({
 
@@ -210,7 +210,7 @@ class DataImportRunnerCallbackTest : FunSpec({
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
 
-    context("D.3 chunk-commit / table-completed callback wiring") {
+    context("LF-010 / LF-013 / LN-009 / LN-011 chunk-commit / table-completed callback wiring") {
         test("fresh run routes skippedTables = empty + resumeStateByTable = empty") {
             val capturedSkipped = mutableListOf<Set<String>>()
             val capturedResumeStates =
@@ -451,7 +451,7 @@ class DataImportRunnerCallbackTest : FunSpec({
             capturedSkipped.single() shouldBe setOf("users")
         }
 
-        test("E2: simulated import abort — resume continues from last committed chunk") {
+        test("LF-012 / LN-011 / LN-017 / LN-027: simulated import abort — resume continues from last committed chunk") {
             // Scenario: import of a single-file table where the executor
             // commits 2 chunks and then throws (simulated abort).
             // A second run with --resume must receive the resume state

@@ -524,7 +524,7 @@ internal object McpToolSchemas {
             ),
         ))
 
-        // LF-017 / LF-024 / LN-030 / LN-031 (LF-017 / LF-024 / LN-030 / LN-031): `testdata_execute` ist jetzt
+        // LF-017 / LF-024 / LN-030 / LN-031: `testdata_execute` ist jetzt
         // produktiv. Das Tool konsumiert ein freigegebenes
         // testdata-plan-Artefakt und veröffentlicht ein importierbares
         // Datenartefakt mit synthetischer ArtifactUploadMetadata

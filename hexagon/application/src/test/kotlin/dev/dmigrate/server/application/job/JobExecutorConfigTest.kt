@@ -13,7 +13,7 @@ class JobExecutorConfigTest : FunSpec({
         JobExecutorConfig.SYNC_DEFAULT shouldBeSameInstanceAs JobExecutorConfig.Sync
     }
 
-    test("Async default reflects plan §3.2 + §10 Q1: fixed 4 threads, 1024 queue, 1s retry") {
+    test("Async default reflects LF-012 / LN-011 / LN-017 / LN-027: fixed 4 threads, 1024 queue, 1s retry") {
         val cfg = JobExecutorConfig.Async.DEFAULT
         cfg.coreThreads shouldBe 4
         cfg.maxThreads shouldBe 4
@@ -47,7 +47,7 @@ class JobExecutorConfigTest : FunSpec({
         cfg.threadNamePrefix shouldBe "test-worker"
     }
 
-    context("Async validation (Plan E3.2 §3.4 + §10 Q1)") {
+    context("Async validation (Plan LF-012 / LN-011 / LN-017 / LN-027 §3.4 + §10 Q1)") {
 
         test("coreThreads <= 0 wirft IllegalArgumentException") {
             val ex = shouldThrow<IllegalArgumentException> {

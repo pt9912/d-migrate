@@ -4,12 +4,12 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.server.core.principal.TenantId
 
 /**
- * Phase E §7.7 Connection-Materialisierungs-Port.
+ * LF-012 / LN-011 / LN-017 / LN-027 Connection-Materialisierungs-Port.
  *
  * Aufgaben:
  *
  * - Discovery- und Resource-Pfade sehen ConnectionRefs SECRET-FREI
- *   (siehe Phase D `ConnectionReferenceStore`).
+ *   (siehe LF-012 / LN-038 `ConnectionReferenceStore`).
  * - Erst der Job-Worker fordert eine [ConnectionConfig] mit
  *   aufgeloesten Credentials an — daher dieses Port-Interface, das
  *   produktiv von einer Adapter-Schicht (Secret-Resolver + URL-Builder)
@@ -19,7 +19,7 @@ import dev.dmigrate.server.core.principal.TenantId
  *
  * - Tenant-Scope durchsetzen ([connectionRef] muss zu [tenant] gehoeren;
  *   sonst werfen).
- * - Secret-Lookup auditierbar protokollieren (Plan §7.7 — Secrets
+ * - Secret-Lookup auditierbar protokollieren (LF-012 / LN-011 / LN-017 / LN-027 — Secrets
  *   erscheinen nicht in Job-/Artefakt-/Audit-Projektionen).
  * - Bei fehlendem Eintrag oder Tenant-Mismatch eine fachliche
  *   Exception werfen (z.B. `ResourceNotFoundException`,

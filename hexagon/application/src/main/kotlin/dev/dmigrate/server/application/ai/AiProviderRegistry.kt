@@ -1,10 +1,10 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.2 + § 6 G.3 — adapterneutrale Provider-Registry.
+ * LF-017 / LF-024 / LN-030 / LN-031— adapterneutrale Provider-Registry.
  *
  * Bootstrap baut **eine** Instanz pro Server-Prozess und reicht sie
- * an die KI-Tool-Handler in G.6. Tool-Handler rufen
+ * an die KI-Tool-Handler in LF-017 / LF-024 / LN-030 / LN-031. Tool-Handler rufen
  * [resolve] mit dem vom Caller gewünschten (oder default-gemappten)
  * Provider und Modell auf; das Outcome entscheidet, ob der Caller
  * weiter darf (siehe [AiProviderResolveOutcome]).
@@ -20,7 +20,7 @@ fun interface AiProviderRegistry {
      * Resolved den Provider für [providerId] und prüft, ob
      * [model] in der `allowedModels`-Liste liegt.
      *
-     * Outcome-Übersicht (Plan §6 G.3 Mapping in §7.2 für G.6):
+     * Outcome-Uebersicht (LF-017 / LF-024 / LN-030 / LN-031 Mapping fuer Tool-Handler):
      *
      * | Outcome | Ursache | Handler-Mapping |
      * |---|---|---|

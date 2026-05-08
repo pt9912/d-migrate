@@ -12,17 +12,16 @@ import javax.sql.DataSource
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Integration test for the Phase-E2 Flyway initial migration (Plan
- * § 4 in `ImpPlan-0.9.6-E2.md`).
+ * Integration test for the LF-012 / LN-011 / LN-017 / LN-027 Flyway initial migration.
  *
  * Verifies:
- * - V1__phase_e_initial.sql applies cleanly against a fresh
+ * - V1__server_state_initial.sql applies cleanly against a fresh
  *   PostgreSQL 16 container
  * - All 5 tables (idempotency_reservations, init_resume_reservations,
  *   jobs, quota_reservation_owners, quota_counters) exist with the
  *   expected primary-key columns and supporting indexes
  * - The migration is idempotent: re-running migrate() against an
- *   already-migrated DB is a no-op (Plan E2.2 Akzeptanz)
+ *   already-migrated DB is a no-op (Plan LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz)
  * - validate() passes without drift
  *
  * Tagged `integration` so the default `./gradlew test` excludes it.
@@ -46,7 +45,7 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
             username = container.username
             password = container.password
             maximumPoolSize = 2
-            poolName = "phase-e-migrate-test"
+            poolName = "server-state-migrate-test"
         }
         dataSource = HikariDataSource(cfg)
     }
@@ -67,7 +66,7 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         result.migrations.first().version shouldBe "1"
     }
 
-    test("all 5 Phase-E tables exist after V1") {
+    test("all 5 server-state tables exist after V1") {
         val ds = dataSource!!
         val tables = listTables(ds, schema = "public")
         tables shouldContainAll listOf(
@@ -79,7 +78,7 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         )
     }
 
-    test("primary keys and indexes are wired per plan § 4") {
+    test("primary keys and indexes are wired for LF-012 / LN-011 / LN-017 / LN-027") {
         val ds = dataSource!!
 
         // Composite PKs.
@@ -110,10 +109,10 @@ class JdbcMigrationRunnerIntegrationTest : FunSpec({
         (partial?.contains("PENDING") ?: false) shouldBe true
     }
 
-    test("flyway history table uses the dedicated Phase-E name") {
+    test("flyway history table uses the dedicated server-state name") {
         val ds = dataSource!!
         val tables = listTables(ds, schema = "public")
-        tables shouldContainAll listOf("flyway_phase_e_history")
+        tables shouldContainAll listOf("flyway_server_state_history")
     }
 
     test("running migrate() again is idempotent — zero new migrations applied") {

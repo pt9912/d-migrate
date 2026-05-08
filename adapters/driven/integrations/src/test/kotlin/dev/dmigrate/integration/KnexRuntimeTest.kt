@@ -13,7 +13,7 @@ import kotlin.io.path.writeText
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E: Knex runtime validation against SQLite.
+ * LF-011: Knex runtime validation against SQLite.
  *
  * Generates a Knex CommonJS migration via the production export path,
  * creates a minimal Knex project, runs `npx knex migrate:latest` and

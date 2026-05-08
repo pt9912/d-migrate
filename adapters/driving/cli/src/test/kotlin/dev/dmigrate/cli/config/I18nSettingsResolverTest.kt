@@ -283,7 +283,7 @@ class I18nSettingsResolverTest : FunSpec({
     // explizites `--lang` hat hoechste Prioritaet und strenge Validierung.
     // ────────────────────────────────────────────────────────────────
 
-    context("Phase A §4.1 — --lang hat hoechste Prioritaet") {
+    context("LF-006 / LF-007 / LN-022 / LN-023 — --lang hat hoechste Prioritaet") {
 
         test("--lang de gewinnt gegen alle Env-/Config-/System-Quellen") {
             val cfg = tempConfig("i18n:\n  default_locale: en_US\n")
@@ -331,7 +331,7 @@ class I18nSettingsResolverTest : FunSpec({
         }
     }
 
-    context("Phase A §4.2 — --lang strikter als allgemeiner Locale-Pfad") {
+    context("LF-006 / LF-007 / LN-022 / LN-023 — --lang strikter als allgemeiner Locale-Pfad") {
 
         test("unsupported --lang (fr) wirft UnsupportedLanguageException") {
             val resolver = I18nSettingsResolver(

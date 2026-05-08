@@ -12,7 +12,7 @@ import java.time.Instant
  * Postgres-/JDBC-Implementierung des [JobStartTransaction]-Vertrags.
  * Komponiert [JdbcIdempotencyStore.commitOnConnection] und
  * [JdbcJobStore.saveOnConnection] in einer einzigen DB-TX
- * (Plan-Refs: ImpPlan-0.9.6-E2.md § 3.5 + § 6.5,
+ * (LF-012 / LN-011 / LN-017 / LN-027,
  * `spec/phase-e-port-atomicity.md` Abschnitt 3).
  *
  * Reihenfolge in der TX:
@@ -23,7 +23,7 @@ import java.time.Instant
  *    Outcome `IdempotencyNotEligible`; der `JdbcTransactionRunner`
  *    committet die TX trivial (kein JobStore-Insert).
  *
- * Plan §7.2 verbietet Saga-Style-Sequencing — durch die geteilte
+ * LF-012 / LN-011 / LN-017 / LN-027 verbietet Saga-Style-Sequencing — durch die geteilte
  * Connection wird die Commit-Boundary atomar: entweder beide
  * Updates sichtbar, oder keiner. Bei JVM-Crash oder DB-Disconnect
  * im Block rollbackt der Runner beide via `Connection.rollback()`.

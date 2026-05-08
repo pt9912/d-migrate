@@ -124,7 +124,7 @@ internal object ResourceContentProjector {
         // so the two surfaces stay coherent. SecretScrubber matches
         // the JobStatusGetHandler scrubbing surface so a planted
         // Bearer/JDBC-URL/tok_ value never leaks via either path
-        // (LF-012 / LN-027 / LN-028 / LN-038 E8(B)).
+        // (LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(B)).
         "error" to job.managedJob.error?.let {
             mapOf("code" to scrub(it.code), "message" to scrub(it.message), "exitCode" to it.exitCode)
         },

@@ -27,7 +27,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase F § 5.1 + § 8.3 (F.3 3/4) — Pin't den policy-pflichtigen
+ * LF-010 / LF-013 / LN-009 / LN-011— Pin't den policy-pflichtigen
  * Init-Pfad ueber alle Pipeline-Branches.
  */
 class UploadInitOrchestratorTest : FunSpec({
@@ -131,7 +131,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val outcome = fx.orchestrator.init(fx.request(approvalKey = "key-policy"))
         val required = outcome.shouldBeInstanceOf<UploadInitOutcome.PolicyRequired>()
         required.requiredScopes shouldBe setOf("dmigrate:artifact:upload")
-        // Plan § 8.3: KEINE Session, KEINE aktive Berechtigung.
+        // LF-010 / LF-013 / LN-009 / LN-011: KEINE Session, KEINE aktive Berechtigung.
         fx.sessionStore.findById(tenant, "session-1").shouldBeNull()
         // Claim wurde freigegeben, sodass die naechste Approval-Replay-
         // Runde den Single-Writer-Cycle neu beginnen kann.

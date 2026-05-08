@@ -14,7 +14,7 @@ import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 /**
- * Phase G § 5.3 + § 6 G.4 — Akzeptanztests für den Hygiene-Service.
+ * LF-017 / LF-024 / LN-030 / LN-031— Akzeptanztests für den Hygiene-Service.
  */
 class DefaultPromptHygieneServiceTest : FunSpec({
 
@@ -42,7 +42,7 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         maxPayloadBytes = maxPayloadBytes,
     )
 
-    test("Plan §6 G.4: harmlose Eingabe -> Allow + stabile Fingerprints") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: harmlose Eingabe -> Allow + stabile Fingerprints") {
         val first = service.sanitize(request("Analyse procedure foo for ${schemaRef.render()}"))
         val second = service.sanitize(request("Analyse procedure foo for ${schemaRef.render()}"))
         first.shouldBeInstanceOf<PromptHygieneResult.Allow>()
@@ -52,7 +52,7 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         first.allowedRefs shouldContainExactly listOf(schemaRef)
     }
 
-    test("Plan §6 G.4: unterschiedliche Eingaben -> unterschiedliche Fingerprints") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unterschiedliche Eingaben -> unterschiedliche Fingerprints") {
         val a = service.sanitize(request("alpha"))
         val b = service.sanitize(request("beta"))
         a.shouldBeInstanceOf<PromptHygieneResult.Allow>()
@@ -60,7 +60,7 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         a.promptFingerprint shouldNotBe b.promptFingerprint
     }
 
-    test("Plan §6 G.4: JDBC-URL mit Passwort wird blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: JDBC-URL mit Passwort wird blockiert") {
         val r = service.sanitize(
             request("connect via jdbc:postgresql://app:topsecret@db.internal/mydb"),
         )
@@ -69,7 +69,7 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         block.detectedClasses shouldContain DetectedSecretClass.JDBC_AUTHORITY_PASSWORD
     }
 
-    test("Plan §6 G.4: API-Key-Pattern wird blockiert (query-Param Form)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: API-Key-Pattern wird blockiert (query-Param Form)") {
         val r = service.sanitize(
             request("contact endpoint at https://example.com/v1?api_key=secret123abc"),
         )
@@ -83,21 +83,21 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         )) shouldBe true
     }
 
-    test("Plan §6 G.4: AWS Access-Key-Pattern wird blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: AWS Access-Key-Pattern wird blockiert") {
         val r = service.sanitize(request("for the bucket use AKIA1234567890ABCDEF for auth"))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.SECRET_DETECTED
         block.detectedClasses shouldContain DetectedSecretClass.AWS_ACCESS_KEY
     }
 
-    test("Plan §6 G.4: Bearer-Token-Form wird blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Bearer-Token-Form wird blockiert") {
         val r = service.sanitize(request("call POST /v2 with header: Bearer abcdef0123456789"))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.SECRET_DETECTED
         block.detectedClasses shouldContain DetectedSecretClass.BEARER_TOKEN
     }
 
-    test("Plan §6 G.4: PEM-Privat-Schluessel wird als PRIVATE_KEY_DETECTED blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PEM-Privat-Schluessel wird als PRIVATE_KEY_DETECTED blockiert") {
         val r = service.sanitize(
             request("here is the key:\n-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END..."),
         )
@@ -106,7 +106,7 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         block.detectedClasses shouldContain DetectedSecretClass.PEM_PRIVATE_KEY
     }
 
-    test("Plan §6 G.4: OpenSSH-Privat-Schluessel wird als PRIVATE_KEY_DETECTED blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: OpenSSH-Privat-Schluessel wird als PRIVATE_KEY_DETECTED blockiert") {
         val r = service.sanitize(
             request("ssh key:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNz..."),
         )
@@ -115,14 +115,14 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         block.detectedClasses shouldContain DetectedSecretClass.SSH_PRIVATE_KEY
     }
 
-    test("Plan §6 G.4: grosse SQL-INSERT-Bulk wird als BULK_DATA_DETECTED blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: grosse SQL-INSERT-Bulk wird als BULK_DATA_DETECTED blockiert") {
         val rows = (1..100).joinToString("\n") { "INSERT INTO t (a,b,c) VALUES (1,2,3);" }
         val r = service.sanitize(request("execute these:\n$rows"))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.BULK_DATA_DETECTED
     }
 
-    test("Plan §6 G.4: grosse CSV-Bulk wird als BULK_DATA_DETECTED blockiert") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: grosse CSV-Bulk wird als BULK_DATA_DETECTED blockiert") {
         val rows = (1..80).joinToString("\n") { "id,name,age,role" }
         val r = service.sanitize(request("data:\n$rows"))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
@@ -136,21 +136,21 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         r.shouldBeInstanceOf<PromptHygieneResult.Allow>()
     }
 
-    test("Plan §6 G.4: Prompt ueber maxPromptBytes -> PROMPT_TOO_LARGE") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Prompt ueber maxPromptBytes -> PROMPT_TOO_LARGE") {
         val big = "A".repeat(2_048)
         val r = service.sanitize(request(big, maxPromptBytes = 1_024))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.PROMPT_TOO_LARGE
     }
 
-    test("Plan §6 G.4: Payload ueber maxPayloadBytes -> PAYLOAD_TOO_LARGE") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Payload ueber maxPayloadBytes -> PAYLOAD_TOO_LARGE") {
         val payload = "{" + "\"k\":\"" + "x".repeat(2_048) + "\"}"
         val r = service.sanitize(request("ok", payload = payload, maxPayloadBytes = 1_024))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.PAYLOAD_TOO_LARGE
     }
 
-    test("Plan §4.6: dmigrate-Ref ausserhalb Whitelist -> UNAUTHORIZED_REF") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: dmigrate-Ref ausserhalb Whitelist -> UNAUTHORIZED_REF") {
         val foreign = ServerResourceUri(tenant, ResourceKind.ARTIFACTS, "foreign-1").render()
         val r = service.sanitize(
             request(
@@ -162,13 +162,13 @@ class DefaultPromptHygieneServiceTest : FunSpec({
         block.reason shouldBe PromptHygieneBlockReason.UNAUTHORIZED_REF
     }
 
-    test("Plan §4.6: externer http-URL im Prompt -> EXTERNAL_URL_DETECTED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: externer http-URL im Prompt -> EXTERNAL_URL_DETECTED") {
         val r = service.sanitize(request("see https://docs.example.com/info for spec"))
         val block = r.shouldBeInstanceOf<PromptHygieneResult.Block>()
         block.reason shouldBe PromptHygieneBlockReason.EXTERNAL_URL_DETECTED
     }
 
-    test("Plan §6 G.4 Akzeptanz: Block.publicMessage enthaelt KEINE Secrets") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Block.publicMessage enthaelt KEINE Secrets") {
         val r = service.sanitize(
             request("the password is jdbc:postgresql://x:topsecret@db/d"),
         )

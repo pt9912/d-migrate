@@ -15,7 +15,7 @@ class ConnectionConfigParserTest : FunSpec({
     }
 
     test("parseConnections returns the raw URL templates including unexpanded \${VAR}") {
-        // Plan-D §8.2 acceptance: the neutral parser MUST NOT
+        // LF-012 / LN-038 acceptance: the neutral parser MUST NOT
         // expand env-vars; the CLI-adapter's NamedConnectionResolver
         // owns ENV-substitution. Pin that ${VAR} stays verbatim.
         val yaml = """
@@ -31,15 +31,15 @@ class ConnectionConfigParserTest : FunSpec({
         )
     }
 
-    test("parseConnections silently drops Phase-D map-form entries (let YamlConnectionReferenceLoader handle them)") {
+    test("parseConnections silently drops LF-012 / LN-038 map-form entries (let YamlConnectionReferenceLoader handle them)") {
         // A YAML mid-migration may carry both shapes side-by-side.
-        // The Phase-C parser only surfaces bare-URL entries.
+        // The legacy parser only surfaces bare-URL entries.
         val yaml = """
             database:
               connections:
                 legacy: "jdbc:sqlite:./dev.db"
                 pg-d:
-                  displayName: PG Phase-D
+                  displayName: PG LF-012 / LN-038
                   dialectId: postgresql
                   sensitivity: PRODUCTION
         """.trimIndent()

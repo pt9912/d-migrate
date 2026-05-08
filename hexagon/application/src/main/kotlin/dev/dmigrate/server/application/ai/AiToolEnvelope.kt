@@ -6,15 +6,15 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Phase G § 6 G.6 (G.6.c) — gemeinsame Eingabe für den
+ * LF-017 / LF-024 / LN-030 / LN-031— gemeinsame Eingabe für den
  * [AiToolOrchestrator].
  *
- * Bündelt das, was alle drei KI-Tool-Handler (G.6.d/e/f) gleich
- * brauchen, damit der Orchestrator die Plan-§-6-G.6-Pflichten
+ * Bündelt das, was alle drei KI-Tool-Handler (LF-017 / LF-024 / LN-030 / LN-031/f) gleich
+ * brauchen, damit der Orchestrator die LF-017 / LF-024 / LN-030 / LN-031-Pflichten
  * einheitlich erzwingt: Single-Writer-Acquire, Terminal-Outcome-
  * Replay, Outcome-Commit und Wire-Mapping.
  *
- * Tool-spezifische Felder (Source-Refs, Plan-Refs, Optionen) bleiben
+ * Tool-spezifische Felder (Source-Refs, LF-012 / LN-011 / LN-017 / LN-027 Refs, Optionen) bleiben
  * im Tool-Handler — der Orchestrator sieht nur den
  * `payloadFingerprint`, der diese Felder bereits stabil
  * normalisiert hat.
@@ -22,11 +22,11 @@ import java.time.Instant
  * @param toolName MCP-Tool-Name, der das Audit/Outcome adressiert
  *   (etwa `"procedure_transform_plan"`).
  * @param tenantId / [callerId] Tenant + Principal aus dem
- *   `PrincipalContext`. Plan §6 G.6 Z. 1083: Dedup-Key.
- * @param approvalKey Plan §5 + § 6 G.6 — synchroner
+ *   `PrincipalContext`. LF-017 / LF-024 / LN-030 / LN-031: Dedup-Key.
+ * @param approvalKey LF-017 / LF-024 / LN-030 / LN-031 — synchroner
  *   Idempotency-/Approval-Key, den der Caller mitbringt.
  * @param payloadFingerprint hex-codierter SHA-256 über die
- *   normalisierten Tool-Argumente. Plan §6 G.6 Z. 1016-1019:
+ *   normalisierten Tool-Argumente. LF-017 / LF-024 / LN-030 / LN-031:
  *   Control-Felder (`approvalToken`, `idempotencyKey`, `requestId`)
  *   sind hier bereits entfernt — der Tool-Handler hat sie vor dem
  *   Hashen abgeschnitten.

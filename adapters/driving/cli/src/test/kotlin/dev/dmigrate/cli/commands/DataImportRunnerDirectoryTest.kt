@@ -37,7 +37,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerDirectoryTest : FunSpec({
 
@@ -210,7 +210,7 @@ class DataImportRunnerDirectoryTest : FunSpec({
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
 
-    context("D.4 Directory topology") {
+    context("LF-010 / LF-013 / LN-009 / LN-011 Directory topology") {
         test("fresh directory run populates inputFile + scanned tables in manifest") {
             val storeDir = Files.createTempDirectory("d-migrate-d4-fresh-")
             val importDir = Files.createTempDirectory("d-migrate-d4-in-")

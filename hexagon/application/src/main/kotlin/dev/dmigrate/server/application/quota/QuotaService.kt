@@ -6,7 +6,7 @@ import dev.dmigrate.server.ports.quota.QuotaStore
 
 /**
  * Application-layer wrapper around [QuotaStore] that adds the
- * reserve/commit/release/refund lifecycle (`ImpPlan-0.9.6-A.md` §6.6).
+ * reserve/commit/release/refund lifecycle (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * The handler pattern is:
  *   1. `val outcome = service.reserve(key, amount)` — short-circuit on
@@ -41,7 +41,7 @@ class DefaultQuotaService(
         store.reserve(key, amount, limitFor(key))
 
     override fun commit(reservation: QuotaReservation) {
-        // Phase A: counter stays at the reserved level. The audit sink
+        // LF-012 / LN-011 / LN-017 / LN-027: counter stays at the reserved level. The audit sink
         // (AP 6.8) will hook in here so the success-path is observable.
     }
 

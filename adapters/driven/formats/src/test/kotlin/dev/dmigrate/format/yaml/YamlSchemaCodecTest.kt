@@ -325,7 +325,7 @@ class YamlSchemaCodecTest : FunSpec({
         }
     }
 
-    // ─── Parser-negative codec tests (§C.4) ──────────────────────
+    // ─── Parser-negative codec tests (LF-009) ──────────────────────
 
     test("duplicate YAML key throws parse error") {
         val yaml = """

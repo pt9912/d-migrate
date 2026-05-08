@@ -4,8 +4,7 @@ import dev.dmigrate.server.core.approval.GrantRequest
 import java.time.Instant
 
 /**
- * Phase E §7.4 Grant-Aussteller-Port.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Erzeugt aus einer [GrantRequest] (vorher von der Policy-Entscheidung
  * `RequiresApproval` materialisiert) entweder einen ausgestellten
  * [GrantIssuance.Issued] oder eine [GrantIssuance.NotIssuable]-Antwort
@@ -20,7 +19,7 @@ import java.time.Instant
  * - [DemoAutoApprovalGrantIssuer] — unsicher, nur fuer loopback/stdio;
  *   stellt fuer jede Anfrage aus, audit-pflichtig.
  *
- * Zusaetzliche Pfade aus Plan §3.1 (Admin-Subkommando, signierte
+ * Zusaetzliche Pfade aus LF-012 / LN-011 / LN-017 / LN-027 (Admin-Subkommando, signierte
  * Grant-Datei) implementieren `GrantIssuer` separat und liegen ausserhalb
  * dieses Moduls.
  */

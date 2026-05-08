@@ -128,7 +128,7 @@ internal class StdioHarness(
     }
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 E8(C): append the most recent JSON-RPC call to the
+     * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): append the most recent JSON-RPC call to the
      * diagnostic ring buffer, evicting the oldest entry when the
      * buffer exceeds [McpClientHarness.DIAGNOSTIC_RPC_HISTORY_SIZE].
      * Outcome is collapsed to a one-line string — only the wire

@@ -251,7 +251,7 @@ private fun callSegment(
 }
 
 /**
- * E4 reuses the E2/E3 transport-pair pattern. Each block runs against
+ * E4 reuses the LF-012 / LN-011 / LN-017 / LN-027/E3 transport-pair pattern. Each block runs against
  * fresh stdio + HTTP harnesses with their own state-dir; cleanup is
  * guaranteed via try/finally even when assertions throw.
  */

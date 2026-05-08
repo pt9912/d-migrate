@@ -1,6 +1,6 @@
 // d-migrate-core: Pure domain model and validation
 // ZERO external dependencies — only Kotlin stdlib (test fixtures may add
-// kotest for shared test helpers; see Phase E0.1 cancel-contract fixture).
+// kotest for shared test helpers; see LF-012 / LN-011 / LN-017 / LN-027 cancel-contract fixture).
 
 plugins {
     `java-library`
@@ -47,7 +47,7 @@ kover {
                     "dev.dmigrate.core.diff.NamedTrigger",
                     // Validation result DTOs (data carriers)
                     "dev.dmigrate.core.validation.ValidationWarning",
-                    // Server-core (0.9.6 phase A) — pure data carriers
+                    // Server-core (LF-012 / LN-011 / LN-017 / LN-027) — pure data carriers
                     "dev.dmigrate.server.core.principal.PrincipalContext",
                     "dev.dmigrate.server.core.principal.TenantId",
                     "dev.dmigrate.server.core.principal.PrincipalId",
@@ -67,7 +67,7 @@ kover {
                     "dev.dmigrate.server.core.execution.ExecutionMeta",
                     "dev.dmigrate.server.core.approval.ApprovalGrant",
                     "dev.dmigrate.server.core.approval.ApprovalCorrelationKind",
-                    // Server-core idempotency outcomes (0.9.6 phase A AP 6.2).
+                    // Server-core idempotency outcomes (LF-012 / LN-011 / LN-017 / LN-027).
                     // Wildcards cover the outer sealed-interface marker plus
                     // every nested data-class subtype in one shot.
                     "dev.dmigrate.server.core.idempotency.IdempotencyKey",

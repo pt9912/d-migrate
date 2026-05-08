@@ -37,7 +37,7 @@ import java.time.LocalDateTime
  * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
- * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
  * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
  * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
  * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
@@ -208,8 +208,8 @@ class DataExportRunnerSinceTest : FunSpec({
     // ─── Happy path (Exit 0) ──────────────────────────────────────
 
 
-    context("C.2 Fall 1 — ohne --since-column bleibt alles C.1-Verhalten") {
-        test("no since-column + no manifest marker → silent C.1-fallback, no ResumeMarker passed") {
+    context("LF-008 / LF-009 / LF-013 Fall 1 — ohne --since-column bleibt alles Legacy-Verhalten") {
+        test("no since-column + no manifest marker → silent LF-008 / LF-009 / LF-013-fallback, no ResumeMarker passed") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
                 ctx, opts, resume, callbacks,
@@ -233,7 +233,7 @@ class DataExportRunnerSinceTest : FunSpec({
         }
     }
 
-    context("C.2 Fall 2 — --since-column ohne PK → stderr-Hinweis + C.1-Fallback") {
+    context("LF-008 / LF-009 / LF-013 Fall 2 — --since-column ohne PK → stderr-Hinweis + Resume-Fallback") {
         test("since-column set but no PK: stderr warning, no ResumeMarker for that table") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
@@ -261,7 +261,7 @@ class DataExportRunnerSinceTest : FunSpec({
         }
     }
 
-    context("C.2 Fresh-Track — --since-column + PK → ResumeMarker ohne Position") {
+    context("LF-008 / LF-009 / LF-013 Fresh-Track — --since-column + PK → ResumeMarker ohne Position") {
         test("fresh run with since-column + PK gets ResumeMarker with position=null") {
             val capturedMarkers = mutableListOf<Map<String, dev.dmigrate.driver.data.ResumeMarker>>()
             val executor: ExportExecutor = ExportExecutor {
@@ -291,7 +291,7 @@ class DataExportRunnerSinceTest : FunSpec({
         }
     }
 
-    context("C.2 Fall 3 — Manifest lastMarker without --since-column → Exit 3") {
+    context("LF-008 / LF-009 / LF-013 Fall 3 — Manifest lastMarker without --since-column → Exit 3") {
         test("manifest has resumePosition but current request has no --since-column → Exit 3") {
             val storeDir = Files.createTempDirectory("d-migrate-c2-f3-")
             val opId = "c2-fall3-op"

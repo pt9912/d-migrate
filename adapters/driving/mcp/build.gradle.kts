@@ -1,5 +1,5 @@
-// adapters:driving:mcp — MCP-v1-Server-Adapter (docs/ImpPlan-0.9.6-B.md §12).
-// Deps werden pro AP dazugenommen, sobald sie tatsaechlich benutzt werden.
+// adapters:driving:mcp — MCP-v1-Server-Adapter (LF-012 / LN-038).
+// Deps werden nach Bedarf dazugenommen, sobald sie tatsaechlich benutzt werden.
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:application"))

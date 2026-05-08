@@ -18,7 +18,7 @@ private val testContainer = PostgreSQLContainer("postgres:16-alpine")
 private var testDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.3 — laesst die [IdempotencyStoreContractTests]-Suite gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — laesst die [IdempotencyStoreContractTests]-Suite gegen
  * eine Testcontainers-Postgres-Instanz laufen. Plan-Akzeptanz:
  * `IdempotencyStoreContractTests` gruen gegen Postgres inklusive
  * Recovery-Tests fuer expired PENDING/AWAITING_APPROVAL-Leases.

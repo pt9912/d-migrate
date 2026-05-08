@@ -258,7 +258,7 @@ internal class ArtifactUploadHandler(
     private fun formatFromMimeType(mimeType: String): String = when {
         mimeType.equals("application/json", ignoreCase = true) ||
             mimeType.endsWith("+json", ignoreCase = true) -> "json"
-        // LF-010 / LF-013 / LN-009 / LN-011: CSV-Import-Artefakte werden in LF-010 / LF-013 / LN-009 / LN-011
+        // LF-010 / LF-013 / LN-009 / LN-011: CSV-Import-Artefakte werden vom Import-Pfad
         // erlaubt; beide Allowlist-Schreibweisen mappen auf dasselbe
         // Format, damit Caller mit `application/csv` denselben
         // deterministischen `art-...`-Id erhalten wie mit `text/csv`.

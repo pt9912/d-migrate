@@ -15,7 +15,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(C): audit-event correlation per
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): audit-event correlation per
  * LF-012 / LN-027 / LN-028 / LN-038 Akzeptanz Z. 2092-2099.
  *
  * Pinned invariants:
@@ -155,7 +155,7 @@ class McpAuditCorrelationScenarioTest : FunSpec({
     }
 })
 
-// --- E8(C) helpers ----------------------------------------------------------
+// --- LF-017 / LF-024 / LN-030 / LN-031(C) helpers ----------------------------------------------------------
 
 private fun McpClientHarness.auditSinkRecorded(): List<AuditEvent> = when (this) {
     is StdioHarness -> auditSink.recorded()

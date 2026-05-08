@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * LF-010 / LF-013 / LN-009 / LN-011 — In-Memory-Variante des
  * [UploadInitClaimStore]. ConcurrentHashMap.compute liefert die
- * atomare Single-Writer-Garantie fuer den Plan-§-8.3-Vertrag.
+ * atomare Single-Writer-Garantie fuer den LF-010 / LF-013 / LN-009 / LN-011-Vertrag.
  *
  * Production-Backings (z.B. JDBC-Postgres) muessen die gleiche
  * exactly-one-Acquired-Eigenschaft ueber DB-Atomicity bereitstellen —
@@ -69,11 +69,11 @@ class InMemoryUploadInitClaimStore : UploadInitClaimStore {
             )
         }
         if (existing.payloadFingerprint != payloadFingerprint) {
-            // Plan § 8.3: gleicher Scope, abweichender Fingerprint -> Conflict.
+            // LF-010 / LF-013 / LN-009 / LN-011: gleicher Scope, abweichender Fingerprint -> Conflict.
             // Lease-Aktivitaet spielt keine Rolle.
             return UploadInitClaimOutcome.Conflict(existing.payloadFingerprint)
         }
-        // Plan § 8.3 + Lease-Vertrag: Active Lease blockt konkurrente
+        // LF-010 / LF-013 / LN-009 / LN-011 + Lease-Vertrag: Active Lease blockt konkurrente
         // Acquires; abgelaufene Lease erlaubt Reclaim.
         // Negative Clock-Jumps duerfen Leases nicht verlaengern —
         // wir vergleichen `now < leaseExpiresAt`, auch wenn `now <

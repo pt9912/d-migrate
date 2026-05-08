@@ -30,7 +30,7 @@ import dev.dmigrate.streaming.StreamingImporter
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
  * stdin in eine Zieldatenbank.
  *
- * Plan §3.7.1 / §6.11. Analog zum `DataExportCommand` ist dieser Command
+ * LF-010 / LF-013 / LN-009 / LN-011. Analog zum `DataExportCommand` ist dieser Command
  * eine dünne Clikt-Schale: er sammelt die CLI-Argumente in einen
  * [DataImportRequest] und delegiert an [DataImportRunner], der die gesamte
  * Geschäftslogik hält.

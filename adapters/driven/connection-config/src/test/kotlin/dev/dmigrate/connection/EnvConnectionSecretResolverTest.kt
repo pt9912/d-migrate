@@ -75,7 +75,7 @@ class EnvConnectionSecretResolverTest : FunSpec({
     }
 
     test("non-env: provider scheme surfaces PROVIDER_MISSING") {
-        // Plan-D §10.10: a connection-backed path without a wired
+        // LF-012 / LN-038: a connection-backed path without a wired
         // provider MUST fail-closed.
         val sut = EnvConnectionSecretResolver(envLookup = { error("must not be called") })
         val outcome = sut.resolve(ref(credentialRef = "vault:secret/pg"), principal())

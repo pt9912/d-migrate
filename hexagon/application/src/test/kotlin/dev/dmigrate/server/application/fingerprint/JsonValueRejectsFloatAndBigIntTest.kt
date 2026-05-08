@@ -5,7 +5,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
 /**
- * Phase A's integer-only restriction (§14.1) is enforced at the type
+ * LF-012 / LN-038 integer-only restriction (§14.1) is enforced at the type
  * system: [JsonValue.Num.value] is `Long`, so `Float`, `Double`,
  * `BigInteger` and `BigDecimal` cannot be passed without an explicit
  * conversion at the adapter boundary. This test pins the canonical

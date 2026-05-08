@@ -71,7 +71,7 @@ subprojects {
         // SLF4J-Provider für Tests, damit Testcontainers-Diagnostics nicht im
         // NOP-Logger verschwinden. Ohne dieses Fragment ist die
         // Strategy-Detection-Fehlermeldung "Could not find a valid Docker
-        // environment" nicht diagnostizierbar (siehe Phase F Debug-Session).
+        // environment" nicht diagnostizierbar (siehe LF-008 / LF-009 / LF-013 Debug-Session).
         "testRuntimeOnly"("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     }
 
@@ -81,7 +81,7 @@ subprojects {
         // Per default integration-Tests ausschließen — sie brauchen Docker
         // (Testcontainers) und überschreiten das 5-Minuten-CI-Budget des
         // Default-Workflows. Aktivieren via `./gradlew test -PintegrationTests`
-        // (siehe .github/workflows/integration.yml und Plan §6.16).
+        // (siehe .github/workflows/integration.yml und LF-008 / LF-009 / LF-013).
         //
         // Wir verwenden Kotest's natives Tag-System (System-Property
         // `kotest.tags`), weil JUnit Jupiter's `excludeTags`/`@Tag` Discovery

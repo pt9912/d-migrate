@@ -35,7 +35,7 @@ import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E3 § 6.5: post-commit Setup-Failure-Pfade in
+ * LF-012 / LN-011 / LN-017 / LN-027: post-commit Setup-Failure-Pfade in
  * [JobStartOrchestrator]. Sub-AP-Scope (4/4): worker == null,
  * factory.create-Throw, dispatcher.dispatch-Throw,
  * RejectedExecutionException, workerHandleRegistry.register-Throw,
@@ -214,7 +214,7 @@ class JobStartOrchestratorSetupFailureTest : FunSpec({
         val terminal = jobStore.findById(tenant, "job_failure").shouldNotBeNull()
         terminal.managedJob.status shouldBe JobStatus.FAILED
         terminal.managedJob.error?.code shouldBe "WORKER_NOT_REGISTERED"
-        // Plan E3 § 6.5: setup-failure released den Owner. Owner-Status
+        // LF-012 / LN-011 / LN-017 / LN-027: setup-failure released den Owner. Owner-Status
         // ist RELEASED nach markExecutorSetupFailed.
         val ownerId = "acme:alice:schema_reverse_start:k1"
         val owner = ownerStore.findById(ownerId).shouldNotBeNull()
@@ -230,7 +230,7 @@ class JobStartOrchestratorSetupFailureTest : FunSpec({
             jobStoreRef = throwingStore,
         )
 
-        // Plan E3 § 6.5: JobStore-Throw beim primaeren markExecutorSetupFailed
+        // LF-012 / LN-011 / LN-017 / LN-027: JobStore-Throw beim primaeren markExecutorSetupFailed
         // wird NICHT verschluckt — der Caller sieht eine echte Exception,
         // weil ohne pollbare FAILED-Wahrheit ein Started-Return luegen
         // wuerde.

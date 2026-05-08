@@ -6,22 +6,21 @@ import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase E §7.6 Pre-Idempotency-Validation-Layer.
- *
- * Tool-Handler aus AP E.6 (3/4) rufen [validate] VOR jedem Idempotency-/
+ * LF-012 / LN-011 / LN-017 / LN-027 *
+ * Tool-Handler aus LF-012 / LN-011 / LN-017 / LN-027 (3/4) rufen [validate] VOR jedem Idempotency-/
  * Policy-/Quota-Store-Write auf. Bei [JobStartInputValidation.Invalid]
  * antwortet der Handler mit einem strukturellen Fehler-Envelope und
- * schreibt NICHTS in die Stores (Plan §7.6 line 1118-1121).
+ * schreibt NICHTS in die Stores (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Ziele der Pflichtchecks:
  *
- * - `idempotencyKey` muss vorhanden und non-blank sein (Plan §7.6
+ * - `idempotencyKey` muss vorhanden und non-blank sein (LF-012 / LN-011 / LN-017 / LN-027
  *   "idempotencyKey als Pflichtfeld erzwingen").
  * - Connection-/Schema-Refs muessen im tenant-scoped
  *   `dmigrate://tenants/<tenant>/<kind>/<id>`-Format vorliegen
- *   (Plan §7.6 "syntaktische Resource-URI-Form, Tenant-Prefix").
+ *   (LF-012 / LN-011 / LN-017 / LN-027 "syntaktische Resource-URI-Form, Tenant-Prefix").
  * - Freie JDBC-URLs (`jdbc:<driver>:...`) werden hart abgelehnt
- *   (Plan §7.6 "freie JDBC-Strings").
+ *   (LF-012 / LN-011 / LN-017 / LN-027 "freie JDBC-Strings").
  *
  * Die Pruefreihenfolge ist deterministisch: erst Idempotency, dann pro
  * Ref der Reihe nach JDBC-URL → Syntax → Kind → Tenant-Prefix. Damit

@@ -268,7 +268,7 @@ class SchemaComparatorTestPart2Part2b : FunSpec({
     }
 
     // ===========================================
-    // Phase B: Canonical key identity
+    // LF-015: Canonical key identity
     // ===========================================
 
     test("overloaded functions with canonical keys are tracked separately") {
@@ -362,7 +362,7 @@ class SchemaComparatorTestPart2Part2b : FunSpec({
     }
 
     // ===========================================
-    // Phase B: Table metadata
+    // LF-015: Table metadata
     // ===========================================
 
 })

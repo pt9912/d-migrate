@@ -33,9 +33,9 @@ private val sweeperTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var sweeperTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.8 — `QuotaReservationSweeper` exactly-once-Refund gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — `QuotaReservationSweeper` exactly-once-Refund gegen
  * Postgres (Plan-Akzeptanz: "Sweeper findet orphane Owner-Eintraege"
- * + Plan §7.9 line 1310).
+ * + LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Spiegelt das Bestands-`QuotaReservationSweeperTest` aber mit
  * `JdbcQuotaReservationOwnerStore` + echter PG-Persistenz statt
@@ -121,7 +121,7 @@ class QuotaReservationSweeperE2ETest : FunSpec({
         fx.quotaStore.current(key) shouldBe 2L
     }
 
-    test("Sweeper laesst COMMITTED-Eintraege unangetastet (Plan §7.9 line 1311)") {
+    test("Sweeper laesst COMMITTED-Eintraege unangetastet (LF-012 / LN-011 / LN-017 / LN-027)") {
         val fx = freshFixture()
         val now0 = fx.initial
 

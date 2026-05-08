@@ -7,8 +7,8 @@ import java.time.Instant
  * Pure validator. Takes a stored [ApprovalGrant] (already located by
  * the service via tenant + tokenFingerprint), the [ApprovalAttempt]
  * that the caller wants to validate against, and a `now` instant.
- * Returns [ApprovalGrantValidation] in deterministic order — see
- * `ImpPlan-0.9.6-A.md` §6.5.
+ * Returns [ApprovalGrantValidation] in deterministic order per
+ * LF-012 / LN-011 / LN-017 / LN-027.
  */
 class ApprovalGrantValidator(
     private val issuerCheck: IssuerCheck = IssuerCheck.Off,

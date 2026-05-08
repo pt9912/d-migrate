@@ -20,10 +20,10 @@ import java.time.Instant
 
 /**
  * Application-layer orchestrator for the upload session lifecycle.
- * The plan §6.3 demands that TTL/abort/expiry/finalize trigger
+ * LF-010 / LF-013 / LN-009 / LN-011 demands that TTL/abort/expiry/finalize trigger
  * `UploadSegmentStore.deleteAllForSession(...)` — that responsibility
  * lives here, not on the stores themselves. `finalize` additionally
- * runs the §6.3 finalize invariants and verifies that the artifact
+ * runs the LF-010 / LF-013 / LN-009 / LN-011 finalize invariants and verifies that the artifact
  * has actually been published into the [ArtifactContentStore] before
  * the session transitions to COMPLETED.
  */
@@ -32,13 +32,13 @@ class UploadSessionService(
     private val segments: UploadSegmentStore,
     private val artifacts: ArtifactContentStore,
     /**
-     * Phase F § 8.6 (F.6 1/3): optionaler [QuotaService] fuer den
+     * LF-010 / LF-013 / LN-009 / LN-011: optionaler [QuotaService] fuer den
      * Expiry-Sweeper. Wenn gewired, gibt der Service auf TTL-/Idle-
      * Expiry die Init-Quotas (`ACTIVE_UPLOAD_SESSIONS=1`,
      * `UPLOAD_BYTES=session.sizeBytes`) frei, sodass ein Tenant
      * nach Idle-Timeout nicht in den Limits gebunden bleibt.
      * Default `null` haelt Bestands-Tests gruen — Production-Wiring
-     * (CLI-Sweeper, Phase-E-Bootstrap) reicht den Service durch.
+     * (CLI-Sweeper, server-state bootstrap) reicht den Service durch.
      */
     private val quotaService: QuotaService? = null,
 ) {
@@ -47,7 +47,7 @@ class UploadSessionService(
         val expired = sessions.expireDue(now)
         for (session in expired) {
             segments.deleteAllForSession(session.uploadSessionId)
-            // Plan § 8.6: "Quota-Release fuer Abort, Expiry und
+            // LF-010 / LF-013 / LN-009 / LN-011: "Quota-Release fuer Abort, Expiry und
             // fehlgeschlagene Finalisierung idempotent ausfuehren".
             // Der QuotaService.release ist idempotent (no-op bei
             // nicht-positivem aktuellem Counter); doppelter Sweep
@@ -82,7 +82,7 @@ class UploadSessionService(
     }
 
     /**
-     * Phase F § 8.9 (F.9 2/3) — Sweeper-Hook fuer Upload-
+     * LF-010 / LF-013 / LN-009 / LN-011— Sweeper-Hook fuer Upload-
      * Finalisierungs-Timeouts.
      *
      * Findet alle `FINALIZING`-Sessions, deren `finalizingLeaseExpiresAt`
@@ -94,8 +94,8 @@ class UploadSessionService(
      *    (claim-keyed CAS gegen den noch aktiven `finalizingClaimId`).
      * 2. Transitioniert die Session auf `ABORTED` (Plan-Wortlaut
      *    "Session FAILED" — der durable State ist `ABORTED` mit
-     *    `FailureOutcome.status=FAILED`, analog zu F.4 (3/3) und
-     *    F.6 (1/3)).
+     *    `FailureOutcome.status=FAILED`, analog zu LF-010 / LF-013 / LN-009 / LN-011 (3/3) und
+     *    LF-010 / LF-013 / LN-009 / LN-011 (1/3)).
      * 3. Loescht Zwischensegmente (Cleanup/Tombstone).
      * 4. Gibt Init-Quotas frei (`ACTIVE_UPLOAD_SESSIONS` +
      *    `UPLOAD_BYTES`).

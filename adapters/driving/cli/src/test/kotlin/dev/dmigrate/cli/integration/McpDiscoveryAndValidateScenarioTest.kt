@@ -14,7 +14,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E2: drift guard + transport-neutral smoke for the two
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-012 / LN-011 / LN-017 / LN-027: drift guard + transport-neutral smoke for the two
  * read-only discovery / validation tools per §7.3 (Pflichtflüsse):
  *
  *  - `tools/list` MUST advertise every tool from

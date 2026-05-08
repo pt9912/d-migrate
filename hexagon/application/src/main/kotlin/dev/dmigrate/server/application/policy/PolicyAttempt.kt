@@ -5,14 +5,13 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 
 /**
- * Phase E §5.4 input DTO fuer [PolicyService.decide].
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Buendelt die Felder, die der Policy-Service zur Entscheidung braucht.
  * Resource-/Connection-Refs und Sensitivitaets-Flags werden ueber
  * [resourceRefs] und [sensitivityFlags] geliefert; konkrete Auspraegungen
- * pflegt der Caller (Tool-Handler) aus AP E.6.
+ * pflegt der Caller (Tool-Handler) aus LF-012 / LN-011 / LN-017 / LN-027.
  *
- * Plan §5.4-Felder, die NICHT hier wandern, weil sie ausserhalb der
+ * LF-012 / LN-011 / LN-017 / LN-027-Felder, die NICHT hier wandern, weil sie ausserhalb der
  * Entscheidung leben:
  * - `idempotencyKey` ist als [correlationKey] (mit kind=IDEMPOTENCY_KEY)
  *   modelliert; ein eigenes Feld waere redundant.

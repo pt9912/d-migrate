@@ -4,8 +4,7 @@ import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Phase E §7.9 Persistent-Owner-Tracking-Store fuer Quota-Reservierungen.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Der Store haelt fuer jeden Owner genau einen Eintrag. Status-Uebergaenge
  * sind absorbierend ueber [QuotaReservationStatus] (kein Zurueck aus
  * REFUNDED/RELEASED). Implementierungen muessen Status-Wechsel atomar

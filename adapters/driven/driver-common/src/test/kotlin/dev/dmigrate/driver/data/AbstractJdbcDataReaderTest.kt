@@ -270,7 +270,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
     // LF-013 / LN-006 / LN-012: ResumeMarker fresh track + position
     // ───────────────────────────────────────────────────────────────────
 
-    test("C.2 ResumeMarker fresh-track: ORDER BY is enforced, no WHERE cascade") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker fresh-track: ORDER BY is enforced, no WHERE cascade") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = listOf("id"),
@@ -288,7 +288,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(1, 2, 3, 4, 5)
     }
 
-    test("C.2 ResumeMarker resume-position: strict lexicographic > cascade skips exact and lower") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker resume-position: strict lexicographic > cascade skips exact and lower") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = listOf("id"),
@@ -308,7 +308,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
     }
 
-    test("C.2 ResumeMarker with duplicate marker values: tie-breaker resumes precisely") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker with duplicate marker values: tie-breaker resumes precisely") {
         // Insert two rows sharing the same qty to stress the lexicographic
         // tie-breaker path.
         pool.borrow().use { conn ->
@@ -338,7 +338,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(7, 4, 5)
     }
 
-    test("C.2 ResumeMarker without tie-breakers: marker column alone drives WHERE/ORDER BY") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker without tie-breakers: marker column alone drives WHERE/ORDER BY") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = emptyList(),
@@ -357,7 +357,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
     }
 
-    test("C.2 ResumeMarker composes with DataFilter.ParameterizedClause via AND") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker composes with DataFilter.ParameterizedClause via AND") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = listOf("id"),
@@ -377,7 +377,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(2, 3, 4)
     }
 
-    test("C.2 ResumeMarker composes with DataFilter.ParameterizedClause; marker params appended last") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker composes with DataFilter.ParameterizedClause; marker params appended last") {
         val marker = ResumeMarker(
             markerColumn = "qty",
             tieBreakerColumns = listOf("id"),
@@ -396,7 +396,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         rows.map { it[0] as Int } shouldContainExactly listOf(3, 4, 5)
     }
 
-    test("C.2 ResumeMarker init rejects mismatched tie-breaker size") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker init rejects mismatched tie-breaker size") {
         shouldThrow<IllegalArgumentException> {
             ResumeMarker(
                 markerColumn = "qty",
@@ -409,7 +409,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         }
     }
 
-    test("C.2 ResumeMarker init rejects blank marker column") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker init rejects blank marker column") {
         shouldThrow<IllegalArgumentException> {
             ResumeMarker(
                 markerColumn = "",
@@ -418,7 +418,7 @@ class AbstractJdbcDataReaderTest : FunSpec({
         }
     }
 
-    test("C.2 ResumeMarker init rejects blank tie-breaker column") {
+    test("LF-008 / LF-009 / LF-013 ResumeMarker init rejects blank tie-breaker column") {
         shouldThrow<IllegalArgumentException> {
             ResumeMarker(
                 markerColumn = "qty",

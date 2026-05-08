@@ -262,7 +262,7 @@ private fun readContent(harness: McpClientHarness, uri: String): JsonObject {
 }
 
 /**
- * E6 reuses the E2/E3/E4/E5 transport-pair pattern. Block does its
+ * E6 reuses the LF-012 / LN-011 / LN-017 / LN-027/E3/E4/E5 transport-pair pattern. Block does its
  * own assertions; cleanup runs even on failure.
  */
 private fun withFreshTransports(

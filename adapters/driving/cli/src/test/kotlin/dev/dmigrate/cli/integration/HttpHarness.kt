@@ -41,7 +41,7 @@ import java.time.Duration
  *   initialize response).
  *
  * The wiring is the LF-012 / LN-027 / LN-028 / LN-038 file-backed LF-012 / LN-038 wiring built explicitly
- * via [IntegrationFixtures.integrationWiring] — plan §6.24 forbids
+ * via [IntegrationFixtures.integrationWiring]; LF-012 / LN-038 forbids
  * HTTP from inheriting the file-backed wiring implicitly from the
  * stdio CLI path.
  */

@@ -5,19 +5,18 @@ import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.time.Instant
 
 /**
- * Phase E §7.9 ownership-aware Composite ueber dem bestehenden
- * [QuotaService]. Verbindet `reserve` mit dem
+ * LF-012 / LN-011 / LN-017 / LN-027 * [QuotaService]. Verbindet `reserve` mit dem
  * [QuotaReservationOwnerStore], sodass:
  *
  * - jede erfolgreiche Reservierung mit `(ownerId, leaseExpiresAt)`
- *   persistiert wird (Plan §7.9 line 1280-1281),
+ *   persistiert wird (LF-012 / LN-011 / LN-017 / LN-027),
  * - `commitForOwner`/`releaseForOwner`/`refundForOwner` sowohl den
  *   Counter im [QuotaService] aktualisieren als auch den Owner-Status,
  * - der [QuotaReservationSweeper] orphane Eintraege ueber den Owner-
  *   Store findet und exactly-once-refunded.
  *
  * Backward-compat: das underlying [QuotaService]-Interface bleibt
- * unveraendert. Caller, die kein Owner-Tracking brauchen (z.B. Phase-C
+ * unveraendert. Caller, die kein Owner-Tracking brauchen (z.B. legacy
  * Upload-Slots), nutzen weiterhin den simpel-Pfad direkt.
  */
 open class OwnerAwareQuotaService(
@@ -62,7 +61,7 @@ open class OwnerAwareQuotaService(
 
     /**
      * Markiert den Owner als COMMITTED — der Slot bleibt belegt, der
-     * Sweeper darf nicht mehr refunden. Plan §7.9 line 1278:
+     * Sweeper darf nicht mehr refunden. LF-012 / LN-011 / LN-017 / LN-027:
      * `commit` nur nach erfolgreichem Job-Commit.
      *
      * Wenn kein Owner-Eintrag existiert (z.B. weil das vorherige
@@ -75,7 +74,7 @@ open class OwnerAwareQuotaService(
     }
 
     /**
-     * Plan §7.9 line 1291-1292: bei `succeeded`/`failed`/`cancelled`/
+     * LF-012 / LN-011 / LN-017 / LN-027: bei `succeeded`/`failed`/`cancelled`/
      * Runner-Timeout-Cleanup freigeben. Counter wird via [delegate]
      * dekrementiert; Owner-Status auf RELEASED.
      *
@@ -92,7 +91,7 @@ open class OwnerAwareQuotaService(
     }
 
     /**
-     * Plan §7.9 line 1282-1284: refund nur fuer Start-Timeouts und
+     * LF-012 / LN-011 / LN-017 / LN-027: refund nur fuer Start-Timeouts und
      * technische Pre-Commit-Fehler des konkreten Pipeline-Owners.
      * Owner-Status auf REFUNDED — der Sweeper sieht den Eintrag dann
      * nicht mehr in `listExpiredPending`.

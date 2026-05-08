@@ -239,13 +239,13 @@ class DataExportHelpersTest : FunSpec({
         // Keine Auto-Zonierung — ein lokaler ISO-DateTime bleibt
         // LocalDateTime, auch wenn die JVM-Default-Zone abweicht oder
         // `ResolvedI18nSettings.timezone` gesetzt waere.
-        test("Phase E §4.4: lokaler DateTime bleibt LocalDateTime (keine Default-TZ-Injektion)") {
+        test("LF-007: lokaler DateTime bleibt LocalDateTime (keine Default-TZ-Injektion)") {
             val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00")
             result.shouldBeInstanceOf<LocalDateTime>()
             result shouldBe LocalDateTime.of(2026, 6, 15, 12, 0, 0)
         }
 
-        test("Phase E §4.2: Offset-Input bleibt OffsetDateTime") {
+        test("LF-007: Offset-Input bleibt OffsetDateTime") {
             val result = DataExportHelpers.parseSinceLiteral("2026-06-15T12:00:00+02:00")
             result.shouldBeInstanceOf<OffsetDateTime>()
         }
@@ -311,7 +311,7 @@ class DataExportHelpersTest : FunSpec({
 
     // ─── TABLE_IDENTIFIER_PATTERN constant ────────────────────────
 
-    test("TABLE_IDENTIFIER_PATTERN is the documented regex from Plan §6.7") {
+    test("TABLE_IDENTIFIER_PATTERN is the documented regex from LF-008 / LF-009 / LF-013") {
         DataExportHelpers.TABLE_IDENTIFIER_PATTERN shouldBe
             "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)?$"
     }

@@ -14,8 +14,8 @@ import java.time.Instant
 
 /**
  * Postgres-/JDBC-Implementierung des [QuotaReservationOwnerStore]-
- * Vertrags. SQL-Patterns: Plan § 6.9 in
- * `docs/planning/done/ImpPlan-0.9.6-E2.md`.
+ * Vertrags. SQL-Patterns: LF-012 / LN-011 / LN-017 / LN-027 in
+ * `docs/planning/done/LF-012 / LN-011 / LN-017 / LN-027`.
  *
  * Atomicity:
  * - `register` ist `INSERT` (ohne ON CONFLICT). Doppel-register fuer
@@ -28,7 +28,7 @@ import java.time.Instant
  *
  * Cross-TX-Komposition: `*OnConnection`-Varianten (internal) erlauben
  * [JdbcOwnerAwareQuotaService] das Owner-mark UND den Counter-
- * Decrement in einer geteilten DB-TX (Plan § 6.9 Failure-Window).
+ * Decrement in einer geteilten DB-TX (LF-012 / LN-011 / LN-017 / LN-027 Failure-Window).
  */
 class JdbcQuotaReservationOwnerStore(
     private val transactionRunner: JdbcTransactionRunner,
@@ -101,7 +101,7 @@ class JdbcQuotaReservationOwnerStore(
                 ownerId, reservationJson, leaseExpiresAt, now, now,
             )
         } catch (cause: SQLException) {
-            // Plan § 6.9 + Contract: PK-Verletzung -> IllegalArgumentException.
+            // LF-012 / LN-011 / LN-017 / LN-027 + Contract: PK-Verletzung -> IllegalArgumentException.
             // Postgres SQLState 23505 = unique_violation.
             if (cause.sqlState == PG_SQLSTATE_UNIQUE_VIOLATION) {
                 throw IllegalArgumentException(

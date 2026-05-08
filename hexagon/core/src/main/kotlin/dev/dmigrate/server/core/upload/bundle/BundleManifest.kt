@@ -17,7 +17,7 @@ package dev.dmigrate.server.core.upload.bundle
  * }
  * ```
  *
- * Plan-§4-Vertragsentscheidungen, die hier durchgesetzt werden:
+ * LF-010 / LF-013 / LN-009 / LN-011-Vertragsentscheidungen, die hier durchgesetzt werden:
  *
  * - **Bundle-Level-Format** ist verbindlich; per-Table `format`-Override
  *   ist in v1 nicht erlaubt. Spätere Manifest-Versionen können das
@@ -58,7 +58,7 @@ data class BundleManifest(
  * Follow-up AP 2 — eine Tabellen-Bindung im
  * [BundleManifest]. Die Reihenfolge der Liste bestimmt **nicht** die
  * Import-Reihenfolge — der Runner zieht die finale Tabellenreihenfolge
- * aus dem `SchemaRefImportPreflightAdapter` (FK-Topologie). Plan-§5.5-
+ * aus dem `SchemaRefImportPreflightAdapter` (FK-Topologie). LF-010 / LF-013 / LN-009 / LN-011-
  * Wortlaut: "SchemaRefImportPreflightAdapter validiert Schema und
  * Tabellenreihenfolge, sobald ein `schemaRef` vorliegt."
  *

@@ -1,14 +1,14 @@
--- Phase E2 initial migration for the d-migrate Server-State-DB.
--- Plan: docs/planning/done/ImpPlan-0.9.6-E2.md § 4 (V1__phase_e_initial.sql).
+-- LF-012 / LN-011 / LN-017 / LN-027 initial migration for the d-migrate Server-State-DB.
+-- LF-012 / LN-011 / LN-017 / LN-027 (V1__server_state_initial.sql).
 --
 -- Targets PostgreSQL >= 14 (technical minimum; PG 16+ recommended for new
--- deployments — see plan § 3.1). Uses JSONB, TIMESTAMPTZ, and partial
+-- deployments — see LF-012 / LN-011 / LN-017 / LN-027). Uses JSONB, TIMESTAMPTZ, and partial
 -- indexes; do NOT port verbatim to other dialects without dialect-specific
 -- review.
 --
 -- The Server-State-DB is isolated from the migration-target databases the
--- d-migrate driver-* adapters operate on (plan § 3.2 + § 3.6). It belongs
--- exclusively to the Phase-E control plane.
+-- d-migrate driver-* adapters operate on (LF-012 / LN-011 / LN-017 / LN-027). It belongs
+-- exclusively to the server-state control plane.
 
 -- ============================================================
 -- 4.1 IdempotencyStore — regular path
@@ -20,10 +20,10 @@ CREATE TABLE idempotency_reservations (
     tool_name           TEXT        NOT NULL,
     idempotency_key     TEXT        NOT NULL,
     state               TEXT        NOT NULL,                 -- PENDING|AWAITING_APPROVAL|COMMITTED|DENIED|FAILED
-    claimed             BOOLEAN     NOT NULL DEFAULT FALSE,   -- claimApproved winner marker (plan § 6.4)
+    claimed             BOOLEAN     NOT NULL DEFAULT FALSE,   -- claimApproved winner marker (LF-012 / LN-011 / LN-017 / LN-027)
     payload_fingerprint TEXT        NOT NULL,
     result_ref          TEXT,
-    challenge           JSONB,                                -- ApprovalChallenge serialized (plan § 6.3)
+    challenge           JSONB,                                -- ApprovalChallenge serialized (LF-012 / LN-011 / LN-017 / LN-027)
     reason              TEXT,
     expires_at          TIMESTAMPTZ NOT NULL,                 -- lease for non-terminal, outcome expiry for terminal
     retention_until     TIMESTAMPTZ NOT NULL,                 -- terminal-state retention; equals expires_at once terminal
@@ -35,11 +35,11 @@ CREATE TABLE idempotency_reservations (
 CREATE INDEX idempotency_expiry ON idempotency_reservations (retention_until);
 
 -- ============================================================
--- 4.1.bis IdempotencyStore — InitResume path (Phase-C upload-init)
+-- 4.1.bis IdempotencyStore — InitResume path (upload-init)
 -- ============================================================
 -- Separate table from idempotency_reservations because InitResumeScope
 -- (clientRequestId) and IdempotencyScope (idempotencyKey) are distinct
--- identity tuples. Polymorph in one table would be fragile (plan § 4.1.bis).
+-- identity tuples. Polymorph in one table would be fragile (LF-012 / LN-011 / LN-017 / LN-027).
 
 CREATE TABLE init_resume_reservations (
     tenant_id           TEXT        NOT NULL,
@@ -90,7 +90,7 @@ CREATE TABLE quota_reservation_owners (
 );
 
 -- Partial index for the sweeper hot path: only PENDING owners need
--- expiry scanning. Plan § 4.3.
+-- expiry scanning. LF-012 / LN-011 / LN-017 / LN-027.
 CREATE INDEX quota_owners_expiry
     ON quota_reservation_owners (lease_expires_at)
     WHERE state = 'PENDING';
@@ -99,7 +99,7 @@ CREATE INDEX quota_owners_expiry
 -- 4.4 QuotaCounter
 -- ============================================================
 -- Limits live in QuotaConfig (passed in at reserve time), NOT in this
--- table — limit changes do not require DDL (plan § 4.4 + § 6.8).
+-- table — limit changes do not require DDL (LF-012 / LN-011 / LN-017 / LN-027).
 
 CREATE TABLE quota_counters (
     quota_key  TEXT        NOT NULL PRIMARY KEY,            -- serialized QuotaKey

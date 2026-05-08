@@ -73,7 +73,7 @@ class JobStartInputValidatorTest : FunSpec({
 
     test("JDBC-URL-Check kommt vor URI-Syntax-Check") {
         // Beide Checks wuerden treffen — JDBC-URL gewinnt fuer den
-        // engsten Fehler (Plan §7.6: "freie JDBC-Strings" explizit
+        // engsten Fehler (LF-012 / LN-011 / LN-017 / LN-027: "freie JDBC-Strings" explizit
         // genannt).
         val outcome = JobStartInputValidator.validate(
             attempt(refs = listOf(connRef(value = "jdbc:sqlite::memory:"))),

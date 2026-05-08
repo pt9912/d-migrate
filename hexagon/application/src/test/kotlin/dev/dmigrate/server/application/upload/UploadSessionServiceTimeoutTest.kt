@@ -19,7 +19,7 @@ import java.io.ByteArrayInputStream
 import java.time.Instant
 
 /**
- * Phase F § 8.9 (F.9 2/3) — pin't den Upload-Finalisierungs-Timeout-
+ * LF-010 / LF-013 / LN-009 / LN-011— pin't den Upload-Finalisierungs-Timeout-
  * Sweeper:
  *
  * - findStaleFinalizing trifft FINALIZING-Sessions mit abgelaufenem
@@ -85,7 +85,7 @@ class UploadSessionServiceTimeoutTest : FunSpec({
         val timedOut = service.timeoutStaleFinalizingSessions(now)
         timedOut shouldBe 1
 
-        // Plan-§-8.9 Akzeptanz:
+        // LF-010 / LF-013 / LN-009 / LN-011 Akzeptanz:
         // - Session ABORTED + FailureOutcome OPERATION_TIMEOUT
         val session = sessions.findById(tenant, "ups-timeout-1").shouldNotBeNull()
         session.state shouldBe UploadSessionState.ABORTED

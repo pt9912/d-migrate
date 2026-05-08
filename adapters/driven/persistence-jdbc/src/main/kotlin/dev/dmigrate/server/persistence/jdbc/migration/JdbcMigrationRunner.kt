@@ -5,17 +5,16 @@ import org.flywaydb.core.api.output.MigrateResult
 import javax.sql.DataSource
 
 /**
- * Wendet die Phase-E Server-State-Migrationen via Flyway an. Plan-Ref:
- * `ImpPlan-0.9.6-E2.md` § 3.2 + § 4.
+ * Wendet die LF-012 / LN-011 / LN-017 / LN-027 Server-State-Migrationen via Flyway an.
  *
- * Production-Pfad ist ein expliziter Ops-Migrationslauf (Plan § 3.2
+ * Production-Pfad ist ein expliziter Ops-Migrationslauf (LF-012 / LN-011 / LN-017 / LN-027
  * + § 10 Q3). Auto-Migrate beim Server-Start ist opt-in via
  * `server.state.migrations.auto = true` und wird vom Bootstrap im
  * MCP-Adapter — nicht in diesem Runner — gewrapped.
  *
- * Lokationen: `classpath:db/migration` (V1__phase_e_initial.sql und
+ * Lokationen: `classpath:db/migration` (V1__server_state_initial.sql und
  * spaetere V2/V3-Migrationen werden hier abgelegt). Eine isolierte
- * History-Tabelle `flyway_phase_e_history` haelt das Phase-E-Schema
+ * History-Tabelle `flyway_server_state_history` haelt das server-state Schema
  * von eventuellen Co-Mietern in derselben DB getrennt.
  */
 class JdbcMigrationRunner(
@@ -32,7 +31,7 @@ class JdbcMigrationRunner(
      * History-Tabelle, ohne neue Migrationen anzuwenden. Wird vom
      * Bootstrap-Pfad bei `server.state.migrations.auto = false`
      * verwendet, um beim Server-Start gegen schief stehende DBs zu
-     * fail-fasten (Plan § 3.2).
+     * fail-fasten (LF-012 / LN-011 / LN-017 / LN-027).
      */
     fun validate() {
         configure().validate()
@@ -47,7 +46,7 @@ class JdbcMigrationRunner(
             .load()
 
     companion object {
-        const val DEFAULT_HISTORY_TABLE: String = "flyway_phase_e_history"
+        const val DEFAULT_HISTORY_TABLE: String = "flyway_server_state_history"
         const val DEFAULT_LOCATION: String = "classpath:db/migration"
     }
 }

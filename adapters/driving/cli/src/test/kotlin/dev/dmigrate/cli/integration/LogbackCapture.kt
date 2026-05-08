@@ -8,7 +8,7 @@ import org.slf4j.Logger.ROOT_LOGGER_NAME
 import org.slf4j.LoggerFactory
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E8(C) follow-up: in-process Logback capture so the
+ * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C) follow-up: in-process Logback capture so the
  * security-scrubbing canary can scan log output for raw secrets.
  * The cli module already depends on `logback-classic`, so the
  * cast from SLF4J's `ILoggerFactory` to Logback's `LoggerContext`

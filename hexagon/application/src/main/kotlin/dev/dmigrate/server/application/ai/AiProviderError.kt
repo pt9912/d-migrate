@@ -1,7 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.1 (G.2 1/4) — typisierte Provider-Fehler.
+ * LF-017 / LF-024 / LN-030 / LN-031— typisierte Provider-Fehler.
  *
  * Provider-spezifische Exceptions (HTTP-Status, SDK-Throwables,
  * lokale Pipe-Brüche) werden in der Adapter-Schicht zu einem dieser
@@ -9,7 +9,7 @@ package dev.dmigrate.server.application.ai
  * **nie** weiter durch die Audit-/Wire-Schicht reichen, weil der
  * Stacktrace Secrets oder Endpunkt-Hinweise enthalten kann.
  *
- * Plan §7.2 verbindliche Fehler-Mappings (für G.6):
+ * LF-017 / LF-024 / LN-030 / LN-031 verbindliche Fehler-Mappings:
  *
  * - [TIMEOUT] → `OPERATION_TIMEOUT` (retryable)
  * - [RATE_LIMITED] → `RATE_LIMITED` (retryable)
@@ -23,7 +23,7 @@ package dev.dmigrate.server.application.ai
  *   Provider-Output enthält Secrets/Rohdaten und wird verworfen)
  * - [INTERNAL] → `INTERNAL_AGENT_ERROR` (terminal)
  *
- * `defaultRetryable` ist der Plan-§-7.2-Default; ein konkreter Caller
+ * `defaultRetryable` ist der LF-017 / LF-024 / LN-030 / LN-031-Default; ein konkreter Caller
  * (etwa der `AiToolOutcomeStore`-Pfad) darf für eine Instanz das
  * `Failure.retryable`-Flag überschreiben, wenn der Kontext es
  * rechtfertigt.

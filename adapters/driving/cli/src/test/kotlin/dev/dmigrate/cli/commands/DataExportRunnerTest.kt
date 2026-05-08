@@ -37,7 +37,7 @@ import java.time.LocalDateTime
  * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
  * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
  *
- * Damit wird **jeder Exit-Code-Pfad** aus Plan §6.10 (2/4/5/7/0) direkt
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
  * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
  * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
  * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.

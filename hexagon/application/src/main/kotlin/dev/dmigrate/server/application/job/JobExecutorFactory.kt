@@ -4,7 +4,7 @@ import java.util.concurrent.Executor
 
 /**
  * Bauplatz fuer das vom Host (MCP-Bootstrap) konsumierte
- * Job-Executor-Tripel — gemaess Plan §4 in `ImpPlan-0.9.6-E3.md`.
+ * Job-Executor-Tripel — gemaess LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Der Caller uebergibt eine [JobExecutorConfig]; die Factory liefert
  * ein [JobExecutorBundle] mit `executor` (an [JobDispatcher]),

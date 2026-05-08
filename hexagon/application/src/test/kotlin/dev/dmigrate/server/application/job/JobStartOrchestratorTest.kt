@@ -216,7 +216,7 @@ class JobStartOrchestratorTest : FunSpec({
     }
 
     test("IdempotencyConflict: gleicher Scope, anderer Fingerprint → keine Policy") {
-        // Plan §7.5: "Idempotency-Konflikt prueft keine Policy".
+        // LF-012 / LN-011 / LN-017 / LN-027: "Idempotency-Konflikt prueft keine Policy".
         val fx = Fixture(policyDefault = PolicyEffect.Deny("policy:tool-blocked"))
         // Erster Call: scope k1 mit fp "c1".
         fx.orchestrator.start(fx.request(payload = JsonValue.obj("connectionId" to JsonValue.str("c1"))))

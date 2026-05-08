@@ -11,7 +11,7 @@ import java.time.Instant
 
 /**
  * Postgres-/JDBC-Variante des [OwnerAwareQuotaService]-Vertrags
- * (Plan-Refs: `ImpPlan-0.9.6-E2.md` § 6.8 + § 6.9).
+ * (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Schliesst die Atomicity-Lücke aus § 6.9: `markReleased`/`markRefunded`
  * UND der zugehoerige Counter-Decrement laufen in derselben DB-TX
@@ -58,7 +58,7 @@ class JdbcOwnerAwareQuotaService(
     }
 
     override fun commitForOwner(ownerId: String, now: Instant) {
-        // commit ist im DefaultQuotaService ein no-op (Phase A audit-only).
+        // commit ist im DefaultQuotaService ein no-op (LN-027 audit-only).
         // markCommitted-CAS auf dem Owner-Store braucht keine Counter-Mutation,
         // also reicht ein einfacher inTransaction-Block ohne shared-conn-Helper.
         transactionRunner.inTransaction { conn ->
@@ -67,7 +67,7 @@ class JdbcOwnerAwareQuotaService(
     }
 
     override fun releaseForOwner(ownerId: String, now: Instant) {
-        // Plan § 6.9: markReleased + Counter-Decrement MUESSEN gemeinsam.
+        // LF-012 / LN-011 / LN-017 / LN-027: markReleased + Counter-Decrement MUESSEN gemeinsam.
         transactionRunner.inTransaction { conn ->
             val transitioned: QuotaReservationOwner =
                 jdbcOwnerStore.markReleasedOnConnection(conn, ownerId, now)

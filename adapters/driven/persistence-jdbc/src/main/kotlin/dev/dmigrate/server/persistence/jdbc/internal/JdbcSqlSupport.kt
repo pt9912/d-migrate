@@ -10,7 +10,7 @@ import java.time.Instant
 /**
  * Kleine, adapter-private JDBC-Helfer fuer den persistence-jdbc-Adapter.
  * Spart pro SQL-Statement die manuelle Index-Buchhaltung der
- * `setX`-Aufrufe und macht die Stores im Plan-§-6-SQL-Pattern lesbar.
+ * `setX`-Aufrufe und macht die Stores im LF-012 / LN-011 / LN-017 / LN-027 SQL-Pattern lesbar.
  *
  * Bewusst minimal — kein DSL-Anspruch, keine ORM-Anleihen. Alles bleibt
  * im JDBC-Stil, nur die Bind-Schleife ist abstrahiert.

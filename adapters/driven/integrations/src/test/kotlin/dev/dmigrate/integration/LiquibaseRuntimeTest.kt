@@ -17,7 +17,7 @@ import java.sql.DriverManager
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E: Liquibase runtime validation against PostgreSQL.
+ * LF-011: Liquibase runtime validation against PostgreSQL.
  *
  * Generates a Liquibase XML changelog via the production export path,
  * then runs Liquibase update + rollback against a real PostgreSQL

@@ -8,7 +8,7 @@ import dev.dmigrate.migration.MigrationVersionSource
 /**
  * Resolves a [MigrationIdentity] from CLI flags and schema metadata.
  *
- * Applies the tool-specific version strategy from Phase A:
+ * Applies the LF-011 tool-specific version strategy:
  * - Flyway/Liquibase: `--version` optional, falls back to `schema.version`
  * - Django/Knex: `--version` required, no fallback
  */
