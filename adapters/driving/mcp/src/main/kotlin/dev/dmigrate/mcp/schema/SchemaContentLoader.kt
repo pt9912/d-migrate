@@ -14,7 +14,7 @@ import java.io.InputStream
 
 /**
  * Materialises a [SchemaSource] into a parsed [SchemaDefinition] for
- * read-only schema tools (AP 6.4-6.6 per `ImpPlan-0.9.6-C.md`).
+ * read-only schema tools (LF-012 / LN-027 / LN-028 / LN-038-6.6 per LF-012 / LN-027 / LN-028 / LN-038).
  *
  * Inline sources are streamed into the JSON codec without re-reading
  * the bytes; reference sources chain through [ArtifactStore] to learn

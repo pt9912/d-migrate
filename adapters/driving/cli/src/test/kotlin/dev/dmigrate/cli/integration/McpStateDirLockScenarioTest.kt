@@ -16,8 +16,8 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E7: lock-/concurrency tests for `<stateDir>/.lock` per
- * `ImpPlan-0.9.6-C.md` §6.24 + §6.21.
+ * LF-012 / LN-027 / LN-028 / LN-038 E7: lock-/concurrency tests for `<stateDir>/.lock` per
+ * LF-012 / LN-027 / LN-028 / LN-038§6.21.
  *
  * Pflichtfluesse:
  *  - while a transport's harness server is running on a stateDir,
@@ -39,7 +39,7 @@ private val IntegrationTag = NamedTag("integration")
  *
  * The unit-level lock semantics are pinned in
  * `McpStateDirLockTest`; this spec covers the harness-level
- * end-to-end exercise that AP 6.24 §6.24 demands.
+ * end-to-end exercise that LF-012 / LN-027 / LN-028 / LN-038 §6.24 demands.
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpStateDirLockScenarioTest : FunSpec({

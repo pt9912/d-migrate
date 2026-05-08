@@ -63,7 +63,7 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
-    // ─── Split Golden Master file assertions (0.9.2 AP 6.7) ──────
+    // ─── Split Golden Master file assertions (LF-003 / LF-009) ──────
 
     val splitSchemas = listOf("full-featured", "view-function-deps")
 
@@ -157,7 +157,7 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
-    // ── MySQL helper_table Golden Masters for full-featured (AP 6.5) ──
+    // ── MySQL helper_table Golden Masters for full-featured (LF-003 / LF-004) ──
 
     test("full-featured mysql helper_table generates correct DDL (golden master)") {
         val input = loadFixture("schemas/full-featured.yaml")
@@ -192,7 +192,7 @@ class DdlGoldenMasterTest : FunSpec({
         stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
     }
 
-    // ── MySQL helper_table Golden Master (AP 6.4) ──────────────
+    // ── MySQL helper_table Golden Master (LF-003 / LF-004) ──────────────
 
     test("sequence-emulation mysql helper_table generates support objects") {
         val input = loadFixture("schemas/sequence-emulation.yaml")

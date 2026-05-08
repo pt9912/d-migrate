@@ -174,7 +174,7 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // — das ist über das öffentliche Verhalten nicht direkt sichtbar, aber wir
         // verifizieren das indirekt im Round-Trip-Test oben.
         // Dieser Test ist Platzhalter; konkrete PG/MySQL-Connection-Tests folgen
-        // in Phase B mit Testcontainers (@Tag("integration")).
+        // in format reader mit Testcontainers (@Tag("integration")).
     }
 
     // ─── ConnectionConfig.toString() Maskierung ──────────────────

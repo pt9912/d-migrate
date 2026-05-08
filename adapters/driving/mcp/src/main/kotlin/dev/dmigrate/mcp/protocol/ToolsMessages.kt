@@ -19,10 +19,10 @@ data class ToolsListResult(
 
 /**
  * MCP `tools/list` per-tool projection. The `inputSchema` field is
- * required by the MCP spec; `outputSchema` is optional but Phase B
+ * required by the MCP spec; `outputSchema` is optional but LF-012 / LN-038
  * advertises it for every tool so client tooling has stable typing.
  *
- * Phase B's [requiredScopes] field is a d-migrate extension — MCP
+ * LF-012 / LN-038's [requiredScopes] field is a d-migrate extension — MCP
  * itself has no scope concept. Clients that don't recognise the field
  * simply ignore it.
  */
@@ -37,7 +37,7 @@ data class ToolMetadata(
 
 /**
  * MCP `tools/call` request shape. `arguments` is left as a Gson tree
- * so each tool handler decides how to deserialize it (Phase B's
+ * so each tool handler decides how to deserialize it (LF-012 / LN-038's
  * `capabilities_list` ignores it; later tools will project into typed
  * argument records).
  */

@@ -15,7 +15,7 @@ import java.time.Instant
  * lease expires or the entry transitions to a terminal state.
  *
  * State machine: `PENDING` -> (`AWAITING_APPROVAL` -> )? `COMMITTED` | `DENIED`.
- * Lease/recovery semantics are documented in `docs/ImpPlan-0.9.6-A.md`
+ * Lease/recovery semantics are documented in `spec/mcp-server.md`
  * §6.2 / §14.2.
  *
  * Implementoren MUESSEN die `IdempotencyStoreContractTests`-Suite
@@ -41,7 +41,7 @@ interface IdempotencyStore {
     ): InitResumeOutcome
 
     /**
-     * Phase E §5.5 (Review-Fix Blocker #3): markAwaitingApproval-Variante,
+     * LF-012 / LN-011 / LN-017 / LN-027 §5.5 (Review-Fix Blocker #3): markAwaitingApproval-Variante,
      * die die durable [ApprovalChallenge] mitspeichert. Beim spaeteren
      * `reserve` (Approved-Retry) liefert die `AwaitingApproval`-Antwort
      * die gespeicherte Challenge zurueck, sodass der Caller den
@@ -71,7 +71,7 @@ interface IdempotencyStore {
     /**
      * Transitions a `PENDING` or `AWAITING_APPROVAL` entry to `COMMITTED`.
      *
-     * Phase E §7.2: when committing as part of a Job-Start, the resulting
+     * LF-012 / LN-011 / LN-017 / LN-027 §7.2: when committing as part of a Job-Start, the resulting
      * COMMITTED-retention MUST cover the job's retention so a deduplicated
      * `COMMITTED` answer is still observable while the job exists. Pass
      * [retentionUntil] = `jobRecord.expiresAt` from the
@@ -91,7 +91,7 @@ interface IdempotencyStore {
     ): Boolean
 
     /**
-     * Phase E §7.5: transitioniert eine `PENDING`- oder
+     * LF-012 / LN-011 / LN-017 / LN-027 §7.5: transitioniert eine `PENDING`- oder
      * `AWAITING_APPROVAL`-Reservierung in `DENIED`. Die Retention bestimmt
      * der Store; der zurueckgegebene [Instant] (`null` bei Nicht-Anwendbar)
      * ist `expiresAt` des neuen Eintrags und MUSS vom Caller fuer das
@@ -100,7 +100,7 @@ interface IdempotencyStore {
     fun deny(scope: IdempotencyScope, reason: String, now: Instant): Instant?
 
     /**
-     * Phase E §5.2 / §7.3: transitioniert eine `PENDING`- oder
+     * LF-012 / LN-011 / LN-017 / LN-027 §5.2 / §7.3: transitioniert eine `PENDING`- oder
      * `AWAITING_APPROVAL`-Reservierung in den finalen [IdempotencyState.FAILED]-
      * Zustand. Im Gegensatz zu [deny] (explizite Policy-Ablehnung)
      * ist FAILED für endgültige technische Fehler vorgesehen
@@ -109,7 +109,7 @@ interface IdempotencyStore {
      * Retries liefern deterministisch dasselbe Fehler-Outcome bis
      * `retentionUntil` bzw. zum Default-Retention-Ende.
      *
-     * Plan §5.2: FAILED ist final und darf NICHT für abgelaufene
+     * LF-012 / LN-011 / LN-017 / LN-027: FAILED ist final und darf NICHT für abgelaufene
      * `PENDING`-Leases oder `AWAITING_APPROVAL`-Challenges verwendet
      * werden — diese erlauben eine Recovery-Reservierung mit identischem
      * Fingerprint.

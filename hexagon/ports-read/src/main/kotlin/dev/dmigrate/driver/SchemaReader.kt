@@ -8,7 +8,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
  * Connection-Ownership follows the established pool pattern: the reader
  * borrows connections from the pool as needed and returns them after use.
  *
- * Implementations live in the driver adapters (Phase C+). This interface
+ * Implementations live in the driver adapters. This interface
  * defines only the contract.
  */
 interface SchemaReader {

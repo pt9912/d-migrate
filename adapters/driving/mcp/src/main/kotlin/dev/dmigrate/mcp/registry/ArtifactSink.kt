@@ -19,8 +19,8 @@ import java.time.Duration
 import java.util.UUID
 
 /**
- * Shared sink for read-only Phase-C tool fallbacks
- * (`schema_generate` AP 6.5, `schema_compare` AP 6.6, AP 6.13
+ * Shared sink for read-only LF-012 / LN-038 tool fallbacks
+ * (`schema_generate` LF-012 / LN-027 / LN-028 / LN-038, `schema_compare` LF-012 / LN-027 / LN-028 / LN-038, LF-012 / LN-027 / LN-028 / LN-038
  * centralised output). When a tool's response would exceed
  * `maxToolResponseBytes`, the consumer hands the rendered bytes here
  * and gets back a [ServerResourceUri] pointing at the persisted
@@ -30,7 +30,7 @@ import java.util.UUID
  * are addressable by the caller's whole tenant via the artifact
  * resource URI; `OWNER` would silently break peer-discovery for the
  * same tenant. Approval-policy is intentionally NOT consulted: this
- * is the read-only counterpart to AP 6.7-6.10's policy-pflichtigen
+ * is the read-only counterpart to LF-012 / LN-027 / LN-028 / LN-038's policy-pflichtigen
  * uploads, which take a different path.
  */
 internal class ArtifactSink(

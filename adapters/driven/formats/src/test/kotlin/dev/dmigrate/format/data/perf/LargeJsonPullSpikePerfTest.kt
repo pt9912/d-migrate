@@ -13,7 +13,7 @@ import kotlin.math.floor
 private val PerfTag = NamedTag("perf")
 
 /**
- * Phase A Schritt 6: echter Go/No-Go-Spike gegen DSL-JSONs
+ * LN-043: echter Go/No-Go-Spike gegen DSL-JSONs
  * Streaming-/Iterator-API auf einem 100-MB-Top-Level-Array.
  *
  * Ziel:

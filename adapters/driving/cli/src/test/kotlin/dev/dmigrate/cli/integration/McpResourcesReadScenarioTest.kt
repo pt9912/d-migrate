@@ -10,11 +10,11 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E6: transport-neutral coverage of `resources/read` per
- * `ImpPlan-0.9.6-C.md` §6.24 + §7.3.
+ * LF-012 / LN-027 / LN-028 / LN-038 E6: transport-neutral coverage of `resources/read` per
+ * LF-012 / LN-027 / LN-028 / LN-038§7.3.
  *
  * Pflichtfluesse:
- *  - Happy path: stage a Phase-C resource (schema / artifact / job)
+ *  - Happy path: stage a LF-012 / LN-038 resource (schema / artifact / job)
  *    on each transport's wiring, read the resource via
  *    `resources/read`, and pin that the projection carries the same
  *    `uri`/`tenantId` and the kind-specific identity field on stdio
@@ -124,7 +124,7 @@ class McpResourcesReadScenarioTest : FunSpec({
     }
 
     test("resources/read for a foreign tenant URI surfaces an identical -32600 tenant-scope-denied on both transports") {
-        // Plan-D §4.2 stage 2: tenant addressing checks
+        // LF-012 / LN-038 stage 2: tenant addressing checks
         // `allowedTenantIds`. The integration principal's allowed set
         // is `{INTEGRATION_TENANT}`, so a URI under "foreign" fails
         // BEFORE any store lookup runs. Both transports MUST return
@@ -142,7 +142,7 @@ class McpResourcesReadScenarioTest : FunSpec({
     }
 
     test("resources/read on the upload-sessions kind collapses into the same VALIDATION_ERROR on both transports") {
-        // Plan-D §5.1 / §10.7: upload-sessions are not MCP-readable.
+        // LF-012 / LN-038: upload-sessions are not MCP-readable.
         // The precedence chain runs the blocked-kind gate BEFORE any
         // store lookup, so a specific session id is never confirmed —
         // the no-oracle property holds for IDs even though the kind
@@ -202,7 +202,7 @@ private const val JSONRPC_INVALID_PARAMS: Int = -32602
 private const val MSG_NOT_FOUND: String = "Resource not found"
 private const val MSG_TENANT_DENIED: String = "tenant scope denied for requested resource"
 private const val MSG_INVALID_URI: String = "invalid resource URI"
-private const val MSG_KIND_BLOCKED: String = "resource kind 'upload-sessions' is not readable in Phase D"
+private const val MSG_KIND_BLOCKED: String = "resource kind 'upload-sessions' is not readable in LF-012 / LN-038"
 
 /**
  * Scrubbed, transport-comparable view of a JSON-RPC error: the

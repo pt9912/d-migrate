@@ -6,7 +6,7 @@ import io.kotest.matchers.maps.shouldContainExactly
 import io.kotest.matchers.shouldBe
 
 /**
- * AP 6.23 D1: pin the shared output schema building blocks before
+ * LF-012 / LN-027 / LN-028 / LN-038 D1: pin the shared output schema building blocks before
  * D3-D6 wire them into the tool schemas. The helpers must produce
  * closed shapes (`additionalProperties=false`) so a later tool-schema
  * change cannot regress strictness without an explicit Goldenfile

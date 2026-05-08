@@ -35,7 +35,7 @@ class PromptsHandlerTest : FunSpec({
         hygieneService = DefaultPromptHygieneService(),
     )
 
-    test("Plan §5.7 Akzeptanz: list() liefert die drei Pflichtprompts in alphabetischer Reihenfolge") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: list() liefert die drei Pflichtprompts in alphabetischer Reihenfolge") {
         val out = handler().list(PromptsListParams())
         out.prompts.map { it.name } shouldBe listOf(
             "procedure_analysis", "procedure_transformation", "testdata_planning",
@@ -73,7 +73,7 @@ class PromptsHandlerTest : FunSpec({
         outcome.shouldBeInstanceOf<PromptsLookupOutcome.Found>()
     }
 
-    test("Plan §6 G.7: unbekannter Prompt -> NotFound") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unbekannter Prompt -> NotFound") {
         val outcome = handler().get(
             PromptsGetParams(name = "no_such_prompt", arguments = null),
             principal,
@@ -82,7 +82,7 @@ class PromptsHandlerTest : FunSpec({
         notFound.name shouldBe "no_such_prompt"
     }
 
-    test("Plan §6 G.7: fehlendes Pflichtargument -> InvalidArguments(MISSING_REQUIRED)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlendes Pflichtargument -> InvalidArguments(MISSING_REQUIRED)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -97,7 +97,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.MISSING_REQUIRED
     }
 
-    test("Plan §6 G.7: unbekanntes Argument -> InvalidArguments(UNKNOWN_ARGUMENT)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unbekanntes Argument -> InvalidArguments(UNKNOWN_ARGUMENT)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -114,7 +114,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.UNKNOWN_ARGUMENT
     }
 
-    test("Plan §6 G.7: ungueltiges enum -> InvalidArguments(ENUM_VIOLATION)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: ungueltiges enum -> InvalidArguments(ENUM_VIOLATION)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -130,7 +130,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.ENUM_VIOLATION
     }
 
-    test("Plan §6 G.7: invalides URI-Format -> InvalidArguments(INVALID_URI)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: invalides URI-Format -> InvalidArguments(INVALID_URI)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -146,7 +146,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.INVALID_URI
     }
 
-    test("Plan §6 G.7: falscher ResourceKind -> InvalidArguments(WRONG_RESOURCE_KIND)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: falscher ResourceKind -> InvalidArguments(WRONG_RESOURCE_KIND)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -162,7 +162,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.WRONG_RESOURCE_KIND
     }
 
-    test("Plan §6 G.7: cross-tenant URI -> InvalidArguments(TENANT_SCOPE_DENIED)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: cross-tenant URI -> InvalidArguments(TENANT_SCOPE_DENIED)") {
         val outcome = handler().get(
             PromptsGetParams(
                 name = "testdata_planning",
@@ -178,7 +178,7 @@ class PromptsHandlerTest : FunSpec({
             PromptArgumentValidationError.TENANT_SCOPE_DENIED
     }
 
-    test("Plan §6 G.7: Secret-/Rohdatenparameter -> HygieneBlocked") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Secret-/Rohdatenparameter -> HygieneBlocked") {
         // rulesSummary mit api_key-Pattern → die Hygiene blockt den
         // gebauten Prompt-Text.
         val outcome = handler().get(
@@ -193,12 +193,12 @@ class PromptsHandlerTest : FunSpec({
             principal,
         )
         val blocked = outcome.shouldBeInstanceOf<PromptsLookupOutcome.HygieneBlocked>()
-        // Plan §6 G.4 Akzeptanz: kein Secret-Wert im Public-Message.
+        // LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: kein Secret-Wert im Public-Message.
         blocked.publicMessage.contains("AKIA") shouldBe false
         blocked.publicMessage.contains("secret_key") shouldBe false
     }
 
-    test("Plan §4.5 Akzeptanz: prompts/get fuehrt KEIN Tool aus") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: prompts/get fuehrt KEIN Tool aus") {
         // Strukturzusage: PromptsHandler hat keinen Zugriff auf
         // ToolRegistry/Handler — der Konstruktor nimmt nur Registry +
         // Hygiene. Wir verifizieren das hier durch Reflection-Check
@@ -208,7 +208,7 @@ class PromptsHandlerTest : FunSpec({
         ctor.parameters.map { it.name }.toSet() shouldBe setOf("registry", "hygieneService")
     }
 
-    test("Plan §5.7 Pflichtprompts haben revision != null und nicht-leere expectedTools") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Pflichtprompts haben revision != null und nicht-leere expectedTools") {
         val registry = DefaultPromptRegistry.mandatory()
         for (entry in registry.list()) {
             val descriptor = registry.find(entry.name)!!

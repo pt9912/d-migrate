@@ -99,7 +99,7 @@ private const val VALID_INIT: String =
  * supplies one outcome per expected `reserve` call.
  *
  * `DefaultQuotaService.commit` is intentionally a no-op today
- * (`QuotaService.kt:43-46` documents the AP 6.8 audit hook), so the
+ * (`QuotaService.kt:43-46` documents the LF-012 / LN-027 / LN-028 / LN-038 audit hook), so the
  * recorder is the only way to observe the boundary between
  * `commit`, `release`, and `refund` without coupling to a
  * production-side regression.

@@ -54,7 +54,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase G § 6 G.9 — End-to-end-Akzeptanz über den realen
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.9 — End-to-end-Akzeptanz über den realen
  * Streamable-HTTP-Transport für die KI-nahen Tools und MCP-Prompts.
  *
  * Pin't:
@@ -149,7 +149,7 @@ class McpAiHttpE2EIT : FunSpec({
         )
     }
 
-    test("Plan §6 G.9: initialize via HTTP advertised capabilities.prompts") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: initialize via HTTP advertised capabilities.prompts") {
         testApplication {
             application {
                 installMcpHttpRoute(
@@ -169,7 +169,7 @@ class McpAiHttpE2EIT : FunSpec({
         }
     }
 
-    test("Plan §6 G.9: prompts/list + prompts/get + tools/call procedure_transform_plan in einer Session") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/list + prompts/get + tools/call procedure_transform_plan in einer Session") {
         testApplication {
             application {
                 installMcpHttpRoute(
@@ -228,7 +228,7 @@ class McpAiHttpE2EIT : FunSpec({
         }
     }
 
-    test("Plan §6 G.9: prompts/get mit Hygiene-Verletzung -> JSON-RPC mit dmigrateCode=PROMPT_HYGIENE_BLOCKED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/get mit Hygiene-Verletzung -> JSON-RPC mit dmigrateCode=PROMPT_HYGIENE_BLOCKED") {
         testApplication {
             application {
                 installMcpHttpRoute(
@@ -259,12 +259,12 @@ class McpAiHttpE2EIT : FunSpec({
             }
             val errorObj = JsonParser.parseString(resp.bodyAsText()).asJsonObject.getAsJsonObject("error")
             errorObj.getAsJsonObject("data").get("dmigrateCode").asString shouldBe "PROMPT_HYGIENE_BLOCKED"
-            // Plan §6 G.4 Akzeptanz: kein Secret im public message.
+            // LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: kein Secret im public message.
             errorObj.get("message").asString.contains("AKIA") shouldBe false
         }
     }
 
-    test("Plan §6 G.9: prompts/get unbekannter Name -> JSON-RPC mit dmigrateCode=RESOURCE_NOT_FOUND") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/get unbekannter Name -> JSON-RPC mit dmigrateCode=RESOURCE_NOT_FOUND") {
         testApplication {
             application {
                 installMcpHttpRoute(

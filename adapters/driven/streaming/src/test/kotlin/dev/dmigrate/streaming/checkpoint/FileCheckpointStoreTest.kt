@@ -48,7 +48,7 @@ class FileCheckpointStoreTest : FunSpec({
         optionsFingerprint = "abc123",
     )
 
-    test("save then load roundtrips all Phase-B manifest fields") {
+    test("save then load roundtrips all format reader manifest fields") {
         val dir = Files.createTempDirectory("dmigrate-cp-roundtrip-")
         try {
             val store = FileCheckpointStore(dir)
@@ -437,7 +437,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: resumePosition is omitted when null (backward compatibility with Phase-B manifests)") {
+    test("C.2: resumePosition is omitted when null (backward compatibility with format reader manifests)") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-null-")
         try {
             val original = sampleManifest("op-no-c2")

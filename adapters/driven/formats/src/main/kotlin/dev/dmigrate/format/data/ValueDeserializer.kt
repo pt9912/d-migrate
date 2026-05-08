@@ -9,9 +9,9 @@ import java.time.format.DateTimeParseException
  * Per-Spalten-Typ-Hint für den [ValueDeserializer]. Lebt im `formats`-
  * Modul (statt in `core`), weil der Deserializer der einzige Konsument ist
  * und der Hint sonst gegen die 0.3.0-Architektur-Regel "kein JDBC-
- * spezifisches Feld in core" verstoßen würde (siehe L15 im 0.4.0-Plan).
+ * spezifisches Feld in core" verstoßen würde.
  *
- * Der Hint wird vom Phase-D `StreamingImporter` aus den Writer-Side-
+ * Der Hint wird vom `StreamingImporter` aus den Writer-Side-
  * Metadaten (`TableImportSession.targetColumns` plus eine vom Writer
  * gelieferte typed metadata struct) gebaut und als Lookup-Closure
  * `(columnName: String) -> JdbcTypeHint?` an den Deserializer übergeben.
@@ -39,15 +39,13 @@ data class JdbcTypeHint(
 )
 
 /**
- * Inverse zur [ValueSerializer]-Mapping-Tabelle aus Plan-0.3.0 §6.4.1.
+ * LF-010 / LF-013: Inverse zur [ValueSerializer]-Mapping-Tabelle.
  * Konvertiert einen Format-spezifischen Input-Wert (JSON-String / -Number /
  * -Array / YAML-Mapping / CSV-String) in den passenden Java-Wert, den der
  * `TableImportSession.write(...)`-Pfad per `setObject(idx, value)` an das
  * PreparedStatement binden kann.
  *
- * Plan: implementation-plan-0.4.0.md §3.5.2 / L15.
- *
- * **Lookup-Closure-API (L15)**: Statt einen JDBC-Typ-Slot auf dem
+ * **Lookup-Closure-API**: Statt einen JDBC-Typ-Slot auf dem
  * `core.ColumnDescriptor` zu führen (was die 0.3.0-Architektur-Regel "kein
  * JDBC-spezifisches Feld in core" verletzen würde), bekommt der Deserializer
  * eine Lookup-Closure `(columnName: String) -> JdbcTypeHint?` durchgereicht.
@@ -56,7 +54,7 @@ data class JdbcTypeHint(
  * - bleibt `core.ColumnDescriptor` unverändert (0.3.0-konform)
  * - lebt der JDBC-Hint lokalisiert in `formats`, wo der Deserializer ihn
  *   ohnehin braucht
- * - kann der Phase-D `StreamingImporter` den Lookup einmal pro Tabelle aus
+ * - kann der `StreamingImporter` den Lookup einmal pro Tabelle aus
  *   den Writer-Metadaten bauen (eine Closure pro Tabelle, nicht pro Row)
  * - sind Tests trivial: ein Map-Literal als Lookup-Quelle reicht
  *

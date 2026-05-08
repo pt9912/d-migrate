@@ -15,17 +15,17 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E4: end-to-end upload flow per §7.3 Pflichtfluesse:
+ * LF-012 / LN-027 / LN-028 / LN-038 E4: end-to-end upload flow per §7.3 Pflichtfluesse:
  *
  *  - `artifact_upload_init` → multi-segment `artifact_upload` →
  *    final segment finalises to a `schemaRef` (read-only schema
  *    staging) on BOTH transports
- *  - the AP-6.21 file-backed wiring writes real files under
+ *  - the LF-012 / LN-027 / LN-028 / LN-038 file-backed wiring writes real files under
  *    `<stateDir>/segments/<sessionId>/...` and
  *    `<stateDir>/artifacts/<shard>/<artifactId>/...` for both
  *    transports
  *  - replay of the completing segment returns the same `schemaRef`
- *    with `deduplicated=true` (idempotent finalisation, AP 6.22 C2)
+ *    with `deduplicated=true` (idempotent finalisation, LF-012 / LN-027 / LN-028 / LN-038 C2)
  *  - `artifact_upload_abort` on a transport's own ACTIVE session
  *    transitions to `ABORTED` and reports the deleted segment count
  *
@@ -56,14 +56,14 @@ class McpUploadFlowScenarioTest : FunSpec({
             val stdioFinal = uploadAll(s, bytes, segments)
             val httpFinal = uploadAll(h, bytes, segments)
 
-            // Both transports must surface a Phase-C tenant schemaRef
+            // Both transports must surface a LF-012 / LN-038 tenant schemaRef
             // on the completing segment; the URI shape is asserted
             // here, the dynamic id is normalised before equality.
             for ((name, payload) in listOf("stdio" to stdioFinal, "http" to httpFinal)) {
                 withClue("$name completing segment must include schemaRef") {
                     payload.has("schemaRef") shouldBe true
                 }
-                withClue("$name schemaRef must be a Phase-C tenant URI") {
+                withClue("$name schemaRef must be a LF-012 / LN-038 tenant URI") {
                     payload.get("schemaRef").asString
                         .startsWith("dmigrate://tenants/") shouldBe true
                 }
@@ -72,7 +72,7 @@ class McpUploadFlowScenarioTest : FunSpec({
                 }
             }
 
-            // AP 6.21 file-backed wiring: real files MUST land under
+            // LF-012 / LN-027 / LN-028 / LN-038 file-backed wiring: real files MUST land under
             // <stateDir>/artifacts/... after a successful finalise.
             // The segments tree may be cleaned up by the finaliser —
             // we only pin the artefact tree which is the durable side

@@ -293,7 +293,7 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.listTableRefs(jdbc, "empty").shouldBeEmpty()
     }
 
-    // ── Sequence-support queries (0.9.4 AP 6.1) ──────────
+    // ── Sequence-support queries (LF-004 / LF-013) ──────────
 
     test("checkSupportTableExists returns true when dmg_sequences is present") {
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns

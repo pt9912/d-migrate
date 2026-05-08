@@ -13,7 +13,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E5: read-only artefact-chunking + job-status slice of the
+ * LF-012 / LN-027 / LN-028 / LN-038 E5: read-only artefact-chunking + job-status slice of the
  * §7.3 Pflichtfluesse.
  *
  *  - `artifact_chunk_get` chunk 0 of a multi-chunk artefact returns
@@ -157,7 +157,7 @@ class McpArtifactAndJobStatusScenarioTest : FunSpec({
                 withClue("${harness.name} terminal must be true for SUCCEEDED") {
                     payload.get("terminal").asBoolean shouldBe true
                 }
-                withClue("${harness.name} resourceUri must be a Phase-C tenant jobs URI") {
+                withClue("${harness.name} resourceUri must be a LF-012 / LN-038 tenant jobs URI") {
                     payload.get("resourceUri").asString
                         .startsWith("dmigrate://tenants/") shouldBe true
                     payload.get("resourceUri").asString

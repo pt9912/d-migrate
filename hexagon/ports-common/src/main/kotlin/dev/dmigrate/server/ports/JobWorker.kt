@@ -4,7 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.server.core.job.JobRecord
 
 /**
- * Phase E §7.7 Job-Worker-Port.
+ * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Job-Worker-Port.
  *
  * Eine [JobWorker]-Implementierung verkapselt den fachlichen Runner
  * (Schema-Reverse, Data-Profile, Schema-Compare, …), der einen
@@ -17,7 +17,7 @@ import dev.dmigrate.server.core.job.JobRecord
  *
  * - Connection-/Schema-Refs aus dem Job autorisiert materialisieren
  *   (Secret-Resolver). Discovery-Pfade sehen die Refs secret-frei.
- * - Cancel-Token an alle Stufen propagieren (Plan §7.7 +
+ * - Cancel-Token an alle Stufen propagieren (LF-012 / LN-011 / LN-017 / LN-027 +
  *   E0-Checkpoints).
  * - Artefakte ueber [ArtifactStore]/[ArtifactContentStore] selbst
  *   persistieren; in [JobWorkerOutcome.Succeeded.artifactRefs] nur
@@ -26,7 +26,7 @@ import dev.dmigrate.server.core.job.JobRecord
  *   verpflichtet, [JobWorkerOutcome.Cancelled] zurueckzugeben (statt
  *   die Exception zu propagieren). Der Dispatcher faengt sie als
  *   Fallback, aber die source-bewusste Klassifikation lebt im Worker
- *   (Plan §7.7 — JOB_CANCEL vs. RUNNER_TIMEOUT).
+ *   (LF-012 / LN-011 / LN-017 / LN-027 — JOB_CANCEL vs. RUNNER_TIMEOUT).
  */
 fun interface JobWorker {
 
@@ -34,7 +34,7 @@ fun interface JobWorker {
 }
 
 /**
- * Phase E §7.7 Worker-Outcome. Drei Branches, alle auf den
+ * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Worker-Outcome. Drei Branches, alle auf den
  * Job-Status-Uebergang abgebildet:
  *
  * - [Succeeded] -> `RUNNING -> SUCCEEDED`, [artifactRefs] landen in

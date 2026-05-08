@@ -45,7 +45,7 @@ class McpServerConfigDefaultsTest : FunSpec({
 
     test("DEFAULT_SCOPE_MAPPING covers §12.9 contract") {
         val map = McpServerConfig.DEFAULT_SCOPE_MAPPING
-        // capabilities_list is the only Phase B handler (§12.11)
+        // capabilities_list is the only LF-012 / LN-038 handler (§12.11)
         map["capabilities_list"] shouldBe setOf("dmigrate:read")
         // discovery
         map.keys shouldContainAll setOf(
@@ -66,8 +66,8 @@ class McpServerConfigDefaultsTest : FunSpec({
         map["connections/list"] shouldBe setOf("dmigrate:admin")
     }
 
-    test("Plan §6 G.5 Akzeptanz: alle drei KI-nahen Tools sind mit dmigrate:ai:execute registriert") {
-        // Die drei produktiven KI-Tools aus Plan §5.4-5.6 muessen
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: alle drei KI-nahen Tools sind mit dmigrate:ai:execute registriert") {
+        // Die drei produktiven KI-Tools aus LF-017 / LF-024 / LN-030 / LN-031 muessen
         // strikt auf `dmigrate:ai:execute` gemappt sein und duerfen
         // weder auf den fail-closed `dmigrate:admin`-Fallback noch
         // auf den read-only `dmigrate:read`-Bereich fallen. Wenn ein
@@ -79,7 +79,7 @@ class McpServerConfigDefaultsTest : FunSpec({
         map["procedure_transform_plan"] shouldBe aiExecute
         map["procedure_transform_execute"] shouldBe aiExecute
         map["testdata_plan"] shouldBe aiExecute
-        // testdata_execute ist als Phase-G-Carve-out ebenfalls
+        // testdata_execute ist als LF-017 / LF-024 / LN-030 / LN-031-Carve-out ebenfalls
         // KI-Scope (Slot bleibt registriert; Handler ist
         // UnsupportedToolHandler bis zum 0.9.7-Erweiterungs-AP).
         map["testdata_execute"] shouldBe aiExecute

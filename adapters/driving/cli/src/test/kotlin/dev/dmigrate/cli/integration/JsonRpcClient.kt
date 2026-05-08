@@ -7,7 +7,7 @@ import com.google.gson.JsonParser
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * AP 6.24: minimal JSON-RPC 2.0 helpers shared by the stdio + HTTP
+ * LF-012 / LN-027 / LN-028 / LN-038: minimal JSON-RPC 2.0 helpers shared by the stdio + HTTP
  * harnesses. The server's lsp4j-based [dev.dmigrate.mcp.transport.stdio.NdjsonMessageProducer]
  * accepts standard JSON-RPC objects; the client side serialises with
  * Gson and parses responses back into [JsonElement] so the harness

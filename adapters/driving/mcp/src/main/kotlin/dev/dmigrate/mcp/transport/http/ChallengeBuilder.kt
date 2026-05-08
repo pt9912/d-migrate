@@ -2,9 +2,9 @@ package dev.dmigrate.mcp.transport.http
 
 /**
  * `WWW-Authenticate` Bearer-Challenge builder per RFC 6750 §3 and
- * `ImpPlan-0.9.6-B.md` §12.14.
+ * LF-012 / LN-027 / LN-028 / LN-038
  *
- * Three Phase-B shapes:
+ * Three LF-012 / LN-038 shapes:
  *
  * | Status | Reason                              | Output                                                                                                  |
  * |--------|-------------------------------------|---------------------------------------------------------------------------------------------------------|

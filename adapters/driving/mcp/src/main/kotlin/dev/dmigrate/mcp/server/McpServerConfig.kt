@@ -10,7 +10,7 @@ import java.time.Duration
 enum class AuthMode { DISABLED, JWT_JWKS, JWT_INTROSPECTION }
 
 /**
- * Verbindlicher Feldsatz aus `ImpPlan-0.9.6-B.md` §12.12. Defaults
+ * Verbindlicher Feldsatz aus LF-012 / LN-027 / LN-028 / LN-038 defaults
  * sind fail-closed: `JWT_JWKS` ohne issuer/jwksUrl/audience ist
  * absichtlich invalid — Konfiguration muss explizit gesetzt werden,
  * sonst startet der Server nicht (§5.2).
@@ -159,7 +159,7 @@ private const val MAX_PORT = 65535
 
 /**
  * §12.9 verbindliche Scope-Tabelle. Alle 0.9.6-Tools sind enthalten,
- * auch wenn Phase B die meisten nur als Registry-Eintrag (ohne
+ * auch wenn LF-012 / LN-038 die meisten nur als Registry-Eintrag (ohne
  * Handler) liefert — die Tabelle ist Vertrag fuer Protected Resource
  * Metadata (§4.4).
  */
@@ -178,8 +178,8 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "resources/list" to read,
         "resources/templates/list" to read,
         "resources/read" to read,
-        // Phase G § 6 G.7: prompts/list und prompts/get sind
-        // Read-Pfade — Plan §6 G.7 verlangt explizit dmigrate:read,
+        // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: prompts/list und prompts/get sind
+        // Read-Pfade — LF-017 / LF-024 / LN-030 / LN-031 verlangt explizit dmigrate:read,
         // nicht den fail-closed Fallback dmigrate:admin.
         "prompts/list" to read,
         "prompts/get" to read,
@@ -199,12 +199,12 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "schema_compare_start" to jobStart,
         "data_profile_start" to jobStart,
         // Upload session — single segment tool with implicit
-        // finalisation per spec/ki-mcp.md §5.3 + ImpPlan-0.9.6-C.md
+        // finalisation per spec/ki-mcp.md §5.3 + LF-012 / LN-027 / LN-028 / LN-038
         // §12.4. The completing segment returns the final
         // artifactId/sha256 in the same response; there is no
         // separate `artifact_upload_complete` tool.
         //
-        // Phase F § 8.4 (F.4 1/3): das method-level Gate fuer
+        // LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 1/3): das method-level Gate fuer
         // `artifact_upload_init` und `artifact_upload` sind method-level
         // `dmigrate:read`, weil `schema_staging_readonly` ohne Write-
         // Policy startbar sein muss. Intent-abhaengige Write-Gates

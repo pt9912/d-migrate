@@ -11,7 +11,7 @@ import java.io.ByteArrayOutputStream
 
 /**
  * §6.3 Akzeptanz: nach MCP-Serverstart muessen Driver- und Codec-
- * Lookups funktionieren — Tool-Handler (Phase C/D) sollen ohne ad-hoc
+ * Lookups funktionieren — Tool-Handler (LF-012 / LN-038) sollen ohne ad-hoc
  * Reflection auskommen.
  */
 class McpServerBootstrapRuntimeLookupTest : FunSpec({

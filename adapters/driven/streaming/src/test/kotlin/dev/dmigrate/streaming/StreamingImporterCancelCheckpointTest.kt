@@ -25,8 +25,8 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.5 checkpoint guard for [StreamingImporter] — the table-level
- * outer loop. Plan §6.3 acceptance:
+ * LN-010 / LN-011 checkpoint guard for [StreamingImporter] — the table-level
+ * outer loop. LF-010 / LF-013 / LN-012 acceptance:
  * - cancel before RunStarted → no progress event, no table imports
  * - cancel between tables → first table imports, second does not start
  * - cancel before onTableCompleted → table imports, callback skipped

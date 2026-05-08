@@ -12,8 +12,8 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import org.slf4j.LoggerFactory
 
 /**
- * AP 6.19: centralised request- and response-byte enforcement for the
- * Phase-C `tools/call` dispatch path.
+ * LF-012 / LN-027 / LN-028 / LN-038: centralised request- and response-byte enforcement for the
+ * LF-012 / LN-038 `tools/call` dispatch path.
  *
  * Request side (pre-dispatch): the serialized `arguments` JSON must
  * fit `maxNonUploadToolRequestBytes` for every read-only tool and
@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory
  * handler itself didn't downgrade), the enforcer writes the full
  * payload to an artefact and returns a truncated success envelope
  * carrying `summary`, `artifactRef`, and `truncated=true`. This
- * matches the §5.5 + AP 6.13 fallback contract every handler with
+ * matches the §5.5 + LF-012 / LN-027 / LN-028 / LN-038 fallback contract every handler with
  * its own oversize path already follows; the enforcer is the safety
  * net that catches everything else.
  */
@@ -66,7 +66,7 @@ class ResponseLimitEnforcer internal constructor(
      * by construction (`code/message/details/requestId`) and never
      * carry the kind of body this code path needs to spill.
      *
-     * AP 6.23: the four schema-strict tools — `schema_validate`,
+     * LF-012 / LN-027 / LN-028 / LN-038: the four schema-strict tools — `schema_validate`,
      * `schema_compare`, `schema_generate`, `job_status_get` — own
      * their tool-specific truncated/artifactRef fallback in the
      * handler. The generic `{summary, artifactRef, truncated}`
@@ -105,7 +105,7 @@ class ResponseLimitEnforcer internal constructor(
         val bytes = text.toByteArray(Charsets.UTF_8)
         if (bytes.size <= cap) return outcome
 
-        // AP 6.23: tools with their own per-output-schema cannot be
+        // LF-012 / LN-027 / LN-028 / LN-038: tools with their own per-output-schema cannot be
         // wrapped in the generic truncated envelope (it would fail
         // their schema's required-field constraint). The handler is
         // expected to downgrade itself; an oversize response here is
@@ -166,7 +166,7 @@ class ResponseLimitEnforcer internal constructor(
 
     internal companion object {
         /**
-         * AP 6.23: tools whose output schema requires per-tool fields
+         * LF-012 / LN-027 / LN-028 / LN-038: tools whose output schema requires per-tool fields
          * (e.g. `valid`, `dialect`, `status`, …) and therefore cannot
          * be wrapped in the generic `{summary, artifactRef, truncated}`
          * fallback envelope without violating their JSON-Schema. Each

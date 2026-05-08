@@ -30,13 +30,13 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.9 (F.9 1/3) — pin't den COMPLETED-Quota-Swap:
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 1/3) — pin't den COMPLETED-Quota-Swap:
  *
  * - Init-time reservierte `ACTIVE_UPLOAD_SESSIONS` (1) und
  *   `UPLOAD_BYTES` (session.sizeBytes) werden auf erfolgreicher
  *   Finalisierung freigegeben.
  * - Die durabel materialisierten Bytes wandern in die neue
- *   `STORED_ARTIFACT_BYTES`-Dimension (Plan § 8.9 wortlaeufig:
+ *   `STORED_ARTIFACT_BYTES`-Dimension (LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig:
  *   "COMPLETED bucht gespeicherte Artefaktbytes genau einmal und
  *   gibt reservierte Upload-Bytes frei").
  */
@@ -132,7 +132,7 @@ class ArtifactUploadHandlerCompletedQuotaSwapTest : FunSpec({
         )
         outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
 
-        // Plan § 8.9 wortlaeufig:
+        // LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig:
         // - ACTIVE_UPLOAD_SESSIONS / UPLOAD_BYTES freigegeben
         quotaStore.current(sessionsKey) shouldBe 0L
         quotaStore.current(bytesKey) shouldBe 0L

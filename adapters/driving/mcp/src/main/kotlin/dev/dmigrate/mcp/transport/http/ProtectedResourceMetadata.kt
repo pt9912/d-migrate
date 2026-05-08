@@ -5,7 +5,7 @@ import dev.dmigrate.mcp.server.McpServerConfig
 
 /**
  * Builds the Protected-Resource-Metadata document per RFC 9728 and
- * `ImpPlan-0.9.6-B.md` §12.14.
+ * LF-012 / LN-027 / LN-028 / LN-038
  *
  * Field order is fixed to satisfy the §6.6 golden test:
  * `resource`, `authorization_servers`, `scopes_supported`,

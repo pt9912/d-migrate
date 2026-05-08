@@ -155,14 +155,14 @@ class NamedConnectionResolverTest : FunSpec({
         ex.message!! shouldContain "Failed to parse"
     }
 
-    test("Plan-D §8.2: a Phase-D map-form connection is invisible to the legacy resolver") {
-        // Plan-D §8.2 splits Phase-C and Phase-D YAML formats:
+    test("LF-012 / LN-038: a LF-012 / LN-038 map-form connection is invisible to the legacy resolver") {
+        // LF-012 / LN-038 splits LF-012 / LN-038 and LF-012 / LN-038 YAML formats:
         // bare-string entries belong to NamedConnectionResolver,
         // map-form entries (with displayName/dialectId/...) are
         // handled by YamlConnectionReferenceLoader. The legacy
         // resolver MUST NOT resolve map-form entries — surfaces
         // them as "not defined" so a CLI that addresses a
-        // Phase-D-only connection by name fails loudly instead of
+        // LF-012 / LN-038-only connection by name fails loudly instead of
         // pulling secrets from a discovery-only record.
         val cfg = tempConfig(
             """

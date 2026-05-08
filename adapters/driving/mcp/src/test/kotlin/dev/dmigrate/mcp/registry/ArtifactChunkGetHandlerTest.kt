@@ -350,7 +350,7 @@ class ArtifactChunkGetHandlerTest : FunSpec({
 
     test("contentType with charset parameter is normalised before the text/binary decision") {
         // `application/json; charset=utf-8` is canonical for JSON
-        // artifacts emitted by AP 6.5/6.9. Strip the parameter
+        // artifacts emitted by LF-012 / LN-027 / LN-028 / LN-038/6.9. Strip the parameter
         // before classifying.
         val f = fixture(maxChunkBytes = 32)
         stageArtifact(f, "art-1", "hello".toByteArray(), contentType = "application/json; charset=utf-8")
@@ -383,8 +383,8 @@ class ArtifactChunkGetHandlerTest : FunSpec({
             "dmigrate://tenants/acme/artifacts/art-1/chunks/1"
     }
 
-    test("AP D9: response carries nextChunkCursor (sealed) when codec is wired") {
-        // Plan-D §10.9: alongside `nextChunkUri`, the Phase-D
+    test("LF-012 / LN-038: response carries nextChunkCursor (sealed) when codec is wired") {
+        // LF-012 / LN-038: alongside `nextChunkUri`, the LF-012 / LN-038
         // response emits an HMAC-sealed `nextChunkCursor` so a
         // tools/call-driven client stays on the tool wire instead
         // of jumping to resources/read.
@@ -434,7 +434,7 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         second.get("offset").asLong shouldBe 4L
     }
 
-    test("AP D9: last chunk emits nextChunkCursor=null") {
+    test("LF-012 / LN-038: last chunk emits nextChunkCursor=null") {
         val payload = "abc".toByteArray()
         val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
             keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
@@ -461,13 +461,13 @@ class ArtifactChunkGetHandlerTest : FunSpec({
                 ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-tiny"}"""), PRINCIPAL),
             ),
         )
-        // Both fields must be explicit null (Phase-C invariant
-        // preserved + Phase-D additive `nextChunkCursor`).
+        // Both fields must be explicit null (LF-012 / LN-038 invariant
+        // preserved + LF-012 / LN-038 additive `nextChunkCursor`).
         response.get("nextChunkUri").isJsonNull shouldBe true
         response.get("nextChunkCursor").isJsonNull shouldBe true
     }
 
-    test("AP D9: tampered nextChunkCursor surfaces VALIDATION_ERROR") {
+    test("LF-012 / LN-038: tampered nextChunkCursor surfaces VALIDATION_ERROR") {
         val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
             keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
                 signing = dev.dmigrate.mcp.cursor.CursorKey(
@@ -493,8 +493,8 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         }
     }
 
-    test("AP D9: chunkId AND nextChunkCursor on the same call rejected with VALIDATION_ERROR") {
-        // Plan-D §10.9: clients must commit to one wire shape so
+    test("LF-012 / LN-038: chunkId AND nextChunkCursor on the same call rejected with VALIDATION_ERROR") {
+        // LF-012 / LN-038: clients must commit to one wire shape so
         // a future deprecation of the legacy chunkId path stays
         // observable.
         val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
@@ -522,8 +522,8 @@ class ArtifactChunkGetHandlerTest : FunSpec({
         }
     }
 
-    test("AP D9: nextChunkCursor without configured codec rejected with VALIDATION_ERROR") {
-        // Phase-B / legacy harness path: refuse to silently restart
+    test("LF-012 / LN-038: nextChunkCursor without configured codec rejected with VALIDATION_ERROR") {
+        // LF-012 / LN-038 / legacy harness path: refuse to silently restart
         // at chunk 0 when a client sends a sealed cursor against a
         // server with no codec — surfaces a misconfig loudly.
         val f = fixture(maxChunkBytes = 4)

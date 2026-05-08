@@ -3,7 +3,7 @@ package dev.dmigrate.driver
 import java.time.Instant
 
 /**
- * Typed generator options for DDL generation (0.5.5 Phase D).
+ * LF-003: typed generator options for DDL generation.
  * Lives in hexagon:ports so both application and driver adapters can use it.
  */
 data class DdlGenerationOptions(

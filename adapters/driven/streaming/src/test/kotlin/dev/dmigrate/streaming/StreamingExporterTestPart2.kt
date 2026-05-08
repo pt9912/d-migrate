@@ -433,7 +433,7 @@ internal class SpyOutputStream : OutputStream() {
 
 /**
  * Realistischer DataChunkWriter, der seinen [OutputStream] in `close()`
- * tatsächlich schließt — wie es echte JSON/YAML/CSV-Writer aus Phase D
+ * tatsächlich schließt — wie es echte JSON/YAML/CSV-Writer aus streaming
  * tun werden. Für F23-Tests, um sicherzustellen, dass der StreamingExporter
  * den Stdout-Stream NICHT zerstört.
  */

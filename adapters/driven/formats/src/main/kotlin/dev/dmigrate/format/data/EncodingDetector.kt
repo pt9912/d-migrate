@@ -8,13 +8,13 @@ import java.nio.charset.StandardCharsets
 /**
  * BOM-basierte Auto-Detection für Input-Encodings.
  *
- * Plan: implementation-plan-0.4.0.md §6.9 (`--encoding auto`).
+ * LF-009 / LF-013: `--encoding auto`.
  *
  * **Bewusst kein universeller Charset-Detector**: Der Detector erkennt
  * ausschließlich BOM-markierte UTF-Streams (UTF-8, UTF-16 BE/LE). Alles
  * andere (ISO-8859-1, Windows-1252, CP-437, …) muss der Nutzer per
  * explizitem `--encoding <charset>` angeben. Heuristische Detektoren
- * (chardet, ICU) sind bewusst out-of-scope für 0.4.0 (§11 / F45).
+ * (chardet, ICU) sind bewusst out-of-scope.
  *
  * Verhalten:
  *

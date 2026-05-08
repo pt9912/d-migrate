@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
 /**
  * PostgreSQL [JdbcUrlBuilder].
  *
- * Default-Parameter (Plan §3.2 / §6.13):
+ * LF-008 / LN-009 / LN-010: Default-Parameter:
  * - `ApplicationName=d-migrate` — sichtbar in `pg_stat_activity`,
  *   hilft beim Identifizieren der Verbindung in der DB
  *

@@ -18,17 +18,17 @@ import dev.dmigrate.server.ports.SchemaStore
 
 /**
  * Resolves a `tools/call` payload's schema source per
- * `ImpPlan-0.9.6-C.md` §5.2 + §6.3. Shared by `schema_validate`
- * (AP 6.4), `schema_generate` (AP 6.5), and `schema_compare` (AP 6.6,
+ * LF-012 / LN-027 / LN-028 / LN-038§6.3. Shared by `schema_validate`
+ * (LF-012 / LN-027 / LN-028 / LN-038), `schema_generate` (LF-012 / LN-027 / LN-028 / LN-038), and `schema_compare` (LF-012 / LN-027 / LN-028 / LN-038,
  * once per `left`/`right`).
  *
  * Two valid sources, never both:
  * - inline `schema` (small JSON object, max [McpLimitsConfig.maxInlineSchemaBytes])
  * - `schemaRef` (tenant-scoped `dmigrate://.../schemas/{id}` URI)
  *
- * No connection-backed source is accepted in Phase C — `connectionRef`
+ * No connection-backed source is accepted in LF-012 / LN-038 — `connectionRef`
  * stays out of every schema-using tool until `schema_compare_start`
- * lands in Phase E.
+ * lands in LF-012 / LN-011 / LN-017 / LN-027.
  */
 data class SchemaSourceInput(
     val schema: JsonElement? = null,
@@ -104,13 +104,13 @@ class SchemaSourceResolver(
         // tenant, schema absent" — both must be indistinguishable
         // from the client's view. Same predicate as JobRecord and
         // ArtifactRecord: tenant readability is `effectiveTenantId`-
-        // only across read-only Phase B/C handlers.
+        // only across read-only LF-012 / LN-038/C handlers.
         if (!TenantScopeChecker.isInScope(principal, uri.tenantId)) {
             throw TenantScopeDeniedException(uri.tenantId)
         }
         val entry = schemaStore.findById(uri.tenantId, uri.id)
             ?: throw ResourceNotFoundException(uri)
-        // AP 6.16 defense-in-depth: a misbehaving SchemaStore impl
+        // LF-012 / LN-027 / LN-028 / LN-038 defense-in-depth: a misbehaving SchemaStore impl
         // (sharded driver, cache layer, future JDBC adapter) could
         // theoretically return an entry whose tenantId, schemaId or
         // resourceUri does not match the lookup key. Surface that

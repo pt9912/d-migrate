@@ -64,21 +64,21 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * MCP-server entry point per `ImpPlan-0.9.6-B.md` §6.11 +
- * `ImpPlan-0.9.6-C.md` §6.14/§6.20/§6.21. The `serve` subcommand
- * activates the full Phase-C dispatch chain: every tool from the
- * Phase-C plan (`schema_validate`, `schema_generate`, `schema_compare`,
+ * MCP-server entry point per LF-012 / LN-027 / LN-028 / LN-038
+ * LF-012 / LN-027 / LN-028 / LN-038§6.20/§6.21. The `serve` subcommand
+ * activates the full LF-012 / LN-038 dispatch chain: every tool from the
+ * LF-012 / LN-038 plan (`schema_validate`, `schema_generate`, `schema_compare`,
  * `artifact_upload*`, `artifact_chunk_get`, `job_status_get`,
  * plus `capabilities_list`) routes to its real handler, and every
  * `tools/call` records one structured audit event.
  *
  * §6.21: byte content (upload segments, artefact bodies) is file-backed
- * under the resolved state dir (`--mcp-state-dir`). Phase E2 can also
- * persist the Phase-E server-state stores when `server.state.jdbcUrl`
+ * under the resolved state dir (`--mcp-state-dir`). LF-012 / LN-011 / LN-017 / LN-027 can also
+ * persist the LF-012 / LN-011 / LN-017 / LN-027 server-state stores when `server.state.jdbcUrl`
  * or `D_MIGRATE_SERVER_STATE_JDBC_URL` is configured.
  */
 class McpCommand : CliktCommand(name = "mcp") {
-    override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
+    override fun help(context: Context) = "MCP-server commands (LF-012 / LN-038: stdio + Streamable HTTP)"
 
     init {
         subcommands(McpServeCommand(), McpCursorKeyCommand(), McpApprovalGrantCommand())
@@ -102,9 +102,9 @@ class McpCommand : CliktCommand(name = "mcp") {
  */
 class McpServeCommand : CliktCommand(name = "serve") {
     override fun help(context: Context) =
-        "Start the MCP server with the Phase-C dispatch chain. " +
+        "Start the MCP server with the LF-012 / LN-038 dispatch chain. " +
             "Byte content is file-backed under --mcp-state-dir " +
-            "(Phase-E server-state can be JDBC-backed via server.state)."
+            "(LF-012 / LN-011 / LN-017 / LN-027 server-state can be JDBC-backed via server.state)."
 
     private val transport by option(
         "--transport",
@@ -182,7 +182,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
 
     private val connectionConfigPath by option(
         "--connection-config",
-        help = "Project/server YAML for Phase-D secret-free connection references. " +
+        help = "Project/server YAML for LF-012 / LN-038 secret-free connection references. " +
             "Defaults to the root --config path when set.",
     ).path()
 
@@ -222,7 +222,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
 
         val retention = parseRetentionOrExit()
         val cursorKeyring = parseCursorKeyringOrExit()
-        // Plan-D §10.3 review: a deployment that runs HTTP with
+        // LF-012 / LN-038 review: a deployment that runs HTTP with
         // any non-disabled auth-mode (i.e. jwt-jwks / jwt-
         // introspection — the production paths) MUST NOT silently
         // fall through to McpRuntimeWiring's `DEV_DEFAULT` keyring.
@@ -302,7 +302,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
                 "${owner.resolved.path}: ${failure.message}", err = true)
             throw ProgramResult(2)
         }
-        // AP 6.22: assembly spools left behind by a crashed
+        // LF-010 / LF-013 / LN-009 / LN-011: assembly spools left behind by a crashed
         // streaming-finalisation are bounded by the same orphan
         // retention. Layout-aware sweep over <stateDir>/assembly/...
         val spoolsRemoved = try {
@@ -384,7 +384,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         val tag = if (owner.resolved.owned) "CLI-owned temporary" else "operator-supplied"
         echo(
             "MCP state dir: ${owner.resolved.path} [$tag] — " +
-                "byte content is file-backed; Phase-E metadata uses server.state when configured.",
+                "byte content is file-backed; LF-012 / LN-011 / LN-017 / LN-027 metadata uses server.state when configured.",
             err = true,
         )
     }
@@ -404,7 +404,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
     }
 
     /**
-     * Plan-D §10.3 fail-closed: when transport is HTTP and
+     * LF-012 / LN-038 fail-closed: when transport is HTTP and
      * `--auth-mode` is one of the production modes, the
      * deployment MUST supply a deterministic
      * `--cursor-keyring-file`. Otherwise the wiring would fall
@@ -490,7 +490,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
         owner: StateDirOwner,
         cursorKeyring: CursorKeyring?,
     ): McpCliServerWiring {
-        // AP 6.14 / 6.20 / 6.21: the base wiring keeps byte content
+        // LF-012 / LN-027 / LN-028 / LN-038: the base wiring keeps byte content
         // file-backed under the locked state dir.
         val phaseC = McpCliRuntimeWiring.runtimeWiring(
             stateDir = owner.resolved.path,
@@ -539,7 +539,7 @@ class McpServeCommand : CliktCommand(name = "serve") {
             )
             artifactRetention = startArtifactRetentionLoop(phaseCWithJdbc)
             finalisationTimeout = startFinalisationTimeoutLoop(phaseCWithJdbc)
-            // Phase E3.5: server.jobs.executor + Env-Overrides aufloesen,
+            // LF-012 / LN-011 / LN-017 / LN-027: server.jobs.executor + Env-Overrides aufloesen,
             // Bundle bauen. Default ist Sync — Bestands-MVP.
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
             val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
@@ -870,7 +870,7 @@ private data class McpCliServerWiring(
     ),
     val promptRegistry: DefaultPromptRegistry = DefaultPromptRegistry.mandatory(),
     /**
-     * Phase E3 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
+     * LF-012 / LN-011 / LN-017 / LN-027 (E3.5): wenn der JDBC-Pfad einen Async-Bundle gebaut
      * hat, wird das Lifecycle hier gehalten — `close()` ruft
      * `shutdown(timeout)` vor `closeable.close()`. So drainen in-flight
      * Jobs sauber, bevor die DataSource zugemacht wird; bei Timeout

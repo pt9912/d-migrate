@@ -45,24 +45,24 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * AP E.8 (3/3) Integration: dispatcht `job_cancel` durch
+ * LF-012 / LN-011 / LN-017 / LN-027 (3/3) Integration: dispatcht `job_cancel` durch
  * [McpServiceImpl] mit produktiver [OperationalMcpRegistries] und prueft die
- * Plan-§7.8-Akzeptanz-Pins, die nur durch den vollen Wire-Pfad
+ * LF-012 / LN-011 / LN-017 / LN-027-Akzeptanz-Pins, die nur durch den vollen Wire-Pfad
  * sichtbar werden:
  *
- * - Wire-Shape `{jobId, status, terminal, executionMeta}` (Plan §7.6 +
+ * - Wire-Shape `{jobId, status, terminal, executionMeta}` (LF-012 / LN-011 / LN-017 / LN-027 +
  *   §5.6) fuer terminale und Pending-Cancel-Faelle.
- * - No-oracle RESOURCE_NOT_FOUND ohne resourceUri-Echo (Plan §5.6 line
+ * - No-oracle RESOURCE_NOT_FOUND ohne resourceUri-Echo (LF-017 / LF-024 / LN-030 / LN-031 line
  *   661-662).
  * - Dispatcher-Barriere: nach `queued -> cancelled`-CAS startet ein
- *   spaeterer dispatch keinen Worker (Plan §7.8 line 1213-1214 +
- *   AP E.7 (1/6) DISPATCH_RACE).
- * - Idempotenter Retry (Plan §7.8 line 1252-1254): zweiter
+ *   spaeterer dispatch keinen Worker (LF-012 / LN-011 / LN-017 / LN-027 line 1213-1214 +
+ *   LF-012 / LN-011 / LN-017 / LN-027 (1/6) DISPATCH_RACE).
+ * - Idempotenter Retry (LF-012 / LN-011 / LN-017 / LN-027 line 1252-1254): zweiter
  *   `job_cancel` mit gleichem Reason aendert den persistierten Reason
  *   nicht.
  *
- * Bewusst nicht abgedeckt: Scope-Check (Phase-B upstream im Service-
- * Layer); Audit-Event-Korrelation (AP E.10).
+ * Bewusst nicht abgedeckt: Scope-Check (LF-012 / LN-038 upstream im Service-
+ * Layer); Audit-Event-Korrelation (LF-012 / LN-011 / LN-017 / LN-027).
  */
 class McpJobCancelScenarioTest : FunSpec({
 
@@ -186,7 +186,7 @@ class McpJobCancelScenarioTest : FunSpec({
         result.isError shouldBe true
         val text = result.content.first().text!!
         text shouldContain ToolErrorCode.RESOURCE_NOT_FOUND.name
-        // Plan §5.6 line 661-662 no-oracle: keine ID-Echo im Envelope.
+        // LF-017 / LF-024 / LN-030 / LN-031 line 661-662 no-oracle: keine ID-Echo im Envelope.
         text shouldNotContain "j-missing"
     }
 
@@ -234,7 +234,7 @@ class McpJobCancelScenarioTest : FunSpec({
         result.content.first().text!! shouldContain "VALIDATION_ERROR"
     }
 
-    test("Idempotenter Retry: zweiter cancel mit gleichem Reason aendert persisted Reason nicht (Plan §7.2)") {
+    test("Idempotenter Retry: zweiter cancel mit gleichem Reason aendert persisted Reason nicht (LF-012 / LN-011 / LN-017 / LN-027)") {
         val w = operationalWiring()
         seedQueued(w)
         // RUNNING setzen + Worker registrieren (durable Phase).
@@ -256,7 +256,7 @@ class McpJobCancelScenarioTest : FunSpec({
         final.managedJob.cancelRequest.requestedReason shouldBe "first"
     }
 
-    test("Dispatcher-Barriere: nach QUEUED→CANCELLED via tools/call startet kein Worker (Plan §7.8 line 1213-1214)") {
+    test("LF-012 / LN-011 / LN-017 / LN-027: cancel barrier prevents worker start") {
         val w = operationalWiring()
         val record = seedQueued(w)
         val principal = adminPrincipal()
@@ -274,7 +274,7 @@ class McpJobCancelScenarioTest : FunSpec({
             JobWorkerOutcome.Succeeded()
         }
         val dispatchOutcome = w.jobDispatcher.dispatch(record, worker, CancellationToken.none()).get()
-        // Plan E3 § 3.6 + § 6.3 (E3.4): cancel-while-queued mappt
+        // LF-012 / LN-011 / LN-017 / LN-027: cancel-while-queued mappt
         // IllegalTransition(currentStatus=CANCELLED) auf JobWorkerOutcome.Cancelled,
         // NICHT auf Failed(DISPATCH_RACE). Der Worker darf trotzdem
         // nicht laufen, und der Cancel-Record bleibt unangetastet.
@@ -287,7 +287,7 @@ class McpJobCancelScenarioTest : FunSpec({
         final.managedJob.artifacts shouldBe emptyList()
     }
 
-    test("Reason-Scrubbing: Bearer-Token im Reason wird redigiert (Plan §7.7 line 1182-1183)") {
+    test("Reason-Scrubbing: Bearer-Token im Reason wird redigiert (LF-012 / LN-011 / LN-017 / LN-027 line 1182-1183)") {
         val w = operationalWiring()
         seedQueued(w)
         val principal = adminPrincipal()

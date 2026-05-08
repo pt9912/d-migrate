@@ -31,7 +31,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.6 (F.6 1/3) — `StreamingFinalizer.persistFailedOutcomeBestEffort`
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3) — `StreamingFinalizer.persistFailedOutcomeBestEffort`
  * gibt die Init-Quotas frei, sobald der FAILED-Outcome durabel landet.
  * Dieses Pin't den Validator-Fehler-Pfad (job_input mit Stub-Finaliser,
  * der absichtlich eine Validation wirft) — analog zum F.4-(3/3)-
@@ -124,7 +124,7 @@ class ArtifactUploadHandlerFinalisationFailureQuotaTest : FunSpec({
             )
         }
 
-        // Plan § 8.6: Init-Quotas sind nach Validation-Failure freigegeben.
+        // LF-012 / LN-011 / LN-017 / LN-027: Init-Quotas sind nach Validation-Failure freigegeben.
         quotaStore.current(sessionsKey) shouldBe 0L
         quotaStore.current(bytesKey) shouldBe 0L
 

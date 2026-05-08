@@ -4,8 +4,8 @@ import com.google.gson.GsonBuilder
 import io.kotest.core.spec.style.FunSpec
 
 /**
- * Golden-file pin for the Phase B tool-schema set per
- * `ImpPlan-0.9.6-B.md` §6.10. Any unintentional drift in
+ * Golden-file pin for the LF-012 / LN-038 tool-schema set per
+ * LF-012 / LN-027 / LN-028 / LN-038: any unintentional drift in
  * [McpToolSchemas] fails this test; intentional changes go through
  * `UPDATE_GOLDEN=true` (regenerates the file) and a code review of the
  * resulting diff.

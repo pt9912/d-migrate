@@ -17,16 +17,16 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Phase G § 6 G.6 (G.6.a 2/2) — in-process [AiToolOutcomeStore]
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.a 2/2) — in-process [AiToolOutcomeStore]
  * mit Single-Writer-Lease + Reclaim.
  *
- * Plan-§-6-G.6-Anforderung, die dieser Store explizit erfüllt:
+ * LF-017 / LF-024 / LN-030 / LN-031-Anforderung, die dieser Store explizit erfüllt:
  *
  * > "Der bestehende SyncEffectIdempotencyStore reicht unverändert
  * > nicht aus, wenn parallele gleiche Pending-Reserves erneut
  * > Reserved liefern."
  *
- * Phase F's [InProcessSyncEffectIdempotencyStore.reserve] fällt bei
+ * LF-010 / LF-013 / LN-009 / LN-011's [InProcessSyncEffectIdempotencyStore.reserve] fällt bei
  * einer aktiven Lease und identischem Fingerprint auf
  * `Reserved(existing.expiresAt)` zurück (`InProcessUploadControlStores.kt:51`).
  * Das bleibt für sequenzielle Upload-Init-Pfade passend; KI-Pfade
@@ -217,11 +217,11 @@ internal class InProcessAiToolOutcomeStore(
 }
 
 /**
- * Phase G § 5.4 + § 6 G.6 (G.6.b 2/2) — in-process
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.b 2/2) — in-process
  * [AiArtifactMetadataStore].
  *
  * Persistiert KI-Artefakt-Metadaten parallel zum
- * [dev.dmigrate.server.ports.ArtifactStore]. Plan §5.4 Z. 748-752:
+ * [dev.dmigrate.server.ports.ArtifactStore]. LF-017 / LF-024 / LN-030 / LN-031 Z. 748-752:
  *
  * - `save` ist idempotent pro `(tenantId, artifactId)` —
  *   identische Metadaten kollabieren auf

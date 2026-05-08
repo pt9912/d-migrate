@@ -8,7 +8,7 @@ import java.time.Clock
 
 /**
  * Resolved-or-not Result eines stdio-Principal-Lookups per
- * `ImpPlan-0.9.6-B.md` §4.2 + §6.7.
+ * LF-012 / LN-027 / LN-028 / LN-038§6.7.
  *
  * `AuthRequired` ist der Sammeltyp fuer "kein gueltiger Principal
  * ableitbar" — fehlender Token, fehlende Registry, unbekannter

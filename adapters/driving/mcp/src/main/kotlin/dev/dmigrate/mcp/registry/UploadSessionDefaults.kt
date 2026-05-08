@@ -6,8 +6,8 @@ import java.time.Duration
  * Cross-handler constants for the read-only upload-session lifecycle.
  *
  * Consolidates the lease-window defaults and the SHA-256 hex pattern
- * that `ArtifactUploadInitHandler` (AP 6.7), `ArtifactUploadHandler`
- * (AP 6.8), and the upcoming `ArtifactUploadAbortHandler` (AP 6.10)
+ * that `ArtifactUploadInitHandler` (LF-012 / LN-027 / LN-028 / LN-038), `ArtifactUploadHandler`
+ * (LF-012 / LN-027 / LN-028 / LN-038), and the upcoming `ArtifactUploadAbortHandler` (LF-012 / LN-027 / LN-028 / LN-038)
  * would otherwise each redefine. Spec/ki-mcp.md §5.3 lines 605-619
  * pin the canonical values: 900s initial TTL, 300s idle, 3600s
  * absolute lease.

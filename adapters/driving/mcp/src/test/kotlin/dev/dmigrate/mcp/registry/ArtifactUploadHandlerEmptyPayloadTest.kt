@@ -26,7 +26,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 8.4 (F.4 2/3) — `sizeBytes=0` Single-Empty-Segment-
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 2/3) — `sizeBytes=0` Single-Empty-Segment-
  * Upload fuer `job_input` mit nicht-Schema-`artifactKind` ist
  * gueltig. `schema_staging_readonly` oder `artifactKind=schema`
  * lehnen `sizeBytes=0` deterministisch mit `VALIDATION_ERROR` ab.
@@ -114,7 +114,7 @@ class ArtifactUploadHandlerEmptyPayloadTest : FunSpec({
         payload.get("acceptedSegmentIndex").asInt shouldBe 1
         payload.get("bytesReceived").asLong shouldBe 0L
 
-        // Plan § 8.4: das gespeicherte Segment hat 0 Bytes.
+        // LF-012 / LN-011 / LN-017 / LN-027: das gespeicherte Segment hat 0 Bytes.
         val stored = fx.segmentStore.listSegments("ups-1").single()
         stored.sizeBytes shouldBe 0L
         stored.segmentSha256 shouldBe emptySha

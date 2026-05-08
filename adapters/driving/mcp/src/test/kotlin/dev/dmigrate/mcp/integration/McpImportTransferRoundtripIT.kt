@@ -46,13 +46,13 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 8.10 (F.10): Integrationstest fuer den vollstaendigen
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): Integrationstest fuer den vollstaendigen
  * Tool-Roundtrip `data_import_start` / `data_transfer_start` →
  * `job_status_get` → `job_cancel`.
  *
- * Pin't, dass die Phase-F-Start-Handler ihre Job-Records in
+ * Pin't, dass die LF-010 / LF-013 / LN-009 / LN-011-Start-Handler ihre Job-Records in
  * denselben Store schreiben, den `job_status_get` und `job_cancel`
- * lesen, und dass Phase-F-Datenoperationen im Default ohne explizit
+ * lesen, und dass LF-010 / LF-013 / LN-009 / LN-011-Datenoperationen im Default ohne explizit
  * injizierten Runner fail-closed terminieren. Dadurch wird kein
  * erfolgreicher JDBC-/Secret-Materialisierungs-Pfad simuliert, wenn
  * er im Bootstrap nicht wirklich verdrahtet ist.
@@ -274,7 +274,7 @@ class McpImportTransferRoundtripIT : FunSpec({
     }
 
     test("Unbekannter sourceConnectionRef-Tenant -> RESOURCE_NOT_FOUND statt Cross-Tenant-Lookup") {
-        // Plan-§-8.8-Akzeptanz: tenant-prefix mismatch fuer
+        // LF-010 / LF-013 / LN-009 / LN-011-Akzeptanz: tenant-prefix mismatch fuer
         // Connection-Refs liefert VALIDATION_ERROR (nicht
         // RESOURCE_NOT_FOUND), sodass eine fremde Tenant-ID nicht via
         // Existenz-Test eruiert werden kann.

@@ -44,11 +44,11 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase G § 6 G.9 — End-to-end-Akzeptanz über den realen
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.9 — End-to-end-Akzeptanz über den realen
  * NDJSON-stdio-Transport für die KI-nahen Tools und MCP-Prompts.
  *
  * Pin't:
- * - initialize advertised `capabilities.prompts` (Plan §6 G.7).
+ * - initialize advertised `capabilities.prompts` (LF-017 / LF-024 / LN-030 / LN-031).
  * - tools/list zeigt die drei produktiven KI-Tools an.
  * - prompts/list zeigt die drei Pflichtprompts an.
  * - tools/call procedure_transform_plan -> Success über stdio.
@@ -150,7 +150,7 @@ class McpAiStdioE2EIT : FunSpec({
         """{"jsonrpc":"2.0","id":$id,"method":"initialize","params":""" +
             """{"protocolVersion":"2025-11-25","clientInfo":{"name":"g9-it","version":"0.9.6"},"capabilities":{}}}"""
 
-    test("Plan §6 G.9: initialize advertised capabilities.prompts neben tools + resources") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: initialize advertised capabilities.prompts neben tools + resources") {
         val resp = runStdioRoundtrip(listOf(initFrame()))
         resp.size shouldBe 1
         val capabilities = parseResultObj(resp[0]).getAsJsonObject("capabilities")
@@ -160,7 +160,7 @@ class McpAiStdioE2EIT : FunSpec({
         capabilities.getAsJsonObject("prompts").get("listChanged").asBoolean shouldBe false
     }
 
-    test("Plan §6 G.9: prompts/list ueber stdio liefert die drei Pflichtprompts") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/list ueber stdio liefert die drei Pflichtprompts") {
         val resp = runStdioRoundtrip(
             listOf(
                 initFrame(1),
@@ -174,7 +174,7 @@ class McpAiStdioE2EIT : FunSpec({
         names shouldBe listOf("procedure_analysis", "procedure_transformation", "testdata_planning")
     }
 
-    test("Plan §6 G.9: prompts/get happy path liefert Prompt-Nachrichten") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/get happy path liefert Prompt-Nachrichten") {
         val resp = runStdioRoundtrip(
             listOf(
                 initFrame(1),
@@ -193,7 +193,7 @@ class McpAiStdioE2EIT : FunSpec({
             "schemaRef=dmigrate://tenants/acme/schemas/schema-1"
     }
 
-    test("Plan §6 G.9: prompts/get mit unbekanntem Prompt -> JSON-RPC error mit dmigrateCode=RESOURCE_NOT_FOUND") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/get mit unbekanntem Prompt -> JSON-RPC error mit dmigrateCode=RESOURCE_NOT_FOUND") {
         val resp = runStdioRoundtrip(
             listOf(
                 initFrame(1),
@@ -206,7 +206,7 @@ class McpAiStdioE2EIT : FunSpec({
         errorObj.getAsJsonObject("data").get("dmigrateCode").asString shouldBe "RESOURCE_NOT_FOUND"
     }
 
-    test("Plan §6 G.9: tools/call procedure_transform_plan ueber stdio -> Success mit planRef") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: tools/call procedure_transform_plan ueber stdio -> Success mit planRef") {
         val args = """{"approvalKey":"k-stdio-1","schemaRef":"dmigrate://tenants/acme/schemas/schema-1",""" +
             """"procedureName":"foo","targetDialect":"POSTGRESQL"}"""
         val resp = runStdioRoundtrip(
@@ -222,7 +222,7 @@ class McpAiStdioE2EIT : FunSpec({
         tool.getAsJsonObject("providerMeta").get("providerName").asString shouldBe "noop"
     }
 
-    test("Plan §6 G.9: KI-Tool-Retry mit gleichem approvalKey -> Replay (selber planRef)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: KI-Tool-Retry mit gleichem approvalKey -> Replay (selber planRef)") {
         val args = """{"approvalKey":"k-replay","schemaRef":"dmigrate://tenants/acme/schemas/schema-1",""" +
             """"procedureName":"foo","targetDialect":"POSTGRESQL"}"""
         val resp = runStdioRoundtrip(
@@ -242,7 +242,7 @@ class McpAiStdioE2EIT : FunSpec({
         second.get("summary").asString shouldBe "replayed plan"
     }
 
-    test("Plan §6 G.9: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT-Envelope") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT-Envelope") {
         val args1 = """{"approvalKey":"k-conflict","schemaRef":"dmigrate://tenants/acme/schemas/schema-1",""" +
             """"procedureName":"foo","targetDialect":"POSTGRESQL"}"""
         val args2 = """{"approvalKey":"k-conflict","schemaRef":"dmigrate://tenants/acme/schemas/schema-1",""" +
@@ -267,7 +267,7 @@ class McpAiStdioE2EIT : FunSpec({
             .get("text").asString shouldContain "IDEMPOTENCY_CONFLICT"
     }
 
-    test("Plan §6 G.9: KI-Tool ohne dmigrate:ai:execute -> ForbiddenPrincipal-Wire-Envelope") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: KI-Tool ohne dmigrate:ai:execute -> ForbiddenPrincipal-Wire-Envelope") {
         // Custom-Wiring mit read-only-Principal.
         val gWiring = aiWiring()
         val registry = AiMcpRegistries.defaultToolRegistry(gWiring)

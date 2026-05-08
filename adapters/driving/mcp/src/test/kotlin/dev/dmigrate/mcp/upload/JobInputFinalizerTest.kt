@@ -23,7 +23,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 8.5 (F.5 1/3) — pin't den `job_input`-Finaliser in
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 1/3) — pin't den `job_input`-Finaliser in
  * Isolation: Bytes landen in [dev.dmigrate.server.ports.ArtifactContentStore],
  * der Metadaten-Record im [dev.dmigrate.server.ports.ArtifactStore],
  * Replay-Idempotenz auf `AlreadyExists` mit gleichem SHA bleibt
@@ -146,7 +146,7 @@ class JobInputFinalizerTest : FunSpec({
         val s = session(sizeBytes = bytes.size.toLong())
         fx.finalizer.complete(s, principal, payload1, artifactId, "csv")
         // Zweiter Aufruf: identische Bytes, identischer artifactId.
-        // Plan § 8.5: "finalisiertes Artefakt ist immutable" + AP 6.22
+        // LF-012 / LN-011 / LN-017 / LN-027: "finalisiertes Artefakt ist immutable" + LF-012 / LN-027 / LN-028 / LN-038
         // Idempotency.
         fx.finalizer.complete(s, principal, payload2, artifactId, "csv")
 

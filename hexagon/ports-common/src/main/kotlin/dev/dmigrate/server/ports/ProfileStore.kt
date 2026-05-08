@@ -8,7 +8,7 @@ import java.time.Instant
 
 /**
  * Tenant-scoped metadata index for profile artefacts. Per
- * `docs/ImpPlan-0.9.6-A.md` §5.3 this port intentionally does not reference
+ * `spec/mcp-server.md` §5.3 this port intentionally does not reference
  * `hexagon:profiling` types; typed profile projections (e.g. `DatabaseProfile`)
  * stay within the profiling module.
  */
@@ -23,30 +23,30 @@ data class ProfileIndexEntry(
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
     /**
-     * Plan-D §6.4: identifies the connection the profile was
-     * generated from. Either a bare `connectionId` (Phase-E
+     * LF-012 / LN-038: identifies the connection the profile was
+     * generated from. Either a bare `connectionId` (LF-012 / LN-011 / LN-017 / LN-027
      * start tools fill it from the connection-ref store) or a
      * full `connectionResourceUri`. Null means the producer did
      * not record one.
      */
     val connectionRef: String? = null,
     /**
-     * Plan-D §6.4: profiling scope (e.g. `full`, `tables-only`,
+     * LF-012 / LN-038: profiling scope (e.g. `full`, `tables-only`,
      * a comma-separated table allowlist). Operator-supplied —
-     * Phase-D §6.4 explicitly excludes raw paths / connection
+     * LF-012 / LN-038 §6.4 explicitly excludes raw paths / connection
      * URLs / ENV expansions, but Profile-Scope strings are
      * already metadata that survives scrubbing safely.
      */
     val scope: String? = null,
     /**
-     * Plan-D §6.4 optional `warningCount` — cumulative profiling
+     * LF-012 / LN-038 optional `warningCount` — cumulative profiling
      * warnings the producer raised. Null when not recorded.
      */
     val warningCount: Int? = null,
 )
 
 /**
- * Phase-D §6.3 + §10.4 filter for `profile_list`. `jobRef` ties
+ * LF-012 / LN-038 §6.3 + §10.4 filter for `profile_list`. `jobRef` ties
  * profiles to a producing job when the profile was emitted by one;
  * time window inclusive at both ends.
  */
@@ -65,7 +65,7 @@ interface ProfileStore {
     fun list(tenantId: TenantId, page: PageRequest): PageResult<ProfileIndexEntry>
 
     /**
-     * Phase-D filtered list. Default sort:
+     * LF-012 / LN-038 filtered list. Default sort:
      *   1. `createdAt` DESC
      *   2. `profileId` ASC
      */

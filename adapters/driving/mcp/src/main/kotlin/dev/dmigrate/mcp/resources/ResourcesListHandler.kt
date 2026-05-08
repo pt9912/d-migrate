@@ -8,7 +8,7 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.resource.ResourceKind
 
 /**
- * Sequential walker for `resources/list` per `ImpPlan-0.9.6-B.md` §6.9
+ * Sequential walker for `resources/list` per LF-012 / LN-027 / LN-028 / LN-038
  * + §12.17.
  *
  * The handler walks resource families in a fixed order
@@ -21,7 +21,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
  * Filtering: tenant-scoping is implicit via the per-store
  * `tenantId = principal.effectiveTenantId` argument; per-record
  * visibility (`OWNER`/`TENANT`/`ADMIN`) is checked via
- * `JobRecord.isReadableBy` / `ArtifactRecord.isReadableBy` — Phase B
+ * `JobRecord.isReadableBy` / `ArtifactRecord.isReadableBy` — LF-012 / LN-038
  * does not yet persist visibility on schema/profile/diff/connection
  * records, so those are returned as-is for the principal's tenant.
  *

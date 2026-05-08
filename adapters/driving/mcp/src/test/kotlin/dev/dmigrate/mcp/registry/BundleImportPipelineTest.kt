@@ -13,7 +13,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Follow-up AP 2 Part 2 — Acceptance-Tests für [BundleImportPipeline].
+ * LF-010 / LF-013 / LN-009 / LN-011 Part 2 — Acceptance-Tests für [BundleImportPipeline].
  *
  * Aus dem Worker herausgelöste Bundle-Logik. Tests benutzen echte
  * ZIP-Bytes (kein Mocking des Extractors) und eine Test-Lambda für

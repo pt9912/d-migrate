@@ -14,7 +14,7 @@ import java.time.Instant
 
 /**
  * RFC 7662 Token-Introspection-backed [AuthValidator] for
- * `AuthMode.JWT_INTROSPECTION` per `ImpPlan-0.9.6-B.md` §12.14.
+ * `AuthMode.JWT_INTROSPECTION` per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Posts `token=<bearer>` (form-encoded) to the configured
  * introspection endpoint, parses the JSON response, and maps the

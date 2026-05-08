@@ -14,7 +14,7 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import java.time.Clock
 
 /**
- * Phase E §3.1 / §7.6: `schema_reverse_start` — startet einen
+ * LF-012 / LN-011 / LN-017 / LN-027 §3.1 / §7.6: `schema_reverse_start` — startet einen
  * Schema-Reverse-Engineering-Job gegen eine tenant-scoped Connection-Ref.
  *
  * Die fachliche Reverse-Pipeline (Reader, Artefakt-Publish, …) bleibt

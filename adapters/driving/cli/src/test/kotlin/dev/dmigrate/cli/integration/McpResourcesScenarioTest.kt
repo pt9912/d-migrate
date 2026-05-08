@@ -10,7 +10,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP D11 sub-commit 2: Plan-D §10.11 transport-neutral coverage of
+ * LF-012 / LN-038 sub-commit 2: LF-012 / LN-038 transport-neutral coverage of
  * the protocol-level resource methods (`resources/list`,
  * `resources/templates/list`).
  *
@@ -18,13 +18,13 @@ private val IntegrationTag = NamedTag("integration")
  * (`McpDiscoveryScenarioTest`); this spec focuses on:
  *
  * - the `resources/list` walker round-trips the HMAC-sealed cursor
- *   from AP D8 sub-commit 1 across both transports
+ *   from LF-012 / LN-038 sub-commit 1 across both transports
  * - a tampered `resources/list` cursor surfaces as
  *   `-32602 InvalidParams` with `error.data.dmigrateCode=VALIDATION_ERROR`
  * - `resources/templates/list` keeps its static-7-templates pin
  *   alive on both transports
  *
- * Plan-D §10.11 acceptance bullets covered here:
+ * LF-012 / LN-038 acceptance bullets covered here:
  * - "resources/list und resources/templates/list" — yes, end-to-end
  * - "Templates-Golden-Test bleibt bei sieben Eintraegen" — yes
  * - "Negative Tests fuer manipulierte Cursor" — yes
@@ -71,7 +71,7 @@ class McpResourcesScenarioTest : FunSpec({
     }
 
     test("tampered resources/list cursor surfaces VALIDATION_ERROR on both transports") {
-        // Plan-D §10.11 negative: a forged cursor MUST collapse to
+        // LF-012 / LN-038 negative: a forged cursor MUST collapse to
         // `-32602 InvalidParams` with `error.data.dmigrateCode=VALIDATION_ERROR`,
         // NOT a silent restart at page 1.
         withFreshTransports { s, h ->
@@ -91,10 +91,10 @@ class McpResourcesScenarioTest : FunSpec({
         }
     }
 
-    test("resources/templates/list returns the static seven Phase-B templates on both transports") {
-        // Plan-D §10.11 + AP 6.9 invariant: the template list is a
+    test("resources/templates/list returns the static seven LF-012 / LN-038 templates on both transports") {
+        // LF-012 / LN-038 + LF-012 / LN-027 / LN-028 / LN-038 invariant: the template list is a
         // closed set of seven entries that does NOT include the
-        // tenantless `dmigrate://capabilities` URI (per Plan-D §5.1
+        // tenantless `dmigrate://capabilities` URI (per LF-012 / LN-038
         // "Capability-Resource erscheint nicht in Templates").
         withFreshTransports { s, h ->
             for (harness in listOf(s, h)) {
@@ -103,7 +103,7 @@ class McpResourcesScenarioTest : FunSpec({
                     ?: error("${harness.name}: templates/list must return a result")
                 val templates = resultEl.asJsonObject.getAsJsonArray("resourceTemplates")
                     ?: error("${harness.name}: templates/list missing resourceTemplates array")
-                withClue("${harness.name}: Plan-D §10.11 acceptance — exactly 7 templates") {
+                withClue("${harness.name}: LF-012 / LN-038 acceptance — exactly 7 templates") {
                     templates.size() shouldBe TEMPLATE_COUNT
                 }
                 val uris = templates.map { it.asJsonObject.get("uriTemplate").asString }

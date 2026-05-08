@@ -234,7 +234,7 @@ class SchemaSourceResolverTest : FunSpec({
     }
 
     test("schemaRef matches the principal's effectiveTenantId regardless of allowedTenantIds membership") {
-        // Tenant readability follows the rest of Phase B/C
+        // Tenant readability follows the rest of LF-012 / LN-038/C
         // (JobRecord.isReadableBy, ArtifactRecord.isReadableBy):
         // effectiveTenantId is the read scope. allowedTenantIds is
         // about *granting* an effective tenant at request entry, not
@@ -271,7 +271,7 @@ class SchemaSourceResolverTest : FunSpec({
         ex.requestedTenant shouldBe ACME
     }
 
-    test("AP 6.16: drifted SchemaIndexEntry (tenant/id/uri mismatch) maps to RESOURCE_NOT_FOUND") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: drifted SchemaIndexEntry (tenant/id/uri mismatch) maps to RESOURCE_NOT_FOUND") {
         // Defense-in-depth: a misbehaving SchemaStore that returns
         // a record whose tenantId / schemaId / resourceUri doesn't
         // match the lookup key must NOT be trusted. The handler

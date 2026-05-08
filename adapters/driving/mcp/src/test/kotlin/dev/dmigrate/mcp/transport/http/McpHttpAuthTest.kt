@@ -63,7 +63,7 @@ private class FakeAuthValidator(private val result: BearerValidationResult) : Au
 }
 
 /**
- * AP 6.6 Bearer / Scope / Metadata acceptance tests. The JWT
+ * LF-012 / LN-027 / LN-028 / LN-038 Bearer / Scope / Metadata acceptance tests. The JWT
  * cryptography itself lives in `JwksAuthValidator`; here we inject
  * fake [AuthValidator]s so the tests stay deterministic and fast.
  */

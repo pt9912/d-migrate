@@ -6,7 +6,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
 /**
- * Phase E §7.2 contract test for [InMemoryWorkerHandleRegistry].
+ * LF-012 / LN-011 / LN-017 / LN-027 §7.2 contract test for [InMemoryWorkerHandleRegistry].
  */
 class InMemoryWorkerHandleRegistryTest : FunSpec({
 

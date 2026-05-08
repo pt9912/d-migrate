@@ -7,7 +7,7 @@ import dev.dmigrate.core.model.IndexSortDirection
  * Typed projections for common JDBC metadata query results.
  *
  * These are pure data carriers — mapping to the neutral model
- * happens in dialect-specific SchemaReader implementations (Phase D).
+ * happens in dialect-specific SchemaReader implementations.
  * No [Map]<String, Any> escape hatches.
  */
 

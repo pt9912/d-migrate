@@ -19,8 +19,8 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E8(A): output-schema validation per
- * `ImpPlan-0.9.6-C.md` §6.24 Akzeptanz Z. 2077-2081.
+ * LF-012 / LN-027 / LN-028 / LN-038 E8(A): output-schema validation per
+ * LF-012 / LN-027 / LN-028 / LN-038 Akzeptanz Z. 2077-2081.
  *
  * For the four tools that publish a typed output schema —
  * `schema_validate`, `schema_generate`, `schema_compare`,

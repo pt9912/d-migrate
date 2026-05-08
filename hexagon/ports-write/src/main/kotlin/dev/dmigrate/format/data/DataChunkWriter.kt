@@ -6,11 +6,10 @@ import dev.dmigrate.core.data.DataChunk
 /**
  * Streaming-Writer für [DataChunk]s in ein Output-Format.
  *
- * Plan §3.5 / §6.17. Konkrete Implementierungen kommen in Phase D
- * (`JsonChunkWriter` mit DSL-JSON, `YamlChunkWriter` mit SnakeYAML Engine,
- * `CsvChunkWriter` mit uniVocity-parsers — siehe §11.5).
+ * LF-009 / LF-013: konkrete Implementierungen schreiben JSON, YAML und CSV
+ * mit formatgerechter Empty-Table- und Chunk-Semantik.
  *
- * **Vertrag** (siehe Plan §3.5 und F24-Klärung):
+ * **Vertrag**:
  * 1. [begin] wird **höchstens einmal** aufgerufen, vor dem ersten [write].
  *    Schreibt z.B. den CSV-Header oder den öffnenden JSON-Array-Bracket.
  * 2. [write] wird für jeden Chunk aufgerufen — auch für leere Chunks (siehe
@@ -21,8 +20,7 @@ import dev.dmigrate.core.data.DataChunk
  * 3. [end] wird **nur dann** aufgerufen, wenn vorher [begin] erfolgreich
  *    gelaufen ist. Schließt offene Container (z.B. JSON-Array `]`).
  *    Ein realer Writer DARF darauf bauen — der StreamingExporter ruft
- *    `end()` nicht ohne vorheriges `begin()` auf, auch nicht im Fehlerpfad
- *    (F24).
+ *    `end()` nicht ohne vorheriges `begin()` auf, auch nicht im Fehlerpfad.
  * 4. [close] **darf jederzeit** aufgerufen werden, auch ohne vorheriges
  *    [begin]. Bei `close()` ohne `begin()` schreibt der Writer KEINE
  *    Daten in den Output-Stream und schließt nur seine internen Resourcen

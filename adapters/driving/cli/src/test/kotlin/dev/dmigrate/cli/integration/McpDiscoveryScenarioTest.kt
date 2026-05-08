@@ -11,14 +11,14 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP D11: Plan-D §10.11 transport-neutral coverage of the Phase-D
+ * LF-012 / LN-038: LF-012 / LN-038 transport-neutral coverage of the LF-012 / LN-038
  * discovery surface — five `*_list` tools, the connection-resource
  * read path, and the HMAC-cursor tampering negative.
  *
  * The suite seeds three records per family directly into both
  * harnesses' in-memory stores (no upload-flow round-trip), then
  * iterates each tool over stdio + HTTP. The acceptance bullets
- * Plan-D §10.11 calls out:
+ * LF-012 / LN-038 calls out:
  *
  * - Test-Seeds für Jobs / Artefakte / Schemas / Profile / Diffs /
  *   Connections — covered via the [IntegrationFixtures.stage*]
@@ -93,7 +93,7 @@ class McpDiscoveryScenarioTest : FunSpec({
     }
 
     test("connection-resource projection drops credentialRef and providerRef on both transports") {
-        // Plan-D §10.10 + §10.11 acceptance: the connection
+        // LF-012 / LN-038 + §10.11 acceptance: the connection
         // discovery surface NEVER materialises a credentialRef /
         // providerRef value. Pin both per-transport so a future
         // regression that lifts a seed into the wire shape fails
@@ -127,7 +127,7 @@ class McpDiscoveryScenarioTest : FunSpec({
     }
 
     test("tampered HMAC cursor on a list-tool surfaces a tool-error envelope on both transports") {
-        // Plan-D §10.11 negative acceptance: a forged cursor MUST
+        // LF-012 / LN-038 negative acceptance: a forged cursor MUST
         // NOT silently restart at page 1. The handler maps
         // `ValidationErrorException` to a `tools/call` error
         // envelope (NOT a JSON-RPC error — list-tools dispatch as

@@ -6,7 +6,7 @@ import java.nio.file.Path
 /**
  * Import-Quelle für den [StreamingImporter][dev.dmigrate.streaming.StreamingImporter].
  *
- * Die CLI löst `--source` erst in Phase E in eine dieser Varianten auf. Der
+ * LF-010 / LF-013: Die CLI löst `--source` in eine dieser Varianten auf. Der
  * Streaming-Layer arbeitet bewusst nur noch gegen diese bereits aufgelöste
  * Form und kennt keinen rohen Source-String.
  */
@@ -35,7 +35,7 @@ sealed class ImportInput {
      * Mehrere Tabellen aus einem Verzeichnis.
      *
      * `tableFilter` begrenzt die Kandidatenmenge. `tableOrder` überschreibt
-     * die Default-Reihenfolge explizit und wird in Phase E u.a. für den
+     * die Default-Reihenfolge explizit und wird u.a. für den
      * Schema-/Topo-Sort-Pfad befüllt.
      */
     data class Directory(

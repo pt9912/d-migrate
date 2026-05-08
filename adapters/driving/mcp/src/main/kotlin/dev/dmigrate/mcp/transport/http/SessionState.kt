@@ -6,7 +6,7 @@ import org.eclipse.lsp4j.jsonrpc.services.GenericEndpoint
 import java.time.Instant
 
 /**
- * Per-session HTTP state per `ImpPlan-0.9.6-B.md` §12.5 / §12.13 / §12.14.
+ * Per-session HTTP state per LF-012 / LN-027 / LN-028 / LN-038§12.13 / §12.14.
  *
  * Holds the negotiated protocol version, lifecycle timestamps, the
  * [McpService] instance, and the [PrincipalContext] from the

@@ -5,14 +5,14 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 
 /**
- * AP 6.24: normalisation helpers for transport-neutral equality
+ * LF-012 / LN-027 / LN-028 / LN-038: normalisation helpers for transport-neutral equality
  * assertions. Replace transport- / runtime-dependent values
  * (request ids, session ids, dynamic resource ids, absolute paths,
  * timestamps) with stable placeholders so a stdio response and an
  * HTTP response of the same business call compare equal at the
  * field level.
  *
- * Plan §6.24 explicitly preserves business fields (toolname,
+ * LF-012 / LN-027 / LN-028 / LN-038 explicitly preserves business fields (toolname,
  * error-code, isError, schemaRef-shape, resource-URI shape,
  * truncated, artifactRef, finding-code/severity/path, audit-outcome)
  * — the helpers below only mask transport noise.
@@ -37,7 +37,7 @@ internal object TransportNormalisation {
     /**
      * Strips the dynamic ID AND the tenant segment from artefact /
      * schema / upload-session resource URIs so two responses produced
-     * by transports with DIFFERENT per-run principals (AP 6.24 §6.24
+     * by transports with DIFFERENT per-run principals (LF-012 / LN-027 / LN-028 / LN-038 §6.24
      * "eigene Tenant/Principal je Transportlauf") still compare equal
      * at the shape layer. The kind segment remains unmasked because
      * tools/list parity demands it stays as a fachliches Feld.
@@ -48,13 +48,13 @@ internal object TransportNormalisation {
         }
 
     /**
-     * AP 6.24 E2: walks [node] recursively and replaces every string
-     * value that matches a Phase-C resource-URI shape with its
+     * LF-012 / LN-027 / LN-028 / LN-038 E2: walks [node] recursively and replaces every string
+     * value that matches a LF-012 / LN-038 resource-URI shape with its
      * normalised form (dynamic id → `<masked>`). Used for transport-
      * neutral equality of payloads that carry per-call dynamic ids in
      * `artifactRef`, `schemaRef`, `diffArtifactRef`, etc.
      *
-     * Plan §6.24: the URI shape (tenant + kind + dynamic-id slot) is
+     * LF-012 / LN-027 / LN-028 / LN-038: the URI shape (tenant + kind + dynamic-id slot) is
      * a fachliches Feld and stays asserted; only the dynamic id is
      * masked.
      */

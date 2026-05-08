@@ -33,12 +33,12 @@ internal object AiToolApprovalSupport {
         )
 
     fun replayChallenge(challenge: AiToolOutcome.FailedRetryable): AiToolWorkResult.FailedRetryable {
-        // Follow-up AP 1: KI-Approval-Challenges müssen denselben aggregierten
+        // LF-017 / LF-024 / LN-030 / LN-031: KI-Approval-Challenges müssen denselben aggregierten
         // Detailvertrag liefern wie Job-/Upload-Pfade (`requiredScopes`,
         // `reasons` als kommagetrennte/pipegetrennte aggregierte Felder, nicht
         // wiederholte Singular-Einträge). Der Replay rebuilded die Details aus
         // den strukturierten Feldern, damit auch durable Challenges aus älteren
-        // Codepfaden den AP-1-Vertrag erfüllen.
+        // Codepfaden den LF-017 / LF-024 / LN-030 / LN-031-Vertrag erfüllen.
         val rebuiltDetails = rebuildApprovalDetails(challenge) ?: challenge.details
         return AiToolWorkResult.FailedRetryable(
             toolErrorCode = challenge.toolErrorCode,
@@ -83,7 +83,7 @@ internal object AiToolApprovalSupport {
     }
 
     /**
-     * Liefert die aggregierten AP-1-Details für ein durable
+     * Liefert die aggregierten LF-017 / LF-024 / LN-030 / LN-031-Details für ein durable
      * `POLICY_REQUIRED`-Outcome — oder `null`, wenn die Challenge keine
      * vollständigen Approval-Felder trägt (dann erhält der Caller die
      * gespeicherten `details` unverändert).
@@ -105,7 +105,7 @@ internal object AiToolApprovalSupport {
     }
 
     /**
-     * Follow-up AP 1: Detail-Form ist aggregiert (`requiredScopes` als
+     * LF-017 / LF-024 / LN-030 / LN-031: Detail-Form ist aggregiert (`requiredScopes` als
      * sortierte, kommagetrennte Liste; `reasons` pipegetrennt) — analog zu
      * [JobStartHandlerSupport.toToolCallOutcome] für Job-Start-Pfade. So
      * sehen Clients dieselbe Approval-Challenge-Form für KI-Tools wie für

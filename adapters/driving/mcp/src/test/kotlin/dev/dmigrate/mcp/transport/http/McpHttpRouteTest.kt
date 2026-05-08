@@ -31,8 +31,8 @@ private fun HttpRequestBuilder.mcpAccept() {
 }
 
 /**
- * AP 6.5 Streamable HTTP — POST/GET/DELETE, Origin, Session-Id,
- * Protocol-Version, Accept, plus all of the AP 6.4 Initialize cases.
+ * LF-012 / LN-027 / LN-028 / LN-038 Streamable HTTP — POST/GET/DELETE, Origin, Session-Id,
+ * Protocol-Version, Accept, plus all of the LF-012 / LN-027 / LN-028 / LN-038 Initialize cases.
  */
 class McpHttpRouteTest : FunSpec({
 
@@ -282,7 +282,7 @@ class McpHttpRouteTest : FunSpec({
         }
     }
 
-    test("GET /mcp returns 405 (no SSE in Phase B)") {
+    test("GET /mcp returns 405 (no SSE in LF-012 / LN-038)") {
         testApplication {
             application {
                 installMcpHttpRoute(LOOPBACK_CONFIG, serviceFactory = { McpServiceImpl(serverVersion = "0.1.0") })

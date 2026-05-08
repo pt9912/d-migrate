@@ -21,12 +21,12 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E8(B): security-scrubbing canary per
- * `ImpPlan-0.9.6-C.md` §6.24 Akzeptanz Z. 2086-2091.
+ * LF-012 / LN-027 / LN-028 / LN-038 E8(B): security-scrubbing canary per
+ * LF-012 / LN-027 / LN-028 / LN-038 Akzeptanz Z. 2086-2091.
  *
  * Plants three deterministic fixture secrets — a Bearer token, a
  * JDBC URL with embedded credentials, and an approval-token-shaped
- * string — into job state the Phase-C handlers project back onto
+ * string — into job state the LF-012 / LN-038 handlers project back onto
  * the wire (`progress.phase`, `error.code`, `error.message`).
  * Drives `job_status_get` and `resources/read` end-to-end on stdio
  * AND http and asserts the planted raw values NEVER appear in:
@@ -94,7 +94,7 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
     }
 
     test("resources/read on an artifact scrubs planted secrets from filename AND contentType") {
-        // AP 6.24 final-review: contentType is operator-supplied via
+        // LF-012 / LN-027 / LN-028 / LN-038 final-review: contentType is operator-supplied via
         // `artifact_upload_init` headers — same scrubbing surface as
         // filename. A planted Bearer/JDBC/tok_ value in contentType
         // must not leak through resources/read.
@@ -136,7 +136,7 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
 
     test("artifact_chunk_get text response scrubs planted secrets in artifact bytes") {
         // §6.24 acceptance: artefacts MUST NOT carry Secret-/JDBC-/
-        // tok_-Rohwerte. AP-6.23 already scrubs DDL artefacts at
+        // tok_-Rohwerte. LF-012 / LN-027 / LN-028 / LN-038 already scrubs DDL artefacts at
         // SchemaGenerateHandler write-time; the read-time defense-
         // in-depth here covers user-uploaded artefacts (where the
         // raw bytes were never routed through SecretScrubber on
@@ -190,7 +190,7 @@ class McpSecurityScrubbingScenarioTest : FunSpec({
     }
 
     test("server log output scrubs planted Bearer/tok_ values from non-allowlisted progress keys") {
-        // AP 6.24 final-review: JobStatusGetHandler.projectProgress
+        // LF-012 / LN-027 / LN-028 / LN-038 final-review: JobStatusGetHandler.projectProgress
         // logs dropped non-allowlisted numeric-value keys via SLF4J
         // (which Logback routes to stderr). User-supplied keys MUST
         // be scrubbed BEFORE the log call so a Bearer-/tok_-shaped
@@ -326,7 +326,7 @@ private fun stageJobWithSecrets(harness: McpClientHarness, jobId: String) {
             ),
             progress = JobProgress(
                 phase = "polling-with-leak: $BEARER_CANARY",
-                // AP 6.24 final-review: keys must also be a no-leak
+                // LF-012 / LN-027 / LN-028 / LN-038 final-review: keys must also be a no-leak
                 // surface — a planted Bearer-shaped key would slip
                 // into wire output if either projector or handler
                 // copied the map verbatim. JobStatusGetHandler drops

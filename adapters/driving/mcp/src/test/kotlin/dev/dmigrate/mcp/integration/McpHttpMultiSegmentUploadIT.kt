@@ -47,11 +47,11 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.10 (F.10): HTTP-Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): HTTP-Integrationstest fuer den
  * mehrsegmentigen `artifact_upload`-Pfad ueber `contentBase64`.
  *
  * Pin't, dass das streambare HTTP-Transport keinen separaten
- * binaeren Upload-Body braucht (Plan-Disclaimer 0.9.6: alle
+ * binaeren Upload-Body braucht (LF-012 / LN-038isclaimer 0.9.6: alle
  * Segmentbytes fliessen ueber JSON-RPC-`contentBase64`). Die
  * MCP-Session bleibt zwischen den Segment-POSTs persistent
  * (`MCP-Session-Id`-Header), und die finale Wirkung
@@ -114,7 +114,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
         val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
         // Pre-seed: durable Session mit drei Segmenten + application/csv-MIME.
-        // CSV ist seit Phase F erlaubt; sowohl `text/csv` als auch
+        // CSV ist seit LF-010 / LF-013 / LN-009 / LN-011 erlaubt; sowohl `text/csv` als auch
         // `application/csv` werden serverseitig auf `format=csv`
         // normalisiert (vgl. F.10.b und ArtifactUploadHandler.formatFromMimeType).
         val payload = "id,name,age\n1,Alice,42\n2,Bob,37\n4,Eve,31\n".toByteArray()
@@ -182,7 +182,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
 
             // 2. Drei artifact_upload-POSTs mit demselben Session-Id-Header.
             //    `contentBase64` ist der einzige Bytetransport — kein
-            //    binaerer Body, kein Multipart (Plan-Disclaimer 0.9.6).
+            //    binaerer Body, kein Multipart (LF-012 / LN-038isclaimer 0.9.6).
             fun uploadCall(id: Int, segIndex: Int, segOffset: Int, isFinal: Boolean, segSha: String, bytes: ByteArray): String {
                 val args = """{"uploadSessionId":"$sessionId","segmentIndex":$segIndex,"segmentOffset":$segOffset,""" +
                     """"segmentTotal":3,"isFinalSegment":$isFinal,"segmentSha256":"$segSha",""" +

@@ -12,7 +12,7 @@ import java.sql.PreparedStatement
 import java.sql.Statement
 
 /**
- * Phase E0.7.4 regression guard: [JdbcMetadataSession] (used by every
+ * LN-010 regression guard: [JdbcMetadataSession] (used by every
  * profiling adapter, every schema reader and every metadata-heavy code
  * path) creates its statements via the borrowed [Connection]. When that
  * connection comes from [HikariConnectionPoolFactory] the

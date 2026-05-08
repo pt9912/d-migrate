@@ -67,14 +67,14 @@ class McpContractRegistriesTest : FunSpec({
         }
     }
 
-    test("descriptors carry typed JSON-Schema 2020-12 input + output (AP 6.10)") {
+    test("descriptors carry typed JSON-Schema 2020-12 input + output (LF-012 / LN-027 / LN-028 / LN-038)") {
         val registry = McpContractRegistries.toolRegistry()
         val descriptor = registry.find("schema_validate")!!
         descriptor.inputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
         descriptor.outputSchema["\$schema"] shouldBe "https://json-schema.org/draft/2020-12/schema"
-        // AP 6.10 swapped stub schemas for typed shapes — assert the
+        // LF-012 / LN-027 / LN-028 / LN-038 swapped stub schemas for typed shapes — assert the
         // typed contract surface so a regression to "type:object only"
-        // is caught here too. AP 6.4 dropped the input `required`
+        // is caught here too. LF-012 / LN-027 / LN-028 / LN-038 dropped the input `required`
         // key for schema_validate (the schema/schemaRef one-of is
         // enforced at runtime, not on the wire); the output side
         // still has required fields and the `properties` map is
@@ -132,10 +132,10 @@ class McpContractRegistriesTest : FunSpec({
         registry.find("capabilities_list") shouldNotBe null
     }
 
-    test("resourceRegistry registers the 7 Phase-B templates as the single source of truth (§4.7 + §5.5)") {
+    test("resourceRegistry registers the 7 LF-012 / LN-038 templates as the single source of truth (§4.7 + §5.5)") {
         // §4.7: stdio + HTTP MUST read templates from the same
         // registry instance. The registry is no longer empty in Phase
-        // B — AP 6.9 fills it with the 7 standard templates from
+        // B — LF-012 / LN-027 / LN-028 / LN-038 fills it with the 7 standard templates from
         // McpResourceTemplates.ALL so resources/templates/list and
         // any future template-driven projection can't diverge.
         val registry = McpContractRegistries.resourceRegistry()

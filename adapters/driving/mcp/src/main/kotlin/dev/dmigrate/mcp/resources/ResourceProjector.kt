@@ -15,7 +15,7 @@ import dev.dmigrate.server.ports.SchemaIndexEntry
 
 /**
  * Pure projections from store records to MCP `resources/list` wire
- * shape per `ImpPlan-0.9.6-B.md` §5.5 + §6.9.
+ * shape per LF-012 / LN-027 / LN-028 / LN-038§6.9.
  *
  * Connection references are projected WITHOUT secrets (no
  * `credentialRef`, `providerRef`, JDBC URL — only `connectionId`,
@@ -23,7 +23,7 @@ import dev.dmigrate.server.ports.SchemaIndexEntry
  * "Connection-Refs ohne Secrets projizieren".
  *
  * Every MCP resource carries `mimeType=application/json` because
- * `resources/read` in Phase C/D will return the underlying record as
+ * `resources/read` in LF-012 / LN-038 will return the underlying record as
  * JSON. The mime is uniform across kinds — no transport-specific
  * variation.
  */
@@ -85,7 +85,7 @@ internal object ResourceProjector {
 }
 
 /**
- * Phase B `resources/read` content projections per §5.5 + §6.9.
+ * LF-012 / LN-038 `resources/read` content projections per §5.5 + §6.9.
  *
  * Where [ResourceProjector] yields the small `Resource` envelope used
  * by `resources/list`, this projector yields the JSON map that
@@ -95,7 +95,7 @@ internal object ResourceProjector {
  * `credentialRef`, `providerRef` and any JDBC URL.
  *
  * The shape is intentionally minimal: identifiers, status/timestamps,
- * the canonical URI plus a few descriptive fields per kind. Phase D
+ * the canonical URI plus a few descriptive fields per kind. LF-012 / LN-038
  * may add typed payload sections (e.g. inline schema bodies) by
  * appending to the same map; clients MUST tolerate unknown fields.
  *
@@ -124,7 +124,7 @@ internal object ResourceContentProjector {
         // so the two surfaces stay coherent. SecretScrubber matches
         // the JobStatusGetHandler scrubbing surface so a planted
         // Bearer/JDBC-URL/tok_ value never leaks via either path
-        // (AP 6.24 E8(B)).
+        // (LF-012 / LN-027 / LN-028 / LN-038 E8(B)).
         "error" to job.managedJob.error?.let {
             mapOf("code" to scrub(it.code), "message" to scrub(it.message), "exitCode" to it.exitCode)
         },
@@ -157,7 +157,7 @@ internal object ResourceContentProjector {
         // on `artifact_upload_init` — same scrubbing contract as
         // filename. Asymmetric scrubbing here would let a planted
         // Bearer/JDBC value slip through the resources/read path
-        // (AP 6.24 final-review finding).
+        // (LF-012 / LN-027 / LN-028 / LN-038 final-review finding).
         put("contentType", scrub(artifact.managedArtifact.contentType))
         put("sizeBytes", artifact.managedArtifact.sizeBytes)
         put("sha256", artifact.managedArtifact.sha256)

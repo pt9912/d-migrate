@@ -144,7 +144,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "action_required: 1"
     }
 
-    // ─── Split Report Contract Tests (0.9.2 AP 6.7) ──────────
+    // ─── Split Report Contract Tests (LF-003 / LF-009) ──────────
 
     test("split report contains split_mode") {
         val result = DdlResult(
@@ -225,7 +225,7 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "action_required: 1"
     }
 
-    // ─── 0.9.3 AP 6.2: mysql_named_sequences in report ──────────
+    // ─── LF-003 / LF-004: mysql_named_sequences in report ──────────
 
     test("report with mysqlNamedSequenceMode includes field in target block") {
         val report = TransformationReportWriter().render(

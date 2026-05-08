@@ -10,7 +10,7 @@ import dev.dmigrate.driver.metadata.JdbcMetadataSession
  * actual table listing, excluding internal `sqlite_*` tables.
  *
  * Borrows a connection from the pool and returns it immediately after
- * the listing (see Plan §6.18).
+ * the listing (LF-008 / LN-010).
  */
 class SqliteTableLister : TableLister {
 

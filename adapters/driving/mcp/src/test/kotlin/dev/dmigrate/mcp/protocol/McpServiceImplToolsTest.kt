@@ -54,7 +54,7 @@ class McpServiceImplToolsTest : FunSpec({
         result.nextCursor shouldBe null
     }
 
-    test("tools/call capabilities_list returns Phase-B contract snapshot") {
+    test("tools/call capabilities_list returns LF-012 / LN-038 contract snapshot") {
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
             toolRegistry = McpContractRegistries.toolRegistry(),
@@ -222,8 +222,8 @@ class McpServiceImplToolsTest : FunSpec({
         pairs shouldBe listOf("policyName" to "x", "custom" to "y")
     }
 
-    test("AP 6.23: errorEnvelope scrubs message + details[].value as a serialisation boundary") {
-        // Plan §6.23: Tool-Error-Envelopes scrub error.details[].value
+    test("LF-012 / LN-027 / LN-028 / LN-038: errorEnvelope scrubs message + details[].value as a serialisation boundary") {
+        // LF-012 / LN-027 / LN-028 / LN-038: Tool-Error-Envelopes scrub error.details[].value
         // (and message) at the serialisation boundary so an upstream
         // exception carrying a Bearer / approval-token / JDBC URL in
         // its details cannot leak across the wire — even if the
@@ -264,7 +264,7 @@ class McpServiceImplToolsTest : FunSpec({
         authValue shouldNotContain "abcdef0123"
     }
 
-    test("AP 6.23 review N8: errorEnvelopeResult scrubs both details[].key and details[].value") {
+    test("LF-012 / LN-027 / LN-028 / LN-038 review N8: errorEnvelopeResult scrubs both details[].key and details[].value") {
         // ApplicationException is sealed, so we exercise the only
         // typed-mapper path that lets us steer both `key` and
         // `value` through directly: ValidationErrorException copies
@@ -414,7 +414,7 @@ class McpServiceImplToolsTest : FunSpec({
         )
         val initOut = sut.initialize(InitializeParams(McpProtocol.MCP_PROTOCOL_VERSION)).get()
         initOut.capabilities.tools shouldBe mapOf("listChanged" to false)
-        // AP 6.9 lit up resources too.
+        // LF-012 / LN-027 / LN-028 / LN-038 lit up resources too.
         initOut.capabilities.resources shouldBe mapOf("listChanged" to false, "subscribe" to false)
     }
 
@@ -457,11 +457,11 @@ class McpServiceImplToolsTest : FunSpec({
         captured.single()!!.get("foo").asString shouldBe "bar"
     }
 
-    test("AP D6 review: unknown property on a published list-tool input fails with VALIDATION_ERROR") {
-        // Plan-D §6.1: "Filter werden strikt validiert. Unbekannte
+    test("LF-012 / LN-038 review: unknown property on a published list-tool input fails with VALIDATION_ERROR") {
+        // LF-012 / LN-038: "Filter werden strikt validiert. Unbekannte
         // Filter liefern VALIDATION_ERROR." The check runs at the
         // dispatcher layer (`enforceStrictInputProperties`) so the
-        // 5 list-tools, the 4 typed Phase-C tools and any other
+        // 5 list-tools, the 4 typed LF-012 / LN-038 tools and any other
         // schema with `additionalProperties=false` get the same
         // strict surface — the runtime contract finally matches
         // the published input-schema.
@@ -471,7 +471,7 @@ class McpServiceImplToolsTest : FunSpec({
             initialPrincipal = PRINCIPAL,
         )
         val args = JsonObject().apply {
-            addProperty("limit", 10) // not a Phase-D filter
+            addProperty("limit", 10) // not a LF-012 / LN-038 filter
         }
         val result = sut.toolsCall(ToolsCallParams(name = "job_list", arguments = args)).get()
         result.isError shouldBe true
@@ -481,7 +481,7 @@ class McpServiceImplToolsTest : FunSpec({
         details.any { it.asJsonObject.get("key").asString == "limit" } shouldBe true
     }
 
-    test("AP D6 review: known properties pass through (no false-positive on Phase-D filters)") {
+    test("LF-012 / LN-038 review: known properties pass through (no false-positive on LF-012 / LN-038 filters)") {
         // Sanity: the strict-properties check must NOT reject a
         // valid `*_list` filter. Pin a positive case so a future
         // refactor that drifts the allowlist breaks loudly.
@@ -495,7 +495,7 @@ class McpServiceImplToolsTest : FunSpec({
             addProperty("pageSize", 50)
         }
         val result = sut.toolsCall(ToolsCallParams(name = "job_list", arguments = args)).get()
-        // Phase-B registry returns UNSUPPORTED_TOOL_OPERATION because
+        // LF-012 / LN-038 registry returns UNSUPPORTED_TOOL_OPERATION because
         // the production handler isn't wired here — but the strict-
         // properties check is upstream, so VALIDATION_ERROR would be
         // surfaced first if the check rejected the filter.

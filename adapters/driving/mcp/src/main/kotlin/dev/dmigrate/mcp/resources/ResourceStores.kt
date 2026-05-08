@@ -12,10 +12,10 @@ import dev.dmigrate.server.ports.SchemaStore
 
 /**
  * Aggregate of the six store ports `resources/list` walks per
- * `ImpPlan-0.9.6-B.md` §5.5 + §6.9. Bundled so the bootstrap, the
+ * LF-012 / LN-027 / LN-028 / LN-038§6.9. Bundled so the bootstrap, the
  * route, and tests can all pass a single value instead of six.
  *
- * Phase B does NOT ship a built-in production implementation —
+ * LF-012 / LN-038 does NOT ship a built-in production implementation —
  * callers (CLI, integration tests) wire whichever backend they prefer
  * (in-memory for demos, real stores for production). [empty] returns
  * a bundle of empty in-memory stores so the bootstrap can start
@@ -47,13 +47,13 @@ data class ResourceStores(
         /**
          * Builds a [ResourceStores] from a [McpRuntimeWiring]. Job,
          * artifact and schema stores are taken from the wiring so
-         * `resources/read` sees the same records the Phase-C tools
+         * `resources/read` sees the same records the LF-012 / LN-038 tools
          * write. Profile, diff and connection stores fall back to
          * empty placeholders because [McpRuntimeWiring] does not carry
-         * them — Phase-C tools never touch those families. AP 6.9
+         * them — LF-012 / LN-038 tools never touch those families. LF-012 / LN-027 / LN-028 / LN-038
          * acceptance: production bootstrap uses this factory so
          * `resources/read` is never wired against [empty] when a
-         * Phase-C wiring is in scope.
+         * LF-012 / LN-038 wiring is in scope.
          */
         fun fromMcpRuntimeWiring(
             wiring: McpRuntimeWiring,
@@ -62,12 +62,12 @@ data class ResourceStores(
             jobStore = wiring.jobStore,
             artifactStore = wiring.artifactStore,
             schemaStore = wiring.schemaStore,
-            // AP D6 added profile/diff stores to McpRuntimeWiring (default
-            // Empty); wire them through so Phase-D `resources/read` and
+            // LF-012 / LN-038 added profile/diff stores to McpRuntimeWiring (default
+            // Empty); wire them through so LF-012 / LN-038 `resources/read` and
             // the discovery list handlers see the same backing store.
             profileStore = wiring.profileStore,
             diffStore = wiring.diffStore,
-            // AP D10: thread the connection-reference store from the
+            // LF-012 / LN-038: thread the connection-reference store from the
             // wiring so production bootstrap (which wires a
             // `LoaderBackedConnectionReferenceStore`) seeds the
             // discovery surface with secret-free connection records.

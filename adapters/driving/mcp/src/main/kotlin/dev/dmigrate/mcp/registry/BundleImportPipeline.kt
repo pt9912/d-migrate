@@ -6,7 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /**
- * Follow-up AP 2 Part 2 — testbare Pipeline für den Bundle-Import.
+ * LF-010 / LF-013 / LN-009 / LN-011 Part 2 — testbare Pipeline für den Bundle-Import.
  *
  * Aus [McpDataImportJobWorker] herausgelöst, damit die Bundle-Logik
  * (Extract → Manifest-Tabellen-Konsistenz → per-Tabelle-Import-Loop →
@@ -24,7 +24,7 @@ import java.nio.file.Path
  *   pro Manifest-Eintrag mit dem extrahierten Datei-Pfad, dem
  *   normalisierten Tabellennamen und dem Manifest-Format. Eine
  *   fehlgeschlagene Tabelle bricht die Iteration ab; nachfolgende
- *   Tabellen werden nicht angefasst (Plan §4 "fail-fast").
+ *   Tabellen werden nicht angefasst (LF-010 / LF-013 / LN-009 / LN-011 "fail-fast").
  *
  * Pure-genug zum Mocken: kein `RuntimeBootstrap`, keine
  * `ArtifactContentStore`-Abfrage, keine `ConnectionReferenceStore`-

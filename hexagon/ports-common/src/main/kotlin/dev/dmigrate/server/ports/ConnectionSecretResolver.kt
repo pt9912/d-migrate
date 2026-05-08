@@ -4,7 +4,7 @@ import dev.dmigrate.server.core.connection.ConnectionReference
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * Plan-D §8.1 + §10.10: adapter-neutral port that resolves a
+ * LF-012 / LN-038 §8.1 + §10.10: adapter-neutral port that resolves a
  * secret-free [ConnectionReference] into the concrete JDBC URL /
  * credential needed to actually open a database connection.
  *

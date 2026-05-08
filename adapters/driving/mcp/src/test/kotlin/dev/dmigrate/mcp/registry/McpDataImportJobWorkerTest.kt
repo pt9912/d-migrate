@@ -34,7 +34,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Follow-up AP 2 Part 2 — Tests für [McpDataImportJobWorker].
+ * LF-010 / LF-013 / LN-009 / LN-011 Part 2 — Tests für [McpDataImportJobWorker].
  *
  * Schwerpunkt: Bundle-Pfad-Erkennung über `_wireArtifactKind=seed-data-bundle`,
  * Spooling, Cleanup. Der eigentliche JDBC-Import schlägt fehl (Test-
@@ -47,7 +47,7 @@ import java.util.zip.ZipOutputStream
  *
  * Decken den Worker-Code, der vor dem JDBC-Aufruf liegt; alles
  * dahinter (echter SQL-Import, Cancellation, Resume-Pfade) wird durch
- * Phase-F-Integration-Tests gegen echte SQLite/PostgreSQL-DBs
+ * LF-010 / LF-013 / LN-009 / LN-011-Integration-Tests gegen echte SQLite/PostgreSQL-DBs
  * abgedeckt.
  */
 class McpDataImportJobWorkerTest : FunSpec({

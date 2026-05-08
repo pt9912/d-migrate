@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.auth
 
 /**
  * Strict `Authorization: Bearer <token>` parser per RFC 6750 §2.1
- * and `ImpPlan-0.9.6-B.md` §12.14 — Bearer tokens MUST NOT come from
+ * and LF-012 / LN-027 / LN-028 / LN-038— Bearer tokens MUST NOT come from
  * query parameters, cookies, or request bodies.
  *
  * Returns null when the header is absent, blank, has a non-Bearer

@@ -27,7 +27,7 @@ import dev.dmigrate.server.application.error.ValidationViolation
 import dev.dmigrate.server.core.artifact.ArtifactKind
 
 /**
- * AP 6.5: `schema_generate` per `ImpPlan-0.9.6-C.md` §6.5.
+ * LF-012 / LN-027 / LN-028 / LN-038: `schema_generate` per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Resolves the source via [SchemaSourceResolver], materialises it via
  * [SchemaContentLoader], looks up the dialect generator via
@@ -68,7 +68,7 @@ internal class SchemaGenerateHandler(
         val options = buildOptions(args)
         val generator = lookupGenerator(args.targetDialect)
         val result = generator.generate(schemaDef, options)
-        // AP 6.23: scrub DDL through the same SecretScrubber pipe as
+        // LF-012 / LN-027 / LN-028 / LN-038: scrub DDL through the same SecretScrubber pipe as
         // the inline findings/messages so an artefact write cannot
         // leak Bearer-tokens, JDBC URLs or approval-tokens that
         // accidentally landed in DEFAULTs / comments / quoted
@@ -127,7 +127,7 @@ internal class SchemaGenerateHandler(
     )
 
     private fun renderResponse(input: RenderInput, context: ToolCallContext): Map<String, Any?> {
-        // AP 6.23: the truncated → artifactRef coupling now covers
+        // LF-012 / LN-027 / LN-028 / LN-038: the truncated → artifactRef coupling now covers
         // both DDL overflow AND findings-only overflow. DDL has
         // priority for the artefact (text/plain SQL); findings-only
         // overflow spills the full findings list as a JSON artefact
@@ -257,7 +257,7 @@ internal class SchemaGenerateHandler(
         )
     }
 
-    // AP 6.17: dynamic strings (objectName, message, hint, skipped
+    // LF-012 / LN-027 / LN-028 / LN-038: dynamic strings (objectName, message, hint, skipped
     // reason) flow from generator transformations that read user-
     // supplied schema bytes; scrubbing keeps accidental token /
     // connection-URL leakage out of the wire response.

@@ -9,9 +9,9 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Phase-D §6.3 + §10.4 filter for `artifact_list`. Time window is
+ * LF-012 / LN-038 §6.3 + §10.4 filter for `artifact_list`. Time window is
  * inclusive at both ends; `jobRef` matches `ArtifactRecord.jobRef`
- * exactly so a Phase-D client can fan out artefacts of one job.
+ * exactly so a LF-012 / LN-038 client can fan out artefacts of one job.
  */
 data class ArtifactListFilter(
     val ownerFilter: PrincipalId? = null,
@@ -35,7 +35,7 @@ interface ArtifactStore {
     ): PageResult<ArtifactRecord>
 
     /**
-     * Phase-D filtered list. Default sort:
+     * LF-012 / LN-038 filtered list. Default sort:
      *   1. `managedArtifact.createdAt` DESC
      *   2. `managedArtifact.artifactId` ASC (stable id tiebreaker)
      */
@@ -48,7 +48,7 @@ interface ArtifactStore {
     fun deleteExpired(now: Instant): Int
 
     /**
-     * Phase F retention hook for callers that must release byte quotas
+     * LF-010 / LF-013 / LN-009 / LN-011 retention hook for callers that must release byte quotas
      * and content-store payloads after metadata expiry. Implementations
      * return the deleted records so the sweeper can delete corresponding
      * bytes and release `STORED_ARTIFACT_BYTES`.

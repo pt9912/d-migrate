@@ -17,7 +17,7 @@ class UploadSessionTransitionsTest : FunSpec({
     }
 
     test("FINALIZING may transition to COMPLETED or ABORTED only") {
-        // AP 6.22: success → COMPLETED, parse/validate/materialise failure → ABORTED.
+        // LF-012 / LN-027 / LN-028 / LN-038: success → COMPLETED, parse/validate/materialise failure → ABORTED.
         UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.COMPLETED) shouldBe true
         UploadSessionTransitions.isAllowed(UploadSessionState.FINALIZING, UploadSessionState.ABORTED) shouldBe true
         // Not allowed: back to ACTIVE, sideways to FINALIZING/EXPIRED.

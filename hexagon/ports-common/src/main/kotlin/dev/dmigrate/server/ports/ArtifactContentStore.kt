@@ -3,9 +3,9 @@ package dev.dmigrate.server.ports
 import java.io.InputStream
 
 /**
- * Byte-store for finalized, immutable artifact content. Phase A defines only
+ * Byte-store for finalized, immutable artifact content. base artifact scope defines only
  * the contract; in-memory and file-backed implementations follow in
- * AP 6.3 (`adapters:driven:storage-file`).
+ * LF-012 / LN-027 / LN-028 / LN-038 (`adapters:driven:storage-file`).
  */
 interface ArtifactContentStore {
 
@@ -23,7 +23,7 @@ sealed interface WriteArtifactOutcome {
     data class SizeMismatch(val expected: Long, val actual: Long) : WriteArtifactOutcome
 
     /**
-     * AP 6.22: an artefact under [artifactId] is already present
+     * LF-010 / LF-013 / LN-009 / LN-011: an artefact under [artifactId] is already present
      * with the same [existingSha256] and [existingSizeBytes].
      * Returned for the deterministic-id idempotent path; callers
      * may treat it as a successful no-op when it matches the

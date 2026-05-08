@@ -11,7 +11,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
 /**
- * Golden tests for the §4.2 precedence chain. Every Phase-D
+ * Golden tests for the §4.2 precedence chain. Every LF-012 / LN-038
  * dispatcher (`resources/read`, `artifact_chunk_get`,
  * `job_status_get`, the `*_list` tools) plugs into
  * [ResourceErrorPrecedence] so the order — parse → tenant scope →
@@ -118,8 +118,8 @@ class ResourceErrorPrecedenceTest : FunSpec({
         // §4.2 demands tenant-scope is checked against
         // allowedTenantIds. A principal with multiple allowed
         // tenants must be able to address resources in any of
-        // them — the AP-6.9 stricter `effectiveTenantId` check
-        // is a Phase-B holdover.
+        // them — the LF-012 / LN-027 / LN-028 / LN-038 stricter `effectiveTenantId` check
+        // is a LF-012 / LN-038 holdover.
         val result = ResourceErrorPrecedence.classify(
             "dmigrate://tenants/secondary/jobs/job-1",
             principal(allowed = setOf(TenantId("acme"), TenantId("secondary"))),

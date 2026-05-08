@@ -20,7 +20,7 @@ import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 
 /**
- * Phase-D §10.6 list-tool handlers. Five concrete handlers, one
+ * LF-012 / LN-038 §10.6 list-tool handlers. Five concrete handlers, one
  * per discovery tool, sharing [ListToolHelpers] for tenant
  * resolution + pageSize bounds + filter parsing. Each handler:
  *
@@ -28,7 +28,7 @@ import dev.dmigrate.server.application.error.ValidationViolation
  *      `allowedTenantIds`, missing → `effectiveTenantId`).
  *   2. Parses the resource-specific filter into the matching
  *      `*ListFilter` AP-D4 added to the store ports.
- *   3. Decodes any incoming HMAC-sealed cursor (AP D8) — verifying
+ *   3. Decodes any incoming HMAC-sealed cursor (LF-012 / LN-038) — verifying
  *      the cursor was minted for the same tenant + filter + pageSize.
  *      Tampered or expired cursors fail with `VALIDATION_ERROR`.
  *   4. Calls the store's filtered `list(tenantId, filter, page)`
@@ -39,12 +39,12 @@ import dev.dmigrate.server.application.error.ValidationViolation
  *      response shape, sealing any next-page cursor with the
  *      same binding.
  *
- * Cursor handling (AP D8 sub-commit 2): when the registry was
+ * Cursor handling (LF-012 / LN-038 sub-commit 2): when the registry was
  * built with a [SealedListToolCursor] (production path: every
- * Phase-C bootstrap ships an HMAC keyring), each handler binds
+ * LF-012 / LN-038 bootstrap ships an HMAC keyring), each handler binds
  * the cursor to (cursorType, tenantId, family, filters,
- * pageSize). When the codec is null (Phase-B / legacy tests),
- * `nextCursor` stays null per AP D6 — clients see only the
+ * pageSize). When the codec is null (LF-012 / LN-038 / legacy tests),
+ * `nextCursor` stays null per LF-012 / LN-038 — clients see only the
  * first page. The two paths share the same handler shape so
  * existing tests that don't wire the codec keep their semantics.
  */
@@ -277,10 +277,10 @@ private fun decodeIncomingCursor(
 ): String? {
     val raw = ListToolHelpers.resolveString(args, "cursor") ?: return null
     if (codec == null) {
-        // Phase-B / legacy harness without a configured keyring:
+        // LF-012 / LN-038 / legacy harness without a configured keyring:
         // refuse to honour a client-supplied cursor rather than
         // silently treat it as "first page" (which would mask a
-        // pagination bug). The Phase-D wire contract is that
+        // pagination bug). The LF-012 / LN-038 wire contract is that
         // cursors round-trip; null is the only legal "first" value.
         throw ValidationErrorException(
             listOf(ValidationViolation("cursor", "cursor verification is not configured on this server")),

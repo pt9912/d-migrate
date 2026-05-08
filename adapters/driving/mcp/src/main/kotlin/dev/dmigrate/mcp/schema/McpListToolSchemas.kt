@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * Phase-D §10.5 + §6.4 typed list-tool schemas.
+ * LF-012 / LN-038 §10.5 + §6.4 typed list-tool schemas.
  *
  * Five `*_list` discovery tools — `job_list`, `artifact_list`,
  * `schema_list`, `profile_list`, `diff_list` — share the
@@ -21,7 +21,7 @@ internal object McpListToolSchemas {
      * Returns the five `*_list` schema pairs keyed by tool name.
      * [McpToolSchemas] merges this map into the central
      * `SCHEMAS` table so `forTool(...)` continues to surface
-     * Phase-D tools through the same lookup API.
+     * LF-012 / LN-038 tools through the same lookup API.
      */
     fun allPairs(): Map<String, SchemaPair> = mapOf(
         "job_list" to jobListPair(),
@@ -32,7 +32,7 @@ internal object McpListToolSchemas {
     )
 
     /**
-     * Common input fields every Phase-D list tool advertises:
+     * Common input fields every LF-012 / LN-038 list tool advertises:
      * `tenantId`, `pageSize`, `cursor`, plus inclusive time-window
      * filters. Resource-specific filter fields are merged in by
      * the per-tool builders below.
@@ -167,7 +167,7 @@ internal object McpListToolSchemas {
     )
 
     /**
-     * Plan-D §6.4 minimum fields per `schemas[]` entry. Phase-D
+     * LF-012 / LN-038 minimum fields per `schemas[]` entry. LF-012 / LN-038
      * mandates `format`, `origin`, `sizeBytes` plus optional
      * `hash` alongside the common identity fields. Producers may
      * not yet set every metadata field, so the wire-shape allows
@@ -202,7 +202,7 @@ internal object McpListToolSchemas {
     )
 
     /**
-     * Plan-D §6.4 minimum fields per `profiles[]` entry. Phase-D
+     * LF-012 / LN-038 minimum fields per `profiles[]` entry. LF-012 / LN-038
      * mandates `connectionRef` (or `connectionResourceUri`),
      * `scope` plus optional `warningCount` alongside the common
      * identity fields.
@@ -234,7 +234,7 @@ internal object McpListToolSchemas {
     )
 
     /**
-     * Plan-D §6.4 minimum fields per `diffs[]` entry. The plan
+     * LF-012 / LN-038 minimum fields per `diffs[]` entry. The plan
      * uses the wire-names `leftSchemaId` / `rightSchemaId` (the
      * model field is `sourceRef` / `targetRef` for stage helper
      * compatibility — projector renames at the wire boundary).

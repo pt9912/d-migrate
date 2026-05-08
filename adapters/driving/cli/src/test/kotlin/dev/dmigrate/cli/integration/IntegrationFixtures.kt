@@ -40,20 +40,20 @@ import java.time.Clock
 import java.time.Instant
 
 /**
- * AP 6.24: per-transport-run isolation primitives. Every harness
+ * LF-012 / LN-027 / LN-028 / LN-038: per-transport-run isolation primitives. Every harness
  * instance carries its own state dir, tenant, principal and audit
  * sink so a stdio + http run inside the same scenario does NOT
  * cross-pollinate persisted state, audit events or principals.
  *
- * The wiring is the AP-6.21 file-backed Phase-C wiring:
+ * The wiring is the LF-012 / LN-027 / LN-028 / LN-038 file-backed LF-012 / LN-038 wiring:
  * - [FileBackedUploadSegmentStore] under `<stateDir>/segments/...`
  * - [FileBackedArtifactContentStore] under `<stateDir>/artifacts/<shard>/...`
  * - [FileSpoolAssembledUploadPayloadFactory] under `<stateDir>/assembly/...`
  * - audit sink is an [InMemoryAuditSink] (per-transport, fresh) so
- *   the AP-6.24 "exactly one audit event per dispatched tools/call"
+ *   the LF-012 / LN-027 / LN-028 / LN-038 "exactly one audit event per dispatched tools/call"
  *   assertion is unambiguous.
  *
- * Plan §6.24 explicitly forbids HTTP from inheriting the file-backed
+ * LF-012 / LN-027 / LN-028 / LN-038 explicitly forbids HTTP from inheriting the file-backed
  * wiring from the stdio CLI path — both transports build their own
  * `McpRuntimeWiring` here, sharing no in-memory state.
  */
@@ -74,7 +74,7 @@ internal object IntegrationFixtures {
      * have no isolation requirement (e.g. `McpHarnessSmokeTest`'s
      * cross-transport drift assertion). Scenario tests that pre-stage
      * tenant-scoped state and assert audit-event correlation MUST use
-     * [freshTransportPrincipal] instead so AP 6.24's "eigene
+     * [freshTransportPrincipal] instead so LF-012 / LN-027 / LN-028 / LN-038's "eigene
      * Tenant/Principal je Transportlauf" requirement holds end-to-end.
      */
     val INTEGRATION_PRINCIPAL: PrincipalContext = PrincipalContext(
@@ -90,7 +90,7 @@ internal object IntegrationFixtures {
     )
 
     /**
-     * AP 6.24 §6.24 final-review: per-transport-run principal so a
+     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: per-transport-run principal so a
      * stdio + HTTP pair invoked from the same `withFreshTransports`
      * helper see DIFFERENT tenants/principals server-side. Each
      * harness instance gets its own, with a unique 8-char suffix
@@ -101,7 +101,7 @@ internal object IntegrationFixtures {
      * `isAdmin = true` keeps `ScopeChecker.isSatisfied`'s admin-bypass
      * working (the same loophole AuthMode.DISABLED relies on for
      * loopback tooling) so handler-level scope checks pass without
-     * requiring the principal to enumerate every Phase-C scope.
+     * requiring the principal to enumerate every LF-012 / LN-038 scope.
      */
     fun freshTransportPrincipal(transport: String): PrincipalContext {
         val suffix = java.util.UUID.randomUUID().toString().take(SUFFIX_LEN)
@@ -123,7 +123,7 @@ internal object IntegrationFixtures {
     private const val SUFFIX_LEN: Int = 8
 
     /**
-     * Builds a Phase-C wiring identical in shape to the production
+     * Builds a LF-012 / LN-038 wiring identical in shape to the production
      * `McpCliRuntimeWiring.runtimeWiring(stateDir)` but with an
      * [InMemoryAuditSink] swapped in so the integration test can
      * assert audit-event counts. The `auditSink` reference is also
@@ -156,7 +156,7 @@ internal object IntegrationFixtures {
             // suite needs the in-memory sink to assert event counts.
             auditSink = auditSink,
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
-            // AP D11: replace the default Empty-stores with seedable
+            // LF-012 / LN-038: replace the default Empty-stores with seedable
             // InMemory variants so the discovery scenario suite can
             // round-trip every list-tool family + connection-resource.
             profileStore = InMemoryProfileStore(),
@@ -167,7 +167,7 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP 6.24 E3: stages a schema-staging-readonly artefact + the
+     * LF-012 / LN-027 / LN-028 / LN-038 E3: stages a schema-staging-readonly artefact + the
      * matching `SchemaIndexEntry` directly via the in-memory stores
      * exposed by [McpRuntimeWiring]. Returns the wire-shape `schemaRef`
      * (`dmigrate://tenants/<tenant>/schemas/<schemaId>`) the test can
@@ -223,7 +223,7 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP 6.24 E5: stages an artefact (record + content) directly via
+     * LF-012 / LN-027 / LN-028 / LN-038 E5: stages an artefact (record + content) directly via
      * the in-memory stores so the chunk-read scenarios don't need to
      * drive the upload flow end-to-end again. Returns the artifactId
      * the test passes back to `artifact_chunk_get`.
@@ -264,7 +264,7 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP 6.24 E5: stages a [JobRecord] directly so the
+     * LF-012 / LN-027 / LN-028 / LN-038 E5: stages a [JobRecord] directly so the
      * `job_status_get` scenarios get a deterministic terminal job
      * with a known artefact list (the artefact-backfill projection
      * needs an entry to lift onto a `ServerResourceUri`).
@@ -301,9 +301,9 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP D11: stages a [ProfileIndexEntry] directly so the
+     * LF-012 / LN-038: stages a [ProfileIndexEntry] directly so the
      * `profile_list` / `resources/list` scenarios get deterministic
-     * discovery records without driving the (Phase-D-future) profile
+     * discovery records without driving the (LF-012 / LN-038-future) profile
      * upload flow end-to-end.
      */
     fun stageProfile(
@@ -330,8 +330,8 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP D11: stages a [DiffIndexEntry] directly so the `diff_list`
-     * scenario sees a populated store. Phase-D start tools will write
+     * LF-012 / LN-038: stages a [DiffIndexEntry] directly so the `diff_list`
+     * scenario sees a populated store. LF-012 / LN-038 start tools will write
      * diffs in a future milestone; the integration suite seeds them
      * by hand for now.
      */
@@ -360,9 +360,9 @@ internal object IntegrationFixtures {
     }
 
     /**
-     * AP D11: stages a [ConnectionReference] directly so the
+     * LF-012 / LN-038: stages a [ConnectionReference] directly so the
      * `connection_list` (well, `resources/list` / `resources/read`)
-     * scenarios see a populated connection-reference store. Plan-D
+     * scenarios see a populated connection-reference store. LF-012 / LN-038
      * §10.10 secret-free guarantee: this helper accepts a plain
      * `credentialRef` string but never expands it.
      */

@@ -5,7 +5,7 @@ import dev.dmigrate.server.core.job.JobRecord
 import java.time.Instant
 
 /**
- * Phase E §5.1 / §7.2 Atomic Job-Start-Unit-of-Work.
+ * LF-012 / LN-011 / LN-017 / LN-027 §5.1 / §7.2 Atomic Job-Start-Unit-of-Work.
  *
  * Bundles two updates into a single atomic operation:
  *
@@ -14,13 +14,13 @@ import java.time.Instant
  *    `resultRef = jobRecord.managedJob.jobId` and
  *    `retentionUntil = jobRecord.managedJob.expiresAt`.
  *
- * Plan §5.1 / §7.2 forbid Saga-style sequencing where the job becomes
+ * LF-012 / LN-011 / LN-017 / LN-027 / §7.2 forbid Saga-style sequencing where the job becomes
  * visible without the matching `COMMITTED`-Idempotency entry; this port
  * is the single approved primitive for that boundary.
  *
  * The InMemory adapter uses a process-level lock; production adapters
  * MUST provide an equivalent atomic primitive (shared transaction or
- * shared store). Plan §7.2 explicitly forbids "recoverable Saga mit
+ * shared store). LF-012 / LN-011 / LN-017 / LN-027 explicitly forbids "recoverable Saga mit
  * sichtbarem Job-ohne-Idempotency-Commit". Implementoren MUESSEN die
  * `JobStartTransactionContractTests`-Suite durchlaufen — Detail-
  * Vertrag in `spec/phase-e-port-atomicity.md` Abschnitt (3).
@@ -46,7 +46,7 @@ interface JobStartTransaction {
 }
 
 /**
- * Phase E §7.2 outcome of [JobStartTransaction.commit].
+ * LF-012 / LN-011 / LN-017 / LN-027 §7.2 outcome of [JobStartTransaction.commit].
  */
 sealed interface JobStartTransactionOutcome {
 

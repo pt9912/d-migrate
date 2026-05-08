@@ -82,7 +82,7 @@ class OperationalMcpRegistriesTest : FunSpec({
         expiresAt = Instant.MAX,
     )
 
-    test("defaultToolRegistry: Phase-E Start-Tools + job_cancel sind produktive Handler") {
+    test("defaultToolRegistry: LF-012 / LN-011 / LN-017 / LN-027 Start-Tools + job_cancel sind produktive Handler") {
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("schema_reverse_start")
             .shouldBeInstanceOf<SchemaReverseStartHandler>()
@@ -106,31 +106,31 @@ class OperationalMcpRegistriesTest : FunSpec({
             .shouldNotBeInstanceOf<UnsupportedToolHandler>()
     }
 
-    test("defaultToolRegistry: Phase-C-Handler bleiben unveraendert (Sample: schema_validate)") {
+    test("defaultToolRegistry: LF-012 / LN-038-Handler bleiben unveraendert (Sample: schema_validate)") {
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
-        // schema_validate ist Phase-C, kein UnsupportedToolHandler.
+        // schema_validate ist LF-012 / LN-038, kein UnsupportedToolHandler.
         val handler = registry.findHandler("schema_validate")
         handler shouldNotBe null
         handler.shouldNotBeInstanceOf<UnsupportedToolHandler>()
     }
 
-    test("defaultToolRegistry: data_import_start ist Phase-F-aktiv (kein UnsupportedToolHandler)") {
-        // Phase F § 8.7 (F.7 5/5): produktiver Handler statt
+    test("defaultToolRegistry: data_import_start ist LF-010 / LF-013 / LN-009 / LN-011-aktiv (kein UnsupportedToolHandler)") {
+        // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5): produktiver Handler statt
         // UnsupportedToolHandler.
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_import_start")
             .shouldBeInstanceOf<DataImportStartHandler>()
     }
 
-    test("defaultToolRegistry: data_transfer_start ist Phase-F-aktiv (kein UnsupportedToolHandler)") {
-        // Phase F § 8.8 (F.8 4/4): produktiver Handler statt
+    test("defaultToolRegistry: data_transfer_start ist LF-010 / LF-013 / LN-009 / LN-011-aktiv (kein UnsupportedToolHandler)") {
+        // LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4): produktiver Handler statt
         // UnsupportedToolHandler.
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_transfer_start")
             .shouldBeInstanceOf<DataTransferStartHandler>()
     }
 
-    test("defaultToolRegistry: artifact_upload_init job_input nutzt Phase-F-Orchestrator und reserviert Init-Quotas") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: job_input init reserves quotas") {
         val wiring = operationalWiring(PolicyEffect.Allow)
         val registry = OperationalMcpRegistries.defaultToolRegistry(wiring)
         val args = JsonParser.parseString(
@@ -162,7 +162,7 @@ class OperationalMcpRegistriesTest : FunSpec({
         }
     }
 
-    test("defaultToolRegistry: administrativer artifact_upload_abort nutzt Phase-F-Policy-Pipeline") {
+    test("defaultToolRegistry: administrativer artifact_upload_abort nutzt LF-010 / LF-013 / LN-009 / LN-011-Policy-Pipeline") {
         val wiring = operationalWiring(PolicyEffect.Allow)
         val session = UploadSession(
             uploadSessionId = "ups-admin-abort",

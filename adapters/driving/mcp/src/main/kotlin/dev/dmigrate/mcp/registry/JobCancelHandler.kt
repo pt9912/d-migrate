@@ -13,12 +13,12 @@ import dev.dmigrate.server.core.job.JobRecord
 import java.time.Clock
 
 /**
- * Phase E §7.8 `job_cancel`-Tool-Handler.
+ * LF-012 / LN-011 / LN-017 / LN-027 §7.8 `job_cancel`-Tool-Handler.
  *
- * Plan-konforme Pflichten:
+ * vertragskonforme Pflichten:
  *
  * - Input-Validierung: genau eines von `jobId` oder `resourceUri` ist
- *   Pflicht (Plan §5.6 line 641); sonst `VALIDATION_ERROR`. `reason`
+ *   Pflicht (LF-012 / LN-011 / LN-017 / LN-027 line 641); sonst `VALIDATION_ERROR`. `reason`
  *   ist optional.
  * - Service-Aufruf via [JobCancelService]; alle Tenant-/Principal-/
  *   Status-Regeln liegen dort (E.8 (1/3)).

@@ -7,7 +7,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
- * Loader für `.d-migrate.yaml` (Plan §6.14 / §3.7.3).
+ * Loader für `.d-migrate.yaml` (LF-012 / LN-027 / LN-028 / LN-038).
  *
  * **Resolve-Funktionen**:
  *
@@ -148,7 +148,7 @@ class NamedConnectionResolver(
 
     /**
      * Liest `database.<key>` aus der bereits geparsten Config-Datei.
-     * Gibt `null` zurück wenn der Key nicht gesetzt ist. Plan-D §8.2:
+     * Gibt `null` zurück wenn der Key nicht gesetzt ist. LF-012 / LN-038:
      * delegiert an den adapter-neutralen [ConnectionConfigParser]
      * und übersetzt dessen typisierte Fehler in
      * [ConfigResolveException], damit der CLI-Exit-Code-Vertrag
@@ -172,7 +172,7 @@ class NamedConnectionResolver(
         ).resolve()
 
     /**
-     * Plan-D §8.2: das eigentliche YAML-Parsing wandert in den
+     * LF-012 / LN-038: das eigentliche YAML-Parsing wandert in den
      * adapter-neutralen [ConnectionConfigParser]; dieser
      * Resolver behält nur noch die CLI-spezifische
      * Pfad-Resolution und die ENV-Substitution. Das `${VAR}`-
@@ -195,7 +195,7 @@ class NamedConnectionResolver(
      * `$${VAR}` bleibt als literales `${VAR}` stehen (Escape gemäß
      * connection-config-spec.md §3.3).
      *
-     * Werte werden literal substituiert — kein Auto-URL-Encoding (Plan §6.14
+     * Werte werden literal substituiert — kein Auto-URL-Encoding (LF-012 / LN-027 / LN-028 / LN-038
      * F13). Sonderzeichen in Passwörtern müssen vom Nutzer vorab encoded
      * werden.
      */

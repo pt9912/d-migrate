@@ -4,9 +4,9 @@ import dev.dmigrate.mcp.protocol.PromptContent
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * Phase G § 5.7 (G.7) — Pflichtprompt `testdata_planning`.
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 (G.7) — Pflichtprompt `testdata_planning`.
  *
- * Plan §5.7 Z. 864:
+ * LF-017 / LF-024 / LN-030 / LN-031 Z. 864:
  * > Testdatenplanung auf Basis von Schema, Regeln und Profil-Summaries
  * > Mindestargumente: schemaRef, targetDialect, optional profileRef,
  * >                   optionale rules

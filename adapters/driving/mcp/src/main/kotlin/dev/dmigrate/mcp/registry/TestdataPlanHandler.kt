@@ -54,12 +54,12 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * Phase G § 5.6 + § 6 G.6 (G.6.f) — Handler für `testdata_plan`.
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.6 + § 6 G.6 (G.6.f) — Handler für `testdata_plan`.
  *
  * Eigenarten gegenüber [ProcedureTransformPlanHandler] (G.6.d):
  *
  * - Eingabe: `schemaRef` Pflicht, `profileRef` und `rules` optional.
- *   Plan §5.6 Z. 825-829 — keine Source-Variante-Wahl wie in G.6.d
+ *   LF-012 / LN-011 / LN-017 / LN-027 Z. 825-829 — keine Source-Variante-Wahl wie in G.6.d
  *   (procedureRef|artifactRef|schemaRef+procedureName), sondern nur
  *   ein Schema plus optionales Profile.
  * - Output-Artefakt: `wireArtifactKind=testdata-plan`,
@@ -68,15 +68,15 @@ import java.time.Duration
  *   und `testdataPayloadFingerprint`.
  * - Wire-Envelope: `testdataPlanArtifactId` + `testdataPlanResourceUri`
  *   (statt `planRef`/`targetArtifactId` der G.6.d/e).
- * - Plan §5.6 Z. 833-836: Tool erzeugt Plan, KEINE produktiven
- *   Datenbank-Schreiboperationen. Plan §5.6 Z. 836-837: Profiling-
+ * - LF-012 / LN-011 / LN-017 / LN-027 Z. 833-836: Tool erzeugt Plan, KEINE produktiven
+ *   Datenbank-Schreiboperationen. LF-012 / LN-011 / LN-017 / LN-027 Z. 836-837: Profiling-
  *   Daten dürfen nur als verdichtete Summary oder erlaubte
  *   Resource-Ref genutzt werden — der Handler prüft beim
  *   `profileRef`-Lookup nur Existenz/Tenant-Scope, keinen
  *   Inhalts-Snapshot.
  *
  * Wiederholt das G.6.d-Pipeline-Skelett — die Crosscutting-Logik
- * (Single-Writer-Acquire, Output-Hygiene Plan §7.4, Audit-Felder)
+ * (Single-Writer-Acquire, Output-Hygiene LF-017 / LF-024 / LN-030 / LN-031, Audit-Felder)
  * ist identisch.
  */
 internal class TestdataPlanHandler(
@@ -120,7 +120,7 @@ internal class TestdataPlanHandler(
             performWork(parsed, context.principal, envelope, payloadFingerprint, claim)
         }
 
-        // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
+        // LF-017 / LF-024 / LN-030 / LN-031: Provider-/Modell-Metadaten ins Audit-Event;
         // sowohl bei live-call als auch beim Replay.
         if (dispatch is AiToolDispatchOutcome.WireSuccess) {
             context.auditFields.resourceRefs = context.auditFields.resourceRefs + listOf(
@@ -285,7 +285,7 @@ internal class TestdataPlanHandler(
                     "profileRef tenant prefix mismatch",
                 )
             }
-            // Plan §5.6 Z. 836-837: Profile-Daten als verdichtete Summary
+            // LF-012 / LN-011 / LN-017 / LN-027 Z. 836-837: Profile-Daten als verdichtete Summary
             // oder Resource-Ref — wir pruefen nur Existenz, kein Inhalts-
             // Snapshot.
             profileStore.findById(tenantId, u.id)
@@ -447,7 +447,7 @@ internal class TestdataPlanHandler(
         } finally {
             quotaService.release(reservation)
         }
-        // Plan §7.4: Output-Hygiene über die Provider-Antwort.
+        // LF-017 / LF-024 / LN-030 / LN-031: Output-Hygiene über die Provider-Antwort.
         val outputCheck = hygieneService.sanitize(
             PromptHygieneRequest(
                 toolName = envelope.toolName + ":output",
@@ -586,7 +586,7 @@ internal class TestdataPlanHandler(
             append("d-migrate testdata-plan\n")
             append("targetDialect=").append(parsed.targetDialect).append('\n')
             sourceRefs.forEach { append("ref=").append(it.render()).append('\n') }
-            // Plan §5.6 Z. 836-837: Profile-Inhalt nicht im Prompt
+            // LF-012 / LN-011 / LN-017 / LN-027 Z. 836-837: Profile-Inhalt nicht im Prompt
             // referenzieren; nur Anwesenheit. Fingerprint erfasst den
             // exakten Wert.
             if (parsed.profileRef != null) append("profileRef=present\n")
@@ -680,7 +680,7 @@ internal class TestdataPlanHandler(
         append(if (replayed) "replayed testdata plan" else "testdata plan generated")
         append("\"")
         append(",\"findings\":[]")
-        // Plan §5.6: Wire-Form heisst testdataPlanArtifactId +
+        // LF-012 / LN-011 / LN-017 / LN-027: Wire-Form heisst testdataPlanArtifactId +
         // testdataPlanResourceUri (statt planRef/targetArtifactId).
         append(",\"testdataPlanArtifactId\":\"").append(artifactId).append('"')
         append(",\"testdataPlanResourceUri\":\"").append(resultRef).append('"')

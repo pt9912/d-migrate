@@ -37,8 +37,8 @@ import java.nio.file.Path
 import java.util.UUID
 
 /**
- * Phase-E Wiring-Bundle parallel zu [McpRuntimeWiring]. Komponiert die
- * Services, die die Phase-E-Tool-Handler aus AP E.6 (3/4) brauchen,
+ * LF-012 / LN-011 / LN-017 / LN-027 Wiring-Bundle parallel zu [McpRuntimeWiring]. Komponiert die
+ * Services, die die LF-012 / LN-011 / LN-017 / LN-027-Tool-Handler aus LF-012 / LN-011 / LN-017 / LN-027 (3/4) brauchen,
  * sodass das Bootstrap nur die Ports und (optional) Konfigurationen
  * uebergibt — Service-Konstruktion erfolgt mit defaults-rueckwaerts.
  *
@@ -47,11 +47,11 @@ import java.util.UUID
  * - [OperationalMcpWiring] traegt das gemeinsame [McpRuntimeWiring] (`jobStore`,
  *   `quotaService`, `auditSink`, `clock`, `connectionStore`, …) als
  *   Pflichtfeld; Tool-Handler greifen via `runtimeWiring.<x>` darauf zu.
- * - Phase-E-eigene Ports (Idempotency, JobStart-Transaction, Worker-
+ * - LF-012 / LN-011 / LN-017 / LN-027-eigene Ports (Idempotency, JobStart-Transaction, Worker-
  *   Handle-Registry, ApprovalGrantStore) sind separate Pflichtfelder,
- *   weil sie keine Phase-C-Vorgaenger haben.
+ *   weil sie keine LF-012 / LN-038-Vorgaenger haben.
  *
- * Sicherheits-Defaults (Plan §7.4):
+ * Sicherheits-Defaults (LF-017 / LF-024 / LN-030 / LN-031):
  *
  * - [policyService] defaultet auf eine leere Allowlist mit
  *   `defaultEffect = Deny("policy:no-rule")` — fail-closed bis explizit
@@ -65,7 +65,7 @@ import java.util.UUID
  * Bundle liefert.
  */
 data class OperationalMcpWiring(
-    /** Phase-C-Bundle (jobStore, quotaService, auditSink, clock, connectionStore, …). */
+    /** LF-012 / LN-038-Bundle (jobStore, quotaService, auditSink, clock, connectionStore, …). */
     val runtimeWiring: McpRuntimeWiring,
     val idempotencyStore: IdempotencyStore,
     val jobStartTransaction: JobStartTransaction,
@@ -106,7 +106,7 @@ data class OperationalMcpWiring(
         cancellationSourceFactory = cancellationSourceFactory,
     ),
     /**
-     * Phase E §7.9 owner-aware Quota-Service. Default-Komposition:
+     * LF-012 / LN-011 / LN-017 / LN-027 §7.9 owner-aware Quota-Service. Default-Komposition:
      * delegate auf [McpRuntimeWiring.quotaService], owner-Store als
      * In-Memory. Production-Wiring kann eine persistente OwnerStore-
      * Implementierung injizieren.
@@ -129,7 +129,7 @@ data class OperationalMcpWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * Phase E3 § 4 + § 5 (E3.5): Executor + Admission + Lifecycle als
+     * LF-012 / LN-011 / LN-017 / LN-027 § 4 + § 5 (E3.5): Executor + Admission + Lifecycle als
      * konsistent verkabeltes Tripel. Default ist `Sync` — gleicher
      * Bestands-Effekt wie `SyncExecutor` plus no-op Admission. Production-
      * Wiring ueberschreibt mit `JobExecutorFactory.create(Async(...))`;
@@ -149,7 +149,7 @@ data class OperationalMcpWiring(
         executor = workerExecutor,
         clock = runtimeWiring.clock,
         quotaService = ownerAwareQuotaService,
-        // Plan E3 § 3.7 (E3.6): scheduled-Event nutzt queueDepth aus
+        // LF-012 / LN-011 / LN-017 / LN-027: scheduled-Event nutzt queueDepth aus
         // dem Lifecycle-Snapshot. Dispatcher kennt den Lifecycle-Typ
         // selbst nicht — er bekommt nur die Funktion.
         executorStatusSnapshot = { executorBundle.lifecycle.status() },
@@ -160,9 +160,9 @@ data class OperationalMcpWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * Phase E §7.7 Worker-Factory fuer Auto-Dispatch. Der generische
+     * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Worker-Factory fuer Auto-Dispatch. Der generische
      * Fallback bleibt [PassthroughJobWorkerFactory] fuer nicht verdrahtete
-     * Bestandsoperationen; Phase-F-Datenoperationen laufen jedoch ueber
+     * Bestandsoperationen; LF-010 / LF-013 / LN-009 / LN-011-Datenoperationen laufen jedoch ueber
      * [DataOperationWorkerFactory] und failen geschlossen, solange
      * kein echter Import-/Transfer-Runner injiziert wurde.
      */

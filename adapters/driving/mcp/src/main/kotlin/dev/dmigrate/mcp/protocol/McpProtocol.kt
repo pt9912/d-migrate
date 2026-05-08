@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.protocol
 
 /**
- * Protocol contract pinned by MCP 2025-11-25 and ImpPlan-0.9.6-B.md §5.3.
+ * Protocol contract pinned by MCP 2025-11-25 and LF-012 / LN-027 / LN-028 / LN-038
  * The MCP `protocolVersion` is what gets negotiated on `initialize`;
  * the d-migrate contract version (`v1`) is exposed only in product
  * capabilities or `capabilities_list` — never as the MCP protocolVersion

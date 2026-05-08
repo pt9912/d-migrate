@@ -4,13 +4,13 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import dev.dmigrate.server.core.principal.TenantId
 
 /**
- * Phase-D resource-error contract per `ImpPlan-0.9.6-D.md` §4.2 +
+ * LF-012 / LN-038 resource-error contract per LF-012 / LN-038
  * §10.2. The four typed failure classes downstream resolvers
  * (`resources/read`, `artifact_chunk_get`, `job_status_get`, the
  * `*_list` tools) must surface uniformly. Each carries the stable
- * `dmigrateCode` string Phase D pins as `error.data.dmigrateCode`
+ * `dmigrateCode` string LF-012 / LN-038 pins as `error.data.dmigrateCode`
  * on the JSON-RPC envelope (the JSON-RPC renderer lives in the MCP
- * adapter; AP D7 wires it in).
+ * adapter; LF-012 / LN-038 wires it in).
  *
  * The error precedence is golden-tested in [ResourceErrorPrecedence]
  * so individual handlers cannot drift on the order they evaluate
@@ -30,8 +30,8 @@ sealed interface McpResourceError {
 
     /**
      * Stage 1: URI / arguments did not parse, or the request
-     * carries a Phase-D-blocked resource kind we never look up.
-     * Phase-D collapses both into one `VALIDATION_ERROR` so the
+     * carries a LF-012 / LN-038-blocked resource kind we never look up.
+     * LF-012 / LN-038 collapses both into one `VALIDATION_ERROR` so the
      * caller cannot probe the difference.
      */
     data class ValidationError(override val message: String) : McpResourceError {
@@ -80,7 +80,7 @@ sealed interface ResourceClassification {
 }
 
 /**
- * Centralised per-§4.2 precedence chain that every Phase-D
+ * Centralised per-§4.2 precedence chain that every LF-012 / LN-038
  * dispatcher MUST go through. Order — load-bearing for the
  * no-oracle property:
  *
@@ -89,14 +89,14 @@ sealed interface ResourceClassification {
  *      [PrincipalContext.allowedTenantIds]; failure surfaces as
  *      `TENANT_SCOPE_DENIED` BEFORE any blocked-kind / store check
  *      so a foreign-tenant URI never hits a resolver.
- *   3. Phase-D-blocked kind: `UPLOAD_SESSIONS` URIs in an allowed
+ *   3. LF-012 / LN-038-blocked kind: `UPLOAD_SESSIONS` URIs in an allowed
  *      tenant collapse to `VALIDATION_ERROR` without store lookup
  *      so an attacker cannot probe upload-session ids.
  *   4. Anything else: hand the parsed URI off to the resolver
  *      dispatcher; record-not-found / not-visible flips at THAT
- *      layer to `RESOURCE_NOT_FOUND`. AP D2 stops short of
+ *      layer to `RESOURCE_NOT_FOUND`. LF-012 / LN-038 stops short of
  *      step 4 — the resolver dispatcher lands with the concrete
- *      handlers in AP D6/D7/D9.
+ *      handlers in LF-012 / LN-038/D7/D9.
  *
  * The chain is pure; cursor decoding (which is also bound at
  * step 4 per §4.2) plugs in there with the resolver dispatcher.
@@ -104,9 +104,9 @@ sealed interface ResourceClassification {
 object ResourceErrorPrecedence {
 
     /**
-     * Phase-D-blocked resource kinds. Currently `UPLOAD_SESSIONS`
+     * LF-012 / LN-038-blocked resource kinds. Currently `UPLOAD_SESSIONS`
      * only — they parse for the legacy upload contract but are
-     * not in the Phase-D readable resource universe.
+     * not in the LF-012 / LN-038 readable resource universe.
      */
     private val PHASE_D_BLOCKED_KINDS: Set<ResourceKind> = setOf(ResourceKind.UPLOAD_SESSIONS)
 
@@ -133,12 +133,12 @@ object ResourceErrorPrecedence {
             )
         }
 
-        // Stage 3: Phase-D-blocked kind
+        // Stage 3: LF-012 / LN-038-blocked kind
         val blockedKind = parsed.blockedKindOrNull()
         if (blockedKind != null && blockedKind in PHASE_D_BLOCKED_KINDS) {
             return ResourceClassification.Failed(
                 McpResourceError.ValidationError(
-                    "resource kind '${blockedKind.pathSegment}' is not readable in Phase D",
+                    "resource kind '${blockedKind.pathSegment}' is not readable in LF-012 / LN-038",
                 ),
             )
         }

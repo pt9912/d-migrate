@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.time.Instant
 
 /**
- * AP 6.24: deterministic [StdioTokenStore] for the integration
+ * LF-012 / LN-027 / LN-028 / LN-038: deterministic [StdioTokenStore] for the integration
  * harness — maps a single known token to a fixed [StdioTokenGrant].
  * Production wiring uses [dev.dmigrate.mcp.auth.FileStdioTokenStore]
  * (file-backed); the integration suite needs the same lookup contract

@@ -137,7 +137,7 @@ class ValueDeserializerTest : FunSpec({
     }
 
     test("INTEGER: H-A2 — Double 1.0 (decimal token) is rejected even though value is integer-shaped") {
-        // Plan §3.5.2: token-format-based, not value-based. Reader produces
+        // LF-010 / LF-013: token-format-based, not value-based. Reader produces
         // Double for any token with `.`/`e`/`E`, and that must NOT silently
         // pass an INTEGER column.
         shouldThrow<ImportSchemaMismatchException> {
@@ -285,7 +285,7 @@ class ValueDeserializerTest : FunSpec({
             LocalDateTime.parse("2026-04-07T10:15")
     }
 
-    test("Phase E §4.1: TIMESTAMPTZ ohne Sekunden-Anteil wird akzeptiert (Lesepfad-Toleranz)") {
+    test("LF-006 / LN-022 / LN-023: TIMESTAMPTZ ohne Sekunden-Anteil wird akzeptiert (Lesepfad-Toleranz)") {
         forCol(Types.TIMESTAMP_WITH_TIMEZONE).deserialize(tableName, "c", "2026-04-07T10:15+02:00") shouldBe
             OffsetDateTime.parse("2026-04-07T10:15+02:00")
     }

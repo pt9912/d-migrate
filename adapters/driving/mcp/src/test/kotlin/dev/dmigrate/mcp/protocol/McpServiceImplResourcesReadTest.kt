@@ -397,13 +397,13 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
     }
 
-    test("resources/read with tenant in allowedTenantIds (not effectiveTenantId) reads in Phase D") {
-        // Plan-D §4.2 / §5.4 broadens the Phase-B contract: tenant
+    test("resources/read with tenant in allowedTenantIds (not effectiveTenantId) reads in LF-012 / LN-038") {
+        // LF-012 / LN-038 broadens the LF-012 / LN-038 contract: tenant
         // addressing checks `allowedTenantIds`, not strict
         // `effectiveTenantId`. A principal whose home tenant differs
         // from the URI tenant may still read records there as long
         // as the URI tenant is in the allowed set — same surface the
-        // AP D6 list-tools expose for an explicit `tenantId`
+        // LF-012 / LN-038 list-tools expose for an explicit `tenantId`
         // argument.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
@@ -481,12 +481,12 @@ class McpServiceImplResourcesReadTest : FunSpec({
     }
 
     test("resources/read on the upload-sessions kind in an allowed tenant surfaces VALIDATION_ERROR") {
-        // Plan-D §5.1 / §10.7: UPLOAD_SESSIONS is not a Phase-D
+        // LF-012 / LN-038: UPLOAD_SESSIONS is not a LF-012 / LN-038
         // readable kind. The precedence chain (§4.2 stage 3) runs
         // the blocked-kind gate BEFORE any store lookup, so an
         // attacker cannot probe upload-session ids through the
-        // not-found timing channel. Phase-B collapsed this into
-        // RESOURCE_NOT_FOUND; Phase-D narrows the wire shape so a
+        // not-found timing channel. LF-012 / LN-038 collapsed this into
+        // RESOURCE_NOT_FOUND; LF-012 / LN-038 narrows the wire shape so a
         // client gets a precise reason for the kind-rejection while
         // still preserving the no-oracle property (existence is
         // never confirmed because no lookup runs).
@@ -559,8 +559,8 @@ class McpServiceImplResourcesReadTest : FunSpec({
     }
 
     test("resources/read on dmigrate://capabilities returns the capabilities document") {
-        // Plan-D §5.1 / §10.7: dmigrate://capabilities is the only
-        // tenantless resource Phase D supports. The body must match
+        // LF-012 / LN-038: dmigrate://capabilities is the only
+        // tenantless resource LF-012 / LN-038 supports. The body must match
         // the `capabilities_list` tool's payload shape (sans
         // `executionMeta`) so a client reading capabilities through
         // either surface gets the same view.
@@ -582,14 +582,14 @@ class McpServiceImplResourcesReadTest : FunSpec({
         val body = parseTextContent(result)
         body["mcpProtocolVersion"] shouldBe "2025-11-25"
         body["serverName"] shouldBe "d-migrate"
-        // executionMeta is `capabilities_list` only — Plan-D §5.1
+        // executionMeta is `capabilities_list` only — LF-012 / LN-038
         // pins the static document for resources/read.
         body.containsKey("executionMeta") shouldBe false
     }
 
     test("resources/read on dmigrate://capabilities with no provider falls back to RESOURCE_NOT_FOUND") {
         // The default empty-map provider models a stale deployment
-        // that hasn't wired capabilities. Plan-D's no-oracle contract
+        // that hasn't wired capabilities. LF-012 / LN-038's no-oracle contract
         // demands resources/read never returns a half-baked body —
         // an empty document collapses to the standard not-found
         // branch with `dmigrateCode=RESOURCE_NOT_FOUND`.
@@ -607,14 +607,14 @@ class McpServiceImplResourcesReadTest : FunSpec({
     }
 
     test("resources/read rejects unknown request parameters with VALIDATION_ERROR") {
-        // Plan-D §5.3 / §10.7: `uri` is the ONLY accepted field.
+        // LF-012 / LN-038: `uri` is the ONLY accepted field.
         // The strict adapter captures the first offender into
         // ReadResourceParams.unknownParameter; the dispatcher rejects
         // BEFORE the URI even parses so a probe like {"chunkId":"x"}
         // can't elicit a parse-grammar oracle. Test the dispatcher
         // surface directly via a constructed params object — the
         // wire-shape adapter is exercised end-to-end through the
-        // integration tests landing in AP D11.
+        // integration tests landing in LF-012 / LN-038.
         val sut = McpServiceImpl(
             serverVersion = "0.0.0",
             initialPrincipal = principal(),
@@ -641,7 +641,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
     }
 
     test("oversized schema projection with artifactRef strips to a referral payload") {
-        // Plan-D §5.2 / §10.7: a JSON projection whose serialised
+        // LF-012 / LN-038: a JSON projection whose serialised
         // size exceeds maxInlineResourceContentBytes MUST surface as
         // a referral (`artifactRef` follow-up) rather than an
         // oversized inline body. The schema projection carries a
@@ -685,7 +685,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
     }
 
     test("oversized capabilities (no artifactRef) surfaces VALIDATION_ERROR") {
-        // Plan-D §5.2: an over-cap projection without an artifactRef
+        // LF-012 / LN-038: an over-cap projection without an artifactRef
         // referral path is a server-side limit-exceeded error. The
         // capabilities document has no backing artefact, so a
         // pathological deployment with too many tools registered
@@ -749,8 +749,8 @@ class McpServiceImplResourcesReadTest : FunSpec({
         body.containsKey("inlineLimitExceeded") shouldBe false
     }
 
-    test("error envelopes carry error.data.dmigrateCode for every Phase-D error class") {
-        // Plan-D §5.4 pins three stable codes on the wire:
+    test("error envelopes carry error.data.dmigrateCode for every LF-012 / LN-038 error class") {
+        // LF-012 / LN-038 pins three stable codes on the wire:
         //   VALIDATION_ERROR     — URI grammar / blocked kind
         //   TENANT_SCOPE_DENIED  — tenant outside allowedTenantIds
         //   RESOURCE_NOT_FOUND   — visible-but-absent / not-readable
@@ -781,7 +781,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         errorData(absent)["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
-    test("Plan-D §5.2 review: maxResourceReadResponseBytes is enforced on the full envelope") {
+    test("LF-012 / LN-038 review: maxResourceReadResponseBytes is enforced on the full envelope") {
         // The inline-byte cap (sub-commit 3) protects the per-content
         // body, but a multi-content resolver could still stack
         // "inline-OK" slices into an oversized envelope. Pin the
@@ -813,7 +813,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         }
     }
 
-    test("Plan-D §6.4 review: connection NOT in allowedPrincipalIds collapses to RESOURCE_NOT_FOUND on resources/read") {
+    test("LF-012 / LN-038 review: connection NOT in allowedPrincipalIds collapses to RESOURCE_NOT_FOUND on resources/read") {
         // The list-store filter at LoaderBackedConnectionReferenceStore.list()
         // already hides un-allowed connections from `resources/list`, but
         // the `resources/read` direct-by-URI lookup used to bypass that
@@ -846,7 +846,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         ((err.data) as Map<String, Any?>)["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
-    test("Plan-D §6.4 review: connection in allowedPrincipalIds reads successfully") {
+    test("LF-012 / LN-038 review: connection in allowedPrincipalIds reads successfully") {
         // Sanity check: the visibility gate must NOT reject a
         // legitimate read so a future regression that drifts the
         // allowlist semantics fails loudly.
@@ -872,7 +872,7 @@ class McpServiceImplResourcesReadTest : FunSpec({
         body["connectionId"] shouldBe "shared-conn"
     }
 
-    test("Plan-D §6.4 review: admin principal bypasses the connection-allowlist") {
+    test("LF-012 / LN-038 review: admin principal bypasses the connection-allowlist") {
         // Mirrors LoaderBackedConnectionReferenceStore.list()'s admin-
         // bypass so list/read agree end-to-end.
         val privateConn = ConnectionReference(

@@ -5,9 +5,9 @@ import dev.dmigrate.mcp.protocol.PromptListEntry
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * Phase G § 5.7 + § 6 G.7 — Server-seitige Prompt-Definition.
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 — Server-seitige Prompt-Definition.
  *
- * Plan §5.7 listet die Pflichtfelder:
+ * LF-017 / LF-024 / LN-030 / LN-031 listet die Pflichtfelder:
  *
  * - `name` (stabil, snake_case)
  * - `description`
@@ -22,26 +22,26 @@ import dev.dmigrate.mcp.protocol.PromptMessage
  * Argument-Validierung läuft separat über [PromptArgumentValidator]
  * — `arguments` hier nur zur Discovery-Projektion.
  *
- * @param name stabiler Wire-Identifikator (snake_case). Plan §5.7
+ * @param name stabiler Wire-Identifikator (snake_case). LF-017 / LF-024 / LN-030 / LN-031
  *   definiert die drei Pflichtprompts (`procedure_analysis`,
  *   `procedure_transformation`, `testdata_planning`).
  * @param description kurze, agentenfreundliche Beschreibung. Wird
  *   1:1 in das `prompts/list`-Discovery-Result projiziert.
- * @param revision Versionsstempel (etwa `"1"`, `"v2"`). Plan §5.7
+ * @param revision Versionsstempel (etwa `"1"`, `"v2"`). LF-017 / LF-024 / LN-030 / LN-031
  *   verlangt sie, damit Caller eine Drift erkennen — der Wert
  *   bleibt für die Lebensdauer einer Prompt-Definition stabil.
  * @param arguments Argumentliste für Discovery + Validation.
  *   Reihenfolge folgt der natürlichen Lesereihenfolge des Prompts.
- * @param expectedTools Plan §5.7: erwartete Tool-Schritte. Rein
+ * @param expectedTools LF-017 / LF-024 / LN-030 / LN-031: erwartete Tool-Schritte. Rein
  *   informativ — die Prompt-Engine führt KEINE Tools aus
- *   (Plan §4.5). Der Wert landet im `description`-Text und in
+ *   (LF-017 / LF-024 / LN-030 / LN-031). Der Wert landet im `description`-Text und in
  *   internen Audit-Spuren.
  * @param hygieneRules kurze, scrubsichere Beschreibungen der
  *   Hygiene-Pflichten. Werden im Description-Text gespiegelt
- *   (Plan §6 G.4 + §7.4).
+ *   (LF-017 / LF-024 / LN-030 / LN-031 + §7.4).
  * @param build Funktion, die aus den (bereits validierten und
  *   hygienisierten) Argumenten die Prompt-Nachrichten erzeugt.
- *   Output muss ausschließlich `text`-Content sein (Plan §5.7
+ *   Output muss ausschließlich `text`-Content sein (LF-017 / LF-024 / LN-030 / LN-031
  *   Z. 875-878).
  */
 data class PromptDescriptor(
@@ -60,7 +60,7 @@ data class PromptDescriptor(
     }
 
     /**
-     * Discovery-Projektion für `prompts/list`. Plan §5.7 Z. 866-877
+     * Discovery-Projektion für `prompts/list`. LF-017 / LF-024 / LN-030 / LN-031 Z. 866-877
      * verlangt `name` + optional `description` + `arguments`. Die
      * detaillierten Hygiene-/Tool-Felder bleiben serverseitig.
      */
@@ -72,7 +72,7 @@ data class PromptDescriptor(
 }
 
 /**
- * Phase G § 5.7 (G.7) — Argument-Spec eines Prompts. Beschreibt
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 (G.7) — Argument-Spec eines Prompts. Beschreibt
  * Form, Pflicht-Status und (für Refs) erlaubte ResourceKinds.
  *
  * Argument-Werte sind im MCP-Wire immer Strings (siehe

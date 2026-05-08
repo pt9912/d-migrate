@@ -44,7 +44,7 @@ object McpContractRegistries {
         "resources/templates/list",
         "resources/read",
         "connections/list",
-        // Phase G § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+        // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
         // Protokoll-Slots, NICHT Tools. Sie laufen ueber den
         // [PromptsHandler] in [McpServiceImpl], nicht ueber die
         // Tool-Registry.
@@ -164,7 +164,7 @@ object McpContractRegistries {
     private val DESCRIPTIONS: Map<String, String> = mapOf(
         "capabilities_list" to (
             "Returns the static d-migrate contract: protocol versions, the registered tools, " +
-                "and the scope table. Stores- and driver-free per ImpPlan §12.11."
+                "and the scope table. Stores- and driver-free per LF-012 / LN-038."
             ),
     )
 

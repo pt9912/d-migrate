@@ -18,7 +18,7 @@ import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * AP 6.4: `schema_validate` per `ImpPlan-0.9.6-C.md` §6.4.
+ * LF-012 / LN-027 / LN-028 / LN-038: `schema_validate` per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Strictness modes:
  * - `lenient` (default): warnings stay warnings; tool succeeds as
@@ -29,11 +29,11 @@ import dev.dmigrate.server.core.principal.PrincipalContext
  *
  * Findings are capped at [McpLimitsConfig.maxInlineFindings]; the
  * `truncated` flag is `true` when more findings exist than fit
- * inline. AP 6.19 wires the [artifactSink] so the full findings set
+ * inline. LF-012 / LN-027 / LN-028 / LN-038 wires the [artifactSink] so the full findings set
  * is persisted as an artefact in that case and the inline payload
- * carries the corresponding `artifactRef`. Phase-B unit tests can
+ * carries the corresponding `artifactRef`. LF-012 / LN-038 unit tests can
  * leave [artifactSink] null — the handler then falls back to the
- * pre-AP-6.19 truncate-only behaviour.
+ * pre-LF-012 / LN-027 / LN-028 / LN-038 truncate-only behaviour.
  */
 internal class SchemaValidateHandler(
     private val resolver: SchemaSourceResolver,
@@ -41,7 +41,7 @@ internal class SchemaValidateHandler(
     private val validator: SchemaValidator,
     private val limits: McpLimitsConfig,
     /**
-     * AP 6.23: required (non-null). The output schema's
+     * LF-012 / LN-027 / LN-028 / LN-038: required (non-null). The output schema's
      * `truncated → artifactRef` coupling is unconditional; production
      * wiring always provides a sink, and tests get a stub via the
      * test-only `handler()` helper. A nullable parameter would be
@@ -101,11 +101,11 @@ internal class SchemaValidateHandler(
         val cap = limits.maxInlineFindings
         val truncated = combined.size > cap
         val inline = if (truncated) combined.take(cap) else combined
-        // AP 6.19: when the inline cap kicks in, persist the FULL
+        // LF-012 / LN-027 / LN-028 / LN-038: when the inline cap kicks in, persist the FULL
         // findings list as an artefact so clients can fetch the
         // remainder via `artifact_chunk_get`. The inline payload
         // still carries summary + capped findings + `truncated=true`
-        // for backward compatibility with Phase-A consumers.
+        // for backward compatibility with base consumers.
         val artifactRef = if (truncated) {
             persistFullFindings(artifactSink, combined, principal)
         } else {
@@ -142,7 +142,7 @@ internal class SchemaValidateHandler(
         return uri.render()
     }
 
-    // AP 6.17: dynamic strings (path, message) come from validator
+    // LF-012 / LN-027 / LN-028 / LN-038: dynamic strings (path, message) come from validator
     // rules that read user-supplied schema bytes; scrubbing keeps
     // accidental Bearer/approval-token/connection-URL leakage out
     // of the wire response. `code` is a curated constant alphabet

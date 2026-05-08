@@ -20,7 +20,7 @@ private val PROTOCOL_METHODS: Set<String> = setOf(
     "resources/templates/list",
     "resources/read",
     "connections/list",
-    // Phase G § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+    // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
     // Protokoll-Slots (im DEFAULT_SCOPE_MAPPING gelistet), nicht
     // Tools.
     "prompts/list",
@@ -103,7 +103,7 @@ class McpToolSchemasTest : FunSpec({
         first.outputSchema shouldBe second.outputSchema
     }
 
-    test("schema_validate accepts inline schema or schemaRef with optional format/strictness (AP 6.4)") {
+    test("schema_validate accepts inline schema or schemaRef with optional format/strictness (LF-012 / LN-027 / LN-028 / LN-038)") {
         // The "exactly one of schema/schemaRef" rule is enforced at
         // runtime by SchemaSourceResolver — JSON Schema's oneOf would
         // duplicate that contract on the wire. Pin only the field set
@@ -118,7 +118,7 @@ class McpToolSchemasTest : FunSpec({
         pair.inputSchema.containsKey("required") shouldBe false
     }
 
-    test("AP 6.23: schema_generate output uses generatorFindings + truncated→artifactRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: schema_generate output uses generatorFindings + truncated→artifactRef") {
         val output = McpToolSchemas.forTool("schema_generate")!!.outputSchema
 
         val props = mapValue(output["properties"])
@@ -131,7 +131,7 @@ class McpToolSchemasTest : FunSpec({
         output["allOf"] shouldBe listOf(McpToolSchemas.truncatedRequiresField("artifactRef"))
     }
 
-    test("AP 6.23: generatorFindingItem extends findingItem with optional hint") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: generatorFindingItem extends findingItem with optional hint") {
         val item = McpToolSchemas.generatorFindingItem()
         item["additionalProperties"] shouldBe false
         val props = mapValue(item["properties"])
@@ -141,7 +141,7 @@ class McpToolSchemasTest : FunSpec({
         required shouldBe listOf("severity", "code", "path", "message")
     }
 
-    test("AP 6.23: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: schema_compare output uses compareDetails findings + truncated→diffArtifactRef") {
         val output = McpToolSchemas.forTool("schema_compare")!!.outputSchema
 
         val props = mapValue(output["properties"])
@@ -158,7 +158,7 @@ class McpToolSchemasTest : FunSpec({
         output["allOf"] shouldBe listOf(McpToolSchemas.truncatedRequiresField("diffArtifactRef"))
     }
 
-    test("AP 6.23: compareDetailsSchema closes details and rejects empty / blank slots") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: compareDetailsSchema closes details and rejects empty / blank slots") {
         val schema = McpToolSchemas.compareDetailsSchema()
         schema["type"] shouldBe "object"
         schema["additionalProperties"] shouldBe false
@@ -172,7 +172,7 @@ class McpToolSchemasTest : FunSpec({
         before["pattern"] shouldBe "\\S"
     }
 
-    test("AP 6.23: schema_validate output is strict and pins truncated→artifactRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: schema_validate output is strict and pins truncated→artifactRef") {
         val output = McpToolSchemas.forTool("schema_validate")!!.outputSchema
 
         val props = mapValue(output["properties"])
@@ -201,8 +201,8 @@ class McpToolSchemasTest : FunSpec({
         }
     }
 
-    test("Plan §6 G.5: KI-nahe Tools verlangen approvalKey + targetDialect als Pflichtfelder") {
-        // Plan §5.4-5.6: alle drei produktiven KI-Tools haben
+    test("LF-017 / LF-024 / LN-030 / LN-031: KI-nahe Tools verlangen approvalKey + targetDialect als Pflichtfelder") {
+        // LF-017 / LF-024 / LN-030 / LN-031: alle drei produktiven KI-Tools haben
         // approvalKey als sync-Idempotency-Key und targetDialect als
         // Pflichtfeld. Schema-Goldenness ist in der Golden-JSON
         // gepinnt; dieser Test pin't zusaetzlich die required-Liste,
@@ -219,10 +219,10 @@ class McpToolSchemasTest : FunSpec({
         }
     }
 
-    test("Plan §6 G.5: KI-nahe Tool-Outputs tragen Pflicht-providerMeta + executionMeta") {
-        // Plan §5.4-5.6 Output: providerMeta + executionMeta sind
+    test("LF-017 / LF-024 / LN-030 / LN-031: KI-nahe Tool-Outputs tragen Pflicht-providerMeta + executionMeta") {
+        // LF-017 / LF-024 / LN-030 / LN-031 Output: providerMeta + executionMeta sind
         // bei jedem Erfolgsfall Pflicht — sie tragen die Provenance
-        // ins Audit (Plan §4.8). Ohne diese Pflicht-Bindung waere
+        // ins Audit (LF-012 / LN-011 / LN-017 / LN-027). Ohne diese Pflicht-Bindung waere
         // ein Output-Goldenness-Drift moeglich, der die Provenance
         // unterschlaegt.
         for (toolName in listOf(
@@ -237,8 +237,8 @@ class McpToolSchemasTest : FunSpec({
         }
     }
 
-    test("Plan §5.1: providerMetaField ist closed-shape mit modelVersion + requestId nullable") {
-        // Plan §5.1: providerMeta darf weder Endpoint noch secretRef
+    test("LF-017 / LF-024 / LN-030 / LN-031: providerMetaField ist closed-shape mit modelVersion + requestId nullable") {
+        // LF-017 / LF-024 / LN-030 / LN-031: providerMeta darf weder Endpoint noch secretRef
         // enthalten. Pin den shape strukturell, damit ein zukuenftiger
         // Helper-Refactor nicht versehentlich einen Endpoint/Secret-Slot
         // einfuehrt.
@@ -248,7 +248,7 @@ class McpToolSchemasTest : FunSpec({
         val props = mapValue(meta["properties"])
         props.keys shouldBe setOf("providerName", "model", "modelVersion", "requestId")
         stringListValue(meta["required"]) shouldBe listOf("providerName", "model")
-        // modelVersion und requestId sind nullable (Plan §5.1: lokale
+        // modelVersion und requestId sind nullable (LF-017 / LF-024 / LN-030 / LN-031: lokale
         // Provider liefern keine modelVersion/requestId).
         mapValue(props["modelVersion"])["type"] shouldBe listOf("string", "null")
         mapValue(props["requestId"])["type"] shouldBe listOf("string", "null")

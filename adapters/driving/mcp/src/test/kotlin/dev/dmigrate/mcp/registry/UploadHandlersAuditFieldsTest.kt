@@ -26,7 +26,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.9 (F.9 3/3) — pin't, dass die Upload-Handler die
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 3/3) — pin't, dass die Upload-Handler die
  * `AuditFields` fuer Around-/Finally-Audit befuellen, ohne rohe
  * Uploadbytes oder Approval-Tokens zu durchschleifen.
  *
@@ -36,7 +36,7 @@ import java.util.Base64
  * Konsumenten typsicher keine sensiblen Daten sehen koennen.
  *
  * Diese Tests pruefen, dass die Handler den `resourceRefs`-Slot mit
- * der Session-URI fuellen (Plan-konformes "tracable" ohne Bytes-
+ * der Session-URI fuellen (vertragskonformes "tracable" ohne Bytes-
  * Leak) und nicht versehentlich `contentBase64` oder `approvalToken`
  * in die Felder schreiben.
  */
@@ -64,7 +64,7 @@ class UploadHandlersAuditFieldsTest : FunSpec({
 
     fun b64(bytes: ByteArray): String = Base64.getEncoder().encodeToString(bytes)
 
-    test("artifact_upload_init (Phase-C readonly) populates resourceRefs mit Session-URI") {
+    test("artifact_upload_init (LF-012 / LN-038 readonly) populates resourceRefs mit Session-URI") {
         val sessionStore = InMemoryUploadSessionStore()
         val quotaStore = InMemoryQuotaStore()
         val handler = ArtifactUploadInitHandler(
@@ -89,7 +89,7 @@ class UploadHandlersAuditFieldsTest : FunSpec({
                 auditFields = auditFields,
             ),
         )
-        // Plan-§-8.9 Akzeptanz: tracable URI im Audit, kein
+        // LF-010 / LF-013 / LN-009 / LN-011 Akzeptanz: tracable URI im Audit, kein
         // contentBase64/approvalToken durch das Audit-Schema
         // ueberhaupt erreichbar.
         auditFields.resourceRefs shouldContain "dmigrate://tenants/acme/upload-sessions/ups-audit-1"
@@ -186,7 +186,7 @@ class UploadHandlersAuditFieldsTest : FunSpec({
     }
 
     test("AuditFields traegt KEINE rohen Uploadbytes oder ApprovalToken (strukturelle Garantie via AuditEvent-Schema)") {
-        // Plan § 8.9 wortlaeufig: "Audit enthaelt keine rohen
+        // LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig: "Audit enthaelt keine rohen
         // Uploadbytes oder Approval-Tokens".
         //
         // Strukturelle Garantie: AuditEvent kennt nur die Felder

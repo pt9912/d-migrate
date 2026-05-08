@@ -9,7 +9,7 @@ import java.security.MessageDigest
 import kotlin.io.path.absolutePathString
 
 /**
- * Phase A Schritt 6 scaffold: stamps, deterministic generation, and
+ * LN-043 scaffold: stamps, deterministic generation, and
  * cache invalidation for the [LargeJsonFixture].
  *
  * **Not the actual Go/No-Go spike.** The real 100-MB pull-parse test

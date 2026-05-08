@@ -42,8 +42,8 @@ import java.time.Duration
 import java.util.UUID
 
 /**
- * Phase-C wiring bundle per `ImpPlan-0.9.6-C.md` §6.14. Holds every
- * fachliche Abhaengigkeit the Phase-C handlers need so the bootstrap
+ * LF-012 / LN-038 wiring bundle per LF-012 / LN-027 / LN-028 / LN-038. Holds every
+ * fachliche Abhaengigkeit the LF-012 / LN-038 handlers need so the bootstrap
  * can build the registry in one shot rather than threading 10+
  * stores through `startStdio` / `startHttp`.
  *
@@ -83,7 +83,7 @@ data class McpRuntimeWiring(
         clock = clock,
     ),
     /**
-     * Phase F § 8.5 (F.5 3/3): Finaliser fuer policy-pflichtige
+     * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3): Finaliser fuer policy-pflichtige
      * `uploadIntent=job_input`-Sessions. Materialisiert die
      * Bytes via [artifactContentStore] und registriert den
      * [ArtifactRecord] (kind=session.artifactKind,
@@ -96,7 +96,7 @@ data class McpRuntimeWiring(
         clock = clock,
     ),
     /**
-     * AP 6.20: optional audit sink. When supplied, every `tools/call`
+     * LF-012 / LN-027 / LN-028 / LN-038: optional audit sink. When supplied, every `tools/call`
      * dispatched through `McpServiceImpl` records a single
      * [dev.dmigrate.server.core.audit.AuditEvent] (success and
      * failure paths alike). Production wiring usually plugs in
@@ -105,16 +105,16 @@ data class McpRuntimeWiring(
      */
     val auditSink: AuditSink? = null,
     /**
-     * AP 6.22: factory that allocates a streaming spool for the
+     * LF-010 / LF-013 / LN-009 / LN-011: factory that allocates a streaming spool for the
      * `ArtifactUploadHandler` finalisation path. Production CLI
-     * wires the file-spool variant under the AP-6.21 state dir;
+     * wires the file-spool variant under the LF-012 / LN-027 / LN-028 / LN-038 state dir;
      * tests/dev default to `AssembledUploadPayloadFactory.inMemory()`.
      */
     val assembledUploadPayloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
 
     /**
-     * AP D6: store backing `profile_list`. No Phase-C tool emits
-     * profile records yet (Phase-D start tools will), so the
+     * LF-012 / LN-038: store backing `profile_list`. No LF-012 / LN-038 tool emits
+     * profile records yet (LF-012 / LN-038 start tools will), so the
      * default is the no-op [EmptyProfileStore]. Integration tests
      * inject an `InMemoryProfileStore` so staged profiles
      * round-trip through the discovery handler.
@@ -122,34 +122,34 @@ data class McpRuntimeWiring(
     val profileStore: ProfileStore = EmptyProfileStore,
 
     /**
-     * AP D6: store backing `diff_list`. Same default-empty
+     * LF-012 / LN-038: store backing `diff_list`. Same default-empty
      * rationale as [profileStore] — `schema_compare` produces
-     * `diffArtifactRef` but no DiffIndexEntry yet; Phase-D start
+     * `diffArtifactRef` but no DiffIndexEntry yet; LF-012 / LN-038 start
      * tools will.
      */
     val diffStore: DiffStore = EmptyDiffStore,
 
     /**
-     * AP D10: secret-free connection-reference store. The MCP
+     * LF-012 / LN-038: secret-free connection-reference store. The MCP
      * bootstrap typically wires
      * `LoaderBackedConnectionReferenceStore(YamlConnectionReferenceLoader(...))`
      * so `resources/list`, `resources/read` and the discovery
      * tools see the deployment's connection refs without ever
      * materialising the resolved JDBC URL or the expanded secret.
      * The default stays empty for tests / CLI-only deployments
-     * that don't carry a Phase-D YAML.
+     * that don't carry a LF-012 / LN-038 YAML.
      */
     val connectionStore: ConnectionReferenceStore = EmptyConnectionStore,
 
     /**
-     * AP D8 + Plan-D §10.3 review: HMAC keyring backing every
-     * Phase-D MCP cursor (`resources/list`, `*_list` discovery
+     * LF-012 / LN-038 + LF-012 / LN-038 review: HMAC keyring backing every
+     * LF-012 / LN-038 MCP cursor (`resources/list`, `*_list` discovery
      * tools, chunk follow-ups).
      *
      * Default is the **deterministic dev keyring** ([DEV_DEFAULT])
      * so tests and single-process dev runs stay reproducible —
      * a cursor minted in one test method round-trips into the
-     * next without surprise verification failures, and Phase-D
+     * next without surprise verification failures, and LF-012 / LN-038
      * integration suites do not depend on random key material.
      *
      * Production / multi-instance / blue-green deployments MUST
@@ -187,7 +187,7 @@ data class McpRuntimeWiring(
     companion object {
 
         /**
-         * Plan-D §10.3 dev/test keyring: a fixed `kid`/secret pair
+         * LF-012 / LN-038 dev/test keyring: a fixed `kid`/secret pair
          * so dev workflows + tests get reproducible cursor wire
          * shapes. Bytes are an obvious "do-not-use-in-production"
          * marker (`0x00..0x1F`) — production wiring MUST replace

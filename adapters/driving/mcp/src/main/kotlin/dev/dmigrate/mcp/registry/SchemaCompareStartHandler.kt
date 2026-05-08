@@ -15,10 +15,10 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import java.time.Clock
 
 /**
- * Phase E §3.1 / §7.6: `schema_compare_start` — startet einen Job, der
+ * LF-012 / LN-011 / LN-017 / LN-027 §3.1 / §7.6: `schema_compare_start` — startet einen Job, der
  * zwei tenant-scoped Schema-Refs vergleicht (`sourceUri`, `targetUri`).
  *
- * Plan §7.7 erlaubt sowohl `connectionRef`- als auch `schemaRef`-
+ * LF-012 / LN-011 / LN-017 / LN-027 erlaubt sowohl `connectionRef`- als auch `schemaRef`-
  * Eingaben fuer dieses Tool; die unterscheidbare Materialisierung
  * (Reader-vs-Schema-Content) lebt im Runner (AP E.7). Hier akzeptiert
  * der Validator beide Kinds — wir erzwingen nur, dass die Refs ein

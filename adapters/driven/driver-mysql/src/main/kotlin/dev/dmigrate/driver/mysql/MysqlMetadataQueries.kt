@@ -222,7 +222,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    // ── Sequence-Support queries (0.9.4 AP 6.1) ──────────────
+    // ── LF-004 / LF-013: Sequence-Support queries ─────────────
 
     fun checkSupportTableExists(session: JdbcOperations, schemaName: String): Boolean? =
         MysqlSequenceSupportMetadataQueries.checkSupportTableExists(session, schemaName)

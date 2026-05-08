@@ -23,7 +23,7 @@ import kotlin.math.roundToLong
 private val PerfTag = NamedTag("perf")
 
 /**
- * Phase D Schritt 23: Reorder-Perf-Gate.
+ * LF-010 / LF-013: Reorder-Perf-Gate.
  *
  * Verifiziert den Streaming-Import mit Header-Reordering gegen ein
  * 1 000 000-Row-Fixture und echtem SQLite-Zielpfad. Der Test misst

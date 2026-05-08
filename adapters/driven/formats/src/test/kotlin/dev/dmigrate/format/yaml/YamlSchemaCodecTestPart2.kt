@@ -102,7 +102,7 @@ class YamlSchemaCodecTestPart2 : FunSpec({
         loc.srid shouldBe 4326
     }
 
-    // ─── Table Metadata (0.6.0 Phase B) ─────────────────────────
+    // ─── Table Metadata (0.6.0 format reader) ─────────────────────────
 
     test("parse table metadata with engine and without_rowid") {
         val schema = loadFixture("schemas/table-metadata.yaml")
@@ -147,7 +147,7 @@ class YamlSchemaCodecTestPart2 : FunSpec({
         diff.tablesChanged[0].metadata shouldNotBe null
     }
 
-    // ─── Canonical Object Keys (0.6.0 Phase B) ─────────────────
+    // ─── Canonical Object Keys (0.6.0 format reader) ─────────────────
 
     test("canonical routine keys are preserved as map keys through codec") {
         val schema = loadFixture("schemas/canonical-keys.yaml")
@@ -205,7 +205,7 @@ class YamlSchemaCodecTestPart2 : FunSpec({
         diff.functionsRemoved shouldHaveSize 0
     }
 
-    // ─── dependencies.functions (0.9.2 AP 6.3 Step A) ────────────
+    // ─── dependencies.functions (LF-003 / LF-004) ────────────
 
     test("parse view with dependencies.functions") {
         val yaml = """
@@ -266,7 +266,7 @@ class YamlSchemaCodecTestPart2 : FunSpec({
         reparsed.views["v1"]!!.dependencies!!.functions shouldBe listOf("f1", "f2")
     }
 
-    // ─── SequenceNextVal codec (0.9.3 AP 6.3) ───────────────────
+    // ─── SequenceNextVal codec (LF-003 / LF-004 / LF-013) ───────────────────
 
     test("round-trip for default.sequence_nextval") {
         val yaml = """

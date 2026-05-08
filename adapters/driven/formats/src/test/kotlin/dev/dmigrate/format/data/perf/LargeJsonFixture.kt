@@ -9,17 +9,17 @@ import kotlin.io.path.absolutePathString
 
 /**
  * Deterministischer Generator für große JSON-Top-Level-Array-Fixtures,
- * die der Phase-A-Spike (Schritt 6) und die Phase-B-Reader-Tests gegen
+ * die der Perf-Spike und die Format-Reader-Tests gegen
  * einen konstanten Speicherpfad laufen lassen.
  *
- * Plan: implementation-plan-0.4.0.md §4 Phase A Schritt 6, L5, R7.
+ * LF-009 / LF-013 / LN-043.
  *
  * **L5 — nicht eingecheckt, nicht in Standard-CI**: Der Generator
  * erzeugt die Datei einmalig in `build/perf-fixtures/` (Gradle-Build-
  * Directory, gitignored) und cached sie für Folgeläufe. Die Fixture
  * ist NICHT Teil des Repos. Der zugehörige Test ist mit
  * `@Tag("perf")` markiert und läuft nicht in der Default-CI, sondern
- * nur in expliziten lokalen Perf-Runs (siehe §4 Phase A Schritt 6:
+ * nur in expliziten lokalen Perf-Runs:
  * opt-in via `./gradlew :adapters:driven:formats:test -Dkotest.tags=perf`).
  *
  * **R7 — Cache-Invalidation via Stamp**: Neben dem Fixture schreibt der
@@ -31,11 +31,11 @@ import kotlin.io.path.absolutePathString
  * (z.B. Zusatz-Spalte im Schema, neuer Random-Seed) niemals still
  * stale Test-Daten auf einem lokalen `build/perf-fixtures/` produzieren.
  *
- * **Phase A Go/No-Go-Readiness**: Dieser Generator dient sowohl den
- * leichten Scaffold-Tests als auch dem echten Phase-A-Perf-Spike. Der
+ * **LN-043 Go/No-Go-Readiness**: Dieser Generator dient sowohl den
+ * leichten Scaffold-Tests als auch dem echten Perf-Spike. Der
  * Spike läuft bewusst direkt gegen DSL-JSONs Pull-/Iterator-API statt
  * gegen einen noch nicht existierenden `JsonChunkReader`, damit die
- * Bibliotheksentscheidung schon vor Phase B mit einem realen 100-MB-
+ * Bibliotheksentscheidung mit einem realen 100-MB-
  * Streaming-Input geprüft werden kann.
  */
 object LargeJsonFixture {
@@ -126,13 +126,13 @@ object LargeJsonFixture {
      * [StringBuilder] auf und schreiben am Ende **einmal** als
      * UTF-8-`ByteArray` in den Stream. Das umgeht jegliche
      * BufferedWriter/OutputStreamWriter-Buffering-Subtilität, ist für
-     * 100-MB-Fixtures (Phase B) noch zumutbar (~ 200 MB Peak-Heap)
+     * 100-MB-Fixtures noch zumutbar (~ 200 MB Peak-Heap)
      * und liefert byte-genauen Determinismus über Filesystem-Aufrufe
      * hinweg.
      */
     fun writeFixture(out: OutputStream, params: Params) {
         // We write raw bytes without going through DSL-JSON on purpose:
-        // the Phase-B reader MUST consume this file, and we want its
+        // the format reader MUST consume this file, and we want its
         // *input* to be plain UTF-8 JSON produced by a different
         // serializer than the one under test. A tiny hand-rolled writer
         // keeps the spike honest.
@@ -217,7 +217,7 @@ object LargeJsonFixture {
     }
 
     /**
-     * Profilings-Helfer für den Phase-B-Spike: liefert den aktuellen
+     * Profilings-Helfer für den Format-Reader-Spike: liefert den aktuellen
      * `used = total - free` Heap-Wert in Bytes. Nicht präzise, aber
      * stabil genug für eine "retained heap nach 100k Rows bleibt in
      * derselben Größenordnung wie einige wenige Chunks, nicht proportional

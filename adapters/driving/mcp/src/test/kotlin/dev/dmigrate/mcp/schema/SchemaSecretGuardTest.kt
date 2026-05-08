@@ -162,13 +162,13 @@ class SchemaSecretGuardTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────
-    // AP 6.23: normalised forbidden-key detection. Variants like
+    // LF-012 / LN-027 / LN-028 / LN-038: normalised forbidden-key detection. Variants like
     // `dbPassword`, `credentialToken`, `api_token`, `JDBCUrl` must
     // be blocked even though they are not exact lowercase matches
     // for an existing FORBIDDEN_TOKENS entry.
     // ──────────────────────────────────────────────────────────────
 
-    test("AP 6.23: dbPassword (substring of password) is detected") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: dbPassword (substring of password) is detected") {
         val schema = mapOf(
             "type" to "object",
             "properties" to mapOf("dbPassword" to mapOf("type" to "string")),
@@ -176,7 +176,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.dbPassword"
     }
 
-    test("AP 6.23: credentialToken (two forbidden substrings) is detected") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: credentialToken (two forbidden substrings) is detected") {
         val schema = mapOf(
             "type" to "object",
             "properties" to mapOf("credentialToken" to mapOf("type" to "string")),
@@ -184,7 +184,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.credentialToken"
     }
 
-    test("AP 6.23: api_token (separator-tolerant) is detected") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: api_token (separator-tolerant) is detected") {
         val schema = mapOf(
             "type" to "object",
             "properties" to mapOf("api_token" to mapOf("type" to "string")),
@@ -192,7 +192,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.api_token"
     }
 
-    test("AP 6.23: JDBCUrl (mixed case + no separator) is detected") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: JDBCUrl (mixed case + no separator) is detected") {
         val schema = mapOf(
             "type" to "object",
             "properties" to mapOf("JDBCUrl" to mapOf("type" to "string")),
@@ -200,7 +200,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.JDBCUrl"
     }
 
-    test("AP 6.23: separator-tolerant connection.string is detected") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: separator-tolerant connection.string is detected") {
         val schema = mapOf(
             "type" to "object",
             "properties" to mapOf("connection.string" to mapOf("type" to "string")),
@@ -208,7 +208,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.findSecretLeaks(schema) shouldContain "properties.connection.string"
     }
 
-    test("AP 6.23: SchemaSecretGuard.normalize collapses case + separators") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: SchemaSecretGuard.normalize collapses case + separators") {
         SchemaSecretGuard.normalize("dbPassword") shouldBe "dbpassword"
         SchemaSecretGuard.normalize("DB_PASSWORD") shouldBe "dbpassword"
         SchemaSecretGuard.normalize("api-key") shouldBe "apikey"
@@ -216,7 +216,7 @@ class SchemaSecretGuardTest : FunSpec({
         SchemaSecretGuard.normalize("JDBC-Url") shouldBe "jdbcurl"
     }
 
-    test("AP 6.23: SchemaSecretGuard.isForbidden direct check") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: SchemaSecretGuard.isForbidden direct check") {
         SchemaSecretGuard.isForbidden("dbPassword") shouldBe true
         SchemaSecretGuard.isForbidden("credentialToken") shouldBe true
         SchemaSecretGuard.isForbidden("api_token") shouldBe true

@@ -34,8 +34,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase G § 6 G.6 (G.6.g) — End-to-end-Smoke für die produktive
- * KI-Tool-Registry: dispatcht die drei Phase-G-Tools durch den
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.g) — End-to-end-Smoke für die produktive
+ * KI-Tool-Registry: dispatcht die drei LF-017 / LF-024 / LN-030 / LN-031-Tools durch den
  * realen `tools/call`-Pfad in [McpServiceImpl] und stellt sicher,
  * dass kein UnsupportedToolHandler mehr im Wege steht.
  */
@@ -100,7 +100,7 @@ class AiMcpRegistriesTest : FunSpec({
     fun aiPrincipal(): PrincipalContext = Fixtures.principalContext(principalId = "alice", tenant = "acme")
         .copy(scopes = setOf("dmigrate:ai:execute"), isAdmin = false)
 
-    test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_plan ist NICHT mehr UnsupportedToolHandler") {
+    test("LF-012 / LN-011 / LN-017 / LN-027 Wiring-Akzeptanz: procedure_transform_plan ist NICHT mehr UnsupportedToolHandler") {
         val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
@@ -121,7 +121,7 @@ class AiMcpRegistriesTest : FunSpec({
         text shouldNotContain "UNSUPPORTED_TOOL_OPERATION"
     }
 
-    test("Plan §7.6 Wiring-Akzeptanz: procedure_transform_execute ist NICHT mehr UnsupportedToolHandler") {
+    test("LF-012 / LN-011 / LN-017 / LN-027 Wiring-Akzeptanz: procedure_transform_execute ist NICHT mehr UnsupportedToolHandler") {
         val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
 
@@ -157,7 +157,7 @@ class AiMcpRegistriesTest : FunSpec({
         execText shouldContain "\"targetResourceUri\""
     }
 
-    test("Plan §7.6 Wiring-Akzeptanz: testdata_plan ist NICHT mehr UnsupportedToolHandler") {
+    test("LF-012 / LN-011 / LN-017 / LN-027 Wiring-Akzeptanz: testdata_plan ist NICHT mehr UnsupportedToolHandler") {
         val gWiring = aiWiring()
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
@@ -176,8 +176,8 @@ class AiMcpRegistriesTest : FunSpec({
         text shouldContain "\"testdataPlanResourceUri\""
     }
 
-    test("Follow-up AP 3: testdata_execute ist produktiv (kein UnsupportedToolHandler mehr)") {
-        // Plan §3.2 Carve-out wurde durch Follow-up-Plan AP 3 geschlossen.
+    test("LF-017 / LF-024 / LN-030 / LN-031: testdata_execute ist produktiv (kein UnsupportedToolHandler mehr)") {
+        // LF-017 / LF-024 / LN-030 / LN-031 Carve-out wurde durch LF-017 / LF-024 / LN-030 / LN-031 geschlossen.
         // Der Handler ist jetzt produktiv; ein Aufruf ohne approvalKey
         // muss ein VALIDATION_ERROR mit `approvalKey`-Feld liefern, nicht
         // mehr UNSUPPORTED_TOOL_OPERATION.
@@ -189,7 +189,7 @@ class AiMcpRegistriesTest : FunSpec({
         result.content.first().text!! shouldNotContain "UNSUPPORTED_TOOL_OPERATION"
     }
 
-    test("Plan §6 G.6: Idempotenz haengt am gemeinsamen Orchestrator (selber Outcome-Store)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Idempotenz haengt am gemeinsamen Orchestrator (selber Outcome-Store)") {
         // Beweis-by-construction: zwei Aufrufe an dasselbe Tool mit
         // gleichem approvalKey+payload → selber resultRef. Das laeuft
         // nur, wenn alle Handler dieselbe AiToolOutcomeStore-Instanz
@@ -216,7 +216,7 @@ class AiMcpRegistriesTest : FunSpec({
         refTwo shouldBe refOne
     }
 
-    test("Plan §4.1 Default: ohne explizite Provider-Konfig laeuft NoOp") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Default: ohne explizite Provider-Konfig laeuft NoOp") {
         // Sanity: das Default-AiMcpWiring traegt
         // DefaultAiProviderRegistry.noOpOnly() — ein Aufruf darf
         // OHNE externe Secrets/Netz funktionieren.
@@ -237,7 +237,7 @@ class AiMcpRegistriesTest : FunSpec({
         text shouldContain "\"providerName\":\"noop\""
     }
 
-    test("Plan §6 G.6: PolicyDenied trifft alle drei Handler einheitlich") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyDenied trifft alle drei Handler einheitlich") {
         val gWiring = aiWiring(policyDefault = PolicyEffect.Deny("policy:denied"))
         val svc = service(gWiring, aiPrincipal())
         val args = JsonParser.parseString(
@@ -254,7 +254,7 @@ class AiMcpRegistriesTest : FunSpec({
         planResult.content.first().text!! shouldContain "POLICY_DENIED"
     }
 
-    test("AiMcpWiring liefert sane Defaults (Plan §3.2 + §4.1): NoOp-Provider, In-Process-Stores") {
+    test("AiMcpWiring liefert sane Defaults (LF-017 / LF-024 / LN-030 / LN-031 + §4.1): NoOp-Provider, In-Process-Stores") {
         val gWiring = AiMcpWiring(operationalWiring = operationalWiring())
         // Defaults sind die In-Process-Implementierungen; type-check
         // statt toString-prefix-Hoffen, weil internal data classes

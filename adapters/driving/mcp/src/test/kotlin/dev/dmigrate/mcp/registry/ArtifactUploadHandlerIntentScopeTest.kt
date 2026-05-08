@@ -28,7 +28,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.4 (F.4 1/3) — pin't den intent-abhaengigen Scope-Check
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 1/3) — pin't den intent-abhaengigen Scope-Check
  * im `artifact_upload`-Handler:
  *
  * - `job_input`-Session ohne `dmigrate:artifact:upload` -> 403 nach
@@ -124,7 +124,7 @@ class ArtifactUploadHandlerIntentScopeTest : FunSpec({
         }
         ex.reason!! shouldContain "uploadIntent=job_input"
 
-        // Plan § 8.4: kein Segmentwrite, keine TTL-Erneuerung, keine
+        // LF-012 / LN-011 / LN-017 / LN-027: kein Segmentwrite, keine TTL-Erneuerung, keine
         // Quota-Aenderung — die Session bleibt unveraendert.
         fx.segmentStore.listSegments("ups-1") shouldBe emptyList()
         val session = fx.sessionStore.findById(tenant, "ups-1")!!

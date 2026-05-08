@@ -22,7 +22,7 @@ import kotlin.io.path.deleteIfExists
  * the abstract contract end-to-end:
  *
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
- * - Empty-table contract (Plan §6.17): one chunk with columns + emptyList rows
+ * - Empty-table contract (LF-009): one chunk with columns + emptyList rows
  * - Multi-chunk streaming with chunkSize splitting
  * - DataFilter (ParameterizedClause, ColumnSubset, Compound)
  * - Setup-error cleanup (invalid SQL must release the borrowed connection)

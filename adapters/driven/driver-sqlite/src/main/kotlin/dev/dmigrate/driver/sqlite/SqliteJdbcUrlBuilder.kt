@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
 /**
  * SQLite [JdbcUrlBuilder].
  *
- * Default-Parameter (`connection-config-spec.md` §1.5 + Plan §3.4):
+ * LF-003 / LF-004 / LN-009: Default-Parameter:
  * - `journal_mode=wal` — WAL-Modus für bessere Concurrency
  * - `foreign_keys=true` — d-migrate verlässt sich auf referenzielle
  *   Integrität, in SQLite sind FKs sonst standardmäßig deaktiviert

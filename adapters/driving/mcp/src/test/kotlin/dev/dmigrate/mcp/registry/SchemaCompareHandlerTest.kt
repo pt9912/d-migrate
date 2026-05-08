@@ -126,7 +126,7 @@ private fun schemaJson(name: String, vararg tables: String): String {
 }
 
 /**
- * Builds a single-table schema for AP-6.6.6 column-level diff tests.
+ * Builds a single-table schema for LF-012 / LN-027 / LN-028 / LN-038 column-level diff tests.
  * `columns` is a map of column-name → JSON column body (without the
  * surrounding braces). `pk` is the primary-key column list.
  */
@@ -204,7 +204,7 @@ class SchemaCompareHandlerTest : FunSpec({
         ex.violations.first().reason shouldContain "schema_compare_start"
     }
 
-    test("inline schema is rejected on either side (Phase C is schemaRef-only)") {
+    test("inline schema is rejected on either side (LF-012 / LN-038 is schemaRef-only)") {
         val setup = setup()
         val ex = shouldThrow<ValidationErrorException> {
             setup.handler.handle(
@@ -307,7 +307,7 @@ class SchemaCompareHandlerTest : FunSpec({
         json.has("diffArtifactRef") shouldBe false
     }
 
-    test("column added produces TABLE_COLUMN_ADDED info finding (AP 6.6.6)") {
+    test("column added produces TABLE_COLUMN_ADDED info finding (LF-012 / LN-027 / LN-028 / LN-038)") {
         val setup = setup()
         stageSchema(setup, "left", singleTable(columns = mapOf("id" to "\"type\":\"identifier\"")))
         stageSchema(
@@ -330,7 +330,7 @@ class SchemaCompareHandlerTest : FunSpec({
         finding.get("path").asString shouldBe "tables.t1.columns.name"
     }
 
-    test("column removed produces TABLE_COLUMN_REMOVED error finding (AP 6.6.6)") {
+    test("column removed produces TABLE_COLUMN_REMOVED error finding (LF-012 / LN-027 / LN-028 / LN-038)") {
         val setup = setup()
         stageSchema(
             setup, "left",
@@ -389,7 +389,7 @@ class SchemaCompareHandlerTest : FunSpec({
         finding.get("message").asString shouldContain "to"
     }
 
-    test("required tightened (false→true) is error; relaxed (true→false) is info (AP 6.6.6)") {
+    test("required tightened (false→true) is error; relaxed (true→false) is info (LF-012 / LN-027 / LN-028 / LN-038)") {
         val setup = setup()
         // left: name optional, opt required.
         // right: name required, opt optional.
@@ -455,7 +455,7 @@ class SchemaCompareHandlerTest : FunSpec({
     }
 
     test("a single TableDiff fans out into one finding per change (no coarse TABLE_CHANGED entry)") {
-        // Defensive: verifies AP 6.6.6 actually emits per-property
+        // Defensive: verifies LF-012 / LN-027 / LN-028 / LN-038 actually emits per-property
         // findings instead of the pre-AP catch-all `TABLE_CHANGED`.
         val setup = setup()
         stageSchema(
@@ -484,7 +484,7 @@ class SchemaCompareHandlerTest : FunSpec({
         (codes.contains("TABLE_CHANGED")) shouldBe false
     }
 
-    test("AP 6.13: column-type change carries details.before/after with raw values (machine-readable supplement)") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: type diff carries before and after details") {
         val setup = setup()
         stageSchema(
             setup, "left",
@@ -525,7 +525,7 @@ class SchemaCompareHandlerTest : FunSpec({
         (details.get("after").asString.length > 0) shouldBe true
     }
 
-    test("AP 6.13: required-tightened finding carries details.before=false, details.after=true") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: required-tightened finding carries details.before=false, details.after=true") {
         val setup = setup()
         stageSchema(
             setup, "left",
@@ -560,7 +560,7 @@ class SchemaCompareHandlerTest : FunSpec({
         details.get("after").asString shouldBe "true"
     }
 
-    test("AP 6.13: per-object additive findings (no details) coexist with per-property changes (with details)") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: per-object additive findings (no details) coexist with per-property changes (with details)") {
         // Coverage: confirm `added`/`removed`/`changed` (whole-object
         // findings without before/after context) don't accidentally
         // emit an empty `details` map.
@@ -583,7 +583,7 @@ class SchemaCompareHandlerTest : FunSpec({
         }
     }
 
-    test("AP 6.13: schema-name change finding scrubs Bearer tokens out of message + details") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: schema-name change finding scrubs Bearer tokens out of message + details") {
         // Defense-in-depth: a tenant whose schema name accidentally
         // contains a bearer-token literal must not leak it via the
         // diff response. SecretScrubber is shared infrastructure;

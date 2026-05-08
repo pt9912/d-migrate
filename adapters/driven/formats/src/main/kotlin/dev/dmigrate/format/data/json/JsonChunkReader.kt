@@ -16,7 +16,7 @@ import java.nio.charset.StandardCharsets
 /**
  * JSON-Format-Reader mit DSL-JSON Pull-Iterator.
  *
- * Plan §3.5.1 / §6.2 / §6.4:
+ * LF-009 / LF-010 / LF-013:
  * - Akzeptiert nur ein Top-Level-Array von Objekten (`[{...}, ...]`)
  * - Nacktes Objekt, Wrapper (`{ "rows": [...] }`), NDJSON → Formatfehler
  * - First-Row-Schema ist autoritativ (F8: lookup by name, R9: leere erste Row)
@@ -202,7 +202,7 @@ class JsonChunkReader(
     }
 
     /**
-     * Normalisiert DSL-JSON-Werte auf die vom Plan §3.5.2 erwarteten
+     * Normalisiert DSL-JSON-Werte auf die erwarteten
      * Java-Typen: Integer → Long (DSL-JSON liefert für kleine Zahlen
      * `Integer` statt `Long`; der ValueDeserializer und die Tests
      * erwarten einheitlich `Long`).

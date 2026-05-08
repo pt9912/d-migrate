@@ -57,7 +57,7 @@ private class JobFixture(
  * Counting decorator used by the no-oracle test to pin that
  * `JobStatusGetHandler` never reaches the store for foreign-tenant
  * URIs. Otherwise differential timing/observation could leak
- * existence — same regression net AP 6.3 introduced via
+ * existence — same regression net LF-012 / LN-027 / LN-028 / LN-038 introduced via
  * `CountingSchemaStore`.
  */
 private class CountingJobStore(private val delegate: JobStore) : JobStore {
@@ -152,7 +152,7 @@ private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
 class JobStatusGetHandlerTest : FunSpec({
 
     test("own job by jobId: returns the truncated projection (artefact ids backfilled to URIs, allowlisted counters)") {
-        // AP 6.23: naked artefact ids in the stored job are backfilled
+        // LF-012 / LN-027 / LN-028 / LN-038: naked artefact ids in the stored job are backfilled
         // to dmigrate://tenants/{tenantId}/artifacts/{artifactId}
         // before serialisation, and progress.numericValues is filtered
         // through the allowlist (`rows` is NOT in the allowlist —
@@ -192,7 +192,7 @@ class JobStatusGetHandlerTest : FunSpec({
         json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe "req-deadbeef"
     }
 
-    test("AP 6.23: artefact entries already in URI form are not double-rewritten") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: artefact entries already in URI form are not double-rewritten") {
         val f = fixture()
         stageJob(
             f, "job-1",
@@ -416,7 +416,7 @@ class JobStatusGetHandlerTest : FunSpec({
         ex.violations.first().reason.contains("expected jobs") shouldBe true
     }
 
-    test("AP 6.17: progress.phase and error.message/code are scrubbed of Bearer tokens") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: progress.phase and error.message/code are scrubbed of Bearer tokens") {
         val f = fixture()
         stageJob(
             f, "job-1",
@@ -448,8 +448,8 @@ class JobStatusGetHandlerTest : FunSpec({
         (outcome as ToolCallOutcome.Success).content.single().mimeType shouldBe "application/json"
     }
 
-    test("AP D9: jobId path and resourceUri path produce identical projections") {
-        // Plan-D §10.9 acceptance: "jobId und resourceUri fuehren
+    test("LF-012 / LN-038: jobId path and resourceUri path produce identical projections") {
+        // LF-012 / LN-038 acceptance: "jobId und resourceUri fuehren
         // zu identischem Status-Resultat". Pin both wire shapes
         // emit the SAME body modulo executionMeta.requestId, so a
         // future regression that drifts one resolver path from the
@@ -476,12 +476,12 @@ class JobStatusGetHandlerTest : FunSpec({
         viaJobId shouldBe viaResourceUri
     }
 
-    test("AP D9: resourceUri pointing at a tenant in allowedTenantIds (not effectiveTenantId) resolves") {
-        // Plan-D §4.2 / §5.4 broadens the tenant-scope check from
+    test("LF-012 / LN-038: resourceUri pointing at a tenant in allowedTenantIds (not effectiveTenantId) resolves") {
+        // LF-012 / LN-038 broadens the tenant-scope check from
         // strict `effectiveTenantId` to `allowedTenantIds`. A
         // principal with allowedTenantIds=[acme,beta] and
         // effectiveTenantId=acme can resolve a beta-tenant URI
-        // through `job_status_get` — same broadening AP D7
+        // through `job_status_get` — same broadening LF-012 / LN-038
         // `resources/read` adopted.
         val f = fixture()
         val betaTenant = TenantId("beta")
@@ -502,8 +502,8 @@ class JobStatusGetHandlerTest : FunSpec({
         json.get("resourceUri").asString shouldBe "dmigrate://tenants/beta/jobs/job-x"
     }
 
-    test("AP D9: resourceUri with chunk-segment (5-segment) shape rejected with VALIDATION_ERROR") {
-        // The Phase-D ADT also accepts ArtifactChunkResourceUri
+    test("LF-012 / LN-038: resourceUri with chunk-segment (5-segment) shape rejected with VALIDATION_ERROR") {
+        // The LF-012 / LN-038 ADT also accepts ArtifactChunkResourceUri
         // (4-segment artefact-chunk URIs). job_status_get must
         // reject anything that isn't a TenantResourceUri pointing
         // at JOBS so a chunk URI never silently routes to a

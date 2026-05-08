@@ -22,22 +22,22 @@ import dev.dmigrate.server.core.resource.TenantResourceUri
 import dev.dmigrate.server.ports.JobStore
 
 /**
- * AP 6.12 + AP D9: `job_status_get` per `ImpPlan-0.9.6-C.md` §5.6 +
- * `ImpPlan-0.9.6-D.md` §10.9.
+ * LF-012 / LN-027 / LN-028 / LN-038 + LF-012 / LN-038: `job_status_get` per LF-012 / LN-027 / LN-028 / LN-038
+ * LF-012 / LN-038
  *
  * Read-only metadata fetch for a single job. Either `jobId` (in the
  * caller's tenant) or `resourceUri` (a fully-qualified
  * `dmigrate://tenants/{tenantId}/jobs/{jobId}`) is accepted; exactly
  * one must be supplied.
  *
- * AP D9 unifies the resolver path with `resources/read`:
- * - `resourceUri` parsing now goes through the Phase-D
+ * LF-012 / LN-038 unifies the resolver path with `resources/read`:
+ * - `resourceUri` parsing now goes through the LF-012 / LN-038
  *   [McpResourceUri] ADT instead of the legacy [ServerResourceUri].
  * - Tenant-scope check uses [PrincipalContext.allowedTenantIds]
- *   (Plan-D §4.2 / §5.4) so a principal whose effective tenant
+ *   (LF-012 / LN-038) so a principal whose effective tenant
  *   differs from the URI tenant can still resolve as long as the
- *   URI tenant is in the allowed set — same broadening AP D6 list-
- *   tools and AP D7 `resources/read` adopted.
+ *   URI tenant is in the allowed set — same broadening LF-012 / LN-038 list-
+ *   tools and LF-012 / LN-038 `resources/read` adopted.
  * - Per-record visibility threads the addressed tenant into
  *   [JobRecord.isReadableBy] so an explicit allowed-but-non-
  *   effective tenant URI doesn't silently drop every record.
@@ -66,10 +66,10 @@ internal class JobStatusGetHandler(
 
         val record = jobStore.findById(tenant, id)
             ?: throw notFound(tenant, id)
-        // AP D9: pass the addressed tenant — `tenant` may be an
+        // LF-012 / LN-038: pass the addressed tenant — `tenant` may be an
         // allowed-but-not-effective tenant when the caller used a
         // resourceUri to switch into another tenant they have access
-        // to. Without the override, the AP D6 default (effectiveTenantId)
+        // to. Without the override, the LF-012 / LN-038 default (effectiveTenantId)
         // would silently drop every cross-tenant record.
         if (!record.isReadableBy(context.principal, tenant)) {
             // No-oracle: same RESOURCE_NOT_FOUND envelope as a
@@ -114,7 +114,7 @@ internal class JobStatusGetHandler(
     }
 
     private fun parseJobUri(raw: String, principal: PrincipalContext): Pair<TenantId, String> {
-        // AP D9: route through the Phase-D ADT so the parser /
+        // LF-012 / LN-038: route through the LF-012 / LN-038 ADT so the parser /
         // grammar / blocked-kind contract matches `resources/read`.
         val parsed = when (val r = McpResourceUri.parse(raw)) {
             is McpResourceUriParseResult.Valid -> r.uri
@@ -141,8 +141,8 @@ internal class JobStatusGetHandler(
                 ),
             )
         }
-        // Plan-D §4.2 / §5.4: tenant-scope check uses
-        // allowedTenantIds (broader than Phase-C's effectiveTenantId-
+        // LF-012 / LN-038: tenant-scope check uses
+        // allowedTenantIds (broader than LF-012 / LN-038's effectiveTenantId-
         // only check). A principal with allowedTenantIds=[A,B] and
         // effectiveTenantId=A may resolve a B-tenant URI.
         if (tenantUri.tenantId !in principal.allowedTenantIds) {
@@ -179,7 +179,7 @@ internal class JobStatusGetHandler(
     }
 
     /**
-     * AP 6.23: project `managed.artifacts` onto the canonical
+     * LF-012 / LN-027 / LN-028 / LN-038: project `managed.artifacts` onto the canonical
      * `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` URI form
      * before serialisation. Naked artefact ids accumulated by older
      * job pipelines are backfilled (single-write happens upstream;
@@ -195,11 +195,11 @@ internal class JobStatusGetHandler(
             }
         }
 
-    // AP 6.17: progress.phase and error.message/code can carry job-
+    // LF-012 / LN-027 / LN-028 / LN-038: progress.phase and error.message/code can carry job-
     // runtime strings that originated from user-provided schemas or
     // connection refs. Scrubbing keeps accidental token /
     // connection-URL leakage out of the wire response.
-    // AP 6.23: numericValues is filtered through a curated allowlist
+    // LF-012 / LN-027 / LN-028 / LN-038: numericValues is filtered through a curated allowlist
     // (McpToolSchemas.JOB_PROGRESS_NUMERIC_KEYS); unknown internal
     // counter names are dropped so the wire output validates against
     // the closed schema. Dropped keys are logged at WARN so operators
@@ -209,7 +209,7 @@ internal class JobStatusGetHandler(
         val allowed = McpToolSchemas.JOB_PROGRESS_NUMERIC_KEYS
         val dropped = progress.numericValues.keys.filterNot { it in allowed }
         if (dropped.isNotEmpty()) {
-            // AP 6.24 final-review: scrub the dropped keys before
+            // LF-012 / LN-027 / LN-028 / LN-038 final-review: scrub the dropped keys before
             // logging — they are user-supplied and a Bearer-/JDBC-/
             // tok_-shaped key would otherwise land in stderr/log
             // output verbatim, bypassing the on-wire scrubbing

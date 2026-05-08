@@ -70,13 +70,13 @@ sealed interface McpStartOutcome {
 /**
  * Startpfade fuer §6.2 + §6.4.
  *
- * AP 6.4 wires the JSON-RPC layer:
+ * LF-012 / LN-027 / LN-028 / LN-038 wires the JSON-RPC layer:
  * - HTTP installs the `POST /mcp` route on the Ktor engine.
  * - stdio attaches a [StdioJsonRpc] read loop to the supplied
  *   in/out streams (defaults to `System.in`/`System.out`).
  *
- * Both transports dispatch into [McpServiceImpl]. AP 6.5 adds the
- * `MCP-Session-Id` lifecycle and routes for HTTP; AP 6.6 adds Auth.
+ * Both transports dispatch into [McpServiceImpl]. LF-012 / LN-027 / LN-028 / LN-038 adds the
+ * `MCP-Session-Id` lifecycle and routes for HTTP; LF-012 / LN-027 / LN-028 / LN-038 adds Auth.
  *
  * Validierungsfehler aus §12.12 werden als `ConfigError` zurueck-
  * gegeben — der Aufrufer (CLI/Embed-Tests) entscheidet, ob er das in
@@ -90,9 +90,9 @@ object McpServerBootstrap {
      *  same process. Defaults to [McpContractRegistries.toolRegistry] which
      *  registers every 0.9.6 tool with `capabilities_list` as the
      *  only real handler.
-     * @param runtimeWiring AP 6.14: when supplied, the bootstrap
+     * @param runtimeWiring LF-012 / LN-027 / LN-028 / LN-038: when supplied, the bootstrap
      *  builds the registry via [McpRuntimeRegistries.defaultToolRegistry]
-     *  so every Phase-C handler from §3.1 dispatches to its real
+     *  so every LF-012 / LN-038 handler from §3.1 dispatches to its real
      *  implementation (instead of `UnsupportedToolHandler`). The
      *  explicit `toolRegistry` parameter still wins if both are
      *  supplied, so existing tests can keep injecting custom
@@ -109,7 +109,7 @@ object McpServerBootstrap {
         promptRegistry: PromptRegistry? = null,
         promptHygieneService: PromptHygieneService? = null,
         // §6.24: integration tests inject a custom DisabledAuthValidator
-        // (with a per-run principal) so AP-6.24 per-transport-run
+        // (with a per-run principal) so LF-012 / LN-027 / LN-028 / LN-038 per-transport-run
         // principal isolation works on AuthMode.DISABLED. Production
         // callers leave this `null`; the route falls back to the
         // built-in `createAuthValidator(config)`.
@@ -126,10 +126,10 @@ object McpServerBootstrap {
             port = config.port,
             host = config.bindAddress,
             module = {
-                // AP 6.5: full Streamable-HTTP route (POST/GET/DELETE,
-                // Origin, Session-Id, Protocol-Version, Accept). AP 6.6
+                // LF-012 / LN-027 / LN-028 / LN-038: full Streamable-HTTP route (POST/GET/DELETE,
+                // Origin, Session-Id, Protocol-Version, Accept). LF-012 / LN-027 / LN-028 / LN-038
                 // wraps Bearer/JWKS auth around the dispatch chain.
-                // AP 6.8: serviceFactory builds an McpServiceImpl per
+                // LF-012 / LN-027 / LN-028 / LN-038: serviceFactory builds an McpServiceImpl per
                 // session that shares the route-level toolRegistry —
                 // §6.8 acceptance ("stdio und HTTP nutzen dieselben
                 // Registry-Instanzen").

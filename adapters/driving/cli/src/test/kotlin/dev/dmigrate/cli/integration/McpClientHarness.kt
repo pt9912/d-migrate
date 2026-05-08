@@ -10,12 +10,12 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import java.nio.file.Path
 
 /**
- * AP 6.24: transport-neutral facade for the MCP integration suite.
+ * LF-012 / LN-027 / LN-028 / LN-038: transport-neutral facade for the MCP integration suite.
  * Both [StdioHarness] and [HttpHarness] expose this surface so the
  * scenario runner can iterate `transports.forAll { runScenario(it) }`
  * without duplicating dispatch / assert plumbing per transport.
  *
- * **Architectural choice (AP 6.24 §6.24 final-review):** the harness
+ * **Architectural choice (LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review):** the harness
  * runs the server **in-process** via [McpServerBootstrap.startStdio]
  * /  [McpServerBootstrap.startHttp]. The plan demands "der echte
  * CLI-/Bootstrap-Pfad" (Z. 1839 + 1963), and a strict reading would
@@ -50,7 +50,7 @@ import java.nio.file.Path
  *   (e.g. `"stdio"`, `"http"`).
  * @property stateDir the MCP server's resolved state-dir for this
  *   harness instance. Tests inspect this directly to verify the
- *   AP-6.21 file-backed layout (`<stateDir>/segments/...`,
+ *   LF-012 / LN-027 / LN-028 / LN-038 file-backed layout (`<stateDir>/segments/...`,
  *   `<stateDir>/artifacts/...`, `<stateDir>/assembly/...`).
  * @property principal the principal the server sees on
  *   `tools/call` / `resources/read`. Constructed per-harness so the
@@ -72,7 +72,7 @@ internal interface McpClientHarness : AutoCloseable {
     fun toolsCall(name: String, arguments: JsonElement?): ToolsCallResult
 
     /**
-     * AP 6.9 / AP 6.24 E6: `resources/read` happy-path. Returns the
+     * LF-012 / LN-027 / LN-028 / LN-038: `resources/read` happy-path. Returns the
      * `result` JsonElement; throws if the server returned a JSON-RPC
      * error. Use [resourcesReadRaw] when the spec needs to inspect
      * the error branch (no-oracle assertions).
@@ -80,7 +80,7 @@ internal interface McpClientHarness : AutoCloseable {
     fun resourcesRead(uri: String): JsonElement
 
     /**
-     * AP 6.24 E6: raw `resources/read` for no-oracle scenarios.
+     * LF-012 / LN-027 / LN-028 / LN-038 E6: raw `resources/read` for no-oracle scenarios.
      * Returns the full [JsonRpcResponse] so the spec can pin both
      * the success projection and the error envelope (code, scrubbed
      * message class) on a single call. The return type carries
@@ -89,7 +89,7 @@ internal interface McpClientHarness : AutoCloseable {
     fun resourcesReadRaw(uri: String): JsonRpcResponse
 
     /**
-     * AP D11: raw `resources/list` for the Phase-D HMAC-cursor
+     * LF-012 / LN-038: raw `resources/list` for the LF-012 / LN-038 HMAC-cursor
      * round-trip + tampering scenarios. `cursor=null` requests
      * the first page; subsequent calls feed back the
      * `nextCursor` from the previous response.
@@ -97,15 +97,15 @@ internal interface McpClientHarness : AutoCloseable {
     fun resourcesListRaw(cursor: String? = null): JsonRpcResponse
 
     /**
-     * AP D11: raw `resources/templates/list` for the static-7-
-     * templates pin. Plan-D §10.11 acceptance: the template list
+     * LF-012 / LN-038: raw `resources/templates/list` for the static-7-
+     * templates pin. LF-012 / LN-038 acceptance: the template list
      * stays bound at exactly seven entries.
      */
     fun resourcesTemplatesListRaw(): JsonRpcResponse
 
     /**
-     * AP 6.24 E8(C): compact diagnostic dump per
-     * `ImpPlan-0.9.6-C.md` §6.24 Z. 2040-2043. Returns a
+     * LF-012 / LN-027 / LN-028 / LN-038 E8(C): compact diagnostic dump per
+     * LF-012 / LN-027 / LN-028 / LN-038. Returns a
      * multi-line text report intended for `System.err` printing
      * when a scenario test fails. Contents:
      *
@@ -149,7 +149,7 @@ internal interface McpClientHarness : AutoCloseable {
 }
 
 /**
- * AP 6.24 §6.24 final-review (Z. 1849): the harness's CLIENT-FACING
+ * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review (Z. 1849): the harness's CLIENT-FACING
  * surface (`McpClientHarness`) is restricted to the methods a real
  * MCP client would use — `initialize`, `toolsList`, `toolsCall`,
  * `resourcesRead`, `close` plus metadata. Direct `McpRuntimeWiring`
@@ -168,7 +168,7 @@ internal fun McpClientHarness.testWiring(): dev.dmigrate.mcp.registry.McpRuntime
 }
 
 /**
- * AP 6.24 E8(C): one entry in the harness diagnostic ring buffer.
+ * LF-012 / LN-027 / LN-028 / LN-038 E8(C): one entry in the harness diagnostic ring buffer.
  *
  * @property method JSON-RPC method name (`tools/call`,
  *   `resources/read`, `initialize`, ...).

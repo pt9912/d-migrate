@@ -21,7 +21,7 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * Production CLI wiring for `mcp serve` per `ImpPlan-0.9.6-C.md`
+ * Production CLI wiring for `mcp serve` per LF-012 / LN-027 / LN-028 / LN-038
  * §6.21 + §6.22.
  *
  * Byte-Stores are file-backed under [stateDir]:
@@ -31,10 +31,10 @@ import java.time.Duration
  *   under `<stateDir>/artifacts/<sha256-prefix>/<artifactId>.bin`
  *   plus sidecar.
  * - `FileSpoolAssembledUploadPayloadFactory(stateDir)` keeps the
- *   AP-6.22 streaming-finalisation spool off-heap under
+ *   LF-010 / LF-013 / LN-009 / LN-011 streaming-finalisation spool off-heap under
  *   `<stateDir>/assembly/<uploadSessionId>/<uuid>.bin`. The default
  *   `AssembledUploadPayloadFactory.inMemory()` from `McpRuntimeWiring`
- *   would defeat the AP-6.22 heap guarantee — production CLI MUST
+ *   would defeat the LF-010 / LF-013 / LN-009 / LN-011 heap guarantee — production CLI MUST
  *   inject the file-spool factory here.
  *
  * Both byte adapters create their own canonical sub-directories — no
@@ -61,13 +61,13 @@ import java.time.Duration
 internal object McpCliRuntimeWiring {
     /**
      * @param connectionConfigPath optional path to the project YAML
-     *  carrying Phase-D connection references (Plan-D §8 + §10.10).
+     *  carrying LF-012 / LN-038 connection references (LF-012 / LN-038 + §10.10).
      *  When set, the CLI builds a [LoaderBackedConnectionReferenceStore]
      *  so `resources/list`, `resources/read` and the discovery list-
      *  tools see the deployment's connection refs without ever
      *  materialising the resolved JDBC URL or the expanded secret.
      *  When null, the wiring falls back to an empty connection store —
-     *  Phase-C-only deployments that haven't migrated to the YAML
+     *  LF-012 / LN-038-only deployments that haven't migrated to the YAML
      *  schema keep working unchanged.
      * @param tenantId tenant the loaded references are scoped to.
      *  Multi-tenant deployments wire one CLI invocation per tenant or
@@ -98,9 +98,9 @@ internal object McpCliRuntimeWiring {
             assembledUploadPayloadFactory = FileSpoolAssembledUploadPayloadFactory(stateDir),
         )
         val keyedWiring = cursorKeyring?.let { baseWiring.copy(cursorKeyring = it) } ?: baseWiring
-        // AP D10: when a YAML config path is provided, wrap the
+        // LF-012 / LN-038: when a YAML config path is provided, wrap the
         // base wiring with a `LoaderBackedConnectionReferenceStore`.
-        // Default branch keeps McpRuntimeWiring's Empty default — Phase-C-
+        // Default branch keeps McpRuntimeWiring's Empty default — LF-012 / LN-038-
         // only deployments without a YAML migrate untouched.
         return if (connectionConfigPath != null) {
             keyedWiring.copy(

@@ -389,7 +389,7 @@ class AbstractDdlGeneratorTest : FunSpec({
         gen.referentialForTest(ReferentialAction.NO_ACTION) shouldBe "NO ACTION"
     }
 
-    // ─── Phase tagging (0.9.2 AP 6.3 Steps B+D) ────────────────
+    // ─── LF-003 / LF-004 / LF-013: phase tagging ───────────────
 
     test("generate() tags tables and indices as PRE_DATA") {
         val gen = TestDdlGenerator()

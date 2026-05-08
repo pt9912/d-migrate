@@ -4,15 +4,15 @@ import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 
 /**
- * Phase-E Tool-Registry-Overlay parallel zu [McpRuntimeRegistries].
+ * LF-012 / LN-011 / LN-017 / LN-027 Tool-Registry-Overlay parallel zu [McpRuntimeRegistries].
  *
- * Umstellung gemaess Plan §7.6 line 1132 ("Tool-Registry von
+ * Umstellung gemaess LF-012 / LN-011 / LN-017 / LN-027 line 1132 ("Tool-Registry von
  * Unsupported-Handlern auf produktive Handler umstellen") fuer die
- * drei Phase-E Start-Tools — `job_cancel` und Runner-Integration
+ * drei LF-012 / LN-011 / LN-017 / LN-027 Start-Tools — `job_cancel` und Runner-Integration
  * folgen in AP E.7 / E.8.
  *
- * Layering: nimmt eine bereits gebaute Phase-C-Registry und
- * ueberschreibt nur die drei E-Slots. Phase-B/C-Tools bleiben
+ * Layering: nimmt eine bereits gebaute LF-012 / LN-038-Registry und
+ * ueberschreibt nur die drei E-Slots. LF-012 / LN-038/C-Tools bleiben
  * unveraendert.
  */
 object OperationalMcpRegistries {
@@ -34,7 +34,7 @@ object OperationalMcpRegistries {
             quotaService = eWiring.ownerAwareQuotaService,
             jobDispatcher = eWiring.jobDispatcher,
             jobWorkerFactory = eWiring.jobWorkerFactory,
-            // Phase E3 § 3.5 + § 6.5 (E3.5): admission ans Pre-commit-Gate;
+            // LF-012 / LN-011 / LN-017 / LN-027 § 3.5 + § 6.5 (E3.5): admission ans Pre-commit-Gate;
             // jobStore an markExecutorSetupFailed (post-commit Setup-
             // Failure -> pollbares FAILED).
             dispatchAdmission = eWiring.executorBundle.admission,
@@ -42,7 +42,7 @@ object OperationalMcpRegistries {
         )
         val clock = eWiring.runtimeWiring.clock
 
-        // Phase-C-Basis nimmt die Phase-B/C-Handler. Wir ueberschreiben nur
+        // LF-012 / LN-038-Basis nimmt die LF-012 / LN-038/C-Handler. Wir ueberschreiben nur
         // die drei E-Slots mit produktiven Handlern; alles andere bleibt
         // wie von McpRuntimeRegistries gewired.
         val baseRegistry = McpRuntimeRegistries.defaultToolRegistry(
@@ -84,11 +84,11 @@ object OperationalMcpRegistries {
                     DataProfileStartHandler(orchestrator, clock)
                 SchemaCompareStartHandler.TOOL_NAME ->
                     SchemaCompareStartHandler(orchestrator, clock)
-                // Phase F § 8.7 (F.7 5/5): produktiver
+                // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5): produktiver
                 // `data_import_start`-Handler. Reaktiviert den
                 // bisherigen UnsupportedToolHandler-Slot mit
                 // ArtifactStore-/ConnectionReferenceStore-/
-                // SchemaStore-Resolution + Phase-E-Job-Pipeline.
+                // SchemaStore-Resolution + LF-012 / LN-011 / LN-017 / LN-027-Job-Pipeline.
                 DataImportStartHandler.TOOL_NAME ->
                     DataImportStartHandler(
                         orchestrator = orchestrator,
@@ -98,7 +98,7 @@ object OperationalMcpRegistries {
                         schemaStore = eWiring.runtimeWiring.schemaStore,
                         clock = clock,
                     )
-                // Phase F § 8.8 (F.8 4/4): produktiver
+                // LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4): produktiver
                 // `data_transfer_start`-Handler. Tenant-scoped
                 // Lookup fuer Source + Target ConnectionRef ueber
                 // den geteilten ConnectionReferenceStore.

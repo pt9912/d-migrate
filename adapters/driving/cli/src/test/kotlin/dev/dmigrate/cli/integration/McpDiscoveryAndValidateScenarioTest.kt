@@ -14,7 +14,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E2: drift guard + transport-neutral smoke for the two
+ * LF-012 / LN-027 / LN-028 / LN-038 E2: drift guard + transport-neutral smoke for the two
  * read-only discovery / validation tools per §7.3 (Pflichtflüsse):
  *
  *  - `tools/list` MUST advertise every tool from
@@ -70,7 +70,7 @@ class McpDiscoveryAndValidateScenarioTest : FunSpec({
         }
         // Mask requestId across both payloads and compare at
         // structure-equality. Tools/scopeTable/limits/dialects/formats
-        // are invariants per AP-6.24 §6.24 ("transport-neutral").
+        // are invariants per LF-012 / LN-027 / LN-028 / LN-038 §6.24 ("transport-neutral").
         val masked = setOf("requestId")
         TransportNormalisation.maskFields(stdio, masked) shouldBe
             TransportNormalisation.maskFields(http, masked)
@@ -112,7 +112,7 @@ class McpDiscoveryAndValidateScenarioTest : FunSpec({
             withClue("$name findings capped at $TRUNCATION_CAP") {
                 payload.getAsJsonArray("findings").size() shouldBe TRUNCATION_CAP
             }
-            withClue("$name artifactRef must be a Phase-C tenant artefact URI") {
+            withClue("$name artifactRef must be a LF-012 / LN-038 tenant artefact URI") {
                 payload.get("artifactRef")?.asString
                     ?.startsWith("dmigrate://tenants/") shouldBe true
             }

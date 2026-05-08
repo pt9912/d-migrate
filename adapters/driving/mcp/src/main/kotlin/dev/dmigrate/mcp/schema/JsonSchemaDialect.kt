@@ -1,13 +1,13 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * Pinned JSON-Schema dialect per `ImpPlan-0.9.6-B.md` §5.6 + §6.10.
+ * Pinned JSON-Schema dialect per LF-012 / LN-027 / LN-028 / LN-038§6.10.
  *
  * MCP advertises tool input/output schemas using JSON Schema. d-migrate
  * pins **Draft 2020-12** as the only acceptable dialect — uniform
  * across stdio and HTTP, no transport-specific variants.
  *
- * If a Phase B tool schema sets `$schema`, it MUST be exactly
+ * If a LF-012 / LN-038 tool schema sets `$schema`, it MUST be exactly
  * [SCHEMA_URI]. If `$schema` is absent, MCP's tool-schema contract
  * still treats the document as 2020-12.
  *
@@ -23,7 +23,7 @@ object JsonSchemaDialect {
     /**
      * JSON-Schema keywords that exist in Draft-07 but NOT in 2020-12,
      * or whose meaning changed enough that mixing them is a contract
-     * violation. The Phase-B golden test rejects any tool schema that
+     * violation. The LF-012 / LN-038 golden test rejects any tool schema that
      * uses one of these at any nesting level.
      *
      * - `definitions`: replaced by `$defs` in 2020-12.

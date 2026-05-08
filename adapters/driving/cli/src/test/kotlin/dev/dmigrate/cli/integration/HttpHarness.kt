@@ -25,7 +25,7 @@ import java.nio.file.Path
 import java.time.Duration
 
 /**
- * AP 6.24 E1: HTTP harness using an in-process [McpServerBootstrap.startHttp]
+ * LF-012 / LN-027 / LN-028 / LN-038 E1: HTTP harness using an in-process [McpServerBootstrap.startHttp]
  * on `127.0.0.1:0`. The bound port is read from the
  * [McpServerHandle.boundPort] after start; tests never see a fixed
  * port. Auth is `DISABLED` (loopback-only per §12.12), so no
@@ -40,7 +40,7 @@ import java.time.Duration
  *   `MCP-Protocol-Version` headers (the latter copied from the
  *   initialize response).
  *
- * The wiring is the AP-6.21 file-backed Phase-C wiring built explicitly
+ * The wiring is the LF-012 / LN-027 / LN-028 / LN-038 file-backed LF-012 / LN-038 wiring built explicitly
  * via [IntegrationFixtures.integrationWiring] — plan §6.24 forbids
  * HTTP from inheriting the file-backed wiring implicitly from the
  * stdio CLI path.
@@ -147,7 +147,7 @@ internal class HttpHarness(
     }
 
     /**
-     * AP 6.24 §6.24 final-review: posts a raw JSON-RPC body and
+     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: posts a raw JSON-RPC body and
      * returns `(statusCode, body)` WITHOUT the 2xx-only assertion in
      * [sendRequestRaw]. Scenario tests that need to scan an HTTP
      * error body (Origin-rejection, session-validation failure,
@@ -241,7 +241,7 @@ internal class HttpHarness(
         }
 
         /**
-         * AP 6.24 E7: factory variant that surfaces the lock-conflict
+         * LF-012 / LN-027 / LN-028 / LN-038 E7: factory variant that surfaces the lock-conflict
          * branch so the lock-/concurrency-test can pin it without
          * unwinding through `error(...)`. Mirrors
          * [StdioHarness.tryStart] so the scenario runner can call
@@ -264,7 +264,7 @@ internal class HttpHarness(
 
             val wiringBundle = IntegrationFixtures.integrationWiring(stateDir, limits = limits)
             // Default scope mapping: McpRuntimeRegistries.defaultToolRegistry
-            // requires `capabilities_list` (and the rest of the Phase-C
+            // requires `capabilities_list` (and the rest of the LF-012 / LN-038
             // tools) to be present in the scope mapping at registration
             // time, even though `AuthMode.DISABLED` short-circuits the
             // route's runtime scope check.
@@ -357,7 +357,7 @@ internal class HttpHarness(
         private const val HTTP_STATUS_OK: Int = 200
     }
 
-    /** AP 6.24 E7: typed start outcome — see [StdioHarness.StartOutcome]. */
+    /** LF-012 / LN-027 / LN-028 / LN-038 E7: typed start outcome — see [StdioHarness.StartOutcome]. */
     sealed interface StartOutcome {
         data class Started(val harness: HttpHarness) : StartOutcome
         data class LockConflict(val diagnostic: String) : StartOutcome

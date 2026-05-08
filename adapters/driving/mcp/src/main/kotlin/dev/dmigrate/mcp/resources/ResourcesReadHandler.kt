@@ -20,36 +20,36 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.util.Base64
 
 /**
- * Handles `resources/read` per `ImpPlan-0.9.6-D.md` §4.2 + §5.3 + §10.7.
+ * Handles `resources/read` per LF-012 / LN-038§5.3 + §10.7.
  *
- * Phase-D upgrade over the Phase-B handler:
+ * LF-012 / LN-038 upgrade over the LF-012 / LN-038 handler:
  *
  * - Goes through [ResourceErrorPrecedence] so URI-grammar / tenant-
  *   scope / blocked-kind precedence is centralised and shared with
  *   the discovery list-tools and the chunk/status resolvers landed
- *   later in Phase D.
- * - Tenant-scope is `allowedTenantIds` (Plan-D §4.2 / §5.4) — a
+ *   later in LF-012 / LN-038.
+ * - Tenant-scope is `allowedTenantIds` (LF-012 / LN-038) — a
  *   principal whose home tenant differs from the URI tenant may
  *   still read records there as long as the URI tenant is in the
- *   allowed set. Phase-B used `effectiveTenantId` (strict equality);
- *   Plan-D explicitly broadens the contract.
+ *   allowed set. LF-012 / LN-038 used `effectiveTenantId` (strict equality);
+ *   LF-012 / LN-038 explicitly broadens the contract.
  * - Every JSON-RPC error envelope carries
  *   `error.data.dmigrateCode` (`VALIDATION_ERROR`,
  *   `TENANT_SCOPE_DENIED`, `RESOURCE_NOT_FOUND`) so clients can
  *   branch on the stable d-migrate code without parsing the
- *   numeric JSON-RPC code. Phase-B left `error.data` null.
+ *   numeric JSON-RPC code. LF-012 / LN-038 left `error.data` null.
  * - `dmigrate://capabilities` is a first-class readable resource
- *   per Plan-D §5.1 / §10.7. The capabilities body is supplied by
+ *   per LF-012 / LN-038 The capabilities body is supplied by
  *   the bootstrap so this handler stays free of registry/limits
  *   plumbing.
  * - `UPLOAD_SESSIONS` URIs in an *allowed* tenant collapse to
- *   `VALIDATION_ERROR` (Plan-D §5.1: kind not readable in Phase D)
- *   instead of the Phase-B `RESOURCE_NOT_FOUND` no-oracle. The
+ *   `VALIDATION_ERROR` (LF-012 / LN-038: kind not readable in LF-012 / LN-038)
+ *   instead of the LF-012 / LN-038 `RESOURCE_NOT_FOUND` no-oracle. The
  *   precedence chain runs the blocked-kind gate before any store
  *   lookup so an attacker cannot probe upload-session ids through
  *   the not-found timing channel.
  *
- * Wire details that stay identical to Phase-B:
+ * Wire details that stay identical to LF-012 / LN-038:
  *
  * - Successful responses carry a single [ResourceContents] slice
  *   with `mimeType=application/json`. The body comes from
@@ -65,8 +65,8 @@ import java.util.Base64
  *   `dmigrateCode=RESOURCE_NOT_FOUND`. Error messages NEVER
  *   mention the requested URI or whether the resource exists.
  *
- * AP D7 sub-commit 3 adds the inline-byte enforcement from
- * Plan-D §5.2: every JSON projection's serialised UTF-8 size must
+ * LF-012 / LN-038 sub-commit 3 adds the inline-byte enforcement from
+ * LF-012 / LN-038: every JSON projection's serialised UTF-8 size must
  * stay at or below [McpLimitsConfig.maxInlineResourceContentBytes].
  * Projections that carry an `artifactRef` get stripped to a
  * referral payload (`uri`, `tenantId`, `artifactRef`, plus an
@@ -74,7 +74,7 @@ import java.util.Base64
  * cap while keeping a follow-up pointer. Projections without an
  * artifactRef (capabilities, jobs, connections) cannot build a
  * referral; those collapse to `VALIDATION_ERROR` with a server-
- * side cap-exceeded message because Plan-D §5.2 forbids both an
+ * side cap-exceeded message because LF-012 / LN-038 forbids both an
  * empty/partial response and an inline payload above the limit.
  */
 internal class ResourcesReadHandler(
@@ -107,7 +107,7 @@ internal class ResourcesReadHandler(
                 ),
             )
         }
-        // Plan-D §5.2 review: the per-content inline cap
+        // LF-012 / LN-038 review: the per-content inline cap
         // (maxInlineResourceContentBytes) is necessary but not
         // sufficient — the full envelope (multi-content + the
         // outer ReadResourceResult shell) MUST also fit under
@@ -119,7 +119,7 @@ internal class ResourcesReadHandler(
     }
 
     /**
-     * Plan-D §5.2 hard ceiling on the entire `resources/read`
+     * LF-012 / LN-038 hard ceiling on the entire `resources/read`
      * response envelope. Serialises the [ReadResourceResult]
      * via Gson and rejects bodies above
      * [McpLimitsConfig.maxResourceReadResponseBytes] with the
@@ -137,7 +137,7 @@ internal class ResourcesReadHandler(
     }
 
     /**
-     * Plan-D §5.2 enforcement: an inline payload's UTF-8 byte size
+     * LF-012 / LN-038 enforcement: an inline payload's UTF-8 byte size
      * MUST be `<= maxInlineResourceContentBytes`. Returns the
      * serialised body that fits in the inline budget — either the
      * original projection (when small enough) or a stripped
@@ -164,7 +164,7 @@ internal class ResourcesReadHandler(
             "artifactRef" to artifactRef,
             // Diagnostic markers — clients branch on them rather
             // than on field presence, since artifactRef alone is
-            // also present on inline projections (Plan-D §5.2 keeps
+            // also present on inline projections (LF-012 / LN-038 keeps
             // the artifactRef field on the inline metadata to act
             // as a content pointer).
             "inlineLimitExceeded" to true,
@@ -285,7 +285,7 @@ internal class ResourcesReadHandler(
         ResourceKind.DIFFS -> stores.diffStore.findById(uri.tenantId, uri.id)
             ?.let(ResourceContentProjector::projectContent)
 
-        // Plan-D §6.4 + §10.10 review: connection-refs honour
+        // LF-012 / LN-038 + §10.10 review: connection-refs honour
         // `allowedPrincipalIds` / `allowedScopes` BOTH on
         // `resources/list` (via the store's `list()` filter) and
         // `resources/read`. Without the per-record `isReadableBy`
@@ -316,14 +316,14 @@ internal class ResourcesReadHandler(
         // discriminator clients should branch on.
         val message = when (this) {
             is McpResourceError.ValidationError -> when {
-                // Phase-B kept the wire message as the literal
+                // LF-012 / LN-038 kept the wire message as the literal
                 // "invalid resource URI" so a caller can't probe
-                // grammar paths. Phase-D keeps that contract for
+                // grammar paths. LF-012 / LN-038 keeps that contract for
                 // grammar failures; UPLOAD_SESSIONS-blocked-kind
                 // gets its own distinct message because the kind
-                // segment is observable by the client (Plan-D
+                // segment is observable by the client (LF-012 / LN-038
                 // §5.1 lists upload-sessions as not-readable).
-                // Inline-cap-exceeded errors (Plan-D §5.2) keep
+                // Inline-cap-exceeded errors (LF-012 / LN-038) keep
                 // their specific message because the cap is a
                 // server-side limit already advertised via
                 // capabilities_list — there is no grammar oracle

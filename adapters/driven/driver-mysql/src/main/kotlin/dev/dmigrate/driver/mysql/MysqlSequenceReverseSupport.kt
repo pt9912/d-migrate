@@ -1,7 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 /**
- * Internal data types for MySQL sequence reverse-engineering support (0.9.4 AP 6.1).
+ * LF-004 / LF-013: internal data types for MySQL sequence reverse-engineering support.
  *
  * These types model the support-scan snapshot that the reader produces
  * before D2/D3 materialize actual SequenceDefinitions. They are internal

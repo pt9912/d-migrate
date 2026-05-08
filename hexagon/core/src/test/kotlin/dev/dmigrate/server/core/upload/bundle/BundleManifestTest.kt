@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 /**
- * Follow-up AP 2 — Form-Invarianten der Manifest-Datentypen.
+ * LF-010 / LF-013 / LN-009 / LN-011 — Form-Invarianten der Manifest-Datentypen.
  *
  * Diese Tests sichern nur die Init-Block-Pflichten (Pfad-Hygiene,
  * Duplicate-Check) — die semantischen Adapter-Tests (Parser-Verhalten,

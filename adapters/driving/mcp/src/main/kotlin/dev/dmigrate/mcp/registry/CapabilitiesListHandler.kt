@@ -10,8 +10,8 @@ import dev.dmigrate.server.application.ai.AiProviderDescription
 import dev.dmigrate.server.ports.quota.QuotaDimension
 
 /**
- * AP 6.2: Phase-C `capabilities_list` per
- * `ImpPlan-0.9.6-C.md` §6.2 + §10.
+ * LF-012 / LN-027 / LN-028 / LN-038: LF-012 / LN-038 `capabilities_list` per
+ * LF-012 / LN-027 / LN-028 / LN-038§10.
  *
  * Output shape (stable across 0.9.6):
  * ```json
@@ -56,9 +56,9 @@ internal class CapabilitiesListReadOnlyHandler(
     private val projectedLimits: Map<String, Number> = projectLimits(limits)
 
     /**
-     * AP D7: capabilities payload sans `executionMeta`. Lets the
+     * LF-012 / LN-038: capabilities payload sans `executionMeta`. Lets the
      * `resources/read dmigrate://capabilities` handler emit the same
-     * static document Phase-D agents see through `capabilities_list`
+     * static document LF-012 / LN-038 agents see through `capabilities_list`
      * — without the per-call `requestId` field that only makes sense
      * for tool invocations.
      */

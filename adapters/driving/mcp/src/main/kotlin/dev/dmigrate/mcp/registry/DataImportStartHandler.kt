@@ -29,20 +29,20 @@ import java.time.Clock
 import java.util.Locale
 
 /**
- * Phase F § 6.1 + § 8.7 (F.7 2/5) — `data_import_start`-Handler.
+ * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 + § 8.7 (F.7 2/5) — `data_import_start`-Handler.
  *
  * Pre-Idempotency-Validation:
  *
  * - exactly-one Quelle: `artifactId` ODER `sourceArtifactRef` (Plan
  *   § 6.1: "artifactId oder Artefakt-resourceUri").
- * - `chunkSize`-Obergrenze (`<=10000`, Plan § 6.1).
+ * - `chunkSize`-Obergrenze (`<=10000`, LF-010 / LF-013 / LN-009 / LN-011).
  * - `targetConnectionRef` als RefField mit `ResourceKind.CONNECTIONS` —
  *   der bestehende [dev.dmigrate.server.application.job.JobStartInputValidator]
  *   weist freie JDBC-URLs, ungueltige URI-Syntax und Tenant-Mismatch
- *   ab (Plan § 7.6 + § 8.7 "strukturelle Validation vor Idempotency
+ *   ab (LF-012 / LN-011 / LN-017 / LN-027 + § 8.7 "strukturelle Validation vor Idempotency
  *   ohne Store-Write").
  *
- * Phase-E Job-Pipeline:
+ * LF-012 / LN-011 / LN-017 / LN-027 Job-Pipeline:
  *
  * - [JobStartOrchestrator] uebernimmt Idempotency-Reservierung,
  *   Policy-Decision, Quota-Reservierung, durable Job-Anlage; der
@@ -72,7 +72,7 @@ internal class DataImportStartHandler(
         validateChunkSize(args)
         validateTableTopology(args)
         validateOptionEnums(args)
-        // Phase F § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix.
+        // LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix.
         // Lookup vor Idempotency, damit "unbekanntes Artefakt" und
         // "falsche Kind/Intent" deterministisch ohne Job-/SyncEffect-
         // Reservierung gemeldet werden.
@@ -82,11 +82,11 @@ internal class DataImportStartHandler(
         validateArtifactContent(record)
         val effectiveFormat = validateFormatCompatibility(args, metadata)
         validateTargetTable(args, metadata)
-        // Phase F § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
+        // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
         // VOR der Idempotency-Reservierung. ConnectionReferenceStore
         // liefert nur secret-frei (kein JDBC-URL-Materialise) — der
         // Resolver-Stack (CLI/Runner) zieht Secrets erst beim
-        // Job-Run aus dem ConnectionSecretResolver. Plan § 8.7
+        // Job-Run aus dem ConnectionSecretResolver. LF-012 / LN-027 / LN-028 / LN-038
         // wortlaeufig: "Policy nur mit secret-freien Metadaten".
         resolveConnectionRef(targetConnectionRef, tenantId)
         val schemaRef = args.optString("schemaRef")
@@ -158,7 +158,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Plan § 6.1: `artifactId` ODER `sourceArtifactRef` Pflicht;
+     * LF-010 / LF-013 / LN-009 / LN-011: `artifactId` ODER `sourceArtifactRef` Pflicht;
      * beide gleichzeitig waeren mehrdeutig (Caller koennte einen
      * Mismatch zwischen den beiden vortaeuschen). Genau eines ist
      * gueltig.
@@ -187,7 +187,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Plan § 6.1: `chunkSize` ist eine "positive Ganzzahl bis 10000".
+     * LF-010 / LF-013 / LN-009 / LN-011: `chunkSize` ist eine "positive Ganzzahl bis 10000".
      * Schema sichert `minimum=1`; die Obergrenze liegt im Handler,
      * weil JSON-Schema-`maximum` an manchen Wire-Schichten nicht
      * konsequent enforced wird (defense in depth).
@@ -218,15 +218,15 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 6.1 (F.7 3/5) + Follow-up AP 2 — table/tables-Topologie.
+     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5) + LF-010 / LF-013 / LN-009 / LN-011 — table/tables-Topologie.
      *
      * - Beide gleichzeitig: VALIDATION_ERROR (mehrdeutig).
-     * - Follow-up AP 2: `tables` ist erlaubt, wenn `bundleFormat`
+     * - LF-010 / LF-013 / LN-009 / LN-011: `tables` ist erlaubt, wenn `bundleFormat`
      *   gesetzt ist und einen versionierten Wert aus
      *   [BundleFormat.ALL] trägt. Ohne `bundleFormat` bleibt `tables`
      *   `VALIDATION_ERROR`.
      * - `tables` als leeres Array oder mit leeren Strings:
-     *   VALIDATION_ERROR (Plan: "leere oder syntaktisch ungueltige
+     *   VALIDATION_ERROR (Vertrag: "leere oder syntaktisch ungueltige
      *   tables -> VALIDATION_ERROR").
      */
     private fun validateTableTopology(args: JsonObject) {
@@ -295,13 +295,13 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 6.1 (F.7 3/5): Artefakt-Lookup.
+     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Lookup.
      *
      * - `artifactId`: direkter Lookup im tenant-scoped [ArtifactStore].
      * - `sourceArtifactRef`: Resource-URI parsen, tenant-Match
      *   pruefen, dann Lookup ueber den extrahierten artifactId.
      *
-     * Plan § 6.1 wortlaeufig: "unbekannte Artefakte liefern
+     * LF-010 / LF-013 / LN-009 / LN-011 wortlaeufig: "unbekannte Artefakte liefern
      * `RESOURCE_NOT_FOUND`". Cross-Tenant-Refs werden bereits durch
      * `ServerResourceUri`-Parsing + Tenant-Match abgewiesen — der
      * Caller-Tenant ist hier autoritativ (kein Oracle ueber fremde
@@ -352,9 +352,9 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix:
+     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix:
      *
-     * - `kind != UPLOAD_INPUT` -> VALIDATION_ERROR (Plan: "Core-Kind
+     * - `kind != UPLOAD_INPUT` -> VALIDATION_ERROR (Vertrag: "Core-Kind
      *   ausser UPLOAD_INPUT als Import-Artefakt -> VALIDATION_ERROR").
      *   Insbesondere `SCHEMA` (read-only Schema-Staging) ist hart
      *   abzulehnen.
@@ -392,7 +392,7 @@ internal class DataImportStartHandler(
         when (metadata.wireArtifactKind) {
             "seed-data", "generic",
             ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE,
-            // Follow-up AP 3: AI-generierte Testdaten sind importierbar.
+            // LF-017 / LF-024 / LN-030 / LN-031: AI-generierte Testdaten sind importierbar.
             dev.dmigrate.server.core.ai.AiWireArtifactKind.GENERATED_TESTDATA -> Unit
             else -> throw ValidationErrorException(
                 listOf(ValidationViolation(
@@ -416,7 +416,7 @@ internal class DataImportStartHandler(
     }
 
     private fun validateFormatCompatibility(args: JsonObject, metadata: ArtifactUploadMetadata): String {
-        // Follow-up AP 2: Bundle-Imports tragen ihr Daten-Format im
+        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Imports tragen ihr Daten-Format im
         // Manifest, nicht im MIME-Type. Der Bundle-Marker spezifiziert
         // ZIP-Container; das `format`-Wire-Argument wird ignoriert
         // (Caller liefert ggf. den per-Bundle-Format-Hint, der vom
@@ -460,7 +460,7 @@ internal class DataImportStartHandler(
     }
 
     private fun validateTargetTable(args: JsonObject, metadata: ArtifactUploadMetadata) {
-        // Follow-up AP 2: für Bundle-Artefakte wird `tables` (Plural) gegen
+        // LF-010 / LF-013 / LN-009 / LN-011: für Bundle-Artefakte wird `tables` (Plural) gegen
         // die persistierten `targetTables` aus der Init-Session validiert;
         // `table` (Singular) ist hier verboten.
         if (metadata.wireArtifactKind == ArtifactUploadInitHandler.WIRE_KIND_SEED_DATA_BUNDLE) {
@@ -488,9 +488,9 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Follow-up AP 2 — Bundle-Tabellen-Konsistenz.
+     * LF-010 / LF-013 / LN-009 / LN-011 — Bundle-Tabellen-Konsistenz.
      *
-     * Plan §4 wortlaut: "`targetTables` in `ArtifactUploadMetadata` muss
+     * LF-010 / LF-013 / LN-009 / LN-011 wortlaut: "`targetTables` in `ArtifactUploadMetadata` muss
      * mit Manifest und Tool-`tables` konsistent sein, falls der Upload
      * bereits Tabellenbindung mitbringt." Diese Validierung deckt den
      * Tool-vs-Init-Vertrag; die Manifest-Konsistenz wird im Runner
@@ -557,12 +557,12 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 8.7 (F.7 4/5): tenant-scoped Lookup im
+     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): tenant-scoped Lookup im
      * [ConnectionReferenceStore]. Der Store liefert ausdruecklich
-     * KEINE materialisierten JDBC-URLs (Plan: "secret-frei") — die
+     * KEINE materialisierten JDBC-URLs (Vertrag: "secret-frei") — die
      * Pruefung dient nur der Existenz/Visibility, das eigentliche
      * Secret-Resolution passiert spaeter im Job-Runner gegen
-     * `ConnectionSecretResolver`. Plan § 8.7 wortlaeufig:
+     * `ConnectionSecretResolver`. LF-012 / LN-027 / LN-028 / LN-038 wortlaeufig:
      * "targetConnectionRef ohne aufloesbare ConnectionReference,
      * Secret oder Principal-Berechtigung -> RESOURCE_NOT_FOUND ...".
      */
@@ -601,8 +601,8 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 8.7 (F.7 4/5): optionaler `schemaRef`-Lookup.
-     * Plan-Vertrag: "schemaRef ueber SchemaStore und
+     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): optionaler `schemaRef`-Lookup.
+     * Vertrag: "schemaRef ueber SchemaStore und
      * SchemaRefImportPreflightAdapter materialisieren; keine lokalen
      * Schema-Pfade aus Tool-Payloads verwenden."
      *
@@ -610,7 +610,7 @@ internal class DataImportStartHandler(
      * fehlende Refs bekommen RESOURCE_NOT_FOUND, lokale Pfade fallen
      * schon an der ServerResourceUri-Parse-Phase aus. Die
      * Schema-Validierung und Tabellenreihenfolge laufen spaeter im
-     * Phase-F-Import-Worker ueber `SchemaRefImportPreflightAdapter`,
+     * LF-010 / LF-013 / LN-009 / LN-011-Import-Worker ueber `SchemaRefImportPreflightAdapter`,
      * nachdem die tenant-scoped Schema-Bytes aus den Stores
      * materialisiert wurden.
      */
@@ -648,9 +648,9 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * Phase F § 8.7 (F.7 4/5): MCP-spezifischer Import-Fingerprint.
+     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): MCP-spezifischer Import-Fingerprint.
      *
-     * Plan-§-8.7-Pflichtfelder: artifactId/resourceUri, Artefakt-
+     * LF-010 / LF-013 / LN-009 / LN-011-Pflichtfelder: artifactId/resourceUri, Artefakt-
      * sha256, persistente Upload-Metadaten (mimeType + filename),
      * targetConnectionRef, optional schemaRef, normalisierte
      * Import-Optionen, Tenant + Principal. Der Fingerprint darf
@@ -666,7 +666,7 @@ internal class DataImportStartHandler(
      * CLI-`ImportOptionsFingerprint`. Diese Implementierung baut
      * stattdessen auf den server-internen
      * [PayloadFingerprintService] auf — Tenant/Principal/Toolname
-     * werden ueber die Phase-E-Bindung garantiert. Lokale CLI-Pfade
+     * werden ueber die LF-012 / LN-011 / LN-017 / LN-027-Bindung garantiert. Lokale CLI-Pfade
      * sind in der MCP-Pipeline strukturell ausgeschlossen
      * (F.7 (2/5) `JobStartInputValidator` weist freie JDBC-URLs +
      * lokale Pfade ab).
@@ -687,7 +687,7 @@ internal class DataImportStartHandler(
         if (enriched.optString("table").isNullOrBlank()) {
             metadata.targetTable?.let { enriched.addProperty("table", it) }
         }
-        // Follow-up AP 2: Bundle-Felder kanonisch in den Fingerprint
+        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Felder kanonisch in den Fingerprint
         // einrechnen (sortiert + lowercased), damit identische Tabellen-
         // Listen in unterschiedlicher Reihenfolge denselben Fingerprint
         // ergeben.
@@ -724,7 +724,7 @@ internal class DataImportStartHandler(
         const val TOOL_NAME: String = "data_import_start"
         const val OPERATION: String = "data_import"
         const val DEFAULT_JOB_RETENTION_SECONDS: Long = 24 * 60 * 60
-        // Plan § 6.1: chunkSize "positive Ganzzahl bis 10000".
+        // LF-010 / LF-013 / LN-009 / LN-011: chunkSize "positive Ganzzahl bis 10000".
         const val MAX_CHUNK_SIZE: Long = 10_000
         private val CSV_MIME_TYPES = setOf("text/csv", "application/csv", "application/vnd.ms-excel")
         private val JSON_MIME_TYPES = setOf("application/json", "text/json", "application/x-ndjson")

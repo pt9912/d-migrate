@@ -12,7 +12,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * AP D3 (`ImpPlan-0.9.6-D.md` §10.3) golden tests:
+ * LF-012 / LN-038 (LF-012 / LN-038) golden tests:
  *  - roundtrip per cursor type
  *  - HMAC tampering, tenant/family/filter/sort/pageSize mismatch
  *  - expiry, missing-/inverted-TTL → VALIDATION_ERROR

@@ -37,7 +37,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.5 (F.5 3/3) — End-to-End Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3) — End-to-End Integrationstest fuer den
  * `job_input`-Upload-Pfad ueber die produktive
  * [McpRuntimeRegistries.defaultToolRegistry]-Verdrahtung. Pin't, dass
  * der `JobInputFinalizer` aus [McpRuntimeWiring] tatsaechlich an den
@@ -95,7 +95,7 @@ class McpJobInputUploadScenarioTest : FunSpec({
         val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
         // 2. Session manuell anlegen (Init-Orchestrator-Wiring ist
-        // separater Concern). Plan-konform: durable Session mit
+        // separater Concern). vertragskonform: durable Session mit
         // approvalKey + approvalFingerprint + targetTable.
         val payload = "id,name,age\n1,Alice,42\n2,Bob,37\n".toByteArray()
         val sha = sha256Hex(payload)
@@ -137,7 +137,7 @@ class McpJobInputUploadScenarioTest : FunSpec({
         artifactRef shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
         val artifactId = artifactRef.substringAfterLast("/")
 
-        // 4. Plan § 8.5: das Artefakt ist nach Finalisierung aus dem
+        // 4. LF-012 / LN-011 / LN-017 / LN-027: das Artefakt ist nach Finalisierung aus dem
         // ArtifactStore und ArtifactContentStore lesbar.
         artifactContentStore.exists(artifactId) shouldBe true
         val record = artifactStore.findById(tenant, artifactId)!!
@@ -146,7 +146,7 @@ class McpJobInputUploadScenarioTest : FunSpec({
         record.managedArtifact.sha256 shouldBe sha
 
         // 5. artifact_chunk_get liest die Bytes 1:1 zurueck
-        // (Plan § 8.5: "artifact_chunk_get liest aus
+        // (LF-012 / LN-011 / LN-017 / LN-027: "artifact_chunk_get liest aus
         // ArtifactContentStore").
         val chunkHandler = registry.findHandler("artifact_chunk_get")!!
         val chunkBody = """{"artifactId":"$artifactId","chunkId":"0"}"""
@@ -164,13 +164,13 @@ class McpJobInputUploadScenarioTest : FunSpec({
         chunkJson.get("sha256").asString shouldBe sha
 
         // 6. Sanity: Session ist COMPLETED, finalisedSchemaRef ==
-        // artifactRef (Plan: Feld dient generisch als Final-Ref).
+        // artifactRef (Vertrag: Feld dient generisch als Final-Ref).
         val finalSession = sessionStore.findById(tenant, sessionId)!!
         finalSession.state shouldBe UploadSessionState.COMPLETED
         finalSession.finalisedSchemaRef shouldBe artifactRef
 
         // 7. Replay: ein zweiter chunk_get-Aufruf liefert dieselben
-        // Bytes (Plan: "finalisiertes Artefakt ist immutable").
+        // Bytes (Vertrag: "finalisiertes Artefakt ist immutable").
         shouldNotThrowAny {
             chunkHandler.handle(
                 ToolCallContext("artifact_chunk_get", args(chunkBody), principal),

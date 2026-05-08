@@ -21,7 +21,7 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * AP D6 §10.6 acceptance tests for [JobListHandler]. The other
+ * LF-012 / LN-038 §10.6 acceptance tests for [JobListHandler]. The other
  * four list-tool handlers share the same shape — these tests
  * also implicitly cover the [ListToolHelpers] tenant + pageSize
  * + filter resolution surface they all funnel through.
@@ -223,7 +223,7 @@ class JobListHandlerTest : FunSpec({
     }
 
     test("HMAC-sealed cursor round-trips through the handler when codec is wired") {
-        // AP D8 sub-commit 2: the handler accepts an incoming
+        // LF-012 / LN-038 sub-commit 2: the handler accepts an incoming
         // sealed `cursor` argument, decodes its resumeToken, and
         // emits a fresh sealed cursor when the store reports a
         // next-page token. Wire it end-to-end through 60 jobs +
@@ -276,7 +276,7 @@ class JobListHandlerTest : FunSpec({
     }
 
     test("incoming cursor without a configured codec surfaces VALIDATION_ERROR") {
-        // Phase-B / legacy wiring path: a client that supplies a
+        // LF-012 / LN-038 / legacy wiring path: a client that supplies a
         // cursor MUST be rejected loudly rather than silently
         // restarting at page 1, which would mask a paginate-only
         // bug at the application layer.

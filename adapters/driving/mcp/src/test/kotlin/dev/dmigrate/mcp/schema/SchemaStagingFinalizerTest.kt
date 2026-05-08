@@ -176,7 +176,7 @@ class SchemaStagingFinalizerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "format"
     }
 
-    test("AP 6.22: re-finalising the same payload under the same deterministic ids is idempotent") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: re-finalising the same payload under the same deterministic ids is idempotent") {
         // Replays after a crash carry the same deterministic
         // artifactId / schemaId derived from (tenant, sessionId,
         // payloadSha, format). The finaliser must accept

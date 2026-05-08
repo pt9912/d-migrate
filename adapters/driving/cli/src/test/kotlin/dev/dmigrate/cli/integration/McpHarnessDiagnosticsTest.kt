@@ -11,8 +11,8 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E8(C): proves the harness diagnostic dump per
- * `ImpPlan-0.9.6-C.md` §6.24 Z. 2040-2043 ("kompaktes
+ * LF-012 / LN-027 / LN-028 / LN-038 E8(C): proves the harness diagnostic dump per
+ * LF-012 / LN-027 / LN-028 / LN-038("kompaktes
  * Diagnosepaket pro Transport bei Fehlschlag") works end-to-end.
  *
  * Pinned invariants:

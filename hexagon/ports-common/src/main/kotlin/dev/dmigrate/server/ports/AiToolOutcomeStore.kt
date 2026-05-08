@@ -8,13 +8,13 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Phase G § 5.1 + § 6 G.6 — durable Idempotency- und Outcome-Store
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.1 + § 6 G.6 — durable Idempotency- und Outcome-Store
  * für synchrone KI-nahe Tool-Aufrufe.
  *
  * **Why a dedicated store** (statt
  * [SyncEffectIdempotencyStore]-Erweiterung): KI-Tools verteilen
  * `approvalKey` an Agent-Retry-Loops, die häufig parallel
- * identische Aufrufe absetzen. Der Phase-F-Store gibt für solche
+ * identische Aufrufe absetzen. Der LF-010 / LF-013 / LN-009 / LN-011-Store gibt für solche
  * parallele Pending-Reserves erneut `Reserved` zurück (siehe
  * `InProcessUploadControlStores.kt:51`) — was bei KI-Tools doppelte
  * Provider-Kosten und doppelte Artefakt-Publishes erzeugt. Der

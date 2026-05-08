@@ -37,7 +37,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 8.8 (F.8 4/4) — End-to-End-Integration des
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4) — End-to-End-Integration des
  * `data_transfer_start`-Tools durch den realen `tools/call`-Pfad in
  * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  */
@@ -200,7 +200,7 @@ class McpDataTransferStartScenarioTest : FunSpec({
         result.isError shouldBe false
     }
 
-    test("data_transfer_start ist im Wire-Schema vom Phase-F-Output (resourceUri + executionMeta)") {
+    test("data_transfer_start ist im Wire-Schema vom LF-010 / LF-013 / LN-009 / LN-011-Output (resourceUri + executionMeta)") {
         val schemas = dev.dmigrate.mcp.schema.McpToolSchemas.forTool("data_transfer_start")
             ?: error("data_transfer_start schema missing")
         val output = schemas.outputSchema

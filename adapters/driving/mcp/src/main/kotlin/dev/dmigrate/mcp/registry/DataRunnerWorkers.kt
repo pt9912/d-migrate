@@ -43,8 +43,8 @@ data class DataRunnerDependencies(
 )
 
 /**
- * Follow-up AP 2 — rekursiver Cleanup eines Bundle-Extraktions-
- * Verzeichnisses. Plan §4 fordert "Cleanup im finally-Pfad" für jeden
+ * LF-010 / LF-013 / LN-009 / LN-011 — rekursiver Cleanup eines Bundle-Extraktions-
+ * Verzeichnisses. LF-010 / LF-013 / LN-009 / LN-011 fordert "Cleanup im finally-Pfad" für jeden
  * Bundle-Job, damit Disk-Space nicht zwischen Job-Runs leakt.
  *
  * Top-Level statt Worker-Member, weil Detekt sonst das
@@ -57,7 +57,7 @@ internal fun recursivelyDeleteBundleDir(root: Path) {
 }
 
 /**
- * Follow-up AP 2 — synchron extrahieren und Manifest-Konsistenz
+ * LF-010 / LF-013 / LN-009 / LN-011 — synchron extrahieren und Manifest-Konsistenz
  * gegen den Caller-supplied `tables`-Payload prüfen. `null` bei
  * Extraktionsfehler oder bei Tabellen-Drift.
  */
@@ -124,14 +124,14 @@ internal class McpDataImportJobWorker(
     }
 
     /**
-     * Follow-up AP 2 — Bundle-Import.
+     * LF-010 / LF-013 / LN-009 / LN-011 — Bundle-Import.
      *
-     * Plan §4 wortlaut: "Bundle-Extraktion erfolgt in ein job-lokales
+     * LF-010 / LF-013 / LN-009 / LN-011 wortlaut: "Bundle-Extraktion erfolgt in ein job-lokales
      * Temp-Verzeichnis mit Cleanup im finally-Pfad." Pro Manifest-Eintrag
      * läuft der bestehende [DataImportRunner] mit der Bundle-Datei als
      * Source und dem Manifest-Tabellennamen als `table`. Eine
      * fehlgeschlagene Tabelle bricht den Job mit ihrem Exit-Code ab —
-     * die nachfolgenden Tabellen werden nicht angefasst (Plan §4
+     * die nachfolgenden Tabellen werden nicht angefasst (LF-010 / LF-013 / LN-009 / LN-011
      * "stable VALIDATION_ERROR-Details ohne lokale Pfade" für
      * Inkonsistenzen).
      */

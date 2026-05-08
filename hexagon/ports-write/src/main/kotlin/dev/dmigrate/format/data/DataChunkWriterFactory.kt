@@ -6,11 +6,9 @@ import java.io.OutputStream
  * Erzeugt [DataChunkWriter]-Instanzen pro Tabelle aus einem
  * [DataExportFormat] + [ExportOptions] + Output-Stream.
  *
- * Plan §3.5 / Phase D Schritt 18. Die konkreten Writer-Implementierungen
- * (`JsonChunkWriter`, `YamlChunkWriter`, `CsvChunkWriter`) folgen in
- * Phase D — bis dahin gibt es nur dieses Interface plus die
- * Datenstrukturen, damit `d-migrate-streaming` (Phase C) bereits gegen
- * eine stabile Schnittstelle bauen kann.
+ * LF-009 / LF-013: stabile Factory-Schnittstelle fuer JSON-, YAML- und
+ * CSV-Writer. Der Streaming-Layer haengt nur an diesem Port und nicht an
+ * konkreten Formatimplementierungen.
  */
 interface DataChunkWriterFactory {
 

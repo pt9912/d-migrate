@@ -4,14 +4,14 @@ import dev.dmigrate.mcp.protocol.PromptContent
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * Phase G § 5.7 (G.7) — Pflichtprompt `procedure_analysis`.
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 (G.7) — Pflichtprompt `procedure_analysis`.
  *
- * Plan §5.7 Z. 862:
+ * LF-017 / LF-024 / LN-030 / LN-031 Z. 862:
  * > Procedure-Analyse auf Basis von Schema-/Artefaktreferenzen
  * > Mindestargumente: `schemaRef` oder `artifactRef`,
  * >                   optional `procedureName`
  *
- * Der Prompt erzeugt **keine** Tool-Ausführung (Plan §4.5); der
+ * Der Prompt erzeugt **keine** Tool-Ausführung (LF-017 / LF-024 / LN-030 / LN-031); der
  * resultierende `text` referenziert die übergebenen Refs und
  * lädt das Modell ein, sie als Read-Quelle zu nutzen — die
  * tatsächliche Auflösung (z. B. `procedure_transform_plan`) ist
@@ -62,7 +62,7 @@ internal object ProcedureAnalysisPrompt {
         val artifactRef = arguments["artifactRef"]
         val procedureName = arguments["procedureName"]
 
-        // Plan §5.7-Akzeptanz: Caller hat genau eine Source-Variante
+        // LF-017 / LF-024 / LN-030 / LN-031-Akzeptanz: Caller hat genau eine Source-Variante
         // gegeben. Hygiene + Validierung haben das geprüft; hier nur
         // saubere Wiedergabe.
         // Newline-separierte key=value-Form, damit die Hygiene-

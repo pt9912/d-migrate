@@ -10,7 +10,7 @@ import java.sql.DriverManager
  * with real JDBC metadata queries against SQLite in-memory.
  *
  * This demonstrates the full pipeline: JDBC query → JdbcMetadataSession
- * → typed projection — the same pattern that Phase D SchemaReader
+ * → typed projection — the same pattern that streaming SchemaReader
  * implementations will use.
  */
 class MetadataProjectionIntegrationTest : FunSpec({

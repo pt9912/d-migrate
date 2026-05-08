@@ -16,7 +16,7 @@ import java.io.OutputStreamWriter
 /**
  * YAML-Format-Writer mit SnakeYAML Engine ([Dump] + [StreamDataWriter]).
  *
- * Plan §3.5 / §6.4.1 / §6.5 / §6.17 / §11.5:
+ * LF-009 / LF-013:
  * - Sequence-of-Maps: `- col1: value\n  col2: value\n- col1: ...`
  * - Empty-Table: `[]\n` (flow-style empty sequence)
  * - NULL: `~` (kanonisch)
@@ -135,4 +135,3 @@ class YamlChunkWriter(
         is SerializedValue.Sequence -> value.elements.map { toYamlValue(it) }
     }
 }
-

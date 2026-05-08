@@ -53,30 +53,31 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * Follow-up AP 3 (Plan §5) — Handler für `testdata_execute`.
+ * LF-017 / LF-024 / LN-030 / LN-031 (LF-017 / LF-024 / LN-030 / LN-031) — Handler für `testdata_execute`.
  *
- * Plan-§-5-Vertrag in Kürze:
+ * LF-017 / LF-024 / LN-030 / LN-031-Vertrag in Kürze:
  *
  * - Konsumiert ein freigegebenes [AiWireArtifactKind.TESTDATA_PLAN]-
  *   Artefakt (per `planRef` ODER `planArtifactId` — exactly-one).
  * - Erzeugt **kein** Datenbank-Write. Output ist ein importierbares
  *   Datenartefakt (`UPLOAD_INPUT`-Kind) mit doppelter Metadaten-Spur:
- *   `ArtifactUploadMetadata` (Plan §5 Pfad-A — synthetisch) plus
+ *   `ArtifactUploadMetadata` (LF-017 / LF-024 / LN-030 / LN-031 Pfad-A — synthetisch) plus
  *   `AiArtifactMetadata` (Provenance/Origin).
  * - Single-Table-Outputs tragen `wireArtifactKind=generated-testdata`
- *   und nutzen den AP-2-konformen Single-File-Importpfad.
+ *   und nutzen den LF-010 / LF-013 / LN-009 / LN-011-konformen Single-File-Importpfad.
  * - Bundle-Outputs tragen `wireArtifactKind=seed-data-bundle` plus
  *   `bundleFormat=seed-bundle.v1.zip` — `data_import_start.tables`
- *   konsumiert sie über den AP-2-Bundle-Vertrag.
- * - Plan §5: kein `targetConnectionRef` im Tool-Payload. Schreibend
+ *   konsumiert sie über den LF-010 / LF-013 / LN-009 / LN-011-Bundle-Vertrag.
+ * - LF-017 / LF-024 / LN-030 / LN-031: kein `targetConnectionRef` im Tool-Payload. Schreibend
  *   wird erst der nachgelagerte `data_import_start` mit
  *   `dmigrate:data:write`.
  *
  * Pipeline analog zu [TestdataPlanHandler] (gemeinsame G.6.c-
  * Single-Writer-Lease via [AiToolOrchestrator]); abweichende Schritte:
  * Plan-Artefakt-Provenance-Validation (§5 Z. 27-33), Zielbindungs-
- * Auflösung aus Plan ODER Payload (§5 "Plan §5: Bundle-Outputs müssen
- * denselben Manifest-v1- und `targetTables`-Vertrag wie AP 2 erfüllen"),
+ * Auflösung aus Plan-Artefakt ODER Payload (LF-017 / LF-024 / LN-030 / LN-031:
+ * Bundle-Outputs müssen denselben Manifest-v1- und `targetTables`-Vertrag
+ * wie LF-010 / LF-013 / LN-009 / LN-011 erfüllen),
  * synthetische `ArtifactUploadMetadata`-Erzeugung beim Publish.
  */
 internal class TestdataExecuteHandler(

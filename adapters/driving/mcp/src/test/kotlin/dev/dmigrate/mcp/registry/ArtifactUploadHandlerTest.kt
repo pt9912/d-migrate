@@ -251,7 +251,7 @@ class ArtifactUploadHandlerTest : FunSpec({
     test("retrying after COMPLETED without a persisted schemaRef throws IDEMPOTENCY_CONFLICT") {
         // The base fixture wires no finalizer, so finaliseToSchemaRef
         // returns null and the session reaches COMPLETED with
-        // `finalisedSchemaRef == null`. AP 6.18's idempotent-replay
+        // `finalisedSchemaRef == null`. LF-012 / LN-027 / LN-028 / LN-038's idempotent-replay
         // path requires a non-null schemaRef to authorise the reuse,
         // so this case stays IDEMPOTENCY_CONFLICT — there's no
         // deterministic answer to return.
@@ -269,7 +269,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         }
     }
 
-    test("AP 6.18: replay of completing segment with same hash returns the persisted schemaRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: replay of completing segment with same hash returns the persisted schemaRef") {
         // Stub finalizer pins the schemaRef on the first call so the
         // replay has something deterministic to return.
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
@@ -298,7 +298,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         f.sessionStore.findById(ACME, "ups-1")!!.finalisedSchemaRef shouldBe schemaUri.render()
     }
 
-    test("AP 6.18: replay with divergent hash at same index throws IDEMPOTENCY_CONFLICT") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: replay with divergent hash at same index throws IDEMPOTENCY_CONFLICT") {
         val schemaUri = ServerResourceUri(ACME, ResourceKind.SCHEMAS, "schema-fixed")
         val stubFinalizer = SchemaStagingFinalizer { _, _, _, _, _, _ -> schemaUri }
         val payload = "abcdefgh".toByteArray()
@@ -604,11 +604,11 @@ class ArtifactUploadHandlerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "contentBase64"
     }
 
-    test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (rolls to ABORTED per AP 6.22)") {
+    test("final segment with cumulative-hash mismatch throws VALIDATION_ERROR (rolls to ABORTED per LF-012 / LN-027 / LN-028 / LN-038)") {
         // Two segments stored, but session.checksumSha256 declares a
         // hash that doesn't match the actual concatenated bytes.
         // The streaming-assembly SHA check runs inside the finaliser
-        // pipeline, so a stub finaliser must be wired for AP 6.22's
+        // pipeline, so a stub finaliser must be wired for LF-012 / LN-027 / LN-028 / LN-038's
         // ABORTED + sanitised-FAILED-outcome path to exercise.
         val seg1 = "abcdefgh".toByteArray()
         val seg2 = "12345678".toByteArray()
@@ -644,7 +644,7 @@ class ArtifactUploadHandlerTest : FunSpec({
             )
         }
         ex.violations.map { it.field } shouldContain "checksumSha256"
-        // AP 6.22: persistent assembly inconsistencies (size/SHA
+        // LF-012 / LN-027 / LN-028 / LN-038: persistent assembly inconsistencies (size/SHA
         // mismatch over stored segments) become a terminal ABORTED
         // outcome with a sanitised FAILED FinalizationOutcome. Replays
         // get the same error class without a fresh assembly attempt.
@@ -809,7 +809,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         }
     }
 
-    test("AP 6.9: when a finalizer is wired, completing the session returns the registered schemaRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: when a finalizer is wired, completing the session returns the registered schemaRef") {
         // Stub finalizer: returns a fixed schemaRef so the test pins
         // only the wiring/payload contract — actual parse+validate is
         // covered by SchemaStagingFinalizerTest.
@@ -872,7 +872,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         recorded shouldBe listOf("complete(session=ups-1,principal=alice,bytes=${payload.size})")
     }
 
-    test("AP 6.9: finalisation failure rolls the session to ABORTED and rethrows the typed exception") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: finalisation failure rolls the session to ABORTED and rethrows the typed exception") {
         // The finalizer throws ValidationErrorException (parse or
         // schema-validate failure). The handler must transition the
         // session to ABORTED so segment cleanup runs on the standard
@@ -937,7 +937,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         sessionStore.findById(ACME, "ups-1")!!.state shouldBe UploadSessionState.ABORTED
     }
 
-    test("AP 6.16: non-final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: non-final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
         // Defense-in-depth: a client that sends an offset that
         // doesn't match the sequential layout the assembler reads
         // could sneak overlapping bytes past the store. The handler
@@ -968,7 +968,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "segmentOffset"
     }
 
-    test("AP 6.16: final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: final segment with offset != (index-1)*chunkSize throws VALIDATION_ERROR") {
         val seg1 = "abcdefgh".toByteArray()
         val seg2 = "12345678".toByteArray()
         val totalHash = sha256Hex(seg1 + seg2)
@@ -1007,7 +1007,7 @@ class ArtifactUploadHandlerTest : FunSpec({
         ex.violations.map { it.field } shouldContain "segmentOffset"
     }
 
-    test("AP 6.16: final segment that doesn't close the byte range exactly throws VALIDATION_ERROR") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: final segment that doesn't close the byte range exactly throws VALIDATION_ERROR") {
         // 12-byte session, 8-byte chunks, expected segments: 2.
         // Final segment at index=2 must have offset=8 and size=4 to
         // close the range. Sending size=8 makes offset+size=16 ≠ 12.

@@ -39,7 +39,7 @@ interface UploadSessionStore {
     fun expireDue(now: Instant): List<UploadSession>
 
     /**
-     * Phase F § 8.9 (F.9 2/3): findet alle `FINALIZING`-Sessions,
+     * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 2/3): findet alle `FINALIZING`-Sessions,
      * deren `finalizingLeaseExpiresAt < [now]` ist. Liefert die
      * Sessions im pre-Transition-Zustand zurueck — der Aufrufer
      * (typisch [dev.dmigrate.server.application.upload.UploadSessionService.timeoutStaleFinalizingSessions])
@@ -52,13 +52,13 @@ interface UploadSessionStore {
      * (PG/SQLite) ihre Listen-API wiederverwenden koennen, ohne
      * eine neue indizierte Query zu bauen. Production-Implementoren
      * KOENNEN die Methode mit einer dedizierten Index-Query
-     * ueberschreiben (Plan-Akzeptanz: Sweeper-Cost ist O(stale-
+     * ueberschreiben (Anforderungsakzeptanz: Sweeper-Cost ist O(stale-
      * count), nicht O(total-finalizing-count)).
      */
     fun findStaleFinalizing(now: Instant): List<UploadSession> = emptyList()
 
     /**
-     * AP 6.22: atomic compare-and-set claim of an `ACTIVE` session
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic compare-and-set claim of an `ACTIVE` session
      * for finalisation. On success the session is moved to
      * `FINALIZING` with the supplied claim id and lease, and the
      * post-claim copy is returned in [ClaimOutcome.Acquired].
@@ -79,7 +79,7 @@ interface UploadSessionStore {
     ): ClaimOutcome
 
     /**
-     * AP 6.22: atomic compare-and-set reclaim of a `FINALIZING`
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic compare-and-set reclaim of a `FINALIZING`
      * session whose lease has expired (`finalizingLeaseExpiresAt <
      * [now]`). On success the existing claim is overwritten with the
      * supplied id and lease and the [UploadSession.state] stays
@@ -91,7 +91,7 @@ interface UploadSessionStore {
      * its own). [ClaimOutcome.WrongState] for any non-`FINALIZING`
      * state — explicitly including `COMPLETED`, where the
      * [FinalizationOutcome] / [UploadSession.finalisedSchemaRef] are
-     * authoritative and the AP 6.18 replay path should be used.
+     * authoritative and the LF-012 / LN-027 / LN-028 / LN-038 replay path should be used.
      */
     fun reclaimStaleFinalization(
         tenantId: TenantId,
@@ -103,7 +103,7 @@ interface UploadSessionStore {
     ): ClaimOutcome
 
     /**
-     * AP 6.22: persist (or overwrite) the [FinalizationOutcome] for a
+     * LF-010 / LF-013 / LN-009 / LN-011: persist (or overwrite) the [FinalizationOutcome] for a
      * `FINALIZING` session. The CAS-key is the active claim id —
      * a concurrent finaliser whose claim has been reclaimed must not
      * be able to overwrite the new owner's outcome.
@@ -126,7 +126,7 @@ interface UploadSessionStore {
     ): PersistOutcome
 
     /**
-     * AP 6.22: atomic commit of the successful finalisation — sets
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic commit of the successful finalisation — sets
      * [FinalizationOutcome] (status = `SUCCEEDED`) AND
      * [UploadSession.finalisedSchemaRef] AND transitions the state
      * `FINALIZING → COMPLETED` in a single CAS step keyed on the

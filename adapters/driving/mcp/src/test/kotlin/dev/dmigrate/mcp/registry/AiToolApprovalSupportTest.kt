@@ -73,7 +73,7 @@ class AiToolApprovalSupportTest : FunSpec({
         result.correlationKey shouldBe "approval-key-1"
         result.requiredScopes shouldBe setOf("ai:plan", "artifact:read")
         result.reasons shouldBe listOf("policy:manual-review", "policy:second-reason")
-        // Follow-up AP 1: aggregierte Felder, analog zu JobStartHandlerSupport
+        // LF-017 / LF-024 / LN-030 / LN-031: aggregierte Felder, analog zu JobStartHandlerSupport
         // (`requiredScopes` sortiert + komma-, `reasons` pipe-getrennt).
         result.details shouldContain ToolErrorDetail("approvalRequestId", "apr-1")
         result.details shouldContain ToolErrorDetail(
@@ -86,16 +86,16 @@ class AiToolApprovalSupportTest : FunSpec({
             "reasons",
             "policy:manual-review|policy:second-reason",
         )
-        // Follow-up AP 1: keine wiederholten Singular-Schlüssel mehr.
+        // LF-017 / LF-024 / LN-030 / LN-031: keine wiederholten Singular-Schlüssel mehr.
         val keys = result.details.map { it.key }
         keys shouldNotContain "requiredScope"
         keys shouldNotContain "reason"
     }
 
-    test("Replay rebuildet Approval-Details aus strukturierten Feldern (AP 1)") {
-        // Follow-up AP 1: stored Challenge-Details aus älterem Codepfad
+    test("Replay rebuildet Approval-Details aus strukturierten Feldern (LF-017 / LF-024 / LN-030 / LN-031)") {
+        // LF-017 / LF-024 / LN-030 / LN-031: stored Challenge-Details aus älterem Codepfad
         // (Singular-Form) dürfen nicht durchschlagen — der Replay erzeugt die
-        // aggregierte AP-1-Form aus den strukturierten Feldern, damit der
+        // aggregierte LF-017 / LF-024 / LN-030 / LN-031-Form aus den strukturierten Feldern, damit der
         // Wire-Vertrag konsistent bleibt.
         val challenge = AiToolOutcome.FailedRetryable(
             scope = scope,

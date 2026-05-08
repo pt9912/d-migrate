@@ -44,7 +44,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 8.7 (F.7 5/5) — End-to-End-Integration des
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5) — End-to-End-Integration des
  * `data_import_start`-Tools durch den realen `tools/call`-Pfad in
  * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  *
@@ -52,7 +52,7 @@ import java.time.ZoneOffset
  *
  * - Allow-Policy + gueltige Args -> Success-Envelope mit jobId/
  *   resourceUri/executionMeta. Job durabel im JobStore.
- * - Plan-§-8.7-Pflichten am Wire: VALIDATION_ERROR fuer fehlenden
+ * - LF-010 / LF-013 / LN-009 / LN-011-Pflichten am Wire: VALIDATION_ERROR fuer fehlenden
  *   `targetConnectionRef`, RESOURCE_NOT_FOUND fuer unbekanntes
  *   Artefakt.
  * - Runner-Boundary aus F.7 (5/5): das Tool wird als Job durabel
@@ -188,7 +188,7 @@ class McpDataImportStartScenarioTest : FunSpec({
         payload.get("resourceUri").asString shouldContain "dmigrate://tenants/acme/jobs/"
         payload.getAsJsonObject("executionMeta").has("requestId") shouldBe true
 
-        // Plan-§-8.7 Akzeptanz: durabler JobRecord mit operation=data_import.
+        // LF-010 / LF-013 / LN-009 / LN-011 Akzeptanz: durabler JobRecord mit operation=data_import.
         val jobId = payload.get("jobId").asString
         val record = w.runtimeWiring.jobStore.findById(tenant, jobId)
             ?: error("expected JobRecord $jobId in store")
@@ -243,8 +243,8 @@ class McpDataImportStartScenarioTest : FunSpec({
         result.content.first().text!! shouldContain "RESOURCE_NOT_FOUND"
     }
 
-    test("data_import_start ist im Wire-Schema vom Phase-F-Output (resourceUri + executionMeta)") {
-        // Plan-Smoke: das Output-Schema ist nicht mehr der Phase-B-
+    test("data_import_start ist im Wire-Schema vom LF-010 / LF-013 / LN-009 / LN-011-Output (resourceUri + executionMeta)") {
+        // Contract-Smoke: das Output-Schema ist nicht mehr der LF-012 / LN-038-
         // Stub jobIdOut(); jobStartOut() liefert resourceUri und
         // executionMeta. Der Allow-Pfad oben hat das verifiziert —
         // dieser Test pin't zusaetzlich, dass beide Felder im

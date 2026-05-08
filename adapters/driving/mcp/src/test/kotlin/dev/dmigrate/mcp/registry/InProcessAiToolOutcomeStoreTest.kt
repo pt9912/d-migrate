@@ -17,7 +17,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase G § 6 G.6 (G.6.a 2/2) — Akzeptanz für den
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.a 2/2) — Akzeptanz für den
  * Single-Writer-Lease + Reclaim-Vertrag.
  */
 class InProcessAiToolOutcomeStoreTest : FunSpec({
@@ -46,8 +46,8 @@ class InProcessAiToolOutcomeStoreTest : FunSpec({
         acquired.claimId shouldBe AiToolClaimId("claim-1")
     }
 
-    test("Plan §6 G.6: parallele identische Pending-Reserves liefern InProgress") {
-        // Hier liegt der Phase-F-SyncEffectIdempotencyStore-Bug
+    test("LF-017 / LF-024 / LN-030 / LN-031: parallele identische Pending-Reserves liefern InProgress") {
+        // Hier liegt der LF-010 / LF-013 / LN-009 / LN-011-SyncEffectIdempotencyStore-Bug
         // (`InProcessUploadControlStores.kt:51`) — bei aktiver Lease mit
         // gleichem Fingerprint wird `Reserved` erneut zurueckgegeben.
         // Der KI-Store loest das mit InProgress.

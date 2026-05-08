@@ -32,7 +32,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.5 (F.5 2/3) — pin't den End-zu-End-`job_input`-
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3) — pin't den End-zu-End-`job_input`-
  * Finalisations-Pfad ueber den `ArtifactUploadHandler`:
  *
  * 1. Handler dispatcht anhand `session.uploadIntent` auf den
@@ -42,7 +42,7 @@ import java.util.Base64
  * 3. [dev.dmigrate.server.ports.ArtifactStore] traegt einen Record
  *    mit `kind=session.artifactKind` + `contentType=session.mimeType`.
  * 4. Session ist `COMPLETED`, `finalizationOutcome.status=SUCCEEDED`,
- *    `schemaId=null` (Plan § 8.5: kein Schema fuer job_input).
+ *    `schemaId=null` (LF-012 / LN-011 / LN-017 / LN-027: kein Schema fuer job_input).
  * 5. Antwort traegt den artifactRef im (generischen)
  *    `schemaRef`-Wirefeld (Feld dient als Final-Ref).
  */
@@ -135,7 +135,7 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
         val response = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
         val json = JsonParser.parseString(response.content.single().text!!).asJsonObject
         json.get("uploadSessionState").asString shouldBe "COMPLETED"
-        // Plan § 8.5: das `schemaRef`-Wirefeld dient generisch als
+        // LF-012 / LN-011 / LN-017 / LN-027: das `schemaRef`-Wirefeld dient generisch als
         // Final-Ref. Fuer job_input ist es der artifactRef-URI.
         val artifactRef = json.get("schemaRef").asString
         artifactRef shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
@@ -162,8 +162,8 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
         finalisation.payloadSha256 shouldBe sha
     }
 
-    test("Phase F § 8.10 (F.10): application/csv und text/csv liefern denselben artifactId (format=csv)") {
-        // CSV-Import-Artefakte sind in Phase F erlaubt; beide
+    test("LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): application/csv und text/csv liefern denselben artifactId (format=csv)") {
+        // CSV-Import-Artefakte sind in LF-010 / LF-013 / LN-009 / LN-011 erlaubt; beide
         // MIME-Allowlist-Schreibweisen muessen serverseitig auf
         // dasselbe `format=csv` normalisieren, damit Caller mit
         // `application/csv` denselben deterministischen `art-...`-Id
@@ -200,7 +200,7 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
     test("job_input ohne JobInputFinalizer-Wiring faellt auf legacy COMPLETED ohne Materialise") {
         // Simuliert Test-Konstellation, in der der Handler ohne
         // jobInputFinalizer konfiguriert ist (z.B. F.5-(2/3)-Edge-
-        // Tests vor F.5 (3/3)-Wiring). Plan-konform: keine Bytes,
+        // Tests vor F.5 (3/3)-Wiring). vertragskonform: keine Bytes,
         // kein Record — aber Session wird trotzdem COMPLETED
         // (Bestands-Tests bleiben gruen).
         val payload = "x".toByteArray()
@@ -240,7 +240,7 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
             """"contentBase64":"${b64(payload)}"}"""
         handler.handle(ToolCallContext("artifact_upload", args(body), uploader))
 
-        // Plan: Session COMPLETED, aber ohne Artefakt (Wiring fehlt).
+        // Vertrag: Session COMPLETED, aber ohne Artefakt (Wiring fehlt).
         sessionStore.findById(tenant, "ups-job-2")!!.state shouldBe UploadSessionState.COMPLETED
         artifactStore.list(tenant, dev.dmigrate.server.core.pagination.PageRequest(pageSize = 10)).items shouldBe emptyList()
         contentStore.exists("any") shouldBe false

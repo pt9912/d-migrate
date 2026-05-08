@@ -38,22 +38,22 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * AP E.10 Audit-Akzeptanz-Pins. Verifiziert Plan §7.10 Tests:
+ * LF-012 / LN-011 / LN-017 / LN-027 Audit-Akzeptanz-Pins. Verifiziert LF-012 / LN-011 / LN-017 / LN-027 Tests:
  *
  * - jedes Fehleroutcome wird auditiert (Around/Finally per [AuditScope])
  * - keine Approval-Tokens, Secrets oder rohen Connection-Daten im Audit
  *
- * Implementierung: existiert bereits seit AP 6.20 — [AuditScope.around]
+ * Implementierung: existiert bereits seit LF-012 / LN-027 / LN-028 / LN-038 — [AuditScope.around]
  * wraps jeden `tools/call`-Dispatch und emittiert ein [AuditEvent] mit
  * SUCCESS/FAILURE-Outcome, errorCode und scrubbed resourceRefs. Diese
- * Suite pinnt das Verhalten fuer die Phase-E-Tools (schema_reverse_start,
+ * Suite pinnt das Verhalten fuer die LF-012 / LN-011 / LN-017 / LN-027-Tools (schema_reverse_start,
  * data_profile_start, schema_compare_start, job_cancel) end-to-end.
  *
  * Bewusst NICHT abgedeckt: AuditFields-Population (`payloadFingerprint`,
- * `resourceRefs`) — die Phase-C-/Phase-E-Handler reichen sie heute nicht
+ * `resourceRefs`) — die LF-012 / LN-038-/LF-012 / LN-011 / LN-017 / LN-027-Handler reichen sie heute nicht
  * an `AuditScope.around` weiter (siehe McpServiceImpl#runAudited
  * Code-Kommentar). Das ist eine Folge-AP-Verbesserung, nicht ein
- * Plan-§7.10-Akzeptanz-Bullet.
+ * LF-012 / LN-011 / LN-017 / LN-027-Akzeptanz-Bullet.
  */
 class McpAuditScenarioTest : FunSpec({
 
@@ -91,7 +91,7 @@ class McpAuditScenarioTest : FunSpec({
         )
         val service: McpServiceImpl = run {
             val components = McpRuntimeRegistries.defaultComponents(phaseC)
-            // Phase-E-Handler ueberlagern; auditSink + auditScope kommen
+            // LF-012 / LN-011 / LN-017 / LN-027-Handler ueberlagern; auditSink + auditScope kommen
             // aus McpRuntimeRegistries.defaultComponents.
             val registry = OperationalMcpRegistries.defaultToolRegistry(eWiring)
             McpServiceImpl(
@@ -158,7 +158,7 @@ class McpAuditScenarioTest : FunSpec({
     }
 
     test("Audit projiziert KEINE rohen approvalToken-Werte") {
-        // Plan §7.10: keine Approval-Tokens im Audit.
+        // LF-012 / LN-011 / LN-017 / LN-027: keine Approval-Tokens im Audit.
         val fx = Fixture(PolicyEffect.Challenge(setOf("data.read")))
         val args = JsonParser.parseString(
             """{"connectionId":"dmigrate://tenants/acme/connections/c1","idempotencyKey":"k-tok","approvalToken":"tok_secret123abc"}""",
@@ -175,7 +175,7 @@ class McpAuditScenarioTest : FunSpec({
         serialized shouldNotContain "tok_secret123abc"
     }
 
-    test("Mehrere parallele Phase-E-Calls erzeugen genau ein AuditEvent pro Call") {
+    test("Mehrere parallele LF-012 / LN-011 / LN-017 / LN-027-Calls erzeugen genau ein AuditEvent pro Call") {
         val fx = Fixture(PolicyEffect.Allow)
         for (i in 1..5) {
             val args = JsonParser.parseString(

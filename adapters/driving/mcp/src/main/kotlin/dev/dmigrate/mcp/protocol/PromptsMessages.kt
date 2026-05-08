@@ -1,13 +1,13 @@
 package dev.dmigrate.mcp.protocol
 
 /**
- * Phase G § 5.7 + § 6 G.7 — MCP `prompts/list` und `prompts/get`
+ * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 — MCP `prompts/list` und `prompts/get`
  * Wire-Shapes per 2025-11-25-Spezifikation.
  *
  * - [PromptsListParams] / [PromptsListResult] — Discovery aller
  *   registrierten Prompts. Cursor analog zu `resources/list`.
  * - [PromptsGetParams] / [PromptsGetResult] — Argumentvalidierte
- *   Prompt-Nachrichten. Plan §4.5 verbindlich: Prompts sind
+ *   Prompt-Nachrichten. LF-017 / LF-024 / LN-030 / LN-031 verbindlich: Prompts sind
  *   Vorlagen, keine versteckten Tool-Ausführungen — die
  *   Antwort enthält nur Text/Resource-Refs, kein Tool-Effekt.
  */
@@ -23,7 +23,7 @@ data class PromptsListResult(
 /**
  * MCP-`Prompt`-Discovery-Form. `arguments` ist optional, weil ein
  * Prompt keine Argumente brauchen kann (selbst wenn alle drei
- * Phase-G-Pflichtprompts welche haben).
+ * LF-017 / LF-024 / LN-030 / LN-031-Pflichtprompts welche haben).
  */
 data class PromptListEntry(
     val name: String,
@@ -34,7 +34,7 @@ data class PromptListEntry(
 /**
  * MCP-Prompt-Argument-Beschreibung. `required` defaultet auf
  * `false`, weil die MCP-Spec optionale Argumente als Default
- * vorsieht. Plan §5.7 verlangt strukturiertes Schema; dieser
+ * vorsieht. LF-017 / LF-024 / LN-030 / LN-031 verlangt strukturiertes Schema; dieser
  * Wire-Form-DTO bleibt simpel — die volle Argumentvalidierung
  * läuft im [dev.dmigrate.mcp.prompts.PromptArgumentValidator].
  */
@@ -55,8 +55,8 @@ data class PromptsGetResult(
 )
 
 /**
- * MCP-Prompt-Message. Phase G unterstützt nur `text`-Content
- * (Plan §5.7: "kurze Prompt-Nachrichten"); `image`/`resource`-
+ * MCP-Prompt-Message. LF-017 / LF-024 / LN-030 / LN-031 unterstützt nur `text`-Content
+ * (LF-017 / LF-024 / LN-030 / LN-031: "kurze Prompt-Nachrichten"); `image`/`resource`-
  * Content folgt mit MCP-Sampling-/Streaming-Erweiterungen außerhalb
  * von 0.9.6.
  */

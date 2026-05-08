@@ -14,9 +14,9 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Follow-up AP 2 — Acceptance-Tests für [BundleExtractor].
+ * LF-010 / LF-013 / LN-009 / LN-011 — Acceptance-Tests für [BundleExtractor].
  *
- * Plan §4 verlangt stabile `VALIDATION_ERROR`-Ergebnisse für jeden
+ * LF-010 / LF-013 / LN-009 / LN-011 verlangt stabile `VALIDATION_ERROR`-Ergebnisse für jeden
  * Sicherheits-Edge-Case: absolute Pfade, Traversal, Symlinks, doppelte
  * Entries, zu viele Entries, zu grosse entpackte Daten, unbekannte
  * Entry-Typen. Diese Tests sichern alle dokumentierten Pfade.

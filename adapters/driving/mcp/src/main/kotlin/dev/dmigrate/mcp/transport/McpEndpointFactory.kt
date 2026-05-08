@@ -12,14 +12,14 @@ import org.eclipse.lsp4j.jsonrpc.services.ServiceEndpoints
  * Builds the lsp4j JSON-RPC pieces shared by stdio and HTTP transports:
  *
  * - [MessageJsonHandler] — Gson-based serializer with the MCP method
- *   table (Initialize today, more in AP 6.8/6.9).
+ *   table (Initialize today, more in LF-012 / LN-027 / LN-028 / LN-038/6.9).
  * - [GenericEndpoint] — reflection-based dispatcher that invokes the
  *   `@JsonRequest`/`@JsonNotification` methods on the local service.
  * - [RemoteEndpoint] — combines local dispatch with an outbound
  *   message consumer (the wire writer); used by both transports.
  *
  * Stdio loops one [RemoteEndpoint] per process. HTTP creates one per
- * request because each POST is a single dispatched message (AP 6.5
+ * request because each POST is a single dispatched message (LF-012 / LN-027 / LN-028 / LN-038
  * adds session reuse via `MCP-Session-Id`).
  */
 internal object McpEndpointFactory {

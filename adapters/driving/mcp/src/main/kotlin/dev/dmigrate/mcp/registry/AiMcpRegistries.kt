@@ -8,20 +8,20 @@ import dev.dmigrate.server.application.ai.AiToolOrchestrator
 import dev.dmigrate.server.application.audit.AuditScope
 
 /**
- * Phase G § 6 G.6 (G.6.g) — Tool-Registry-Overlay parallel zu
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.g) — Tool-Registry-Overlay parallel zu
  * [OperationalMcpRegistries].
  *
- * Plan §7.6 line 1132 sinngemäß: "Tool-Registry von Unsupported-
- * Handlern auf produktive Handler umstellen". Phase G überschreibt
+ * LF-012 / LN-011 / LN-017 / LN-027 line 1132 sinngemäß: "Tool-Registry von Unsupported-
+ * Handlern auf produktive Handler umstellen". LF-017 / LF-024 / LN-030 / LN-031 überschreibt
  * exakt die drei KI-nahen Slots
  * (`procedure_transform_plan`, `procedure_transform_execute`,
  * `testdata_plan`); `testdata_execute` bleibt bewusst auf
- * [UnsupportedToolHandler] (Plan §3.2 Carve-out — separate
+ * [UnsupportedToolHandler] (LF-017 / LF-024 / LN-030 / LN-031 Carve-out — separate
  * Daten-Schreiboperation, nicht in 0.9.6).
  *
- * Layering: nimmt eine bereits gebaute Phase-E-Registry (die
- * Phase-B/C/D/E-Tools verdrahtet) und überschreibt nur die drei
- * G-Slots. Phase-A bis F bleibt unverändert.
+ * Layering: nimmt eine bereits gebaute LF-012 / LN-011 / LN-017 / LN-027-Registry (die
+ * LF-012 / LN-038/C/D/E-Tools verdrahtet) und überschreibt nur die drei
+ * G-Slots. base bis F bleibt unverändert.
  *
  * Bootstrap-Vertrag:
  *
@@ -29,12 +29,12 @@ import dev.dmigrate.server.application.audit.AuditScope
  *   damit Single-Writer-Lease und Reclaim über denselben Store
  *   laufen.
  * - **Eine** [AiProviderRegistry] mit garantiertem NoOp-Default
- *   (Plan §4.1).
+ *   (LF-017 / LF-024 / LN-030 / LN-031).
  * - **Ein** [PromptHygieneService], der Input + Output prüft
- *   (Plan §7.4).
+ *   (LF-017 / LF-024 / LN-030 / LN-031).
  *
  * Beide Transports (stdio + HTTP) MÜSSEN dieselbe Registry-Instanz
- * teilen — Plan-§-6.1-Akzeptanz parallel zu Phase C.
+ * teilen — LF-017 / LF-024 / LN-030 / LN-031-Akzeptanz parallel zu LF-012 / LN-038.
  */
 object AiMcpRegistries {
 
@@ -75,7 +75,7 @@ object AiMcpRegistries {
         val phaseC = phaseE.runtimeWiring
         val clock = phaseC.clock
 
-        // Plan §6 G.6: ein gemeinsamer Orchestrator über die drei
+        // LF-017 / LF-024 / LN-030 / LN-031: ein gemeinsamer Orchestrator über die drei
         // Handler, damit das Acquire/Replay/Commit über denselben
         // AiToolOutcomeStore läuft.
         val orchestrator = AiToolOrchestrator(
@@ -127,7 +127,7 @@ object AiMcpRegistries {
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )
-                // Follow-up AP 3: testdata_execute jetzt produktiv (Plan §5).
+                // LF-017 / LF-024 / LN-030 / LN-031: testdata_execute jetzt produktiv (LF-017 / LF-024 / LN-030 / LN-031).
                 TestdataExecuteHandler.TOOL_NAME -> TestdataExecuteHandler(
                     orchestrator = orchestrator,
                     artifactStore = phaseC.artifactStore,

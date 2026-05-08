@@ -10,18 +10,18 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E1 smoke test: starts both transports against the
- * AP-6.21 file-backed wiring, runs `initialize` + `tools/list`
+ * LF-012 / LN-027 / LN-028 / LN-038 E1 smoke test: starts both transports against the
+ * LF-012 / LN-027 / LN-028 / LN-038 file-backed wiring, runs `initialize` + `tools/list`
  * via the [McpClientHarness] surface, and asserts the
  * advertised tool set is identical between stdio and HTTP.
  *
- * The full Phase-C scenario lands in E2-E8; E1 only pins the
+ * The full LF-012 / LN-038 scenario lands in E2-E8; E1 only pins the
  * harness plumbing.
  *
  * Tagged `integration` so the default fast-test loop skips it
  * (see root `build.gradle.kts` — `kotest.tags=!integration & !perf`
  * by default; `-PintegrationTests` flips it on). Uses the same
- * file-level `IntegrationTag` constant as the other Phase-F E2E
+ * file-level `IntegrationTag` constant as the other LF-010 / LF-013 / LN-009 / LN-011 E2E
  * tests in this module — Kotest 6's discovery filter has been
  * observed to ignore inline `tags(NamedTag("…"))` calls in CI,
  * even though they work locally.
@@ -71,7 +71,7 @@ class McpHarnessSmokeTest : FunSpec({
         }
     }
 
-    test("stdio + http advertise the same Phase-C tool set (drift guard)") {
+    test("stdio + http advertise the same LF-012 / LN-038 tool set (drift guard)") {
         val stdioDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")
         val httpDir = IntegrationFixtures.freshStateDir("dmigrate-it-http-")
         try {

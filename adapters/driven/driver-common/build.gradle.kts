@@ -21,7 +21,7 @@ kover {
                     "dev.dmigrate.driver.DdlGenerator",
                     "dev.dmigrate.driver.TypeMapper",
                     "dev.dmigrate.driver.connection.PoolSettings",
-                    // Phase C Schritt 12: pure Interfaces
+                    // LF-008 / LF-010: pure Interfaces
                     "dev.dmigrate.driver.data.DataWriter",
                     "dev.dmigrate.driver.data.TableImportSession",
                     "dev.dmigrate.driver.data.SchemaSync",
@@ -29,7 +29,7 @@ kover {
                     // wenn SequenceAdjustment eigene Tests bekommt
                     "dev.dmigrate.driver.data.SequenceAdjustment",
                     "dev.dmigrate.driver.data.UnsupportedTriggerModeException",
-                    // Phase C: pure data projections (no logic)
+                    // LF-004 / LF-008: pure data projections (no logic)
                     "dev.dmigrate.driver.metadata.TableRef",
                     "dev.dmigrate.driver.metadata.ColumnProjection",
                     "dev.dmigrate.driver.metadata.PrimaryKeyProjection",

@@ -8,7 +8,7 @@ import java.time.Instant
 
 /**
  * No-op [AuthValidator] for `AuthMode.DISABLED` per
- * `ImpPlan-0.9.6-B.md` §12.14.
+ * LF-012 / LN-027 / LN-028 / LN-038
  *
  * Returns a synthetic anonymous-admin [PrincipalContext] regardless
  * of the supplied token. Configuration validation (§12.12) blocks
@@ -17,7 +17,7 @@ import java.time.Instant
  *
  * The injected [principal] defaults to [ANONYMOUS_PRINCIPAL] for
  * production parity. Integration tests override this so each
- * transport-run gets its own principal (AP 6.24 §6.24 demands
+ * transport-run gets its own principal (LF-012 / LN-027 / LN-028 / LN-038 §6.24 demands
  * "eigene Tenant/Principal je Transportlauf"); production code
  * never constructs the override path.
  */

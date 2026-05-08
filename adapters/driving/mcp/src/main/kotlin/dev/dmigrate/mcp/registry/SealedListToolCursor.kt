@@ -12,7 +12,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Plan-D §4.2 + §10.6 + §10.8 wrapper that HMAC-seals every
+ * LF-012 / LN-038 + §10.6 + §10.8 wrapper that HMAC-seals every
  * `*_list` discovery tool's cursor. Distinct from
  * [dev.dmigrate.mcp.resources.SealedResourcesListCursor] only in
  * the binding shape: discovery cursors carry a per-tool
@@ -20,15 +20,15 @@ import java.time.Instant
  * `family`, and the request's filter map — so cursor reuse
  * across tools, families or filter sets fails verification.
  *
- * Phase-D §6.2 default sort (`createdAt DESC, id ASC`) is the
+ * LF-012 / LN-038 §6.2 default sort (`createdAt DESC, id ASC`) is the
  * only sort the discovery handlers issue, so [sort] is `null`
  * here. Future per-tool sort modes plug in by setting the field
  * — the codec already binds it.
  *
- * AP D6 returned `nextCursor=null` from every list handler; AP
+ * LF-012 / LN-038 returned `nextCursor=null` from every list handler; AP
  * D8 sub-commit 2 wires this codec so multi-page navigation
  * actually round-trips, with each cursor scoped to (tenant,
- * family, filters, pageSize, sort) per Plan-D §6.2 / §6.4.
+ * family, filters, pageSize, sort) per LF-012 / LN-038
  */
 internal class SealedListToolCursor(
     private val codec: McpCursorCodec,
@@ -70,7 +70,7 @@ internal class SealedListToolCursor(
     /**
      * Verifies + unwraps a sealed cursor. Throws
      * [ValidationErrorException] (which the dispatcher renders as
-     * a `VALIDATION_ERROR` envelope per Plan-D §6.4) on tamper /
+     * a `VALIDATION_ERROR` envelope per LF-012 / LN-038) on tamper /
      * binding mismatch / expiry / forgery so every per-tool path
      * funnels the same wire shape on cursor failures.
      */

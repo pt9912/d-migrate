@@ -82,7 +82,7 @@ class OperationalMcpWiringTest : FunSpec({
         w.payloadFingerprintService
     }
 
-    test("Default-PolicyService ist fail-closed (Plan §7.4)") {
+    test("Default-PolicyService ist fail-closed (LF-017 / LF-024 / LN-030 / LN-031)") {
         val w = operationalWiring()
         val attempt = PolicyAttempt(
             tenantId = TenantId("acme"),
@@ -96,7 +96,7 @@ class OperationalMcpWiringTest : FunSpec({
         decision shouldBe PolicyDecision.Denied("policy:no-rule")
     }
 
-    test("Default-GrantIssuer ist FailClosed (Plan §7.4)") {
+    test("Default-GrantIssuer ist FailClosed (LF-017 / LF-024 / LN-030 / LN-031)") {
         val w = operationalWiring()
         w.grantIssuer shouldBeSameInstanceAs FailClosedGrantIssuer
     }

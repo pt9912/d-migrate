@@ -15,7 +15,7 @@ import kotlin.math.floor
 private val PerfTag = NamedTag("perf")
 
 /**
- * Phase B Schritt 8: Spec-/Heap-Test für den YAML-Reader.
+ * LF-009 / LF-013: Spec-/Heap-Test für den YAML-Reader.
  *
  * Liest eine deterministische 100k-Row-YAML-Datei aus `build/perf-fixtures`
  * und prüft, dass der Reader den Input ohne Speicherwachstum proportional

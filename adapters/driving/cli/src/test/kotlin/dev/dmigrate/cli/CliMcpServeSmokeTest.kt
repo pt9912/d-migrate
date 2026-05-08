@@ -17,7 +17,7 @@ import java.nio.file.Files
 import kotlin.io.path.deleteRecursively
 
 /**
- * Smoke tests for `d-migrate mcp serve` per `ImpPlan-0.9.6-B.md` §6.11.
+ * Smoke tests for `d-migrate mcp serve` per LF-012 / LN-027 / LN-028 / LN-038
  * Covers the help output and the configuration-error exit path. We do
  * NOT actually start the server here — that would block the test on
  * stdin/SIGINT.
@@ -78,7 +78,7 @@ class CliMcpServeSmokeTest : FunSpec({
         // This test exercises the in-process OverlappingFileLockException
         // fallback in McpStateDirLock — both lock attempts run in the same
         // JVM, so the JDK rejects the second tryLock() before it ever asks
-        // the kernel. AP 6.24 E7 (`McpStateDirLockScenarioTest`) covers
+        // the kernel. LF-012 / LN-027 / LN-028 / LN-038 E7 (`McpStateDirLockScenarioTest`) covers
         // the harness-level transport-symmetric path against a real
         // running server, including the post-stop restart and the
         // stale-payload-no-lock case.
@@ -167,7 +167,7 @@ class CliMcpServeSmokeTest : FunSpec({
         // McpServerConfigStdioValidationTest in the mcp module.
     }
 
-    test("mcp serve stdio wires Phase-G prompts into initialize capabilities") {
+    test("mcp serve stdio wires LF-017 / LF-024 / LN-030 / LN-031 prompts into initialize capabilities") {
         @OptIn(kotlin.io.path.ExperimentalPathApi::class)
         val dir = Files.createTempDirectory("dmigrate-mcp-cli-phase-g-")
         val input = ByteArrayInputStream(

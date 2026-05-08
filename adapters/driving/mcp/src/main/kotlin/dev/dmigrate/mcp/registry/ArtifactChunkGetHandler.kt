@@ -17,27 +17,27 @@ import java.security.MessageDigest
 import java.util.Base64
 
 /**
- * AP 6.11 + AP D9: `artifact_chunk_get` per `ImpPlan-0.9.6-C.md`
- * §5.5 + `ImpPlan-0.9.6-D.md` §10.9.
+ * LF-012 / LN-027 / LN-028 / LN-038 + LF-012 / LN-038: `artifact_chunk_get` per LF-012 / LN-027 / LN-028 / LN-038
+ * §5.5 + LF-012 / LN-038
  *
  * Reads a single chunk of an artefact. The chunk index is a
  * sequential integer starting at 0; the offset is computed
  * server-side as `chunkIndex * maxArtifactChunkBytes`. The first
  * call without `chunkId` / `nextChunkCursor` returns chunk `"0"`;
  * subsequent calls follow either the HMAC-sealed
- * `nextChunkCursor` (Plan-D Tool-Pfad) or the `nextChunkUri`
- * (Plan-D `resources/read`-Pfad).
+ * `nextChunkCursor` (LF-012 / LN-038 Tool-Pfad) or the `nextChunkUri`
+ * (LF-012 / LN-038 `resources/read`-Pfad).
  *
- * AP D9 changes:
+ * LF-012 / LN-038 changes:
  * - The response now carries an HMAC-sealed `nextChunkCursor`
  *   alongside `nextChunkUri` so a Tool-Caller stays on the
  *   `tools/call` contract instead of jumping to `resources/read`.
  *   Both fields are explicit `null` on the last chunk per the
  *   §5.5 invariant.
  * - The naked `chunkId` integer is still accepted as input
- *   (Phase-C compatibility, Plan-D §10.9 "befristete Legacy-
+ *   (LF-012 / LN-038 compatibility, LF-012 / LN-038 "befristete Legacy-
  *   Eingabe"), but the response no longer emits a `nextChunkId`
- *   field — Plan-D §10.9 forbids it.
+ *   field — LF-012 / LN-038 forbids it.
  * - Cursor binding ties (tenant, artifactId, chunkSize) so a
  *   sealed cursor minted for artefact A in tenant X cannot be
  *   replayed against artefact B, tenant Y, or with a different
@@ -73,7 +73,7 @@ internal class ArtifactChunkGetHandler(
         val obj = JsonArgs.requireObject(context.arguments)
         val artifactId = obj.requireString("artifactId")
         val chunkSize = limits.maxArtifactChunkBytes
-        // AP D9: prefer the HMAC-sealed `nextChunkCursor` over the
+        // LF-012 / LN-038: prefer the HMAC-sealed `nextChunkCursor` over the
         // naked `chunkId` integer. Both inputs MUST NOT be set on
         // the same call — a client should commit to one wire shape.
         val nakedChunkId = obj.optString("chunkId")
@@ -83,7 +83,7 @@ internal class ArtifactChunkGetHandler(
                 listOf(
                     ValidationViolation(
                         "input",
-                        "exactly one of 'chunkId' (legacy) or 'nextChunkCursor' (Phase-D) is allowed",
+                        "exactly one of 'chunkId' (legacy) or 'nextChunkCursor' (LF-012 / LN-038) is allowed",
                     ),
                 ),
             )
@@ -129,9 +129,9 @@ internal class ArtifactChunkGetHandler(
         } else {
             null
         }
-        // Plan-D §10.9: when a codec is wired (production path),
+        // LF-012 / LN-038: when a codec is wired (production path),
         // emit the HMAC-sealed continuation cursor alongside the
-        // resource-URI form. Phase-B-only deployments without a
+        // resource-URI form. LF-012 / LN-038-only deployments without a
         // configured codec emit `null` and rely on `nextChunkUri`
         // for follow-ups.
         val nextChunkCursor = if (hasMore) {
@@ -171,9 +171,9 @@ internal class ArtifactChunkGetHandler(
             // §5.5 line 471: `nextChunkUri` is mandatory and is
             // explicitly `null` on the last chunk — emit it always.
             put("nextChunkUri", nextChunkUri)
-            // Plan-D §10.9: Phase-D output ALWAYS carries
+            // LF-012 / LN-038: LF-012 / LN-038 output ALWAYS carries
             // nextChunkCursor (null on last chunk, sealed string
-            // otherwise) when a codec is wired. Phase-B-only
+            // otherwise) when a codec is wired. LF-012 / LN-038-only
             // deployments emit null on every chunk — clients pick
             // up `nextChunkUri`.
             put("nextChunkCursor", nextChunkCursor)
@@ -190,11 +190,11 @@ internal class ArtifactChunkGetHandler(
     }
 
     /**
-     * Plan-D §10.9: decode a sealed continuation cursor and return
+     * LF-012 / LN-038: decode a sealed continuation cursor and return
      * the next chunk index. The codec verifies (tenant, artifactId,
      * chunkSize) so a cursor minted for a different artefact /
      * tenant / chunkSize collapses to `VALIDATION_ERROR` via the
-     * thrown [ValidationErrorException]. Phase-B-only deployments
+     * thrown [ValidationErrorException]. LF-012 / LN-038-only deployments
      * without a wired codec reject any client-supplied
      * `nextChunkCursor` rather than silently restarting at chunk 0.
      */

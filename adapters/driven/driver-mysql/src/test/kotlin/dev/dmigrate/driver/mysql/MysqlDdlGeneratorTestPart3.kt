@@ -396,7 +396,7 @@ class MysqlDdlGeneratorTestPart3 : FunSpec({
         rendered shouldContain "`col``inject`"
     }
 
-    // ── helper_table mode (0.9.3 AP 6.4) ───────────────────────
+    // ── helper_table mode (LF-003 / LF-004 / LF-013) ───────────────────────
 
     val helperOpts = DdlGenerationOptions(
         mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,

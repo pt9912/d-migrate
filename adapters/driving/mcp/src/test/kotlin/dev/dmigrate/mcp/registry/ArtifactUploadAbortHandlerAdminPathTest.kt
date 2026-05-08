@@ -39,10 +39,10 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Phase F § 5.3 + § 8.6 (F.6 3/3) — pin't den administrativen
+ * LF-010 / LF-013 / LN-009 / LN-011 § 5.3 + § 8.6 (F.6 3/3) — pin't den administrativen
  * `artifact_upload_abort`-Pfad ueber den Handler:
  *
- * - Owner-Self-Abort: Phase-C-Verhalten unveraendert.
+ * - Owner-Self-Abort: LF-012 / LN-038-Verhalten unveraendert.
  * - Cross-Principal ohne Admin-Pipeline: Forbidden (Bestands-Compat).
  * - Cross-Principal mit Pipeline + Allow-Policy: Abort durch + Quotas
  *   freigegeben + AbortOutcome durabel.
@@ -175,7 +175,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
         payload.get("quotaReleased").asBoolean shouldBe true
         payload.get("reason").asString shouldBe "ops-cleanup"
 
-        // Plan § 5.3: ABORTED + Cleanup + Quota-Release durabel.
+        // LF-017 / LF-024 / LN-030 / LN-031: ABORTED + Cleanup + Quota-Release durabel.
         fx.sessionStore.findById(tenant, "ups-1")!!.state shouldBe UploadSessionState.ABORTED
         fx.quotaStore.current(fx.sessionsKey) shouldBe 0L
         fx.quotaStore.current(fx.bytesKey) shouldBe 0L
@@ -197,7 +197,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
                 ),
             )
         }
-        // Plan: KEIN Abort, KEIN Quota-Release.
+        // Vertrag: KEIN Abort, KEIN Quota-Release.
         fx.sessionStore.findById(tenant, "ups-1")!!.state shouldBe UploadSessionState.ACTIVE
         fx.quotaStore.current(fx.sessionsKey) shouldBe 1L
     }
@@ -253,7 +253,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
                 ),
             ),
         )
-        // Plan § 5.3: identischer Outcome bei identischem Fingerprint.
+        // LF-017 / LF-024 / LN-030 / LN-031: identischer Outcome bei identischem Fingerprint.
         second.get("uploadSessionState").asString shouldBe "ABORTED"
         second.get("preAbortState").asString shouldBe first.get("preAbortState").asString
         second.get("quotaReleased").asBoolean shouldBe true
@@ -268,7 +268,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
                 adminPrincipal(),
             ),
         )
-        // Plan § 5.3: anderer reason -> IDEMPOTENCY_CONFLICT statt
+        // LF-017 / LF-024 / LN-030 / LN-031: anderer reason -> IDEMPOTENCY_CONFLICT statt
         // altem Outcome.
         shouldThrow<IdempotencyConflictException> {
             fx.handler.handle(
@@ -281,7 +281,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
         }
     }
 
-    test("Owner-Self-Abort bleibt unveraendert (Phase C)") {
+    test("Owner-Self-Abort bleibt unveraendert (LF-012 / LN-038)") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val ownerPrincipal = PrincipalContext(
             principalId = alice,
@@ -302,7 +302,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
             ),
         )
         val payload = parsePayload(outcome)
-        // Owner-Self-Abort schickt segmentsDeleted-Feld zurueck (Phase C);
+        // Owner-Self-Abort schickt segmentsDeleted-Feld zurueck (LF-012 / LN-038);
         // der Admin-Pfad nutzt das preAbortState/quotaReleased-Schema.
         payload.has("segmentsDeleted") shouldBe true
         payload.has("preAbortState") shouldBe false

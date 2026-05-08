@@ -12,7 +12,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * AP 6.24 E3: transport-neutral coverage of `schema_generate` and
+ * LF-012 / LN-027 / LN-028 / LN-038 E3: transport-neutral coverage of `schema_generate` and
  * `schema_compare` per §7.3 (Pflichtfluesse):
  *
  *  - `schema_generate` with a small inline schema: both transports
@@ -20,7 +20,7 @@ private val IntegrationTag = NamedTag("integration")
  *    `truncated=false` payloads
  *  - `schema_generate` with a large generated DDL: both transports
  *    surface the same artefact-fallback shape (`truncated=true` +
- *    `artifactRef` set to the Phase-C tenant artefact URI, no inline
+ *    `artifactRef` set to the LF-012 / LN-038 tenant artefact URI, no inline
  *    `ddl`)
  *  - `schema_compare` of two materialised schema refs (identical
  *    schemas): both transports return the same `identical=true`
@@ -132,7 +132,7 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
     // coupling) validates against the schema` covers the variant
     // for `schema_compare`. Re-deriving the same coupling for
     // `schema_generate` against the actual generator-finding stream
-    // is a Phase-D follow-up — driver-supplied note shape is not
+    // is a LF-012 / LN-038 follow-up — driver-supplied note shape is not
     // stable enough for a deterministic integration scenario today.
     //
     // Tracked under §7.3 final-review as a known-deferred carve-out.
@@ -164,7 +164,7 @@ class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
             withClue("$name must spill DDL to artefact (no inline ddl)") {
                 payload.has("ddl") shouldBe false
             }
-            withClue("$name artifactRef must be a Phase-C tenant artefact URI") {
+            withClue("$name artifactRef must be a LF-012 / LN-038 tenant artefact URI") {
                 payload.get("artifactRef")?.asString
                     ?.startsWith("dmigrate://tenants/") shouldBe true
             }

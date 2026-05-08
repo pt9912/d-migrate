@@ -50,7 +50,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase F § 5.1 + § 8.3 (F.3 4/4) — pin't den policy-Init-Pfad
+ * LF-010 / LF-013 / LN-009 / LN-011 § 5.1 + § 8.3 (F.3 4/4) — pin't den policy-Init-Pfad
  * (`uploadIntent=job_input`) im MCP-Handler:
  *
  * - Allow -> Success-Envelope mit `uploadSessionId`/`ttlSeconds`.
@@ -59,7 +59,7 @@ import java.util.concurrent.atomic.AtomicInteger
  * - InProgress (paralleler Single-Writer-Claim) -> OPERATION_TIMEOUT.
  * - IdempotencyConflict -> IdempotencyConflictException.
  * - ValidationError -> ValidationErrorException.
- * - Ohne Orchestrator faellt `job_input` weiterhin auf Phase-C
+ * - Ohne Orchestrator faellt `job_input` weiterhin auf LF-012 / LN-038
  *   POLICY_REQUIRED zurueck (Bestands-Caller unveraendert).
  * - `sizeBytes`/`expectedSizeBytes`-Alias-Konflikt -> VALIDATION_ERROR.
  */
@@ -251,7 +251,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         error.envelope.details.first { it.key == "requiredScopes" }.value shouldContain
             "dmigrate:artifact:upload"
 
-        // Plan § 8.3: KEINE Session, KEINE Quota.
+        // LF-012 / LN-011 / LN-017 / LN-027: KEINE Session, KEINE Quota.
         fx.sessionStore.findById(tenant, "ups-1") shouldBe null
         fx.quotaStore.current(
             dev.dmigrate.server.ports.quota.QuotaKey(tenant, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, alice),
@@ -523,7 +523,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
             )
         }
         ex.violations.map { it.field } shouldContain "sizeBytes"
-        // Plan § 8.4: keine Session entsteht (Pre-Store-Validation).
+        // LF-012 / LN-011 / LN-017 / LN-027: keine Session entsteht (Pre-Store-Validation).
         fx.sessionStore.findById(tenant, "ups-1") shouldBe null
     }
 
@@ -541,7 +541,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         ex.violations.map { it.field } shouldContain "artifactKind"
     }
 
-    test("Ohne Orchestrator faellt job_input weiterhin auf Phase-C POLICY_REQUIRED zurueck") {
+    test("Ohne Orchestrator faellt job_input weiterhin auf LF-012 / LN-038 POLICY_REQUIRED zurueck") {
         val fx = Fixture(wireOrchestrator = false)
         val ex = shouldThrow<PolicyRequiredException> {
             fx.handler.handle(

@@ -27,10 +27,10 @@ class McpCliRuntimeWiringTest : FunSpec({
         }
     }
 
-    test("runtimeWiring uses the file-spool assembly factory (AP 6.22 heap guarantee)") {
+    test("runtimeWiring uses the file-spool assembly factory (LF-012 / LN-027 / LN-028 / LN-038 heap guarantee)") {
         // Regression guard: McpRuntimeWiring's default for
         // assembledUploadPayloadFactory is the in-memory variant,
-        // which would defeat the AP-6.22 streaming guarantee. The
+        // which would defeat the LF-012 / LN-027 / LN-028 / LN-038 streaming guarantee. The
         // CLI-production wiring MUST inject the file-spool factory.
         val dir = Files.createTempDirectory("dmigrate-mcp-wiring-spool-")
         try {

@@ -34,9 +34,7 @@ sealed interface MigrationRollback {
  * rollback state. Tool adapters render their artifacts from this bundle
  * without needing access to [DdlGenerator] or the filesystem.
  *
- * Note: the master plan (`implementation-plan-0.7.0.md`) describes the
- * bundle as carrying Up-/Down-"artifacts". This is a deliberate
- * refinement: the bundle carries generator-near *payloads* (DDL result +
+ * LF-003 / LF-009: the bundle carries generator-near *payloads* (DDL result +
  * deterministic SQL). Tool-specific *artifacts* (files with relative
  * paths) are produced by [ToolMigrationExporter] from the bundle.
  *

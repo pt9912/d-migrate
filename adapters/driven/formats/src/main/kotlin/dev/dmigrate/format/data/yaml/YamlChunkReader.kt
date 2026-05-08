@@ -10,13 +10,13 @@ import org.snakeyaml.engine.v2.events.SequenceEndEvent
 /**
  * YAML-Format-Reader mit SnakeYAML Engine Event-API.
  *
- * Plan §3.5.1 / §6.2:
+ * LF-009 / LF-010 / LF-013:
  * - Akzeptiert nur eine Top-Level-Sequenz von Mappings
  * - Skalare am Top-Level, verschachtelte Dokumentformen → Formatfehler
  * - First-Row-Schema ist autoritativ (F8: lookup by name, R9: leere erste Row)
  * - Streaming: Event-basierte State-Machine, kein Tree-Aufbau
  *
- * **YAML-Mini-Design (§6.2)**:
+ * **YAML-Mini-Design**:
  * 1. `StreamStart/DocumentStart/SequenceStart` initialisieren den Row-Kontext
  * 2. Jedes Top-Level-`MappingStart` beginnt eine neue Row
  * 3. Scalar-Key/Value-Paare werden in File-Order gesammelt

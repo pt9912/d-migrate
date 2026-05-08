@@ -77,7 +77,7 @@ private fun fixture(
 
 class McpServiceImplAuditTest : FunSpec({
 
-    test("AP 6.20: a successful tools/call emits one SUCCESS audit event with the dispatch requestId") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a successful tools/call emits one SUCCESS audit event with the dispatch requestId") {
         val f = fixture()
         f.sut.toolsCall(ToolsCallParams(name = "test_tool")).get()
         val events = f.sink.recorded()
@@ -91,7 +91,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.errorCode shouldBe null
     }
 
-    test("AP 6.20: a handler-thrown ValidationError emits FAILURE with VALIDATION_ERROR outcome") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a handler-thrown ValidationError emits FAILURE with VALIDATION_ERROR outcome") {
         val handler = ToolHandler {
             throw ValidationErrorException(listOf(ValidationViolation("schema", "missing required field")))
         }
@@ -104,7 +104,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.requestId shouldBe "req-fixed"
     }
 
-    test("AP 6.20: a missing principal emits FAILURE with AUTH_REQUIRED outcome") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a missing principal emits FAILURE with AUTH_REQUIRED outcome") {
         val f = fixture(principal = null)
         f.sut.toolsCall(ToolsCallParams(name = "test_tool")).get()
         val event = f.sink.recorded().single()
@@ -115,7 +115,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.tenantId shouldBe null
     }
 
-    test("AP 6.20: a scope violation emits FAILURE with FORBIDDEN_PRINCIPAL outcome") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a scope violation emits FAILURE with FORBIDDEN_PRINCIPAL outcome") {
         // Tool requires admin scope; principal only has read.
         val f = fixture(requiredScopes = setOf("dmigrate:admin"))
         f.sut.toolsCall(ToolsCallParams(name = "test_tool")).get()
@@ -126,7 +126,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.principalId shouldBe PrincipalId("alice")
     }
 
-    test("AP 6.20: a typed PolicyDenied propagates through audit as FAILURE with POLICY_DENIED") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a typed PolicyDenied propagates through audit as FAILURE with POLICY_DENIED") {
         val handler = ToolHandler {
             throw PolicyDeniedException(policyName = "p1", reason = "test")
         }
@@ -137,7 +137,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.errorCode shouldBe ToolErrorCode.POLICY_DENIED
     }
 
-    test("Phase G: a returned ToolCallOutcome.Error emits FAILURE with the tool error code") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: a returned ToolCallOutcome.Error emits FAILURE with the tool error code") {
         val handler = ToolHandler {
             ToolCallOutcome.Error(
                 dev.dmigrate.server.core.error.ToolErrorEnvelope(
@@ -154,7 +154,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.errorCode shouldBe ToolErrorCode.PROMPT_HYGIENE_BLOCKED
     }
 
-    test("AP 6.20: a non-ApplicationException Throwable emits FAILURE with INTERNAL_AGENT_ERROR") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: a non-ApplicationException Throwable emits FAILURE with INTERNAL_AGENT_ERROR") {
         val handler = ToolHandler {
             throw IllegalStateException("boom")
         }
@@ -165,7 +165,7 @@ class McpServiceImplAuditTest : FunSpec({
         event.errorCode shouldBe ToolErrorCode.INTERNAL_AGENT_ERROR
     }
 
-    test("AP 6.20: unknown tool stays JSON-RPC -32601 — no audit event") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: unknown tool stays JSON-RPC -32601 — no audit event") {
         // §6.8: protocol-method typos must NOT pollute the audit log.
         // Audit semantics record tool invocations, not name lookups.
         val f = fixture()
@@ -175,7 +175,7 @@ class McpServiceImplAuditTest : FunSpec({
         f.sink.recorded().size shouldBe 0
     }
 
-    test("AP 6.20: without auditScope wired, dispatch behaves exactly as Phase B (no audit, no requestId leak)") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: no auditScope keeps dispatch audit-free") {
         val descriptor = ToolDescriptor(
             name = "test_tool",
             title = "test_tool",

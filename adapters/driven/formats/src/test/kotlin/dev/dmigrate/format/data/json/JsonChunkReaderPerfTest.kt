@@ -13,7 +13,7 @@ import kotlin.math.floor
 private val PerfTag = NamedTag("perf")
 
 /**
- * Phase B Schritt 7: Streaming-Test gegen das 100-MB-Fixture aus Phase A.
+ * LF-009 / LF-013 / LN-043: Streaming-Test gegen das 100-MB-Fixture.
  *
  * Verifiziert, dass [JsonChunkReader] das große Fixture mit konstantem
  * Speicherbudget lesen kann und die Integer-vs-Decimal-Diskriminierung

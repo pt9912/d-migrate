@@ -51,13 +51,13 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 /**
- * Streamable-HTTP route per `ImpPlan-0.9.6-B.md` §6.5 + §6.6 +
+ * Streamable-HTTP route per LF-012 / LN-027 / LN-028 / LN-038§6.6 +
  * §12.13 + §12.14.
  *
  * Endpoints:
  * - `POST /mcp` — JSON-RPC dispatch with Origin / Accept / body /
  *   Bearer / Session / Protocol-Version / Scope chain.
- * - `GET /mcp` — `405 Method Not Allowed` (no SSE in Phase B)
+ * - `GET /mcp` — `405 Method Not Allowed` (no SSE in LF-012 / LN-038)
  * - `DELETE /mcp` — terminates the session (`200` with valid id,
  *   `405` without)
  * - `GET /.well-known/oauth-protected-resource` — RFC 9728 metadata
@@ -254,7 +254,7 @@ private suspend fun validateBearer(
     authValidator: AuthValidator,
 ): PrincipalContext? {
     if (config.authMode == AuthMode.DISABLED) {
-        // §6.24: AP 6.24 demands per-transport-run principal
+        // §6.24: LF-012 / LN-027 / LN-028 / LN-038 demands per-transport-run principal
         // isolation. The validator's [principal] field is the
         // injection point — production wiring uses
         // [DisabledAuthValidator.ANONYMOUS_PRINCIPAL] (the default

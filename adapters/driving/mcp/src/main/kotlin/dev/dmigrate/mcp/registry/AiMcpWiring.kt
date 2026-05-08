@@ -10,23 +10,23 @@ import dev.dmigrate.server.ports.AiToolOutcomeStore
 import java.time.Duration
 
 /**
- * Phase G § 6 G.6 (G.6.g) — Wiring-Bundle für die KI-nahen
+ * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.g) — Wiring-Bundle für die KI-nahen
  * MCP-Tools.
  *
  * Baut auf [OperationalMcpWiring] auf (das wiederum [McpRuntimeWiring] hält):
  * Tool-Handler greifen auf `operationalWiring.runtimeWiring.artifactStore`,
  * `.artifactContentStore`, `.schemaStore`, `.profileStore`,
- * `.connectionStore`, `.clock` zurück. Phase-G ergänzt nur die
+ * `.connectionStore`, `.clock` zurück. LF-017 / LF-024 / LN-030 / LN-031 ergänzt nur die
  * KI-spezifischen Stores und Services.
  *
- * Strikte Default-Vorgaben (Plan §3.2 + §4.1): ohne explizite
+ * Strikte Default-Vorgaben (LF-017 / LF-024 / LN-030 / LN-031 + §4.1): ohne explizite
  * Konfiguration fährt das Wiring auf NoOp-Provider, In-Process-
  * Outcome-/Metadata-Stores und den pattern-basierten
- * [DefaultPromptHygieneService]. Externe Provider (Plan §6 G.3)
+ * [DefaultPromptHygieneService]. Externe Provider (LF-017 / LF-024 / LN-030 / LN-031)
  * werden erst durch eine angereicherte [aiProviderRegistry]
  * aktiviert.
  *
- * @param operationalWiring Phase-E + Phase-C Wiring (Job-Start-Tools,
+ * @param operationalWiring LF-012 / LN-011 / LN-017 / LN-027 + LF-012 / LN-038 Wiring (Job-Start-Tools,
  *   Cancel, Upload-Init, Artifact-Stores, Connection-Refs).
  * @param aiToolOutcomeStore Single-Writer-Outcome-Store mit
  *   Lease/Reclaim (G.6.a). Default = [InProcessAiToolOutcomeStore].

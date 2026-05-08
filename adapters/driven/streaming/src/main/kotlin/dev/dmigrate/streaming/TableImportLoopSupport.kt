@@ -52,10 +52,10 @@ internal fun importChunks(
 ) {
     var nextChunk: DataChunk? = firstChunk
     while (nextChunk != null) {
-        // Plan §6.3: cancel between chunks must not start the next chunk's
+        // LF-010 / LF-013 / LN-009 / LN-012: cancel between chunks must not start the next chunk's
         // normalize/write. Cancel checkpoints sit OUTSIDE the per-call try
         // blocks so OperationCancelledException never travels through the
-        // chunk-failure catches (Plan §4.5 — would otherwise be mapped to
+        // chunk-failure catches (would otherwise be mapped to
         // a fachlicher chunk error).
         cancellationToken.throwIfCancellationRequested()
 
@@ -89,7 +89,7 @@ internal fun importChunks(
         val commitFailed = commitAndAccount(session, writeResult, normalizedChunk, context, state, reporter)
         if (commitFailed) break
 
-        // Plan §4.6: callbacks that persist progress are side effects. Cancel
+        // LF-010 / LF-013 / LN-012: callbacks that persist progress are side effects. Cancel
         // before the callback prevents a fake-progress manifest entry for an
         // otherwise-finished chunk.
         cancellationToken.throwIfCancellationRequested()
@@ -116,7 +116,7 @@ internal fun importChunks(
  * Commits the chunk and updates loop state. Returns `true` if a
  * non-fatal commit failure asked the loop to break; throws on ABORT.
  * Extracted from [importChunks] so the cancel checkpoint can sit
- * cleanly outside the chunk-failure catch (Plan §4.5).
+ * cleanly outside the chunk-failure catch.
  */
 private fun commitAndAccount(
     session: TableImportSession,

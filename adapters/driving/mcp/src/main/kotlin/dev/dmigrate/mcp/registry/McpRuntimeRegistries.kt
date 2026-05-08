@@ -8,7 +8,7 @@ import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.audit.AuditScope
 
 /**
- * Phase-C wiring entry point per `ImpPlan-0.9.6-C.md` §6.1.
+ * LF-012 / LN-038 wiring entry point per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Override semantics worth pinning down:
  * - keys MUST be tool names already registered by [McpContractRegistries] —
@@ -56,7 +56,7 @@ object McpRuntimeRegistries {
     }
 
     /**
-     * AP 6.14: builds the production-ready Phase-C registry by
+     * LF-012 / LN-027 / LN-028 / LN-038: builds the production-ready LF-012 / LN-038 registry by
      * instantiating every fachlichen Handler from §3.1 and routing
      * them through [toolRegistry]. The bootstrap calls this once at
      * server start so `tools/call` dispatches into the real handlers
@@ -65,7 +65,7 @@ object McpRuntimeRegistries {
      * Stays a separate entry point from [toolRegistry] so existing
      * contract tests (which call `toolRegistry()` with no overrides)
      * keep their incremental-fallback semantics — backwards-
-     * compatible per AP 6.14 acceptance.
+     * compatible per LF-012 / LN-027 / LN-028 / LN-038 acceptance.
      */
     fun defaultToolRegistry(
         wiring: McpRuntimeWiring,
@@ -93,7 +93,7 @@ object McpRuntimeRegistries {
             scopeMapping = scopeMapping,
             limits = wiring.limits,
         )
-        // AP D8: one cursor codec instance, shared across the five
+        // LF-012 / LN-038: one cursor codec instance, shared across the five
         // discovery list-tools. SealedListToolCursor stamps a
         // per-tool `cursorType` into the binding, so the shared
         // codec still emits cursors that can't be replayed across
@@ -128,7 +128,7 @@ object McpRuntimeRegistries {
                 artifactStore = wiring.artifactStore,
                 contentStore = wiring.artifactContentStore,
                 limits = wiring.limits,
-                // AP D9: wire the HMAC-sealed `nextChunkCursor` so
+                // LF-012 / LN-038: wire the HMAC-sealed `nextChunkCursor` so
                 // the chunk-walk produces both `nextChunkUri` and
                 // `nextChunkCursor` (Tool-pfad). The shared codec is
                 // safe — SealedChunkCursor stamps cursorType into
@@ -155,14 +155,14 @@ object McpRuntimeRegistries {
                     clock = wiring.clock,
                     finalizingLeaseTtl = wiring.operationTimeout,
                     finalizer = wiring.finalizer,
-                    // Phase F § 8.5 (F.5 3/3): wire the policy-init
+                    // LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3): wire the policy-init
                     // (`job_input`) Finaliser, sodass durable Bytes
                     // tatsaechlich in den ArtifactContentStore landen.
                     // Ohne Wiring fiel der job_input-Pfad auf den
                     // legacy COMPLETED-Shortcut zurueck — kein
                     // Artefakt, kein chunk_get.
                     jobInputFinalizer = wiring.jobInputFinalizer,
-                    // AP 6.22: thread the file-spool factory from the
+                    // LF-010 / LF-013 / LN-009 / LN-011: thread the file-spool factory from the
                     // wiring DTO into the handler — the handler default is
                     // the in-memory variant, which would defeat the
                     // streaming heap guarantee in production.
@@ -186,7 +186,7 @@ object McpRuntimeRegistries {
                 ),
             ),
             "job_status_get" to JobStatusGetHandler(jobStore = wiring.jobStore),
-            // AP D6 + AP D8: discovery list tools with HMAC-sealed
+            // LF-012 / LN-038 + LF-012 / LN-038: discovery list tools with HMAC-sealed
             // cursors. The shared SealedListToolCursor wraps every
             // per-tool resumeToken so a cursor minted for tool A /
             // tenant X / filters F cannot be replayed against tool B
@@ -198,7 +198,7 @@ object McpRuntimeRegistries {
             "diff_list" to DiffListHandler(wiring.diffStore, listToolCursor),
         )
         // Filter to the scope-mapping universe so a deployment that
-        // narrows the tool set (e.g. read-only vs full Phase-C)
+        // narrows the tool set (e.g. read-only vs full LF-012 / LN-038)
         // doesn't trip the "handlerOverrides target unregistered
         // tools" guard in `toolRegistry`.
         val filtered = overrides.filterKeys { it in scopeMapping.keys }
@@ -206,12 +206,12 @@ object McpRuntimeRegistries {
     }
 
     /**
-     * AP 6.19: the dispatch-time request/response byte enforcer
+     * LF-012 / LN-027 / LN-028 / LN-038: the dispatch-time request/response byte enforcer
      * matching the [defaultToolRegistry]. The bootstrap wires this
      * into [dev.dmigrate.mcp.protocol.McpServiceImpl] so every
      * `tools/call` is bracketed by the same byte caps the
      * [defaultToolRegistry] handlers rely on for their inline /
-     * artefact split. Phase-B-only deployments can leave the
+     * artefact split. LF-012 / LN-038-only deployments can leave the
      * enforcer null — `dispatch` then behaves as before.
      */
     fun defaultResponseLimitEnforcer(wiring: McpRuntimeWiring): ResponseLimitEnforcer =
@@ -227,11 +227,11 @@ object McpRuntimeRegistries {
     /**
      * Bundles the per-call dispatch components a single `tools/call`
      * needs — the registry that finds the handler, the byte-limit
-     * enforcer that brackets it, and (AP 6.20) the audit scope that
+     * enforcer that brackets it, and (LF-012 / LN-027 / LN-028 / LN-038) the audit scope that
      * records one event per call. The bootstrap takes one of these
      * instead of three correlated parameters with cross-defaults so
      * the `runtimeWiring?.let { ... }`-fallback expression lives in
-     * one place. Phase-B-only callers (no `McpRuntimeWiring`) get a
+     * one place. LF-012 / LN-038-only callers (no `McpRuntimeWiring`) get a
      * registry with no enforcer and no audit — the same shape
      * `dispatch` already handles.
      */
@@ -240,7 +240,7 @@ object McpRuntimeRegistries {
         val responseLimitEnforcer: ResponseLimitEnforcer?,
         val auditScope: AuditScope?,
         /**
-         * AP D7: capabilities document for `resources/read
+         * LF-012 / LN-038: capabilities document for `resources/read
          * dmigrate://capabilities`. Built from the same descriptors +
          * scope mapping + limits the [CapabilitiesListReadOnlyHandler]
          * uses so the resource and the tool stay in lock-step.
@@ -250,11 +250,11 @@ object McpRuntimeRegistries {
          */
         val capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
         /**
-         * AP D8: HMAC cursor codec backing `resources/list` and the
-         * `*_list` discovery tools. Null in Phase-B-only deployments
+         * LF-012 / LN-038: HMAC cursor codec backing `resources/list` and the
+         * `*_list` discovery tools. Null in LF-012 / LN-038-only deployments
          * (no McpRuntimeWiring) — the dispatcher then falls back to the
          * legacy unsigned Base64 cursor for resources/list and to
-         * `nextCursor=null` for the discovery tools (AP D6 no-op).
+         * `nextCursor=null` for the discovery tools (LF-012 / LN-038 no-op).
          */
         val cursorCodec: McpCursorCodec? = null,
     )

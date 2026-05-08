@@ -4,7 +4,7 @@ import java.security.MessageDigest
 
 /**
  * SHA-256-Hex-Fingerprint fuer rohe `DMIGRATE_MCP_STDIO_TOKEN`-Werte
- * per `ImpPlan-0.9.6-B.md` §12.10.
+ * per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Der rohe Tokenwert verlaesst den Aufruf-Stack nie — wir hashen
  * sofort und reichen ausschliesslich den Fingerprint zur

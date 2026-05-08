@@ -38,7 +38,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.10 (F.10): stdio-Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): stdio-Integrationstest fuer den
  * mehrsegmentigen `artifact_upload`-Pfad.
  *
  * Validiert, dass der NDJSON-stdio-Transport mehrere
@@ -93,7 +93,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         )
         val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
 
-        // 2. Stdio-bound Principal — die Token-Registry haengt Phase B/C
+        // 2. Stdio-bound Principal — die Token-Registry haengt LF-012 / LN-038/C
         // an; fuer den IT genuegt das pre-bound Principal. `dmigrate:read`
         // gated den `artifact_upload`-Methoden-Eintritt, und der
         // intent-abhaengige Scope-Check im Handler erzwingt zusaetzlich
@@ -209,7 +209,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         seg2Result.get("bytesReceived").asLong shouldBe 32L
 
         // Segment 3 (final): COMPLETED + schemaRef-URI (generischer
-        // Final-Ref fuer job_input, Plan § 8.5).
+        // Final-Ref fuer job_input, LF-012 / LN-011 / LN-017 / LN-027).
         val seg3Result = extractToolText(responses[3])
         seg3Result.get("uploadSessionState").asString shouldBe "COMPLETED"
         seg3Result.get("acceptedSegmentIndex").asInt shouldBe 3
@@ -233,7 +233,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         // Session waere ein zweiter Lifecycle (StdioJsonRpc verbraucht
         // den InputStream einmalig). Statt einer zweiten stdio-Sitzung
         // pruefen wir den Round-Trip ueber den bereits gewireten
-        // chunk_get-Handler direkt — Plan-§-8.5-Akzeptanz: "bytes
+        // chunk_get-Handler direkt — LF-010 / LF-013 / LN-009 / LN-011-Akzeptanz: "bytes
         // lesbar via artifact_chunk_get" haengt nicht am Transport.
         val chunkHandler = registry.findHandler("artifact_chunk_get")!!
         val chunkBody = JsonParser.parseString(

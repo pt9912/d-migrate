@@ -13,7 +13,7 @@ import java.io.ByteArrayInputStream
 /**
  * Unit-Tests für [CsvChunkReader].
  *
- * Plan §4 Phase B Schritt 9: CsvChunkReader mit uniVocity CsvParser.
+ * LF-009 / LF-013: CsvChunkReader mit uniVocity CsvParser.
  * CSV-Werte sind immer String (oder null via csvNullString) — keine
  * Typ-Auflösung im Reader. Die Struktur spiegelt die Json/Yaml-Reader-Tests.
  */
@@ -279,7 +279,7 @@ class CsvChunkReaderTest : FunSpec({
         }
     }
 
-    test("Phase F §4.5: UTF-16 LE BOM + Unicode-Payload wird erkannt und transcodiert") {
+    test("LF-009 / LF-013: UTF-16 LE BOM + Unicode-Payload wird erkannt und transcodiert") {
         val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
         val csv = "name\nΑθήνα".toByteArray(Charsets.UTF_16LE)
         val input = ByteArrayInputStream(bom + csv)
@@ -290,7 +290,7 @@ class CsvChunkReaderTest : FunSpec({
         }
     }
 
-    test("Phase F §4.5: UTF-16 BE BOM + Unicode-Payload wird erkannt") {
+    test("LF-009 / LF-013: UTF-16 BE BOM + Unicode-Payload wird erkannt") {
         val bom = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
         val csv = "name\nMünchen 🇩🇪".toByteArray(Charsets.UTF_16BE)
         val input = ByteArrayInputStream(bom + csv)

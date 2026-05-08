@@ -31,14 +31,14 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase B initialize / tools handler per
- * `ImpPlan-0.9.6-B.md` §6.4 + §6.8 + §12.8 + §12.11 + §12.16.
+ * LF-012 / LN-038 initialize / tools handler per
+ * LF-012 / LN-027 / LN-028 / LN-038§6.8 + §12.8 + §12.11 + §12.16.
  *
- * AP 6.4: Validates the client's `protocolVersion` and remembers the
+ * LF-012 / LN-027 / LN-028 / LN-038: Validates the client's `protocolVersion` and remembers the
  * negotiated version. Wrong `protocolVersion` is mapped to JSON-RPC
  * error `-32602` (Invalid params), per §12.8.
  *
- * AP 6.8: Adds `tools/list` and `tools/call`.
+ * LF-012 / LN-027 / LN-028 / LN-038: Adds `tools/list` and `tools/call`.
  * - `tools/list` projects [toolRegistry] into MCP shape.
  * - `tools/call` dispatches via the registry handler. Unknown tool
  *   names raise JSON-RPC `-32601` (Method not found, §12.8); known
@@ -50,8 +50,8 @@ import java.util.concurrent.atomic.AtomicReference
  * [initialPrincipal]. stdio sets it once at bootstrap; HTTP rebinds it
  * per request via [bindPrincipal] from `McpHttpRoute` so §12.14
  * "per-request validation is source-of-truth" survives the dispatch.
- * Phase B's only handler — `capabilities_list` — does not consult the
- * principal, but the scaffolding is here so Phase C/D handlers drop
+ * LF-012 / LN-038's only handler — `capabilities_list` — does not consult the
+ * principal, but the scaffolding is here so LF-012 / LN-038 handlers drop
  * in unchanged.
  */
 class McpServiceImpl(
@@ -66,7 +66,7 @@ class McpServiceImpl(
     private val auditScope: AuditScope? = null,
     private val requestIdProvider: () -> String = ::generateDispatchRequestId,
     /**
-     * AP D7: builds the capabilities document for `resources/read
+     * LF-012 / LN-038: builds the capabilities document for `resources/read
      * dmigrate://capabilities`. Defaults to an empty map — the
      * bootstrap supplies the real provider (the one
      * [dev.dmigrate.mcp.registry.CapabilitiesListReadOnlyHandler]
@@ -77,9 +77,9 @@ class McpServiceImpl(
      */
     capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
     /**
-     * AP D7 sub-commit 3: inline-vs-artifactRef byte cap (§5.2).
+     * LF-012 / LN-038 sub-commit 3: inline-vs-artifactRef byte cap (§5.2).
      * Defaults to a fresh [McpLimitsConfig], which carries the
-     * Plan-D MAX_INLINE_RESOURCE_CONTENT_BYTES and
+     * LF-012 / LN-038 MAX_INLINE_RESOURCE_CONTENT_BYTES and
      * MAX_RESOURCE_READ_RESPONSE_BYTES constants. Production
      * bootstrap supplies the deployment's tuned config so a server
      * with raised tool-response caps uses the matching resource
@@ -87,23 +87,23 @@ class McpServiceImpl(
      */
     limitsConfig: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
     /**
-     * AP D8: HMAC cursor codec for `resources/list`. When non-null,
+     * LF-012 / LN-038: HMAC cursor codec for `resources/list`. When non-null,
      * cursors are sealed via [dev.dmigrate.mcp.resources.SealedResourcesListCursor]
      * with tenant + pageSize + expiry binding. Null falls back to
-     * the Phase-B unsigned Base64 path so existing tests + Phase-B
+     * the LF-012 / LN-038 unsigned Base64 path so existing tests + LF-012 / LN-038
      * harnesses stay green; production bootstrap always wires a
-     * codec via the Phase-C wiring's keyring.
+     * codec via the LF-012 / LN-038 wiring's keyring.
      */
     private val cursorCodec: dev.dmigrate.mcp.cursor.McpCursorCodec? = null,
     /**
-     * Phase G § 6 G.7: Prompt-Registry für `prompts/list` und
+     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: Prompt-Registry für `prompts/list` und
      * `prompts/get`. `null` deaktiviert beide Methoden — sie
      * antworten dann mit JSON-RPC `MethodNotFound`. Bootstrap mit
-     * Phase-G-Wiring liefert eine [dev.dmigrate.mcp.prompts.DefaultPromptRegistry.mandatory].
+     * LF-017 / LF-024 / LN-030 / LN-031-Wiring liefert eine [dev.dmigrate.mcp.prompts.DefaultPromptRegistry.mandatory].
      */
     private val promptRegistry: dev.dmigrate.mcp.prompts.PromptRegistry? = null,
     /**
-     * Phase G § 6 G.7 + § 6 G.4: Hygiene-Service, der `prompts/get`
+     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7 + § 6 G.4: Hygiene-Service, der `prompts/get`
      * über die assemblierte Prompt-Nachricht laufen lässt. Pflicht,
      * wenn [promptRegistry] gesetzt ist.
      */
@@ -152,13 +152,13 @@ class McpServiceImpl(
         }
         negotiated.set(params.protocolVersion)
         val capabilities = ServerCapabilities(
-            // §5.3: tools lit up in AP 6.8, resources in AP 6.9.
+            // §5.3: tools lit up in LF-012 / LN-027 / LN-028 / LN-038, resources in LF-012 / LN-027 / LN-028 / LN-038.
             // listChanged stays false until subscriptions ship.
             tools = mapOf("listChanged" to false),
             resources = mapOf("listChanged" to false, "subscribe" to false),
-            // Phase G § 6 G.7: capabilities.prompts wird nur
+            // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: capabilities.prompts wird nur
             // ausgewiesen, wenn der Bootstrap eine Prompt-Registry
-            // eingehaengt hat. Plan §6 G.7 Akzeptanz: "initialize
+            // eingehaengt hat. LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: "initialize
             // enthaelt capabilities.prompts" sobald promptsHandler
             // verfuegbar ist.
             prompts = if (promptsHandler != null) mapOf("listChanged" to false) else null,
@@ -172,7 +172,7 @@ class McpServiceImpl(
     }
 
     override fun initialized() {
-        // Notification — no response. Phase C uses this hook to flip
+        // Notification — no response. LF-012 / LN-038 uses this hook to flip
         // session into "ready" once tool registries exist.
     }
 
@@ -187,9 +187,9 @@ class McpServiceImpl(
     }
 
     override fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult> {
-        // §6.8 / Phase-B: `unknown tool` is JSON-RPC `-32601`, NOT
+        // §6.8 / LF-012 / LN-038: `unknown tool` is JSON-RPC `-32601`, NOT
         // a tool-result envelope. The audit scope only opens after we
-        // know the call addresses a registered tool — Phase-A audit
+        // know the call addresses a registered tool — base audit
         // semantics record tool invocations, not protocol-method
         // typos.
         val handler = toolRegistry.findHandler(params.name)
@@ -202,7 +202,7 @@ class McpServiceImpl(
             tenantId = principal?.effectiveTenantId,
             principalId = principal?.principalId,
         )
-        // Phase E §7.10 Review-Fix #8: AuditFields-Plumbing. Eine Instanz
+        // LF-012 / LN-011 / LN-017 / LN-027 §7.10 Review-Fix #8: AuditFields-Plumbing. Eine Instanz
         // wird hier erzeugt und SOWOHL an die ToolCallContext (handler
         // schreibt) ALS AUCH an auditScope.around (finally liest) gereicht.
         // Damit landen payloadFingerprint + resourceRefs aus dem Handler
@@ -237,9 +237,9 @@ class McpServiceImpl(
      * translates any thrown exception into the same `tools/call`
      * error envelope `dispatch` would have produced — but only AFTER
      * `auditScope.around` has captured the failure outcome. Without
-     * an audit scope this collapses to the pre-AP-6.20 try/catch.
+     * an audit scope this collapses to the pre-LF-012 / LN-027 / LN-028 / LN-038 try/catch.
      *
-     * Phase E §7.10 (Review-Fix #8): [fields] werden in around
+     * LF-012 / LN-011 / LN-017 / LN-027 §7.10 (Review-Fix #8): [fields] werden in around
      * weitergereicht (gleiche Instanz wie ToolCallContext.auditFields).
      */
     private fun runAudited(
@@ -258,8 +258,8 @@ class McpServiceImpl(
     }
 
     /**
-     * Pre-AP-6.20 [dispatch] used to wrap handler invocation in its
-     * own try/catch. AP 6.20 hoists the catch one level up so
+     * Pre-LF-012 / LN-027 / LN-028 / LN-038 [dispatch] used to wrap handler invocation in its
+     * own try/catch. LF-012 / LN-027 / LN-028 / LN-038 hoists the catch one level up so
      * [auditScope] sees the typed `ApplicationException` and records
      * the matching FAILURE outcome. `rawDispatch` therefore lets
      * exceptions propagate; the caller (`runAudited`) maps them.
@@ -269,7 +269,7 @@ class McpServiceImpl(
         context: ToolCallContext,
     ): ToolsCallResult {
         responseLimitEnforcer?.enforceRequestSize(context.name, context.arguments)
-        // Plan-D §6.1 + AP D6 review: enforce
+        // LF-012 / LN-038 + LF-012 / LN-038 review: enforce
         // `additionalProperties=false` from the published
         // input schema. Without this, an unknown filter
         // (`{"limit": 10}` on a `*_list` tool, or any other
@@ -295,7 +295,7 @@ class McpServiceImpl(
     }
 
     /**
-     * Plan-D §6.1 + AP D6 review: every tool whose published
+     * LF-012 / LN-038 + LF-012 / LN-038 review: every tool whose published
      * `inputSchema` declares `additionalProperties=false` must
      * have its incoming `arguments` checked against the schema's
      * top-level `properties` keys. Unknown keys collapse to a
@@ -305,7 +305,7 @@ class McpServiceImpl(
      * The check is intentionally shallow — only the top-level
      * keys are validated. Nested filter objects and wire-shape
      * details stay the responsibility of the handler. This
-     * matches the Plan-D §6.1 acceptance ("Filter werden strikt
+     * matches the LF-012 / LN-038 acceptance ("Filter werden strikt
      * validiert. Unbekannte Filter liefern VALIDATION_ERROR")
      * without dragging in a full JSON-Schema validator.
      */
@@ -338,12 +338,12 @@ class McpServiceImpl(
 
     private fun renderError(e: Throwable, requestId: String, toolName: String): ToolsCallResult {
         val base = errorMapper.map(e)
-        // Pre-AP-6.20 helpers attached `toolName` as a structured
+        // Pre-LF-012 / LN-027 / LN-028 / LN-038 helpers attached `toolName` as a structured
         // detail only for the two early-failure paths (AUTH_REQUIRED,
         // FORBIDDEN_PRINCIPAL); other exceptions carried their own
         // details from the typed exception's projection. Preserve
         // that wire shape — a global toolName detail would be a
-        // cross-cutting wire change beyond the scope of AP 6.20.
+        // cross-cutting wire change beyond the scope of LF-012 / LN-027 / LN-028 / LN-038.
         val needsToolName = e is AuthRequiredException || e is ForbiddenPrincipalException
         val details = if (needsToolName) {
             base.details + dev.dmigrate.server.core.error.ToolErrorDetail("toolName", toolName)
@@ -376,7 +376,7 @@ class McpServiceImpl(
                     ResponseError(
                         ResponseErrorCode.InvalidParams.value,
                         e.message ?: "invalid cursor",
-                        // Plan-D §4.2 cursor errors collapse to
+                        // LF-012 / LN-038 cursor errors collapse to
                         // VALIDATION_ERROR alongside the rest of
                         // the resource-error chain.
                         mapOf("dmigrateCode" to "VALIDATION_ERROR"),
@@ -387,7 +387,7 @@ class McpServiceImpl(
         val raw = resourcesListHandler.list(principal, cursor)
         // Re-seal the next cursor so the wire string is HMAC-bound
         // to (tenant, pageSize, family). When no codec is wired,
-        // pass the unsigned cursor through unchanged for Phase-B
+        // pass the unsigned cursor through unchanged for LF-012 / LN-038
         // backward compatibility.
         val sealed = sealedListCursor
         val out = if (sealed != null && raw.nextCursor != null) {
@@ -431,7 +431,7 @@ class McpServiceImpl(
                     ResponseError(ResponseErrorCode.InvalidRequest, "principal not bound", null),
                 ),
             )
-        // Plan-D §5.3 / §10.7: `uri` is the ONLY accepted field on
+        // LF-012 / LN-038: `uri` is the ONLY accepted field on
         // `resources/read`. Any other key (cursor, range, chunkId,
         // unknown extension) is captured by
         // [StrictReadResourceParamsAdapter] and surfaces here as a
@@ -456,7 +456,7 @@ class McpServiceImpl(
                 ResponseError(
                     ResponseErrorCode.InvalidParams.value,
                     "resources/read requires 'uri'",
-                    // Phase-D §5.4: every resource error carries
+                    // LF-012 / LN-038 §5.4: every resource error carries
                     // error.data.dmigrateCode. A missing 'uri' is
                     // a request-shape failure → VALIDATION_ERROR.
                     mapOf("dmigrateCode" to "VALIDATION_ERROR"),
@@ -478,8 +478,8 @@ class McpServiceImpl(
         // divergent template sets. The wire shape (`ResourceTemplate`)
         // is a strict subset of the registry's
         // `ResourceTemplateDescriptor` (no `requiredScopes` on the
-        // wire — Phase B's clients don't need it for templates).
-        // Phase B publishes a static set; no pagination needed,
+        // wire — LF-012 / LN-038's clients don't need it for templates).
+        // LF-012 / LN-038 publishes a static set; no pagination needed,
         // cursor is accepted but ignored.
         enforceScope("resources/templates/list")?.let { return CompletableFuture.failedFuture(it) }
         return CompletableFuture.completedFuture(
@@ -501,7 +501,7 @@ class McpServiceImpl(
                     ),
                 ),
             )
-        // Plan §6 G.7: prompts/list verlangt dmigrate:read.
+        // LF-017 / LF-024 / LN-030 / LN-031: prompts/list verlangt dmigrate:read.
         enforceScope("prompts/list")?.let { return CompletableFuture.failedFuture(it) }
         return CompletableFuture.completedFuture(handler.list(params))
     }
@@ -517,7 +517,7 @@ class McpServiceImpl(
                     ),
                 ),
             )
-        // Plan §6 G.7: prompts/get verlangt dmigrate:read.
+        // LF-017 / LF-024 / LN-030 / LN-031: prompts/get verlangt dmigrate:read.
         enforceScope("prompts/get")?.let { return CompletableFuture.failedFuture(it) }
         val principal = currentPrincipal.get()
             ?: return CompletableFuture.failedFuture(
@@ -534,7 +534,7 @@ class McpServiceImpl(
                         ResponseError(
                             ResponseErrorCode.InvalidParams.value,
                             "unknown prompt '${outcome.name}'",
-                            // Plan §6 G.7: dmigrateCode-Mapping.
+                            // LF-017 / LF-024 / LN-030 / LN-031: dmigrateCode-Mapping.
                             mapOf("dmigrateCode" to "RESOURCE_NOT_FOUND"),
                         ),
                     ),
@@ -644,7 +644,7 @@ class McpServiceImpl(
     private fun errorEnvelopeResult(
         envelope: dev.dmigrate.server.core.error.ToolErrorEnvelope,
     ): ToolsCallResult {
-        // AP 6.23: scrub the message + every details[].(key,value)
+        // LF-012 / LN-027 / LN-028 / LN-038: scrub the message + every details[].(key,value)
         // through SecretScrubber as a serialisation boundary.
         // Upstream mappers already scrub typed validation messages,
         // but generic / forwarded errors can still carry Bearer

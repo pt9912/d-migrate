@@ -44,8 +44,8 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase F § 6.1 + § 8.7 (F.7 2/5) — Pre-Idempotency-Validation +
- * Phase-E-Pipeline-Integration des `data_import_start`-Handlers.
+ * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 + § 8.7 (F.7 2/5) — Pre-Idempotency-Validation +
+ * LF-012 / LN-011 / LN-017 / LN-027-Pipeline-Integration des `data_import_start`-Handlers.
  *
  * Pin't:
  *
@@ -314,7 +314,7 @@ class DataImportStartHandlerTest : FunSpec({
         ex.violations.first().field shouldBe "chunkSize"
     }
 
-    test("chunkSize=10000 ist zulaessig (Plan-Maximum)") {
+    test("chunkSize=10000 ist zulaessig (Vertragsmaximum)") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val result = fx.handler.handle(ctx(args(chunkSize = 10_000)))
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
@@ -326,7 +326,7 @@ class DataImportStartHandlerTest : FunSpec({
             fx.handler.handle(ctx(args(targetConnectionRef = "jdbc:postgresql://prod:5432/db")))
         }
         ex.violations.first().field shouldBe "targetConnectionRef"
-        // Plan § 8.7: "vor Idempotency ohne Store-Write" — der
+        // LF-012 / LN-011 / LN-017 / LN-027: "vor Idempotency ohne Store-Write" — der
         // Job-ID-Counter ist Indikator dafuer, dass die Pipeline nicht
         // bis zur durablen Reservierung gelaufen ist.
         fx.jobIdSeq.get() shouldBe 0
@@ -554,7 +554,7 @@ class DataImportStartHandlerTest : FunSpec({
         fx.jobIdSeq.get() shouldBe 0
     }
 
-    test("tables ohne bundleFormat -> VALIDATION_ERROR(bundleFormat) (Follow-up AP 2)") {
+    test("tables ohne bundleFormat -> VALIDATION_ERROR(bundleFormat) (LF-010 / LF-013 / LN-009 / LN-011)") {
         val fx = Fixture()
         val tablesArr = JsonArray().apply { add("warehouse.events"); add("warehouse.users") }
         val ex = shouldThrow<ValidationErrorException> {
@@ -661,7 +661,7 @@ class DataImportStartHandlerTest : FunSpec({
         )
         first.shouldBeInstanceOf<ToolCallOutcome.Success>()
 
-        // Plan § 8.7: "abweichende Import-Option mit gleichem
+        // LF-012 / LN-011 / LN-017 / LN-027: "abweichende Import-Option mit gleichem
         // idempotencyKey -> IDEMPOTENCY_CONFLICT". Der von uns
         // injizierte Artefakt-sha256 / mimeType / filename geht in
         // den Payload-Fingerprint ein und macht die zwei Anfragen

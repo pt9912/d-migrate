@@ -28,14 +28,14 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
 /**
- * AP 6.24 E1: stdio harness using an in-process [McpServerBootstrap.startStdio]
+ * LF-012 / LN-027 / LN-028 / LN-038 E1: stdio harness using an in-process [McpServerBootstrap.startStdio]
  * wired via two `PipedStream` pairs. The server runs on its own
  * daemon thread; the test thread writes JSON-RPC requests into the
  * server's stdin pipe and pulls responses off the server's stdout
  * pipe via a small reader thread that lifts each NDJSON line into a
  * blocking queue.
  *
- * The wiring is the AP-6.21 file-backed Phase-C wiring with an
+ * The wiring is the LF-012 / LN-027 / LN-028 / LN-038 file-backed LF-012 / LN-038 wiring with an
  * [InMemoryAuditSink] attached so `tests` can assert audit-event
  * shape per [auditSink].
  */
@@ -58,7 +58,7 @@ internal class StdioHarness(
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
     /**
-     * AP 6.24 §6.24 final-review: removed from the
+     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: removed from the
      * [McpClientHarness] interface (Z. 1849 forbids non-client
      * methods on the harness surface). Still exposed `internal` on
      * the concrete class so test-only fixture helpers can stage
@@ -128,7 +128,7 @@ internal class StdioHarness(
     }
 
     /**
-     * AP 6.24 E8(C): append the most recent JSON-RPC call to the
+     * LF-012 / LN-027 / LN-028 / LN-038 E8(C): append the most recent JSON-RPC call to the
      * diagnostic ring buffer, evicting the oldest entry when the
      * buffer exceeds [McpClientHarness.DIAGNOSTIC_RPC_HISTORY_SIZE].
      * Outcome is collapsed to a one-line string — only the wire
@@ -178,7 +178,7 @@ internal class StdioHarness(
         }
 
         /**
-         * AP 6.24 E7: factory variant that surfaces the lock-conflict
+         * LF-012 / LN-027 / LN-028 / LN-038 E7: factory variant that surfaces the lock-conflict
          * branch so the lock-/concurrency-test can pin it without
          * unwinding through `error(...)`. All other failure modes
          * collapse to typed outcomes too; tests should pattern-match
@@ -274,7 +274,7 @@ internal class StdioHarness(
     }
 
     /**
-     * AP 6.24 E7: typed outcome so the lock-/concurrency-test can
+     * LF-012 / LN-027 / LN-028 / LN-038 E7: typed outcome so the lock-/concurrency-test can
      * pin a [LockConflict] without throwing. All other modes also
      * surface as discriminated cases so the test runner gets the
      * exact failure class on the wire.

@@ -113,8 +113,8 @@ class McpRuntimeWiringTest : FunSpec({
         registry.find("artifact_upload_init") shouldBe null
     }
 
-    test("AP 6.22: defaultToolRegistry threads the AssembledUploadPayloadFactory into ArtifactUploadHandler") {
-        // Regression guard for the AP-6.22 review: it is not enough
+    test("LF-012 / LN-027 / LN-028 / LN-038: defaultToolRegistry threads the AssembledUploadPayloadFactory into ArtifactUploadHandler") {
+        // Regression guard for the LF-012 / LN-027 / LN-028 / LN-038 review: it is not enough
         // for `McpRuntimeWiring.assembledUploadPayloadFactory` to hold the
         // file-spool variant — the field must also reach the actual
         // `ArtifactUploadHandler` constructed by `McpRuntimeRegistries`.
@@ -126,7 +126,7 @@ class McpRuntimeWiringTest : FunSpec({
         handler.payloadFactory shouldBe customFactory
     }
 
-    test("Plan-D §10.3 review: cursorKeyring default is the deterministic dev keyring (NOT a fresh random)") {
+    test("LF-012 / LN-038 review: cursorKeyring default is the deterministic dev keyring (NOT a fresh random)") {
         // A random per-process default makes integration tests
         // and dev workflows non-reproducible — a cursor minted
         // by one McpRuntimeWiring instance can't be verified by
@@ -159,7 +159,7 @@ class McpRuntimeWiringTest : FunSpec({
         a.cursorKeyring.signing.kid shouldBe "dev-default"
     }
 
-    test("Plan-D §10.3: randomCursorKeyring() opt-in produces unique key material per call") {
+    test("LF-012 / LN-038: randomCursorKeyring() opt-in produces unique key material per call") {
         // Single-instance production deployments without a
         // wired keyring file use this factory explicitly. Pin
         // that two calls produce different `kid`s + secrets
