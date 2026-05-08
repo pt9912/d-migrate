@@ -73,15 +73,16 @@ d-migrate schema migrate --source desired.yaml --target db:staging --output migr
 Ziel fuer 0.9.6 ist, dass `migrate up/down` als zusammenhaengender Ablauf
 funktioniert:
 
-- `up`: Ist-Datenbank lesen, gegen Soll-Schema diffen, Up-DDL planen, rendern
-  und wahlweise ausfuehren bzw. als SQL ausgeben.
+- `up`: Ist-Zustand aus Datenbank oder Schema-Datei lesen, gegen Soll-Schema
+  diffen, Up-DDL planen, rendern und bei DB-Targets wahlweise ausfuehren bzw.
+  als SQL ausgeben.
 - `down`: aus demselben Plan ein Rollback-Artefakt erzeugen und dieses
   Rollback gegen die Ziel-Datenbank ausfuehren koennen.
 
 Nicht Teil von 0.9.6 sind fortgeschrittene Rollback-Varianten wie
 versionierte `DiffResult`-Artefakte als CLI-Input, Teil-Rollbacks,
-automatische Rename-Mappings oder Datei-zu-Datei-Migrationsplanung ohne
-Live-Ist-Zustand.
+automatische Rename-Mappings oder automatische Datenrekonstruktion nach
+destruktiven Operationen.
 
 Die fachliche Unterscheidung ist verbindlich:
 
@@ -440,7 +441,8 @@ Wichtig:
 - `--generate-rollback` darf fuer solche Operationen aber kein falsches
   Down-SQL erfinden.
 - `MANUAL_REQUIRED` blockiert im ersten Slice die automatische Down-Erzeugung.
-  Teil-Rollbacks oder manuell ergaenzte Down-Schritte sind spaeterer Scope.
+  Teil-Rollbacks oder manuell ergaenzte Down-Schritte sind nicht Bestandteil
+  dieses Plans.
 - Der Runner muss den Nutzer ueber nicht reversible Operationen informieren.
 
 ### 4.6 Risiko- und Bestaetigungsmodell
@@ -468,8 +470,7 @@ Beispiele fuer `requiresManualConfirmation = true`:
   Datenvorbedingung
 - SQLite-Rebuild mit nicht trivialer Datenkopie
 
-Der CLI-Vertrag sollte spaeter einen expliziten Schalter bekommen, zum
-Beispiel:
+Der CLI-Vertrag bekommt einen expliziten Schalter:
 
 ```bash
 d-migrate schema migrate ... --allow-destructive
@@ -714,33 +715,158 @@ Rebuild-pflichtig:
 - PK-Aenderungen
 - bestimmte Drop-Column-Faelle
 
-SQLite-Rebuilds sollten nicht als einzelne SQL-Zeilen versteckt werden. Der
-dialektneutrale `DiffResult` bleibt jedoch bei den fachlichen Operationen
-(`AlterColumnType`, `DropConstraint`, `AddConstraint`, usw.). Erst ein
-nachgelagerter, dialektspezifischer Folgeplan darf daraus einen
-`RebuildTable`-Schritt bilden:
+SQLite-Rebuilds werden im ersten Slice vollstaendig geplant. Sie duerfen nicht
+als einzelne SQL-Zeilen versteckt werden. Der dialektneutrale `DiffResult`
+bleibt bei den fachlichen Operationen (`AlterColumnType`, `DropConstraint`,
+`AddConstraint`, usw.). Der SQLite-Generator muss daraus einen
+dialektspezifischen `DialectMigrationPlan` mit expliziten Rebuild-Schritten
+ableiten.
 
 ```kotlin
+data class DialectMigrationPlan(
+    val dialect: DatabaseDialect,
+    val sourceOperationIds: List<String>,
+    val steps: List<DialectMigrationStep>,
+    val diagnostics: List<DiffDiagnostic> = emptyList(),
+)
+
+sealed interface DialectMigrationStep {
+    val sourceOperationIds: Set<String>
+    val risk: OperationRisk
+}
+
 data class RebuildTable(
+    override val sourceOperationIds: Set<String>,
     val tableName: String,
     val oldTable: TableDefinition,
     val newTable: TableDefinition,
-    val columnMapping: Map<String, String>,
-    ...
+    val newTableTempName: String,
+    val preservedColumns: List<ColumnCopyMapping>,
+    val addedColumns: List<AddedColumnFill>,
+    val droppedColumns: List<String>,
+    val dependentViewsToRecreate: List<NamedView>,
+    val dependentTriggersToRecreate: List<NamedTrigger>,
+    val indexesToRecreate: List<IndexDefinition>,
+    val preflight: List<SqliteRebuildPreflight>,
+    override val risk: OperationRisk,
+) : DialectMigrationStep
+
+data class ColumnCopyMapping(
+    val sourceColumn: String,
+    val targetColumn: String,
+    val expressionSql: String,
 )
+
+data class AddedColumnFill(
+    val columnName: String,
+    val expressionSql: String,
+)
+
+enum class SqliteRebuildPreflight {
+    TABLE_EXISTS,
+    TEMP_NAME_AVAILABLE,
+    SOURCE_COLUMNS_EXIST,
+    DEPENDENCIES_KNOWN,
+    ADDED_COLUMNS_FILLABLE,
+    FOREIGN_KEYS_CHECKABLE,
+}
 ```
 
-Offene Entscheidung:
+Verbindliche Rebuild-Regeln:
 
-- Wird `RebuildTable` direkt vom Planner erzeugt, wenn Ziel-Dialekt SQLite ist?
-- Oder bleibt `DiffResult` dialektneutral und der SQLite-Generator hebt
-  einzelne Operationen in einen Rebuild-Plan?
+- Ein `RebuildTable` gruppiert alle fachlichen Operationen, die dieselbe
+  Tabelle betreffen und fuer SQLite nicht direkt per `ALTER TABLE` renderbar
+  sind.
+- Der Core-`DiffResult` bleibt dialektneutral. `RebuildTable` ist kein
+  `DiffOperation`, sondern ein SQLite-spezifischer Folgeplan mit Rueckverweis
+  auf die ausloesenden Operation-IDs.
+- Direkt renderbare SQLite-Operationen duerfen neben Rebuild-Schritten stehen,
+  muessen aber dependency-sicher vor oder nach dem Rebuild sortiert werden.
 
-Empfehlung:
+Spaltenmapping:
 
-- `DiffResult` bleibt dialektneutral.
-- Ein nachgelagerter `DialectMigrationPlan` darf Operationen fuer SQLite zu
-  Rebuild-Schritten gruppieren.
+- Unveraenderte Spalten werden 1:1 kopiert:
+  `sourceColumn = targetColumn`, `expressionSql = quote(sourceColumn)`.
+- `AlterColumnType` kopiert standardmaessig mit `CAST`, wenn der
+  Typmapper eine sichere SQLite-Zielaffinitaet bestimmen kann. Ist kein
+  sicherer Cast moeglich, wird die Operation `MANUAL_REQUIRED` und blockiert
+  automatisches Up/Down-SQL.
+- `AlterColumnDefault` und Constraint-/PK-Aenderungen aendern nur die
+  Zieltabellen-Definition; bestehende Werte werden 1:1 kopiert.
+- Hinzugefuegte nullable Spalten werden mit `NULL` gefuellt, sofern kein
+  Default existiert.
+- Hinzugefuegte Spalten mit Default werden mit dem gerenderten Default-Ausdruck
+  gefuellt.
+- Hinzugefuegte `NOT NULL`-Spalten ohne Default sind im Rebuild
+  `MANUAL_REQUIRED`; der Planner darf kein SQL erfinden.
+- Entfernte Spalten werden in `droppedColumns` ausgewiesen. Der Up-Plan ist
+  destruktiv; ein automatisches Down-SQL ist dafuer `NOT_REVERSIBLE`.
+- Rename-Operationen bleiben ausserhalb des ersten Slice. Entfernen plus
+  Hinzufuegen darf nicht automatisch als Spaltenmapping interpretiert werden.
+
+Temporaere Namen:
+
+- `newTableTempName` wird deterministisch aus Tabellenname und dem stabilen
+  Fingerprint der gruppierten Operation-IDs gebildet, zum Beispiel
+  `__dmigrate_rebuild_orders_4f8c2a1b`.
+- Der Name muss mit bestehenden Tabellen, Views, Indizes und Triggern der
+  Ziel-Datenbank kollisionsfrei sein. Bei Kollision wird deterministisch ein
+  Suffix `__2`, `__3`, ... vergeben.
+- Temporaere Namen werden im Report und im SQL-Metadatenblock ausgewiesen.
+- Es gibt keinen dauerhaft sichtbaren Old-Table-Namen. Der bevorzugte Ablauf
+  erstellt die neue Tabelle unter dem temporaeren Namen, kopiert Daten, droppt
+  die alte Tabelle und benennt die neue Tabelle auf den Originalnamen um.
+
+Rebuild-SQL-Ablauf:
+
+1. Preflight pruefen:
+   - erwartete Tabelle existiert
+   - temporaerer Name ist frei
+   - alle Quellspalten fuer `preservedColumns` existieren
+   - keine unbekannten abhaengigen Views/Trigger blockieren den Drop
+   - `NOT NULL`-/Default-Regeln fuer hinzugefuegte Spalten sind erfuellt
+2. Vor der Transaktion `PRAGMA foreign_keys=OFF` setzen, wenn der Rebuild
+   FK-bezogene Drops/Renames braucht. Der Runner muss den vorherigen Zustand
+   merken und nach Commit/Rollback wiederherstellen.
+3. `BEGIN IMMEDIATE`.
+4. Abhaengige Views und Trigger droppen, deren Definitionen in
+   `dependentViewsToRecreate` bzw. `dependentTriggersToRecreate` gespeichert
+   sind.
+5. Neue Tabelle unter `newTableTempName` aus `newTable` erzeugen.
+6. Daten mit expliziter Spaltenliste kopieren:
+   `INSERT INTO temp(target...) SELECT expression... FROM old`.
+7. Alte Tabelle droppen.
+8. Temporaere Tabelle auf den Originalnamen umbenennen.
+9. Indizes aus `indexesToRecreate` neu erzeugen.
+10. Trigger und Views aus den gespeicherten Definitionen neu erzeugen.
+11. `PRAGMA foreign_key_check` ausfuehren, wenn Foreign Keys beteiligt sind.
+12. `COMMIT`.
+13. Den vorherigen `foreign_keys`-Zustand wiederherstellen.
+
+Fehlerverhalten:
+
+- Der Runner fuehrt einen Rebuild als unteilbare Einheit aus. Tritt zwischen
+  `BEGIN IMMEDIATE` und `COMMIT` ein Fehler auf, muss `ROLLBACK` ausgefuehrt
+  werden.
+- Schlaegt `ROLLBACK` selbst fehl oder ist der Verbindungszustand unklar, endet
+  der Lauf mit einem lokalen Fehler und einem Report, der die letzte bekannte
+  Rebuild-Phase nennt.
+- Der Runner darf nach einem fehlgeschlagenen Rebuild nicht mit weiteren
+  Migration-Schritten fortfahren.
+- SQL-Artefakte muessen die Rebuild-Grenzen kommentieren und den
+  Metadatenblock so schreiben, dass ein Mensch die betroffene Tabelle,
+  Operation-IDs, Temp-Namen und Risiko-Klassifizierung erkennt.
+
+Down-Rebuild:
+
+- Fuer reversible Rebuilds wird der Down-Plan aus demselben
+  `RebuildTable`-Vertrag erzeugt, aber mit `oldTable` und `newTable`
+  vertauscht.
+- Das Down-Mapping ist nur automatisch erlaubt, wenn alle Up-Schritte
+  reversibel sind und keine verworfenen Daten rekonstruiert werden muessen.
+- Enthaelt der Up-Rebuild `droppedColumns` oder manuelle Casts, blockiert
+  `--generate-rollback` mit `ROLLBACK_NOT_POSSIBLE` oder
+  `MANUAL_ACTION_REQUIRED`.
 
 ---
 
@@ -764,36 +890,57 @@ Flag-Skizze:
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
 | `--source` | Ja | Operand | Soll-Schema, zunaechst Datei |
-| `--target` | Ja | Operand | Ist-Datenbank oder spaeter Ist-Schema |
+| `--target` | Ja | Operand | Ist-Datenbank oder Ist-Schema-Datei |
+| `--dialect` | Bedingt | Dialekt | Zieldialekt fuer SQL-Rendering; Pflicht bei Datei-zu-Datei, bei DB-Target aus der Connection ableitbar |
 | `--output` | Nein | Pfad | Up-SQL-Ausgabe |
 | `--rollback-output` | Nein | Pfad | Down-SQL-Ausgabe, wenn getrennt |
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen |
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
 | `--plan-only` | Nein | Boolean | nur stabilen Plan-/Risiko-Report schreiben, kein SQL |
 | `--report` | Nein | Pfad | strukturierter Plan-/Risiko-Report |
-| `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen `--target` ausfuehren |
+| `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen ein DB-Target ausfuehren |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausfuehren |
 
 Die CLI-Namen folgen dem bestehenden Stub in `spec/cli-spec.md`:
-`--source` bezeichnet das Soll-Schema, `--target` die Ist-Datenbank. Intern
-soll der Runner diese Werte sofort auf die eindeutigen Begriffe `desired` und
+`--source` bezeichnet das Soll-Schema, `--target` den Ist-Zustand. Intern soll
+der Runner diese Werte sofort auf die eindeutigen Begriffe `desired` und
 `current` abbilden. `SchemaComparator.compare(current, desired)` ist die
 verbindliche Richtung fuer den Operationsplan.
 
-Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
-ausfuehrbaren Up-Pfad tragen:
+Unterstuetzte Zielmodi im ersten Slice:
 
-1. Ist-Zustand aus `--target` introspektieren.
+| Modus | `--source` | `--target` | `--dialect` | `--execute` |
+|---|---|---|---|---|
+| Datei-zu-DB | Soll-Schema-Datei | `db:<url-or-alias>` | optional, muss zur DB passen wenn gesetzt | erlaubt |
+| Datei-zu-Datei | Soll-Schema-Datei | `file:<current.yaml>` oder Pfad | Pflicht | nicht erlaubt |
+
+Datei-zu-Datei erzeugt einen vollstaendigen Plan, Up-SQL, optional Down-SQL und
+Report ohne Live-Datenbank. Der Modus darf keine Zielzustands-Introspektion und
+keine Ausfuehrung versuchen. `--execute` mit Datei-Target ist ein CLI-Fehler
+mit Exit `2`. Der Report und der SQL-Metadatenblock enthalten in diesem Modus
+den Fingerprint der aktuellen Schema-Datei als erwarteten Vorzustand und den
+Fingerprint des Soll-Schemas als erwarteten Post-Up-Zustand.
+
+Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
+ausfuehrbaren Up-Pfad fuer DB-Targets und einen vollstaendigen Plan-/Renderpfad
+fuer Datei-Targets tragen:
+
+1. Ist-Zustand aus `--target` aufloesen:
+   - DB-Target: introspektieren.
+   - Datei-Target: Schema-Datei laden und validieren.
 2. Soll-Zustand aus `--source` laden und validieren.
 3. Reverse-generierte Marker und synthetische Metadaten beider Operanden
    normalisieren, bevor verglichen wird. Der Codepfad soll die bestehende
    `schema compare`-Semantik teilen statt eine zweite Normalisierung zu
    erfinden.
 4. `DiffResult` in Richtung `current -> desired` planen.
-5. Up-DDL rendern, sofern kein Risiko-, Rollback- oder Dialektblocker greift.
-6. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
-7. Bei `--execute` Up-DDL gegen `--target` ausfuehren.
-8. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
+5. Zieldialekt bestimmen:
+   - DB-Target: aus der Connection, optional gegen `--dialect` validiert.
+   - Datei-Target: aus dem Pflichtflag `--dialect`.
+6. Up-DDL rendern, sofern kein Risiko-, Rollback- oder Dialektblocker greift.
+7. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
+8. Bei `--execute` Up-DDL gegen das DB-Target ausfuehren.
+9. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
    `desired` vergleichen.
 
 `--dry-run` ist der Default, solange `--execute` nicht gesetzt ist. Damit kann
@@ -897,9 +1044,9 @@ schmaler Header im SQL-Artefakt, der mindestens enthaelt:
 
 Fehlt dieser Metadatenblock, darf `schema rollback` das SQL im ersten Slice nur
 als Preview/Validierung behandeln. Eine Ausfuehrung ohne Metadatenblock ist
-spaeterer Scope oder braucht einen eigenen expliziten Unsafe-Schalter.
+nicht Bestandteil dieses Plans.
 
-Spaeter belastbare Variante:
+Nicht Bestandteil dieses Plans:
 
 1. Rollback aus gespeichertem `DiffResult`/Plan-Artefakt:
 
@@ -929,6 +1076,7 @@ Der Report muss mindestens enthalten:
 - Fingerprint des Soll-Zustands
 - Fingerprint des Zielzustands nach Up, wenn `--execute` genutzt wurde
 - Pfade zu Up- und Down-SQL
+- Operand-Modus (`file-to-db` oder `file-to-file`) und Zieldialekt
 - Liste der Operationen, aus denen Up und Down gerendert wurden
 - Blocker fuer Down, falls `--generate-rollback` nicht moeglich ist
 
@@ -944,7 +1092,7 @@ zuerst die View und danach die Tabelle entfernen.
 Fuer `MANUAL_REQUIRED` gilt im ersten Slice ebenfalls strikt: Es wird kein
 automatisches Down-SQL erzeugt. Der Lauf endet mit Exit `8` und
 `blockedReason = MANUAL_ACTION_REQUIRED`. Manuelle Down-Bloecke oder partielle
-Rollback-Artefakte bleiben spaeterer Scope.
+Rollback-Artefakte sind nicht Bestandteil dieses Plans.
 
 Automatisch renderbar heisst nicht automatisch risikofrei. Down-Schritte wie
 `DropTable` oder `DropColumn`, die aus reversiblen Up-Operationen entstehen,
@@ -965,8 +1113,8 @@ Empfohlene Stufen:
 1. Interner `DiffResult`-Vertrag im Core.
 2. Stabiler Report-Vertrag fuer CLI/MCP, nicht identisch mit allen
    Implementierungsdetails.
-3. Optional spaeter: versioniertes `DiffResult`-Artefakt als Input fuer
-   `schema rollback`.
+3. Nicht Bestandteil dieses Plans: versioniertes `DiffResult`-Artefakt als
+   Input fuer `schema rollback`.
 
 Report-Inhalte:
 
@@ -1038,7 +1186,23 @@ Erste realistische Matrix:
 
 - PostgreSQL: Tabellen, Spalten, Constraints, Indizes, Views
 - MySQL: Tabellen, Spalten, Constraints, Indizes, Views
-- SQLite: Tabellen, Spalten, Indizes, einfache Views, Rebuild-Diagnose
+- SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
+  RebuildTable-Planung fuer SQLite-pflichtige Table-Rebuilds
+
+Zusaetzlich fuer SQLite verbindlich:
+
+- `DialectMigrationPlan` aus `DiffResult` ableiten
+- Rebuild-Gruppierung pro Tabelle implementieren
+- deterministische Temp-Namen und Kollisionssuffixe erzeugen
+- Spaltenmapping inklusive `CAST`, Default-/NULL-Fill und Blocker fuer
+  nicht automatisch fuellbare `NOT NULL`-Spalten rendern
+- alte/neue Tabellenconstraints in `CREATE TABLE` korrekt abbilden
+- Indizes, Trigger und bekannte abhaengige Views nach dem Rebuild wieder
+  erzeugen
+- `PRAGMA foreign_keys`-Handling, `foreign_key_check`, `BEGIN IMMEDIATE`,
+  `COMMIT` und `ROLLBACK` als Runner-Vertrag abbilden
+- Down-Rebuild aus reversiblem Up-Rebuild erzeugen und bei Datenverlust- oder
+  Manual-Faellen blockieren
 
 Nicht in der ersten Matrix:
 
@@ -1050,9 +1214,11 @@ Nicht in der ersten Matrix:
 ### Phase E - CLI-Runner
 
 - `SchemaMigrateRunner`
-- Operand-Aufloesung fuer Soll-Schema und Ist-Datenbank
-- Reverse des Ist-Zustands
+- Operand-Aufloesung fuer Soll-Schema, Ist-Datenbank und Ist-Schema-Datei
+- Reverse des Ist-Zustands bei DB-Target
 - Normalisierung reverse-generierter Schema-Metadaten vor Compare/Planning
+- Datei-zu-Datei-Planung ohne Live-Datenbank
+- `--dialect`-Pflicht und Dialektvalidierung fuer Datei-Targets
 - Compare
 - Planner
 - Dialekt-DDL
@@ -1062,6 +1228,7 @@ Nicht in der ersten Matrix:
 - `--rollback-output`
 - `--execute`
 - `--dry-run` als Default ohne Ausfuehrung
+- `--execute` mit Datei-Target als Exit `2` ablehnen
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
 - Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
@@ -1069,6 +1236,9 @@ Nicht in der ersten Matrix:
 - Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
   genutzt wird
 - `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
+- SQLite-Rebuild-Schritte als unteilbare Ausfuehrungseinheit behandeln und bei
+  Fehlern abbrechen, rollbacken und im Report die letzte Rebuild-Phase
+  ausweisen
 - Nach-Compare nach Up-Ausfuehrung gegen das Soll-Schema
 - Report-Ausgabe
 - sauberes Exit-Code-Mapping
@@ -1077,7 +1247,10 @@ Nicht in der ersten Matrix:
 
 - Core-Planner-Tests
 - DDL-Golden-Tests pro Dialekt
-- CLI-Tests fuer Flags, Exit-Codes und Reports
+- SQLite-Rebuild-Golden-Tests fuer Temp-Namen, Spaltenmapping,
+  Index-/Constraint-/Trigger-/View-Wiederaufbau und Down-Rebuild
+- CLI-Tests fuer Flags, Exit-Codes und Reports, inklusive Datei-zu-Datei,
+  `--dialect`-Pflicht und `--execute`-Ablehnung bei Datei-Target
 - Docker-Smokes:
   - PostgreSQL Up
   - PostgreSQL Up + Down
@@ -1085,6 +1258,7 @@ Nicht in der ersten Matrix:
   - MySQL Up + Down fuer die erste reversible Operationsmatrix
   - SQLite Up
   - SQLite Up + Down fuer direkt reversible Operationen ohne Rebuild
+  - SQLite Up + Down fuer mindestens einen echten Table-Rebuild
 - Roundtrip-Smoke:
   - Ausgangsschema in DB erzeugen
   - Zielschema migrieren
@@ -1115,6 +1289,10 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
+- SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
+  Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
+  Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
+  deterministisch beschrieben und getestet.
 - Destruktive Operationen werden ohne Freigabe nicht als ausfuehrbares SQL
   gerendert oder ausgefuehrt; `--plan-only` darf weiterhin einen Risiko-Report
   erzeugen.
@@ -1122,6 +1300,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   `NOT_REVERSIBLE` oder `MANUAL_REQUIRED`.
 - Operation-IDs sind deterministisch aus fachlicher Semantik abgeleitet und in
   Up-, Down- und Report-Artefakten referenzierbar.
+- Datei-zu-Datei-Planung ohne Live-Datenbank erzeugt Plan, Up-SQL, optional
+  Down-SQL und Report, wenn `--dialect` gesetzt ist.
+- Datei-zu-Datei mit `--execute` endet mit Exit `2`.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
 - Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
   kein `--output`-Artefakt mit teilweise gerendertem SQL.
@@ -1142,7 +1323,8 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   das Ausgangsschema.
 - PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
   Up-Smoke.
-- Mindestens PostgreSQL hat einen Up+Down-Smoke.
+- Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
+  SQLite-Smoke enthaelt mindestens einen echten Table-Rebuild.
 - `schema compare`-Output bleibt rueckwaertskompatibel und serialisiert nicht
   ploetzlich das interne `DiffResult`.
 - 0.7.0-Tool-Exports bleiben full-state und unveraendert.
@@ -1151,29 +1333,37 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 
 ## 11. Entscheidungen fuer den ersten Slice
 
-Der erste `DiffResult`-Slice soll bewusst eng bleiben. Er muss den fachlichen
-Kernvertrag stabilisieren, ohne gleichzeitig alle spaeteren Migrationsvarianten
-als Nutzervertrag freizugeben.
+Der erste `DiffResult`-Slice soll den fuer `migrate up/down` benoetigten
+Vertrag vollstaendig festlegen, ohne zusaetzliche Produktvarianten als
+Nutzervertrag freizugeben.
 
 Zur Vermeidung von Missverstaendnissen ist die Milestone-Grenze:
 
 | Milestone | Enthalten | Nicht enthalten |
 |---|---|---|
 | 0.7.0 full-state | `schema generate`, Tool-Exports, full-state Rollback-Artefakte | diff-basierte `schema migrate`-Ausfuehrung |
-| 0.9.6 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Up-DDL-Ausfuehrung, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings, Datei-zu-Datei-Planung |
-| nach 0.9.6: Rollback-Erweiterungen | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows | automatische Datenrekonstruktion nach destruktiven Operationen |
+| 0.9.6 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Datei-zu-Datei-Planung ohne Live-Datenbank, Up-DDL-Ausfuehrung fuer DB-Targets, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings |
+| nicht fuer den ersten Slice benoetigt | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows | automatische Datenrekonstruktion nach destruktiven Operationen |
 
 Damit ist `migrate up/down` verbindlicher Bestandteil von 0.9.6: Up wird aus
-dem Diff geplant und gegen die Ziel-Datenbank ausgefuehrt, Down wird als
-Rollback-SQL aus demselben Plan erzeugt und ueber `schema rollback` wieder
-gegen die Ziel-Datenbank ausgefuehrt.
+dem Diff geplant und fuer den Zieldialekt gerendert. Bei DB-Targets wird Up
+gegen die Ziel-Datenbank ausgefuehrt; bei Datei-Targets endet der Pfad nach
+Plan-/SQL-/Report-Erzeugung. Down wird als Rollback-SQL aus demselben Plan
+erzeugt und kann ueber `schema rollback` gegen eine Ziel-Datenbank ausgefuehrt
+werden.
 
 Verbindlich fuer den ersten Slice:
 
-- `schema migrate` unterstuetzt zunaechst Datei-zu-DB:
+- `schema migrate` unterstuetzt Datei-zu-DB:
   - `--source` ist das Soll-Schema als Datei.
   - `--target` ist die Ist-Datenbank.
-  - Datei-zu-Datei als reiner SQL-Plan bleibt spaeterer Scope.
+- `schema migrate` unterstuetzt Datei-zu-Datei:
+  - `--source` ist das Soll-Schema als Datei.
+  - `--target` ist das aktuelle/Ist-Schema als Datei.
+  - `--dialect` ist Pflicht.
+  - `--execute` ist unzulaessig und endet mit Exit `2`.
+  - Der Modus erzeugt Plan, Up-SQL, optional Down-SQL und Report ohne
+    Introspection.
 - Reverse-generierte Schema-Metadaten werden vor Compare/Planning mit dem
   gemeinsamen Compare-Normalizer neutralisiert.
 - `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
@@ -1185,7 +1375,7 @@ Verbindlich fuer den ersten Slice:
   - enthaelt der Plan mindestens eine `MANUAL_REQUIRED`-Operation, bricht
     Rollback-Erzeugung mit Exit `8` und `blockedReason = MANUAL_ACTION_REQUIRED`
     ab.
-  - Teil-Rollbacks mit Warn-/Manual-Blocks sind spaeterer Scope.
+  - Teil-Rollbacks mit Warn-/Manual-Blocks sind nicht Bestandteil dieses Plans.
 - `schema rollback` unterstuetzt im ersten Slice die Ausfuehrung von
   gespeichertem Down-SQL aus `--rollback-output`.
 - `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
@@ -1205,18 +1395,25 @@ Verbindlich fuer den ersten Slice:
 - Rename-Hints bleiben reine Diagnose. Es gibt kein automatisches Rename und
   keine `RenameTable`-/`RenameColumn`-Operation im ersten Slice.
 - SQLite-Rebuild bleibt dialektspezifischer Folgeplan und wird nicht als
-  Kernoperation im dialektneutralen `DiffResult` modelliert.
+  Kernoperation im dialektneutralen `DiffResult` modelliert. Der
+  SQLite-`DialectMigrationPlan` selbst ist aber verbindlicher Bestandteil
+  dieses Plans und des ersten Slice.
+- SQLite-Rebuilds muessen vollstaendig geplant werden:
+  - deterministisches Spaltenmapping
+  - deterministische temporaere Namen mit Kollisionsbehandlung
+  - Wiederaufbau von Tabellenconstraints, Indizes, Triggern und bekannten
+    abhaengigen Views
+  - Preflight vor Ausfuehrung
+  - transaktionale Ausfuehrung mit `BEGIN IMMEDIATE`, `COMMIT` und
+    `ROLLBACK` bei Fehlern
+  - Wiederherstellung des vorherigen `PRAGMA foreign_keys`-Zustands
+  - Down-Rebuild nur, wenn keine verworfenen Daten oder manuellen Casts
+    rekonstruiert werden muessen
 
-Bewusst spaeter zu entscheiden:
+Bewusst nicht Voraussetzung fuer den ersten Slice:
 
 - versionierte `DiffResult`-Serialisierung als moeglicher Input fuer
   `schema rollback`
 - `--allow-partial-rollback` oder ein aequivalenter Vertrag fuer bewusst
   unvollstaendige Down-Artefakte
-- Datei-zu-Datei-Planung ohne Live-Datenbank als eigener CLI-Modus
 - explizite Rename-Operationen mit Nutzer-Mapping
-- konkrete Ausgestaltung des SQLite-`DialectMigrationPlan`, insbesondere:
-  - Spaltenmapping
-  - temporaere Namen
-  - Index-/Constraint-Wiederaufbau
-  - Fehler-Rollback bei abgebrochenem Rebuild
