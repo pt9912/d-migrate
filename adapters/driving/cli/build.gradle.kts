@@ -56,6 +56,7 @@ dependencies {
     implementation(project(":adapters:driven:persistence-jdbc"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:audit-logging"))
+    implementation(project(":adapters:driven:text-icu"))
     // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
     // Sowohl der CLI- als auch der MCP-Pfad (über McpCliRuntimeWiring)
     // konsumieren denselben YamlConnectionReferenceLoader.

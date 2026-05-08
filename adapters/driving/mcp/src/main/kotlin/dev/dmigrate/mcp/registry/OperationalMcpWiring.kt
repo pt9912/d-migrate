@@ -33,6 +33,8 @@ import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.SyncEffectIdempotencyStore
 import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.WorkerHandleRegistry
+import dev.dmigrate.text.UnicodeTextService
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 import java.nio.file.Path
 import java.util.UUID
 
@@ -78,7 +80,8 @@ data class OperationalMcpWiring(
         store = approvalGrantStore,
         validator = approvalGrantValidator,
     ),
-    val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(),
+    val unicodeText: UnicodeTextService = IcuUnicodeTextService(),
+    val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(unicodeText),
     val syncEffectStore: SyncEffectIdempotencyStore = InProcessSyncEffectIdempotencyStore(),
     val uploadInitClaimStore: UploadInitClaimStore = InProcessUploadInitClaimStore(),
     val abortOutcomeStore: AbortOutcomeStore = InProcessAbortOutcomeStore(),

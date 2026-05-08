@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.fingerprint
 
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.text.FakeUnicodeTextService
 
 internal object FingerprintFixtures {
 
@@ -17,5 +18,5 @@ internal object FingerprintFixtures {
         extras = extras,
     )
 
-    fun service(): PayloadFingerprintService = DefaultPayloadFingerprintService()
+    fun service(): PayloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService())
 }

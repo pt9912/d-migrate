@@ -5,6 +5,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationError
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.core.validation.ValidationWarning
+import dev.dmigrate.text.FakeUnicodeTextService
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -62,7 +63,7 @@ class OutputFormatterTest : FunSpec({
 
         test("prints schema header, counts, and success marker for a valid schema") {
             val (stdout, stderr) = captureStreams {
-                OutputFormatter(CliContext()).printValidationResult(
+                OutputFormatter(CliContext(), FakeUnicodeTextService()).printValidationResult(
                     validResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -79,7 +80,7 @@ class OutputFormatterTest : FunSpec({
 
         test("suppresses the header + summary lines in --quiet mode") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(quiet = true)).printValidationResult(
+                OutputFormatter(CliContext(quiet = true), FakeUnicodeTextService()).printValidationResult(
                     validResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -92,7 +93,7 @@ class OutputFormatterTest : FunSpec({
 
         test("prints warnings to stderr with their code and message") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext()).printValidationResult(
+                OutputFormatter(CliContext(), FakeUnicodeTextService()).printValidationResult(
                     warningResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -105,7 +106,7 @@ class OutputFormatterTest : FunSpec({
 
         test("prints errors to stderr with their code and message") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext()).printValidationResult(
+                OutputFormatter(CliContext(), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -118,7 +119,7 @@ class OutputFormatterTest : FunSpec({
 
         test("summary says 'Validation failed' for invalid results") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext()).printValidationResult(
+                OutputFormatter(CliContext(), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -131,7 +132,7 @@ class OutputFormatterTest : FunSpec({
 
         test("--quiet mode still emits the warning/error lines on stderr (without object path)") {
             val (stdout, stderr) = captureStreams {
-                OutputFormatter(CliContext(quiet = true)).printValidationResult(
+                OutputFormatter(CliContext(quiet = true), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -150,7 +151,7 @@ class OutputFormatterTest : FunSpec({
 
         test("envelope contains command, status, exit_code for valid schema") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printValidationResult(
                     validResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -167,7 +168,7 @@ class OutputFormatterTest : FunSpec({
 
         test("failed status and exit_code 3 for invalid schema") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -181,7 +182,7 @@ class OutputFormatterTest : FunSpec({
 
         test("results array contains warning and error entries with levels") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -204,7 +205,7 @@ class OutputFormatterTest : FunSpec({
                 )
             )
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printValidationResult(
                     tricky,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -224,7 +225,7 @@ class OutputFormatterTest : FunSpec({
 
         test("envelope contains command, status, exit_code for valid schema") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "yaml")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "yaml"), FakeUnicodeTextService()).printValidationResult(
                     validResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -240,7 +241,7 @@ class OutputFormatterTest : FunSpec({
 
         test("failed status and exit_code 3 for invalid schema, with entries") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "yaml")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "yaml"), FakeUnicodeTextService()).printValidationResult(
                     invalidResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -258,7 +259,7 @@ class OutputFormatterTest : FunSpec({
 
         test("schema block has name and version") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "yaml")).printValidationResult(
+                OutputFormatter(CliContext(outputFormat = "yaml"), FakeUnicodeTextService()).printValidationResult(
                     validResult,
                     sampleSchema,
                     "/tmp/schema.yaml",
@@ -275,7 +276,7 @@ class OutputFormatterTest : FunSpec({
 
         test("plain format prints [ERROR] prefix and file arrow on stderr") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext()).printError("oops", "/tmp/bad.yaml")
+                OutputFormatter(CliContext(), FakeUnicodeTextService()).printError("oops", "/tmp/bad.yaml")
             }
             stderr shouldContain "[ERROR] oops"
             stderr shouldContain "→ File: /tmp/bad.yaml"
@@ -283,7 +284,7 @@ class OutputFormatterTest : FunSpec({
 
         test("json format prints a JSON object with error+file keys on stderr") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printError("oops", "/tmp/bad.yaml")
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printError("oops", "/tmp/bad.yaml")
             }
             stderr shouldContain "\"error\": \"oops\""
             stderr shouldContain "\"file\": \"/tmp/bad.yaml\""
@@ -291,7 +292,7 @@ class OutputFormatterTest : FunSpec({
 
         test("yaml format prints error: and file: keys on stderr") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "yaml")).printError("oops", "/tmp/bad.yaml")
+                OutputFormatter(CliContext(outputFormat = "yaml"), FakeUnicodeTextService()).printError("oops", "/tmp/bad.yaml")
             }
             stderr shouldContain "error: \"oops\""
             stderr shouldContain "file: \"/tmp/bad.yaml\""
@@ -299,7 +300,7 @@ class OutputFormatterTest : FunSpec({
 
         test("json format escapes quotes/backslashes/newlines in message and file") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json")).printError(
+                OutputFormatter(CliContext(outputFormat = "json"), FakeUnicodeTextService()).printError(
                     "with \"quote\" and \\ backslash\nand newline",
                     "weird\tpath",
                 )
@@ -319,7 +320,7 @@ class OutputFormatterTest : FunSpec({
 
         test("plain output uses German header") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(deContext).printValidationResult(
+                OutputFormatter(deContext, FakeUnicodeTextService()).printValidationResult(
                     validResult, sampleSchema, "/tmp/schema.yaml")
             }
             stdout shouldContain "wird validiert"
@@ -328,7 +329,7 @@ class OutputFormatterTest : FunSpec({
 
         test("plain error uses German prefix") {
             val (_, stderr) = captureStreams {
-                OutputFormatter(deContext).printError("etwas schief", "/tmp/bad.yaml")
+                OutputFormatter(deContext, FakeUnicodeTextService()).printError("etwas schief", "/tmp/bad.yaml")
             }
             stderr shouldContain "[FEHLER]"
             stderr shouldContain "Datei:"
@@ -336,7 +337,7 @@ class OutputFormatterTest : FunSpec({
 
         test("JSON output stays English even with German locale") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "json", locale = java.util.Locale.GERMAN))
+                OutputFormatter(CliContext(outputFormat = "json", locale = java.util.Locale.GERMAN), FakeUnicodeTextService())
                     .printValidationResult(validResult, sampleSchema, "/tmp/schema.yaml")
             }
             stdout shouldContain "\"command\": \"schema.validate\""
@@ -345,7 +346,7 @@ class OutputFormatterTest : FunSpec({
 
         test("YAML output stays English even with German locale") {
             val (stdout, _) = captureStreams {
-                OutputFormatter(CliContext(outputFormat = "yaml", locale = java.util.Locale.GERMAN))
+                OutputFormatter(CliContext(outputFormat = "yaml", locale = java.util.Locale.GERMAN), FakeUnicodeTextService())
                     .printValidationResult(validResult, sampleSchema, "/tmp/schema.yaml")
             }
             stdout shouldContain "command: schema.validate"

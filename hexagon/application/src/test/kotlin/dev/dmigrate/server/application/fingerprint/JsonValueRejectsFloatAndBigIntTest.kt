@@ -1,5 +1,6 @@
 package dev.dmigrate.server.application.fingerprint
 
+import dev.dmigrate.text.FakeUnicodeTextService
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
@@ -14,9 +15,11 @@ import io.kotest.matchers.shouldBe
  */
 class JsonValueRejectsFloatAndBigIntTest : FunSpec({
 
+    val canonicalizer = JsonCanonicalizer(FakeUnicodeTextService())
+
     test("Long edge values canonicalize to their toString form") {
         listOf(0L, -1L, 1L, Long.MIN_VALUE, Long.MAX_VALUE).forEach { n ->
-            JsonCanonicalizer.canonicalize(JsonValue.Num(n)) shouldBe n.toString()
+            canonicalizer.canonicalize(JsonValue.Num(n)) shouldBe n.toString()
         }
     }
 })

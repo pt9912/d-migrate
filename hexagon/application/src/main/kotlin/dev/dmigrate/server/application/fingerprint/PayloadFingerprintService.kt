@@ -1,5 +1,6 @@
 package dev.dmigrate.server.application.fingerprint
 
+import dev.dmigrate.text.UnicodeTextService
 import java.security.MessageDigest
 
 interface PayloadFingerprintService {
@@ -11,7 +12,11 @@ interface PayloadFingerprintService {
     ): String
 }
 
-class DefaultPayloadFingerprintService : PayloadFingerprintService {
+class DefaultPayloadFingerprintService(
+    private val unicodeText: UnicodeTextService,
+) : PayloadFingerprintService {
+
+    private val canonicalizer = JsonCanonicalizer(unicodeText)
 
     override fun fingerprint(
         scope: FingerprintScope,
@@ -19,7 +24,7 @@ class DefaultPayloadFingerprintService : PayloadFingerprintService {
         bind: BindContext,
     ): String {
         val normalized = FingerprintNormalization.normalize(scope, payload, bind)
-        val canonical = JsonCanonicalizer.canonicalize(normalized)
+        val canonical = canonicalizer.canonicalize(normalized)
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(canonical.toByteArray(Charsets.UTF_8))
         return digest.toHex()

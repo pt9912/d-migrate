@@ -15,6 +15,7 @@ dependencies {
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:driver-common"))
+    implementation(project(":adapters:driven:text-icu"))
     runtimeOnly(project(":adapters:driven:driver-postgresql"))
     implementation(project(":adapters:driven:driver-postgresql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mysql"))

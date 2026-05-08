@@ -17,7 +17,9 @@ import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.I18nSettingsResolver
 import dev.dmigrate.cli.config.UnsupportedLanguageException
 import dev.dmigrate.cli.i18n.ResolvedI18nSettings
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeTextService
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.McpCommand
@@ -83,6 +85,8 @@ class DMigrate(
         versionOption(cliVersion())
     }
 
+    private val unicodeText: UnicodeTextService = IcuUnicodeTextService()
+
     private var cachedCliContext: CliContext? = null
 
     override fun run() {
@@ -136,7 +140,8 @@ class DMigrate(
                 quiet = quiet,
                 noColor = noColor,
                 noProgress = noProgress,
-            )
+            ),
+            unicodeText,
         ).printError(message, source)
     }
 }

@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
@@ -14,7 +15,7 @@ import io.kotest.matchers.string.shouldHaveLength
  */
 class UploadInitApprovalFingerprintTest : FunSpec({
 
-    val service = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+    val service = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
 
     fun base() = UploadInitApprovalAttempt(
         tenantId = TenantId("acme"),

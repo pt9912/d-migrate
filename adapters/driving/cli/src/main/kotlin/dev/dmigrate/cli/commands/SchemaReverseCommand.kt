@@ -18,6 +18,7 @@ import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.SidecarPath
 import dev.dmigrate.format.report.ReverseReportWriter
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 
 class SchemaReverseCommand : CliktCommand(name = "reverse") {
     override fun help(context: Context) = "Reverse-engineer a live database into a schema file"
@@ -41,7 +42,7 @@ class SchemaReverseCommand : CliktCommand(name = "reverse") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
+        val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
         val request = SchemaReverseRequest(
             source = source,
             output = output,

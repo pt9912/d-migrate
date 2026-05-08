@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.config
 
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe

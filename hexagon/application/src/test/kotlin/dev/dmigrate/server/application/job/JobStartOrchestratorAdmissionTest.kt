@@ -4,6 +4,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyRule
@@ -85,7 +86,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = policyService,
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
             jobDispatcher = dispatcher,
             jobWorkerFactory = factory,
@@ -233,7 +234,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
             approvalGrantStore = grantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_x" },
             jobDispatcher = JobDispatcher(jobStore),
             jobWorkerFactory = PassthroughJobWorkerFactory,

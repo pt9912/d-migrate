@@ -9,6 +9,7 @@ import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -95,7 +96,7 @@ class DataImportStartHandlerTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyDefault),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
         val handler = DataImportStartHandler(

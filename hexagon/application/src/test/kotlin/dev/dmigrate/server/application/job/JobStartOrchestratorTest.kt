@@ -5,6 +5,7 @@ import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyRule
@@ -63,7 +64,7 @@ class JobStartOrchestratorTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = policyService,
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
 
@@ -174,7 +175,7 @@ class JobStartOrchestratorTest : FunSpec({
         // Grant mit passenden Bindungen (Token-Fingerprint, Scopes, etc.)
         // ablegen.
         val rawToken = "tok-fixture"
-        val payloadFp = DefaultPayloadFingerprintService().fingerprint(
+        val payloadFp = DefaultPayloadFingerprintService(FakeUnicodeTextService()).fingerprint(
             scope = dev.dmigrate.server.application.fingerprint.FingerprintScope.START_TOOL,
             payload = JsonValue.obj("connectionId" to JsonValue.str("c1")),
             bind = dev.dmigrate.server.application.fingerprint.BindContext(
@@ -236,7 +237,7 @@ class JobStartOrchestratorTest : FunSpec({
             idempotencyKey = dev.dmigrate.server.core.idempotency.IdempotencyKey("k1"),
         )
         // Reserve mit demselben fingerprint, dann markieren als denied.
-        val fp = DefaultPayloadFingerprintService().fingerprint(
+        val fp = DefaultPayloadFingerprintService(FakeUnicodeTextService()).fingerprint(
             scope = dev.dmigrate.server.application.fingerprint.FingerprintScope.START_TOOL,
             payload = JsonValue.obj("connectionId" to JsonValue.str("c1")),
             bind = dev.dmigrate.server.application.fingerprint.BindContext(

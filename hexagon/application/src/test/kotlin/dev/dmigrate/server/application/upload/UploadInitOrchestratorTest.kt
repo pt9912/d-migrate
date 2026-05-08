@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
@@ -43,7 +44,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val claimStore = InMemoryUploadInitClaimStore()
         val sessionStore = InMemoryUploadSessionStore()
         val grantStore = InMemoryApprovalGrantStore()
-        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
         val orchestrator = UploadInitOrchestrator(

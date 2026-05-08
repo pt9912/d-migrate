@@ -1,7 +1,7 @@
 package dev.dmigrate.cli.config
 
 import dev.dmigrate.cli.i18n.ResolvedI18nSettings
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
 import org.snakeyaml.engine.v2.api.Load
 import org.snakeyaml.engine.v2.api.LoadSettings
 import java.nio.file.Files

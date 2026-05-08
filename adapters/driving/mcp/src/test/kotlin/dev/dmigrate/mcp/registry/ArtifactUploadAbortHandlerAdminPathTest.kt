@@ -8,6 +8,7 @@ import dev.dmigrate.server.application.error.PolicyDeniedException
 import dev.dmigrate.server.application.error.PolicyRequiredException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyService
@@ -122,7 +123,7 @@ class ArtifactUploadAbortHandlerAdminPathTest : FunSpec({
                 quotaService = quota,
                 syncEffectStore = syncEffectStore,
                 abortOutcomeStore = abortOutcomeStore,
-                abortApprovalFingerprint = AbortApprovalFingerprint(DefaultPayloadFingerprintService()),
+                abortApprovalFingerprint = AbortApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService())),
                 policyService = policyService
                     ?: ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyDefault),
                 clock = clock,

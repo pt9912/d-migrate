@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSessionState
@@ -18,7 +19,7 @@ import io.kotest.matchers.string.shouldHaveLength
  */
 class AbortApprovalFingerprintTest : FunSpec({
 
-    val service = AbortApprovalFingerprint(DefaultPayloadFingerprintService())
+    val service = AbortApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
 
     fun base() = AbortApprovalAttempt(
         callerTenantId = TenantId("acme"),
@@ -105,7 +106,7 @@ class AbortApprovalFingerprintTest : FunSpec({
         // im BindContext muss daher zwischen Init und Abort
         // unterscheiden, sonst wuerden parallele Init/Abort-Calls
         // im selben Scope kollidieren.
-        val initService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val initService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         val initFp = initService.fingerprint(
             UploadInitApprovalAttempt(
                 tenantId = TenantId("acme"),

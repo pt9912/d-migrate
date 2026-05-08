@@ -36,6 +36,8 @@ import dev.dmigrate.server.ports.SyncEffectIdempotencyStore
 import dev.dmigrate.server.ports.UploadInitClaimStore
 import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.UploadSessionStore
+import dev.dmigrate.text.UnicodeTextService
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 import java.security.SecureRandom
 import java.time.Clock
 import java.time.Duration
@@ -167,7 +169,8 @@ data class McpRuntimeWiring(
             reasons = listOf("policy:no-rule"),
         ),
     ),
-    val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(),
+    val unicodeText: UnicodeTextService = IcuUnicodeTextService(),
+    val payloadFingerprintService: PayloadFingerprintService = DefaultPayloadFingerprintService(unicodeText),
     val syncEffectStore: SyncEffectIdempotencyStore = InProcessSyncEffectIdempotencyStore(),
     val uploadInitClaimStore: UploadInitClaimStore = InProcessUploadInitClaimStore(),
     val abortOutcomeStore: AbortOutcomeStore = InProcessAbortOutcomeStore(),

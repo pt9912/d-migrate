@@ -10,9 +10,6 @@ dependencies {
     implementation(project(":hexagon:ports"))
     implementation(project(":hexagon:profiling"))
 
-    // Phase D (0.8.0): ICU4J for grapheme counting and Unicode normalization
-    implementation("com.ibm.icu:icu4j:76.1")
-
     // Phase E3 (0.9.6): slf4j-Facade fuer Worker-Thread-Uncaught-Logging im
     // BoundedAsyncJobExecutor. No-op ohne Provider; Tests/Runtime ziehen
     // logback-classic (root build.gradle.kts subprojects-Block).

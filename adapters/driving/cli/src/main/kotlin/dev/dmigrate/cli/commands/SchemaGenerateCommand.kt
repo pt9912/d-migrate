@@ -15,6 +15,7 @@ import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.report.TransformationReportWriter
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 
 /**
  * `d-migrate schema generate` — dünne Clikt-Schale über [SchemaGenerateRunner].
@@ -54,7 +55,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
+        val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
         val splitMode = if (split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
         val request = SchemaGenerateRequest(
             source = source,

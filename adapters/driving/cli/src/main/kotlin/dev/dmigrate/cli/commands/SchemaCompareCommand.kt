@@ -18,6 +18,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.format.SchemaFileResolver
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 
 class SchemaCompareCommand : CliktCommand(name = "compare") {
     override fun help(context: Context) = "Compare two schema definitions"
@@ -32,7 +33,7 @@ class SchemaCompareCommand : CliktCommand(name = "compare") {
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
+        val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
         val validator = SchemaValidator()
         val request = SchemaCompareRequest(
             source = source,

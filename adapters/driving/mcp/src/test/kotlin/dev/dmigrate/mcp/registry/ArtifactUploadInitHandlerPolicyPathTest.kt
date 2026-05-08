@@ -13,6 +13,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyService
@@ -101,7 +102,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         val grantStore = InMemoryApprovalGrantStore()
         val quotaStore = InMemoryQuotaStore()
         val quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE }
-        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
         val orchestrator = UploadInitOrchestrator(
@@ -372,7 +373,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         )
         // Wir berechnen den erwarteten Fingerprint manuell, sonst
         // produziert der zweite Aufruf einen Conflict statt InProgress.
-        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         val expectedFingerprint = fingerprintService.fingerprint(
             UploadInitApprovalAttempt(
                 tenantId = tenant,

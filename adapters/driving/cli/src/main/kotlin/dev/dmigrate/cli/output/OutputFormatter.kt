@@ -1,18 +1,19 @@
 package dev.dmigrate.cli.output
 
 import dev.dmigrate.cli.CliContext
-import dev.dmigrate.cli.i18n.UnicodeNormalizer
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
+import dev.dmigrate.text.UnicodeTextService
 
 class OutputFormatter(
     private val context: CliContext,
+    private val unicodeText: UnicodeTextService,
     private val messages: MessageResolver = MessageResolver(context.locale),
 ) {
 
     /** Normalizes display text using the configured Unicode normalization mode. */
     private fun norm(text: String): String =
-        UnicodeNormalizer.normalize(text, context.normalization)
+        unicodeText.normalize(text, context.normalization)
 
     fun printValidationResult(result: ValidationResult, schema: SchemaDefinition, source: String) {
         if (source.isEmpty()) Unit
