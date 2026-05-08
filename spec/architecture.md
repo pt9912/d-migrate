@@ -91,6 +91,7 @@ d-migrate/
 | Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
 | Driven Adapter  | `adapters:driven:integrations`      | Tool-Exporter (Flyway, Liquibase, Django, Knex)                                                                                      |
 | Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`, `StreamingImporter`, `TableExporter`, `TableImporter`)                                       |
+| Driven Adapter  | `adapters:driven:text-icu`          | ICU4J-basierte `UnicodeTextService`-Implementierung (`IcuUnicodeTextService`); haelt ICU4J aus dem Application-Layer fern             |
 
 ```
               adapters:driving:cli  (Clikt)
@@ -256,7 +257,8 @@ adapters:driving:cli
 ├── adapters:driven:driver-*-profiling ──▶ driver-*, hexagon:profiling (optional)
 ├── adapters:driven:formats ──▶ ports-read, ports-write, Jackson, DSL-JSON, SnakeYAML, Univocity
 ├── adapters:driven:integrations ──▶ hexagon:ports, driver-common
-└── adapters:driven:streaming ──▶ ports-read, ports-write
+├── adapters:driven:streaming ──▶ ports-read, ports-write
+└── adapters:driven:text-icu ──▶ hexagon:ports-common, ICU4J
 ```
 
 **Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab.
@@ -958,7 +960,7 @@ subprojects {
 | MySQL Connector/J   | 9.x     | driver-mysql    | DB-Zugriff               |
 | SQLite JDBC         | 3.47.x  | driver-sqlite   | DB-Zugriff               |
 | HikariCP            | 6.x     | drivers         | Connection Pooling       |
-| ICU4J               | 76.x    | application/cli | Unicode-Verarbeitung     |
+| ICU4J               | 76.x    | adapters/driven/text-icu | Unicode-Verarbeitung (versteckt hinter `dev.dmigrate.text.UnicodeTextService` in `hexagon:ports-common`; Composition Root verdrahtet `IcuUnicodeTextService` in `adapters/driving/cli` und `adapters/driving/mcp`) |
 | Ktor Client         | 3.x     | ai              | HTTP für KI-APIs         |
 | SLF4J + Logback     | 2.x/1.5 | Alle            | Logging                  |
 | Kotest              | 5.9.x   | Test            | Test-Framework           |
