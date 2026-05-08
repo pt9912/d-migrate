@@ -21,7 +21,14 @@ abstract class AbstractDdlGenerator(
         tagNewSkips(skipped, preSkipCount, DdlPhase.PRE_DATA)
 
         val (sorted, circularEdges) = topologicalSort(schema.tables)
-        val deferredFks = circularEdges.map { it.fromTable to it.fromColumn }.toSet()
+        val deferredFks = circularEdges
+            .filter { it.source == DeferredForeignKeySource.COLUMN }
+            .map { it.fromTable to it.fromColumn }
+            .toSet()
+        val deferredConstraints = circularEdges
+            .filter { it.source == DeferredForeignKeySource.CONSTRAINT }
+            .map { it.fromTable to it.constraintName }
+            .toSet()
         for ((name, table) in sorted) {
             val spatialBlockNote = spatialTableBlockNote(name, table, options)
             if (spatialBlockNote != null) {
@@ -29,7 +36,7 @@ abstract class AbstractDdlGenerator(
                 statements += DdlStatement("", notes = listOf(spatialBlockNote))
                 continue
             }
-            val tableStatements = generateTable(name, table, schema, deferredFks, options)
+            val tableStatements = generateTable(name, table, schema, deferredFks, deferredConstraints, options)
             val blockNote = tableStatements.asSequence()
                 .flatMap { it.notes.asSequence() }
                 .firstOrNull { it.blocksTable }
@@ -45,14 +52,18 @@ abstract class AbstractDdlGenerator(
         }
 
         preSkipCount = skipped.size
-        if (options.deferForeignKeys) {
-            val sortedTables = sorted.toMap()
-            statements += ((this as? DeferredForeignKeyDdlSupport)
-                ?.generateDeferredForeignKeys(
-                    DdlGenerationSupport.deferredForeignKeys(sortedTables),
+        val deferredSupport = this as? DeferredForeignKeyDdlSupport
+        if (options.deferForeignKeys && deferredSupport != null) {
+            val generatedTables = sorted
+                .filter { (name, _) -> name !in blockedTables }
+                .toMap()
+            val deferredForeignKeys = DdlGenerationSupport.deferredForeignKeys(generatedTables)
+                .filter { fk -> fk.toTable !in schema.tables || fk.toTable in generatedTables }
+            statements += deferredSupport
+                .generateDeferredForeignKeys(
+                    deferredForeignKeys,
                     skipped,
                 )
-                .orEmpty())
                 .withPhase(DdlPhase.POST_DATA)
             tagNewSkips(skipped, preSkipCount, DdlPhase.POST_DATA)
         } else {
@@ -108,6 +119,7 @@ abstract class AbstractDdlGenerator(
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>> = emptySet(),
+        deferredConstraints: Set<Pair<String, String>> = emptySet(),
         options: DdlGenerationOptions = DdlGenerationOptions(),
     ): List<DdlStatement>
     abstract fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement>

@@ -62,6 +62,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
@@ -93,6 +94,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         // Explicit constraints
         for (constraint in table.constraints) {
             if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
+            if ((name to constraint.name) in deferredConstraints) continue
             columnLines += generateConstraintClause(constraint)
         }
 
@@ -253,11 +255,17 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), Deferre
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return edges.map { edge ->
-            val constraintName = "fk_${edge.fromTable}_${edge.fromColumn}"
             val sql = buildString {
-                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(constraintName)}")
-                append(" FOREIGN KEY (${quoteIdentifier(edge.fromColumn)})")
-                append(" REFERENCES ${quoteIdentifier(edge.toTable)} (${quoteIdentifier(edge.toColumn)});")
+                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD ")
+                append(buildForeignKeyClause(
+                    edge.constraintName,
+                    edge.fromColumns,
+                    edge.toTable,
+                    edge.toColumns,
+                    edge.onDelete,
+                    edge.onUpdate,
+                ))
+                append(";")
             }
             DdlStatement(sql)
         }

@@ -21,7 +21,18 @@ data class CircularFkEdge(
     val fromColumn: String,
     val toTable: String,
     val toColumn: String,
+    val constraintName: String = "fk_${fromTable}_$fromColumn",
+    val fromColumns: List<String> = listOf(fromColumn).filter { it.isNotBlank() },
+    val toColumns: List<String> = listOf(toColumn).filter { it.isNotBlank() },
+    val onDelete: ReferentialAction? = null,
+    val onUpdate: ReferentialAction? = null,
+    val source: DeferredForeignKeySource = DeferredForeignKeySource.COLUMN,
 )
+
+enum class DeferredForeignKeySource {
+    COLUMN,
+    CONSTRAINT,
+}
 
 data class DeferredForeignKey(
     val constraintName: String,
@@ -31,6 +42,7 @@ data class DeferredForeignKey(
     val toColumns: List<String>,
     val onDelete: ReferentialAction? = null,
     val onUpdate: ReferentialAction? = null,
+    val source: DeferredForeignKeySource = DeferredForeignKeySource.COLUMN,
 )
 
 interface DeferredForeignKeyDdlSupport {
@@ -43,13 +55,12 @@ interface DeferredForeignKeyDdlSupport {
 internal object DdlGenerationSupport {
 
     fun topologicalSort(tables: Map<String, TableDefinition>): TopologicalSortResult {
-        val edges = foreignKeyEdges(tables)
+        val foreignKeys = deferredForeignKeys(tables)
+        val edges = foreignKeyEdges(foreignKeys)
         val result = dev.dmigrate.core.dependency.sortTablesByDependency(tables.keys, edges)
         return TopologicalSortResult(
             sorted = result.sorted.map { it to tables.getValue(it) },
-            circularEdges = result.circularEdges.map {
-                CircularFkEdge(it.fromTable, it.fromColumn ?: "", it.toTable, it.toColumn ?: "")
-            },
+            circularEdges = result.circularEdges.mapNotNull { it.resolveFrom(foreignKeys) },
         )
     }
 
@@ -65,6 +76,7 @@ internal object DdlGenerationSupport {
                     toColumns = listOf(ref.column),
                     onDelete = ref.onDelete,
                     onUpdate = ref.onUpdate,
+                    source = DeferredForeignKeySource.COLUMN,
                 )
             }
             val constraintFks = table.constraints.mapNotNull { constraint ->
@@ -78,18 +90,40 @@ internal object DdlGenerationSupport {
                     toColumns = ref.columns,
                     onDelete = ref.onDelete,
                     onUpdate = ref.onUpdate,
+                    source = DeferredForeignKeySource.CONSTRAINT,
                 )
             }
             columnFks + constraintFks
         }
 
-    private fun foreignKeyEdges(tables: Map<String, TableDefinition>): List<FkEdge> =
-        deferredForeignKeys(tables).map { fk ->
+    private fun foreignKeyEdges(foreignKeys: List<DeferredForeignKey>): List<FkEdge> =
+        foreignKeys.map { fk ->
             FkEdge(
                 fromTable = fk.fromTable,
                 fromColumn = fk.fromColumns.firstOrNull(),
                 toTable = fk.toTable,
                 toColumn = fk.toColumns.firstOrNull(),
+            )
+        }
+
+    private fun FkEdge.resolveFrom(foreignKeys: List<DeferredForeignKey>): CircularFkEdge? =
+        foreignKeys.firstOrNull { fk ->
+            fk.fromTable == fromTable &&
+                fk.fromColumns.firstOrNull() == fromColumn &&
+                fk.toTable == toTable &&
+                fk.toColumns.firstOrNull() == toColumn
+        }?.let { fk ->
+            CircularFkEdge(
+                fromTable = fk.fromTable,
+                fromColumn = fk.fromColumns.firstOrNull().orEmpty(),
+                toTable = fk.toTable,
+                toColumn = fk.toColumns.firstOrNull().orEmpty(),
+                constraintName = fk.constraintName,
+                fromColumns = fk.fromColumns,
+                toColumns = fk.toColumns,
+                onDelete = fk.onDelete,
+                onUpdate = fk.onUpdate,
+                source = fk.source,
             )
         }
 

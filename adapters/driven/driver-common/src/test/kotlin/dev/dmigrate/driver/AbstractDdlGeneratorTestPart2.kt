@@ -338,7 +338,7 @@ internal class TestDdlGenerator(
     private val emitBlankSequence: Boolean = false,
     private val blockedTable: String? = null,
     private val blockCode: String = "E052",
-) : AbstractDdlGenerator(StubTypeMapper()) {
+) : AbstractDdlGenerator(StubTypeMapper()), DeferredForeignKeyDdlSupport {
 
     override val dialect: DatabaseDialect = DatabaseDialect.POSTGRESQL
 
@@ -346,6 +346,7 @@ internal class TestDdlGenerator(
     val tableOrder = mutableListOf<String>()
     val viewOrder = mutableListOf<String>()
     val circularEdges = mutableListOf<CircularFkEdge>()
+    val deferredForeignKeys = mutableListOf<DeferredForeignKey>()
 
     override fun quoteIdentifier(name: String): String = "\"$name\""
 
@@ -354,6 +355,7 @@ internal class TestDdlGenerator(
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
         callOrder += "table:$name"
@@ -402,6 +404,14 @@ internal class TestDdlGenerator(
         }
         if ("circular" !in callOrder) callOrder += "circular"
         return emptyList()
+    }
+
+    override fun generateDeferredForeignKeys(
+        foreignKeys: List<DeferredForeignKey>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> {
+        deferredForeignKeys += foreignKeys
+        return foreignKeys.map { DdlStatement("ALTER ${it.constraintName};") }
     }
 
     override fun generateViews(

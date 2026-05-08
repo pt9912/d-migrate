@@ -310,6 +310,63 @@ class PostgresDdlGeneratorTableTest : FunSpec({
         post shouldContain "FOREIGN KEY (\"parent_id\", \"parent_kind\") REFERENCES \"parents\" (\"id\", \"kind\")"
     }
 
+    test("circular explicit composite FKs are deferred as complete ALTER TABLE constraints") {
+        val s = schema(
+            tables = mapOf(
+                "a" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Integer),
+                        "kind" to col(NeutralType.Text()),
+                        "b_id" to col(NeutralType.Integer),
+                        "b_kind" to col(NeutralType.Text()),
+                    ),
+                    primaryKey = listOf("id", "kind"),
+                    constraints = listOf(
+                        ConstraintDefinition(
+                            name = "a_b_fkey",
+                            type = ConstraintType.FOREIGN_KEY,
+                            columns = listOf("b_id", "b_kind"),
+                            references = ConstraintReferenceDefinition(
+                                table = "b",
+                                columns = listOf("id", "kind"),
+                                onDelete = ReferentialAction.CASCADE,
+                            ),
+                        ),
+                    ),
+                ),
+                "b" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Integer),
+                        "kind" to col(NeutralType.Text()),
+                        "a_id" to col(NeutralType.Integer),
+                        "a_kind" to col(NeutralType.Text()),
+                    ),
+                    primaryKey = listOf("id", "kind"),
+                    constraints = listOf(
+                        ConstraintDefinition(
+                            name = "b_a_fkey",
+                            type = ConstraintType.FOREIGN_KEY,
+                            columns = listOf("a_id", "a_kind"),
+                            references = ConstraintReferenceDefinition("a", listOf("id", "kind")),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = generator.generate(s)
+        val createA = result.statements.first { it.sql.startsWith("CREATE TABLE \"a\"") }.sql
+        val createB = result.statements.first { it.sql.startsWith("CREATE TABLE \"b\"") }.sql
+        val ddl = result.render()
+
+        createA shouldNotContain "a_b_fkey"
+        createB shouldNotContain "b_a_fkey"
+        ddl shouldContain "ALTER TABLE \"a\" ADD CONSTRAINT \"a_b_fkey\" FOREIGN KEY (\"b_id\", \"b_kind\") " +
+            "REFERENCES \"b\" (\"id\", \"kind\") ON DELETE CASCADE;"
+        ddl shouldContain "ALTER TABLE \"b\" ADD CONSTRAINT \"b_a_fkey\" FOREIGN KEY (\"a_id\", \"a_kind\") " +
+            "REFERENCES \"a\" (\"id\", \"kind\");"
+    }
+
     test("enum with ref_type generates CREATE TYPE AS ENUM and column uses quoted type name") {
         val s = schema(
             customTypes = mapOf(

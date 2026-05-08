@@ -67,6 +67,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
@@ -98,6 +99,7 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
 
         // Explicit constraints
         for (constraint in table.constraints) {
+            if ((name to constraint.name) in deferredConstraints) continue
             generateConstraintClause(constraint, notes)?.let { columnLines += it }
         }
 
@@ -154,11 +156,15 @@ class MysqlDdlGenerator : AbstractDdlGenerator(MysqlTypeMapper()) {
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return edges.map { edge ->
-            val constraintName = "fk_${edge.fromTable}_${edge.fromColumn}"
             val sql = buildString {
-                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(constraintName)}")
-                append(" FOREIGN KEY (${quoteIdentifier(edge.fromColumn)})")
-                append(" REFERENCES ${quoteIdentifier(edge.toTable)} (${quoteIdentifier(edge.toColumn)});")
+                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(edge.constraintName)}")
+                append(" FOREIGN KEY (${edge.fromColumns.joinToString(", ") { quoteIdentifier(it) }})")
+                append(" REFERENCES ${quoteIdentifier(edge.toTable)} (${edge.toColumns.joinToString(", ") { quoteIdentifier(it) }})")
+                val onDelete = edge.onDelete
+                val onUpdate = edge.onUpdate
+                if (onDelete != null) append(" ON DELETE ${referentialActionSql(onDelete)}")
+                if (onUpdate != null) append(" ON UPDATE ${referentialActionSql(onUpdate)}")
+                append(";")
             }
             DdlStatement(sql)
         }

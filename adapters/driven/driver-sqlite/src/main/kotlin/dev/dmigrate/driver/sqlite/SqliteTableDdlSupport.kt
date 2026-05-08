@@ -13,6 +13,7 @@ internal class SqliteTableDdlSupport(
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
         val geometryColumns = table.columns.filter { it.value.type is NeutralType.Geometry }
@@ -24,7 +25,7 @@ internal class SqliteTableDdlSupport(
         }
 
         val notes = mutableListOf<TransformationNote>()
-        val columnLines = buildColumnLines(name, table, schema, deferredFks, isSpatiaLite, notes)
+        val columnLines = buildColumnLines(name, table, schema, deferredFks, deferredConstraints, isSpatiaLite, notes)
 
         if (table.partitioning != null) {
             notes += TransformationNote(
@@ -82,6 +83,7 @@ internal class SqliteTableDdlSupport(
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         isSpatiaLite: Boolean,
         notes: MutableList<TransformationNote>,
     ): List<String> {
@@ -92,6 +94,7 @@ internal class SqliteTableDdlSupport(
             lines += columnConstraintHelper.generateColumnSql(columnName, column, schema, name, notes, deferredFks)
         }
         for (constraint in table.constraints) {
+            if ((name to constraint.name) in deferredConstraints) continue
             lines += columnConstraintHelper.generateConstraintClause(constraint, notes)
         }
         val skipPrimaryKey = table.primaryKey.size == 1 && table.primaryKey.all { primaryKey ->

@@ -32,9 +32,10 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> =
-        tableSupport.generateTable(name, table, schema, deferredFks, options)
+        tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options)
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
         tableSupport.generateIndices(tableName, table)

@@ -246,6 +246,18 @@ class AbstractDdlGeneratorTest : FunSpec({
         )
     }
 
+    test("generate() omits deferred foreign keys that target blocked schema tables") {
+        val gen = TestDdlGenerator(blockedTable = "parents")
+        val schema = schema(
+            "parents" to table("id" to col()),
+            "children" to table("parent_id" to col(refs("parents", "id"))),
+        )
+
+        gen.generate(schema, DdlGenerationOptions(deferForeignKeys = true))
+
+        gen.deferredForeignKeys shouldBe emptyList()
+    }
+
     // ─── generateRollback() / invertStatement ────────────────────
 
     test("generateRollback inverts CREATE TABLE → DROP TABLE in reverse order") {

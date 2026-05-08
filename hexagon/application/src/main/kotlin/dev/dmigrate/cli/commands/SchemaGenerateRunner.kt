@@ -154,7 +154,7 @@ class SchemaGenerateRunner(
             mysqlNamedSequenceMode = mysqlSeqMode.value,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,
-            deferForeignKeys = request.splitMode == SplitMode.PRE_POST,
+            deferForeignKeys = request.splitMode == SplitMode.PRE_POST && dialect == DatabaseDialect.POSTGRESQL,
         )
 
         return Preflight.Ok(dialect, options, mysqlSeqMode.value)
