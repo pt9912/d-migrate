@@ -237,14 +237,46 @@ Vorgeschlagene Basiskategorien:
 ```kotlin
 sealed interface DiffOperation {
     val id: String
+    val objectRef: DiffObjectRef
     val objectType: DiffObjectType
-    val objectName: String
+        get() = objectRef.type
     val phase: DiffPhase
     val dependencies: Set<String>
     val reversibility: Reversibility
     val risk: OperationRisk
 }
+
+data class DiffObjectRef(
+    val type: DiffObjectType,
+    val path: List<String>,
+) {
+    val displayName: String = path.joinToString(".")
+}
 ```
+
+`objectRef.path` ist die qualifizierte fachliche Identitaet:
+
+- Tabelle: `["orders"]`
+- Spalte: `["orders", "status"]`
+- Constraint: `["orders", "fk_orders_customer"]`
+- Index: `["orders", "idx_orders_created_at"]`
+- Schemaweites Objekt: `["status_enum"]`
+
+Die konkrete Operation muss ausserdem den fuer Rendering und Rollback
+notwendigen Payload tragen. Beispiele:
+
+- `CreateTable`: neue `TableDefinition`
+- `DropTable`: alte `TableDefinition`
+- `AddColumn`: Tabellenname, Spaltenname, neue `ColumnDefinition`
+- `DropColumn`: Tabellenname, Spaltenname, alte `ColumnDefinition`
+- `AlterColumnType`: Tabellenname, Spaltenname, alter und neuer Typ
+- `AlterColumnDefault`: Tabellenname, Spaltenname, alter und neuer Default
+- `AddConstraint`: Tabellenname, neue `ConstraintDefinition`
+- `DropConstraint`: Tabellenname, alte `ConstraintDefinition`
+- `ReplaceView`: alte und neue `ViewDefinition`
+
+Damit bleibt `DiffResult` ein ausfuehrbarer Plan und wird nicht zu einem
+reinen Report ueber Objektarten und Namen.
 
 Beispiele:
 
@@ -308,6 +340,28 @@ Vorgeschlagene Phasen:
 
 Diese Phasen sind ein Planungsmodell. Der konkrete Generator darf fuer einen
 Dialekt zusammenfassen, wenn die Semantik erhalten bleibt.
+
+Die Phasen sind jedoch nur der Standard-Tie-Breaker fuer Operationen ohne
+direkte Abhaengigkeit. Verbindlich ist:
+
+1. Der Planner erzeugt explizite Dependencies zwischen Operationen.
+2. Die endgueltige Reihenfolge entsteht durch topologische Sortierung.
+3. `DiffPhase` sortiert nur Operationen, die dependency-seitig unabhaengig
+   sind.
+4. Wenn Phasen- und Dependency-Reihenfolge widersprechen, gewinnt die
+   Dependency-Reihenfolge.
+
+Das ist besonders wichtig fuer Drop-Operationen. Beispiele:
+
+- `DropTable(orders)` haengt von `DropView(...)`, `DropTrigger(...)`,
+  `DropIndex(...)` und `DropConstraint(...)` ab, soweit diese Objekte auf
+  `orders` zeigen.
+- `DropColumn(orders.customer_id)` haengt von dem Entfernen betroffener
+  Constraints, Indizes, Views und Trigger ab.
+- Create-Operationen laufen in der natuerlichen Richtung: referenzierte Typen,
+  Tabellen und Spalten vor Constraints, Indizes, Views und Triggern.
+
+Ein Generator darf diese Reihenfolge nicht rein nach Phase neu sortieren.
 
 ### 4.5 Reversibilitaet
 
@@ -499,6 +553,13 @@ Erste Zieloperationen:
 - `CREATE/DROP INDEX`
 - `CREATE OR REPLACE VIEW`
 
+Views sind im ersten Slice nur fuer einfache, nicht materialisierte Views
+enthalten, deren Abhaengigkeiten im Plan eindeutig aufloesbar sind. Der Planner
+muss betroffene Views vor abhaengigen Drop-/Alter-Operationen entfernen bzw.
+nach den referenzierten Tabellen, Spalten und Routinen wieder erzeugen. Views
+mit nicht aufloesbaren Routine- oder Materialized-View-Abhaengigkeiten werden
+diagnostiziert statt blind gerendert.
+
 Bewusst nicht in der ersten PostgreSQL-Zielmatrix:
 
 - `CREATE/ALTER/DROP SEQUENCE`
@@ -529,6 +590,9 @@ Erste Zieloperationen:
 - `ALTER TABLE ADD CONSTRAINT`
 - `ALTER TABLE DROP FOREIGN KEY`
 - View-Replacement mit bestehenden Helpern
+
+Auch fuer MySQL gilt: View-Replacement ist im ersten Slice auf einfache Views
+mit aufloesbaren Tabellen-/Spaltenabhaengigkeiten begrenzt.
 
 Bewusst nicht in der ersten MySQL-Zielmatrix:
 
@@ -618,7 +682,7 @@ Flag-Skizze:
 | `--rollback-output` | Nein | Pfad | Down-SQL-Ausgabe, wenn getrennt |
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen |
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
-| `--plan-only` | Nein | Boolean | nur DiffResult/Report schreiben, kein SQL |
+| `--plan-only` | Nein | Boolean | nur stabilen Plan-/Risiko-Report schreiben, kein SQL |
 | `--report` | Nein | Pfad | strukturierter Plan-/Risiko-Report |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen `--target` ausfuehren |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausfuehren |
@@ -684,15 +748,44 @@ aus einer Live-Datenbank erraten.
 Fuer 0.9.6 verbindlich:
 
 ```bash
-d-migrate schema rollback --source rollback.sql --target db:staging --execute
+d-migrate schema rollback --source rollback.sql --target db:staging --execute --allow-destructive
 ```
+
+Flag-Skizze:
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--source` | Ja | Pfad | von `schema migrate --generate-rollback` erzeugtes Down-SQL |
+| `--target` | Ja | Operand | Ziel-Datenbank |
+| `--execute` | Nein | Boolean | Down-SQL gegen `--target` ausfuehren |
+| `--dry-run` | Nein | Boolean | Validierung/Preview, keine Ausfuehrung |
+| `--allow-destructive` | Nein | Boolean | destruktive Down-Operationen erlauben |
 
 Der Runner:
 
 1. liest ausschliesslich das gespeicherte Down-SQL aus `--source`,
-2. fuehrt es bei `--execute` gegen `--target` aus,
-3. protokolliert ausgefuehrte Statements und Fehler,
-4. fuehrt ohne `--execute` nur Validierung/Preview aus.
+2. liest daraus den von `schema migrate --generate-rollback` erzeugten
+   maschinenlesbaren `d-migrate`-Metadatenblock,
+3. fuehrt es bei `--execute` gegen `--target` aus,
+4. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
+   Down-Operationen ausweist,
+5. protokolliert ausgefuehrte Statements und Fehler,
+6. fuehrt ohne `--execute` nur Validierung/Preview aus.
+
+Der Metadatenblock ist kein oeffentliches `DiffResult`-Artefakt. Er ist ein
+schmaler Header im SQL-Artefakt, der mindestens enthaelt:
+
+- Formatkennung und Version, zum Beispiel `d-migrate rollback-sql v1`
+- Fingerprint des Ist-Zustands vor Up
+- Fingerprint des Soll-Zustands
+- Operation-IDs, aus denen Down-SQL gerendert wurde
+- Risiko-Zusammenfassung fuer Down, insbesondere `destructive` und
+  `dataLossPossible`
+- Ziel-Dialekt
+
+Fehlt dieser Metadatenblock, darf `schema rollback` das SQL im ersten Slice nur
+als Preview/Validierung behandeln. Eine Ausfuehrung ohne Metadatenblock ist
+spaeterer Scope oder braucht einen eigenen expliziten Unsafe-Schalter.
 
 Spaeter belastbare Variante:
 
@@ -726,6 +819,12 @@ Der Report muss mindestens enthalten:
 Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
 automatisch renderbar sind. Fuer `NOT_REVERSIBLE` bleibt das Verhalten strikt:
 Exit `8` mit `blockedReason = ROLLBACK_NOT_POSSIBLE`.
+
+Automatisch renderbar heisst nicht automatisch risikofrei. Down-Schritte wie
+`DropTable` oder `DropColumn`, die aus reversiblen Up-Operationen entstehen,
+werden im Down-Artefakt weiterhin als destruktiv markiert. `schema rollback`
+darf solche Artefakte bei `--execute` nur mit `--allow-destructive`
+ausfuehren.
 
 ---
 
@@ -773,13 +872,16 @@ Report-Inhalte:
 
 - `DiffResult`
 - `DiffOperation`
+- `DiffObjectRef`
 - `DiffPhase`
 - `DiffObjectType`
 - `Reversibility`
 - `OperationRisk`
 - `DiffDiagnostic`
 - stabile Operation-IDs
-- Tests fuer leere Diffs, deterministische Sortierung und Risiko-Mapping
+- Operation-Payloads fuer Rendering und Rollback
+- Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
+  Payload-Mapping und Risiko-Mapping
 
 ### Phase C - Planner
 
@@ -824,6 +926,7 @@ Nicht in der ersten Matrix:
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
 - Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
   genutzt wird
+- `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
 - Nach-Compare nach Up-Ausfuehrung gegen das Soll-Schema
 - Report-Ausgabe
 - sauberes Exit-Code-Mapping
@@ -857,15 +960,23 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 
 - `SchemaDiff` bleibt als Compare-Kernvertrag erhalten.
 - Der neue `DiffResult` enthaelt deterministisch sortierte Operationen.
-- Jede Operation hat Phase, ID, Risiko und Reversibilitaet.
+- Jede Operation hat Phase, ID, qualifizierte `DiffObjectRef`, Risiko,
+  Reversibilitaet und den fuer Rendering/Rollback notwendigen Payload.
+- Dependency-Sortierung gewinnt gegen reine Phasenreihenfolge, insbesondere bei
+  Drop-Operationen fuer Views, Trigger, Constraints, Indizes, Spalten und
+  Tabellen.
 - Destruktive Operationen werden ohne Freigabe nicht ausfuehrbar gerendert.
 - `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
   `NOT_REVERSIBLE`.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
 - `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
-  Up-Plan passendes Down-SQL-Artefakt.
-- `schema rollback --source rollback.sql --target ... --execute` wendet das
-  erzeugte Down-SQL gegen die Ziel-Datenbank an.
+  Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
+  `d-migrate`-Metadatenblock.
+- `schema rollback --source rollback.sql --target ... --execute` wendet
+  nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
+- `schema rollback --source rollback.sql --target ... --execute` mit
+  `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
+  Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
 - Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
   Soll-Schema.
 - Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
@@ -913,6 +1024,9 @@ Verbindlich fuer den ersten Slice:
   - Teil-Rollbacks mit Warn-/Manual-Blocks sind spaeterer Scope.
 - `schema rollback` unterstuetzt im ersten Slice die Ausfuehrung von
   gespeichertem Down-SQL aus `--rollback-output`.
+- Destruktive Down-SQL-Ausfuehrung braucht ebenfalls explizit
+  `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
+  erzeugten Down-SQL-Artefakt.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
   Ohne diesen Schalter endet Rendering mit Exit `8` und
   `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`.
