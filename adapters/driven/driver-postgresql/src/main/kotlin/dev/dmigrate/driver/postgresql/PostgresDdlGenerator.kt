@@ -201,7 +201,9 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             if (index.type != IndexType.BTREE) {
                 append(" USING ${index.type.name}")
             }
-            append(" ($cols);")
+            append(" ($cols)")
+            if (index.where != null) append(" WHERE ${index.where}")
+            append(";")
         }
         return DdlStatement(sql)
     }
@@ -230,14 +232,17 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         baseCount: Int,
         used: MutableMap<String, Int>,
     ): String {
-        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDirectionSuffix(index)}"
+        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDisambiguationSuffix(index)}"
         val seen = used.getOrDefault(candidate, 0)
         used[candidate] = seen + 1
         return if (seen == 0) candidate else "${candidate}_${seen + 1}"
     }
 
-    private fun indexDirectionSuffix(index: IndexDefinition): String =
-        index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
+    private fun indexDisambiguationSuffix(index: IndexDefinition): String {
+        val directionPart = index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
+        val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
+        return "$directionPart$wherePart"
+    }
 
     // ── Circular FK references ───────────────────
 

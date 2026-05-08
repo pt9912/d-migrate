@@ -126,13 +126,14 @@ class SqliteSchemaReader : SchemaReader {
         }
 
         // Non-unique, non-autoindex indices
-        val regularIndices = indices.filter { !it.isUnique || it.columns.size > 1 }
-            .filter { !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
+        val regularIndices = indices.filter { it.where != null || !it.isUnique || it.columns.size > 1 }
+            .filter { it.where != null || !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
                     columns = idx.indexColumns,
                     unique = idx.isUnique,
+                    where = idx.where,
                 )
             }
 

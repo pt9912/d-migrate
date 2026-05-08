@@ -48,6 +48,7 @@ data class IndexProjection(
     val isUnique: Boolean,
     val type: String? = null,
     val directions: List<IndexSortDirection?> = emptyList(),
+    val where: String? = null,
 ) {
     val indexColumns: List<IndexColumn>
         get() = columns.mapIndexed { index, column -> IndexColumn(column, directions.getOrNull(index)) }

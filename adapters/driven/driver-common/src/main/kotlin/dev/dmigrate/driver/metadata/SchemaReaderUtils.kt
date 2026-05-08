@@ -77,7 +77,7 @@ object SchemaReaderUtils {
     fun buildMultiColumnUniqueFromIndices(
         indices: List<IndexProjection>,
     ): List<ConstraintDefinition> =
-        indices.filter { it.isUnique && it.columns.size > 1 }.map { idx ->
+        indices.filter { it.isUnique && it.columns.size > 1 && it.where == null }.map { idx ->
             ConstraintDefinition(name = idx.name, type = ConstraintType.UNIQUE, columns = idx.columns)
         }
 
@@ -98,7 +98,7 @@ object SchemaReaderUtils {
      * (MySQL/SQLite pattern).
      */
     fun singleColumnUniqueFromIndices(indices: List<IndexProjection>): Set<String> =
-        indices.filter { it.isUnique && it.columns.size == 1 }
+        indices.filter { it.isUnique && it.columns.size == 1 && it.where == null }
             .map { it.columns[0] }.toSet()
 
     /**

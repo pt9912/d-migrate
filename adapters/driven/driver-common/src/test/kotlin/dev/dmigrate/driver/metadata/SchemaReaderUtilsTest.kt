@@ -104,6 +104,7 @@ class SchemaReaderUtilsTest : FunSpec({
             IndexProjection("idx1", listOf("a", "b"), isUnique = true),
             IndexProjection("idx2", listOf("c"), isUnique = true),
             IndexProjection("idx3", listOf("d", "e"), isUnique = false),
+            IndexProjection("idx4", listOf("f", "g"), isUnique = true, where = "deleted_at IS NULL"),
         )
         val result = SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         result shouldHaveSize 1
@@ -130,6 +131,7 @@ class SchemaReaderUtilsTest : FunSpec({
             IndexProjection("idx1", listOf("email"), isUnique = true),
             IndexProjection("idx2", listOf("a", "b"), isUnique = true),
             IndexProjection("idx3", listOf("name"), isUnique = false),
+            IndexProjection("idx4", listOf("archived_email"), isUnique = true, where = "deleted_at IS NULL"),
         )
         SchemaReaderUtils.singleColumnUniqueFromIndices(indices) shouldBe setOf("email")
     }

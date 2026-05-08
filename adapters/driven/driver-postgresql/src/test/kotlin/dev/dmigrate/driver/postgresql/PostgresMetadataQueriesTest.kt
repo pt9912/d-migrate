@@ -207,6 +207,23 @@ class PostgresMetadataQueriesTest : FunSpec({
         )
     }
 
+    test("listIndices maps partial index predicate") {
+        every { jdbc.queryList(match { it.contains("pg_get_expr") }, any(), any()) } returns listOf(
+            mapOf(
+                "index_name" to "uq_active_email",
+                "columns" to "{email}",
+                "directions" to "{NULL}",
+                "is_unique" to true,
+                "index_type" to "btree",
+                "predicate" to "(deleted_at IS NULL)",
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listIndices(jdbc, "public", "users")
+
+        result[0].where shouldBe "(deleted_at IS NULL)"
+    }
+
     // ── listSequences ──────────────────────────────
 
     test("listSequences returns raw maps") {

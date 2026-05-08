@@ -144,7 +144,8 @@ internal object PostgresTableMetadataQueries {
                        ORDER BY k.n
                    ) AS directions,
                    ix.indisunique AS is_unique,
-                   am.amname AS index_type
+                   am.amname AS index_type,
+                   pg_get_expr(ix.indpred, ix.indrelid) AS predicate
             FROM pg_index ix
             JOIN pg_class t ON t.oid = ix.indrelid
             JOIN pg_class i ON i.oid = ix.indexrelid
@@ -159,7 +160,7 @@ internal object PostgresTableMetadataQueries {
                   WHERE c.conindid = ix.indexrelid
                     AND c.contype IN ('u', 'x')
               )
-            GROUP BY i.relname, ix.indisunique, am.amname
+            GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid
             ORDER BY i.relname
             """.trimIndent(), schemaName, table,
         ).map { row ->
@@ -169,6 +170,7 @@ internal object PostgresTableMetadataQueries {
                 isUnique = row["is_unique"] as Boolean,
                 type = row["index_type"] as? String,
                 directions = parseDirectionArrayColumn(row["directions"]),
+                where = row["predicate"] as? String,
             )
         }
     }

@@ -215,6 +215,35 @@ class SqliteDdlGeneratorIndexTest : FunSpec({
         indexSql shouldBe "CREATE UNIQUE INDEX \"idx_users_email_uniq\" ON \"users\" (\"email\");"
     }
 
+    test("partial unique index appends WHERE predicate") {
+        val s = schema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf(
+                        "id" to col(NeutralType.Identifier(autoIncrement = true)),
+                        "email" to col(NeutralType.Email),
+                        "deleted_at" to col(NeutralType.DateTime()),
+                    ),
+                    primaryKey = listOf("id"),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "uq_active_email",
+                            columns = listOf(IndexColumn("email")),
+                            unique = true,
+                            where = "deleted_at IS NULL",
+                        )
+                    ),
+                )
+            )
+        )
+        val indexSql = generator.generate(s).statements
+            .map { it.sql.trim() }
+            .first { it.startsWith("CREATE UNIQUE INDEX") }
+
+        indexSql shouldBe
+            "CREATE UNIQUE INDEX \"uq_active_email\" ON \"users\" (\"email\") WHERE deleted_at IS NULL;"
+    }
+
     test("index column directions are rendered") {
         val s = schema(
             tables = mapOf(

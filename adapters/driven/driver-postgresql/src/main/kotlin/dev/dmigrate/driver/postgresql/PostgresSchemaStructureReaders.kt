@@ -96,6 +96,7 @@ private fun readPostgresTable(
                 else -> IndexType.BTREE
             },
             unique = index.isUnique,
+            where = index.where,
         )
     }
 

@@ -447,14 +447,27 @@ transportieren `DESC` verlustarm.
 CREATE UNIQUE INDEX "idx_customers_email" ON "customers" ("email");
 ```
 
-### 5.4 Partial-Index (PostgreSQL only)
+### 5.4 Partial-Index
 
 ```sql
 -- PostgreSQL
 CREATE INDEX "idx_active_orders" ON "orders" ("status") WHERE "status" != 'cancelled';
+
+-- SQLite
+CREATE INDEX "idx_active_orders" ON "orders" ("status") WHERE "status" != 'cancelled';
 ```
 
-Für MySQL/SQLite: Nicht unterstützt → Standard-Index erzeugen + W102.
+Das neutrale Feld `index.where` ist ein Trusted-Input Raw-SQL-Praedikat fuer
+die Ziel-Engine. Es wird nicht geparst oder dialektuebergreifend transformiert.
+
+| Ziel | Verhalten |
+|---|---|
+| PostgreSQL | `WHERE <predicate>` wird gerendert und per Reverse gelesen |
+| SQLite | `WHERE <predicate>` wird gerendert und per Reverse aus `sqlite_master.sql` gelesen |
+| MySQL | Kein stiller Predicate-Verlust: Index wird uebersprungen und `action_required` E057 erzeugt |
+
+Partial-UNIQUE wird genauso behandelt. MySQL darf daraus keinen normalen
+Unique-Index erzeugen, weil das strenger waere als die Quelle.
 
 ---
 
@@ -1271,7 +1284,7 @@ Reihenfolge vor dem `DROP TABLE` emittiert.
 ### 16.8 Fehler- und Warnungs-Codes fuer Spatial
 
 Diese Codes ergaenzen die allgemeinen Codes aus §4. Die Codes E020, E120 und E121
-entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E056 sowie W113 und W120
+entstehen bei `schema validate` (Schema-/Modellregeln); E052 bis E057 sowie W113 und W120
 entstehen bei `schema generate` (Generator-/Report-Regeln).
 
 | Code | Typ | Ebene | Meldung |
@@ -1284,6 +1297,7 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | E054 | action_required | `schema generate` | Object type is not supported in the target dialect |
 | E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
 | E056 | action_required | `schema generate` | Named sequence cannot be generated natively and needs emulation/manual handling |
+| E057 | action_required | `schema generate` | Partial index predicate cannot be generated in the target dialect |
 | W113 | Warnung | `schema generate` | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
 | W114 | Warnung | `schema generate` | Sequence cache value stored but not emulated as preallocation in MySQL helper-table mode |
 | W115 | Warnung | `schema generate` | SequenceNextVal uses lossy MySQL trigger semantics; explicit NULL is treated like omitted value |
@@ -1319,6 +1333,11 @@ Partitionierung im Zieldialekt nicht unterstützt wird.
 **E056 (Sequence-/Emulationsfall)**: Wird erzeugt, wenn eine benannte Sequence
 im Zieldialekt nicht nativ erzeugt werden kann und manuelle Emulation oder
 Nacharbeit erforderlich ist.
+
+**E057 (Partial Index)**: Wird erzeugt, wenn ein Index ein `where`-Praedikat
+traegt, der Zieldialekt aber keine native Partial-Index-Semantik unterstuetzt.
+Der Index wird uebersprungen; insbesondere Partial-UNIQUE darf nicht als
+normaler Unique-Index ausgegeben werden.
 
 **W113**: Wird erzeugt, wenn deklarierte oder best-effort abgeleitete
 View-Abhaengigkeiten keine vollstaendige topologische Sortierung erlauben. Die

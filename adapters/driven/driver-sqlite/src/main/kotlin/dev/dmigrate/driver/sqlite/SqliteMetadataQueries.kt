@@ -82,6 +82,10 @@ object SqliteMetadataQueries {
                 .sortedBy { (it["seqno"] as Number).toInt() }
             val cols = colRows.mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
+            val createSql = session.querySingle(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+                indexName,
+            )?.get("sql") as? String
             IndexProjection(
                 name = indexName,
                 columns = cols,
@@ -89,8 +93,15 @@ object SqliteMetadataQueries {
                 directions = colRows.map { row ->
                     if (((row["desc"] as? Number)?.toInt() ?: 0) == 1) IndexSortDirection.DESC else null
                 },
+                where = extractIndexWhere(createSql),
             )
         }
+    }
+
+    private fun extractIndexWhere(sql: String?): String? {
+        if (sql == null) return null
+        val match = Regex("""\sWHERE\s""", RegexOption.IGNORE_CASE).find(sql) ?: return null
+        return sql.substring(match.range.last + 1).trim().removeSuffix(";").trim().takeIf { it.isNotEmpty() }
     }
 
     fun listViews(session: JdbcMetadataSession): List<Pair<String, String?>> {

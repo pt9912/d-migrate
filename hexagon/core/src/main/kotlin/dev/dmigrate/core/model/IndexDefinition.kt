@@ -16,7 +16,8 @@ data class IndexDefinition(
     val name: String? = null,
     val columns: List<IndexColumn>,
     val type: IndexType = IndexType.BTREE,
-    val unique: Boolean = false
+    val unique: Boolean = false,
+    val where: String? = null,
 ) {
     val columnNames: List<String>
         get() = columns.map { it.name }

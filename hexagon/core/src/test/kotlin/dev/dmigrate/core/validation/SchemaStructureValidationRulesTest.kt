@@ -76,6 +76,7 @@ class SchemaStructureValidationRulesTest : FunSpec({
                         indices = listOf(
                             IndexDefinition(name = "idx_empty", columns = emptyList()),
                             IndexDefinition(name = "idx_blank", columns = listOf(IndexColumn(""))),
+                            IndexDefinition(name = "idx_blank_where", columns = listOf(IndexColumn("id")), where = " "),
                         ),
                     )
                 ),
@@ -84,6 +85,7 @@ class SchemaStructureValidationRulesTest : FunSpec({
 
         result.errors.map { it.message }.sorted() shouldBe listOf(
             "Index 'idx_blank' contains an empty column name",
+            "Index 'idx_blank_where' has an empty where predicate",
             "Index 'idx_empty' has no columns",
         )
     }

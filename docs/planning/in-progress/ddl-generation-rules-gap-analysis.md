@@ -1,7 +1,7 @@
 # Gap-Analyse: `ddl-generation-rules.md` gegen Implementierungsstand
 
-**Stand:** 2026-05-02  
-**Status:** Planung / Scope-Klaerung
+**Stand:** 2026-05-08
+**Status:** In Umsetzung — Partial-Index-Scope umgesetzt, Determinismus-Scope offen
 
 Dieses Dokument haelt Punkte fest, die in der DDL-Zielbild-Spezifikation
 [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md)
@@ -10,11 +10,13 @@ spaeterer Scope getragen werden.
 
 ## Ergebnis
 
-Diese Analyse identifiziert aktuell zwei relevante Gaps ohne explizite
+Diese Analyse identifiziert aktuell noch einen relevanten Gap ohne explizite
 Deferred-Entscheidung:
 
-- **Partial Indexes / Partial-UNIQUE** als fachlicher DDL-Semantik-Gap
 - **`schema generate`-Determinismus** als Reproduzierbarkeits-Gap
+
+Der urspruenglich gelistete fachliche DDL-Semantik-Gap
+**Partial Indexes / Partial-UNIQUE** ist seit 2026-05-08 umgesetzt.
 
 Die Einstufung sollte bei Aenderungen an `ddl-generation-rules.md` erneut
 geprueft werden.
@@ -39,15 +41,16 @@ CREATE INDEX "idx_active_orders" ON "orders" ("status") WHERE "status" != 'cance
 [`lastenheft-d-migrate.md` §8.7](../../../spec/lastenheft-d-migrate.md) nennt
 Partial Indexes mit WHERE-Klauseln als PostgreSQL-spezifischen Testfall.
 
-### Aktueller Implementierungsstand
+### Implementierungsstand seit 2026-05-08
 
-Partial Indexes werden aktuell nicht modelliert.
+Partial Indexes sind ueber `IndexDefinition.where` modelliert.
 
-- [`IndexDefinition`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/IndexDefinition.kt) enthaelt nur `name`, `columns`, `type`, `unique`.
-- Die Schema-Referenz und das JSON-Schema dokumentieren kein `where`-, `predicate`- oder `filter`-Feld fuer Indizes.
-- PostgreSQL erzeugt Index-DDL ohne `WHERE`-Klausel.
-- MySQL und SQLite erzeugen ebenfalls nur normale Indizes oder behandeln nicht unterstuetzte Index-Typen mit `W102`.
-- Reverse Engineering kann Partial-Index-Praedikate derzeit nicht informationsbewahrend rekonstruieren.
+- [`IndexDefinition`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/core/model/IndexDefinition.kt) enthaelt `where: String?`.
+- YAML/JSON Lesen und Schreiben akzeptiert `where` auf Index-Ebene.
+- `spec/schema.json`, Schema-Referenz und DDL-Regeln dokumentieren das Feld.
+- PostgreSQL erzeugt `WHERE <predicate>` und liest Praedikate ueber `pg_get_expr(ix.indpred, ix.indrelid)`.
+- SQLite erzeugt native Partial Indexes und liest Praedikate aus `sqlite_master.sql`.
+- MySQL erzeugt fuer Partial Indexes `action_required` E057 und keinen stillen Standard- oder Unique-Index-Fallback.
 
 ### Risiko
 
@@ -68,14 +71,14 @@ indices:
 Ein Fallback auf `CREATE UNIQUE INDEX ... (email)` waere falsch, weil dann auch
 geloschte/inaktive Zeilen eindeutig sein muessten.
 
-### Empfehlung
+### Umgesetzte Modellform
 
 Ein additives Feld auf `IndexDefinition` einfuehren:
 
 ```kotlin
 data class IndexDefinition(
     val name: String? = null,
-    val columns: List<String>,
+    val columns: List<IndexColumn>,
     val type: IndexType = IndexType.BTREE,
     val unique: Boolean = false,
     val where: String? = null,
@@ -98,30 +101,26 @@ Semantik:
 |---|---|---|
 | PostgreSQL | `CREATE INDEX ... WHERE ...` | `CREATE UNIQUE INDEX ... WHERE ...` |
 | MySQL | `action_required` fuer Partial Indexes; kein stiller Predicate-Verlust | `action_required`; kein Unique-Fallback |
-| SQLite | optional native Partial-Index-Unterstuetzung pruefen, sonst `action_required` | optional native Partial-UNIQUE-Unterstuetzung pruefen, sonst `action_required`; kein Unique-Fallback |
-
-Hinweis: SQLite unterstuetzt Partial Indexes in modernen Versionen. Wenn
-SQLite-Zielversionen nicht explizit gemanagt werden, sollte der erste Schritt
-konservativ bleiben und nicht still voraussetzen, dass jedes Zielsystem die
-Klausel akzeptiert.
+| SQLite | `CREATE INDEX ... WHERE ...` | `CREATE UNIQUE INDEX ... WHERE ...` |
 
 ### Umsetzungsschnitt
 
 Betroffene Bereiche:
 
-- Core-Modell: `IndexDefinition.where`
-- YAML/JSON Schema: Lesen, Schreiben, Validierung
-- Schema-Diff: `where` als Index-Eigenschaft vergleichen
-- PostgreSQL-Generator: `WHERE <predicate>` an Index-DDL anhaengen
-- MySQL-/SQLite-Generatoren: klare `action_required`-/Warnstrategie
-- Reverse Engineering: PostgreSQL `pg_indexes.indexdef` oder Katalogfelder fuer Praedikat auswerten
-- Tests: Golden Master, Generator-Unit-Tests, Reverse-Tests fuer `unique + where`
+- [x] Core-Modell: `IndexDefinition.where`
+- [x] YAML/JSON Schema: Lesen, Schreiben, Validierung
+- [x] Schema-Diff: `where` als Index-Eigenschaft vergleichen
+- [x] PostgreSQL-Generator: `WHERE <predicate>` an Index-DDL anhaengen
+- [x] MySQL-Generator: `action_required` E057 statt Predicate-Verlust
+- [x] SQLite-Generator: native Partial Indexes rendern
+- [x] Reverse Engineering: PostgreSQL und SQLite lesen Praedikate
+- [x] Tests: Format-Codecs, Generator-Unit-Tests, Diff, Validierung und Reverse-Tests
 
-Offene Entscheidung:
+Entscheidung:
 
 - Feldname `where` ist YAML-nah und SQL-verstaendlich.
 - Feldname `predicate` ist modellneutraler, aber weniger direkt fuer Anwender.
-- Empfehlung: `where`, weil die Spezifikation bereits von WHERE-Klauseln spricht.
+- Ergebnis: `where`, weil die Spezifikation bereits von WHERE-Klauseln spricht.
 
 ## 2. `reserved_only` Identifier-Quoting
 
@@ -185,13 +184,13 @@ offene Zielbild-Gaps:
 - MySQL Named-Sequence-Emulation ueber `--mysql-named-sequences helper_table`
 - phasenbezogene DDL-Ordnung mit `DdlPhase` und `--split pre-post`
 
-## Vorschlag fuer naechsten Umsetzungsscope
+## Umgesetzter Partial-Index-Scope
 
-1. Partial-Index-Modell einfuehren (`where`).
-2. PostgreSQL-Generator und PostgreSQL-Reverse sauber implementieren.
-3. Partial-UNIQUE fuer nicht unterstuetzte Dialekte als `action_required` behandeln.
-4. `ddl-generation-rules.md`, `neutral-model-spec.md`, `schema-reference.md` und `schema.json` synchronisieren.
-5. Danach entscheiden, ob SQLite Partial Indexes als natives Ziel explizit unterstuetzt werden.
+1. Partial-Index-Modell eingefuehrt (`where`).
+2. PostgreSQL-Generator und PostgreSQL-Reverse implementiert.
+3. Partial-UNIQUE fuer MySQL als `action_required` E057 behandelt.
+4. `ddl-generation-rules.md`, `neutral-model-spec.md`, `schema-reference.md` und `schema.json` synchronisiert.
+5. SQLite Partial Indexes als natives Ziel explizit unterstuetzt.
 
 ## 5. `schema generate`-Header-Timestamp und Determinismus
 

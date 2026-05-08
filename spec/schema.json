@@ -229,7 +229,8 @@
         "unique": {
           "type": "boolean",
           "default": false
-        }
+        },
+        "where": { "type": "string", "minLength": 1 }
       }
     },
     "indexColumn": {

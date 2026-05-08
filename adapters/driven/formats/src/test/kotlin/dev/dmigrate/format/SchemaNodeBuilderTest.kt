@@ -78,6 +78,7 @@ class SchemaNodeBuilderTest : FunSpec({
                             name = "idx_orders_status",
                             columns = listOf("status").map(::IndexColumn),
                             unique = true,
+                            where = "status <> 'archived'",
                         )
                     ),
                     constraints = listOf(

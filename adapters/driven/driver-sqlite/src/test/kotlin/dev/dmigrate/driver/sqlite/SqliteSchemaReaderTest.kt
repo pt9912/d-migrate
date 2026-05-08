@@ -128,6 +128,24 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    test("partial single-column UNIQUE stays as index with predicate") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, deleted_at TEXT)",
+            "CREATE UNIQUE INDEX idx_active_email ON t (email) WHERE deleted_at IS NULL",
+        ) { pool ->
+            val result = reader.read(pool)
+            val t = result.schema.tables["t"]!!
+
+            t.columns["email"]!!.unique shouldBe false
+            t.indices.single() shouldBe IndexDefinition(
+                name = "idx_active_email",
+                columns = listOf(IndexColumn("email")),
+                unique = true,
+                where = "deleted_at IS NULL",
+            )
+        }
+    }
+
     // ── Single-column FK on ColumnDefinition.references ──
 
     test("single-column FK is lifted to ColumnDefinition.references") {

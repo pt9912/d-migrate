@@ -109,6 +109,32 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE INDEX \"idx_users_email\" ON \"users\" (\"email\");"
     }
 
+    test("partial unique index appends WHERE predicate") {
+        val s = schema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf(
+                        "email" to col(NeutralType.Email),
+                        "deleted_at" to col(NeutralType.DateTime()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "uq_active_email",
+                            columns = listOf(IndexColumn("email")),
+                            unique = true,
+                            where = "deleted_at IS NULL",
+                        )
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(s).render()
+
+        ddl shouldContain
+            "CREATE UNIQUE INDEX \"uq_active_email\" ON \"users\" (\"email\") WHERE deleted_at IS NULL;"
+    }
+
     test("index column directions are rendered") {
         val s = schema(
             tables = mapOf(

@@ -50,7 +50,8 @@ class JsonSchemaCodecTest : FunSpec({
                       "columns": [
                         "created_at",
                         { "name": "id", "direction": "desc" }
-                      ]
+                      ],
+                      "where": "created_at IS NOT NULL"
                     }
                   ]
                 }
@@ -64,6 +65,7 @@ class JsonSchemaCodecTest : FunSpec({
             IndexColumn("created_at"),
             IndexColumn("id", IndexSortDirection.DESC),
         )
+        schema.tables.getValue("orders").indices.single().where shouldBe "created_at IS NOT NULL"
     }
 
     // ── JSON Round-Trip ─────────────────────────

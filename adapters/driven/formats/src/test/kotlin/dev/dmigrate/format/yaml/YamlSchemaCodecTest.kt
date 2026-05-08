@@ -75,7 +75,8 @@ class YamlSchemaCodecTest : FunSpec({
                       - created_at
                       - name: id
                         direction: desc
-        """.trimIndent()
+                    where: "created_at IS NOT NULL"
+            """.trimIndent()
 
         val schema = codec.read(ByteArrayInputStream(yaml.toByteArray()))
         val index = schema.tables.getValue("orders").indices.single()
@@ -84,6 +85,7 @@ class YamlSchemaCodecTest : FunSpec({
             IndexColumn("created_at"),
             IndexColumn("id", IndexSortDirection.DESC),
         )
+        index.where shouldBe "created_at IS NOT NULL"
     }
 
     test("write index columns uses short form unless direction is explicit") {
@@ -103,6 +105,7 @@ class YamlSchemaCodecTest : FunSpec({
                                 IndexColumn("created_at"),
                                 IndexColumn("id", IndexSortDirection.ASC),
                             ),
+                            where = "created_at IS NOT NULL",
                         )
                     ),
                 )
@@ -118,6 +121,8 @@ class YamlSchemaCodecTest : FunSpec({
         yaml shouldContain "id"
         yaml shouldContain "direction"
         yaml shouldContain "asc"
+        yaml shouldContain "where"
+        yaml shouldContain "created_at IS NOT NULL"
         codec.read(ByteArrayInputStream(out.toByteArray())) shouldBe schema
     }
 

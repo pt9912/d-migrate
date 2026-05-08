@@ -417,6 +417,37 @@ class SchemaComparatorTest : FunSpec({
         diff.tablesChanged[0].indicesChanged[0].after.columns[0].direction shouldBe IndexSortDirection.DESC
     }
 
+    test("index where predicate change is detected") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("email" to col(), "deleted_at" to col()),
+            indices = listOf(
+                IndexDefinition(
+                    name = "uq_active_email",
+                    columns = listOf(IndexColumn("email")),
+                    unique = true,
+                    where = "deleted_at IS NULL",
+                )
+            ),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("email" to col(), "deleted_at" to col()),
+            indices = listOf(
+                IndexDefinition(
+                    name = "uq_active_email",
+                    columns = listOf(IndexColumn("email")),
+                    unique = true,
+                    where = "deleted_at IS NOT NULL",
+                )
+            ),
+        )))
+
+        val diff = comparator.compare(left, right)
+
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesChanged[0].after.where shouldBe "deleted_at IS NOT NULL"
+    }
+
     test("unnamed index direction is part of signature") {
         val left = schema(tables = mapOf("t" to table(
             columns = mapOf("c" to col()),
@@ -425,6 +456,35 @@ class SchemaComparatorTest : FunSpec({
         val right = schema(tables = mapOf("t" to table(
             columns = mapOf("c" to col()),
             indices = listOf(IndexDefinition(columns = listOf(IndexColumn("c", IndexSortDirection.DESC)))),
+        )))
+
+        val diff = comparator.compare(left, right)
+
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].indicesAdded shouldHaveSize 1
+        diff.tablesChanged[0].indicesRemoved shouldHaveSize 1
+    }
+
+    test("unnamed index where predicate is part of signature") {
+        val left = schema(tables = mapOf("t" to table(
+            columns = mapOf("email" to col(), "deleted_at" to col()),
+            indices = listOf(
+                IndexDefinition(
+                    columns = listOf(IndexColumn("email")),
+                    unique = true,
+                    where = "deleted_at IS NULL",
+                )
+            ),
+        )))
+        val right = schema(tables = mapOf("t" to table(
+            columns = mapOf("email" to col(), "deleted_at" to col()),
+            indices = listOf(
+                IndexDefinition(
+                    columns = listOf(IndexColumn("email")),
+                    unique = true,
+                    where = "deleted_at IS NOT NULL",
+                )
+            ),
         )))
 
         val diff = comparator.compare(left, right)

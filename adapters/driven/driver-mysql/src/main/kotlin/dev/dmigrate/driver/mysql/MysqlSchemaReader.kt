@@ -172,8 +172,8 @@ class MysqlSchemaReader(
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         constraints += SchemaReaderUtils.buildCheckConstraints(checks)
 
-        val indexDefs = indices.filter { !it.isUnique || it.columns.size == 1 }
-            .filter { !(it.isUnique && it.columns.size == 1) }
+        val indexDefs = indices.filter { it.where != null || !it.isUnique || it.columns.size == 1 }
+            .filter { it.where != null || !(it.isUnique && it.columns.size == 1) }
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
@@ -183,6 +183,7 @@ class MysqlSchemaReader(
                         else -> IndexType.BTREE
                     },
                     unique = idx.isUnique,
+                    where = idx.where,
                 )
             }
 

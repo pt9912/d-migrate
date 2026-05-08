@@ -536,6 +536,7 @@ tables:
             direction: asc
         type: btree
         unique: true
+        where: "email IS NOT NULL"
 
   orders:
     columns:

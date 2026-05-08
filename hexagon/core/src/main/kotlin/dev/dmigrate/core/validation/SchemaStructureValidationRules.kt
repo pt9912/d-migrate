@@ -79,6 +79,14 @@ internal object SchemaStructureValidationRules {
                     )
                 }
             }
+            if (index.where?.isBlank() == true) {
+                val indexName = index.name ?: index.columns.joinToString(",")
+                errors += ValidationError(
+                    "E005",
+                    "Index '$indexName' has an empty where predicate",
+                    "tables.$tableName.indices",
+                )
+            }
         }
     }
 

@@ -262,7 +262,7 @@ internal class TableComparator {
     }
 
     private fun indexKey(index: IndexDefinition): String =
-        index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}"
+        index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"
 }
 
 internal data class TableDiffs(

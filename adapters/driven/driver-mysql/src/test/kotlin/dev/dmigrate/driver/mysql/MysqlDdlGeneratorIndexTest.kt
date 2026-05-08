@@ -201,6 +201,36 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE INDEX `idx_products_sku_unique` ON `products` (`sku`);"
     }
 
+    test("partial index is action required and is not rendered") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf(
+                        "email" to col(NeutralType.Email),
+                        "deleted_at" to col(NeutralType.DateTime()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "uq_active_email",
+                            columns = listOf(IndexColumn("email")),
+                            unique = true,
+                            where = "deleted_at IS NULL",
+                        )
+                    ),
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "E057"
+        ddl shouldContain "Partial index 'uq_active_email' is not supported in MySQL and was skipped."
+        ddl shouldNotContain "CREATE UNIQUE INDEX `uq_active_email`"
+        result.notes.find { it.code == "E057" && it.objectName == "uq_active_email" }!!.type shouldBe
+            NoteType.ACTION_REQUIRED
+    }
+
     test("index column directions are rendered") {
         val schema = emptySchema(
             tables = mapOf(

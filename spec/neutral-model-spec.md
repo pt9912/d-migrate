@@ -327,6 +327,10 @@ tables:
       - name: idx_orders_status
         columns: [status]
         type: hash
+      - name: uq_active_customer
+        columns: [customer_id]
+        unique: true
+        where: "is_archived = false"     # Partial-Index-Praedikat, Raw-SQL
 
     # ── Constraints ──────────────────
     constraints:

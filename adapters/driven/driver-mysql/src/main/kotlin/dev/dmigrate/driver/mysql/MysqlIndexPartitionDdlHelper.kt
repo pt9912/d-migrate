@@ -59,6 +59,21 @@ internal class MysqlIndexPartitionDdlHelper(
         }
 
     private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement? {
+        if (index.where != null) {
+            return DdlStatement(
+                "",
+                listOf(
+                    TransformationNote(
+                        type = NoteType.ACTION_REQUIRED,
+                        code = "E057",
+                        objectName = indexName,
+                        message = "Partial index '$indexName' is not supported in MySQL and was skipped.",
+                        hint = "Create an equivalent generated-column index manually or remove the index predicate.",
+                    )
+                )
+            )
+        }
+
         val columns = index.columns.joinToString(", ") { renderIndexColumn(it) }
 
         return when (index.type) {
@@ -133,12 +148,15 @@ internal class MysqlIndexPartitionDdlHelper(
         baseCount: Int,
         used: MutableMap<String, Int>,
     ): String {
-        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDirectionSuffix(index)}"
+        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDisambiguationSuffix(index)}"
         val seen = used.getOrDefault(candidate, 0)
         used[candidate] = seen + 1
         return if (seen == 0) candidate else "${candidate}_${seen + 1}"
     }
 
-    private fun indexDirectionSuffix(index: IndexDefinition): String =
-        index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
+    private fun indexDisambiguationSuffix(index: IndexDefinition): String {
+        val directionPart = index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
+        val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
+        return "$directionPart$wherePart"
+    }
 }

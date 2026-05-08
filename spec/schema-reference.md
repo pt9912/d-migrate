@@ -135,6 +135,7 @@ tables:
             direction: desc   # Optional: asc | desc
         type: btree            # btree | hash | gin | gist | brin
         unique: false          # Default: false
+        where: "col2 IS NOT NULL" # Optionales Partial-Index-Praedikat (Raw-SQL)
 
     # Constraints (optional)
     constraints:

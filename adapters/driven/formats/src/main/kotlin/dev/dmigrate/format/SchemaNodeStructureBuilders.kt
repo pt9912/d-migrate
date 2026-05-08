@@ -150,6 +150,7 @@ private fun buildIndices(
         node.set<ArrayNode>("columns", buildIndexColumns(mapper, index.columns))
         if (index.type != IndexType.BTREE) node.put("type", index.type.name.lowercase())
         if (index.unique) node.put("unique", true)
+        if (index.where != null) node.put("where", index.where)
         arrayNode.add(node)
     }
     return arrayNode
