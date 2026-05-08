@@ -22,7 +22,7 @@
 > Transfer-Filter-Kanonisierung, Retention-Cleanup-Release,
 > AbortOutcome-State/Bytes und `schemaRef`-Import-Preflight) sind
 > mit dem Phase-F-Abschluss geschlossen.
-> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
+> **Referenz**: `docs/planning/done/implementation-plan-0.9.6.md`
 > Abschnitt 4.5, Abschnitt 4.6, Abschnitt 5.4, Abschnitt 6.1a,
 > Abschnitt 6.7, Abschnitt 6.8, Abschnitt 8 Phase F, Abschnitt 9.1,
 > Abschnitt 9.2, Abschnitt 9.3, Abschnitt 9.4, Abschnitt 11 und

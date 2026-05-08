@@ -16,7 +16,7 @@
 > mit fail-closed-RATE_LIMITED-Pfad + Audit-Provider-Metadaten + Output-
 > Hygiene; G.9 stdio + HTTP E2E-ITs; G.10 Doku + Roadmap-Closing. Damit
 > ist der 0.9.6-MCP-Vertrag (Phase A bis G) vollständig abgeschlossen.
-> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
+> **Referenz**: `docs/planning/done/implementation-plan-0.9.6.md`
 > Abschnitt 4.3, Abschnitt 4.4, Abschnitt 4.5, Abschnitt 4.8,
 > Abschnitt 5.4, Abschnitt 6.10, Abschnitt 6.11, Abschnitt 8 Phase G,
 > Abschnitt 9, Abschnitt 10, Abschnitt 11 und Abschnitt 12;

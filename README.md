@@ -251,7 +251,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.5](https://github.com/pt9912/d-migrate/releases/tag/v0.9.5)** — Qualitätsverbesserung — MySQL-Profiling unterstützt `--schema` jetzt end-to-end; shared SQL-Helpers und strengere Test-/CI-Gates verbessern die Release- und Qualitätsbasis.
+Aktuelles Release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)** — MCP-Server — d-migrate ist jetzt als Model Context Protocol v1 Server über `stdio` und Streamable HTTP nutzbar (Phasen A–G), mit asynchronen Jobs, Idempotenz, Policy/Approval, Quotas, JDBC-Persistenz, file-backed Artifact-Stores, Bundle-Import und KI-nahen Tools (`procedure_transform_*`, `testdata_*`). Daneben: deterministische DDL-Generierung (`--deterministic`/`SOURCE_DATE_EPOCH`), bigint Identity-Columns für PostgreSQL/MySQL, partial Index-Predicates, Index-Sortierung pro Spalte und ein robusterer `schema reverse`/`--split=pre-post`-Pfad.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 

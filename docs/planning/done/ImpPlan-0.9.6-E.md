@@ -10,7 +10,7 @@
 > (Verdict `Go`); E0-Cancel-Vertrag, Runner-Token-Propagation,
 > Cancel-Checkpoints und Driver-Timeout-Konfiguration sind über
 > AP E0.1–E0.7 nachgewiesen.
-> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
+> **Referenz**: `docs/planning/done/implementation-plan-0.9.6.md`
 > Abschnitt 4.4, Abschnitt 4.5, Abschnitt 4.7, Abschnitt 4.9,
 > Abschnitt 5.4, Abschnitt 6.1a, Abschnitt 6.4, Abschnitt 6.6,
 > Abschnitt 6.9, Abschnitt 8 Phase E0, Abschnitt 8 Phase E,

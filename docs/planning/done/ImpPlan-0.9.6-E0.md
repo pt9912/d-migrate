@@ -22,7 +22,7 @@
 >   `ImpPlan-0.9.6-E0.7.md` (in-progress, Plan-Commits `4a12164`,
 >   `8f3b2f2`, Move `ccae7b3`).
 >
-> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md`
+> **Referenz**: `docs/planning/done/implementation-plan-0.9.6.md`
 > Abschnitt 4.7, Abschnitt 4.9, Abschnitt 6.9, Abschnitt 8 Phase E0,
 > Abschnitt 8 Phase E, Abschnitt 11 und Abschnitt 12;
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;

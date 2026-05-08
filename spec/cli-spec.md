@@ -4,7 +4,7 @@
 
 > Dokumenttyp: Spezifikation / Referenz
 >
-> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose und `source_operand`/`target_operand`), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse mit `W116`) und `data transfer` (0.6.0).
+> **Implementierungsstatus**: Implementiert sind `schema validate` (0.1.0), `schema generate` (0.2.0, 0.9.6 `--deterministic`), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose und `source_operand`/`target_operand`), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse mit `W116`, 0.9.6 `--name`/`--version`) und `data transfer` (0.6.0). Seit 0.9.6 zusätzlich `mcp serve`, `mcp approval-grant issue` und `mcp cursor-key generate`/`validate`.
 
 ---
 
@@ -353,6 +353,7 @@ d-migrate schema generate --source <path> --target <dialect> [--output <path>] [
 | `--target` | Ja | Dialekt | Zieldatenbank (`postgresql`, `mysql`, `sqlite`) |
 | `--output` | Nein | Pfad | Ausgabedatei (Default: stdout) |
 | `--generate-rollback` | Nein | Boolean | Zusätzlich Rollback-DDL generieren |
+| `--deterministic` | Nein | Boolean | Lässt den DDL-Header `Generated:`-Zeile weg und nutzt einen festen Zeitstempel (siehe unten). Auch der Sidecar-Report (`<output>.report.yaml`) und das JSON-Output-Feld `generated_at` folgen derselben Policy |
 | `--spatial-profile` | Nein | String | Spatial-Profil für `geometry`-Spalten (siehe unten) |
 | `--split` | Nein | `single` / `pre-post` | DDL-Ausgabemodus (Default: `single`). `pre-post` erzeugt importfreundliche Artefakte (pre-data/post-data) |
 | `--mysql-named-sequences` | Nein | `action_required` / `helper_table` | MySQL-Sequence-Strategie (Default: `action_required`). Nur zusammen mit `--target mysql` zulaessig; bei PostgreSQL/SQLite: Exit 2. `helper_table` emuliert benannte Sequences ueber kanonische Hilfsobjekte (`dmg_sequences`, `dmg_nextval`/`dmg_setval`, `BEFORE INSERT`-Trigger). |
@@ -399,6 +400,15 @@ Sequence-spezifische Ausgaben (0.9.3, `--mysql-named-sequences`):
 - **W115** (Lossy Trigger-Semantik): `SequenceNextVal` auf einer Spalte nutzt MySQL-Trigger; explizites `NULL` wird wie ein ausgelassener Wert behandelt.
 - **W116** (Fehlende Support-Objekte): Sequence-Metadaten beim Reverse aus `dmg_sequences` rekonstruiert, aber erforderliche Support-Objekte (Routinen und/oder Trigger) fehlen oder sind nicht kanonisch. Die Sequence ist dann rekonstruierbar, aber nicht voll betriebsfaehig. `W116` erscheint als Reverse-Note auf Sequence- oder Spaltenebene. Bei `schema compare` bleibt `W116` eine operandseitige Diagnose: es erzeugt keinen eigenen Diff-Eintrag und beeinflusst den Exit-Code nicht (Exit folgt nur aus Validation oder echtem Schema-Diff). Aktiv seit 0.9.4.
 - **W117** (Transaktionsgebundene Werte): Sequence-Werte im `helper_table`-Modus werden bei Rollback zurueckgerollt — anders als native PostgreSQL-Sequences.
+
+**`--deterministic`** (0.9.6): Macht den DDL- und Report-Output reproduzierbar.
+
+- Im DDL-Header wird die `-- Generated: <timestamp>`-Zeile weggelassen.
+- Wenn die Umgebungsvariable `SOURCE_DATE_EPOCH` (UNIX-Sekunden) gesetzt ist, gilt sie zusätzlich als fester Erzeugungszeitstempel für DDL-Header und den Sidecar-Report. Ein nicht-numerischer oder nicht in einen `Instant` parsbarer Wert führt zu **Exit 2**.
+- Der YAML-Sidecar-Report (`<output>.report.yaml`) lässt das Feld `generated_at` weg, wenn `--deterministic` gesetzt ist; das JSON-Output-Format folgt derselben Policy.
+- Rollback-DDL (`--generate-rollback`) trägt denselben deterministischen Header.
+
+`--deterministic` ist orthogonal zu `--split` und `--generate-rollback` und kann mit beiden kombiniert werden.
 
 **`--split`** (0.9.2): Steuert den DDL-Ausgabemodus.
 
@@ -459,6 +469,8 @@ denselben Regeln wie bei `data export` (§1.4), aber ohne impliziten
 | `--include-functions` | Nein | Boolean | User-Defined Functions einschliessen |
 | `--include-triggers` | Nein | Boolean | Triggers einschliessen |
 | `--include-all` | Nein | Boolean | Alle optionalen Objekte einschliessen |
+| `--name` | Nein | String | Schemaname im Output statt des reverse-generierten Defaults (seit 0.9.6) |
+| `--version` | Nein | String | Schemaversion im Output statt `0.0.0-reverse` (seit 0.9.6) |
 
 **Reverse-Ausgabe und Reverse-Report**:
 
@@ -1054,6 +1066,105 @@ Sensible Werte (Passwörter, API-Keys) werden maskiert als `***`.
 
 Exit: `0` bei Erfolg, `7` bei Konfigurationsfehlern.
 
+### 6.8 mcp *(0.9.6, umgesetzt)*
+
+Stellt d-migrate als Model Context Protocol v1 Server bereit. Vollständige Tool-, Resource- und Prompt-Verträge stehen in [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md). Dieser Abschnitt dokumentiert nur den CLI-Vertrag.
+
+#### `mcp serve`
+
+Startet den MCP-Server mit der vollständigen Phase-C/D/E/F/G-Dispatch-Kette. Byte-Inhalte (Upload-Segmente, Artefakt-Bodies) sind file-backed unter `--mcp-state-dir`; Phase-E-Server-State (Idempotenz, Jobs, Quotas) kann optional über `server.state` JDBC-persistent gehalten werden, sonst läuft Phase-E in-memory.
+
+```
+d-migrate mcp serve [--transport stdio|http] [--bind <addr>] [--port <n>] \
+                    [--auth-mode disabled|jwt-jwks|jwt-introspection] \
+                    [--issuer <uri> --jwks-url <url> --audience <aud>] \
+                    [--mcp-state-dir <path>] [--cursor-keyring-file <path>] \
+                    [--approval-grants-file <path>]
+```
+
+**Transport** (`--transport`):
+
+| Wert | Beschreibung |
+|---|---|
+| `stdio` (Default) | Ein Server-Prozess pro Client-Sitzung, Authentifizierung via `--stdio-token-file` |
+| `http` | Streamable HTTP. Loopback-`--bind` erlaubt `--auth-mode disabled`; jede nicht-loopback-Bindung verlangt einen JWT-Modus |
+
+**Authentifizierung** (`--auth-mode`):
+
+| Modus | Geltungsbereich | Zusätzliche Pflichtflags |
+|---|---|---|
+| `disabled` | Nur Loopback-HTTP oder Stdio | — |
+| `jwt-jwks` (Default) | HTTP, lokale JWKS-Validierung | `--issuer`, `--jwks-url`, `--audience` |
+| `jwt-introspection` | HTTP, RFC 7662 Introspection | `--issuer`, `--introspection-url`, `--audience` |
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--transport` | Nein | `stdio` / `http` | Default `stdio` |
+| `--bind` | Nein | Adresse | HTTP-Bind (Default `127.0.0.1`). Nicht-loopback erfordert `--auth-mode != disabled` |
+| `--port` | Nein | Integer | HTTP-Port; `0` wählt einen ephemeralen Port |
+| `--public-base-url` | Nein | URL | Öffentliche Basis-URL (HTTPS). Pflicht für nicht-loopback Production-HTTP |
+| `--auth-mode` | Nein | Choice | siehe oben |
+| `--issuer`, `--jwks-url`, `--introspection-url`, `--audience` | Modusabhängig | URL/String | Siehe Auth-Tabelle |
+| `--stdio-token-file` | Nein | Pfad | JSON/YAML-Token-Registry für Stdio (siehe `mcp-server.md` §12.10) |
+| `--allow-origin` | Nein | String, mehrfach | Origin-Allowlist; Loopback-Defaults aktiv bei Loopback-Bind |
+| `--mcp-state-dir` | Nein | Pfad | State-Verzeichnis für file-backed Bytes. Gewinnt gegen `$DMIGRATE_MCP_STATE_DIR`; Default ist ein CLI-eigener Tempdir, der beim Stop gelöscht wird. Operator-bereitgestellte Verzeichnisse sind single-writer (advisory `.lock`) und überleben den Prozess |
+| `--mcp-state-orphan-retention` | Nein | Dauer | Retention für verwaiste Byte-Files beim Startup-Sweep. Werte: `never` (Forensik-Modus, kein Sweep), `0`/`0s` (alles löschen), `<n><ms\|s\|m\|h\|d>`, ISO-8601 `PT…`. Default 24h. Upload-Segmente ohne überlebende Session-Metadaten werden unter jeder nicht-`never`-Policy entfernt |
+| `--connection-config` | Nein | Pfad | Server-/Project-YAML für Phase-D Connection-Refs ohne Secrets. Default ist der `--config`-Pfad |
+| `--cursor-keyring-file` | Nein | Pfad | YAML-Keyring für HMAC-versiegelte MCP-Cursor. Pflicht für deterministische Multi-Instanz-Deployments — der DEV-Default ist HTTP-Production gesperrt |
+| `--approval-grants-file` | Nein | Pfad | JSON/YAML-Store für `ApprovalGrant`-Einträge. Wird zusammen mit `mcp approval-grant issue` benutzt |
+| `--operation-timeout-seconds` | Nein | Long | Timeout (Sekunden) für Upload-Finalisierungs-Leases und den Stale-Finalisation-Sweeper |
+
+**Exit-Codes**:
+
+| Code | Trigger |
+|---|---|
+| `0` | Server beendet sich regulär |
+| `2` | Ungültige Konfiguration (z.B. fehlende Auth-Pflichtfelder, ungültige Retention, DEV-Cursor-Keyring im HTTP-Production-Pfad), Sweep-Fehler |
+| Sonstige | Werden vom Server-Lifecycle gemappt (siehe `spec/mcp-server.md`) |
+
+#### `mcp approval-grant issue`
+
+Erstellt einen token-gebundenen `ApprovalGrant` für eine offene `POLICY_REQUIRED`-Challenge. Der erzeugte Token wird auf stdout ausgegeben (`approvalToken=…`), der Grant in der mit `--file` referenzierten Store-Datei abgelegt.
+
+```
+d-migrate mcp approval-grant issue --file <path> \
+                                   --tenant <tenantId> --caller <principalId> \
+                                   --tool <toolName> \
+                                   --approval-request-id <id> \
+                                   --payload-fingerprint <hex> \
+                                   --scope <s> [--scope <s> …] \
+                                   ( --idempotency-key <key> | --approval-key <key> )
+```
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--file` | Ja | Pfad | Pfad zum Grant-Store (gleiche Datei wie `mcp serve --approval-grants-file`) |
+| `--tenant` | Ja | String | Tenant-ID aus der `POLICY_REQUIRED`-Antwort |
+| `--caller` | Ja | String | Principal-ID, die den Job gestartet hat |
+| `--tool` | Ja | String | Tool-Name, z.B. `schema_reverse_start` |
+| `--approval-request-id` | Ja | String | `approvalRequestId` aus der Challenge |
+| `--payload-fingerprint` | Ja | Hex-String | `payloadFingerprint` aus der Challenge |
+| `--scope` | Ja, ≥1× | String | Genehmigter Scope; einmal pro `requiredScope` aus der Challenge wiederholen |
+| `--idempotency-key` | Genau einer von beiden | String | Korrelation für Job-Start-Pfade |
+| `--approval-key` | Genau einer von beiden | String | Korrelation für synchrone KI-/Tool-Pfade |
+| `--issuer-fingerprint` | Nein | String | Stable Issuer-Identität im Grant. Default `cli-approval-grant` |
+| `--grant-source` | Nein | String | Audit-/Source-Label. Default `cli-admin` |
+| `--expires-at` | Nein | RFC-3339 | Explizites Ablaufdatum; gewinnt gegen `--ttl-seconds` |
+| `--ttl-seconds` | Nein | Long | Gültigkeitsdauer wenn `--expires-at` fehlt. Default 300 |
+| `--token` | Nein | String | Roher Token; Default ist ein zufällig erzeugter Token (`appr_<32-byte-hex>`). Nur der Fingerprint wird im Grant gespeichert |
+
+**Exit-Codes**:
+
+| Code | Trigger |
+|---|---|
+| `0` | Grant erstellt, Token auf stdout |
+| `2` | Beide oder keiner von `--idempotency-key`/`--approval-key` (Usage-Fehler) |
+| `7` | Datei-/Parse-/I/O-Fehler beim Schreiben des Stores |
+
+#### `mcp cursor-key generate` / `mcp cursor-key validate`
+
+Erzeugt bzw. validiert YAML-Keyrings für die HMAC-Cursor von `mcp serve --cursor-keyring-file`. Diese Subkommandos sind Operations-Tools für Multi-Instanz-Deployments und werden im Detail in [`spec/mcp-server.md`](./mcp-server.md) dokumentiert.
+
 ---
 
 ## 7. Fortschrittsanzeige
@@ -1206,6 +1317,6 @@ stdin-/DDL-Pfad — Reverse arbeitet ausschließlich gegen Live-DB-Verbindungen.
 
 ---
 
-**Version**: 1.6
-**Stand**: 2026-04-21
-**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse) und `data transfer` (0.6.0) implementiert
+**Version**: 1.7
+**Stand**: 2026-05-08
+**Status**: `schema validate` (0.1.0), `schema generate` (0.2.0, 0.9.6 `--deterministic`), `data export` (0.3.0), `data import` (0.4.0), `schema compare` (0.5.0 file-based, 0.6.0 mit DB-Operanden, 0.9.4 operandseitige Diagnose), `schema reverse` (0.6.0, 0.9.4 MySQL-Sequence-Reverse, 0.9.6 `--name`/`--version`) und `data transfer` (0.6.0) implementiert; `mcp serve`, `mcp approval-grant issue` und `mcp cursor-key generate`/`validate` (0.9.6, siehe §6.8 sowie [`spec/mcp-server.md`](./mcp-server.md) und [`spec/ki-mcp.md`](./ki-mcp.md))

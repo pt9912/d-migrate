@@ -42,7 +42,7 @@ class TransformationReportWriter {
         appendLine("target:")
         appendLine("  dialect: $dialect")
         if (!deterministic) appendLine("  generated_at: \"${generatedAt ?: Instant.now()}\"")
-        appendLine("  generator: \"d-migrate 0.9.5\"")
+        appendLine("  generator: \"d-migrate 0.9.6\"")
         if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")
         appendLine()

@@ -13,6 +13,232 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+## [0.9.6] - 2026-05-08
+
+### Added
+
+- **MCP server** (`mcp serve`): production-ready Model Context Protocol
+  v1 server over both `stdio` and Streamable HTTP, with
+  initialize/capability negotiation, principal context and per-run
+  tenant scoping. The full MCP-Server milestone (Phases A–G) lands in
+  this release; the surface follows `spec/ki-mcp.md` and
+  `spec/mcp-server.md`.
+- **MCP read-only schema tools**: `schema_validate`, `schema_generate`
+  and `schema_compare` route through the existing validator, DDL
+  generators and comparator. Schema sources can be inline payloads,
+  file paths or tenant-scoped `schemaRef` artifacts; `schema_compare`
+  emits column-level findings with structured `details.before/after`
+  and falls back to a scrubbed `diffArtifactRef` when the inline budget
+  is exceeded.
+- **MCP capability discovery**: `capabilities_list` exposes dialects,
+  formats, limits and `executionMeta`. `tools/list` is a stable
+  registry; HMAC-sealed cursors paginate the list-tool surface
+  (`job_list`, `artifact_list`, `schema_list`, `profile_list`,
+  `diff_list`).
+- **MCP resource discovery**: standard `resources/list`,
+  `resources/templates/list` and `resources/read` are wired against
+  typed resource URIs (sealed ADT) with tenant-scope enforcement and a
+  no-oracle error policy. `artifact_chunk_get` reads tenant-scoped
+  artifacts via 4-segment URIs with HMAC `nextChunkCursor` paging.
+- **MCP write tools** (Phase F): `data_import_start` and
+  `data_transfer_start` accept connection- and schema-refs, run
+  structural pre-idempotency validation, perform schema-ref import
+  preflight and join the Phase-E job pipeline. The policy-pflichtige
+  `artifact_upload_init` variant carries session metadata, drives an
+  approval flow, terminally fails sessions on oversize segments and
+  releases init quotas on expiry / finalisation failure.
+- **MCP AI tools** (Phase G): `procedure_transform_plan`,
+  `procedure_transform_execute` and `testdata_plan` produce signed AI
+  artifacts via the new `AiProviderPort`/`NoOpAiProvider`,
+  `AiToolOrchestrator`, `AiToolOutcomeStore` and
+  `AiArtifactMetadataStore`. `testdata_execute` materialises an
+  importable testdata artifact (path A) that is then written via
+  `data_import_start`.
+- **MCP prompts**: `prompts/list` and `prompts/get` expose a static
+  prompt registry with prompt-hygiene secret scrubbing.
+- **MCP authorization and audit**: HTTP and stdio authorization
+  contracts (capability-based scope tables, principal binding),
+  centralised audit wiring with secret scrubbing on every
+  `tools/call`, structured error envelope with runtime scrubbing for
+  read-only handlers, and `executionMeta.requestId` plumbed through
+  every handler.
+- **MCP async jobs and idempotency** (Phase E): `schema_reverse_start`,
+  `data_profile_start`, `schema_compare_start`, `data_import_start`,
+  `data_transfer_start` and `job_cancel`. Includes a typed
+  `IdempotencyState` automaton with `FAILED`/`markFailed`,
+  `JobStartOrchestrator`, `JobStartTransaction`, durable approval
+  challenges, `ApprovedRetryService`, per-worker `JobWorker` ports
+  and dispatcher with `OperationCancelSource` mapping
+  (cancel reasons including `EXECUTOR_SATURATED` and the standard
+  Exit-130 mapping).
+- **MCP policy and approval grants**: `ConfiguredPolicyService`,
+  `GrantIssuer` with fail-closed and demo modes, file-backed approval
+  grants for `mcp serve` and a `mcp approval-grant issue` CLI
+  subcommand that mints either `--idempotency-key` or `--approval-key`
+  grants. `POLICY_REQUIRED` envelopes carry `approvalRequestId`,
+  `correlationKind`, `correlationKey`, `requiredScopes`, `reasons` and
+  `payloadFingerprint` (uniformly across job-, upload- and AI-tool
+  paths).
+- **MCP quotas**: typed quota dimensions including
+  `STORED_ARTIFACT_BYTES`, operation-key dimension,
+  `parallelSegmentWrites` default, retry-after and owner-tracking,
+  COMPLETED-quota swap on artifact materialisation, AI provider
+  quota with audit metadata.
+- **MCP persistent state** (Phase E2): JDBC/Postgres adapters land in a
+  new `persistence-jdbc` module — `JdbcTransactionRunner`,
+  `JdbcIdempotencyStore` (regular and `reserveInitResume` paths),
+  `JdbcJobStore`, `JdbcJobStartTransaction`, JDBC quota stack
+  (`JdbcQuotaService`/`JdbcQuotaReservationOwnerStore`), Flyway V1
+  initial migration, contract test suites against Testcontainers
+  Postgres. The MCP bootstrap wires server-state persistence end-to-end.
+- **MCP async executor** (Phase E3): `BoundedAsyncJobExecutor` with
+  `JobExecutorLifecycle`, `JobDispatchAdmission` gate, backpressure
+  (`RateLimited` with reason `EXECUTOR_SATURATED`), cancel-while-queued
+  in `JobDispatcher` and graceful shutdown. The default
+  `SyncExecutor` is preserved; async is opt-in via
+  `server.jobs.executor.mode`.
+- **MCP file-backed byte stores**: `mcp serve` uses a file-backed
+  artifact byte store with stateDir locks, per-key locks, atomic
+  `Files.move`/`Files.createLink` visibility, sidecar publish before
+  data, content verification and a startup sweep over
+  `<stateDir>/assembly/...`. Streaming finalisation via
+  `AssembledUploadPayload` + `SchemaStagingFinalizer` keeps memory
+  bounded.
+- **MCP upload pipeline**: `UploadInitOrchestrator`, single-writer
+  `UploadInitClaimStore` with claim-CAS, intent-based scope check,
+  dispatch-by-uploadIntent (`job_input` vs schema), `JobInputFinalizer`
+  for policy-pflichtige uploads, idempotent final-segment replay,
+  finalisation timeout sweeper mapping to `OPERATION_TIMEOUT`,
+  `AbortOutcomeStore` and administrative abort path with policy.
+- **MCP bundle import** (data_import_start AP-2): multi-table bundle
+  import contract — wire schema accepts `tables`, the worker extracts
+  the bundle and runs per-table import.
+- **DDL determinism**: new `--deterministic` flag on `schema generate`
+  and `DdlGenerationOptions.generatedAt`. `AbstractDdlGenerator`
+  emits a fixed timestamp or omits the `Generated:` header line.
+  `SchemaGenerateRunner` honours `SOURCE_DATE_EPOCH` and exits 2 on an
+  invalid value. `TransformationReportWriter` (sidecar reports) shares
+  the same policy.
+- **PostgreSQL bigint identity**: forward generation and reverse
+  engineering of `GENERATED { ALWAYS | BY DEFAULT } AS IDENTITY`
+  bigint columns, including an explicit decision to retire the
+  `bigserial` shorthand in favour of identity columns.
+- **MySQL bigint identity**: reverse engineering preserves
+  `BIGINT AUTO_INCREMENT` identity semantics in the neutral schema.
+- **Neutral column generation model**: shared core type for identity /
+  default-generation metadata across PostgreSQL, MySQL and SQLite
+  generators and readers.
+- **Index features**: `IndexDefinition` now supports partial-index
+  predicates and per-column sort directions; the corresponding DDL
+  generators and reverse readers round-trip both.
+- **`schema reverse` flags**: `--name` and `--version` set the neutral
+  schema name/version directly (e.g.
+  `--name bess-ems --version 1.0.0`).
+- **Foreign-key reverse output**: `schema reverse` always emits
+  named-constraint entries in `constraints[]`, including for
+  single-column FKs, so identifiers like
+  `optimization_objective_breakdowns_run_id_fkey` survive a
+  reverse/generate round-trip. Column-level `references` remains
+  supported for hand-written schemas.
+- **PostgreSQL composite PK/UNIQUE**: `schema reverse` reads composite
+  primary keys and unique constraints via `pg_constraint.conkey`;
+  primary-key columns are restored to `required: true`.
+
+### Changed
+
+- **`AbstractDdlGenerator.getVersion()`** returns `0.9.6`.
+- **`schema reverse` (PostgreSQL)** no longer emits column-level
+  `references` from the reverse path — FKs are always named entries
+  in `constraints[]`.
+- **`--split=pre-post` FK handling** is now dialect-aware:
+  `deferForeignKeys` is enabled only for PostgreSQL. MySQL and SQLite
+  no longer lose circular FKs to the deferred-FK fence; circular
+  explicit/composite FKs carry full constraint metadata and are
+  rendered as complete `ALTER TABLE ... ADD CONSTRAINT`. Deferred FKs
+  are emitted only for tables that actually exist in the output, and
+  FKs to blocked schema tables are no longer written into post-data.
+- **PostgreSQL `CREATE TABLE` ordering** considers composite-FK
+  constraints when computing dependency order.
+- **`--split=pre-post` PostgreSQL FKs** are stripped from pre-data and
+  added back as `ALTER TABLE ... ADD CONSTRAINT` in post-data; output
+  parent directories are created on demand.
+- **MySQL view dependency contract**: column-level view dependencies
+  no longer assume `INFORMATION_SCHEMA.VIEW_COLUMN_USAGE`; without
+  introspection privileges or explicit dependencies the affected
+  column-level view cases are blocked instead of being silently
+  approximated.
+- **MCP Schema-Source resolver**: tenant policy aligned with the rest
+  of Phase B/C; `mcp serve` consistently routes inline payloads, file
+  paths and tenant-scoped `schemaRef` artifacts through one resolver.
+- **Driver timeout layer** (Phase E0.7): `PoolSettings` gains
+  `statementTimeoutMs`/`networkTimeoutMs`, drivers carry a
+  driver-specific `connectionInitSql`, and a common
+  `TimeoutDecoratedConnection` layer plus `setNetworkTimeout` is
+  applied uniformly across PostgreSQL, MySQL and SQLite Hikari
+  factories.
+- **MCP plan drift cleanup**: `data_export_start` removed from the
+  registry, the HTTP `Accept` header is enforced more strictly, and
+  artifact-upload scope is now checked by intent.
+- **`schema generate --output --generate-rollback`** emits a
+  rollback-DDL header that uses the same deterministic timestamp
+  policy as the forward DDL.
+- **Cancel-Reason scrubbing** runs end-to-end across reverse, profile,
+  import, transfer and compare workers; cancel reasons reaching
+  audit/error envelopes are scrubbed before persistence.
+
+### Fixed
+
+- **`schema generate --split=pre-post --generate-rollback`** now exits
+  2 with a clear stderr message instead of producing inconsistent
+  rollback files.
+- **PostgreSQL primary-key columns from `schema reverse`** are emitted
+  with `required: true` again (regression introduced when the column
+  reader was refactored).
+- **`mcp serve` shutdown hook** is unregistered on a normal return so
+  multiple lifecycle entries no longer accumulate.
+- **MCP upload session races**: transition-mapping race outcomes map
+  to typed exceptions; finalize gates `COMPLETED` on artifact
+  materialisation; `validateFinalize` is enforced on
+  `UploadSessionService.finalize`; segment offsets persist in the
+  sidecar (rehash-recovery dropped); divergent artifact-write hashes
+  emit a `Conflict`.
+- **MCP idempotency**: `IdempotencyStore.claimApproved` is now atomic
+  before side effects; in-memory `JobStartTransaction` commits
+  idempotency before saving the job; quota releases are race-free
+  (no double release); `ApprovedRetryService` integrates with quotas.
+- **MCP `job_status_get`** wire payload aligned with the JSON-Schema,
+  pinned to a no-oracle store property; `artifact_chunk_get` aligned
+  with spec §5.5 including the empty-artefact branch.
+- **MCP audit pipeline**: `AuditFields.resourceRefs` populated in
+  upload handlers; `AuditFields` plumbed through Phase-E tools; HTTP
+  readiness and per-run principal asserted in the integration
+  harness.
+- **`isAdmin`** correctly bypasses `ScopeChecker.isSatisfied` for
+  administrative tools.
+- **`E07PostgresTimeoutBench`** decouples `networkTimeout` from
+  `statement_timeout` to avoid driver-quirk-driven flakes.
+
+### Security
+
+- **MCP secret scrubbing** is applied at every layer that can serialise
+  user input: tool-error envelopes, schema sinks (`SchemaSecretGuard`
+  with normalised forbidden-key detection), prompt registry
+  (`PromptHygieneService`), AI-provider audit metadata, response
+  byte-limit fallback artefacts and cancel-reason text.
+- **MCP cursors** (`resources/list`, list tools, artifact chunks) are
+  HMAC-sealed and rejected on tenant or chunk-key mismatch.
+- **MCP request/response byte limits** are enforced centrally with a
+  generic envelope fallback for unbounded payloads, and an
+  inline-vs-`artifactRef` byte cap on `resources/read`.
+- **Approval-grant CLI** (`mcp approval-grant issue`) requires exactly
+  one of `--idempotency-key` or `--approval-key`, so a grant cannot
+  ambiguously match both correlation kinds.
+
+### Removed
+
+- **`data_export_start`** removed from the MCP tool registry — exports
+  remain CLI-only for 0.9.6 and were never wired in the server path.
+
 ## [0.9.5] - 2026-04-24
 
 ### Added

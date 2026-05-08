@@ -5,7 +5,7 @@
 > **Status**: **Implementiert (2026-05-04)** — Plan-A/B/C/D abgeschlossen.
 > AP D1–D12 gelandet auf `develop`. Offene Nacharbeiten siehe §14
 > "Nacharbeiten" am Plan-Ende.
-> **Referenz**: `docs/planning/in-progress/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
+> **Referenz**: `docs/planning/done/implementation-plan-0.9.6.md` Abschnitt 1 bis 7,
 > Abschnitt 8 Phase D, Abschnitt 9.1, Abschnitt 9.2, Abschnitt 9.3,
 > Abschnitt 9.4, Abschnitt 11 und Abschnitt 12;
 > `docs/planning/done/ImpPlan-0.9.6-A.md`;

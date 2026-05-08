@@ -393,7 +393,7 @@ Teilplaene: [`ImpPlan-0.9.4-6.1.md`](../done/ImpPlan-0.9.4-6.1.md),
 | ------- | ------------------ | ------ |
 | Quality | Quality verbessern | —      |
 
-### Milestone 0.9.6 — MCP-Server
+### Milestone 0.9.6 — MCP-Server ✅ (2026-05-08)
 
 | Bereich | Aufgabe                                                                                                                                          | LF-Ref | Status         |
 | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------------- |
@@ -667,6 +667,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.41
-**Stand**: 2026-05-07
-**Status**: Milestone 0.1.0–0.9.5 abgeschlossen; 0.9.6 Phase A/B/C/D/E0/E0.7/E/E2/E3/F/G abgeschlossen — der MCP-Server-Milestone ist damit komplett. Geplant: 0.9.7, 0.9.8, 0.9.9
+**Version**: 3.42
+**Stand**: 2026-05-08
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7, 0.9.8, 0.9.9
