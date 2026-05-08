@@ -629,13 +629,14 @@ zusaetzliche Felder:
 - `ROLLBACK_NOT_POSSIBLE`
 - `MANUAL_ACTION_REQUIRED`
 - `TARGET_STATE_MISMATCH`
+- `TARGET_DIALECT_MISMATCH`
 - `DIALECT_UNSUPPORTED_OPERATION`
 
 Damit kann ein Runner unterscheiden, ob der Up-Plan wegen fehlendem
 `--allow-destructive` blockiert ist, ob nur `--generate-rollback` wegen
 `NOT_REVERSIBLE` oder manueller Arbeit scheitert, ob `schema rollback` gegen
-einen unerwarteten Zielzustand laufen wuerde, oder ob der Ziel-Dialekt eine
-Operation nicht rendern kann.
+einen unerwarteten Zielzustand oder falschen Dialekt laufen wuerde, oder ob der
+Ziel-Dialekt eine Operation nicht rendern kann.
 
 ### 6.2 PostgreSQL
 
@@ -653,6 +654,9 @@ Erste Zieloperationen:
 - `CREATE OR REPLACE VIEW` nur fuer kompatible View-Aenderungen
 - `DROP VIEW` + `CREATE VIEW` fuer View-Replacements, die vor
   Tabellen-/Spaltenaenderungen entfernt und danach wieder aufgebaut werden
+- `CREATE/DROP TYPE` fuer einfache PostgreSQL-Enums, soweit sie als
+  `CustomTypeDefinition` verlustfrei im Schema vorliegen und ihre Abhaengigkeit
+  zu Tabellen/Spalten eindeutig planbar ist
 
 `CHECK`- und `EXCLUDE`-Constraints gehoeren nicht zur ersten PostgreSQL-
 Rendermatrix, solange der Compare-Kern sie nicht verlustfrei als `SchemaDiff`
@@ -692,6 +696,7 @@ blockieren, statt SQL mit unbekannten Abhaengigkeiten zu erzeugen.
 
 Bewusst nicht in der ersten PostgreSQL-Zielmatrix:
 
+- `ALTER TYPE` fuer nicht trivial kompatible Enum-/Domain-Aenderungen
 - `CREATE/ALTER/DROP SEQUENCE`
 - `CREATE OR REPLACE FUNCTION`
 - `CREATE OR REPLACE PROCEDURE`
@@ -717,6 +722,9 @@ Erste Zieloperationen:
 - `ALTER TABLE DROP COLUMN`
 - `MODIFY COLUMN`
 - `ALTER TABLE ADD/DROP INDEX`
+- `ALTER TABLE ADD PRIMARY KEY` / `ALTER TABLE DROP PRIMARY KEY`, soweit die
+  Primaerschluessel-Aenderung ohne Rebuild- oder Datenmigrationsannahmen
+  renderbar ist
 - `ALTER TABLE ADD CONSTRAINT` fuer vom Compare-Kern verlustfrei gelieferte
   FK-/Unique-Constraints
 - `ALTER TABLE DROP FOREIGN KEY`
@@ -742,6 +750,13 @@ Die Konsequenz fuer MySQL ist verbindlich:
   einer Query-Text-Heuristik ist nicht zulaessig.
 - Auf MySQL-Versionen ohne `VIEW_TABLE_USAGE` sind abhaengige View-Replacements
   im ersten Slice nicht renderbar.
+- Der Adapter muss die Vollstaendigkeit der `VIEW_TABLE_USAGE`-/
+  `VIEW_ROUTINE_USAGE`-Projektion als Preflight behandeln. MySQL zeigt dort nur
+  Objekte, fuer die der introspektierende Benutzer ausreichende Privilegien
+  besitzt. Kann der Adapter nicht belegen, dass die noetigen View- und
+  Tabellenprivilegien fuer den Migrationsumfang vorhanden sind, gelten
+  abhaengige View-Replacements und spaltenveraendernde Operationen unter Views
+  als nicht renderbar und muessen mit Diagnose blockieren.
 
 Bewusst nicht in der ersten MySQL-Zielmatrix:
 
@@ -1033,10 +1048,12 @@ Rendering und erfolgreicher Blocker-Pruefung finalisiert:
   Runner schreibt stattdessen, soweit technisch moeglich, ein separates
   Recovery-Artefakt mit eindeutigem Suffix wie
   `.recovery.<timestamp>.rollback.sql` in dasselbe Zielverzeichnis. Dieses
-  Artefakt muss im Metadatenblock als `recovery = true` und
-  `postUpVerified = false` markiert sein und darf von
-  `schema rollback --execute` nur nach erneuter Zielzustandspruefung akzeptiert
-  werden. Kann auch dieses Recovery-Artefakt nicht geschrieben werden, endet der
+  Artefakt muss im Metadatenblock als `recovery = true` markiert sein.
+  `postUpVerified` richtet sich danach, ob bereits ein beobachteter
+  Post-Up-Fingerprint aus erfolgreicher Nach-Introspection vorliegt. Das
+  Artefakt darf von `schema rollback --execute` nur nach erneuter
+  Zielzustandspruefung gegen `allowedPostUpFingerprints` akzeptiert werden.
+  Kann auch dieses Recovery-Artefakt nicht geschrieben werden, endet der
   Lauf mit Exit `7` und einem strukturierten lokalen Fehler, der klar ausweist,
   dass Up bereits ausgefuehrt wurde und kein finalisiertes Rollback-Artefakt
   vorliegt.
@@ -1059,7 +1076,8 @@ fuer Datei-Targets tragen:
 5. Zieldialekt bestimmen:
    - DB-Target: aus der Connection, optional gegen `--dialect` validiert.
    - Datei-Target: aus dem Pflichtflag `--dialect`.
-6. Up-DDL rendern, sofern kein Risiko-, Rollback- oder Dialektblocker greift.
+6. Up-DDL rendern, sofern kein Up-Risiko- oder Dialektblocker greift. Rollback-
+   Blocker wirken nur, wenn `--generate-rollback` gesetzt ist.
 7. Bei `--generate-rollback` die Down-Renderbarkeit aus demselben Plan pruefen
    und das Down-SQL vorbereiten. Ohne `--execute` wird es sofort mit dem
    erwarteten Soll-Fingerprint als Post-Up-Fingerprint nach
@@ -1108,8 +1126,9 @@ ist, und fuer erfolgreiche `--plan-only`-Laeufe. Das unterscheidet
 gefunden" bedeutet. Ein Plan mit Risiken bleibt nur dann erfolgreich, wenn er
 ausschliesslich als Plan-/Risiko-Report angefordert wurde. Sobald der Lauf ein
 ausfuehrbares Up-SQL-Artefakt rendern oder Up-DDL ausfuehren soll, fuehren
-fehlende Up-Freigaben, nicht moeglicher Rollback oder nicht renderbare
-Dialektoperationen zu Exit `8`. Fehlende Freigaben fuer destruktive
+fehlende Up-Freigaben oder nicht renderbare Dialektoperationen zu Exit `8`.
+Nicht moeglicher Rollback fuehrt nur dann zu Exit `8`, wenn
+`--generate-rollback` angefordert wurde. Fehlende Freigaben fuer destruktive
 Down-Schritte blockieren dagegen erst `schema rollback --execute`, nicht die
 Erzeugung eines korrekt markierten Down-SQL-Artefakts.
 
@@ -1123,6 +1142,8 @@ unterscheiden:
   `MANUAL_REQUIRED`
 - `schema rollback --execute` angefordert, aber die Ziel-Datenbank entspricht
   nicht dem erwarteten Post-Up-/Soll-Fingerprint
+- `schema rollback --execute` angefordert, aber der Ziel-Dialekt entspricht
+  nicht dem im Rollback-Artefakt gespeicherten Dialekt
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
 
 Die konkrete Exit-Code-Matrix muss vor Implementierung mit `spec/cli-spec.md`
@@ -1158,15 +1179,20 @@ Der Runner:
 1. liest ausschliesslich das gespeicherte Down-SQL aus `--source`,
 2. liest daraus den von `schema migrate --generate-rollback` erzeugten
    maschinenlesbaren `d-migrate`-Metadatenblock,
-3. introspektiert bei `--execute` den aktuellen Zielzustand und vergleicht ihn
-   mit dem im Metadatenblock erwarteten Post-Up-/Soll-Fingerprint,
-4. bricht bei abweichendem Zielzustand mit Exit `8` und
+3. bestimmt bei `--execute` den Dialekt des Ziel-Connectors und vergleicht ihn
+   mit dem im Metadatenblock gespeicherten Dialekt,
+4. bricht bei Dialektabweichung mit Exit `8` und
+   `blockedReason = TARGET_DIALECT_MISMATCH` ab,
+5. introspektiert bei `--execute` den aktuellen Zielzustand und vergleicht ihn
+   bei normalen Artefakten mit `postUpFingerprint`, bei Recovery-Artefakten mit
+   `allowedPostUpFingerprints`,
+6. bricht bei fehlender Uebereinstimmung mit Exit `8` und
    `blockedReason = TARGET_STATE_MISMATCH` ab,
-5. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
+7. verlangt `--allow-destructive`, wenn der Metadatenblock destruktive
    Down-Operationen ausweist,
-6. fuehrt es bei `--execute` gegen `--target` aus,
-7. protokolliert ausgefuehrte Statements und Fehler,
-8. fuehrt ohne `--execute` nur Validierung/Preview aus.
+8. fuehrt es bei `--execute` gegen `--target` aus,
+9. protokolliert ausgefuehrte Statements und Fehler,
+10. fuehrt ohne `--execute` nur Validierung/Preview aus.
 
 Der Metadatenblock ist kein oeffentliches `DiffResult`-Artefakt. Er ist ein
 schmaler Header im SQL-Artefakt, der mindestens enthaelt:
@@ -1197,14 +1223,29 @@ vertraut:
 - Das JSON-Objekt enthaelt mindestens:
   `format`, `formatVersion`, `dialect`, `currentFingerprint`,
   `desiredFingerprint`, `postUpFingerprint`, `operationIds`,
-  `risk`, `createdByVersion` und `fingerprintAlgorithm`.
+  `risk`, `createdByVersion`, `fingerprintAlgorithm`, `recovery` und
+  `postUpVerified`.
+- `recovery` ist bei normalen Rollback-Artefakten `false` und bei Recovery-
+  Artefakten `true`. `postUpVerified` ist nur dann `true`, wenn
+  `postUpFingerprint` aus einer erfolgreichen Nach-Introspection nach
+  ausgefuehrtem Up stammt. Bei Dry-Run-/Datei-zu-Datei-Artefakten ist
+  `postUpVerified = false`, weil `postUpFingerprint` dort der erwartete
+  Soll-Fingerprint ist.
+- Fuer `recovery = true` enthaelt das JSON zusaetzlich
+  `allowedPostUpFingerprints` als nicht leere Liste. Sie enthaelt den
+  beobachteten Post-Up-Fingerprint, soweit verfuegbar, und kann den erwarteten
+  Soll-Fingerprint enthalten, wenn die Nach-Introspection nicht erfolgreich
+  abgeschlossen wurde. `schema rollback --execute` akzeptiert Recovery-
+  Artefakte nur, wenn der aktuelle Zielzustand zu einem dieser Fingerprints
+  passt.
 - `risk` enthaelt mindestens `destructive`, `dataLossPossible`,
   `requiresManualConfirmation` und die betroffenen Operation-IDs.
 - Der Parser ist strikt: fehlende Pflichtfelder, unbekannte `formatVersion`,
   syntaktisch ungueltiges JSON, widerspruechliche Dialekt-/Fingerprint-Felder
   oder mehrere Metadatenbloecke machen das Artefakt fuer `--execute`
-  ungueltig. Preview/Validierung darf den Fehler berichten, aber nicht
-  ausfuehren.
+  ungueltig. Bei `recovery = true` sind fehlende oder leere
+  `allowedPostUpFingerprints` ebenfalls ungueltig. Preview/Validierung darf den
+  Fehler berichten, aber nicht ausfuehren.
 - Fingerprints werden aus derselben kanonischen Schema-Projektion gebildet, die
   auch der Nach-Compare verwendet: reverse-generierte Marker und synthetische
   Metadaten werden vorher normalisiert, Map-/Listenreihenfolgen werden
@@ -1415,10 +1456,12 @@ Erste realistische Matrix:
 
 - PostgreSQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views mit
   getrennter Strategie fuer kompatibles `CREATE OR REPLACE VIEW` und explizites
-  Drop/Recreate
+  Drop/Recreate, einfache Enum-Custom-Types ohne nicht triviale `ALTER TYPE`-
+  Semantik
 - MySQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views nur mit
   explizit belegbaren table-level Dependencies; spaltenveraendernde Operationen
-  unter Views nur mit expliziten column-level Dependencies
+  unter Views nur mit expliziten column-level Dependencies und ausreichenden
+  Introspection-Privilegien
 - SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
   RebuildTable-Planung fuer SQLite-pflichtige Table-Rebuilds
 
@@ -1485,6 +1528,8 @@ Nicht in der ersten Matrix:
   Begrenzungskommentare, kanonisches JSON, Pflichtfelder,
   Fingerprint-Algorithmus und Secret-Scrubbing
 - Zielzustands-Pruefung vor `schema rollback --execute`
+- Zieldialekt-Pruefung vor `schema rollback --execute`; Abweichungen vom
+  Metadatenblock enden mit `TARGET_DIALECT_MISMATCH`
 - Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
   genutzt wird
 - `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
@@ -1514,7 +1559,12 @@ Nicht in der ersten Matrix:
   Finalisierung fehlschlaegt
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
-  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch und Secret-Scrubbing
+  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch, Dialekt-Mismatch,
+  Recovery-Felder (`recovery`, `postUpVerified`,
+  `allowedPostUpFingerprints`) und Secret-Scrubbing
+- MySQL-Dependency-Tests fuer fehlende oder unvollstaendige View-Dependency-
+  Privilegien; betroffene View-Replacements und spaltenveraendernde Operationen
+  muessen blockieren
 - Docker-Smokes:
   - PostgreSQL Up
   - PostgreSQL Up + Down
@@ -1559,9 +1609,17 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
   entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
   Reihenfolge.
+- PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
+  Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
+  planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
+  blind gerendert.
 - MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
   `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
   Views werden ohne explizite column-level Dependencies blockiert.
+- MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
+  `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
+  Projektion und blockiert betroffene View-Replacements oder
+  spaltenveraendernde Operationen mit Diagnose.
 - `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
   abbildet; andernfalls gelten sie als diagnostizierter Gap und duerfen nicht
@@ -1607,6 +1665,8 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
   Nach-Compare und Driftpruefung und enthaelt die verwendete
   Fingerprint-Algorithmus-ID.
+- Der Metadatenblock enthaelt `recovery` und `postUpVerified`; Recovery-
+  Artefakte enthalten zusaetzlich nicht leere `allowedPostUpFingerprints`.
 - `schema migrate --generate-rollback` ohne `--rollback-output` endet mit
   Exit `2`.
 - `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
@@ -1622,6 +1682,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - `schema rollback --source rollback.sql --target ... --execute` prueft vor der
   Ausfuehrung, dass der aktuelle Zielzustand zum im Metadatenblock erwarteten
   Post-Up-/Soll-Fingerprint passt, und bricht bei Drift ab.
+- `schema rollback --source rollback.sql --target ... --execute` prueft vor der
+  Ausfuehrung, dass der Ziel-Dialekt zum im Metadatenblock gespeicherten
+  Dialekt passt, und bricht bei Abweichung mit `TARGET_DIALECT_MISMATCH` ab.
 - `schema rollback --source rollback.sql --target ... --execute` mit
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
@@ -1687,6 +1750,12 @@ Verbindlich fuer den ersten Slice:
 - PostgreSQL-Views nutzen `CREATE OR REPLACE VIEW` nur fuer kompatible
   Replacements; dependency-bedingte oder signaturinkompatible Replacements
   werden als explizites Drop/Recreate geplant oder blockiert.
+- PostgreSQL rendert im ersten Slice einfache Enum-Custom-Types, soweit sie
+  verlustfrei diffbar und dependency-sicher planbar sind; nicht triviale
+  `ALTER TYPE`-Faelle bleiben blockierende Diagnosen.
+- MySQL-View-Dependency-Daten gelten nur dann als belastbar, wenn der Adapter
+  ausreichende Privilegien fuer die relevante `VIEW_TABLE_USAGE`-/
+  `VIEW_ROUTINE_USAGE`-Projektion belegen kann.
 - `--generate-rollback` ist streng:
   - enthaelt der Plan mindestens eine `NOT_REVERSIBLE`-Operation, bricht
     Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
@@ -1700,11 +1769,16 @@ Verbindlich fuer den ersten Slice:
 - `schema rollback --execute --dry-run` ist unzulaessig und endet mit Exit `2`.
 - Das Down-SQL enthaelt einen strikt parsebaren
   `d-migrate rollback-sql v1`-Metadatenblock mit kanonischem JSON,
-  Pflichtfeldern, Fingerprint-Algorithmus-ID und ohne Secrets.
+  Pflichtfeldern, Fingerprint-Algorithmus-ID, `recovery`,
+  `postUpVerified` und ohne Secrets. Recovery-Artefakte enthalten zusaetzlich
+  nicht leere `allowedPostUpFingerprints`.
 - `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
   Zielzustand und vergleicht ihn mit dem im Down-SQL-Metadatenblock erwarteten
   Post-Up-/Soll-Fingerprint. Bei Abweichung endet der Lauf mit Exit `8` und
   `blockedReason = TARGET_STATE_MISMATCH`.
+- `schema rollback --execute` prueft vor der Ausfuehrung den Ziel-Dialekt gegen
+  den im Metadatenblock gespeicherten Dialekt. Bei Abweichung endet der Lauf mit
+  Exit `8` und `blockedReason = TARGET_DIALECT_MISMATCH`.
 - Destruktive Down-SQL-Ausfuehrung braucht ebenfalls explizit
   `--allow-destructive`; die Entscheidung basiert auf dem Metadatenblock im
   erzeugten Down-SQL-Artefakt.
