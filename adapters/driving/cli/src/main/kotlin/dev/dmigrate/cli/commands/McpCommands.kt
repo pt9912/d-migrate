@@ -10,16 +10,19 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.int
+import com.github.ajalt.clikt.parameters.types.long
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.cliVersion
 import dev.dmigrate.mcp.cursor.CursorKeyring
+import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.prompts.DefaultPromptRegistry
 import dev.dmigrate.mcp.registry.PhaseCRegistries
 import dev.dmigrate.mcp.registry.PhaseCWiring
 import dev.dmigrate.mcp.registry.PhaseEWiring
 import dev.dmigrate.mcp.registry.PhaseGRegistries
 import dev.dmigrate.mcp.registry.PhaseGWiring
+import dev.dmigrate.mcp.registry.McpCoreJobWorkerFactory
 import dev.dmigrate.mcp.resources.ResourceStores
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerBootstrap
@@ -40,6 +43,11 @@ import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
+import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
+import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
+import dev.dmigrate.server.core.approval.ApprovalGrant
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
@@ -47,6 +55,8 @@ import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
+import java.security.SecureRandom
+import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -68,7 +78,7 @@ class McpCommand : CliktCommand(name = "mcp") {
     override fun help(context: Context) = "MCP-server commands (Phase C: stdio + Streamable HTTP)"
 
     init {
-        subcommands(McpServeCommand(), McpCursorKeyCommand())
+        subcommands(McpServeCommand(), McpCursorKeyCommand(), McpApprovalGrantCommand())
     }
 
     override fun run() = Unit
@@ -176,6 +186,11 @@ class McpServeCommand : CliktCommand(name = "serve") {
     private val cursorKeyringFile by option(
         "--cursor-keyring-file",
         help = "YAML keyring for HMAC-sealed MCP cursors. Required for deterministic multi-instance deployments.",
+    ).path()
+
+    private val approvalGrantsFile by option(
+        "--approval-grants-file",
+        help = "JSON/YAML ApprovalGrant store. Use with 'd-migrate mcp approval-grant issue' to approve pending jobs.",
     ).path()
 
     override fun run() {
@@ -476,12 +491,16 @@ class McpServeCommand : CliktCommand(name = "serve") {
         val state = resolveServerStateConfigOrExit() ?: run {
             val artifactRetention = startArtifactRetentionLoop(phaseC)
             val idempotencyStore = InMemoryIdempotencyStore()
+            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
             val phaseE = PhaseEWiring(
                 phaseCWiring = phaseC,
                 idempotencyStore = idempotencyStore,
                 jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
                 workerHandleRegistry = InMemoryWorkerHandleRegistry(),
-                approvalGrantStore = InMemoryApprovalGrantStore(),
+                approvalGrantStore = approvalGrantStore(),
+                fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseC, connectionSecretResolver),
+                connectionSecretResolver = connectionSecretResolver,
+                dataRunnerTempDirectory = owner.resolved.path,
             )
             val phaseG = PhaseGWiring(phaseEWiring = phaseE)
             return McpCliRuntimeWiring(
@@ -511,12 +530,13 @@ class McpServeCommand : CliktCommand(name = "serve") {
             // Bundle bauen. Default ist Sync — Bestands-MVP.
             val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath()).resolve()
             val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
+            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
             val phaseE = PhaseEWiring(
                 phaseCWiring = phaseCWithJdbc,
                 idempotencyStore = idempotencyStore,
                 jobStartTransaction = JdbcJobStartTransaction(runner, idempotencyStore, jobStore),
                 workerHandleRegistry = InMemoryWorkerHandleRegistry(),
-                approvalGrantStore = InMemoryApprovalGrantStore(),
+                approvalGrantStore = approvalGrantStore(),
                 quotaReservationOwnerStore = ownerStore,
                 ownerAwareQuotaService = JdbcOwnerAwareQuotaService(
                     transactionRunner = runner,
@@ -525,7 +545,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
                     limitFor = { Long.MAX_VALUE },
                 ),
                 executorBundle = executorBundle,
-                connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver(),
+                fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseCWithJdbc, connectionSecretResolver),
+                connectionSecretResolver = connectionSecretResolver,
                 dataRunnerTempDirectory = owner.resolved.path,
             )
             val phaseG = PhaseGWiring(phaseEWiring = phaseE)
@@ -555,6 +576,24 @@ class McpServeCommand : CliktCommand(name = "serve") {
             throw failure
         }
     }
+
+    private fun approvalGrantStore() =
+        approvalGrantsFile?.let(::FileBackedApprovalGrantStore) ?: InMemoryApprovalGrantStore()
+
+    private fun mcpCoreJobWorkerFactory(
+        phaseC: PhaseCWiring,
+        connectionSecretResolver: dev.dmigrate.server.ports.ConnectionSecretResolver,
+    ) = McpCoreJobWorkerFactory(
+        connectionStore = phaseC.connectionStore,
+        connectionSecretResolver = connectionSecretResolver,
+        artifactStore = phaseC.artifactStore,
+        artifactContentStore = phaseC.artifactContentStore,
+        schemaStore = phaseC.schemaStore,
+        profileStore = phaseC.profileStore,
+        diffStore = phaseC.diffStore,
+        limits = phaseC.limits,
+        clock = phaseC.clock,
+    )
 
     private fun startArtifactRetentionLoop(phaseC: PhaseCWiring): AutoCloseable {
         val service = ArtifactRetentionService(
@@ -636,6 +675,109 @@ class McpServeCommand : CliktCommand(name = "serve") {
         echo("MCP server configuration is invalid:", err = true)
         errors.forEach { echo("  - $it", err = true) }
         throw ProgramResult(2)
+    }
+}
+
+class McpApprovalGrantCommand : CliktCommand(name = "approval-grant") {
+    override fun help(context: Context) = "Approval grant administration"
+
+    init {
+        subcommands(McpApprovalGrantIssueCommand())
+    }
+
+    override fun run() = Unit
+}
+
+class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
+    override fun help(context: Context) =
+        "Issue a token-bound approval grant for a pending POLICY_REQUIRED challenge."
+
+    private val file by option(
+        "--file",
+        help = "JSON/YAML ApprovalGrant store used by 'mcp serve --approval-grants-file'.",
+    ).path().required()
+
+    private val tenant by option("--tenant", help = "Tenant id from the pending challenge.").required()
+
+    private val caller by option("--caller", help = "Principal id that started the pending job.").required()
+
+    private val tool by option("--tool", help = "Tool name, e.g. schema_reverse_start.").required()
+
+    private val approvalRequestId by option(
+        "--approval-request-id",
+        help = "approvalRequestId returned by POLICY_REQUIRED.",
+    ).required()
+
+    private val idempotencyKey by option(
+        "--idempotency-key",
+        help = "idempotencyKey used for the pending start call.",
+    ).required()
+
+    private val payloadFingerprint by option(
+        "--payload-fingerprint",
+        help = "payloadFingerprint returned by POLICY_REQUIRED.",
+    ).required()
+
+    private val scope by option(
+        "--scope",
+        help = "Approved scope. Repeat for every required scope.",
+    ).multiple(required = true)
+
+    private val issuerFingerprint by option(
+        "--issuer-fingerprint",
+        help = "Stable issuer identity stored in the grant.",
+    ).default("cli-approval-grant")
+
+    private val grantSource by option(
+        "--grant-source",
+        help = "Audit/source label stored in the grant.",
+    ).default("cli-admin")
+
+    private val expiresAt by option(
+        "--expires-at",
+        help = "RFC-3339 expiry instant. Overrides --ttl-seconds.",
+    )
+
+    private val ttlSeconds by option(
+        "--ttl-seconds",
+        help = "Grant lifetime when --expires-at is omitted.",
+    ).long().default(300)
+
+    private val token by option(
+        "--token",
+        help = "Raw token to issue. Defaults to a generated token; only its fingerprint is stored.",
+    )
+
+    override fun run() {
+        val rawToken = token ?: generatedToken()
+        val expiry = expiresAt?.let(Instant::parse) ?: Instant.now().plusSeconds(ttlSeconds)
+        val grant = ApprovalGrant(
+            approvalRequestId = approvalRequestId,
+            correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
+            correlationKey = idempotencyKey,
+            approvalTokenFingerprint = ApprovalTokenFingerprint.compute(rawToken),
+            toolName = tool,
+            tenantId = TenantId(tenant),
+            callerId = PrincipalId(caller),
+            payloadFingerprint = payloadFingerprint,
+            issuerFingerprint = issuerFingerprint,
+            issuedScopes = scope.toSet(),
+            grantSource = grantSource,
+            expiresAt = expiry,
+        )
+        FileBackedApprovalGrantStore(file).save(grant)
+        echo("approvalToken=$rawToken")
+        echo("expiresAt=${grant.expiresAt}")
+    }
+
+    private fun generatedToken(): String {
+        val bytes = ByteArray(32)
+        SECURE_RANDOM.nextBytes(bytes)
+        return "appr_" + bytes.joinToString("") { "%02x".format(it) }
+    }
+
+    private companion object {
+        val SECURE_RANDOM: SecureRandom = SecureRandom()
     }
 }
 

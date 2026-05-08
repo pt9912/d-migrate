@@ -137,6 +137,7 @@ internal object JobStartHandlerSupport {
                         ToolErrorDetail("approvalRequestId", outcome.approvalRequestId),
                         ToolErrorDetail("correlationKind", outcome.correlationKind.name),
                         ToolErrorDetail("correlationKey", outcome.correlationKey),
+                        ToolErrorDetail("payloadFingerprint", outcome.payloadFingerprint),
                         ToolErrorDetail("requiredScopes", outcome.requiredScopes.sorted().joinToString(",")),
                         ToolErrorDetail("reasons", outcome.reasons.joinToString("|")),
                     ),

@@ -116,6 +116,7 @@ class JobStartHandlerSupportTest : FunSpec({
             approvalRequestId = "req-1",
             correlationKind = ApprovalCorrelationKind.IDEMPOTENCY_KEY,
             correlationKey = "k1",
+            payloadFingerprint = "fp-1",
             requiredScopes = setOf("data.read", "schema.write"),
             reasons = listOf("sensitivity:pii"),
         )
@@ -126,6 +127,7 @@ class JobStartHandlerSupportTest : FunSpec({
         keyed["approvalRequestId"] shouldBe "req-1"
         keyed["correlationKind"] shouldBe "IDEMPOTENCY_KEY"
         keyed["correlationKey"] shouldBe "k1"
+        keyed["payloadFingerprint"] shouldBe "fp-1"
         keyed["requiredScopes"] shouldBe "data.read,schema.write"
         keyed["reasons"] shouldBe "sensitivity:pii"
         result.envelope.requestId shouldBe "req-z"

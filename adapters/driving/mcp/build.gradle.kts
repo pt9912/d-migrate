@@ -3,6 +3,7 @@
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:application"))
+    implementation(project(":hexagon:profiling"))
     implementation(project(":hexagon:ports"))
     implementation(project(":hexagon:ports-common"))
 
@@ -16,11 +17,11 @@ dependencies {
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:driver-common"))
     runtimeOnly(project(":adapters:driven:driver-postgresql"))
-    runtimeOnly(project(":adapters:driven:driver-postgresql-profiling"))
+    implementation(project(":adapters:driven:driver-postgresql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mysql"))
-    runtimeOnly(project(":adapters:driven:driver-mysql-profiling"))
+    implementation(project(":adapters:driven:driver-mysql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-sqlite"))
-    runtimeOnly(project(":adapters:driven:driver-sqlite-profiling"))
+    implementation(project(":adapters:driven:driver-sqlite-profiling"))
 
     // §12.1 — JSON-RPC-Layer (AP 6.4 Initialize-Handler + NDJSON-Framing)
     implementation("org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:${rootProject.properties["lsp4jJsonrpcVersion"]}")

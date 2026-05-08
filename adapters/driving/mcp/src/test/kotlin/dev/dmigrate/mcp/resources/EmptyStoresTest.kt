@@ -16,11 +16,20 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.ArtifactListFilter
 import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.DiffListFilter
+import dev.dmigrate.server.ports.JobListFilter
+import dev.dmigrate.server.ports.JobTransitionOutcome
 import dev.dmigrate.server.ports.ProfileIndexEntry
+import dev.dmigrate.server.ports.ProfileListFilter
 import dev.dmigrate.server.ports.SchemaIndexEntry
+import dev.dmigrate.server.ports.SchemaListFilter
+import dev.dmigrate.server.ports.WriteArtifactOutcome
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
 import java.time.Instant
 
 /**
@@ -60,6 +69,10 @@ class EmptyStoresTest : FunSpec({
         EmptyJobStore.save(record) shouldBe record
         EmptyJobStore.findById(TENANT, "j1") shouldBe null
         EmptyJobStore.list(TENANT, PAGE).items shouldBe emptyList()
+        EmptyJobStore.list(TENANT, JobListFilter(operation = "op"), PAGE).items shouldBe emptyList()
+        EmptyJobStore.transitionStatus(TENANT, "j1", setOf(JobStatus.QUEUED)) { it } shouldBe
+            JobTransitionOutcome.NotFound
+        EmptyJobStore.markCancelRequested(TENANT, "j1", NOW, "alice", "test") shouldBe JobTransitionOutcome.NotFound
         EmptyJobStore.deleteExpired(NOW) shouldBe 0
     }
 
@@ -75,7 +88,19 @@ class EmptyStoresTest : FunSpec({
         EmptyArtifactStore.save(record) shouldBe record
         EmptyArtifactStore.findById(TENANT, "a1") shouldBe null
         EmptyArtifactStore.list(TENANT, PAGE).items shouldBe emptyList()
+        EmptyArtifactStore.list(TENANT, ArtifactListFilter(kindFilter = ArtifactKind.SCHEMA), PAGE).items shouldBe
+            emptyList()
         EmptyArtifactStore.deleteExpired(NOW) shouldBe 0
+    }
+
+    test("EmptyArtifactContentStore is a no-op for content operations") {
+        val write = EmptyArtifactContentStore.write("a1", ByteArrayInputStream(byteArrayOf(1)), 1)
+        write.shouldBeInstanceOf<WriteArtifactOutcome.SizeMismatch>()
+        write.expected shouldBe 1
+        write.actual shouldBe 0
+        EmptyArtifactContentStore.openRangeRead("a1", offset = 0, length = 1).readBytes() shouldBe ByteArray(0)
+        EmptyArtifactContentStore.exists("a1") shouldBe false
+        EmptyArtifactContentStore.delete("a1") shouldBe false
     }
 
     test("EmptySchemaStore is a no-op for save/find/list/delete") {
@@ -91,6 +116,7 @@ class EmptyStoresTest : FunSpec({
         EmptySchemaStore.save(entry) shouldBe entry
         EmptySchemaStore.findById(TENANT, "s1") shouldBe null
         EmptySchemaStore.list(TENANT, PAGE).items shouldBe emptyList()
+        EmptySchemaStore.list(TENANT, SchemaListFilter(jobRef = "j1"), PAGE).items shouldBe emptyList()
         EmptySchemaStore.deleteExpired(NOW) shouldBe 0
     }
 
@@ -107,6 +133,7 @@ class EmptyStoresTest : FunSpec({
         EmptyProfileStore.save(entry) shouldBe entry
         EmptyProfileStore.findById(TENANT, "p1") shouldBe null
         EmptyProfileStore.list(TENANT, PAGE).items shouldBe emptyList()
+        EmptyProfileStore.list(TENANT, ProfileListFilter(jobRef = "j1"), PAGE).items shouldBe emptyList()
         EmptyProfileStore.deleteExpired(NOW) shouldBe 0
     }
 
@@ -125,6 +152,7 @@ class EmptyStoresTest : FunSpec({
         EmptyDiffStore.save(entry) shouldBe entry
         EmptyDiffStore.findById(TENANT, "d1") shouldBe null
         EmptyDiffStore.list(TENANT, PAGE).items shouldBe emptyList()
+        EmptyDiffStore.list(TENANT, DiffListFilter(sourceRef = "s", targetRef = "t"), PAGE).items shouldBe emptyList()
         EmptyDiffStore.deleteExpired(NOW) shouldBe 0
     }
 

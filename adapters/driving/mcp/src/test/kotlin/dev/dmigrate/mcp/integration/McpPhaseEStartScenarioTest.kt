@@ -232,8 +232,11 @@ class McpPhaseEStartScenarioTest : FunSpec({
         val payload = JsonParser.parseString(text).asJsonObject
         val jobId = payload.get("jobId").asString
 
-        // Plan §7.7: nach Auto-Dispatch + SyncExecutor + Passthrough-Worker
-        // ist der Job bereits SUCCEEDED, NICHT mehr QUEUED.
+        // Plan §7.7: nach Auto-Dispatch + SyncExecutor ist der Job
+        // bereits SUCCEEDED, NICHT mehr QUEUED. Dieses Szenario nutzt
+        // bewusst das PhaseEWiring-Default-Test-Fallback; der CLI-
+        // Bootstrap injiziert fuer die echten Read-Side-Start-Tools den
+        // produktiven McpCoreJobWorkerFactory.
         val finalRecord = w.phaseCWiring.jobStore.findById(Fixtures.tenant("acme"), jobId)!!
         finalRecord.managedJob.status shouldBe dev.dmigrate.server.core.job.JobStatus.SUCCEEDED
         // Counter freigegeben (Slot released).

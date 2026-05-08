@@ -10,6 +10,7 @@ import dev.dmigrate.server.core.job.JobStatus
 import dev.dmigrate.server.core.job.JobVisibility
 import dev.dmigrate.server.core.job.ManagedJob
 import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import java.time.Clock
 
@@ -39,15 +40,8 @@ internal class SchemaCompareStartHandler(
 
         val tenantId = context.principal.effectiveTenantId
         val now = clock.instant()
-        // sourceUri und targetUri akzeptieren CONNECTIONS- ODER SCHEMAS-
-        // Refs. Der Validator pruefte sonst beide auf eine feste Kind;
-        // hier waehlen wir SCHEMAS, weil das Tool primaer Schemas
-        // vergleicht. Wer eine Connection-Ref liefert, wird in AP E.7
-        // (Runner) ueber den Connection-Resolver geroutet — hier reicht
-        // ein Format-Check via SCHEMAS-erwartetem ResourceKind, der den
-        // Connection-Pfad als WrongRefKind zurueckweist. Schemas-only ist
-        // restriktiver, aber konsistent zum bestehenden `schema_compare`-
-        // Sync-Tool.
+        val sourceKind = allowedCompareKind(sourceUri)
+        val targetKind = allowedCompareKind(targetUri)
         val request = JobStartRequest(
             toolName = TOOL_NAME,
             tenantId = tenantId,
@@ -56,10 +50,11 @@ internal class SchemaCompareStartHandler(
             approvalToken = approvalToken,
             payload = JobStartHandlerSupport.toJsonValueObj(args),
             refs = listOf(
-                RefField(name = "sourceUri", value = sourceUri, expectedKind = ResourceKind.SCHEMAS),
-                RefField(name = "targetUri", value = targetUri, expectedKind = ResourceKind.SCHEMAS),
+                RefField(name = "sourceUri", value = sourceUri, expectedKind = sourceKind),
+                RefField(name = "targetUri", value = targetUri, expectedKind = targetKind),
             ),
             now = now,
+            principalContext = context.principal,
             auditFields = context.auditFields,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
@@ -87,6 +82,17 @@ internal class SchemaCompareStartHandler(
         val outcome = orchestrator.start(request)
         return JobStartHandlerSupport.toToolCallOutcome(outcome, tenantId, context.requestId)
     }
+
+    private fun allowedCompareKind(value: String): ResourceKind =
+        when (val parsed = ServerResourceUri.parse(value)) {
+            is ResourceUriParseResult.Valid -> when (parsed.uri.kind) {
+                ResourceKind.SCHEMAS,
+                ResourceKind.CONNECTIONS,
+                -> parsed.uri.kind
+                else -> ResourceKind.SCHEMAS
+            }
+            is ResourceUriParseResult.Invalid -> ResourceKind.SCHEMAS
+        }
 
     companion object {
         const val TOOL_NAME: String = "schema_compare_start"

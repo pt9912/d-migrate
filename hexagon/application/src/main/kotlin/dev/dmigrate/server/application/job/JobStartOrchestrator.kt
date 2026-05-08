@@ -211,7 +211,7 @@ class JobStartOrchestrator(
         )
         return when (val decision = policyService.decide(attempt)) {
             is PolicyDecision.Allowed -> commitJob(request, scope)
-            is PolicyDecision.RequiresApproval -> markAwaitingAndChallenge(request, scope, decision)
+            is PolicyDecision.RequiresApproval -> markAwaitingAndChallenge(request, scope, decision, fingerprint)
             is PolicyDecision.Denied -> denyAndReturn(scope, decision.reasonCode, request.now)
         }
     }
@@ -359,6 +359,7 @@ class JobStartOrchestrator(
         request: JobStartRequest,
         scope: IdempotencyScope,
         decision: PolicyDecision.RequiresApproval,
+        fingerprint: String,
     ): JobStartHandlerOutcome {
         // Plan §5.5 (Review-Fix Blocker #3): die durable Challenge wird
         // beim Statuswechsel persistiert, damit der Approved-Retry den
@@ -375,6 +376,7 @@ class JobStartOrchestrator(
             approvalRequestId = decision.approvalRequestId,
             correlationKind = decision.correlationKind,
             correlationKey = decision.correlationKey,
+            payloadFingerprint = fingerprint,
             requiredScopes = decision.requiredScopes,
             reasons = decision.reasons,
         )
@@ -406,6 +408,7 @@ class JobStartOrchestrator(
                 approvalRequestId = durableChallenge.approvalRequestId,
                 correlationKind = durableChallenge.correlationKind,
                 correlationKey = durableChallenge.correlationKey,
+                payloadFingerprint = fingerprint,
                 requiredScopes = durableChallenge.requiredScopes,
                 reasons = durableChallenge.reasons,
             )
@@ -429,6 +432,7 @@ class JobStartOrchestrator(
                         approvalRequestId = decision.approvalRequestId,
                         correlationKind = decision.correlationKind,
                         correlationKey = decision.correlationKey,
+                        payloadFingerprint = fingerprint,
                         requiredScopes = decision.requiredScopes,
                         reasons = decision.reasons,
                     )
@@ -684,6 +688,7 @@ sealed interface JobStartHandlerOutcome {
         val approvalRequestId: String,
         val correlationKind: ApprovalCorrelationKind,
         val correlationKey: String,
+        val payloadFingerprint: String,
         val requiredScopes: Set<String>,
         val reasons: List<String>,
     ) : JobStartHandlerOutcome

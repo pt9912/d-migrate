@@ -54,6 +54,7 @@ internal class SchemaReverseStartHandler(
                 ),
             ),
             now = now,
+            principalContext = context.principal,
             auditFields = context.auditFields,
             jobBuilder = { jobId, createdAt ->
                 JobRecord(
