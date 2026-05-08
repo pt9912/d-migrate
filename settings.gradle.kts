@@ -24,6 +24,7 @@ include("adapters:driven:integrations")
 include("adapters:driven:persistence-jdbc")
 include("adapters:driven:storage-file")
 include("adapters:driven:streaming")
+include("adapters:driven:text-icu")
 include("adapters:driving:cli")
 include("adapters:driving:mcp")
 

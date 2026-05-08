@@ -164,6 +164,7 @@ dependencies {
     kover(project(":adapters:driven:persistence-jdbc"))
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))
+    kover(project(":adapters:driven:text-icu"))
     kover(project(":adapters:driving:cli"))
     kover(project(":adapters:driving:mcp"))
     kover(project(":test:integration-postgresql"))
