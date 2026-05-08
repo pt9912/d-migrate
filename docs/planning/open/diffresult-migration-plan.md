@@ -1,9 +1,9 @@
 # Implementierungsplan: `DiffResult` fuer diff-basierte Migrationen
 
-> Status: Draft (2026-05-03)
+> Status: Draft (2026-05-03), aktualisiert fuer 0.9.6
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
-> Vertrag als Grundlage fuer spaetere `schema migrate`- und
+> Vertrag als Grundlage fuer den 0.9.6-Migrationspfad `schema migrate` und
 > diff-basierte Rollback-Pfade.
 >
 > Referenzen:
@@ -21,8 +21,8 @@
 ## 1. Ziel
 
 Dieses Dokument beschreibt den fehlenden Zwischenvertrag zwischen dem heute
-existierenden `SchemaDiff` und einem spaeteren, wirklich ausfuehrbaren
-Migrationspfad.
+existierenden `SchemaDiff` und dem fuer 0.9.6 geplanten, wirklich
+ausfuehrbaren Migrationspfad.
 
 Der heutige Stand reicht fuer `schema compare`, aber noch nicht fuer
 `schema migrate`:
@@ -35,7 +35,8 @@ Der heutige Stand reicht fuer `schema compare`, aber noch nicht fuer
   Ziel-Schema.
 - `DdlGenerator.generateRollback(...)` erzeugt full-state-Rollback-DDL aus
   genau einem Schema.
-- 0.7.0-Tool-Exports verwenden diesen full-state-Pfad bewusst weiter.
+- Die mit 0.7.0 eingefuehrten Tool-Exports verwenden diesen full-state-Pfad
+  bewusst weiter.
 
 Was fehlt:
 
@@ -52,10 +53,10 @@ abgeleitet wird.
 
 ---
 
-## 2. Abgrenzung zu 0.7.0
+## 2. Abgrenzung zu 0.7.0 und Ziel 0.9.6
 
-0.7.0 exportiert baseline-/full-state-Artefakte aus einem einzelnen neutralen
-Schema:
+0.7.0 ist in diesem Dokument der historische baseline-/full-state-Pfad: Es
+exportiert Artefakte aus einem einzelnen neutralen Schema:
 
 ```bash
 d-migrate export flyway --source schema.yaml --target postgresql --output migrations
@@ -63,11 +64,24 @@ d-migrate export flyway --source schema.yaml --target postgresql --output migrat
 
 Dieser Pfad bleibt unveraendert.
 
-`DiffResult` gehoert zu einem spaeteren Pfad:
+`DiffResult` gehoert zum fuer 0.9.6 geplanten Migrationspfad:
 
 ```bash
 d-migrate schema migrate --source desired.yaml --target db:staging --output migration.sql
 ```
+
+Ziel fuer 0.9.6 ist, dass `migrate up/down` als zusammenhaengender Ablauf
+funktioniert:
+
+- `up`: Ist-Datenbank lesen, gegen Soll-Schema diffen, Up-DDL planen, rendern
+  und wahlweise ausfuehren bzw. als SQL ausgeben.
+- `down`: aus demselben Plan ein Rollback-Artefakt erzeugen und dieses
+  Rollback gegen die Ziel-Datenbank ausfuehren koennen.
+
+Nicht Teil von 0.9.6 sind fortgeschrittene Rollback-Varianten wie
+versionierte `DiffResult`-Artefakte als CLI-Input, Teil-Rollbacks,
+automatische Rename-Mappings oder Datei-zu-Datei-Migrationsplanung ohne
+Live-Ist-Zustand.
 
 Die fachliche Unterscheidung ist verbindlich:
 
@@ -80,7 +94,7 @@ Die fachliche Unterscheidung ist verbindlich:
 
 Nicht akzeptabel:
 
-- `DiffResult` in 0.7.0-Tool-Exports hineinzuziehen
+- `DiffResult` in die historischen 0.7.0-Tool-Exports hineinzuziehen
 - `MigrationBundle` als Ersatz fuer `DiffResult` zu verwenden
 - `SchemaDiff` direkt als DDL-Plan zu rendern
 - destruktive Operationen ohne explizite Risiko- und Bestaetigungssemantik
@@ -181,7 +195,7 @@ full-state-`DdlGenerator`.
 
 - ein CLI-/JSON-Ausgabeformat fuer `schema compare` ersetzen
 - rohe SQL-Strings als primaere Semantik tragen
-- Tool-Export-Artefakte aus 0.7.0 ersetzen
+- historische Tool-Export-Artefakte aus 0.7.0 ersetzen
 - Rename-Detection erraten, solange es dafuer keine robuste Semantik gibt
 - Datenmigrationen fuer geaenderte Spalteninhalte automatisch ableiten
 
@@ -579,7 +593,7 @@ Empfehlung:
 
 ---
 
-## 7. CLI-Vertrag fuer spaeteren Milestone
+## 7. CLI-Vertrag fuer 0.9.6
 
 ### 7.1 `schema migrate`
 
@@ -606,12 +620,30 @@ Flag-Skizze:
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
 | `--plan-only` | Nein | Boolean | nur DiffResult/Report schreiben, kein SQL |
 | `--report` | Nein | Pfad | strukturierter Plan-/Risiko-Report |
+| `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen `--target` ausfuehren |
+| `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausfuehren |
 
 Die CLI-Namen folgen dem bestehenden Stub in `spec/cli-spec.md`:
 `--source` bezeichnet das Soll-Schema, `--target` die Ist-Datenbank. Intern
 soll der Runner diese Werte sofort auf die eindeutigen Begriffe `desired` und
 `current` abbilden. `SchemaComparator.compare(current, desired)` ist die
 verbindliche Richtung fuer den Operationsplan.
+
+Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
+ausfuehrbaren Up-Pfad tragen:
+
+1. Ist-Zustand aus `--target` introspektieren.
+2. Soll-Zustand aus `--source` laden und validieren.
+3. `DiffResult` in Richtung `current -> desired` planen.
+4. Up-DDL rendern.
+5. Bei `--generate-rollback` Down-DDL aus demselben Plan rendern.
+6. Bei `--execute` Up-DDL gegen `--target` ausfuehren.
+7. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
+   `desired` vergleichen.
+
+`--dry-run` ist der Default, solange `--execute` nicht gesetzt ist. Damit kann
+der gleiche Befehl zuerst den Plan und beide SQL-Artefakte erzeugen und danach
+bewusst ausgefuehrt werden.
 
 Exit-Codes sollten sich an bestehenden Mustern orientieren:
 
@@ -645,25 +677,55 @@ abgeglichen werden.
 
 ### 7.2 `schema rollback`
 
-`schema rollback` sollte keine Magie aus einer Live-Datenbank erraten.
+`schema rollback` ist fuer 0.9.6 der Down-Ausfuehrungspfad fuer das von
+`schema migrate --generate-rollback` erzeugte Down-SQL. Er sollte keine Magie
+aus einer Live-Datenbank erraten.
 
-Zwei belastbare Varianten:
+Fuer 0.9.6 verbindlich:
 
-1. Rollback aus gespeichertem Down-SQL:
+```bash
+d-migrate schema rollback --source rollback.sql --target db:staging --execute
+```
 
-   ```bash
-   d-migrate schema rollback --source rollback.sql --target db:staging
-   ```
+Der Runner:
 
-2. Rollback aus gespeichertem `DiffResult`/Plan-Artefakt:
+1. liest ausschliesslich das gespeicherte Down-SQL aus `--source`,
+2. fuehrt es bei `--execute` gegen `--target` aus,
+3. protokolliert ausgefuehrte Statements und Fehler,
+4. fuehrt ohne `--execute` nur Validierung/Preview aus.
+
+Spaeter belastbare Variante:
+
+1. Rollback aus gespeichertem `DiffResult`/Plan-Artefakt:
 
    ```bash
    d-migrate schema rollback --source migration-plan.yaml --target db:staging
    ```
 
-Variante 2 setzt voraus, dass `DiffResult` serialisierbar und versioniert ist.
+Diese Variante setzt voraus, dass `DiffResult` serialisierbar und versioniert ist.
 Das sollte erst nach Stabilisierung des internen Vertrags als Nutzervertrag
 freigegeben werden.
+
+### 7.3 0.9.6 Up/Down-Artefaktvertrag
+
+Ein erfolgreicher 0.9.6-Up/Down-Lauf besteht aus zusammenpassenden Artefakten:
+
+- Up-SQL aus `--output`
+- Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist
+- strukturierter Report aus `--report`
+
+Der Report muss mindestens enthalten:
+
+- Fingerprint des Ist-Zustands vor Up
+- Fingerprint des Soll-Zustands
+- Fingerprint des Zielzustands nach Up, wenn `--execute` genutzt wurde
+- Pfade zu Up- und Down-SQL
+- Liste der Operationen, aus denen Up und Down gerendert wurden
+- Blocker fuer Down, falls `--generate-rollback` nicht moeglich ist
+
+Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
+automatisch renderbar sind. Fuer `NOT_REVERSIBLE` bleibt das Verhalten strikt:
+Exit `8` mit `blockedReason = ROLLBACK_NOT_POSSIBLE`.
 
 ---
 
@@ -754,6 +816,15 @@ Nicht in der ersten Matrix:
 - `--plan-only`
 - `--allow-destructive`
 - `--generate-rollback`
+- `--rollback-output`
+- `--execute`
+- `--dry-run` als Default ohne Ausfuehrung
+- Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
+- Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist
+- `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
+- Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
+  genutzt wird
+- Nach-Compare nach Up-Ausfuehrung gegen das Soll-Schema
 - Report-Ausgabe
 - sauberes Exit-Code-Mapping
 
@@ -766,12 +837,17 @@ Nicht in der ersten Matrix:
   - PostgreSQL Up
   - PostgreSQL Up + Down
   - MySQL Up
+  - MySQL Up + Down fuer die erste reversible Operationsmatrix
   - SQLite Up
+  - SQLite Up + Down fuer direkt reversible Operationen ohne Rebuild
 - Roundtrip-Smoke:
   - Ausgangsschema in DB erzeugen
   - Zielschema migrieren
+  - Rollback-Artefakt aus demselben Plan erzeugen
   - reverse
-  - compare gegen Zielschema
+  - compare nach Up gegen Zielschema
+  - Down ausfuehren
+  - compare nach Down gegen Ausgangsschema
 
 ---
 
@@ -785,6 +861,15 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - Destruktive Operationen werden ohne Freigabe nicht ausfuehrbar gerendert.
 - `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
   `NOT_REVERSIBLE`.
+- `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
+- `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
+  Up-Plan passendes Down-SQL-Artefakt.
+- `schema rollback --source rollback.sql --target ... --execute` wendet das
+  erzeugte Down-SQL gegen die Ziel-Datenbank an.
+- Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
+  Soll-Schema.
+- Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
+  das Ausgangsschema.
 - PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
   Up-Smoke.
 - Mindestens PostgreSQL hat einen Up+Down-Smoke.
@@ -800,6 +885,19 @@ Der erste `DiffResult`-Slice soll bewusst eng bleiben. Er muss den fachlichen
 Kernvertrag stabilisieren, ohne gleichzeitig alle spaeteren Migrationsvarianten
 als Nutzervertrag freizugeben.
 
+Zur Vermeidung von Missverstaendnissen ist die Milestone-Grenze:
+
+| Milestone | Enthalten | Nicht enthalten |
+|---|---|---|
+| 0.7.0 full-state | `schema generate`, Tool-Exports, full-state Rollback-Artefakte | diff-basierte `schema migrate`-Ausfuehrung |
+| 0.9.6 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Up-DDL-Ausfuehrung, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings, Datei-zu-Datei-Planung |
+| nach 0.9.6: Rollback-Erweiterungen | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows | automatische Datenrekonstruktion nach destruktiven Operationen |
+
+Damit ist `migrate up/down` verbindlicher Bestandteil von 0.9.6: Up wird aus
+dem Diff geplant und gegen die Ziel-Datenbank ausgefuehrt, Down wird als
+Rollback-SQL aus demselben Plan erzeugt und ueber `schema rollback` wieder
+gegen die Ziel-Datenbank ausgefuehrt.
+
 Verbindlich fuer den ersten Slice:
 
 - `schema migrate` unterstuetzt zunaechst Datei-zu-DB:
@@ -813,6 +911,8 @@ Verbindlich fuer den ersten Slice:
     Rollback-Erzeugung mit Exit `8` und `blockedReason = ROLLBACK_NOT_POSSIBLE`
     ab.
   - Teil-Rollbacks mit Warn-/Manual-Blocks sind spaeterer Scope.
+- `schema rollback` unterstuetzt im ersten Slice die Ausfuehrung von
+  gespeichertem Down-SQL aus `--rollback-output`.
 - Destruktive Up-DDL braucht explizit `--allow-destructive`.
   Ohne diesen Schalter endet Rendering mit Exit `8` und
   `blockedReason = DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`.
