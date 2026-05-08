@@ -19,7 +19,7 @@ import java.text.ParseException
 
 /**
  * JWT/JWKS-backed [AuthValidator] for `AuthMode.JWT_JWKS` per
- * LF-012 / LN-027 / LN-028 / LN-038§12.14.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Uses Nimbus' `JWKSource` (with built-in cache + rotation) for the
  * key lookup and `DefaultJWTProcessor` for signature + claim

@@ -11,7 +11,7 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 
 /**
- * LF-012 / LN-038 §10.6 shared helpers for the five `*_list` discovery
+ * LF-012 / LN-038 shared helpers for the five `*_list` discovery
  * handlers. Pulled into a dedicated object so the per-tool
  * handlers stay thin — they parse their resource-specific
  * filters, hand them off to the store, and project the results.

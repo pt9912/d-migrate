@@ -24,7 +24,7 @@ import dev.dmigrate.server.ports.ConnectionReferenceStore
 import java.time.Clock
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 6.2 + § 8.8 (F.8 2/4) — `data_transfer_start`-Handler.
+ * LF-010 / LF-013 / LN-009 / LN-011 — `data_transfer_start`-Handler.
  *
  * Pre-Idempotency-Validation (LF-012 / LN-027 / LN-028 / LN-038 wortlaeufig "vor
  * Idempotency ohne Store-Write"):
@@ -73,7 +73,7 @@ internal class DataTransferStartHandler(
         validateSincePair(args)
 
         val tenantId = context.principal.effectiveTenantId
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 3/4): Existenz-/Tenant-Lookup VOR der
+        // LF-010 / LF-013 / LN-009 / LN-011: Existenz-/Tenant-Lookup VOR der
         // Idempotency-Reservierung. Vertragswortlaut: "ConnectionRef
         // ohne aufloesbare Secret-/Provider-Referenz oder Principal-
         // Berechtigung -> RESOURCE_NOT_FOUND". Beide Refs werden
@@ -138,7 +138,7 @@ internal class DataTransferStartHandler(
     /**
      * LF-010 / LF-013 / LN-009 / LN-011: `chunkSize` ist eine "positive Ganzzahl bis 10000".
      * Schema sichert `minimum=1`; die Obergrenze liegt im Handler
-     * als Defense in Depth (analog zu F.7 (2/5)).
+     * als Defense in Depth (analog zu LF-010 / LF-013 / LN-009 / LN-011).
      */
     private fun validateChunkSize(args: JsonObject) {
         val element = args.get("chunkSize")?.takeUnless { it.isJsonNull } ?: return
@@ -250,7 +250,7 @@ internal class DataTransferStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 3/4): tenant-scoped ConnectionRef-Lookup
+     * LF-010 / LF-013 / LN-009 / LN-011: tenant-scoped ConnectionRef-Lookup
      * mit `field`-spezifischer Fehlerausgabe (sourceConnectionRef vs
      * targetConnectionRef), sodass der Caller den genauen Pfad sieht
      * statt einer generischen "Connection not found"-Antwort.

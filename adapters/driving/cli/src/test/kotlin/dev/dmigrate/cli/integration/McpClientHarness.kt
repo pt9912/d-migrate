@@ -15,7 +15,7 @@ import java.nio.file.Path
  * scenario runner can iterate `transports.forAll { runScenario(it) }`
  * without duplicating dispatch / assert plumbing per transport.
  *
- * **Architectural choice (LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review):** the harness
+ * **Architectural choice (LF-012 / LN-027 / LN-028 / LN-038 final-review):** the harness
  * runs the server **in-process** via [McpServerBootstrap.startStdio]
  * /  [McpServerBootstrap.startHttp]. The plan demands "der echte
  * CLI-/Bootstrap-Pfad" (Z. 1839 + 1963), and a strict reading would
@@ -50,7 +50,7 @@ import java.nio.file.Path
  *   (e.g. `"stdio"`, `"http"`).
  * @property stateDir the MCP server's resolved state-dir for this
  *   harness instance. Tests inspect this directly to verify the
- *   LF-012 / LN-027 / LN-028 / LN-038 file-backed layout (`<stateDir>/segments/...`,
+ *   LF-012 / LN-027 / LN-028 / LN-038 file-backed layout (`<stateDir>/segments...`,
  *   `<stateDir>/artifacts/...`, `<stateDir>/assembly/...`).
  * @property principal the principal the server sees on
  *   `tools/call` / `resources/read`. Constructed per-harness so the
@@ -149,7 +149,7 @@ internal interface McpClientHarness : AutoCloseable {
 }
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review (Z. 1849): the harness's CLIENT-FACING
+ * LF-012 / LN-027 / LN-028 / LN-038 final-review (Z. 1849): the harness's CLIENT-FACING
  * surface (`McpClientHarness`) is restricted to the methods a real
  * MCP client would use — `initialize`, `toolsList`, `toolsCall`,
  * `resourcesRead`, `close` plus metadata. Direct `McpRuntimeWiring`

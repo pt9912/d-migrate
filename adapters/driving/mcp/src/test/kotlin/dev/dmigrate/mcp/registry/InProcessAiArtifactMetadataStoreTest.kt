@@ -16,7 +16,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.b 2/2) — Akzeptanz für den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanz für den
  * In-Process-Provenance-Store.
  */
 class InProcessAiArtifactMetadataStoreTest : FunSpec({

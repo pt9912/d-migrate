@@ -26,7 +26,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 3/3) — pin't, dass die Upload-Handler die
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't, dass die Upload-Handler die
  * `AuditFields` fuer Around-/Finally-Audit befuellen, ohne rohe
  * Uploadbytes oder Approval-Tokens zu durchschleifen.
  *

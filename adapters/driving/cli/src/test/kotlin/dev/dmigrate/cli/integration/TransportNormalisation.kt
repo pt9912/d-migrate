@@ -37,7 +37,7 @@ internal object TransportNormalisation {
     /**
      * Strips the dynamic ID AND the tenant segment from artefact /
      * schema / upload-session resource URIs so two responses produced
-     * by transports with DIFFERENT per-run principals (LF-012 / LN-027 / LN-028 / LN-038 §6.24
+     * by transports with DIFFERENT per-run principals (LF-012 / LN-027 / LN-028 / LN-038
      * "eigene Tenant/Principal je Transportlauf") still compare equal
      * at the shape layer. The kind segment remains unmasked because
      * tools/list parity demands it stays as a fachliches Feld.

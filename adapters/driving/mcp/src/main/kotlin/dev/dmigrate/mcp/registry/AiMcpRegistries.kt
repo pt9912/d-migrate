@@ -8,7 +8,7 @@ import dev.dmigrate.server.application.ai.AiToolOrchestrator
 import dev.dmigrate.server.application.audit.AuditScope
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.g) — Tool-Registry-Overlay parallel zu
+ * LF-017 / LF-024 / LN-030 / LN-031 — Tool-Registry-Overlay parallel zu
  * [OperationalMcpRegistries].
  *
  * LF-012 / LN-011 / LN-017 / LN-027 line 1132 sinngemäß: "Tool-Registry von Unsupported-
@@ -127,7 +127,7 @@ object AiMcpRegistries {
                     quotaService = phaseC.quotaService,
                     clock = clock,
                 )
-                // LF-017 / LF-024 / LN-030 / LN-031: testdata_execute jetzt produktiv (LF-017 / LF-024 / LN-030 / LN-031).
+                // LF-017 / LF-024 / LN-030 / LN-031: testdata_execute jetzt produktiv.
                 TestdataExecuteHandler.TOOL_NAME -> TestdataExecuteHandler(
                     orchestrator = orchestrator,
                     artifactStore = phaseC.artifactStore,

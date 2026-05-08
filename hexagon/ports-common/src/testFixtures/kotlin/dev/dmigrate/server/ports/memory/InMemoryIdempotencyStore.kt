@@ -34,7 +34,7 @@ class InMemoryIdempotencyStore(
         // states per Plan §5.2; this flag never crosses the port boundary.
         val claimed: Boolean = false,
         /**
-         * Phase E §5.5 (Review-Fix Blocker #3): durable Approval-
+         * LF-012 / LN-011 / LN-017 / LN-027: durable Approval-
          * Challenge, die beim `markAwaitingApproval` persistiert wird.
          * Wird beim spaeteren `reserve` in
          * `IdempotencyReserveOutcome.AwaitingApproval.challenge`

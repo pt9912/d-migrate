@@ -5,7 +5,7 @@ import dev.dmigrate.server.core.principal.PrincipalContext
 import java.util.UUID
 
 /**
- * Per-call dispatch context per LF-012 / LN-027 / LN-028 / LN-038§12.8.
+ * Per-call dispatch context per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * The principal is the validated `PrincipalContext` from §12.14
  * (HTTP-Bearer) or §12.15 (stdio-Token). Tool handlers MUST trust this
@@ -30,7 +30,7 @@ data class ToolCallContext(
     val principal: PrincipalContext,
     val requestId: String = "req-${UUID.randomUUID().toString().take(8)}",
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.10 (Review-Fix #8): mutable AuditFields, die der
+     * LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix #8): mutable AuditFields, die der
      * Tool-Handler waehrend des Aufrufs befuellen kann (z.B.
      * payloadFingerprint, resourceRefs). Der McpServiceImpl reicht
      * dieselbe Instanz an [dev.dmigrate.server.application.audit.AuditScope.around],

@@ -11,7 +11,7 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038: LF-012 / LN-038 `capabilities_list` per
- * LF-012 / LN-027 / LN-028 / LN-038§10.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Output shape (stable across 0.9.6):
  * ```json

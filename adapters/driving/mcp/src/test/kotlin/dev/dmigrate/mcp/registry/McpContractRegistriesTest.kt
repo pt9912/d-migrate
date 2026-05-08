@@ -132,7 +132,7 @@ class McpContractRegistriesTest : FunSpec({
         registry.find("capabilities_list") shouldNotBe null
     }
 
-    test("resourceRegistry registers the 7 LF-012 / LN-038 templates as the single source of truth (§4.7 + §5.5)") {
+    test("resourceRegistry registers the 7 LF-012 / LN-038 templates as the single source of truth ()") {
         // §4.7: stdio + HTTP MUST read templates from the same
         // registry instance. The registry is no longer empty in Phase
         // B — LF-012 / LN-027 / LN-028 / LN-038 fills it with the 7 standard templates from

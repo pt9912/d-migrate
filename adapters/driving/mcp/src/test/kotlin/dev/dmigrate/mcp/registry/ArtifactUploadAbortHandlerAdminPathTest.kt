@@ -39,7 +39,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 5.3 + § 8.6 (F.6 3/3) — pin't den administrativen
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den administrativen
  * `artifact_upload_abort`-Pfad ueber den Handler:
  *
  * - Owner-Self-Abort: LF-012 / LN-038-Verhalten unveraendert.

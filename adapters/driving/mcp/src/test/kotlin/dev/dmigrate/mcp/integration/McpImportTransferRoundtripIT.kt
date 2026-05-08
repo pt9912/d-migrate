@@ -46,7 +46,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): Integrationstest fuer den vollstaendigen
+ * LF-010 / LF-013 / LN-009 / LN-011: Integrationstest fuer den vollstaendigen
  * Tool-Roundtrip `data_import_start` / `data_transfer_start` →
  * `job_status_get` → `job_cancel`.
  *

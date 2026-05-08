@@ -8,7 +8,7 @@ import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Phase F (F.3 2/4) — In-Memory-Variante des
+ * LF-010 / LF-013 / LN-009 / LN-011 — In-Memory-Variante des
  * [UploadInitClaimStore]. ConcurrentHashMap.compute liefert die
  * atomare Single-Writer-Garantie fuer den Plan-§-8.3-Vertrag.
  *

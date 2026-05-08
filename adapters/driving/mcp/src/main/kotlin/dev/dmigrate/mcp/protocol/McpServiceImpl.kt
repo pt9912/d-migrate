@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicReference
 
 /**
  * LF-012 / LN-038 initialize / tools handler per
- * LF-012 / LN-027 / LN-028 / LN-038§6.8 + §12.8 + §12.11 + §12.16.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * LF-012 / LN-027 / LN-028 / LN-038: Validates the client's `protocolVersion` and remembers the
  * negotiated version. Wrong `protocolVersion` is mapped to JSON-RPC
@@ -77,7 +77,7 @@ class McpServiceImpl(
      */
     capabilitiesProvider: () -> Map<String, Any?> = { emptyMap() },
     /**
-     * LF-012 / LN-038 sub-commit 3: inline-vs-artifactRef byte cap (§5.2).
+     * LF-012 / LN-038 sub-commit 3: inline-vs-artifactRef byte cap ().
      * Defaults to a fresh [McpLimitsConfig], which carries the
      * LF-012 / LN-038 MAX_INLINE_RESOURCE_CONTENT_BYTES and
      * MAX_RESOURCE_READ_RESPONSE_BYTES constants. Production
@@ -96,14 +96,14 @@ class McpServiceImpl(
      */
     private val cursorCodec: dev.dmigrate.mcp.cursor.McpCursorCodec? = null,
     /**
-     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: Prompt-Registry für `prompts/list` und
+     * LF-017 / LF-024 / LN-030 / LN-031: Prompt-Registry für `prompts/list` und
      * `prompts/get`. `null` deaktiviert beide Methoden — sie
      * antworten dann mit JSON-RPC `MethodNotFound`. Bootstrap mit
      * LF-017 / LF-024 / LN-030 / LN-031-Wiring liefert eine [dev.dmigrate.mcp.prompts.DefaultPromptRegistry.mandatory].
      */
     private val promptRegistry: dev.dmigrate.mcp.prompts.PromptRegistry? = null,
     /**
-     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7 + § 6 G.4: Hygiene-Service, der `prompts/get`
+     * LF-017 / LF-024 / LN-030 / LN-031: Hygiene-Service, der `prompts/get`
      * über die assemblierte Prompt-Nachricht laufen lässt. Pflicht,
      * wenn [promptRegistry] gesetzt ist.
      */
@@ -152,11 +152,12 @@ class McpServiceImpl(
         }
         negotiated.set(params.protocolVersion)
         val capabilities = ServerCapabilities(
-            // §5.3: tools lit up in LF-012 / LN-027 / LN-028 / LN-038, resources in LF-012 / LN-027 / LN-028 / LN-038.
+            // LF-012 / LN-027 / LN-028 / LN-038: tools and resources
+            // are advertised once their registries are implemented.
             // listChanged stays false until subscriptions ship.
             tools = mapOf("listChanged" to false),
             resources = mapOf("listChanged" to false, "subscribe" to false),
-            // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: capabilities.prompts wird nur
+            // LF-017 / LF-024 / LN-030 / LN-031: capabilities.prompts wird nur
             // ausgewiesen, wenn der Bootstrap eine Prompt-Registry
             // eingehaengt hat. LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: "initialize
             // enthaelt capabilities.prompts" sobald promptsHandler
@@ -187,7 +188,7 @@ class McpServiceImpl(
     }
 
     override fun toolsCall(params: ToolsCallParams): CompletableFuture<ToolsCallResult> {
-        // §6.8 / LF-012 / LN-038: `unknown tool` is JSON-RPC `-32601`, NOT
+        // LF-012 / LN-038: `unknown tool` is JSON-RPC `-32601`, NOT
         // a tool-result envelope. The audit scope only opens after we
         // know the call addresses a registered tool — base audit
         // semantics record tool invocations, not protocol-method
@@ -202,7 +203,7 @@ class McpServiceImpl(
             tenantId = principal?.effectiveTenantId,
             principalId = principal?.principalId,
         )
-        // LF-012 / LN-011 / LN-017 / LN-027 §7.10 Review-Fix #8: AuditFields-Plumbing. Eine Instanz
+        // LF-012 / LN-011 / LN-017 / LN-027 Review-Fix #8: AuditFields-Plumbing. Eine Instanz
         // wird hier erzeugt und SOWOHL an die ToolCallContext (handler
         // schreibt) ALS AUCH an auditScope.around (finally liest) gereicht.
         // Damit landen payloadFingerprint + resourceRefs aus dem Handler
@@ -239,7 +240,7 @@ class McpServiceImpl(
      * `auditScope.around` has captured the failure outcome. Without
      * an audit scope this collapses to the pre-LF-012 / LN-027 / LN-028 / LN-038 try/catch.
      *
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.10 (Review-Fix #8): [fields] werden in around
+     * LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix #8): [fields] werden in around
      * weitergereicht (gleiche Instanz wie ToolCallContext.auditFields).
      */
     private fun runAudited(
@@ -456,7 +457,7 @@ class McpServiceImpl(
                 ResponseError(
                     ResponseErrorCode.InvalidParams.value,
                     "resources/read requires 'uri'",
-                    // LF-012 / LN-038 §5.4: every resource error carries
+                    // LF-012 / LN-038: every resource error carries
                     // error.data.dmigrateCode. A missing 'uri' is
                     // a request-shape failure → VALIDATION_ERROR.
                     mapOf("dmigrateCode" to "VALIDATION_ERROR"),

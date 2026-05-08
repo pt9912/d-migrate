@@ -20,7 +20,7 @@ import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 
 /**
- * LF-012 / LN-038 §10.6 list-tool handlers. Five concrete handlers, one
+ * LF-012 / LN-038 list-tool handlers. Five concrete handlers, one
  * per discovery tool, sharing [ListToolHelpers] for tenant
  * resolution + pageSize bounds + filter parsing. Each handler:
  *

@@ -39,7 +39,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.8 — Provider-Quota + Audit-Goldens.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Provider-Quota + Audit-Goldens.
  *
  * Pin't:
  * - LF-017 / LF-024 / LN-030 / LN-031: Provider-Quota=0 -> RATE_LIMITED + Provider wird
@@ -74,7 +74,7 @@ class AiToolQuotaAndAuditTest : FunSpec({
 
     /**
      * Spy-Provider, der zaehlt, wie oft er invoked wurde — LF-017 / LF-024 / LN-030 / LN-031:
-     * G.8 Akzeptanz: bei Quota-RATE_LIMITED muss der Counter 0
+     * LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: bei Quota-RATE_LIMITED muss der Counter 0
      * bleiben.
      */
     class CountingProvider : AiProviderPort {

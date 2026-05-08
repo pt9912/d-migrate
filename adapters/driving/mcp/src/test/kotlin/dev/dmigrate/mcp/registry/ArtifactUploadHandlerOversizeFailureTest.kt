@@ -32,7 +32,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 3/3) — pin't den terminalen Failure-Pfad fuer
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den terminalen Failure-Pfad fuer
  * oversize Segmente:
  *
  * - oversize -> Session terminal `ABORTED` mit FailureOutcome

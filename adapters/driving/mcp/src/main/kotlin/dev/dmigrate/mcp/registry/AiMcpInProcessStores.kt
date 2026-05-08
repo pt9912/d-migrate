@@ -17,7 +17,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.a 2/2) — in-process [AiToolOutcomeStore]
+ * LF-017 / LF-024 / LN-030 / LN-031 — in-process [AiToolOutcomeStore]
  * mit Single-Writer-Lease + Reclaim.
  *
  * LF-017 / LF-024 / LN-030 / LN-031-Anforderung, die dieser Store explizit erfüllt:
@@ -217,7 +217,7 @@ internal class InProcessAiToolOutcomeStore(
 }
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.b 2/2) — in-process
+ * LF-017 / LF-024 / LN-030 / LN-031 — in-process
  * [AiArtifactMetadataStore].
  *
  * Persistiert KI-Artefakt-Metadaten parallel zum

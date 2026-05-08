@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Phase F (F.3 2/4) — Contract-Tests fuer [UploadInitClaimStore].
+ * LF-010 / LF-013 / LN-009 / LN-011 — Contract-Tests fuer [UploadInitClaimStore].
  * Pinnt Plan-§-5.1-/§-8.3-Atomicity:
  *
  * - Ersten Acquire gewinnt.

@@ -33,7 +33,7 @@ data class ProfileIndexEntry(
     /**
      * LF-012 / LN-038: profiling scope (e.g. `full`, `tables-only`,
      * a comma-separated table allowlist). Operator-supplied —
-     * LF-012 / LN-038 §6.4 explicitly excludes raw paths / connection
+     * LF-012 / LN-038 explicitly excludes raw paths / connection
      * URLs / ENV expansions, but Profile-Scope strings are
      * already metadata that survives scrubbing safely.
      */
@@ -46,7 +46,7 @@ data class ProfileIndexEntry(
 )
 
 /**
- * LF-012 / LN-038 §6.3 + §10.4 filter for `profile_list`. `jobRef` ties
+ * LF-012 / LN-038 filter for `profile_list`. `jobRef` ties
  * profiles to a producing job when the profile was emitted by one;
  * time window inclusive at both ends.
  */

@@ -19,7 +19,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.6 Helper-Funktionen, die alle drei Start-Tool-Handler
+ * LF-012 / LN-011 / LN-017 / LN-027 Helper-Funktionen, die alle drei Start-Tool-Handler
  * (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`)
  * teilen: JsonElement-zu-JsonValue-Konvertierung fuer den
  * PayloadFingerprint, Job-resourceUri-Render, Outcome-zu-ToolCallOutcome-
@@ -107,7 +107,7 @@ internal object JobStartHandlerSupport {
      * Mapped die orchestrator-Antwort auf die MCP-`tools/call`-Outcome.
      *
      * - Started/AlreadyStarted -> Success-Envelope mit `{jobId,
-     *   resourceUri, executionMeta}` gemaess der E.6 (1/4)
+     *   resourceUri, executionMeta}` gemaess der LF-012 / LN-011 / LN-017 / LN-027
      *   Schema-Migration.
      * - PolicyRequired -> Error-Envelope `POLICY_REQUIRED` mit
      *   `approvalRequestId`, `correlationKey`, `requiredScopes`, `reasons`.
@@ -117,7 +117,7 @@ internal object JobStartHandlerSupport {
      * - ValidationError -> [ValidationErrorException] mit feldspezifischer
      *   Violation.
      * - Pending/Failed -> Error-Envelope `OPERATION_TIMEOUT` (defensiv;
-     *   AP E.9 verfeinert).
+     *   LF-012 / LN-011 / LN-017 / LN-027 verfeinert).
      */
     fun toToolCallOutcome(
         outcome: JobStartHandlerOutcome,

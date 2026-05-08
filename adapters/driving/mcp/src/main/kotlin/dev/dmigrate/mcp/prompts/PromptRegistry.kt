@@ -3,7 +3,7 @@ package dev.dmigrate.mcp.prompts
 import dev.dmigrate.mcp.protocol.PromptListEntry
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 — Server-seitige Prompt-Registry.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Server-seitige Prompt-Registry.
  *
  * LF-017 / LF-024 / LN-030 / LN-031 Z. 858-864 verbindlich: drei Pflichtprompts.
  * [DefaultPromptRegistry] verdrahtet sie; Tests können einen

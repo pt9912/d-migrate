@@ -45,7 +45,7 @@ class McpServerConfigDefaultsTest : FunSpec({
 
     test("DEFAULT_SCOPE_MAPPING covers §12.9 contract") {
         val map = McpServerConfig.DEFAULT_SCOPE_MAPPING
-        // capabilities_list is the only LF-012 / LN-038 handler (§12.11)
+        // capabilities_list is the only LF-012 / LN-038 handler ()
         map["capabilities_list"] shouldBe setOf("dmigrate:read")
         // discovery
         map.keys shouldContainAll setOf(

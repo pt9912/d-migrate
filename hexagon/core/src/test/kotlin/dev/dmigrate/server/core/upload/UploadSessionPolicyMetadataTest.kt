@@ -11,7 +11,7 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 4.2 + § 5.1 (F.2) — Policy-Init-Metadaten auf
+ * LF-010 / LF-013 / LN-009 / LN-011 — Policy-Init-Metadaten auf
  * [UploadSession]. Pin't, dass die drei neuen Felder
  * `approvalKey`/`approvalFingerprint`/`targetTable` per Default-
  * Konstruktion `null` sind (Bestands-Compat: read-only Schema-

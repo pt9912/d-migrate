@@ -37,7 +37,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4) — End-to-End-Integration des
+ * LF-010 / LF-013 / LN-009 / LN-011 — End-to-End-Integration des
  * `data_transfer_start`-Tools durch den realen `tools/call`-Pfad in
  * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  */

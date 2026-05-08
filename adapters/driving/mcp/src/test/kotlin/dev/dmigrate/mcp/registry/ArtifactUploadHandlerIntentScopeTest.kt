@@ -28,7 +28,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 1/3) — pin't den intent-abhaengigen Scope-Check
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den intent-abhaengigen Scope-Check
  * im `artifact_upload`-Handler:
  *
  * - `job_input`-Session ohne `dmigrate:artifact:upload` -> 403 nach
@@ -144,7 +144,7 @@ class ArtifactUploadHandlerIntentScopeTest : FunSpec({
         val uploader = principal(setOf("dmigrate:artifact:upload"))
         // Ein gueltiges Final-Segment durchlaeuft den Pfad bis zum
         // Finaliser. Ohne Finaliser wird die Session legacy auf
-        // COMPLETED gesetzt — wichtig fuer F.4 (1/3) ist nur, dass der
+        // COMPLETED gesetzt — wichtig fuer LF-010 / LF-013 / LN-009 / LN-011 ist nur, dass der
         // Scope-Check nicht vorher abbricht.
         val outcome = fx.handler.handle(
             ToolCallContext("artifact_upload", args(segmentArgs("ABCDEFGH".toByteArray())), uploader),

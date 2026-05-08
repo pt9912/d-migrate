@@ -5,10 +5,10 @@ import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.b) — durable Provenance-Store für
+ * LF-017 / LF-024 / LN-030 / LN-031 — durable Provenance-Store für
  * KI-Artefakte.
  *
- * LF-017 / LF-024 / LN-030 / LN-031-Pfad-A (G.1-Bestandsaufnahme §3.2): wir bleiben bei
+ * LF-017 / LF-024 / LN-030 / LN-031-Pfad-A: wir bleiben bei
  * `ArtifactKind.OTHER` für KI-Artefakte und persistieren die
  * KI-Metadaten in diesem separaten Store. Vorteile:
  *
@@ -19,7 +19,7 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
  *   Filter macht;
  * - Atomarität: der Tool-Handler schreibt
  *   `ArtifactStore.save(record)` und `AiArtifactMetadataStore.save(metadata)`
- *   im selben durable Commit (G.6.d/e/f).
+ *   im selben durable Commit (LF-017 / LF-024 / LN-030 / LN-031).
  *
  * LF-017 / LF-024 / LN-030 / LN-031 Z. 748-752 Vertrag:
  *
@@ -59,11 +59,11 @@ interface AiArtifactMetadataStore {
 }
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.b) — typed Save-Outcome.
+ * LF-017 / LF-024 / LN-030 / LN-031 — typed Save-Outcome.
  *
  * Unterscheidet zwischen idempotentem No-Op-Replay und einem
  * harten Konflikt zweier verschiedener Metadaten-Sätze unter
- * derselben `(tenantId, artifactId)`. Tool-Handler in G.6.d/e/f
+ * derselben `(tenantId, artifactId)`. Tool-Handler in LF-017 / LF-024 / LN-030 / LN-031
  * mappen [Conflict] auf `INTERNAL_AGENT_ERROR` (Server-State-
  * Drift, niemals Caller-Fehler — der Caller hat denselben
  * `approvalKey` benutzt, aber der Store sieht abweichende

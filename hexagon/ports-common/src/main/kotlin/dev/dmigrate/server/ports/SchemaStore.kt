@@ -47,7 +47,7 @@ data class SchemaIndexEntry(
 )
 
 /**
- * LF-012 / LN-038 §6.3 + §10.4 filter for `schema_list`. `jobRef` matches
+ * LF-012 / LN-038 filter for `schema_list`. `jobRef` matches
  * `SchemaIndexEntry.jobRef`; time window inclusive at both ends.
  */
 data class SchemaListFilter(

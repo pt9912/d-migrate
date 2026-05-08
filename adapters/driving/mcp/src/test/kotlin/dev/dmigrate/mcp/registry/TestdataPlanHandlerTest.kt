@@ -46,7 +46,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.6 + § 6 G.6 (G.6.f) — Akzeptanztests für den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests für den
  * `testdata_plan`-Handler.
  */
 class TestdataPlanHandlerTest : FunSpec({

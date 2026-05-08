@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * LF-012 / LN-038 §10.5 + §6.4 typed list-tool schemas.
+ * LF-012 / LN-038 typed list-tool schemas.
  *
  * Five `*_list` discovery tools — `job_list`, `artifact_list`,
  * `schema_list`, `profile_list`, `diff_list` — share the

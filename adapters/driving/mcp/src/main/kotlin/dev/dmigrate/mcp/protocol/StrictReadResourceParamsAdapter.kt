@@ -6,7 +6,7 @@ import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
 
 /**
- * LF-012 / LN-038 + §10.7 strict deserialiser for [ReadResourceParams].
+ * LF-012 / LN-038 + strict deserialiser for [ReadResourceParams].
  *
  * LF-012 / LN-038 rejects any `resources/read` request that carries a field
  * other than `uri`: chunking, range-reads and similar extensions

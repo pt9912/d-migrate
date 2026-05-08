@@ -5,7 +5,7 @@ import dev.dmigrate.mcp.protocol.PromptListEntry
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 — Server-seitige Prompt-Definition.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Server-seitige Prompt-Definition.
  *
  * LF-017 / LF-024 / LN-030 / LN-031 listet die Pflichtfelder:
  *
@@ -38,7 +38,7 @@ import dev.dmigrate.mcp.protocol.PromptMessage
  *   internen Audit-Spuren.
  * @param hygieneRules kurze, scrubsichere Beschreibungen der
  *   Hygiene-Pflichten. Werden im Description-Text gespiegelt
- *   (LF-017 / LF-024 / LN-030 / LN-031 + §7.4).
+ *   (LF-017 / LF-024 / LN-030 / LN-031).
  * @param build Funktion, die aus den (bereits validierten und
  *   hygienisierten) Argumenten die Prompt-Nachrichten erzeugt.
  *   Output muss ausschließlich `text`-Content sein (LF-017 / LF-024 / LN-030 / LN-031
@@ -72,7 +72,7 @@ data class PromptDescriptor(
 }
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 (G.7) — Argument-Spec eines Prompts. Beschreibt
+ * LF-017 / LF-024 / LN-030 / LN-031 — Argument-Spec eines Prompts. Beschreibt
  * Form, Pflicht-Status und (für Refs) erlaubte ResourceKinds.
  *
  * Argument-Werte sind im MCP-Wire immer Strings (siehe

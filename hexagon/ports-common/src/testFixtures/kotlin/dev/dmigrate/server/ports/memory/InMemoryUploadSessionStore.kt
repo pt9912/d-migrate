@@ -88,7 +88,7 @@ class InMemoryUploadSessionStore : UploadSessionStore {
     }
 
     /**
-     * Phase F § 8.9 (F.9 2/3): findet alle FINALIZING-Sessions, deren
+     * LF-010 / LF-013 / LN-009 / LN-011: findet alle FINALIZING-Sessions, deren
      * Lease abgelaufen ist. Plan-konform iteriert die InMemory-Variante
      * den gesamten Sessions-Snapshot — Production-Stores (PG) sollten
      * eine indizierte Query hinterlegen.

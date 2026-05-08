@@ -49,7 +49,7 @@ data class ResourcesTemplatesListResult(
 )
 
 /**
- * MCP resource template per LF-012 / LN-027 / LN-028 / LN-038§6.9. The
+ * MCP resource template per LF-012 / LN-027 / LN-028 / LN-038. The
  * `uriTemplate` follows MCP-RFC-6570 — `{tenantId}` and friends are
  * placeholders the client substitutes before invoking
  * `resources/read`.
@@ -63,9 +63,9 @@ data class ResourceTemplate(
 
 /**
  * MCP `resources/read` request shape per the 2025-11-25 specification
- * + LF-012 / LN-027 / LN-028 / LN-038§6.9 + LF-012 / LN-038§10.7.
+ * + LF-012 / LN-027 / LN-028 / LN-038 + LF-012 / LN-038.
  *
- * `uri` MUST be a fully-resolved `dmigrate://...` URI. LF-012 / LN-038
+ * `uri` MUST be a fully-resolved `dmigrate:/...` URI. LF-012 / LN-038
  * pins the request shape: `uri` is the ONLY accepted field —
  * `cursor`, `range`, `chunkId` and any other extension key are
  * rejected as `-32602 InvalidParams` with

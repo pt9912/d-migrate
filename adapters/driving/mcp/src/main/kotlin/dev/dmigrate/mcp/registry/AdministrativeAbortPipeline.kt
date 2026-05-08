@@ -26,7 +26,7 @@ import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Clock
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 5.3 + § 8.6 (F.6 3/3) — Pipeline fuer administrative /
+ * LF-010 / LF-013 / LN-009 / LN-011 — Pipeline fuer administrative /
  * fremde `artifact_upload_abort`-Aufrufe.
  *
  * Pflicht-Sequence (Vertragswortlaut):
@@ -194,7 +194,7 @@ internal class AdministrativeAbortPipeline(
     }
 
     private fun releaseInitQuotas(session: UploadSession) {
-        // LF-012 / LN-011 / LN-017 / LN-027 / § 8.6: gleiche Quota-Keys wie Owner-Self-Abort
+        // LF-012 / LN-011 / LN-017 / LN-027: gleiche Quota-Keys wie Owner-Self-Abort
         // (ACTIVE_UPLOAD_SESSIONS=1, UPLOAD_BYTES=session.sizeBytes),
         // adressiert ueber den ORIGINALEN Session-Owner — der Caller
         // (Admin) hat die Reservierungen nicht selbst gemacht.

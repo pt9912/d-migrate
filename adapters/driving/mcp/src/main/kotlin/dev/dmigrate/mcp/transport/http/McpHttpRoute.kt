@@ -51,7 +51,7 @@ import java.util.UUID
 import java.util.concurrent.CompletableFuture
 
 /**
- * Streamable-HTTP route per LF-012 / LN-027 / LN-028 / LN-038§6.6 +
+ * Streamable-HTTP route per LF-012 / LN-027 / LN-028 / LN-038 +
  * §12.13 + §12.14.
  *
  * Endpoints:
@@ -254,7 +254,7 @@ private suspend fun validateBearer(
     authValidator: AuthValidator,
 ): PrincipalContext? {
     if (config.authMode == AuthMode.DISABLED) {
-        // §6.24: LF-012 / LN-027 / LN-028 / LN-038 demands per-transport-run principal
+        // LF-012 / LN-027 / LN-028 / LN-038 demands per-transport-run principal
         // isolation. The validator's [principal] field is the
         // injection point — production wiring uses
         // [DisabledAuthValidator.ANONYMOUS_PRINCIPAL] (the default

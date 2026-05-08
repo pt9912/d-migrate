@@ -70,7 +70,7 @@ class McpDiscoveryAndValidateScenarioTest : FunSpec({
         }
         // Mask requestId across both payloads and compare at
         // structure-equality. Tools/scopeTable/limits/dialects/formats
-        // are invariants per LF-012 / LN-027 / LN-028 / LN-038 §6.24 ("transport-neutral").
+        // are invariants per LF-012 / LN-027 / LN-028 / LN-038 ("transport-neutral").
         val masked = setOf("requestId")
         TransportNormalisation.maskFields(stdio, masked) shouldBe
             TransportNormalisation.maskFields(http, masked)

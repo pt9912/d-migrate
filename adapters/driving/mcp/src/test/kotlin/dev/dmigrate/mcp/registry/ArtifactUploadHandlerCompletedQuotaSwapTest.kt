@@ -30,7 +30,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 1/3) — pin't den COMPLETED-Quota-Swap:
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den COMPLETED-Quota-Swap:
  *
  * - Init-time reservierte `ACTIVE_UPLOAD_SESSIONS` (1) und
  *   `UPLOAD_BYTES` (session.sizeBytes) werden auf erfolgreicher

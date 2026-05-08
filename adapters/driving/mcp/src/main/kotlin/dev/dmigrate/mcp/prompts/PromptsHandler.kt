@@ -11,17 +11,17 @@ import dev.dmigrate.server.application.audit.prompt.PromptHygieneService
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7 — Server-seitiger Handler für die MCP-
+ * LF-017 / LF-024 / LN-030 / LN-031 — Server-seitiger Handler für die MCP-
  * Prompt-Methoden.
  *
- * Pipeline für `prompts/get` (LF-017 / LF-024 / LN-030 / LN-031 + §4.5):
+ * Pipeline für `prompts/get` (LF-017 / LF-024 / LN-030 / LN-031):
  *
  * 1. Look-up via [PromptRegistry.find] → unbekannt → [PromptsLookupOutcome.NotFound].
  * 2. Argumentvalidierung über [PromptArgumentValidator] →
  *    invalid → [PromptsLookupOutcome.InvalidArguments].
  * 3. Prompt-Build (deterministisch aus den validierten Args).
  * 4. Hygiene-Check über die assemblierte Prompt-Nachricht
- *    (LF-017 / LF-024 / LN-030 / LN-031 + §7.4) — hier laufen Argumente durch
+ *    (LF-017 / LF-024 / LN-030 / LN-031) — hier laufen Argumente durch
  *    `payloadJson`, der zusammengebaute Text durch `promptText`.
  * 5. Rückgabe als [PromptsGetResult] mit Tool-Step-Hinweis im
  *    `description`.
@@ -54,7 +54,7 @@ class PromptsHandler(
 
         val messages = descriptor.build(validated)
 
-        // LF-017 / LF-024 / LN-030 / LN-031 + §7.4: Hygiene über jede gebaute
+        // LF-017 / LF-024 / LN-030 / LN-031: Hygiene über jede gebaute
         // Prompt-Nachricht. Wir leiten den Promptmessage-Text als
         // promptText durch und die Argumente als JSON-Payload, damit
         // sowohl direkte als auch maskierte Secret-Pattern erfasst

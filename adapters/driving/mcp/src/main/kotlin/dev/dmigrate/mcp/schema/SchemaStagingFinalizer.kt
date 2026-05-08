@@ -28,7 +28,7 @@ import java.time.Duration
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 + LF-010 / LF-013 / LN-009 / LN-011: finalises a `FINALIZING` read-only schema-staging
- * session per LF-012 / LN-027 / LN-028 / LN-038§6.22.
+ * session per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Called by `StreamingFinalizer` (the upload handler's claim-and-
  * finalise pipeline) after the streaming-assembly spool has produced

@@ -44,7 +44,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 + § 8.7 (F.7 2/5) — Pre-Idempotency-Validation +
+ * LF-010 / LF-013 / LN-009 / LN-011 — Pre-Idempotency-Validation +
  * LF-012 / LN-011 / LN-017 / LN-027-Pipeline-Integration des `data_import_start`-Handlers.
  *
  * Pin't:
@@ -343,7 +343,7 @@ class DataImportStartHandlerTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────
-    // F.7 (3/5) — Artifact-Eligibility + table-Topologie.
+    // LF-010 / LF-013 / LN-009 / LN-011 — Artifact-Eligibility + table-Topologie.
     // ──────────────────────────────────────────────────────────────
 
     test("artifactId zeigt auf nicht existierendes Artefakt -> RESOURCE_NOT_FOUND") {
@@ -590,7 +590,7 @@ class DataImportStartHandlerTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────
-    // F.7 (4/5) — ConnectionRef + SchemaRef-Resolution + Fingerprint.
+    // LF-010 / LF-013 / LN-009 / LN-011 — ConnectionRef + SchemaRef-Resolution + Fingerprint.
     // ──────────────────────────────────────────────────────────────
 
     test("targetConnectionRef ohne Eintrag im ConnectionReferenceStore -> RESOURCE_NOT_FOUND") {

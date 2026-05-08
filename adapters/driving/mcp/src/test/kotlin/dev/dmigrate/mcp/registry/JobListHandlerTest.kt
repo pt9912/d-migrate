@@ -21,7 +21,7 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 §10.6 acceptance tests for [JobListHandler]. The other
+ * LF-012 / LN-038 acceptance tests for [JobListHandler]. The other
  * four list-tool handlers share the same shape — these tests
  * also implicitly cover the [ListToolHelpers] tenant + pageSize
  * + filter resolution surface they all funnel through.

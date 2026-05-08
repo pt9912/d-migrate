@@ -28,7 +28,7 @@ import org.slf4j.LoggerFactory
  * handler itself didn't downgrade), the enforcer writes the full
  * payload to an artefact and returns a truncated success envelope
  * carrying `summary`, `artifactRef`, and `truncated=true`. This
- * matches the §5.5 + LF-012 / LN-027 / LN-028 / LN-038 fallback contract every handler with
+ * matches the + LF-012 / LN-027 / LN-028 / LN-038 fallback contract every handler with
  * its own oversize path already follows; the enforcer is the safety
  * net that catches everything else.
  */

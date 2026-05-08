@@ -40,17 +40,17 @@ import java.util.UUID
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038: `artifact_upload_init` for the read-only schema-staging
- * path per LF-012 / LN-027 / LN-028 / LN-038§6.7.
+ * path per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * LF-012 / LN-038 accepts only `uploadIntent=schema_staging_readonly`. Every
  * other intent surfaces as `POLICY_REQUIRED` so clients understand
- * the future policy gate (LF-012 / LN-027 / LN-028 / LN-038+) is not yet open. The handler
+ * the future policy gate (LF-012 / LN-027 / LN-028 / LN-038) is not yet open. The handler
  * does NOT consult an approval store — read-only schema staging is
  * policy-free per §4.4.
  *
  * Quota policy: reserves one slot in `ACTIVE_UPLOAD_SESSIONS` AND
  * `expectedSizeBytes` in `UPLOAD_BYTES`. The session reservation is
- * released on abort/expiry/finalisation (LF-012 / LN-027 / LN-028 / LN-038+); the byte
+ * released on abort/expiry/finalisation (LF-012 / LN-027 / LN-028 / LN-038); the byte
  * reservation likewise. If either reservation is rate-limited, the
  * session is not created and the byte reservation is rolled back via
  * [QuotaService.release] before throwing.
@@ -65,7 +65,7 @@ internal class ArtifactUploadInitHandler(
     private val limits: McpLimitsConfig,
     private val options: Options,
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 5.1 + § 8.3 (F.3 4/4): wenn gesetzt, faengt der Handler
+     * LF-010 / LF-013 / LN-009 / LN-011: wenn gesetzt, faengt der Handler
      * `uploadIntent=job_input` und delegiert an den
      * [dev.dmigrate.server.application.upload.UploadInitOrchestrator].
      * Registry-Defaults wiren den Orchestrator; `null` bleibt nur fuer
@@ -77,10 +77,10 @@ internal class ArtifactUploadInitHandler(
     private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
-        // LF-010 / LF-013 / LN-009 / LN-011 § 5.1 (F.3 4/4): policy-pflichtige Intents werden vor
+        // LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtige Intents werden vor
         // dem LF-012 / LN-038 Read-only-Pfad abgefangen. Wenn ein
         // `UploadInitOrchestrator` gewired ist, geht `uploadIntent=
-        // job_input` durch die F.3-Pipeline.
+        // job_input` durch die LF-010 / LF-013 / LN-009 / LN-011-Pipeline.
         if (uploadInitOrchestrator != null) {
             policyInitOutcomeOrNull(context)?.let { return it }
         }
@@ -114,7 +114,7 @@ internal class ArtifactUploadInitHandler(
         val now = options.clock.instant()
         val absoluteExpiresAt = now.plus(options.absoluteLeaseDuration)
         val session = newSession(context, args, now, absoluteExpiresAt)
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 3/3): durable AuditFields-Population.
+        // LF-010 / LF-013 / LN-009 / LN-011: durable AuditFields-Population.
         // Anforderungsakzeptanz "Audit enthaelt keine rohen Uploadbytes oder
         // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
         // erfuellt; hier wird der `resourceRefs`-Slot mit der
@@ -164,7 +164,7 @@ internal class ArtifactUploadInitHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 5.1 + § 8.3 (F.3 4/4) — Policy-Init-Pfad fuer
+     * LF-010 / LF-013 / LN-009 / LN-011 — Policy-Init-Pfad fuer
      * `uploadIntent=job_input`. Retourniert `null` wenn der Intent
      * nicht zum Policy-Pfad gehoert (Legacy-Pfad uebernimmt) oder wenn
      * der `uploadIntent` ueberhaupt fehlt (Legacy-Pfad emittiert die
@@ -190,7 +190,7 @@ internal class ArtifactUploadInitHandler(
         // pflicht, sobald tables gesetzt ist; targetTable und tables sind
         // gegenseitig exklusiv.
         val bundleHints = parseBundleInitHints(raw, targetTable)
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 2/3): `sizeBytes=0` ist nur fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: `sizeBytes=0` ist nur fuer
         // nicht-Schema-`job_input` als Single-Empty-Segment gueltig
         // (Vertrag: "leeres finales Segment + Empty-SHA"). Schema-Artefakte
         // muessen Bytes haben — ein leeres Schema-Dokument ist kein
@@ -411,7 +411,7 @@ internal class ArtifactUploadInitHandler(
     )
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.3: `sizeBytes=0` ist fuer `job_input` ein gueltiger
+     * LF-010 / LF-013 / LN-009 / LN-011: `sizeBytes=0` ist fuer `job_input` ein gueltiger
      * Single-Empty-Segment-Upload. `segmentCountFor` rundet 0 / N auf 0,
      * der Orchestrator-Vertrag erwartet aber ein finales Segment.
      */
@@ -611,7 +611,7 @@ internal class ArtifactUploadInitHandler(
 
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
 
-        /** LF-010 / LF-013 / LN-009 / LN-011 § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */
+        /** LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
 
         private const val SCOPE_ARTIFACT_UPLOAD: String = "dmigrate:artifact:upload"
@@ -624,7 +624,7 @@ internal class ArtifactUploadInitHandler(
         const val WIRE_KIND_SEED_DATA_BUNDLE: String = "seed-data-bundle"
 
         /**
-         * LF-010 / LF-013 / LN-009 / LN-011 § 8.3 (F.3 4/4): Default-MIME-Type fuer den
+         * LF-010 / LF-013 / LN-009 / LN-011: Default-MIME-Type fuer den
          * Policy-Init-Pfad, wenn der Caller keinen `mimeType` angibt.
          * Schliesst die Luecke zwischen Approval-Fingerprint
          * (`mimeType` floss in den LF-010 / LF-013 / LN-009 / LN-011-Fingerprint ein) und

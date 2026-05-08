@@ -12,7 +12,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 + §10.6 + §10.8 wrapper that HMAC-seals every
+ * LF-012 / LN-038 + wrapper that HMAC-seals every
  * `*_list` discovery tool's cursor. Distinct from
  * [dev.dmigrate.mcp.resources.SealedResourcesListCursor] only in
  * the binding shape: discovery cursors carry a per-tool
@@ -20,7 +20,7 @@ import java.time.Instant
  * `family`, and the request's filter map — so cursor reuse
  * across tools, families or filter sets fails verification.
  *
- * LF-012 / LN-038 §6.2 default sort (`createdAt DESC, id ASC`) is the
+ * LF-012 / LN-038 default sort (`createdAt DESC, id ASC`) is the
  * only sort the discovery handlers issue, so [sort] is `null`
  * here. Future per-tool sort modes plug in by setting the field
  * — the codec already binds it.

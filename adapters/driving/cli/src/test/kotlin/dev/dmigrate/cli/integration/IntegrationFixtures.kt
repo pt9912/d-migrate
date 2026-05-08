@@ -90,7 +90,7 @@ internal object IntegrationFixtures {
     )
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: per-transport-run principal so a
+     * LF-012 / LN-027 / LN-028 / LN-038 final-review: per-transport-run principal so a
      * stdio + HTTP pair invoked from the same `withFreshTransports`
      * helper see DIFFERENT tenants/principals server-side. Each
      * harness instance gets its own, with a unique 8-char suffix

@@ -18,7 +18,7 @@ import java.util.Base64
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 + LF-012 / LN-038: `artifact_chunk_get` per LF-012 / LN-027 / LN-028 / LN-038
- * §5.5 + LF-012 / LN-038
+ * + LF-012 / LN-038
  *
  * Reads a single chunk of an artefact. The chunk index is a
  * sequential integer starting at 0; the offset is computed

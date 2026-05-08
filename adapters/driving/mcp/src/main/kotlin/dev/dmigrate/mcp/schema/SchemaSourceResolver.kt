@@ -18,7 +18,7 @@ import dev.dmigrate.server.ports.SchemaStore
 
 /**
  * Resolves a `tools/call` payload's schema source per
- * LF-012 / LN-027 / LN-028 / LN-038§6.3. Shared by `schema_validate`
+ * LF-012 / LN-027 / LN-028 / LN-038. Shared by `schema_validate`
  * (LF-012 / LN-027 / LN-028 / LN-038), `schema_generate` (LF-012 / LN-027 / LN-028 / LN-038), and `schema_compare` (LF-012 / LN-027 / LN-028 / LN-038,
  * once per `left`/`right`).
  *

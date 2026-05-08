@@ -83,7 +83,7 @@ data class McpRuntimeWiring(
         clock = clock,
     ),
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3): Finaliser fuer policy-pflichtige
+     * LF-010 / LF-013 / LN-009 / LN-011: Finaliser fuer policy-pflichtige
      * `uploadIntent=job_input`-Sessions. Materialisiert die
      * Bytes via [artifactContentStore] und registriert den
      * [ArtifactRecord] (kind=session.artifactKind,

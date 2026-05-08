@@ -61,7 +61,7 @@ import java.time.Duration
 internal object McpCliRuntimeWiring {
     /**
      * @param connectionConfigPath optional path to the project YAML
-     *  carrying LF-012 / LN-038 connection references (LF-012 / LN-038 + §10.10).
+     *  carrying LF-012 / LN-038 connection references (LF-012 / LN-038).
      *  When set, the CLI builds a [LoaderBackedConnectionReferenceStore]
      *  so `resources/list`, `resources/read` and the discovery list-
      *  tools see the deployment's connection refs without ever

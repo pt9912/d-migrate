@@ -37,7 +37,7 @@ data class DiffIndexEntry(
 )
 
 /**
- * LF-012 / LN-038 §6.3 + §10.4 filter for `diff_list`. `sourceRef` /
+ * LF-012 / LN-038 filter for `diff_list`. `sourceRef` /
  * `targetRef` match the `DiffIndexEntry.sourceRef` /
  * `DiffIndexEntry.targetRef` exactly so a LF-012 / LN-038 client can find
  * every diff for a given schema pair; time window inclusive.

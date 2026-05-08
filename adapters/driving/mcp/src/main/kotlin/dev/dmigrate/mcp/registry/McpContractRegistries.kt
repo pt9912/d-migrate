@@ -44,7 +44,7 @@ object McpContractRegistries {
         "resources/templates/list",
         "resources/read",
         "connections/list",
-        // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+        // LF-017 / LF-024 / LN-030 / LN-031: MCP-Prompt-Methoden sind ebenfalls
         // Protokoll-Slots, NICHT Tools. Sie laufen ueber den
         // [PromptsHandler] in [McpServiceImpl], nicht ueber die
         // Tool-Registry.

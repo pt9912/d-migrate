@@ -115,7 +115,7 @@ class OperationalMcpRegistriesTest : FunSpec({
     }
 
     test("defaultToolRegistry: data_import_start ist LF-010 / LF-013 / LN-009 / LN-011-aktiv (kein UnsupportedToolHandler)") {
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5): produktiver Handler statt
+        // LF-010 / LF-013 / LN-009 / LN-011: produktiver Handler statt
         // UnsupportedToolHandler.
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_import_start")
@@ -123,7 +123,7 @@ class OperationalMcpRegistriesTest : FunSpec({
     }
 
     test("defaultToolRegistry: data_transfer_start ist LF-010 / LF-013 / LN-009 / LN-011-aktiv (kein UnsupportedToolHandler)") {
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4): produktiver Handler statt
+        // LF-010 / LF-013 / LN-009 / LN-011: produktiver Handler statt
         // UnsupportedToolHandler.
         val registry = OperationalMcpRegistries.defaultToolRegistry(operationalWiring())
         registry.findHandler("data_transfer_start")

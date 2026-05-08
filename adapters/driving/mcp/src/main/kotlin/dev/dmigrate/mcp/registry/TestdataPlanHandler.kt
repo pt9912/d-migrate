@@ -54,12 +54,12 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.6 + § 6 G.6 (G.6.f) — Handler für `testdata_plan`.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für `testdata_plan`.
  *
- * Eigenarten gegenüber [ProcedureTransformPlanHandler] (G.6.d):
+ * Eigenarten gegenüber [ProcedureTransformPlanHandler] (LF-017 / LF-024 / LN-030 / LN-031):
  *
  * - Eingabe: `schemaRef` Pflicht, `profileRef` und `rules` optional.
- *   LF-012 / LN-011 / LN-017 / LN-027 Z. 825-829 — keine Source-Variante-Wahl wie in G.6.d
+ *   LF-012 / LN-011 / LN-017 / LN-027 Z. 825-829 — keine Source-Variante-Wahl wie bei
  *   (procedureRef|artifactRef|schemaRef+procedureName), sondern nur
  *   ein Schema plus optionales Profile.
  * - Output-Artefakt: `wireArtifactKind=testdata-plan`,
@@ -67,7 +67,7 @@ import java.time.Duration
  *   [AiArtifactProvenance.TestdataPlan] mit `testdataPromptFingerprint`
  *   und `testdataPayloadFingerprint`.
  * - Wire-Envelope: `testdataPlanArtifactId` + `testdataPlanResourceUri`
- *   (statt `planRef`/`targetArtifactId` der G.6.d/e).
+ *   (statt `planRef`/`targetArtifactId` der Procedure-Pfade).
  * - LF-012 / LN-011 / LN-017 / LN-027 Z. 833-836: Tool erzeugt Plan, KEINE produktiven
  *   Datenbank-Schreiboperationen. LF-012 / LN-011 / LN-017 / LN-027 Z. 836-837: Profiling-
  *   Daten dürfen nur als verdichtete Summary oder erlaubte
@@ -75,7 +75,7 @@ import java.time.Duration
  *   `profileRef`-Lookup nur Existenz/Tenant-Scope, keinen
  *   Inhalts-Snapshot.
  *
- * Wiederholt das G.6.d-Pipeline-Skelett — die Crosscutting-Logik
+ * Wiederholt das LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Skelett — die Crosscutting-Logik
  * (Single-Writer-Acquire, Output-Hygiene LF-017 / LF-024 / LN-030 / LN-031, Audit-Felder)
  * ist identisch.
  */

@@ -53,7 +53,7 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 (LF-017 / LF-024 / LN-030 / LN-031) — Handler für `testdata_execute`.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für `testdata_execute`.
  *
  * LF-017 / LF-024 / LN-030 / LN-031-Vertrag in Kürze:
  *
@@ -72,7 +72,7 @@ import java.time.Duration
  *   wird erst der nachgelagerte `data_import_start` mit
  *   `dmigrate:data:write`.
  *
- * Pipeline analog zu [TestdataPlanHandler] (gemeinsame G.6.c-
+ * Pipeline analog zu [TestdataPlanHandler] (gemeinsame LF-017 / LF-024 / LN-030 / LN-031-
  * Single-Writer-Lease via [AiToolOrchestrator]); abweichende Schritte:
  * Plan-Artefakt-Provenance-Validation (§5 Z. 27-33), Zielbindungs-
  * Auflösung aus Plan-Artefakt ODER Payload (LF-017 / LF-024 / LN-030 / LN-031:

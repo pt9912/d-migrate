@@ -15,7 +15,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.time.Instant
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7 — End-to-end Akzeptanz auf der McpServiceImpl-
+ * LF-017 / LF-024 / LN-030 / LN-031 — End-to-end Akzeptanz auf der McpServiceImpl-
  * Schicht: capabilities.prompts wird im initialize ausgewiesen,
  * prompts/list und prompts/get sind durch dmigrate:read gated und
  * mappen Fehler auf JSON-RPC + dmigrateCode.

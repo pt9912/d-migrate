@@ -13,7 +13,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * In-memory session registry per LF-012 / LN-027 / LN-028 / LN-038§12.13.
+ * In-memory session registry per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Sessions are keyed by UUID v4 and live in a `ConcurrentHashMap`.
  * `get` updates `lastSeen` on every hit so an active client never

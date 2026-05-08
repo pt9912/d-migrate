@@ -34,7 +34,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.g) — End-to-end-Smoke für die produktive
+ * LF-017 / LF-024 / LN-030 / LN-031 — End-to-end-Smoke für die produktive
  * KI-Tool-Registry: dispatcht die drei LF-017 / LF-024 / LN-030 / LN-031-Tools durch den
  * realen `tools/call`-Pfad in [McpServiceImpl] und stellt sicher,
  * dass kein UnsupportedToolHandler mehr im Wege steht.
@@ -254,7 +254,7 @@ class AiMcpRegistriesTest : FunSpec({
         planResult.content.first().text!! shouldContain "POLICY_DENIED"
     }
 
-    test("AiMcpWiring liefert sane Defaults (LF-017 / LF-024 / LN-030 / LN-031 + §4.1): NoOp-Provider, In-Process-Stores") {
+    test("AiMcpWiring liefert sane Defaults (LF-017 / LF-024 / LN-030 / LN-031): NoOp-Provider, In-Process-Stores") {
         val gWiring = AiMcpWiring(operationalWiring = operationalWiring())
         // Defaults sind die In-Process-Implementierungen; type-check
         // statt toString-prefix-Hoffen, weil internal data classes

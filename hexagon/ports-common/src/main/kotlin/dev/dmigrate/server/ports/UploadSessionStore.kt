@@ -39,7 +39,7 @@ interface UploadSessionStore {
     fun expireDue(now: Instant): List<UploadSession>
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 2/3): findet alle `FINALIZING`-Sessions,
+     * LF-010 / LF-013 / LN-009 / LN-011: findet alle `FINALIZING`-Sessions,
      * deren `finalizingLeaseExpiresAt < [now]` ist. Liefert die
      * Sessions im pre-Transition-Zustand zurueck — der Aufrufer
      * (typisch [dev.dmigrate.server.application.upload.UploadSessionService.timeoutStaleFinalizingSessions])

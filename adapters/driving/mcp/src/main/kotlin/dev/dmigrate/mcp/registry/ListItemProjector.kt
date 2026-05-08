@@ -9,7 +9,7 @@ import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.SchemaIndexEntry
 
 /**
- * LF-012 / LN-038 §6.4 + §10.5 list-item projections per discovery tool.
+ * LF-012 / LN-038 list-item projections per discovery tool.
  *
  * Each projector takes a record from the underlying store and
  * returns the JSON map the list-tool wire shape requires. Every
@@ -55,7 +55,7 @@ internal object ListItemProjector {
             "sizeBytes" to record.managedArtifact.sizeBytes,
             "contentType" to SecretScrubber.scrub(record.managedArtifact.contentType),
             "resourceUri" to record.resourceUri.render(),
-            // LF-012 / LN-038 §6.4 chunk-template surfaces the per-artifact
+            // LF-012 / LN-038 chunk-template surfaces the per-artifact
             // chunk URI shape so clients can build the next-chunk
             // address without out-of-band knowledge of the path
             // grammar. LF-012 / LN-038's resources/read recognises this URI

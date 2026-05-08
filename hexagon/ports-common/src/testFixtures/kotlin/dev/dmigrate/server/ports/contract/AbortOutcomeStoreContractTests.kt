@@ -10,7 +10,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
 /**
- * Phase F § 8.6 (F.6 2/3) — Contract-Tests fuer Implementoren von
+ * LF-010 / LF-013 / LN-009 / LN-011 — Contract-Tests fuer Implementoren von
  * [AbortOutcomeStore]. Pin't:
  *
  * 1. Erster Save unter neuem `resultRef` -> `Stored`.

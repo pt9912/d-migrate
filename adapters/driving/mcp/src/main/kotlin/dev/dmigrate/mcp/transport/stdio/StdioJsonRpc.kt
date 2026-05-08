@@ -9,7 +9,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * stdio JSON-RPC dispatcher per LF-012 / LN-027 / LN-028 / LN-038§12.4.
+ * stdio JSON-RPC dispatcher per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Wires an [NdjsonMessageProducer] (reads NDJSON from [input]) to an
  * lsp4j `RemoteEndpoint` that dispatches to [service] and writes

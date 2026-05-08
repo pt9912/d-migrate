@@ -102,8 +102,8 @@ internal class ArtifactUploadHandler(
         limits = limits,
         payloadFactory = payloadFactory,
         finalizingLeaseTtl = options.finalizingLeaseTtl,
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3): Init-Quotas auf Validation-/Parse-
-        // Failure freigeben (analog zur F.4-(3/3)-oversize-Pipeline).
+        // LF-010 / LF-013 / LN-009 / LN-011: Init-Quotas auf Validation-/Parse-
+        // Failure freigeben (analog zur LF-010 / LF-013 / LN-009 / LN-011-oversize-Pipeline).
         quotaService = quotaService,
     )
 
@@ -127,7 +127,7 @@ internal class ArtifactUploadHandler(
         }
         enforceIntentScope(session, context.principal)
         validateSessionSizeContract(session)
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 3/3): AuditFields-Population fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: AuditFields-Population fuer
         // Around-/Finally-Audit (Vertrag: "Around-/Finally-Audit fuer
         // Init, Segment, Abort ... vervollstaendigen").
         context.auditFields.resourceRefs = listOf(session.resourceUri.render())
@@ -178,7 +178,7 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3): dispatchet die finalisierung anhand
+     * LF-010 / LF-013 / LN-009 / LN-011: dispatchet die finalisierung anhand
      * des `session.uploadIntent`. `schema_staging_readonly` geht
      * weiter durch den LF-010 / LF-013 / LN-009 / LN-011-Schema-Pfad ([SchemaStagingFinalizer]),
      * `job_input` durch den neuen [JobInputFinalizer] (Bytes-only,
@@ -231,7 +231,7 @@ internal class ArtifactUploadHandler(
         val finalizer = options.jobInputFinalizer
         return if (finalizer == null) {
             // Tests ohne JobInputFinalizer-Wiring: legacy COMPLETED-
-            // Transition; in Production muss F.5 (3/3) den Finaliser
+            // Transition; in Production muss LF-010 / LF-013 / LN-009 / LN-011 den Finaliser
             // wiren, sonst bleibt der Artefakt-Materialise-Schritt aus.
             sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
             null
@@ -248,7 +248,7 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3): leichter MIME-zu-Format-Mapper fuer
+     * LF-010 / LF-013 / LN-009 / LN-011: leichter MIME-zu-Format-Mapper fuer
      * den deterministischen `artifactId`-Material-String. Werte
      * folgen [SchemaFileResolver]-/LF-010 / LF-013 / LN-009 / LN-011-Konventionen ("json",
      * "yaml") und fallen sonst auf "bin" zurueck. Der MIME-Type
@@ -258,7 +258,7 @@ internal class ArtifactUploadHandler(
     private fun formatFromMimeType(mimeType: String): String = when {
         mimeType.equals("application/json", ignoreCase = true) ||
             mimeType.endsWith("+json", ignoreCase = true) -> "json"
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): CSV-Import-Artefakte werden in LF-010 / LF-013 / LN-009 / LN-011
+        // LF-010 / LF-013 / LN-009 / LN-011: CSV-Import-Artefakte werden in LF-010 / LF-013 / LN-009 / LN-011
         // erlaubt; beide Allowlist-Schreibweisen mappen auf dasselbe
         // Format, damit Caller mit `application/csv` denselben
         // deterministischen `art-...`-Id erhalten wie mit `text/csv`.
@@ -287,7 +287,7 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 1/3): intent-abhaengiger Scope-Check nach
+     * LF-010 / LF-013 / LN-009 / LN-011: intent-abhaengiger Scope-Check nach
      * dem no-oracle Session-/Owner-Lookup. Dispatch erzwingt nur das
      * lockere `dmigrate:read`-Gate; der Handler erzwingt zusaetzlich
      * `dmigrate:artifact:upload` fuer policy-pflichtige
@@ -325,7 +325,7 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 3/3): terminale Failure-Pipeline fuer
+     * LF-010 / LF-013 / LN-009 / LN-011: terminale Failure-Pipeline fuer
      * oversize Segmente. Vertrag: "zu grosses Segment setzt Session
      * terminal auf FAILED, speichert ein Failure-Outcome, startet
      * Cleanup und gibt Quotas frei". Reihenfolge ist wichtig — der
@@ -404,7 +404,7 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 2/3): defensive Pruefung gegen Session-
+     * LF-010 / LF-013 / LN-009 / LN-011: defensive Pruefung gegen Session-
      * Misskonfiguration. `sizeBytes=0` ist nur fuer das Single-Empty-
      * Segment in nicht-Schema-`job_input` zulaessig (Vertrag: "Null-Byte-
      * Upload als ein finales leeres Segment modellieren"). Init blockt
@@ -754,10 +754,10 @@ internal class ArtifactUploadHandler(
         val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
         val finalizer: SchemaStagingFinalizer? = null,
         /**
-         * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3): policy-pflichtiger
+         * LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger
          * `uploadIntent=job_input`-Pfad. Default `null` haelt
          * Bestands-Tests gruen; Production wiring muss den Finaliser
-         * setzen, sonst materialisiert F.5 keine Artefaktbytes.
+         * setzen, sonst materialisiert LF-010 / LF-013 / LN-009 / LN-011 keine Artefaktbytes.
          */
         val jobInputFinalizer: JobInputFinalizer? = null,
         val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
@@ -769,7 +769,7 @@ internal class ArtifactUploadHandler(
         private val MAX_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
         val DEFAULT_FINALIZING_LEASE_TTL: Duration = Duration.ofMinutes(5)
 
-        /** LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 1/3): Intent-zu-Scope-Mapping. */
+        /** LF-010 / LF-013 / LN-009 / LN-011: Intent-zu-Scope-Mapping. */
         private val SCOPE_ARTIFACT_UPLOAD: Set<String> = setOf("dmigrate:artifact:upload")
         private val SCOPE_READONLY_ACCEPTED: Set<String> =
             setOf("dmigrate:read", "dmigrate:artifact:upload")

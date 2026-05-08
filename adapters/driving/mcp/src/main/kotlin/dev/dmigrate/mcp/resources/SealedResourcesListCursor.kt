@@ -10,7 +10,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 + §10.8 wrapper that HMAC-seals the
+ * LF-012 / LN-038 + wrapper that HMAC-seals the
  * `resources/list` cursor. LF-012 / LN-038 kept the cursor as
  * Base64-of-JSON `(kind, innerToken)` — no signature, no tenant
  * binding, no expiry. LF-012 / LN-038 wraps that inner state inside an

@@ -54,7 +54,7 @@ internal class ArtifactUploadAbortHandler(
     private val quotaService: QuotaService,
     private val clock: Clock,
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 5.3 + § 8.6 (F.6 3/3): wenn gewired, faengt der
+     * LF-010 / LF-013 / LN-009 / LN-011: wenn gewired, faengt der
      * Handler administrative / fremde Abbrueche und delegiert an die
      * [AdministrativeAbortPipeline]. Default `null` haelt die
      * LF-012 / LN-038-Owner-only-Semantik unveraendert (Bestands-Tests
@@ -77,7 +77,7 @@ internal class ArtifactUploadAbortHandler(
                 ServerResourceUri(tenant, ResourceKind.UPLOAD_SESSIONS, uploadSessionId),
             )
 
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 3/3): AuditFields-Population fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: AuditFields-Population fuer
         // Around-/Finally-Audit (Vertrag: "Around-/Finally-Audit fuer
         // Init, Segment, Abort ... vervollstaendigen").
         context.auditFields.resourceRefs = listOf(session.resourceUri.render())
@@ -87,7 +87,7 @@ internal class ArtifactUploadAbortHandler(
             return handleOwnerAbort(session, context, reason)
         }
 
-        // LF-010 / LF-013 / LN-009 / LN-011 § 5.3: fremder Owner -> administrative Pipeline.
+        // LF-010 / LF-013 / LN-009 / LN-011: fremder Owner -> administrative Pipeline.
         // Ohne gewirete Pipeline bleibt die LF-012 / LN-038-Semantik
         // (Forbidden) — Bestands-Caller-Tests unveraendert.
         val pipeline = administrativeAbortPipeline

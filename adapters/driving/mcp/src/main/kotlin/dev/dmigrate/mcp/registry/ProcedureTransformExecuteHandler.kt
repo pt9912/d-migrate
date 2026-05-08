@@ -52,10 +52,10 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.5 + § 6 G.6 (G.6.e) — Handler für
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für
  * `procedure_transform_execute`.
  *
- * Eigenarten gegenüber [ProcedureTransformPlanHandler] (G.6.d):
+ * Eigenarten gegenüber [ProcedureTransformPlanHandler]:
  *
  * - Genau eine Plan-Source: `planRef` ODER `planArtifactId`. Plan
  *   §5.5 Z. 770 — Schema listet beide, Handler erzwingt
@@ -75,9 +75,9 @@ import java.time.Duration
  *   [AiArtifactProvenance.Execute] mit Plan-Bindung
  *   (`planRef`, `planArtifactFingerprint`).
  * - Wire-Envelope: `targetArtifactId` + `targetResourceUri` als
- *   Pflichtfelder (statt `planRef` wie in G.6.d).
+ *   Pflichtfelder (statt `planRef` im Plan-Pfad).
  *
- * Wiederholt das G.6.d-Pipeline-Skelett — die Crosscutting-Logik
+ * Wiederholt das LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Skelett; die Crosscutting-Logik
  * (Single-Writer-Acquire, Output-Hygiene LF-017 / LF-024 / LN-030 / LN-031,
  * Audit-Felder) ist identisch.
  */
@@ -742,7 +742,7 @@ internal class ProcedureTransformExecuteHandler(
         append("\"")
         append(",\"findings\":[]")
         // LF-012 / LN-011 / LN-017 / LN-027: Output-Wire-Form heisst targetArtifactId +
-        // targetResourceUri (NICHT planRef wie bei G.6.d).
+        // targetResourceUri (NICHT planRef wie im Plan-Pfad).
         append(",\"targetArtifactId\":\"").append(artifactId).append('"')
         append(",\"targetResourceUri\":\"").append(resultRef).append('"')
         append(",\"providerMeta\":{\"providerName\":\"").append(providerName).append('"')

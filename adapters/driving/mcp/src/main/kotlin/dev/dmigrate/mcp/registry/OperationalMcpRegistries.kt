@@ -9,7 +9,7 @@ import dev.dmigrate.server.application.job.JobStartOrchestrator
  * Umstellung gemaess LF-012 / LN-011 / LN-017 / LN-027 line 1132 ("Tool-Registry von
  * Unsupported-Handlern auf produktive Handler umstellen") fuer die
  * drei LF-012 / LN-011 / LN-017 / LN-027 Start-Tools — `job_cancel` und Runner-Integration
- * folgen in AP E.7 / E.8.
+ * folgen in LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Layering: nimmt eine bereits gebaute LF-012 / LN-038-Registry und
  * ueberschreibt nur die drei E-Slots. LF-012 / LN-038/C-Tools bleiben
@@ -34,7 +34,7 @@ object OperationalMcpRegistries {
             quotaService = eWiring.ownerAwareQuotaService,
             jobDispatcher = eWiring.jobDispatcher,
             jobWorkerFactory = eWiring.jobWorkerFactory,
-            // LF-012 / LN-011 / LN-017 / LN-027 § 3.5 + § 6.5 (E3.5): admission ans Pre-commit-Gate;
+            // LF-012 / LN-011 / LN-017 / LN-027 (E3.5): admission ans Pre-commit-Gate;
             // jobStore an markExecutorSetupFailed (post-commit Setup-
             // Failure -> pollbares FAILED).
             dispatchAdmission = eWiring.executorBundle.admission,
@@ -84,7 +84,7 @@ object OperationalMcpRegistries {
                     DataProfileStartHandler(orchestrator, clock)
                 SchemaCompareStartHandler.TOOL_NAME ->
                     SchemaCompareStartHandler(orchestrator, clock)
-                // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5): produktiver
+                // LF-010 / LF-013 / LN-009 / LN-011: produktiver
                 // `data_import_start`-Handler. Reaktiviert den
                 // bisherigen UnsupportedToolHandler-Slot mit
                 // ArtifactStore-/ConnectionReferenceStore-/
@@ -98,7 +98,7 @@ object OperationalMcpRegistries {
                         schemaStore = eWiring.runtimeWiring.schemaStore,
                         clock = clock,
                     )
-                // LF-010 / LF-013 / LN-009 / LN-011 § 8.8 (F.8 4/4): produktiver
+                // LF-010 / LF-013 / LN-009 / LN-011: produktiver
                 // `data_transfer_start`-Handler. Tenant-scoped
                 // Lookup fuer Source + Target ConnectionRef ueber
                 // den geteilten ConnectionReferenceStore.

@@ -37,7 +37,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3) — End-to-End Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011 — End-to-End Integrationstest fuer den
  * `job_input`-Upload-Pfad ueber die produktive
  * [McpRuntimeRegistries.defaultToolRegistry]-Verdrahtung. Pin't, dass
  * der `JobInputFinalizer` aus [McpRuntimeWiring] tatsaechlich an den
@@ -46,7 +46,7 @@ import java.util.Base64
  *
  * Init wird hier manuell simuliert (Session vorab in den Store
  * geschrieben) — der Orchestrator-Wiring fuer den policy-Init-Pfad
- * (F.3 4/4) ist eine separate Aenderung; F.5 (3/3) konzentriert
+ * (LF-010 / LF-013 / LN-009 / LN-011) ist eine separate Aenderung; diese Suite konzentriert
  * sich auf den Finalisations- und Lesepfad.
  */
 class McpJobInputUploadScenarioTest : FunSpec({
@@ -74,7 +74,7 @@ class McpJobInputUploadScenarioTest : FunSpec({
 
     fun args(s: String): JsonElement = JsonParser.parseString(s)
 
-    test("F.5 (3/3) E2E: artifact_upload (job_input) -> bytes lesbar via artifact_chunk_get") {
+    test("LF-010 / LF-013 / LN-009 / LN-011 E2E: artifact_upload (job_input) -> bytes lesbar via artifact_chunk_get") {
         // 1. Wiring + Registry — produktive McpRuntimeWiring inkl.
         // automatischem JobInputFinalizer-Default.
         val sessionStore = InMemoryUploadSessionStore()

@@ -65,7 +65,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * MCP-server entry point per LF-012 / LN-027 / LN-028 / LN-038
- * LF-012 / LN-027 / LN-028 / LN-038§6.20/§6.21. The `serve` subcommand
+ * LF-012 / LN-027 / LN-028 / LN-038. The `serve` subcommand
  * activates the full LF-012 / LN-038 dispatch chain: every tool from the
  * LF-012 / LN-038 plan (`schema_validate`, `schema_generate`, `schema_compare`,
  * `artifact_upload*`, `artifact_chunk_get`, `job_status_get`,

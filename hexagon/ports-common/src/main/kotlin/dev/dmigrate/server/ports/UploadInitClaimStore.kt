@@ -5,7 +5,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 5.1 + § 8.3 (F.3 2/4) — atomarer Single-Writer-Claim
+ * LF-010 / LF-013 / LN-009 / LN-011 — atomarer Single-Writer-Claim
  * fuer den policy-pflichtigen `artifact_upload_init`-Pfad.
  *
  * Zweck: zwischen `SyncEffectIdempotencyStore.reserve(...)` und der

@@ -50,7 +50,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 5.1 + § 8.3 (F.3 4/4) — pin't den policy-Init-Pfad
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den policy-Init-Pfad
  * (`uploadIntent=job_input`) im MCP-Handler:
  *
  * - Allow -> Success-Envelope mit `uploadSessionId`/`ttlSeconds`.
@@ -507,7 +507,7 @@ class ArtifactUploadInitHandlerPolicyPathTest : FunSpec({
         parseSuccess(outcome).get("uploadSessionId").asString shouldBe "ups-1"
     }
 
-    test("F.4 (2/3): sizeBytes=0 + artifactKind=SCHEMA -> VALIDATION_ERROR (kein leeres Schema)") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: sizeBytes=0 + artifactKind=SCHEMA -> VALIDATION_ERROR (kein leeres Schema)") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val empty = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         val ex = shouldThrow<ValidationErrorException> {

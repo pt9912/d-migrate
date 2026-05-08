@@ -47,11 +47,11 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.5 + § 6 G.6 (G.6.e) — Akzeptanztests fuer den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests fuer den
  * `procedure_transform_execute`-Handler.
  *
  * Schwerpunkt: Plan-Provenance-Validierung (LF-017 / LF-024 / LN-030 / LN-031 Z. 783-799),
- * weil das die Pflicht ist, die G.6.e von G.6.d unterscheidet.
+ * weil das die Execute-spezifische Pflicht gegenüber dem Plan-Pfad ist.
  */
 class ProcedureTransformExecuteHandlerTest : FunSpec({
 

@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.schema
 
 /**
  * Verifies tool schemas don't accept secret-shaped properties per
- * LF-012 / LN-027 / LN-028 / LN-038§6.10 ("Schemas, die rohe JDBC-Secrets
+ * LF-012 / LN-027 / LN-028 / LN-038 ("Schemas, die rohe JDBC-Secrets
  * als Tool-Payload erlauben" sind verboten).
  *
  * Rationale: even though LF-012 / LN-038 doesn't dispatch most tools, a tool
@@ -59,13 +59,13 @@ internal object SchemaSecretGuard {
      * weakening the substring match for everyone else.
      */
     val ALLOWED_OVERRIDES: Set<String> = setOf(
-        // LF-012 / LN-011 / LN-017 / LN-027 §7.4: `approvalToken` ist ein client-praesentiertes
+        // LF-012 / LN-011 / LN-017 / LN-027: `approvalToken` ist ein client-praesentiertes
         // Approval-Token im Approved-Retry-Flow. Es wandert nie in
         // Store/Audit — der Server fingerprint't es per
         // ApprovalTokenFingerprint.compute(...) und verwirft das Klartext-
         // Token sofort danach. Der Substring `token` matcht generisch,
         // aber dieses Feld ist ausdruecklich Teil des MCP-Protokolls
-        // (LF-012 / LN-011 / LN-017 / LN-027 / §7.6 input).
+        // (LF-012 / LN-011 / LN-017 / LN-027 input).
         "approvaltoken",
     )
 

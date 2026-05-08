@@ -43,8 +43,8 @@ class McpServiceImplTest : FunSpec({
         val result = sut.initialize(
             InitializeParams(protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION),
         ).get()
-        // §5.3: capabilities reflect only what is implemented. LF-012 / LN-027 / LN-028 / LN-038
-        // turned on tools, LF-012 / LN-027 / LN-028 / LN-038 turns on resources. Both keep
+        // Capabilities reflect only what is implemented by the
+        // LF-012 / LN-027 / LN-028 / LN-038 registry. Both keep
         // listChanged=false until subscriptions ship; resources also
         // declares subscribe=false (no Resource subscription support).
         result.capabilities.tools shouldBe mapOf("listChanged" to false)

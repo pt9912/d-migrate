@@ -147,7 +147,7 @@ internal class HttpHarness(
     }
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: posts a raw JSON-RPC body and
+     * LF-012 / LN-027 / LN-028 / LN-038 final-review: posts a raw JSON-RPC body and
      * returns `(statusCode, body)` WITHOUT the 2xx-only assertion in
      * [sendRequestRaw]. Scenario tests that need to scan an HTTP
      * error body (Origin-rejection, session-validation failure,

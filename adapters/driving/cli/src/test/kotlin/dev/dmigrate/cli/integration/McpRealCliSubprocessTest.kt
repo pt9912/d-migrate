@@ -19,7 +19,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 §6.24 Z. 1839 + 1963 + final-review point 1: spawn the
+ * LF-012 / LN-027 / LN-028 / LN-038 Z. 1839 + 1963 + final-review point 1: spawn the
  * REAL CLI binary as a child JVM and exercise the full
  * `mcp serve --transport stdio` lifecycle:
  *

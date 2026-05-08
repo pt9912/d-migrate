@@ -2,7 +2,7 @@ package dev.dmigrate.mcp.schema
 
 /**
  * LF-012 / LN-038 input/output JSON-Schemas for every 0.9.6 tool per
- * LF-012 / LN-027 / LN-028 / LN-038§6.10.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Each tool gets a typed schema with the obvious top-level
  * arguments. LF-012 / LN-038 will refine them as handlers come online; the
@@ -137,7 +137,7 @@ internal object McpToolSchemas {
                 .withAllOf(truncatedRequiresField("artifactRef"))
                 .required("dialect", "statementCount", "summary", "findings", "truncated"),
         ))
-        // LF-012 / LN-038 §10.5 + §6.4: typed list-tool schemas live in
+        // LF-012 / LN-038: typed list-tool schemas live in
         // `McpListToolSchemas`; the registry merges them in
         // through one putAll so the lookup-by-tool-name surface
         // stays unified.
@@ -315,7 +315,7 @@ internal object McpToolSchemas {
         ))
 
         // Data-write tools
-        // LF-010 / LF-013 / LN-009 / LN-011 § 6.1 + § 8.7 (F.7 1/5): Vollstaendiges
+        // LF-010 / LF-013 / LN-009 / LN-011: Vollstaendiges
         // `data_import_start`-Tool-Schema. LF-017 / LF-024 / LN-030 / LN-031-Optionen werden
         // flat unter dem Input gefuehrt (nicht in einem `options`-
         // Wrapper), damit das additionalProperties=false-Gate
@@ -365,10 +365,10 @@ internal object McpToolSchemas {
             ).required("idempotencyKey", "targetConnectionRef"),
             output = jobStartOut(),
         ))
-        // LF-010 / LF-013 / LN-009 / LN-011 § 6.2 + § 8.8 (F.8 1/4): Vollstaendiges
+        // LF-010 / LF-013 / LN-009 / LN-011: Vollstaendiges
         // `data_transfer_start`-Tool-Schema. LF-010 / LF-013 / LN-009 / LN-011-Optionen werden
         // flat unter dem Input gefuehrt (analog zu data_import_start
-        // aus F.7), damit `additionalProperties=false` unbekannte
+        // aus LF-010 / LF-013 / LN-009 / LN-011), damit `additionalProperties=false` unbekannte
         // Optionsnamen direkt am Schema-Gate blockiert.
         put("data_transfer_start", schemaPair(
             input = obj(
@@ -394,7 +394,7 @@ internal object McpToolSchemas {
             output = jobStartOut(),
         ))
 
-        // Cancel — LF-012 / LN-011 / LN-017 / LN-027 / §7.6: Eingabe `jobId` ODER tenant-scoped
+        // Cancel — LF-012 / LN-011 / LN-017 / LN-027: Eingabe `jobId` ODER tenant-scoped
         // `resourceUri` (server-side check stellt "exactly-one" sicher);
         // optional `reason`. Output liefert aktuellen Jobstatus +
         // `executionMeta` mit Cancel-Feldern, KEIN `cancelled: boolean`
@@ -417,7 +417,7 @@ internal object McpToolSchemas {
             ).required("jobId", "operation", "status", "terminal", "resourceUri", "executionMeta"),
         ))
 
-        // LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 8.5 (G.5): vollstaendiges
+        // LF-017 / LF-024 / LN-030 / LN-031: vollstaendiges
         // `procedure_transform_plan`-Schema. LF-017 / LF-024 / LN-030 / LN-031-Eingaben
         // werden flat unter dem Input gefuehrt (nicht in einem
         // Wrapper), damit `additionalProperties=false` unbekannte
@@ -445,7 +445,7 @@ internal object McpToolSchemas {
                 "rules" to objectField(),
                 "profileRef" to stringField(),
                 "diffRef" to stringField(),
-                // Optionale Provider-Auswahl (LF-017 / LF-024 / LN-030 / LN-031 + §5.2):
+                // Optionale Provider-Auswahl (LF-017 / LF-024 / LN-030 / LN-031):
                 "providerId" to stringField(),
                 "model" to stringField(),
             ).required("approvalKey", "targetDialect"),
@@ -462,7 +462,7 @@ internal object McpToolSchemas {
             ).required("summary", "findings", "providerMeta", "executionMeta"),
         ))
 
-        // LF-017 / LF-024 / LN-030 / LN-031 § 5.5 + § 8.5 (G.5): vollstaendiges
+        // LF-017 / LF-024 / LN-030 / LN-031: vollstaendiges
         // `procedure_transform_execute`-Schema. LF-012 / LN-011 / LN-017 / LN-027 Z. 770:
         // `planRef` ODER `planArtifactId` referenziert das
         // freigegebene Plan-Artefakt aus `procedure_transform_plan`;
@@ -496,7 +496,7 @@ internal object McpToolSchemas {
             ),
         ))
 
-        // LF-017 / LF-024 / LN-030 / LN-031 § 5.6 + § 8.5 (G.5): vollstaendiges
+        // LF-017 / LF-024 / LN-030 / LN-031: vollstaendiges
         // `testdata_plan`-Schema. LF-012 / LN-011 / LN-017 / LN-027 Pflichtfelder:
         // `approvalKey`, `schemaRef`, `targetDialect`. Optional:
         // `profileRef`, `rules`, Provider-Auswahl.
@@ -559,7 +559,7 @@ internal object McpToolSchemas {
 
     /**
      * `schema_compare` operand shape: only `schemaRef` is accepted in
-     * LF-012 / LN-038 (§5.3 + §6.6). `connectionRef` and inline `schema` are
+     * LF-012 / LN-038 (). `connectionRef` and inline `schema` are
      * runtime-rejected — the JSON-Schema deliberately does NOT list
      * them so a JSON-Schema-validating client gets the same answer.
      */
@@ -702,7 +702,7 @@ internal object McpToolSchemas {
     )
 
     /**
-     * Job-aware `executionMeta` object per LF-012 / LN-011 / LN-017 / LN-027 / §5.6 — adds
+     * Job-aware `executionMeta` object per LF-012 / LN-011 / LN-017 / LN-027 — adds
      * the durable Cancel-Felder, die `job_status_get` und `job_cancel`
      * EINHEITLICH projizieren muessen. `requestId` bleibt das einzige
      * Pflichtfeld; Cancel-Felder werden nur bei aktivem oder
@@ -774,13 +774,13 @@ internal object McpToolSchemas {
     )
 
     /**
-     * LF-017 / LF-024 / LN-030 / LN-031 § 5.1 (G.5): closed-shape `providerMeta`-Objekt für
+     * LF-017 / LF-024 / LN-030 / LN-031: closed-shape `providerMeta`-Objekt für
      * KI-nahe Tool-Outputs. `providerName` und `model` sind Pflicht
      * (sonst wäre keine Provenance möglich); `modelVersion` und
      * `requestId` sind optional, weil lokale Provider keine
      * Versionierung/Korrelation liefern müssen. **Enthält bewusst
      * keinen Endpoint, keinen `secretRef` und keine API-Keys**
-     * (LF-017 / LF-024 / LN-030 / LN-031 + §5.2 Z. 611-612: Secrets nie in Wire-Antworten).
+     * (LF-017 / LF-024 / LN-030 / LN-031 + Z. 611-612: Secrets nie in Wire-Antworten).
      */
     internal fun providerMetaField(): Map<String, Any> = mapOf(
         "type" to "object",
@@ -796,12 +796,12 @@ internal object McpToolSchemas {
 
     // arrayField/enumField extracted to SchemaPrimitives.kt;
     // list-tool schemas + their items extracted to
-    // McpListToolSchemas.kt (LF-012 / LN-038/§6.4).
+    // McpListToolSchemas.kt (LF-012 / LN-038).
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.6 Job-Start-Tools (`schema_reverse_start`,
+     * LF-012 / LN-011 / LN-017 / LN-027 Job-Start-Tools (`schema_reverse_start`,
      * `data_profile_start`): teilen `connectionId` + scope-spec, plus die
-     * LF-012 / LN-011 / LN-017 / LN-027-Pflichtfelder `idempotencyKey` (LF-012 / LN-011 / LN-017 / LN-027 "idempotencyKey
+     * LF-012 / LN-011 / LN-017 / LN-027-Pflichtfelder `idempotencyKey` ("idempotencyKey
      * als Pflichtfeld erzwingen") und das optionale `approvalToken`
      * (LF-012 / LN-011 / LN-017 / LN-027: Caller liefert Token nach `RequiresApproval` nach).
      */
@@ -818,7 +818,7 @@ internal object McpToolSchemas {
     )
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.6 Output-Schema fuer Start-Tools: `jobId` + `resourceUri`
+     * LF-012 / LN-011 / LN-017 / LN-027 Output-Schema fuer Start-Tools: `jobId` + `resourceUri`
      * + (job-aware) `executionMeta`. Wird von `schema_reverse_start`,
      * `data_profile_start` und `schema_compare_start` geteilt.
      */

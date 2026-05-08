@@ -58,7 +58,7 @@ internal class StdioHarness(
     val auditSink: InMemoryAuditSink get() = auditSinkRef
 
     /**
-     * LF-012 / LN-027 / LN-028 / LN-038 §6.24 final-review: removed from the
+     * LF-012 / LN-027 / LN-028 / LN-038 final-review: removed from the
      * [McpClientHarness] interface (Z. 1849 forbids non-client
      * methods on the harness surface). Still exposed `internal` on
      * the concrete class so test-only fixture helpers can stage

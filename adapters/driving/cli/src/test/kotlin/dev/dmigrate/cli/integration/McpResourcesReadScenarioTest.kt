@@ -11,7 +11,7 @@ private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E6: transport-neutral coverage of `resources/read` per
- * LF-012 / LN-027 / LN-028 / LN-038§7.3.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Pflichtfluesse:
  *  - Happy path: stage a LF-012 / LN-038 resource (schema / artifact / job)

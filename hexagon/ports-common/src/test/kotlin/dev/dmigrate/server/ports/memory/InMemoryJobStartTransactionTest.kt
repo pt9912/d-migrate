@@ -13,7 +13,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.2 contract test for [InMemoryJobStartTransaction]: belegt,
+ * LF-012 / LN-011 / LN-017 / LN-027 contract test for [InMemoryJobStartTransaction]: belegt,
  * dass `JobStore.save` und `IdempotencyStore.commit` jointly visible
  * werden und keine Saga-Halbzustände entstehen.
  */

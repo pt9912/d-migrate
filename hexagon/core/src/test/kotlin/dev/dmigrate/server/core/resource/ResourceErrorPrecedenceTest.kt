@@ -11,7 +11,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
 /**
- * Golden tests for the §4.2 precedence chain. Every LF-012 / LN-038
+ * Golden tests for the precedence chain. Every LF-012 / LN-038
  * dispatcher (`resources/read`, `artifact_chunk_get`,
  * `job_status_get`, the `*_list` tools) plugs into
  * [ResourceErrorPrecedence] so the order — parse → tenant scope →

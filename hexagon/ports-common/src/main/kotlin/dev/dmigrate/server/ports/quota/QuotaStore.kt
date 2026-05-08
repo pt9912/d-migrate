@@ -10,7 +10,7 @@ enum class QuotaDimension {
     UPLOAD_BYTES,
     PARALLEL_SEGMENT_WRITES,
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 1/3): persistierte Artefakt-Bytes nach
+     * LF-010 / LF-013 / LN-009 / LN-011: persistierte Artefakt-Bytes nach
      * erfolgreicher Finalisierung. Die [ACTIVE_UPLOAD_SESSIONS]-
      * und [UPLOAD_BYTES]-Reservierungen aus Init werden auf
      * `COMPLETED` freigegeben; die Bytes wandern in diese Dimension,
@@ -61,7 +61,7 @@ sealed interface QuotaOutcome {
         val current: Long,
         val limit: Long,
         /**
-         * LF-012 / LN-011 / LN-017 / LN-027 §7.9 line 1294-1295: `RATE_LIMITED`-Details muessen
+         * LF-012 / LN-011 / LN-017 / LN-027 line 1294-1295: `RATE_LIMITED`-Details muessen
          * `retryAfter` enthalten. Fuer Window-Rate-Limits aus dem
          * naechsten Window-Reset; fuer aktive Jobquoten aus einem
          * konfigurierten Retry-Hint, weil Slot-Freigabe ereignisgetrieben

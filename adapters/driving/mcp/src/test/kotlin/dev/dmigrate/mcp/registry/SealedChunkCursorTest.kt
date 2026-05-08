@@ -49,7 +49,7 @@ class SealedChunkCursorTest : FunSpec({
     }
 
     test("chunkSize change between mint and verify invalidates the cursor") {
-        // LF-012 / LN-038 §10.9: chunkSize is part of the binding so a
+        // LF-012 / LN-038: chunkSize is part of the binding so a
         // server that bumps `maxArtifactChunkBytes` mid-walk
         // doesn't silently re-align byte offsets.
         val codec = McpCursorCodec(keyring(), clock = fixedClock(Instant.parse("2026-05-04T10:00:00Z")))
@@ -68,7 +68,7 @@ class SealedChunkCursorTest : FunSpec({
         }
     }
 
-    test("LF-012 / LN-038 §10.9 review: chunk-cursor default TTL is 5 minutes (NOT the 15-minute generic default)") {
+    test("LF-012 / LN-038 review: chunk-cursor default TTL is 5 minutes (NOT the 15-minute generic default)") {
         // Tight chunk walks finish well within 5 minutes; the
         // generic 15-minute TTL would needlessly extend the
         // replay window for stale cursors.

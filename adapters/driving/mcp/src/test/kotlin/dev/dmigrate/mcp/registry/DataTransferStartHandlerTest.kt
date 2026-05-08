@@ -34,7 +34,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 6.2 + § 8.8 (F.8 2/4) — Pre-Idempotency-Validation +
+ * LF-010 / LF-013 / LN-009 / LN-011 — Pre-Idempotency-Validation +
  * LF-012 / LN-011 / LN-017 / LN-027-Pipeline-Integration des `data_transfer_start`-Handlers.
  *
  * Pin't:
@@ -331,7 +331,7 @@ class DataTransferStartHandlerTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────
-    // F.8 (3/4) — ConnectionRef-Resolution + Transfer-Fingerprint.
+    // LF-010 / LF-013 / LN-009 / LN-011 — ConnectionRef-Resolution + Transfer-Fingerprint.
     // ──────────────────────────────────────────────────────────────
 
     test("sourceConnectionRef ohne Eintrag im Store -> RESOURCE_NOT_FOUND") {

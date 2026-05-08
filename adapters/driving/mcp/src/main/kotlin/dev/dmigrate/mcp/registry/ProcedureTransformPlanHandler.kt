@@ -54,7 +54,7 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.4 + § 6 G.6 (G.6.d) — Handler für
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für
  * `procedure_transform_plan`.
  *
  * Verbindet die LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Schritte:
@@ -80,13 +80,13 @@ import java.time.Duration
  *    `planArtifactId`, `planResourceUri`, `providerMeta`,
  *    `executionMeta`).
  *
- * Scope-Carve-out für G.6.d (wird in G.6.e/f bzw. G.7-Folge-AP
- * geschlossen):
+ * Scope-Carve-out für LF-017 / LF-024 / LN-030 / LN-031 (wird mit den
+ * Execute-/Testdata-/Prompt-Pfaden geschlossen):
  *
  * - `PolicyDecision.RequiresApproval` wird als generisches
  *   `POLICY_REQUIRED` ohne Challenge-Felder (`approvalRequestId`,
  *   `requiredScopes`, `reasons`) projiziert. Volle Challenge-Form
- *   kommt mit dem AI-Approval-Flow im AP G.6.e/f.
+ *   kommt mit dem LF-017 / LF-024 / LN-030 / LN-031-Approval-Flow.
  */
 internal class ProcedureTransformPlanHandler(
     private val orchestrator: AiToolOrchestrator,
@@ -123,7 +123,7 @@ internal class ProcedureTransformPlanHandler(
             now = clock.instant(),
         )
 
-        // Audit-Felder befuellen (LF-017 / LF-024 / LN-030 / LN-031 + LF-012 / LN-011 / LN-017 / LN-027 §7.10).
+        // Audit-Felder befuellen (LF-017 / LF-024 / LN-030 / LN-031 + LF-012 / LN-011 / LN-017 / LN-027).
         context.auditFields.payloadFingerprint = payloadFingerprint
         context.auditFields.resourceRefs = context.auditFields.resourceRefs + parsed.allResourceRefs()
 
@@ -607,7 +607,7 @@ internal class ProcedureTransformPlanHandler(
         when (val src = parsed.source) {
             is SourceVariant.Procedure -> {
                 // procedureRef ist ein freies String-Token (LF-017 / LF-024 / LN-030 / LN-031 erlaubt
-                // tool-spezifische Identitaeten); fuer G.6.d MVP keine Lookup-
+                // tool-spezifische Identitaeten); im MVP keine Lookup-
                 // Pflicht — die Provenance haelt den Wert als Audit-Spur.
                 // Bei einem `dmigrate://`-Format-Wert zwingen wir Tenant-Bindung.
                 val parsedUri = ServerResourceUri.parse(src.value)

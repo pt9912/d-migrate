@@ -12,7 +12,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 + §10.9 wrapper that HMAC-seals the
+ * LF-012 / LN-038 + wrapper that HMAC-seals the
  * `artifact_chunk_get` continuation cursor. LF-012 / LN-038 used a naked
  * integer (`chunkId`) as both input and output — clients could
  * forge any chunk index to probe an artefact's content.

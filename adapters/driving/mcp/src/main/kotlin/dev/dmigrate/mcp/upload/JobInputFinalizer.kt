@@ -17,7 +17,7 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 1/3) — Finaliser fuer policy-pflichtige
+ * LF-010 / LF-013 / LN-009 / LN-011 — Finaliser fuer policy-pflichtige
  * `uploadIntent=job_input`-Sessions.
  *
  * Aufgerufen vom [dev.dmigrate.mcp.registry.StreamingFinalizer] nach
@@ -62,7 +62,7 @@ fun interface JobInputFinalizer {
  *
  * Speichert keine Schema-Daten und ruft keinen Validator —
  * `job_input`-Bytes werden vom nachgelagerten Import-Worker
- * (F.7 / F.8) als opake Datenquelle interpretiert.
+ * (LF-010 / LF-013 / LN-009 / LN-011) als opake Datenquelle interpretiert.
  */
 class DefaultJobInputFinalizer(
     private val artifactStore: ArtifactStore,

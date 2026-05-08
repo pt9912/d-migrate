@@ -38,7 +38,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): stdio-Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011: stdio-Integrationstest fuer den
  * mehrsegmentigen `artifact_upload`-Pfad.
  *
  * Validiert, dass der NDJSON-stdio-Transport mehrere
@@ -73,9 +73,9 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         return JsonParser.parseString(text).asJsonObject
     }
 
-    test("F.10: mehrsegmentiger CSV-Upload (job_input) ueber stdio liefert COMPLETED + Bytes via artifact_chunk_get") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: mehrsegmentiger CSV-Upload ueber stdio finalisiert") {
         // 1. McpRuntimeWiring + Registry — produktive Default-Verdrahtung
-        // (inkl. JobInputFinalizer-Wiring aus F.5 3/3).
+        // (inkl. JobInputFinalizer-Wiring aus LF-010 / LF-013 / LN-009 / LN-011).
         val sessionStore = InMemoryUploadSessionStore()
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
@@ -111,7 +111,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         )
 
         // 3. Pre-seed: durable Session mit drei Segmenten + CSV-MIME-Type.
-        // F.10 pin't den mehrsegmentigen Upload + Finalisation, nicht
+        // LF-010 / LF-013 / LN-009 / LN-011 pin't den mehrsegmentigen Upload + Finalisation, nicht
         // den separat getesteten policy-gesteuerten Init.
         val payload = "id,name,age\n1,Alice,42\n2,Bob,37\n4,Eve,31\n".toByteArray()
         val sha = sha256Hex(payload)

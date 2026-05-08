@@ -38,7 +38,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 Audit-Akzeptanz-Pins. Verifiziert LF-012 / LN-011 / LN-017 / LN-027 Tests:
+ * LF-012 / LN-011 / LN-017 / LN-027 Audit-Akzeptanz-Pins. Verifiziert die Job-Start- und
+ * Cancel-Auditpfade:
  *
  * - jedes Fehleroutcome wird auditiert (Around/Finally per [AuditScope])
  * - keine Approval-Tokens, Secrets oder rohen Connection-Daten im Audit

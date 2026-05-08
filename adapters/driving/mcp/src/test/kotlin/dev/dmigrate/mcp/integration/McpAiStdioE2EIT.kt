@@ -44,7 +44,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.9 — End-to-end-Akzeptanz über den realen
+ * LF-017 / LF-024 / LN-030 / LN-031 — End-to-end-Akzeptanz über den realen
  * NDJSON-stdio-Transport für die KI-nahen Tools und MCP-Prompts.
  *
  * Pin't:

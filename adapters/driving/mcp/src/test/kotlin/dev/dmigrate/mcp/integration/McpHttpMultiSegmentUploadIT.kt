@@ -47,7 +47,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): HTTP-Integrationstest fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011: HTTP-Integrationstest fuer den
  * mehrsegmentigen `artifact_upload`-Pfad ueber `contentBase64`.
  *
  * Pin't, dass das streambare HTTP-Transport keinen separaten
@@ -95,7 +95,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
         return JsonParser.parseString(text).asJsonObject
     }
 
-    test("F.10: mehrsegmentiger CSV-Upload (job_input) ueber HTTP/contentBase64 finalisiert COMPLETED") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: mehrsegmentiger CSV-Upload (job_input) ueber HTTP/contentBase64 finalisiert COMPLETED") {
         val sessionStore = InMemoryUploadSessionStore()
         val artifactStore = InMemoryArtifactStore()
         val artifactContentStore = InMemoryArtifactContentStore()
@@ -116,7 +116,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
         // Pre-seed: durable Session mit drei Segmenten + application/csv-MIME.
         // CSV ist seit LF-010 / LF-013 / LN-009 / LN-011 erlaubt; sowohl `text/csv` als auch
         // `application/csv` werden serverseitig auf `format=csv`
-        // normalisiert (vgl. F.10.b und ArtifactUploadHandler.formatFromMimeType).
+        // normalisiert (vgl. LF-010 / LF-013 / LN-009 / LN-011 und ArtifactUploadHandler.formatFromMimeType).
         val payload = "id,name,age\n1,Alice,42\n2,Bob,37\n4,Eve,31\n".toByteArray()
         val sha = sha256Hex(payload)
         val sessionId = "ups-http-multiseg"

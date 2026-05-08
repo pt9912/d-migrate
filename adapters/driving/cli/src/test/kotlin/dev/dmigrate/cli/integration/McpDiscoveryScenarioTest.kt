@@ -93,7 +93,7 @@ class McpDiscoveryScenarioTest : FunSpec({
     }
 
     test("connection-resource projection drops credentialRef and providerRef on both transports") {
-        // LF-012 / LN-038 + §10.11 acceptance: the connection
+        // LF-012 / LN-038 + acceptance: the connection
         // discovery surface NEVER materialises a credentialRef /
         // providerRef value. Pin both per-transport so a future
         // regression that lifts a seed into the wire shape fails

@@ -3,7 +3,7 @@ package dev.dmigrate.server.ports
 import dev.dmigrate.server.core.connection.ConnectionReference
 
 /**
- * LF-012 / LN-038 + §10.10: adapter-neutral port that loads
+ * LF-012 / LN-038: adapter-neutral port that loads
  * **secret-free** [ConnectionReference] records from configuration
  * (project YAML, server config, or a future config provider). The
  * port deliberately surfaces *only* the discovery-safe metadata —

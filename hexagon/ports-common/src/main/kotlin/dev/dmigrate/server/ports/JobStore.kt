@@ -10,7 +10,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 §6.3 + §10.4 filter for `job_list`. Every field is
+ * LF-012 / LN-038 filter for `job_list`. Every field is
  * optional; an empty filter selects every job in the tenant.
  *
  * Time window: `createdAfter` is INCLUSIVE, `createdBefore` is
@@ -51,7 +51,7 @@ interface JobStore {
     fun deleteExpired(now: Instant): Int
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.2: Compare-and-set-Statusübergang. Liest den aktuellen
+     * LF-012 / LN-011 / LN-017 / LN-027: Compare-and-set-Statusübergang. Liest den aktuellen
      * [JobRecord] atomar aus dem Store, prüft dass der heutige Status in
      * [allowedFromStatuses] enthalten ist, und schreibt den durch
      * [transformer] erzeugten neuen [ManagedJob]. [transformer] empfängt
@@ -82,7 +82,7 @@ interface JobStore {
     ): JobTransitionOutcome
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.2: durable Cancel-Request-Markierung. Setzt
+     * LF-012 / LN-011 / LN-017 / LN-027: durable Cancel-Request-Markierung. Setzt
      * [ManagedJob.cancelRequest].`requested = true` mit den übergebenen
      * Metadaten, ohne den Status-Übergang nach `CANCELLED` selbst
      * auszulösen — dieser kommt erst nach Worker-Ack via
@@ -109,7 +109,7 @@ interface JobStore {
 }
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.2 Statusübergangs-Ergebnis. Pinned in
+ * LF-012 / LN-011 / LN-017 / LN-027 Statusübergangs-Ergebnis. Pinned in
  * [JobStore.transitionStatus] und [JobStore.markCancelRequested].
  */
 sealed interface JobTransitionOutcome {

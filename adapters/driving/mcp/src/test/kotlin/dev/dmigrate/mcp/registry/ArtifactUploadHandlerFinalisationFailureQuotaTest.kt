@@ -31,10 +31,10 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3) — `StreamingFinalizer.persistFailedOutcomeBestEffort`
+ * LF-010 / LF-013 / LN-009 / LN-011 — `StreamingFinalizer.persistFailedOutcomeBestEffort`
  * gibt die Init-Quotas frei, sobald der FAILED-Outcome durabel landet.
  * Dieses Pin't den Validator-Fehler-Pfad (job_input mit Stub-Finaliser,
- * der absichtlich eine Validation wirft) — analog zum F.4-(3/3)-
+ * der absichtlich eine Validation wirft) — analog zum LF-010 / LF-013 / LN-009 / LN-011-
  * oversize-Pfad, aber spaeter in der Pipeline (nach Claim + Assembly).
  */
 class ArtifactUploadHandlerFinalisationFailureQuotaTest : FunSpec({

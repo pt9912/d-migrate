@@ -23,7 +23,7 @@ import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038: `schema_compare` per LF-012 / LN-027 / LN-028 / LN-038§6.6.
+ * LF-012 / LN-027 / LN-028 / LN-038: `schema_compare` per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * LF-012 / LN-038 is **schemaRef-only** — inline `schema` and `connectionRef`
  * are explicitly rejected:

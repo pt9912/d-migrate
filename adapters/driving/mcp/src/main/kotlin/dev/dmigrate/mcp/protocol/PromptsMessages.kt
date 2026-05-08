@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.protocol
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 — MCP `prompts/list` und `prompts/get`
+ * LF-017 / LF-024 / LN-030 / LN-031 — MCP `prompts/list` und `prompts/get`
  * Wire-Shapes per 2025-11-25-Spezifikation.
  *
  * - [PromptsListParams] / [PromptsListResult] — Discovery aller

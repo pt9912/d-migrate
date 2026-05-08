@@ -13,7 +13,7 @@ import dev.dmigrate.server.core.job.JobRecord
 import java.time.Clock
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.8 `job_cancel`-Tool-Handler.
+ * LF-012 / LN-011 / LN-017 / LN-027 `job_cancel`-Tool-Handler.
  *
  * vertragskonforme Pflichten:
  *
@@ -21,8 +21,8 @@ import java.time.Clock
  *   Pflicht (LF-012 / LN-011 / LN-017 / LN-027 line 641); sonst `VALIDATION_ERROR`. `reason`
  *   ist optional.
  * - Service-Aufruf via [JobCancelService]; alle Tenant-/Principal-/
- *   Status-Regeln liegen dort (E.8 (1/3)).
- * - Outcome-Mapping auf das `job_cancel`-Output-Schema (E.6 (1/4)):
+ *   Status-Regeln liegen dort (LF-012 / LN-011 / LN-017 / LN-027).
+ * - Outcome-Mapping auf das `job_cancel`-Output-Schema (LF-012 / LN-011 / LN-017 / LN-027):
  *   `{jobId, operation, status, terminal, resourceUri, executionMeta}`.
  *   `executionMeta` projiziert die Cancel-Felder gemaess
  *   `executionMetaJobField` aus `McpToolSchemas` einheitlich

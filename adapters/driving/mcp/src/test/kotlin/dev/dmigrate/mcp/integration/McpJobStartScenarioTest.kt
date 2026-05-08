@@ -36,7 +36,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 (4/4) Integration: dispatcht die drei LF-012 / LN-011 / LN-017 / LN-027 Start-Tools
+ * LF-012 / LN-011 / LN-017 / LN-027 Integration: dispatcht die drei Job-Start-Tools
  * durch den realen `tools/call`-Pfad in [McpServiceImpl] mit der
  * produktiven [OperationalMcpRegistries] Registry.
  *
@@ -46,13 +46,13 @@ import java.time.ZoneOffset
  *   umstellen" — die drei E-Slots werden via [OperationalMcpRegistries] zu
  *   echten Handlern aufgeloest und liefern Job-Outcomes statt
  *   `UNSUPPORTED_TOOL_OPERATION`.
- * - Output-Schema `{jobId, resourceUri, executionMeta}` (E.6 (1/4)).
+ * - Output-Schema `{jobId, resourceUri, executionMeta}` (LF-012 / LN-011 / LN-017 / LN-027).
  * - Pre-Idempotency-Validation: idempotencyKey-Pflicht und freie
- *   JDBC-URLs werden vor jedem Store-Write abgewiesen (E.6 (2/4)).
+ *   JDBC-URLs werden vor jedem Store-Write abgewiesen (LF-012 / LN-011 / LN-017 / LN-027).
  * - Idempotenter Retry liefert dieselbe Antwort.
  *
  * Bewusst KEIN Transport-Layer: stdio/HTTP-Aequivalenz ist durch
- * LF-012 / LN-027 / LN-028 / LN-038-LF-012 / LN-038-Suite generisch abgedeckt; LF-012 / LN-011 / LN-017 / LN-027-spezifischer
+ * LF-012 / LN-027 / LN-028 / LN-038-Suite generisch abgedeckt; LF-012 / LN-011 / LN-017 / LN-027-spezifischer
  * Test fokussiert sich auf Handler-/Registry-Integration. Der
  * Runner-Pfad (Worker-Dispatch) folgt in LF-012 / LN-011 / LN-017 / LN-027.
  */
@@ -245,7 +245,7 @@ class McpJobStartScenarioTest : FunSpec({
 
     test("Schema in McpToolSchemas reflektiert die produktiven Handler") {
         // Sanity: das Schema fuer schema_reverse_start hat idempotencyKey
-        // als Pflichtfeld (E.6 (1/4)) und der Handler erzwingt das. Wenn
+        // als Pflichtfeld (LF-012 / LN-011 / LN-017 / LN-027) und der Handler erzwingt das. Wenn
         // jemand das Schema ohne Migration aendert, schlaegt dieser Test
         // an, weil die Handler-Validierung divergiert.
         val pair = McpToolSchemas.forTool("schema_reverse_start")!!

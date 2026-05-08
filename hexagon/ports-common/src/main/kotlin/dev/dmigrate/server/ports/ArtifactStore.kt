@@ -9,7 +9,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * LF-012 / LN-038 §6.3 + §10.4 filter for `artifact_list`. Time window is
+ * LF-012 / LN-038 filter for `artifact_list`. Time window is
  * inclusive at both ends; `jobRef` matches `ArtifactRecord.jobRef`
  * exactly so a LF-012 / LN-038 client can fan out artefacts of one job.
  */

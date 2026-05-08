@@ -155,7 +155,7 @@ object McpRuntimeRegistries {
                     clock = wiring.clock,
                     finalizingLeaseTtl = wiring.operationTimeout,
                     finalizer = wiring.finalizer,
-                    // LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 3/3): wire the policy-init
+                    // LF-010 / LF-013 / LN-009 / LN-011: wire the policy-init
                     // (`job_input`) Finaliser, sodass durable Bytes
                     // tatsaechlich in den ArtifactContentStore landen.
                     // Ohne Wiring fiel der job_input-Pfad auf den

@@ -41,7 +41,7 @@ interface IdempotencyStore {
     ): InitResumeOutcome
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §5.5 (Review-Fix Blocker #3): markAwaitingApproval-Variante,
+     * LF-012 / LN-011 / LN-017 / LN-027 (Review-Fix Blocker #3): markAwaitingApproval-Variante,
      * die die durable [ApprovalChallenge] mitspeichert. Beim spaeteren
      * `reserve` (Approved-Retry) liefert die `AwaitingApproval`-Antwort
      * die gespeicherte Challenge zurueck, sodass der Caller den
@@ -71,7 +71,7 @@ interface IdempotencyStore {
     /**
      * Transitions a `PENDING` or `AWAITING_APPROVAL` entry to `COMMITTED`.
      *
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.2: when committing as part of a Job-Start, the resulting
+     * LF-012 / LN-011 / LN-017 / LN-027: when committing as part of a Job-Start, the resulting
      * COMMITTED-retention MUST cover the job's retention so a deduplicated
      * `COMMITTED` answer is still observable while the job exists. Pass
      * [retentionUntil] = `jobRecord.expiresAt` from the
@@ -91,7 +91,7 @@ interface IdempotencyStore {
     ): Boolean
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.5: transitioniert eine `PENDING`- oder
+     * LF-012 / LN-011 / LN-017 / LN-027: transitioniert eine `PENDING`- oder
      * `AWAITING_APPROVAL`-Reservierung in `DENIED`. Die Retention bestimmt
      * der Store; der zurueckgegebene [Instant] (`null` bei Nicht-Anwendbar)
      * ist `expiresAt` des neuen Eintrags und MUSS vom Caller fuer das
@@ -100,7 +100,7 @@ interface IdempotencyStore {
     fun deny(scope: IdempotencyScope, reason: String, now: Instant): Instant?
 
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §5.2 / §7.3: transitioniert eine `PENDING`- oder
+     * LF-012 / LN-011 / LN-017 / LN-027: transitioniert eine `PENDING`- oder
      * `AWAITING_APPROVAL`-Reservierung in den finalen [IdempotencyState.FAILED]-
      * Zustand. Im Gegensatz zu [deny] (explizite Policy-Ablehnung)
      * ist FAILED für endgültige technische Fehler vorgesehen

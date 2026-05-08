@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * Pinned JSON-Schema dialect per LF-012 / LN-027 / LN-028 / LN-038§6.10.
+ * Pinned JSON-Schema dialect per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * MCP advertises tool input/output schemas using JSON Schema. d-migrate
  * pins **Draft 2020-12** as the only acceptable dialect — uniform

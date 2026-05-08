@@ -92,7 +92,7 @@ object McpServerBootstrap {
      *  only real handler.
      * @param runtimeWiring LF-012 / LN-027 / LN-028 / LN-038: when supplied, the bootstrap
      *  builds the registry via [McpRuntimeRegistries.defaultToolRegistry]
-     *  so every LF-012 / LN-038 handler from §3.1 dispatches to its real
+     *  so every LF-012 / LN-038 handler from dispatches to its real
      *  implementation (instead of `UnsupportedToolHandler`). The
      *  explicit `toolRegistry` parameter still wins if both are
      *  supplied, so existing tests can keep injecting custom

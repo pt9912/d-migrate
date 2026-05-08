@@ -32,7 +32,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3) — pin't den End-zu-End-`job_input`-
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den End-zu-End-`job_input`-
  * Finalisations-Pfad ueber den `ArtifactUploadHandler`:
  *
  * 1. Handler dispatcht anhand `session.uploadIntent` auf den
@@ -162,7 +162,7 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
         finalisation.payloadSha256 shouldBe sha
     }
 
-    test("LF-010 / LF-013 / LN-009 / LN-011 § 8.10 (F.10): application/csv und text/csv liefern denselben artifactId (format=csv)") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: application/csv und text/csv liefern denselben artifactId (format=csv)") {
         // CSV-Import-Artefakte sind in LF-010 / LF-013 / LN-009 / LN-011 erlaubt; beide
         // MIME-Allowlist-Schreibweisen muessen serverseitig auf
         // dasselbe `format=csv` normalisieren, damit Caller mit
@@ -199,8 +199,8 @@ class ArtifactUploadHandlerJobInputFinalisationTest : FunSpec({
 
     test("job_input ohne JobInputFinalizer-Wiring faellt auf legacy COMPLETED ohne Materialise") {
         // Simuliert Test-Konstellation, in der der Handler ohne
-        // jobInputFinalizer konfiguriert ist (z.B. F.5-(2/3)-Edge-
-        // Tests vor F.5 (3/3)-Wiring). vertragskonform: keine Bytes,
+        // jobInputFinalizer konfiguriert ist (z.B. LF-010 / LF-013 / LN-009 / LN-011-Edge-
+        // Tests vor LF-010 / LF-013 / LN-009 / LN-011-Wiring). vertragskonform: keine Bytes,
         // kein Record — aber Session wird trotzdem COMPLETED
         // (Bestands-Tests bleiben gruen).
         val payload = "x".toByteArray()

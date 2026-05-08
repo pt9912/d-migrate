@@ -80,7 +80,7 @@ sealed interface ResourceClassification {
 }
 
 /**
- * Centralised per-§4.2 precedence chain that every LF-012 / LN-038
+ * Centralised per- precedence chain that every LF-012 / LN-038
  * dispatcher MUST go through. Order — load-bearing for the
  * no-oracle property:
  *

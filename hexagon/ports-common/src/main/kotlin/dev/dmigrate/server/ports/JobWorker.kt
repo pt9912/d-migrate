@@ -4,7 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.server.core.job.JobRecord
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Job-Worker-Port.
+ * LF-012 / LN-011 / LN-017 / LN-027 Job-Worker-Port.
  *
  * Eine [JobWorker]-Implementierung verkapselt den fachlichen Runner
  * (Schema-Reverse, Data-Profile, Schema-Compare, …), der einen
@@ -34,7 +34,7 @@ fun interface JobWorker {
 }
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Worker-Outcome. Drei Branches, alle auf den
+ * LF-012 / LN-011 / LN-017 / LN-027 Worker-Outcome. Drei Branches, alle auf den
  * Job-Status-Uebergang abgebildet:
  *
  * - [Succeeded] -> `RUNNING -> SUCCEEDED`, [artifactRefs] landen in

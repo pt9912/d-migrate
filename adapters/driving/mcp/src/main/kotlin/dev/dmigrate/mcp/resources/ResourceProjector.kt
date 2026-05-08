@@ -15,7 +15,7 @@ import dev.dmigrate.server.ports.SchemaIndexEntry
 
 /**
  * Pure projections from store records to MCP `resources/list` wire
- * shape per LF-012 / LN-027 / LN-028 / LN-038§6.9.
+ * shape per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Connection references are projected WITHOUT secrets (no
  * `credentialRef`, `providerRef`, JDBC URL — only `connectionId`,
@@ -85,7 +85,7 @@ internal object ResourceProjector {
 }
 
 /**
- * LF-012 / LN-038 `resources/read` content projections per §5.5 + §6.9.
+ * LF-012 / LN-038 `resources/read` content projections per.
  *
  * Where [ResourceProjector] yields the small `Resource` envelope used
  * by `resources/list`, this projector yields the JSON map that

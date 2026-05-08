@@ -5,7 +5,7 @@ import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 + § 6 G.7 (G.7) — pure Argumentvalidierung gegen
+ * LF-017 / LF-024 / LN-030 / LN-031 — pure Argumentvalidierung gegen
  * [PromptArgumentSpec].
  *
  * Pure Funktion: keine IO, keine Lookups. Ressource-Refs werden

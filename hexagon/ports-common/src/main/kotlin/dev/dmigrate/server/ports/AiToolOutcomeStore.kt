@@ -8,7 +8,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.1 + § 6 G.6 — durable Idempotency- und Outcome-Store
+ * LF-017 / LF-024 / LN-030 / LN-031 — durable Idempotency- und Outcome-Store
  * für synchrone KI-nahe Tool-Aufrufe.
  *
  * **Why a dedicated store** (statt

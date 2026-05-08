@@ -44,7 +44,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 5/5) — End-to-End-Integration des
+ * LF-010 / LF-013 / LN-009 / LN-011 — End-to-End-Integration des
  * `data_import_start`-Tools durch den realen `tools/call`-Pfad in
  * [McpServiceImpl] mit der produktiven [OperationalMcpRegistries]-Registry.
  *
@@ -55,7 +55,7 @@ import java.time.ZoneOffset
  * - LF-010 / LF-013 / LN-009 / LN-011-Pflichten am Wire: VALIDATION_ERROR fuer fehlenden
  *   `targetConnectionRef`, RESOURCE_NOT_FOUND fuer unbekanntes
  *   Artefakt.
- * - Runner-Boundary aus F.7 (5/5): das Tool wird als Job durabel
+ * - Runner-Boundary aus LF-010 / LF-013 / LN-009 / LN-011: das Tool wird als Job durabel
  *   angelegt; ohne explizit injizierten Import-Runner terminiert der
  *   Datenjob fail-closed, statt erfolgreichen JDBC-I/O zu simulieren.
  */

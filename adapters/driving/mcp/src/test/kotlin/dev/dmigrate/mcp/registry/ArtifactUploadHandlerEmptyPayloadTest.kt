@@ -26,7 +26,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 8.4 (F.4 2/3) — `sizeBytes=0` Single-Empty-Segment-
+ * LF-010 / LF-013 / LN-009 / LN-011 — `sizeBytes=0` Single-Empty-Segment-
  * Upload fuer `job_input` mit nicht-Schema-`artifactKind` ist
  * gueltig. `schema_staging_readonly` oder `artifactKind=schema`
  * lehnen `sizeBytes=0` deterministisch mit `VALIDATION_ERROR` ab.

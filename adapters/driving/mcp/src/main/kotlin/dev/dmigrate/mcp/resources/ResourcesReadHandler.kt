@@ -20,7 +20,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.util.Base64
 
 /**
- * Handles `resources/read` per LF-012 / LN-038§5.3 + §10.7.
+ * Handles `resources/read` per LF-012 / LN-038.
  *
  * LF-012 / LN-038 upgrade over the LF-012 / LN-038 handler:
  *
@@ -285,7 +285,7 @@ internal class ResourcesReadHandler(
         ResourceKind.DIFFS -> stores.diffStore.findById(uri.tenantId, uri.id)
             ?.let(ResourceContentProjector::projectContent)
 
-        // LF-012 / LN-038 + §10.10 review: connection-refs honour
+        // LF-012 / LN-038 + review: connection-refs honour
         // `allowedPrincipalIds` / `allowedScopes` BOTH on
         // `resources/list` (via the store's `list()` filter) and
         // `resources/read`. Without the per-record `isReadableBy`

@@ -43,7 +43,7 @@ interface McpService {
     fun resourcesRead(params: ReadResourceParams): CompletableFuture<ReadResourceResult>
 
     /**
-     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-`prompts/list`. Scope-gated auf
+     * LF-017 / LF-024 / LN-030 / LN-031: MCP-`prompts/list`. Scope-gated auf
      * `dmigrate:read`. Discovery aller server-seitig registrierten
      * Prompts.
      */
@@ -51,7 +51,7 @@ interface McpService {
     fun promptsList(params: PromptsListParams?): CompletableFuture<PromptsListResult>
 
     /**
-     * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-`prompts/get`. Scope-gated auf
+     * LF-017 / LF-024 / LN-030 / LN-031: MCP-`prompts/get`. Scope-gated auf
      * `dmigrate:read`. Validiert Argumente, läuft Hygiene und
      * liefert die Prompt-Nachrichten zurück. **Keine** versteckte
      * Tool-Ausführung (LF-017 / LF-024 / LN-030 / LN-031).

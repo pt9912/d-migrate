@@ -20,7 +20,7 @@ private val PROTOCOL_METHODS: Set<String> = setOf(
     "resources/templates/list",
     "resources/read",
     "connections/list",
-    // LF-017 / LF-024 / LN-030 / LN-031 § 6 G.7: MCP-Prompt-Methoden sind ebenfalls
+    // LF-017 / LF-024 / LN-030 / LN-031: MCP-Prompt-Methoden sind ebenfalls
     // Protokoll-Slots (im DEFAULT_SCOPE_MAPPING gelistet), nicht
     // Tools.
     "prompts/list",

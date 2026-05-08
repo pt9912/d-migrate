@@ -17,7 +17,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.a 2/2) — Akzeptanz für den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanz für den
  * Single-Writer-Lease + Reclaim-Vertrag.
  */
 class InProcessAiToolOutcomeStoreTest : FunSpec({

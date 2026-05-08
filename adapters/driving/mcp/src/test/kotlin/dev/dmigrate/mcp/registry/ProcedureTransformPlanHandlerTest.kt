@@ -49,7 +49,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 6 G.6 (G.6.d) — Akzeptanztests fuer den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests fuer den
  * `procedure_transform_plan`-Handler.
  */
 class ProcedureTransformPlanHandlerTest : FunSpec({

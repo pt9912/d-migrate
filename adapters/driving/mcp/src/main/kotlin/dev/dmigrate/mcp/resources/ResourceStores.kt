@@ -12,7 +12,7 @@ import dev.dmigrate.server.ports.SchemaStore
 
 /**
  * Aggregate of the six store ports `resources/list` walks per
- * LF-012 / LN-027 / LN-028 / LN-038§6.9. Bundled so the bootstrap, the
+ * LF-012 / LN-027 / LN-028 / LN-038. Bundled so the bootstrap, the
  * route, and tests can all pass a single value instead of six.
  *
  * LF-012 / LN-038 does NOT ship a built-in production implementation —

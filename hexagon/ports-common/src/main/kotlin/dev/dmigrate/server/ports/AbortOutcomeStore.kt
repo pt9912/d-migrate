@@ -3,7 +3,7 @@ package dev.dmigrate.server.ports
 import dev.dmigrate.server.core.upload.AbortOutcome
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 5.3 + § 8.6 (F.6 2/3) — strukturiertes Outcome-Repository
+ * LF-010 / LF-013 / LN-009 / LN-011 — strukturiertes Outcome-Repository
  * fuer administrative / fremde `artifact_upload_abort`-Aufrufe.
  *
  * Indiziert ueber den von [SyncEffectIdempotencyStore] vergebenen

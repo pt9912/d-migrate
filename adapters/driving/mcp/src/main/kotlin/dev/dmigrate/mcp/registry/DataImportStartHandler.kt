@@ -29,7 +29,7 @@ import java.time.Clock
 import java.util.Locale
 
 /**
- * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 + § 8.7 (F.7 2/5) — `data_import_start`-Handler.
+ * LF-010 / LF-013 / LN-009 / LN-011 — `data_import_start`-Handler.
  *
  * Pre-Idempotency-Validation:
  *
@@ -39,7 +39,7 @@ import java.util.Locale
  * - `targetConnectionRef` als RefField mit `ResourceKind.CONNECTIONS` —
  *   der bestehende [dev.dmigrate.server.application.job.JobStartInputValidator]
  *   weist freie JDBC-URLs, ungueltige URI-Syntax und Tenant-Mismatch
- *   ab (LF-012 / LN-011 / LN-017 / LN-027 + § 8.7 "strukturelle Validation vor Idempotency
+ *   ab (LF-012 / LN-011 / LN-017 / LN-027: "strukturelle Validation vor Idempotency
  *   ohne Store-Write").
  *
  * LF-012 / LN-011 / LN-017 / LN-027 Job-Pipeline:
@@ -72,7 +72,7 @@ internal class DataImportStartHandler(
         validateChunkSize(args)
         validateTableTopology(args)
         validateOptionEnums(args)
-        // LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix.
+        // LF-010 / LF-013 / LN-009 / LN-011: Artefakt-Eignungsmatrix.
         // Lookup vor Idempotency, damit "unbekanntes Artefakt" und
         // "falsche Kind/Intent" deterministisch ohne Job-/SyncEffect-
         // Reservierung gemeldet werden.
@@ -82,7 +82,7 @@ internal class DataImportStartHandler(
         validateArtifactContent(record)
         val effectiveFormat = validateFormatCompatibility(args, metadata)
         validateTargetTable(args, metadata)
-        // LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): Connection-/Schema-Ref-Resolution
+        // LF-010 / LF-013 / LN-009 / LN-011: Connection-/Schema-Ref-Resolution
         // VOR der Idempotency-Reservierung. ConnectionReferenceStore
         // liefert nur secret-frei (kein JDBC-URL-Materialise) — der
         // Resolver-Stack (CLI/Runner) zieht Secrets erst beim
@@ -107,7 +107,7 @@ internal class DataImportStartHandler(
             // Wenn der Caller den Artefakt-URI mitgibt, nimmt der
             // [JobStartInputValidator] die tenant-scoped-Pruefung
             // auch fuer ihn mit. `artifactId` (rein opaque) wird im
-            // F.7-(3/5)-Step gegen den Store aufgeloest.
+            // gegen den LF-010 / LF-013 / LN-009 / LN-011-Vertrag im Store aufgeloest.
             if (artifactSource is ArtifactSource.Ref) {
                 add(
                     RefField(
@@ -218,7 +218,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5) + LF-010 / LF-013 / LN-009 / LN-011 — table/tables-Topologie.
+     * LF-010 / LF-013 / LN-009 / LN-011 — table/tables-Topologie.
      *
      * - Beide gleichzeitig: VALIDATION_ERROR (mehrdeutig).
      * - LF-010 / LF-013 / LN-009 / LN-011: `tables` ist erlaubt, wenn `bundleFormat`
@@ -295,7 +295,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Lookup.
+     * LF-010 / LF-013 / LN-009 / LN-011: Artefakt-Lookup.
      *
      * - `artifactId`: direkter Lookup im tenant-scoped [ArtifactStore].
      * - `sourceArtifactRef`: Resource-URI parsen, tenant-Match
@@ -352,7 +352,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 6.1 (F.7 3/5): Artefakt-Eignungsmatrix:
+     * LF-010 / LF-013 / LN-009 / LN-011: Artefakt-Eignungsmatrix:
      *
      * - `kind != UPLOAD_INPUT` -> VALIDATION_ERROR (Vertrag: "Core-Kind
      *   ausser UPLOAD_INPUT als Import-Artefakt -> VALIDATION_ERROR").
@@ -557,7 +557,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): tenant-scoped Lookup im
+     * LF-010 / LF-013 / LN-009 / LN-011: tenant-scoped Lookup im
      * [ConnectionReferenceStore]. Der Store liefert ausdruecklich
      * KEINE materialisierten JDBC-URLs (Vertrag: "secret-frei") — die
      * Pruefung dient nur der Existenz/Visibility, das eigentliche
@@ -601,7 +601,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): optionaler `schemaRef`-Lookup.
+     * LF-010 / LF-013 / LN-009 / LN-011: optionaler `schemaRef`-Lookup.
      * Vertrag: "schemaRef ueber SchemaStore und
      * SchemaRefImportPreflightAdapter materialisieren; keine lokalen
      * Schema-Pfade aus Tool-Payloads verwenden."
@@ -648,7 +648,7 @@ internal class DataImportStartHandler(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.7 (F.7 4/5): MCP-spezifischer Import-Fingerprint.
+     * LF-010 / LF-013 / LN-009 / LN-011: MCP-spezifischer Import-Fingerprint.
      *
      * LF-010 / LF-013 / LN-009 / LN-011-Pflichtfelder: artifactId/resourceUri, Artefakt-
      * sha256, persistente Upload-Metadaten (mimeType + filename),
@@ -668,7 +668,7 @@ internal class DataImportStartHandler(
      * [PayloadFingerprintService] auf — Tenant/Principal/Toolname
      * werden ueber die LF-012 / LN-011 / LN-017 / LN-027-Bindung garantiert. Lokale CLI-Pfade
      * sind in der MCP-Pipeline strukturell ausgeschlossen
-     * (F.7 (2/5) `JobStartInputValidator` weist freie JDBC-URLs +
+     * (LF-010 / LF-013 / LN-009 / LN-011: `JobStartInputValidator` weist freie JDBC-URLs +
      * lokale Pfade ab).
      */
     private fun enrichPayloadForFingerprint(

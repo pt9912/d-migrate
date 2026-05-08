@@ -4,7 +4,7 @@ import dev.dmigrate.server.core.error.ToolErrorCode
 
 /**
  * Transport-neutral metadata for a single MCP tool per
- * LF-012 / LN-027 / LN-028 / LN-038§6.8.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * The descriptor is stable across stdio and HTTP — the same instance
  * is read by both transports' `tools/list`. It does NOT carry the

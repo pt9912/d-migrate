@@ -6,7 +6,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 /**
- * Phase E0.7.1: [PoolSettings] trägt die Cancel-Reaktions-Schranken aus
+ * LF-012 / LN-011 / LN-017 / LN-0270.7.1: [PoolSettings] trägt die Cancel-Reaktions-Schranken aus
  * implementation-plan-0.9.6 §4.1. Default ist `30000ms` (obere Schranke);
  * `0` deaktiviert; negative Werte sind Konstruktionsfehler.
  */

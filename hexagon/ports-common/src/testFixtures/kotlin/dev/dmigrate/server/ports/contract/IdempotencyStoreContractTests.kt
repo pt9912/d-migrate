@@ -245,7 +245,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         removed shouldBe 3
     }
 
-    // ── Phase E §7.3: FAILED state ───────────────────────────────
+    // ── LF-012 / LN-011 / LN-017 / LN-027: FAILED state ───────────────────────────────
 
     test("markFailed transitions PENDING to FAILED and reserve returns Failed with reason") {
         val store = factory()

@@ -19,7 +19,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E §7.2 / `spec/phase-e-port-atomicity.md` (3) Atomicity-
+ * LF-012 / LN-011 / LN-017 / LN-027 / `spec/phase-e-port-atomicity.md` (3) Atomicity-
  * Vertraege fuer [JobStartTransaction]-Implementoren.
  *
  * Jede Implementation muss diese Suite durchlaufen, sonst ist der

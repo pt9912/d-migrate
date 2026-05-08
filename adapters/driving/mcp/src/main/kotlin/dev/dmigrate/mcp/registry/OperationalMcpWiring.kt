@@ -38,7 +38,7 @@ import java.util.UUID
 
 /**
  * LF-012 / LN-011 / LN-017 / LN-027 Wiring-Bundle parallel zu [McpRuntimeWiring]. Komponiert die
- * Services, die die LF-012 / LN-011 / LN-017 / LN-027-Tool-Handler aus LF-012 / LN-011 / LN-017 / LN-027 (3/4) brauchen,
+ * Services, die die LF-012 / LN-011 / LN-017 / LN-027-Tool-Handler brauchen,
  * sodass das Bootstrap nur die Ports und (optional) Konfigurationen
  * uebergibt — Service-Konstruktion erfolgt mit defaults-rueckwaerts.
  *
@@ -106,7 +106,7 @@ data class OperationalMcpWiring(
         cancellationSourceFactory = cancellationSourceFactory,
     ),
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.9 owner-aware Quota-Service. Default-Komposition:
+     * LF-012 / LN-011 / LN-017 / LN-027 owner-aware Quota-Service. Default-Komposition:
      * delegate auf [McpRuntimeWiring.quotaService], owner-Store als
      * In-Memory. Production-Wiring kann eine persistente OwnerStore-
      * Implementierung injizieren.
@@ -129,7 +129,7 @@ data class OperationalMcpWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 § 4 + § 5 (E3.5): Executor + Admission + Lifecycle als
+     * LF-012 / LN-011 / LN-017 / LN-027 (E3.5): Executor + Admission + Lifecycle als
      * konsistent verkabeltes Tripel. Default ist `Sync` — gleicher
      * Bestands-Effekt wie `SyncExecutor` plus no-op Admission. Production-
      * Wiring ueberschreibt mit `JobExecutorFactory.create(Async(...))`;
@@ -160,7 +160,7 @@ data class OperationalMcpWiring(
         quotaService = ownerAwareQuotaService,
     ),
     /**
-     * LF-012 / LN-011 / LN-017 / LN-027 §7.7 Worker-Factory fuer Auto-Dispatch. Der generische
+     * LF-012 / LN-011 / LN-017 / LN-027 Worker-Factory fuer Auto-Dispatch. Der generische
      * Fallback bleibt [PassthroughJobWorkerFactory] fuer nicht verdrahtete
      * Bestandsoperationen; LF-010 / LF-013 / LN-009 / LN-011-Datenoperationen laufen jedoch ueber
      * [DataOperationWorkerFactory] und failen geschlossen, solange

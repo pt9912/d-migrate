@@ -3,7 +3,7 @@ package dev.dmigrate.server.ports
 import dev.dmigrate.core.cancel.CancellationTokenSource
 
 /**
- * LF-012 / LN-011 / LN-017 / LN-027 §7.2 / §6.4 runtime registry that maps a `jobId` to the
+ * LF-012 / LN-011 / LN-017 / LN-027 runtime registry that maps a `jobId` to the
  * [CancellationTokenSource] of the worker thread (or coroutine) that
  * is currently executing the job.
  *

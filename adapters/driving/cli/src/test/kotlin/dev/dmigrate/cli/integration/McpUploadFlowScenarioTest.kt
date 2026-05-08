@@ -15,7 +15,7 @@ import kotlin.io.path.deleteRecursively
 private val IntegrationTag = NamedTag("integration")
 
 /**
- * LF-012 / LN-027 / LN-028 / LN-038 E4: end-to-end upload flow per §7.3 Pflichtfluesse:
+ * LF-012 / LN-027 / LN-028 / LN-038 E4: end-to-end upload flow per Pflichtfluesse:
  *
  *  - `artifact_upload_init` → multi-segment `artifact_upload` →
  *    final segment finalises to a `schemaRef` (read-only schema

@@ -52,10 +52,10 @@ internal class StreamingFinalizer(
     private val payloadFactory: AssembledUploadPayloadFactory,
     private val finalizingLeaseTtl: Duration,
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3): optionaler [QuotaService] fuer den
+     * LF-010 / LF-013 / LN-009 / LN-011: optionaler [QuotaService] fuer den
      * Failure-Pfad. Wenn gewired, gibt der Finaliser auf Validation-/
      * Parse-Fehler die Init-Quotas (`ACTIVE_UPLOAD_SESSIONS`,
-     * `UPLOAD_BYTES`) frei — analog zur F.4-(3/3)-oversize-Pipeline.
+     * `UPLOAD_BYTES`) frei — analog zur LF-010 / LF-013 / LN-009 / LN-011-oversize-Pipeline.
      * Default `null` haelt Bestands-Tests gruen.
      */
     private val quotaService: QuotaService? = null,
@@ -96,7 +96,7 @@ internal class StreamingFinalizer(
     )
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.5 (F.5 2/3) — Pendant zu [finalise] fuer
+     * LF-010 / LF-013 / LN-009 / LN-011 — Pendant zu [finalise] fuer
      * `uploadIntent=job_input`. Faehrt dieselbe Claim-/Assembly-/
      * Outcome-/Commit-Pipeline, ueberlaesst aber die Bytes-
      * Materialisierung dem [JobInputFinalizer] (kein Schema-Parse,
@@ -206,7 +206,7 @@ internal class StreamingFinalizer(
             // one shot. The split persist + save + transition flow
             // had a Reclaim race window between the steps; this call
             // gates all three writes on `finalizingClaimId == claimId`.
-            // LF-010 / LF-013 / LN-009 / LN-011 (F.5 2/3): das Feld heisst `finalisedSchemaRef`,
+            // LF-010 / LF-013 / LN-009 / LN-011: das Feld heisst `finalisedSchemaRef`,
             // dient aber generisch als final-ref (artifactRef fuer
             // job_input).
             requirePersistOrConflict(
@@ -220,7 +220,7 @@ internal class StreamingFinalizer(
                     now = now,
                 ),
             )
-            // LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 1/3): Quota-Swap nach COMPLETED.
+            // LF-010 / LF-013 / LN-009 / LN-011: Quota-Swap nach COMPLETED.
             // Init-time reserved ACTIVE_UPLOAD_SESSIONS + UPLOAD_BYTES
             // werden freigegeben; die durabel persistierten
             // Artefaktbytes wandern in die STORED_ARTIFACT_BYTES-
@@ -233,7 +233,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 1/3): COMPLETED-Quota-Swap.
+     * LF-010 / LF-013 / LN-009 / LN-011: COMPLETED-Quota-Swap.
      *
      * - Release `ACTIVE_UPLOAD_SESSIONS` (1) — die Session ist nicht
      *   mehr aktiv.
@@ -328,7 +328,7 @@ internal class StreamingFinalizer(
                 ),
             )
             "PAYLOAD_TOO_LARGE" -> throw PayloadTooLargeException(0, 0)
-            // LF-010 / LF-013 / LN-009 / LN-011 § 8.9 (F.9 2/3): Upload-Finalisierungs-Timeout
+            // LF-010 / LF-013 / LN-009 / LN-011: Upload-Finalisierungs-Timeout
             // -> OPERATION_TIMEOUT. Der Sweeper aus
             // `UploadSessionService.timeoutStaleFinalizingSessions`
             // persistiert den Outcome; ein Replay-Call (z.B. erneuter
@@ -481,7 +481,7 @@ internal class StreamingFinalizer(
         when (persisted) {
             is PersistOutcome.Persisted -> {
                 transitionToAbortedBestEffort(session, now)
-                // LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3): nach durablem ABORTED gibt
+                // LF-010 / LF-013 / LN-009 / LN-011: nach durablem ABORTED gibt
                 // der Finaliser die Init-Quotas frei, damit der Tenant
                 // nach einem Validation-/Parse-Fehler nicht in seinen
                 // Limits gebunden bleibt. Idempotent — nur der erste
@@ -504,7 +504,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * LF-010 / LF-013 / LN-009 / LN-011 § 8.6 (F.6 1/3): gibt die Init-time Quotas
+     * LF-010 / LF-013 / LN-009 / LN-011: gibt die Init-time Quotas
      * (`ACTIVE_UPLOAD_SESSIONS=1`, `UPLOAD_BYTES=session.sizeBytes`)
      * fuer den Session-Owner frei. Idempotent (`QuotaService.release`
      * ist no-op bei nicht-positivem aktuellem Counter). No-op wenn

@@ -11,8 +11,7 @@ dependencies {
     // muessen auf dem Runtime-Classpath liegen, damit ServiceLoader
     // (RuntimeBootstrap.initialize) sie entdeckt. Compile-Zugriff auf
     // Driver-/Codec-/Streaming-APIs gibt es ueber transitive Reads
-    // (formats fuer SchemaFileResolver, streaming wenn Tool-Handler in
-    // Phase C/D Ports brauchen).
+    // (formats fuer SchemaFileResolver, streaming fuer Schema-/Data-Ports).
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:driver-common"))

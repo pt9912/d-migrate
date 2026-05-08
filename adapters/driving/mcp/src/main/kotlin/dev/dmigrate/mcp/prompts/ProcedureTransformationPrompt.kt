@@ -4,7 +4,7 @@ import dev.dmigrate.mcp.protocol.PromptContent
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * LF-017 / LF-024 / LN-030 / LN-031 § 5.7 (G.7) — Pflichtprompt `procedure_transformation`.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Pflichtprompt `procedure_transformation`.
  *
  * LF-017 / LF-024 / LN-030 / LN-031 Z. 863:
  * > Procedure-Transformation mit explizitem Policy-Hinweis
