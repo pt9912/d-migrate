@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
@@ -21,6 +22,11 @@ class StreamingImporter(
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {
 
+    /** Test seam (Phase E0.3): cancel-propagation tests swap this with a
+     *  capturing override before invoking [import]. Production callers leave
+     *  it at the default. */
+    internal var tableImporter: TableImporter = TableImporter(readerFactory, onTableOpened)
+
     fun import(
         pool: ConnectionPool,
         input: ImportInput,
@@ -35,16 +41,17 @@ class StreamingImporter(
         resumeStateByTable: Map<String, ImportTableResumeState> = emptyMap(),
         onChunkCommitted: (ImportChunkCommit) -> Unit = {},
         onTableCompleted: (TableImportSummary) -> Unit = {},
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): ImportResult {
         val writer = writerLookup(pool.dialect)
         val inputResolver = ImportInputResolver()
-        val tableImporter = TableImporter(readerFactory, onTableOpened)
 
         val discoveredInputs = inputResolver.resolve(input, format)
         require(discoveredInputs.isNotEmpty()) {
             "No tables to import from $input"
         }
 
+        cancellationToken.throwIfCancellationRequested()
         progressReporter.report(ProgressEvent.RunStarted(
             operation = ProgressOperation.IMPORT,
             totalTables = discoveredInputs.size,
@@ -56,6 +63,7 @@ class StreamingImporter(
         val summaries = mutableListOf<TableImportSummary>()
 
         for ((index, tableInput) in discoveredInputs.withIndex()) {
+            cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
             val summary = tableImporter.import(TableImportParams(
                 pool = pool,
@@ -70,8 +78,10 @@ class StreamingImporter(
                 tableCount = discoveredInputs.size,
                 resumeState = resumeStateByTable[tableInput.table],
                 onChunkCommitted = onChunkCommitted,
+                cancellationToken = cancellationToken,
             ))
             summaries += summary
+            cancellationToken.throwIfCancellationRequested()
             onTableCompleted(summary)
         }
 

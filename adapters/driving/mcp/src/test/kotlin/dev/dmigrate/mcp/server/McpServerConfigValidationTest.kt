@@ -1,0 +1,245 @@
+package dev.dmigrate.mcp.server
+
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.inspectors.forAtLeastOne
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.string.shouldContain
+import java.net.URI
+import java.nio.file.Files
+import java.time.Duration
+
+private val ISSUER = URI.create("https://issuer.example/")
+private val JWKS = URI.create("https://issuer.example/.well-known/jwks.json")
+private val INTROSPECT = URI.create("https://issuer.example/introspect")
+private const val AUDIENCE = "mcp.dmigrate.example"
+
+/**
+ * §12.15 stdio validation tests live here because they share the
+ * config / fixtures with the HTTP path; the function under test is
+ * `McpServerConfig.validateForStdio()`.
+ */
+class McpServerConfigStdioValidationTest : FunSpec({
+
+    test("default-config (JWT_JWKS, no issuer/jwks/audience) is OK for stdio") {
+        // §12.15: stdio ignores authMode entirely. Without this
+        // separation, the McpServerConfig() default — which is
+        // JWT_JWKS-shaped because that's what HTTP wants by default —
+        // would refuse to start a stdio server for no good reason.
+        McpServerConfig().validateForStdio().shouldBeEmpty()
+    }
+
+    test("port-range still applies to stdio") {
+        McpServerConfig(port = -1).validateForStdio()
+            .forAtLeastOne { it shouldContain "port must be in" }
+    }
+
+    test("clockSkew range still applies to stdio") {
+        McpServerConfig(clockSkew = Duration.ofHours(1)).validateForStdio()
+            .forAtLeastOne { it shouldContain "clockSkew" }
+    }
+
+    test("unreadable stdioTokenFile still rejects stdio start") {
+        val nonExistent = java.nio.file.Paths.get("/no/such/path-${System.nanoTime()}.json")
+        McpServerConfig(stdioTokenFile = nonExistent).validateForStdio()
+            .forAtLeastOne { it shouldContain "stdioTokenFile" }
+    }
+
+    test("HTTP-only validate() still rejects the same default-config") {
+        // Sanity: the split is real — validate() (HTTP) and
+        // validateForStdio() must NOT return the same answer for the
+        // same input. Otherwise the §12.15 carve-out is lost.
+        McpServerConfig().validate().shouldNotBeEmpty()
+    }
+
+    test("non-loopback bind is irrelevant for stdio") {
+        // §12.15: stdio is a per-process pipe; bind/origin checks
+        // don't apply.
+        McpServerConfig(bindAddress = "0.0.0.0").validateForStdio().shouldBeEmpty()
+    }
+})
+
+private fun validJwks() = McpServerConfig(
+    authMode = AuthMode.JWT_JWKS,
+    issuer = ISSUER,
+    jwksUrl = JWKS,
+    audience = AUDIENCE,
+)
+
+private fun validIntrospection() = McpServerConfig(
+    authMode = AuthMode.JWT_INTROSPECTION,
+    issuer = ISSUER,
+    introspectionUrl = INTROSPECT,
+    audience = AUDIENCE,
+)
+
+private fun validDisabled() = McpServerConfig(
+    authMode = AuthMode.DISABLED,
+)
+
+class McpServerConfigValidationTest : FunSpec({
+
+    test("default config (JWT_JWKS, no creds) is invalid — fail-closed") {
+        val errs = McpServerConfig().validate()
+        errs.forAtLeastOne { it shouldContain "issuer" }
+        errs.forAtLeastOne { it shouldContain "jwksUrl" }
+        errs.forAtLeastOne { it shouldContain "audience" }
+    }
+
+    test("DISABLED on loopback bind validates") {
+        validDisabled().validate().shouldBeEmpty()
+    }
+
+    test("DISABLED on 0.0.0.0 rejects (§4.3)") {
+        val errs = validDisabled().copy(bindAddress = "0.0.0.0").validate()
+        errs.forAtLeastOne { it shouldContain "loopback" }
+    }
+
+    test("DISABLED on :: rejects") {
+        val errs = validDisabled().copy(bindAddress = "::").validate()
+        errs.forAtLeastOne { it shouldContain "loopback" }
+    }
+
+    test("DISABLED with publicBaseUrl rejects") {
+        val errs = validDisabled().copy(
+            publicBaseUrl = URI.create("https://mcp.example/"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "publicBaseUrl" }
+    }
+
+    test("JWT_JWKS without issuer/jwksUrl/audience rejects") {
+        val errs = McpServerConfig(authMode = AuthMode.JWT_JWKS).validate()
+        errs.forAtLeastOne { it shouldContain "issuer" }
+        errs.forAtLeastOne { it shouldContain "jwksUrl" }
+        errs.forAtLeastOne { it shouldContain "audience" }
+    }
+
+    test("JWT_JWKS with full set validates") {
+        validJwks().validate().shouldBeEmpty()
+    }
+
+    test("JWT_INTROSPECTION without introspectionUrl rejects") {
+        val errs = validIntrospection().copy(introspectionUrl = null).validate()
+        errs.forAtLeastOne { it shouldContain "introspectionUrl" }
+    }
+
+    test("JWT_INTROSPECTION with full set validates") {
+        validIntrospection().validate().shouldBeEmpty()
+    }
+
+    test("allowedOrigins with literal '*' rejects (§12.6)") {
+        val errs = validJwks().copy(
+            allowedOrigins = setOf("*"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "wildcard" }
+    }
+
+    test("non-loopback bind with default origins rejects (§12.6)") {
+        // Default origins are loopback-only; a public bind requires
+        // an explicit origin list.
+        val errs = validJwks().copy(bindAddress = "0.0.0.0").validate()
+        errs.forAtLeastOne { it shouldContain "explicit allowedOrigins" }
+    }
+
+    test("non-loopback bind with explicit origins + publicBaseUrl validates") {
+        validJwks().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://app.example"),
+            publicBaseUrl = URI.create("https://mcp.example/"),
+        ).validate().shouldBeEmpty()
+    }
+
+    test("non-loopback bind without publicBaseUrl rejects (§4.4 + §5.2)") {
+        // §4.4 verlangt eine kanonische HTTPS-URI in Protected Resource
+        // Metadata; §5.2 macht "kanonische HTTP-Resource-URI nicht
+        // bestimmbar" zum Startfehler. Ohne publicBaseUrl muesste der
+        // Server auf den Request-Origin zurueckfallen — das ist nicht
+        // kanonisch (Reverse-Proxy-Header lassen sich injizieren).
+        val errs = validJwks().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://app.example"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "publicBaseUrl" }
+    }
+
+    test("loopback bind without publicBaseUrl is fine") {
+        // Loopback uses request-derived URIs in resource_metadata —
+        // no Reverse-Proxy attack-surface there, and Protected
+        // Resource Metadata isn't normative for AuthMode.DISABLED.
+        validJwks().validate().shouldBeEmpty()
+    }
+
+    test("algorithmAllowlist containing 'none' rejects (§12.3)") {
+        val errs = validJwks().copy(
+            algorithmAllowlist = setOf("RS256", "none"),
+        ).validate()
+        errs.shouldNotBeEmpty()
+        errs.forAtLeastOne { it shouldContain "none" }
+    }
+
+    test("algorithmAllowlist containing HS256 rejects") {
+        val errs = validJwks().copy(
+            algorithmAllowlist = setOf("RS256", "HS256"),
+        ).validate()
+        errs.shouldNotBeEmpty()
+        errs.forAtLeastOne { it shouldContain "HS256" }
+    }
+
+    test("port outside 0..65535 rejects") {
+        val errs = validJwks().copy(port = 70_000).validate()
+        errs.forAtLeastOne { it shouldContain "port" }
+    }
+
+    test("negative port rejects") {
+        val errs = validJwks().copy(port = -1).validate()
+        errs.forAtLeastOne { it shouldContain "port" }
+    }
+
+    test("negative clockSkew rejects") {
+        val errs = validJwks().copy(clockSkew = Duration.ofSeconds(-1)).validate()
+        errs.forAtLeastOne { it shouldContain "clockSkew" }
+    }
+
+    test("clockSkew over 5min rejects") {
+        val errs = validJwks().copy(clockSkew = Duration.ofMinutes(6)).validate()
+        errs.forAtLeastOne { it shouldContain "clockSkew" }
+    }
+
+    test("non-positive operationTimeout rejects") {
+        val errs = validJwks().copy(operationTimeout = Duration.ZERO).validate()
+        errs.forAtLeastOne { it shouldContain "operationTimeout" }
+    }
+
+    test("publicBaseUrl with non-https scheme rejects (§4.4)") {
+        val errs = validJwks().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://app.example"),
+            publicBaseUrl = URI.create("http://mcp.example/"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "https" }
+    }
+
+    test("publicBaseUrl with https scheme validates") {
+        validJwks().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://app.example"),
+            publicBaseUrl = URI.create("https://mcp.example/"),
+        ).validate().shouldBeEmpty()
+    }
+
+    test("stdioTokenFile pointing to missing path rejects (§12.10)") {
+        val errs = validJwks().copy(
+            stdioTokenFile = java.nio.file.Path.of("/tmp/does-not-exist-${System.nanoTime()}"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "stdioTokenFile" }
+    }
+
+    test("stdioTokenFile pointing to readable file validates") {
+        val tmp = Files.createTempFile("d-migrate-stdio-", ".json")
+        try {
+            validJwks().copy(stdioTokenFile = tmp).validate().shouldBeEmpty()
+        } finally {
+            Files.deleteIfExists(tmp)
+        }
+    }
+})

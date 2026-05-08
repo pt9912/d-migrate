@@ -31,7 +31,6 @@ private fun readPostgresTable(
     val checkConstraints = PostgresMetadataQueries.listCheckConstraints(session, schema, tableName)
     val indexRows = PostgresMetadataQueries.listIndices(session, schema, tableName)
 
-    val singleColumnForeignKeys = SchemaReaderUtils.liftSingleColumnFks(foreignKeys)
     val singleColumnUnique = SchemaReaderUtils.singleColumnUniqueFromConstraints(uniqueConstraints)
 
     val columns = LinkedHashMap<String, ColumnDefinition>()
@@ -45,7 +44,9 @@ private fun readPostgresTable(
                 udtName = (row["udt_name"] as? String) ?: (row["data_type"] as String),
                 isPkCol = isPrimaryKeyColumn,
                 isIdentity = isIdentity,
+                identityGeneration = row["identity_generation"] as? String,
                 colDefault = row["column_default"] as? String,
+                generatedSequenceName = row["generated_sequence_name"] as? String,
                 charMaxLen = (row["character_maximum_length"] as? Number)?.toInt(),
                 numPrecision = (row["numeric_precision"] as? Number)?.toInt(),
                 numScale = (row["numeric_scale"] as? Number)?.toInt(),
@@ -55,7 +56,7 @@ private fun readPostgresTable(
         )
         if (mapping.note != null) notes += mapping.note
 
-        val required = if (isPrimaryKeyColumn) false else (row["is_nullable"] as String) == "NO"
+        val required = (row["is_nullable"] as String) == "NO"
         val unique = if (isPrimaryKeyColumn) false else columnName in singleColumnUnique
         val defaultValue = if (
             isPrimaryKeyColumn &&
@@ -71,19 +72,19 @@ private fun readPostgresTable(
             required = required,
             unique = unique,
             default = defaultValue,
-            references = singleColumnForeignKeys[columnName],
+            generation = mapping.generation,
         )
     }
 
     val constraints = mutableListOf<ConstraintDefinition>()
-    constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(foreignKeys)
+    constraints += SchemaReaderUtils.buildForeignKeyConstraints(foreignKeys)
     constraints += SchemaReaderUtils.buildMultiColumnUniqueFromConstraints(uniqueConstraints)
     constraints += SchemaReaderUtils.buildCheckConstraints(checkConstraints)
 
     val indices = indexRows.map { index ->
         IndexDefinition(
             name = index.name,
-            columns = index.columns,
+            columns = index.indexColumns,
             type = when (index.type) {
                 "btree" -> IndexType.BTREE
                 "hash" -> IndexType.HASH
@@ -93,6 +94,7 @@ private fun readPostgresTable(
                 else -> IndexType.BTREE
             },
             unique = index.isUnique,
+            where = index.where,
         )
     }
 

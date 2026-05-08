@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -22,6 +24,8 @@ data class SchemaReverseRequest(
     val outputFormat: String = "plain",
     val quiet: Boolean = false,
     val verbose: Boolean = false,
+    val schemaName: String? = null,
+    val schemaVersion: String? = null,
 )
 
 /**
@@ -78,17 +82,34 @@ class SchemaReverseRunner(
         val config: dev.dmigrate.driver.connection.ConnectionConfig,
     )
 
-    fun execute(request: SchemaReverseRequest): Int {
+    /**
+     * Run the reverse pipeline. Cooperative cancel checkpoints sit between
+     * preflight and introspection, between introspection and schema publish,
+     * and between schema publish and report publish. [OperationCancelledException]
+     * is mapped to CLI exit code 130 per `spec/job-contract.md` and must not
+     * be reported as a fachlicher error (implementation-plan-0.9.6 §4.5).
+     */
+    fun execute(
+        request: SchemaReverseRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         val ctx = when (val r = validateAndResolve(request)) {
             is ResolvedContext -> r
             else -> return r as Int
         }
 
-        val result = readSchema(request, ctx) ?: return 4
-        writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
-        writeReportFile(ctx, result)?.let { return it }
-        printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
-        return 0
+        return try {
+            cancellationToken.throwIfCancellationRequested()
+            val result = readSchema(request, ctx) ?: return 4
+            cancellationToken.throwIfCancellationRequested()
+            writeSchemaFile(request, result, ctx.userFacingSource)?.let { return it }
+            cancellationToken.throwIfCancellationRequested()
+            writeReportFile(ctx, result)?.let { return it }
+            printOutput(request, result, ctx.userFacingSource, ctx.reportPath)
+            0
+        } catch (_: OperationCancelledException) {
+            CANCELLED_EXIT_CODE
+        }
     }
 
     private fun validateAndResolve(request: SchemaReverseRequest): Any {
@@ -140,12 +161,26 @@ class SchemaReverseRunner(
                     includeTriggers = request.includeAll || request.includeTriggers,
                 )
                 val reader = driverLookup(ctx.config.dialect).schemaReader()
-                reader.read(p, options)
+                val result = reader.read(p, options)
+                applySchemaMetadataOverrides(result, request)
             }
         } catch (e: Exception) {
             userFacingPrintError("Connection or metadata error: ${e.message}", ctx.userFacingSource)
             null
         }
+    }
+
+    private fun applySchemaMetadataOverrides(
+        result: SchemaReadResult,
+        request: SchemaReverseRequest,
+    ): SchemaReadResult {
+        if (request.schemaName == null && request.schemaVersion == null) return result
+        return result.copy(
+            schema = result.schema.copy(
+                name = request.schemaName ?: result.schema.name,
+                version = request.schemaVersion ?: result.schema.version,
+            )
+        )
     }
 
     private fun writeSchemaFile(request: SchemaReverseRequest, result: SchemaReadResult, userFacingSource: String): Int? {
@@ -205,6 +240,9 @@ class SchemaReverseRunner(
     }
 
     companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
+
         private fun esc(s: String) = s
             .replace("\\", "\\\\")
             .replace("\"", "\\\"")

@@ -1,5 +1,7 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.DataWriter
@@ -25,6 +27,7 @@ internal data class TableImportParams(
     val tableCount: Int,
     val resumeState: ImportTableResumeState?,
     val onChunkCommitted: (ImportChunkCommit) -> Unit,
+    val cancellationToken: CancellationToken = CancellationToken.none(),
 )
 
 internal data class PreparedTableImport(
@@ -34,12 +37,12 @@ internal data class PreparedTableImport(
     val chunkContext: ChunkContext,
 )
 
-internal class TableImporter(
+internal open class TableImporter(
     private val readerFactory: DataChunkReaderFactory,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit,
 ) {
 
-    fun import(params: TableImportParams): TableImportSummary {
+    open fun import(params: TableImportParams): TableImportSummary {
         val tableStartedAt = System.nanoTime()
         var reader: DataChunkReader? = null
         var session: TableImportSession? = null
@@ -54,6 +57,7 @@ internal class TableImporter(
         }
         state.chunksCommittedTotal = committedChunksOffset
 
+        params.cancellationToken.throwIfCancellationRequested()
         try {
             val prepared = prepareImport(
                 params = params,
@@ -72,7 +76,9 @@ internal class TableImporter(
                 params.reporter,
                 params.onChunkCommitted,
                 prepared.firstChunk,
+                params.cancellationToken,
             )
+            params.cancellationToken.throwIfCancellationRequested()
             finishImport(prepared.session, state)
         } catch (throwable: Throwable) {
             primaryFailure = throwable
@@ -98,6 +104,7 @@ internal class TableImporter(
         state: ImportLoopState,
         committedChunksOffset: Long,
     ): PreparedTableImport {
+        params.cancellationToken.throwIfCancellationRequested()
         val reader = readerFactory.create(
             format = params.format,
             input = params.tableInput.openInput(),
@@ -105,15 +112,18 @@ internal class TableImporter(
             chunkSize = params.config.chunkSize,
             options = params.readOptions,
         )
+        params.cancellationToken.throwIfCancellationRequested()
         val session = params.writer.openTable(params.pool, params.tableInput.table, effectiveOptions)
         onTableOpened(params.tableInput.table, session.targetColumns)
+        params.cancellationToken.throwIfCancellationRequested()
         params.reporter.report(
             ProgressEvent.ImportTableStarted(params.tableInput.table, params.ordinal, params.tableCount)
         )
         state.targetColumns = session.targetColumns.map { it.asColumnDescriptor() }
 
-        skipCommittedChunks(reader, committedChunksOffset)
+        skipCommittedChunks(reader, committedChunksOffset, params.cancellationToken)
 
+        params.cancellationToken.throwIfCancellationRequested()
         val firstChunk = reader.nextChunk()
         val chunkContext = buildChunkContext(params, reader, session, firstChunk)
         return PreparedTableImport(reader, session, firstChunk, chunkContext)
@@ -200,10 +210,18 @@ internal class TableImporter(
             TableProgressStatus.FAILED
         }
 
-    private fun skipCommittedChunks(reader: DataChunkReader, offset: Long) {
+    private fun skipCommittedChunks(
+        reader: DataChunkReader,
+        offset: Long,
+        cancellationToken: CancellationToken,
+    ) {
         if (offset <= 0L) return
         var skipped = 0L
         while (skipped < offset) {
+            // Plan §4.6: resume-skip must check before each potentially long
+            // nextChunk read so a cancel during skip never persists a fake
+            // progress checkpoint or starts a write.
+            cancellationToken.throwIfCancellationRequested()
             reader.nextChunk() ?: break
             skipped += 1
         }

@@ -152,6 +152,7 @@ internal object CompareRendererYaml {
                 c.default?.let { sb.appendLine("          default: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
                 c.unique?.let { sb.appendLine("          unique: {before: ${it.before}, after: ${it.after}}") }
                 c.references?.let { sb.appendLine("          references: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
+                c.generation?.let { sb.appendLine("          generation: {before: ${nullable(it.before)}, after: ${nullable(it.after)}}") }
             }
         }
     }

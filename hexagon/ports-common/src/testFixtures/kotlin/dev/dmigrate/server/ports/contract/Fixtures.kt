@@ -18,6 +18,8 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.core.upload.UploadSegment
 import dev.dmigrate.server.core.upload.UploadSession
 import dev.dmigrate.server.core.upload.UploadSessionState
+import dev.dmigrate.server.ports.quota.QuotaDimension
+import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Instant
 
 object Fixtures {
@@ -27,6 +29,16 @@ object Fixtures {
 
     fun tenant(id: String) = TenantId(id)
     fun principal(id: String) = PrincipalId(id)
+
+    fun quotaKey(
+        dimension: QuotaDimension = QuotaDimension.ACTIVE_JOBS,
+        tenant: String = "acme",
+        principal: String? = null,
+    ) = QuotaKey(
+        tenantId = tenant(tenant),
+        dimension = dimension,
+        principalId = principal?.let { principal(it) },
+    )
 
     fun principalContext(
         principalId: String = "alice",

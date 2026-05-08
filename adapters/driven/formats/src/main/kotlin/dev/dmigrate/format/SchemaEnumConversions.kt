@@ -20,6 +20,12 @@ internal fun String.toIndexType(): IndexType = when (lowercase()) {
     else -> throw IllegalArgumentException("Unknown index type: $this")
 }
 
+internal fun String.toIndexSortDirection(): IndexSortDirection = when (lowercase()) {
+    "asc" -> IndexSortDirection.ASC
+    "desc" -> IndexSortDirection.DESC
+    else -> throw IllegalArgumentException("Unknown index sort direction: $this")
+}
+
 internal fun String.toConstraintType(): ConstraintType = when (lowercase()) {
     "check" -> ConstraintType.CHECK
     "unique" -> ConstraintType.UNIQUE

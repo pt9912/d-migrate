@@ -2,8 +2,10 @@ package dev.dmigrate.format
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IdentityMode
 import dev.dmigrate.core.model.ParameterDirection
 import dev.dmigrate.core.model.PartitionType
 import dev.dmigrate.core.model.TriggerEvent
@@ -41,7 +43,16 @@ class SchemaNodeParserTest : FunSpec({
                   "columns": {
                     "id": { "type": "identifier", "auto_increment": true },
                     "status": { "type": "enum", "ref_type": "status_type" },
-                    "next_id": { "type": "integer", "default": { "sequence_nextval": "order_seq" } }
+                    "next_id": { "type": "integer", "default": { "sequence_nextval": "order_seq" } },
+                    "big_id": {
+                      "type": "biginteger",
+                      "generation": {
+                        "type": "identity",
+                        "mode": "always",
+                        "sequence_name": "orders_big_id_seq",
+                        "legacy_serial_syntax": true
+                      }
+                    }
                   },
                   "primary_key": ["id"],
                   "indices": [
@@ -165,6 +176,11 @@ class SchemaNodeParserTest : FunSpec({
         table.columns.getValue("next_id").default
             .shouldBeInstanceOf<DefaultValue.SequenceNextVal>()
             .sequenceName shouldBe "order_seq"
+        table.columns.getValue("big_id").generation shouldBe ColumnGeneration.Identity(
+            mode = IdentityMode.ALWAYS,
+            sequenceName = "orders_big_id_seq",
+            legacySerialSyntax = true,
+        )
 
         val procedure = schema.procedures.getValue("refresh_orders")
         procedure.parameters.single().direction shouldBe ParameterDirection.INOUT

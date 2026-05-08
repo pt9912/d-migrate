@@ -114,8 +114,18 @@ internal class TableComparator {
         val refDiff = if (fkAbsorbed) null
             else if (left.references == right.references) null
             else ValueChange(left.references, right.references)
-        if (hasNoColumnDiff(typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff)) return null
-        return ColumnDiff(name, typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff)
+        val generationDiff = if (left.generation == right.generation) null
+            else ValueChange(left.generation, right.generation)
+        if (hasNoColumnDiff(typeDiff, requiredDiff, defaultDiff, uniqueDiff, refDiff, generationDiff)) return null
+        return ColumnDiff(
+            name = name,
+            type = typeDiff,
+            required = requiredDiff,
+            default = defaultDiff,
+            unique = uniqueDiff,
+            references = refDiff,
+            generation = generationDiff,
+        )
     }
 
     private fun hasNoColumnDiff(vararg diffs: Any?): Boolean =
@@ -252,7 +262,7 @@ internal class TableComparator {
     }
 
     private fun indexKey(index: IndexDefinition): String =
-        index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}"
+        index.name ?: "idx:${index.columns.joinToString(",")}:${index.type}:${index.unique}:${index.where.orEmpty()}"
 }
 
 internal data class TableDiffs(

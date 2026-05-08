@@ -30,6 +30,7 @@ d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migra
 - Inkrementeller Export über `--since-column` / `--since`
 - Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
 - CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import`, `data transfer` und `data profile`
+- MCP-Server (`d-migrate mcp serve --transport stdio|http`) per MCP 2025-11-25 mit Transport, Auth (JWT-JWKS, JWT-Introspection, stdio-Token-Registry), Discovery (`tools/list`, `resources/list`, `resources/templates/list`), JSON-Schema-Vertrag und produktiven MCP-Tool-Handlern inklusive kontrollierter Start-Tools
 - Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
 - OCI-Image für die Nutzung mit Docker
 
@@ -62,6 +63,31 @@ noch kein vollautomatischer Standard-Installationspfad.
 
 ```bash
 ./gradlew build
+```
+
+#### Makefile-Komfortziele
+
+Das Top-Level-[`Makefile`](Makefile) ist ein duenner Wrapper um die
+kanonischen Gradle-, Docker- und Script-Einstiegspunkte. Die verfuegbaren
+Kurzbefehle zeigt:
+
+```bash
+make help
+```
+
+Haeufige Ziele:
+
+```bash
+make build             # ./gradlew build
+make test              # ./gradlew test
+make gates             # Gradle check, Coverage-Gate und docs-check
+make ci                # ./gradlew build plus Coverage-Gate und docs-check
+make smoke             # CLI-Distribution bauen und --version/--help pruefen
+make integration       # Testcontainers-Integrationstests via Docker-Script
+make docs-check        # Markdown-Linkziele in docs/ pruefen
+make docker-gates      # Docker-Runtime-Build, Coverage-Gate und Runtime-Smoke
+make docker-full-gates # docker-gates plus Docker-Integrationstests
+make release-assets    # ZIP, TAR, Fat JAR und SHA256 bauen
 ```
 
 #### Release-Assets lokal bauen
@@ -172,7 +198,7 @@ Hinweise:
 - Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
 - Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
 - Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
-- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (`[text](pfad)`) in `docs/` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
+- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (Markdown links) in `docs/`, `spec/`, `README.md` und `CHANGELOG.md` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
 - Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
 - Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
   [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
@@ -225,7 +251,7 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.5](https://github.com/pt9912/d-migrate/releases/tag/v0.9.5)** — Qualitätsverbesserung — MySQL-Profiling unterstützt `--schema` jetzt end-to-end; shared SQL-Helpers und strengere Test-/CI-Gates verbessern die Release- und Qualitätsbasis.
+Aktuelles Release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)** — MCP-Server — d-migrate ist jetzt als Model Context Protocol v1 Server über `stdio` und Streamable HTTP nutzbar (Phasen A–G), mit asynchronen Jobs, Idempotenz, Policy/Approval, Quotas, JDBC-Persistenz, file-backed Artifact-Stores, Bundle-Import und KI-nahen Tools (`procedure_transform_*`, `testdata_*`). Daneben: deterministische DDL-Generierung (`--deterministic`/`SOURCE_DATE_EPOCH`), bigint Identity-Columns für PostgreSQL/MySQL, partial Index-Predicates, Index-Sortierung pro Spalte und ein robusterer `schema reverse`/`--split=pre-post`-Pfad.
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
@@ -242,22 +268,23 @@ Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](http
 ## Roadmap
 
 Die vollständige Roadmap und den Meilensteinplan findest du in
-[docs/roadmap.md](docs/roadmap.md).
+[docs/planning/roadmap.md](docs/planning/in-progress/roadmap.md).
 
 ## Dokumentation
 
-Detaillierte Dokumentation findest du im [docs/](docs/)-Verzeichnis:
+Detaillierte Dokumentation findest du in [docs/](docs/) und [spec/](spec/):
 
-- [Quick Start Guide (Deutsch)](docs/guide.md)
-- [Entwurf](docs/design.md) / [Architektur](docs/architecture.md)
-- [Schema-YAML-Referenz](docs/schema-reference.md)
-- [Spezifikation des neutralen Modells](docs/neutral-model-spec.md)
-- [CLI-Spezifikation](docs/cli-spec.md)
-- [Regeln zur DDL-Generierung](docs/ddl-generation-rules.md)
-- [Verbindungs- und Konfigurationsspezifikation](docs/connection-config-spec.md)
-- [Roadmap](docs/roadmap.md)
-- [Release-Leitfaden](docs/releasing.md)
-- [Lastenheft (Deutsch)](docs/lastenheft-d-migrate.md)
+- [Quick Start Guide (Deutsch)](docs/user/guide.md)
+- [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
+- [Schema-YAML-Referenz](spec/schema-reference.md)
+- [Spezifikation des neutralen Modells](spec/neutral-model-spec.md)
+- [CLI-Spezifikation](spec/cli-spec.md)
+- [MCP-Server (`d-migrate mcp serve`)](spec/mcp-server.md)
+- [Regeln zur DDL-Generierung](spec/ddl-generation-rules.md)
+- [Verbindungs- und Konfigurationsspezifikation](spec/connection-config-spec.md)
+- [Roadmap](docs/planning/in-progress/roadmap.md)
+- [Release-Leitfaden](docs/user/releasing.md)
+- [Lastenheft (Deutsch)](spec/lastenheft-d-migrate.md)
 
 ## Mitmachen
 

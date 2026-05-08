@@ -1,5 +1,6 @@
 package dev.dmigrate.profiling.service
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingQueryError
@@ -15,7 +16,7 @@ import java.sql.SQLFeatureNotSupportedException
  * Orchestrates profiling for a single table.
  * Loads metadata, profiles each column, resolves types, evaluates warnings.
  */
-class ProfileTableService(
+open class ProfileTableService(
     private val adapters: ProfilingAdapterSet,
     private val warningEvaluator: WarningEvaluator = WarningEvaluator(),
     private val targetTypes: List<TargetLogicalType> = listOf(
@@ -26,13 +27,20 @@ class ProfileTableService(
     private val topN: Int = 10,
 ) {
 
-    fun profile(pool: ConnectionPool, tableName: String, schema: String? = null): TableProfile {
+    open fun profile(
+        pool: ConnectionPool,
+        tableName: String,
+        schema: String? = null,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): TableProfile {
+        cancellationToken.throwIfCancellationRequested()
         val columns = try {
             adapters.introspection.listColumns(pool, tableName, schema)
         } catch (e: Exception) {
             throw SchemaIntrospectionError("Failed to list columns for table '$tableName': ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val rowCount = try {
             adapters.data.rowCount(pool, tableName, schema)
         } catch (e: Exception) {
@@ -40,7 +48,8 @@ class ProfileTableService(
         }
 
         val columnProfiles = columns.map { col ->
-            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount, schema)
+            cancellationToken.throwIfCancellationRequested()
+            profileColumn(pool, tableName, col.name, col.dbType, col.nullable, rowCount, schema, cancellationToken)
         }
 
         val tableWarnings = warningEvaluator.evaluateTable(
@@ -55,6 +64,7 @@ class ProfileTableService(
         )
     }
 
+    @Suppress("LongParameterList")
     private fun profileColumn(
         pool: ConnectionPool,
         table: String,
@@ -63,6 +73,7 @@ class ProfileTableService(
         nullable: Boolean,
         rowCount: Long,
         schema: String? = null,
+        cancellationToken: CancellationToken = CancellationToken.none(),
     ): ColumnProfile {
         val logicalType = try {
             adapters.typeResolver.resolve(dbType)
@@ -71,12 +82,14 @@ class ProfileTableService(
                 "Failed to resolve type for '$table.$column' (dbType: $dbType): ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val metrics = try {
             adapters.data.columnMetrics(pool, table, column, dbType, schema)
         } catch (e: Exception) {
             throw ProfilingQueryError("Failed to profile column '$table.$column': ${e.message}", e)
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val topValues = try {
             adapters.data.topValues(pool, table, column, topN, schema)
         } catch (e: Exception) {
@@ -84,6 +97,7 @@ class ProfileTableService(
         }
 
         val numericStats = if (logicalType in setOf(LogicalType.INTEGER, LogicalType.DECIMAL)) {
+            cancellationToken.throwIfCancellationRequested()
             optionalProfilingValue(
                 operation = "numericStats",
                 table = table,
@@ -95,6 +109,7 @@ class ProfileTableService(
         } else null
 
         val temporalStats = if (logicalType in setOf(LogicalType.DATE, LogicalType.DATETIME)) {
+            cancellationToken.throwIfCancellationRequested()
             optionalProfilingValue(
                 operation = "temporalStats",
                 table = table,
@@ -105,6 +120,7 @@ class ProfileTableService(
             }
         } else null
 
+        cancellationToken.throwIfCancellationRequested()
         val compatibility = optionalProfilingValue(
             operation = "targetTypeCompatibility",
             table = table,

@@ -91,4 +91,60 @@ class SchemaColumnValidationRulesTest : FunSpec({
 
         errors.shouldBeEmpty()
     }
+
+    test("validate accepts identity generation on biginteger without standalone sequence") {
+        val errors = SchemaColumnValidationRules.validate(
+            path = "tables.orders.columns.id",
+            column = ColumnDefinition(
+                type = NeutralType.BigInteger,
+                generation = ColumnGeneration.Identity(
+                    mode = IdentityMode.BY_DEFAULT,
+                    sequenceName = "orders_id_seq",
+                ),
+            ),
+            schema = schema(),
+        )
+
+        errors.shouldBeEmpty()
+    }
+
+    test("validate rejects identity generation on non-integer column") {
+        val errors = SchemaColumnValidationRules.validate(
+            path = "tables.orders.columns.id",
+            column = ColumnDefinition(
+                type = NeutralType.Text(),
+                generation = ColumnGeneration.Identity(),
+            ),
+            schema = schema(),
+        )
+
+        errors.single().code shouldBe "E130"
+    }
+
+    test("validate rejects identity generation with default") {
+        val errors = SchemaColumnValidationRules.validate(
+            path = "tables.orders.columns.id",
+            column = ColumnDefinition(
+                type = NeutralType.BigInteger,
+                default = DefaultValue.SequenceNextVal("orders_id_seq"),
+                generation = ColumnGeneration.Identity(),
+            ),
+            schema = schema(sequences = mapOf("orders_id_seq" to SequenceDefinition(start = 1))),
+        )
+
+        errors.map { it.code } shouldBe listOf("E131")
+    }
+
+    test("validate rejects identity sequence duplicated as standalone sequence") {
+        val errors = SchemaColumnValidationRules.validate(
+            path = "tables.orders.columns.id",
+            column = ColumnDefinition(
+                type = NeutralType.BigInteger,
+                generation = ColumnGeneration.Identity(sequenceName = "orders_id_seq"),
+            ),
+            schema = schema(sequences = mapOf("orders_id_seq" to SequenceDefinition(start = 1))),
+        )
+
+        errors.single().code shouldBe "E133"
+    }
 })

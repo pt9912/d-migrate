@@ -69,7 +69,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
                 "products" to table(
                     columns = mapOf("name" to col(NeutralType.Text())),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_name", columns = listOf("name"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_products_name", columns = listOf("name").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -85,7 +85,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
                 "products" to table(
                     columns = mapOf("code" to col(NeutralType.Text(maxLength = 20))),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_code", columns = listOf("code"), type = IndexType.HASH)
+                        IndexDefinition(name = "idx_products_code", columns = listOf("code").map(::IndexColumn), type = IndexType.HASH)
                     )
                 )
             )
@@ -100,7 +100,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
                 "users" to table(
                     columns = mapOf("email" to col(NeutralType.Email)),
                     indices = listOf(
-                        IndexDefinition(name = "idx_users_email", columns = listOf("email"), unique = true)
+                        IndexDefinition(name = "idx_users_email", columns = listOf("email").map(::IndexColumn), unique = true)
                     )
                 )
             )
@@ -109,13 +109,84 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE INDEX \"idx_users_email\" ON \"users\" (\"email\");"
     }
 
+    test("partial unique index appends WHERE predicate") {
+        val s = schema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf(
+                        "email" to col(NeutralType.Email),
+                        "deleted_at" to col(NeutralType.DateTime()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "uq_active_email",
+                            columns = listOf(IndexColumn("email")),
+                            unique = true,
+                            where = "deleted_at IS NULL",
+                        )
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(s).render()
+
+        ddl shouldContain
+            "CREATE UNIQUE INDEX \"uq_active_email\" ON \"users\" (\"email\") WHERE deleted_at IS NULL;"
+    }
+
+    test("index column directions are rendered") {
+        val s = schema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf(
+                        "created_at" to col(NeutralType.DateTime()),
+                        "id" to col(NeutralType.Identifier()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_created",
+                            columns = listOf(
+                                IndexColumn("created_at", IndexSortDirection.DESC),
+                                IndexColumn("id", IndexSortDirection.ASC),
+                            ),
+                        )
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(s).render()
+
+        ddl shouldContain "CREATE INDEX \"idx_orders_created\" ON \"orders\" (\"created_at\" DESC, \"id\" ASC);"
+    }
+
+    test("unnamed index name collision includes direction suffix") {
+        val s = schema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf("created_at" to col(NeutralType.DateTime())),
+                    indices = listOf(
+                        IndexDefinition(columns = listOf(IndexColumn("created_at"))),
+                        IndexDefinition(columns = listOf(IndexColumn("created_at", IndexSortDirection.DESC))),
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(s).render()
+
+        ddl shouldContain "CREATE INDEX \"idx_orders_created_at_default\" ON \"orders\" (\"created_at\");"
+        ddl shouldContain "CREATE INDEX \"idx_orders_created_at_desc\" ON \"orders\" (\"created_at\" DESC);"
+    }
+
     test("index name is auto-generated when not provided") {
         val s = schema(
             tables = mapOf(
                 "logs" to table(
                     columns = mapOf("level" to col(NeutralType.Text())),
                     indices = listOf(
-                        IndexDefinition(columns = listOf("level"))
+                        IndexDefinition(columns = listOf("level").map(::IndexColumn))
                     )
                 )
             )
@@ -135,7 +206,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_orders_cust_date",
-                            columns = listOf("customer_id", "order_date")
+                            columns = listOf("customer_id", "order_date").map(::IndexColumn)
                         )
                     )
                 )
@@ -212,7 +283,7 @@ class PostgresDdlGeneratorMiscTest : FunSpec({
                     columns = mapOf("id" to col(NeutralType.Integer)),
                     primaryKey = listOf("id"),
                     indices = listOf(
-                        IndexDefinition(name = "idx_items_id", columns = listOf("id"))
+                        IndexDefinition(name = "idx_items_id", columns = listOf("id").map(::IndexColumn))
                     )
                 )
             ),

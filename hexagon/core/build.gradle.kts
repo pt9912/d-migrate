@@ -1,5 +1,15 @@
 // d-migrate-core: Pure domain model and validation
-// ZERO external dependencies — only Kotlin stdlib
+// ZERO external dependencies — only Kotlin stdlib (test fixtures may add
+// kotest for shared test helpers; see Phase E0.1 cancel-contract fixture).
+
+plugins {
+    `java-library`
+    `java-test-fixtures`
+}
+
+dependencies {
+    testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+}
 
 kover {
     reports {
@@ -35,6 +45,8 @@ kover {
                     "dev.dmigrate.core.diff.NamedFunction",
                     "dev.dmigrate.core.diff.NamedProcedure",
                     "dev.dmigrate.core.diff.NamedTrigger",
+                    // Validation result DTOs (data carriers)
+                    "dev.dmigrate.core.validation.ValidationWarning",
                     // Server-core (0.9.6 phase A) — pure data carriers
                     "dev.dmigrate.server.core.principal.PrincipalContext",
                     "dev.dmigrate.server.core.principal.TenantId",
@@ -43,6 +55,7 @@ kover {
                     "dev.dmigrate.server.core.job.ManagedJob",
                     "dev.dmigrate.server.core.job.JobError",
                     "dev.dmigrate.server.core.job.JobProgress",
+                    "dev.dmigrate.server.core.job.JobCancelRequest",
                     "dev.dmigrate.server.core.artifact.ManagedArtifact",
                     "dev.dmigrate.server.core.upload.UploadSession",
                     "dev.dmigrate.server.core.upload.UploadSegment",
@@ -53,25 +66,43 @@ kover {
                     "dev.dmigrate.server.core.pagination.PageResult",
                     "dev.dmigrate.server.core.execution.ExecutionMeta",
                     "dev.dmigrate.server.core.approval.ApprovalGrant",
-                    // Server-core idempotency outcomes (0.9.6 phase A AP 6.2)
+                    "dev.dmigrate.server.core.approval.ApprovalCorrelationKind",
+                    // Server-core idempotency outcomes (0.9.6 phase A AP 6.2).
+                    // Wildcards cover the outer sealed-interface marker plus
+                    // every nested data-class subtype in one shot.
                     "dev.dmigrate.server.core.idempotency.IdempotencyKey",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyState",
                     "dev.dmigrate.server.core.idempotency.IdempotencyScope",
                     "dev.dmigrate.server.core.idempotency.SyncEffectScope",
                     "dev.dmigrate.server.core.idempotency.InitResumeScope",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Reserved",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$ExistingPending",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$AwaitingApproval",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Committed",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Denied",
-                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$Conflict",
-                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Reserved",
-                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Existing",
-                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$Conflict",
-                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Reserved",
-                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Existing",
-                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$Conflict",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome\$*",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome",
+                    "dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome\$*",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome",
+                    "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$*",
+                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome",
+                    "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$*",
                     // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
                     "dev.dmigrate.server.core.audit.AuditEvent",
+                    "dev.dmigrate.server.core.audit.AuditOutcome",
+                    // Server-core AI types (0.9.6 Phase G G.6.a/b) —
+                    // Datentraeger fuer Outcome-Lifecycle und KI-Artefakt-
+                    // Provenance. Init-Blocks pruefen Form-Invarianten;
+                    // semantische Pfade sind in adapters/driving/mcp und
+                    // hexagon/application abgedeckt. Wildcards umfassen
+                    // den sealed-Marker plus jeden Sub-Typ.
+                    "dev.dmigrate.server.core.ai.AiToolScope",
+                    "dev.dmigrate.server.core.ai.AiToolClaimId",
+                    "dev.dmigrate.server.core.ai.AiToolOutcome",
+                    "dev.dmigrate.server.core.ai.AiToolOutcome\$*",
+                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome",
+                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome\$*",
+                    "dev.dmigrate.server.core.ai.AiArtifactMetadata",
+                    "dev.dmigrate.server.core.ai.AiArtifactProvenance",
+                    "dev.dmigrate.server.core.ai.AiArtifactProvenance\$*",
+                    "dev.dmigrate.server.core.ai.AiWireArtifactKind",
+                    "dev.dmigrate.server.core.ai.AiIntent",
                 )
             }
         }

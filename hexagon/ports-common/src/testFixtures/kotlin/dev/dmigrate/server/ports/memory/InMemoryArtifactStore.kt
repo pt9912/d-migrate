@@ -6,6 +6,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.ports.ArtifactListFilter
 import dev.dmigrate.server.ports.ArtifactStore
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -38,11 +39,38 @@ class InMemoryArtifactStore : ArtifactStore {
         return paginate(matching, page)
     }
 
+    override fun list(
+        tenantId: TenantId,
+        filter: ArtifactListFilter,
+        page: PageRequest,
+    ): PageResult<ArtifactRecord> {
+        val matching = records.values
+            .filter { it.tenantId == tenantId }
+            .filter { filter.ownerFilter == null || it.ownerPrincipalId == filter.ownerFilter }
+            .filter { filter.kindFilter == null || it.kind == filter.kindFilter }
+            .filter { filter.jobRef == null || it.jobRef == filter.jobRef }
+            .filter {
+                filter.createdAfter == null || !it.managedArtifact.createdAt.isBefore(filter.createdAfter)
+            }
+            .filter {
+                filter.createdBefore == null || !it.managedArtifact.createdAt.isAfter(filter.createdBefore)
+            }
+            .sortedWith(
+                compareByDescending<ArtifactRecord> { it.managedArtifact.createdAt }
+                    .thenBy { it.managedArtifact.artifactId },
+            )
+        return paginate(matching, page)
+    }
+
     override fun deleteExpired(now: Instant): Int {
+        return deleteExpiredRecords(now).size
+    }
+
+    override fun deleteExpiredRecords(now: Instant): List<ArtifactRecord> {
         val expired = records.entries
             .filter { it.value.managedArtifact.expiresAt.isBefore(now) }
-            .map { it.key }
-        expired.forEach { records.remove(it) }
-        return expired.size
+            .map { it.key to it.value }
+        expired.forEach { (key, _) -> records.remove(key) }
+        return expired.map { it.second }
     }
 }

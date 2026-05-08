@@ -68,7 +68,7 @@ internal class SqliteCapabilityDdlSupport(
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
         for (edge in edges) {
-            val constraintName = "fk_${edge.fromTable}_${edge.fromColumn}"
+            val constraintName = edge.constraintName
             skipped += SkippedObject("foreign_key", constraintName, circularForeignKeySkipReason(edge))
             statements += DdlStatement(
                 "-- Circular FK ${quoteIdentifier(constraintName)} skipped: SQLite cannot ALTER TABLE ADD CONSTRAINT",

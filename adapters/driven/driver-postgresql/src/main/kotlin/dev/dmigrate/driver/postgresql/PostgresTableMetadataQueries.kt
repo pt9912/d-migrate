@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.metadata.ConstraintProjection
 import dev.dmigrate.driver.metadata.ForeignKeyProjection
@@ -32,7 +33,9 @@ internal object PostgresTableMetadataQueries {
             SELECT column_name, data_type, udt_name, is_nullable,
                    column_default, ordinal_position,
                    character_maximum_length, numeric_precision, numeric_scale,
-                   is_identity, identity_generation
+                   is_identity, identity_generation,
+                   pg_get_serial_sequence(format('%I.%I', table_schema, table_name), column_name)
+                       AS generated_sequence_name
             FROM information_schema.columns
             WHERE table_schema = ? AND table_name = ?
             ORDER BY ordinal_position
@@ -43,14 +46,15 @@ internal object PostgresTableMetadataQueries {
     fun listPrimaryKeyColumns(session: JdbcOperations, schemaName: String, table: String): List<String> {
         return session.queryList(
             """
-            SELECT kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-            WHERE tc.constraint_type = 'PRIMARY KEY'
-              AND tc.table_schema = ? AND tc.table_name = ?
-            ORDER BY kcu.ordinal_position
+            SELECT a.attname AS column_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS pos(attnum, n)
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = pos.attnum
+            WHERE c.contype = 'p'
+              AND n.nspname = ? AND t.relname = ?
+            ORDER BY pos.n
             """.trimIndent(), schemaName, table,
         ).map { it["column_name"] as String }
     }
@@ -95,14 +99,16 @@ internal object PostgresTableMetadataQueries {
     ): Map<String, List<String>> {
         val rows = session.queryList(
             """
-            SELECT tc.constraint_name, kcu.column_name
-            FROM information_schema.table_constraints tc
-            JOIN information_schema.key_column_usage kcu
-              ON tc.constraint_name = kcu.constraint_name
-              AND tc.table_schema = kcu.table_schema
-            WHERE tc.constraint_type = 'UNIQUE'
-              AND tc.table_schema = ? AND tc.table_name = ?
-            ORDER BY tc.constraint_name, kcu.ordinal_position
+            SELECT c.conname AS constraint_name,
+                   a.attname AS column_name
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS pos(attnum, n)
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = pos.attnum
+            WHERE c.contype = 'u'
+              AND n.nspname = ? AND t.relname = ?
+            ORDER BY c.conname, pos.n
             """.trimIndent(), schemaName, table,
         )
         return rows.groupBy { it["constraint_name"] as String }
@@ -136,8 +142,13 @@ internal object PostgresTableMetadataQueries {
             """
             SELECT i.relname AS index_name,
                    array_agg(a.attname ORDER BY k.n) AS columns,
+                   array_agg(
+                       CASE WHEN (ix.indoption[k.n - 1] & 1) = 1 THEN 'DESC' ELSE NULL END
+                       ORDER BY k.n
+                   ) AS directions,
                    ix.indisunique AS is_unique,
-                   am.amname AS index_type
+                   am.amname AS index_type,
+                   pg_get_expr(ix.indpred, ix.indrelid) AS predicate
             FROM pg_index ix
             JOIN pg_class t ON t.oid = ix.indrelid
             JOIN pg_class i ON i.oid = ix.indexrelid
@@ -152,7 +163,7 @@ internal object PostgresTableMetadataQueries {
                   WHERE c.conindid = ix.indexrelid
                     AND c.contype IN ('u', 'x')
               )
-            GROUP BY i.relname, ix.indisunique, am.amname
+            GROUP BY i.relname, ix.indisunique, am.amname, ix.indpred, ix.indrelid
             ORDER BY i.relname
             """.trimIndent(), schemaName, table,
         ).map { row ->
@@ -161,6 +172,8 @@ internal object PostgresTableMetadataQueries {
                 columns = parseArrayColumn(row["columns"]),
                 isUnique = row["is_unique"] as Boolean,
                 type = row["index_type"] as? String,
+                directions = parseDirectionArrayColumn(row["directions"]),
+                where = row["predicate"] as? String,
             )
         }
     }
@@ -175,6 +188,16 @@ internal object PostgresTableMetadataQueries {
             LEFT JOIN pg_sequences ps
               ON ps.schemaname = s.sequence_schema AND ps.sequencename = s.sequence_name
             WHERE s.sequence_schema = ?
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM pg_class seq
+                  JOIN pg_namespace seq_ns ON seq_ns.oid = seq.relnamespace
+                  JOIN pg_depend dep ON dep.objid = seq.oid
+                  WHERE seq.relkind = 'S'
+                    AND seq_ns.nspname = s.sequence_schema
+                    AND seq.relname = s.sequence_name
+                    AND dep.deptype IN ('a', 'i')
+              )
             ORDER BY s.sequence_name
             """.trimIndent(), schemaName,
         )
@@ -206,6 +229,15 @@ internal object PostgresTableMetadataQueries {
         is String -> value.removeSurrounding("{", "}").split(",").map { it.trim() }
         else -> emptyList()
     }
+
+    private fun parseDirectionArrayColumn(value: Any?): List<IndexSortDirection?> = when (value) {
+        is java.sql.Array -> (value.array as Array<*>).map { parseIndexSortDirection(it?.toString()) }
+        is String -> value.removeSurrounding("{", "}").split(",").map { parseIndexSortDirection(it.trim()) }
+        else -> emptyList()
+    }
+
+    private fun parseIndexSortDirection(value: String?): IndexSortDirection? =
+        if (value.equals("DESC", ignoreCase = true)) IndexSortDirection.DESC else null
 
     private fun mapPgAction(code: String?): String? = when (code) {
         "c" -> "CASCADE"

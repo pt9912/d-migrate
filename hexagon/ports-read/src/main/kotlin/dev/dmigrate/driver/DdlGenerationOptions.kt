@@ -1,5 +1,7 @@
 package dev.dmigrate.driver
 
+import java.time.Instant
+
 /**
  * Typed generator options for DDL generation (0.5.5 Phase D).
  * Lives in hexagon:ports so both application and driver adapters can use it.
@@ -8,6 +10,12 @@ data class DdlGenerationOptions(
     val spatialProfile: SpatialProfile = SpatialProfile.NONE,
     /** MySQL-specific: how to handle named sequences. `null` for non-MySQL targets. */
     val mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
+    /** Stable generation timestamp, typically derived from SOURCE_DATE_EPOCH. */
+    val generatedAt: Instant? = null,
+    /** Omit volatile provenance fields from generated artifacts. */
+    val deterministic: Boolean = false,
+    /** Emit foreign keys as deferred ALTER TABLE statements instead of inline CREATE TABLE clauses. */
+    val deferForeignKeys: Boolean = false,
 )
 
 /**

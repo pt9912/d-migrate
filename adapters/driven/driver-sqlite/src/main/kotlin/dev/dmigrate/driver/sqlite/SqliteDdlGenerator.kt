@@ -20,9 +20,9 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         capabilitySupport.generateCustomTypes(types)
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = capabilitySupport.generateSequences(sequences, skipped)
+    ): List<DdlStatement> = capabilitySupport.generateSequences(schema.sequences, skipped)
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.SPATIALITE
@@ -32,9 +32,10 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> =
-        tableSupport.generateTable(name, table, schema, deferredFks, options)
+        tableSupport.generateTable(name, table, schema, deferredFks, deferredConstraints, options)
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> =
         tableSupport.generateIndices(tableName, table)

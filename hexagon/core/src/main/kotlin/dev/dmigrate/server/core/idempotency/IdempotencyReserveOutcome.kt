@@ -1,5 +1,6 @@
 package dev.dmigrate.server.core.idempotency
 
+import dev.dmigrate.server.core.approval.ApprovalChallenge
 import java.time.Instant
 
 sealed interface IdempotencyReserveOutcome {
@@ -18,6 +19,13 @@ sealed interface IdempotencyReserveOutcome {
     data class AwaitingApproval(
         override val scope: IdempotencyScope,
         val expiresAt: Instant,
+        /**
+         * Phase E §5.5 (Review-Fix Blocker #3): durable Challenge,
+         * die beim Statuswechsel nach AWAITING_APPROVAL persistiert
+         * wurde. `null` fuer Bestands-Stores ohne Challenge-Support
+         * (backward compat).
+         */
+        val challenge: ApprovalChallenge? = null,
     ) : IdempotencyReserveOutcome
 
     data class Committed(
@@ -26,6 +34,17 @@ sealed interface IdempotencyReserveOutcome {
     ) : IdempotencyReserveOutcome
 
     data class Denied(
+        override val scope: IdempotencyScope,
+        val expiresAt: Instant,
+        val reason: String,
+    ) : IdempotencyReserveOutcome
+
+    /**
+     * Phase E §5.2 / §7.3: endgültige, nicht-retrybare Reservierung
+     * ohne Job. Identische Retries liefern deterministisch dasselbe
+     * Outcome bis [expiresAt]; danach kann ein neuer Versuch laufen.
+     */
+    data class Failed(
         override val scope: IdempotencyScope,
         val expiresAt: Instant,
         val reason: String,
@@ -54,6 +73,39 @@ sealed interface SyncEffectReserveOutcome {
         override val scope: SyncEffectScope,
         val existingFingerprint: String,
     ) : SyncEffectReserveOutcome
+}
+
+/**
+ * Outcome of `IdempotencyStore.claimApproved(scope, now)` — the atomic
+ * AWAITING_APPROVAL -> PENDING transition the §6.2 plan demands so
+ * exactly one caller is allowed to perform side-effects after a policy
+ * approval.
+ */
+sealed interface IdempotencyClaimOutcome {
+    val scope: IdempotencyScope
+
+    data class Claimed(
+        override val scope: IdempotencyScope,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyClaimOutcome
+
+    data class AlreadyClaimed(
+        override val scope: IdempotencyScope,
+        val leaseExpiresAt: Instant,
+    ) : IdempotencyClaimOutcome
+
+    data class Committed(
+        override val scope: IdempotencyScope,
+        val resultRef: String,
+    ) : IdempotencyClaimOutcome
+
+    data class Denied(
+        override val scope: IdempotencyScope,
+        val expiresAt: Instant,
+        val reason: String,
+    ) : IdempotencyClaimOutcome
+
+    data class NotAwaitingApproval(override val scope: IdempotencyScope) : IdempotencyClaimOutcome
 }
 
 sealed interface InitResumeOutcome {

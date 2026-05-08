@@ -1,7 +1,10 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DialectCapabilities
+import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.profiling.ProfilingAdapterSet
 import dev.dmigrate.profiling.ProfilingException
 import dev.dmigrate.profiling.model.DatabaseProfile
@@ -35,7 +38,7 @@ data class DataProfileRequest(
 class DataProfileRunner(
     private val connectionResolver: (String) -> String,
     private val dialectResolver: (String) -> DatabaseDialect,
-    private val poolFactory: (String, DatabaseDialect) -> AutoCloseable,
+    private val poolFactory: (String, DatabaseDialect) -> ConnectionPool,
     private val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
     private val databaseProduct: (AutoCloseable) -> String = { "unknown" },
     private val databaseVersion: (AutoCloseable) -> String? = { null },
@@ -43,7 +46,10 @@ class DataProfileRunner(
     private val stderr: (String) -> Unit = { System.err.println(it) },
 ) {
 
-    fun execute(request: DataProfileRequest): Int {
+    fun execute(
+        request: DataProfileRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
         // ─── 1. Validate request ────────────────────────────────
         if (request.topN < 1 || request.topN > 1000) {
             stderr("[ERROR] topN must be between 1 and 1000, got: ${request.topN}")
@@ -93,20 +99,23 @@ class DataProfileRunner(
         return try {
             val service = ProfileDatabaseService(adapters,
                 dev.dmigrate.profiling.service.ProfileTableService(adapters, topN = request.topN))
-            @Suppress("UNCHECKED_CAST")
-            val connPool = pool as dev.dmigrate.driver.connection.ConnectionPool
 
             val profile = service.profile(
-                pool = connPool,
+                pool = pool,
                 databaseProduct = databaseProduct(pool),
                 databaseVersion = databaseVersion(pool),
                 schema = request.schema,
                 tables = request.tables,
+                cancellationToken = cancellationToken,
             )
 
+            cancellationToken.throwIfCancellationRequested()
             reportWriter(profile, request.format, request.output)
             if (!request.quiet) stderr("Profiling complete: ${profile.tables.size} table(s)")
             0
+        } catch (_: OperationCancelledException) {
+            // Plan §4.5: Cancel maps to CLI exit 130, not the generic 5 path.
+            CANCELLED_EXIT_CODE
         } catch (e: ProfilingException) {
             stderr("[ERROR] Profiling failed: ${e.message}")
             5
@@ -116,5 +125,10 @@ class DataProfileRunner(
         } finally {
             pool.close()
         }
+    }
+
+    companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
     }
 }

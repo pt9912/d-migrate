@@ -70,7 +70,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_lookups_key",
-                            columns = listOf("key"),
+                            columns = listOf("key").map(::IndexColumn),
                             type = IndexType.HASH
                         )
                     )
@@ -97,7 +97,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                         "body" to col(NeutralType.Json)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_docs_body", columns = listOf("body"), type = IndexType.GIN)
+                        IndexDefinition(name = "idx_docs_body", columns = listOf("body").map(::IndexColumn), type = IndexType.GIN)
                     )
                 )
             )
@@ -121,7 +121,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                         "location" to col(NeutralType.Text())
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_geo_loc", columns = listOf("location"), type = IndexType.GIST)
+                        IndexDefinition(name = "idx_geo_loc", columns = listOf("location").map(::IndexColumn), type = IndexType.GIST)
                     )
                 )
             )
@@ -142,7 +142,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                         "created_at" to col(NeutralType.DateTime())
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_logs_created", columns = listOf("created_at"), type = IndexType.BRIN)
+                        IndexDefinition(name = "idx_logs_created", columns = listOf("created_at").map(::IndexColumn), type = IndexType.BRIN)
                     )
                 )
             )
@@ -163,7 +163,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                         "sku" to col(NeutralType.Text(maxLength = 50), required = true)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_sku", columns = listOf("sku"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_products_sku", columns = listOf("sku").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -186,7 +186,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_products_sku_unique",
-                            columns = listOf("sku"),
+                            columns = listOf("sku").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         )
@@ -201,6 +201,81 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
         ddl shouldContain "CREATE UNIQUE INDEX `idx_products_sku_unique` ON `products` (`sku`);"
     }
 
+    test("partial index is action required and is not rendered") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "users" to table(
+                    columns = mapOf(
+                        "email" to col(NeutralType.Email),
+                        "deleted_at" to col(NeutralType.DateTime()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "uq_active_email",
+                            columns = listOf(IndexColumn("email")),
+                            unique = true,
+                            where = "deleted_at IS NULL",
+                        )
+                    ),
+                )
+            )
+        )
+
+        val result = generator.generate(schema)
+        val ddl = result.render()
+
+        ddl shouldContain "E057"
+        ddl shouldContain "Partial index 'uq_active_email' is not supported in MySQL and was skipped."
+        ddl shouldNotContain "CREATE UNIQUE INDEX `uq_active_email`"
+        result.notes.find { it.code == "E057" && it.objectName == "uq_active_email" }!!.type shouldBe
+            NoteType.ACTION_REQUIRED
+    }
+
+    test("index column directions are rendered") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf(
+                        "created_at" to col(NeutralType.DateTime()),
+                        "id" to col(NeutralType.Identifier()),
+                    ),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_created",
+                            columns = listOf(
+                                IndexColumn("created_at", IndexSortDirection.DESC),
+                                IndexColumn("id", IndexSortDirection.ASC),
+                            ),
+                        )
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(schema).render()
+
+        ddl shouldContain "CREATE INDEX `idx_orders_created` ON `orders` (`created_at` DESC, `id` ASC);"
+    }
+
+    test("unnamed index name collision includes direction suffix") {
+        val schema = emptySchema(
+            tables = mapOf(
+                "orders" to table(
+                    columns = mapOf("created_at" to col(NeutralType.DateTime())),
+                    indices = listOf(
+                        IndexDefinition(columns = listOf(IndexColumn("created_at"))),
+                        IndexDefinition(columns = listOf(IndexColumn("created_at", IndexSortDirection.DESC))),
+                    ),
+                )
+            )
+        )
+
+        val ddl = generator.generate(schema).render()
+
+        ddl shouldContain "CREATE INDEX `idx_orders_created_at_default` ON `orders` (`created_at`);"
+        ddl shouldContain "CREATE INDEX `idx_orders_created_at_desc` ON `orders` (`created_at` DESC);"
+    }
+
     test("index without explicit name auto-generates name") {
         val schema = emptySchema(
             tables = mapOf(
@@ -210,7 +285,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                         "col_b" to col(NeutralType.Integer)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = null, columns = listOf("col_a", "col_b"), type = IndexType.BTREE)
+                        IndexDefinition(name = null, columns = listOf("col_a", "col_b").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -232,7 +307,7 @@ class MysqlDdlGeneratorIndexTest : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_cache_hash",
-                            columns = listOf("hash_key"),
+                            columns = listOf("hash_key").map(::IndexColumn),
                             type = IndexType.HASH,
                             unique = true
                         )

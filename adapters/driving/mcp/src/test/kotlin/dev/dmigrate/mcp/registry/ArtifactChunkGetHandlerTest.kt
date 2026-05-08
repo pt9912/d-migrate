@@ -1,0 +1,541 @@
+package dev.dmigrate.mcp.registry
+
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.server.application.error.ResourceNotFoundException
+import dev.dmigrate.server.application.error.ValidationErrorException
+import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.server.core.artifact.ArtifactRecord
+import dev.dmigrate.server.core.artifact.ManagedArtifact
+import dev.dmigrate.server.core.job.JobVisibility
+import dev.dmigrate.server.core.principal.AuthSource
+import dev.dmigrate.server.core.principal.PrincipalContext
+import dev.dmigrate.server.core.principal.PrincipalId
+import dev.dmigrate.server.core.principal.TenantId
+import dev.dmigrate.server.core.resource.ResourceKind
+import dev.dmigrate.server.core.resource.ServerResourceUri
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldStartWith
+import io.kotest.matchers.types.shouldBeInstanceOf
+import java.io.ByteArrayInputStream
+import java.security.MessageDigest
+import java.time.Instant
+import java.util.Base64
+
+private val ACME = TenantId("acme")
+private val ALICE = PrincipalId("alice")
+private val BOB = PrincipalId("bob")
+
+private val PRINCIPAL = PrincipalContext(
+    principalId = ALICE,
+    homeTenantId = ACME,
+    effectiveTenantId = ACME,
+    allowedTenantIds = setOf(ACME),
+    scopes = setOf("dmigrate:read"),
+    isAdmin = false,
+    auditSubject = "alice",
+    authSource = AuthSource.SERVICE_ACCOUNT,
+    expiresAt = Instant.MAX,
+)
+
+private val ADMIN = PRINCIPAL.copy(isAdmin = true)
+private val FIXED_NOW: Instant = Instant.parse("2026-05-02T12:00:00Z")
+
+private fun sha256Hex(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+private class ChunkFixture(
+    val handler: ArtifactChunkGetHandler,
+    val artifactStore: InMemoryArtifactStore,
+    val contentStore: InMemoryArtifactContentStore,
+)
+
+private const val TEST_REQUEST_ID = "req-deadbeef"
+
+private fun ctx(name: String, args: JsonObject, principal: PrincipalContext = PRINCIPAL): ToolCallContext =
+    ToolCallContext(name = name, arguments = args, principal = principal, requestId = TEST_REQUEST_ID)
+
+private fun fixture(maxChunkBytes: Int = 8): ChunkFixture {
+    val artifactStore = InMemoryArtifactStore()
+    val contentStore = InMemoryArtifactContentStore()
+    val handler = ArtifactChunkGetHandler(
+        artifactStore = artifactStore,
+        contentStore = contentStore,
+        limits = McpLimitsConfig(maxArtifactChunkBytes = maxChunkBytes),
+    )
+    return ChunkFixture(handler, artifactStore, contentStore)
+}
+
+private fun stageArtifact(
+    f: ChunkFixture,
+    artifactId: String = "art-1",
+    bytes: ByteArray = "abcdefghij".toByteArray(),
+    contentType: String = "application/json",
+    visibility: JobVisibility = JobVisibility.TENANT,
+    owner: PrincipalId = ALICE,
+): ArtifactRecord {
+    f.contentStore.write(artifactId, ByteArrayInputStream(bytes), bytes.size.toLong())
+    val record = ArtifactRecord(
+        managedArtifact = ManagedArtifact(
+            artifactId = artifactId,
+            filename = "$artifactId.bin",
+            contentType = contentType,
+            sizeBytes = bytes.size.toLong(),
+            sha256 = sha256Hex(bytes),
+            createdAt = FIXED_NOW,
+            expiresAt = FIXED_NOW.plusSeconds(3600),
+        ),
+        kind = ArtifactKind.SCHEMA,
+        tenantId = ACME,
+        ownerPrincipalId = owner,
+        visibility = visibility,
+        resourceUri = ServerResourceUri(ACME, ResourceKind.ARTIFACTS, artifactId),
+    )
+    f.artifactStore.save(record)
+    return record
+}
+
+private fun args(content: String): JsonObject = JsonParser.parseString(content).asJsonObject
+
+private fun parsePayload(outcome: ToolCallOutcome): JsonObject {
+    val text = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>().content.single().text!!
+    return JsonParser.parseString(text).asJsonObject
+}
+
+class ArtifactChunkGetHandlerTest : FunSpec({
+
+    test("first chunk of a small text artifact returns encoding=text and inline text content") {
+        val payload = """{"name":"orders"}"""
+        val f = fixture(maxChunkBytes = 32)
+        stageArtifact(f, "art-1", payload.toByteArray(), contentType = "application/json")
+        val outcome = f.handler.handle(
+            ctx("artifact_chunk_get", args("""{"artifactId":"art-1"}""")),
+        )
+        val json = parsePayload(outcome)
+        json.get("artifactId").asString shouldBe "art-1"
+        json.get("resourceUri").asString shouldBe "dmigrate://tenants/acme/artifacts/art-1"
+        json.get("chunkId").asString shouldBe "0"
+        json.get("offset").asLong shouldBe 0L
+        json.get("lengthBytes").asInt shouldBe payload.length
+        json.get("contentType").asString shouldBe "application/json"
+        json.get("encoding").asString shouldBe "text"
+        json.get("text").asString shouldBe payload
+        json.has("contentBase64") shouldBe false
+        json.get("nextChunkUri").isJsonNull shouldBe true
+        json.get("sha256").asString shouldBe sha256Hex(payload.toByteArray())
+        json.getAsJsonObject("executionMeta").get("requestId").asString shouldBe TEST_REQUEST_ID
+    }
+
+    test("binary contentType returns encoding=base64 with contentBase64 (no text field)") {
+        val bytes = byteArrayOf(0x00, 0x01, 0x02, 0xFF.toByte(), 0x10)
+        val f = fixture(maxChunkBytes = 32)
+        stageArtifact(f, "art-bin", bytes, contentType = "application/octet-stream")
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-bin"}"""), PRINCIPAL),
+        )
+        val json = parsePayload(outcome)
+        json.get("encoding").asString shouldBe "base64"
+        json.get("contentBase64").asString shouldBe Base64.getEncoder().encodeToString(bytes)
+        json.has("text") shouldBe false
+        json.get("sha256").asString shouldBe sha256Hex(bytes)
+    }
+
+    test("multi-chunk traversal: nextChunkUri is set on intermediate chunks, null on the last") {
+        // 10-byte payload, 4-byte chunks → 3 chunks (4 + 4 + 2).
+        val payload = "abcdefghij".toByteArray()
+        val f = fixture(maxChunkBytes = 4)
+        stageArtifact(f, "art-1", payload)
+
+        val first = parsePayload(
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+            ),
+        )
+        first.get("chunkId").asString shouldBe "0"
+        first.get("offset").asLong shouldBe 0L
+        first.get("lengthBytes").asInt shouldBe 4
+        first.get("nextChunkUri").asString shouldBe
+            "dmigrate://tenants/acme/artifacts/art-1/chunks/1"
+
+        val second = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","chunkId":"1"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        second.get("offset").asLong shouldBe 4L
+        second.get("lengthBytes").asInt shouldBe 4
+
+        val third = parsePayload(
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","chunkId":"2"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        third.get("offset").asLong shouldBe 8L
+        third.get("lengthBytes").asInt shouldBe 2
+        // Spec §5.5 line 471: nextChunkUri is mandatory and `null`
+        // on the last chunk — never omitted.
+        third.get("nextChunkUri").isJsonNull shouldBe true
+    }
+
+    test("missing artifact throws RESOURCE_NOT_FOUND") {
+        val f = fixture()
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-missing"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("artifact in different tenant maps to RESOURCE_NOT_FOUND (no-oracle)") {
+        // Honest cross-tenant test: register a record under
+        // OTHER tenant and try to read it as ACME. The store's
+        // tenant-scoped findById returns null for ACME even
+        // though the record exists; same RESOURCE_NOT_FOUND as a
+        // truly missing id.
+        val f = fixture()
+        val otherTenant = TenantId("other-tenant")
+        val bytes = "secret".toByteArray()
+        f.contentStore.write("art-foreign", ByteArrayInputStream(bytes), bytes.size.toLong())
+        f.artifactStore.save(
+            ArtifactRecord(
+                managedArtifact = ManagedArtifact(
+                    artifactId = "art-foreign",
+                    filename = "art-foreign.bin",
+                    contentType = "text/plain",
+                    sizeBytes = bytes.size.toLong(),
+                    sha256 = sha256Hex(bytes),
+                    createdAt = FIXED_NOW,
+                    expiresAt = FIXED_NOW.plusSeconds(3600),
+                ),
+                kind = ArtifactKind.SCHEMA,
+                tenantId = otherTenant,
+                ownerPrincipalId = ALICE,
+                visibility = JobVisibility.TENANT,
+                resourceUri = ServerResourceUri(otherTenant, ResourceKind.ARTIFACTS, "art-foreign"),
+            ),
+        )
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-foreign"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("ADMIN-visibility artifact is invisible to a non-admin principal — RESOURCE_NOT_FOUND") {
+        // Closes the ADMIN/non-admin branch of `isReadableBy`.
+        val f = fixture()
+        stageArtifact(f, "art-admin", visibility = JobVisibility.ADMIN)
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-admin"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("chunk 0 of a zero-byte artefact returns an empty payload (not RESOURCE_NOT_FOUND)") {
+        val f = fixture(maxChunkBytes = 8)
+        stageArtifact(f, "art-empty", bytes = ByteArray(0), contentType = "application/octet-stream")
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-empty"}"""), PRINCIPAL),
+        )
+        val json = parsePayload(outcome)
+        json.get("lengthBytes").asInt shouldBe 0
+        json.get("nextChunkUri").isJsonNull shouldBe true
+    }
+
+    test("chunk 1+ of a zero-byte artefact maps to RESOURCE_NOT_FOUND (regression)") {
+        // Pre-fix this path threw IllegalArgumentException from
+        // RangeBounds.check because the offset guard skipped
+        // empty artefacts; now it surfaces the structured
+        // RESOURCE_NOT_FOUND envelope per the no-oracle rule.
+        val f = fixture(maxChunkBytes = 8)
+        stageArtifact(f, "art-empty", bytes = ByteArray(0), contentType = "application/octet-stream")
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-empty","chunkId":"1"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("OWNER-only artifact is invisible to a non-owner principal — RESOURCE_NOT_FOUND") {
+        val f = fixture()
+        stageArtifact(f, "art-1", visibility = JobVisibility.OWNER, owner = BOB)
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+            )
+        }
+    }
+
+    test("ADMIN-visibility artifact is readable to admin principals") {
+        val f = fixture()
+        stageArtifact(f, "art-1", "x".toByteArray(), visibility = JobVisibility.ADMIN)
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), ADMIN),
+        )
+        parsePayload(outcome).get("artifactId").asString shouldBe "art-1"
+    }
+
+    test("invalid chunkId (non-numeric) throws VALIDATION_ERROR with field=chunkId") {
+        val f = fixture()
+        stageArtifact(f, "art-1")
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","chunkId":"abc"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "chunkId"
+    }
+
+    test("negative chunkId throws VALIDATION_ERROR") {
+        val f = fixture()
+        stageArtifact(f, "art-1")
+        val ex = shouldThrow<ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","chunkId":"-1"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+        ex.violations.map { it.field } shouldContain "chunkId"
+    }
+
+    test("out-of-range chunkId for an existing artifact throws RESOURCE_NOT_FOUND") {
+        // 8-byte payload, 8-byte chunks → only chunk 0 exists.
+        val f = fixture(maxChunkBytes = 8)
+        stageArtifact(f, "art-1", "12345678".toByteArray())
+        shouldThrow<ResourceNotFoundException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","chunkId":"5"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("text/* content types map to encoding=text") {
+        val f = fixture(maxChunkBytes = 32)
+        stageArtifact(f, "art-1", "hello".toByteArray(), contentType = "text/plain")
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+        )
+        parsePayload(outcome).get("encoding").asString shouldBe "text"
+    }
+
+    test("contentType with charset parameter is normalised before the text/binary decision") {
+        // `application/json; charset=utf-8` is canonical for JSON
+        // artifacts emitted by AP 6.5/6.9. Strip the parameter
+        // before classifying.
+        val f = fixture(maxChunkBytes = 32)
+        stageArtifact(f, "art-1", "hello".toByteArray(), contentType = "application/json; charset=utf-8")
+        val outcome = f.handler.handle(
+            ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+        )
+        parsePayload(outcome).get("encoding").asString shouldBe "text"
+    }
+
+    test("missing artifactId throws VALIDATION_ERROR") {
+        val f = fixture()
+        shouldThrow<ValidationErrorException> {
+            f.handler.handle(ToolCallContext("artifact_chunk_get", args("""{}"""), PRINCIPAL))
+        }
+    }
+
+    test("chunk size strictly capped at maxArtifactChunkBytes regardless of artifact size") {
+        // 100-byte payload, 10-byte chunks → first chunk is exactly
+        // 10 bytes; nextChunkUri continues from chunk 1.
+        val payload = ByteArray(100) { (it % 26 + 'a'.code).toByte() }
+        val f = fixture(maxChunkBytes = 10)
+        stageArtifact(f, "art-1", payload, contentType = "application/json")
+        val first = parsePayload(
+            f.handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-1"}"""), PRINCIPAL),
+            ),
+        )
+        first.get("lengthBytes").asInt shouldBe 10
+        first.get("nextChunkUri").asString shouldStartWith
+            "dmigrate://tenants/acme/artifacts/art-1/chunks/1"
+    }
+
+    test("AP D9: response carries nextChunkCursor (sealed) when codec is wired") {
+        // Plan-D §10.9: alongside `nextChunkUri`, the Phase-D
+        // response emits an HMAC-sealed `nextChunkCursor` so a
+        // tools/call-driven client stays on the tool wire instead
+        // of jumping to resources/read.
+        val payload = "abcdefghij".toByteArray() // 10 bytes
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val sealedCursor = SealedChunkCursor(codec)
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = artifactStore,
+            contentStore = contentStore,
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = sealedCursor,
+        )
+        val f = ChunkFixture(handler, artifactStore, contentStore)
+        stageArtifact(f, "art-d9", payload)
+
+        val first = parsePayload(
+            handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-d9"}"""), PRINCIPAL),
+            ),
+        )
+        first.get("chunkId").asString shouldBe "0"
+        first.get("nextChunkUri").asString shouldStartWith
+            "dmigrate://tenants/acme/artifacts/art-d9/chunks/1"
+        val cursor = first.get("nextChunkCursor").asString
+        cursor.contains('.') shouldBe true
+
+        // Round-trip: pass cursor back; expect chunk 1.
+        val second = parsePayload(
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-d9","nextChunkCursor":"$cursor"}"""),
+                    PRINCIPAL,
+                ),
+            ),
+        )
+        second.get("chunkId").asString shouldBe "1"
+        second.get("offset").asLong shouldBe 4L
+    }
+
+    test("AP D9: last chunk emits nextChunkCursor=null") {
+        val payload = "abc".toByteArray()
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val sealedCursor = SealedChunkCursor(codec)
+        val artifactStore = InMemoryArtifactStore()
+        val contentStore = InMemoryArtifactContentStore()
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = artifactStore,
+            contentStore = contentStore,
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 32),
+            cursorCodec = sealedCursor,
+        )
+        val f = ChunkFixture(handler, artifactStore, contentStore)
+        stageArtifact(f, "art-tiny", payload)
+
+        val response = parsePayload(
+            handler.handle(
+                ToolCallContext("artifact_chunk_get", args("""{"artifactId":"art-tiny"}"""), PRINCIPAL),
+            ),
+        )
+        // Both fields must be explicit null (Phase-C invariant
+        // preserved + Phase-D additive `nextChunkCursor`).
+        response.get("nextChunkUri").isJsonNull shouldBe true
+        response.get("nextChunkCursor").isJsonNull shouldBe true
+    }
+
+    test("AP D9: tampered nextChunkCursor surfaces VALIDATION_ERROR") {
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = InMemoryArtifactStore(),
+            contentStore = InMemoryArtifactContentStore(),
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = SealedChunkCursor(codec),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-x","nextChunkCursor":"forged.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("AP D9: chunkId AND nextChunkCursor on the same call rejected with VALIDATION_ERROR") {
+        // Plan-D §10.9: clients must commit to one wire shape so
+        // a future deprecation of the legacy chunkId path stays
+        // observable.
+        val codec = dev.dmigrate.mcp.cursor.McpCursorCodec(
+            keyring = dev.dmigrate.mcp.cursor.CursorKeyring(
+                signing = dev.dmigrate.mcp.cursor.CursorKey(
+                    kid = "k1",
+                    secret = ByteArray(32) { it.toByte() },
+                ),
+            ),
+        )
+        val handler = ArtifactChunkGetHandler(
+            artifactStore = InMemoryArtifactStore(),
+            contentStore = InMemoryArtifactContentStore(),
+            limits = McpLimitsConfig(maxArtifactChunkBytes = 4),
+            cursorCodec = SealedChunkCursor(codec),
+        )
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-x","chunkId":"1","nextChunkCursor":"some.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+
+    test("AP D9: nextChunkCursor without configured codec rejected with VALIDATION_ERROR") {
+        // Phase-B / legacy harness path: refuse to silently restart
+        // at chunk 0 when a client sends a sealed cursor against a
+        // server with no codec — surfaces a misconfig loudly.
+        val f = fixture(maxChunkBytes = 4)
+        stageArtifact(f, "art-1", "abcdefghij".toByteArray())
+        shouldThrow<dev.dmigrate.server.application.error.ValidationErrorException> {
+            f.handler.handle(
+                ToolCallContext(
+                    "artifact_chunk_get",
+                    args("""{"artifactId":"art-1","nextChunkCursor":"some.cursor"}"""),
+                    PRINCIPAL,
+                ),
+            )
+        }
+    }
+})

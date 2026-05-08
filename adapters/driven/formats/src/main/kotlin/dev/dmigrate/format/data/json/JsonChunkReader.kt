@@ -89,9 +89,8 @@ class JsonChunkReader(
                 )
             }
 
-            @Suppress("UNCHECKED_CAST")
-            val firstMap = first as Map<String, Any?>
-            val names = firstMap.keys.toList()
+            val firstMap = first
+            val names = stringKeys(firstMap)
             headerNames = names
             fieldIndex = names.withIndex().associate { (i, name) -> name to i }
             pendingFirstRow = mapToRow(firstMap, names, fieldIndex!!)
@@ -126,8 +125,7 @@ class JsonChunkReader(
                         "got ${element?.javaClass?.simpleName ?: "null"}"
                 )
             }
-            @Suppress("UNCHECKED_CAST")
-            val map = element as Map<String, Any?>
+            val map = element
             rows.add(normalizeRow(map, names, index))
         }
 
@@ -163,13 +161,13 @@ class JsonChunkReader(
      * weil die erste Row das Schema definiert.
      */
     private fun mapToRow(
-        map: Map<String, Any?>,
+        map: Map<*, *>,
         names: List<String>,
         index: Map<String, Int>,
     ): Array<Any?> {
         val row = arrayOfNulls<Any?>(names.size)
         for ((key, value) in map) {
-            val slot = index[key] ?: continue
+            val slot = index[key as String] ?: continue
             row[slot] = normalizeValue(value)
         }
         return row
@@ -182,16 +180,19 @@ class JsonChunkReader(
      * - Zusätzliche Keys → [ImportSchemaMismatchException]
      */
     private fun normalizeRow(
-        map: Map<String, Any?>,
+        map: Map<*, *>,
         names: List<String>,
         index: Map<String, Int>,
     ): Array<Any?> {
         val row = arrayOfNulls<Any?>(names.size)
         for ((key, value) in map) {
-            val slot = index[key]
+            val name = key as? String ?: throw ImportSchemaMismatchException(
+                "Table '$table': JSON object contains non-string key ${key?.javaClass?.simpleName ?: "null"}"
+            )
+            val slot = index[name]
             if (slot == null) {
                 throw ImportSchemaMismatchException(
-                    "Table '$table': JSON object contains key '$key' " +
+                    "Table '$table': JSON object contains key '$name' " +
                         "which is not present in the first row's schema $names"
                 )
             }
@@ -213,6 +214,13 @@ class JsonChunkReader(
         is Float -> value.toDouble()
         else -> value
     }
+
+    private fun stringKeys(map: Map<*, *>): List<String> =
+        map.keys.map { key ->
+            key as? String ?: throw ImportSchemaMismatchException(
+                "Table '$table': JSON object contains non-string key ${key?.javaClass?.simpleName ?: "null"}"
+            )
+        }
 
     companion object {
         /**

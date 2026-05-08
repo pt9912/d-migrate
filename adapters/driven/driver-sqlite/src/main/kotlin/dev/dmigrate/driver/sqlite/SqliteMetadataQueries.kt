@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.metadata.*
 
@@ -76,16 +77,31 @@ object SqliteMetadataQueries {
             val indexName = idx["name"] as String
             // Skip SQLite autoindex (backing indices for PK/UNIQUE constraints)
             if (indexName.startsWith("sqlite_autoindex_")) return@mapNotNull null
-            val colRows = session.queryList("PRAGMA index_info(${SqlIdentifiers.quoteStringLiteral(indexName)})")
-            val cols = colRows.sortedBy { (it["seqno"] as Number).toInt() }
-                .mapNotNull { it["name"] as? String }
+            val colRows = session.queryList("PRAGMA index_xinfo(${SqlIdentifiers.quoteStringLiteral(indexName)})")
+                .filter { ((it["key"] as? Number)?.toInt() ?: 1) == 1 }
+                .sortedBy { (it["seqno"] as Number).toInt() }
+            val cols = colRows.mapNotNull { it["name"] as? String }
             if (cols.isEmpty()) return@mapNotNull null
+            val createSql = session.querySingle(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+                indexName,
+            )?.get("sql") as? String
             IndexProjection(
                 name = indexName,
                 columns = cols,
                 isUnique = (idx["unique"] as Number).toInt() == 1,
+                directions = colRows.map { row ->
+                    if (((row["desc"] as? Number)?.toInt() ?: 0) == 1) IndexSortDirection.DESC else null
+                },
+                where = extractIndexWhere(createSql),
             )
         }
+    }
+
+    private fun extractIndexWhere(sql: String?): String? {
+        if (sql == null) return null
+        val match = Regex("""\sWHERE\s""", RegexOption.IGNORE_CASE).find(sql) ?: return null
+        return sql.substring(match.range.last + 1).trim().removeSuffix(";").trim().takeIf { it.isNotEmpty() }
     }
 
     fun listViews(session: JdbcMetadataSession): List<Pair<String, String?>> {

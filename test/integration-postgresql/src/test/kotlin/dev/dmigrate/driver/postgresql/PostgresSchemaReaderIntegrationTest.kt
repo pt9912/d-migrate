@@ -15,7 +15,8 @@ import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.nulls.shouldBeNull
-import io.kotest.matchers.nulls.shouldNotBeNull
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 
 private val IntegrationTag = NamedTag("integration")
@@ -75,6 +76,25 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
                         status order_status NOT NULL DEFAULT 'pending',
                         total NUMERIC(10,2),
                         notes TEXT
+                    )
+                """)
+
+                stmt.execute("""
+                    CREATE TABLE optimization_runs (
+                        run_id UUID PRIMARY KEY
+                    )
+                """)
+
+                stmt.execute("""
+                    CREATE TABLE optimization_objective_breakdowns (
+                        run_id UUID NOT NULL,
+                        position INTEGER NOT NULL,
+                        name TEXT NOT NULL,
+                        value DOUBLE PRECISION NOT NULL,
+                        unit TEXT NOT NULL,
+                        PRIMARY KEY (run_id, name),
+                        UNIQUE (run_id, position),
+                        FOREIGN KEY (run_id) REFERENCES optimization_runs(run_id) ON DELETE CASCADE
                     )
                 """)
 
@@ -197,14 +217,41 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── PK-implicit required/unique not duplicated ──
+    // ── PK required preserved, PK-implicit unique not duplicated ──
 
-    test("PK columns do not have redundant required or unique") {
+    test("PK columns preserve required but do not duplicate unique") {
         pool().use { pool ->
             val result = reader.read(pool)
             val customers = result.schema.tables["customers"]!!
-            customers.columns["id"]!!.required shouldBe false
+            customers.columns["id"]!!.required shouldBe true
             customers.columns["id"]!!.unique shouldBe false
+        }
+    }
+
+    test("composite PK plus overlapping UNIQUE and single-column FK are preserved") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val table = result.schema.tables["optimization_objective_breakdowns"]!!
+
+            table.primaryKey shouldBe listOf("run_id", "name")
+            table.columns["run_id"]!!.required shouldBe true
+            table.columns["name"]!!.required shouldBe true
+            table.columns["position"]!!.required shouldBe true
+
+            table.columns["run_id"]!!.references.shouldBeNull()
+
+            table.constraints.any {
+                it.name == "optimization_objective_breakdowns_run_id_fkey" &&
+                    it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("run_id") &&
+                    it.references!!.table == "optimization_runs" &&
+                    it.references!!.columns == listOf("run_id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
+            table.constraints.any {
+                it.type == ConstraintType.UNIQUE &&
+                    it.columns == listOf("run_id", "position")
+            } shouldBe true
         }
     }
 
@@ -217,28 +264,47 @@ class PostgresSchemaReaderIntegrationTest : FunSpec({
         }
     }
 
-    // ── Single-column FK lifted ─────────────────
+    // ── Single-column FK constraint ─────────────────
 
-    test("single-column FK lifted to ColumnDefinition.references") {
+    test("single-column FK is preserved as named table constraint") {
         pool().use { pool ->
             val result = reader.read(pool)
-            val ref = result.schema.tables["orders"]!!.columns["customer_id"]!!.references
-            ref.shouldNotBeNull()
-            ref.table shouldBe "customers"
-            ref.column shouldBe "id"
-            ref.onDelete shouldBe ReferentialAction.CASCADE
+            val orders = result.schema.tables["orders"]!!
+            orders.columns["customer_id"]!!.references.shouldBeNull()
+            orders.constraints.any {
+                it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("customer_id") &&
+                    it.references!!.table == "customers" &&
+                    it.references!!.columns == listOf("id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
         }
     }
 
-    // ── Bigserial → BigInteger (not Identifier) ──
+    // ── Bigserial → BigInteger + generation ──
 
-    test("bigserial preserves BigInteger type width") {
+    test("bigserial preserves BigInteger type width and generation") {
         pool().use { pool ->
             val result = reader.read(pool)
             val orderId = result.schema.tables["orders"]!!.columns["id"]!!
             orderId.type shouldBe NeutralType.BigInteger
-            // Note should document the AI property
-            result.notes.any { it.code == "R300" && it.objectName.contains("orders.id") } shouldBe true
+            orderId.generation shouldBe ColumnGeneration.Identity(
+                mode = IdentityMode.BY_DEFAULT,
+                sequenceName = "public.orders_id_seq",
+                legacySerialSyntax = true,
+            )
+            result.notes.none { it.code == "R300" } shouldBe true
+            result.schema.sequences.containsKey("orders_id_seq") shouldBe false
+        }
+    }
+
+    test("bigserial reverse to forward generates BIGSERIAL without duplicate sequence DDL") {
+        pool().use { pool ->
+            val result = reader.read(pool)
+            val ddl = PostgresDdlGenerator().generate(result.schema).render()
+            ddl shouldContain "\"id\" BIGSERIAL"
+            ddl shouldNotContain "CREATE SEQUENCE \"orders_id_seq\""
+            ddl shouldContain "CREATE SEQUENCE \"invoice_seq\""
         }
     }
 

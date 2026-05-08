@@ -1,5 +1,8 @@
 package dev.dmigrate.driver.metadata
 
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexSortDirection
+
 /**
  * Typed projections for common JDBC metadata query results.
  *
@@ -44,7 +47,12 @@ data class IndexProjection(
     val columns: List<String>,
     val isUnique: Boolean,
     val type: String? = null,
-)
+    val directions: List<IndexSortDirection?> = emptyList(),
+    val where: String? = null,
+) {
+    val indexColumns: List<IndexColumn>
+        get() = columns.mapIndexed { index, column -> IndexColumn(column, directions.getOrNull(index)) }
+}
 
 data class ConstraintProjection(
     val name: String,

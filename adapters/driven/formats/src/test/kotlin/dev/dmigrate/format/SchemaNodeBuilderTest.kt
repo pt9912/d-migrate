@@ -2,6 +2,7 @@ package dev.dmigrate.format
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeDefinition
@@ -9,6 +10,8 @@ import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.IdentityMode
+import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ParameterDefinition
@@ -60,9 +63,24 @@ class SchemaNodeBuilderTest : FunSpec({
                             type = NeutralType.Integer,
                             default = DefaultValue.SequenceNextVal("order_seq"),
                         ),
+                        "big_id" to ColumnDefinition(
+                            type = NeutralType.BigInteger,
+                            generation = ColumnGeneration.Identity(
+                                mode = IdentityMode.ALWAYS,
+                                sequenceName = "orders_big_id_seq",
+                                legacySerialSyntax = true,
+                            ),
+                        ),
                     ),
                     primaryKey = listOf("id"),
-                    indices = listOf(IndexDefinition(name = "idx_orders_status", columns = listOf("status"), unique = true)),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_orders_status",
+                            columns = listOf("status").map(::IndexColumn),
+                            unique = true,
+                            where = "status <> 'archived'",
+                        )
+                    ),
                     constraints = listOf(
                         ConstraintDefinition(
                             name = "chk_orders_status",
@@ -164,6 +182,11 @@ class SchemaNodeBuilderTest : FunSpec({
         root["encoding"].asText() shouldBe "latin-1"
         root["custom_types"]["status_type"]["values"].map { it.asText() } shouldContainExactly listOf("OPEN", "DONE")
         root["tables"]["orders"]["columns"]["next_id"]["default"]["sequence_nextval"].asText() shouldBe "order_seq"
+        val generation = root["tables"]["orders"]["columns"]["big_id"]["generation"]
+        generation["type"].asText() shouldBe "identity"
+        generation["mode"].asText() shouldBe "always"
+        generation["sequence_name"].asText() shouldBe "orders_big_id_seq"
+        generation["legacy_serial_syntax"].asBoolean() shouldBe true
         root["tables"]["orders"]["metadata"]["engine"].asText() shouldBe "InnoDB"
         root["tables"]["orders"]["metadata"]["without_rowid"].asBoolean() shouldBe true
         root["tables"]["orders"]["partitioning"]["partitions"].single()["name"].asText() shouldBe "p0"
@@ -176,4 +199,3 @@ class SchemaNodeBuilderTest : FunSpec({
         root["sequences"]["order_seq"]["cache"].asInt() shouldBe 20
     }
 })
-

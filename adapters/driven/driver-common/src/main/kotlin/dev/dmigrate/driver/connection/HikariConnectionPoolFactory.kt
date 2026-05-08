@@ -7,6 +7,9 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import org.slf4j.LoggerFactory
 import java.sql.Connection
+import java.sql.SQLFeatureNotSupportedException
+import java.util.concurrent.Executor
+import kotlin.math.ceil
 
 /**
  * Erzeugt einen [ConnectionPool] (HikariCP-basiert) aus einer [ConnectionConfig].
@@ -43,10 +46,62 @@ object HikariConnectionPoolFactory {
             idleTimeout = effectivePool.idleTimeoutMs
             maxLifetime = effectivePool.maxLifetimeMs
             keepaliveTime = effectivePool.keepaliveTimeMs
+            connectionInitSqlFor(config.dialect, effectivePool.statementTimeoutMs)?.let {
+                connectionInitSql = it
+            }
         }
 
         val dataSource = HikariDataSource(hikariConfig)
-        return HikariConnectionPool(config.dialect, dataSource)
+        return HikariConnectionPool(
+            dialect = config.dialect,
+            dataSource = dataSource,
+            statementTimeoutSeconds = timeoutSecondsOf(effectivePool.statementTimeoutMs),
+            networkTimeoutMs = effectivePool.networkTimeoutMs,
+        )
+    }
+
+    /**
+     * Konvertiert ein Millisekunden-Budget in das von
+     * [java.sql.Statement.setQueryTimeout] verlangte Sekunden-Format und
+     * rundet sub-Sekunden-Werte AUF (Plan §5.3 — verhindert, dass `500ms`
+     * versehentlich zu `0` und damit zu "disabled" wird).
+     *
+     * `<=0` bleibt `0` (Disable-Pfad aus Plan §4.2).
+     *
+     * `internal` für Tests.
+     */
+    internal fun timeoutSecondsOf(timeoutMs: Int): Int {
+        if (timeoutMs <= 0) return 0
+        return ceil(timeoutMs / 1000.0).toInt()
+    }
+
+    /**
+     * Erzeugt das driver-spezifische `connectionInitSql` aus dem
+     * Cancel-Reaktions-Budget aus implementation-plan-0.9.6 §4.1.
+     *
+     * Pro Dialekt:
+     * - PostgreSQL: `SET statement_timeout = $ms` — wirkt auf alle
+     *   Statements (SELECT/INSERT/UPDATE/DDL) der jeweiligen Connection.
+     * - MySQL: `SET SESSION MAX_EXECUTION_TIME = $ms` — wirkt **nur auf
+     *   SELECTs** (MySQL-Quirk). Write-Pfade benötigen zusätzlich den
+     *   gemeinsamen JDBC-Timeout-Layer aus E0.7.3.
+     * - SQLite: `PRAGMA busy_timeout = $ms` — Lock-Wait-Timeout. Lange
+     *   Range-Scans benötigen zusätzlich `setQueryTimeout` aus dem
+     *   gemeinsamen Layer.
+     *
+     * Wert `0` deaktiviert den Init-SQL-Pfad (Treiber-Default greift,
+     * üblicherweise unbegrenzt). Negative Werte sind durch
+     * [PoolSettings.init] bereits ausgeschlossen.
+     *
+     * `internal` für Tests.
+     */
+    internal fun connectionInitSqlFor(dialect: DatabaseDialect, statementTimeoutMs: Int): String? {
+        if (statementTimeoutMs <= 0) return null
+        return when (dialect) {
+            DatabaseDialect.POSTGRESQL -> "SET statement_timeout = $statementTimeoutMs"
+            DatabaseDialect.MYSQL -> "SET SESSION MAX_EXECUTION_TIME = $statementTimeoutMs"
+            DatabaseDialect.SQLITE -> "PRAGMA busy_timeout = $statementTimeoutMs"
+        }
     }
 
     /**
@@ -101,13 +156,41 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
     }
 }
 
-/** Hikari-basierte [ConnectionPool]-Implementierung. Internal: nicht direkt instanzieren. */
+/**
+ * Hikari-basierte [ConnectionPool]-Implementierung. Internal: nicht direkt
+ * instanzieren.
+ *
+ * Wraps every borrowed [Connection] in a [TimeoutDecoratedConnection]
+ * (Plan §5.3 Common-JDBC-Timeout-Layer) and applies
+ * [Connection.setNetworkTimeout] for connection-level I/O bounds, sodass
+ * insbesondere `DatabaseMetaData`-Direkt-Calls wie `getPrimaryKeys` aus
+ * PostgreSQL/MySQL-Writer-Open nicht ungebunden bleiben.
+ *
+ * Drivers, die [Connection.setNetworkTimeout] nicht implementieren
+ * (`SQLFeatureNotSupportedException`), fallen still auf den Statement-
+ * Timeout-Pfad zurück; Statement-Level-Timeouts greifen weiterhin via
+ * Decorator (Plan §4.3-Tabelle SQLite-Branch).
+ */
 private class HikariConnectionPool(
     override val dialect: DatabaseDialect,
     private val dataSource: HikariDataSource,
+    private val statementTimeoutSeconds: Int,
+    private val networkTimeoutMs: Int,
 ) : ConnectionPool {
 
-    override fun borrow(): Connection = dataSource.connection
+    override fun borrow(): Connection {
+        val raw = dataSource.connection
+        if (networkTimeoutMs > 0) {
+            try {
+                raw.setNetworkTimeout(DirectExecutor, networkTimeoutMs)
+            } catch (_: SQLFeatureNotSupportedException) {
+                // Fall back silently: Statement-level timeouts via the
+                // TimeoutDecoratedConnection still bound query duration.
+                // See Plan §4.3 SQLite-Branch.
+            }
+        }
+        return TimeoutDecoratedConnection(raw, statementTimeoutSeconds)
+    }
 
     override fun activeConnections(): Int {
         val mxBean: HikariPoolMXBean? = dataSource.hikariPoolMXBean
@@ -119,4 +202,14 @@ private class HikariConnectionPool(
             dataSource.close()
         }
     }
+}
+
+/**
+ * Caller-thread executor for [Connection.setNetworkTimeout]. JDBC uses
+ * the executor for cleanup-side runnables when a connection is forcibly
+ * timed out; running on the caller thread is acceptable for d-migrate's
+ * single-job-per-pool usage and avoids Guava as a transitive dep.
+ */
+private object DirectExecutor : Executor {
+    override fun execute(command: Runnable) = command.run()
 }

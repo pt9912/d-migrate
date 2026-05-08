@@ -71,8 +71,7 @@ class PipelineCheckpointResolver(
             )
         }
 
-        @Suppress("UNCHECKED_CAST")
-        val root = parsed as? Map<String, Any?> ?: return null
+        val root = parsed as? Map<*, *> ?: return null
         val pipeline = root["pipeline"] as? Map<*, *> ?: return null
         val checkpoint = pipeline["checkpoint"] as? Map<*, *> ?: return null
 

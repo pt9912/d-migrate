@@ -250,7 +250,7 @@ class PostgresDdlGeneratorTest : FunSpec({
                 "products" to table(
                     columns = mapOf("name" to col(NeutralType.Text())),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_name", columns = listOf("name"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_products_name", columns = listOf("name").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -268,7 +268,7 @@ class PostgresDdlGeneratorTest : FunSpec({
                 "products" to table(
                     columns = mapOf("code" to col(NeutralType.Text(maxLength = 20))),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_code", columns = listOf("code"), type = IndexType.HASH)
+                        IndexDefinition(name = "idx_products_code", columns = listOf("code").map(::IndexColumn), type = IndexType.HASH)
                     )
                 )
             )
@@ -285,7 +285,7 @@ class PostgresDdlGeneratorTest : FunSpec({
                 "users" to table(
                     columns = mapOf("email" to col(NeutralType.Email)),
                     indices = listOf(
-                        IndexDefinition(name = "idx_users_email", columns = listOf("email"), unique = true)
+                        IndexDefinition(name = "idx_users_email", columns = listOf("email").map(::IndexColumn), unique = true)
                     )
                 )
             )
@@ -560,7 +560,7 @@ class PostgresDdlGeneratorTest : FunSpec({
                     columns = mapOf("id" to col(NeutralType.Integer)),
                     primaryKey = listOf("id"),
                     indices = listOf(
-                        IndexDefinition(name = "idx_items_id", columns = listOf("id"))
+                        IndexDefinition(name = "idx_items_id", columns = listOf("id").map(::IndexColumn))
                     )
                 )
             ),

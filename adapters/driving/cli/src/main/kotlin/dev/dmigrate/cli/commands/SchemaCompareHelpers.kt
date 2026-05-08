@@ -77,6 +77,16 @@ internal object SchemaCompareHelpers {
         }
     }
 
+    fun generationToString(generation: ColumnGeneration?): String? = when (generation) {
+        null -> null
+        is ColumnGeneration.Identity -> buildString {
+            append("identity(mode=${generation.mode.name.lowercase()}")
+            generation.sequenceName?.let { append(",sequence=$it") }
+            if (generation.legacySerialSyntax) append(",legacy_serial_syntax=true")
+            append(")")
+        }
+    }
+
     // ── Projection: SchemaDiff → DiffView ─────────────────────────
 
     fun projectDiff(diff: SchemaDiff): DiffView {
@@ -132,6 +142,7 @@ internal object SchemaCompareHelpers {
                 default = c.default?.let { NullableStringChange(defaultValueToString(it.before), defaultValueToString(it.after)) },
                 unique = c.unique?.let { StringChange(it.before.toString(), it.after.toString()) },
                 references = c.references?.let { NullableStringChange(referenceToString(it.before), referenceToString(it.after)) },
+                generation = c.generation?.let { NullableStringChange(generationToString(it.before), generationToString(it.after)) },
             )
         },
         primaryKey = t.primaryKey?.let { StringListChange(it.before, it.after) },

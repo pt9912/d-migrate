@@ -1,5 +1,6 @@
 package dev.dmigrate.server.ports.memory
 
+import dev.dmigrate.server.ports.contract.AbortOutcomeStoreContractTests
 import dev.dmigrate.server.ports.contract.ApprovalGrantStoreContractTests
 import dev.dmigrate.server.ports.contract.ArtifactContentStoreContractTests
 import dev.dmigrate.server.ports.contract.ArtifactStoreContractTests
@@ -7,6 +8,7 @@ import dev.dmigrate.server.ports.contract.AuditSinkContractTests
 import dev.dmigrate.server.ports.contract.ConnectionReferenceStoreContractTests
 import dev.dmigrate.server.ports.contract.DiffStoreContractTests
 import dev.dmigrate.server.ports.contract.IdempotencyStoreContractTests
+import dev.dmigrate.server.ports.contract.JobStartTransactionContractTests
 import dev.dmigrate.server.ports.contract.JobStoreContractTests
 import dev.dmigrate.server.ports.contract.ProfileStoreContractTests
 import dev.dmigrate.server.ports.contract.QuotaStoreContractTests
@@ -53,3 +55,22 @@ class InMemoryApprovalGrantStoreContractTest :
 class InMemoryAuditSinkContractTest : AuditSinkContractTests({ InMemoryAuditSink() })
 
 class InMemoryQuotaStoreContractTest : QuotaStoreContractTests({ InMemoryQuotaStore() })
+
+class InMemoryJobStartTransactionContractTest :
+    JobStartTransactionContractTests({
+        val idempotencyStore = InMemoryIdempotencyStore()
+        val jobStore = InMemoryJobStore()
+        dev.dmigrate.server.ports.contract.JobStartTransactionFixture(
+            idempotencyStore = idempotencyStore,
+            jobStore = jobStore,
+            transaction = InMemoryJobStartTransaction(jobStore, idempotencyStore),
+        )
+    })
+
+class InMemoryUploadInitClaimStoreContractTest :
+    dev.dmigrate.server.ports.contract.UploadInitClaimStoreContractTests({
+        InMemoryUploadInitClaimStore()
+    })
+
+class InMemoryAbortOutcomeStoreContractTest :
+    AbortOutcomeStoreContractTests({ InMemoryAbortOutcomeStore() })

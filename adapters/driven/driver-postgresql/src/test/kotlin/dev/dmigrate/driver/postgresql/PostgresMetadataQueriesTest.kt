@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -53,7 +55,7 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listPrimaryKeyColumns ──────────────────────
 
     test("listPrimaryKeyColumns returns column names") {
-        every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns listOf(
             mapOf("column_name" to "id"),
             mapOf("column_name" to "tenant_id"),
         )
@@ -134,7 +136,7 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listUniqueConstraintColumns ────────────────
 
     test("listUniqueConstraintColumns groups by constraint name") {
-        every { jdbc.queryList(match { it.contains("UNIQUE") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "uq_email", "column_name" to "email"),
             mapOf("constraint_name" to "uq_name", "column_name" to "first_name"),
             mapOf("constraint_name" to "uq_name", "column_name" to "last_name"),
@@ -184,6 +186,42 @@ class PostgresMetadataQueriesTest : FunSpec({
         )
         val result = PostgresMetadataQueries.listIndices(jdbc, "public", "t")
         result[0].columns shouldBe listOf("col_a", "col_b")
+    }
+
+    test("listIndices maps DESC indoption and normalizes ASC to null") {
+        every { jdbc.queryList(match { it.contains("indoption") }, any(), any()) } returns listOf(
+            mapOf(
+                "index_name" to "idx_created",
+                "columns" to "{created_at,id}",
+                "directions" to "{DESC,NULL}",
+                "is_unique" to false,
+                "index_type" to "btree",
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listIndices(jdbc, "public", "orders")
+
+        result[0].indexColumns shouldBe listOf(
+            IndexColumn("created_at", IndexSortDirection.DESC),
+            IndexColumn("id"),
+        )
+    }
+
+    test("listIndices maps partial index predicate") {
+        every { jdbc.queryList(match { it.contains("pg_get_expr") }, any(), any()) } returns listOf(
+            mapOf(
+                "index_name" to "uq_active_email",
+                "columns" to "{email}",
+                "directions" to "{NULL}",
+                "is_unique" to true,
+                "index_type" to "btree",
+                "predicate" to "(deleted_at IS NULL)",
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listIndices(jdbc, "public", "users")
+
+        result[0].where shouldBe "(deleted_at IS NULL)"
     }
 
     // ── listSequences ──────────────────────────────

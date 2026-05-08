@@ -128,18 +128,41 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
-    // ── Single-column FK on ColumnDefinition.references ──
+    test("partial single-column UNIQUE stays as index with predicate") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, email TEXT, deleted_at TEXT)",
+            "CREATE UNIQUE INDEX idx_active_email ON t (email) WHERE deleted_at IS NULL",
+        ) { pool ->
+            val result = reader.read(pool)
+            val t = result.schema.tables["t"]!!
 
-    test("single-column FK is lifted to ColumnDefinition.references") {
+            t.columns["email"]!!.unique shouldBe false
+            t.indices.single() shouldBe IndexDefinition(
+                name = "idx_active_email",
+                columns = listOf(IndexColumn("email")),
+                unique = true,
+                where = "deleted_at IS NULL",
+            )
+        }
+    }
+
+    // ── Single-column FK constraint ──
+
+    test("single-column FK is preserved as table constraint") {
         withDb(
             "CREATE TABLE parent (id INTEGER PRIMARY KEY)",
             "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent(id) ON DELETE CASCADE)",
         ) { pool ->
             val result = reader.read(pool)
-            val ref = result.schema.tables["child"]!!.columns["parent_id"]!!.references!!
-            ref.table shouldBe "parent"
-            ref.column shouldBe "id"
-            ref.onDelete shouldBe ReferentialAction.CASCADE
+            val child = result.schema.tables["child"]!!
+            child.columns["parent_id"]!!.references shouldBe null
+            child.constraints.any {
+                it.type == ConstraintType.FOREIGN_KEY &&
+                    it.columns == listOf("parent_id") &&
+                    it.references!!.table == "parent" &&
+                    it.references!!.columns == listOf("id") &&
+                    it.references!!.onDelete == ReferentialAction.CASCADE
+            } shouldBe true
         }
     }
 
@@ -218,6 +241,21 @@ class SqliteSchemaReaderTest : FunSpec({
             val t = result.schema.tables["t"]!!
             // The UNIQUE constraint creates a sqlite_autoindex — should not appear
             t.indices.none { it.name?.startsWith("sqlite_autoindex_") == true } shouldBe true
+        }
+    }
+
+    test("index descending direction is read from index_xinfo") {
+        withDb(
+            "CREATE TABLE orders (id INTEGER PRIMARY KEY, created_at TEXT)",
+            "CREATE INDEX idx_orders_created ON orders (created_at DESC, id ASC)",
+        ) { pool ->
+            val result = reader.read(pool)
+            val index = result.schema.tables.getValue("orders").indices.single()
+
+            index.columns shouldBe listOf(
+                IndexColumn("created_at", IndexSortDirection.DESC),
+                IndexColumn("id"),
+            )
         }
     }
 

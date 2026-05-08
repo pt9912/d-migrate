@@ -1,5 +1,7 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.model.IndexColumn
+import dev.dmigrate.core.model.IndexSortDirection
 import dev.dmigrate.driver.metadata.JdbcOperations
 import dev.dmigrate.driver.SqlIdentifiers
 import io.kotest.core.spec.style.FunSpec
@@ -169,6 +171,22 @@ class MysqlMetadataQueriesTest : FunSpec({
         nameIdx.isUnique shouldBe false
         val emailIdx = result.find { it.name == "idx_email" }!!
         emailIdx.isUnique shouldBe true
+    }
+
+    test("listIndices maps D collation to DESC and normalizes A to null") {
+        every { jdbc.queryList(match { it.contains("information_schema.statistics") }, any(), any()) } returns listOf(
+            mapOf("index_name" to "idx_created", "column_name" to "created_at",
+                "non_unique" to 1, "seq_in_index" to 1, "index_type" to "BTREE", "collation" to "D"),
+            mapOf("index_name" to "idx_created", "column_name" to "id",
+                "non_unique" to 1, "seq_in_index" to 2, "index_type" to "BTREE", "collation" to "A"),
+        )
+
+        val result = MysqlMetadataQueries.listIndices(jdbc, "mydb", "orders")
+
+        result.single().indexColumns shouldBe listOf(
+            IndexColumn("created_at", IndexSortDirection.DESC),
+            IndexColumn("id"),
+        )
     }
 
     // ── listViews ──────────────────────────────────

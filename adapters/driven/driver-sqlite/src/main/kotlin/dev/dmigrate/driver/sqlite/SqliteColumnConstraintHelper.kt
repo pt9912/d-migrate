@@ -20,6 +20,9 @@ internal class SqliteColumnConstraintHelper(
     ): String {
         val type = col.type
 
+        if (col.generation is ColumnGeneration.Identity && supportsRowidIdentity(type)) {
+            return generateRowidIdentityColumn(colName, col)
+        }
         if (type is NeutralType.Identifier && type.autoIncrement) {
             return generateAutoIncrementColumn(colName, col, type)
         }
@@ -37,6 +40,15 @@ internal class SqliteColumnConstraintHelper(
             )
         }
         return generateDefaultColumn(colName, col, schema, tableName, deferredFks)
+    }
+
+    private fun supportsRowidIdentity(type: NeutralType): Boolean =
+        type is NeutralType.Integer || type is NeutralType.BigInteger
+
+    private fun generateRowidIdentityColumn(colName: String, col: ColumnDefinition): String {
+        val parts = mutableListOf(quoteIdentifier(colName), "INTEGER PRIMARY KEY AUTOINCREMENT")
+        if (col.unique) parts += "UNIQUE"
+        return parts.joinToString(" ")
     }
 
     private fun generateAutoIncrementColumn(colName: String, col: ColumnDefinition, type: NeutralType): String {

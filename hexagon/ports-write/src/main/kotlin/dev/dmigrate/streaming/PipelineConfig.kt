@@ -1,5 +1,6 @@
 package dev.dmigrate.streaming
 
+import dev.dmigrate.core.validation.requirePositive
 import java.nio.file.Path
 import java.time.Duration
 
@@ -77,9 +78,7 @@ data class CheckpointConfig(
 ) {
     init {
         require(rowInterval > 0) { "checkpoint.rowInterval must be > 0, got $rowInterval" }
-        require(!maxInterval.isNegative && !maxInterval.isZero) {
-            "checkpoint.maxInterval must be > 0, got $maxInterval"
-        }
+        requirePositive(maxInterval, "checkpoint.maxInterval")
     }
 
     companion object {

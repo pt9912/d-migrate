@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -123,16 +125,33 @@ class DataImportRunner(
         stderr = userFacingStderr,
     )
 
-    fun execute(request: DataImportRequest): Int {
+    fun execute(
+        request: DataImportRequest,
+        cancellationToken: CancellationToken = CancellationToken.none(),
+    ): Int {
+        return try {
+            executeWithCancel(request, cancellationToken)
+        } catch (_: OperationCancelledException) {
+            // Plan §4.5 — Cancel maps to CLI exit 130, never to the generic
+            // 5 (import failure) path that the inner catch-Throwable produces.
+            CANCELLED_EXIT_CODE
+        }
+    }
+
+    private fun executeWithCancel(
+        request: DataImportRequest,
+        cancellationToken: CancellationToken,
+    ): Int {
         val ctx = when (val result = resolveRequest(request)) {
             is ImportPreflightResolution.Ok -> result.value
             is ImportPreflightResolution.Exit -> return result.code
         }
 
+        cancellationToken.throwIfCancellationRequested()
         val pool = connect(ctx.connectionConfig) ?: return 4
 
         return try {
-            runImport(request, ctx, pool)
+            runImport(request, ctx, pool, cancellationToken)
         } finally {
             runCatching { pool.close() }
         }
@@ -154,6 +173,7 @@ class DataImportRunner(
         request: DataImportRequest,
         context: ImportPreflightContext,
         pool: ConnectionPool,
+        cancellationToken: CancellationToken,
     ): Int {
         val executionPlan = when (
             val result = executionPlanner.prepare(
@@ -174,6 +194,7 @@ class DataImportRunner(
                 pool,
                 context.preparedImport,
                 executionPlan,
+                cancellationToken,
             )
         ) {
             is StreamingResult.Ok -> r.value
@@ -204,6 +225,9 @@ class DataImportRunner(
     }
 
     companion object {
+        /** CLI exit code for cooperative cancellation per `spec/job-contract.md`. */
+        const val CANCELLED_EXIT_CODE = 130
+
         fun inferFormatFromExtension(path: Path): String? = DataImportHelpers.inferFormatFromExtension(path)
 
         fun formatProgressSummary(result: ImportResult): String = ImportCompletionSupport.formatProgressSummary(result)

@@ -62,10 +62,10 @@ class PostgresSchemaReaderTest : FunSpec({
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
         every { jdbc.queryList(match { it.contains("information_schema.columns") }, any(), any()) } returns columns
-        every { jdbc.queryList(match { it.contains("PRIMARY KEY") }, any(), any()) } returns
+        every { jdbc.queryList(match { it.contains("contype = 'p'") }, any(), any()) } returns
             pkColumns.map { mapOf("column_name" to it) }
-        every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns emptyList()
-        every { jdbc.queryList(match { "UNIQUE" in it && "pg_constraint" !in it }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("CHECK") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_index") }, any(), any()) } returns emptyList()
         every { jdbc.querySingle(match { it.contains("pg_partitioned_table") }, any(), any()) } returns null
@@ -102,7 +102,7 @@ class PostgresSchemaReaderTest : FunSpec({
         table.columns.mapShouldHaveSize(2)
 
         val idCol = table.columns["id"]!!
-        idCol.required shouldBe false // PK columns have required=false
+        idCol.required shouldBe true
         idCol.unique shouldBe false   // PK columns have unique=false
 
         val nameCol = table.columns["name"]!!
@@ -329,13 +329,13 @@ class PostgresSchemaReaderTest : FunSpec({
                 "is_identity" to "NO", "identity_generation" to null),
         ), listOf("id"))
         // FK on user_id
-        every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'f'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "fk_user", "columns" to "{user_id}",
                 "referenced_table" to "users", "referenced_columns" to "{id}",
                 "confdeltype" to "c", "confupdtype" to "a"),
         )
         // Unique constraint on note
-        every { jdbc.queryList(match { "UNIQUE" in it && "pg_constraint" !in it }, any(), any()) } returns listOf(
+        every { jdbc.queryList(match { it.contains("contype = 'u'") }, any(), any()) } returns listOf(
             mapOf("constraint_name" to "uq_note", "column_name" to "note"),
         )
         // Check constraint
@@ -354,8 +354,7 @@ class PostgresSchemaReaderTest : FunSpec({
 
         val table = result.schema.tables["orders"]!!
         val userIdCol = table.columns["user_id"]!!
-        userIdCol.references.shouldNotBeNull()
-        userIdCol.references!!.table shouldBe "users"
+        userIdCol.references.shouldBeNull()
         userIdCol.required shouldBe true // non-PK, NOT NULL
 
         val noteCol = table.columns["note"]!!
@@ -364,6 +363,14 @@ class PostgresSchemaReaderTest : FunSpec({
 
         table.indices shouldHaveSize 1
         table.indices[0].type shouldBe IndexType.BTREE
+        table.constraints.any {
+            it.name == "fk_user" &&
+                it.type == ConstraintType.FOREIGN_KEY &&
+                it.columns == listOf("user_id") &&
+                it.references!!.table == "users" &&
+                it.references!!.columns == listOf("id") &&
+                it.references!!.onDelete == ReferentialAction.CASCADE
+        } shouldBe true
         table.constraints.any { it.type == ConstraintType.CHECK } shouldBe true
     }
 
@@ -385,6 +392,42 @@ class PostgresSchemaReaderTest : FunSpec({
 
         val table = result.schema.tables["items"]!!
         table.columns["id"].shouldNotBeNull()
+    }
+
+    test("read table with bigserial column maps generation") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "orders", "table_schema" to "public", "table_type" to "BASE TABLE"),
+        )
+        stubTableQueries(listOf(
+            mapOf(
+                "column_name" to "id",
+                "data_type" to "bigint",
+                "udt_name" to "int8",
+                "is_nullable" to "NO",
+                "column_default" to "nextval('orders_id_seq'::regclass)",
+                "ordinal_position" to 1,
+                "character_maximum_length" to null,
+                "numeric_precision" to 64,
+                "numeric_scale" to 0,
+                "is_identity" to "NO",
+                "identity_generation" to null,
+                "generated_sequence_name" to "public.orders_id_seq",
+            ),
+        ), listOf("id"))
+
+        val opts = SchemaReadOptions(includeViews = false, includeFunctions = false,
+            includeProcedures = false, includeTriggers = false)
+        val result = reader.read(pool, opts)
+
+        val id = result.schema.tables["orders"]!!.columns["id"]!!
+        id.type shouldBe NeutralType.BigInteger
+        id.default.shouldBeNull()
+        id.generation shouldBe ColumnGeneration.Identity(
+            sequenceName = "public.orders_id_seq",
+            legacySerialSyntax = true,
+        )
+        result.notes.none { it.code == "R300" } shouldBe true
     }
 
     test("readPartitioning with LIST and HASH strategies") {

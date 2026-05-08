@@ -4,6 +4,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.DiffIndexEntry
+import dev.dmigrate.server.ports.DiffListFilter
 import dev.dmigrate.server.ports.DiffStore
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -26,6 +27,25 @@ class InMemoryDiffStore : DiffStore {
         val matching = entries.values
             .filter { it.tenantId == tenantId }
             .sortedBy { it.createdAt }
+        return paginate(matching, page)
+    }
+
+    override fun list(
+        tenantId: TenantId,
+        filter: DiffListFilter,
+        page: PageRequest,
+    ): PageResult<DiffIndexEntry> {
+        val matching = entries.values
+            .filter { it.tenantId == tenantId }
+            .filter { filter.jobRef == null || it.jobRef == filter.jobRef }
+            .filter { filter.sourceRef == null || it.sourceRef == filter.sourceRef }
+            .filter { filter.targetRef == null || it.targetRef == filter.targetRef }
+            .filter { filter.createdAfter == null || !it.createdAt.isBefore(filter.createdAfter) }
+            .filter { filter.createdBefore == null || !it.createdAt.isAfter(filter.createdBefore) }
+            .sortedWith(
+                compareByDescending<DiffIndexEntry> { it.createdAt }
+                    .thenBy { it.diffId },
+            )
         return paginate(matching, page)
     }
 

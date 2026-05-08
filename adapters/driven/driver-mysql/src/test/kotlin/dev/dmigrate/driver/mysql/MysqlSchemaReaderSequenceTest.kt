@@ -7,7 +7,6 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
-import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.mockk.every
 import io.mockk.mockk
@@ -246,8 +245,13 @@ class MysqlSchemaReaderSequenceTest : FunSpec({
 
         val table = result.schema.tables["orders"]!!
         table.indices.shouldBeEmpty()
-        val userIdCol = table.columns["user_id"]!!
-        userIdCol.references.shouldNotBeNull()
-        userIdCol.references!!.table shouldBe "users"
+        table.columns["user_id"]!!.references shouldBe null
+        table.constraints.any {
+            it.name == "fk_user" &&
+                it.type == ConstraintType.FOREIGN_KEY &&
+                it.columns == listOf("user_id") &&
+                it.references!!.table == "users" &&
+                it.references!!.columns == listOf("id")
+        } shouldBe true
     }
 })

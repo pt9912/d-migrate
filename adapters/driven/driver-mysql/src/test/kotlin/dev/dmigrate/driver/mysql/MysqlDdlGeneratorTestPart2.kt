@@ -252,7 +252,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
                         "code" to col(NeutralType.Text(maxLength = 20))
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_items_code", columns = listOf("code"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_items_code", columns = listOf("code").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -336,7 +336,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
                         "col_b" to col(NeutralType.Integer)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = null, columns = listOf("col_a", "col_b"), type = IndexType.BTREE)
+                        IndexDefinition(name = null, columns = listOf("col_a", "col_b").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -539,7 +539,7 @@ class MysqlDdlGeneratorTestPart2 : FunSpec({
                     ),
                     primaryKey = listOf("id"),
                     indices = listOf(
-                        IndexDefinition(name = "idx_users_name", columns = listOf("name"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_users_name", columns = listOf("name").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )

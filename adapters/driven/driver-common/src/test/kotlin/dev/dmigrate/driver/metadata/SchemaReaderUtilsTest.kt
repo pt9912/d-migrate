@@ -65,6 +65,22 @@ class SchemaReaderUtilsTest : FunSpec({
         SchemaReaderUtils.liftSingleColumnFks(fks).shouldBeEmpty()
     }
 
+    // ── buildForeignKeyConstraints ───────────────
+
+    test("single-column FK becomes named constraint") {
+        val fks = listOf(
+            ForeignKeyProjection("fk1", listOf("user_id"), "users", listOf("id"), "CASCADE", null),
+        )
+        val result = SchemaReaderUtils.buildForeignKeyConstraints(fks)
+        result shouldHaveSize 1
+        result[0].name shouldBe "fk1"
+        result[0].type shouldBe ConstraintType.FOREIGN_KEY
+        result[0].columns shouldBe listOf("user_id")
+        result[0].references!!.table shouldBe "users"
+        result[0].references!!.columns shouldBe listOf("id")
+        result[0].references!!.onDelete shouldBe ReferentialAction.CASCADE
+    }
+
     // ── buildMultiColumnFkConstraints ───────────────
 
     test("multi-column FK becomes constraint") {
@@ -104,6 +120,7 @@ class SchemaReaderUtilsTest : FunSpec({
             IndexProjection("idx1", listOf("a", "b"), isUnique = true),
             IndexProjection("idx2", listOf("c"), isUnique = true),
             IndexProjection("idx3", listOf("d", "e"), isUnique = false),
+            IndexProjection("idx4", listOf("f", "g"), isUnique = true, where = "deleted_at IS NULL"),
         )
         val result = SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         result shouldHaveSize 1
@@ -130,6 +147,7 @@ class SchemaReaderUtilsTest : FunSpec({
             IndexProjection("idx1", listOf("email"), isUnique = true),
             IndexProjection("idx2", listOf("a", "b"), isUnique = true),
             IndexProjection("idx3", listOf("name"), isUnique = false),
+            IndexProjection("idx4", listOf("archived_email"), isUnique = true, where = "deleted_at IS NULL"),
         )
         SchemaReaderUtils.singleColumnUniqueFromIndices(indices) shouldBe setOf("email")
     }

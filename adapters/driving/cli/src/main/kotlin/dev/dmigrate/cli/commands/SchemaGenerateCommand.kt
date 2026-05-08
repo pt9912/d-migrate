@@ -39,6 +39,8 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
         .path()
     val generateRollback by option("--generate-rollback", help = "Generate rollback DDL")
         .flag()
+    val deterministic by option("--deterministic", help = "Omit runtime timestamps from DDL and reports")
+        .flag()
     val spatialProfile by option("--spatial-profile",
         help = "Spatial type handling profile (postgis, native, spatialite, none)")
     val split by option("--split",
@@ -66,12 +68,23 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             quiet = ctx.quiet,
             splitMode = splitMode,
             mysqlNamedSequences = mysqlNamedSequences,
+            deterministic = deterministic,
         )
         val runner = SchemaGenerateRunner(
             schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
             generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            reportWriter = { path, result, schema, dialect, src, splitModeStr, mysqlSeqMode ->
-                TransformationReportWriter().write(path, result, schema, dialect, src, splitModeStr, mysqlSeqMode)
+            reportWriter = { path, result, schema, dialect, src, splitModeStr, options ->
+                TransformationReportWriter().write(
+                    path,
+                    result,
+                    schema,
+                    dialect,
+                    src,
+                    splitModeStr,
+                    options.mysqlNamedSequenceMode,
+                    options.generatedAt,
+                    options.deterministic,
+                )
             },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
             sidecarPath = SchemaGenerateHelpers::sidecarPath,

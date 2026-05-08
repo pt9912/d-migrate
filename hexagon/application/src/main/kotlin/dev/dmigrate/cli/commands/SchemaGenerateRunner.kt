@@ -4,13 +4,16 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DdlGenerationOptions
-import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.DdlGenerator
+import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfilePolicy
+import java.nio.file.Files
 import java.nio.file.Path
+import java.time.DateTimeException
+import java.time.Instant
 import kotlin.io.path.writeText
 
 /** DDL output split mode for `schema generate` (0.9.2). */
@@ -36,6 +39,7 @@ data class SchemaGenerateRequest(
     val quiet: Boolean,
     val splitMode: SplitMode = SplitMode.SINGLE,
     val mysqlNamedSequences: String? = null,
+    val deterministic: Boolean = false,
 )
 
 /**
@@ -54,9 +58,12 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, MysqlNamedSequenceMode?) -> Unit,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, DdlGenerationOptions) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
-        { path, content -> path.writeText(content) },
+        { path, content ->
+            path.parent?.let { Files.createDirectories(it) }
+            path.writeText(content)
+        },
     private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
@@ -65,6 +72,7 @@ class SchemaGenerateRunner(
     private val printValidationResult: (ValidationResult, SchemaDefinition, String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
+    private val getenv: (String) -> String? = System::getenv,
 ) {
 
     private sealed interface Preflight {
@@ -140,15 +148,35 @@ class SchemaGenerateRunner(
         }
 
         val mysqlSeqMode = resolveMysqlSeqMode(request, dialect) ?: return Preflight.Exit(2)
+        val generatedAt = resolveGeneratedAt(request) ?: return Preflight.Exit(2)
         val options = DdlGenerationOptions(
             spatialProfile = spatialProfile,
             mysqlNamedSequenceMode = mysqlSeqMode.value,
+            generatedAt = generatedAt.value,
+            deterministic = request.deterministic,
+            deferForeignKeys = request.splitMode == SplitMode.PRE_POST && dialect == DatabaseDialect.POSTGRESQL,
         )
 
         return Preflight.Ok(dialect, options, mysqlSeqMode.value)
     }
 
     private data class OptionalMode(val value: MysqlNamedSequenceMode?)
+    private data class OptionalInstant(val value: Instant?)
+
+    private fun resolveGeneratedAt(request: SchemaGenerateRequest): OptionalInstant? {
+        val raw = getenv("SOURCE_DATE_EPOCH") ?: return OptionalInstant(null)
+        val epochSeconds = raw.toLongOrNull()
+        if (epochSeconds == null) {
+            printError("Invalid SOURCE_DATE_EPOCH '$raw': expected Unix epoch seconds", request.source.toString())
+            return null
+        }
+        return try {
+            OptionalInstant(Instant.ofEpochSecond(epochSeconds))
+        } catch (e: DateTimeException) {
+            printError("Invalid SOURCE_DATE_EPOCH '$raw': ${e.message}", request.source.toString())
+            null
+        }
+    }
 
     private fun resolveMysqlSeqMode(request: SchemaGenerateRequest, dialect: DatabaseDialect): OptionalMode? {
         if (request.mysqlNamedSequences != null) {
@@ -223,7 +251,7 @@ class SchemaGenerateRunner(
 
         if (request.splitMode == SplitMode.PRE_POST) {
             if (request.output != null) {
-                outputWriter.writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, mysqlSeqMode)
+                outputWriter.writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, options)
             }
             if (request.outputFormat == "json") {
                 stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))

@@ -4,6 +4,7 @@ import dev.dmigrate.server.core.pagination.PageRequest
 import dev.dmigrate.server.core.pagination.PageResult
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.ports.ProfileIndexEntry
+import dev.dmigrate.server.ports.ProfileListFilter
 import dev.dmigrate.server.ports.ProfileStore
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -26,6 +27,23 @@ class InMemoryProfileStore : ProfileStore {
         val matching = entries.values
             .filter { it.tenantId == tenantId }
             .sortedBy { it.createdAt }
+        return paginate(matching, page)
+    }
+
+    override fun list(
+        tenantId: TenantId,
+        filter: ProfileListFilter,
+        page: PageRequest,
+    ): PageResult<ProfileIndexEntry> {
+        val matching = entries.values
+            .filter { it.tenantId == tenantId }
+            .filter { filter.jobRef == null || it.jobRef == filter.jobRef }
+            .filter { filter.createdAfter == null || !it.createdAt.isBefore(filter.createdAfter) }
+            .filter { filter.createdBefore == null || !it.createdAt.isAfter(filter.createdBefore) }
+            .sortedWith(
+                compareByDescending<ProfileIndexEntry> { it.createdAt }
+                    .thenBy { it.profileId },
+            )
         return paginate(matching, page)
     }
 

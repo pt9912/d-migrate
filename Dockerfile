@@ -68,9 +68,13 @@ COPY --chown=gradle:gradle adapters/driven/driver-mysql-profiling/build.gradle.k
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite-profiling/build.gradle.kts adapters/driven/driver-sqlite-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/driven/formats/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/audit-logging/build.gradle.kts adapters/driven/audit-logging/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/connection-config/build.gradle.kts adapters/driven/connection-config/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/storage-file/build.gradle.kts adapters/driven/storage-file/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/streaming/build.gradle.kts adapters/driven/streaming/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driving/cli/build.gradle.kts adapters/driving/cli/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driving/mcp/build.gradle.kts adapters/driving/mcp/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-postgresql/build.gradle.kts test/integration-postgresql/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-mysql/build.gradle.kts test/integration-mysql/build.gradle.kts
 COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consumer-read-probe/build.gradle.kts
@@ -101,6 +105,33 @@ RUN find /src -name "detekt-baseline.xml" -not -path "/src/build/*" \
       -printf '%P\n' | tar cf /src/detekt-baselines.tar -C /src -T -
 
 ENTRYPOINT ["cat", "/src/detekt-baselines.tar"]
+
+# ---- Stage: golden-update --------------------------------------------------
+# Helper stage for regenerating pinned JSON-Schema golden snapshots after a
+# Phase-B/C/D/E/F/G tool-schema change. Runs the goldenness tests with
+# UPDATE_GOLDEN=true (which makes the test write the regenerated file
+# instead of comparing), then tars all `src/test/resources/golden/**` files
+# so the host can extract them into the source tree without a volume mount.
+#
+# This stage MUST NOT fail on golden drift — `UPDATE_GOLDEN=true` makes the
+# test return successfully after the rewrite, so no `|| true` is needed.
+#
+# Usage (or via `make golden-update`):
+#   docker build --target golden-update -t d-migrate:golden-update .
+#   docker run --rm d-migrate:golden-update | tar xf -
+FROM compile AS golden-update
+
+ENV UPDATE_GOLDEN=true
+
+RUN gradle --no-daemon \
+    :adapters:driving:mcp:test \
+    --tests "*GoldenTest*" \
+    --rerun-tasks
+
+RUN find /src -path "*/src/test/resources/golden/*" -type f \
+      -printf '%P\n' | tar cf /src/goldens.tar -C /src -T -
+
+ENTRYPOINT ["cat", "/src/goldens.tar"]
 
 # ---- Stage: detekt ---------------------------------------------------------
 # Actual static-analysis gate. This stage MUST fail on detekt violations.

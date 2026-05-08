@@ -197,4 +197,154 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         val cfg = memoryConfig(mapOf("a" to "1", "b" to "2", "c" to "3"))
         cfg.params.keys.toList() shouldContainExactly listOf("a", "b", "c")
     }
+
+    // ─── E0.7.2: connectionInitSqlFor ──────────────────────────
+
+    test("connectionInitSqlFor builds PostgreSQL statement_timeout SQL") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 30_000,
+        ) shouldBe "SET statement_timeout = 30000"
+    }
+
+    test("connectionInitSqlFor builds MySQL MAX_EXECUTION_TIME SQL") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 30_000,
+        ) shouldBe "SET SESSION MAX_EXECUTION_TIME = 30000"
+    }
+
+    test("connectionInitSqlFor builds SQLite busy_timeout PRAGMA") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 30_000,
+        ) shouldBe "PRAGMA busy_timeout = 30000"
+    }
+
+    test("connectionInitSqlFor honors a custom positive timeout") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 5_000,
+        ) shouldBe "SET statement_timeout = 5000"
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 5_000,
+        ) shouldBe "SET SESSION MAX_EXECUTION_TIME = 5000"
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 5_000,
+        ) shouldBe "PRAGMA busy_timeout = 5000"
+    }
+
+    test("connectionInitSqlFor returns null for statementTimeoutMs == 0 (disabled)") {
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.POSTGRESQL, 0,
+        ) shouldBe null
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.MYSQL, 0,
+        ) shouldBe null
+        HikariConnectionPoolFactory.connectionInitSqlFor(
+            DatabaseDialect.SQLITE, 0,
+        ) shouldBe null
+    }
+
+    test("create wires the SQLite PRAGMA into the live pool — busy_timeout is observable") {
+        // SQLite is the only dialect we can verify end-to-end without a
+        // Testcontainer. xerial sqlite-jdbc maps `Statement.setQueryTimeout(s)`
+        // to `PRAGMA busy_timeout = s*1000`, so the decorator's per-statement
+        // setQueryTimeout will overwrite connectionInitSql. We pick a value
+        // that is already a multiple of 1000 (`30_000`) so both layers agree.
+        val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 30_000))
+        HikariConnectionPoolFactory.create(cfg).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe 30_000
+                    }
+                }
+            }
+        }
+    }
+
+    // ─── E0.7.3: timeoutSecondsOf rounding ─────────────────────
+
+    test("timeoutSecondsOf rounds sub-second values up — keeps 500ms above zero") {
+        HikariConnectionPoolFactory.timeoutSecondsOf(0) shouldBe 0
+        HikariConnectionPoolFactory.timeoutSecondsOf(-100) shouldBe 0
+        HikariConnectionPoolFactory.timeoutSecondsOf(1) shouldBe 1
+        HikariConnectionPoolFactory.timeoutSecondsOf(500) shouldBe 1
+        HikariConnectionPoolFactory.timeoutSecondsOf(999) shouldBe 1
+        HikariConnectionPoolFactory.timeoutSecondsOf(1000) shouldBe 1
+        HikariConnectionPoolFactory.timeoutSecondsOf(1001) shouldBe 2
+        HikariConnectionPoolFactory.timeoutSecondsOf(30_000) shouldBe 30
+    }
+
+    // ─── E0.7.3: borrow returns a TimeoutDecoratedConnection ──
+
+    test("borrow returns a connection that applies queryTimeout to created statements") {
+        // statementTimeoutMs = 4500 → ceil(4.5) = 5 seconds
+        val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 4_500))
+        HikariConnectionPoolFactory.create(cfg).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt -> stmt.queryTimeout shouldBe 5 }
+                conn.prepareStatement("SELECT 1").use { stmt -> stmt.queryTimeout shouldBe 5 }
+            }
+        }
+    }
+
+    test("borrow with statementTimeoutMs = 0 leaves no queryTimeout on borrowed statements") {
+        val cfg = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 0))
+        HikariConnectionPoolFactory.create(cfg).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt -> stmt.queryTimeout shouldBe 0 }
+                conn.prepareStatement("SELECT 1").use { stmt -> stmt.queryTimeout shouldBe 0 }
+            }
+        }
+    }
+
+    test("borrow gracefully handles drivers that do not support setNetworkTimeout") {
+        // SQLite's xerial driver may or may not support setNetworkTimeout
+        // depending on the build. The factory must NOT throw — it falls back
+        // silently. We assert that borrow succeeds and the connection is
+        // usable, regardless of network-timeout support.
+        val cfg = memoryConfig().copy(pool = PoolSettings(networkTimeoutMs = 12_000))
+        HikariConnectionPoolFactory.create(cfg).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    val rs = stmt.executeQuery("SELECT 1")
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 1
+                }
+            }
+        }
+    }
+
+    test("create with statementTimeoutMs == 0 does not set our PRAGMA — driver default applies") {
+        // Compare against the value we would get if init-SQL ran. With
+        // `statementTimeoutMs = 0` the factory must skip both the PRAGMA
+        // (E0.7.2) and the per-statement setQueryTimeout (E0.7.3 decorator).
+        // Pick `ourValue` as a multiple of 1000 so the decorator's
+        // ceil(ms/1000)*1000 doesn't drift the assertion (xerial maps
+        // setQueryTimeout(s) → busy_timeout = s*1000).
+        val ourValue = 25_000
+        val withInit = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = ourValue))
+        val withoutInit = memoryConfig().copy(pool = PoolSettings(statementTimeoutMs = 0))
+
+        val driverDefault = HikariConnectionPoolFactory.create(withoutInit).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1)
+                    }
+                }
+            }
+        }
+        driverDefault shouldNotBe ourValue
+        HikariConnectionPoolFactory.create(withInit).use { pool ->
+            pool.borrow().use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery("PRAGMA busy_timeout").use { rs ->
+                        rs.next() shouldBe true
+                        rs.getInt(1) shouldBe ourValue
+                    }
+                }
+            }
+        }
+    }
 })

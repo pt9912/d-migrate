@@ -98,7 +98,7 @@ class SqliteDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_docs_content",
-                            columns = listOf("content"),
+                            columns = listOf("content").map(::IndexColumn),
                             type = IndexType.GIN
                         )
                     )
@@ -122,7 +122,7 @@ class SqliteDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_locations_geom",
-                            columns = listOf("geom"),
+                            columns = listOf("geom").map(::IndexColumn),
                             type = IndexType.GIST
                         )
                     )
@@ -146,7 +146,7 @@ class SqliteDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_logs_ts",
-                            columns = listOf("ts"),
+                            columns = listOf("ts").map(::IndexColumn),
                             type = IndexType.BRIN
                         )
                     )
@@ -172,7 +172,7 @@ class SqliteDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -199,7 +199,7 @@ class SqliteDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email_uniq",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         )

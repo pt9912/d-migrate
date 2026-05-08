@@ -1,0 +1,158 @@
+GRADLE ?= ./gradlew
+DOCKER ?= docker
+
+IMAGE ?= d-migrate
+IMAGE_TAG ?= dev
+CLI_PROJECT ?= :adapters:driving:cli
+CLI_BIN ?= adapters/driving/cli/build/install/d-migrate/bin/d-migrate
+ARGS ?= --help
+INTEGRATION_TASKS ?=
+
+# Docker-targeted gradle runs (see docker-check / docker-test).
+# MODULES is a space-separated list of project paths, e.g.
+#   make docker-check MODULES=":adapters:driving:mcp :hexagon:ports-common"
+# An empty MODULES runs `check` / `test` across the whole repo.
+MODULES ?=
+DOCKER_TAG ?= $(IMAGE):dev-targeted
+
+# Build the gradle task list for docker-check / docker-test from MODULES.
+# Falls back to the full repo task when MODULES is empty.
+docker_check_tasks = $(if $(strip $(MODULES)),$(addsuffix :check,$(MODULES)),check)
+docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
+
+.DEFAULT_GOAL := help
+
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-smoke docker-gates docker-full-gates golden-update clean
+
+help:
+	@printf '%s\n' \
+		'Targets:' \
+		'  make dev              Install the local CLI distribution and run --help' \
+		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
+		'  make build            Run the full Gradle build' \
+		'  make test             Run unit tests' \
+		'  make check            Run Gradle check' \
+		'  make lint             Run Detekt across subprojects' \
+		'  make coverage-gate    Run tests and root Kover verification' \
+		'  make coverage-report  Generate Kover HTML/XML reports' \
+		'  make integration      Run Docker-backed integration tests' \
+		'  make docs-check       Verify Markdown links in docs/' \
+		'  make smoke            Build the CLI distribution and run --version/--help' \
+		'  make gates            Run check, coverage and docs gates' \
+		'  make ci               Run build, coverage and docs gates' \
+		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
+		'  make docker-build     Build the runtime Docker image' \
+		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
+		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
+		'  make docker-detekt    Run Detekt inside Docker' \
+		'  make docker-coverage  Build Kover HTML coverage image' \
+		'  make docker-coverage-gate  Run Kover verification inside Docker' \
+		'  make docker-coverage-json  Build Kover JSON coverage image' \
+		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
+		'  make docker-gates     Run Docker build, coverage and smoke gates' \
+		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
+		'  make golden-update    Regenerate pinned tool-schema golden snapshots via Docker' \
+		'  make clean            Run Gradle clean' \
+		'' \
+		'Variables:' \
+		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
+		'  ARGS="schema validate --source schema.yaml"' \
+		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"' \
+		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test)' \
+		'  DOCKER_TAG=d-migrate:dev-targeted'
+
+resolve-deps:
+	$(GRADLE) resolveAllDependencies
+
+dev:
+	$(GRADLE) $(CLI_PROJECT):installDist
+	$(CLI_BIN) --help
+
+run:
+	$(GRADLE) $(CLI_PROJECT):run --args="$(ARGS)"
+
+build:
+	$(GRADLE) build
+
+test:
+	$(GRADLE) test
+
+check:
+	$(GRADLE) check
+
+lint:
+	$(GRADLE) detekt
+
+coverage-gate:
+	$(GRADLE) test koverVerify
+
+coverage-report:
+	$(GRADLE) test koverHtmlReport koverXmlReport
+
+integration:
+	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
+
+docs-check:
+	./scripts/verify-doc-refs.sh
+
+smoke:
+	$(GRADLE) $(CLI_PROJECT):installDist
+	$(CLI_BIN) --version
+	$(CLI_BIN) --help
+
+gates: check coverage-gate docs-check
+
+ci: build coverage-gate docs-check
+
+release-assets:
+	$(GRADLE) $(CLI_PROJECT):assembleReleaseAssets
+
+docker-build:
+	$(DOCKER) build -t $(IMAGE):$(IMAGE_TAG) .
+
+# Targeted module check inside the Dockerfile `build` stage.
+#   make docker-check                            # whole repo (slower than docker-build)
+#   make docker-check MODULES=":adapters:driving:mcp"
+#   make docker-check MODULES=":hexagon:ports-common :adapters:driving:mcp"
+docker-check:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(docker_check_tasks))" \
+	  -t $(DOCKER_TAG) .
+
+# Targeted module test inside the Dockerfile `build` stage. Same semantics as
+# docker-check but runs only the test task (no detekt / kover gates).
+docker-test:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
+	  -t $(DOCKER_TAG) .
+
+docker-detekt:
+	$(DOCKER) build --target detekt -t $(IMAGE):detekt .
+
+docker-coverage:
+	$(DOCKER) build --target coverage -t $(IMAGE):coverage .
+
+docker-coverage-gate:
+	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+
+docker-coverage-json:
+	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
+
+# Regenerate pinned JSON-Schema golden snapshots without volume mounts.
+# Builds the `golden-update` Docker stage (which runs the goldenness tests
+# with UPDATE_GOLDEN=true), then streams the tarball of refreshed
+# `src/test/resources/golden/**` files into the source tree.
+golden-update:
+	$(DOCKER) build --target golden-update -t $(IMAGE):golden-update .
+	$(DOCKER) run --rm $(IMAGE):golden-update | tar xf -
+
+docker-smoke: docker-build
+	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
+	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
+
+docker-gates: docker-build docker-coverage-gate docker-smoke
+
+docker-full-gates: docker-gates integration
+
+clean:
+	$(GRADLE) clean

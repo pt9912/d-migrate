@@ -33,6 +33,7 @@ private fun parseColumn(node: JsonNode): ColumnDefinition = ColumnDefinition(
     unique = node.boolOrDefault("unique", false),
     default = parseDefault(node["default"]),
     references = parseReference(node["references"]),
+    generation = parseGeneration(node["generation"]),
 )
 
 private fun parseNeutralType(node: JsonNode): NeutralType {
@@ -140,15 +141,52 @@ private fun parseReference(node: JsonNode?): ReferenceDefinition? {
     )
 }
 
+private fun parseGeneration(node: JsonNode?): ColumnGeneration? {
+    if (node == null || node.isNull) return null
+    require(node.isObject) { "Column generation must be an object" }
+    return when (val type = node.requiredText("type")) {
+        "identity" -> ColumnGeneration.Identity(
+            mode = parseIdentityMode(node.optionalText("mode")),
+            sequenceName = node.optionalText("sequence_name"),
+            legacySerialSyntax = node.boolOrDefault("legacy_serial_syntax", false),
+        )
+        else -> throw IllegalArgumentException("Unknown column generation type: $type")
+    }
+}
+
+private fun parseIdentityMode(value: String?): IdentityMode =
+    when (value ?: "by_default") {
+        "always" -> IdentityMode.ALWAYS
+        "by_default" -> IdentityMode.BY_DEFAULT
+        else -> throw IllegalArgumentException("Unknown identity mode: $value")
+    }
+
 private fun parseIndices(node: JsonNode?): List<IndexDefinition> {
     if (node == null || !node.isArray) return emptyList()
     return node.map { childNode ->
         IndexDefinition(
             name = childNode.optionalText("name"),
-            columns = childNode["columns"]?.toStringList() ?: emptyList(),
+            columns = parseIndexColumns(childNode["columns"]),
             type = childNode.optionalText("type")?.toIndexType() ?: IndexType.BTREE,
             unique = childNode.boolOrDefault("unique", false),
+            where = childNode.optionalText("where"),
         )
+    }
+}
+
+private fun parseIndexColumns(node: JsonNode?): List<IndexColumn> {
+    if (node == null || !node.isArray) return emptyList()
+    return node.map { columnNode ->
+        when {
+            columnNode.isTextual -> IndexColumn(columnNode.asText())
+            columnNode.isObject -> IndexColumn(
+                name = columnNode.requiredText("name"),
+                direction = columnNode.optionalText("direction")?.toIndexSortDirection(),
+            )
+            else -> throw IllegalArgumentException(
+                "Index columns must be strings or objects with 'name' and optional 'direction'"
+            )
+        }
     }
 }
 

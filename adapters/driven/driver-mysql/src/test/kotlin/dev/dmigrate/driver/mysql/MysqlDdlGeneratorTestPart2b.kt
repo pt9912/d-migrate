@@ -80,7 +80,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
                         "body" to col(NeutralType.Json)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_docs_body", columns = listOf("body"), type = IndexType.GIN)
+                        IndexDefinition(name = "idx_docs_body", columns = listOf("body").map(::IndexColumn), type = IndexType.GIN)
                     )
                 )
             )
@@ -104,7 +104,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
                         "location" to col(NeutralType.Text())
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_geo_loc", columns = listOf("location"), type = IndexType.GIST)
+                        IndexDefinition(name = "idx_geo_loc", columns = listOf("location").map(::IndexColumn), type = IndexType.GIST)
                     )
                 )
             )
@@ -125,7 +125,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
                         "created_at" to col(NeutralType.DateTime())
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_logs_created", columns = listOf("created_at"), type = IndexType.BRIN)
+                        IndexDefinition(name = "idx_logs_created", columns = listOf("created_at").map(::IndexColumn), type = IndexType.BRIN)
                     )
                 )
             )
@@ -148,7 +148,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
                         "sku" to col(NeutralType.Text(maxLength = 50), required = true)
                     ),
                     indices = listOf(
-                        IndexDefinition(name = "idx_products_sku", columns = listOf("sku"), type = IndexType.BTREE)
+                        IndexDefinition(name = "idx_products_sku", columns = listOf("sku").map(::IndexColumn), type = IndexType.BTREE)
                     )
                 )
             )
@@ -171,7 +171,7 @@ class MysqlDdlGeneratorTestPart2b : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_products_sku_unique",
-                            columns = listOf("sku"),
+                            columns = listOf("sku").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         )

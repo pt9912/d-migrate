@@ -72,11 +72,11 @@ class MysqlTypeMappingTest : FunSpec({
         map("int", isAI = true).type shouldBe NeutralType.Identifier(autoIncrement = true)
     }
 
-    test("bigint AUTO_INCREMENT → BigInteger with R300 note") {
+    test("bigint AUTO_INCREMENT → BigInteger with identity generation") {
         val result = map("bigint", isAI = true)
         result.type shouldBe NeutralType.BigInteger
-        result.note.shouldNotBeNull()
-        result.note!!.code shouldBe "R300"
+        result.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+        result.note.shouldBeNull()
     }
 
     test("smallint AUTO_INCREMENT → Identifier") {

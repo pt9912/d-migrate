@@ -18,6 +18,18 @@ internal class PostgresColumnConstraintHelper(
     ): String {
         val type = col.type
 
+        val generation = col.generation
+        if (generation is ColumnGeneration.Identity) {
+            val generatedSql = identityColumnSql(type, generation)
+            if (generatedSql != null) {
+                val parts = mutableListOf<String>()
+                parts += quoteIdentifier(colName)
+                parts += generatedSql
+                if (col.unique) parts += "UNIQUE"
+                return parts.joinToString(" ")
+            }
+        }
+
         // For Identifier type (SERIAL), skip NOT NULL since SERIAL implies it
         if (type is NeutralType.Identifier && type.autoIncrement) {
             val parts = mutableListOf<String>()
@@ -60,6 +72,26 @@ internal class PostgresColumnConstraintHelper(
 
         // Default: delegate to base class columnSql
         return columnSql(tableName, colName, col, schema)
+    }
+
+    private fun identityColumnSql(type: NeutralType, identity: ColumnGeneration.Identity): String? {
+        val baseType = when (type) {
+            is NeutralType.Integer -> "INTEGER"
+            is NeutralType.BigInteger -> "BIGINT"
+            else -> return null
+        }
+        if (identity.legacySerialSyntax) {
+            return when (type) {
+                is NeutralType.Integer -> "SERIAL"
+                is NeutralType.BigInteger -> "BIGSERIAL"
+                else -> null
+            }
+        }
+        val mode = when (identity.mode) {
+            IdentityMode.ALWAYS -> "ALWAYS"
+            IdentityMode.BY_DEFAULT -> "BY DEFAULT"
+        }
+        return "$baseType GENERATED $mode AS IDENTITY"
     }
 
     fun buildForeignKeyClause(

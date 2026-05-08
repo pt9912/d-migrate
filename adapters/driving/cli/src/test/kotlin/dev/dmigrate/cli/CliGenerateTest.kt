@@ -151,6 +151,35 @@ class CliGenerateTest : FunSpec({
         }
     }
 
+    test("schema generate --deterministic omits runtime timestamps from DDL and report") {
+        val outFile = Files.createTempFile("d-migrate-cli-gen-det-", ".sql")
+        outFile.deleteIfExists()
+        try {
+            shouldNotThrowAny {
+                cli().parse(
+                    listOf(
+                        "schema", "generate",
+                        "--source", resourcePath("valid-schema.yaml"),
+                        "--target", "postgresql",
+                        "--output", outFile.toString(),
+                        "--deterministic",
+                    )
+                )
+            }
+            outFile.readText() shouldNotContain "Generated:"
+            val reportPath = outFile.resolveSibling(
+                outFile.fileName.toString().removeSuffix(".sql") + ".report.yaml"
+            )
+            reportPath.readText() shouldNotContain "generated_at"
+        } finally {
+            val reportPath = outFile.resolveSibling(
+                outFile.fileName.toString().removeSuffix(".sql") + ".report.yaml"
+            )
+            Files.deleteIfExists(outFile)
+            Files.deleteIfExists(reportPath)
+        }
+    }
+
     test("schema generate --output --generate-rollback writes both DDL and rollback files") {
         val outFile = Files.createTempFile("d-migrate-cli-gen-rb-", ".sql")
         outFile.deleteIfExists()

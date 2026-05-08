@@ -1,7 +1,6 @@
 package dev.dmigrate.server.ports.contract
 
 import dev.dmigrate.server.ports.quota.QuotaDimension
-import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import dev.dmigrate.server.ports.quota.QuotaStore
 import io.kotest.core.spec.style.FunSpec
@@ -13,10 +12,8 @@ import java.util.concurrent.TimeUnit
 
 abstract class QuotaStoreContractTests(factory: () -> QuotaStore) : FunSpec({
 
-    fun key(dimension: QuotaDimension = QuotaDimension.ACTIVE_JOBS) = QuotaKey(
-        tenantId = Fixtures.tenant("acme"),
-        dimension = dimension,
-    )
+    fun key(dimension: QuotaDimension = QuotaDimension.ACTIVE_JOBS) =
+        Fixtures.quotaKey(dimension = dimension)
 
     test("reserve increments counter when below limit") {
         val store = factory()

@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.DependencyInfo
+import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -49,7 +50,7 @@ class SchemaStructureValidationRulesTest : FunSpec({
                 tables = mapOf(
                     "items" to table(
                         columns = mapOf("id" to col(NeutralType.Identifier(true))),
-                        indices = listOf(IndexDefinition(name = "idx_bad", columns = listOf("missing"))),
+                        indices = listOf(IndexDefinition(name = "idx_bad", columns = listOf("missing").map(::IndexColumn))),
                         constraints = listOf(
                             ConstraintDefinition(
                                 name = "chk_status",
@@ -64,6 +65,29 @@ class SchemaStructureValidationRulesTest : FunSpec({
         )
 
         result.errors.map { it.code }.sorted() shouldBe listOf("E001", "E005", "E012")
+    }
+
+    test("reports empty index column list and blank index column name") {
+        val result = SchemaStructureValidationRules.validate(
+            schema(
+                tables = mapOf(
+                    "items" to table(
+                        columns = mapOf("id" to col(NeutralType.Identifier(true))),
+                        indices = listOf(
+                            IndexDefinition(name = "idx_empty", columns = emptyList()),
+                            IndexDefinition(name = "idx_blank", columns = listOf(IndexColumn(""))),
+                            IndexDefinition(name = "idx_blank_where", columns = listOf(IndexColumn("id")), where = " "),
+                        ),
+                    )
+                ),
+            ),
+        )
+
+        result.errors.map { it.message }.sorted() shouldBe listOf(
+            "Index 'idx_blank' contains an empty column name",
+            "Index 'idx_blank_where' has an empty where predicate",
+            "Index 'idx_empty' has no columns",
+        )
     }
 
     test("reports float monetary warning and missing view dependency") {

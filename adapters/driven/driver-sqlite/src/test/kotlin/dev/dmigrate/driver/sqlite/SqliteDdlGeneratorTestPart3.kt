@@ -183,7 +183,7 @@ class SqliteDdlGeneratorTestPart3 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_name",
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -287,13 +287,13 @@ class SqliteDdlGeneratorTestPart3 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_users_email",
-                            columns = listOf("email"),
+                            columns = listOf("email").map(::IndexColumn),
                             type = IndexType.BTREE,
                             unique = true
                         ),
                         IndexDefinition(
                             name = "idx_users_name",
-                            columns = listOf("name"),
+                            columns = listOf("name").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )
@@ -321,7 +321,7 @@ class SqliteDdlGeneratorTestPart3 : FunSpec({
                     indices = listOf(
                         IndexDefinition(
                             name = "idx_events_user_date",
-                            columns = listOf("user_id", "created_at"),
+                            columns = listOf("user_id", "created_at").map(::IndexColumn),
                             type = IndexType.BTREE
                         )
                     )

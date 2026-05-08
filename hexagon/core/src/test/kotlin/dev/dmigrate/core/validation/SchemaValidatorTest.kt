@@ -96,7 +96,7 @@ class SchemaValidatorTest : FunSpec({
             "users" to table(
                 columns = mapOf("id" to col(NeutralType.Identifier(true))),
                 primaryKey = listOf("id"),
-                indices = listOf(IndexDefinition(name = "idx_bad", columns = listOf("nonexistent")))
+                indices = listOf(IndexDefinition(name = "idx_bad", columns = listOf("nonexistent").map(::IndexColumn)))
             )
         ))
         val result = validator.validate(s)

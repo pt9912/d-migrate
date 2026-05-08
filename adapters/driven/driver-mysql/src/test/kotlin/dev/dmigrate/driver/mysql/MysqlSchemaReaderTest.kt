@@ -178,7 +178,7 @@ class MysqlSchemaReaderTest : FunSpec({
         trigger.sourceDialect shouldBe "mysql"
     }
 
-    test("read table with bigint auto_increment produces mapping note") {
+    test("read table with bigint auto_increment maps identity generation") {
         stubEmptyDefaults()
         stubTableQueries()
         every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
@@ -200,7 +200,10 @@ class MysqlSchemaReaderTest : FunSpec({
             includeProcedures = false, includeTriggers = false)
         val result = reader.read(pool, opts)
 
-        result.notes.any { it.code == "R300" } shouldBe true
+        val id = result.schema.tables["big_table"]!!.columns["id"]!!
+        id.type shouldBe NeutralType.BigInteger
+        id.generation shouldBe ColumnGeneration.Identity(legacySerialSyntax = true)
+        result.notes.none { it.code == "R300" } shouldBe true
     }
 
     test("read table with required column and unique index") {

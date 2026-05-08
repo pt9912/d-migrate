@@ -46,3 +46,6 @@ release-assets/
 
 #
 .kotlin/
+
+#
+coverage.json

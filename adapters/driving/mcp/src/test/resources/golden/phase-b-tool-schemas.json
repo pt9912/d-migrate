@@ -1,0 +1,2670 @@
+{
+  "artifact_chunk_get": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "chunkId": {
+          "type": "string"
+        },
+        "nextChunkCursor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string"
+        },
+        "chunkId": {
+          "type": "string"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lengthBytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "contentType": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "text",
+            "base64"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "contentBase64": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "nextChunkUri": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "nextChunkCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "artifactId",
+        "resourceUri",
+        "chunkId",
+        "offset",
+        "lengthBytes",
+        "contentType",
+        "encoding",
+        "sha256",
+        "nextChunkUri",
+        "nextChunkCursor",
+        "executionMeta"
+      ]
+    }
+  },
+  "artifact_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "SCHEMA",
+            "PROFILE",
+            "DIFF",
+            "DATA_EXPORT",
+            "UPLOAD_INPUT",
+            "OTHER"
+          ]
+        },
+        "jobId": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "artifactId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "artifactKind": {
+                "type": "string",
+                "enum": [
+                  "SCHEMA",
+                  "PROFILE",
+                  "DIFF",
+                  "DATA_EXPORT",
+                  "UPLOAD_INPUT",
+                  "OTHER"
+                ]
+              },
+              "jobId": {
+                "type": "string"
+              },
+              "filename": {
+                "type": "string"
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "contentType": {
+                "type": "string"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "chunkTemplate": {
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "visibilityClass": {
+                "type": "string",
+                "enum": [
+                  "OWN",
+                  "TENANT_VISIBLE",
+                  "ADMIN_VISIBLE"
+                ]
+              }
+            },
+            "required": [
+              "artifactId",
+              "tenantId",
+              "artifactKind",
+              "filename",
+              "sizeBytes",
+              "contentType",
+              "resourceUri"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifacts"
+      ]
+    }
+  },
+  "artifact_upload": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "segmentIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "segmentOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "segmentTotal": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "isFinalSegment": {
+          "type": "boolean"
+        },
+        "segmentSha256": {
+          "type": "string"
+        },
+        "contentBase64": {
+          "type": "string"
+        },
+        "clientRequestId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uploadSessionId",
+        "segmentIndex",
+        "segmentOffset",
+        "segmentTotal",
+        "isFinalSegment",
+        "segmentSha256",
+        "contentBase64"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "acceptedSegmentIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "bytesReceived": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uploadSessionTtlSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "uploadSessionState": {
+          "type": "string",
+          "enum": [
+            "ACTIVE",
+            "COMPLETED"
+          ]
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "uploadSessionId",
+        "acceptedSegmentIndex",
+        "deduplicated",
+        "bytesReceived",
+        "uploadSessionTtlSeconds",
+        "uploadSessionState"
+      ]
+    }
+  },
+  "artifact_upload_abort": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadSessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uploadSessionId"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "uploadSessionState": {
+          "type": "string",
+          "enum": [
+            "ABORTED"
+          ]
+        },
+        "segmentsDeleted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "uploadSessionId",
+        "uploadSessionState",
+        "segmentsDeleted"
+      ]
+    }
+  },
+  "artifact_upload_init": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadIntent": {
+          "type": "string",
+          "enum": [
+            "schema_staging_readonly"
+          ]
+        },
+        "expectedSizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "checksumSha256": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "uploadIntent",
+        "expectedSizeBytes",
+        "checksumSha256"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uploadSessionId": {
+          "type": "string"
+        },
+        "uploadSessionTtlSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expectedFirstSegmentIndex": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expectedFirstSegmentOffset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "uploadSessionId",
+        "uploadSessionTtlSeconds",
+        "expectedFirstSegmentIndex",
+        "expectedFirstSegmentOffset"
+      ]
+    }
+  },
+  "capabilities_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "mcpProtocolVersion": {
+          "type": "string"
+        },
+        "dmigrateContractVersion": {
+          "type": "string"
+        },
+        "serverName": {
+          "type": "string"
+        },
+        "tools": {
+          "type": "array"
+        },
+        "scopeTable": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "dialects": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "formats": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  },
+  "data_import_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "targetConnectionRef": {
+          "type": "string"
+        },
+        "artifactId": {
+          "type": "string"
+        },
+        "sourceArtifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "table": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "bundleFormat": {
+          "type": "string"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml",
+            "csv"
+          ]
+        },
+        "onError": {
+          "type": "string",
+          "enum": [
+            "abort",
+            "skip",
+            "log"
+          ]
+        },
+        "onConflict": {
+          "type": "string",
+          "enum": [
+            "abort",
+            "skip",
+            "update"
+          ]
+        },
+        "triggerMode": {
+          "type": "string",
+          "enum": [
+            "fire",
+            "disable",
+            "strict"
+          ]
+        },
+        "truncate": {
+          "type": "boolean"
+        },
+        "disableFkChecks": {
+          "type": "boolean"
+        },
+        "reseedSequences": {
+          "type": "boolean"
+        },
+        "encoding": {
+          "type": "string"
+        },
+        "csvNoHeader": {
+          "type": "boolean"
+        },
+        "csvNullString": {
+          "type": "string"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvalToken": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotencyKey",
+        "targetConnectionRef"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "data_profile_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connectionId",
+        "idempotencyKey"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "data_transfer_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "sourceConnectionRef": {
+          "type": "string"
+        },
+        "targetConnectionRef": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "filter": {
+          "type": "string"
+        },
+        "sinceColumn": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string"
+        },
+        "onConflict": {
+          "type": "string",
+          "enum": [
+            "abort",
+            "skip",
+            "update"
+          ]
+        },
+        "triggerMode": {
+          "type": "string",
+          "enum": [
+            "fire",
+            "disable",
+            "strict"
+          ]
+        },
+        "truncate": {
+          "type": "boolean"
+        },
+        "chunkSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "approvalToken": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idempotencyKey",
+        "sourceConnectionRef",
+        "targetConnectionRef"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "diff_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        },
+        "sourceRef": {
+          "type": "string"
+        },
+        "targetRef": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diffs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "diffId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/diffs/[^/]+$"
+              },
+              "leftSchemaId": {
+                "type": "string"
+              },
+              "rightSchemaId": {
+                "type": "string"
+              },
+              "statusSummary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "diffId",
+              "tenantId",
+              "resourceUri",
+              "leftSchemaId",
+              "rightSchemaId",
+              "statusSummary",
+              "createdAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "diffs"
+      ]
+    }
+  },
+  "job_cancel": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "operation",
+        "status",
+        "terminal",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "job_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "operation": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "jobId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "QUEUED",
+                  "RUNNING",
+                  "SUCCEEDED",
+                  "FAILED",
+                  "CANCELLED"
+                ]
+              },
+              "operation": {
+                "type": "string"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              },
+              "visibilityClass": {
+                "type": "string",
+                "enum": [
+                  "OWN",
+                  "TENANT_VISIBLE",
+                  "ADMIN_VISIBLE"
+                ]
+              },
+              "artifactUris": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+                }
+              }
+            },
+            "required": [
+              "jobId",
+              "tenantId",
+              "status",
+              "operation",
+              "resourceUri",
+              "createdAt",
+              "updatedAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "jobs"
+      ]
+    }
+  },
+  "job_status_get": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "SUCCEEDED",
+            "FAILED",
+            "CANCELLED"
+          ]
+        },
+        "terminal": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "string"
+        },
+        "expiresAt": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+          }
+        },
+        "progress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "phase": {
+              "type": "string"
+            },
+            "numericValues": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "processed": {
+                  "type": "integer"
+                },
+                "total": {
+                  "type": "integer"
+                },
+                "succeeded": {
+                  "type": "integer"
+                },
+                "failed": {
+                  "type": "integer"
+                },
+                "skipped": {
+                  "type": "integer"
+                },
+                "bytesRead": {
+                  "type": "integer"
+                },
+                "bytesWritten": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "required": [
+            "phase",
+            "numericValues"
+          ]
+        },
+        "error": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "exitCode": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "operation",
+        "status",
+        "terminal",
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "resourceUri",
+        "artifacts",
+        "executionMeta"
+      ]
+    }
+  },
+  "procedure_transform_execute": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "planRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "executionOptions": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalKey",
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "targetArtifactId": {
+          "type": "string"
+        },
+        "targetResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "findings",
+        "targetArtifactId",
+        "targetResourceUri",
+        "providerMeta",
+        "executionMeta"
+      ]
+    }
+  },
+  "procedure_transform_plan": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "procedureRef": {
+          "type": "string"
+        },
+        "artifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "procedureName": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "profileRef": {
+          "type": "string"
+        },
+        "diffRef": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalKey",
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "planRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "planResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "findings",
+        "providerMeta",
+        "executionMeta"
+      ]
+    }
+  },
+  "profile_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "profileId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/profiles/[^/]+$"
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "connectionRef": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "warningCount": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "profileId",
+              "tenantId",
+              "resourceUri",
+              "connectionRef",
+              "scope",
+              "createdAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "profiles"
+      ]
+    }
+  },
+  "schema_compare": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schemaRef"
+          ]
+        },
+        "right": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "schemaRef": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "schemaRef"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "identical",
+            "different"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "object",
+                "additionalProperties": false,
+                "minProperties": 1,
+                "properties": {
+                  "before": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  },
+                  "after": {
+                    "type": "string",
+                    "pattern": "\\S"
+                  }
+                }
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "diffArtifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "summary",
+        "findings",
+        "truncated"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          },
+          "then": {
+            "required": [
+              "diffArtifactRef"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "schema_compare_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sourceUri": {
+          "type": "string"
+        },
+        "targetUri": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceUri",
+        "targetUri",
+        "idempotencyKey"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "schema_generate": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "spatialProfile": {
+          "type": "string",
+          "enum": [
+            "postgis",
+            "native",
+            "spatialite",
+            "none"
+          ]
+        },
+        "mysqlNamedSequenceMode": {
+          "type": "string",
+          "enum": [
+            "action_required",
+            "helper_table"
+          ]
+        }
+      },
+      "required": [
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dialect": {
+          "type": "string"
+        },
+        "statementCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "hint": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "ddl": {
+          "type": "string"
+        },
+        "artifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "dialect",
+        "statementCount",
+        "summary",
+        "findings",
+        "truncated"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          },
+          "then": {
+            "required": [
+              "artifactRef"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "schema_list": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenantId": {
+          "type": "string"
+        },
+        "pageSize": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cursor": {
+          "type": "string"
+        },
+        "createdAfter": {
+          "type": "string"
+        },
+        "createdBefore": {
+          "type": "string"
+        },
+        "jobId": {
+          "type": "string"
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schemas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "schemaId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "artifactRef": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+              },
+              "resourceUri": {
+                "type": "string",
+                "pattern": "^dmigrate://tenants/[^/]+/schemas/[^/]+$"
+              },
+              "jobId": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "format": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "origin": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "sizeBytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "schemaId",
+              "tenantId",
+              "resourceUri",
+              "format",
+              "origin",
+              "sizeBytes",
+              "createdAt"
+            ]
+          }
+        },
+        "nextCursor": {
+          "type": "string"
+        },
+        "totalCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "totalCountEstimate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schemas"
+      ]
+    }
+  },
+  "schema_reverse_start": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "connectionId": {
+          "type": "string"
+        },
+        "tenantId": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "includes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excludes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connectionId",
+        "idempotencyKey"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "resourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/jobs/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            },
+            "cancelRequested": {
+              "type": "boolean"
+            },
+            "cancelAckPending": {
+              "type": "boolean"
+            },
+            "cancelRequestedAt": {
+              "type": "string"
+            },
+            "cancelRequestedBy": {
+              "type": "string"
+            },
+            "cancelRequestedReason": {
+              "type": "string"
+            },
+            "cancelSignalSource": {
+              "type": "string"
+            },
+            "retryAfter": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "jobId",
+        "resourceUri",
+        "executionMeta"
+      ]
+    }
+  },
+  "schema_validate": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "json",
+            "yaml"
+          ]
+        },
+        "strictness": {
+          "type": "string",
+          "enum": [
+            "lenient",
+            "strict"
+          ]
+        }
+      }
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "artifactRef": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "valid",
+        "summary",
+        "findings",
+        "truncated"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "truncated": {
+                "const": true
+              }
+            },
+            "required": [
+              "truncated"
+            ]
+          },
+          "then": {
+            "required": [
+              "artifactRef"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "testdata_execute": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "targetDialect": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "planRef": {
+          "type": "string"
+        },
+        "planArtifactId": {
+          "type": "string"
+        },
+        "outputFormat": {
+          "type": "string",
+          "enum": [
+            "csv",
+            "json",
+            "yaml"
+          ]
+        },
+        "bundleFormat": {
+          "type": "string"
+        },
+        "targetTable": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "rowLimit": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalKey",
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "testdataArtifactId": {
+          "type": "string"
+        },
+        "testdataResourceUri": {
+          "type": "string"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "testdataArtifactId",
+        "testdataResourceUri"
+      ]
+    }
+  },
+  "testdata_plan": {
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approvalKey": {
+          "type": "string"
+        },
+        "approvalToken": {
+          "type": "string"
+        },
+        "schemaRef": {
+          "type": "string"
+        },
+        "profileRef": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "targetDialect": {
+          "type": "string",
+          "enum": [
+            "POSTGRESQL",
+            "MYSQL",
+            "SQLITE"
+          ]
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approvalKey",
+        "schemaRef",
+        "targetDialect"
+      ]
+    },
+    "outputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "error",
+                  "warning",
+                  "info"
+                ]
+              },
+              "code": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "severity",
+              "code",
+              "path",
+              "message"
+            ]
+          }
+        },
+        "testdataPlanArtifactId": {
+          "type": "string"
+        },
+        "testdataPlanResourceUri": {
+          "type": "string",
+          "pattern": "^dmigrate://tenants/[^/]+/artifacts/[^/]+$"
+        },
+        "providerMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "providerName": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "modelVersion": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "requestId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "providerName",
+            "model"
+          ]
+        },
+        "executionMeta": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requestId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "requestId"
+          ]
+        }
+      },
+      "required": [
+        "summary",
+        "findings",
+        "providerMeta",
+        "executionMeta"
+      ]
+    }
+  }
+}

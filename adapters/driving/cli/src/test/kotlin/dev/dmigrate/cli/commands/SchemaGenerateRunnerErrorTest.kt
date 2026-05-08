@@ -68,6 +68,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         quiet: Boolean = false,
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequences: String? = null,
+        deterministic: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source, target = target,
         spatialProfile = spatialProfile, output = output,
@@ -75,6 +76,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         outputFormat = outputFormat, verbose = verbose,
         quiet = quiet, splitMode = splitMode,
         mysqlNamedSequences = mysqlNamedSequences,
+        deterministic = deterministic,
     )
 
     class StdoutCapture {
@@ -96,6 +98,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         val schema: SchemaDefinition,
         val dialect: String,
         val source: Path,
+        val options: dev.dmigrate.driver.DdlGenerationOptions,
     )
 
     class RunnerHarness {
@@ -109,12 +112,12 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
             { ValidationResult() }
         var generator: FakeGenerator = FakeGenerator()
 
-        fun runner(): SchemaGenerateRunner = SchemaGenerateRunner(
+        fun runner(env: Map<String, String> = emptyMap()): SchemaGenerateRunner = SchemaGenerateRunner(
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
-            reportWriter = { path, result, schema, dialect, source, _, _ ->
-                reportWrites += ReportRecord(path, result, schema, dialect, source)
+            reportWriter = { path, result, schema, dialect, source, _, options ->
+                reportWrites += ReportRecord(path, result, schema, dialect, source, options)
             },
             fileWriter = { path, content ->
                 fileWrites += WriteRecord(path, content)
@@ -127,7 +130,10 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
             printValidationResult = { _, _, _ -> },
             stdout = stdout.sink,
             stderr = stderr.sink,
+            getenv = env::get,
         )
+
+        fun runnerWithEnv(vararg pairs: Pair<String, String>): SchemaGenerateRunner = runner(mapOf(*pairs))
     }
 
     val harness = { RunnerHarness() }
@@ -183,6 +189,13 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.schemaReader = { throw RuntimeException() }
         h.runner().execute(request()) shouldBe 7
         h.stderr.joined() shouldContain "Failed to parse schema file"
+    }
+
+    test("Exit 2: invalid SOURCE_DATE_EPOCH prevents generation") {
+        val h = harness()
+        h.runnerWithEnv("SOURCE_DATE_EPOCH" to "not-an-epoch").execute(request()) shouldBe 2
+        h.stderr.joined() shouldContain "Invalid SOURCE_DATE_EPOCH"
+        h.generator.generateCalls shouldBe 0
     }
 
     // ─── Sidecar + rollback path derivation ──────────────────────
@@ -530,9 +543,9 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.stdout.joined() shouldNotContain "mysql_named_sequences"
     }
 
-    test("JSON output includes generator version 0.9.5") {
+    test("JSON output includes generator version 0.9.6") {
         val h = harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
-        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.5\""
+        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.6\""
     }
 })

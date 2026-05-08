@@ -51,7 +51,25 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:integrations"))
+    // Phase E2: persistent MCP server-state adapters for production
+    // metadata (IdempotencyStore, JobStore, JobStartTransaction, Quota).
+    implementation(project(":adapters:driven:persistence-jdbc"))
     implementation(project(":adapters:driven:streaming"))
+    implementation(project(":adapters:driven:audit-logging"))
+    // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
+    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliPhaseCWiring)
+    // konsumieren denselben YamlConnectionReferenceLoader.
+    implementation(project(":adapters:driven:connection-config"))
+    // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
+    implementation(project(":adapters:driving:mcp"))
+    // AP 6.21: `mcp serve` constructs file-backed byte-stores for
+    // uploads (`FileBackedUploadSegmentStore`) and artefact content
+    // (`FileBackedArtifactContentStore`) under the resolved state dir.
+    implementation(project(":adapters:driven:storage-file"))
+    // AP 6.21 + Phase E2: default metadata stores still come from
+    // `:hexagon:ports-common` testFixtures, while `server.state.*`
+    // opt-in switches Phase-E Job/Quota/Idempotency metadata to JDBC.
+    implementation(testFixtures(project(":hexagon:ports-common")))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
@@ -66,6 +84,17 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
+
+    // AP 6.24: integration-test harnesses build JSON-RPC payloads with Gson.
+    // The mcp module uses Gson internally (transitive via lsp4j) but does
+    // not re-export it; the CLI test source-set declares it explicitly.
+    testImplementation("com.google.code.gson:gson:2.14.0")
+
+    // AP 6.24 E8: validate Phase-C tool runtime outputs against the
+    // PhaseBToolSchemas output schemas (JSON Schema 2020-12). Test-
+    // scope only — the production server publishes the schemas via
+    // tools/list but does not validate dispatch responses against them.
+    testImplementation("com.networknt:json-schema-validator:1.5.4")
 }
 
 tasks.named<ProcessResources>("processResources") {

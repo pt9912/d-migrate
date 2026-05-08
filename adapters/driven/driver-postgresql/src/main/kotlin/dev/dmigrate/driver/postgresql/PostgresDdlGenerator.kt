@@ -4,7 +4,7 @@ import dev.dmigrate.core.model.*
 import dev.dmigrate.driver.*
 import dev.dmigrate.driver.SqlIdentifiers
 
-class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
+class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()), DeferredForeignKeyDdlSupport {
 
     override val dialect = DatabaseDialect.POSTGRESQL
 
@@ -32,9 +32,25 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     // ── Sequences ────────────────────────────────
 
     override fun generateSequences(
-        sequences: Map<String, SequenceDefinition>,
+        schema: SchemaDefinition,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = typeSequenceSupport.generateSequences(sequences)
+    ): List<DdlStatement> = typeSequenceSupport.generateSequences(sequencesForGeneration(schema))
+
+    private fun sequencesForGeneration(schema: SchemaDefinition): Map<String, SequenceDefinition> {
+        val ownedSequenceKeys = schema.tables.values
+            .asSequence()
+            .flatMap { it.columns.values.asSequence() }
+            .mapNotNull { (it.generation as? ColumnGeneration.Identity)?.sequenceName }
+            .flatMap { sequenceName ->
+                sequence {
+                    yield(sequenceName)
+                    yield(sequenceName.substringAfterLast("."))
+                }
+            }
+            .toSet()
+        if (ownedSequenceKeys.isEmpty()) return schema.sequences
+        return schema.sequences.filterKeys { it !in ownedSequenceKeys }
+    }
 
     override fun canGenerateSpatial(profile: SpatialProfile): Boolean =
         profile == SpatialProfile.POSTGIS
@@ -46,6 +62,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         table: TableDefinition,
         schema: SchemaDefinition,
         deferredFks: Set<Pair<String, String>>,
+        deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions
     ): List<DdlStatement> {
         val statements = mutableListOf<DdlStatement>()
@@ -68,6 +85,7 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         // Inline foreign key constraints (non-circular, from column references)
         for ((colName, col) in table.columns) {
             val ref = col.references ?: continue
+            if (options.deferForeignKeys) continue
             if ((name to colName) in deferredFks) continue
             val fkName = "fk_${name}_${colName}"
             columnLines += buildForeignKeyClause(fkName, listOf(colName), ref.table, listOf(ref.column), ref.onDelete, ref.onUpdate)
@@ -75,6 +93,8 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
 
         // Explicit constraints
         for (constraint in table.constraints) {
+            if (options.deferForeignKeys && constraint.type == ConstraintType.FOREIGN_KEY) continue
+            if ((name to constraint.name) in deferredConstraints) continue
             columnLines += generateConstraintClause(constraint)
         }
 
@@ -171,12 +191,12 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
     // ── Indices ──────────────────────────────────
 
     override fun generateIndices(tableName: String, table: TableDefinition): List<DdlStatement> {
-        return table.indices.map { index -> generateIndex(tableName, index) }
+        val generatedNames = generatedIndexNames(tableName, table.indices)
+        return table.indices.mapIndexed { position, index -> generateIndex(tableName, index, generatedNames[position]) }
     }
 
-    private fun generateIndex(tableName: String, index: IndexDefinition): DdlStatement {
-        val indexName = index.name ?: "idx_${tableName}_${index.columns.joinToString("_")}"
-        val cols = index.columns.joinToString(", ") { quoteIdentifier(it) }
+    private fun generateIndex(tableName: String, index: IndexDefinition, indexName: String): DdlStatement {
+        val cols = index.columns.joinToString(", ") { renderIndexColumn(it) }
         val sql = buildString {
             append("CREATE ")
             if (index.unique) append("UNIQUE ")
@@ -185,9 +205,47 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
             if (index.type != IndexType.BTREE) {
                 append(" USING ${index.type.name}")
             }
-            append(" ($cols);")
+            append(" ($cols)")
+            if (index.where != null) append(" WHERE ${index.where}")
+            append(";")
         }
         return DdlStatement(sql)
+    }
+
+    private fun renderIndexColumn(column: IndexColumn): String =
+        buildString {
+            val direction = column.direction
+            append(quoteIdentifier(column.name))
+            if (direction != null) append(" ${direction.name}")
+        }
+
+    private fun generatedIndexNames(tableName: String, indices: List<IndexDefinition>): List<String> {
+        val baseNames = indices.map { index ->
+            index.name ?: "idx_${tableName}_${index.columnNames.joinToString("_")}"
+        }
+        val baseCounts = baseNames.groupingBy { it }.eachCount()
+        val used = indices.mapNotNull { it.name }.groupingBy { it }.eachCount().toMutableMap()
+        return indices.mapIndexed { position, index ->
+            index.name ?: disambiguateGeneratedIndexName(baseNames[position], index, baseCounts.getValue(baseNames[position]), used)
+        }
+    }
+
+    private fun disambiguateGeneratedIndexName(
+        baseName: String,
+        index: IndexDefinition,
+        baseCount: Int,
+        used: MutableMap<String, Int>,
+    ): String {
+        val candidate = if (baseCount == 1) baseName else "${baseName}_${indexDisambiguationSuffix(index)}"
+        val seen = used.getOrDefault(candidate, 0)
+        used[candidate] = seen + 1
+        return if (seen == 0) candidate else "${candidate}_${seen + 1}"
+    }
+
+    private fun indexDisambiguationSuffix(index: IndexDefinition): String {
+        val directionPart = index.columns.joinToString("_") { it.direction?.name?.lowercase() ?: "default" }
+        val wherePart = index.where?.let { "_where_${Integer.toUnsignedString(it.hashCode(), 36)}" }.orEmpty()
+        return "$directionPart$wherePart"
     }
 
     // ── Circular FK references ───────────────────
@@ -197,15 +255,41 @@ class PostgresDdlGenerator : AbstractDdlGenerator(PostgresTypeMapper()) {
         skipped: MutableList<SkippedObject>
     ): List<DdlStatement> {
         return edges.map { edge ->
-            val constraintName = "fk_${edge.fromTable}_${edge.fromColumn}"
             val sql = buildString {
-                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD CONSTRAINT ${quoteIdentifier(constraintName)}")
-                append(" FOREIGN KEY (${quoteIdentifier(edge.fromColumn)})")
-                append(" REFERENCES ${quoteIdentifier(edge.toTable)} (${quoteIdentifier(edge.toColumn)});")
+                append("ALTER TABLE ${quoteIdentifier(edge.fromTable)} ADD ")
+                append(buildForeignKeyClause(
+                    edge.constraintName,
+                    edge.fromColumns,
+                    edge.toTable,
+                    edge.toColumns,
+                    edge.onDelete,
+                    edge.onUpdate,
+                ))
+                append(";")
             }
             DdlStatement(sql)
         }
     }
+
+    override fun generateDeferredForeignKeys(
+        foreignKeys: List<DeferredForeignKey>,
+        skipped: MutableList<SkippedObject>,
+    ): List<DdlStatement> =
+        foreignKeys.map { fk ->
+            val sql = buildString {
+                append("ALTER TABLE ${quoteIdentifier(fk.fromTable)} ADD ")
+                append(buildForeignKeyClause(
+                    fk.constraintName,
+                    fk.fromColumns,
+                    fk.toTable,
+                    fk.toColumns,
+                    fk.onDelete,
+                    fk.onUpdate,
+                ))
+                append(";")
+            }
+            DdlStatement(sql)
+        }
 
     // ── Views ────────────────────────────────────
 

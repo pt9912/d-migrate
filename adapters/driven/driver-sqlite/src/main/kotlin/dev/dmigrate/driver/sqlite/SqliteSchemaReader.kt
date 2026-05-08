@@ -85,7 +85,6 @@ class SqliteSchemaReader : SchemaReader {
         val hasAutoincrement = SqliteTypeMapping.hasAutoincrement(createSql)
         val isWithoutRowid = SqliteTypeMapping.hasWithoutRowid(createSql)
 
-        val singleColFks = SchemaReaderUtils.liftSingleColumnFks(fks)
         val singleColUnique = SchemaReaderUtils.singleColumnUniqueFromIndices(indices)
 
         val columnDefs = LinkedHashMap<String, ColumnDefinition>()
@@ -102,19 +101,16 @@ class SqliteSchemaReader : SchemaReader {
             val required = if (isPkCol) false else !col.isNullable
             val unique = if (isPkCol) false else col.name in singleColUnique
 
-            val references = singleColFks[col.name]
-
             columnDefs[col.name] = ColumnDefinition(
                 type = neutralType,
                 required = required,
                 unique = unique,
                 default = SqliteTypeMapping.parseDefault(col.columnDefault),
-                references = references,
             )
         }
 
         val constraints = mutableListOf<ConstraintDefinition>()
-        constraints += SchemaReaderUtils.buildMultiColumnFkConstraints(fks)
+        constraints += SchemaReaderUtils.buildForeignKeyConstraints(fks)
         constraints += SchemaReaderUtils.buildMultiColumnUniqueFromIndices(indices)
         // CHECK constraints from CREATE TABLE SQL
         for ((checkName, checkExpr) in SqliteTypeMapping.extractCheckConstraints(createSql)) {
@@ -126,13 +122,14 @@ class SqliteSchemaReader : SchemaReader {
         }
 
         // Non-unique, non-autoindex indices
-        val regularIndices = indices.filter { !it.isUnique || it.columns.size > 1 }
-            .filter { !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
+        val regularIndices = indices.filter { it.where != null || !it.isUnique || it.columns.size > 1 }
+            .filter { it.where != null || !(it.isUnique && it.columns.size > 1) } // multi-col unique already in constraints
             .map { idx ->
                 IndexDefinition(
                     name = idx.name,
-                    columns = idx.columns,
+                    columns = idx.indexColumns,
                     unique = idx.isUnique,
+                    where = idx.where,
                 )
             }
 

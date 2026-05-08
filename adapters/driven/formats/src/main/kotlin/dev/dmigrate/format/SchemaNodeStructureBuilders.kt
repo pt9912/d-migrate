@@ -89,6 +89,9 @@ private fun buildColumn(mapper: ObjectMapper, column: ColumnDefinition): ObjectN
     if (column.references != null) {
         node.set<ObjectNode>("references", buildReference(mapper, column.references!!))
     }
+    if (column.generation != null) {
+        node.set<ObjectNode>("generation", buildGeneration(mapper, column.generation!!))
+    }
     return node
 }
 
@@ -123,6 +126,19 @@ private fun buildReference(mapper: ObjectMapper, reference: ReferenceDefinition)
     return node
 }
 
+private fun buildGeneration(mapper: ObjectMapper, generation: ColumnGeneration): ObjectNode {
+    val node = mapper.createObjectNode()
+    when (generation) {
+        is ColumnGeneration.Identity -> {
+            node.put("type", "identity")
+            node.put("mode", generation.mode.name.lowercase())
+            if (generation.sequenceName != null) node.put("sequence_name", generation.sequenceName)
+            if (generation.legacySerialSyntax) node.put("legacy_serial_syntax", true)
+        }
+    }
+    return node
+}
+
 private fun buildIndices(
     mapper: ObjectMapper,
     indices: List<IndexDefinition>,
@@ -131,10 +147,30 @@ private fun buildIndices(
     for (index in indices) {
         val node = mapper.createObjectNode()
         if (index.name != null) node.put("name", index.name)
-        node.set<ArrayNode>("columns", stringArray(mapper, index.columns))
+        node.set<ArrayNode>("columns", buildIndexColumns(mapper, index.columns))
         if (index.type != IndexType.BTREE) node.put("type", index.type.name.lowercase())
         if (index.unique) node.put("unique", true)
+        if (index.where != null) node.put("where", index.where)
         arrayNode.add(node)
+    }
+    return arrayNode
+}
+
+private fun buildIndexColumns(
+    mapper: ObjectMapper,
+    columns: List<IndexColumn>,
+): ArrayNode {
+    val arrayNode = mapper.createArrayNode()
+    for (column in columns) {
+        val direction = column.direction
+        if (direction == null) {
+            arrayNode.add(column.name)
+        } else {
+            val columnNode = mapper.createObjectNode()
+            columnNode.put("name", column.name)
+            columnNode.put("direction", direction.name.lowercase())
+            arrayNode.add(columnNode)
+        }
     }
     return arrayNode
 }

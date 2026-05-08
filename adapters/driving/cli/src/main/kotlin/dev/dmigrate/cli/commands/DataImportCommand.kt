@@ -207,6 +207,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                     resumeStateByTable = resume.resumeStateByTable,
                     onChunkCommitted = callbacks.onChunkCommitted,
                     onTableCompleted = callbacks.onTableCompleted,
+                    cancellationToken = ctx.cancellationToken,
                 )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),

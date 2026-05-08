@@ -36,10 +36,23 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          cache-disabled: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          cache-disabled: true
 
       - name: Build, test, run detekt and verify coverage
-        run: ./gradlew build koverVerify
+        # --no-build-cache: kover-Verify konsumiert die `.exec`-Daten
+        # aus dem konkreten Test-Lauf. Der gradle/actions/setup-gradle
+        # Cache-Restore zwischen Runs hat in der Vergangenheit stale
+        # Execution-Daten zurueckgespielt (knapp-unter-90% Boundary-
+        # Flakes auf z.B. :hexagon:core). Die per-Modul-Konfiguration
+        # in build.gradle.kts (`outputs.cacheIf { false }` auf Test +
+        # koverVerify/koverGenerate*) reicht dafuer in CI nicht aus.
+        # Seit 0.9.6 ist `cache-disabled: true` deshalb fuer alle Runs
+        # gesetzt (vorher nur fuer Tag-Builds). Damit ist sowohl die
+        # Task-Output-Wiederverwendung (`--no-build-cache`) als auch der
+        # Dependency-/Kotlin-Compiler-Cache der setup-gradle-Action
+        # ausgeschaltet. Bei Persistenz des Flakes ggf. zusaetzlich
+        # `outputs.upToDateWhen { false }` auf Test-Tasks setzen.
+        run: ./gradlew build koverVerify --no-build-cache
 
       - name: Generate coverage reports
         if: always()
