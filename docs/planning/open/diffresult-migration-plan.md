@@ -638,6 +638,21 @@ Damit kann ein Runner unterscheiden, ob der Up-Plan wegen fehlendem
 einen unerwarteten Zielzustand oder falschen Dialekt laufen wuerde, oder ob der
 Ziel-Dialekt eine Operation nicht rendern kann.
 
+Ausfuehrungsfehler gehoeren nicht in `blockedReason`. Sobald der Runner
+begonnen hat, DDL gegen eine Ziel-Datenbank auszufuehren, sind Fehler
+terminaler Migrationszustand und werden separat berichtet, zum Beispiel mit:
+
+- `executionStarted`
+- `executionCompleted`
+- `statementsAttempted`
+- `lastStatementOperationIds`
+- `transactionRolledBack`
+- `sideEffectsPossible`
+- `executionError`
+
+Solche Fehler werden als `MIGRATION_ERROR` behandelt, nicht als Planungs-,
+Render- oder Dialektblocker.
+
 ### 6.2 PostgreSQL
 
 Erste Zieloperationen:
@@ -980,7 +995,7 @@ Flag-Skizze:
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen |
 | `--allow-destructive` | Nein | Boolean | destruktive Operationen erlauben |
 | `--plan-only` | Nein | Boolean | nur stabilen Plan-/Risiko-Report schreiben, kein SQL |
-| `--report` | Nein | Pfad | strukturierter Plan-/Risiko-Report |
+| `--report` | Bedingt | Pfad | strukturierter Plan-/Risiko-Report; Pflicht bei `--execute` |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen ein DB-Target ausfuehren |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausfuehren |
 
@@ -1016,17 +1031,20 @@ Ausgabeziele sind im ersten Slice bewusst explizit:
   geschrieben. Plain-Status, Warnungen und Blocker gehen nach `stderr`.
 - Mit `--output` wird Up-SQL in diese Datei geschrieben und nicht zusaetzlich
   nach `stdout` dupliziert.
-- `--report` ist optional. Ist es gesetzt, wird der strukturierte Report an
-  diesen Pfad geschrieben. Ist es nicht gesetzt, wird kein impliziter
-  Report-Pfad abgeleitet.
+- `--report` ist optional, ausser bei `--execute`. Ist es gesetzt, wird der
+  strukturierte Report an diesen Pfad geschrieben. Ist es nicht gesetzt, wird
+  kein impliziter Report-Pfad abgeleitet.
 - Bei `--plan-only` gibt es kein SQL. Ohne `--report` wird der strukturierte
   Plan-/Risiko-Report nach `stdout` geschrieben; mit `--report` wird er in
   diese Datei geschrieben.
 - Wenn `--generate-rollback` gesetzt ist, ist `--rollback-output` immer der
   einzige Zielpfad fuer Down-SQL. Down-SQL wird nie nach `stdout` geschrieben.
 - `--execute` ohne `--output` ist zulaessig: die Migration wird ausgefuehrt,
-  aber kein Up-SQL-Artefakt persistiert. Ein Report entsteht nur bei gesetztem
-  `--report`.
+  aber kein Up-SQL-Artefakt persistiert.
+- `--execute` verlangt im ersten Slice zwingend `--report`. Ein DB-seitiger
+  Schemawechsel darf nicht ohne dauerhaftes Audit-Artefakt aus Plan,
+  Fingerprints, Operation-IDs, Risiko- und Ausfuehrungsstatus erfolgen. Fehlt
+  `--report`, endet der Lauf als ungueltiger CLI-Aufruf mit Exit `2`.
 - `--execute` und `--dry-run` sind gegenseitig exklusiv. Die Kombination endet
   als ungueltiger CLI-Aufruf mit Exit `2`.
 
@@ -1059,6 +1077,11 @@ Rendering und erfolgreicher Blocker-Pruefung finalisiert:
   vorliegt.
 - Falls das Dateisystem keine atomare Ersetzung im Zielverzeichnis erlaubt,
   endet der Lauf mit Exit `7`, bevor ein bestehendes Artefakt veraendert wird.
+- Reports sind ebenfalls atomar zu schreiben. Bei einem terminalen
+  Ausfuehrungsfehler darf der Fehlerreport finalisiert werden, solange er
+  eindeutig `status = failed` und den Ausfuehrungszustand enthaelt. Up-SQL- und
+  Down-SQL-Artefakte bleiben in diesem Fall unveraendert, sofern sie nicht schon
+  vor der Ausfuehrung erfolgreich finalisiert wurden.
 
 Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
 ausfuehrbaren Up-Pfad fuer DB-Targets und einen vollstaendigen Plan-/Renderpfad
@@ -1086,9 +1109,37 @@ fuer Datei-Targets tragen:
 9. Nach Ausfuehrung den Zielzustand erneut introspektieren und gegen
    `desired` vergleichen.
 10. Bei `--execute --generate-rollback` das Down-SQL erst nach erfolgreicher
-   Nach-Introspection atomar nach `--rollback-output` schreiben. Der
-   Metadatenblock enthaelt dann den tatsaechlich beobachteten
-   Post-Up-Fingerprint.
+    Nach-Introspection atomar nach `--rollback-output` schreiben. Der
+    Metadatenblock enthaelt dann den tatsaechlich beobachteten
+    Post-Up-Fingerprint.
+
+Ausfuehrungsfehler sind ein eigener Vertrag, getrennt von Planning und
+Rendering:
+
+- Der Dialektgenerator bzw. Runner muss vor Ausfuehrung deklarieren, ob der
+  erzeugte Up-Plan als eine transaktionale Einheit ausgefuehrt werden kann.
+  PostgreSQL soll eine Transaktion verwenden, sofern keine nicht
+  transaktionsfaehige Anweisung im Plan vorkommt. MySQL-DDL darf nicht als
+  transaktional angenommen werden. SQLite-Rebuilds gelten jeweils als
+  unteilbare Rebuild-Einheit gemaess §6.4, nicht automatisch als globale
+  Migrationstransaktion.
+- Schlaegt eine DDL-Anweisung nach Beginn von `--execute` fehl, endet der Lauf
+  mit Exit `5` (`MIGRATION_ERROR`). Der Report enthaelt mindestens
+  `executionStarted = true`, `executionCompleted = false`,
+  `statementsAttempted`, die Operation-IDs der letzten gestarteten Anweisung,
+  `transactionRolledBack`, `sideEffectsPossible` und die Fehlerdiagnose.
+- Wenn der Runner beweisen kann, dass die gesamte Ausfuehrung zurueckgerollt
+  wurde und keine DB-seitigen Seiteneffekte verbleiben, wird
+  `sideEffectsPossible = false` berichtet. Andernfalls ist
+  `sideEffectsPossible = true`; der Nutzer muss den Zielzustand pruefen.
+- Ein normaler oder Recovery-`--rollback-output` darf nach partieller oder
+  unklarer Up-Ausfuehrung nicht finalisiert werden. Der vorbereitete Down-Plan
+  beschreibt den Soll-Post-Up-Zustand und ist fuer einen unbekannten
+  Zwischenzustand nicht automatisch gueltig. Automatische Rekonstruktion eines
+  partiellen Zwischenzustands ist nicht Bestandteil des ersten Slice.
+- Der in diesem Dokument beschriebene Recovery-Rollback-Fall gilt nur, wenn Up
+  vollstaendig ausgefuehrt wurde und danach Nach-Introspection, Nach-Compare oder
+  finale Rollback-Artefakt-Finalisierung fehlschlaegt.
 
 `--dry-run` ist der Default, solange `--execute` nicht gesetzt ist. Damit kann
 der gleiche Befehl zuerst den Plan und beide SQL-Artefakte erzeugen und danach
@@ -1111,7 +1162,8 @@ Exit-Codes sollten sich an bestehenden Mustern orientieren:
 | `2` | ungueltige CLI-Argumente |
 | `3` | Schema-Validierungsfehler |
 | `4` | Verbindungsfehler |
-| `7` | I/O-, Planungs- oder Renderfehler |
+| `5` | DDL-Ausfuehrungsfehler nach Beginn von `--execute` |
+| `7` | lokale I/O-, Planungs-, Render- oder Artefaktfehler |
 | `8` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar |
 
 Exit `8` ist ein neuer geplanter CLI-Code fuer blockierte Migrationen. Phase A
@@ -1148,6 +1200,12 @@ unterscheiden:
 
 Die konkrete Exit-Code-Matrix muss vor Implementierung mit `spec/cli-spec.md`
 abgeglichen werden.
+
+Exit `5` gilt fuer Fehler waehrend der tatsaechlichen DDL-Ausfuehrung nach
+Beginn von `--execute`, inklusive partieller oder unklarer Seiteneffekte. Der
+strukturierte Fehler muss den Ausfuehrungszustand gemaess §7.1 ausweisen. Fehler
+vor Beginn der Ausfuehrung bleiben je nach Ursache Exit `2`, `3`, `4`, `7` oder
+`8`.
 
 ### 7.2 `schema rollback`
 
@@ -1223,8 +1281,21 @@ vertraut:
 - Das JSON-Objekt enthaelt mindestens:
   `format`, `formatVersion`, `dialect`, `currentFingerprint`,
   `desiredFingerprint`, `postUpFingerprint`, `operationIds`,
-  `risk`, `createdByVersion`, `fingerprintAlgorithm`, `recovery` und
-  `postUpVerified`.
+  `risk`, `createdByVersion`, `fingerprintAlgorithm`, `bodyHashAlgorithm`,
+  `bodyHash`, `recovery` und `postUpVerified`.
+- `bodyHash` bindet den Metadatenblock an den tatsaechlichen SQL-Body. Der Hash
+  wird ueber die kanonischen Bytes aller Zeilen nach dem End-Begrenzer gebildet:
+  Zeilenenden werden als LF normalisiert, der Generator schreibt genau eine
+  finale Newline, und der Hash deckt Kommentare sowie ausfuehrbare Statements im
+  Body ab. Der Metadatenblock selbst ist nicht Teil des Hashes.
+- `bodyHashAlgorithm` benennt den Algorithmus und die kanonische Byte-Regel, zum
+  Beispiel `sha256-lf-body-v1`. `schema rollback --execute` muss den Hash vor
+  jeder Zielzustands- oder Dialektpruefung neu berechnen. Eine Abweichung macht
+  das Artefakt ungueltig und endet ohne DB-Zugriff mit Exit `7`.
+- Dieser Hash ist ein Integritaets- und Drift-Schutz fuer versehentlich oder
+  manuell veraenderte Artefakte, keine kryptografische Signatur gegen einen
+  Angreifer, der Header und Body gemeinsam neu schreiben kann. Signierte
+  Artefakte oder HMACs sind nicht Bestandteil des ersten Slice.
 - `recovery` ist bei normalen Rollback-Artefakten `false` und bei Recovery-
   Artefakten `true`. `postUpVerified` ist nur dann `true`, wenn
   `postUpFingerprint` aus einer erfolgreichen Nach-Introspection nach
@@ -1241,9 +1312,10 @@ vertraut:
 - `risk` enthaelt mindestens `destructive`, `dataLossPossible`,
   `requiresManualConfirmation` und die betroffenen Operation-IDs.
 - Der Parser ist strikt: fehlende Pflichtfelder, unbekannte `formatVersion`,
-  syntaktisch ungueltiges JSON, widerspruechliche Dialekt-/Fingerprint-Felder
-  oder mehrere Metadatenbloecke machen das Artefakt fuer `--execute`
-  ungueltig. Bei `recovery = true` sind fehlende oder leere
+  syntaktisch ungueltiges JSON, unbekannte `bodyHashAlgorithm`, abweichender
+  `bodyHash`, widerspruechliche Dialekt-/Fingerprint-Felder oder mehrere
+  Metadatenbloecke machen das Artefakt fuer `--execute` ungueltig. Bei
+  `recovery = true` sind fehlende oder leere
   `allowedPostUpFingerprints` ebenfalls ungueltig. Preview/Validierung darf den
   Fehler berichten, aber nicht ausfuehren.
 - Fingerprints werden aus derselben kanonischen Schema-Projektion gebildet, die
@@ -1312,6 +1384,10 @@ Ausgabeziele angefordert wurden, aus zusammenpassenden Artefakten:
 - Down-SQL aus `--rollback-output`, wenn `--generate-rollback` gesetzt ist
 - strukturierter Report aus `--report`
 
+Bei `--execute` ist `--report` Pflicht. Der Report ist dann nicht nur ein
+optionales Begleitartefakt, sondern das Audit-Artefakt des DB-seitigen
+Schemawechsels.
+
 `--rollback-output` ist bei `--generate-rollback` verbindlich. Der Runner darf
 keinen impliziten Dateinamen ableiten und darf Down-SQL nicht in das
 Up-SQL-Artefakt mischen.
@@ -1334,6 +1410,9 @@ Der Report muss mindestens enthalten:
   wurden
 - Operand-Modus (`file-to-db` oder `file-to-file`) und Zieldialekt
 - Liste der Operationen, aus denen Up und Down gerendert wurden
+- bei `--execute`: Ausfuehrungsstatus mit `executionStarted`,
+  `executionCompleted`, `statementsAttempted`, `transactionRolledBack`,
+  `sideEffectsPossible` und Fehlerdiagnose bei Abbruch
 - Blocker fuer Down, falls `--generate-rollback` nicht moeglich ist
 
 Down-SQL darf nur erzeugt werden, wenn alle fuer Down benoetigten Operationen
@@ -1408,6 +1487,9 @@ Report-Inhalte:
   spezifizieren: stdout-Fallback fuer Up-SQL, kein impliziter Report-Sidecar,
   `--rollback-output` als einziger Down-SQL-Pfad und
   `--execute --dry-run` als Exit `2`
+- `--execute` als auditpflichtigen Pfad spezifizieren: ohne explizites
+  `--report` Exit `2`, bei DDL-Ausfuehrungsfehlern Exit `5` mit strukturiertem
+  Ausfuehrungsstatus statt Exit `7` oder `8`
 
 ### Phase B - Core-Vertrag
 
@@ -1509,11 +1591,18 @@ Nicht in der ersten Matrix:
 - `--generate-rollback`
 - `--rollback-output` als Pflichtausgabe fuer `--generate-rollback`
 - `--execute`
+- `--execute` ohne `--report` als Exit `2` ablehnen
 - `--dry-run` als Default ohne Ausfuehrung
 - `--execute --dry-run` fuer `schema migrate` und `schema rollback` als
   Exit `2` ablehnen
 - `--execute` mit Datei-Target als Exit `2` ablehnen
 - Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
+- Dialektbezogene Transaktions-/Autocommit-Semantik vor Ausfuehrung bestimmen
+  und im Report ausweisen
+- DDL-Ausfuehrungsfehler nach Start von `--execute` als Exit `5` abbilden,
+  inklusive `executionStarted`, `executionCompleted`, `statementsAttempted`,
+  `lastStatementOperationIds`, `transactionRolledBack` und
+  `sideEffectsPossible`
 - Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
   `--execute` erst nach erfolgreichem Nach-Compare final schreiben
 - Recovery-Fall fuer `--execute --generate-rollback` nach bereits
@@ -1526,7 +1615,8 @@ Nicht in der ersten Matrix:
 - `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
 - strikter Parser fuer den `d-migrate rollback-sql v1`-Metadatenblock:
   Begrenzungskommentare, kanonisches JSON, Pflichtfelder,
-  Fingerprint-Algorithmus und Secret-Scrubbing
+  Fingerprint-Algorithmus, `bodyHashAlgorithm`, `bodyHash`, SQL-Body-
+  Integritaetspruefung und Secret-Scrubbing
 - Zielzustands-Pruefung vor `schema rollback --execute`
 - Zieldialekt-Pruefung vor `schema rollback --execute`; Abweichungen vom
   Metadatenblock enden mit `TARGET_DIALECT_MISMATCH`
@@ -1550,7 +1640,12 @@ Nicht in der ersten Matrix:
   `--dialect`-Pflicht, `--execute`-Ablehnung bei Datei-Target,
   `schema migrate --execute --dry-run` und
   `schema rollback --execute --dry-run` als Exit `2`,
+  `schema migrate --execute` ohne `--report` als Exit `2`,
   stdout-/Datei-Ausgabeziele und fehlende implizite Report-Sidecars
+- Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler nach Beginn
+  der DDL-Ausfuehrung endet mit Exit `5`, enthaelt strukturierten
+  Ausfuehrungsstatus, ueberschreibt keine unfertigen SQL-Artefakte und
+  unterscheidet beweisbar zurueckgerollt von moeglicherweise partiell angewendet
 - Artefakt-Writer-Tests fuer atomare Finalisierung und unveraenderte
   bestehende Zielpfade bei Planungs-, Render-, Blocker- und
   Ausfuehrungsfehlern
@@ -1559,8 +1654,8 @@ Nicht in der ersten Matrix:
   Finalisierung fehlschlaegt
 - Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
   doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
-  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch, Dialekt-Mismatch,
-  Recovery-Felder (`recovery`, `postUpVerified`,
+  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch, Body-Hash-Mismatch,
+  Dialekt-Mismatch, Recovery-Felder (`recovery`, `postUpVerified`,
   `allowedPostUpFingerprints`) und Secret-Scrubbing
 - MySQL-Dependency-Tests fuer fehlende oder unvollstaendige View-Dependency-
   Privilegien; betroffene View-Replacements und spaltenveraendernde Operationen
@@ -1651,6 +1746,12 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - `--report` erzeugt nur dann ein Report-Artefakt, wenn es explizit gesetzt
   ist; es gibt keinen impliziten Report-Sidecar.
 - `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
+- `schema migrate --execute` verlangt ein explizites `--report`; ohne Report-
+  Pfad endet der Lauf mit Exit `2`.
+- Schlaegt `schema migrate --execute` nach Beginn der DDL-Ausfuehrung fehl,
+  endet der Lauf mit Exit `5`, berichtet den Ausfuehrungszustand strukturiert
+  und unterscheidet beweisbar zurueckgerollt von moeglicherweise partiell
+  angewendet.
 - Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
   kein `--output`-Artefakt mit teilweise gerendertem SQL.
 - Up-SQL-, Down-SQL- und Report-Dateien werden erst nach vollstaendigem
@@ -1662,6 +1763,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - Der Down-SQL-Metadatenblock hat stabile Begrenzungskommentare, enthaelt ein
   kanonisches JSON-Objekt mit Pflichtfeldern und wird von `schema rollback`
   strikt geparst.
+- Der Down-SQL-Metadatenblock enthaelt `bodyHashAlgorithm` und `bodyHash`; der
+  Rollback-Runner berechnet den Hash des SQL-Bodys vor Ausfuehrung neu und
+  lehnt veraenderte Artefakte ohne DB-Zugriff ab.
 - Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
   Nach-Compare und Driftpruefung und enthaelt die verwendete
   Fingerprint-Algorithmus-ID.
@@ -1741,6 +1845,11 @@ Verbindlich fuer den ersten Slice:
   - `--report` erzeugt nur bei gesetztem Flag ein Report-Artefakt;
   - `--rollback-output` ist bei `--generate-rollback` der einzige Down-SQL-Pfad.
 - `schema migrate --execute --dry-run` ist unzulaessig und endet mit Exit `2`.
+- `schema migrate --execute` ist auditpflichtig und verlangt `--report`; ohne
+  expliziten Report-Pfad endet der Lauf mit Exit `2`.
+- Fehler nach Beginn der DDL-Ausfuehrung enden mit Exit `5` und strukturiertem
+  Ausfuehrungsstatus. Ein vorbereiteter Down-Plan darf bei partieller oder
+  unklarer Up-Ausfuehrung nicht als Rollback-Artefakt finalisiert werden.
 - Reverse-generierte Schema-Metadaten werden vor Compare/Planning mit dem
   gemeinsamen Compare-Normalizer neutralisiert.
 - `DiffResult` wird nicht als oeffentliches Input-Artefakt serialisiert.
@@ -1769,9 +1878,9 @@ Verbindlich fuer den ersten Slice:
 - `schema rollback --execute --dry-run` ist unzulaessig und endet mit Exit `2`.
 - Das Down-SQL enthaelt einen strikt parsebaren
   `d-migrate rollback-sql v1`-Metadatenblock mit kanonischem JSON,
-  Pflichtfeldern, Fingerprint-Algorithmus-ID, `recovery`,
-  `postUpVerified` und ohne Secrets. Recovery-Artefakte enthalten zusaetzlich
-  nicht leere `allowedPostUpFingerprints`.
+  Pflichtfeldern, Fingerprint-Algorithmus-ID, SQL-Body-Hash,
+  `recovery`, `postUpVerified` und ohne Secrets. Recovery-Artefakte enthalten
+  zusaetzlich nicht leere `allowedPostUpFingerprints`.
 - `schema rollback --execute` introspektiert vor der Ausfuehrung den aktuellen
   Zielzustand und vergleicht ihn mit dem im Down-SQL-Metadatenblock erwarteten
   Post-Up-/Soll-Fingerprint. Bei Abweichung endet der Lauf mit Exit `8` und
