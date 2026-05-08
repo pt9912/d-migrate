@@ -18,6 +18,7 @@ import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Path
+import java.time.Instant
 
 /**
  * Unit-Tests für [SchemaGenerateRunner] mit Fakes für Schema-Reader,
@@ -84,6 +85,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         quiet: Boolean = false,
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequences: String? = null,
+        deterministic: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source,
         target = target,
@@ -96,6 +98,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         quiet = quiet,
         splitMode = splitMode,
         mysqlNamedSequences = mysqlNamedSequences,
+        deterministic = deterministic,
     )
 
     class StdoutCapture {
@@ -117,6 +120,7 @@ class SchemaGenerateRunnerTest : FunSpec({
         val schema: SchemaDefinition,
         val dialect: String,
         val source: Path,
+        val options: dev.dmigrate.driver.DdlGenerationOptions,
     )
 
     /**
@@ -134,12 +138,12 @@ class SchemaGenerateRunnerTest : FunSpec({
         var validator: (SchemaDefinition) -> ValidationResult = { ValidationResult() }
         var generator: FakeGenerator = FakeGenerator()
 
-        fun runner(): SchemaGenerateRunner = SchemaGenerateRunner(
+        fun runner(env: Map<String, String> = emptyMap()): SchemaGenerateRunner = SchemaGenerateRunner(
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
-            reportWriter = { path, result, schema, dialect, source, _, _ ->
-                reportWrites += ReportRecord(path, result, schema, dialect, source)
+            reportWriter = { path, result, schema, dialect, source, _, options ->
+                reportWrites += ReportRecord(path, result, schema, dialect, source, options)
             },
             fileWriter = { path, content -> fileWrites += WriteRecord(path, content) },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
@@ -150,7 +154,10 @@ class SchemaGenerateRunnerTest : FunSpec({
             printValidationResult = { _, _, _ -> },
             stdout = stdout.sink,
             stderr = stderr.sink,
+            getenv = env::get,
         )
+
+        fun runnerWithEnv(vararg pairs: Pair<String, String>): SchemaGenerateRunner = runner(mapOf(*pairs))
     }
 
     val harness = { RunnerHarness() }
@@ -276,6 +283,23 @@ class SchemaGenerateRunnerTest : FunSpec({
         // json mode bypasses file writing and report generation
         h.fileWrites.shouldBeEmpty()
         h.reportWrites.shouldBeEmpty()
+    }
+
+    test("Exit 0: --deterministic sets generator and report options") {
+        val h = harness()
+        h.runner().execute(
+            request(output = Path.of("/tmp/out.sql"), deterministic = true)
+        ) shouldBe 0
+        h.generator.generateOptions!!.deterministic shouldBe true
+        h.reportWrites.single().options.deterministic shouldBe true
+    }
+
+    test("Exit 0: SOURCE_DATE_EPOCH sets a stable generatedAt instant") {
+        val h = harness()
+        val runner = h.runnerWithEnv("SOURCE_DATE_EPOCH" to "1775001600")
+        runner.execute(request(output = Path.of("/tmp/out.sql"))) shouldBe 0
+        h.generator.generateOptions!!.generatedAt shouldBe Instant.parse("2026-04-01T00:00:00Z")
+        h.reportWrites.single().options.generatedAt shouldBe Instant.parse("2026-04-01T00:00:00Z")
     }
 
     test("Exit 0: --output-format=json preserves spatial W120 notes and E052 skipped objects") {

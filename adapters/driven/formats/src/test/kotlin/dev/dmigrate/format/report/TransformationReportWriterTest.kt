@@ -7,6 +7,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 import java.nio.file.Path
+import java.time.Instant
 
 class TransformationReportWriterTest : FunSpec({
 
@@ -26,6 +27,30 @@ class TransformationReportWriterTest : FunSpec({
         report shouldContain "file: \"schema.yaml\""
         report shouldContain "dialect: postgresql"
         report shouldContain "generator: \"d-migrate 0.9.5\""
+    }
+
+    test("report uses supplied generatedAt timestamp") {
+        val report = writer.render(
+            DdlResult(statements = listOf(DdlStatement("SELECT 1"))),
+            schema(),
+            "postgresql",
+            Path.of("schema.yaml"),
+            generatedAt = Instant.parse("2026-04-01T00:00:00Z"),
+        )
+
+        report shouldContain "generated_at: \"2026-04-01T00:00:00Z\""
+    }
+
+    test("deterministic report omits generated_at") {
+        val report = writer.render(
+            DdlResult(statements = listOf(DdlStatement("SELECT 1"))),
+            schema(),
+            "postgresql",
+            Path.of("schema.yaml"),
+            deterministic = true,
+        )
+
+        report shouldNotContain "generated_at"
     }
 
     test("report contains summary counts") {

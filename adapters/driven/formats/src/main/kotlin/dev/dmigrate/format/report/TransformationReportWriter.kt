@@ -19,8 +19,10 @@ class TransformationReportWriter {
         sourceFile: Path,
         splitMode: String? = null,
         mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
+        generatedAt: Instant? = null,
+        deterministic: Boolean = false,
     ) {
-        output.writeText(render(result, schema, dialect, sourceFile, splitMode, mysqlNamedSequenceMode))
+        output.writeText(render(result, schema, dialect, sourceFile, splitMode, mysqlNamedSequenceMode, generatedAt, deterministic))
     }
 
     fun render(
@@ -30,6 +32,8 @@ class TransformationReportWriter {
         sourceFile: Path,
         splitMode: String? = null,
         mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
+        generatedAt: Instant? = null,
+        deterministic: Boolean = false,
     ): String = buildString {
         appendLine("source:")
         appendLine("  schema: \"${escapeYaml(schema.name)}\"")
@@ -37,7 +41,7 @@ class TransformationReportWriter {
         appendLine("  file: \"${escapeYaml(sourceFile.toString())}\"")
         appendLine("target:")
         appendLine("  dialect: $dialect")
-        appendLine("  generated_at: \"${Instant.now()}\"")
+        if (!deterministic) appendLine("  generated_at: \"${generatedAt ?: Instant.now()}\"")
         appendLine("  generator: \"d-migrate 0.9.5\"")
         if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")

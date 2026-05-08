@@ -43,6 +43,20 @@ nicht in die Tool-Artefakte übernommen. Gleiches Schema + gleiche Flags muss
 identische Artefaktinhalte erzeugen. Provenienz bleibt im Report oder in
 stabilen, nicht zeitabhängigen Metadaten sichtbar.
 
+**`schema generate`-Determinismus (0.9.5)**:
+
+- Ohne weitere Flags bleibt der Header wie oben beschrieben und nutzt einen
+  Laufzeit-Timestamp.
+- Ist `SOURCE_DATE_EPOCH` gesetzt, bleibt die Header-Form erhalten, aber
+  `Generated:` wird aus diesem Unix-Epoch-Sekundenwert als UTC-`Instant`
+  abgeleitet.
+- Mit `--deterministic` wird der Laufzeit-Timestamp aus DDL, JSON-DDL-Feldern
+  und Sidecar-Report entfernt. Der Header endet dann bei `-- Target:
+  <dialect>`.
+- Ist `--deterministic` zusammen mit `SOURCE_DATE_EPOCH` gesetzt, bestimmt
+  `--deterministic` weiterhin die Output-Policy; der stabile Zeitwert wird
+  nicht als volatile Provenienz ausgegeben.
+
 ### 1.3 Encoding
 
 - Generierte Dateien sind immer **UTF-8** ohne BOM
@@ -1067,10 +1081,15 @@ class DdlGoldenMasterTest : FunSpec({
 
 ### 15.4 Nicht-deterministische Elemente
 
-Der DDL-Header enthält einen Timestamp (`Generated: <ISO-8601>`). Für Golden-Master-Tests:
+Der DDL-Header enthält im normalen Modus einen Timestamp (`Generated: <ISO-8601>`).
+Für Golden-Master-Tests:
 
-- **Option A** (empfohlen): Header-Zeilen bei Vergleich ignorieren (Zeilen die mit `-- Generated:` beginnen)
-- **Option B**: Timestamp via Clock-Injection fixieren
+- **Option A** (empfohlen): `schema generate --deterministic` bzw.
+  `DdlGenerationOptions(deterministic = true)` verwenden.
+- **Option B**: `SOURCE_DATE_EPOCH` bzw. `DdlGenerationOptions(generatedAt = ...)`
+  auf einen festen Wert setzen.
+- **Option C**: Header-Zeilen bei Vergleich ignorieren, insbesondere die
+  `-- Target: ... | Generated: ...`-Zeile.
 
 ### 15.5 Golden-Master-Aktualisierung
 

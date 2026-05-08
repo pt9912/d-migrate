@@ -6,7 +6,6 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
-import dev.dmigrate.driver.MysqlNamedSequenceMode
 import java.nio.file.Path
 
 internal data class GeneratedDdl(
@@ -20,7 +19,7 @@ internal data class GeneratedDdl(
 
 internal class SchemaGenerateOutputWriter(
     private val fileWriter: (Path, String) -> Unit,
-    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, MysqlNamedSequenceMode?) -> Unit,
+    private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, DdlGenerationOptions) -> Unit,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
     private val splitPath: (Path, DdlPhase) -> Path,
@@ -34,7 +33,7 @@ internal class SchemaGenerateOutputWriter(
         schema: SchemaDefinition,
         dialect: String,
         splitModeStr: String?,
-        mysqlSeqMode: MysqlNamedSequenceMode? = null,
+        options: DdlGenerationOptions,
     ) {
         val outputPath = request.output!!
         val prePath = splitPath(outputPath, DdlPhase.PRE_DATA)
@@ -46,7 +45,7 @@ internal class SchemaGenerateOutputWriter(
         fileWriter(postPath, postDdl + "\n")
         if (!request.quiet) stderr("Post-data DDL written to $postPath")
 
-        writeReport(request, result, schema, dialect, outputPath, splitModeStr, mysqlSeqMode)
+        writeReport(request, result, schema, dialect, outputPath, splitModeStr, options)
     }
 
     fun writeFileOutput(request: SchemaGenerateRequest, gen: GeneratedDdl, splitModeStr: String?) {
@@ -68,7 +67,7 @@ internal class SchemaGenerateOutputWriter(
             gen.dialect.name.lowercase(),
             outputPath,
             splitModeStr,
-            gen.options.mysqlNamedSequenceMode,
+            gen.options,
         )
     }
 
@@ -89,7 +88,7 @@ internal class SchemaGenerateOutputWriter(
                 gen.dialect.name.lowercase(),
                 request.report,
                 null,
-                gen.options.mysqlNamedSequenceMode,
+                gen.options,
             )
         }
     }
@@ -101,10 +100,10 @@ internal class SchemaGenerateOutputWriter(
         dialect: String,
         outputPath: Path,
         splitModeStr: String?,
-        mysqlSeqMode: MysqlNamedSequenceMode? = null,
+        options: DdlGenerationOptions,
     ) {
         val reportPath = request.report ?: sidecarPath(outputPath, ".report.yaml")
-        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr, mysqlSeqMode)
+        reportWriter(reportPath, result, schema, dialect, request.source, splitModeStr, options)
         if (!request.quiet) stderr("Report written to $reportPath")
     }
 }

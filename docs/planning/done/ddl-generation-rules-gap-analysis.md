@@ -1,7 +1,7 @@
 # Gap-Analyse: `ddl-generation-rules.md` gegen Implementierungsstand
 
 **Stand:** 2026-05-08
-**Status:** In Umsetzung — Partial-Index-Scope umgesetzt, Determinismus-Scope offen
+**Status:** Umgesetzt
 
 Dieses Dokument haelt Punkte fest, die in der DDL-Zielbild-Spezifikation
 [`spec/ddl-generation-rules.md`](../../../spec/ddl-generation-rules.md)
@@ -10,15 +10,15 @@ spaeterer Scope getragen werden.
 
 ## Ergebnis
 
-Diese Analyse identifiziert aktuell noch einen relevanten Gap ohne explizite
+Diese Analyse identifizierte zwei relevante Gaps ohne explizite
 Deferred-Entscheidung:
 
+- **Partial Indexes / Partial-UNIQUE**
 - **`schema generate`-Determinismus** als Reproduzierbarkeits-Gap
 
-Der urspruenglich gelistete fachliche DDL-Semantik-Gap
-**Partial Indexes / Partial-UNIQUE** ist seit 2026-05-08 umgesetzt.
+Beide Gaps sind seit 2026-05-08 umgesetzt.
 
-Die Einstufung sollte bei Aenderungen an `ddl-generation-rules.md` erneut
+Die Einstufung sollte bei Aenderungen an `ddl-generation-rules.md` weiterhin
 geprueft werden.
 
 Zwei weitere Punkte sind bereits in der Spezifikation selbst oder in
@@ -215,10 +215,23 @@ java.time.Instant.now()
 
 Damit ist `schema generate` bei identischer Eingabe nicht byte-deterministisch.
 
+### Implementierungsstand seit 2026-05-08
+
+Der Reproduzierbarkeits-Gap ist geschlossen.
+
+- `DdlGenerationOptions` enthaelt `generatedAt: Instant?` und
+  `deterministic: Boolean`.
+- `schema generate --deterministic` entfernt Laufzeit-Timestamps aus DDL,
+  JSON-DDL-Feldern und Sidecar-Report.
+- `SOURCE_DATE_EPOCH` wird als Unix-Epoch-Sekundenwert gelesen und im normalen
+  Modus als stabiler `Generated:`-Instant verwendet.
+- Ungueltige `SOURCE_DATE_EPOCH`-Werte fuehren zu Exit-Code 2.
+- Rollback-DDL nutzt dieselben Optionen wie Forward-DDL.
+
 ### Bewertung
 
-Das ist ein echter Reproduzierbarkeits-Gap, aber kein funktionaler
-DDL-Semantikfehler. Der erzeugte SQL-Inhalt ist stabil; nur der Header macht
+Das war ein echter Reproduzierbarkeits-Gap, aber kein funktionaler
+DDL-Semantikfehler. Der erzeugte SQL-Inhalt war stabil; nur der Header machte
 die Ausgabe volatil.
 
 ### Braucht es einen neuen Schalter?
@@ -256,19 +269,21 @@ Semantik und Praezedenz:
 4. Wenn weder `--deterministic` noch `SOURCE_DATE_EPOCH` gesetzt ist, bleibt das heutige Provenienzverhalten mit Laufzeitzeit aktiv.
 5. Tool-Exports duerfen ihre bestehende Timestamp-Normalisierung behalten; falls sie auf die gemeinsame Policy umgestellt werden, muss diese Praezedenz identisch gelten.
 
-Offene Entscheidung:
+Getroffene Entscheidung:
 
 | Option | Vorteil | Nachteil |
 |---|---|---|
-| `--deterministic` entfernt `Generated:` | maximal stabil, analog Tool-Export-Normalisierung | Header-Form weicht von §1.2 ab |
+| `--deterministic` entfernt `Generated:` | maximal stabil, analog Tool-Export-Normalisierung | Header-Form weicht im deterministischen Modus von §1.2 ab |
 | `--deterministic` setzt festen Wert, z. B. Unix Epoch | Header-Form bleibt stabil | kuenstlicher Timestamp kann missverstanden werden |
 | `--generated-at <instant>` | maximale Kontrolle, gut testbar | mehr CLI-Oberflaeche, weniger intuitiv |
 | nur `SOURCE_DATE_EPOCH` | Standardkonform ohne neue CLI-Option | weniger sichtbar fuer Nutzer |
 
-Empfehlung fuer ersten Scope:
+Umgesetzter Scope:
 
-1. `DdlGenerationOptions` um `generatedAt: Instant?` oder einen Clock-/Header-Policy-Wert erweitern.
-2. CLI-Flag `--deterministic` einfuehren.
-3. `SOURCE_DATE_EPOCH` als stabilen Zeitwert gemaess Praezedenzregel auswerten.
-4. Sidecar-Reports ebenfalls ueber dieselbe Zeitquelle fuehren.
-5. Tool-Exports koennen ihre bestehende Normalisierung behalten oder auf dieselbe Policy umstellen.
+1. `DdlGenerationOptions` um `generatedAt: Instant?` und `deterministic: Boolean`
+   erweitert.
+2. CLI-Flag `--deterministic` eingefuehrt.
+3. `SOURCE_DATE_EPOCH` als stabilen Zeitwert gemaess Praezedenzregel
+   ausgewertet.
+4. Sidecar-Reports ueber dieselbe Zeitquelle und Determinismus-Policy gefuehrt.
+5. Tool-Exports behalten ihre bestehende Timestamp-Normalisierung.
