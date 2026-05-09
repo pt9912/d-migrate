@@ -19,20 +19,23 @@ interface UploadSessionStore {
      * AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`: same-checksum replay for the
      * read-only `schema_staging_readonly` upload-intent. Returns the
      * existing ACTIVE session whose
-     * `(tenantId, ownerPrincipalId, checksumSha256, sizeBytes)` tuple
-     * matches — or `null` when no such session exists.
+     * `(tenantId, ownerPrincipalId, uploadIntent="schema_staging_readonly",
+     * checksumSha256, sizeBytes)` tuple matches — or `null` when no
+     * such session exists.
      *
-     * Used by [dev.dmigrate.mcp.registry.ArtifactUploadInitHandler] to
-     * fold `artifact_upload_init` retries onto the live session
-     * instead of minting a new one and burning quota. Restricted to
-     * `uploadIntent = "schema_staging_readonly"` because the policy-
-     * pflichtige intents (`job_input`, …) own their own
-     * idempotency-key path through [UploadInitOrchestrator] and must
-     * not be replayed via this shortcut.
+     * Used by [dev.dmigrate.mcp.registry.ArtifactUploadInitHandler] as
+     * the **cheap path** — most retries hit here without touching
+     * quota. Restricted to `uploadIntent = "schema_staging_readonly"`
+     * because the policy-pflichtige intents (`job_input`, …) own their
+     * own idempotency-key path through [UploadInitOrchestrator] and
+     * must not be replayed via this shortcut.
      *
      * Default implementation returns `null` so non-implementing
      * stores (e.g. legacy fakes) stay safe — the worst case is "no
      * idempotency", never "wrong session returned".
+     *
+     * Race protection lives in [saveOrFindActiveSchemaStaging] — see
+     * its contract for the linearizability requirement.
      */
     fun findActiveSchemaStagingByChecksum(
         tenantId: TenantId,
@@ -40,6 +43,37 @@ interface UploadSessionStore {
         checksumSha256: String,
         sizeBytes: Long,
     ): UploadSession? = null
+
+    /**
+     * AP 6.13 atomic find-or-save for the read-only schema-staging
+     * path. If an ACTIVE session whose
+     * `(tenantId, ownerPrincipalId, uploadIntent="schema_staging_readonly",
+     * checksumSha256, sizeBytes)` tuple matches [session] already
+     * exists, returns that existing session. Otherwise persists
+     * [session] and returns it.
+     *
+     * Callers compare the returned session's `uploadSessionId` against
+     * the candidate to detect the race-loss case and refund quota.
+     *
+     * **Concurrency contract (production implementations MUST honour)**:
+     * the find-and-save MUST be linearizable for the same tuple — two
+     * concurrent calls with matching tuples MUST both observe exactly
+     * one persisted session, and at most one caller MUST receive the
+     * "saved [session]"-result. Implementations choose between:
+     *
+     *  - a partial unique index on
+     *    `(tenant_id, owner_principal_id, upload_intent,
+     *    checksum_sha256, size_bytes) WHERE state = 'ACTIVE'` (JDBC),
+     *    catching the conflict from the second insert, OR
+     *  - in-process locking covering both the find and the save
+     *    ([dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore]
+     *    holds a single mutex).
+     *
+     * Default implementation falls back to a plain [save] without
+     * any race protection — same "fail-soft, no idempotency"
+     * contract as [findActiveSchemaStagingByChecksum].
+     */
+    fun saveOrFindActiveSchemaStaging(session: UploadSession): UploadSession = save(session)
 
     fun list(
         tenantId: TenantId,

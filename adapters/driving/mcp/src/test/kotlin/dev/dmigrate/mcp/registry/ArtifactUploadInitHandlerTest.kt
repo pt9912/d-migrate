@@ -415,6 +415,31 @@ class ArtifactUploadInitHandlerTest : FunSpec({
         parsePayload(replay).getAsJsonObject("executionMeta").get("idempotentReplay").asBoolean shouldBe true
     }
 
+    test("idempotent replay path emits zero quota calls (RecordingQuotaService)") {
+        // Direct verification: the second call must not invoke
+        // reserve/commit/refund/release at all on the cheap-path
+        // replay. Pre-stage one ACTIVE session so the lookup hits.
+        val service = RecordingQuotaService(
+            outcomes = ArrayDeque(
+                listOf(
+                    grant(QuotaKey(ACME, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, ALICE), 1L),
+                    grant(QuotaKey(ACME, QuotaDimension.UPLOAD_BYTES, ALICE), 1024L),
+                ),
+            ),
+        )
+        val sessionStore = InMemoryUploadSessionStore()
+        val handler = recordingHandler(service, sessionStore)
+        // First call: full reserve/commit pair on each dimension.
+        handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val firstCallSize = service.recorded.size
+        firstCallSize shouldBe 4  // 2x reserve + 2x commit
+
+        val replay = handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        parsePayload(replay).getAsJsonObject("executionMeta").get("idempotentReplay").asBoolean shouldBe true
+        // Replay must not record any further quota lifecycle events.
+        service.recorded.size shouldBe firstCallSize
+    }
+
     test("different checksum mints a fresh session (idempotency keyed on checksum+size)") {
         val s = setup()
         s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
@@ -442,6 +467,22 @@ class ArtifactUploadInitHandlerTest : FunSpec({
             auditSubject = "bob",
         )
         val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), bob))
+        parsePayload(outcome).getAsJsonObject("executionMeta").has("idempotentReplay") shouldBe false
+    }
+
+    test("different tenant sees no replay even when principalId string collides") {
+        val s = setup()
+        s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        // Same principalId string ("alice"), different effective tenant.
+        val globex = TenantId("globex")
+        val crossTenantPrincipal = PRINCIPAL.copy(
+            homeTenantId = globex,
+            effectiveTenantId = globex,
+            allowedTenantIds = setOf(globex),
+        )
+        val outcome = s.handler.handle(
+            ToolCallContext("artifact_upload_init", args(VALID_INIT), crossTenantPrincipal),
+        )
         parsePayload(outcome).getAsJsonObject("executionMeta").has("idempotentReplay") shouldBe false
     }
 })

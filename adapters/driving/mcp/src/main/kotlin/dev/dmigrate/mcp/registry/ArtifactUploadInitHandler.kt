@@ -94,13 +94,28 @@ internal class ArtifactUploadInitHandler(
         // — read-only staging is not user-state-changing on retry,
         // and reservation-replay would burn an extra session-slot
         // plus the byte budget for every retry.
+        //
+        // Stale-lease guard: a session within `MIN_REPLAY_TTL_SECONDS`
+        // of `absoluteLeaseExpiresAt` is too short to actually finish
+        // an upload through the segment+finalize round-trip — replay
+        // would hand the client a useless TTL. Treat it as a miss
+        // and let the new-session path mint a fresh lease.
+        //
+        // TODO(0.9.8): COMPLETED-state match should surface a typed
+        // `ALREADY_COMPLETED` envelope with the existing
+        // `finalisedSchemaRef`, instead of falling through to a
+        // duplicate upload (port currently restricted to
+        // state == ACTIVE). Out of scope for this commit.
         sessionStore.findActiveSchemaStagingByChecksum(
             tenantId = tenantId,
             ownerPrincipalId = context.principal.principalId,
             checksumSha256 = args.checksumSha256,
             sizeBytes = args.expectedSizeBytes,
         )?.let { existing ->
-            return idempotentReplay(context, existing)
+            val ttlNow = effectiveTtlSeconds(options.clock.instant(), existing.absoluteLeaseExpiresAt)
+            if (ttlNow >= MIN_REPLAY_TTL_SECONDS) {
+                return idempotentReplay(context, existing)
+            }
         }
 
         val sessionsKey = QuotaKey(tenantId, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, context.principal.principalId)
@@ -125,16 +140,9 @@ internal class ArtifactUploadInitHandler(
 
         val now = options.clock.instant()
         val absoluteExpiresAt = now.plus(options.absoluteLeaseDuration)
-        val session = newSession(context, args, now, absoluteExpiresAt)
-        // LF-010 / LF-013 / LN-009 / LN-011: durable AuditFields-Population.
-        // Anforderungsakzeptanz "Audit enthaelt keine rohen Uploadbytes oder
-        // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
-        // erfuellt; hier wird der `resourceRefs`-Slot mit der
-        // tenant-scoped Session-URI gefuellt, sodass Audit-Konsumenten
-        // den Upload-Context tracen koennen.
-        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
-        try {
-            sessionStore.save(session)
+        val candidate = newSession(context, args, now, absoluteExpiresAt)
+        val saved = try {
+            sessionStore.saveOrFindActiveSchemaStaging(candidate)
         } catch (e: RuntimeException) {
             // Defence in depth: if the store throws (e.g. a future
             // unique-id collision contract), roll the reservations
@@ -143,6 +151,23 @@ internal class ArtifactUploadInitHandler(
             quotaService.refund(sessionsReservation)
             throw e
         }
+        if (saved.uploadSessionId != candidate.uploadSessionId) {
+            // AP 6.13 race-loss: a concurrent caller saved the
+            // matching session first. Refund our reservations and
+            // surface the existing session via the replay path —
+            // same observable behaviour as if we had hit the cheap
+            // lookup at the top of the handler.
+            quotaService.refund(bytesReservation)
+            quotaService.refund(sessionsReservation)
+            return idempotentReplay(context, saved)
+        }
+        // LF-010 / LF-013 / LN-009 / LN-011: durable AuditFields-Population.
+        // Anforderungsakzeptanz "Audit enthaelt keine rohen Uploadbytes oder
+        // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
+        // erfuellt; hier wird der `resourceRefs`-Slot mit der
+        // tenant-scoped Session-URI gefuellt, sodass Audit-Konsumenten
+        // den Upload-Context tracen koennen.
+        context.auditFields.resourceRefs = listOf(saved.resourceUri.render())
         // Commit hooks run on success per QuotaService.kt:11-17 —
         // counters stay reserved, audit hook fires.
         quotaService.commit(sessionsReservation)
@@ -158,7 +183,7 @@ internal class ArtifactUploadInitHandler(
         // to repeat it here.
         val ttlSeconds = effectiveTtlSeconds(now, absoluteExpiresAt)
         val payload = mapOf(
-            "uploadSessionId" to session.uploadSessionId,
+            "uploadSessionId" to saved.uploadSessionId,
             "uploadSessionTtlSeconds" to ttlSeconds,
             "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
             "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
@@ -184,15 +209,28 @@ internal class ArtifactUploadInitHandler(
      * = true` lets clients distinguish a replay from a fresh init.
      *
      * The TTL is computed against the existing
-     * `absoluteLeaseExpiresAt` (no lease extension on replay) — if
-     * the session is on the verge of expiring the client can still
-     * choose to wait for the natural expiry and retry, in which case
-     * the next call mints a fresh session per the normal path.
+     * `absoluteLeaseExpiresAt` (no lease extension on replay). The
+     * caller already gated the entry on a TTL >= MIN_REPLAY_TTL_SECONDS.
+     *
+     * Resumability hint: `executionMeta.bytesReceived` carries the
+     * server-side received-bytes counter so resume-aware clients can
+     * compute their next-segment offset locally. The first-segment
+     * fields stay at the spec defaults (`FIRST_SEGMENT_INDEX` /
+     * `FIRST_SEGMENT_OFFSET`) for backwards compatibility with
+     * non-resumable clients — those clients restart from segment 1
+     * and the server's segment-store contract will dedupe by
+     * `(sessionId, segmentIndex, segmentSha256)`.
      */
     private fun idempotentReplay(
         context: ToolCallContext,
         session: UploadSession,
     ): ToolCallOutcome {
+        // TODO(0.9.8): surface `idempotentReplay = true` via
+        // `AuditFields` once the audit schema gains a generic
+        // metadata slot. Today the replay/fresh distinction lives
+        // only on the wire (`executionMeta.idempotentReplay`); audit
+        // consumers that need it must join on `requestId` with the
+        // wire-log until the audit-schema extension lands.
         context.auditFields.resourceRefs = listOf(session.resourceUri.render())
         val ttlSeconds = effectiveTtlSeconds(options.clock.instant(), session.absoluteLeaseExpiresAt)
         val payload = mapOf(
@@ -203,6 +241,7 @@ internal class ArtifactUploadInitHandler(
             "executionMeta" to mapOf(
                 "requestId" to context.requestId,
                 "idempotentReplay" to true,
+                "bytesReceived" to session.bytesReceived,
             ),
         )
         return ToolCallOutcome.Success(
@@ -666,6 +705,15 @@ internal class ArtifactUploadInitHandler(
 
         /** LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
+
+        /**
+         * AP 6.13 stale-lease guard: a replay returning a TTL below
+         * this threshold is treated as a miss so the client gets a
+         * fresh lease instead of a useless one. 60s is the smallest
+         * window that comfortably covers a single segment+finalize
+         * round-trip.
+         */
+        const val MIN_REPLAY_TTL_SECONDS: Long = 60L
 
         private const val SCOPE_ARTIFACT_UPLOAD: String = "dmigrate:artifact:upload"
 

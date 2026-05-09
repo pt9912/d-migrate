@@ -21,9 +21,19 @@ class InMemoryUploadSessionStore : UploadSessionStore {
 
     private val sessions = ConcurrentHashMap<Key, UploadSession>()
 
-    override fun save(session: UploadSession): UploadSession {
+    /**
+     * AP 6.13 linearisability lock. Guards the read-modify-write
+     * sequence `findActiveSchemaStagingByChecksum + save` so two
+     * racing `artifact_upload_init` callers with the same tuple cannot
+     * both observe "no match" and then both insert distinct sessions.
+     * The JDBC adapter (when it lands) replaces this with a partial
+     * unique index per the `UploadSessionStore` port contract.
+     */
+    private val checksumIndexLock = Any()
+
+    override fun save(session: UploadSession): UploadSession = synchronized(checksumIndexLock) {
         sessions[Key(session.tenantId, session.uploadSessionId)] = session
-        return session
+        session
     }
 
     override fun findById(tenantId: TenantId, uploadSessionId: String): UploadSession? =
@@ -34,15 +44,42 @@ class InMemoryUploadSessionStore : UploadSessionStore {
         ownerPrincipalId: PrincipalId,
         checksumSha256: String,
         sizeBytes: Long,
-    ): UploadSession? = sessions.values
-        .firstOrNull { s ->
-            s.tenantId == tenantId &&
-                s.ownerPrincipalId == ownerPrincipalId &&
-                s.uploadIntent == "schema_staging_readonly" &&
-                s.checksumSha256 == checksumSha256 &&
-                s.sizeBytes == sizeBytes &&
-                s.state == UploadSessionState.ACTIVE
+    ): UploadSession? = synchronized(checksumIndexLock) {
+        findActiveSchemaStagingMatch(tenantId, ownerPrincipalId, checksumSha256, sizeBytes)
+    }
+
+    override fun saveOrFindActiveSchemaStaging(session: UploadSession): UploadSession =
+        synchronized(checksumIndexLock) {
+            if (session.uploadIntent == "schema_staging_readonly" &&
+                session.state == UploadSessionState.ACTIVE
+            ) {
+                val existing = findActiveSchemaStagingMatch(
+                    tenantId = session.tenantId,
+                    ownerPrincipalId = session.ownerPrincipalId,
+                    checksumSha256 = session.checksumSha256,
+                    sizeBytes = session.sizeBytes,
+                )
+                if (existing != null && existing.uploadSessionId != session.uploadSessionId) {
+                    return@synchronized existing
+                }
+            }
+            sessions[Key(session.tenantId, session.uploadSessionId)] = session
+            session
         }
+
+    private fun findActiveSchemaStagingMatch(
+        tenantId: TenantId,
+        ownerPrincipalId: PrincipalId,
+        checksumSha256: String,
+        sizeBytes: Long,
+    ): UploadSession? = sessions.values.firstOrNull { s ->
+        s.tenantId == tenantId &&
+            s.ownerPrincipalId == ownerPrincipalId &&
+            s.uploadIntent == "schema_staging_readonly" &&
+            s.checksumSha256 == checksumSha256 &&
+            s.sizeBytes == sizeBytes &&
+            s.state == UploadSessionState.ACTIVE
+    }
 
     override fun list(
         tenantId: TenantId,
