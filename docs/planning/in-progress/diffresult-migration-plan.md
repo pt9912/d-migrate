@@ -1584,70 +1584,70 @@ Report-Inhalte:
 
 ### Phase A - Spezifikation und Namensbereinigung
 
-- `spec/cli-spec.md` fuer `schema migrate`/`schema rollback` schaerfen
-- globale Exit-Code-Tabelle in `spec/cli-spec.md` um den geplanten
+- [x] `spec/cli-spec.md` fuer `schema migrate`/`schema rollback` schaerfen
+- [x] globale Exit-Code-Tabelle in `spec/cli-spec.md` um den geplanten
   Migrations-Blocker-Code `8` ergaenzen oder einen bestehenden Code verbindlich
   wiederverwenden
-- `spec/design.md` um `DiffResult` als Zwischenvertrag ergaenzen
-- private `SchemaComparator.DiffResult<N, D>` umbenennen
-- Comparator-Luecke fuer `CHECK`-/`EXCLUDE`-Constraints entscheiden:
+- [x] `spec/design.md` um `DiffResult` als Zwischenvertrag ergaenzen
+- [x] private `SchemaComparator.DiffResult<N, D>` umbenennen
+- [x] Comparator-Luecke fuer `CHECK`-/`EXCLUDE`-Constraints entscheiden:
   entweder `SchemaDiff`/`TableComparator` so erweitern, dass diese Constraints
   verlustfrei diffbar sind, oder einen Vor-Normalisierungs-Detector einfuehren,
   der betroffene Tabellen als nicht vollstaendig diffbar blockiert. Ein
   stilles Wegnormalisieren mit anschliessendem SQL-Rendering fuer dieselbe
   Tabelle ist nicht zulaessig.
-- klare Begriffe festlegen:
+- [x] klare Begriffe festlegen:
   - `SchemaDiff` = struktureller Unterschied
   - `DiffView` = stabiler Compare-Output
   - `DiffResult` = migrationsfaehiger Operationsplan
   - `MigrationDdlResult` = gerenderte Up-/Down-DDL
-- CLI-Ausgabeziele fuer `schema migrate`/`schema rollback` verbindlich
+- [x] CLI-Ausgabeziele fuer `schema migrate`/`schema rollback` verbindlich
   spezifizieren: stdout-Fallback fuer Up-SQL, kein impliziter Report-Sidecar,
   `--rollback-output` als einziger Down-SQL-Pfad fuer SQL-rendernde
   Rollback-Laeufe, `--plan-only --generate-rollback` ohne Down-SQL-Artefakt
   und `--execute --dry-run` als Exit `2`
-- `--execute` als auditpflichtigen Pfad spezifizieren: ohne explizites
+- [x] `--execute` als auditpflichtigen Pfad spezifizieren: ohne explizites
   `--report` Exit `2`, bei DDL-Ausfuehrungsfehlern Exit `5` mit strukturiertem
   Ausfuehrungsstatus statt Exit `7` oder `8`
 
 ### Phase B - Core-Vertrag
 
-- `DiffResult`
-- `DiffOperation`
-- `DiffObjectRef`
-- `DiffPhase`
-- `DiffObjectType`
-- `Reversibility`
-- `OperationRisks`
-- `OperationRisk`
-- `DiffDiagnostic`
-- stabile Operation-IDs
-- deterministische ID-Bildung aus Operationstyp, Objektpfad und
+- [x] `DiffResult`
+- [x] `DiffOperation`
+- [x] `DiffObjectRef`
+- [x] `DiffPhase`
+- [x] `DiffObjectType`
+- [x] `Reversibility`
+- [x] `OperationRisks`
+- [x] `OperationRisk`
+- [x] `DiffDiagnostic`
+- [x] stabile Operation-IDs
+- [x] deterministische ID-Bildung aus Operationstyp, Objektpfad und
   Payload-Fingerprint
-- Operation-Payloads fuer Rendering und Rollback
-- gemeinsamer Normalizer fuer reverse-generierte Schema-Metadaten, den
+- [x] Operation-Payloads fuer Rendering und Rollback
+- [x] gemeinsamer Normalizer fuer reverse-generierte Schema-Metadaten, den
   `schema compare` und `schema migrate` nutzen
-- kanonische Fingerprint-Projektion fuer Migrations-Reports,
+- [x] kanonische Fingerprint-Projektion fuer Migrations-Reports,
   SQL-Metadatenblock, Nach-Compare und `schema rollback`-Driftpruefung
-- planungsfaehiger Dependency-Vertrag fuer Views, mindestens Tabellen- und
+- [x] planungsfaehiger Dependency-Vertrag fuer Views, mindestens Tabellen- und
   Spaltenabhaengigkeiten fuer `DropTable`, `DropColumn` und `AlterColumn*`
-- Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
+- [x] Tests fuer leere Diffs, deterministische Sortierung, Dependency-Sortierung,
   inverse Down-Sortierung, Payload-Mapping, Up-/Down-Risiko-Mapping und
   Reverse-Marker-Normalisierung
 
 ### Phase C - Planner
 
-- `DiffPlanner` implementieren
-- Mapping von `SchemaDiff` zu Operationen
-- Dependency-/Phasen-Sortierung
-- inverse Dependency-/Phasen-Sortierung fuer Down-Operationen spezifizieren
+- [x] `DiffPlanner` implementieren
+- [x] Mapping von `SchemaDiff` zu Operationen
+- [x] Dependency-/Phasen-Sortierung
+- [x] inverse Dependency-/Phasen-Sortierung fuer Down-Operationen spezifizieren
   und testen
-- View-Abhaengigkeiten aus Reader-/Dependency-Daten nutzen; bei fehlender
+- [x] View-Abhaengigkeiten aus Reader-/Dependency-Daten nutzen; bei fehlender
   belastbarer Abhaengigkeitsinformation blockierende Diagnosen erzeugen
-- Reversibilitaetsklassifizierung
-- destruktive Operationen markieren
-- Rename-Kandidaten nur diagnostizieren, nicht automatisch migrieren
-- `CHECK`-/`EXCLUDE`-Constraint-Aenderungen nur planen, wenn der Compare-Kern
+- [x] Reversibilitaetsklassifizierung
+- [x] destruktive Operationen markieren
+- [x] Rename-Kandidaten nur diagnostizieren, nicht automatisch migrieren
+- [x] `CHECK`-/`EXCLUDE`-Constraint-Aenderungen nur planen, wenn der Compare-Kern
   sie verlustfrei liefert; andernfalls muss ein Vor-Normalisierungs-Detector
   betroffene Tabellen als nicht vollstaendig diffbar blockieren statt die
   Aenderung still verschwinden zu lassen
@@ -1656,15 +1656,15 @@ Report-Inhalte:
 
 Erste realistische Matrix:
 
-- PostgreSQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views mit
+- [x] PostgreSQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views mit
   getrennter Strategie fuer kompatibles `CREATE OR REPLACE VIEW` und explizites
   Drop/Recreate, `AlterColumnType` nur fuer getestete implizite Casts ohne
   `USING`, einfache Enum-Custom-Types ohne nicht triviale `ALTER TYPE`-Semantik
-- MySQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views nur mit
+- [x] MySQL: Tabellen, Spalten, PK/FK/Unique-Constraints, Indizes, Views nur mit
   explizit belegbaren table-level Dependencies; spaltenveraendernde Operationen
   unter Views nur mit expliziten column-level Dependencies und ausreichenden
   Introspection-Privilegien
-- SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
+- [x] SQLite: Tabellen, Spalten, Indizes, einfache Views, vollstaendige
   RebuildTable-Planung fuer SQLite-pflichtige Table-Rebuilds
 
 `CHECK`- und `EXCLUDE`-Constraints sind in dieser Matrix nur dann enthalten,
@@ -1676,19 +1676,19 @@ SQL-Erzeugung ausgeschlossen werden.
 
 Zusaetzlich fuer SQLite verbindlich:
 
-- `DialectMigrationPlan` aus `DiffResult` ableiten
-- Rebuild-Gruppierung pro Tabelle implementieren
-- deterministische Temp-Namen und Kollisionssuffixe erzeugen
-- Spaltenmapping inklusive `CAST`, Default-/NULL-Fill und Blocker fuer
+- [x] `DialectMigrationPlan` aus `DiffResult` ableiten
+- [x] Rebuild-Gruppierung pro Tabelle implementieren
+- [x] deterministische Temp-Namen und Kollisionssuffixe erzeugen
+- [x] Spaltenmapping inklusive `CAST`, Default-/NULL-Fill und Blocker fuer
   nicht automatisch fuellbare `NOT NULL`-Spalten rendern; automatische
   SQLite-Casts fuer `AlterColumnType` nur mit expliziter, getesteter
   Quell-/Ziel-Cast-Matrix und den noetigen Daten-Preflights erlauben
-- alte/neue Tabellenconstraints in `CREATE TABLE` korrekt abbilden
-- Indizes, Trigger und bekannte abhaengige Views nach dem Rebuild wieder
+- [x] alte/neue Tabellenconstraints in `CREATE TABLE` korrekt abbilden
+- [x] Indizes, Trigger und bekannte abhaengige Views nach dem Rebuild wieder
   erzeugen
-- `PRAGMA foreign_keys`-Handling, `foreign_key_check`, `BEGIN IMMEDIATE`,
+- [x] `PRAGMA foreign_keys`-Handling, `foreign_key_check`, `BEGIN IMMEDIATE`,
   `COMMIT` und `ROLLBACK` als Runner-Vertrag abbilden
-- Down-Rebuild aus reversiblem Up-Rebuild als eigenen inversen Rebuild-Plan
+- [x] Down-Rebuild aus reversiblem Up-Rebuild als eigenen inversen Rebuild-Plan
   erzeugen, richtungsabhaengige Felder neu bestimmen und bei Datenverlust- oder
   Manual-Faellen blockieren
 
@@ -1701,62 +1701,62 @@ Nicht in der ersten Matrix:
 
 ### Phase E - CLI-Runner
 
-- `SchemaMigrateRunner`
-- Operand-Aufloesung fuer Soll-Schema, Ist-Datenbank und Ist-Schema-Datei
-- Reverse des Ist-Zustands bei DB-Target
-- Normalisierung reverse-generierter Schema-Metadaten vor Compare/Planning
-- Datei-zu-Datei-Planung ohne Live-Datenbank
-- `--dialect`-Pflicht und Dialektvalidierung fuer Datei-Targets
-- Compare
-- Planner
-- Dialekt-DDL
-- `--plan-only`
-- `--allow-destructive`
-- `--generate-rollback`
-- `--rollback-output` als Pflichtausgabe fuer SQL-rendernde
+- [x] `SchemaMigrateRunner`
+- [x] Operand-Aufloesung fuer Soll-Schema, Ist-Datenbank und Ist-Schema-Datei
+- [x] Reverse des Ist-Zustands bei DB-Target
+- [x] Normalisierung reverse-generierter Schema-Metadaten vor Compare/Planning
+- [x] Datei-zu-Datei-Planung ohne Live-Datenbank
+- [x] `--dialect`-Pflicht und Dialektvalidierung fuer Datei-Targets
+- [x] Compare
+- [x] Planner
+- [x] Dialekt-DDL
+- [x] `--plan-only`
+- [x] `--allow-destructive`
+- [x] `--generate-rollback`
+- [x] `--rollback-output` als Pflichtausgabe fuer SQL-rendernde
   `--generate-rollback`-Laeufe
-- `--plan-only --generate-rollback` als reine Rollback-Faehigkeitspruefung ohne
+- [x] `--plan-only --generate-rollback` als reine Rollback-Faehigkeitspruefung ohne
   Down-SQL-Artefakt behandeln und mit `--rollback-output` als Exit `2` ablehnen
-- `--execute`
-- `--execute` ohne `--report` als Exit `2` ablehnen
-- `--dry-run` als Default ohne Ausfuehrung
-- `--execute --dry-run` fuer `schema migrate` und `schema rollback` als
+- [x] `--execute`
+- [x] `--execute` ohne `--report` als Exit `2` ablehnen
+- [x] `--dry-run` als Default ohne Ausfuehrung
+- [x] `--execute --dry-run` fuer `schema migrate` und `schema rollback` als
   Exit `2` ablehnen
-- `--execute` mit Datei-Target als Exit `2` ablehnen
-- Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
-- Dialektbezogene Transaktions-/Autocommit-Semantik vor Ausfuehrung bestimmen
+- [x] `--execute` mit Datei-Target als Exit `2` ablehnen
+- [x] Up-DDL gegen `--target` ausfuehren, wenn `--execute` gesetzt ist
+- [x] Dialektbezogene Transaktions-/Autocommit-Semantik vor Ausfuehrung bestimmen
   und im Report ausweisen
-- DDL-Ausfuehrungsfehler nach Start von `--execute` als Exit `5` abbilden,
+- [x] DDL-Ausfuehrungsfehler nach Start von `--execute` als Exit `5` abbilden,
   inklusive `executionStarted`, `executionCompleted`, `statementsAttempted`,
   `lastStatementOperationIds`, `transactionRolledBack` und
   `sideEffectsPossible`
-- Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
+- [x] Down-SQL-Artefakt erzeugen, wenn `--generate-rollback` gesetzt ist; bei
   `--execute` erst nach erfolgreichem Nach-Compare final schreiben
-- Recovery-Fall fuer `--execute --generate-rollback` nach bereits
+- [x] Recovery-Fall fuer `--execute --generate-rollback` nach bereits
   ausgefuehrtem Up abbilden: Nach-Introspection-/Nach-Compare-/
   Finalisierungsfehler duerfen bestehende Rollback-Pfade nicht ueberschreiben;
   ein markiertes Recovery-Rollback-Artefakt darf nur entstehen, wenn kein
   beobachteter Post-Up-Fingerprint dem Soll-Fingerprint widerspricht
-- gemeinsamer Artefakt-Writer fuer Up-SQL, Down-SQL und Reports mit temporaerer
+- [x] gemeinsamer Artefakt-Writer fuer Up-SQL, Down-SQL und Reports mit temporaerer
   Datei im Zielverzeichnis und atomarer Finalisierung
-- `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
-- strikter Parser fuer den `d-migrate rollback-sql v1`-Metadatenblock:
+- [x] `SchemaRollbackRunner` fuer Down-SQL-Ausfuehrung
+- [x] strikter Parser fuer den `d-migrate rollback-sql v1`-Metadatenblock:
   Begrenzungskommentare, kanonisches JSON, Pflichtfelder,
   Fingerprint-Algorithmus, `artifactHashAlgorithm`, `artifactHash`,
   Integritaetspruefung ueber kanonischen Header ohne `artifactHash` plus
   SQL-Body und Secret-Scrubbing
-- Zielzustands-Pruefung vor `schema rollback --execute`
-- Zieldialekt-Pruefung vor `schema rollback --execute`; Abweichungen vom
+- [x] Zielzustands-Pruefung vor `schema rollback --execute`
+- [x] Zieldialekt-Pruefung vor `schema rollback --execute`; Abweichungen vom
   Metadatenblock enden mit `TARGET_DIALECT_MISMATCH`
-- Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
+- [x] Rollback-SQL gegen `--target` ausfuehren, wenn `schema rollback --execute`
   genutzt wird
-- `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
-- SQLite-Rebuild-Schritte als unteilbare Ausfuehrungseinheit behandeln und bei
+- [x] `--allow-destructive` auch fuer destruktive Down-SQL-Ausfuehrung auswerten
+- [x] SQLite-Rebuild-Schritte als unteilbare Ausfuehrungseinheit behandeln und bei
   Fehlern abbrechen, rollbacken und im Report die letzte Rebuild-Phase
   ausweisen
-- Nach-Compare nach Up-Ausfuehrung gegen das Soll-Schema
-- Report-Ausgabe
-- sauberes Exit-Code-Mapping
+- [x] Nach-Compare nach Up-Ausfuehrung gegen das Soll-Schema
+- [x] Report-Ausgabe
+- [x] sauberes Exit-Code-Mapping
 
 ### Phase F - Tests und Smokes
 
@@ -1766,67 +1766,67 @@ nach Risiko-/Nutzenabwaegung gepriorisiert werden.
 
 #### F.1 — Golden-Master-DDL-Tests pro Dialekt ✅ (2026-05-09)
 
-- Up-DDL-Goldens fuer Postgres / MySQL / SQLite pro Szenario
+- [x] Up-DDL-Goldens fuer Postgres / MySQL / SQLite pro Szenario
   (`add-table`, `add-column`, `drop-column`, `alter-column-type-safe`).
-- Renderer-Aenderung ohne Golden-Update faellt laut.
-- Down-Goldens und SQLite-Rebuild-Spezialfaelle (Temp-Namen-
+- [x] Renderer-Aenderung ohne Golden-Update faellt laut.
+- [x] Down-Goldens und SQLite-Rebuild-Spezialfaelle (Temp-Namen-
   Determinismus, Spaltenmapping-Edge-Cases) folgen in spaeteren
   F.x-Slices oder gemeinsam mit den Round-Trip-Smokes.
 
 #### F.2 — Round-Trip-Smoke PostgreSQL
 
-- Testcontainers-basiert (existierende `test/integration-postgresql/`-
+- [ ] Testcontainers-basiert (existierende `test/integration-postgresql/`-
   Infrastruktur wiederverwenden).
-- Ausgangsschema in DB einrichten.
-- `schema migrate --execute` mit `--generate-rollback` und
+- [ ] Ausgangsschema in DB einrichten.
+- [ ] `schema migrate --execute` mit `--generate-rollback` und
   `--rollback-output`.
-- Reverse + Compare gegen Ziel-Schema.
-- `schema rollback --execute`.
-- Reverse + Compare gegen Ausgangsschema.
+- [ ] Reverse + Compare gegen Ziel-Schema.
+- [ ] `schema rollback --execute`.
+- [ ] Reverse + Compare gegen Ausgangsschema.
 
 #### F.3 — Round-Trip-Smoke MySQL
 
-- Analog zu F.2 fuer die erste reversible Operationsmatrix
+- [ ] Analog zu F.2 fuer die erste reversible Operationsmatrix
   (Plan §6.3); `AlterColumnNullability` bleibt Carve-Out.
 
 #### F.4 — Round-Trip-Smoke SQLite
 
-- Direkt-reversible Operationen ohne Rebuild (in-memory; kein
+- [ ] Direkt-reversible Operationen ohne Rebuild (in-memory; kein
   Testcontainers noetig).
-- Mindestens ein echter Table-Rebuild im Pfad, um die
+- [ ] Mindestens ein echter Table-Rebuild im Pfad, um die
   RebuildTable-Pipeline gegen eine echte SQLite-Engine zu fahren
   (Spaltenmapping, foreign_key_check, BEGIN IMMEDIATE / COMMIT).
 
 #### F.5 — Recovery-Rollback-Artefakt
 
-- Recovery-Pfad in `schema migrate --execute --generate-rollback`:
+- [ ] Recovery-Pfad in `schema migrate --execute --generate-rollback`:
   bei Post-Compare-Drift das Rollback-Artefakt mit `recovery=true`
   und `allowedPostUpFingerprints` finalisieren, sofern kein
   beobachteter Post-Up-Fingerprint dem Soll widerspricht.
-- Recovery-Pfad in `schema rollback`: `allowedPostUpFingerprints`-
+- [ ] Recovery-Pfad in `schema rollback`: `allowedPostUpFingerprints`-
   Whitelist akzeptieren.
-- Tests fuer "beobachteter Post-Up-Fingerprint != Soll" Fall:
+- [ ] Tests fuer "beobachteter Post-Up-Fingerprint != Soll" Fall:
   KEIN automatisch ausfuehrbares Recovery-Artefakt darf entstehen.
 
 #### F.6 — Edge-Cases und Hardening
 
-- Atomic-Writer-Edge-Cases: Render-/Blocker-/Execution-Fehler
+- [ ] Atomic-Writer-Edge-Cases: Render-/Blocker-/Execution-Fehler
   duerfen bestehende Zielpfade nicht ueberschreiben.
-- MySQL-Dependency-Tests fuer fehlende View-Privilegien; betroffene
+- [ ] MySQL-Dependency-Tests fuer fehlende View-Privilegien; betroffene
   View-Replacements / spaltenveraendernde Operationen muessen blocken.
-- SQLite-Rebuild-Atomic-Execution-Vertrag (autocommit aus, kein
+- [ ] SQLite-Rebuild-Atomic-Execution-Vertrag (autocommit aus, kein
   outer-Tx) als Integration-Test.
-- Erweiterte Metadatenblock-Tests: doppelte Bloecke, unbekannte
+- [ ] Erweiterte Metadatenblock-Tests: doppelte Bloecke, unbekannte
   Formatversionen, ungueltiges JSON, Fingerprint-Algorithmus-
   Mismatch, Secret-Scrubbing-Pruefung. Die strukturellen
   Parser-Faelle sind in `RollbackArtefactParserTest` (E.5) bereits
   abgedeckt; F.6 ergaenzt das Secret-Scrubbing- und das
   Round-Trip-Tampering-Spezifikum.
-- Erweiterte CLI-Exit-Code-Tests (z.B. stdout-/Datei-
+- [ ] Erweiterte CLI-Exit-Code-Tests (z.B. stdout-/Datei-
   Ausgabeziele, fehlende implizite Report-Sidecars). Die
   Hauptpfade aus E.1-E.6 sind bereits durch Unit-Tests abgedeckt;
   F.6 schliesst die Luecken.
-- Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler
+- [ ] Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler
   nach Beginn der DDL-Ausfuehrung endet mit Exit `5`, enthaelt
   strukturierten Ausfuehrungsstatus, ueberschreibt keine unfertigen
   SQL-Artefakte und unterscheidet beweisbar zurueckgerollt von
