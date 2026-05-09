@@ -97,7 +97,32 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             return
         }
-        rebuildRenderer.renderRebuild(table, bucket, current, desired, ctx)
+        if (ctx.direction == SqliteRenderDirection.DOWN) {
+            // Any NOT_REVERSIBLE op in the bucket (notably DropColumn — the
+            // dropped data is gone) prevents the inverse-rebuild from
+            // succeeding. Short-circuit before invoking the renderer.
+            val nonReversible = bucket.filter { it.reversibility == Reversibility.NOT_REVERSIBLE }
+            if (nonReversible.isNotEmpty()) {
+                for (op in nonReversible) {
+                    ctx.skip(
+                        op,
+                        "Rebuild bucket for `$table` contains NOT_REVERSIBLE operation ${op.id}; " +
+                            "down-rebuild cannot reconstruct the dropped data.",
+                        code = "SQLITE_REBUILD_NOT_REVERSIBLE",
+                    )
+                }
+                ctx.addBlocker(
+                    MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE,
+                    operationIds = bucket.map { it.id }.toSet(),
+                )
+                return
+            }
+            // Swap schemas: the down-rebuild copies from desired (= post-up
+            // state) into a target shaped like the original current.
+            rebuildRenderer.renderRebuild(table, bucket, source = desired, target = current, ctx)
+            return
+        }
+        rebuildRenderer.renderRebuild(table, bucket, source = current, target = desired, ctx)
     }
 
     @Suppress("CyclomaticComplexMethod")

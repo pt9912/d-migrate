@@ -232,7 +232,8 @@ class SqliteRebuildRendererTest : FunSpec({
         firstIds.size shouldBe 1
     }
 
-    test("Down direction on a rebuild bucket yields ROLLBACK_NOT_POSSIBLE") {
+    test("Down direction on a fully reversible rebuild bucket emits inverse rebuild (D.5)") {
+        // AlterColumnType is AUTOMATIC_WITH_DATA_RISK → reversible.
         val before = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
         )
@@ -253,7 +254,50 @@ class SqliteRebuildRendererTest : FunSpec({
         val current = schemaWith(mapOf("u" to before))
         val desired = schemaWith(mapOf("u" to after))
         val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        r.isBlocked shouldBe false
+        // Down rebuild casts BigInteger back to Integer (inverse direction).
+        val insertSelect = r.statements.single { it.sql.startsWith("INSERT INTO") }.sql
+        insertSelect shouldContain "CAST(\"id\" AS INTEGER)"
+        // Sequence is the canonical 9-step (no indices in this test).
+        r.statements.size shouldBe 9
+        r.statements.first().sql shouldBe "PRAGMA foreign_keys = OFF;"
+        r.statements.last().sql shouldBe "PRAGMA foreign_keys = ON;"
+    }
+
+    test("Down direction on a bucket containing DropColumn (NOT_REVERSIBLE) yields ROLLBACK_NOT_POSSIBLE") {
+        // DropColumn is absorbed into the rebuild bucket and is NOT_REVERSIBLE.
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "legacy" to ColumnDefinition(NeutralType.Text()),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        // The DropColumn alone wouldn't trigger a rebuild — pair it with an
+        // AlterColumnType so the bucket actually forms.
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsRemoved = mapOf("legacy" to ColumnDefinition(NeutralType.Text())),
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "id",
+                            type = ValueChange(NeutralType.Integer, NeutralType.Integer),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("u" to before))
+        val desired = schemaWith(mapOf("u" to after))
+        val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
         r.primaryBlockedReason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+        r.diagnostics.any { it.code == "SQLITE_REBUILD_NOT_REVERSIBLE" } shouldBe true
     }
 
     test("Constraint reshape (AddConstraint UNIQUE) triggers rebuild") {

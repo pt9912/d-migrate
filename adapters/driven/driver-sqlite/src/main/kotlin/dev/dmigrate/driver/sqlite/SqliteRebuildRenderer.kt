@@ -13,17 +13,17 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 /**
  * Synthesises the SQLite RebuildTable sequence per
  * `docs/planning/open/diffresult-migration-plan.md §6.4`. Given a
- * bucket of rebuild-required operations on one table plus the
- * current and desired [TableDefinition]s (from the planner's
- * source-schema fields), emits:
+ * bucket of rebuild-required operations on one table plus a
+ * `source` [TableDefinition] (the table state to copy data FROM) and
+ * a `target` [TableDefinition] (the target table shape), emits:
  *
  * 1. `PRAGMA foreign_keys = OFF;`
  * 2. `BEGIN IMMEDIATE;`
- * 3. `CREATE TABLE <temp> (...desired columns/PK/constraints...);`
+ * 3. `CREATE TABLE <temp> (...target columns/PK/constraints...);`
  * 4. `INSERT INTO <temp> (cols...) SELECT (mapped exprs...) FROM <orig>;`
  * 5. `DROP TABLE <orig>;`
  * 6. `ALTER TABLE <temp> RENAME TO <orig>;`
- * 7. `CREATE INDEX ...` for every index in the desired table.
+ * 7. `CREATE INDEX ...` for every index in the target table.
  * 8. `PRAGMA foreign_key_check;`
  * 9. `COMMIT;`
  * 10. `PRAGMA foreign_keys = ON;`
@@ -32,19 +32,27 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  * IDs so a runner failure can attribute back to *all* the business
  * ops the rebuild covers.
  *
- * Column-mapping rules:
+ * Direction-agnostic: the renderer takes `(source, target)` and
+ * applies the canonical sequence. The dispatcher
+ * ([SqliteDiffDdlGenerator]) chooses which schema is source vs.
+ * target based on Up/Down direction:
  *
- * - Columns present in both: emitted as-is
+ * - **Up**: `source = currentSchema`, `target = desiredSchema`.
+ * - **Down**: `source = desiredSchema`, `target = currentSchema`.
+ *
+ * Down also enforces a reversibility precondition before calling —
+ * buckets containing any `NOT_REVERSIBLE` operation are short-
+ * circuited to `ROLLBACK_NOT_POSSIBLE`.
+ *
+ * Column-mapping rules (apply identically in both directions; the
+ * meaning of "added" / "dropped" is relative to the target):
+ *
+ * - Columns present in both `source` and `target`: emitted as-is
  *   (`"col"`); type-changed columns emit `CAST("col" AS <newType>)`.
- * - Columns added in the desired side: filled with the column's
+ * - Columns added in the target side: filled with the column's
  *   `DEFAULT` literal if any, else `NULL` for nullable, else this
  *   blocks the rebuild with `NOT_NULL_BACKFILL_REQUIRED`.
- * - Columns dropped on the desired side: simply not selected.
- *
- * Down-rendering is *not* attempted in D.4.b: a rebuild's inverse
- * needs the post-up state and is genuinely a separate slice
- * (D.5). The down-side renders an empty result with a
- * `ROLLBACK_NOT_POSSIBLE` blocker.
+ * - Columns dropped on the target side: simply not selected.
  */
 internal class SqliteRebuildRenderer(
     private val sql: SqliteDiffSqlBuilders,
@@ -53,23 +61,11 @@ internal class SqliteRebuildRenderer(
     fun renderRebuild(
         table: String,
         bucket: List<DiffOperation>,
-        current: TableDefinition,
-        desired: TableDefinition,
+        source: TableDefinition,
+        target: TableDefinition,
         ctx: SqliteDiffRenderContext,
     ) {
-        if (ctx.direction == SqliteRenderDirection.DOWN) {
-            for (op in bucket) {
-                ctx.skip(
-                    op,
-                    "SQLite RebuildTable down-direction is deferred to D.5; the rebuild plan " +
-                        "from up cannot be inverted without inspecting the post-up state.",
-                    code = "SQLITE_REBUILD_DOWN_NOT_IMPLEMENTED",
-                )
-                ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
-            }
-            return
-        }
-        val mapping = computeColumnMapping(current, desired)
+        val mapping = computeColumnMapping(source, target)
         if (mapping.notNullBackfillBlocked.isNotEmpty()) {
             for (col in mapping.notNullBackfillBlocked) {
                 ctx.addDiagnostic(
@@ -90,13 +86,13 @@ internal class SqliteRebuildRenderer(
             for (op in bucket) ctx.markRendered(op)
             return
         }
-        emitRebuildSequence(table, bucket, desired, mapping, ctx)
+        emitRebuildSequence(table, bucket, target, mapping, ctx)
     }
 
     private fun emitRebuildSequence(
         table: String,
         bucket: List<DiffOperation>,
-        desired: TableDefinition,
+        target: TableDefinition,
         mapping: ColumnMapping,
         ctx: SqliteDiffRenderContext,
     ) {
@@ -105,7 +101,7 @@ internal class SqliteRebuildRenderer(
 
         ctx.emitRebuildStatement("PRAGMA foreign_keys = OFF;", opIds)
         ctx.emitRebuildStatement("BEGIN IMMEDIATE;", opIds)
-        ctx.emitRebuildStatement(buildCreateTempSql(tempName, desired), opIds)
+        ctx.emitRebuildStatement(buildCreateTempSql(tempName, target), opIds)
         ctx.emitRebuildStatement(
             buildInsertSelectSql(tempName, table, mapping),
             opIds,
@@ -115,7 +111,7 @@ internal class SqliteRebuildRenderer(
             "ALTER TABLE ${sql.quote(tempName)} RENAME TO ${sql.quote(table)};",
             opIds,
         )
-        for (idx in desired.indices) {
+        for (idx in target.indices) {
             ctx.emitRebuildStatement(sql.createIndexSql(table, idx), opIds)
         }
         ctx.emitRebuildStatement("PRAGMA foreign_key_check;", opIds)
@@ -127,15 +123,15 @@ internal class SqliteRebuildRenderer(
         ctx.markBucketDestructive(opIds)
     }
 
-    private fun buildCreateTempSql(tempName: String, desired: TableDefinition): String {
+    private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
         val lines = mutableListOf<String>()
-        for ((colName, col) in desired.columns.entries.sortedBy { it.key }) {
+        for ((colName, col) in target.columns.entries.sortedBy { it.key }) {
             lines += "    " + sql.columnLine(colName, col)
         }
-        if (desired.primaryKey.isNotEmpty()) {
-            lines += "    PRIMARY KEY (" + desired.primaryKey.joinToString(", ") { sql.quote(it) } + ")"
+        if (target.primaryKey.isNotEmpty()) {
+            lines += "    PRIMARY KEY (" + target.primaryKey.joinToString(", ") { sql.quote(it) } + ")"
         }
-        for (c in desired.constraints.sortedBy { it.name }) {
+        for (c in target.constraints.sortedBy { it.name }) {
             sql.constraintLine(c)?.let { lines += "    $it" }
         }
         return buildString {
@@ -152,19 +148,19 @@ internal class SqliteRebuildRenderer(
             "SELECT $selectExprs FROM ${sql.quote(originalTable)};"
     }
 
-    private fun computeColumnMapping(current: TableDefinition, desired: TableDefinition): ColumnMapping {
+    private fun computeColumnMapping(source: TableDefinition, target: TableDefinition): ColumnMapping {
         val entries = mutableListOf<ColumnMappingEntry>()
         val blocked = mutableListOf<String>()
-        for ((name, desiredCol) in desired.columns.entries.sortedBy { it.key }) {
-            val currentCol = current.columns[name]
+        for ((name, targetCol) in target.columns.entries.sortedBy { it.key }) {
+            val currentCol = source.columns[name]
             entries += when {
-                currentCol != null && currentCol.type == desiredCol.type ->
+                currentCol != null && currentCol.type == targetCol.type ->
                     ColumnMappingEntry(name, sql.quote(name))
                 currentCol != null ->
-                    ColumnMappingEntry(name, "CAST(${sql.quote(name)} AS ${sql.toSql(desiredCol.type)})")
-                desiredCol.default != null ->
-                    ColumnMappingEntry(name, defaultLiteral(desiredCol))
-                !desiredCol.required ->
+                    ColumnMappingEntry(name, "CAST(${sql.quote(name)} AS ${sql.toSql(targetCol.type)})")
+                targetCol.default != null ->
+                    ColumnMappingEntry(name, defaultLiteral(targetCol))
+                !targetCol.required ->
                     ColumnMappingEntry(name, "NULL")
                 else -> {
                     blocked += name
