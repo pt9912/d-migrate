@@ -32,6 +32,27 @@ private fun mockClient(status: HttpStatusCode, body: String): HttpClient {
     return HttpClient(engine)
 }
 
+/**
+ * Mock client that captures the Authorization header (if any) of the
+ * outgoing introspection request, for asserting RFC 6749 §2.3.1
+ * client-auth wiring.
+ */
+private class CapturingClient(status: HttpStatusCode, body: String) {
+    var authorization: String? = null
+        private set
+
+    val client: HttpClient = HttpClient(
+        MockEngine { request ->
+            authorization = request.headers["Authorization"]
+            respond(
+                content = ByteReadChannel(body),
+                status = status,
+                headers = headersOf("Content-Type", "application/json"),
+            )
+        },
+    )
+}
+
 private fun config() = McpServerConfig(
     authMode = AuthMode.JWT_INTROSPECTION,
     issuer = URI.create(ISSUER),
@@ -200,5 +221,52 @@ class IntrospectionAuthValidatorTest : FunSpec({
         val result = runBlocking { validator.validate("any-token") }
         result.shouldBeInstanceOf<BearerValidationResult.Valid>()
         result.principal.scopes shouldBe setOf("dmigrate:read")
+    }
+
+    // ── RFC 6749 §2.3.1 client_credentials Basic auth ──────────────
+
+    test("no clientId/secret omits the Authorization header") {
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER", "aud": "$AUDIENCE", "exp": $FAR_FUTURE}
+        """.trimIndent()
+        val capturing = CapturingClient(HttpStatusCode.OK, body)
+        val validator = IntrospectionAuthValidator(config(), capturing.client)
+        runBlocking { validator.validate("any-token") }
+        capturing.authorization shouldBe null
+    }
+
+    test("clientId+clientSecret sets Authorization: Basic <base64(urlencode(id):urlencode(secret))>") {
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER", "aud": "$AUDIENCE", "exp": $FAR_FUTURE}
+        """.trimIndent()
+        val capturing = CapturingClient(HttpStatusCode.OK, body)
+        val cfg = config().copy(
+            introspectionClientId = "my-mcp",
+            introspectionClientSecret = "s3cret",
+        )
+        val validator = IntrospectionAuthValidator(cfg, capturing.client)
+        runBlocking { validator.validate("any-token") }
+        // base64("my-mcp:s3cret") == "bXktbWNwOnMzY3JldA=="
+        capturing.authorization shouldBe "Basic bXktbWNwOnMzY3JldA=="
+    }
+
+    test("special characters in clientId/secret are URL-encoded before Basic encoding") {
+        val body = """
+            {"active": true, "sub": "u", "iss": "$ISSUER", "aud": "$AUDIENCE", "exp": $FAR_FUTURE}
+        """.trimIndent()
+        val capturing = CapturingClient(HttpStatusCode.OK, body)
+        // RFC 6749 §2.3.1 requires url-encoding the components first.
+        // URLEncoder.encode replaces space with `+` and percent-encodes
+        // `:`, `/`, `@` etc.
+        val cfg = config().copy(
+            introspectionClientId = "client@host",
+            introspectionClientSecret = "p:w/d",
+        )
+        val validator = IntrospectionAuthValidator(cfg, capturing.client)
+        runBlocking { validator.validate("any-token") }
+        // url-encoded "client@host" = "client%40host"
+        // url-encoded "p:w/d" = "p%3Aw%2Fd"
+        // joined "client%40host:p%3Aw%2Fd" base64 = "Y2xpZW50JTQwaG9zdDpwJTNBdyUyRmQ="
+        capturing.authorization shouldBe "Basic Y2xpZW50JTQwaG9zdDpwJTNBdyUyRmQ="
     }
 })

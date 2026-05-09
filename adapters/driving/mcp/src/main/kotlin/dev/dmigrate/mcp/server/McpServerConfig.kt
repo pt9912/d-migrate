@@ -24,6 +24,18 @@ data class McpServerConfig(
     val issuer: URI? = null,
     val jwksUrl: URI? = null,
     val introspectionUrl: URI? = null,
+    /**
+     * RFC 7662 / RFC 6749 §2.3.1 client authentication for the
+     * introspection endpoint. Both [introspectionClientId] and
+     * [introspectionClientSecret] must be set together — leaving
+     * either side null disables client auth (acceptable for
+     * loopback dev setups, never for production deployments
+     * authenticated via `client_credentials`). The pair is encoded
+     * as HTTP Basic in the `Authorization` header (per RFC 6749
+     * §2.3.1: each component URL-encoded before joining and Base64).
+     */
+    val introspectionClientId: String? = null,
+    val introspectionClientSecret: String? = null,
     val audience: String? = null,
     val algorithmAllowlist: Set<String> = DEFAULT_ALGORITHMS,
     val clockSkew: Duration = Duration.ofSeconds(60),
@@ -82,6 +94,9 @@ fun McpServerConfig.validate(): List<String> {
             if (issuer == null) errors += "authMode=JWT_INTROSPECTION requires issuer"
             if (audience == null) errors += "authMode=JWT_INTROSPECTION requires audience"
             if (introspectionUrl == null) errors += "authMode=JWT_INTROSPECTION requires introspectionUrl"
+            if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
+                errors += "introspectionClientId and introspectionClientSecret must both be set or both be null"
+            }
         }
     }
 

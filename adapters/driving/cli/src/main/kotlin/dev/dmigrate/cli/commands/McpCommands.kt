@@ -106,6 +106,18 @@ class McpServeCommand : CliktCommand(name = "serve") {
         help = "RFC 7662 introspection endpoint (required for jwt-introspection).",
     )
 
+    private val introspectionClientId by option(
+        "--introspection-client-id",
+        help = "OAuth client_id for RFC 7662 introspection-endpoint authentication. " +
+            "Must be set together with --introspection-client-secret.",
+    )
+
+    private val introspectionClientSecret by option(
+        "--introspection-client-secret",
+        help = "OAuth client_secret for RFC 7662 introspection-endpoint authentication. " +
+            "Must be set together with --introspection-client-id.",
+    )
+
     private val audience by option(
         "--audience",
         help = "Expected `aud` claim / OAuth Resource Indicator (required for jwt-* modes).",
@@ -173,6 +185,8 @@ class McpServeCommand : CliktCommand(name = "serve") {
             issuer = issuer,
             jwksUrl = jwksUrl,
             introspectionUrl = introspectionUrl,
+            introspectionClientId = introspectionClientId,
+            introspectionClientSecret = introspectionClientSecret,
             audience = audience,
             stdioTokenFile = stdioTokenFile,
             allowOrigin = allowOrigin,

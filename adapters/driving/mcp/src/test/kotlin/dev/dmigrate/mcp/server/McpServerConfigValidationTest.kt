@@ -127,6 +127,23 @@ class McpServerConfigValidationTest : FunSpec({
         validIntrospection().validate().shouldBeEmpty()
     }
 
+    test("JWT_INTROSPECTION with both clientId+clientSecret validates") {
+        validIntrospection().copy(
+            introspectionClientId = "id",
+            introspectionClientSecret = "secret",
+        ).validate().shouldBeEmpty()
+    }
+
+    test("JWT_INTROSPECTION with only clientId rejects") {
+        val errs = validIntrospection().copy(introspectionClientId = "id").validate()
+        errs.forAtLeastOne { it shouldContain "introspectionClientId" }
+    }
+
+    test("JWT_INTROSPECTION with only clientSecret rejects") {
+        val errs = validIntrospection().copy(introspectionClientSecret = "secret").validate()
+        errs.forAtLeastOne { it shouldContain "introspectionClientSecret" }
+    }
+
     test("allowedOrigins with literal '*' rejects (§12.6)") {
         val errs = validJwks().copy(
             allowedOrigins = setOf("*"),
