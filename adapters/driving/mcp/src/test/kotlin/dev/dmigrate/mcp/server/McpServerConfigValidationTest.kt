@@ -144,6 +144,26 @@ class McpServerConfigValidationTest : FunSpec({
         errs.forAtLeastOne { it shouldContain "introspectionClientSecret" }
     }
 
+    test("JWT_INTROSPECTION on non-loopback bind without client credentials rejects (LN-025/LN-028)") {
+        val errs = validIntrospection().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://mcp.example"),
+            publicBaseUrl = URI.create("https://mcp.example/"),
+        ).validate()
+        errs.forAtLeastOne { it shouldContain "introspectionClientId" }
+        errs.forAtLeastOne { it shouldContain "RFC 6749 §2.3.1" }
+    }
+
+    test("JWT_INTROSPECTION on non-loopback bind with client credentials validates") {
+        validIntrospection().copy(
+            bindAddress = "0.0.0.0",
+            allowedOrigins = setOf("https://mcp.example"),
+            publicBaseUrl = URI.create("https://mcp.example/"),
+            introspectionClientId = "id",
+            introspectionClientSecret = "secret",
+        ).validate().shouldBeEmpty()
+    }
+
     test("allowedOrigins with literal '*' rejects (§12.6)") {
         val errs = validJwks().copy(
             allowedOrigins = setOf("*"),

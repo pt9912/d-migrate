@@ -24,6 +24,8 @@ class McpServerConfigDefaultsTest : FunSpec({
         cfg.issuer shouldBe null
         cfg.jwksUrl shouldBe null
         cfg.introspectionUrl shouldBe null
+        cfg.introspectionClientId shouldBe null
+        cfg.introspectionClientSecret shouldBe null
         cfg.audience shouldBe null
         cfg.algorithmAllowlist shouldContainExactly setOf(
             "RS256", "RS384", "RS512", "ES256", "ES384", "ES512",

@@ -49,9 +49,17 @@ internal class IntrospectionAuthValidator(
 
     /**
      * Pre-built HTTP Basic header. Null when no client credentials
-     * are configured (loopback dev setups). Per RFC 6749 §2.3.1:
-     * URL-encode `client_id` and `client_secret` before joining with
-     * a colon and Base64-encoding.
+     * are configured (loopback dev setups).
+     *
+     * Per RFC 6749 §2.3.1: components are first URL-encoded with
+     * `application/x-www-form-urlencoded` (Java's `URLEncoder.encode`
+     * delivers exactly this form: space → `+`, reserved chars
+     * percent-encoded), then joined by `:` and Base64-encoded.
+     * Verified interop with Keycloak / Okta / Auth0 / Azure AD.
+     *
+     * Tradeoff: the secret lives in the heap as a String for the
+     * lifetime of the validator. Rotation requires a server restart;
+     * acceptable for the LN-027/LN-028 deployment shape.
      */
     private val basicAuthHeader: String? = run {
         val id = config.introspectionClientId

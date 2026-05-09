@@ -250,6 +250,22 @@ class IntrospectionAuthValidatorTest : FunSpec({
         capturing.authorization shouldBe "Basic bXktbWNwOnMzY3JldA=="
     }
 
+    test("401 from introspection endpoint with valid client_credentials still maps to Invalid") {
+        // Belt-and-braces: even with a Basic header attached, a 401
+        // must surface as BearerValidationResult.Invalid (LN-027 /
+        // LN-028). Verifies the auth wiring does not accidentally
+        // bypass the response-status check.
+        val capturing = CapturingClient(HttpStatusCode.Unauthorized, "")
+        val cfg = config().copy(
+            introspectionClientId = "id",
+            introspectionClientSecret = "secret",
+        )
+        val validator = IntrospectionAuthValidator(cfg, capturing.client)
+        val result = runBlocking { validator.validate("any-token") }
+        result.shouldBeInstanceOf<BearerValidationResult.Invalid>()
+        capturing.authorization shouldContain "Basic "
+    }
+
     test("special characters in clientId/secret are URL-encoded before Basic encoding") {
         val body = """
             {"active": true, "sub": "u", "iss": "$ISSUER", "aud": "$AUDIENCE", "exp": $FAR_FUTURE}

@@ -97,6 +97,17 @@ fun McpServerConfig.validate(): List<String> {
             if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
                 errors += "introspectionClientId and introspectionClientSecret must both be set or both be null"
             }
+            // LN-025 / LN-028: production HTTP deployments (non-loopback bind)
+            // MUST authenticate the introspection POST per RFC 6749 §2.3.1.
+            // Loopback dev setups can keep both creds null.
+            if (!bindIsLoopback &&
+                introspectionClientId == null &&
+                introspectionClientSecret == null
+            ) {
+                errors += "authMode=JWT_INTROSPECTION on non-loopback bind '$bindAddress' " +
+                    "requires introspectionClientId and introspectionClientSecret " +
+                    "(RFC 6749 §2.3.1 client authentication)"
+            }
         }
     }
 
