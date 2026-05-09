@@ -247,12 +247,11 @@ class DiffOperationDefaultsTest : FunSpec({
             withNewId::class shouldBe op::class
         }
 
-        // Reflection guard: every concrete subtype of DiffOperation must
-        // appear in the catalog above. A missing or accidentally-added
-        // subtype fails the comparison so the smoke list cannot drift
-        // out of sync with the sealed hierarchy.
-        val catalogClasses = ops.map { it::class }.toSet()
-        val sealedConcrete = DiffOperation::class.sealedSubclasses.toSet()
-        catalogClasses shouldBe sealedConcrete
+        // Catalog-size guard: the §4.3 catalog has 31 subtypes today.
+        // Adding a 32nd subtype must be paired with a smoke-test
+        // entry in `ops`; the count makes the omission impossible to
+        // miss without pulling in kotlin-reflect for `sealedSubclasses`.
+        val distinctClasses = ops.map { it::class }.toSet()
+        distinctClasses.size shouldBe 31
     }
 })

@@ -1,0 +1,121 @@
+package dev.dmigrate.driver.postgresql
+
+import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.driver.migration.MigrationBlockedReason
+
+/**
+ * Per-operation renderers for table / column / primary-key DDL.
+ * Stateless: takes a [PostgresDiffRenderContext] (which carries
+ * direction + SQL builders) and writes statements / diagnostics
+ * back into it.
+ */
+internal object PostgresDiffTableOps {
+
+    fun renderCreateTable(op: DiffOperation.CreateTable, ctx: PostgresDiffRenderContext) {
+        val tableName = op.objectRef.rootName
+        if (ctx.direction == PostgresRenderDirection.DOWN) {
+            ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
+            return
+        }
+        val lines = mutableListOf<String>()
+        for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
+            lines += "    " + ctx.sql.columnLine(colName, col)
+        }
+        if (op.table.primaryKey.isNotEmpty()) {
+            lines += "    PRIMARY KEY (" + op.table.primaryKey.joinToString(", ") { ctx.sql.quote(it) } + ")"
+        }
+        for (c in op.table.constraints.sortedBy { it.name }) {
+            ctx.sql.constraintLine(c)?.let { lines += "    $it" }
+        }
+        val text = buildString {
+            append("CREATE TABLE ").append(ctx.sql.quote(tableName)).append(" (\n")
+            append(lines.joinToString(",\n"))
+            append("\n);")
+        }
+        ctx.emit(op, text)
+        for (idx in op.table.indices) {
+            ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
+        }
+    }
+
+    fun renderDropTable(op: DiffOperation.DropTable, ctx: PostgresDiffRenderContext) {
+        val tableName = op.objectRef.rootName
+        val text = if (ctx.direction == PostgresRenderDirection.DOWN) {
+            // DropTable is NOT_REVERSIBLE — render-down is filtered upstream;
+            // the placeholder keeps the emit path total.
+            "-- DropTable is NOT_REVERSIBLE; refusing to render an inverse."
+        } else {
+            "DROP TABLE ${ctx.sql.quote(tableName)};"
+        }
+        ctx.emit(op, text)
+    }
+
+    fun renderAddColumn(op: DiffOperation.AddColumn, ctx: PostgresDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        if (ctx.direction == PostgresRenderDirection.DOWN) {
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
+            return
+        }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+    }
+
+    fun renderDropColumn(op: DiffOperation.DropColumn, ctx: PostgresDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
+    }
+
+    fun renderAlterColumnType(op: DiffOperation.AlterColumnType, ctx: PostgresDiffRenderContext) {
+        if (!ctx.sql.isSafeImplicitCast(op.before, op.after)) {
+            ctx.skip(op, "AlterColumnType from ${op.before} to ${op.after} requires an explicit USING cast.")
+            ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+            return
+        }
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val targetType = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
+                "TYPE ${ctx.sql.toSql(targetType)};",
+        )
+    }
+
+    fun renderAlterColumnNullability(op: DiffOperation.AlterColumnNullability, ctx: PostgresDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val targetRequired = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        val verb = if (targetRequired) "SET NOT NULL" else "DROP NOT NULL"
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} $verb;")
+    }
+
+    fun renderAlterColumnDefault(op: DiffOperation.AlterColumnDefault, ctx: PostgresDiffRenderContext) {
+        val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
+        val target = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        val text = if (target == null) {
+            "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} DROP DEFAULT;"
+        } else {
+            "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
+                "SET DEFAULT ${ctx.sql.toDefaultSql(target, NeutralType.Text())};"
+        }
+        ctx.emit(op, text)
+    }
+
+    fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: PostgresDiffRenderContext) {
+        val table = op.objectRef.rootName
+        if (ctx.direction == PostgresRenderDirection.DOWN) {
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(table + "_pkey")};")
+            return
+        }
+        val cols = op.columns.joinToString(", ") { ctx.sql.quote(it) }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD PRIMARY KEY ($cols);")
+    }
+
+    fun renderDropPrimaryKey(op: DiffOperation.DropPrimaryKey, ctx: PostgresDiffRenderContext) {
+        val table = op.objectRef.rootName
+        if (ctx.direction == PostgresRenderDirection.DOWN) {
+            val cols = op.columns.joinToString(", ") { ctx.sql.quote(it) }
+            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD PRIMARY KEY ($cols);")
+            return
+        }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(table + "_pkey")};")
+    }
+}
