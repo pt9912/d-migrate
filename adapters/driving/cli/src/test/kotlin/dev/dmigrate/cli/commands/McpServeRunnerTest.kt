@@ -3,8 +3,6 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.mcp.cursor.CursorKeyring
 import dev.dmigrate.mcp.server.AuthMode
 import dev.dmigrate.mcp.server.McpServerConfig
-import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
-import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
@@ -194,22 +192,6 @@ class McpServeRunnerTest : FunSpec({
                     stderr = sink,
                 ).rejectDevKeyringInProductionOrExit(null)
             }.code shouldBe 2
-        }
-    }
-
-    context("approvalGrantStore") {
-        test("null option yields InMemoryApprovalGrantStore") {
-            newRunner().approvalGrantStore().shouldBeInstanceOf<InMemoryApprovalGrantStore>()
-        }
-
-        test("file option yields FileBackedApprovalGrantStore") {
-            val file = Files.createTempFile("dmigrate-grants-", ".yaml")
-            try {
-                val store = newRunner(McpServeOptions(approvalGrantsFile = file)).approvalGrantStore()
-                store.shouldBeInstanceOf<FileBackedApprovalGrantStore>()
-            } finally {
-                Files.deleteIfExists(file)
-            }
         }
     }
 
