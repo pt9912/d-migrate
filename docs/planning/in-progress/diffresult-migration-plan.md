@@ -1849,140 +1849,140 @@ abgedeckt:
 
 Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 
-- `SchemaDiff` bleibt als Compare-Kernvertrag erhalten.
-- Der neue `DiffResult` enthaelt deterministisch sortierte Operationen.
-- Jede Operation hat Phase, ID, qualifizierte `DiffObjectRef`,
+- [x] `SchemaDiff` bleibt als Compare-Kernvertrag erhalten.
+- [x] Der neue `DiffResult` enthaelt deterministisch sortierte Operationen.
+- [x] Jede Operation hat Phase, ID, qualifizierte `DiffObjectRef`,
   richtungsabhaengige Up-/Down-Risiken, Reversibilitaet und den fuer
   Rendering/Rollback notwendigen Payload.
-- Dependency-Sortierung gewinnt gegen reine Phasenreihenfolge, insbesondere bei
+- [x] Dependency-Sortierung gewinnt gegen reine Phasenreihenfolge, insbesondere bei
   Drop-Operationen fuer Views, Trigger, Constraints, Indizes, Spalten und
   Tabellen.
-- Down-DDL wird in inverser, dependency-sicherer Reihenfolge gerendert; abhaengige
+- [x] Down-DDL wird in inverser, dependency-sicherer Reihenfolge gerendert; abhaengige
   Down-Operationen laufen vor ihren Voraussetzungen.
-- Reverse-generierte Schema-Metadaten werden vor Compare/Planning normalisiert,
+- [x] Reverse-generierte Schema-Metadaten werden vor Compare/Planning normalisiert,
   sodass synthetische `name`-/`version`-Werte keine Migrationsoperationen
   ausloesen.
-- View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
+- [x] View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
-- PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
+- [ ] PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
   die View-Aenderung kompatibel ist. Muss eine View wegen abhaengiger Tabellen-/
   Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
   entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
   Reihenfolge.
-- PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
+- [x] PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
   Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
   planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
   blind gerendert.
-- PostgreSQL rendert `AlterColumnType` im ersten Slice nur fuer getestete
+- [x] PostgreSQL rendert `AlterColumnType` im ersten Slice nur fuer getestete
   implizite Casts ohne `USING`; alle anderen Typaenderungen werden als
   `MANUAL_REQUIRED` oder `DIALECT_UNSUPPORTED_OPERATION` blockiert.
-- MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
+- [ ] MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
   `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
   Views werden ohne explizite column-level Dependencies blockiert.
-- MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
+- [ ] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
   `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
   Projektion und blockiert betroffene View-Replacements oder
   spaltenveraendernde Operationen mit Diagnose.
-- `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
+- [x] `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
   blockieren. Die Aenderung darf weder still verschwinden noch darf fuer dieselbe
   Tabelle SQL aus einem unvollstaendigen Diff entstehen.
-- SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
+- [x] SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
   deterministisch beschrieben und getestet.
-- SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
+- [ ] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
   Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
   sonst blockiert die Operation als `MANUAL_REQUIRED`.
-- SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
+- [x] SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
   blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
   Down-Vertrag.
-- Destruktive Up-Operationen werden ohne Freigabe nicht als ausfuehrbares
+- [x] Destruktive Up-Operationen werden ohne Freigabe nicht als ausfuehrbares
   Up-SQL gerendert oder ausgefuehrt; `--plan-only` darf weiterhin einen
   Risiko-Report erzeugen.
-- Destruktive Down-Operationen aus einem reversiblen Up-Plan blockieren die
+- [x] Destruktive Down-Operationen aus einem reversiblen Up-Plan blockieren die
   Down-SQL-Erzeugung nicht, werden aber im Metadatenblock markiert und bei
   `schema rollback --execute` nur mit `--allow-destructive` ausgefuehrt.
-- `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
+- [x] `--generate-rollback` erzeugt keine falschen Down-Schritte fuer
   `NOT_REVERSIBLE` oder `MANUAL_REQUIRED`.
-- Operation-IDs sind deterministisch aus fachlicher Semantik abgeleitet und in
+- [x] Operation-IDs sind deterministisch aus fachlicher Semantik abgeleitet und in
   Up-, Down- und Report-Artefakten referenzierbar.
-- Datei-zu-Datei-Planung ohne Live-Datenbank erzeugt Plan, Up-SQL, optional
+- [x] Datei-zu-Datei-Planung ohne Live-Datenbank erzeugt Plan, Up-SQL, optional
   Down-SQL und optional einen Report, wenn `--dialect` gesetzt ist.
-- Datei-zu-Datei mit `--execute` endet mit Exit `2`.
-- `schema migrate --execute --dry-run` endet mit Exit `2`.
-- `schema rollback --execute --dry-run` endet mit Exit `2`.
-- Ein renderbarer Dry-Run ohne `--output` schreibt Up-SQL nach `stdout`; mit
+- [x] Datei-zu-Datei mit `--execute` endet mit Exit `2`.
+- [x] `schema migrate --execute --dry-run` endet mit Exit `2`.
+- [x] `schema rollback --execute --dry-run` endet mit Exit `2`.
+- [x] Ein renderbarer Dry-Run ohne `--output` schreibt Up-SQL nach `stdout`; mit
   `--output` schreibt er Up-SQL nur in diese Datei.
-- `--report` erzeugt nur dann ein Report-Artefakt, wenn es explizit gesetzt
+- [x] `--report` erzeugt nur dann ein Report-Artefakt, wenn es explizit gesetzt
   ist; es gibt keinen impliziten Report-Sidecar.
-- `--plan-only --generate-rollback` erzeugt kein Down-SQL-Artefakt, berichtet
+- [x] `--plan-only --generate-rollback` erzeugt kein Down-SQL-Artefakt, berichtet
   aber Down-Renderbarkeit, Rollback-Risiken und Rollback-Blocker.
-- `--plan-only --generate-rollback --rollback-output ...` endet mit Exit `2`.
-- `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
-- `schema migrate --execute` verlangt ein explizites `--report`; ohne Report-
+- [x] `--plan-only --generate-rollback --rollback-output ...` endet mit Exit `2`.
+- [x] `schema migrate --execute` wendet Up-DDL gegen die Ziel-Datenbank an.
+- [x] `schema migrate --execute` verlangt ein explizites `--report`; ohne Report-
   Pfad endet der Lauf mit Exit `2`.
-- Schlaegt `schema migrate --execute` nach Beginn der DDL-Ausfuehrung fehl,
+- [x] Schlaegt `schema migrate --execute` nach Beginn der DDL-Ausfuehrung fehl,
   endet der Lauf mit Exit `5`, berichtet den Ausfuehrungszustand strukturiert
   und unterscheidet beweisbar zurueckgerollt von moeglicherweise partiell
   angewendet.
-- Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
+- [x] Ein durch fehlendes `--allow-destructive` blockierter Dry-Run ueberschreibt
   kein `--output`-Artefakt mit teilweise gerendertem SQL.
-- Up-SQL-, Down-SQL- und Report-Dateien werden erst nach vollstaendigem
+- [x] Up-SQL-, Down-SQL- und Report-Dateien werden erst nach vollstaendigem
   Rendering und erfolgreicher Blocker-Pruefung atomar finalisiert; bestehende
   Artefakte bleiben bei Fehlern unveraendert.
-- `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
+- [x] `schema migrate --generate-rollback --rollback-output ...` erzeugt ein zum
   Up-Plan passendes Down-SQL-Artefakt mit maschinenlesbarem
   `d-migrate`-Metadatenblock.
-- Der Down-SQL-Metadatenblock hat stabile Begrenzungskommentare, enthaelt ein
+- [x] Der Down-SQL-Metadatenblock hat stabile Begrenzungskommentare, enthaelt ein
   kanonisches JSON-Objekt mit Pflichtfeldern und wird von `schema rollback`
   strikt geparst.
-- Der Down-SQL-Metadatenblock enthaelt `artifactHashAlgorithm` und
+- [x] Der Down-SQL-Metadatenblock enthaelt `artifactHashAlgorithm` und
   `artifactHash`; der Rollback-Runner berechnet den Hash ueber kanonischen
   Header ohne `artifactHash` plus SQL-Body in Preview-, Validierungs- und
   Execute-Pfaden neu und lehnt veraenderte Artefakte ohne DB-Zugriff ab.
-- Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
+- [x] Der Metadatenblock nutzt dieselbe kanonische Fingerprint-Projektion wie
   Nach-Compare und Driftpruefung und enthaelt die verwendete
   Fingerprint-Algorithmus-ID.
-- Der Metadatenblock enthaelt `recovery` und `postUpVerified`; Recovery-
+- [x] Der Metadatenblock enthaelt `recovery` und `postUpVerified`; Recovery-
   Artefakte enthalten zusaetzlich nicht leere `allowedPostUpFingerprints`.
-- `schema migrate --generate-rollback` ohne `--rollback-output` endet in
+- [x] `schema migrate --generate-rollback` ohne `--rollback-output` endet in
   SQL-rendernden Laeufen mit Exit `2`; ausgenommen ist
   `--plan-only --generate-rollback`, weil dort kein Down-SQL-Artefakt entsteht.
-- `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
+- [ ] `schema migrate --execute --generate-rollback --rollback-output ...` schreibt
   das finale Down-SQL-Artefakt erst nach erfolgreichem Up und Nach-Compare; der
   Metadatenblock enthaelt den beobachteten Post-Up-Fingerprint.
-- Schlaegt `schema migrate --execute --generate-rollback` nach erfolgreichem Up,
+- [ ] Schlaegt `schema migrate --execute --generate-rollback` nach erfolgreichem Up,
   aber vor finalisiertem Rollback-Artefakt fehl, wird der Side Effect
   strukturiert ausgewiesen (`upExecuted = true`, `rollbackFinalized = false`).
   Ein bestehendes `--rollback-output` bleibt unveraendert. Ein markiertes
   Recovery-Rollback-Artefakt wird nur geschrieben, wenn kein beobachteter
   Post-Up-Fingerprint dem Soll-Fingerprint widerspricht.
-- `schema rollback --source rollback.sql --target ... --execute` wendet
+- [x] `schema rollback --source rollback.sql --target ... --execute` wendet
   nicht destruktives Down-SQL gegen die Ziel-Datenbank an.
-- `schema rollback --source rollback.sql --target ... --execute` prueft vor der
+- [x] `schema rollback --source rollback.sql --target ... --execute` prueft vor der
   Ausfuehrung, dass der aktuelle Zielzustand zum im Metadatenblock erwarteten
   Post-Up-/Soll-Fingerprint passt, und bricht bei Drift ab.
-- `schema rollback --source rollback.sql --target ... --execute` prueft vor der
+- [x] `schema rollback --source rollback.sql --target ... --execute` prueft vor der
   Ausfuehrung, dass der Ziel-Dialekt zum im Metadatenblock gespeicherten
   Dialekt passt, und bricht bei Abweichung mit `TARGET_DIALECT_MISMATCH` ab.
-- `schema rollback --source rollback.sql --target ... --execute` mit
+- [x] `schema rollback --source rollback.sql --target ... --execute` mit
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
-- Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
+- [ ] Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
   Soll-Schema.
-- Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
+- [ ] Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
   das Ausgangsschema.
-- PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
+- [ ] PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
   Up-Smoke.
-- Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
+- [ ] Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
   SQLite-Smoke enthaelt mindestens einen echten Table-Rebuild.
-- `schema compare`-Output bleibt rueckwaertskompatibel und serialisiert nicht
+- [x] `schema compare`-Output bleibt rueckwaertskompatibel und serialisiert nicht
   ploetzlich das interne `DiffResult`.
-- 0.7.0-Tool-Exports bleiben full-state und unveraendert.
+- [x] 0.7.0-Tool-Exports bleiben full-state und unveraendert.
 
 ---
 
