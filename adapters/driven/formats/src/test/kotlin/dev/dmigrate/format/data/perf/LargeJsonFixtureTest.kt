@@ -5,7 +5,7 @@ import io.kotest.matchers.longs.shouldBeGreaterThan
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import java.nio.file.Files
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import kotlin.io.path.absolutePathString
 
 /**
@@ -147,9 +147,7 @@ class LargeJsonFixtureTest : FunSpec({
 
     test("R7: generator source hash is derived from the actual source file content") {
         val sourceBytes = Files.readAllBytes(LargeJsonFixture.currentGeneratorSourcePath())
-        val expected = MessageDigest.getInstance("SHA-256")
-            .digest(sourceBytes)
-            .joinToString("") { "%02x".format(it) }
+        val expected = sha256Hex(sourceBytes)
         LargeJsonFixture.currentGeneratorSourceHash() shouldBe expected
     }
 

@@ -1,9 +1,30 @@
 # Refactoring: SHA-256 / Hex-Encoding konsolidieren
 
-Status: offen
+Status: Done (2026-05-09)
 Ursprung: Code-Review zu AP 6.3 (0.9.6 Phase A), siehe Reuse-Findung #4.
-Hinweis: Datei wurde als `.md` angelegt — die anderen Plan-/Refactoring-Docs
-in `docs/` nutzen ebenfalls Markdown.
+
+## Outcome (2026-05-09)
+
+Zentrale `ByteArray.toHex()`- und `sha256Hex(...)`-Funktionen liegen
+jetzt in `hexagon/core/src/main/kotlin/dev/dmigrate/core/util/HexEncoding.kt`.
+Alle Fundstellen sind migriert — sowohl die im urspruenglichen Plan
+gelisteten elf, als auch weitere Sites, die seit der Plan-Erstellung
+im `mcp`-Modul dazugekommen sind (acht zusaetzliche Handler/Sinks).
+Aufgeloeste lokale Helper:
+
+- 2x `internal fun ByteArray.toHex` (StreamingHashWriter,
+  ApprovalTokenFingerprint vor Refactor)
+- ~9x lokale `private fun sha256Hex(bytes: ByteArray)` (PayloadFingerprintService,
+  DefaultPromptHygieneService, NoOpAiProvider,
+  InMemoryArtifactContentStore, InMemoryUploadSegmentStore,
+  ArtifactSink, ArtifactChunkGetHandler companion, ArtifactUploadHandler,
+  ProcedureTransformPlanHandler/ExecuteHandler, TestdataPlanHandler/ExecuteHandler)
+- 1x `private fun hexOf(bytes: ByteArray)` (StreamingFinalizer)
+
+Modul-isolierter Coverage-Gate (`make docker-coverage-modules`)
+bleibt fuer alle ueberhaupt geloesten Module ueber 90%.
+`MysqlSequenceNaming.hash10` behaelt das `take(HASH_LENGTH = 10)`-
+Suffix wie im Plan vorgesehen.
 
 ## Problem
 

@@ -36,6 +36,8 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import dev.dmigrate.core.util.sha256Hex
+import dev.dmigrate.core.util.toHex
 
 /**
  * LF-010 / LF-013 / LN-009 / LN-011: drives the single-writer claim → streaming-assembly →
@@ -567,7 +569,7 @@ internal class StreamingFinalizer(
                 written = streamSegmentInto(spool.output, digest, written, cap, session, segment, finalSegmentBytes)
             }
             verifyAssemblyTotals(session, written, digest)
-            return spool.publish(written, hexOf(digest.digest()))
+            return spool.publish(written, digest.digest().toHex())
         } catch (failure: Throwable) {
             spool.close()
             throw failure
@@ -612,7 +614,7 @@ internal class StreamingFinalizer(
     private fun verifyAssemblyTotals(session: UploadSession, written: Long, digest: MessageDigest) {
         // We need the digest output for the size check too — clone
         // to avoid double-finalising the MessageDigest.
-        val totalSha = hexOf(digest.clone().let { (it as MessageDigest).digest() })
+        val totalSha = digest.clone().let { (it as MessageDigest).digest() }.toHex()
         if (written != session.sizeBytes) {
             throw ValidationErrorException(
                 listOf(
@@ -667,17 +669,13 @@ internal class StreamingFinalizer(
         session: UploadSession,
         payloadSha: String,
         format: String,
-    ): String = "art-" + hexOf(
-        MessageDigest.getInstance("SHA-256").digest(idMaterial(session, payloadSha, format)),
-    ).take(DETERMINISTIC_ID_BYTES)
+    ): String = "art-" + sha256Hex(idMaterial(session, payloadSha, format)).take(DETERMINISTIC_ID_BYTES)
 
     private fun deterministicSchemaId(
         session: UploadSession,
         payloadSha: String,
         format: String,
-    ): String = "sch-" + hexOf(
-        MessageDigest.getInstance("SHA-256").digest(idMaterial(session, payloadSha, format)),
-    ).take(DETERMINISTIC_ID_BYTES)
+    ): String = "sch-" + sha256Hex(idMaterial(session, payloadSha, format)).take(DETERMINISTIC_ID_BYTES)
 
     private fun idMaterial(session: UploadSession, payloadSha: String, format: String): ByteArray =
         "${session.tenantId.value}|${session.uploadSessionId}|$payloadSha|$format".toByteArray(Charsets.UTF_8)
@@ -703,9 +701,6 @@ internal class StreamingFinalizer(
         is ValidationErrorException -> failure.message?.take(SANITIZED_MESSAGE_MAX_CHARS)
         else -> null
     }
-
-    private fun hexOf(bytes: ByteArray): String =
-        bytes.joinToString("") { "%02x".format(it) }
 
     private companion object {
         const val BUFFER_BYTES: Int = 64 * 1024

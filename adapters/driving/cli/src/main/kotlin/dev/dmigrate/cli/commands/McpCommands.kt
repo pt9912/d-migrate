@@ -14,6 +14,7 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.long
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.DMigrate
+import dev.dmigrate.core.util.toHex
 import dev.dmigrate.mcp.registry.FileBackedApprovalGrantStore
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
@@ -304,7 +305,7 @@ class McpApprovalGrantIssueCommand : CliktCommand(name = "issue") {
     private fun generatedToken(): String {
         val bytes = ByteArray(32)
         SECURE_RANDOM.nextBytes(bytes)
-        return "appr_" + bytes.joinToString("") { "%02x".format(it) }
+        return "appr_" + bytes.toHex()
     }
 
     private companion object {

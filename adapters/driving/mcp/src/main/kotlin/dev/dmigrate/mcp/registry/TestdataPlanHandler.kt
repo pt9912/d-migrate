@@ -49,9 +49,9 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
+import dev.dmigrate.core.util.sha256Hex
 
 /**
  * LF-017 / LF-024 / LN-030 / LN-031 — Handler für `testdata_plan`.
@@ -700,9 +700,6 @@ internal class TestdataPlanHandler(
 
     private fun escapeJson(text: String): String =
         text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     // ---- Parsed args --------------------------------------------------
 

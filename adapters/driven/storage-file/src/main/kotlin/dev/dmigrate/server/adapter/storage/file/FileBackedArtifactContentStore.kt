@@ -1,5 +1,6 @@
 package dev.dmigrate.server.adapter.storage.file
 
+import dev.dmigrate.core.util.sha256Hex
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.IOException
@@ -10,7 +11,6 @@ import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
-import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -132,10 +132,8 @@ class FileBackedArtifactContentStore(private val root: Path) : ArtifactContentSt
     private fun metaFor(finalBin: Path, artifactId: String): Path =
         finalBin.resolveSibling("$artifactId${FileLayout.META}")
 
-    private fun shardOf(artifactId: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(artifactId.toByteArray(Charsets.UTF_8))
-        return digest.toHex().substring(0, 2)
-    }
+    private fun shardOf(artifactId: String): String =
+        sha256Hex(artifactId).substring(0, 2)
 
     companion object {
         /**

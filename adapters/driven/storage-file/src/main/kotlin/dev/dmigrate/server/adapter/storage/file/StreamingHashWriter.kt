@@ -5,6 +5,7 @@ import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import dev.dmigrate.core.util.toHex
 import java.security.MessageDigest
 
 internal data class HashedWrite(val sizeBytes: Long, val sha256: String)
@@ -40,13 +41,3 @@ internal object StreamingHashWriter {
     const val BUFFER_SIZE = 64 * 1024
 }
 
-internal fun ByteArray.toHex(): String {
-    val sb = StringBuilder(size * 2)
-    for (b in this) {
-        sb.append(HEX_CHARS[(b.toInt() ushr 4) and 0xF])
-        sb.append(HEX_CHARS[b.toInt() and 0xF])
-    }
-    return sb.toString()
-}
-
-private val HEX_CHARS = "0123456789abcdef".toCharArray()

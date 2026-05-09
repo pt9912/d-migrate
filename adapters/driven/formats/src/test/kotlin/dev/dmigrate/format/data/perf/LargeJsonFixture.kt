@@ -4,6 +4,8 @@ import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import dev.dmigrate.core.util.sha256Hex
+import dev.dmigrate.core.util.toHex
 import java.security.MessageDigest
 import kotlin.io.path.absolutePathString
 
@@ -71,7 +73,7 @@ object LargeJsonFixture {
             val md = MessageDigest.getInstance("SHA-256")
             md.update("rows=$rows|seed=$seed|schema=$SCHEMA_VERSION|".toByteArray())
             md.update(currentGeneratorSourceHash().toByteArray())
-            return md.digest().joinToString("") { "%02x".format(it) }
+            return md.digest().toHex()
         }
     }
 
@@ -205,11 +207,8 @@ object LargeJsonFixture {
                     "Tried: ${sourcePathCandidates.joinToString()}"
             )
 
-    internal fun currentGeneratorSourceHash(): String {
-        val bytes = Files.readAllBytes(currentGeneratorSourcePath())
-        val md = MessageDigest.getInstance("SHA-256")
-        return md.digest(bytes).joinToString("") { "%02x".format(it) }
-    }
+    internal fun currentGeneratorSourceHash(): String =
+        sha256Hex(Files.readAllBytes(currentGeneratorSourcePath()))
 
     private fun nextSeed(s: Long): Long {
         // Tiny LCG — deterministic, no allocation.

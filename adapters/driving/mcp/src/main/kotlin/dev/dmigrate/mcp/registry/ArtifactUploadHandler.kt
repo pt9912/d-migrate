@@ -38,7 +38,7 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -774,9 +774,5 @@ internal class ArtifactUploadHandler(
         private val SCOPE_READONLY_ACCEPTED: Set<String> =
             setOf("dmigrate:read", "dmigrate:artifact:upload")
 
-        private fun sha256Hex(bytes: ByteArray): String {
-            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-            return digest.joinToString("") { "%02x".format(it) }
-        }
     }
 }

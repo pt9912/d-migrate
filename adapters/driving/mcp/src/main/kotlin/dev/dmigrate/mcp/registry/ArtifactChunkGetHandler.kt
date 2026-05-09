@@ -13,7 +13,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.util.Base64
 
 /**
@@ -252,11 +252,6 @@ internal class ArtifactChunkGetHandler(
         fun isTextContentType(contentType: String): Boolean {
             val ct = contentType.substringBefore(";").trim().lowercase()
             return ct.startsWith("text/") || ct in TEXT_APPLICATION_TYPES
-        }
-
-        fun sha256Hex(bytes: ByteArray): String {
-            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-            return digest.joinToString("") { "%02x".format(it) }
         }
 
         fun chunkUri(tenantId: String, artifactId: String, chunkId: String): String =

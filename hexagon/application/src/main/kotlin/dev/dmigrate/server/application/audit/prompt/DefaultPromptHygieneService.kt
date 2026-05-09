@@ -1,8 +1,8 @@
 package dev.dmigrate.server.application.audit.prompt
 
+import dev.dmigrate.core.util.sha256Hex
 import dev.dmigrate.driver.connection.ConnectionSecretMasker
 import dev.dmigrate.server.core.resource.ServerResourceUri
-import java.security.MessageDigest
 
 /**
  * LF-017 / LF-024 / LN-030 / LN-031— pattern-basierter Default-Hygiene-
@@ -185,11 +185,6 @@ class DefaultPromptHygieneService : PromptHygieneService {
 
     private fun normalize(text: String): String =
         text.replace("\r\n", "\n").replace('\r', '\n').trim()
-
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
 
     private companion object {
         // Sub-Pattern aus ConnectionSecretMasker — wir nutzen sie

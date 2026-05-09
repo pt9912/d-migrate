@@ -1,6 +1,6 @@
 package dev.dmigrate.server.application.ai
 
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 
 /**
  * LF-017 / LF-024 / LN-030 / LN-031— deterministischer Default-Provider.
@@ -79,11 +79,6 @@ class NoOpAiProvider(
             append(":prompt=").append(request.promptFingerprint.take(SHORT_FP_LENGTH))
             append(":payload=").append(request.payloadFingerprint.take(SHORT_FP_LENGTH))
         }
-
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
 
     companion object {
         const val DEFAULT_PROVIDER_NAME: String = "noop"

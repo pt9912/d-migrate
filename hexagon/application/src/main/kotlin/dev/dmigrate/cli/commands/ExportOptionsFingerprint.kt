@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.commands
 
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 
 /**
  * LF-013 / LN-006 / LN-012: deterministischer SHA-256-Fingerprint
@@ -40,14 +40,7 @@ object ExportOptionsFingerprint {
      *
      * @return 64-stelliger Hex-String in Kleinbuchstaben.
      */
-    fun compute(input: Input): String {
-        val canonical = canonicalForm(input)
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(canonical.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte ->
-            "%02x".format(byte)
-        }
-    }
+    fun compute(input: Input): String = sha256Hex(canonicalForm(input))
 
     /**
      * Eingangsdaten fuer den Fingerprint. Wird vom [DataExportRunner]

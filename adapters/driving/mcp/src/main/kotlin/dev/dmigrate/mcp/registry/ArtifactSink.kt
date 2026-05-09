@@ -13,7 +13,7 @@ import dev.dmigrate.server.ports.ArtifactContentStore
 import dev.dmigrate.server.ports.ArtifactStore
 import dev.dmigrate.server.ports.WriteArtifactOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.time.Clock
 import java.time.Duration
 import java.util.UUID
@@ -99,11 +99,6 @@ internal class ArtifactSink(
             ),
         )
         return resourceUri
-    }
-
-    private fun sha256Hex(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
     }
 
     companion object {

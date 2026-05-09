@@ -1,6 +1,6 @@
 package dev.dmigrate.driver.mysql
 
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.util.Locale
 
 /**
@@ -35,12 +35,8 @@ object MysqlSequenceNaming {
      * Computes the first 10 lowercase hex characters of SHA-256
      * over `<tableNorm>\u0000<columnNorm>`.
      */
-    fun hash10(tableNorm: String, columnNorm: String): String {
-        val input = "$tableNorm\u0000$columnNorm"
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(input.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }.take(HASH_LENGTH)
-    }
+    fun hash10(tableNorm: String, columnNorm: String): String =
+        sha256Hex("$tableNorm\u0000$columnNorm").take(HASH_LENGTH)
 
     /**
      * Builds the canonical BEFORE INSERT trigger name for a
