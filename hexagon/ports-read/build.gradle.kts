@@ -43,6 +43,11 @@ kover {
                     "dev.dmigrate.driver.ReverseSourceRef",
                     "dev.dmigrate.driver.SchemaReadSeverity",
                     "dev.dmigrate.format.data.FormatReadOptions",
+                    // 0.9.7 migration port (Phase D.1)
+                    "dev.dmigrate.driver.migration.DiffDdlGenerator",
+                    "dev.dmigrate.driver.migration.MigrationBlocker",
+                    "dev.dmigrate.driver.migration.MigrationBlockedReason",
+                    "dev.dmigrate.driver.migration.MigrationDdlStatement",
                 )
             }
         }
