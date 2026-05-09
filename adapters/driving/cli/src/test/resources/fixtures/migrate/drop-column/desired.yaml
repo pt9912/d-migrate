@@ -1,0 +1,11 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: integer
+        required: true
+    primary_key: [id]

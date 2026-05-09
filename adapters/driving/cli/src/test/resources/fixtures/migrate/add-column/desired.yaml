@@ -1,0 +1,18 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+tables:
+  users:
+    columns:
+      id:
+        type: integer
+        required: true
+      email:
+        type: text
+        max_length: 254
+        required: true
+      nickname:
+        type: text
+        max_length: 100
+    primary_key: [id]

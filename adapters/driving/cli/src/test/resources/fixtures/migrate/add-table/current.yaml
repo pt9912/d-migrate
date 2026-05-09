@@ -1,0 +1,5 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+tables: {}
