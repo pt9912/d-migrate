@@ -629,10 +629,9 @@ tool-spezifische Down-Artefakte auf Basis des bestehenden full-state-
 Dies ist ein baseline-/full-state-Rollback — es kehrt die gesamte Schema-
 Erstellung um, nicht einen inkrementellen Diff.
 
-### 7.2 Diff-basierter Rollback (späterer Milestone)
+### 7.2 Diff-basierter Rollback — `schema migrate` / `schema rollback` (0.9.7)
 
-Der spätere `schema migrate`-Pfad wird aus einem `DiffResult` die inverse
-Operation ableiten:
+`schema migrate` plant aus einem `DiffResult` die inverse Operation:
 
 | Up-Operation       | Down-Operation                                                    |
 | ------------------ | ----------------------------------------------------------------- |
@@ -644,8 +643,37 @@ Operation ableiten:
 | DROP COLUMN        | Warnung: Datenverlust, kein automatischer Rollback                |
 
 Nicht-reversible Operationen (z.B. DROP COLUMN, DROP TABLE) erzeugen eine
-Warnung und erfordern explizite Bestätigung. Dieser Pfad wird in einem
-späteren Milestone implementiert und ist bewusst nicht Teil von 0.7.0.
+Warnung und erfordern explizite Bestätigung über `--allow-destructive`.
+
+**Begriffsabgrenzung** (verbindlich für `schema migrate`/`schema rollback`-
+Implementierung in 0.9.7):
+
+- **`SchemaDiff`** (`hexagon/core/.../diff/SchemaDiff.kt`) — *struktureller
+  Unterschied* zwischen zwei Schemas. Symmetrisch in der Form, asymmetrisch
+  in der Verwendung: `SchemaComparator.compare(left, right)` liefert
+  added/removed/changed pro Objekttyp. Genutzt als Basis für `schema
+  compare` und als Eingabe für die `DiffPlanner`-Pipeline.
+- **`DiffView`** (`hexagon/application/.../SchemaCompareProjection.kt`) —
+  *stabiler, primitive-only Compare-Output* für die `schema compare`-
+  Renderer (JSON/YAML/Plain). Reine Projektion ohne Geschäftslogik.
+- **`DiffResult`** *(0.9.7 in Arbeit)* — *migrationsfähiger
+  Operationsplan*. Ergänzt `SchemaDiff` um Phasen
+  (`pre_data`/`structural`/`post_data`), Reversibilitäts-Klassifikation pro
+  Operation, Risiko-Bewertung (`destructive`, `dataLossPossible`,
+  `requiresManualConfirmation`), stabile Operation-IDs für Audit-Tracing
+  und kanonische Fingerprints für Drift-Schutz.
+- **`MigrationDdlResult`** *(0.9.7 in Arbeit)* — *gerenderte Up-/Down-DDL*
+  pro Dialekt, plus Metadatenblock mit `currentFingerprint`,
+  `desiredFingerprint`, `postUpFingerprint`, `operationIds`, `risk`,
+  `dialect`, `artifactHash`. Letzter Schritt vor SQL-Datei oder Direkt-
+  Ausführung.
+
+Datenfluss: `(current, desired) → SchemaComparator → SchemaDiff →
+DiffPlanner → DiffResult → MigrationDdlRenderer → MigrationDdlResult →
+SQL-Datei | DB-Execute`.
+
+Detaillierter Plan: [`docs/planning/open/diffresult-migration-plan.md`](../docs/planning/open/diffresult-migration-plan.md).
+CLI-Vertrag: [`spec/cli-spec.md §6.1 schema migrate / schema rollback`](./cli-spec.md).
 
 ---
 

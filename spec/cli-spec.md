@@ -78,9 +78,10 @@ d-migrate data export --source staging --format json
 | `2` | `USAGE_ERROR` | Ungültige Argumente oder Flags | Fehlender Pflicht-Parameter |
 | `3` | `VALIDATION_ERROR` | Schema- oder Daten-Validierung fehlgeschlagen | FK referenziert nicht-existierende Tabelle |
 | `4` | `CONNECTION_ERROR` | Datenbankverbindung fehlgeschlagen | DB nicht erreichbar, Credentials falsch |
-| `5` | `MIGRATION_ERROR` | Fehler während Daten-Migration | Constraint-Verletzung beim Import |
+| `5` | `MIGRATION_ERROR` | Fehler während Daten- oder Schema-Migration nach Beginn der Ausführung | Constraint-Verletzung beim Import; DDL-Anweisung schlägt nach Beginn von `schema migrate --execute` fehl |
 | `6` | `AI_ERROR` | KI-Provider nicht erreichbar oder Transformation fehlgeschlagen | Ollama nicht gestartet |
 | `7` | `LOCAL_ERROR` | Lokaler Konfigurations-, Parse-, Datei-, I/O-, Render- oder Kollisionsfehler | Ungültiges YAML in `.d-migrate.yaml`, Schema-Datei nicht lesbar, Ausgabepfad nicht beschreibbar |
+| `8` | `MIGRATION_BLOCKED` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar (vor Ausführung) | `schema migrate` ohne `--allow-destructive` mit destruktivem Up; `--generate-rollback` mit nicht-reversibler Operation; Ziel-Dialekt rendert geplante Operation nicht |
 | `130` | `INTERRUPTED` | Durch Benutzer abgebrochen (Ctrl+C) | SIGINT empfangen |
 
 ### 2.1 Exit-Code-Regeln
@@ -574,45 +575,122 @@ d-migrate schema compare --source file:schema.yaml --target db:staging
 d-migrate schema compare --source db:staging --target db:postgresql://localhost/prod
 ```
 
-#### `schema migrate` *(geplant: späterer Milestone)*
+#### `schema migrate` *(0.9.7 in Arbeit)*
 
-Generiert Migrationsskript (Up + optional Down) aus Schema-Diff.
-
-```
-d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
-```
-
-| Flag | Pflicht | Typ | Beschreibung |
-|---|---|---|---|
-| `--source` | Ja | Pfad | Soll-Schema (YAML) |
-| `--target` | Ja | URL | Ist-Datenbank |
-| `--output` | Nein | Pfad | Migrationsskript-Ausgabe |
-| `--generate-rollback` | Nein | Boolean | Down-Migration erzeugen |
-
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
-
-Hinweis: Nicht Teil von 0.7.0. `schema migrate` wird diff-basiert auf
-`DiffResult` arbeiten und ist bewusst von `export flyway|liquibase|django|knex`
-(baseline-/full-state-Export aus einem einzelnen Schema) abgegrenzt.
-
-#### `schema rollback` *(geplant: späterer Milestone)*
-
-Führt ein Rollback-Migrationsskript gegen eine Datenbank aus.
+Plant einen migrationsfähigen Operationsplan aus dem Diff zwischen Soll-
+und Ist-Schema und rendert dialektspezifisches Up-DDL — optional inklusive
+Down-DDL — und führt es bei Bedarf gegen das Ziel-Datenbank-System aus.
 
 ```
-d-migrate schema rollback --source <path> --target <url>
+d-migrate schema migrate --source <desired> --target <current> \
+  [--dialect <id>] [--output <up.sql>] \
+  [--generate-rollback --rollback-output <down.sql>] \
+  [--plan-only] [--report <report.yaml>] \
+  [--execute] [--allow-destructive] [--dry-run]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Rollback-SQL-Datei (Down-Migration) |
-| `--target` | Ja | URL | Ziel-Datenbank |
-| `--dry-run` | Nein | Boolean | Nur anzeigen, nicht ausführen |
+| `--source` | Ja | Operand | Soll-Schema (Datei) |
+| `--target` | Ja | Operand | Ist-Zustand: `db:<url-or-alias>` oder `file:<current.yaml>` |
+| `--dialect` | Bedingt | Dialekt | Pflicht bei Datei-zu-Datei-Modus; aus Connection ableitbar bei DB-Target |
+| `--output` | Nein | Pfad | Up-SQL-Ausgabe; ohne Flag bei renderbarem Dry-Run nach `stdout` |
+| `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht bei `--generate-rollback` ohne `--plan-only` |
+| `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen |
+| `--plan-only` | Nein | Boolean | Nur Plan-/Risiko-Report, kein SQL; in dieser Kombination ist `--rollback-output` unzulässig |
+| `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
+| `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
+| `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
+| `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
+Begriffe (vollständig in `spec/design.md`):
 
-Hinweis: Nicht Teil des 0.5.0-MVP-Releases; wird zusammen mit dem
-Migrations-/Rollback-Pfad in einem späteren Milestone konkretisiert.
+- **`SchemaDiff`** — struktureller Unterschied zwischen zwei Schemas
+- **`DiffView`** — stabile, primitive-only Compare-Ausgabe für `schema compare`
+- **`DiffResult`** — migrationsfähiger Operationsplan (Phasen, Reversibilität, Risiko)
+- **`MigrationDdlResult`** — gerenderte Up-/Down-DDL plus Metadaten
+
+Modi:
+
+| Modus | `--source` | `--target` | `--dialect` | `--execute` |
+|---|---|---|---|---|
+| Datei-zu-DB | Soll-Schema | `db:<url-or-alias>` | optional, muss zur DB passen | erlaubt |
+| Datei-zu-Datei | Soll-Schema | `file:<current.yaml>` | Pflicht | nicht erlaubt (Exit `2`) |
+
+Ausgabevertrag:
+
+- **Up-SQL**: Mit `--output` in Datei (atomar geschrieben), ohne `--output` bei renderbarem Dry-Run nach `stdout`. Bei `--execute` ohne `--output` keine Persistierung — die Ausführung gegen die DB ist das Artefakt.
+- **Down-SQL**: Nur über `--rollback-output`. Wird nie nach `stdout` geschrieben und nie als zweiter Block in das Up-SQL-Artefakt eingebettet.
+- **Report**: Mit `--report` in Datei, ohne bei `--plan-only` nach `stdout`. `--execute` ohne `--report` ist Exit `2` (auditpflichtig).
+- **Atomare Finalisierung**: Up-SQL, Down-SQL und Reports werden in eine temporäre Datei im Zielverzeichnis geschrieben und erst nach erfolgreichem Planning, Rendering und Blocker-Check atomar verschoben. Bei Render- oder Ausführungsfehlern bleiben bestehende Zielpfade unverändert.
+
+Exit-Codes:
+
+| Exit | Bedeutung |
+|---|---|
+| `0` | Erfolg (auch No-op-Lauf ohne Diff oder erfolgreicher `--plan-only`) |
+| `2` | Ungültige CLI-Argumente (z.B. `--execute` mit Datei-Target, `--execute` + `--dry-run`, `--plan-only` + `--rollback-output`) |
+| `3` | Schema-Validierungsfehler |
+| `4` | Verbindungsfehler |
+| `5` | DDL-Ausführungsfehler nach Beginn von `--execute` (`MIGRATION_ERROR`) |
+| `7` | Lokale I/O-, Planungs-, Render- oder Artefaktfehler |
+| `8` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar (`MIGRATION_BLOCKED`) |
+
+Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und einen optionalen `primaryBlockedReason` enthalten. Mindestens unterscheidbare Fälle:
+
+- destruktive Up-Operation ohne `--allow-destructive`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist `NOT_REVERSIBLE`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist `MANUAL_REQUIRED`
+- Ziel-Dialekt kann eine geplante Operation nicht rendern
+
+Detaillierter Implementierungs-Plan: [`docs/planning/open/diffresult-migration-plan.md`](../docs/planning/open/diffresult-migration-plan.md).
+
+Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
+
+#### `schema rollback` *(0.9.7 in Arbeit)*
+
+Validiert und führt das von `schema migrate --generate-rollback` erzeugte
+Down-SQL-Artefakt gegen eine Datenbank aus. Führt keine Live-Diff-Berechnung
+durch — der Down-Plan stammt aus dem zur Migration erzeugten Artefakt.
+
+```
+d-migrate schema rollback --source <down.sql> --target <db> \
+  [--execute] [--allow-destructive] [--dry-run]
+```
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--source` | Ja | Pfad | Down-SQL aus `schema migrate --generate-rollback` |
+| `--target` | Ja | Operand | Ziel-Datenbank (`db:<url-or-alias>`) |
+| `--execute` | Nein | Boolean | Down-SQL gegen `--target` ausführen; gegenseitig exklusiv mit `--dry-run` |
+| `--allow-destructive` | Nein | Boolean | Destruktive Down-Operationen erlauben |
+| `--dry-run` | Nein | Boolean | Validierung/Preview, keine Ausführung |
+
+Vor jeder Ausführung prüft der Runner strikt den im Artefakt eingebetteten
+`d-migrate rollback-sql`-Metadatenblock (kanonisches JSON, `artifactHash`,
+`postUpFingerprint`/`allowedPostUpFingerprints`, `dialect`, Risiko-Felder).
+Eine Abweichung führt vor jedem DB-Zugriff zu Exit `7` (Artefakt ungültig).
+
+Bei `--execute`:
+
+1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.
+2. Dialekt der Ziel-Connection mit dem im Block gespeicherten Dialekt vergleichen → Exit `8` (`TARGET_DIALECT_MISMATCH`) bei Abweichung.
+3. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
+4. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
+5. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
+
+Exit-Codes:
+
+| Exit | Bedeutung |
+|---|---|
+| `0` | Erfolg |
+| `2` | Ungültige CLI-Argumente |
+| `4` | Verbindungsfehler |
+| `5` | DDL-Ausführungsfehler nach Beginn von `--execute` |
+| `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
+| `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
+
+Detaillierter Implementierungs-Plan: [`docs/planning/open/diffresult-migration-plan.md §7.2`](../docs/planning/open/diffresult-migration-plan.md).
 
 ### 6.2 data
 

@@ -2080,3 +2080,50 @@ Bewusst nicht Voraussetzung fuer den ersten Slice:
 - `--allow-partial-rollback` oder ein aequivalenter Vertrag fuer bewusst
   unvollstaendige Down-Artefakte
 - explizite Rename-Operationen mit Nutzer-Mapping
+
+### 11.1 Phase-A-Entscheidungen (2026-05-09)
+
+**CHECK-/EXCLUDE-Constraint-Diffbarkeit** — `TableComparator.normalize`
+verwirft heute `CHECK`- und `EXCLUDE`-Constraints stillschweigend
+(`hexagon/core/.../TableComparator.kt:182`). Das ist fuer `schema compare`
+unkritisch (der Plan-Output ist deklariert "primitive-only"), wuerde aber
+fuer `schema migrate` einen unvollstaendigen Plan rendern: ein Tabellen-
+Update koennte einen `CHECK`-Constraint vergessen, weil der Comparator ihn
+nie gesehen hat.
+
+**Entscheidung**: Pre-Normalization-Detector statt Comparator-Erweiterung.
+
+- Vor dem `DiffPlanner`-Lauf prueft eine kleine Detector-Funktion alle
+  Tabellen aus `current` und `desired` auf vorhandene `CHECK`- oder
+  `EXCLUDE`-Constraints.
+- Werden welche gefunden, gibt `DiffPlanner` einen Blocker
+  `CONSTRAINT_NOT_DIFFABLE` mit der Liste der betroffenen Tabellennamen
+  zurueck. `schema migrate` endet mit Exit `8` und einem strukturierten
+  Fehler, der die betroffenen Tabellen ausweist.
+- `schema compare` bleibt unveraendert: der Diff-View darf weiterhin ohne
+  CHECK-/EXCLUDE-Erkennung gerendert werden, weil sein Vertrag das so
+  zulaesst (operandseitige `W`-Notes existieren bereits fuer aehnliche
+  Faelle).
+
+Begruendung: TableComparator-Erweiterung wuerde ein paralleles Diff-
+Modell fuer arbitraery SQL-Expressions verlangen (Kanonisierung von
+`age >= 0` vs. `0 <= age` vs. dialektspezifische Schreibweisen). Das ist
+fuer 0.9.7 ueber Ziel; das stille Wegnormalisieren mit anschliessendem
+Render ist aber inakzeptabel. Der Detector-Pfad markiert die Luecke
+explizit, statt sie zu kaschieren — ein nachfolgender Milestone kann den
+Detector durch echte Diffbarkeit ersetzen.
+
+Implementierung verbleibt in Phase B/C; Phase A dokumentiert nur die
+Entscheidung.
+
+**`SchemaComparator.DiffResult<N, D>` umbenannt** — der private generische
+Hilfstyp wurde zu `CollectionDiff<N, D>` umbenannt
+(`hexagon/core/.../diff/SchemaComparator.kt`), damit der Name `DiffResult`
+fuer den oeffentlichen Migrate-Vertrag in Phase B frei ist.
+
+**Begriffsabgrenzung in `spec/design.md` §7.2 erfasst**: `SchemaDiff` /
+`DiffView` / `DiffResult` / `MigrationDdlResult`.
+
+**CLI-Vertrag in `spec/cli-spec.md` §6.1 erfasst**: `schema migrate` und
+`schema rollback` mit Flag-Tabelle, Modus-Matrix, Ausgabe-Vertrag und
+Exit-Code-Tabelle (neuer Code `8 = MIGRATION_BLOCKED`).

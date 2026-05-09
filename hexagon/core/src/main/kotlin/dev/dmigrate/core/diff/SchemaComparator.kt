@@ -66,7 +66,15 @@ class SchemaComparator {
 
     // --- Generic map-diff helper ---
 
-    private data class DiffResult<N, D>(
+    /**
+     * Generic per-object-map diff used by the comparator helpers.
+     *
+     * Renamed from `DiffResult` (0.9.7 Migrate Phase A) so the
+     * `DiffResult` name stays free for the upcoming migration-plan
+     * contract that turns a [SchemaDiff] into a runnable operation
+     * plan. This type is purely an internal collection split.
+     */
+    private data class CollectionDiff<N, D>(
         val added: List<N>,
         val removed: List<N>,
         val changed: List<D>,
@@ -77,7 +85,7 @@ class SchemaComparator {
         rightMap: Map<String, T>,
         wrapNamed: (String, T) -> N,
         compareDetail: (String, T, T) -> D?,
-    ): DiffResult<N, D> {
+    ): CollectionDiff<N, D> {
         val leftNames = leftMap.keys
         val rightNames = rightMap.keys
 
@@ -87,7 +95,7 @@ class SchemaComparator {
             compareDetail(name, leftMap.getValue(name), rightMap.getValue(name))
         }
 
-        return DiffResult(added, removed, changed)
+        return CollectionDiff(added, removed, changed)
     }
 
     // --- Detail comparisons per object type ---
