@@ -1,10 +1,16 @@
 # Implementierungsplan: `DiffResult` fuer diff-basierte Migrationen
 
-> Status: Draft (2026-05-03), aktualisiert fuer 0.9.6
+> Status: In Arbeit (2026-05-09), Ziel 0.9.7
+>
+> Phase A-E sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
+> Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
+> Execute). Phase F.1 (Golden-DDL-Tests) ist gelandet; F.2-F.6
+> (Round-Trip-Smokes pro Dialekt, Recovery-Pfad, Edge-Cases) bleiben
+> offen.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
-> Vertrag als Grundlage fuer den 0.9.6-Migrationspfad `schema migrate` und
-> diff-basierte Rollback-Pfade.
+> Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
+> und diff-basierte Rollback-Pfade.
 >
 > Referenzen:
 > - `docs/planning/done/implementation-plan-0.7.0.md`
@@ -21,7 +27,7 @@
 ## 1. Ziel
 
 Dieses Dokument beschreibt den fehlenden Zwischenvertrag zwischen dem heute
-existierenden `SchemaDiff` und dem fuer 0.9.6 geplanten, wirklich
+existierenden `SchemaDiff` und dem fuer 0.9.7 geplanten, wirklich
 ausfuehrbaren Migrationspfad.
 
 Der heutige Stand reicht fuer `schema compare`, aber noch nicht fuer
@@ -53,7 +59,7 @@ abgeleitet wird.
 
 ---
 
-## 2. Abgrenzung zu 0.7.0 und Ziel 0.9.6
+## 2. Abgrenzung zu 0.7.0 und Ziel 0.9.7
 
 0.7.0 ist in diesem Dokument der historische baseline-/full-state-Pfad: Es
 exportiert Artefakte aus einem einzelnen neutralen Schema:
@@ -64,13 +70,13 @@ d-migrate export flyway --source schema.yaml --target postgresql --output migrat
 
 Dieser Pfad bleibt unveraendert.
 
-`DiffResult` gehoert zum fuer 0.9.6 geplanten Migrationspfad:
+`DiffResult` gehoert zum fuer 0.9.7 geplanten Migrationspfad:
 
 ```bash
 d-migrate schema migrate --source desired.yaml --target db:staging --output migration.sql
 ```
 
-Ziel fuer 0.9.6 ist, dass `migrate up/down` als zusammenhaengender Ablauf
+Ziel fuer 0.9.7 ist, dass `migrate up/down` als zusammenhaengender Ablauf
 funktioniert:
 
 - `up`: Ist-Zustand aus Datenbank oder Schema-Datei lesen, gegen Soll-Schema
@@ -79,7 +85,7 @@ funktioniert:
 - `down`: aus demselben Plan ein Rollback-Artefakt erzeugen und dieses
   Rollback gegen die Ziel-Datenbank ausfuehren koennen.
 
-Nicht Teil von 0.9.6 sind fortgeschrittene Rollback-Varianten wie
+Nicht Teil von 0.9.7 sind fortgeschrittene Rollback-Varianten wie
 versionierte `DiffResult`-Artefakte als CLI-Input, Teil-Rollbacks,
 automatische Rename-Mappings oder automatische Datenrekonstruktion nach
 destruktiven Operationen.
@@ -1030,7 +1036,7 @@ Down-Rebuild:
 
 ---
 
-## 7. CLI-Vertrag fuer 0.9.6
+## 7. CLI-Vertrag fuer 0.9.7
 
 ### 7.1 `schema migrate`
 
@@ -1159,7 +1165,7 @@ Rendering und erfolgreicher Blocker-Pruefung finalisiert:
   Down-SQL-Artefakte bleiben in diesem Fall unveraendert, sofern sie nicht schon
   vor der Ausfuehrung erfolgreich finalisiert wurden.
 
-Fuer 0.9.6 muss `schema migrate` nicht nur SQL schreiben, sondern einen
+Fuer 0.9.7 muss `schema migrate` nicht nur SQL schreiben, sondern einen
 ausfuehrbaren Up-Pfad fuer DB-Targets und einen vollstaendigen Plan-/Renderpfad
 fuer Datei-Targets tragen:
 
@@ -1287,11 +1293,11 @@ vor Beginn der Ausfuehrung bleiben je nach Ursache Exit `2`, `3`, `4`, `7` oder
 
 ### 7.2 `schema rollback`
 
-`schema rollback` ist fuer 0.9.6 der Down-Ausfuehrungspfad fuer das von
+`schema rollback` ist fuer 0.9.7 der Down-Ausfuehrungspfad fuer das von
 `schema migrate --generate-rollback` erzeugte Down-SQL. Er sollte keine Magie
 aus einer Live-Datenbank erraten.
 
-Fuer 0.9.6 verbindlich:
+Fuer 0.9.7 verbindlich:
 
 ```bash
 d-migrate schema rollback --source rollback.sql --target db:staging --execute --allow-destructive
@@ -1479,9 +1485,9 @@ Diese Variante setzt voraus, dass `DiffResult` serialisierbar und versioniert is
 Das sollte erst nach Stabilisierung des internen Vertrags als Nutzervertrag
 freigegeben werden.
 
-### 7.3 0.9.6 Up/Down-Artefaktvertrag
+### 7.3 0.9.7 Up/Down-Artefaktvertrag
 
-Ein erfolgreicher 0.9.6-Up/Down-Lauf besteht, soweit die jeweiligen
+Ein erfolgreicher 0.9.7-Up/Down-Lauf besteht, soweit die jeweiligen
 Ausgabeziele angefordert wurden, aus zusammenpassenden Artefakten:
 
 - Up-SQL aus `--output` oder aus `stdout`, wenn kein `--output` gesetzt ist
@@ -1991,10 +1997,10 @@ Zur Vermeidung von Missverstaendnissen ist die Milestone-Grenze:
 | Milestone | Enthalten | Nicht enthalten |
 |---|---|---|
 | 0.7.0 full-state | `schema generate`, Tool-Exports, full-state Rollback-Artefakte | diff-basierte `schema migrate`-Ausfuehrung |
-| 0.9.6 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Datei-zu-Datei-Planung ohne Live-Datenbank, Up-DDL-Ausfuehrung fuer DB-Targets, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings |
-| Nach 0.9.6 separat zu entscheiden | noch kein verbindlicher Umfang | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows, automatische Datenrekonstruktion nach destruktiven Operationen |
+| 0.9.7 erster `DiffResult`-Slice | Datei-zu-DB `schema migrate`, Datei-zu-Datei-Planung ohne Live-Datenbank, Up-DDL-Ausfuehrung fuer DB-Targets, Down-SQL-Erzeugung, `schema rollback` aus Down-SQL, Risiko-/Rollback-Blocker | gespeicherter `DiffResult` als Rollback-Input, Teil-Rollbacks, Rename-Mappings |
+| Nach 0.9.7 separat zu entscheiden | noch kein verbindlicher Umfang | versionierte Plan-Artefakte, `schema rollback` aus Plan, optionale Partial-/Manual-Workflows, automatische Datenrekonstruktion nach destruktiven Operationen |
 
-Damit ist `migrate up/down` verbindlicher Bestandteil von 0.9.6: Up wird aus
+Damit ist `migrate up/down` verbindlicher Bestandteil von 0.9.7: Up wird aus
 dem Diff geplant und fuer den Zieldialekt gerendert. Bei DB-Targets wird Up
 gegen die Ziel-Datenbank ausgefuehrt; bei Datei-Targets endet der Pfad nach
 Plan-/SQL-Erzeugung und optionaler Report-Erzeugung. Down wird als Rollback-SQL
