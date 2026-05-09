@@ -51,8 +51,17 @@ internal class PostgresDiffRenderContext(
     }
 
     private fun riskFor(op: DiffOperation): OperationRisk =
-        if (direction == PostgresRenderDirection.UP) op.risks.up
-        else op.risks.down ?: OperationRisk.SAFE
+        if (direction == PostgresRenderDirection.UP) {
+            op.risks.up
+        } else {
+            // NOT_REVERSIBLE / MANUAL_REQUIRED ops should be short-circuited by the
+            // dispatcher before reaching emit(), so a null down-risk here is a contract
+            // violation by the caller. Loud failure beats silent SAFE.
+            op.risks.down ?: error(
+                "emit() called for op ${op.id} (reversibility=${op.reversibility}) in DOWN direction " +
+                    "but risks.down is null; the dispatcher should have skipped or blocked first.",
+            )
+        }
 
     fun skip(op: DiffOperation, message: String) {
         skipped += op.id
@@ -68,13 +77,23 @@ internal class PostgresDiffRenderContext(
         blockers += MigrationBlocker(reason = reason, operationIds = operationIds)
     }
 
+    fun addInfoDiagnostic(code: String, operationId: String, message: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.INFO,
+            operationId = operationId,
+        )
+    }
+
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
-        // Planner-emitted blockers (CONSTRAINT_NOT_DIFFABLE etc.) translate to
-        // DIALECT_UNSUPPORTED_OPERATION for the runner — the renderer cannot
-        // proceed with operations whose target tables were skipped.
-        val effectiveBlockers = if (plannerBlockers.isNotEmpty() && blockers.isEmpty()) {
+        // Planner-emitted blockers (CONSTRAINT_NOT_DIFFABLE etc.) always translate to a
+        // DIALECT_UNSUPPORTED_OPERATION blocker on the renderer side — even when the
+        // renderer also has its own blockers. A CLI consumer that reads only the
+        // `blockers` list must see *every* reason the plan can't run.
+        val effectiveBlockers = if (plannerBlockers.isNotEmpty()) {
             blockers + MigrationBlocker(
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
                 diagnostics = plannerBlockers,

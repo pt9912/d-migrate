@@ -102,6 +102,7 @@ internal object PostgresDiffTableOps {
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == PostgresRenderDirection.DOWN) {
+            emitDropPkAdvisory(op, ctx)
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(table + "_pkey")};")
             return
         }
@@ -116,6 +117,30 @@ internal object PostgresDiffTableOps {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD PRIMARY KEY ($cols);")
             return
         }
+        emitDropPkAdvisory(op, ctx)
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT IF EXISTS ${ctx.sql.quote(table + "_pkey")};")
+    }
+
+    /**
+     * The first-matrix DropPrimaryKey path assumes the auto-named PK
+     * constraint follows PostgreSQL's `<table>_pkey` convention. If
+     * the source schema explicitly named its PK (e.g. `CONSTRAINT
+     * pk_users PRIMARY KEY (...)`), the `IF EXISTS` swallows the
+     * mismatch and the PK survives; the next ADD will fail. Surface
+     * an advisory diagnostic so operators can verify before running.
+     *
+     * TODO Phase F: enrich `DropPrimaryKey` with the explicit
+     * constraint name (requires extending the schema model to track
+     * PK constraint names; see Plan §11.2).
+     */
+    private fun emitDropPkAdvisory(op: DiffOperation, ctx: PostgresDiffRenderContext) {
+        ctx.addInfoDiagnostic(
+            code = "PG_PK_NAME_CONVENTION",
+            operationId = op.id,
+            message = "DropPrimaryKey for `${op.objectRef.rootName}` assumes the auto-named " +
+                "constraint `${op.objectRef.rootName}_pkey`. Verify the source schema's actual " +
+                "PK constraint name; a non-conventional name will let the IF EXISTS swallow the " +
+                "mismatch and leave the PK in place.",
+        )
     }
 }

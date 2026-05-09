@@ -176,4 +176,34 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         r.statements.shouldBeEmpty()
         r.isBlocked shouldBe false
     }
+
+    test("Rebuild bucket with currentSchema=null yields SQLITE_REBUILD_MISSING_SOURCES") {
+        // Build a real DiffResult, then strip the source schemas to simulate a
+        // deserialised-from-artefact path.
+        val before = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+        )
+        val after = before.copy(columns = mapOf("id" to ColumnDefinition(NeutralType.BigInteger)))
+        val current = SchemaDefinition(name = "App", version = "1", tables = mapOf("u" to before))
+        val desired = SchemaDefinition(name = "App", version = "1", tables = mapOf("u" to after))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "id",
+                            type = ValueChange(NeutralType.Integer, NeutralType.BigInteger),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val plan = DiffPlanner().plan(current, desired, diff)
+            .copy(currentSchema = null, desiredSchema = null)
+        val r = gen.generateUp(plan, DdlGenerationOptions())
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "SQLITE_REBUILD_MISSING_SOURCES" } shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+    }
 })

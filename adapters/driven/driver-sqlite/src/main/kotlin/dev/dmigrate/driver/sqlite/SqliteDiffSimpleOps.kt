@@ -66,7 +66,7 @@ internal object SqliteDiffSimpleOps {
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {
-            ctx.emit(op, ctx.sql.dropIndexSql(op.index, table))
+            ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
@@ -78,7 +78,7 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }
-        ctx.emit(op, ctx.sql.dropIndexSql(op.index, table))
+        ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
     }
 
     fun renderCreateView(op: DiffOperation.CreateView, ctx: SqliteDiffRenderContext) {

@@ -61,6 +61,18 @@ data class MigrationDdlResult(
         require(operationsRendered.intersect(operationsSkipped).isEmpty()) {
             "operationsRendered and operationsSkipped must be disjoint"
         }
+        require((manualActions - operationsRendered).isEmpty()) {
+            "manualActions must be a subset of operationsRendered"
+        }
+        require((destructiveOperations - operationsRendered).isEmpty()) {
+            "destructiveOperations must be a subset of operationsRendered"
+        }
+        require((nonReversibleOperations - operationsRendered).isEmpty()) {
+            "nonReversibleOperations must be a subset of operationsRendered"
+        }
+        require(statements.flatMap { it.operationIds }.toSet().subtract(operationsRendered).isEmpty()) {
+            "every statement's operationIds must be a subset of operationsRendered"
+        }
         if (primaryBlockedReason != null) {
             require(blockers.isNotEmpty()) {
                 "primaryBlockedReason set without any blockers"

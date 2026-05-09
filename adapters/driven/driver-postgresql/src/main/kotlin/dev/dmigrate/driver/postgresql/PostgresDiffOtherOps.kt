@@ -46,7 +46,7 @@ internal object PostgresDiffOtherOps {
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             ctx.emit(
                 op,
-                "DROP INDEX ${ctx.sql.quote(op.index.name ?: ctx.sql.anonIndexName(table, op.index))};",
+                "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};",
             )
             return
         }
@@ -59,7 +59,7 @@ internal object PostgresDiffOtherOps {
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }
-        ctx.emit(op, "DROP INDEX ${ctx.sql.quote(op.index.name ?: ctx.sql.anonIndexName(table, op.index))};")
+        ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")
     }
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: PostgresDiffRenderContext) {

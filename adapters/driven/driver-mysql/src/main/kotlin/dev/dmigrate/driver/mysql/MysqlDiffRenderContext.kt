@@ -43,8 +43,14 @@ internal class MysqlDiffRenderContext(
     }
 
     private fun riskFor(op: DiffOperation): OperationRisk =
-        if (direction == MysqlRenderDirection.UP) op.risks.up
-        else op.risks.down ?: OperationRisk.SAFE
+        if (direction == MysqlRenderDirection.UP) {
+            op.risks.up
+        } else {
+            op.risks.down ?: error(
+                "emit() called for op ${op.id} (reversibility=${op.reversibility}) in DOWN direction " +
+                    "but risks.down is null; the dispatcher should have skipped or blocked first.",
+            )
+        }
 
     fun skip(op: DiffOperation, message: String) {
         skipped += op.id
@@ -63,7 +69,10 @@ internal class MysqlDiffRenderContext(
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
-        val effectiveBlockers = if (plannerBlockers.isNotEmpty() && blockers.isEmpty()) {
+        // Planner-emitted blockers (CONSTRAINT_NOT_DIFFABLE etc.) always translate to a
+        // DIALECT_UNSUPPORTED_OPERATION blocker — even alongside renderer blockers, so
+        // a CLI surfaces every reason the plan cannot run.
+        val effectiveBlockers = if (plannerBlockers.isNotEmpty()) {
             blockers + MigrationBlocker(
                 reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
                 diagnostics = plannerBlockers,

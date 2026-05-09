@@ -67,13 +67,18 @@ internal class SqliteDiffSqlBuilders {
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }
-        val name = idx.name ?: anonIndexName(table, idx)
+        val name = effectiveIndexName(table, idx)
         val whereClause = idx.where?.let { " WHERE $it" } ?: ""
         return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)} ($cols)$whereClause;"
     }
 
-    fun dropIndexSql(idx: IndexDefinition, table: String): String =
-        "DROP INDEX ${quote(idx.name ?: anonIndexName(table, idx))};"
+    /** Parameter order standardised to `(table, idx)` across all dialects. */
+    fun dropIndexSql(table: String, idx: IndexDefinition): String =
+        "DROP INDEX ${quote(effectiveIndexName(table, idx))};"
+
+    /** Single source of truth for the index name; mirrors PG / MySQL [effectiveIndexName]. */
+    fun effectiveIndexName(table: String, idx: IndexDefinition): String =
+        idx.name ?: anonIndexName(table, idx)
 
     fun createViewSql(name: String, v: ViewDefinition): String =
         "CREATE VIEW ${quote(name)} AS ${v.query?.trimEnd(';')};"

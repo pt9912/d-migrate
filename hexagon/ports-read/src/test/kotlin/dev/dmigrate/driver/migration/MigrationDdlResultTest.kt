@@ -82,4 +82,43 @@ class MigrationDdlResultTest : FunSpec({
         b.operationIds.isEmpty() shouldBe true
         b.diagnostics.isEmpty() shouldBe true
     }
+
+    test("manualActions must be a subset of operationsRendered") {
+        shouldThrow<IllegalArgumentException> {
+            MigrationDdlResult(
+                statements = listOf(stmt("op-a")),
+                operationsRendered = setOf("op-a"),
+                manualActions = setOf("op-b"),
+            )
+        }
+    }
+
+    test("destructiveOperations must be a subset of operationsRendered") {
+        shouldThrow<IllegalArgumentException> {
+            MigrationDdlResult(
+                statements = listOf(stmt("op-a")),
+                operationsRendered = setOf("op-a"),
+                destructiveOperations = setOf("op-b"),
+            )
+        }
+    }
+
+    test("nonReversibleOperations must be a subset of operationsRendered") {
+        shouldThrow<IllegalArgumentException> {
+            MigrationDdlResult(
+                statements = listOf(stmt("op-a")),
+                operationsRendered = setOf("op-a"),
+                nonReversibleOperations = setOf("op-b"),
+            )
+        }
+    }
+
+    test("every statement's operationIds must be a subset of operationsRendered") {
+        shouldThrow<IllegalArgumentException> {
+            MigrationDdlResult(
+                statements = listOf(stmt("op-stale")),
+                operationsRendered = setOf("op-fresh"),
+            )
+        }
+    }
 })

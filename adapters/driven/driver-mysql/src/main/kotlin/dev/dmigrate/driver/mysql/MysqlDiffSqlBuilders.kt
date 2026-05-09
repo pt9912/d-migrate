@@ -58,6 +58,9 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             "ALTER TABLE ${quote(table)} DROP FOREIGN KEY ${quote(c.name)};"
         ConstraintType.UNIQUE ->
             "ALTER TABLE ${quote(table)} DROP INDEX ${quote(c.name)};"
+        // TODO: MySQL ≥ 8.0.16 supports `ALTER TABLE … DROP CHECK <name>` for CHECK
+        // constraints. Not in the first matrix because the planner blocks CHECK upstream
+        // (Phase A `CONSTRAINT_NOT_DIFFABLE`); revisit when CHECK lands in the comparator.
         ConstraintType.CHECK, ConstraintType.EXCLUDE -> null
     }
 
@@ -74,13 +77,17 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }
-        val name = idx.name ?: anonIndexName(table, idx)
+        val name = effectiveIndexName(table, idx)
         return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols);"
     }
 
     /** MySQL drops indexes with `DROP INDEX … ON tbl`. */
     fun dropIndexSql(table: String, idx: IndexDefinition): String =
-        "DROP INDEX ${quote(idx.name ?: anonIndexName(table, idx))} ON ${quote(table)};"
+        "DROP INDEX ${quote(effectiveIndexName(table, idx))} ON ${quote(table)};"
+
+    /** Single source of truth for the index name; mirrors PG / SQLite [effectiveIndexName]. */
+    fun effectiveIndexName(table: String, idx: IndexDefinition): String =
+        idx.name ?: anonIndexName(table, idx)
 
     fun createViewSql(name: String, v: ViewDefinition): String =
         "CREATE VIEW ${quote(name)} AS ${v.query?.trimEnd(';')};"

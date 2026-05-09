@@ -337,4 +337,43 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
+
+    test("Both planner blockers AND renderer blockers coexist in result.blockers") {
+        // CONSTRAINT_NOT_DIFFABLE on `users` (planner) + AlterCustomType (renderer-side
+        // DIALECT_UNSUPPORTED). Both must surface so a CLI sees the full picture.
+        val tableWithCheck = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+            constraints = listOf(
+                ConstraintDefinition(name = "chk_x", type = ConstraintType.CHECK, expression = "id > 0"),
+            ),
+        )
+        val customType = dev.dmigrate.core.model.CustomTypeDefinition(
+            kind = dev.dmigrate.core.model.CustomTypeKind.ENUM,
+            values = listOf("a"),
+        )
+        val current = emptySchema().copy(
+            tables = mapOf("users" to tableWithCheck),
+            customTypes = mapOf("status_t" to customType),
+        )
+        val desired = emptySchema().copy(
+            customTypes = mapOf("status_t" to customType.copy(values = listOf("a", "b"))),
+        )
+        val diff = SchemaDiff(
+            tablesRemoved = listOf(NamedTable("users", tableWithCheck)),
+            customTypesChanged = listOf(
+                dev.dmigrate.core.diff.CustomTypeDiff(
+                    name = "status_t",
+                    values = ValueChange(listOf("a"), listOf("a", "b")),
+                ),
+            ),
+        )
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        // Planner-side cascade blocker present
+        r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION &&
+            it.diagnostics.any { d -> d.code == "CONSTRAINT_NOT_DIFFABLE" } } shouldBe true
+        // Renderer-side blocker (AlterCustomType is out-of-scope) also present
+        val rendererBlocker = r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION &&
+            it.diagnostics.isEmpty() } || r.diagnostics.any { it.code == "POSTGRES_RENDER_SKIP" }
+        rendererBlocker shouldBe true
+    }
 })

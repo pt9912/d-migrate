@@ -59,10 +59,18 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         val cols = idx.columns.joinToString(", ") { col ->
             quote(col.name) + (col.direction?.let { " ${it.name}" } ?: "")
         }
-        val name = idx.name ?: anonIndexName(table, idx)
+        val name = effectiveIndexName(table, idx)
         val whereClause = idx.where?.let { " WHERE $it" } ?: ""
         return "CREATE ${unique}INDEX ${quote(name)} ON ${quote(table)}$using ($cols)$whereClause;"
     }
+
+    /**
+     * Single source of truth for the index name across CREATE/DROP
+     * paths so the up-side `CREATE INDEX <name>` and the down-side
+     * `DROP INDEX <name>` cannot drift if [anonIndexName] ever evolves.
+     */
+    fun effectiveIndexName(table: String, idx: IndexDefinition): String =
+        idx.name ?: anonIndexName(table, idx)
 
     fun createEnumTypeSql(name: String, t: CustomTypeDefinition): String {
         val values = t.values?.joinToString(", ") { "'${it.replace("'", "''")}'" }.orEmpty()
