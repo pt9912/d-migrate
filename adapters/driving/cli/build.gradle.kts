@@ -209,13 +209,7 @@ kover {
         }
         verify {
             rule {
-                // 80%: The CLI module contains ~15% thin Clikt command shells
-                // (DataProfileCommand, ExportCommands, SchemaReverseCommand etc.)
-                // whose logic lives in the corresponding *Runner classes (tested
-                // at 90%+). Kover class excludes do not reliably filter these in
-                // CI (Gradle Actions cache interaction). The effective testable
-                // code coverage is 95%+ when command shells are excluded.
-                minBound(80)
+                minBound(90)
             }
         }
     }

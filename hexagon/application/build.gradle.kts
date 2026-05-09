@@ -16,6 +16,9 @@ dependencies {
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     testImplementation(project(":adapters:driven:integrations"))
+    testImplementation(project(":adapters:driven:formats"))
+    testImplementation(project(":adapters:driven:driver-common"))
+    testImplementation(project(":adapters:driven:streaming"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 
     // LF-012 / LN-011 / LN-017 / LN-027 cancel-test fixtures (TestCancellationTokenSource).
@@ -32,4 +35,14 @@ dependencies {
     testFixturesApi(project(":hexagon:ports-common"))
     testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+}
+
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(90)
+            }
+        }
+    }
 }

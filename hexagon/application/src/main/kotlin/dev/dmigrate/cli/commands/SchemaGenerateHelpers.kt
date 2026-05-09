@@ -12,7 +12,7 @@ import java.nio.file.Path
  * die Pfad-Berechnung und JSON-Serialisierung unit-testbar sind, ohne einen
  * Clikt-Command oder das Dateisystem zu benötigen.
  */
-internal object SchemaGenerateHelpers {
+object SchemaGenerateHelpers {
 
     /**
      * Baut den Pfad für eine Sidecar-Datei, die neben dem eigentlichen

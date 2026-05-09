@@ -1,7 +1,6 @@
 package dev.dmigrate.cli.commands
 
 import io.kotest.assertions.throwables.shouldThrow
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -146,18 +145,16 @@ class DataExportRunnerResumeTest : FunSpec({
     )
 
     /**
-     * Ein isolierter `sourceResolver`, der URLs mit "://" unverändert
-     * durchreicht und benannte Quellen über einen neutralisierten
-     * [NamedConnectionResolver] auflöst, damit Tests nicht vom
-     * Host-Environment abhängen.
+     * Ein isolierter \`sourceResolver\`, der URLs mit "://" unverändert
+     * durchreicht und benannte Quellen mit IllegalArgumentException
+     * ablehnt, damit Tests keine Connection-Config-Datei brauchen.
      */
-    fun isolatedSourceResolver(source: String, configPath: Path?): String {
-        val resolver = NamedConnectionResolver(
-            configPathFromCli = configPath,
-            envLookup = { null },
-            defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-        )
-        return resolver.resolve(source)
+    fun isolatedSourceResolver(source: String, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+        require(source.isNotBlank()) { "--source must not be blank" }
+        if ("://" in source) return source
+
+        throw IllegalArgumentException("Connection name '$source' not resolvable in test context")
+
     }
 
     /** Capture-Helper, der stderr-Zeilen in eine Liste puffert. */

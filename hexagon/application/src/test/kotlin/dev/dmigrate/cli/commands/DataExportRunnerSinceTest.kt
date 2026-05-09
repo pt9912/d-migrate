@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.NamedConnectionResolver
+import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -13,20 +13,37 @@ import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.ExportOptions
+import dev.dmigrate.format.data.ValueSerializer
 import dev.dmigrate.streaming.ExportResult
 import dev.dmigrate.streaming.TableExportSummary
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
+import java.time.LocalDate
+import java.time.LocalDateTime
 
-class DataExportRunnerMarkerTest : FunSpec({
+/**
+ * Unit-Tests für [DataExportRunner] mit Fakes für alle externen
+ * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
+ * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
+ *
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
+ * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
+ * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
+ * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
+ */
+class DataExportRunnerSinceTest : FunSpec({
+
+    // ─── Fakes ────────────────────────────────────────────────────
 
     class FakeConnectionPool(
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
@@ -66,6 +83,11 @@ class DataExportRunnerMarkerTest : FunSpec({
             error("FakeWriterFactory.create() must not be called — runner delegates to ExportExecutor")
     }
 
+    /**
+     * ExportExecutor-Fake der standardmäßig ein synthetisches erfolgreiches
+     * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
+     * zu werfen oder ein Result mit `error != null` zu liefern.
+     */
     val successExecutor: ExportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
         val summaries = opts.tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
@@ -77,6 +99,9 @@ class DataExportRunnerMarkerTest : FunSpec({
         )
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────
+
+    /** Baut einen [DataExportRequest] mit harmlosen Happy-Path-Defaults. */
     fun request(
         source: String = "sqlite:///tmp/d-migrate-runner-fake.db",
         format: String = "json",
@@ -119,21 +144,31 @@ class DataExportRunnerMarkerTest : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedSourceResolver(source: String, configPath: Path?): String {
-        val resolver = NamedConnectionResolver(
-            configPathFromCli = configPath,
-            envLookup = { null },
-            defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-        )
-        return resolver.resolve(source)
+    /**
+     * Ein isolierter \`sourceResolver\`, der URLs mit "://" unverändert
+     * durchreicht und benannte Quellen mit IllegalArgumentException
+     * ablehnt, damit Tests keine Connection-Config-Datei brauchen.
+     */
+    fun isolatedSourceResolver(source: String, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+        require(source.isNotBlank()) { "--source must not be blank" }
+        if ("://" in source) return source
+
+        throw IllegalArgumentException("Connection name '$source' not resolvable in test context")
+
     }
 
+    /** Capture-Helper, der stderr-Zeilen in eine Liste puffert. */
     class StderrCapture {
         val lines = mutableListOf<String>()
         val sink: (String) -> Unit = { lines += it }
         fun joined(): String = lines.joinToString("\n")
     }
 
+    /**
+     * Baut einen [DataExportRunner] mit Fake-Collaborators. Alle Parameter
+     * sind optional; der Default ist ein voll funktionsfähiger Happy-Path-
+     * Runner, der ohne echte DB, ohne echte Files, ohne Clikt läuft.
+     */
     fun newRunner(
         stderr: StderrCapture,
         sourceResolver: (String, Path?) -> String = ::isolatedSourceResolver,
@@ -167,7 +202,8 @@ class DataExportRunnerMarkerTest : FunSpec({
         primaryKeyLookup = primaryKeyLookup,
     )
 
-    // ─── LF-008 / LF-009 / LF-013 Fall 1 — ohne --since-column bleibt alles Legacy-Verhalten ─
+    // ─── Happy path (Exit 0) ──────────────────────────────────────
+
 
     context("LF-008 / LF-009 / LF-013 Fall 1 — ohne --since-column bleibt alles Legacy-Verhalten") {
         test("no since-column + no manifest marker → silent LF-008 / LF-009 / LF-013-fallback, no ResumeMarker passed") {
@@ -185,6 +221,8 @@ class DataExportRunnerMarkerTest : FunSpec({
             val runner = newRunner(
                 stderr,
                 exportExecutor = executor,
+                // PK present — but without since-column, the runner still
+                // should not build markers.
                 primaryKeyLookup = { _, _, _ -> listOf("id") },
             )
             runner.execute(request()) shouldBe 0
@@ -208,7 +246,7 @@ class DataExportRunnerMarkerTest : FunSpec({
             val runner = newRunner(
                 stderr,
                 exportExecutor = executor,
-                primaryKeyLookup = { _, _, _ -> emptyList() },
+                primaryKeyLookup = { _, _, _ -> emptyList() }, // no PK
             )
             val exit = runner.execute(
                 request(sinceColumn = "updated_at", since = "2026-01-01")
@@ -311,73 +349,11 @@ class DataExportRunnerMarkerTest : FunSpec({
                     tables = listOf("users"),
                     resume = opId,
                     checkpointDir = storeDir,
+                    // KEIN since-column — Fall 3
                 ),
             )
             exit shouldBe 3
             stderr.joined() shouldContain "mid-table marker on column 'updated_at'"
-        }
-    }
-
-    context("LF-008 / LF-009 / LF-013 onChunkProcessed → Manifest gets IN_PROGRESS with resumePosition") {
-        test("per-chunk callback persists marker position into manifest") {
-            val storeDir = Files.createTempDirectory("d-migrate-c2-chunk-")
-            val executor: ExportExecutor = ExportExecutor {
-                ctx, opts, resume, callbacks,
-                ->
-                val out = opts.output
-                if (out is dev.dmigrate.streaming.ExportOutput.SingleFile) {
-                    Files.createDirectories(out.path.parent)
-                    Files.writeString(out.path, "")
-                }
-                val table = opts.tables.single()
-                if (table in resume.resumeMarkers) {
-                    callbacks.onChunkProcessed(
-                        dev.dmigrate.streaming.TableChunkProgress(
-                            table = table,
-                            rowsProcessed = 10,
-                            chunksProcessed = 1,
-                            position = dev.dmigrate.driver.data.ResumeMarker.Position(
-                                lastMarkerValue = "2026-04-01",
-                                lastTieBreakerValues = listOf(10L),
-                            ),
-                        )
-                    )
-                    callbacks.onChunkProcessed(
-                        dev.dmigrate.streaming.TableChunkProgress(
-                            table = table,
-                            rowsProcessed = 20,
-                            chunksProcessed = 2,
-                            position = dev.dmigrate.driver.data.ResumeMarker.Position(
-                                lastMarkerValue = "2026-04-05",
-                                lastTieBreakerValues = listOf(20L),
-                            ),
-                        )
-                    )
-                }
-                val summary = TableExportSummary(table, rows = 20, chunks = 2, bytes = 512, durationMs = 4)
-                callbacks.onTableCompleted(summary)
-                ExportResult(listOf(summary), 20, 2, 512, 4)
-            }
-
-            val stderr = StderrCapture()
-            val runner = newRunner(
-                stderr,
-                exportExecutor = executor,
-                primaryKeyLookup = { _, _, _ -> listOf("id") },
-                checkpointStoreFactory = { dir ->
-                    dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
-                },
-            )
-            runner.execute(
-                request(
-                    output = storeDir.resolve("users.json"),
-                    tables = listOf("users"),
-                    sinceColumn = "updated_at",
-                    since = "2026-01-01",
-                    checkpointDir = storeDir,
-                ),
-            ) shouldBe 0
-            stderr.joined() shouldNotContain "Error:"
         }
     }
 

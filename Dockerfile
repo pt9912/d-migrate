@@ -222,6 +222,65 @@ COPY --from=coverage-build /src/build/reports/kover/report.json /srv/coverage-js
 
 ENTRYPOINT ["cat", "/srv/coverage-json/report.json"]
 
+# ---- Stage 6b: coverage-modules --------------------------------------------
+# Per-module Kover XML and JSON reports. Aggregate verification (`koverVerify`)
+# can pass while individual modules still sit below 90% in isolation, because
+# cross-module tests count toward the aggregate. This stage produces module-
+# isolated reports so module-local coverage gaps surface as well.
+#
+#     docker build --target coverage-modules -t d-migrate:coverage-modules .
+#     docker run --rm d-migrate:coverage-modules | tar xf - -C build/reports/kover-modules
+#
+# Or via:
+#
+#     make docker-coverage-modules
+FROM coverage-build AS coverage-modules
+
+# All subprojects with main sources, excluding pure integration-test runners
+# (test:integration-* / test:consumer-read-probe). Override via
+# `--build-arg COVERAGE_MODULES_TASKS=...` for a narrower run.
+ARG COVERAGE_MODULES_TASKS="\
+:hexagon:core:koverXmlReport \
+:hexagon:application:koverXmlReport \
+:hexagon:profiling:koverXmlReport \
+:hexagon:ports-common:koverXmlReport \
+:hexagon:ports-read:koverXmlReport \
+:hexagon:ports-write:koverXmlReport \
+:adapters:driven:driver-common:koverXmlReport \
+:adapters:driven:driver-postgresql:koverXmlReport \
+:adapters:driven:driver-postgresql-profiling:koverXmlReport \
+:adapters:driven:driver-mysql:koverXmlReport \
+:adapters:driven:driver-mysql-profiling:koverXmlReport \
+:adapters:driven:driver-sqlite:koverXmlReport \
+:adapters:driven:driver-sqlite-profiling:koverXmlReport \
+:adapters:driven:audit-logging:koverXmlReport \
+:adapters:driven:connection-config:koverXmlReport \
+:adapters:driven:formats:koverXmlReport \
+:adapters:driven:integrations:koverXmlReport \
+:adapters:driven:persistence-jdbc:koverXmlReport \
+:adapters:driven:storage-file:koverXmlReport \
+:adapters:driven:streaming:koverXmlReport \
+:adapters:driven:text-icu:koverXmlReport \
+:adapters:driving:cli:koverXmlReport \
+:adapters:driving:mcp:koverXmlReport \
+"
+
+# Tests are already up-to-date from the parent `coverage-build` stage; only the
+# per-module koverXmlReport tasks need to run here.
+RUN gradle --no-daemon ${COVERAGE_MODULES_TASKS} && \
+    mkdir -p /reports && \
+    find /src \
+      \( -path '/src/build/reports' -prune \) -o \
+      -path '*/build/reports/kover/report.xml' -print | \
+    while IFS= read -r xml; do \
+      mod=$(echo "$xml" | sed 's|^/src/||; s|/build/reports/kover/report.xml$||; s|/|_|g'); \
+      cp "$xml" "/reports/${mod}.xml"; \
+      yq -p xml -o json "$xml" | \
+        jq -f /src/scripts/kover-report-to-json.jq > "/reports/${mod}.json"; \
+    done
+
+ENTRYPOINT ["sh", "-c", "tar -cf - -C /reports ."]
+
 # ---- Stage 7: runtime ------------------------------------------------------
 # Uses the same JRE base as the Jib image produced by :adapters:driving:cli:jibDockerBuild
 FROM eclipse-temurin:21-jre-noble AS runtime

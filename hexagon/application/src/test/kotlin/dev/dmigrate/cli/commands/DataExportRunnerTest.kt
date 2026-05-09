@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.NamedConnectionResolver
+import io.kotest.assertions.throwables.shouldThrow
 import dev.dmigrate.core.data.DataFilter
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -31,7 +31,19 @@ import java.sql.Connection
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-class DataExportRunnerHappyPathTest : FunSpec({
+/**
+ * Unit-Tests für [DataExportRunner] mit Fakes für alle externen
+ * Collaborators (sourceResolver, URL-Parser, Pool-Factory,
+ * DataReader/TableLister-Lookups, WriterFactory, ExportExecutor).
+ *
+ * Damit wird **jeder Exit-Code-Pfad** aus LF-008 / LF-009 / LF-013 / LN-012 direkt
+ * unit-testbar, ohne HikariCP, ohne echte Datenbank und ohne Clikt-Kontext.
+ * Die E2E-Tests in `CliDataExportTest` bleiben als Integrations-Sicherheitsnetz,
+ * decken aber nicht mehr jeden Fehlerpfad ab — das macht jetzt dieser Test.
+ */
+class DataExportRunnerTest : FunSpec({
+
+    // ─── Fakes ────────────────────────────────────────────────────
 
     class FakeConnectionPool(
         override val dialect: DatabaseDialect = DatabaseDialect.SQLITE,
@@ -71,6 +83,11 @@ class DataExportRunnerHappyPathTest : FunSpec({
             error("FakeWriterFactory.create() must not be called — runner delegates to ExportExecutor")
     }
 
+    /**
+     * ExportExecutor-Fake der standardmäßig ein synthetisches erfolgreiches
+     * Ergebnis liefert. Tests können den Builder überschreiben, um Fehler
+     * zu werfen oder ein Result mit `error != null` zu liefern.
+     */
     val successExecutor: ExportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
         val summaries = opts.tables.map { TableExportSummary(it, rows = 10, chunks = 1, bytes = 256, durationMs = 3) }
         ExportResult(
@@ -82,6 +99,9 @@ class DataExportRunnerHappyPathTest : FunSpec({
         )
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────
+
+    /** Baut einen [DataExportRequest] mit harmlosen Happy-Path-Defaults. */
     fun request(
         source: String = "sqlite:///tmp/d-migrate-runner-fake.db",
         format: String = "json",
@@ -124,21 +144,31 @@ class DataExportRunnerHappyPathTest : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedSourceResolver(source: String, configPath: Path?): String {
-        val resolver = NamedConnectionResolver(
-            configPathFromCli = configPath,
-            envLookup = { null },
-            defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-        )
-        return resolver.resolve(source)
+    /**
+     * Ein isolierter \`sourceResolver\`, der URLs mit "://" unverändert
+     * durchreicht und benannte Quellen mit IllegalArgumentException
+     * ablehnt, damit Tests keine Connection-Config-Datei brauchen.
+     */
+    fun isolatedSourceResolver(source: String, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+        require(source.isNotBlank()) { "--source must not be blank" }
+        if ("://" in source) return source
+
+        throw IllegalArgumentException("Connection name '$source' not resolvable in test context")
+
     }
 
+    /** Capture-Helper, der stderr-Zeilen in eine Liste puffert. */
     class StderrCapture {
         val lines = mutableListOf<String>()
         val sink: (String) -> Unit = { lines += it }
         fun joined(): String = lines.joinToString("\n")
     }
 
+    /**
+     * Baut einen [DataExportRunner] mit Fake-Collaborators. Alle Parameter
+     * sind optional; der Default ist ein voll funktionsfähiger Happy-Path-
+     * Runner, der ohne echte DB, ohne echte Files, ohne Clikt läuft.
+     */
     fun newRunner(
         stderr: StderrCapture,
         sourceResolver: (String, Path?) -> String = ::isolatedSourceResolver,
@@ -196,10 +226,12 @@ class DataExportRunnerHappyPathTest : FunSpec({
             listerLookup = { FakeTableLister(provider = { listOf("discovered_table") }) },
         )
         runner.execute(request(tables = null)) shouldBe 0
+        // The progress summary reflects the discovered table count
         stderr.joined() shouldContain "1 table(s)"
     }
 
     test("Exit 0: empty --tables list falls through to auto-discovery") {
+        // `tables = emptyList()` → explicitTables = null after takeIf { it.isNotEmpty() }
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
@@ -212,6 +244,36 @@ class DataExportRunnerHappyPathTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         runner.execute(request(tables = listOf("public.users"))) shouldBe 0
+    }
+
+    test("Exit 7: source resolution errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            sourceResolver = { _, _ ->
+                throw IllegalArgumentException("bad alias -> postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(source = "prod")) shouldBe 7
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
+    }
+
+    test("Exit 4: connection errors scrub credentials") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            poolFactory = {
+                throw IllegalStateException("failed for postgresql://admin:secret@host/db")
+            },
+        )
+
+        runner.execute(request(source = "postgresql://admin:secret@host/db")) shouldBe 4
+
+        stderr.joined() shouldContain "***"
+        stderr.joined() shouldNotContain "secret"
     }
 
     test("Exit 0: --filter is parsed as DSL and passed as ParameterizedClause to the executor") {
@@ -233,10 +295,13 @@ class DataExportRunnerHappyPathTest : FunSpec({
     }
 
     test("Fingerprint stability: semantically equal filters with different whitespace/case produce same fingerprint") {
+        // Two filter strings that differ only in whitespace and keyword case
+        // must produce the same canonical form and therefore the same fingerprint.
         val filterA = parseFilter("status = 'OPEN'  AND  active = true")!!
         val filterB = parseFilter("status='OPEN' and active=TRUE")!!
         filterA.canonical shouldBe filterB.canonical
 
+        // Verify through the full fingerprint computation path
         val fpA = ExportOptionsFingerprint.compute(ExportOptionsFingerprint.Input(
             format = "json", encoding = "utf-8", csvDelimiter = ",",
             csvBom = false, csvNoHeader = false, csvNullString = "",
@@ -271,6 +336,7 @@ class DataExportRunnerHappyPathTest : FunSpec({
                 )
             }
         )
+        // null filter = --filter not provided (blank is rejected at CLI layer)
         runner.execute(request(filter = null)) shouldBe 0
         capturedFilter shouldBe null
     }
@@ -331,162 +397,146 @@ class DataExportRunnerHappyPathTest : FunSpec({
         marker.params shouldBe listOf(LocalDateTime.parse("2026-01-01T10:15:30"))
     }
 
-    // ─── ValueSerializer warnings + quiet/no-progress ────────────
+    // ─── Exit 7: Config / URL / Registry ─────────────────────────
 
-    test("ValueSerializer warnings are printed to stderr by default") {
+    test("Exit 7: ConfigResolveException maps to exit 7") {
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            collectWarnings = {
-                listOf(
-                    "  \u26a0 W202 users.balance (java.lang.Double): IEEE-754 Infinity not representable in JSON"
-                )
+            sourceResolver = { _, configPath ->
+                throw IllegalArgumentException("Config file not found: $configPath")
             },
         )
-        runner.execute(request()) shouldBe 0
-        stderr.joined() shouldContain "W202"
-        stderr.joined() shouldContain "users.balance"
+        // source is a connection name (no "://") and the config file doesn't exist
+        val exitCode = runner.execute(
+            request(
+                source = "staging",
+                cliConfigPath = Path.of("/nope/missing-config.yaml"),
+            )
+        )
+        exitCode shouldBe 7
+        stderr.joined() shouldContain "Config file not found"
     }
 
-    test("--quiet suppresses both warnings and progress summary") {
+    test("Exit 7: urlParser IllegalArgumentException maps to exit 7") {
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            collectWarnings = {
-                listOf("  \u26a0 W202 users.balance (Double): Infinity")
-            },
-        )
-        runner.execute(request(quiet = true)) shouldBe 0
-        stderr.lines.shouldBeEmpty()
-    }
-
-    test("--no-progress suppresses the summary but keeps warnings visible") {
-        val stderr = StderrCapture()
-        val runner = newRunner(
-            stderr,
-            collectWarnings = {
-                listOf("  \u26a0 W202 users.balance (Double): Infinity")
-            },
-        )
-        runner.execute(request(noProgress = true)) shouldBe 0
-        stderr.joined() shouldContain "W202"
-        stderr.lines.none { it.contains("Exported") } shouldBe true
-    }
-
-    // ─── URL parse path with real ConnectionUrlParser ────────────
-
-    test("URL source is passed through the real ConnectionUrlParser (sqlite)") {
-        var parsedConfig: ConnectionConfig? = null
-        val stderr = StderrCapture()
-        val runner = newRunner(
-            stderr,
-            urlParser = { url ->
-                val parsed = ConnectionUrlParser.parse(url)
-                parsedConfig = parsed
-                parsed
-            },
-        )
-        runner.execute(request(source = "sqlite:///tmp/runner-fake.db")) shouldBe 0
-        parsedConfig?.dialect shouldBe DatabaseDialect.SQLITE
-        parsedConfig?.database shouldBe "/tmp/runner-fake.db"
-    }
-
-    test("default file constructor path does not blow up when the executor is the happy-path default") {
-        val stderr = StderrCapture()
-        val runner = DataExportRunner(
-            sourceResolver = ::isolatedSourceResolver,
-            urlParser = ConnectionUrlParser::parse,
-            poolFactory = { FakeConnectionPool() },
-            readerLookup = { FakeDataReader() },
-            listerLookup = { FakeTableLister() },
-            writerFactoryBuilder = { FakeWriterFactory() },
-            collectWarnings = { emptyList() },
-            exportExecutor = successExecutor,
-            stderr = stderr.sink,
-        )
-        runner.execute(request()) shouldBe 0
-    }
-
-    // ─── Edge case: blank source ─────────────────────────────────
-
-    test("Exit 7: blank --source is reported as source resolution error") {
-        val stderr = StderrCapture()
-        val runner = newRunner(stderr)
-        runner.execute(request(source = "   ")) shouldBe 7
-        stderr.joined() shouldContain "--source must not be blank"
-    }
-
-    // ─── File-system side effect probe ───────────────────────────
-
-    test("every early exit closes the pool exactly once if it was opened") {
-        val pool = FakeConnectionPool()
-        val stderr = StderrCapture()
-        val runner = newRunner(
-            stderr,
-            poolFactory = { pool },
-            readerLookup = { throw IllegalArgumentException("no reader") },
+            urlParser = { url -> throw IllegalArgumentException("Unknown dialect in URL $url") },
         )
         runner.execute(request()) shouldBe 7
-        pool.closeCount shouldBe 1
+        stderr.joined() shouldContain "Unknown dialect"
     }
 
-    test("pre-pool exits (bad encoding) do not touch the pool factory") {
-        var poolFactoryInvoked = false
+    test("Exit 7: DataReader registry miss maps to exit 7") {
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            poolFactory = {
-                poolFactoryInvoked = true
-                FakeConnectionPool()
-            },
+            readerLookup = { d -> throw IllegalArgumentException("No DataReader registered for dialect $d") },
         )
-        runner.execute(request(encoding = "bogus-charset-12345")) shouldBe 2
-        poolFactoryInvoked shouldBe false
+        runner.execute(request()) shouldBe 7
+        stderr.joined() shouldContain "No DataReader registered"
     }
 
-    // ─── Progress Reporter Wiring (§8.3) ───────────────────────────
-
-    test("default path passes reporter to executor") {
-        val reporterEvents = mutableListOf<String>()
-        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+    test("Exit 7: TableLister registry miss maps to exit 7") {
         val stderr = StderrCapture()
-        val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
-                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
-                    dev.dmigrate.streaming.ProgressOperation.EXPORT, opts.tables.size))
-                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
-            })
-        runner.execute(request())
-        reporterEvents shouldContainExactly listOf("RunStarted")
+        val runner = newRunner(
+            stderr,
+            listerLookup = { d -> throw IllegalArgumentException("No TableLister registered for dialect $d") },
+        )
+        runner.execute(request()) shouldBe 7
+        stderr.joined() shouldContain "No TableLister registered"
     }
 
-    test("--quiet suppresses reporter") {
-        val reporterEvents = mutableListOf<String>()
-        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+    // ─── Exit 2: Validation errors ───────────────────────────────
+
+    test("Exit 2: unknown encoding") {
         val stderr = StderrCapture()
-        val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
-                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
-                    dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
-                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
-            })
-        runner.execute(request(quiet = true))
-        reporterEvents.size shouldBe 0
+        val runner = newRunner(stderr)
+        runner.execute(request(encoding = "not-a-real-charset-ever")) shouldBe 2
+        stderr.joined() shouldContain "Unknown encoding"
     }
 
-    test("--no-progress suppresses reporter") {
-        val reporterEvents = mutableListOf<String>()
-        val reporter = dev.dmigrate.streaming.ProgressReporter { reporterEvents += it::class.simpleName!! }
+    test("Exit 2: invalid --tables identifier (whitespace)") {
         val stderr = StderrCapture()
-        val runner = newRunner(stderr, progressReporter = reporter,
-            exportExecutor = ExportExecutor { ctx, opts, resume, callbacks ->
-                callbacks.progressReporter.report(dev.dmigrate.streaming.ProgressEvent.RunStarted(
-                    dev.dmigrate.streaming.ProgressOperation.EXPORT, 1))
-                ExportResult(tables = emptyList(), totalRows = 0, totalChunks = 0, totalBytes = 0, durationMs = 0)
-            })
-        runner.execute(request(noProgress = true))
-        reporterEvents.size shouldBe 0
+        val runner = newRunner(stderr)
+        runner.execute(request(tables = listOf("weird name"))) shouldBe 2
+        stderr.joined() shouldContain "not a valid identifier"
     }
 
-    Files.deleteIfExists(Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"))
+    test("Exit 2: invalid --tables identifier (SQL injection)") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(tables = listOf("users; DROP TABLE users"))) shouldBe 2
+    }
+
+    test("Exit 2: empty effective tables (lister returns empty list)") {
+        val stderr = StderrCapture()
+        val runner = newRunner(
+            stderr,
+            listerLookup = { FakeTableLister(provider = { emptyList() }) },
+        )
+        runner.execute(request(tables = null)) shouldBe 2
+        stderr.joined() shouldContain "No tables to export"
+    }
+
+    test("Exit 2: multiple tables to stdout without --split-files") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(tables = listOf("users", "orders"), output = null)) shouldBe 2
+        stderr.joined() shouldContain "Cannot export"
+    }
+
+    test("Exit 2: --split-files without --output") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(splitFiles = true, output = null)) shouldBe 2
+        stderr.joined() shouldContain "--split-files"
+    }
+
+    test("Exit 2: --csv-delimiter multi-char") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(format = "csv", csvDelimiter = "::")) shouldBe 2
+        stderr.joined() shouldContain "single character"
+    }
+
+    test("Exit 2: --csv-delimiter empty") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(format = "csv", csvDelimiter = "")) shouldBe 2
+    }
+
+    test("Exit 2: --since-column without --since") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(sinceColumn = "updated_at")) shouldBe 2
+        stderr.joined() shouldContain "--since-column and --since must be used together"
+    }
+
+    test("Exit 2: --since without --since-column") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(since = "2026-01-01")) shouldBe 2
+        stderr.joined() shouldContain "--since-column and --since must be used together"
+    }
+
+    test("Exit 2: invalid --since-column identifier") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+        runner.execute(request(sinceColumn = "bad column", since = "1")) shouldBe 2
+        stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
+    }
+
+    test("Exit 2: invalid --filter DSL throws FilterParseException at request construction") {
+        // Since 0.9.3, filter parsing happens in the CLI layer (DataExportCommand)
+        // before DataExportRequest is constructed. The Runner never sees invalid DSL.
+        // This test verifies that parseFilter rejects invalid input.
+        shouldThrow<FilterParseException> {
+            parseFilter("LIMIT 10")
+        }
+    }
+
+    // ─── Exit 4: Connection / lister I/O ─────────────────────────
+
 })

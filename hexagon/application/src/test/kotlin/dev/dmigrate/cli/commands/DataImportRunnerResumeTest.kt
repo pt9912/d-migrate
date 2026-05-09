@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -144,16 +142,18 @@ class DataImportRunnerResumeTest : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedTargetResolver(target: String?, configPath: Path?): String {
-        if (target != null) {
-            val resolver = NamedConnectionResolver(
-                configPathFromCli = configPath,
-                envLookup = { null },
-                defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-            )
-            return resolver.resolve(target)
-        }
-        throw ConfigResolveException("--target was not provided and no default_target configured.")
+    fun isolatedTargetResolver(target: String?, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+
+
+        require(target != null) { "--target was not provided and no default_target configured." }
+
+
+        if ("://" in target) return target
+
+
+        throw IllegalArgumentException("Connection name '$target' not resolvable in test context")
+
+
     }
 
     class StderrCapture {

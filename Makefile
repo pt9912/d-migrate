@@ -22,7 +22,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -48,6 +48,7 @@ help:
 		'  make docker-coverage  Build Kover HTML coverage image' \
 		'  make docker-coverage-gate  Run Kover verification inside Docker' \
 		'  make docker-coverage-json  Build Kover JSON coverage image' \
+		'  make docker-coverage-modules  Per-module Kover reports + summary (modules below 90% in isolation)' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
@@ -150,6 +151,33 @@ docker-coverage-gate:
 
 docker-coverage-json:
 	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
+
+# Per-module Kover reports — module-isolated view to surface modules whose
+# main code is covered only by cross-module tests. Aggregate verification
+# (docker-coverage-gate) can pass while individual modules sit below 90%.
+#
+# The Dockerfile `coverage-modules` stage emits a tarball on stdout with
+# `<module>.xml` and `<module>.json` per project; this target extracts to
+# `build/reports/kover-modules/` and runs the summary script.
+#
+# Override the module list via:
+#   make docker-coverage-modules COVERAGE_MODULES_TASKS=":hexagon:application:koverXmlReport :adapters:driving:cli:koverXmlReport"
+COVERAGE_MODULES_TASKS ?=
+COVERAGE_MODULES_THRESHOLD ?= 90
+COVERAGE_MODULES_TOP ?= 10
+
+docker-coverage-modules:
+	@$(DOCKER) build --target coverage-modules \
+	  $(if $(strip $(COVERAGE_MODULES_TASKS)),--build-arg COVERAGE_MODULES_TASKS="$(COVERAGE_MODULES_TASKS)",) \
+	  -t $(IMAGE):coverage-modules .
+	@mkdir -p build/reports/kover-modules
+	@rm -f build/reports/kover-modules/*.xml build/reports/kover-modules/*.json
+	@$(DOCKER) run --rm $(IMAGE):coverage-modules | tar xf - -C build/reports/kover-modules
+	@echo "Module reports in build/reports/kover-modules/"
+	@echo
+	@python3 scripts/kover-modules-summary.py build/reports/kover-modules \
+	  --threshold $(COVERAGE_MODULES_THRESHOLD) \
+	  --top $(COVERAGE_MODULES_TOP) || true
 
 # Regenerate pinned JSON-Schema golden snapshots without volume mounts.
 # Builds the `golden-update` Docker stage (which runs the goldenness tests
