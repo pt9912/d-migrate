@@ -1754,54 +1754,88 @@ Nicht in der ersten Matrix:
 
 ### Phase F - Tests und Smokes
 
-- Core-Planner-Tests
-- DDL-Golden-Tests pro Dialekt
-- SQLite-Rebuild-Golden-Tests fuer Temp-Namen, Spaltenmapping,
-  Index-/Constraint-/Trigger-/View-Wiederaufbau und Down-Rebuild
-- CLI-Tests fuer Flags, Exit-Codes und Reports, inklusive Datei-zu-Datei,
-  `--dialect`-Pflicht, `--execute`-Ablehnung bei Datei-Target,
-  `schema migrate --execute --dry-run` und
-  `schema rollback --execute --dry-run` als Exit `2`,
-  `schema migrate --execute` ohne `--report` als Exit `2`,
-  `--plan-only --generate-rollback` ohne Down-SQL-Artefakt,
-  `--plan-only --generate-rollback --rollback-output ...` als Exit `2`,
-  stdout-/Datei-Ausgabeziele und fehlende implizite Report-Sidecars
-- Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler nach Beginn
-  der DDL-Ausfuehrung endet mit Exit `5`, enthaelt strukturierten
-  Ausfuehrungsstatus, ueberschreibt keine unfertigen SQL-Artefakte und
-  unterscheidet beweisbar zurueckgerollt von moeglicherweise partiell angewendet
-- Artefakt-Writer-Tests fuer atomare Finalisierung und unveraenderte
-  bestehende Zielpfade bei Planungs-, Render-, Blocker- und
-  Ausfuehrungsfehlern
-- Recovery-Tests fuer `schema migrate --execute --generate-rollback`, bei denen
-  Up erfolgreich war, aber Nach-Compare oder finale Rollback-Artefakt-
-  Finalisierung fehlschlaegt; bei beobachtetem Post-Up-Fingerprint ungleich
-  Soll darf kein automatisch ausfuehrbares Recovery-Rollback-Artefakt entstehen
-- Metadatenblock-Tests fuer gueltige Down-SQL-Artefakte, fehlende Bloecke,
-  doppelte Bloecke, unbekannte Formatversionen, fehlende Pflichtfelder,
-  ungueltiges JSON, Fingerprint-Algorithmus-Mismatch,
-  Artifact-Hash-Mismatch bei Header- oder Body-Aenderungen, Dialekt-Mismatch,
-  Recovery-Felder (`recovery`, `postUpVerified`, `allowedPostUpFingerprints`)
-  und Secret-Scrubbing
-- MySQL-Dependency-Tests fuer fehlende oder unvollstaendige View-Dependency-
-  Privilegien; betroffene View-Replacements und spaltenveraendernde Operationen
-  muessen blockieren
-- Docker-Smokes:
-  - PostgreSQL Up
-  - PostgreSQL Up + Down
-  - MySQL Up
-  - MySQL Up + Down fuer die erste reversible Operationsmatrix
-  - SQLite Up
-  - SQLite Up + Down fuer direkt reversible Operationen ohne Rebuild
-  - SQLite Up + Down fuer mindestens einen echten Table-Rebuild
-- Roundtrip-Smoke:
-  - Ausgangsschema in DB erzeugen
-  - Zielschema migrieren
-  - Rollback-Artefakt aus demselben Plan erzeugen
-  - reverse
-  - compare nach Up gegen Zielschema
-  - Down ausfuehren
-  - compare nach Down gegen Ausgangsschema
+Wird in Sub-Slices ausgeliefert. Reihenfolge approximativ — die
+ersten drei sind Voraussetzung fuer alles Weitere, danach kann je
+nach Risiko-/Nutzenabwaegung gepriorisiert werden.
+
+#### F.1 — Golden-Master-DDL-Tests pro Dialekt ✅ (2026-05-09)
+
+- Up-DDL-Goldens fuer Postgres / MySQL / SQLite pro Szenario
+  (`add-table`, `add-column`, `drop-column`, `alter-column-type-safe`).
+- Renderer-Aenderung ohne Golden-Update faellt laut.
+- Down-Goldens und SQLite-Rebuild-Spezialfaelle (Temp-Namen-
+  Determinismus, Spaltenmapping-Edge-Cases) folgen in spaeteren
+  F.x-Slices oder gemeinsam mit den Round-Trip-Smokes.
+
+#### F.2 — Round-Trip-Smoke PostgreSQL
+
+- Testcontainers-basiert (existierende `test/integration-postgresql/`-
+  Infrastruktur wiederverwenden).
+- Ausgangsschema in DB einrichten.
+- `schema migrate --execute` mit `--generate-rollback` und
+  `--rollback-output`.
+- Reverse + Compare gegen Ziel-Schema.
+- `schema rollback --execute`.
+- Reverse + Compare gegen Ausgangsschema.
+
+#### F.3 — Round-Trip-Smoke MySQL
+
+- Analog zu F.2 fuer die erste reversible Operationsmatrix
+  (Plan §6.3); `AlterColumnNullability` bleibt Carve-Out.
+
+#### F.4 — Round-Trip-Smoke SQLite
+
+- Direkt-reversible Operationen ohne Rebuild (in-memory; kein
+  Testcontainers noetig).
+- Mindestens ein echter Table-Rebuild im Pfad, um die
+  RebuildTable-Pipeline gegen eine echte SQLite-Engine zu fahren
+  (Spaltenmapping, foreign_key_check, BEGIN IMMEDIATE / COMMIT).
+
+#### F.5 — Recovery-Rollback-Artefakt
+
+- Recovery-Pfad in `schema migrate --execute --generate-rollback`:
+  bei Post-Compare-Drift das Rollback-Artefakt mit `recovery=true`
+  und `allowedPostUpFingerprints` finalisieren, sofern kein
+  beobachteter Post-Up-Fingerprint dem Soll widerspricht.
+- Recovery-Pfad in `schema rollback`: `allowedPostUpFingerprints`-
+  Whitelist akzeptieren.
+- Tests fuer "beobachteter Post-Up-Fingerprint != Soll" Fall:
+  KEIN automatisch ausfuehrbares Recovery-Artefakt darf entstehen.
+
+#### F.6 — Edge-Cases und Hardening
+
+- Atomic-Writer-Edge-Cases: Render-/Blocker-/Execution-Fehler
+  duerfen bestehende Zielpfade nicht ueberschreiben.
+- MySQL-Dependency-Tests fuer fehlende View-Privilegien; betroffene
+  View-Replacements / spaltenveraendernde Operationen muessen blocken.
+- SQLite-Rebuild-Atomic-Execution-Vertrag (autocommit aus, kein
+  outer-Tx) als Integration-Test.
+- Erweiterte Metadatenblock-Tests: doppelte Bloecke, unbekannte
+  Formatversionen, ungueltiges JSON, Fingerprint-Algorithmus-
+  Mismatch, Secret-Scrubbing-Pruefung. Die strukturellen
+  Parser-Faelle sind in `RollbackArtefactParserTest` (E.5) bereits
+  abgedeckt; F.6 ergaenzt das Secret-Scrubbing- und das
+  Round-Trip-Tampering-Spezifikum.
+- Erweiterte CLI-Exit-Code-Tests (z.B. stdout-/Datei-
+  Ausgabeziele, fehlende implizite Report-Sidecars). Die
+  Hauptpfade aus E.1-E.6 sind bereits durch Unit-Tests abgedeckt;
+  F.6 schliesst die Luecken.
+- Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler
+  nach Beginn der DDL-Ausfuehrung endet mit Exit `5`, enthaelt
+  strukturierten Ausfuehrungsstatus, ueberschreibt keine unfertigen
+  SQL-Artefakte und unterscheidet beweisbar zurueckgerollt von
+  moeglicherweise partiell angewendet (E.4 hat den Pfad implementiert;
+  F.6 deckt die Variante mit halb angewendetem Up plus rollback-
+  Failure ab).
+
+Coverage-Punkte aus dem urspruenglichen Phase-F-Bullet-Set, die NICHT
+im Sub-Slice-Plan stehen, sind in den vorhergehenden Phasen bereits
+abgedeckt:
+
+- Core-Planner-Tests → Phase C (`DiffPlannerTest` etc.).
+- CLI-Flag- / Exit-Code-Tests → E.1-E.6 unit tests.
+- Metadatenblock-Tests (Hauptfaelle) → E.5
+  (`RollbackArtefactParserTest`).
 
 ---
 
