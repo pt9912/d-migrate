@@ -222,7 +222,7 @@ class SchemaMigrateRunnerTest : FunSpec({
         runner.execute(request) shouldBe 2
     }
 
-    test("--generate-rollback is rejected with exit 2 in E.1") {
+    test("--generate-rollback without --rollback-output and without --plan-only is exit 2") {
         val (runner, _) = captureRunner()
         val request = SchemaMigrateRequest(
             source = sourcePath.toString(),
@@ -231,6 +231,139 @@ class SchemaMigrateRunnerTest : FunSpec({
             generateRollback = true,
         )
         runner.execute(request) shouldBe 2
+    }
+
+    test("--rollback-output without --generate-rollback is exit 2") {
+        val (runner, _) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            rollbackOutput = tmpDir.resolve("down.sql"),
+        )
+        runner.execute(request) shouldBe 2
+    }
+
+    test("--generate-rollback --plan-only is a capability check; report.summary reflects Down-side") {
+        val capture = mutableMapOf<String, String>()
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            renderReport = { r, _ ->
+                "{\"downStatementsTotal\":${r.summary.downStatementsTotal},\"downBlocked\":${r.summary.downBlocked}}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+            stdout = { capture.merge("stdout", it) { a, b -> "$a\n$b" } },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            generateRollback = true,
+            planOnly = true,
+        )
+        runner.execute(request) shouldBe 0
+        capture["stdout"] shouldContain "\"downStatementsTotal\":1"
+        capture["stdout"] shouldContain "\"downBlocked\":false"
+    }
+
+    test("--generate-rollback writes a v1 metadata block + sql body to --rollback-output") {
+        val capture = mutableMapOf<String, String>()
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        MigrationDdlResult(
+                            statements = listOf(
+                                MigrationDdlStatement(
+                                    sql = "DROP TABLE x;",
+                                    operationIds = setOf("op-1"),
+                                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+                                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                                ),
+                            ),
+                            operationsRendered = setOf("op-1"),
+                        )
+                }
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { _, _ -> "{}" },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val outPath = tmpDir.resolve("up-2.sql")
+        val downPath = tmpDir.resolve("down-2.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            generateRollback = true,
+            output = outPath,
+            rollbackOutput = downPath,
+        )
+        runner.execute(request) shouldBe 0
+        val artefact = capture["wrote:$downPath"]!!
+        artefact shouldContain "-- d-migrate rollback-sql v1 begin"
+        artefact shouldContain "-- d-migrate rollback-sql v1 end"
+        artefact shouldContain "\"format\":\"d-migrate rollback-sql\""
+        artefact shouldContain "\"formatVersion\":\"v1\""
+        artefact shouldContain "\"dialect\":\"POSTGRESQL\""
+        artefact shouldContain "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v1\""
+        artefact shouldContain "\"recovery\":false"
+        artefact shouldContain "\"postUpVerified\":false"
+        artefact shouldContain "DROP TABLE x;"
+    }
+
+    test("Down-side blockers (NOT_REVERSIBLE) propagate into combined exit 8") {
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        MigrationDdlResult(
+                            statements = emptyList(),
+                            operationsRendered = emptySet(),
+                            blockers = listOf(
+                                MigrationBlocker(reason = MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE),
+                            ),
+                            primaryBlockedReason = MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE,
+                        )
+                }
+            },
+            renderReport = { _, _ -> "{}" },
+            printError = { _, _ -> },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            generateRollback = true,
+            rollbackOutput = tmpDir.resolve("down-blocked.sql"),
+        )
+        runner.execute(request) shouldBe 8
     }
 
     test("--plan-only with --rollback-output is exit 2") {

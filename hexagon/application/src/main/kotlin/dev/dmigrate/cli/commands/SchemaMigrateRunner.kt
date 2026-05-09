@@ -59,6 +59,8 @@ class SchemaMigrateRunner(
     private val printError: (message: String, source: String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
+    /** Embedded into the rollback artefact's `createdByVersion` field. */
+    private val createdByVersion: String = "d-migrate (dev)",
 ) {
     private val userFacingErrors = UserFacingErrors(urlScrubber)
     private val userFacingPrintError = userFacingErrors.printError(printError)
@@ -124,20 +126,89 @@ class SchemaMigrateRunner(
 
         cancellationToken.throwIfCancellationRequested()
 
-        // 6. Pipeline: compare → plan → render
+        // 6. Pipeline: compare → plan → render UP
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
         cancellationToken.throwIfCancellationRequested()
-        val rendered = renderer.generateUp(plan, DdlGenerationOptions())
+        val renderedUp = renderer.generateUp(plan, DdlGenerationOptions())
 
         // 7. Block on destructive without --allow-destructive
-        val effective = applyDestructiveGuard(rendered, request.allowDestructive)
+        val effectiveUp = applyDestructiveGuard(renderedUp, request.allowDestructive)
 
-        // 8. Build report
-        val report = buildReport(request, sourceResolved, targetResolved, plan, effective, effectiveDialect)
+        // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result)
+        val renderedDown = if (request.generateRollback) {
+            cancellationToken.throwIfCancellationRequested()
+            renderer.generateDown(plan, DdlGenerationOptions())
+        } else {
+            null
+        }
+        val combined = if (renderedDown == null) effectiveUp else mergeDownIntoUp(effectiveUp, renderedDown)
 
-        // 9. Decide outcome
-        return finalize(request, effective, report)
+        // 9. Build report
+        val report = buildReport(request, sourceResolved, targetResolved, plan, combined, effectiveDialect, renderedDown)
+
+        // 10. Build the rollback artefact text if Down rendered cleanly
+        val rollbackArtefact = if (request.generateRollback && renderedDown != null && !combined.isBlocked) {
+            buildRollbackArtefact(plan, renderedDown, effectiveDialect)
+        } else {
+            null
+        }
+
+        // 11. Decide outcome
+        return finalize(request, combined, report, rollbackArtefact)
+    }
+
+    /**
+     * Merge Down-rendering blockers into the Up result so the caller
+     * sees a unified `MigrationDdlResult`. We don't replace Up's
+     * statements / rendered ops — those are still useful for the
+     * report — but Down's blockers (`ROLLBACK_NOT_POSSIBLE`,
+     * `MANUAL_ACTION_REQUIRED` from `MANUAL_REQUIRED` operations,
+     * `DIALECT_UNSUPPORTED_OPERATION` for un-renderable Down-paths)
+     * propagate into `combined.blockers` so the runner exits 8.
+     */
+    private fun mergeDownIntoUp(up: MigrationDdlResult, down: MigrationDdlResult): MigrationDdlResult {
+        if (down.blockers.isEmpty()) return up
+        val merged = up.blockers + down.blockers
+        val primary = up.primaryBlockedReason ?: down.primaryBlockedReason
+        return up.copy(
+            blockers = merged,
+            primaryBlockedReason = primary,
+            diagnostics = up.diagnostics + down.diagnostics,
+        )
+    }
+
+    private fun buildRollbackArtefact(
+        plan: dev.dmigrate.core.diff.migration.DiffResult,
+        down: MigrationDdlResult,
+        dialect: DatabaseDialect,
+    ): String {
+        val downRisk = down.statements.fold(
+            RollbackArtefactBuilder.Risk(false, false, false, down.operationsRendered),
+        ) { acc, s ->
+            RollbackArtefactBuilder.Risk(
+                destructive = acc.destructive || s.risk.destructive,
+                dataLossPossible = acc.dataLossPossible || s.risk.dataLossPossible,
+                requiresManualConfirmation = acc.requiresManualConfirmation || s.risk.requiresManualConfirmation,
+                operationIds = acc.operationIds,
+            )
+        }
+        val currentFp = plan.current.fingerprint ?: ""
+        val desiredFp = plan.desired.fingerprint ?: ""
+        return RollbackArtefactBuilder.build(
+            RollbackArtefactBuilder.Input(
+                dialect = dialect,
+                currentFingerprint = currentFp,
+                desiredFingerprint = desiredFp,
+                // Without --execute, the post-up state is the planned desired state.
+                postUpFingerprint = desiredFp,
+                postUpVerified = false,
+                operationIds = down.operationsRendered,
+                risk = downRisk,
+                downStatements = down.statements,
+                createdByVersion = createdByVersion,
+            ),
+        )
     }
 
     private fun resolveDialect(request: SchemaMigrateRequest, target: ResolvedSchemaOperand): DatabaseDialect? {
@@ -170,16 +241,23 @@ class SchemaMigrateRunner(
             userFacingPrintError("--execute is not supported yet (E.4).", request.source)
             return 2
         }
-        if (request.generateRollback) {
-            userFacingPrintError("--generate-rollback is not supported yet (E.3).", request.source)
-            return 2
-        }
         if (request.dryRun && request.execute) {
             userFacingPrintError("--dry-run and --execute are mutually exclusive.", request.source)
             return 2
         }
         if (request.planOnly && request.rollbackOutput != null) {
             userFacingPrintError("--plan-only forbids --rollback-output.", request.source)
+            return 2
+        }
+        if (request.generateRollback && !request.planOnly && request.rollbackOutput == null) {
+            userFacingPrintError(
+                "--generate-rollback requires --rollback-output (or use --plan-only for a capability check).",
+                request.source,
+            )
+            return 2
+        }
+        if (!request.generateRollback && request.rollbackOutput != null) {
+            userFacingPrintError("--rollback-output requires --generate-rollback.", request.source)
             return 2
         }
         return null
@@ -279,6 +357,7 @@ class SchemaMigrateRunner(
         plan: DiffResult,
         rendered: MigrationDdlResult,
         dialect: DatabaseDialect,
+        renderedDown: MigrationDdlResult? = null,
     ): SchemaMigrateReport {
         val isBlocked = rendered.isBlocked
         val isEmpty = plan.operations.isEmpty()
@@ -339,6 +418,8 @@ class SchemaMigrateRunner(
                 manualActionCount = rendered.manualActions.size,
                 nonReversibleCount = rendered.nonReversibleOperations.size,
                 primaryBlockedReason = rendered.primaryBlockedReason?.name,
+                downStatementsTotal = renderedDown?.statements?.size,
+                downBlocked = renderedDown?.isBlocked ?: false,
             ),
         )
     }
@@ -347,17 +428,18 @@ class SchemaMigrateRunner(
         request: SchemaMigrateRequest,
         rendered: MigrationDdlResult,
         report: SchemaMigrateReport,
+        rollbackArtefact: String?,
     ): Int {
         // Always emit the report when --report is set (also on blockers).
         request.report?.let { writeReport(it, report, request.reportFormat) ?: return 7 }
 
-        // On blocker: report-only — do not emit Up-SQL.
+        // On blocker: report-only — do not emit Up-SQL or Down artefact.
         if (report.exitCode == 8) {
             if (request.report == null) stdout(renderReport(report, request.reportFormat))
             return 8
         }
 
-        // On --plan-only: report only.
+        // On --plan-only: report only (capability check for --generate-rollback inclusive).
         if (request.planOnly) {
             if (request.report == null) stdout(renderReport(report, request.reportFormat))
             return report.exitCode
@@ -376,6 +458,22 @@ class SchemaMigrateRunner(
         } else {
             // Render Up-SQL to stdout when no --output was set (dry-run-by-default per spec §6.1).
             stdout(upSql)
+        }
+
+        // Down-SQL artefact emission. --rollback-output is required upstream when
+        // --generate-rollback is set without --plan-only, so rollbackArtefact is
+        // the canonical signal that we have one to write.
+        if (rollbackArtefact != null && request.rollbackOutput != null) {
+            try {
+                ensureParentDirectories(request.rollbackOutput)
+                atomicWriter(request.rollbackOutput, rollbackArtefact)
+            } catch (e: Exception) {
+                userFacingPrintError(
+                    "Failed to write rollback artefact: ${e.message}",
+                    request.rollbackOutput.toString(),
+                )
+                return 7
+            }
         }
         return report.exitCode
     }
@@ -491,4 +589,8 @@ data class SchemaMigrateSummary(
     val manualActionCount: Int = 0,
     val nonReversibleCount: Int = 0,
     val primaryBlockedReason: String? = null,
+    /** Number of statements in the Down-rendering, or null when --generate-rollback was off. */
+    val downStatementsTotal: Int? = null,
+    /** True iff the Down-rendering produced blockers (independent of Up-side blockers). */
+    val downBlocked: Boolean = false,
 )
