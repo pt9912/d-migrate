@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SkippedObject
 
@@ -24,4 +25,10 @@ data class ResolvedSchemaOperand(
     val validation: ValidationResult,
     val notes: List<SchemaReadNote> = emptyList(),
     val skippedObjects: List<SkippedObject> = emptyList(),
+    /**
+     * Effective dialect for the operand source, when known. DB
+     * operands set this from the connection; file operands leave it
+     * null and rely on the caller's `--dialect` flag.
+     */
+    val dialect: DatabaseDialect? = null,
 )

@@ -14,13 +14,16 @@ import java.nio.file.Path
 import kotlin.io.path.writeText
 
 /**
- * E.1 first-slice runner for `schema migrate`. Implements the
- * file-to-file mode per `spec/cli-spec.md §6.1 schema migrate`:
+ * Runner for `schema migrate` per `spec/cli-spec.md §6.1`.
  *
- * - both `--source` and `--target` are local schema files,
- * - `--dialect` is mandatory (no DB connection to derive from),
- * - `--execute` is rejected (Exit 2 — DB execution lands in E.4),
- * - `--generate-rollback` is deferred to E.3.
+ * Slices delivered:
+ *
+ * - **E.1**: file-to-file mode. `--dialect` mandatory.
+ * - **E.2**: DB-target (and DB-source) mode via the injected
+ *   `dbLoader`. `--dialect` becomes optional when *target* is a DB —
+ *   the loader supplies it from the connection. If both are set, they
+ *   must match (otherwise Exit 2 `TARGET_DIALECT_MISMATCH`-style).
+ * - **E.3+**: `--generate-rollback`, `--execute` — still rejected.
  *
  * Pipeline: load → normalize → validate → compare → plan → render.
  *
@@ -44,6 +47,7 @@ import kotlin.io.path.writeText
 class SchemaMigrateRunner(
     private val operandParser: (String) -> CompareOperand = CompareOperandParser::parse,
     private val fileLoader: (CompareOperand.File) -> ResolvedSchemaOperand,
+    private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)? = null,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand = CompareOperandNormalizer::normalize,
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
     private val planner: DiffPlanner = DiffPlanner(),
@@ -81,25 +85,21 @@ class SchemaMigrateRunner(
             return 2
         }
 
-        // E.1: only file-to-file is supported.
-        if (sourceOp !is CompareOperand.File) {
-            userFacingPrintError("E.1 only supports file sources; got ${sourceOp::class.simpleName}", request.source)
-            return 2
+        // Output collision check (only meaningful for file operands)
+        val filePaths = listOfNotNull(
+            (sourceOp as? CompareOperand.File)?.path,
+            (targetOp as? CompareOperand.File)?.path,
+        ).toTypedArray()
+        if (filePaths.isNotEmpty()) {
+            request.output?.let { if (collidesWithOperand(it, *filePaths)) return 2 }
+            request.report?.let { if (collidesWithOperand(it, *filePaths)) return 2 }
         }
-        if (targetOp !is CompareOperand.File) {
-            userFacingPrintError("E.1 only supports file targets; got ${targetOp::class.simpleName}", request.target)
-            return 2
-        }
-
-        // Output collision check
-        request.output?.let { if (collidesWithOperand(it, sourceOp.path, targetOp.path)) return 2 }
-        request.report?.let { if (collidesWithOperand(it, sourceOp.path, targetOp.path)) return 2 }
 
         cancellationToken.throwIfCancellationRequested()
 
         // 3. Load + normalize + validate both
-        val sourceResolved = loadFileOperand(sourceOp, request.source) ?: return 7
-        val targetResolved = loadFileOperand(targetOp, request.target) ?: return 7
+        val sourceResolved = loadOperand(sourceOp, request.source, request.cliConfigPath) ?: return lastExitCode
+        val targetResolved = loadOperand(targetOp, request.target, request.cliConfigPath) ?: return lastExitCode
 
         val (sourceNormalized, targetNormalized) = try {
             normalizer(sourceResolved) to normalizer(targetResolved)
@@ -112,38 +112,66 @@ class SchemaMigrateRunner(
             return emitValidationFailure(request, sourceNormalized, targetNormalized)
         }
 
-        // 4. Resolve renderer
-        val renderer = rendererFor(request.dialect)
+        // 4. Resolve effective dialect
+        val effectiveDialect = resolveDialect(request, targetResolved) ?: return 2
+
+        // 5. Resolve renderer
+        val renderer = rendererFor(effectiveDialect)
         if (renderer == null) {
-            userFacingPrintError("No renderer registered for dialect ${request.dialect.name}", request.source)
+            userFacingPrintError("No renderer registered for dialect ${effectiveDialect.name}", request.source)
             return 2
         }
 
         cancellationToken.throwIfCancellationRequested()
 
-        // 5. Pipeline: compare → plan → render
+        // 6. Pipeline: compare → plan → render
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
         cancellationToken.throwIfCancellationRequested()
         val rendered = renderer.generateUp(plan, DdlGenerationOptions())
 
-        // 6. Block on destructive without --allow-destructive
+        // 7. Block on destructive without --allow-destructive
         val effective = applyDestructiveGuard(rendered, request.allowDestructive)
 
-        // 7. Build report
-        val report = buildReport(request, sourceResolved, targetResolved, plan, effective)
+        // 8. Build report
+        val report = buildReport(request, sourceResolved, targetResolved, plan, effective, effectiveDialect)
 
-        // 8. Decide outcome
+        // 9. Decide outcome
         return finalize(request, effective, report)
     }
 
+    private fun resolveDialect(request: SchemaMigrateRequest, target: ResolvedSchemaOperand): DatabaseDialect? {
+        val targetDialect = target.dialect
+        val requested = request.dialect
+        return when {
+            requested == null && targetDialect == null -> {
+                userFacingPrintError(
+                    "--dialect is required when neither source nor target is a database connection.",
+                    request.source,
+                )
+                null
+            }
+            requested != null && targetDialect != null && requested != targetDialect -> {
+                userFacingPrintError(
+                    "Requested dialect ${requested.name} does not match target connection dialect " +
+                        "${targetDialect.name} (TARGET_DIALECT_MISMATCH).",
+                    request.target,
+                )
+                null
+            }
+            else -> requested ?: targetDialect
+        }
+    }
+
+    private var lastExitCode: Int = 7
+
     private fun validateRequest(request: SchemaMigrateRequest): Int? {
         if (request.execute) {
-            userFacingPrintError("--execute is not supported in E.1; remove the flag.", request.source)
+            userFacingPrintError("--execute is not supported yet (E.4).", request.source)
             return 2
         }
         if (request.generateRollback) {
-            userFacingPrintError("--generate-rollback is not supported in E.1; lands in E.3.", request.source)
+            userFacingPrintError("--generate-rollback is not supported yet (E.3).", request.source)
             return 2
         }
         if (request.dryRun && request.execute) {
@@ -168,12 +196,37 @@ class SchemaMigrateRunner(
         return false
     }
 
-    private fun loadFileOperand(operand: CompareOperand.File, rawRef: String): ResolvedSchemaOperand? {
-        return try {
+    private fun loadOperand(
+        operand: CompareOperand,
+        rawRef: String,
+        configPath: Path?,
+    ): ResolvedSchemaOperand? = when (operand) {
+        is CompareOperand.File -> try {
             fileLoader(operand)
         } catch (e: Exception) {
             userFacingPrintError("Failed to read schema file: ${e.message}", rawRef)
+            lastExitCode = 7
             null
+        }
+        is CompareOperand.Database -> {
+            val loader = dbLoader
+            if (loader == null) {
+                userFacingPrintError("Database operands require a DB loader to be wired.", rawRef)
+                lastExitCode = 2
+                null
+            } else {
+                try {
+                    loader(operand, configPath)
+                } catch (e: CompareConfigException) {
+                    userFacingPrintError("Config/URL error: ${e.message}", rawRef)
+                    lastExitCode = 7
+                    null
+                } catch (e: Exception) {
+                    userFacingPrintError("Connection/metadata error: ${e.message}", rawRef)
+                    lastExitCode = 4
+                    null
+                }
+            }
         }
     }
 
@@ -184,12 +237,13 @@ class SchemaMigrateRunner(
     ): Int {
         for (e in source.validation.errors) userFacingStderr("source: ${e.code} ${e.message}")
         for (e in target.validation.errors) userFacingStderr("target: ${e.code} ${e.message}")
+        val dialectName = request.dialect?.name ?: target.dialect?.name ?: source.dialect?.name ?: "UNKNOWN"
         val report = SchemaMigrateReport(
             status = "validation_failed",
             exitCode = 3,
             source = source.reference,
             target = target.reference,
-            dialect = request.dialect.name,
+            dialect = dialectName,
             planOnly = request.planOnly,
             blockers = emptyList(),
             diagnostics = emptyList(),
@@ -224,6 +278,7 @@ class SchemaMigrateRunner(
         target: ResolvedSchemaOperand,
         plan: DiffResult,
         rendered: MigrationDdlResult,
+        dialect: DatabaseDialect,
     ): SchemaMigrateReport {
         val isBlocked = rendered.isBlocked
         val isEmpty = plan.operations.isEmpty()
@@ -238,7 +293,7 @@ class SchemaMigrateRunner(
             exitCode = exitCode,
             source = source.reference,
             target = target.reference,
-            dialect = request.dialect.name,
+            dialect = dialect.name,
             planOnly = request.planOnly,
             blockers = rendered.blockers.map {
                 SchemaMigrateBlockerView(
@@ -364,7 +419,12 @@ class SchemaMigrateRunner(
 data class SchemaMigrateRequest(
     val source: String,
     val target: String,
-    val dialect: DatabaseDialect,
+    /**
+     * Required for file-to-file mode; optional with DB-target — the
+     * loader derives it from the connection. If both this field and a
+     * DB-target dialect are present, they must match (Exit 2).
+     */
+    val dialect: DatabaseDialect? = null,
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,
@@ -374,6 +434,7 @@ data class SchemaMigrateRequest(
     val generateRollback: Boolean = false,
     val execute: Boolean = false,
     val dryRun: Boolean = false,
+    val cliConfigPath: Path? = null,
 )
 
 data class SchemaMigrateReport(

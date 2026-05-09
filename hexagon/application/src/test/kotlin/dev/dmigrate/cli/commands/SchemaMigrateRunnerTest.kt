@@ -314,12 +314,135 @@ class SchemaMigrateRunnerTest : FunSpec({
         runner.execute(request) shouldBe 2
     }
 
-    test("DB target operand is rejected with exit 2 in E.1") {
+    test("DB target without a wired dbLoader yields exit 2") {
         val (runner, _) = captureRunner()
         val request = SchemaMigrateRequest(
             source = sourcePath.toString(),
             target = "db:postgres://localhost",
             dialect = DatabaseDialect.POSTGRESQL,
+        )
+        runner.execute(request) shouldBe 2
+    }
+
+    test("DB target with a loader supplies the dialect; --dialect omitted is fine") {
+        val capture = mutableMapOf<String, String>()
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:source", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = SchemaDefinition(name = "App", version = "1"),
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            renderReport = { r, _ -> "{\"dialect\":\"${r.dialect}\"}" },
+            printError = { msg, src -> capture["error:$src"] = msg },
+            stdout = { capture.merge("stdout", it) { a, b -> "$a\n$b" } },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            // dialect intentionally omitted — derived from DB loader
+            planOnly = true,
+        )
+        runner.execute(request) shouldBe 0
+        capture["stdout"] shouldContain "POSTGRESQL"
+    }
+
+    test("--dialect mismatch with DB-target dialect yields exit 2 (TARGET_DIALECT_MISMATCH)") {
+        val capture = mutableMapOf<String, String>()
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:source", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = SchemaDefinition(name = "App", version = "1"),
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.MYSQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            renderReport = { _, _ -> "{}" },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:mysql://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+        )
+        runner.execute(request) shouldBe 2
+        capture.values.any { it.contains("TARGET_DIALECT_MISMATCH") } shouldBe true
+    }
+
+    test("DB connection error in dbLoader yields exit 4") {
+        val capture = mutableMapOf<String, String>()
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:source", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { _, _ -> error("connection refused") },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { _ -> null },
+            renderReport = { _, _ -> "{}" },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+        )
+        runner.execute(request) shouldBe 4
+    }
+
+    test("DB config error (CompareConfigException) yields exit 7") {
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:source", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { _, _ -> throw CompareConfigException("alias unresolved") },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { _ -> null },
+            renderReport = { _, _ -> "{}" },
+            printError = { _, _ -> },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:dburl://x",
+            dialect = DatabaseDialect.POSTGRESQL,
+        )
+        runner.execute(request) shouldBe 7
+    }
+
+    test("File-to-file without --dialect yields exit 2") {
+        val (runner, _) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = null,
         )
         runner.execute(request) shouldBe 2
     }
