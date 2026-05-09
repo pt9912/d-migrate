@@ -12,6 +12,8 @@ import dev.dmigrate.mcp.registry.OperationalMcpWiring
 import dev.dmigrate.mcp.server.McpServerConfig
 import dev.dmigrate.server.application.artifact.ArtifactRetentionService
 import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.application.quota.OwnerAwareQuotaService
+import dev.dmigrate.server.application.quota.QuotaReservationOwnerStore
 import dev.dmigrate.server.application.upload.UploadSessionService
 import dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
@@ -21,6 +23,8 @@ import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
+import dev.dmigrate.server.ports.IdempotencyStore
+import dev.dmigrate.server.ports.JobStartTransaction
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryIdempotencyStore
 import dev.dmigrate.server.ports.memory.InMemoryJobStartTransaction
@@ -30,65 +34,48 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
- * Builds the MCP runtime wiring stack and the support loops (artifact
- * retention, finalisation-timeout sweeper) that the runner kicks off
- * before transport startup.
- *
- * Splitting this out of [McpServeRunner] keeps the runner focused on
- * Clikt-decoupled lifecycle orchestration while the JDBC/datasource/
- * scheduler bits — which are what most usefully unit-testable in
- * isolation — live here behind a constructor injectable from tests.
+ * Server-state bundle returned by [ServerStateFactory.build]. Holds the
+ * stores plus the cleanup hook that closes the underlying DataSource
+ * (or any other resource the factory took ownership of).
  */
-internal class McpServeWiring(
-    private val effectiveConnectionConfigPath: Path?,
-    private val approvalGrantsFile: Path?,
+internal data class ServerStateBundle(
+    /** Phase-C runtime with the persistent stores swapped in. */
+    val phaseCWithPersistence: McpRuntimeWiring,
+    val idempotencyStore: IdempotencyStore,
+    val jobStartTransaction: JobStartTransaction,
+    val quotaReservationOwnerStore: QuotaReservationOwnerStore,
+    val ownerAwareQuotaService: OwnerAwareQuotaService,
+    /** Closes the DataSource and any other JDBC resources held by the bundle. */
+    val cleanup: AutoCloseable,
+)
+
+/**
+ * Builds the server-state bundle (job/quota/idempotency stores plus
+ * any pool/migration resources) from a resolved [McpServerStateConfig].
+ *
+ * The default implementation [DefaultServerStateFactory] creates a
+ * Hikari DataSource, applies Flyway migrations, and wires up the
+ * Postgres-flavoured JDBC stores. Tests can substitute an in-memory
+ * factory to exercise the JDBC-branch wiring without a real database.
+ *
+ * Future work: a SQLite-in-memory factory variant lets the unit tests
+ * cover the migration path end-to-end on a process-local backend.
+ */
+internal fun interface ServerStateFactory {
+    fun build(state: McpServerStateConfig, phaseC: McpRuntimeWiring): ServerStateBundle
+}
+
+/**
+ * Default [ServerStateFactory]: Hikari + Flyway + Postgres-flavoured
+ * JDBC stores. Mirrors the behaviour the runner had before this
+ * factory was introduced.
+ */
+internal class DefaultServerStateFactory(
     private val stderr: (String) -> Unit,
-) {
+) : ServerStateFactory {
 
-    /**
-     * Constructs the full [McpCliServerWiring] (Phase C runtime + Phase E
-     * operational + Phase G AI). Picks the in-memory branch when no
-     * `server.state.jdbcUrl` is configured, otherwise the JDBC branch
-     * with Hikari + migrations + JDBC stores.
-     */
-    fun build(
-        config: McpServerConfig,
-        owner: StateDirOwner,
-        cursorKeyring: CursorKeyring?,
-    ): McpCliServerWiring {
-        val phaseC = McpCliRuntimeWiring.runtimeWiring(
-            stateDir = owner.resolved.path,
-            connectionConfigPath = effectiveConnectionConfigPath,
-            cursorKeyring = cursorKeyring,
-            operationTimeout = config.operationTimeout,
-        )
-        val state = resolveServerStateConfigOrExit() ?: run {
-            val artifactRetention = startArtifactRetentionLoop(phaseC)
-            val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
-            val idempotencyStore = InMemoryIdempotencyStore()
-            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
-            val phaseE = OperationalMcpWiring(
-                runtimeWiring = phaseC,
-                idempotencyStore = idempotencyStore,
-                jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
-                workerHandleRegistry = InMemoryWorkerHandleRegistry(),
-                approvalGrantStore = approvalGrantStore(),
-                fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseC, connectionSecretResolver),
-                connectionSecretResolver = connectionSecretResolver,
-                dataRunnerTempDirectory = owner.resolved.path,
-            )
-            val phaseG = AiMcpWiring(operationalWiring = phaseE)
-            return McpCliServerWiring(
-                runtimeWiring = phaseC,
-                aiWiring = phaseG,
-                components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping),
-                closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
-            )
-        }
-
+    override fun build(state: McpServerStateConfig, phaseC: McpRuntimeWiring): ServerStateBundle {
         val dataSource = createServerStateDataSource(state)
-        var artifactRetention: AutoCloseable? = null
-        var finalisationTimeout: AutoCloseable? = null
         try {
             applyOrValidateMigrations(dataSource, state)
             val runner = JdbcTransactionRunner(dataSource)
@@ -101,17 +88,10 @@ internal class McpServeWiring(
                 jobStore = jobStore,
                 quotaService = quotaService,
             )
-            artifactRetention = startArtifactRetentionLoop(phaseCWithJdbc)
-            finalisationTimeout = startFinalisationTimeoutLoop(phaseCWithJdbc)
-            val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath).resolve()
-            val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
-            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
-            val phaseE = OperationalMcpWiring(
-                runtimeWiring = phaseCWithJdbc,
+            return ServerStateBundle(
+                phaseCWithPersistence = phaseCWithJdbc,
                 idempotencyStore = idempotencyStore,
                 jobStartTransaction = JdbcJobStartTransaction(runner, idempotencyStore, jobStore),
-                workerHandleRegistry = InMemoryWorkerHandleRegistry(),
-                approvalGrantStore = approvalGrantStore(),
                 quotaReservationOwnerStore = ownerStore,
                 ownerAwareQuotaService = JdbcOwnerAwareQuotaService(
                     transactionRunner = runner,
@@ -119,6 +99,98 @@ internal class McpServeWiring(
                     jdbcOwnerStore = ownerStore,
                     limitFor = { Long.MAX_VALUE },
                 ),
+                cleanup = dataSource,
+            )
+        } catch (failure: Throwable) {
+            dataSource.close()
+            throw failure
+        }
+    }
+
+    fun createServerStateDataSource(state: McpServerStateConfig): HikariDataSource {
+        val cfg = HikariConfig().apply {
+            jdbcUrl = state.jdbcUrl
+            state.username?.let { username = it }
+            state.password?.let { password = it }
+            maximumPoolSize = state.maximumPoolSize
+            connectionTimeout = state.connectionTimeoutMs
+            poolName = "dmigrate-server-state"
+        }
+        return HikariDataSource(cfg)
+    }
+
+    fun applyOrValidateMigrations(
+        dataSource: HikariDataSource,
+        state: McpServerStateConfig,
+    ) {
+        try {
+            val migrations = JdbcMigrationRunner(dataSource)
+            if (state.migrationsAuto) {
+                migrations.migrate()
+            } else {
+                migrations.validate()
+            }
+        } catch (failure: Throwable) {
+            stderr("MCP server configuration is invalid:")
+            stderr(
+                "  - server.state migration validation failed: " +
+                    "${failure.message ?: failure::class.simpleName}",
+            )
+            throw McpServeExit(2)
+        }
+    }
+}
+
+/**
+ * Builds the MCP runtime wiring stack (Phase C runtime + Phase E
+ * operational + Phase G AI) plus the support loops (artifact retention,
+ * finalisation-timeout sweeper) that the runner kicks off before
+ * transport startup.
+ *
+ * Splitting this out of [McpServeRunner] keeps the runner focused on
+ * Clikt-decoupled lifecycle orchestration. The JDBC server-state path
+ * is delegated to a [ServerStateFactory] that defaults to the real
+ * Hikari/Flyway/Postgres stack but is constructor-injectable so unit
+ * tests can supply an in-memory variant.
+ */
+internal class McpServeWiring(
+    private val effectiveConnectionConfigPath: Path?,
+    private val approvalGrantsFile: Path?,
+    private val stderr: (String) -> Unit,
+    private val serverStateFactory: ServerStateFactory = DefaultServerStateFactory(stderr),
+) {
+
+    fun build(
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        cursorKeyring: CursorKeyring?,
+    ): McpCliServerWiring {
+        val phaseC = McpCliRuntimeWiring.runtimeWiring(
+            stateDir = owner.resolved.path,
+            connectionConfigPath = effectiveConnectionConfigPath,
+            cursorKeyring = cursorKeyring,
+            operationTimeout = config.operationTimeout,
+        )
+        val state = resolveServerStateConfigOrExit() ?: return buildInMemory(config, owner, phaseC)
+
+        val bundle = serverStateFactory.build(state, phaseC)
+        var artifactRetention: AutoCloseable? = null
+        var finalisationTimeout: AutoCloseable? = null
+        try {
+            val phaseCWithJdbc = bundle.phaseCWithPersistence
+            artifactRetention = startArtifactRetentionLoop(phaseCWithJdbc)
+            finalisationTimeout = startFinalisationTimeoutLoop(phaseCWithJdbc)
+            val executor = McpJobExecutorConfigResolver(effectiveConnectionConfigPath).resolve()
+            val executorBundle = dev.dmigrate.server.application.job.JobExecutorFactory.create(executor.config)
+            val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
+            val phaseE = OperationalMcpWiring(
+                runtimeWiring = phaseCWithJdbc,
+                idempotencyStore = bundle.idempotencyStore,
+                jobStartTransaction = bundle.jobStartTransaction,
+                workerHandleRegistry = InMemoryWorkerHandleRegistry(),
+                approvalGrantStore = approvalGrantStore(),
+                quotaReservationOwnerStore = bundle.quotaReservationOwnerStore,
+                ownerAwareQuotaService = bundle.ownerAwareQuotaService,
                 executorBundle = executorBundle,
                 fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseCWithJdbc, connectionSecretResolver),
                 connectionSecretResolver = connectionSecretResolver,
@@ -127,7 +199,7 @@ internal class McpServeWiring(
             val phaseG = AiMcpWiring(operationalWiring = phaseE)
             val components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping)
             stderr(
-                "MCP server-state: JDBC/Postgres enabled " +
+                "MCP server-state: persistent backend enabled " +
                     "(migrations.auto=${state.migrationsAuto}, " +
                     "executor=${if (executor.isAsync) "async" else "sync"}).",
             )
@@ -136,7 +208,7 @@ internal class McpServeWiring(
                 runtimeWiring = phaseCWithJdbc,
                 aiWiring = phaseG,
                 components = components,
-                closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, dataSource)),
+                closeable = CloseStack(listOfNotNull(artifactRetention, finalisationTimeout, bundle.cleanup)),
                 executorLifecycle = if (executor.isAsync) executorBundle.lifecycle else null,
                 executorShutdownTimeout = asyncCfg?.shutdownTimeout
                     ?: dev.dmigrate.server.application.job.JobExecutorConfig.Async.DEFAULT_SHUTDOWN_TIMEOUT,
@@ -148,11 +220,39 @@ internal class McpServeWiring(
                 try {
                     finalisationTimeout?.close()
                 } finally {
-                    dataSource.close()
+                    bundle.cleanup.close()
                 }
             }
             throw failure
         }
+    }
+
+    private fun buildInMemory(
+        config: McpServerConfig,
+        owner: StateDirOwner,
+        phaseC: McpRuntimeWiring,
+    ): McpCliServerWiring {
+        val artifactRetention = startArtifactRetentionLoop(phaseC)
+        val finalisationTimeout = startFinalisationTimeoutLoop(phaseC)
+        val idempotencyStore = InMemoryIdempotencyStore()
+        val connectionSecretResolver = dev.dmigrate.connection.EnvConnectionSecretResolver()
+        val phaseE = OperationalMcpWiring(
+            runtimeWiring = phaseC,
+            idempotencyStore = idempotencyStore,
+            jobStartTransaction = InMemoryJobStartTransaction(phaseC.jobStore, idempotencyStore),
+            workerHandleRegistry = InMemoryWorkerHandleRegistry(),
+            approvalGrantStore = approvalGrantStore(),
+            fallbackJobWorkerFactory = mcpCoreJobWorkerFactory(phaseC, connectionSecretResolver),
+            connectionSecretResolver = connectionSecretResolver,
+            dataRunnerTempDirectory = owner.resolved.path,
+        )
+        val phaseG = AiMcpWiring(operationalWiring = phaseE)
+        return McpCliServerWiring(
+            runtimeWiring = phaseC,
+            aiWiring = phaseG,
+            components = AiMcpRegistries.defaultComponents(phaseG, config.scopeMapping),
+            closeable = CloseStack(listOf(artifactRetention, finalisationTimeout)),
+        )
     }
 
     fun approvalGrantStore() =
@@ -249,39 +349,6 @@ internal class McpServeWiring(
         stderr("MCP server configuration is invalid:")
         stderr("  - ${failure.message}")
         throw McpServeExit(2)
-    }
-
-    fun createServerStateDataSource(state: McpServerStateConfig): HikariDataSource {
-        val cfg = HikariConfig().apply {
-            jdbcUrl = state.jdbcUrl
-            state.username?.let { username = it }
-            state.password?.let { password = it }
-            maximumPoolSize = state.maximumPoolSize
-            connectionTimeout = state.connectionTimeoutMs
-            poolName = "dmigrate-server-state"
-        }
-        return HikariDataSource(cfg)
-    }
-
-    fun applyOrValidateMigrations(
-        dataSource: HikariDataSource,
-        state: McpServerStateConfig,
-    ) {
-        try {
-            val migrations = JdbcMigrationRunner(dataSource)
-            if (state.migrationsAuto) {
-                migrations.migrate()
-            } else {
-                migrations.validate()
-            }
-        } catch (failure: Throwable) {
-            stderr("MCP server configuration is invalid:")
-            stderr(
-                "  - server.state migration validation failed: " +
-                    "${failure.message ?: failure::class.simpleName}",
-            )
-            throw McpServeExit(2)
-        }
     }
 
     private companion object {
