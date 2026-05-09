@@ -20,10 +20,16 @@ import kotlin.io.path.writeText
  *
  * - **E.1**: file-to-file mode. `--dialect` mandatory.
  * - **E.2**: DB-target (and DB-source) mode via the injected
- *   `dbLoader`. `--dialect` becomes optional when *target* is a DB —
- *   the loader supplies it from the connection. If both are set, they
- *   must match (otherwise Exit 2 `TARGET_DIALECT_MISMATCH`-style).
- * - **E.3+**: `--generate-rollback`, `--execute` — still rejected.
+ *   `dbLoader`.
+ * - **E.3**: `--generate-rollback` + `d-migrate rollback-sql v1`
+ *   metadata block on the Down artefact.
+ * - **E.4**: `--execute` runs the Up-SQL against the DB target via
+ *   the injected `executor`, captures an `ExecutionTrace`, runs a
+ *   post-compare against the desired schema, and only finalises the
+ *   `--rollback-output` artefact if the post-compare is clean.
+ *   Recovery (post-compare drift after a half-applied Up) surfaces
+ *   as Exit 5 with the trace populated; full recovery-rollback
+ *   artefact emission lands in Phase F.
  *
  * Pipeline: load → normalize → validate → compare → plan → render.
  *
@@ -52,6 +58,14 @@ class SchemaMigrateRunner(
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
+    /**
+     * Executes the rendered Up-SQL against the resolved DB target.
+     * Required when `--execute` is set; null otherwise. The runner
+     * passes the target operand and the rendered statements; the
+     * executor returns a trace populated according to its own
+     * transaction policy.
+     */
+    private val executor: ExecutorFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -84,6 +98,12 @@ class SchemaMigrateRunner(
             targetOp = operandParser(request.target)
         } catch (e: IllegalArgumentException) {
             userFacingPrintError("Invalid operand: ${e.message}", request.source)
+            return 2
+        }
+
+        // --execute requires a DB target.
+        if (request.execute && targetOp !is CompareOperand.Database) {
+            userFacingPrintError("--execute requires a DB target (db:<url>).", request.target)
             return 2
         }
 
@@ -144,18 +164,127 @@ class SchemaMigrateRunner(
         }
         val combined = if (renderedDown == null) effectiveUp else mergeDownIntoUp(effectiveUp, renderedDown)
 
-        // 9. Build report
-        val report = buildReport(request, sourceResolved, targetResolved, plan, combined, effectiveDialect, renderedDown)
+        // 9. Execute Up against the DB target if --execute. Skipped on blockers.
+        val executionTrace = maybeExecute(request, targetOp, combined, cancellationToken)
+        val withExecution = if (executionTrace != null) combined.copy(
+            executionStarted = executionTrace.executionStarted,
+            executionCompleted = executionTrace.executionCompleted,
+            statementsAttempted = executionTrace.statementsAttempted,
+            lastStatementOperationIds = executionTrace.lastStatementOperationIds,
+            transactionRolledBack = executionTrace.transactionRolledBack,
+            sideEffectsPossible = executionTrace.sideEffectsPossible,
+            executionError = executionTrace.executionError,
+        ) else combined
 
-        // 10. Build the rollback artefact text if Down rendered cleanly
-        val rollbackArtefact = if (request.generateRollback && renderedDown != null && !combined.isBlocked) {
-            buildRollbackArtefact(plan, renderedDown, effectiveDialect)
-        } else {
-            null
+        // 10. Post-compare after a successful execute (if --execute and no error).
+        val postCompareDriftCode: Int? =
+            if (executionTrace != null && executionTrace.executionError == null) {
+                runPostCompare(request, sourceNormalized.schema, targetOp)
+            } else {
+                null
+            }
+
+        // 11. Build report
+        val report = buildReport(request, sourceResolved, targetResolved, plan, withExecution, effectiveDialect, renderedDown)
+
+        // 12. Build the rollback artefact text if Down rendered cleanly AND the
+        //     execute path didn't leave the target in an unknown state.
+        val rollbackArtefact = maybeBuildRollback(
+            request,
+            combined,
+            renderedDown,
+            executionTrace,
+            postCompareDriftCode,
+            plan,
+            effectiveDialect,
+        )
+
+        // 13. Decide outcome
+        return finalize(request, withExecution, report, rollbackArtefact, executionTrace, postCompareDriftCode)
+    }
+
+    /**
+     * Execute the rendered Up-SQL via the injected executor when
+     * `--execute` is set and the plan isn't blocked. Returns null
+     * for non-execute or blocked-plan paths so callers can short-
+     * circuit. The executor is responsible for transaction handling
+     * per the dialect's own contract — the runner only relays the
+     * trace back into the report.
+     */
+    private fun maybeExecute(
+        request: SchemaMigrateRequest,
+        target: CompareOperand,
+        combined: MigrationDdlResult,
+        cancellationToken: CancellationToken,
+    ): ExecutionTrace? {
+        if (!request.execute) return null
+        if (combined.isBlocked) return null
+        val exec = executor
+        if (exec == null) {
+            userFacingPrintError("--execute requires an executor to be wired.", request.target)
+            return ExecutionTrace(
+                executionStarted = false,
+                executionCompleted = false,
+                executionError = "no executor wired",
+            )
         }
+        val dbOperand = target as? CompareOperand.Database
+            ?: error("validateRequest must reject --execute with non-DB target before reaching the executor.")
+        cancellationToken.throwIfCancellationRequested()
+        return try {
+            exec(dbOperand, combined.statements, request.cliConfigPath)
+        } catch (e: Exception) {
+            ExecutionTrace(
+                executionStarted = true,
+                executionCompleted = true,
+                statementsAttempted = combined.statements.size,
+                lastStatementOperationIds = combined.statements.lastOrNull()?.operationIds.orEmpty(),
+                transactionRolledBack = false,
+                sideEffectsPossible = true,
+                executionError = e.message ?: e::class.simpleName,
+            )
+        }
+    }
 
-        // 11. Decide outcome
-        return finalize(request, combined, report, rollbackArtefact)
+    /**
+     * Post-compare hook: re-introspect the target after a successful
+     * `--execute` and verify the resulting state matches the desired
+     * Soll-schema. Returns null on clean state or an exit code on
+     * drift / introspection failure.
+     */
+    private fun runPostCompare(
+        request: SchemaMigrateRequest,
+        desired: SchemaDefinition,
+        target: CompareOperand,
+    ): Int? {
+        val loader = dbLoader ?: return null
+        val dbOperand = target as? CompareOperand.Database ?: return null
+        val postResolved = try {
+            loader(dbOperand, request.cliConfigPath)
+        } catch (e: Exception) {
+            userFacingPrintError(
+                "Post-execute introspection failed: ${e.message} (post-compare skipped, drift unknown)",
+                request.target,
+            )
+            return 5
+        }
+        val postNormalized = try {
+            normalizer(postResolved)
+        } catch (e: IllegalStateException) {
+            userFacingPrintError("Post-execute reverse marker error: ${e.message}", request.target)
+            return 5
+        }
+        val drift = comparator(postNormalized.schema, desired)
+        return if (drift.isEmpty()) {
+            null
+        } else {
+            userFacingPrintError(
+                "Post-execute compare detected drift; the target does not match the desired schema. " +
+                    "TODO Phase F: emit a recovery rollback artefact when supported.",
+                request.target,
+            )
+            5
+        }
     }
 
     /**
@@ -176,6 +305,23 @@ class SchemaMigrateRunner(
             primaryBlockedReason = primary,
             diagnostics = up.diagnostics + down.diagnostics,
         )
+    }
+
+    private fun maybeBuildRollback(
+        request: SchemaMigrateRequest,
+        combined: MigrationDdlResult,
+        renderedDown: MigrationDdlResult?,
+        executionTrace: ExecutionTrace?,
+        postCompareDriftCode: Int?,
+        plan: DiffResult,
+        dialect: DatabaseDialect,
+    ): String? {
+        if (!request.generateRollback || renderedDown == null) return null
+        if (combined.isBlocked) return null
+        val executeOk = executionTrace == null ||
+            (executionTrace.executionError == null && postCompareDriftCode == null)
+        if (!executeOk) return null
+        return buildRollbackArtefact(plan, renderedDown, dialect)
     }
 
     private fun buildRollbackArtefact(
@@ -237,12 +383,16 @@ class SchemaMigrateRunner(
     private var lastExitCode: Int = 7
 
     private fun validateRequest(request: SchemaMigrateRequest): Int? {
-        if (request.execute) {
-            userFacingPrintError("--execute is not supported yet (E.4).", request.source)
-            return 2
-        }
         if (request.dryRun && request.execute) {
             userFacingPrintError("--dry-run and --execute are mutually exclusive.", request.source)
+            return 2
+        }
+        if (request.execute && request.report == null) {
+            userFacingPrintError("--execute requires --report (audit-trail).", request.source)
+            return 2
+        }
+        if (request.execute && request.planOnly) {
+            userFacingPrintError("--execute and --plan-only are mutually exclusive.", request.source)
             return 2
         }
         if (request.planOnly && request.rollbackOutput != null) {
@@ -421,16 +571,32 @@ class SchemaMigrateRunner(
                 downStatementsTotal = renderedDown?.statements?.size,
                 downBlocked = renderedDown?.isBlocked ?: false,
             ),
+            execution = if (rendered.executionStarted || rendered.executionError != null) {
+                SchemaMigrateExecutionView(
+                    started = rendered.executionStarted,
+                    completed = rendered.executionCompleted,
+                    statementsAttempted = rendered.statementsAttempted,
+                    lastStatementOperationIds = rendered.lastStatementOperationIds.toList(),
+                    transactionRolledBack = rendered.transactionRolledBack,
+                    sideEffectsPossible = rendered.sideEffectsPossible,
+                    executionError = rendered.executionError,
+                )
+            } else {
+                null
+            },
         )
     }
 
+    @Suppress("ReturnCount")
     private fun finalize(
         request: SchemaMigrateRequest,
         rendered: MigrationDdlResult,
         report: SchemaMigrateReport,
         rollbackArtefact: String?,
+        executionTrace: ExecutionTrace?,
+        postCompareDriftCode: Int?,
     ): Int {
-        // Always emit the report when --report is set (also on blockers).
+        // Always emit the report when --report is set (also on blockers / errors).
         request.report?.let { writeReport(it, report, request.reportFormat) ?: return 7 }
 
         // On blocker: report-only — do not emit Up-SQL or Down artefact.
@@ -445,24 +611,36 @@ class SchemaMigrateRunner(
             return report.exitCode
         }
 
-        // Up-SQL artefact emission.
-        val upSql = rendered.statements.joinToString("\n\n") { it.sql }
-        if (request.output != null) {
-            try {
-                ensureParentDirectories(request.output)
-                atomicWriter(request.output, upSql)
-            } catch (e: Exception) {
-                userFacingPrintError("Failed to write up-SQL artefact: ${e.message}", request.output.toString())
-                return 7
+        // --execute path: skip Up-SQL artefact write (DB execution is the artefact).
+        // Up-SQL artefact emission only when not executing.
+        if (!request.execute) {
+            val upSql = rendered.statements.joinToString("\n\n") { it.sql }
+            if (request.output != null) {
+                try {
+                    ensureParentDirectories(request.output)
+                    atomicWriter(request.output, upSql)
+                } catch (e: Exception) {
+                    userFacingPrintError(
+                        "Failed to write up-SQL artefact: ${e.message}",
+                        request.output.toString(),
+                    )
+                    return 7
+                }
+            } else {
+                stdout(upSql)
             }
-        } else {
-            // Render Up-SQL to stdout when no --output was set (dry-run-by-default per spec §6.1).
-            stdout(upSql)
         }
 
-        // Down-SQL artefact emission. --rollback-output is required upstream when
-        // --generate-rollback is set without --plan-only, so rollbackArtefact is
-        // the canonical signal that we have one to write.
+        // Execute-error path: report carries the trace; exit 5 (MIGRATION_ERROR).
+        if (executionTrace?.executionError != null) {
+            return 5
+        }
+        // Post-compare drift: report drift, exit 5.
+        if (postCompareDriftCode != null) {
+            return postCompareDriftCode
+        }
+
+        // Down-SQL artefact emission — only after a clean execute (or no execute at all).
         if (rollbackArtefact != null && request.rollbackOutput != null) {
             try {
                 ensureParentDirectories(request.rollbackOutput)
@@ -547,6 +725,17 @@ data class SchemaMigrateReport(
     val blockers: List<SchemaMigrateBlockerView>,
     val diagnostics: List<SchemaMigrateDiagnosticView>,
     val summary: SchemaMigrateSummary,
+    val execution: SchemaMigrateExecutionView? = null,
+)
+
+data class SchemaMigrateExecutionView(
+    val started: Boolean,
+    val completed: Boolean,
+    val statementsAttempted: Int,
+    val lastStatementOperationIds: List<String>,
+    val transactionRolledBack: Boolean,
+    val sideEffectsPossible: Boolean,
+    val executionError: String?,
 )
 
 data class SchemaMigrateOperationView(
@@ -578,6 +767,34 @@ data class SchemaMigrateDiagnosticView(
     val severity: String,
     val message: String,
     val operationId: String?,
+)
+
+/**
+ * Execution trace returned by the injected executor when
+ * `--execute` is set. The runner copies these fields onto the
+ * combined [MigrationDdlResult] so the report can surface them and
+ * downstream artefact-writers know whether the rollback artefact
+ * is finalisable.
+ */
+/**
+ * Function type alias for the executor port. Bundled into a typealias
+ * so the [SchemaMigrateRunner] constructor stays under Detekt's
+ * MaxLineLength budget.
+ */
+typealias ExecutorFn = (
+    target: CompareOperand.Database,
+    statements: List<dev.dmigrate.driver.migration.MigrationDdlStatement>,
+    configPath: Path?,
+) -> ExecutionTrace
+
+data class ExecutionTrace(
+    val executionStarted: Boolean,
+    val executionCompleted: Boolean,
+    val statementsAttempted: Int = 0,
+    val lastStatementOperationIds: Set<String> = emptySet(),
+    val transactionRolledBack: Boolean = false,
+    val sideEffectsPossible: Boolean = false,
+    val executionError: String? = null,
 )
 
 data class SchemaMigrateSummary(

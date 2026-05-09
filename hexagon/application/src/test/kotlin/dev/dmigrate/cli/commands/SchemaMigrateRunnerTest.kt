@@ -211,7 +211,7 @@ class SchemaMigrateRunnerTest : FunSpec({
         capture["stdout"] shouldContain "blocked"
     }
 
-    test("--execute is rejected with exit 2 in E.1") {
+    test("--execute without --report is rejected with exit 2 (audit-trail)") {
         val (runner, _) = captureRunner()
         val request = SchemaMigrateRequest(
             source = sourcePath.toString(),
