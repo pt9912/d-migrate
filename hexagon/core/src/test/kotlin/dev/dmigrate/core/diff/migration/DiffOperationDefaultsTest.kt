@@ -237,5 +237,22 @@ class DiffOperationDefaultsTest : FunSpec({
             withDeps.id shouldBe op.id
             withDeps::class shouldBe op::class
         }
+
+        // withId pinning: every subtype must replace its id (used by
+        // OperationMapper.disambiguateIds for #N collision suffixes).
+        for (op in ops) {
+            val newId = op.id + "#9"
+            val withNewId = op.withId(newId)
+            withNewId.id shouldBe newId
+            withNewId::class shouldBe op::class
+        }
+
+        // Reflection guard: every concrete subtype of DiffOperation must
+        // appear in the catalog above. A missing or accidentally-added
+        // subtype fails the comparison so the smoke list cannot drift
+        // out of sync with the sealed hierarchy.
+        val catalogClasses = ops.map { it::class }.toSet()
+        val sealedConcrete = DiffOperation::class.sealedSubclasses.toSet()
+        catalogClasses shouldBe sealedConcrete
     }
 })

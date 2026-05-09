@@ -4,8 +4,8 @@ import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
-import dev.dmigrate.core.model.TableDefinition
 
 /**
  * Maps a [SchemaDiff] to a flat list of [DiffOperation]s with stable
@@ -17,6 +17,16 @@ import dev.dmigrate.core.model.TableDefinition
  * decision: tables carrying them are surfaced via
  * `CONSTRAINT_NOT_DIFFABLE` blockers; the comparator does not lossless-
  * diff their semantics).
+ *
+ * Operation-ID payload determinism: at-risk types (those carrying
+ * `Map` fields whose iteration order can vary across loaders / JVM
+ * versions — `TableDefinition`, `ColumnDefinition`, `CustomTypeDefinition`,
+ * `ViewDefinition`) are canonicalised via [CanonicalPayload]. The
+ * remaining types (`SequenceDefinition`, `FunctionDefinition`,
+ * `ProcedureDefinition`, `TriggerDefinition` plus their `Diff`
+ * variants) have only primitive / `List` / sealed-subclass fields,
+ * so their `toString()` is already deterministic under the Kotlin
+ * data-class contract.
  */
 internal object OperationMapper {
 
@@ -34,7 +44,25 @@ internal object OperationMapper {
         mapFunctions(diff, current, desired, ops)
         mapProcedures(diff, current, desired, ops)
         mapTriggers(diff, current, desired, ops)
-        return ops
+        return disambiguateIds(ops)
+    }
+
+    /**
+     * Apply [OperationIdFactory.disambiguate] so that any pair of
+     * operations that — by accident or by edge case — produced the
+     * same base ID receive a stable `#N` suffix in declaration order.
+     * Today's mappers should not collide for non-degenerate inputs,
+     * but the planner contract is that IDs are unique, and it's
+     * cheap to enforce.
+     */
+    private fun disambiguateIds(ops: List<DiffOperation>): List<DiffOperation> {
+        if (ops.isEmpty()) return ops
+        val pairs = ops.mapIndexed { idx, op -> op.id to idx }
+        val resolved = OperationIdFactory.disambiguate(pairs)
+        return ops.mapIndexed { idx, op ->
+            val newId = resolved[idx]
+            if (newId == op.id) op else op.withId(newId)
+        }
     }
 
     private fun mapCustomTypes(
@@ -46,7 +74,7 @@ internal object OperationMapper {
         for (added in diff.customTypesAdded) {
             val ref = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf(added.name))
             ops += DiffOperation.CreateCustomType(
-                id = OperationIdFactory.makeId("CreateCustomType", ref, added.definition.toString()),
+                id = OperationIdFactory.makeId("CreateCustomType", ref, CanonicalPayload.customType(added.definition)),
                 objectRef = ref,
                 customType = added.definition,
             )
@@ -54,7 +82,7 @@ internal object OperationMapper {
         for (removed in diff.customTypesRemoved) {
             val ref = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf(removed.name))
             ops += DiffOperation.DropCustomType(
-                id = OperationIdFactory.makeId("DropCustomType", ref, removed.definition.toString()),
+                id = OperationIdFactory.makeId("DropCustomType", ref, CanonicalPayload.customType(removed.definition)),
                 objectRef = ref,
                 customType = removed.definition,
             )
@@ -64,7 +92,12 @@ internal object OperationMapper {
             val before = current.customTypes[changed.name] ?: continue
             val after = desired.customTypes[changed.name] ?: continue
             ops += DiffOperation.AlterCustomType(
-                id = OperationIdFactory.makeId("AlterCustomType", ref, changed.toString()),
+                id = OperationIdFactory.makeId(
+                    "AlterCustomType",
+                    ref,
+                    "before=" + CanonicalPayload.customType(before) +
+                        "->after=" + CanonicalPayload.customType(after),
+                ),
                 objectRef = ref,
                 before = before,
                 after = after,
@@ -81,7 +114,7 @@ internal object OperationMapper {
             if (added.name in blockedTables) continue
             val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(added.name))
             ops += DiffOperation.CreateTable(
-                id = OperationIdFactory.makeId("CreateTable", ref, canonicalTablePayload(added.definition)),
+                id = OperationIdFactory.makeId("CreateTable", ref, CanonicalPayload.table(added.definition)),
                 objectRef = ref,
                 table = added.definition,
             )
@@ -90,7 +123,7 @@ internal object OperationMapper {
             if (removed.name in blockedTables) continue
             val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(removed.name))
             ops += DiffOperation.DropTable(
-                id = OperationIdFactory.makeId("DropTable", ref, canonicalTablePayload(removed.definition)),
+                id = OperationIdFactory.makeId("DropTable", ref, CanonicalPayload.table(removed.definition)),
                 objectRef = ref,
                 table = removed.definition,
             )
@@ -108,7 +141,7 @@ internal object OperationMapper {
         for ((name, def) in table.columnsAdded) {
             val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, name))
             ops += DiffOperation.AddColumn(
-                id = OperationIdFactory.makeId("AddColumn", ref, def.toString()),
+                id = OperationIdFactory.makeId("AddColumn", ref, CanonicalPayload.column(def)),
                 objectRef = ref,
                 column = def,
             )
@@ -116,7 +149,7 @@ internal object OperationMapper {
         for ((name, def) in table.columnsRemoved) {
             val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, name))
             ops += DiffOperation.DropColumn(
-                id = OperationIdFactory.makeId("DropColumn", ref, def.toString()),
+                id = OperationIdFactory.makeId("DropColumn", ref, CanonicalPayload.column(def)),
                 objectRef = ref,
                 column = def,
             )
@@ -157,7 +190,7 @@ internal object OperationMapper {
             if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, c.name))
             ops += DiffOperation.AddConstraint(
-                id = OperationIdFactory.makeId("AddConstraint", ref, c.toString()),
+                id = OperationIdFactory.makeId("AddConstraint", ref, CanonicalPayload.constraint(c)),
                 objectRef = ref,
                 constraint = c,
             )
@@ -166,7 +199,7 @@ internal object OperationMapper {
             if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, c.name))
             ops += DiffOperation.DropConstraint(
-                id = OperationIdFactory.makeId("DropConstraint", ref, c.toString()),
+                id = OperationIdFactory.makeId("DropConstraint", ref, CanonicalPayload.constraint(c)),
                 objectRef = ref,
                 constraint = c,
             )
@@ -174,13 +207,13 @@ internal object OperationMapper {
         for (vc in table.constraintsChanged) {
             val refOld = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, vc.before.name))
             ops += DiffOperation.DropConstraint(
-                id = OperationIdFactory.makeId("DropConstraint", refOld, vc.before.toString()),
+                id = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before)),
                 objectRef = refOld,
                 constraint = vc.before,
             )
             val refNew = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, vc.after.name))
             ops += DiffOperation.AddConstraint(
-                id = OperationIdFactory.makeId("AddConstraint", refNew, vc.after.toString()),
+                id = OperationIdFactory.makeId("AddConstraint", refNew, CanonicalPayload.constraint(vc.after)),
                 objectRef = refNew,
                 constraint = vc.after,
             )
@@ -189,42 +222,47 @@ internal object OperationMapper {
 
     private fun mapTableIndices(table: TableDiff, ops: MutableList<DiffOperation>) {
         for (idx in table.indicesAdded) {
-            val ref = indexRef(table.name, idx.name, idx.columns.joinToString("_"))
+            val ref = indexRef(table.name, idx)
             ops += DiffOperation.AddIndex(
-                id = OperationIdFactory.makeId("AddIndex", ref, idx.toString()),
+                id = OperationIdFactory.makeId("AddIndex", ref, CanonicalPayload.index(idx)),
                 objectRef = ref,
                 index = idx,
             )
         }
         for (idx in table.indicesRemoved) {
-            val ref = indexRef(table.name, idx.name, idx.columns.joinToString("_"))
+            val ref = indexRef(table.name, idx)
             ops += DiffOperation.DropIndex(
-                id = OperationIdFactory.makeId("DropIndex", ref, idx.toString()),
+                id = OperationIdFactory.makeId("DropIndex", ref, CanonicalPayload.index(idx)),
                 objectRef = ref,
                 index = idx,
             )
         }
         for (vc in table.indicesChanged) {
-            val refOld = indexRef(table.name, vc.before.name, vc.before.columns.joinToString("_"))
+            val refOld = indexRef(table.name, vc.before)
             ops += DiffOperation.DropIndex(
-                id = OperationIdFactory.makeId("DropIndex", refOld, vc.before.toString()),
+                id = OperationIdFactory.makeId("DropIndex", refOld, CanonicalPayload.index(vc.before)),
                 objectRef = refOld,
                 index = vc.before,
             )
-            val refNew = indexRef(table.name, vc.after.name, vc.after.columns.joinToString("_"))
+            val refNew = indexRef(table.name, vc.after)
             ops += DiffOperation.AddIndex(
-                id = OperationIdFactory.makeId("AddIndex", refNew, vc.after.toString()),
+                id = OperationIdFactory.makeId("AddIndex", refNew, CanonicalPayload.index(vc.after)),
                 objectRef = refNew,
                 index = vc.after,
             )
         }
     }
 
-    private fun indexRef(tableName: String, indexName: String?, columnsKey: String): DiffObjectRef =
-        DiffObjectRef(
-            DiffObjectType.INDEX,
-            listOf(tableName, indexName ?: "anon_$columnsKey"),
-        )
+    private fun indexRef(tableName: String, idx: IndexDefinition): DiffObjectRef {
+        val name = idx.name ?: anonIndexKey(idx)
+        return DiffObjectRef(DiffObjectType.INDEX, listOf(tableName, name))
+    }
+
+    private fun anonIndexKey(idx: IndexDefinition): String {
+        val cols = idx.columns.joinToString("_") { it.name }
+        val whereHash = idx.where?.hashCode()?.toString(16) ?: "0"
+        return "anon_${cols}_${idx.type.name}_${idx.unique}_$whereHash"
+    }
 
     private fun mapTablePrimaryKey(table: TableDiff, ops: MutableList<DiffOperation>) {
         val pk = table.primaryKey ?: return
@@ -254,7 +292,7 @@ internal object OperationMapper {
         for (added in diff.viewsAdded) {
             val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(added.name))
             ops += DiffOperation.CreateView(
-                id = OperationIdFactory.makeId("CreateView", ref, added.definition.toString()),
+                id = OperationIdFactory.makeId("CreateView", ref, CanonicalPayload.view(added.definition)),
                 objectRef = ref,
                 view = added.definition,
             )
@@ -262,7 +300,7 @@ internal object OperationMapper {
         for (removed in diff.viewsRemoved) {
             val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(removed.name))
             ops += DiffOperation.DropView(
-                id = OperationIdFactory.makeId("DropView", ref, removed.definition.toString()),
+                id = OperationIdFactory.makeId("DropView", ref, CanonicalPayload.view(removed.definition)),
                 objectRef = ref,
                 view = removed.definition,
             )
@@ -272,7 +310,12 @@ internal object OperationMapper {
             val before = current.views[changed.name] ?: continue
             val after = desired.views[changed.name] ?: continue
             ops += DiffOperation.ReplaceView(
-                id = OperationIdFactory.makeId("ReplaceView", ref, changed.toString()),
+                id = OperationIdFactory.makeId(
+                    "ReplaceView",
+                    ref,
+                    "before=" + CanonicalPayload.view(before) +
+                        "->after=" + CanonicalPayload.view(after),
+                ),
                 objectRef = ref,
                 before = before,
                 after = after,
@@ -420,7 +463,4 @@ internal object OperationMapper {
         }
     }
 
-    private fun canonicalTablePayload(table: TableDefinition): String =
-        "cols=${table.columns.size},pk=${table.primaryKey.joinToString(",")}," +
-            "constraints=${table.constraints.size},indices=${table.indices.size}"
 }

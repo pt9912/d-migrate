@@ -34,8 +34,8 @@ object OperationIdFactory {
     /** Direction prefix folded into every ID hash. */
     const val DIRECTION_PREFIX: String = "current->desired"
 
-    /** Path component separator. ASCII Unit Separator (0x1F). */
-    private const val PATH_SEP: Char = ''
+    /** Path component separator. Shared with [CanonicalPayload]. */
+    private const val PATH_SEP: Char = CanonicalEncoding.SEP
 
     /** Hex prefix length retained from each SHA-256 input. */
     private const val SHORT_HEX_PREFIX: Int = 12

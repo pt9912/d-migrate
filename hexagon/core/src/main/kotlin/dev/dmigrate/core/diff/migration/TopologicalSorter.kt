@@ -2,23 +2,33 @@ package dev.dmigrate.core.diff.migration
 
 /**
  * Sorts a list of [DiffOperation]s by their declared
- * [DiffOperation.dependencies], using [DiffPhase] as the
- * deterministic tie-breaker per
- * `docs/planning/open/diffresult-migration-plan.md §4.4`.
+ * [DiffOperation.dependencies], using a deterministic tie-breaker
+ * (phase → object type → object name → id) per
+ * `docs/planning/open/diffresult-migration-plan.md §4.4`. The
+ * `objectRef`-based ordering keeps the SQL output of unrelated
+ * operations stable across schema revisions, which makes cross-
+ * version diffs of generated migrations reviewable.
  *
  * Cross-plan IDs in `dependencies` (i.e. references to operations
  * not present in this list) are silently dropped. A future slice
  * may surface them as a `BLOCKER` diagnostic; currently they're
  * an internal-bug indicator.
  *
- * If a dependency cycle remains after the topological pass, the
- * surviving operations are appended in deterministic phase + id
- * order so the caller still gets a complete (if not strictly
- * sorted) result.
+ * Cycle detection: if a residual set survives the topological pass,
+ * those operations are reported as `cycleIds` so the caller can
+ * surface a `DEPENDENCY_CYCLE` blocker. The residual ops are also
+ * appended to `sorted` in deterministic order so the caller still
+ * gets a complete (if not strictly sorted) result for diagnostic
+ * rendering.
  */
 internal object TopologicalSorter {
 
-    fun sort(ops: List<DiffOperation>): List<DiffOperation> {
+    data class Result(
+        val sorted: List<DiffOperation>,
+        val cycleIds: Set<String>,
+    )
+
+    fun sort(ops: List<DiffOperation>): Result {
         val byId = ops.associateBy { it.id }
         val deps = ops.associate { op ->
             op.id to op.dependencies.filter { it in byId }.toSet()
@@ -45,17 +55,21 @@ internal object TopologicalSorter {
             sortInPlace(ready)
         }
 
+        val cycleIds = remaining.map { it.id }.toSet()
         if (remaining.isNotEmpty()) {
-            result += remaining.sortedWith(phaseAndIdOrder)
+            result += remaining.sortedWith(stableOrder)
         }
-        return result
+        return Result(sorted = result, cycleIds = cycleIds)
     }
 
-    private val phaseAndIdOrder: Comparator<DiffOperation> =
-        compareBy<DiffOperation> { it.phase.ordinal }.thenBy { it.id }
+    private val stableOrder: Comparator<DiffOperation> =
+        compareBy<DiffOperation> { it.phase.ordinal }
+            .thenBy { it.objectRef.type.ordinal }
+            .thenBy { it.objectRef.displayName }
+            .thenBy { it.id }
 
     private fun sortInPlace(deque: ArrayDeque<DiffOperation>) {
-        val sorted = deque.sortedWith(phaseAndIdOrder)
+        val sorted = deque.sortedWith(stableOrder)
         deque.clear()
         deque.addAll(sorted)
     }

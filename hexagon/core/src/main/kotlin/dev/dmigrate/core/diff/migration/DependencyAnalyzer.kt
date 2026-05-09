@@ -22,21 +22,45 @@ import dev.dmigrate.core.model.ConstraintType
  * - `CreateView` → depends on the `CreateTable`s declared in
  *   `view.dependencies.tables`.
  *
- * Out of scope for this slice:
+ * Out of scope for this slice (carved out for Phase D — see Plan
+ * §6.1 and the integration-test plan §6.4):
  *
  * - Drop-side `DropView` / `DropFunction` ordering (the inverse-sort
  *   in Phase D handles it via the planner's reverse traversal).
+ * - `Replace*` body dependencies — `ReplaceFunction`, `ReplaceProcedure`,
+ *   `ReplaceTrigger`, `ReplaceView` could in principle reference
+ *   newly-created tables/views; today's renderer relies on dialect-
+ *   level forward-reference tolerance (`CREATE OR REPLACE …`).
  * - Materialized view refresh ordering.
  * - Trigger → table / function / view ordering (declared via
  *   `trigger.dependencies` later).
+ *
+ * Schema-qualified FK references (`other_schema.users`) are not yet
+ * supported — `ConstraintReferenceDefinition.table` is a plain name
+ * today. When cross-schema references land, the analyzer's name
+ * comparisons must switch to qualified-name lookups.
  */
 internal object DependencyAnalyzer {
 
     fun attach(ops: List<DiffOperation>): List<DiffOperation> {
         val createTableByName = ops.filterIsInstance<DiffOperation.CreateTable>()
             .associateBy { it.objectRef.rootName }
+        // Build reverse indices once so DropTable's edge computation is
+        // O(referenced-from-N-tables) instead of O(allOps) per drop —
+        // matters for large warehouse-tier schemas.
+        val dropConstraintsByRefTable = ops.filterIsInstance<DiffOperation.DropConstraint>()
+            .groupBy { it.constraint.references?.table }
+            .filterKeys { it != null }
+            .mapKeys { it.key!! }
+        val dropViewsByRefTable = mutableMapOf<String, MutableList<DiffOperation.DropView>>()
+        for (op in ops.filterIsInstance<DiffOperation.DropView>()) {
+            for (tableName in op.view.dependencies?.tables.orEmpty()) {
+                dropViewsByRefTable.getOrPut(tableName) { mutableListOf() } += op
+            }
+        }
         return ops.map { op ->
-            val deps = op.dependencies + computeDeps(op, createTableByName, ops)
+            val computed = computeDeps(op, createTableByName, dropConstraintsByRefTable, dropViewsByRefTable)
+            val deps = op.dependencies + computed
             op.withDependencies(deps)
         }
     }
@@ -44,12 +68,13 @@ internal object DependencyAnalyzer {
     private fun computeDeps(
         op: DiffOperation,
         createTableByName: Map<String, DiffOperation.CreateTable>,
-        ops: List<DiffOperation>,
+        dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
+        dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> = when (op) {
         is DiffOperation.CreateTable -> dependenciesForCreateTable(op, createTableByName)
         is DiffOperation.AddColumn -> dependenciesForAddColumn(op, createTableByName)
         is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, createTableByName)
-        is DiffOperation.DropTable -> dependenciesForDropTable(op, ops)
+        is DiffOperation.DropTable -> dependenciesForDropTable(op, dropConstraintsByRefTable, dropViewsByRefTable)
         is DiffOperation.CreateView -> dependenciesForCreateView(op, createTableByName)
         else -> emptySet()
     }
@@ -96,22 +121,13 @@ internal object DependencyAnalyzer {
 
     private fun dependenciesForDropTable(
         op: DiffOperation.DropTable,
-        ops: List<DiffOperation>,
+        dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
+        dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         val targetTable = op.objectRef.rootName
-        for (other in ops) {
-            if (other === op) continue
-            when (other) {
-                is DiffOperation.DropConstraint -> {
-                    if (other.constraint.references?.table == targetTable) deps += other.id
-                }
-                is DiffOperation.DropView -> {
-                    if (other.view.dependencies?.tables?.contains(targetTable) == true) deps += other.id
-                }
-                else -> Unit
-            }
-        }
+        dropConstraintsByRefTable[targetTable]?.forEach { deps += it.id }
+        dropViewsByRefTable[targetTable]?.forEach { deps += it.id }
         return deps
     }
 

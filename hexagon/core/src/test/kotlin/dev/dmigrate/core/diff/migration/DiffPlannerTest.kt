@@ -322,4 +322,98 @@ class DiffPlannerTest : FunSpec({
         val result = planner.plan(schemaWith(), schemaWith(), diff)
         result.isFullyReversible shouldBe false
     }
+
+    test("isFullyReversible is false when MANUAL_REQUIRED operation is present (AlterCustomType)") {
+        val customType = dev.dmigrate.core.model.CustomTypeDefinition(
+            kind = dev.dmigrate.core.model.CustomTypeKind.ENUM,
+            values = listOf("a"),
+        )
+        val current = schemaWith().copy(customTypes = mapOf("status_t" to customType))
+        val desired = schemaWith().copy(customTypes = mapOf("status_t" to customType.copy(values = listOf("a", "b"))))
+        val diff = SchemaDiff(
+            customTypesChanged = listOf(
+                dev.dmigrate.core.diff.CustomTypeDiff(
+                    name = "status_t",
+                    values = ValueChange(listOf("a"), listOf("a", "b")),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        result.isFullyReversible shouldBe false
+    }
+
+    test("FK on a non-blocked table referencing a blocked table emits FK_TO_BLOCKED_TABLE") {
+        val tableWithCheck = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+            constraints = listOf(
+                ConstraintDefinition(name = "chk_x", type = ConstraintType.CHECK, expression = "id > 0"),
+            ),
+        )
+        val orders = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "user_id" to ColumnDefinition(
+                    NeutralType.Integer,
+                    references = ReferenceDefinition(table = "users", column = "id"),
+                ),
+            ),
+        )
+        val current = schemaWith()
+        val desired = schemaWith(tables = mapOf("users" to tableWithCheck, "orders" to orders))
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("users", tableWithCheck), NamedTable("orders", orders)),
+        )
+        val result = planner.plan(current, desired, diff)
+        // Both diagnostics should be present.
+        val codes = result.diagnostics.map { it.code }.toSet()
+        codes shouldContain "CONSTRAINT_NOT_DIFFABLE"
+        codes shouldContain "FK_TO_BLOCKED_TABLE"
+        // The FK_TO_BLOCKED_TABLE diagnostic must reference the orders CreateTable's id.
+        val createOrders = result.operations.filterIsInstance<DiffOperation.CreateTable>()
+            .single { it.objectRef.rootName == "orders" }
+        val fkDiag = result.diagnostics.single { it.code == "FK_TO_BLOCKED_TABLE" }
+        fkDiag.operationId shouldBe createOrders.id
+        fkDiag.severity shouldBe dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER
+    }
+
+    test("anonymous indices on the same columns but different where get distinct IDs") {
+        val idxA = dev.dmigrate.core.model.IndexDefinition(
+            name = null,
+            columns = listOf(dev.dmigrate.core.model.IndexColumn("c1")),
+            type = dev.dmigrate.core.model.IndexType.BTREE,
+            where = "active = true",
+        )
+        val idxB = dev.dmigrate.core.model.IndexDefinition(
+            name = null,
+            columns = listOf(dev.dmigrate.core.model.IndexColumn("c1")),
+            type = dev.dmigrate.core.model.IndexType.BTREE,
+            where = "active = false",
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(TableDiff(name = "users", indicesAdded = listOf(idxA, idxB))),
+        )
+        val result = planner.plan(schemaWith(), schemaWith(), diff)
+        val ids = result.operations.filterIsInstance<DiffOperation.AddIndex>().map { it.id }
+        ids.size shouldBe 2
+        ids.distinct().size shouldBe 2
+    }
+
+    test("operation IDs are stable across construction-order variants") {
+        // Two semantically equal but differently-constructed inputs.
+        val colsA = linkedMapOf(
+            "id" to ColumnDefinition(NeutralType.Identifier()),
+            "name" to ColumnDefinition(NeutralType.Text()),
+        )
+        val colsB = linkedMapOf<String, ColumnDefinition>().apply {
+            put("name", ColumnDefinition(NeutralType.Text()))
+            put("id", ColumnDefinition(NeutralType.Identifier()))
+        }
+        val tableA = TableDefinition(columns = colsA)
+        val tableB = TableDefinition(columns = colsB)
+        val diffA = SchemaDiff(tablesAdded = listOf(NamedTable("users", tableA)))
+        val diffB = SchemaDiff(tablesAdded = listOf(NamedTable("users", tableB)))
+        val rA = planner.plan(schemaWith(), schemaWith(), diffA)
+        val rB = planner.plan(schemaWith(), schemaWith(), diffB)
+        rA.operations.map { it.id } shouldBe rB.operations.map { it.id }
+    }
 })

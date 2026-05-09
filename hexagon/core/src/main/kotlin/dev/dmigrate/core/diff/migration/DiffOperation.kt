@@ -52,6 +52,13 @@ sealed interface DiffOperation {
      */
     fun withDependencies(dependencies: Set<String>): DiffOperation
 
+    /**
+     * Returns a copy of this operation with [id] replaced. Used by
+     * [OperationMapper] when [OperationIdFactory.disambiguate]
+     * resolves a base-ID collision into `#N`-suffixed variants.
+     */
+    fun withId(id: String): DiffOperation
+
     // ── Tables ──────────────────────────────────────────────────────
 
     data class CreateTable(
@@ -67,6 +74,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropTable(
@@ -82,6 +90,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Columns ─────────────────────────────────────────────────────
@@ -99,6 +108,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropColumn(
@@ -114,6 +124,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class AlterColumnType(
@@ -130,6 +141,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class AlterColumnNullability(
@@ -146,6 +158,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class AlterColumnDefault(
@@ -159,6 +172,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Primary keys ────────────────────────────────────────────────
@@ -173,6 +187,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropPrimaryKey(
@@ -185,6 +200,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Constraints ─────────────────────────────────────────────────
@@ -199,6 +215,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropConstraint(
@@ -211,6 +228,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Indices ─────────────────────────────────────────────────────
@@ -225,6 +243,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropIndex(
@@ -237,6 +256,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Custom types ────────────────────────────────────────────────
@@ -254,6 +274,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class AlterCustomType(
@@ -270,6 +291,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropCustomType(
@@ -285,6 +307,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Sequences ───────────────────────────────────────────────────
@@ -302,6 +325,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class AlterSequence(
@@ -315,6 +339,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropSequence(
@@ -330,6 +355,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Views ───────────────────────────────────────────────────────
@@ -347,6 +373,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class ReplaceView(
@@ -360,6 +387,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropView(
@@ -375,6 +403,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Functions ───────────────────────────────────────────────────
@@ -392,6 +421,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class ReplaceFunction(
@@ -405,6 +435,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropFunction(
@@ -420,6 +451,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Procedures ──────────────────────────────────────────────────
@@ -437,6 +469,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class ReplaceProcedure(
@@ -450,6 +483,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropProcedure(
@@ -465,6 +499,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     // ── Triggers ────────────────────────────────────────────────────
@@ -482,6 +517,7 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class ReplaceTrigger(
@@ -495,6 +531,7 @@ sealed interface DiffOperation {
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
     data class DropTrigger(
@@ -510,5 +547,6 @@ sealed interface DiffOperation {
         ),
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
     }
 }

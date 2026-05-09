@@ -50,8 +50,8 @@ object MigrationFingerprint {
     /** Algorithm identifier folded into every projection. Bump on contract change. */
     const val ALGORITHM: String = "schema-fingerprint-v1"
 
-    /** Field-/key separator inside the canonical projection. ASCII Unit Separator (0x1F). */
-    private const val SEP: Char = '\u001F'
+    /** Field-/key separator inside the canonical projection. Shared with [CanonicalPayload]. */
+    private const val SEP: Char = CanonicalEncoding.SEP
 
     /** SHA-256 hex of the canonical projection. */
     fun compute(schema: SchemaDefinition): String =
