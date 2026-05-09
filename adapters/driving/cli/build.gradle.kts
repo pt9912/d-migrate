@@ -199,6 +199,12 @@ kover {
                     "dev.dmigrate.cli.commands.SchemaCompareCommand*",
                     "dev.dmigrate.cli.commands.SchemaValidateCommand*",
                     "dev.dmigrate.cli.commands.SchemaGenerateCommand*",
+                    "dev.dmigrate.cli.commands.SchemaMigrateCommand*",
+                    "dev.dmigrate.cli.commands.SchemaRollbackCommand*",
+                    // Phase E.6: thin wiring helpers — Hikari + JDBC integration-bound;
+                    // tested via :test:integration-server-state in Phase F.
+                    "dev.dmigrate.cli.commands.JdbcMigrationExecutor*",
+                    "dev.dmigrate.cli.commands.MigrateRendererRegistry*",
                     "dev.dmigrate.cli.commands.DataExportCommand*",
                     "dev.dmigrate.cli.commands.DataImportCommand*",
                     "dev.dmigrate.cli.commands.DataTransferCommand*",
