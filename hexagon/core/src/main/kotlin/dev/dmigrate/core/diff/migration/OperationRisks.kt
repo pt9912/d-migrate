@@ -10,7 +10,7 @@ package dev.dmigrate.core.diff.migration
  * `MANUAL_REQUIRED`, [down] may be `null` and the blocker comes from the
  * reversibility classification + generator diagnostics.
  *
- * See `docs/planning/open/diffresult-migration-plan.md §4.6`.
+ * See `docs/planning/in-progress/diffresult-migration-plan.md §4.6`.
  */
 data class OperationRisks(
     val up: OperationRisk,

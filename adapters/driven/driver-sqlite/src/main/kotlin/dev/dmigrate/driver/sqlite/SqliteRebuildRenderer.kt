@@ -10,7 +10,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
  * Synthesises the SQLite RebuildTable sequence per
- * `docs/planning/open/diffresult-migration-plan.md §6.4`. Given a
+ * `docs/planning/in-progress/diffresult-migration-plan.md §6.4`. Given a
  * bucket of rebuild-required operations on one table plus a
  * `source` [TableDefinition] (the table state to copy data FROM) and
  * a `target` [TableDefinition] (the target table shape), emits:

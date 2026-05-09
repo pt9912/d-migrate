@@ -11,7 +11,7 @@ package dev.dmigrate.core.diff.migration
  * forces the constraint drop to come first regardless of phase. Phases only
  * resolve ties between operations with no explicit dependency edge.
  *
- * The set is derived from `docs/planning/open/diffresult-migration-plan.md
+ * The set is derived from `docs/planning/in-progress/diffresult-migration-plan.md
  * §4.4`. A concrete dialect generator MAY collapse adjacent phases (e.g.
  * SQLite-Rebuild treats columns + constraints as one rebuild unit) as long
  * as the resulting SQL preserves the planner's dependency contract.

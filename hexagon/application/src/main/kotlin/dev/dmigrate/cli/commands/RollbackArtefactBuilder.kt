@@ -7,7 +7,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 
 /**
  * Builds the `d-migrate rollback-sql v1` Down-SQL artefact per
- * `docs/planning/open/diffresult-migration-plan.md §7.3` and
+ * `docs/planning/in-progress/diffresult-migration-plan.md §7.3` and
  * `spec/cli-spec.md §6.1`.
  *
  * Output shape:

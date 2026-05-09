@@ -36,7 +36,7 @@ import dev.dmigrate.core.model.SchemaDefinition
  *   half-formed marker that would otherwise silently produce a
  *   diff.
  *
- * See `docs/planning/open/diffresult-migration-plan.md §11.1` for
+ * See `docs/planning/in-progress/diffresult-migration-plan.md §11.1` for
  * the Phase A decision.
  */
 object ReverseMarkerNormalizer {

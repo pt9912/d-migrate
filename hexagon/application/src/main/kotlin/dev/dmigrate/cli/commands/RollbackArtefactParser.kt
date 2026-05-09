@@ -5,7 +5,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 
 /**
  * Strict parser for the `d-migrate rollback-sql v1` artefact per
- * `docs/planning/open/diffresult-migration-plan.md §7.3`.
+ * `docs/planning/in-progress/diffresult-migration-plan.md §7.3`.
  *
  * The input must contain exactly one delimited block:
  *

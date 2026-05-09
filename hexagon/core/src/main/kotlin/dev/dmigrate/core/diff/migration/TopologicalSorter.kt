@@ -4,7 +4,7 @@ package dev.dmigrate.core.diff.migration
  * Sorts a list of [DiffOperation]s by their declared
  * [DiffOperation.dependencies], using a deterministic tie-breaker
  * (phase → object type → object name → id) per
- * `docs/planning/open/diffresult-migration-plan.md §4.4`. The
+ * `docs/planning/in-progress/diffresult-migration-plan.md §4.4`. The
  * `objectRef`-based ordering keeps the SQL output of unrelated
  * operations stable across schema revisions, which makes cross-
  * version diffs of generated migrations reviewable.
