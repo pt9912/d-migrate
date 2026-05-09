@@ -204,6 +204,16 @@ kover {
                     "dev.dmigrate.cli.commands.DataTransferCommand*",
                     "dev.dmigrate.cli.commands.SchemaCommand*",
                     "dev.dmigrate.cli.commands.DataCommand*",
+                    // Hikari/Flyway/Postgres-Default — pro Definition
+                    // integrationstest-bound (Hikari validiert beim
+                    // Konstruktor mit `initializationFailTimeout=1ms`).
+                    // Tests substituieren diese Factory mit Fakes via
+                    // `McpServeWiring(serverStateFactory = ...)`. Real-Coverage
+                    // entsteht im :test:integration-server-state-Modul.
+                    "dev.dmigrate.cli.commands.DefaultServerStateFactory*",
+                    // Private data class for the excluded ExportCommand*
+                    // shells; carries no behaviour beyond field accessors.
+                    "dev.dmigrate.cli.commands.ExportParams*",
                 )
             }
         }
