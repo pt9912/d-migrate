@@ -227,5 +227,15 @@ class DiffOperationDefaultsTest : FunSpec({
         ops.filterIsInstance<DiffOperation.DropColumn>().single().reversibility shouldBe Reversibility.NOT_REVERSIBLE
         ops.filterIsInstance<DiffOperation.DropCustomType>().single().reversibility shouldBe Reversibility.NOT_REVERSIBLE
         ops.filterIsInstance<DiffOperation.AlterCustomType>().single().reversibility shouldBe Reversibility.MANUAL_REQUIRED
+
+        // withDependencies pinning: every subtype must replace its dependencies set
+        // (sealed-interface contract used by DependencyAnalyzer in Phase C).
+        val deps = setOf("dep-1", "dep-2")
+        for (op in ops) {
+            val withDeps = op.withDependencies(deps)
+            withDeps.dependencies shouldBe deps
+            withDeps.id shouldBe op.id
+            withDeps::class shouldBe op::class
+        }
     }
 })
