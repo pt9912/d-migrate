@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.model.SchemaDefinition
 
 /**
  * Migration-ready operation plan derived from a [SchemaDiff].
@@ -42,6 +43,15 @@ data class DiffResult(
     val schemaDiff: SchemaDiff,
     val operations: List<DiffOperation>,
     val diagnostics: List<DiffDiagnostic> = emptyList(),
+    /**
+     * Optional full source schemas. Renderers that need to reconstruct
+     * the complete target table (notably the SQLite RebuildTable
+     * pipeline in Phase D.4.b) read these. Most renderers operate on
+     * `operations` alone and ignore them. The planner populates both
+     * fields; only artefact-deserialised `DiffResult`s leave them null.
+     */
+    val currentSchema: SchemaDefinition? = null,
+    val desiredSchema: SchemaDefinition? = null,
 ) {
     /** True iff at least one diagnostic is a [DiffDiagnostic.Severity.BLOCKER]. */
     val hasBlockers: Boolean

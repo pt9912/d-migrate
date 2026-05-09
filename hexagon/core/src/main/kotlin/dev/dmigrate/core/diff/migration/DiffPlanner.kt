@@ -83,6 +83,8 @@ class DiffPlanner {
             schemaDiff = schemaDiff,
             operations = sortResult.sorted,
             diagnostics = diagnostics,
+            currentSchema = current,
+            desiredSchema = desired,
         )
     }
 

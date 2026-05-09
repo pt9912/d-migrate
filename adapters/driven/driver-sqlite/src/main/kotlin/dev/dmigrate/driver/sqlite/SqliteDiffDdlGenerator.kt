@@ -10,36 +10,45 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 
 /**
- * SQLite-flavoured renderer for the migration pipeline (Phase D.4.a
- * first-matrix slice per Plan §6.4).
+ * SQLite-flavoured renderer for the migration pipeline.
  *
- * Slice scope:
+ * Phase D.4.a (slice 1): simple ops — Create/DropTable, Add/DropColumn,
+ * Add/DropIndex, Create/Replace/DropView. Rebuild-required ops were
+ * deferred to MANUAL_ACTION_REQUIRED.
  *
- * - In scope: tables, columns (`ADD` / `DROP COLUMN`), indices,
- *   simple views (`CREATE`, `DROP`, `DROP+CREATE`-style replace).
- * - Deferred to D.4.b (RebuildTable pipeline,
- *   `MANUAL_ACTION_REQUIRED` blocker today): `AlterColumnType`,
- *   `AlterColumnNullability`, `AlterColumnDefault`,
- *   `AddPrimaryKey`, `DropPrimaryKey`, `AddConstraint`,
- *   `DropConstraint`. SQLite cannot mutate any of these without
- *   rebuilding the table.
- * - Out of scope (DIALECT_UNSUPPORTED_OPERATION): routines,
- *   triggers, sequence ops, custom types (SQLite has no
- *   `CREATE TYPE`).
+ * Phase D.4.b (this slice): full RebuildTable pipeline per Plan §6.4
+ * for ops that SQLite cannot ALTER in place (column-type/nullability/
+ * default change, PK reshape, constraint reshape). The rebuild
+ * absorbs Add/Drop column ops on the same table since the desired
+ * schema already reflects them.
  *
- * `ReplaceView` emits two statements (DROP IF EXISTS + CREATE) both
- * tagged with the source op-id, since SQLite has no
- * `CREATE OR REPLACE VIEW`.
+ * Pipeline:
  *
- * Down-direction walks the planner's topo-sort in reverse and
- * projects each op's `OperationRisks.down`. Any `NOT_REVERSIBLE`
- * op down-renders as a `ROLLBACK_NOT_POSSIBLE` blocker.
+ * 1. [SqliteRebuildPlanner] classifies operations into rebuild
+ *    buckets (per table) plus the residual simple ops.
+ * 2. Rebuild buckets render via [SqliteRebuildRenderer], which
+ *    emits the canonical 10-statement sequence
+ *    (`PRAGMA foreign_keys = OFF; BEGIN IMMEDIATE; CREATE temp;
+ *    INSERT-SELECT; DROP original; RENAME temp; CREATE INDEX...;
+ *    PRAGMA foreign_key_check; COMMIT; PRAGMA foreign_keys = ON;`)
+ *    and computes the column mapping (CAST for type changes,
+ *    DEFAULT/NULL fill for new columns, BLOCKER for unfillable
+ *    NOT NULL).
+ * 3. Simple ops render through [SqliteDiffSimpleOps] as before.
+ *
+ * Down-direction: NOT_REVERSIBLE for rebuild buckets in D.4.b
+ * (ROLLBACK_NOT_POSSIBLE blocker); D.5 will add the inverse-rebuild
+ * support.
+ *
+ * Out of first matrix entirely (DIALECT_UNSUPPORTED_OPERATION):
+ * routines, triggers, sequences, custom types.
  */
 class SqliteDiffDdlGenerator : DiffDdlGenerator {
 
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE
 
     private val sql = SqliteDiffSqlBuilders()
+    private val rebuildRenderer = SqliteRebuildRenderer(sql)
 
     override fun generateUp(diff: DiffResult, options: DdlGenerationOptions): MigrationDdlResult =
         render(diff, options, direction = SqliteRenderDirection.UP)
@@ -54,12 +63,45 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
     ): MigrationDdlResult {
         val ctx = SqliteDiffRenderContext(direction = direction, sql = sql, options = options)
         val ops = if (direction == SqliteRenderDirection.UP) diff.operations else diff.operations.reversed()
-        for (op in ops) renderOp(op, ctx)
+
+        val classification = SqliteRebuildPlanner.classify(ops)
+
+        // Render rebuild buckets first (they belong to TABLES phase),
+        // then the rest in original (already topo-sorted) order.
+        for ((table, bucket) in classification.rebuildBuckets) {
+            renderRebuildBucket(table, bucket, diff, ctx)
+        }
+        for (op in classification.simpleOps) renderSimpleOp(op, ctx)
+
         return ctx.toResult(diff)
     }
 
+    private fun renderRebuildBucket(
+        table: String,
+        bucket: List<DiffOperation>,
+        diff: DiffResult,
+        ctx: SqliteDiffRenderContext,
+    ) {
+        val current = diff.currentSchema?.tables?.get(table)
+        val desired = diff.desiredSchema?.tables?.get(table)
+        if (current == null || desired == null) {
+            for (op in bucket) {
+                ctx.skip(
+                    op,
+                    "RebuildTable for `$table` requires both current and desired SchemaDefinition; " +
+                        "the planner did not propagate them. This typically means the DiffResult " +
+                        "was deserialised from an artefact rather than freshly produced.",
+                    code = "SQLITE_REBUILD_MISSING_SOURCES",
+                )
+                ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            }
+            return
+        }
+        rebuildRenderer.renderRebuild(table, bucket, current, desired, ctx)
+    }
+
     @Suppress("CyclomaticComplexMethod")
-    private fun renderOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+    private fun renderSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         if (ctx.direction == SqliteRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
             ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
@@ -76,7 +118,9 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.ReplaceView -> SqliteDiffSimpleOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> SqliteDiffSimpleOps.renderDropView(op, ctx)
 
-            // Rebuild-required: deferred to D.4.b
+            // Rebuild-required ops should have been classified into a rebuild bucket by
+            // SqliteRebuildPlanner.classify. If they show up here they're on a table whose
+            // current/desired schema couldn't be located — handled in renderRebuildBucket.
             is DiffOperation.AlterColumnType,
             is DiffOperation.AlterColumnNullability,
             is DiffOperation.AlterColumnDefault,

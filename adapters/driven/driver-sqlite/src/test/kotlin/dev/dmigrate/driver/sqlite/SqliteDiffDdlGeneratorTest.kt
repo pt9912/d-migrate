@@ -77,7 +77,11 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         planAndUp(diff).statements.single().sql shouldBe "ALTER TABLE \"u\" DROP COLUMN \"legacy\";"
     }
 
-    test("AlterColumnType is deferred to D.4.b (MANUAL_ACTION_REQUIRED)") {
+    test("Rebuild-required ops on a table not present in current/desired schemas yield SQLITE_REBUILD_MISSING_SOURCES") {
+        // Rebuild ops require both current+desired schemas in DiffResult.
+        // When the planner is fed empty schemas and a synthetic diff
+        // (which is degenerate since tables don't exist), the rebuild
+        // renderer cannot reconstruct the target table → blocker.
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -94,55 +98,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         val r = planAndUp(diff)
         r.isBlocked shouldBe true
         r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.any { it.code == "SQLITE_REBUILD_REQUIRED" } shouldBe true
-    }
-
-    test("AlterColumnNullability and AlterColumnDefault are deferred to D.4.b") {
-        val nullability = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(
-                    name = "u",
-                    columnsChanged = listOf(
-                        dev.dmigrate.core.diff.ColumnDiff(name = "x", required = ValueChange(true, false)),
-                    ),
-                ),
-            ),
-        )
-        val rNull = planAndUp(nullability)
-        rNull.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-
-        val defaultChange = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(
-                    name = "u",
-                    columnsChanged = listOf(
-                        dev.dmigrate.core.diff.ColumnDiff(
-                            name = "x",
-                            default = ValueChange(null, dev.dmigrate.core.model.DefaultValue.StringLiteral("a")),
-                        ),
-                    ),
-                ),
-            ),
-        )
-        val rDef = planAndUp(defaultChange)
-        rDef.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-    }
-
-    test("AddPrimaryKey / DropPrimaryKey are deferred to D.4.b") {
-        val diff = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(name = "u", primaryKey = ValueChange(emptyList(), listOf("id"))),
-            ),
-        )
-        val r = planAndUp(diff)
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-    }
-
-    test("AddConstraint / DropConstraint are deferred to D.4.b") {
-        val c = ConstraintDefinition(name = "uq", type = ConstraintType.UNIQUE, columns = listOf("email"))
-        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "u", constraintsAdded = listOf(c))))
-        val r = planAndUp(diff)
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.any { it.code == "SQLITE_REBUILD_MISSING_SOURCES" } shouldBe true
     }
 
     test("AddIndex / DropIndex round-trip without rebuild") {

@@ -3,6 +3,7 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -74,6 +75,35 @@ internal class SqliteDiffRenderContext(
 
     fun addBlocker(reason: MigrationBlockedReason, operationIds: Set<String>) {
         blockers += MigrationBlocker(reason = reason, operationIds = operationIds)
+    }
+
+    /**
+     * Emits a single statement attached to a *set* of operation IDs.
+     * Used by the RebuildTable pipeline where one rebuild covers
+     * multiple business operations on the same table.
+     */
+    fun emitRebuildStatement(sqlText: String, opIds: Set<String>) {
+        statements += MigrationDdlStatement(
+            sql = sqlText,
+            operationIds = opIds,
+            risk = OperationRisk(destructive = true, dataLossPossible = true, requiresManualConfirmation = true),
+            phase = DiffPhase.TABLES,
+        )
+    }
+
+    /** Mark an op as rendered without emitting a separate statement (rebuild absorbs it). */
+    fun markRendered(op: DiffOperation) {
+        rendered += op.id
+    }
+
+    /** Apply destructive / manualConfirm / nonReversible flags for the rebuild bucket. */
+    fun markBucketDestructive(opIds: Set<String>) {
+        destructive += opIds
+        manualActions += opIds
+    }
+
+    fun addDiagnostic(d: DiffDiagnostic) {
+        diagnostics += d
     }
 
     fun toResult(diff: DiffResult): MigrationDdlResult {
