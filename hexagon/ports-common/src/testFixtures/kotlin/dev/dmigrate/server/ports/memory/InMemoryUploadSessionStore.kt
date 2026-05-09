@@ -29,6 +29,21 @@ class InMemoryUploadSessionStore : UploadSessionStore {
     override fun findById(tenantId: TenantId, uploadSessionId: String): UploadSession? =
         sessions[Key(tenantId, uploadSessionId)]
 
+    override fun findActiveSchemaStagingByChecksum(
+        tenantId: TenantId,
+        ownerPrincipalId: PrincipalId,
+        checksumSha256: String,
+        sizeBytes: Long,
+    ): UploadSession? = sessions.values
+        .firstOrNull { s ->
+            s.tenantId == tenantId &&
+                s.ownerPrincipalId == ownerPrincipalId &&
+                s.uploadIntent == "schema_staging_readonly" &&
+                s.checksumSha256 == checksumSha256 &&
+                s.sizeBytes == sizeBytes &&
+                s.state == UploadSessionState.ACTIVE
+        }
+
     override fun list(
         tenantId: TenantId,
         page: PageRequest,

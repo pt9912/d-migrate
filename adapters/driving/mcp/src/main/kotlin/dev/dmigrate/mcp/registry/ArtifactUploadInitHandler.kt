@@ -85,12 +85,24 @@ internal class ArtifactUploadInitHandler(
             policyInitOutcomeOrNull(context)?.let { return it }
         }
 
-        // TODO(LF-012 / LN-027 / LN-028 / LN-038): idempotency key per spec/mcp-server.md
-        // — read-only staging is not user-state-changing on retry,
-        // but a same-checksum replay should ideally hit the existing
-        // session instead of minting a new one and burning quota.
         val args = parseArguments(context.arguments)
         val tenantId = context.principal.effectiveTenantId
+
+        // AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`: same-checksum replay
+        // for the read-only `schema_staging_readonly` intent. Returns
+        // the live ACTIVE session and skips a fresh quota reservation
+        // — read-only staging is not user-state-changing on retry,
+        // and reservation-replay would burn an extra session-slot
+        // plus the byte budget for every retry.
+        sessionStore.findActiveSchemaStagingByChecksum(
+            tenantId = tenantId,
+            ownerPrincipalId = context.principal.principalId,
+            checksumSha256 = args.checksumSha256,
+            sizeBytes = args.expectedSizeBytes,
+        )?.let { existing ->
+            return idempotentReplay(context, existing)
+        }
+
         val sessionsKey = QuotaKey(tenantId, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, context.principal.principalId)
         val bytesKey = QuotaKey(tenantId, QuotaDimension.UPLOAD_BYTES, context.principal.principalId)
         val sessionsReservation = QuotaReservation(sessionsKey, amount = 1)
@@ -151,6 +163,47 @@ internal class ArtifactUploadInitHandler(
             "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
             "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
             "executionMeta" to mapOf("requestId" to context.requestId),
+        )
+        return ToolCallOutcome.Success(
+            content = listOf(
+                ToolContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
+        )
+    }
+
+    /**
+     * AP 6.13 / `ImpPlan-0.9.6-B §5.3.5` — Idempotent replay for
+     * read-only schema-staging uploads. Returns the existing
+     * session's contract payload without touching quota. The audit
+     * `resourceRefs` slot is still populated so the trace shows the
+     * client touched the upload-init tool. `executionMeta.idempotentReplay
+     * = true` lets clients distinguish a replay from a fresh init.
+     *
+     * The TTL is computed against the existing
+     * `absoluteLeaseExpiresAt` (no lease extension on replay) — if
+     * the session is on the verge of expiring the client can still
+     * choose to wait for the natural expiry and retry, in which case
+     * the next call mints a fresh session per the normal path.
+     */
+    private fun idempotentReplay(
+        context: ToolCallContext,
+        session: UploadSession,
+    ): ToolCallOutcome {
+        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
+        val ttlSeconds = effectiveTtlSeconds(options.clock.instant(), session.absoluteLeaseExpiresAt)
+        val payload = mapOf(
+            "uploadSessionId" to session.uploadSessionId,
+            "uploadSessionTtlSeconds" to ttlSeconds,
+            "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
+            "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
+            "executionMeta" to mapOf(
+                "requestId" to context.requestId,
+                "idempotentReplay" to true,
+            ),
         )
         return ToolCallOutcome.Success(
             content = listOf(

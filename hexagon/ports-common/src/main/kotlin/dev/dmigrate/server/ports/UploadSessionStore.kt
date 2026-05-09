@@ -15,6 +15,32 @@ interface UploadSessionStore {
 
     fun findById(tenantId: TenantId, uploadSessionId: String): UploadSession?
 
+    /**
+     * AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`: same-checksum replay for the
+     * read-only `schema_staging_readonly` upload-intent. Returns the
+     * existing ACTIVE session whose
+     * `(tenantId, ownerPrincipalId, checksumSha256, sizeBytes)` tuple
+     * matches — or `null` when no such session exists.
+     *
+     * Used by [dev.dmigrate.mcp.registry.ArtifactUploadInitHandler] to
+     * fold `artifact_upload_init` retries onto the live session
+     * instead of minting a new one and burning quota. Restricted to
+     * `uploadIntent = "schema_staging_readonly"` because the policy-
+     * pflichtige intents (`job_input`, …) own their own
+     * idempotency-key path through [UploadInitOrchestrator] and must
+     * not be replayed via this shortcut.
+     *
+     * Default implementation returns `null` so non-implementing
+     * stores (e.g. legacy fakes) stay safe — the worst case is "no
+     * idempotency", never "wrong session returned".
+     */
+    fun findActiveSchemaStagingByChecksum(
+        tenantId: TenantId,
+        ownerPrincipalId: PrincipalId,
+        checksumSha256: String,
+        sizeBytes: Long,
+    ): UploadSession? = null
+
     fun list(
         tenantId: TenantId,
         page: PageRequest,

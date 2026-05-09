@@ -381,4 +381,67 @@ class ArtifactUploadInitHandlerTest : FunSpec({
         val outcome = handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
         parsePayload(outcome).get("uploadSessionTtlSeconds").asLong shouldBe 600L
     }
+
+    // ── AP 6.13: same-checksum idempotent replay ───────────────────
+
+    test("same checksum + size + principal/tenant returns the existing session (idempotent replay)") {
+        val s = setup()
+        val first = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val firstId = parsePayload(first).get("uploadSessionId").asString
+        val countBefore = s.sessionStore.list(
+            ACME,
+            dev.dmigrate.server.core.pagination.PageRequest(pageSize = 100),
+        ).items.size
+
+        val replay = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val replayJson = parsePayload(replay)
+
+        replayJson.get("uploadSessionId").asString shouldBe firstId
+        replayJson.getAsJsonObject("executionMeta").get("idempotentReplay").asBoolean shouldBe true
+        // No second session minted.
+        s.sessionStore.list(
+            ACME,
+            dev.dmigrate.server.core.pagination.PageRequest(pageSize = 100),
+        ).items.size shouldBe countBefore
+    }
+
+    test("idempotent replay does not double-charge the active-session quota") {
+        val s = setup(sessionLimit = 1)
+        s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        // A non-idempotent retry would hit RateLimited because
+        // sessionLimit = 1; the replay path must not reserve a
+        // second slot.
+        val replay = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        parsePayload(replay).getAsJsonObject("executionMeta").get("idempotentReplay").asBoolean shouldBe true
+    }
+
+    test("different checksum mints a fresh session (idempotency keyed on checksum+size)") {
+        val s = setup()
+        s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val otherChecksum = "f".repeat(64)
+        val otherInit = """{"uploadIntent":"schema_staging_readonly","expectedSizeBytes":1024,"checksumSha256":"$otherChecksum"}"""
+        val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(otherInit), PRINCIPAL))
+        val payload = parsePayload(outcome)
+        // Fresh session: no idempotentReplay flag.
+        payload.getAsJsonObject("executionMeta").has("idempotentReplay") shouldBe false
+    }
+
+    test("different size with same checksum mints a fresh session") {
+        val s = setup()
+        s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val differentSize = """{"uploadIntent":"schema_staging_readonly","expectedSizeBytes":2048,"checksumSha256":"$SHA256_OK"}"""
+        val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(differentSize), PRINCIPAL))
+        parsePayload(outcome).getAsJsonObject("executionMeta").has("idempotentReplay") shouldBe false
+    }
+
+    test("different principal sees no replay (no cross-owner idempotency leak)") {
+        val s = setup()
+        s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), PRINCIPAL))
+        val bob = PRINCIPAL.copy(
+            principalId = PrincipalId("bob"),
+            auditSubject = "bob",
+        )
+        val outcome = s.handler.handle(ToolCallContext("artifact_upload_init", args(VALID_INIT), bob))
+        parsePayload(outcome).getAsJsonObject("executionMeta").has("idempotentReplay") shouldBe false
+    }
 })
