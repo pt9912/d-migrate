@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.ViewDefinition
 
 /**
  * Maps a [SchemaDiff] to a runnable [DiffResult].
@@ -38,6 +39,13 @@ import dev.dmigrate.core.model.TableDefinition
  * (FK column / FK constraint) are tagged with a
  * `FK_TO_BLOCKED_TABLE` blocker so the renderer cannot silently emit
  * dangling references.
+ *
+ * Phase F.6.b decision (View column-level deps): column-altering
+ * operations (`DropColumn`, `AlterColumnType`,
+ * `AlterColumnNullability`) on a table referenced by a view that
+ * lacks column-level dependency info produce a
+ * `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` blocker diagnostic. See
+ * Plan §6.3.
  */
 class DiffPlanner {
 
@@ -64,6 +72,7 @@ class DiffPlanner {
         val sortResult = TopologicalSorter.sort(opsWithDeps)
 
         diagnostics += detectFkToBlockedTables(sortResult.sorted, blockedTables)
+        diagnostics += detectViewColumnDepsBlockers(sortResult.sorted, current, desired)
         if (sortResult.cycleIds.isNotEmpty()) {
             diagnostics += DiffDiagnostic(
                 code = "DEPENDENCY_CYCLE",
@@ -129,6 +138,87 @@ class DiffPlanner {
             }
         }
         return out
+    }
+
+    /**
+     * Per Plan §6.3 / §F.6.b: when a view declares a table-level
+     * dependency on a table T but no column-level dependency entry
+     * for T is supplied, the planner cannot tell whether the view
+     * references a specific column of T. Column-altering operations
+     * (`DropColumn`, `AlterColumnType`, `AlterColumnNullability`) on
+     * such tables MUST block — the renderer would otherwise emit DDL
+     * that silently breaks the view at execute time.
+     *
+     * This is dialect-agnostic: PostgreSQL adapters that supply
+     * column-level deps (via `pg_depend`) never trip the block; MySQL
+     * adapters can't (no `VIEW_COLUMN_USAGE` source) and must block
+     * unless the user supplied an explicit schema file with column-
+     * level deps.
+     *
+     * The check considers views from BOTH `current` and `desired` —
+     * a view present only in `current` (slated for `DropView`) still
+     * exists in the live target until its drop runs, and a view in
+     * `desired` will be created/updated to depend on the table; both
+     * sides need the column-level signal to plan safely.
+     */
+    private fun detectViewColumnDepsBlockers(
+        ops: List<DiffOperation>,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): List<DiffDiagnostic> {
+        val viewsByTable = collectViewsByTable(current, desired)
+        if (viewsByTable.isEmpty()) return emptyList()
+        val out = mutableListOf<DiffDiagnostic>()
+        for (op in ops) {
+            val (tableName, columnName) = columnAlteringTarget(op) ?: continue
+            for ((viewName, view) in viewsByTable[tableName].orEmpty()) {
+                val columnDeps = view.dependencies?.columns?.get(tableName)
+                if (columnDeps != null) continue // column-level info present → trust it
+                out += DiffDiagnostic(
+                    code = "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS",
+                    message = "Operation ${op.id} alters column '$tableName.$columnName' but " +
+                        "view '$viewName' declares a table-level dependency on '$tableName' " +
+                        "without column-level dependency information. Per Plan §6.3 the " +
+                        "planner cannot determine if the view references this column; " +
+                        "supply column-level deps in the schema file or use an adapter " +
+                        "projection that exposes them (PostgreSQL pg_depend; MySQL has no " +
+                        "VIEW_COLUMN_USAGE source).",
+                    severity = DiffDiagnostic.Severity.BLOCKER,
+                    operationId = op.id,
+                )
+            }
+        }
+        return out
+    }
+
+    /**
+     * Walk both schemas and produce a `tableName → viewName →
+     * ViewDefinition` map. The desired-side definition wins for views
+     * present in both schemas — for the F.6.b check that doesn't
+     * matter, since either side without column-level deps still
+     * triggers the block, but the dedupe keeps each view emitting at
+     * most one diagnostic per op.
+     */
+    private fun collectViewsByTable(
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): Map<String, Map<String, ViewDefinition>> {
+        val out = mutableMapOf<String, MutableMap<String, ViewDefinition>>()
+        for (schema in listOf(current, desired)) {
+            for ((viewName, view) in schema.views) {
+                for (tableName in view.dependencies?.tables.orEmpty()) {
+                    out.getOrPut(tableName) { mutableMapOf() }[viewName] = view
+                }
+            }
+        }
+        return out
+    }
+
+    private fun columnAlteringTarget(op: DiffOperation): Pair<String, String>? = when (op) {
+        is DiffOperation.DropColumn -> op.objectRef.path[0] to op.objectRef.path[1]
+        is DiffOperation.AlterColumnType -> op.objectRef.path[0] to op.objectRef.path[1]
+        is DiffOperation.AlterColumnNullability -> op.objectRef.path[0] to op.objectRef.path[1]
+        else -> null
     }
 
     private fun fkTargetOf(op: DiffOperation): String? = when (op) {

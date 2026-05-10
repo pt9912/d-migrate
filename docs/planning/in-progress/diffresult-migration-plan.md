@@ -1940,12 +1940,24 @@ nach Aufwand (kleinste Slice zuerst):
   (`transactionRolledBack=true`/`upExecuted=false`) bleibt durch
   den bestehenden "executor failure surfaces executionError +
   exit 5"-Test im selben Spec gepinnt.
-- [ ] **F.6.b** MySQL View-Dependency-Block — Tests dass column-
+- [x] **F.6.b** MySQL View-Dependency-Block — Tests dass column-
   altering Ops (`DropColumn`, `AlterColumnType`, `AlterColumnNullability`)
   unter Views OHNE explizite column-level Dependencies aus einer
   Schema-Datei oder Adapter-Projektion mit Diagnose blocken. Plan
   §6.3-Mandate; betrifft den Live-DB-Pfad weil MySQL keine
-  spaltenpraezise `VIEW_COLUMN_USAGE`-Quelle liefert.
+  spaltenpraezise `VIEW_COLUMN_USAGE`-Quelle liefert. Implementiert
+  in `DiffPlanner.detectViewColumnDepsBlockers(...)` als dialect-
+  agnostische Check-Stufe: View mit `dependencies.tables` aber
+  ohne `dependencies.columns[T]` → BLOCKER-Diagnose
+  `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` an die jeweilige
+  Spalten-Op gebunden. PostgreSQL-Adapter mit pg_depend-Projektion
+  liefert column-level Deps und triggert nicht; MySQL-Adapter
+  triggert defaultmaessig solange keine explizite Schema-Datei
+  column-level Deps liefert. Pinned in `DiffPlannerTest`:
+  DropColumn / AlterColumnType / AlterColumnNullability blocken
+  bei table-level-only Deps; AddColumn blockt nicht; column-level
+  Deps schalten den Block aus; Views nur in `current` (slated for
+  DropView) blocken weiterhin weil sie zur Execute-Zeit live sind.
 - [ ] **F.6.c** SQLite-Rebuild-Atomic-Execution Integration-Test —
   Pinnt dass der Rebuild als unteilbare Einheit ausgefuehrt wird:
   bei Mid-Rebuild-Fehler (z.B. INSERT-SELECT failed) bleibt die DB

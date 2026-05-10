@@ -20,6 +20,7 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 class DiffPlannerTest : FunSpec({
 
@@ -396,6 +397,268 @@ class DiffPlannerTest : FunSpec({
         val ids = result.operations.filterIsInstance<DiffOperation.AddIndex>().map { it.id }
         ids.size shouldBe 2
         ids.distinct().size shouldBe 2
+    }
+
+    // ── §F.6.b View-Dependency-Block ────────────────────────────────────
+    //
+    // Per Plan §6.3 column-altering operations on a table referenced by
+    // a view that lacks column-level dependency info MUST block. The
+    // check is dialect-agnostic at the planner layer; PostgreSQL
+    // adapters supplying column-level deps via `pg_depend` will simply
+    // never trigger it, MySQL adapters (no `VIEW_COLUMN_USAGE`) trip it
+    // unless the user supplied an explicit schema file with column
+    // deps.
+
+    test("F.6.b — DropColumn under a view with table-level-only deps blocks with VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS") {
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "legacy" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")), // table-level only
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        val desired = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users.copy(columns = users.columns - "legacy")),
+            views = mapOf("v_users" to view),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsRemoved = mapOf("legacy" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        val diag = result.diagnostics.single { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" }
+        diag.severity shouldBe DiffDiagnostic.Severity.BLOCKER
+        diag.operationId shouldBe result.operations.filterIsInstance<DiffOperation.DropColumn>().single().id
+        diag.message shouldContainStr "v_users"
+        diag.message shouldContainStr "users.legacy"
+        result.hasBlockers shouldBe true
+    }
+
+    test("F.6.b — AlterColumnType under a view with table-level-only deps blocks") {
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "name" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val schema = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "name",
+                            type = ValueChange(NeutralType.Text(), NeutralType.Text(maxLength = 100)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val result = planner.plan(schema, schema, diff)
+        val diag = result.diagnostics.single { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" }
+        diag.operationId shouldBe result.operations.filterIsInstance<DiffOperation.AlterColumnType>().single().id
+    }
+
+    test("F.6.b — AlterColumnNullability under a view with table-level-only deps blocks") {
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "email" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val schema = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "email",
+                            required = ValueChange(false, true),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val result = planner.plan(schema, schema, diff)
+        val diag = result.diagnostics.single { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" }
+        diag.operationId shouldBe result.operations.filterIsInstance<DiffOperation.AlterColumnNullability>().single().id
+    }
+
+    test("F.6.b — DropColumn under a view with column-level deps does NOT block (PostgreSQL pg_depend path)") {
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "legacy" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            // Column-level deps present — adapter (e.g. PostgreSQL via
+            // pg_depend) supplied them. Even though `legacy` is dropped,
+            // the planner trusts the column-level signal and does NOT
+            // emit the §F.6.b block. (Other layers may still block via
+            // explicit dep on `legacy` — out of scope here.)
+            dependencies = DependencyInfo(
+                tables = listOf("users"),
+                columns = mapOf("users" to listOf("id")),
+            ),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        val desired = current.copy(
+            tables = mapOf("users" to users.copy(columns = users.columns - "legacy")),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsRemoved = mapOf("legacy" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        result.diagnostics.any { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" } shouldBe false
+    }
+
+    test("F.6.b — DropColumn on a table with NO views does not block") {
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "legacy" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+        )
+        val desired = current.copy(
+            tables = mapOf("users" to users.copy(columns = users.columns - "legacy")),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsRemoved = mapOf("legacy" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        result.diagnostics.any { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" } shouldBe false
+    }
+
+    test("F.6.b — AddColumn (non-altering) under a table-level-only view does NOT block") {
+        // Adding a column cannot break a view that doesn't reference
+        // it — only DropColumn/AlterColumnType/AlterColumnNullability
+        // do. Pin so a future planner refactor doesn't accidentally
+        // widen the block to AddColumn.
+        val users = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        val desired = current.copy(
+            tables = mapOf(
+                "users" to users.copy(
+                    columns = users.columns + ("nick" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsAdded = mapOf("nick" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        result.diagnostics.any { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" } shouldBe false
+    }
+
+    test("F.6.b — view in CURRENT only (slated for DropView) still triggers the block") {
+        // Pre-execute the view exists in the live DB; the column-
+        // altering op runs before any DropView could remove it.
+        val users = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "legacy" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to view),
+        )
+        // desired drops both the legacy column AND the view
+        val desired = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("users" to users.copy(columns = users.columns - "legacy")),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsRemoved = mapOf("legacy" to ColumnDefinition(NeutralType.Text())),
+                ),
+            ),
+            viewsRemoved = listOf(NamedView("v_users", view)),
+        )
+        val result = planner.plan(current, desired, diff)
+        result.diagnostics.any { it.code == "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS" } shouldBe true
     }
 
     test("operation IDs are stable across construction-order variants") {
