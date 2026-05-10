@@ -60,7 +60,7 @@ help:
 		'  make smoke            Build the CLI distribution and run --version/--help' \
 		'  make gates            Run check, coverage and docs gates' \
 		'  make ci               Run build, coverage and docs gates' \
-		'  make ci-build         Run CI build and Kover gate with CI cache guard' \
+		'  make ci-build         Run CI build tasks inside the Docker build stage' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
 		'  make oci-build        Build the Jib OCI image locally' \
 		'  make docker-build     Build the runtime Docker image' \
@@ -132,7 +132,9 @@ gates: check coverage-gate docs-check
 ci: build coverage-gate docs-check
 
 ci-build:
-	$(GRADLE) $(CI_BUILD_TASKS)
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(CI_BUILD_TASKS))" \
+	  -t $(IMAGE):ci-build .
 
 release-assets:
 	$(GRADLE) $(CLI_PROJECT):assembleReleaseAssets
