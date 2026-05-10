@@ -1894,14 +1894,19 @@ Plan-Version werden auf sechs DoD-Punkte aufgebohrt; Reihenfolge
 nach Aufwand (kleinste Slice zuerst):
 
 - [ ] **F.6.d** Erweiterte Metadatenblock-Tests — **Secret-Scrubbing**
-  (Passwoerter / Tokens im SQL-Body werden vor Persistenz scrub't /
-  reicht der Builder rohe Bytes weiter?) und **Round-Trip-Tampering**
-  (post-Build Body-Modifikation wird vom Parser via `artifactHash`-
-  Verifikation erkannt). Die strukturellen Parser-Faelle (doppelte
-  Bloecke, unbekannte Formatversionen, ungueltiges JSON,
-  Fingerprint-Algorithmus-Mismatch) sind bereits in
-  `RollbackArtefactParserTest` (E.5) abgedeckt; F.6.d ergaenzt nur
-  die zwei genannten Lueken.
+  (Header carries no JDBC URL, secret-keyword shapes, OS-paths,
+  SSH-private-key markers — pinned via einer broaderen
+  `FORBIDDEN_HEADER_SUBSTRINGS`-Konstante) und **Round-Trip-
+  Tampering** ueber alle Metadata-Felder
+  (`recovery=false→true`, `dialect`, `formatVersion`,
+  `risk.destructive`, `operationIds[]`, `artifactHash`-self via
+  recompute-not-echo). Die strukturellen Parser-Faelle (doppelte
+  Bloecke via E.5; `UNKNOWN_FORMAT_VERSION`,
+  `UNKNOWN_ARTIFACT_HASH_ALGORITHM`, `MISSING_FIELD_*`,
+  `TYPE_MISMATCH_*`, `MALFORMED_HEADER_PREFIX`, JSON-Syntax-Fehler
+  via F.6.d-Follow-up) sind in `RollbackArtefactParserTest`
+  abgedeckt. Whitespace-only-Tampering ist als positive Lenient-
+  Parse-Strict-Canonical-Hash-Invariante gepinnt.
 - [ ] **F.6.a** Atomic-Writer-Edge-Cases — Tests dass Render-/
   Blocker-/Execution-Fehler bestehende `--output` /
   `--rollback-output` / `--report` NICHT ueberschreiben. Pinnt

@@ -4,10 +4,34 @@ import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
+
+/**
+ * Substring tokens that the canonical metadata header MUST never
+ * contain (Plan §7.3 / §10 line 1429-1431). Covers JDBC URLs / any
+ * URI-shaped substring, common secret-keyword-shaped patterns, and
+ * platform-specific home / temp / SSH-artefact path prefixes.
+ *
+ * Keep the list broad: a future field that legitimately needs a URI
+ * should fail this pin (and the spec) — there is no allowed
+ * exception in the metadata header.
+ */
+private val FORBIDDEN_HEADER_SUBSTRINGS = listOf(
+    // JDBC URL / any URI-shaped substring (the spec forbids all
+    // unmasked connection URLs and resource URIs in the header).
+    "jdbc:", "://",
+    // Secret-keyword-shaped tokens. Match the substring case-
+    // insensitively at assertion time.
+    "password", "passwd", "secret", "api_key", "apikey", "token=", "auth=",
+    // Absolute local paths — macOS / Linux / Windows / containers.
+    "/Users/", "/home/", "/root/", "/var/", "/tmp/",
+    "C:\\", "\\Users\\", "\\Windows\\",
+    // SSH / private-key artefacts.
+    ".ssh", "id_rsa", "id_ed25519", "BEGIN PRIVATE KEY", "BEGIN RSA PRIVATE KEY",
+)
 
 class RollbackArtefactParserTest : FunSpec({
 
@@ -198,24 +222,116 @@ class RollbackArtefactParserTest : FunSpec({
     //         that invariant explicit so a future field addition
     //         that breaks the contract fails loudly.
 
-    test("F.6.d — metadata block carries no JDBC URL / connection-string-shaped substrings") {
-        val text = makeArtefact()
-        val header = text.substringAfter("v1 begin\n").substringBefore("\nv1 end").lines().first()
-        // None of the documented fields ever carry a JDBC URL — verify
-        // this empirically against the canonical text.
-        header shouldNotContain "jdbc:"
-        header shouldNotContain "://"
-    }
-
-    test("F.6.d — metadata block carries no obvious secret-keyword-shaped substrings") {
-        // Negative pin: rendering normal inputs must NOT produce a
-        // header that looks like it carries a secret. If a future field
-        // contains user-supplied free-text, this test fires when the
-        // field name OR a default value matches a secret-keyword token.
-        val text = makeArtefact()
-        val header = text.substringAfter("v1 begin\n").substringBefore("\nv1 end").lines().first()
-        for (forbidden in listOf("password", "passwd", "secret", "api_key", "token=", "/Users/", "/home/")) {
-            header.contains(forbidden, ignoreCase = true) shouldBe false
+    test("F.6.d — metadata block contains no forbidden substrings (Plan §7.3 contract pin)") {
+        // Single consolidated check using the [FORBIDDEN_HEADER_SUBSTRINGS]
+        // constant. If a future field rendered ANY of these tokens — JDBC
+        // URLs, secret-keyword shapes, OS-path prefixes, SSH/private-key
+        // markers — this test fires immediately, before the leak can hit
+        // production.
+        val header = extractCanonicalHeader(makeArtefact())
+        for (forbidden in FORBIDDEN_HEADER_SUBSTRINGS) {
+            withClue("header must not contain forbidden token `$forbidden`: $header") {
+                header.contains(forbidden, ignoreCase = true) shouldBe false
+            }
         }
     }
+
+    // ── F.6.d follow-up: structural rejection coverage. The plan
+    //         §F.6 originally claimed E.5 covers UNKNOWN_FORMAT_VERSION
+    //         / UNKNOWN_ARTIFACT_HASH_ALGORITHM / MISSING_FIELD /
+    //         TYPE_MISMATCH / MALFORMED_HEADER_PREFIX / JSON-syntax
+    //         errors — but only MULTIPLE_METADATA_BLOCKS,
+    //         MISSING_*_DELIMITER, and the two original tampering
+    //         cases were actually pinned. These tests close the gap.
+
+    test("F.6.d — UNKNOWN_FORMAT_VERSION fires for a recognised-but-unsupported version") {
+        // Tampered formatVersion="v99" parses fine as a String but the
+        // parser's pre-hash check rejects via UNKNOWN_FORMAT_VERSION
+        // before verifyHash even runs. Asserting the EXACT code (not the
+        // disjunction the F.6.d main test uses) pins the ordering
+        // contract: structural pre-checks fire before hash verification.
+        val text = makeArtefact()
+        val tampered = text.replace("\"formatVersion\":\"v1\"", "\"formatVersion\":\"v99\"")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "UNKNOWN_FORMAT_VERSION"
+    }
+
+    test("F.6.d — UNKNOWN_ARTIFACT_HASH_ALGORITHM fires for a recognised-but-unsupported algo") {
+        val text = makeArtefact()
+        val tampered = text.replace(
+            "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v1\"",
+            "\"artifactHashAlgorithm\":\"md5-legacy\"",
+        )
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "UNKNOWN_ARTIFACT_HASH_ALGORITHM"
+    }
+
+    test("F.6.d — MISSING_FIELD_DIALECT fires when a required field is removed") {
+        val text = makeArtefact()
+        val tampered = text.replace(",\"dialect\":\"POSTGRESQL\"", "")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "MISSING_FIELD_DIALECT"
+    }
+
+    test("F.6.d — TYPE_MISMATCH_DIALECT fires when a string field is replaced with a non-string") {
+        val text = makeArtefact()
+        val tampered = text.replace("\"dialect\":\"POSTGRESQL\"", "\"dialect\":42")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "TYPE_MISMATCH_DIALECT"
+    }
+
+    test("F.6.d — MALFORMED_HEADER_PREFIX fires when the metadata line lacks the `-- ` prefix") {
+        val text = makeArtefact()
+        // Replace ONLY the metadata line's leading `-- ` (not the begin
+        // delimiter, which is `-- d-migrate rollback-sql v1 begin`).
+        val tampered = text.replace("-- {\"artifactHash", "// {\"artifactHash")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "MALFORMED_HEADER_PREFIX"
+    }
+
+    test("F.6.d — JSON syntax error in the header surfaces a parser code (not Success)") {
+        val text = makeArtefact()
+        // Drop the closing `}` of the JSON object — turns valid JSON into
+        // truncated input. The exact code (e.g. EXPECTED_CHAR_}) depends
+        // on the mini-parser's reach; key invariant is rejection.
+        val tampered = text.replace("\"risk\":{", "\"risk\":")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+    }
+
+    test("F.6.d — whitespace-only tampering inside the JSON is structurally lenient (positive pin)") {
+        // Pin the lenient-parse-strict-canonical-hash invariant: the
+        // MiniJson parser tolerates whitespace, the canonical builder
+        // strips it. Re-encoding via verifyHash produces the original
+        // canonical bytes → rebuilt-hash matches parsed.artifactHash →
+        // Success. This is by design: whitespace can't change the
+        // SEMANTIC content of the artefact, so it's not a tamper vector
+        // worth rejecting.
+        val text = makeArtefact()
+        val tampered = text.replace("\"recovery\":false", "\"recovery\": false")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
+        r.parsed.recovery shouldBe false
+    }
 })
+
+/**
+ * Extract the single canonical metadata-header line from a built
+ * artefact. Replaces the earlier `lines().first()` shorthand which
+ * would silently miss a leak if the canonical encoding ever wrapped
+ * across multiple lines. Uses the full begin/end delimiters as
+ * anchors so the partial-match `\nv1 end` substring trick can't
+ * leak the END_DELIMITER prefix into the captured body.
+ */
+private fun extractCanonicalHeader(artefact: String): String {
+    val begin = "-- d-migrate rollback-sql v1 begin\n"
+    val end = "\n-- d-migrate rollback-sql v1 end"
+    val between = artefact.substringAfter(begin).substringBefore(end)
+    val lines = between.lines().filter { it.isNotBlank() }
+    return lines.single().trim().removePrefix("-- ")
+}
