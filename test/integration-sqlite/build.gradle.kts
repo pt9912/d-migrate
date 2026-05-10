@@ -20,18 +20,3 @@ dependencies {
 
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
 }
-
-// F.4 diagnostics: surface full assertion messages on failure. Default
-// Gradle test logging only prints "AssertionFailedError at NN" without
-// the message, which makes round-trip drift opaque (the exception's
-// `clue` text is the entire forensic surface). FULL format on `failed`
-// only — kept narrow so passing runs aren't drowned in JVM/Hikari debug.
-tasks.withType<Test>().configureEach {
-    testLogging {
-        events("failed")
-        showExceptions = true
-        showCauses = true
-        showStackTraces = true
-        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
-    }
-}

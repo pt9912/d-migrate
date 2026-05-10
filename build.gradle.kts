@@ -124,6 +124,21 @@ subprojects {
         if (updateGolden != null) {
             systemProperty("UPDATE_GOLDEN", updateGolden)
         }
+
+        // Surface full assertion messages on failure across every test
+        // task in the project. Default Gradle test logging only prints
+        // "AssertionFailedError at File.kt:NN" without the message,
+        // which makes Kotest `withClue { }` text and any structured
+        // diagnostic carried in an exception body opaque — F.4's
+        // SQLite-rebuild round-trip drift was the forcing function for
+        // wiring this up. `events("failed")` keeps passing runs quiet.
+        testLogging {
+            events("failed")
+            showExceptions = true
+            showCauses = true
+            showStackTraces = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
     }
 
     tasks.withType<Test>().configureEach {
