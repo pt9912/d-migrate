@@ -186,24 +186,28 @@ class SchemaMigrateRunner(
         ) else combined
 
         // 10. Post-compare after a successful execute (if --execute and no error).
-        val postCompareDriftCode: Int? =
+        val postCompareOutcome: PostCompareOutcome? =
             if (executionTrace != null && executionTrace.executionError == null) {
                 runPostCompare(request, sourceNormalized.schema, targetOp)
             } else {
                 null
             }
+        val postCompareDriftCode: Int? = postCompareOutcome?.toDriftCode()
 
         // 11. Build report
         val report = buildReport(request, sourceResolved, targetResolved, plan, withExecution, effectiveDialect, renderedDown)
 
         // 12. Build the rollback artefact text if Down rendered cleanly AND the
-        //     execute path didn't leave the target in an unknown state.
+        //     execute path didn't leave the target in an unknown state. The
+        //     observed Post-Up-Fingerprint flows through so the metadata block
+        //     can carry it (`postUpFingerprint`, `postUpVerified=true`) per
+        //     §10 acceptance — see Plan F.5.b.
         val rollbackArtefact = maybeBuildRollback(
             request,
             combined,
             renderedDown,
             executionTrace,
-            postCompareDriftCode,
+            postCompareOutcome,
             plan,
             effectiveDialect,
         )
@@ -258,22 +262,36 @@ class SchemaMigrateRunner(
     /**
      * Post-compare hook: re-introspect the target after a successful
      * `--execute` and verify the resulting state matches the desired
-     * Soll-schema. Returns null on clean state or an exit code on
-     * drift / introspection failure.
+     * Soll-schema. Returns one of three outcomes ([PostCompareOutcome]):
+     *
+     * - [PostCompareOutcome.Clean] — observed fingerprint equals the
+     *   desired fingerprint; no drift. Carries the observed FP so the
+     *   rollback artefact's metadata block can pin it as
+     *   `postUpFingerprint` with `postUpVerified=true` (Plan §F.5.b,
+     *   §10 acceptance).
+     * - [PostCompareOutcome.Drift] — observed fingerprint differs.
+     *   The runner exits `5` and (per Plan §F.5.g) MUST NOT auto-emit
+     *   a recovery rollback artefact. The observed FP rides along for
+     *   structured reporting (Plan §F.5.c).
+     * - [PostCompareOutcome.IntrospectionFailed] — the target could
+     *   not be re-read after Up (loader threw or reverse-marker
+     *   normalization rejected the result). No observed FP exists;
+     *   the runner exits `5`. A recovery artefact emission for this
+     *   case (with `desiredFp` as the only allowed post-up
+     *   fingerprint) lands in Plan §F.5.e.
      *
      * Uses [fingerprint] (a content-only hash, see
-     * [MigrationFingerprint]) instead of `SchemaDiff.isEmpty()` so
-     * the check is symmetric with `verifyTargetMatchesArtefact` in
-     * [SchemaRollbackRunner] and immune to the file-side YAML's
-     * user-chosen `name`/`version` labels — those are not observable
-     * state in a live database and would otherwise produce phantom
-     * drift on every real round-trip.
+     * [MigrationFingerprint]) symmetric with
+     * `verifyTargetMatchesArtefact` in [SchemaRollbackRunner] and
+     * immune to the file-side YAML's user-chosen `name`/`version`
+     * labels — those are not observable state in a live database and
+     * would otherwise produce phantom drift on every real round-trip.
      */
     private fun runPostCompare(
         request: SchemaMigrateRequest,
         desired: SchemaDefinition,
         target: CompareOperand,
-    ): Int? {
+    ): PostCompareOutcome? {
         val loader = dbLoader ?: return null
         val dbOperand = target as? CompareOperand.Database ?: return null
         val postResolved = try {
@@ -283,23 +301,25 @@ class SchemaMigrateRunner(
                 "Post-execute introspection failed: ${e.message} (post-compare skipped, drift unknown)",
                 request.target,
             )
-            return 5
+            return PostCompareOutcome.IntrospectionFailed
         }
         val postNormalized = try {
             normalizer(postResolved)
         } catch (e: IllegalStateException) {
             userFacingPrintError("Post-execute reverse marker error: ${e.message}", request.target)
-            return 5
+            return PostCompareOutcome.IntrospectionFailed
         }
-        return if (fingerprint(postNormalized.schema) == fingerprint(desired)) {
-            null
+        val observed = fingerprint(postNormalized.schema)
+        val desiredFp = fingerprint(desired)
+        return if (observed == desiredFp) {
+            PostCompareOutcome.Clean(observed)
         } else {
             userFacingPrintError(
                 "Post-execute compare detected drift; the target does not match the desired schema. " +
                     "TODO Phase F: emit a recovery rollback artefact when supported.",
                 request.target,
             )
-            5
+            PostCompareOutcome.Drift(observed)
         }
     }
 
@@ -328,22 +348,34 @@ class SchemaMigrateRunner(
         combined: MigrationDdlResult,
         renderedDown: MigrationDdlResult?,
         executionTrace: ExecutionTrace?,
-        postCompareDriftCode: Int?,
+        postCompareOutcome: PostCompareOutcome?,
         plan: DiffResult,
         dialect: DatabaseDialect,
     ): String? {
         if (!request.generateRollback || renderedDown == null) return null
         if (combined.isBlocked) return null
         val executeOk = executionTrace == null ||
-            (executionTrace.executionError == null && postCompareDriftCode == null)
+            (executionTrace.executionError == null && postCompareOutcome !is PostCompareOutcome.Drift &&
+                postCompareOutcome !is PostCompareOutcome.IntrospectionFailed)
         if (!executeOk) return null
-        return buildRollbackArtefact(plan, renderedDown, dialect)
+        // F.5.b: when post-compare confirmed the live target equals the
+        // desired Soll, pin the OBSERVED fingerprint into the artefact and
+        // mark `postUpVerified=true`. Without --execute (or before E.4
+        // restructuring) we fall back to the planned desired fingerprint
+        // and leave `postUpVerified=false`.
+        val (postUpFp, postUpVerified) = when (postCompareOutcome) {
+            is PostCompareOutcome.Clean -> postCompareOutcome.observedFingerprint to true
+            else -> (plan.desired.fingerprint ?: "") to false
+        }
+        return buildRollbackArtefact(plan, renderedDown, dialect, postUpFp, postUpVerified)
     }
 
     private fun buildRollbackArtefact(
         plan: dev.dmigrate.core.diff.migration.DiffResult,
         down: MigrationDdlResult,
         dialect: DatabaseDialect,
+        postUpFingerprint: String,
+        postUpVerified: Boolean,
     ): String {
         val downRisk = down.statements.fold(
             RollbackArtefactBuilder.Risk(false, false, false, down.operationsRendered),
@@ -362,9 +394,8 @@ class SchemaMigrateRunner(
                 dialect = dialect,
                 currentFingerprint = currentFp,
                 desiredFingerprint = desiredFp,
-                // Without --execute, the post-up state is the planned desired state.
-                postUpFingerprint = desiredFp,
-                postUpVerified = false,
+                postUpFingerprint = postUpFingerprint,
+                postUpVerified = postUpVerified,
                 operationIds = down.operationsRendered,
                 risk = downRisk,
                 downStatements = down.statements,
@@ -812,6 +843,50 @@ data class ExecutionTrace(
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
 )
+
+/**
+ * Result of `runPostCompare`. Three terminal states the recovery
+ * pipeline (Plan §F.5) discriminates on:
+ *
+ * - [Clean] — observed Post-Up content fingerprint equals desired;
+ *   the runner finalises a normal `--rollback-output` artefact with
+ *   the observed fingerprint and `postUpVerified=true`.
+ * - [Drift] — observed Post-Up fingerprint differs from desired;
+ *   the runner exits `5` and (per Plan §F.5.g) MUST NOT auto-emit a
+ *   recovery rollback artefact. The observed FP is carried for
+ *   structured reporting.
+ * - [IntrospectionFailed] — the target could not be re-read after
+ *   Up. No observed FP exists. A recovery artefact emission for this
+ *   case (with `desiredFp` as the only allowed post-up fingerprint)
+ *   is the F.5.e sub-slice.
+ *
+ * `null` (caller-side) is the non-applicable case: `--execute` was
+ * not requested, or the executor reported an error before
+ * post-compare could even attempt to read.
+ */
+internal sealed class PostCompareOutcome {
+
+    abstract val observedFingerprint: String?
+
+    data class Clean(override val observedFingerprint: String) : PostCompareOutcome()
+
+    data class Drift(override val observedFingerprint: String) : PostCompareOutcome()
+
+    data object IntrospectionFailed : PostCompareOutcome() {
+        override val observedFingerprint: String? = null
+    }
+
+    /**
+     * Maps the outcome to the legacy `Int?` exit-code shape the rest
+     * of the runner pipeline still consumes (will go away when F.5.c
+     * restructures `finalize` to compute exit codes from outcomes
+     * directly).
+     */
+    fun toDriftCode(): Int? = when (this) {
+        is Clean -> null
+        is Drift, IntrospectionFailed -> 5
+    }
+}
 
 data class SchemaMigrateSummary(
     val operationsTotal: Int = 0,

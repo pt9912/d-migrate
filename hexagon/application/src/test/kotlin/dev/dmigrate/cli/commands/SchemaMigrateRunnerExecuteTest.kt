@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
@@ -217,6 +218,67 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         capture.keys.none { it.startsWith("wrote:") && it.endsWith(".sql") } shouldBe true
         // Report still gets written.
         capture.keys.any { it == "wrote:$reportPath" } shouldBe true
+    }
+
+    test("F.5.b — clean post-compare pins observed Post-Up-Fingerprint into the rollback artefact") {
+        // Plan §F.5.b / §10 acceptance: the rollback metadata block must
+        // carry the OBSERVED Post-Up content fingerprint (not the planned
+        // desired one) so that schema rollback's TARGET_STATE_MISMATCH
+        // check verifies the same bytes that actually live in the DB.
+        val capture = mutableMapOf<String, String>()
+        val schema = schemaWithTable("orders")
+        val expectedObservedFingerprint = MigrationFingerprint.compute(schema)
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schema, validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = schema,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, statements, _ ->
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                )
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { _, _ -> "{}" },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val reportPath = tmpDir.resolve("e4-f5b-report.json")
+        val rollbackPath = tmpDir.resolve("e4-f5b-rollback.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = rollbackPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 0
+        val artefactText = capture["wrote:$rollbackPath"]
+            ?: error("rollback artefact was not written")
+        artefactText shouldContain "\"postUpFingerprint\":\"$expectedObservedFingerprint\""
+        artefactText shouldContain "\"postUpVerified\":true"
+        // `recovery=false` in the happy path — recovery emission is F.5.e/f.
+        artefactText shouldContain "\"recovery\":false"
     }
 
     test("--execute with executor failure surfaces executionError + exit 5") {
