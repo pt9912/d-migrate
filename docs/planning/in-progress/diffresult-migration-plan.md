@@ -1807,13 +1807,38 @@ fuer alle Tabellen — Soll/Ausgangsschema im Test muessen das exakt
 spiegeln, sonst Fingerprint-Mismatch. Carve-Out gewahrt: Test fasst nur
 AddColumn (Up) / DropColumn (Down) an, kein `AlterColumnNullability`.
 
-#### F.4 — Round-Trip-Smoke SQLite
+#### F.4 — Round-Trip-Smoke SQLite ✅ (2026-05-10)
 
-- [ ] Direkt-reversible Operationen ohne Rebuild (in-memory; kein
-  Testcontainers noetig).
-- [ ] Mindestens ein echter Table-Rebuild im Pfad, um die
+- [x] Direkt-reversible Operationen ohne Rebuild (in-memory; kein
+  Testcontainers noetig). — F.4.a `AddColumn`-Round-Trip via direktem
+  `ALTER TABLE`.
+- [x] Mindestens ein echter Table-Rebuild im Pfad, um die
   RebuildTable-Pipeline gegen eine echte SQLite-Engine zu fahren
-  (Spaltenmapping, foreign_key_check, BEGIN IMMEDIATE / COMMIT).
+  (Spaltenmapping, foreign_key_check, BEGIN IMMEDIATE / COMMIT). —
+  F.4.b `AlterColumnNullability`-Round-Trip ueber den 9-Statement-
+  Rebuild-Pfad.
+
+F.4 hat zwei produktive Bugs offengelegt, die im selben Slice gefixt
+sind:
+
+1. **`JdbcMigrationExecutor.runAll`-Tx-Modell-Bruch fuer SQLite-Rebuild.**
+   `autoCommit = false` + Trailing `conn.commit()` kollidiert mit den
+   vom `SqliteRebuildRenderer` emittierten expliziten `BEGIN IMMEDIATE`
+   /`COMMIT` (xerial-sqlite: `cannot start a transaction within a
+   transaction`). Fix: per-Stream-Dispatch zwischen "Runner-owned tx"
+   (PG/MySQL/SQLite-direkt) und "Stream-owned tx" (SQLite-Rebuild),
+   detektiert ueber das Vorhandensein eines expliziten
+   `BEGIN`-Statements im Stream. Der Stream-owned-Pfad bleibt auf
+   `autoCommit = true` und ueberlaesst die Tx-Fuehrung dem SQL-Body.
+2. **`SchemaRollbackRunner` buendelte den ganzen Multi-Statement-
+   Artefakt-Body in ein einziges `MigrationDdlStatement.sql`.** xerial-
+   sqlite (und andere JDBC-Driver) fuehren multi-statement Strings via
+   `Statement.execute(...)` nicht aus — alles nach dem ersten `;` wurde
+   stillschweigend uebersprungen. Fix: Body wieder in einzelne
+   Statements splitten (Separator `\n\n`, identisch zur
+   `RollbackArtefactBuilder.canonicalBody`-Joining-Logik).
+
+Test-Fixture-Mirror `executeAgainstPool` 1:1 nachgezogen.
 
 #### F.5 — Recovery-Rollback-Artefakt
 
@@ -1991,14 +2016,14 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
 - [x] Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
-  Soll-Schema. (PostgreSQL via F.2, MySQL via F.3; SQLite folgt in F.4.)
+  Soll-Schema. (PostgreSQL via F.2, MySQL via F.3, SQLite via F.4.)
 - [x] Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
-  das Ausgangsschema. (PostgreSQL via F.2, MySQL via F.3; SQLite folgt in F.4.)
-- [ ] PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
-  Up-Smoke. (PostgreSQL ✅ via F.2, MySQL ✅ via F.3; SQLite offen.)
-- [ ] Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
+  das Ausgangsschema. (PostgreSQL via F.2, MySQL via F.3, SQLite via F.4.)
+- [x] PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
+  Up-Smoke. (PostgreSQL ✅ via F.2, MySQL ✅ via F.3, SQLite ✅ via F.4.a/F.4.b.)
+- [x] Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
   SQLite-Smoke enthaelt mindestens einen echten Table-Rebuild.
-  (PostgreSQL ✅ via F.2; SQLite offen.)
+  (PostgreSQL ✅ via F.2, SQLite ✅ via F.4.b RebuildTable-Pipeline.)
 - [x] `schema compare`-Output bleibt rueckwaertskompatibel und serialisiert nicht
   ploetzlich das interne `DiffResult`.
 - [x] 0.7.0-Tool-Exports bleiben full-state und unveraendert.
