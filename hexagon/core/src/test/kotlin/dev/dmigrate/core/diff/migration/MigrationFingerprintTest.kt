@@ -46,6 +46,22 @@ class MigrationFingerprintTest : FunSpec({
         MigrationFingerprint.compute(a) shouldBe MigrationFingerprint.compute(b)
     }
 
+    test("description / encoding / locale are NOT part of the fingerprint") {
+        // Same B+ rationale as name/version — these are reporting metadata,
+        // not observable database state. The reverse reader does not surface
+        // them onto SchemaDefinition, so a YAML that customised them would
+        // otherwise drift against any real DB.
+        val plain = SchemaDefinition(name = "App", version = "1")
+        val annotated = SchemaDefinition(
+            name = "App",
+            version = "1",
+            description = "annotated copy",
+            encoding = "latin1",
+            locale = "de_DE",
+        )
+        MigrationFingerprint.compute(plain) shouldBe MigrationFingerprint.compute(annotated)
+    }
+
     test("content differences yield different fingerprints") {
         val emptyA = schema()
         val withTable = schema(

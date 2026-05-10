@@ -22,6 +22,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
 import java.sql.SQLException
@@ -164,6 +165,15 @@ class PostgresMigrateRoundTripIntegrationTest : FunSpec({
             migrateExit shouldBe 0
             Files.exists(rollbackPath) shouldBe true
             Files.exists(reportPath) shouldBe true
+            // Sanity-spot-check that the report carries the expected
+            // post-execute state. The renderer is the trivial
+            // `SchemaMigrateReport.toString()` (see runner wiring above),
+            // so we look at substrings rather than parsing JSON.
+            val reportText = Files.readString(reportPath)
+            reportText shouldContain "status=ok"
+            reportText shouldContain "exitCode=0"
+            reportText shouldContain "started=true"
+            reportText shouldContain "executionError=null"
 
             // ── 3. Reverse + Compare gegen Ziel-Schema ──────────────────
             MigrationFingerprint.compute(readPgSchema(pool)) shouldBe

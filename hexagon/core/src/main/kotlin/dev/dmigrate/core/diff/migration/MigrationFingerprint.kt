@@ -26,15 +26,16 @@ import dev.dmigrate.core.util.sha256Hex
  *   (`postUpFingerprint`, `allowedPostUpFingerprints`),
  * - the post-`--execute` compare and `schema rollback` drift checks.
  *
- * The fingerprint is a **pure content hash**: the user-chosen
- * `name`/`version` labels are *not* part of the projection. Both
- * fields are documentation / reporting metadata; they are not
- * observable database state. Including them would mean a desired
- * YAML labelled `App / 1` could never round-trip against a live
- * database (which has no concept of "schema name") even with
- * identical content. Reverse-marker handling is therefore a
- * non-event for fingerprinting and lives only at compare-/report-
- * level concerns.
+ * The fingerprint is a **pure content hash**. Schema-level reporting
+ * metadata — `name`, `version`, `description`, `encoding`, `locale` —
+ * is *not* part of the projection. None of these are observable
+ * database state from the reverse reader's perspective: a live
+ * PostgreSQL has no concept of "schema name", and the reader does
+ * not surface the server's collation/encoding onto
+ * [SchemaDefinition]. Including any of them would mean a desired
+ * YAML could never round-trip against a real DB even with identical
+ * content. Reverse-marker handling is therefore a non-event for
+ * fingerprinting and lives only at compare-/report-level concerns.
  *
  * Algorithm: `schema-fingerprint-v1`. Steps:
  *
@@ -66,13 +67,24 @@ object MigrationFingerprint {
     fun compute(schema: SchemaDefinition): String =
         sha256Hex(project(schema))
 
-    /** Returns the canonical projection string. Public for diagnostics. */
+    /**
+     * Returns the canonical projection string. Public for diagnostics.
+     *
+     * Schema-level metadata (`description`, `encoding`, `locale`) is
+     * intentionally **not** projected — same B+ rationale as
+     * `name`/`version`: these are reporting fields, not observable
+     * database state. A live PostgreSQL or MySQL has its own server-
+     * level encoding/collation that the reverse reader does not
+     * surface on the [SchemaDefinition], so a YAML that customised
+     * those fields would otherwise drift against any real DB target
+     * even with identical content. If we ever decide they ARE
+     * content, `SchemaComparator.compareMetadata` must learn to diff
+     * them too — both code paths must agree on what counts as
+     * "schema state".
+     */
     fun project(schema: SchemaDefinition): String {
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
-        sb.append("description=").append(schema.description ?: "").append('\n')
-        sb.append("encoding=").append(schema.encoding).append('\n')
-        sb.append("locale=").append(schema.locale ?: "").append('\n')
         appendCustomTypes(sb, schema.customTypes)
         appendTables(sb, schema.tables)
         appendViews(sb, schema.views)

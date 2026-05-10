@@ -152,6 +152,14 @@ class SchemaRollbackRunner(
                 return 8
             }
         }
+        // No CompareOperandNormalizer call on `targetResolved.schema` here:
+        // a live-DB schema comes straight from the reader, so it cannot
+        // carry user-authored markers needing validation. The fingerprint
+        // is also content-only, so any prefix in the synthetic schema name
+        // is irrelevant. Keep this in sync with
+        // SchemaMigrateRunner.runPostCompare's normalizer call, which only
+        // exists to surface malformed-marker errors from any *file*-side
+        // operand the loader might return.
         val targetFingerprint = fingerprint(targetResolved.schema)
         val acceptable = if (parsed.recovery) {
             parsed.allowedPostUpFingerprints.orEmpty().toSet()
