@@ -82,6 +82,14 @@ class SchemaMigrateRunner(
      * [MigrationFingerprint.compute]; override only for tests.
      */
     private val fingerprint: (SchemaDefinition) -> String = MigrationFingerprint::compute,
+    /**
+     * Clock injected into the recovery-rollback-artefact path
+     * derivation so the `<timestamp>` infix
+     * (`<output>.recovery.<timestamp>.rollback.sql`, Plan §F.5.d) is
+     * deterministic in tests. Production uses
+     * [java.time.Clock.systemUTC]; tests pin a `Clock.fixed(...)`.
+     */
+    private val clock: java.time.Clock = java.time.Clock.systemUTC(),
     /** Embedded into the rollback artefact's `createdByVersion` field. */
     private val createdByVersion: String = "d-migrate (dev)",
 ) {
@@ -210,9 +218,36 @@ class SchemaMigrateRunner(
             plan,
             effectiveDialect,
         )
+        // 12a. F.5.e/f: when --generate-rollback is set and Down rendered
+        //      cleanly, prepare a recovery-artefact builder closure so the
+        //      finalize-stage failure paths (Introspection-Fail, Write-Fail)
+        //      can emit a marked recovery artefact with the appropriate
+        //      `allowedPostUpFingerprints` set (see Plan §F.5.e/f).
+        val recoveryContext: RecoveryContext? = if (
+            request.generateRollback &&
+            renderedDown != null &&
+            !combined.isBlocked
+        ) {
+            RecoveryContext(
+                build = { fp, verified ->
+                    buildRecoveryArtefact(plan, renderedDown, effectiveDialect, fp, verified)
+                },
+                desiredFingerprint = plan.desired.fingerprint ?: "",
+            )
+        } else {
+            null
+        }
 
         // 13. Decide outcome
-        return finalize(request, withExecution, report, rollbackArtefact, executionTrace, postCompareOutcome)
+        return finalize(
+            request,
+            withExecution,
+            report,
+            rollbackArtefact,
+            executionTrace,
+            postCompareOutcome,
+            recoveryContext,
+        )
     }
 
     /**
@@ -375,33 +410,19 @@ class SchemaMigrateRunner(
         dialect: DatabaseDialect,
         postUpFingerprint: String,
         postUpVerified: Boolean,
-    ): String {
-        val downRisk = down.statements.fold(
-            RollbackArtefactBuilder.Risk(false, false, false, down.operationsRendered),
-        ) { acc, s ->
-            RollbackArtefactBuilder.Risk(
-                destructive = acc.destructive || s.risk.destructive,
-                dataLossPossible = acc.dataLossPossible || s.risk.dataLossPossible,
-                requiresManualConfirmation = acc.requiresManualConfirmation || s.risk.requiresManualConfirmation,
-                operationIds = acc.operationIds,
-            )
-        }
-        val currentFp = plan.current.fingerprint ?: ""
-        val desiredFp = plan.desired.fingerprint ?: ""
-        return RollbackArtefactBuilder.build(
-            RollbackArtefactBuilder.Input(
-                dialect = dialect,
-                currentFingerprint = currentFp,
-                desiredFingerprint = desiredFp,
-                postUpFingerprint = postUpFingerprint,
-                postUpVerified = postUpVerified,
-                operationIds = down.operationsRendered,
-                risk = downRisk,
-                downStatements = down.statements,
-                createdByVersion = createdByVersion,
-            ),
-        )
-    }
+    ): String = SchemaMigrateRollbackArtefactBuilder.buildNormal(
+        plan, down, dialect, postUpFingerprint, postUpVerified, createdByVersion,
+    )
+
+    private fun buildRecoveryArtefact(
+        plan: dev.dmigrate.core.diff.migration.DiffResult,
+        down: MigrationDdlResult,
+        dialect: DatabaseDialect,
+        allowedFingerprint: String,
+        postUpVerified: Boolean,
+    ): String = SchemaMigrateRollbackArtefactBuilder.buildRecovery(
+        plan, down, dialect, allowedFingerprint, postUpVerified, createdByVersion,
+    )
 
     private fun resolveDialect(request: SchemaMigrateRequest, target: ResolvedSchemaOperand): DatabaseDialect? {
         val targetDialect = target.dialect
@@ -554,93 +575,9 @@ class SchemaMigrateRunner(
         rendered: MigrationDdlResult,
         dialect: DatabaseDialect,
         renderedDown: MigrationDdlResult? = null,
-    ): SchemaMigrateReport {
-        val isBlocked = rendered.isBlocked
-        val isEmpty = plan.operations.isEmpty()
-        val status = when {
-            isBlocked -> "blocked"
-            isEmpty -> "no_op"
-            else -> "ok"
-        }
-        val exitCode = if (isBlocked) 8 else 0
-        return SchemaMigrateReport(
-            status = status,
-            exitCode = exitCode,
-            source = source.reference,
-            target = target.reference,
-            dialect = dialect.name,
-            planOnly = request.planOnly,
-            blockers = rendered.blockers.map {
-                SchemaMigrateBlockerView(
-                    reason = it.reason.name,
-                    operationIds = it.operationIds.toList(),
-                    diagnosticCodes = it.diagnostics.map { d -> d.code },
-                )
-            },
-            diagnostics = rendered.diagnostics.map {
-                SchemaMigrateDiagnosticView(
-                    code = it.code,
-                    severity = it.severity.name,
-                    message = it.message,
-                    operationId = it.operationId,
-                )
-            },
-            operations = plan.operations.map {
-                SchemaMigrateOperationView(
-                    id = it.id,
-                    kind = it::class.simpleName ?: "Unknown",
-                    objectType = it.objectType.name,
-                    path = it.objectRef.path,
-                    phase = it.phase.name,
-                    reversibility = it.reversibility.name,
-                    rendered = it.id in rendered.operationsRendered,
-                    skipped = it.id in rendered.operationsSkipped,
-                )
-            },
-            statements = if (request.planOnly) null else rendered.statements.map {
-                SchemaMigrateStatementView(
-                    sql = it.sql,
-                    operationIds = it.operationIds.toList(),
-                    phase = it.phase.name,
-                    destructive = it.risk.destructive,
-                )
-            },
-            summary = SchemaMigrateSummary(
-                operationsTotal = plan.operations.size,
-                operationsRendered = rendered.operationsRendered.size,
-                operationsSkipped = rendered.operationsSkipped.size,
-                statementsTotal = rendered.statements.size,
-                destructiveCount = rendered.destructiveOperations.size,
-                manualActionCount = rendered.manualActions.size,
-                nonReversibleCount = rendered.nonReversibleOperations.size,
-                primaryBlockedReason = rendered.primaryBlockedReason?.name,
-                downStatementsTotal = renderedDown?.statements?.size,
-                downBlocked = renderedDown?.isBlocked ?: false,
-            ),
-            execution = if (rendered.executionStarted || rendered.executionError != null) {
-                SchemaMigrateExecutionView(
-                    started = rendered.executionStarted,
-                    completed = rendered.executionCompleted,
-                    statementsAttempted = rendered.statementsAttempted,
-                    lastStatementOperationIds = rendered.lastStatementOperationIds.toList(),
-                    transactionRolledBack = rendered.transactionRolledBack,
-                    sideEffectsPossible = rendered.sideEffectsPossible,
-                    executionError = rendered.executionError,
-                    // Up-DDL was applied to the DB iff the executor was
-                    // started AND the runner-managed transaction wasn't
-                    // rolled back. A clean rollback after a failed Up
-                    // means no side effect — `upExecuted = false`.
-                    upExecuted = rendered.executionStarted && !rendered.transactionRolledBack,
-                    // `rollbackFinalized` is only known AFTER the
-                    // artefact write attempt — populated by `finalize`
-                    // via report.copy(...) before the report is written.
-                    rollbackFinalized = null,
-                )
-            } else {
-                null
-            },
-        )
-    }
+    ): SchemaMigrateReport = SchemaMigrateReportBuilder.build(
+        request, source, target, plan, rendered, dialect, renderedDown,
+    )
 
     /**
      * F.5.c: report writing is now ALWAYS the last step inside
@@ -652,7 +589,7 @@ class SchemaMigrateRunner(
      * Each terminal branch routes through [emitReportAndExit] so the
      * old "report first, artefacts later" race is gone.
      */
-    @Suppress("ReturnCount")
+    @Suppress("ReturnCount", "LongParameterList")
     private fun finalize(
         request: SchemaMigrateRequest,
         rendered: MigrationDdlResult,
@@ -660,6 +597,7 @@ class SchemaMigrateRunner(
         rollbackArtefact: String?,
         executionTrace: ExecutionTrace?,
         postCompareOutcome: PostCompareOutcome?,
+        recoveryContext: RecoveryContext?,
     ): Int {
         // Blocker path: report-only, no Up-SQL or Down artefact.
         if (report.exitCode == 8) {
@@ -687,11 +625,26 @@ class SchemaMigrateRunner(
             return emitReportAndExit(request, report, rollbackFinalized = null, baseExit = 5)
         }
 
-        // Post-compare drift OR introspection failure after a successful Up:
-        // Up DID land, but we couldn't (or shouldn't) finalise the normal
-        // rollback artefact. F.5.e/f extend this branch to emit a recovery
-        // artefact for the introspection-failure case; F.5.g pins the
-        // drift case to "no auto-recovery" via Plan §F.5.
+        // Post-compare introspection failure after a successful Up: Up DID land
+        // but we couldn't observe the new state. Per Plan §F.5.e the recovery
+        // artefact is finalised with `desiredFp` as the only allowed FP and
+        // `postUpVerified=false`. Best-effort write — failure here only logs;
+        // the elevated Exit-7 contract for a failed recovery write lands in
+        // F.5.h.
+        if (postCompareOutcome is PostCompareOutcome.IntrospectionFailed) {
+            tryWriteRecoveryArtefact(
+                request = request,
+                recoveryContext = recoveryContext,
+                allowedFingerprint = recoveryContext?.desiredFingerprint,
+                postUpVerified = false,
+            )
+            return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 5)
+        }
+
+        // Post-compare drift case: per Plan §F.5.g NO auto-recovery artefact
+        // — the observed state contradicts the Soll, so emitting an
+        // executable recovery would risk further damage. Operator must
+        // inspect manually.
         val driftCode = postCompareOutcome?.toDriftCode()
         if (driftCode != null) {
             return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = driftCode)
@@ -748,6 +701,44 @@ class SchemaMigrateRunner(
             path.toString(),
         )
         false
+    }
+
+    /**
+     * F.5.e/f: best-effort write of a recovery rollback artefact to
+     * `<--rollback-output>.recovery.<timestamp>.rollback.sql`. Caller
+     * supplies the [allowedFingerprint] (desiredFp for F.5.e
+     * Introspection-Fail, observedFp for F.5.f Write-Fail) and the
+     * [postUpVerified] flag. No-ops gracefully when
+     * `--generate-rollback` was off, the Down-render was blocked, or
+     * `--rollback-output` is unset. Returns true when an artefact was
+     * actually written.
+     *
+     * F.5.h will tighten this to elevate the exit code to 7 when the
+     * write itself fails after a side-effect Up — currently the
+     * failure is logged via `printError` only.
+     */
+    private fun tryWriteRecoveryArtefact(
+        request: SchemaMigrateRequest,
+        recoveryContext: RecoveryContext?,
+        allowedFingerprint: String?,
+        postUpVerified: Boolean,
+    ): Boolean {
+        val ctx = recoveryContext ?: return false
+        val fp = allowedFingerprint ?: return false
+        val output = request.rollbackOutput ?: return false
+        val recoveryPath = RecoveryArtefactPath.recoveryPathFor(output, clock.instant())
+        val artefact = ctx.build(fp, postUpVerified)
+        return try {
+            ensureParentDirectories(recoveryPath)
+            atomicWriter(recoveryPath, artefact)
+            true
+        } catch (e: Exception) {
+            userFacingPrintError(
+                "Failed to write recovery rollback artefact: ${e.message}",
+                recoveryPath.toString(),
+            )
+            false
+        }
     }
 
     /**
@@ -935,6 +926,22 @@ data class ExecutionTrace(
     val transactionRolledBack: Boolean = false,
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
+)
+
+/**
+ * Pre-built capability for emitting a **recovery** rollback artefact
+ * from inside [SchemaMigrateRunner.finalize]. Constructed in
+ * `execute()` once Down has rendered cleanly so the failure-path
+ * branches don't need access to the full plan/renderer state.
+ *
+ * `build(allowedFp, postUpVerified)` produces the artefact text with
+ * `recovery=true` and a single-element
+ * `allowedPostUpFingerprints=[allowedFp]`. `desiredFingerprint` is
+ * the FP the caller pins for the F.5.e Introspection-Fail case.
+ */
+internal data class RecoveryContext(
+    val build: (allowedFingerprint: String, postUpVerified: Boolean) -> String,
+    val desiredFingerprint: String,
 )
 
 /**

@@ -502,4 +502,90 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         report shouldContain "\"rollbackFinalized\":false"
     }
 
+    test("F.5.e — post-introspection failure emits a recovery artefact with desiredFp + recovery=true") {
+        // Plan §F.5.e: Up landed in the DB (executor returned cleanly) but
+        // the post-introspection dbLoader call threw. The runner MUST NOT
+        // overwrite the user's --rollback-output, but MAY write a separate
+        // recovery artefact at <rollbackOutput>.recovery.<ts>.rollback.sql
+        // with `recovery=true`, `allowedPostUpFingerprints=[desiredFp]`,
+        // `postUpVerified=false`. Exit stays 5; report carries
+        // `upExecuted=true`, `rollbackFinalized=false`.
+        val capture = mutableMapOf<String, String>()
+        val schema = schemaWithTable("orders")
+        var loadCallNo = 0
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schema, validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                loadCallNo++
+                if (loadCallNo == 1) {
+                    // Pre-execute: returns the original (current) state.
+                    ResolvedSchemaOperand(
+                        reference = "db:${op.source}",
+                        schema = schema,
+                        validation = ValidationResult(),
+                        dialect = DatabaseDialect.POSTGRESQL,
+                    )
+                } else {
+                    // Post-execute: introspection failure (e.g. driver crash,
+                    // network drop right after Up). Triggers F.5.e.
+                    error("simulated post-introspection failure")
+                }
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, _, _ ->
+                ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                "{\"upExecuted\":${r.execution?.upExecuted},\"rollbackFinalized\":${r.execution?.rollbackFinalized}}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+            // Pin the timestamp so the recovery filename is deterministic.
+            clock = java.time.Clock.fixed(
+                java.time.Instant.parse("2026-05-10T14:30:45Z"),
+                java.time.ZoneOffset.UTC,
+            ),
+        )
+        val reportPath = tmpDir.resolve("e4-f5e-report.json")
+        val rollbackPath = tmpDir.resolve("e4-f5e-rollback.sql")
+        val expectedRecoveryPath = tmpDir.resolve("e4-f5e-rollback.sql.recovery.20260510T143045Z.rollback.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = rollbackPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 5
+        // The user's --rollback-output is NEVER overwritten under F.5.e.
+        capture.containsKey("wrote:$rollbackPath") shouldBe false
+        // The recovery artefact lives at the spec-prescribed path.
+        val recoveryArtefact = capture["wrote:$expectedRecoveryPath"]
+            ?: error("recovery artefact not written; capture keys = ${capture.keys}")
+        // Recovery contract: the metadata block sets recovery=true and pins
+        // the desiredFp as the only allowed FP (no observed FP available).
+        val expectedDesiredFp = MigrationFingerprint.compute(schema)
+        recoveryArtefact shouldContain "\"recovery\":true"
+        recoveryArtefact shouldContain "\"allowedPostUpFingerprints\":[\"$expectedDesiredFp\"]"
+        recoveryArtefact shouldContain "\"postUpVerified\":false"
+        // Report still reflects the side-effect signal.
+        val report = capture["wrote:$reportPath"]
+            ?: error("report was not written")
+        report shouldContain "\"upExecuted\":true"
+        report shouldContain "\"rollbackFinalized\":false"
+    }
+
 })
