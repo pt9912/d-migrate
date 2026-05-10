@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldNotContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 class RollbackArtefactParserTest : FunSpec({
@@ -113,5 +114,108 @@ class RollbackArtefactParserTest : FunSpec({
         // The parser may catch this as either MISSING_ALLOWED or ARTIFACT_HASH_MISMATCH
         // (the tampering breaks the hash too). Either is acceptable as a strict-rejection signal.
         (r.code == "MISSING_ALLOWED_POST_UP_FINGERPRINTS" || r.code == "ARTIFACT_HASH_MISMATCH") shouldBe true
+    }
+
+    // ── F.6.d: Round-Trip-Tampering — extended coverage beyond the
+    //         two existing tampering cases (SQL body + fingerprint).
+    //         Each test mutates a different metadata field and pins
+    //         that the parser refuses the resulting artefact via
+    //         ARTIFACT_HASH_MISMATCH (or, where the mutation also
+    //         breaks structural pre-checks, the corresponding
+    //         structural error). The point is to demonstrate that
+    //         the artifactHash covers EVERY field, not just the two
+    //         already proven.
+
+    test("F.6.d — tampered recovery=false → true is detected via ARTIFACT_HASH_MISMATCH") {
+        val text = makeArtefact(recovery = false)
+        val tampered = text.replace("\"recovery\":false", "\"recovery\":true")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        // The flip alone breaks the hash; without allowedPostUpFingerprints
+        // the parser may also raise MISSING_ALLOWED. Both signal strict
+        // rejection — important is that no Success is returned.
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "MISSING_ALLOWED_POST_UP_FINGERPRINTS") shouldBe true
+    }
+
+    test("F.6.d — tampered dialect value is detected via ARTIFACT_HASH_MISMATCH") {
+        val text = makeArtefact(dialect = DatabaseDialect.POSTGRESQL)
+        val tampered = text.replace("\"dialect\":\"POSTGRESQL\"", "\"dialect\":\"MYSQL\"")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+    }
+
+    test("F.6.d — tampered formatVersion is detected via ARTIFACT_HASH_MISMATCH") {
+        val text = makeArtefact()
+        val tampered = text.replace("\"formatVersion\":\"v1\"", "\"formatVersion\":\"v2\"")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        // Either an UNKNOWN_FORMAT_VERSION pre-hash check or the hash
+        // mismatch — both are strict-rejection signals.
+        (r.code == "UNKNOWN_FORMAT_VERSION" || r.code == "ARTIFACT_HASH_MISMATCH") shouldBe true
+    }
+
+    test("F.6.d — tampered risk.destructive is detected via ARTIFACT_HASH_MISMATCH") {
+        val text = makeArtefact()
+        val tampered = text.replace("\"destructive\":false", "\"destructive\":true")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+    }
+
+    test("F.6.d — tampered operationIds list is detected via ARTIFACT_HASH_MISMATCH") {
+        val text = makeArtefact()
+        val tampered = text.replace("\"operationIds\":[\"op-1\"]", "\"operationIds\":[\"op-99\"]")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+    }
+
+    test("F.6.d — tampered artifactHash itself (re-hash dance) is detected") {
+        // Attacker substitutes BOTH the body and the artifactHash to a
+        // self-consistent pair (common attack — without re-knowing the
+        // canonical-encoding, they pick the wrong hash). Pin: the parser
+        // recomputes via the documented algorithm and rejects.
+        val text = makeArtefact()
+        val tampered = text
+            .replace("DROP TABLE x;", "DROP TABLE attacker;")
+            // Substitute the hash with a plausible-looking but wrong value.
+            .replace(
+                Regex("\"artifactHash\":\"[0-9a-f]+\""),
+                "\"artifactHash\":\"" + "0".repeat(64) + "\"",
+            )
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+    }
+
+    // ── F.6.d: Secret-Scrubbing — pin the contract from §7.3 / §10
+    //         that the metadata block must NEVER carry secrets,
+    //         unmasked connection URLs, or absolute local paths.
+    //         The current builder achieves this structurally (none
+    //         of the fields can carry user-supplied free-form
+    //         strings except `createdByVersion`); this test makes
+    //         that invariant explicit so a future field addition
+    //         that breaks the contract fails loudly.
+
+    test("F.6.d — metadata block carries no JDBC URL / connection-string-shaped substrings") {
+        val text = makeArtefact()
+        val header = text.substringAfter("v1 begin\n").substringBefore("\nv1 end").lines().first()
+        // None of the documented fields ever carry a JDBC URL — verify
+        // this empirically against the canonical text.
+        header shouldNotContain "jdbc:"
+        header shouldNotContain "://"
+    }
+
+    test("F.6.d — metadata block carries no obvious secret-keyword-shaped substrings") {
+        // Negative pin: rendering normal inputs must NOT produce a
+        // header that looks like it carries a secret. If a future field
+        // contains user-supplied free-text, this test fires when the
+        // field name OR a default value matches a secret-keyword token.
+        val text = makeArtefact()
+        val header = text.substringAfter("v1 begin\n").substringBefore("\nv1 end").lines().first()
+        for (forbidden in listOf("password", "passwd", "secret", "api_key", "token=", "/Users/", "/home/")) {
+            header.contains(forbidden, ignoreCase = true) shouldBe false
+        }
     }
 })
