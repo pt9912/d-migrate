@@ -1914,11 +1914,16 @@ nach Aufwand (kleinste Slice zuerst):
   nach vollstaendigem Rendering und erfolgreicher Blocker-Pruefung
   atomar finalisiert; bestehende Artefakte bleiben bei Fehlern
   unveraendert."
-- [ ] **F.6.e** Erweiterte CLI-Exit-Code-Tests — stdout-vs-file-
+- [x] **F.6.e** Erweiterte CLI-Exit-Code-Tests — stdout-vs-file-
   Ausgabeziele, fehlende implizite Report-Sidecars, Flag-
   Kombinationen, die in E.1-E.6-Lueken stehen. Die Hauptpfade sind
   bereits durch Unit-Tests abgedeckt; F.6.e schliesst die Edge-
-  Lueken.
+  Lueken. Pinned in `SchemaMigrateRunnerCliExitCodeTest`:
+  `--dry-run+--execute` Exit 2, `--execute+--plan-only` Exit 2,
+  `--execute` mit File-Target Exit 2, Up-SQL-stdout-Echo wenn
+  `--output` fehlt (positive), `--report` Pfad-Kollision Exit 2,
+  invalid operand parsing Exit 2, KEIN implizites Report-Sidecar
+  an einem Default-Pfad bei fehlendem `--report`.
 - [ ] **F.6.f** Mid-DDL-Ausfuehrungsfehler — `schema migrate
   --execute` mit DDL-Failure NACH erfolgreichem ersten Statement
   plus rollback-Failure (`sideEffectsPossible=true`); strukturierter
