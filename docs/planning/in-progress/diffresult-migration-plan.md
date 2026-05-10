@@ -1,12 +1,14 @@
 # Implementierungsplan: `DiffResult` fuer diff-basierte Migrationen
 
-> Status: In Arbeit (2026-05-09), Ziel 0.9.7
+> Status: In Arbeit (2026-05-10), Ziel 0.9.7
 >
-> Phase A-E sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
+> Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
 > Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
-> Execute). Phase F.1 (Golden-DDL-Tests) ist gelandet; F.2-F.6
-> (Round-Trip-Smokes pro Dialekt, Recovery-Pfad, Edge-Cases) bleiben
-> offen.
+> Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
+> Pfad, Edge-Cases). Phase G (Dialect-Hardening: SQLite-Cast-Matrix,
+> MySQL-VIEW-Privilege-Preflight, PostgreSQL-ReplaceView-Compat-
+> Decision) ist offen und schliesst die letzten drei §10-Akzeptanz-
+> punkte fuer 0.9.7.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -1987,6 +1989,70 @@ abgedeckt:
 - Metadatenblock-Tests (Hauptfaelle) → E.5
   (`RollbackArtefactParserTest`).
 
+### Phase G - Dialect-Hardening
+
+Schliesst die drei verbliebenen §10-Akzeptanzkriterien, die Phase F
+nicht abdeckt, weil es Renderer- bzw. Adapter-Implementierung
+braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
+
+- [ ] **G.1** SQLite `AlterColumnType` Cast-Matrix —
+  `SqliteRebuildRenderer` rendert das `INSERT-SELECT` aktuell mit
+  einer Type-Affinity-basierten `CAST`-Heuristik. Stattdessen muss
+  eine explizite Whitelist sicherer `(oldType, newType)`-Paare
+  geprueft werden; Paare ausserhalb der Matrix blockieren als
+  `MANUAL_REQUIRED`. Whitelist-Inhalt: Integer↔Text-affine
+  Konvertierungen die SQLite garantiert nicht-truncating
+  durchfuehrt; offene Fragen sind Numeric-Width-Verluste,
+  Text→Integer mit Non-Numeric-Daten, BLOB↔Text. Daten-
+  Preflights (zB SELECT COUNT(*) WHERE CAST(...) IS NULL fuer
+  unsichere Casts) sind Carve-Out, weil sie eine Live-DB
+  voraussetzen und Phase G den Renderer-Layer hardened.
+  Adressiert §10-DoD "SQLite-`AlterColumnType` nutzt automatische
+  `CAST`-Ausdruecke nur mit expliziter, getesteter Quell-/Ziel-
+  Cast-Matrix" (L2040-2043).
+
+- [ ] **G.2** MySQL `VIEW_TABLE_USAGE` Privilege-Preflight —
+  `MysqlSchemaReader` muss erkennen, wann er `VIEW_TABLE_USAGE` /
+  `VIEW_ROUTINE_USAGE` nicht (vollstaendig) lesen kann:
+  Permission-Denied wirft heute schon, aber die "Stille
+  Unvollstaendigkeit" (Tabelle existiert, liefert 0 Rows fuer
+  einen bekannten View, weil der introspektierende User SHOW VIEW
+  auf abhaengigen Tabellen fehlt) wird nicht detektiert. Loesung:
+  Reader projiziert pro View ein `dependencyProjectionComplete`-
+  Flag in einer adapter-internen Struktur; Planner liest das
+  Flag und blockt View-Replacements oder spaltenveraendernde
+  Operationen unter dem View mit
+  `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`-BLOCKER-Diagnose
+  (analog zu F.6.b). Adressiert §10-DoD "MySQL behandelt
+  fehlende oder nicht belegbare Privilegien fuer
+  `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige
+  Dependency-Projektion" (L2027-2030).
+
+- [ ] **G.3** PostgreSQL `ReplaceView` Compatibility-Decision —
+  `PostgresDiffDdlGenerator` rendert View-Aenderungen heute immer
+  als `CREATE OR REPLACE VIEW`. PG akzeptiert das aber nur, wenn
+  Spaltenanzahl, -reihenfolge und -typen unveraendert bleiben und
+  keine referenzierte Tabellenspalte geaendert / geloescht wird.
+  Zwei-Stufen-Loesung:
+  1. **Strict-Variante** (verbindlich fuer G.3): wenn die View in
+     `dependencies.columns` Spalten referenziert, die in derselben
+     Migration `DropColumn`/`AlterColumnType`/
+     `AlterColumnNullability` erfahren, splittet der Planner die
+     View-Aenderung in `DropView` (vor Spalten-Op) +
+     `CreateView` (nach Spalten-Op) — dependency-sicher. Reine
+     Body-Aenderungen ohne Tabellen-Impact bleiben weiter
+     `CREATE OR REPLACE VIEW`.
+  2. **Spaltensignatur-Compatibility** (Carve-Out): ohne Schema-
+     Diff der View-eigenen Spaltenanzahl/-reihenfolge/-typen ist
+     die Heuristik unvollstaendig. Voller Vergleich braucht
+     entweder eine `ViewColumn`-Modellebene (heute nicht
+     vorhanden) oder einen Pre-Render-Probe (nicht in 0.9.7).
+     Wird im Plan dokumentiert und auf 0.9.8+ verschoben.
+  Adressiert §10-DoD "PostgreSQL rendert `ReplaceView` nur dann
+  als `CREATE OR REPLACE VIEW`, wenn die View-Aenderung
+  kompatibel ist" (L2012-2016) — Strict-Variante. Spaltensignatur-
+  Compatibility bleibt §10-Carve-Out.
+
 ---
 
 ## 10. Akzeptanzkriterien
@@ -2013,7 +2079,8 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   die View-Aenderung kompatibel ist. Muss eine View wegen abhaengiger Tabellen-/
   Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
   entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
-  Reihenfolge.
+  Reihenfolge. (Phase G.3 — Strict-Variante; Spaltensignatur-Compatibility
+  bleibt Carve-Out auf 0.9.8+.)
 - [x] PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
   Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
   planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
@@ -2029,7 +2096,7 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [ ] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
   `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
   Projektion und blockiert betroffene View-Replacements oder
-  spaltenveraendernde Operationen mit Diagnose.
+  spaltenveraendernde Operationen mit Diagnose. (Phase G.2.)
 - [x] `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
@@ -2042,7 +2109,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [ ] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
   Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
-  sonst blockiert die Operation als `MANUAL_REQUIRED`.
+  sonst blockiert die Operation als `MANUAL_REQUIRED`. (Phase G.1 — Cast-
+  Matrix; Daten-Preflights bleiben Carve-Out, weil sie eine Live-DB
+  voraussetzen und Phase G den Renderer-Layer hardened.)
 - [x] SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
   blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
   Down-Vertrag.
