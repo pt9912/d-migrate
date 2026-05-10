@@ -1796,10 +1796,16 @@ Slice mitgefixt:
 - `SchemaMigrateRunner.runPostCompare` vergleicht ueber Fingerprints statt
   `SchemaDiff.isEmpty()`, symmetrisch zu `SchemaRollbackRunner`.
 
-#### F.3 — Round-Trip-Smoke MySQL
+#### F.3 — Round-Trip-Smoke MySQL ✅ (2026-05-10)
 
-- [ ] Analog zu F.2 fuer die erste reversible Operationsmatrix
+- [x] Analog zu F.2 fuer die erste reversible Operationsmatrix
   (Plan §6.3); `AlterColumnNullability` bleibt Carve-Out.
+
+MySQL-spezifische Deltas zu F.2: Reverse-Reader setzt `required = false`
+auf PK-Spalten und fuellt `metadata = TableMetadata(engine = "InnoDB")`
+fuer alle Tabellen — Soll/Ausgangsschema im Test muessen das exakt
+spiegeln, sonst Fingerprint-Mismatch. Carve-Out gewahrt: Test fasst nur
+AddColumn (Up) / DropColumn (Down) an, kein `AlterColumnNullability`.
 
 #### F.4 — Round-Trip-Smoke SQLite
 
@@ -1985,11 +1991,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
 - [x] Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
-  Soll-Schema. (PostgreSQL via F.2; MySQL/SQLite folgen in F.3/F.4.)
+  Soll-Schema. (PostgreSQL via F.2, MySQL via F.3; SQLite folgt in F.4.)
 - [x] Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
-  das Ausgangsschema. (PostgreSQL via F.2; SQLite folgt in F.4.)
+  das Ausgangsschema. (PostgreSQL via F.2, MySQL via F.3; SQLite folgt in F.4.)
 - [ ] PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
-  Up-Smoke. (PostgreSQL ✅ via F.2; MySQL/SQLite offen.)
+  Up-Smoke. (PostgreSQL ✅ via F.2, MySQL ✅ via F.3; SQLite offen.)
 - [ ] Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
   SQLite-Smoke enthaelt mindestens einen echten Table-Rebuild.
   (PostgreSQL ✅ via F.2; SQLite offen.)
