@@ -588,6 +588,90 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         report shouldContain "\"rollbackFinalized\":false"
     }
 
+    test("F.5.g+j — drift case must NOT auto-emit a recovery artefact (Plan §F.5.g negative)") {
+        // Plan §F.5.g / §7.1 (Z. 1461-1465): when the post-compare detects
+        // genuine drift (observed != desired), the runner MUST NOT write
+        // any auto-executable recovery rollback artefact. The observed
+        // state contradicts the Soll, so an executable Down could push the
+        // DB into a worse state. Operator must inspect manually.
+        //
+        // The previous F.5.c-drift test pinned only "--rollback-output not
+        // written"; this test additionally pins the matching
+        // `.recovery.<timestamp>.rollback.sql` path, which is the file
+        // F.5.e/f WOULD have written under the Introspection-Fail and
+        // Write-Fail branches. Drift is the only branch where neither
+        // path is touched.
+        val capture = mutableMapOf<String, String>()
+        val desired = schemaWithTable("orders")
+        val drifted = SchemaDefinition(name = "App", version = "1") // empty — content drift vs desired
+        val rollbackPath = tmpDir.resolve("e4-f5g-rollback.sql")
+        val recoveryPath = tmpDir.resolve("e4-f5g-rollback.sql.recovery.20260510T143045Z.rollback.sql")
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = desired, validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = drifted,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, _, _ ->
+                ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                val observed = MigrationFingerprint.compute(drifted)
+                "{\"upExecuted\":${r.execution?.upExecuted}," +
+                    "\"rollbackFinalized\":${r.execution?.rollbackFinalized}," +
+                    "\"observedFingerprint\":\"$observed\"}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+            // Pinned clock so the (would-be) recovery path is deterministic.
+            clock = java.time.Clock.fixed(
+                java.time.Instant.parse("2026-05-10T14:30:45Z"),
+                java.time.ZoneOffset.UTC,
+            ),
+        )
+        val reportPath = tmpDir.resolve("e4-f5g-report.json")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = rollbackPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 5
+        // Negative pinning: NEITHER the user --rollback-output NOR the
+        // recovery-shaped path is written under drift.
+        capture.containsKey("wrote:$rollbackPath") shouldBe false
+        capture.containsKey("wrote:$recoveryPath") shouldBe false
+        // No file in the same parent that looks recovery-shaped at all.
+        capture.keys.filter { it.startsWith("wrote:") && it.contains(".recovery.") } shouldBe emptyList()
+        // Report still carries the side-effect signal so an operator can
+        // see exactly what happened (Up landed, observed FP captured,
+        // rollback NOT finalised).
+        val report = capture["wrote:$reportPath"]
+            ?: error("report was not written")
+        report shouldContain "\"upExecuted\":true"
+        report shouldContain "\"rollbackFinalized\":false"
+        report shouldContain "\"observedFingerprint\":\"${MigrationFingerprint.compute(drifted)}\""
+    }
+
     test("F.5.f — write-fail of --rollback-output after clean compare emits recovery with observedFp") {
         // Plan §F.5.f: Up landed, post-compare clean (observed == desired),
         // but the atomic write of the user-requested --rollback-output
