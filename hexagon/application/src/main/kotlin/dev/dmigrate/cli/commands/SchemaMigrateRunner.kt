@@ -651,6 +651,14 @@ class SchemaMigrateRunner(
         }
 
         // Down-SQL artefact emission — only after a clean execute (or no execute at all).
+        // F.5.f: if the atomic write of the user-requested --rollback-output
+        // fails AFTER a successful Up + clean post-compare, fall back to a
+        // marked recovery artefact at the .recovery.<ts>.rollback.sql path
+        // pinned to the OBSERVED Post-Up-Fingerprint
+        // (`postUpVerified=true`). The user's path is provably untouched
+        // (atomic-write failure left no partial bytes), and the recovery
+        // artefact carries the actual observed state so a follow-up
+        // `schema rollback --execute` can verify against it.
         val rollbackFinalized: Boolean? = when {
             rollbackArtefact == null -> null      // no --generate-rollback or Down was blocked
             request.rollbackOutput == null -> null // upstream validation guarantees this combo
@@ -658,6 +666,13 @@ class SchemaMigrateRunner(
                 if (writeRollbackArtefact(request.rollbackOutput, rollbackArtefact)) {
                     true
                 } else {
+                    val observedFp = (postCompareOutcome as? PostCompareOutcome.Clean)?.observedFingerprint
+                    tryWriteRecoveryArtefact(
+                        request = request,
+                        recoveryContext = recoveryContext,
+                        allowedFingerprint = observedFp,
+                        postUpVerified = true,
+                    )
                     return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 7)
                 }
             }
