@@ -1842,14 +1842,50 @@ Test-Fixture-Mirror `executeAgainstPool` 1:1 nachgezogen.
 
 #### F.5 — Recovery-Rollback-Artefakt
 
-- [ ] Recovery-Pfad in `schema migrate --execute --generate-rollback`:
-  bei Post-Compare-Drift das Rollback-Artefakt mit `recovery=true`
-  und `allowedPostUpFingerprints` finalisieren, sofern kein
-  beobachteter Post-Up-Fingerprint dem Soll widerspricht.
-- [ ] Recovery-Pfad in `schema rollback`: `allowedPostUpFingerprints`-
-  Whitelist akzeptieren.
-- [ ] Tests fuer "beobachteter Post-Up-Fingerprint != Soll" Fall:
-  KEIN automatisch ausfuehrbares Recovery-Artefakt darf entstehen.
+Wird in Sub-Slices ausgeliefert. Das nominelle Vertragsbild fuer den
+Recovery-Pfad steht in §7.1 (Zeilen 1135-1166 und 1445-1474); diese
+Sub-Slices verdrahten es schrittweise. F.5.i ist redundanter
+Bestaetigungstest fuer eine bereits in E.5 verdrahtete Stelle.
+
+- [ ] **F.5.a** Observed Post-Up-Fingerprint in `runPostCompare`
+  capturen und an die Artefakt-Builder-Pfade durchreichen, statt
+  weiterhin nur einen Drift-Boolean zurueckzugeben (heutiger Stand:
+  `desiredFp` als Platzhalter).
+- [ ] **F.5.b** Happy-Path-Artefakt (`schema migrate --execute
+  --generate-rollback` ohne Drift) verwendet observed FP als
+  `postUpFingerprint`, setzt `postUpVerified=true`. Erfuellt §10
+  "Metadatenblock enthaelt den beobachteten Post-Up-Fingerprint".
+- [ ] **F.5.c** Report-Felder `upExecuted` / `rollbackFinalized` in
+  `SchemaMigrateExecutionView` ergaenzen und in `finalize` populieren.
+  Erfuellt den ersten Halbsatz der §10-Side-Effect-Akzeptanz.
+- [ ] **F.5.d** Recovery-Artefakt-Naming `<output>.recovery.<timestamp>.rollback.sql`,
+  atomic write zum gleichen Verzeichnis. Bestehender `--rollback-output`
+  wird nie ueberschrieben (auch im Recovery-Pfad).
+- [ ] **F.5.e** Recovery Case A — Post-Introspection schlaegt nach
+  erfolgreichem Up fehl: Recovery-Artefakt mit
+  `allowedPostUpFingerprints=[desiredFp]`, `postUpVerified=false`
+  schreiben.
+- [ ] **F.5.f** Recovery Case B — Atomic-Write des regulaeren
+  `--rollback-output` schlaegt bei sauberem Post-Compare fehl:
+  Recovery-Artefakt mit `allowedPostUpFingerprints=[observedFp]`,
+  `postUpVerified=true` schreiben.
+- [ ] **F.5.g** Recovery Case C (Negativ) — Drift detected
+  (observed != desired): KEIN automatisch ausfuehrbares Recovery-
+  Artefakt; Exit `5`; observed FP + `rollbackFinalized=false` im
+  Report. (Negativ-Test im F.5-Scope.)
+- [ ] **F.5.h** Recovery-Artefakt-Schreib-Fehler (FS-Race, kein
+  atomares Replace im Zielverzeichnis): Exit `7` mit strukturierter
+  "Up bereits ausgefuehrt, manuelle Sicherung der Ziel-Datenbank
+  erforderlich"-Meldung.
+- [ ] **F.5.i** `SchemaRollbackRunner.verifyTargetMatchesArtefact`
+  ist bereits seit E.5 verdrahtet (Recovery-Pfad akzeptiert
+  `allowedPostUpFingerprints`-Whitelist). Bestaetigungstest mit
+  Multi-FP `allowedPostUpFingerprints`-Artefakt, das gegen einen der
+  zugelassenen Zustaende erfolgreich executet.
+- [ ] **F.5.j** Test fuer Case C im Migrate-Runner: Drift-Szenario,
+  kein File geschrieben (auch nicht im `.recovery.<ts>.sql`-Pfad);
+  Report carries `upExecuted=true`, `rollbackFinalized=false`,
+  observed FP, manuelle Pruefpflicht-Note.
 
 #### F.6 — Edge-Cases und Hardening
 
