@@ -1773,16 +1773,28 @@ nach Risiko-/Nutzenabwaegung gepriorisiert werden.
   Determinismus, Spaltenmapping-Edge-Cases) folgen in spaeteren
   F.x-Slices oder gemeinsam mit den Round-Trip-Smokes.
 
-#### F.2 — Round-Trip-Smoke PostgreSQL
+#### F.2 — Round-Trip-Smoke PostgreSQL ✅ (2026-05-10)
 
-- [ ] Testcontainers-basiert (existierende `test/integration-postgresql/`-
+- [x] Testcontainers-basiert (existierende `test/integration-postgresql/`-
   Infrastruktur wiederverwenden).
-- [ ] Ausgangsschema in DB einrichten.
-- [ ] `schema migrate --execute` mit `--generate-rollback` und
+- [x] Ausgangsschema in DB einrichten.
+- [x] `schema migrate --execute` mit `--generate-rollback` und
   `--rollback-output`.
-- [ ] Reverse + Compare gegen Ziel-Schema.
-- [ ] `schema rollback --execute`.
-- [ ] Reverse + Compare gegen Ausgangsschema.
+- [x] Reverse + Compare gegen Ziel-Schema.
+- [x] `schema rollback --execute`.
+- [x] Reverse + Compare gegen Ausgangsschema.
+
+Beim Verdrahten ist eine zuvor unentdeckte Fingerprint-/Drift-Schwachstelle
+aufgefallen: `MigrationFingerprint.project()` enthielt `name=`/`version=`,
+weshalb post-`--execute` Drift-Pruefungen und `verifyTargetMatchesArtefact`
+fuer reale YAML-vs-Reverse-Roundtrips niemals geglueckt waeren. Im selben
+Slice mitgefixt:
+
+- `MigrationFingerprint` ist jetzt ein reiner Content-Hash; Algorithmus-ID
+  bleibt `schema-fingerprint-v1` (es existieren noch keine produktiven
+  Artefakte).
+- `SchemaMigrateRunner.runPostCompare` vergleicht ueber Fingerprints statt
+  `SchemaDiff.isEmpty()`, symmetrisch zu `SchemaRollbackRunner`.
 
 #### F.3 — Round-Trip-Smoke MySQL
 
@@ -1972,14 +1984,15 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [x] `schema rollback --source rollback.sql --target ... --execute` mit
   `--allow-destructive` wendet destruktives Down-SQL nur dann an, wenn der
   Metadatenblock diese Freigabe verlangt und der Nutzer sie explizit setzt.
-- [ ] Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
-  Soll-Schema.
-- [ ] Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
-  das Ausgangsschema.
+- [x] Nach `migrate --execute` vergleicht ein Smoke den Zielzustand gegen das
+  Soll-Schema. (PostgreSQL via F.2; MySQL/SQLite folgen in F.3/F.4.)
+- [x] Nach `schema rollback --execute` vergleicht ein Smoke den Zielzustand gegen
+  das Ausgangsschema. (PostgreSQL via F.2; SQLite folgt in F.4.)
 - [ ] PostgreSQL, MySQL und SQLite haben jeweils mindestens einen echten
-  Up-Smoke.
+  Up-Smoke. (PostgreSQL ✅ via F.2; MySQL/SQLite offen.)
 - [ ] Mindestens PostgreSQL und SQLite haben je einen Up+Down-Smoke. Der
   SQLite-Smoke enthaelt mindestens einen echten Table-Rebuild.
+  (PostgreSQL ✅ via F.2; SQLite offen.)
 - [x] `schema compare`-Output bleibt rueckwaertskompatibel und serialisiert nicht
   ploetzlich das interne `DiffResult`.
 - [x] 0.7.0-Tool-Exports bleiben full-state und unveraendert.
