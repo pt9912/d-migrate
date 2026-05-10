@@ -52,29 +52,11 @@ jobs:
         # Dependency-/Kotlin-Compiler-Cache der setup-gradle-Action
         # ausgeschaltet. Bei Persistenz des Flakes ggf. zusaetzlich
         # `outputs.upToDateWhen { false }` auf Test-Tasks setzen.
-        run: ./gradlew build koverVerify --no-build-cache
+        run: make ci-build
 
       - name: Generate coverage reports
         if: always()
-        run: >-
-          ./gradlew
-          :hexagon:core:koverHtmlReport
-          :hexagon:ports-common:koverHtmlReport
-          :hexagon:ports-read:koverHtmlReport
-          :hexagon:ports-write:koverHtmlReport
-          :hexagon:application:koverHtmlReport
-          :hexagon:profiling:koverHtmlReport
-          :adapters:driven:driver-common:koverHtmlReport
-          :adapters:driven:driver-postgresql:koverHtmlReport
-          :adapters:driven:driver-postgresql-profiling:koverHtmlReport
-          :adapters:driven:driver-mysql:koverHtmlReport
-          :adapters:driven:driver-mysql-profiling:koverHtmlReport
-          :adapters:driven:driver-sqlite:koverHtmlReport
-          :adapters:driven:driver-sqlite-profiling:koverHtmlReport
-          :adapters:driven:formats:koverHtmlReport
-          :adapters:driven:integrations:koverHtmlReport
-          :adapters:driven:streaming:koverHtmlReport
-          :adapters:driving:cli:koverHtmlReport
+        run: make coverage-modules-html
 
       - name: Upload test results
         if: always()
@@ -92,25 +74,6 @@ jobs:
           path: '**/build/reports/kover/html/**'
           retention-days: 14
 
-      - name: Generate per-module coverage XML/JSON (CI/local diff)
-        # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
-        # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
-        # Post-Process. Ergibt `build/reports/kover-modules/<module>.{xml,json}`
-        # die mit `jq -r '.report.packages[]'` direkt gegen den lokalen Output
-        # diffbar sind. Dient v.a. der Diagnose, wenn die per-Modul-koverVerify-
-        # Gates in CI flake'n und lokal gruen sind (siehe LF-006-Bekannter-
-        # Kover-CI-Flake).
-        if: always()
-        run: make docker-coverage-modules
-
-      - name: Upload per-module coverage XML/JSON
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: coverage-modules
-          path: 'build/reports/kover-modules/*'
-          retention-days: 14
-
       - name: Upload detekt reports
         if: always()
         uses: actions/upload-artifact@v6
@@ -121,7 +84,7 @@ jobs:
 
       - name: Build release assets
         if: startsWith(github.ref, 'refs/tags/v')
-        run: ./gradlew :adapters:driving:cli:assembleReleaseAssets
+        run: make release-assets
 
       - name: Upload release assets
         if: startsWith(github.ref, 'refs/tags/v')
@@ -150,7 +113,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
 
       - name: Build OCI image locally
-        run: ./gradlew :adapters:driving:cli:jibDockerBuild
+        run: make oci-build
 
       - name: Login to GitHub Container Registry
         if: startsWith(github.ref, 'refs/tags/v')

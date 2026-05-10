@@ -7,6 +7,25 @@ CLI_PROJECT ?= :adapters:driving:cli
 CLI_BIN ?= adapters/driving/cli/build/install/d-migrate/bin/d-migrate
 ARGS ?= --help
 INTEGRATION_TASKS ?=
+CI_BUILD_TASKS ?= build koverVerify --no-build-cache
+COVERAGE_MODULES_HTML_TASKS ?= \
+	:hexagon:core:koverHtmlReport \
+	:hexagon:ports-common:koverHtmlReport \
+	:hexagon:ports-read:koverHtmlReport \
+	:hexagon:ports-write:koverHtmlReport \
+	:hexagon:application:koverHtmlReport \
+	:hexagon:profiling:koverHtmlReport \
+	:adapters:driven:driver-common:koverHtmlReport \
+	:adapters:driven:driver-postgresql:koverHtmlReport \
+	:adapters:driven:driver-postgresql-profiling:koverHtmlReport \
+	:adapters:driven:driver-mysql:koverHtmlReport \
+	:adapters:driven:driver-mysql-profiling:koverHtmlReport \
+	:adapters:driven:driver-sqlite:koverHtmlReport \
+	:adapters:driven:driver-sqlite-profiling:koverHtmlReport \
+	:adapters:driven:formats:koverHtmlReport \
+	:adapters:driven:integrations:koverHtmlReport \
+	:adapters:driven:streaming:koverHtmlReport \
+	:adapters:driving:cli:koverHtmlReport
 
 # Docker-targeted gradle runs (see docker-check / docker-test).
 # MODULES is a space-separated list of project paths, e.g.
@@ -22,7 +41,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report coverage-modules-html integration docs-check smoke gates ci ci-build release-assets oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -35,12 +54,15 @@ help:
 		'  make lint             Run Detekt across subprojects' \
 		'  make coverage-gate    Run tests and root Kover verification' \
 		'  make coverage-report  Generate Kover HTML/XML reports' \
+		'  make coverage-modules-html  Generate selected per-module Kover HTML reports' \
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links in docs/' \
 		'  make smoke            Build the CLI distribution and run --version/--help' \
 		'  make gates            Run check, coverage and docs gates' \
 		'  make ci               Run build, coverage and docs gates' \
+		'  make ci-build         Run CI build and Kover gate with CI cache guard' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
+		'  make oci-build        Build the Jib OCI image locally' \
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
 		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
@@ -91,6 +113,9 @@ coverage-gate:
 coverage-report:
 	$(GRADLE) test koverHtmlReport koverXmlReport
 
+coverage-modules-html:
+	$(GRADLE) $(COVERAGE_MODULES_HTML_TASKS)
+
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
@@ -106,8 +131,14 @@ gates: check coverage-gate docs-check
 
 ci: build coverage-gate docs-check
 
+ci-build:
+	$(GRADLE) $(CI_BUILD_TASKS)
+
 release-assets:
 	$(GRADLE) $(CLI_PROJECT):assembleReleaseAssets
+
+oci-build:
+	$(GRADLE) $(CLI_PROJECT):jibDockerBuild
 
 docker-build:
 	$(DOCKER) build -t $(IMAGE):$(IMAGE_TAG) .

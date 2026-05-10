@@ -48,16 +48,3 @@ jobs:
         # darf keine stale `.exec`-Daten sehen, sonst gibt es
         # knapp-unter-90% Boundary-Flakes.
         run: make integration
-
-      - name: Generate per-module coverage image (CI/local diff)
-        # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
-        # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
-        # Post-Process. Die per-module Reports liegen im gebauten Image unter
-        # `/reports`; `docker-coverage-modules-summary` gibt daraus die
-        # Diagnose aus, ohne lokale Artefakte zu extrahieren.
-        if: always()
-        run: make docker-coverage-modules
-
-      - name: Print per-module coverage summary
-        if: always()
-        run: make docker-coverage-modules-summary

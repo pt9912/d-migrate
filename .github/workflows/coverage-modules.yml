@@ -1,0 +1,32 @@
+name: Per-Module Coverage
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  coverage-modules-summary:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Print per-module coverage summary
+        # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
+        # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
+        # Post-Process. Die per-module Reports liegen im gebauten Image unter
+        # `/reports`; dieser Target gibt daraus die Diagnose aus, ohne lokale
+        # Artefakte zu extrahieren.
+        run: make docker-coverage-modules-summary
