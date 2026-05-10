@@ -190,26 +190,51 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
 ```
 
-Hinweise:
+### Dockerfile-Workflows (schneller Überblick)
 
-- Die Build-Stage nutzt `eclipse-temurin:21-jdk-noble` und cached Gradle-Abhängigkeiten über BuildKit-Cache-Mounts, sodass wiederholte Builds schnell sind.
-- Die Runtime-Stage nutzt `eclipse-temurin:21-jre-noble` (dasselbe Basisimage wie das veröffentlichte OCI-Image aus `:adapters:driving:cli:jibDockerBuild`).
-- Die `coverage`-Stage führt `test koverHtmlReport koverXmlReport` aus und liefert den aggregierten Root-Kover-HTML-Report über einen eingebauten HTTP-Server auf Port `8080` aus.
-- Die `coverage-json`-Stage gibt denselben aggregierten Root-Kover-Report als normalisiertes, JaCoCo-artiges JSON per `ENTRYPOINT` auf `stdout` aus, sodass du ihn direkt in eine Datei umleiten kannst.
-- Die `coverage`-Stage baut den HTML-Report bewusst auch dann, wenn der 90%-Kover-Gate aktuell unterschritten wird.
-- Die separate `coverage-verify`-Stage führt `koverVerify` aus und bricht `docker build --target coverage-verify` absichtlich mit einem Fehler ab, sobald der konfigurierte Kover-Mindestwert nicht erreicht wird.
-- `scripts/verify-doc-refs.sh` prüft Markdown-Link-Targets (Markdown links) in `docs/`, `spec/`, `README.md` und `CHANGELOG.md` gegen das Dateisystem. Externe HTTP-Links werden ignoriert. Exit-Code 1 bei kaputten Links.
-- Ein vollständiger `docker build` erreicht immer die Runtime-Stage. Wenn du `GRADLE_TASKS` überschreibst, füge `:adapters:driving:cli:installDist` hinzu; für Build-/Test-Only-Subsets nutze alternativ `--target build`.
-- Testcontainers-basierte Integrationstests sollten nicht in `docker build` laufen. Nutze dafür
-  [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh),
-  das einen kurzlebigen JDK-Container startet und den Docker-Socket des Hosts mountet, damit Testcontainers PostgreSQL/MySQL normal starten kann.
-- Um Build-Artefakte aus der Build-Stage zu extrahieren:
-  ```bash
-  docker build --target build -t d-migrate:build .
-  docker create --name d-migrate-tmp d-migrate:build
-  docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
-  docker rm d-migrate-tmp
-  ```
+<details>
+<summary>Build- und Runtime-Stages</summary>
+
+- Build-Stage: `eclipse-temurin:21-jdk-noble`
+- Runtime-Stage: `eclipse-temurin:21-jre-noble` (wie beim offiziellen OCI-Image aus `:adapters:driving:cli:jibDockerBuild`)
+- Gradle-Dependencies werden über BuildKit-Cache-Mounts gecacht.
+- Vollständiger `docker build` landet immer in der `runtime`-Stage.
+- Bei `GRADLE_TASKS`-Überschreibung ergänzen: `:adapters:driving:cli:installDist`
+- Für reinen Build/Test ohne Runtime-Image: `--target build`
+
+</details>
+
+<details>
+<summary>Coverage-Stages</summary>
+
+- `coverage`: `test koverHtmlReport koverXmlReport` + HTTP-Server auf Port `8080` für Root-Kover-HTML.
+- `coverage`: HTML-Report wird auch bei unterschrittenem 90%-Gate erzeugt.
+- `coverage-json`: identischer Root-Kover-Report als JaCoCo-ähnliches JSON auf `stdout` (via `ENTRYPOINT`).
+- `coverage-verify`: hartes `koverVerify`; Build-Target bricht bei nicht erfülltem Mindestwert mit Fehler ab.
+
+</details>
+
+<details>
+<summary>Dokumente und Integrationstests</summary>
+
+- `scripts/verify-doc-refs.sh` validiert Links in `docs/`, `spec/`, `README.md`, `CHANGELOG.md` gegen das Dateisystem.
+- Externe HTTP-Links werden ignoriert; kaputte interne Links liefern Exit-Code `1`.
+- Testcontainers-Jobs nicht im `docker build` laufen lassen.
+- Dafür nutze stattdessen [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh), der den Host-Docker-Socket in einen JDK-Container mountet.
+
+</details>
+
+<details>
+<summary>Build-Artefakte aus der Build-Stage exportieren</summary>
+
+```bash
+docker build --target build -t d-migrate:build .
+docker create --name d-migrate-tmp d-migrate:build
+docker cp d-migrate-tmp:/src/adapters/driving/cli/build/distributions ./dist
+docker rm d-migrate-tmp
+```
+
+</details>
 
 ### Minimales Schema-Beispiel
 
@@ -251,7 +276,27 @@ Und vergleichst zwei Versionen so:
 
 ## Aktueller Stand
 
-Aktuelles Release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)** — MCP-Server — d-migrate ist jetzt als Model Context Protocol v1 Server über `stdio` und Streamable HTTP nutzbar (Phasen A–G), mit asynchronen Jobs, Idempotenz, Policy/Approval, Quotas, JDBC-Persistenz, file-backed Artifact-Stores, Bundle-Import und KI-nahen Tools (`procedure_transform_*`, `testdata_*`). Daneben: deterministische DDL-Generierung (`--deterministic`/`SOURCE_DATE_EPOCH`), bigint Identity-Columns für PostgreSQL/MySQL, partial Index-Predicates, Index-Sortierung pro Spalte und ein robusterer `schema reverse`/`--split=pre-post`-Pfad.
+Aktuelles Release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)**
+
+MCP-Server:
+
+- Laufzeit als **Model Context Protocol v1 Server** (`stdio`, Streamable HTTP)
+- Asynchrone Jobs
+- Idempotenz
+- Policy/Approval
+- Quotas
+- JDBC-Persistenz
+- File-backed Artifact-Stores
+- Bundle-Import
+- KI-nahe Tools (`procedure_transform_*`, `testdata_*`)
+
+Weitere Verbesserungen:
+
+- Deterministische DDL-Generierung (`--deterministic` / `SOURCE_DATE_EPOCH`)
+- BigInt Identity-Columns für PostgreSQL/MySQL
+- Partial Index-Predicates
+- Index-Sortierung pro Spalte
+- Robusterer `schema reverse`-Pfad mit `--split=pre-post`
 
 Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
