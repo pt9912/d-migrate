@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands.testing
 
 import dev.dmigrate.cli.commands.ExecutionTrace
+import dev.dmigrate.cli.commands.MigrationStreamClassifier
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import java.sql.Connection
@@ -49,19 +50,12 @@ fun executeAgainstPool(
         return ExecutionTrace(executionStarted = true, executionCompleted = true)
     }
     return pool.borrow().use { conn ->
-        if (statements.any { isExplicitBeginStatement(it.sql) }) {
+        if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
             runStreamOwnedTransaction(conn, statements)
         } else {
             runRunnerOwnedTransaction(conn, statements)
         }
     }
-}
-
-private fun isExplicitBeginStatement(sql: String): Boolean {
-    val trimmed = sql.trimStart().uppercase()
-    return trimmed.startsWith("BEGIN;") ||
-        trimmed.startsWith("BEGIN ") ||
-        trimmed == "BEGIN"
 }
 
 @Suppress("ReturnCount")

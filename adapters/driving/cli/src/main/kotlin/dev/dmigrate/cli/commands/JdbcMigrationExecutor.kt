@@ -93,18 +93,11 @@ internal object JdbcMigrationExecutor {
     }
 
     private fun runAll(conn: java.sql.Connection, statements: List<MigrationDdlStatement>): ExecutionTrace =
-        if (statements.any { isExplicitBeginStatement(it.sql) }) {
+        if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
             runStreamOwnedTransaction(conn, statements)
         } else {
             runRunnerOwnedTransaction(conn, statements)
         }
-
-    private fun isExplicitBeginStatement(sql: String): Boolean {
-        val trimmed = sql.trimStart().uppercase()
-        return trimmed.startsWith("BEGIN;") ||
-            trimmed.startsWith("BEGIN ") ||
-            trimmed == "BEGIN"
-    }
 
     @Suppress("ReturnCount")
     private fun runRunnerOwnedTransaction(
