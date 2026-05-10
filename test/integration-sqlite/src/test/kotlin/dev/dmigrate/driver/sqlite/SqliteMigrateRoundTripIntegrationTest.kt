@@ -21,6 +21,7 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.assertions.withClue
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
@@ -156,6 +157,105 @@ class SqliteMigrateRoundTripIntegrationTest : FunSpec({
         }
     }
 
+    test("F.6.c — mid-rebuild failure (NOT NULL violation in INSERT-SELECT) leaves the original table pristine") {
+        // Per Plan §F.6.c: the SQLite RebuildTable pipeline must run
+        // as one indivisible unit. Force an INSERT-SELECT failure by
+        // pre-populating the source table with a NULL row that the
+        // target schema's NOT NULL column would reject. The stream-
+        // owned transaction model wraps the entire pipeline in
+        // `BEGIN IMMEDIATE` … `ROLLBACK` (on error); after the
+        // rollback the live database must be byte-equal to the
+        // pre-migrate state — original table intact, original row
+        // intact, and no orphan `<table>__dmg_rebuild_*` left behind.
+        val pool = newPool()
+        val tmp = createTempDirectory("sqlite-roundtrip-f6c")
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE round_trip (id INTEGER PRIMARY KEY, status TEXT)",
+                "INSERT INTO round_trip (id, status) VALUES (1, NULL)",
+            )
+
+            val originalSchema = SchemaDefinition(
+                name = "rt-original",
+                version = "0",
+                tables = mapOf(
+                    "round_trip" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = false),
+                            "status" to ColumnDefinition(NeutralType.Text(), required = false),
+                        ),
+                        primaryKey = listOf("id"),
+                    ),
+                ),
+            )
+            // desired flips status → NOT NULL — the rebuild's INSERT
+            // SELECT will fail on the NULL row in the temp table.
+            val desiredSchema = SchemaDefinition(
+                name = "rt-desired",
+                version = "1",
+                tables = mapOf(
+                    "round_trip" to TableDefinition(
+                        columns = linkedMapOf(
+                            "id" to ColumnDefinition(NeutralType.Integer, required = false),
+                            "status" to ColumnDefinition(NeutralType.Text(), required = true),
+                        ),
+                        primaryKey = listOf("id"),
+                    ),
+                ),
+            )
+
+            val pristineFingerprint = MigrationFingerprint.compute(readSqliteSchema(pool))
+            pristineFingerprint shouldBe MigrationFingerprint.compute(originalSchema)
+            countRoundTripRows(pool) shouldBe 1
+
+            val reportPath = tmp.resolve("report.json")
+            val errors = mutableListOf<String>()
+
+            val migrateRunner = sqliteMigrateRunner(pool, desiredSchema, errors)
+            val migrateExit = migrateRunner.execute(
+                SchemaMigrateRequest(
+                    source = "file:${tmp.resolve("ignored-desired.yaml")}",
+                    target = "db:placeholder",
+                    dialect = DatabaseDialect.SQLITE,
+                    report = reportPath,
+                    execute = true,
+                ),
+            )
+            // Exit 5 — execute path with executionError. Renderer gave us
+            // a clean plan; the failure is at runtime inside the rebuild.
+            withClue({
+                val report = if (Files.exists(reportPath)) Files.readString(reportPath) else "<no report>"
+                "migrate errors: $errors\nreport: $report"
+            }) { migrateExit shouldBe 5 }
+
+            val report = Files.readString(reportPath)
+            // Stream-owned model handled the rollback explicitly via a
+            // literal `ROLLBACK;` against the live SQLite connection —
+            // pin the trace fields so a future executor refactor can't
+            // silently flip atomicity into "half-applied".
+            report shouldContain "transactionRolledBack=true"
+            report shouldContain "sideEffectsPossible=false"
+            report shouldContain "executionError="
+
+            // Schema-level invariant: post-failure fingerprint matches
+            // the pre-migrate snapshot bit-for-bit. Any drift here
+            // would mean the rebuild left structural debris.
+            MigrationFingerprint.compute(readSqliteSchema(pool)) shouldBe pristineFingerprint
+
+            // Row-level invariant: the NULL row that triggered the
+            // INSERT-SELECT failure is still there, untouched.
+            countRoundTripRows(pool) shouldBe 1
+
+            // No `__dmg_rebuild_*` orphan table — the BEGIN IMMEDIATE …
+            // ROLLBACK reverted the CREATE TABLE for the temp.
+            listOrphanRebuildTables(pool).shouldBeEmpty()
+        } finally {
+            tmp.toFile().deleteRecursively()
+            pool.close()
+        }
+    }
+
     test("F.4.b — AlterColumnNullability round-trip via SQLite RebuildTable pipeline") {
         val pool = newPool()
         val tmp = createTempDirectory("sqlite-roundtrip-f4b")
@@ -249,6 +349,31 @@ class SqliteMigrateRoundTripIntegrationTest : FunSpec({
         }
     }
 })
+
+private fun countRoundTripRows(pool: ConnectionPool): Int {
+    pool.borrow().use { conn ->
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery("SELECT COUNT(*) FROM round_trip").use { rs ->
+                rs.next()
+                return rs.getInt(1)
+            }
+        }
+    }
+}
+
+private fun listOrphanRebuildTables(pool: ConnectionPool): List<String> {
+    val out = mutableListOf<String>()
+    pool.borrow().use { conn ->
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '%__dmg_rebuild_%'",
+            ).use { rs ->
+                while (rs.next()) out += rs.getString(1)
+            }
+        }
+    }
+    return out
+}
 
 private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
     pool.borrow().use { conn ->

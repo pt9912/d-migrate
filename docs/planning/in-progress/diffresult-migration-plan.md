@@ -1958,12 +1958,20 @@ nach Aufwand (kleinste Slice zuerst):
   bei table-level-only Deps; AddColumn blockt nicht; column-level
   Deps schalten den Block aus; Views nur in `current` (slated for
   DropView) blocken weiterhin weil sie zur Execute-Zeit live sind.
-- [ ] **F.6.c** SQLite-Rebuild-Atomic-Execution Integration-Test —
+- [x] **F.6.c** SQLite-Rebuild-Atomic-Execution Integration-Test —
   Pinnt dass der Rebuild als unteilbare Einheit ausgefuehrt wird:
   bei Mid-Rebuild-Fehler (z.B. INSERT-SELECT failed) bleibt die DB
   im Pre-Rebuild-Zustand (kein gedroppter Original-Table, keine
   Halb-Migration). Erweiterung des F.4.b-Smokes mit einer Failure-
-  Variante.
+  Variante. Pinned in `SqliteMigrateRoundTripIntegrationTest`
+  ("F.6.c — mid-rebuild failure …"): NULL→NOT NULL Transition
+  mit pre-populated NULL row triggert NOT NULL Violation in der
+  INSERT-SELECT (Statement 4 des 9-Statement-Pipelines), Stream-
+  owned Tx-Modell macht ROLLBACK, Exit 5, Trace
+  `transactionRolledBack=true`/`sideEffectsPossible=false`,
+  Schema-Fingerprint vor und nach dem Failure identisch, Original-
+  Row erhalten, kein orphan `__dmg_rebuild_*` Table im
+  `sqlite_master`.
 
 Coverage-Punkte aus dem urspruenglichen Phase-F-Bullet-Set, die NICHT
 im Sub-Slice-Plan stehen, sind in den vorhergehenden Phasen bereits
