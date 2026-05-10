@@ -98,3 +98,22 @@ jobs:
           name: integration-coverage-reports
           path: '**/build/reports/kover/html/**'
           retention-days: 14
+
+      - name: Generate per-module coverage XML/JSON (CI/local diff)
+        # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
+        # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
+        # Post-Process. Ergibt `build/reports/kover-modules/<module>.{xml,json}`
+        # die mit `jq -r '.report.packages[]'` direkt gegen den lokalen Output
+        # diffbar sind. Dient v.a. der Diagnose, wenn die per-Modul-koverVerify-
+        # Gates in CI flake'n und lokal gruen sind (siehe LF-006-Bekannter-
+        # Kover-CI-Flake).
+        if: always()
+        run: make docker-coverage-modules
+
+      - name: Upload per-module coverage XML/JSON
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-coverage-modules
+          path: 'build/reports/kover-modules/*'
+          retention-days: 14
