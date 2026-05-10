@@ -65,8 +65,8 @@ kover {
                     "dev.dmigrate.server.core.pagination.PageRequest",
                     "dev.dmigrate.server.core.pagination.PageResult",
                     "dev.dmigrate.server.core.execution.ExecutionMeta",
-                    "dev.dmigrate.server.core.approval.ApprovalGrant",
-                    "dev.dmigrate.server.core.approval.ApprovalCorrelationKind",
+                    // ApprovalGrant + ApprovalCorrelationKind covered by
+                    // ApprovalGrantTest as of 2026-05 — exclude removed.
                     // Server-core idempotency outcomes (LF-012 / LN-011 / LN-017 / LN-027).
                     // Wildcards cover the outer sealed-interface marker plus
                     // every nested data-class subtype in one shot.
@@ -83,26 +83,9 @@ kover {
                     "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$*",
                     "dev.dmigrate.server.core.idempotency.InitResumeOutcome",
                     "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$*",
-                    // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
-                    "dev.dmigrate.server.core.audit.AuditEvent",
-                    "dev.dmigrate.server.core.audit.AuditOutcome",
-                    // LF-017 / LF-024 / LN-030 / LN-031: Server-core AI types —
-                    // Datentraeger fuer Outcome-Lifecycle und KI-Artefakt-
-                    // Provenance. Init-Blocks pruefen Form-Invarianten;
-                    // semantische Pfade sind in adapters/driving/mcp und
-                    // hexagon/application abgedeckt. Wildcards umfassen
-                    // den sealed-Marker plus jeden Sub-Typ.
-                    "dev.dmigrate.server.core.ai.AiToolScope",
-                    "dev.dmigrate.server.core.ai.AiToolClaimId",
-                    "dev.dmigrate.server.core.ai.AiToolOutcome",
-                    "dev.dmigrate.server.core.ai.AiToolOutcome\$*",
-                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome",
-                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome\$*",
-                    "dev.dmigrate.server.core.ai.AiArtifactMetadata",
-                    "dev.dmigrate.server.core.ai.AiArtifactProvenance",
-                    "dev.dmigrate.server.core.ai.AiArtifactProvenance\$*",
-                    "dev.dmigrate.server.core.ai.AiWireArtifactKind",
-                    "dev.dmigrate.server.core.ai.AiIntent",
+                    // AuditEvent / AuditOutcome covered by AuditEventTest
+                    // as of 2026-05 — exclude removed.
+
                 )
             }
         }
