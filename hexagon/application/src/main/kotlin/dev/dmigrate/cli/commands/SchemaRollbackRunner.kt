@@ -182,18 +182,13 @@ class SchemaRollbackRunner(
         targetOp: CompareOperand.Database,
         exec: ExecutorFn,
     ): Int {
-        val statement = MigrationDdlStatement(
-            sql = parsed.sqlBody.trimEnd('\n'),
+        val statements = splitArtefactBody(
+            sqlBody = parsed.sqlBody,
             operationIds = parsed.operationIds.toSet(),
-            risk = if (parsed.risk.destructive) {
-                dev.dmigrate.core.diff.migration.OperationRisk(destructive = true)
-            } else {
-                dev.dmigrate.core.diff.migration.OperationRisk.SAFE
-            },
-            phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+            destructive = parsed.risk.destructive,
         )
         val trace = try {
-            exec(targetOp, listOf(statement), request.cliConfigPath)
+            exec(targetOp, statements, request.cliConfigPath)
         } catch (e: Exception) {
             userFacingPrintError(
                 "Down execution failed: ${e.message ?: e::class.simpleName}",
@@ -207,6 +202,47 @@ class SchemaRollbackRunner(
         } else {
             0
         }
+    }
+
+    /**
+     * Split the artefact's `sqlBody` back into individual
+     * [MigrationDdlStatement]s. The builder ([RollbackArtefactBuilder.canonicalBody])
+     * joins per-statement SQL with `\n\n`, so we reverse that exact
+     * separator. JDBC drivers (e.g. xerial-sqlite) do NOT execute
+     * multi-statement strings via `Statement.execute(...)` — they
+     * silently truncate at the first `;` — so handing the executor a
+     * single bundled statement skips everything past the first one
+     * and was the F.4 forcing function for this fix.
+     *
+     * Phase tagging: the artefact format does not preserve the
+     * planner's per-statement [DiffPhase], so we stamp every split
+     * statement with [DiffPhase.TABLES] as a generic "executable
+     * body" placeholder. The executor's rebuild detection looks at
+     * the SQL itself ("any statement starts with BEGIN") rather than
+     * the phase tag, so the round-trip still picks the right
+     * transaction-ownership model.
+     */
+    private fun splitArtefactBody(
+        sqlBody: String,
+        operationIds: Set<String>,
+        destructive: Boolean,
+    ): List<MigrationDdlStatement> {
+        val risk = if (destructive) {
+            dev.dmigrate.core.diff.migration.OperationRisk(destructive = true)
+        } else {
+            dev.dmigrate.core.diff.migration.OperationRisk.SAFE
+        }
+        return sqlBody.split("\n\n")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { sql ->
+                MigrationDdlStatement(
+                    sql = sql,
+                    operationIds = operationIds,
+                    risk = risk,
+                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                )
+            }
     }
 
     private fun validateRequest(request: SchemaRollbackRequest): Int? {

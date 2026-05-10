@@ -16,24 +16,48 @@ import java.sql.SQLException
  * 1. Resolve the operand string via [NamedConnectionResolver]
  *    (config-aware) to a JDBC URL. Wraps non-config errors in
  *    [CompareConfigException] so the runner exits 7.
- * 2. Open a Hikari pool, set `autoCommit = false`, run all
- *    statements through one [java.sql.Statement.execute] each, and
- *    commit on the last. On any failure, roll back and surface the
- *    SQL message into [ExecutionTrace.executionError].
- * 3. SQLite specifics: the rebuild pipeline emits its own
- *    `BEGIN IMMEDIATE;` / `COMMIT;` markers; we still set
- *    `autoCommit = false` to keep xerial-sqlite's wrapping out of
- *    the way. The PRAGMA / BEGIN / COMMIT statements are sent
- *    through normal `execute()` calls — SQLite handles them
- *    inline.
+ * 2. Open a Hikari pool and dispatch on the statement stream's
+ *    transaction-ownership model (see [runAll] below).
  *
- * Error mapping:
+ * Two transaction-ownership models are supported, dispatched per-
+ * stream by inspecting the SQL content for an explicit `BEGIN`
+ * marker:
+ *
+ * - **Runner-owned tx (default)** — for PG, MySQL, and SQLite-
+ *   direct streams. `autoCommit = false`, all statements run inside
+ *   one outer JDBC transaction, `conn.commit()` on success,
+ *   `conn.rollback()` on `SQLException`.
+ *
+ * - **SQL-stream-owned tx** — for SQLite-rebuild streams (`migrate
+ *   --execute` ones rendered by `SqliteRebuildRenderer`; `rollback
+ *   --execute` ones reconstructed by `SchemaRollbackRunner.splitArtefactBody`
+ *   from the artefact body). Detected by the presence of an
+ *   explicit `BEGIN ` statement in the stream. Setting
+ *   `autoCommit = false` here would race xerial-sqlite's implicit-
+ *   tx-on-first-statement and produce
+ *   `cannot start a transaction within a transaction` (F.4 was the
+ *   forcing function). For these streams we keep `autoCommit = true`
+ *   and never call `conn.commit()` — the stream's own COMMIT closes
+ *   the rebuild, surrounding PRAGMAs run outside any tx.
+ *
+ * The detection key is the SQL itself rather than the
+ * [MigrationDdlStatement.phase] tag because the rollback path
+ * cannot reconstruct per-statement phases from the artefact body.
+ * Long-term: an explicit `transactionScope` field on
+ * [MigrationDdlStatement] (and round-tripped through the artefact)
+ * would let renderers declare ownership directly.
+ *
+ * Error mapping (runner-owned tx):
  *
  * - first statement fails before any execute → `transactionRolledBack=true`,
  *   `sideEffectsPossible=false`.
  * - failure after at least one statement succeeded → rollback is
  *   attempted; success of the rollback flips `transactionRolledBack=true`,
  *   else `sideEffectsPossible=true`.
+ *
+ * Error mapping (stream-owned tx): on `SQLException` an explicit
+ * `ROLLBACK;` is sent; success → `transactionRolledBack=true`, else
+ * `sideEffectsPossible=true`.
  */
 internal object JdbcMigrationExecutor {
 
@@ -68,8 +92,25 @@ internal object JdbcMigrationExecutor {
         }
     }
 
+    private fun runAll(conn: java.sql.Connection, statements: List<MigrationDdlStatement>): ExecutionTrace =
+        if (statements.any { isExplicitBeginStatement(it.sql) }) {
+            runStreamOwnedTransaction(conn, statements)
+        } else {
+            runRunnerOwnedTransaction(conn, statements)
+        }
+
+    private fun isExplicitBeginStatement(sql: String): Boolean {
+        val trimmed = sql.trimStart().uppercase()
+        return trimmed.startsWith("BEGIN;") ||
+            trimmed.startsWith("BEGIN ") ||
+            trimmed == "BEGIN"
+    }
+
     @Suppress("ReturnCount")
-    private fun runAll(conn: java.sql.Connection, statements: List<MigrationDdlStatement>): ExecutionTrace {
+    private fun runRunnerOwnedTransaction(
+        conn: java.sql.Connection,
+        statements: List<MigrationDdlStatement>,
+    ): ExecutionTrace {
         conn.autoCommit = false
         var attempted = 0
         var lastIds: Set<String> = emptySet()
@@ -89,7 +130,37 @@ internal object JdbcMigrationExecutor {
                 lastStatementOperationIds = lastIds,
             )
         } catch (e: SQLException) {
-            return rollbackTrace(conn, attempted, lastIds, e)
+            return rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = true)
+        }
+    }
+
+    @Suppress("ReturnCount")
+    private fun runStreamOwnedTransaction(
+        conn: java.sql.Connection,
+        statements: List<MigrationDdlStatement>,
+    ): ExecutionTrace {
+        // The stream contains its OWN `BEGIN IMMEDIATE` / `COMMIT`. Keep
+        // autoCommit=true so JDBC doesn't open a competing implicit tx;
+        // never call conn.commit() — the stream's COMMIT did it.
+        conn.autoCommit = true
+        var attempted = 0
+        var lastIds: Set<String> = emptySet()
+        try {
+            conn.createStatement().use { jdbcStmt ->
+                for (stmt in statements) {
+                    lastIds = stmt.operationIds
+                    attempted++
+                    jdbcStmt.execute(stmt.sql)
+                }
+            }
+            return ExecutionTrace(
+                executionStarted = true,
+                executionCompleted = true,
+                statementsAttempted = attempted,
+                lastStatementOperationIds = lastIds,
+            )
+        } catch (e: SQLException) {
+            return rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = false)
         }
     }
 
@@ -98,9 +169,17 @@ internal object JdbcMigrationExecutor {
         attempted: Int,
         lastIds: Set<String>,
         cause: SQLException,
+        jdbcRollback: Boolean,
     ): ExecutionTrace {
         val (rolledBack, sideEffects) = try {
-            conn.rollback()
+            if (jdbcRollback) {
+                conn.rollback()
+            } else {
+                // Stream-owned tx: send an explicit ROLLBACK; statement so
+                // we don't depend on the driver's view of the JDBC tx state
+                // (it is `autoCommit=true` here).
+                conn.createStatement().use { it.execute("ROLLBACK;") }
+            }
             true to false
         } catch (_: SQLException) {
             false to true
