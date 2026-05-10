@@ -628,17 +628,21 @@ class SchemaMigrateRunner(
         // Post-compare introspection failure after a successful Up: Up DID land
         // but we couldn't observe the new state. Per Plan §F.5.e the recovery
         // artefact is finalised with `desiredFp` as the only allowed FP and
-        // `postUpVerified=false`. Best-effort write — failure here only logs;
-        // the elevated Exit-7 contract for a failed recovery write lands in
-        // F.5.h.
+        // `postUpVerified=false`. Per Plan §F.5.h / §7.1 (Z. 1156-1159),
+        // a recovery-write FAILURE elevates the exit code to `7`: the run
+        // had a side effect AND no finalised rollback artefact, the
+        // strongest local-error signal so an operator-facing playbook
+        // distinguishes "post-compare drift, untouched FS" (Exit 5) from
+        // "post-compare drift, recovery I/O dead too" (Exit 7).
         if (postCompareOutcome is PostCompareOutcome.IntrospectionFailed) {
-            tryWriteRecoveryArtefact(
+            val recoveryWrite = tryWriteRecoveryArtefact(
                 request = request,
                 recoveryContext = recoveryContext,
                 allowedFingerprint = recoveryContext?.desiredFingerprint,
                 postUpVerified = false,
             )
-            return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 5)
+            val exit = if (recoveryWrite == RecoveryWriteOutcome.Failed) 7 else 5
+            return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = exit)
         }
 
         // Post-compare drift case: per Plan §F.5.g NO auto-recovery artefact
@@ -719,40 +723,55 @@ class SchemaMigrateRunner(
     }
 
     /**
-     * F.5.e/f: best-effort write of a recovery rollback artefact to
+     * F.5.e/f/h: write a recovery rollback artefact to
      * `<--rollback-output>.recovery.<timestamp>.rollback.sql`. Caller
      * supplies the [allowedFingerprint] (desiredFp for F.5.e
      * Introspection-Fail, observedFp for F.5.f Write-Fail) and the
-     * [postUpVerified] flag. No-ops gracefully when
-     * `--generate-rollback` was off, the Down-render was blocked, or
-     * `--rollback-output` is unset. Returns true when an artefact was
-     * actually written.
+     * [postUpVerified] flag.
      *
-     * F.5.h will tighten this to elevate the exit code to 7 when the
-     * write itself fails after a side-effect Up — currently the
-     * failure is logged via `printError` only.
+     * Tri-state return per F.5.h:
+     *
+     * - `null` — no attempt made (no [recoveryContext], no
+     *   [allowedFingerprint], or no `--rollback-output` path).
+     *   Caller's exit-code stays at the baseline (no escalation).
+     * - [RecoveryWriteOutcome.Written] — atomic write succeeded.
+     *   Caller's exit-code stays at the baseline.
+     * - [RecoveryWriteOutcome.Failed] — attempt fired but the
+     *   atomic write threw (FS race, no atomic-replace, permission,
+     *   …). Caller MUST elevate the exit code to `7` per Plan §7.1
+     *   (Z. 1156-1159) — the run had a side effect AND no
+     *   finalised rollback artefact, the strongest local-error
+     *   signal. The user-facing error doubly emits a "Up bereits
+     *   ausgeführt; manuelle Sicherung erforderlich" hint so the
+     *   structured report's Side-Effect-signal is mirrored in the
+     *   stderr stream.
      */
     private fun tryWriteRecoveryArtefact(
         request: SchemaMigrateRequest,
         recoveryContext: RecoveryContext?,
         allowedFingerprint: String?,
         postUpVerified: Boolean,
-    ): Boolean {
-        val ctx = recoveryContext ?: return false
-        val fp = allowedFingerprint ?: return false
-        val output = request.rollbackOutput ?: return false
+    ): RecoveryWriteOutcome? {
+        val ctx = recoveryContext ?: return null
+        val fp = allowedFingerprint ?: return null
+        val output = request.rollbackOutput ?: return null
         val recoveryPath = RecoveryArtefactPath.recoveryPathFor(output, clock.instant())
         val artefact = ctx.build(fp, postUpVerified)
         return try {
             ensureParentDirectories(recoveryPath)
             atomicWriter(recoveryPath, artefact)
-            true
+            RecoveryWriteOutcome.Written
         } catch (e: Exception) {
             userFacingPrintError(
                 "Failed to write recovery rollback artefact: ${e.message}",
                 recoveryPath.toString(),
             )
-            false
+            userFacingPrintError(
+                "Up was executed against the target but no finalised rollback artefact " +
+                    "could be written; manual database recovery may be required.",
+                request.target,
+            )
+            RecoveryWriteOutcome.Failed
         }
     }
 
@@ -942,6 +961,15 @@ data class ExecutionTrace(
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
 )
+
+/**
+ * F.5.h — terminal status of the recovery-artefact write attempt.
+ * `null` (caller-side) = no attempt was made (no recoveryContext,
+ * no allowedFingerprint, or no `--rollback-output` path). The
+ * runner only escalates the exit code to `7` when the value is
+ * [Failed].
+ */
+internal enum class RecoveryWriteOutcome { Written, Failed }
 
 /**
  * Pre-built capability for emitting a **recovery** rollback artefact
