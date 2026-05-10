@@ -350,7 +350,8 @@ class SchemaMigrateRunner(
         } else {
             userFacingPrintError(
                 "Post-execute compare detected drift; the target does not match the desired schema. " +
-                    "TODO Phase F: emit a recovery rollback artefact when supported.",
+                    "Per Plan §F.5.g no automatic recovery rollback artefact will be emitted on drift — " +
+                    "operator must inspect the target manually before deciding on rollback.",
                 request.target,
             )
             PostCompareOutcome.Drift(observed)
@@ -1020,10 +1021,13 @@ internal sealed class PostCompareOutcome {
     }
 
     /**
-     * Maps the outcome to the legacy `Int?` exit-code shape the rest
-     * of the runner pipeline still consumes (will go away when F.5.c
-     * restructures `finalize` to compute exit codes from outcomes
-     * directly).
+     * Maps the outcome to the runner's drift-exit-code shape: `null`
+     * on a clean post-compare, `5` for both [Drift] and
+     * [IntrospectionFailed] (the latter is escalated to `7` by the
+     * caller via F.5.h when the recovery-write itself fails). Used
+     * only by the drift-only branch in
+     * [SchemaMigrateRunner.finalize] — the recovery-emission
+     * branches dispatch on the [PostCompareOutcome] subtype directly.
      */
     fun toDriftCode(): Int? = when (this) {
         is Clean -> null
