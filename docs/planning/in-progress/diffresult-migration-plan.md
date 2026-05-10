@@ -1924,13 +1924,22 @@ nach Aufwand (kleinste Slice zuerst):
   `--output` fehlt (positive), `--report` Pfad-Kollision Exit 2,
   invalid operand parsing Exit 2, KEIN implizites Report-Sidecar
   an einem Default-Pfad bei fehlendem `--report`.
-- [ ] **F.6.f** Mid-DDL-Ausfuehrungsfehler — `schema migrate
+- [x] **F.6.f** Mid-DDL-Ausfuehrungsfehler — `schema migrate
   --execute` mit DDL-Failure NACH erfolgreichem ersten Statement
   plus rollback-Failure (`sideEffectsPossible=true`); strukturierter
   Trace beweist "halb angewendet" und unterscheidet sich vom Trace
   mit `transactionRolledBack=true`. E.4 hat den Pfad implementiert;
   F.6.f deckt die Variante mit halb angewendetem Up plus rollback-
-  Failure ab.
+  Failure ab. Pinned in `SchemaMigrateRunnerExecuteTest`
+  ("F.6.f — half-applied Up + rollback failure …"): Multi-
+  Statement-Render mit Mid-Statement-Failure, Trace
+  `sideEffectsPossible=true`, `transactionRolledBack=false`,
+  `upExecuted=true`, `lastStatementOperationIds=[op-2]`,
+  `rollbackFinalized=null`, kein Down-Artefakt geschrieben.
+  Distinktion vom Clean-Rollback-Pfad
+  (`transactionRolledBack=true`/`upExecuted=false`) bleibt durch
+  den bestehenden "executor failure surfaces executionError +
+  exit 5"-Test im selben Spec gepinnt.
 - [ ] **F.6.b** MySQL View-Dependency-Block — Tests dass column-
   altering Ops (`DropColumn`, `AlterColumnType`, `AlterColumnNullability`)
   unter Views OHNE explizite column-level Dependencies aus einer

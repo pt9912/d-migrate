@@ -274,6 +274,110 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         report shouldContain "\"error\":\"syntax error near LINE 1\""
     }
 
+    test("F.6.f — half-applied Up + rollback failure pins sideEffectsPossible/upExecuted/lastStatementOps in the trace") {
+        // Per Plan §F.6.f the dangerous case is: first DDL statement
+        // landed (auto-commit on MySQL/SQLite, or partial transaction
+        // on PostgreSQL where the transactional rollback ALSO failed).
+        // The trace must distinguish this from the safe rollback case
+        // (sideEffectsPossible=false, transactionRolledBack=true)
+        // covered by the "executor failure surfaces executionError +
+        // exit 5" test above.
+        val capture = mutableMapOf<String, String>()
+        val twoStatementRendered = MigrationDdlResult(
+            statements = listOf(
+                MigrationDdlStatement(
+                    sql = "CREATE TABLE x (id INT);",
+                    operationIds = setOf("op-1"),
+                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                ),
+                MigrationDdlStatement(
+                    sql = "CREATE TABLE y (id INT);",
+                    operationIds = setOf("op-2"),
+                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                ),
+            ),
+            operationsRendered = setOf("op-1", "op-2"),
+        )
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = SchemaDefinition(name = "App", version = "1"),
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        twoStatementRendered
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, _, _ ->
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = 2,
+                    lastStatementOperationIds = setOf("op-2"),
+                    transactionRolledBack = false,
+                    sideEffectsPossible = true,
+                    executionError = "DDL failed at statement 2; rollback also failed (auto-commit dialect)",
+                )
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                val ex = r.execution!!
+                "{" +
+                    "\"started\":${ex.started}," +
+                    "\"completed\":${ex.completed}," +
+                    "\"statementsAttempted\":${ex.statementsAttempted}," +
+                    "\"lastStatementOperationIds\":[${ex.lastStatementOperationIds.joinToString(",") { "\"$it\"" }}]," +
+                    "\"transactionRolledBack\":${ex.transactionRolledBack}," +
+                    "\"sideEffectsPossible\":${ex.sideEffectsPossible}," +
+                    "\"upExecuted\":${ex.upExecuted}," +
+                    "\"rollbackFinalized\":${ex.rollbackFinalized}," +
+                    "\"executionError\":\"${ex.executionError}\"" +
+                    "}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val reportPath = tmpDir.resolve("e6f-half-applied.json")
+        val downPath = tmpDir.resolve("e6f-half-applied-down.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = downPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 5
+        val report = capture["wrote:$reportPath"]!!
+        // Side-effect signals — pinned per Plan §F.6.f
+        report shouldContain "\"sideEffectsPossible\":true"
+        report shouldContain "\"transactionRolledBack\":false"
+        report shouldContain "\"upExecuted\":true"
+        // Last-statement pointer must reach the FAILING op (op-2),
+        // not op-1 — operator needs to know where the half-apply
+        // landed.
+        report shouldContain "\"lastStatementOperationIds\":[\"op-2\"]"
+        report shouldContain "\"statementsAttempted\":2"
+        // Rollback artefact MUST NOT be finalised because executionError
+        // is non-null — finalize() short-circuits with rollbackFinalized=null.
+        report shouldContain "\"rollbackFinalized\":null"
+        capture.containsKey("wrote:$downPath") shouldBe false
+    }
+
     test("--execute with post-compare drift exits 5 and skips Down-artefact write") {
         val capture = mutableMapOf<String, String>()
         var loadCallNo = 0
