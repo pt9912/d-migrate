@@ -1,11 +1,11 @@
 package dev.dmigrate.driver.postgresql
 
-import dev.dmigrate.cli.commands.ExecutionTrace
 import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaMigrateRequest
 import dev.dmigrate.cli.commands.SchemaMigrateRunner
 import dev.dmigrate.cli.commands.SchemaRollbackRequest
 import dev.dmigrate.cli.commands.SchemaRollbackRunner
+import dev.dmigrate.cli.commands.testing.executeAgainstPool
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.ColumnDefinition
@@ -18,14 +18,12 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.migration.MigrationDdlStatement
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
-import java.sql.SQLException
 import kotlin.io.path.createTempDirectory
 
 private val IntegrationTag = NamedTag("integration")
@@ -144,7 +142,7 @@ class PostgresMigrateRoundTripIntegrationTest : FunSpec({
                 rendererFor = { d ->
                     if (d == DatabaseDialect.POSTGRESQL) PostgresDiffDdlGenerator() else null
                 },
-                executor = { _, statements, _ -> executeOnPg(pool, statements) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
                 renderReport = { r, _ -> r.toString() },
                 printError = { msg, src -> System.err.println("[$src] $msg") },
             )
@@ -182,7 +180,7 @@ class PostgresMigrateRoundTripIntegrationTest : FunSpec({
             // ── 4. schema rollback --execute --allow-destructive ────────
             val rollbackRunner = SchemaRollbackRunner(
                 dbLoader = { _, _ -> liveOperand(pool) },
-                executor = { _, statements, _ -> executeOnPg(pool, statements) },
+                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
                 printError = { msg, src -> System.err.println("[$src] $msg") },
             )
             val rollbackExit = rollbackRunner.execute(
@@ -221,56 +219,3 @@ private fun liveOperand(pool: ConnectionPool): ResolvedSchemaOperand = ResolvedS
     validation = ValidationResult(),
     dialect = DatabaseDialect.POSTGRESQL,
 )
-
-/**
- * Mirrors `JdbcMigrationExecutor` (CLI module) but reuses the test
- * pool: autocommit off, single statement-per-execute, rollback on
- * failure with `transactionRolledBack` / `sideEffectsPossible`
- * tracking.
- */
-@Suppress("ReturnCount")
-private fun executeOnPg(
-    pool: ConnectionPool,
-    statements: List<MigrationDdlStatement>,
-): ExecutionTrace {
-    if (statements.isEmpty()) {
-        return ExecutionTrace(executionStarted = true, executionCompleted = true)
-    }
-    return pool.borrow().use { conn ->
-        conn.autoCommit = false
-        var attempted = 0
-        var lastIds: Set<String> = emptySet()
-        try {
-            conn.createStatement().use { jdbcStmt ->
-                for (s in statements) {
-                    lastIds = s.operationIds
-                    attempted++
-                    jdbcStmt.execute(s.sql)
-                }
-            }
-            conn.commit()
-            ExecutionTrace(
-                executionStarted = true,
-                executionCompleted = true,
-                statementsAttempted = attempted,
-                lastStatementOperationIds = lastIds,
-            )
-        } catch (e: SQLException) {
-            val (rolledBack, sideEffects) = try {
-                conn.rollback()
-                true to false
-            } catch (_: SQLException) {
-                false to true
-            }
-            ExecutionTrace(
-                executionStarted = true,
-                executionCompleted = true,
-                statementsAttempted = attempted,
-                lastStatementOperationIds = lastIds,
-                transactionRolledBack = rolledBack,
-                sideEffectsPossible = sideEffects,
-                executionError = e.message ?: e::class.simpleName,
-            )
-        }
-    }
-}

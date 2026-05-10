@@ -33,6 +33,12 @@ dependencies {
     // LF-012 / LN-011 / LN-017 / LN-027: Contract-Test-Fixture fuer QuotaReservationOwnerStore
     // braucht Kotest fuer abstract FunSpec-Definition.
     testFixturesApi(project(":hexagon:ports-common"))
+    // Migrate Phase F.2/F.3: `executeAgainstPool` test-helper signature uses
+    // ConnectionPool (ports-common, already above) + MigrationDdlStatement
+    // (ports-read), and returns ExecutionTrace (this module). The ports-read
+    // dep is required because Gradle's testFixtures source set does not
+    // inherit `implementation` deps' transitive `api` exports automatically.
+    testFixturesApi(project(":hexagon:ports-read"))
     testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
 }
