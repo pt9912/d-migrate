@@ -1887,13 +1887,13 @@ Bestaetigungstest fuer eine bereits in E.5 verdrahtete Stelle.
   Report carries `upExecuted=true`, `rollbackFinalized=false`,
   observed FP, manuelle Pruefpflicht-Note.
 
-#### F.6 — Edge-Cases und Hardening
+#### F.6 — Edge-Cases und Hardening ✅ (2026-05-10)
 
 Wird in Sub-Slices ausgeliefert. Die F.6-Bullets aus der ersten
 Plan-Version werden auf sechs DoD-Punkte aufgebohrt; Reihenfolge
 nach Aufwand (kleinste Slice zuerst):
 
-- [ ] **F.6.d** Erweiterte Metadatenblock-Tests — **Secret-Scrubbing**
+- [x] **F.6.d** Erweiterte Metadatenblock-Tests — **Secret-Scrubbing**
   (Header carries no JDBC URL, secret-keyword shapes, OS-paths,
   SSH-private-key markers — pinned via einer broaderen
   `FORBIDDEN_HEADER_SUBSTRINGS`-Konstante) und **Round-Trip-
@@ -1907,13 +1907,18 @@ nach Aufwand (kleinste Slice zuerst):
   via F.6.d-Follow-up) sind in `RollbackArtefactParserTest`
   abgedeckt. Whitespace-only-Tampering ist als positive Lenient-
   Parse-Strict-Canonical-Hash-Invariante gepinnt.
-- [ ] **F.6.a** Atomic-Writer-Edge-Cases — Tests dass Render-/
+- [x] **F.6.a** Atomic-Writer-Edge-Cases — Tests dass Render-/
   Blocker-/Execution-Fehler bestehende `--output` /
   `--rollback-output` / `--report` NICHT ueberschreiben. Pinnt
   §10-Akzeptanz "Up-SQL-, Down-SQL- und Report-Dateien werden erst
   nach vollstaendigem Rendering und erfolgreicher Blocker-Pruefung
   atomar finalisiert; bestehende Artefakte bleiben bei Fehlern
-  unveraendert."
+  unveraendert." Pinned in `SchemaMigrateRunnerArtefactProtectionTest`:
+  Execute-Error / Destructive-Blocker / Down-Render-Blocker /
+  Validation-Failure — pre-existing `--output` und
+  `--rollback-output` Bytes bleiben unveraendert UND `atomicWriter`
+  wird fuer diese Pfade NIE aufgerufen. `--report` ist bewusst
+  ausserhalb des Contracts (Runner finalisiert IMMER ein Report).
 - [x] **F.6.e** Erweiterte CLI-Exit-Code-Tests — stdout-vs-file-
   Ausgabeziele, fehlende implizite Report-Sidecars, Flag-
   Kombinationen, die in E.1-E.6-Lueken stehen. Die Hauptpfade sind
@@ -2016,9 +2021,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [x] PostgreSQL rendert `AlterColumnType` im ersten Slice nur fuer getestete
   implizite Casts ohne `USING`; alle anderen Typaenderungen werden als
   `MANUAL_REQUIRED` oder `DIALECT_UNSUPPORTED_OPERATION` blockiert.
-- [ ] MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
+- [x] MySQL setzt fuer Live-DB-Operanden keine spaltenpraezise
   `VIEW_COLUMN_USAGE`-Quelle voraus; `DropColumn` und `AlterColumn*` unter
-  Views werden ohne explizite column-level Dependencies blockiert.
+  Views werden ohne explizite column-level Dependencies blockiert. (F.6.b
+  via `DiffPlanner.detectViewColumnDepsBlockers` →
+  `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Diagnose.)
 - [ ] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
   `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
   Projektion und blockiert betroffene View-Replacements oder
