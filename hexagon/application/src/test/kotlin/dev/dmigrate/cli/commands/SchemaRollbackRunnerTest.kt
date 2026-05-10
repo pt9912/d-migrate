@@ -30,6 +30,9 @@ class SchemaRollbackRunnerTest : FunSpec({
         postUpFp: String = "fp-desired",
         sql: String = "DROP TABLE x;",
         destructive: Boolean = false,
+        recovery: Boolean = false,
+        postUpVerified: Boolean = false,
+        allowedPostUpFingerprints: List<String>? = null,
     ): String = RollbackArtefactBuilder.build(
         RollbackArtefactBuilder.Input(
             dialect = dialect,
@@ -45,6 +48,9 @@ class SchemaRollbackRunnerTest : FunSpec({
             ),
             downStatements = listOf(stmt(sql)),
             createdByVersion = "test/0.0.0",
+            recovery = recovery,
+            postUpVerified = postUpVerified,
+            allowedPostUpFingerprints = allowedPostUpFingerprints,
         ),
     )
 
@@ -292,5 +298,167 @@ class SchemaRollbackRunnerTest : FunSpec({
             target = "db:postgres://localhost",
         )
         runner.execute(request) shouldBe 7
+    }
+
+    test("F.5.i — recovery artefact with multi-FP allowedPostUpFingerprints accepts a matching observed state") {
+        // Plan §F.5.i / §7.1 (Z. 1466-1470): recovery artefacts
+        // (`recovery=true`) carry a non-empty `allowedPostUpFingerprints`
+        // whitelist instead of a single `postUpFingerprint`. The rollback
+        // runner's `verifyTargetMatchesArtefact` (wired since E.5) accepts
+        // ANY observed state whose fingerprint is in the whitelist. F.5.i
+        // is the confirmation test — the runner-side wiring is already
+        // there; we just pin the contract end-to-end with a multi-FP
+        // artefact.
+        val schemaA = SchemaDefinition(
+            name = "A",
+            version = "1",
+            tables = mapOf(
+                "users" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "id" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.Integer,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val schemaB = SchemaDefinition(
+            name = "B",
+            version = "1",
+            tables = mapOf(
+                "orders" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "id" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.BigInteger,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val fpA = MigrationFingerprint.compute(schemaA)
+        val fpB = MigrationFingerprint.compute(schemaB)
+        val artefactPath = writeArtefact(
+            "f5i-multi-fp.sql",
+            buildArtefact(
+                postUpFp = fpA,        // value still present per format, but ignored when recovery=true
+                recovery = true,
+                postUpVerified = true,
+                allowedPostUpFingerprints = listOf(fpA, fpB),
+            ),
+        )
+        val executorCalls = mutableListOf<List<MigrationDdlStatement>>()
+        // dbLoader returns schemaB — the SECOND entry in the whitelist —
+        // so the test pins that ANY whitelist member is acceptable, not
+        // just the first.
+        val runner = SchemaRollbackRunner(
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = schemaB,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            executor = { _, statements, _ ->
+                executorCalls += statements
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                )
+            },
+            printError = { _, _ -> },
+        )
+        val request = SchemaRollbackRequest(
+            source = artefactPath,
+            target = "db:postgres://localhost",
+            execute = true,
+        )
+        runner.execute(request) shouldBe 0
+        executorCalls.size shouldBe 1
+        executorCalls.single().single().sql shouldBe "DROP TABLE x;"
+    }
+
+    test("F.5.i — recovery artefact rejects observed state outside the allowedPostUpFingerprints whitelist") {
+        // Negative half: the same recovery artefact with whitelist
+        // [fpA, fpB] MUST reject a target whose fingerprint is neither.
+        // Pins the SchemaRollbackRunner.verifyTargetMatchesArtefact's
+        // fallback to TARGET_STATE_MISMATCH (exit 8) for recovery
+        // artefacts, mirroring the non-recovery happy-path.
+        val schemaA = SchemaDefinition(
+            name = "A",
+            version = "1",
+            tables = mapOf(
+                "users" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "id" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.Integer,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val schemaB = SchemaDefinition(
+            name = "B",
+            version = "1",
+            tables = mapOf(
+                "orders" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "id" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.BigInteger,
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val schemaC = SchemaDefinition(
+            name = "C",
+            version = "1",
+            tables = mapOf(
+                "products" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "sku" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.Text(),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val fpA = MigrationFingerprint.compute(schemaA)
+        val fpB = MigrationFingerprint.compute(schemaB)
+        val artefactPath = writeArtefact(
+            "f5i-reject.sql",
+            buildArtefact(
+                postUpFp = fpA,
+                recovery = true,
+                postUpVerified = true,
+                allowedPostUpFingerprints = listOf(fpA, fpB),
+            ),
+        )
+        val executorCalls = mutableListOf<List<MigrationDdlStatement>>()
+        val runner = SchemaRollbackRunner(
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    // schemaC fingerprint is NOT in the whitelist.
+                    schema = schemaC,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            executor = { _, statements, _ ->
+                executorCalls += statements
+                ExecutionTrace(executionStarted = true, executionCompleted = true)
+            },
+            printError = { _, _ -> },
+        )
+        val request = SchemaRollbackRequest(
+            source = artefactPath,
+            target = "db:postgres://localhost",
+            execute = true,
+        )
+        runner.execute(request) shouldBe 8
+        // Executor must NOT have been called when state-check fails.
+        executorCalls shouldBe emptyList()
     }
 })
