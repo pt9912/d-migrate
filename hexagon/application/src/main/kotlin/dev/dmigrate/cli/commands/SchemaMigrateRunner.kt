@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -73,6 +74,14 @@ class SchemaMigrateRunner(
     private val printError: (message: String, source: String) -> Unit,
     private val stdout: (String) -> Unit = { println(it) },
     private val stderr: (String) -> Unit = { System.err.println(it) },
+    /**
+     * Computes a content fingerprint over a schema. Used by the post-
+     * `--execute` drift check so observed and desired states are
+     * compared via the same content-only contract that the rollback
+     * runner uses for `TARGET_STATE_MISMATCH`. Default delegates to
+     * [MigrationFingerprint.compute]; override only for tests.
+     */
+    private val fingerprint: (SchemaDefinition) -> String = MigrationFingerprint::compute,
     /** Embedded into the rollback artefact's `createdByVersion` field. */
     private val createdByVersion: String = "d-migrate (dev)",
 ) {
@@ -251,6 +260,14 @@ class SchemaMigrateRunner(
      * `--execute` and verify the resulting state matches the desired
      * Soll-schema. Returns null on clean state or an exit code on
      * drift / introspection failure.
+     *
+     * Uses [fingerprint] (a content-only hash, see
+     * [MigrationFingerprint]) instead of `SchemaDiff.isEmpty()` so
+     * the check is symmetric with `verifyTargetMatchesArtefact` in
+     * [SchemaRollbackRunner] and immune to the file-side YAML's
+     * user-chosen `name`/`version` labels — those are not observable
+     * state in a live database and would otherwise produce phantom
+     * drift on every real round-trip.
      */
     private fun runPostCompare(
         request: SchemaMigrateRequest,
@@ -274,8 +291,7 @@ class SchemaMigrateRunner(
             userFacingPrintError("Post-execute reverse marker error: ${e.message}", request.target)
             return 5
         }
-        val drift = comparator(postNormalized.schema, desired)
-        return if (drift.isEmpty()) {
+        return if (fingerprint(postNormalized.schema) == fingerprint(desired)) {
             null
         } else {
             userFacingPrintError(

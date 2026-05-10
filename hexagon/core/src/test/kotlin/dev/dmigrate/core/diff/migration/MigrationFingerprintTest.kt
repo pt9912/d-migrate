@@ -40,10 +40,20 @@ class MigrationFingerprintTest : FunSpec({
         MigrationFingerprint.compute(a) shouldBe MigrationFingerprint.compute(b)
     }
 
-    test("different schemas yield different fingerprints") {
+    test("name and version are NOT part of the fingerprint (content-only hash)") {
         val a = schema(name = "A", version = "1")
-        val b = schema(name = "A", version = "2")
-        MigrationFingerprint.compute(a) shouldNotBe MigrationFingerprint.compute(b)
+        val b = schema(name = "B", version = "2")
+        MigrationFingerprint.compute(a) shouldBe MigrationFingerprint.compute(b)
+    }
+
+    test("content differences yield different fingerprints") {
+        val emptyA = schema()
+        val withTable = schema(
+            tables = mapOf(
+                "t" to TableDefinition(columns = mapOf("c" to ColumnDefinition(NeutralType.Integer))),
+            ),
+        )
+        MigrationFingerprint.compute(emptyA) shouldNotBe MigrationFingerprint.compute(withTable)
     }
 
     test("table key order does not affect the fingerprint (deterministic sort)") {
@@ -83,16 +93,16 @@ class MigrationFingerprintTest : FunSpec({
             MigrationFingerprint.compute(schema(tables = mapOf("t" to t2)))
     }
 
-    test("reverse-marker schemas fold onto the same fingerprint as their normalized form") {
+    test("reverse-marker schemas fold onto the same fingerprint as a plain schema") {
+        // Since name/version are excluded from the fingerprint, reverse-marker
+        // provenance is automatically irrelevant — no normalization needed
+        // at fingerprint time.
         val reverse = SchemaDefinition(
             name = ReverseScopeCodec.postgresName("db", "public"),
             version = ReverseScopeCodec.REVERSE_VERSION,
         )
-        val normalized = SchemaDefinition(
-            name = ReverseMarkerNormalizer.NORMALIZED_NAME,
-            version = ReverseMarkerNormalizer.NORMALIZED_VERSION,
-        )
-        MigrationFingerprint.compute(reverse) shouldBe MigrationFingerprint.compute(normalized)
+        val plain = SchemaDefinition(name = "App", version = "1")
+        MigrationFingerprint.compute(reverse) shouldBe MigrationFingerprint.compute(plain)
     }
 
     test("project includes index columns and unique flag") {

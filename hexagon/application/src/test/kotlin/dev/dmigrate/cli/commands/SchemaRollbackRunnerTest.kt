@@ -130,9 +130,22 @@ class SchemaRollbackRunnerTest : FunSpec({
 
     test("--execute with target state drift yields TARGET_STATE_MISMATCH (exit 8)") {
         // Build an artefact whose postUpFingerprint matches the *desired* schema's fingerprint;
-        // the runner re-fingerprints whatever the dbLoader returns. Fingerprint a different
-        // schema in the loader to force drift.
-        val desiredSchema = SchemaDefinition(name = "App", version = "1")
+        // the runner re-fingerprints whatever the dbLoader returns. Fingerprint a content-
+        // different schema in the loader to force drift. (Schema name/version are NOT part
+        // of the fingerprint — drift must be content-level, e.g. a table that doesn't exist.)
+        val desiredSchema = SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf(
+                "users" to dev.dmigrate.core.model.TableDefinition(
+                    columns = mapOf(
+                        "id" to dev.dmigrate.core.model.ColumnDefinition(
+                            dev.dmigrate.core.model.NeutralType.Integer,
+                        ),
+                    ),
+                ),
+            ),
+        )
         val desiredFp = MigrationFingerprint.compute(desiredSchema)
         val artefactPath = writeArtefact(
             "a6.sql",

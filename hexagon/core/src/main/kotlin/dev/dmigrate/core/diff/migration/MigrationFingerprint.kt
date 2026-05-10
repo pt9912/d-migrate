@@ -26,15 +26,24 @@ import dev.dmigrate.core.util.sha256Hex
  *   (`postUpFingerprint`, `allowedPostUpFingerprints`),
  * - the post-`--execute` compare and `schema rollback` drift checks.
  *
+ * The fingerprint is a **pure content hash**: the user-chosen
+ * `name`/`version` labels are *not* part of the projection. Both
+ * fields are documentation / reporting metadata; they are not
+ * observable database state. Including them would mean a desired
+ * YAML labelled `App / 1` could never round-trip against a live
+ * database (which has no concept of "schema name") even with
+ * identical content. Reverse-marker handling is therefore a
+ * non-event for fingerprinting and lives only at compare-/report-
+ * level concerns.
+ *
  * Algorithm: `schema-fingerprint-v1`. Steps:
  *
- * 1. Apply [ReverseMarkerNormalizer] so reverse-generated provenance
- *    cannot affect the fingerprint.
- * 2. Build a deterministic string projection of the schema. Maps
- *    are emitted in lexicographic key order; lists keep their
- *    declared order (PK column lists, parameter lists, etc.) — those
- *    are semantic.
- * 3. SHA-256 over the UTF-8 bytes of the projection, lowercase hex.
+ * 1. Build a deterministic string projection of the schema's
+ *    content (custom types, tables, views, sequences, routines,
+ *    triggers). Maps are emitted in lexicographic key order; lists
+ *    keep their declared order (PK column lists, parameter lists,
+ *    etc.) — those are semantic.
+ * 2. SHA-256 over the UTF-8 bytes of the projection, lowercase hex.
  *
  * The output format includes the [ALGORITHM] string as a leading
  * line so future projection changes ship as a new algorithm name
@@ -59,21 +68,18 @@ object MigrationFingerprint {
 
     /** Returns the canonical projection string. Public for diagnostics. */
     fun project(schema: SchemaDefinition): String {
-        val normalized = ReverseMarkerNormalizer.normalize(schema)
         val sb = StringBuilder()
         sb.append("algorithm=").append(ALGORITHM).append('\n')
-        sb.append("name=").append(normalized.name).append('\n')
-        sb.append("version=").append(normalized.version).append('\n')
-        sb.append("description=").append(normalized.description ?: "").append('\n')
-        sb.append("encoding=").append(normalized.encoding).append('\n')
-        sb.append("locale=").append(normalized.locale ?: "").append('\n')
-        appendCustomTypes(sb, normalized.customTypes)
-        appendTables(sb, normalized.tables)
-        appendViews(sb, normalized.views)
-        appendSequences(sb, normalized.sequences)
-        appendFunctions(sb, normalized.functions)
-        appendProcedures(sb, normalized.procedures)
-        appendTriggers(sb, normalized.triggers)
+        sb.append("description=").append(schema.description ?: "").append('\n')
+        sb.append("encoding=").append(schema.encoding).append('\n')
+        sb.append("locale=").append(schema.locale ?: "").append('\n')
+        appendCustomTypes(sb, schema.customTypes)
+        appendTables(sb, schema.tables)
+        appendViews(sb, schema.views)
+        appendSequences(sb, schema.sequences)
+        appendFunctions(sb, schema.functions)
+        appendProcedures(sb, schema.procedures)
+        appendTriggers(sb, schema.triggers)
         return sb.toString()
     }
 
