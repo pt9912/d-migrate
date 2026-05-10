@@ -1889,29 +1889,50 @@ Bestaetigungstest fuer eine bereits in E.5 verdrahtete Stelle.
 
 #### F.6 — Edge-Cases und Hardening
 
-- [ ] Atomic-Writer-Edge-Cases: Render-/Blocker-/Execution-Fehler
-  duerfen bestehende Zielpfade nicht ueberschreiben.
-- [ ] MySQL-Dependency-Tests fuer fehlende View-Privilegien; betroffene
-  View-Replacements / spaltenveraendernde Operationen muessen blocken.
-- [ ] SQLite-Rebuild-Atomic-Execution-Vertrag (autocommit aus, kein
-  outer-Tx) als Integration-Test.
-- [ ] Erweiterte Metadatenblock-Tests: doppelte Bloecke, unbekannte
-  Formatversionen, ungueltiges JSON, Fingerprint-Algorithmus-
-  Mismatch, Secret-Scrubbing-Pruefung. Die strukturellen
-  Parser-Faelle sind in `RollbackArtefactParserTest` (E.5) bereits
-  abgedeckt; F.6 ergaenzt das Secret-Scrubbing- und das
-  Round-Trip-Tampering-Spezifikum.
-- [ ] Erweiterte CLI-Exit-Code-Tests (z.B. stdout-/Datei-
-  Ausgabeziele, fehlende implizite Report-Sidecars). Die
-  Hauptpfade aus E.1-E.6 sind bereits durch Unit-Tests abgedeckt;
-  F.6 schliesst die Luecken.
-- [ ] Ausfuehrungsfehler-Tests fuer `schema migrate --execute`: Fehler
-  nach Beginn der DDL-Ausfuehrung endet mit Exit `5`, enthaelt
-  strukturierten Ausfuehrungsstatus, ueberschreibt keine unfertigen
-  SQL-Artefakte und unterscheidet beweisbar zurueckgerollt von
-  moeglicherweise partiell angewendet (E.4 hat den Pfad implementiert;
-  F.6 deckt die Variante mit halb angewendetem Up plus rollback-
-  Failure ab).
+Wird in Sub-Slices ausgeliefert. Die F.6-Bullets aus der ersten
+Plan-Version werden auf sechs DoD-Punkte aufgebohrt; Reihenfolge
+nach Aufwand (kleinste Slice zuerst):
+
+- [ ] **F.6.d** Erweiterte Metadatenblock-Tests — **Secret-Scrubbing**
+  (Passwoerter / Tokens im SQL-Body werden vor Persistenz scrub't /
+  reicht der Builder rohe Bytes weiter?) und **Round-Trip-Tampering**
+  (post-Build Body-Modifikation wird vom Parser via `artifactHash`-
+  Verifikation erkannt). Die strukturellen Parser-Faelle (doppelte
+  Bloecke, unbekannte Formatversionen, ungueltiges JSON,
+  Fingerprint-Algorithmus-Mismatch) sind bereits in
+  `RollbackArtefactParserTest` (E.5) abgedeckt; F.6.d ergaenzt nur
+  die zwei genannten Lueken.
+- [ ] **F.6.a** Atomic-Writer-Edge-Cases — Tests dass Render-/
+  Blocker-/Execution-Fehler bestehende `--output` /
+  `--rollback-output` / `--report` NICHT ueberschreiben. Pinnt
+  §10-Akzeptanz "Up-SQL-, Down-SQL- und Report-Dateien werden erst
+  nach vollstaendigem Rendering und erfolgreicher Blocker-Pruefung
+  atomar finalisiert; bestehende Artefakte bleiben bei Fehlern
+  unveraendert."
+- [ ] **F.6.e** Erweiterte CLI-Exit-Code-Tests — stdout-vs-file-
+  Ausgabeziele, fehlende implizite Report-Sidecars, Flag-
+  Kombinationen, die in E.1-E.6-Lueken stehen. Die Hauptpfade sind
+  bereits durch Unit-Tests abgedeckt; F.6.e schliesst die Edge-
+  Lueken.
+- [ ] **F.6.f** Mid-DDL-Ausfuehrungsfehler — `schema migrate
+  --execute` mit DDL-Failure NACH erfolgreichem ersten Statement
+  plus rollback-Failure (`sideEffectsPossible=true`); strukturierter
+  Trace beweist "halb angewendet" und unterscheidet sich vom Trace
+  mit `transactionRolledBack=true`. E.4 hat den Pfad implementiert;
+  F.6.f deckt die Variante mit halb angewendetem Up plus rollback-
+  Failure ab.
+- [ ] **F.6.b** MySQL View-Dependency-Block — Tests dass column-
+  altering Ops (`DropColumn`, `AlterColumnType`, `AlterColumnNullability`)
+  unter Views OHNE explizite column-level Dependencies aus einer
+  Schema-Datei oder Adapter-Projektion mit Diagnose blocken. Plan
+  §6.3-Mandate; betrifft den Live-DB-Pfad weil MySQL keine
+  spaltenpraezise `VIEW_COLUMN_USAGE`-Quelle liefert.
+- [ ] **F.6.c** SQLite-Rebuild-Atomic-Execution Integration-Test —
+  Pinnt dass der Rebuild als unteilbare Einheit ausgefuehrt wird:
+  bei Mid-Rebuild-Fehler (z.B. INSERT-SELECT failed) bleibt die DB
+  im Pre-Rebuild-Zustand (kein gedroppter Original-Table, keine
+  Halb-Migration). Erweiterung des F.4.b-Smokes mit einer Failure-
+  Variante.
 
 Coverage-Punkte aus dem urspruenglichen Phase-F-Bullet-Set, die NICHT
 im Sub-Slice-Plan stehen, sind in den vorhergehenden Phasen bereits
