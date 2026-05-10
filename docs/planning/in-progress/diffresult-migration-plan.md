@@ -2211,3 +2211,74 @@ fuer den oeffentlichen Migrate-Vertrag in Phase B frei ist.
 **CLI-Vertrag in `spec/cli-spec.md` §6.1 erfasst**: `schema migrate` und
 `schema rollback` mit Flag-Tabelle, Modus-Matrix, Ausgabe-Vertrag und
 Exit-Code-Tabelle (neuer Code `8 = MIGRATION_BLOCKED`).
+
+### 11.2 Phase-F.4-Carve-outs (2026-05-10)
+
+F.4 hat zwei Heuristik-basierte Fixes verdrahtet, die im aktuellen
+Renderer-Scope korrekt sind, aber an stillschweigende Annahmen
+gekoppelt bleiben. Beide gehoeren als bewusste Carve-outs ins
+Verzeichnis, damit F.5 / F.6 / Phase G sie nicht aus Versehen brechen.
+
+**Carve-out F.4-1: BEGIN-Detection ueber SQL-Content statt
+`transactionScope`-Feld.**
+
+`JdbcMigrationExecutor.runAll` und `MigrationExecutorTestSupport.executeAgainstPool`
+detektieren den "Stream-owned tx"-Pfad heute via
+`statements.any { isExplicitBeginStatement(it.sql) }` — also durch
+String-Praefix-Pruefung auf `BEGIN`. Korrekt, solange:
+
+- nur `SqliteRebuildRenderer` explizite Tx-Marker emittiert, und
+- kein anderer Diff-Renderer eine `MigrationDdlStatement.sql` mit
+  `BEGIN ` als fuehrendem Token erzeugt (insbesondere keine
+  Routinen-Bodies, die `BEGIN ... END`-Bloecke enthalten — heute
+  durch `markUnsupported` in PG/MySQL geblockt, kommt aber in
+  Phase G).
+
+Sobald ein zukuenftiger Renderer eine Routinen-Body-Emission via
+`MigrationDdlStatement` schaltet, wird der gesamte Stream
+faelschlich als stream-owned klassifiziert und der Runner-managed
+JDBC-Tx fuer PG/MySQL still abgeschaltet — Atomicity weg, ohne
+Test-Signal. Der Renderer-Doc bei `SqliteRebuildRenderer.kt:60-62`
+hat den richtigen Long-Term-Fix bereits benannt:
+
+> A future `transactionScope` field on
+> [dev.dmigrate.driver.migration.MigrationDdlStatement] is the
+> long-term fix; until then the phase tag is the canonical signal.
+
+**Entscheidung**: F.4 verdrahtet die Heuristik. Ein `transactionScope:
+TransactionScope`-Feld auf `MigrationDdlStatement` (Werte etwa
+`RUNNER_OWNED` / `STREAM_OWNED`) wird in einem nachfolgenden Slice
+als Vertragsfeld nachgezogen, bevor ein Diff-Renderer
+Routinen-Bodies emittiert.
+
+**Carve-out F.4-2: Multi-Statement-Artefakt-Body via `\n\n`-Split
+statt strukturierter Serialisierung.**
+
+`SchemaRollbackRunner.splitArtefactBody` reverst die Joining-Logik
+von `RollbackArtefactBuilder.canonicalBody`
+(`stmts.joinToString("\n\n") { … }`) durch `split("\n\n")`. Korrekt,
+solange:
+
+- kein `MigrationDdlStatement.sql` selbst eine `\n\n`-Sequenz
+  enthaelt (alle aktuellen Renderer emittieren Single-Line oder
+  `,\n`-getrennte Multi-Line ohne Leerzeile), und
+- der Joining-Vertrag im `RollbackArtefactBuilder` stabil bleibt.
+
+Sobald ein Renderer einen multi-line View / Function / Trigger Body
+mit absichtlicher Leerzeile rendert, mis-cuttet der Split — die
+Rollback-Ausfuehrung waere stillschweigend unvollstaendig (genau das
+Failure-Mode, dass F.4 bei Bug 2 aufgedeckt hat, nur in einer neuen
+Form). Das aktuelle Artefakt-Format hat keinen Escape-Mechanismus.
+
+**Entscheidung**: F.4 verdrahtet den Split. Eine strukturierte
+Statement-Serialisierung im Artefakt (z.B. ein JSON-Array mit
+Per-Statement-Metadaten statt nur SQL-Body) wird in einem
+nachfolgenden Slice nachgezogen, idealerweise gemeinsam mit dem
+`transactionScope`-Feld aus Carve-out F.4-1. Damit waere auch die
+heute verworfene Per-Statement-`DiffPhase` round-trip-fest.
+
+Beide Carve-outs sind als Future-Risiko, nicht als Sofort-Bug, in
+diese Liste aufgenommen — der aktuelle Renderer-Scope deckt sie
+nicht. Wer F.5 / F.6 / Phase G arbeitet, sollte beim Hinzufuegen
+einer Statement-Quelle (insbesondere Routinen / Funktionen / Trigger
+mit Body) erst diese beiden Carve-outs aufloesen.
