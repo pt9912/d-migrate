@@ -192,7 +192,6 @@ class SchemaMigrateRunner(
             } else {
                 null
             }
-        val postCompareDriftCode: Int? = postCompareOutcome?.toDriftCode()
 
         // 11. Build report
         val report = buildReport(request, sourceResolved, targetResolved, plan, withExecution, effectiveDialect, renderedDown)
@@ -213,7 +212,7 @@ class SchemaMigrateRunner(
         )
 
         // 13. Decide outcome
-        return finalize(request, withExecution, report, rollbackArtefact, executionTrace, postCompareDriftCode)
+        return finalize(request, withExecution, report, rollbackArtefact, executionTrace, postCompareOutcome)
     }
 
     /**
@@ -627,6 +626,15 @@ class SchemaMigrateRunner(
                     transactionRolledBack = rendered.transactionRolledBack,
                     sideEffectsPossible = rendered.sideEffectsPossible,
                     executionError = rendered.executionError,
+                    // Up-DDL was applied to the DB iff the executor was
+                    // started AND the runner-managed transaction wasn't
+                    // rolled back. A clean rollback after a failed Up
+                    // means no side effect — `upExecuted = false`.
+                    upExecuted = rendered.executionStarted && !rendered.transactionRolledBack,
+                    // `rollbackFinalized` is only known AFTER the
+                    // artefact write attempt — populated by `finalize`
+                    // via report.copy(...) before the report is written.
+                    rollbackFinalized = null,
                 )
             } else {
                 null
@@ -634,6 +642,16 @@ class SchemaMigrateRunner(
         )
     }
 
+    /**
+     * F.5.c: report writing is now ALWAYS the last step inside
+     * `finalize`, so the report can carry the
+     * [SchemaMigrateExecutionView.rollbackFinalized] tri-state with
+     * the actual outcome of the rollback artefact write attempt
+     * (`true` after success, `false` after a side-effect-bearing
+     * failure, `null` when no rollback was requested or possible).
+     * Each terminal branch routes through [emitReportAndExit] so the
+     * old "report first, artefacts later" race is gone.
+     */
     @Suppress("ReturnCount")
     private fun finalize(
         request: SchemaMigrateRequest,
@@ -641,66 +659,122 @@ class SchemaMigrateRunner(
         report: SchemaMigrateReport,
         rollbackArtefact: String?,
         executionTrace: ExecutionTrace?,
-        postCompareDriftCode: Int?,
+        postCompareOutcome: PostCompareOutcome?,
     ): Int {
-        // Always emit the report when --report is set (also on blockers / errors).
-        request.report?.let { writeReport(it, report, request.reportFormat) ?: return 7 }
-
-        // On blocker: report-only — do not emit Up-SQL or Down artefact.
+        // Blocker path: report-only, no Up-SQL or Down artefact.
         if (report.exitCode == 8) {
-            if (request.report == null) stdout(renderReport(report, request.reportFormat))
-            return 8
+            return emitReportAndExit(request, report, rollbackFinalized = null, baseExit = 8)
         }
 
-        // On --plan-only: report only (capability check for --generate-rollback inclusive).
+        // --plan-only: report only (capability check for --generate-rollback inclusive).
         if (request.planOnly) {
-            if (request.report == null) stdout(renderReport(report, request.reportFormat))
-            return report.exitCode
+            return emitReportAndExit(request, report, rollbackFinalized = null, baseExit = report.exitCode)
         }
 
-        // --execute path: skip Up-SQL artefact write (DB execution is the artefact).
-        // Up-SQL artefact emission only when not executing.
+        // --execute path skips Up-SQL artefact write (DB execution is the artefact).
         if (!request.execute) {
-            val upSql = rendered.statements.joinToString("\n\n") { it.sql }
-            if (request.output != null) {
-                try {
-                    ensureParentDirectories(request.output)
-                    atomicWriter(request.output, upSql)
-                } catch (e: Exception) {
-                    userFacingPrintError(
-                        "Failed to write up-SQL artefact: ${e.message}",
-                        request.output.toString(),
-                    )
-                    return 7
-                }
-            } else {
-                stdout(upSql)
+            val upWriteFailedExit = writeOrEchoUpSql(request, rendered)
+            if (upWriteFailedExit != null) {
+                return emitReportAndExit(request, report, rollbackFinalized = null, baseExit = upWriteFailedExit)
             }
         }
 
-        // Execute-error path: report carries the trace; exit 5 (MIGRATION_ERROR).
+        // Execute-error path: Up did not finish cleanly. The transactionRolledBack
+        // / sideEffectsPossible fields on the trace already encode whether the Up
+        // partially landed; rollbackFinalized stays `null` because no rollback
+        // artefact write was attempted.
         if (executionTrace?.executionError != null) {
-            return 5
+            return emitReportAndExit(request, report, rollbackFinalized = null, baseExit = 5)
         }
-        // Post-compare drift: report drift, exit 5.
-        if (postCompareDriftCode != null) {
-            return postCompareDriftCode
+
+        // Post-compare drift OR introspection failure after a successful Up:
+        // Up DID land, but we couldn't (or shouldn't) finalise the normal
+        // rollback artefact. F.5.e/f extend this branch to emit a recovery
+        // artefact for the introspection-failure case; F.5.g pins the
+        // drift case to "no auto-recovery" via Plan §F.5.
+        val driftCode = postCompareOutcome?.toDriftCode()
+        if (driftCode != null) {
+            return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = driftCode)
         }
 
         // Down-SQL artefact emission — only after a clean execute (or no execute at all).
-        if (rollbackArtefact != null && request.rollbackOutput != null) {
-            try {
-                ensureParentDirectories(request.rollbackOutput)
-                atomicWriter(request.rollbackOutput, rollbackArtefact)
-            } catch (e: Exception) {
-                userFacingPrintError(
-                    "Failed to write rollback artefact: ${e.message}",
-                    request.rollbackOutput.toString(),
-                )
-                return 7
+        val rollbackFinalized: Boolean? = when {
+            rollbackArtefact == null -> null      // no --generate-rollback or Down was blocked
+            request.rollbackOutput == null -> null // upstream validation guarantees this combo
+            else -> {
+                if (writeRollbackArtefact(request.rollbackOutput, rollbackArtefact)) {
+                    true
+                } else {
+                    return emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 7)
+                }
             }
         }
-        return report.exitCode
+        return emitReportAndExit(request, report, rollbackFinalized = rollbackFinalized, baseExit = report.exitCode)
+    }
+
+    /**
+     * Writes (or stdout-echoes) the rendered Up-SQL when not in
+     * `--execute` mode. Returns `null` on success or `7` on write
+     * failure so callers can route through [emitReportAndExit] with
+     * the proper exit code.
+     */
+    private fun writeOrEchoUpSql(request: SchemaMigrateRequest, rendered: MigrationDdlResult): Int? {
+        val upSql = rendered.statements.joinToString("\n\n") { it.sql }
+        if (request.output == null) {
+            stdout(upSql)
+            return null
+        }
+        return try {
+            ensureParentDirectories(request.output)
+            atomicWriter(request.output, upSql)
+            null
+        } catch (e: Exception) {
+            userFacingPrintError(
+                "Failed to write up-SQL artefact: ${e.message}",
+                request.output.toString(),
+            )
+            7
+        }
+    }
+
+    /** Returns true on successful atomic write, false on failure. */
+    private fun writeRollbackArtefact(path: Path, artefact: String): Boolean = try {
+        ensureParentDirectories(path)
+        atomicWriter(path, artefact)
+        true
+    } catch (e: Exception) {
+        userFacingPrintError(
+            "Failed to write rollback artefact: ${e.message}",
+            path.toString(),
+        )
+        false
+    }
+
+    /**
+     * Single end-of-pipeline report sink. Injects [rollbackFinalized]
+     * into the report's execution view (when present) and writes the
+     * report atomically when `--report` is set, else echoes to stdout
+     * for the blocker- and plan-only branches that were the only ones
+     * doing stdout-echo before the F.5.c restructuring.
+     */
+    private fun emitReportAndExit(
+        request: SchemaMigrateRequest,
+        report: SchemaMigrateReport,
+        rollbackFinalized: Boolean?,
+        baseExit: Int,
+    ): Int {
+        val finalReport = if (report.execution == null) {
+            report
+        } else {
+            report.copy(execution = report.execution.copy(rollbackFinalized = rollbackFinalized))
+        }
+        request.report?.let { reportPath ->
+            if (writeReport(reportPath, finalReport, request.reportFormat) == null) return 7
+        }
+        if (request.report == null && (baseExit == 8 || request.planOnly)) {
+            stdout(renderReport(finalReport, request.reportFormat))
+        }
+        return baseExit
     }
 
     private fun writeReport(path: Path, report: SchemaMigrateReport, format: String): Unit? {
@@ -783,6 +857,25 @@ data class SchemaMigrateExecutionView(
     val transactionRolledBack: Boolean,
     val sideEffectsPossible: Boolean,
     val executionError: String?,
+    /**
+     * True iff Up-DDL was applied to the DB and stuck (executor was
+     * started AND the runner-managed transaction wasn't rolled back).
+     * Per Plan §F.5.c / §10: structured Side-Effect-signal so a
+     * downstream operator can see "Up succeeded but rollback was not
+     * finalised" (`upExecuted=true`, `rollbackFinalized=false`).
+     * `false` for non-`--execute` runs.
+     */
+    val upExecuted: Boolean = false,
+    /**
+     * Tri-state finalisation status for the rollback artefact:
+     * `true` after successful atomic write to `--rollback-output`,
+     * `false` after Up succeeded but the rollback artefact could not
+     * be finalised (post-compare drift, introspection failure, write
+     * failure — see Plan §F.5.e/f/g/h),
+     * `null` when `--generate-rollback` was not requested or when the
+     * Down-render itself was blocked.
+     */
+    val rollbackFinalized: Boolean? = null,
 )
 
 data class SchemaMigrateOperationView(

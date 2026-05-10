@@ -389,4 +389,117 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         capture.containsKey("wrote:$downPath") shouldBe false
     }
 
+    test("F.5.c — happy path report carries upExecuted=true and rollbackFinalized=true") {
+        val capture = mutableMapOf<String, String>()
+        val schema = schemaWithTable("orders")
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schema, validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = schema,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, statements, _ ->
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                )
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                "{\"upExecuted\":${r.execution?.upExecuted},\"rollbackFinalized\":${r.execution?.rollbackFinalized}}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val reportPath = tmpDir.resolve("e4-f5c-ok-report.json")
+        val rollbackPath = tmpDir.resolve("e4-f5c-ok-rollback.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = rollbackPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 0
+        val report = capture["wrote:$reportPath"]
+            ?: error("report was not written")
+        report shouldContain "\"upExecuted\":true"
+        report shouldContain "\"rollbackFinalized\":true"
+    }
+
+    test("F.5.c — drift path report carries upExecuted=true and rollbackFinalized=false") {
+        // Side-effect signal per Plan §10: Up landed in the DB (executor
+        // succeeded, no rollback) but the rollback artefact could not be
+        // finalised because the post-compare detected drift.
+        val capture = mutableMapOf<String, String>()
+        val desired = schemaWithTable("orders")
+        val drifted = SchemaDefinition(name = "App", version = "1")
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = desired, validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = drifted,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, _, _ ->
+                ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                "{\"upExecuted\":${r.execution?.upExecuted},\"rollbackFinalized\":${r.execution?.rollbackFinalized}}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val reportPath = tmpDir.resolve("e4-f5c-drift-report.json")
+        val rollbackPath = tmpDir.resolve("e4-f5c-drift-rollback.sql")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:postgres://localhost/test",
+            dialect = DatabaseDialect.POSTGRESQL,
+            execute = true,
+            generateRollback = true,
+            rollbackOutput = rollbackPath,
+            report = reportPath,
+        )
+        runner.execute(request) shouldBe 5
+        capture.containsKey("wrote:$rollbackPath") shouldBe false
+        val report = capture["wrote:$reportPath"]
+            ?: error("report was not written")
+        report shouldContain "\"upExecuted\":true"
+        report shouldContain "\"rollbackFinalized\":false"
+    }
+
 })
