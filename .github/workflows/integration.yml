@@ -29,44 +29,14 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Speicher-Budget auf dem ubuntu-latest-Runner (16 GB):
-      #  - Gradle-Daemon: 4 GB aus gradle.properties (unveraendert)
-      #  - Forked Test-JVM: 4 GB via maxHeapSize in build.gradle.kts,
-      #    aktiv unter `-PintegrationTests` (oder explizit ueber
-      #    `-PtestMaxHeapSize=Xg`)
-      #  - Testcontainers (PG/MySQL/...): uebrige ~8 GB
-      # GRADLE_OPTS gilt fuer den Launcher-/Daemon-JVM; damit liegt der
-      # Gradle-Scheduler selbst bequem ueber dem Default.
-      GRADLE_OPTS: "-Xmx4g"
+      # Keep CI on the same entry point as `make integration`, while retaining
+      # the workflow-specific no-build-cache guard from the previous direct
+      # Gradle invocation.
+      INTEGRATION_TASKS: "-PintegrationTests test koverVerify :koverVerify --no-build-cache"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Python 3
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Django
-        run: pip install --quiet django
-
-      - name: Set up Node.js 20
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install pnpm
-        run: npm install -g pnpm
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
 
       - name: Run integration tests (all modules with @integration tag)
         # Plan §6.16: generischer Aufruf, sodass neue integration-Tests in
@@ -75,45 +45,19 @@ jobs:
         # Root-build.gradle.kts den `integration`-Tag für alle Test-Tasks.
         #
         # --no-build-cache: siehe Begruendung in build.yml — kover-Verify
-        # darf keine stale `.exec`-Daten aus dem setup-gradle Cache-
-        # Restore sehen, sonst gibt es knapp-unter-90% Boundary-Flakes.
-        run: ./gradlew test koverVerify :koverVerify -PintegrationTests --no-build-cache
+        # darf keine stale `.exec`-Daten sehen, sonst gibt es
+        # knapp-unter-90% Boundary-Flakes.
+        run: make integration
 
-      - name: Upload integration test results
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: integration-test-results
-          path: '**/build/test-results/test/*.xml'
-          retention-days: 14
-
-      - name: Generate integration coverage HTML
-        if: always()
-        run: ./gradlew koverHtmlReport -PintegrationTests
-
-      - name: Upload coverage HTML
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: integration-coverage-reports
-          path: '**/build/reports/kover/html/**'
-          retention-days: 14
-
-      - name: Generate per-module coverage XML/JSON (CI/local diff)
+      - name: Generate per-module coverage image (CI/local diff)
         # Apples-to-apples mit `make docker-coverage-modules` lokal — gleicher
         # Dockerfile-Stage `coverage-modules`, gleicher kover-report-to-json.jq
-        # Post-Process. Ergibt `build/reports/kover-modules/<module>.{xml,json}`
-        # die mit `jq -r '.report.packages[]'` direkt gegen den lokalen Output
-        # diffbar sind. Dient v.a. der Diagnose, wenn die per-Modul-koverVerify-
-        # Gates in CI flake'n und lokal gruen sind (siehe LF-006-Bekannter-
-        # Kover-CI-Flake).
+        # Post-Process. Die per-module Reports liegen im gebauten Image unter
+        # `/reports`; `docker-coverage-modules-summary` gibt daraus die
+        # Diagnose aus, ohne lokale Artefakte zu extrahieren.
         if: always()
         run: make docker-coverage-modules
 
-      - name: Upload per-module coverage XML/JSON
+      - name: Print per-module coverage summary
         if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: integration-coverage-modules
-          path: 'build/reports/kover-modules/*'
-          retention-days: 14
+        run: make docker-coverage-modules-summary
