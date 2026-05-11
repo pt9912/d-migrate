@@ -138,6 +138,146 @@ class SqliteRebuildH4Test : FunSpec({
         val check = plan.preflight.single { it.kind == SqliteRebuildPreflightKind.SOURCE_COLUMNS_EXIST }
         check.outcome shouldBe SqliteRebuildPreflightOutcome.PASS
     }
+
+    // ---- Negative paths via direct buildPreflightChecks ----
+    // These exercise the defensive FAIL branches that the normal
+    // planRebuild API cannot reach (computeColumnMapping enforces
+    // preservedColumns ⊆ source.columns by construction). The
+    // negative tests pin the contract surface so a future Planner
+    // refactor that bypasses computeColumnMapping cannot silently
+    // produce a SOURCE_COLUMNS_EXIST=FAIL without flipping the test.
+
+    test("H.4 — SOURCE_COLUMNS_EXIST FAILs when mapping references a column absent from oldTable") {
+        val malformedMapping = SqliteColumnMappingModel(
+            preservedColumns = listOf(
+                // sourceColumn `ghost` is not in `source.columns`.
+                ColumnCopyMapping(
+                    sourceColumn = "ghost",
+                    targetColumn = "ghost",
+                    expressionSql = "\"ghost\"",
+                    typeChanged = false,
+                ),
+            ),
+            addedColumns = emptyList(),
+            droppedColumnNames = emptyList(),
+            notNullBackfillBlocked = emptyList(),
+            castNotWhitelisted = emptyList(),
+        )
+        val preflight = SqliteRebuildPlanner.buildPreflightChecks(
+            table = "u",
+            source = source, // only has `id` + `age`
+            mapping = malformedMapping,
+            resolvedTempName = "u__dmg_rebuild_xyz",
+            catalog = SqliteCatalogSnapshot.EMPTY,
+        )
+        val check = preflight.single { it.kind == SqliteRebuildPreflightKind.SOURCE_COLUMNS_EXIST }
+        check.outcome shouldBe SqliteRebuildPreflightOutcome.FAIL
+        check.message.contains("ghost") shouldBe true
+        check.message.contains("not present in oldTable") shouldBe true
+    }
+
+    test("H.4 — TEMP_NAME_AVAILABLE FAILs defensively when resolved name still collides") {
+        // Resolver bug-simulation: pass a resolved name that the
+        // catalog still contains. Plan-time-flag-only — won't happen
+        // via normal API (resolveTempTableName iterates until free).
+        val preflight = SqliteRebuildPlanner.buildPreflightChecks(
+            table = "u",
+            source = source,
+            mapping = SqliteColumnMappingModel(
+                preservedColumns = emptyList(),
+                addedColumns = emptyList(),
+                droppedColumnNames = emptyList(),
+                notNullBackfillBlocked = emptyList(),
+                castNotWhitelisted = emptyList(),
+            ),
+            resolvedTempName = "u__dmg_rebuild_already_taken",
+            catalog = SqliteCatalogSnapshot.EMPTY.copy(
+                tables = setOf("u__dmg_rebuild_already_taken"),
+            ),
+        )
+        val check = preflight.single { it.kind == SqliteRebuildPreflightKind.TEMP_NAME_AVAILABLE }
+        check.outcome shouldBe SqliteRebuildPreflightOutcome.FAIL
+        check.message.contains("still collides") shouldBe true
+        check.message.contains("planner bug") shouldBe true
+    }
+
+    test("H.4 — TABLE_EXISTS is structurally PASS (no real negative path in normal API)") {
+        // The TABLE_EXISTS check is defensive: planRebuild is only
+        // called via SqliteDiffDdlGenerator.renderRebuildBucket, which
+        // short-circuits with SQLITE_REBUILD_MISSING_SOURCES if
+        // current/desired table is missing — so we never reach
+        // buildPreflightChecks for a missing source. Pinned here as a
+        // contract: TABLE_EXISTS PASS is unconditional in the current
+        // API surface. A future planner-direct call path that bypasses
+        // the dispatcher would need to add a negative-path test.
+        val preflight = SqliteRebuildPlanner.buildPreflightChecks(
+            table = "u",
+            source = source,
+            mapping = SqliteColumnMappingModel(
+                preservedColumns = emptyList(),
+                addedColumns = emptyList(),
+                droppedColumnNames = emptyList(),
+                notNullBackfillBlocked = emptyList(),
+                castNotWhitelisted = emptyList(),
+            ),
+            resolvedTempName = "u__dmg_rebuild_abc",
+            catalog = SqliteCatalogSnapshot.EMPTY,
+        )
+        preflight.single { it.kind == SqliteRebuildPreflightKind.TABLE_EXISTS }.outcome shouldBe
+            SqliteRebuildPreflightOutcome.PASS
+    }
+
+    test("H.4 — DEPENDENCIES_KNOWN is INFO-only by Plan-Design (F.6.b + G.2 delegated)") {
+        // The DEPENDENCIES_KNOWN check is deliberately not plan-time-
+        // evaluated in the SQLite adapter — the F.6.b and G.2 blockers
+        // live in DiffPlanner (hexagon:core) and block at the
+        // application layer before the SQLite renderer is reached. The
+        // INFO-entry in this list is purely declarative for downstream
+        // tooling (Migrate-Report, MCP). No FAIL path exists at this
+        // layer; a future refactor that would shift the dependency
+        // check into the SQLite planner would need to add a new
+        // outcome path here.
+        val preflight = SqliteRebuildPlanner.buildPreflightChecks(
+            table = "u",
+            source = source,
+            mapping = SqliteColumnMappingModel(
+                preservedColumns = emptyList(),
+                addedColumns = emptyList(),
+                droppedColumnNames = emptyList(),
+                notNullBackfillBlocked = emptyList(),
+                castNotWhitelisted = emptyList(),
+            ),
+            resolvedTempName = "u__dmg_rebuild_abc",
+            catalog = SqliteCatalogSnapshot.EMPTY,
+        )
+        preflight.single { it.kind == SqliteRebuildPreflightKind.DEPENDENCIES_KNOWN }.outcome shouldBe
+            SqliteRebuildPreflightOutcome.INFO
+    }
+
+    test("H.4 — FOREIGN_KEYS_CHECKABLE is INFO-only at plan-time (runner-vertrag covers the execute-time check)") {
+        // The actual FK-violation check is execute-time and runs in
+        // RunnerHookHandler.apply("assert-foreign-keys-clean") — that
+        // is where the negative path lives (SQLException on non-empty
+        // pragma_foreign_key_check). The plan-time entry is
+        // declarative; it exists to make the runner-contract surface
+        // visible to inspection tooling. JdbcMigrationExecutorH3bTest
+        // pins the actual FAIL behaviour at execute-time.
+        val preflight = SqliteRebuildPlanner.buildPreflightChecks(
+            table = "u",
+            source = source,
+            mapping = SqliteColumnMappingModel(
+                preservedColumns = emptyList(),
+                addedColumns = emptyList(),
+                droppedColumnNames = emptyList(),
+                notNullBackfillBlocked = emptyList(),
+                castNotWhitelisted = emptyList(),
+            ),
+            resolvedTempName = "u__dmg_rebuild_abc",
+            catalog = SqliteCatalogSnapshot.EMPTY,
+        )
+        preflight.single { it.kind == SqliteRebuildPreflightKind.FOREIGN_KEYS_CHECKABLE }.outcome shouldBe
+            SqliteRebuildPreflightOutcome.INFO
+    }
 })
 
 private infix fun <T> List<T>.shouldHaveSize(size: Int) {

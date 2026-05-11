@@ -195,6 +195,51 @@ class SqliteRebuildPlannerTest : FunSpec({
         snap.triggers.shouldBeEmpty()
     }
 
+    test("H.2 — fromSchema extracts bare trigger names from canonical `table::name` keys") {
+        // SQLite enforces trigger-name uniqueness against the bare
+        // SQL identifier, not the Map-Key. SchemaDefinition.triggers
+        // is keyed via ObjectKeyCodec.triggerKey("table", "name") =
+        // "table::name"; the catalog snapshot must hold the bare
+        // `name` so collision-probes match SQLite's namespace.
+        val canonicalKey = dev.dmigrate.core.identity.ObjectKeyCodec.triggerKey("users", "audit")
+        val schema = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("users" to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())))),
+            triggers = mapOf(
+                canonicalKey to dev.dmigrate.core.model.TriggerDefinition(
+                    table = "users",
+                    event = dev.dmigrate.core.model.TriggerEvent.INSERT,
+                    timing = dev.dmigrate.core.model.TriggerTiming.AFTER,
+                    forEach = dev.dmigrate.core.model.TriggerForEach.ROW,
+                    body = "SELECT 1;",
+                ),
+            ),
+        )
+        val snap = SqliteCatalogSnapshot.fromSchema(schema)
+        // Bare name 'audit' must be in the collision set, not 'users::audit'.
+        snap.triggers shouldBe setOf("audit")
+    }
+
+    test("H.2 — fromSchema tolerates bare trigger keys (hand-written file schemas)") {
+        // Plain test fixture: trigger map keyed by bare name (no `::`).
+        // Should be passed through unchanged.
+        val schema = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("users" to TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())))),
+            triggers = mapOf(
+                "audit_users_after_insert" to dev.dmigrate.core.model.TriggerDefinition(
+                    table = "users",
+                    event = dev.dmigrate.core.model.TriggerEvent.INSERT,
+                    timing = dev.dmigrate.core.model.TriggerTiming.AFTER,
+                    forEach = dev.dmigrate.core.model.TriggerForEach.ROW,
+                    body = "SELECT 1;",
+                ),
+            ),
+        )
+        val snap = SqliteCatalogSnapshot.fromSchema(schema)
+        snap.triggers shouldBe setOf("audit_users_after_insert")
+    }
+
     test("H.2 — union of two snapshots") {
         val a = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf("a"))
         val b = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf("b"))

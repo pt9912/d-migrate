@@ -194,7 +194,7 @@ internal object SqliteRebuildPlanner {
      * Report, MCP, JSON serialisation) can inspect the rebuild's
      * readiness declaratively.
      */
-    private fun buildPreflightChecks(
+    internal fun buildPreflightChecks(
         table: String,
         source: TableDefinition,
         mapping: SqliteColumnMappingModel,

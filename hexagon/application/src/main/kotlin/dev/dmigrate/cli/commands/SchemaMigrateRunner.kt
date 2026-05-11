@@ -714,9 +714,18 @@ class SchemaMigrateRunner(
      * `--execute` mode. Returns `null` on success or `7` on write
      * failure so callers can route through [emitReportAndExit] with
      * the proper exit code.
+     *
+     * Phase H Plan-Doc-Vertrag: SQLite-Rebuild-Streams (erkennbar an
+     * `__dmg_rebuild_`-Stamp im SQL) bekommen einen Warn-Header
+     * voran, der die Standalone-Pfad-Limitationen explizit macht
+     * (Temp-Name-Probe nur gegen Schema-Modell; FK-State wird auf
+     * pauschal ON gesetzt). Externe Runner sehen den Hinweis im
+     * Artefakt; die Header-Zeilen sind reine SQL-Kommentare und
+     * brechen keinen Parser.
      */
     private fun writeOrEchoUpSql(request: SchemaMigrateRequest, rendered: MigrationDdlResult): Int? {
-        val upSql = rendered.statements.joinToString("\n\n") { it.sql }
+        val body = rendered.statements.joinToString("\n\n") { it.sql }
+        val upSql = renderSqlArtefactHeader(body) + body
         if (request.output == null) {
             stdout(upSql)
             return null
@@ -731,6 +740,35 @@ class SchemaMigrateRunner(
                 request.output.toString(),
             )
             7
+        }
+    }
+
+    /**
+     * Phase H header: warns operators about the two standalone-pfad
+     * Limitations of SQLite-Rebuild streams. Empty string when the
+     * stream contains no SQLite-Rebuild sequences (PG/MySQL streams
+     * don't need either caveat).
+     */
+    private fun renderSqlArtefactHeader(body: String): String {
+        if (!body.contains("__dmg_rebuild_")) return ""
+        return buildString {
+            append("-- d-migrate schema migrate --plan-only artefact\n")
+            append("-- \n")
+            append("-- SQLite-Rebuild caveats for standalone execution:\n")
+            append("-- \n")
+            append("--   1. Temp-Name collision probe is against the schema-model only.\n")
+            append("--      Ad-hoc objects in the live DB (CREATE INDEX outside the\n")
+            append("--      schema, sqlite_stat* tables, etc.) may collide at execute-\n")
+            append("--      time. Verify via `schema migrate --execute` against the\n")
+            append("--      target — H.2.2 live `sqlite_master` probe is on 0.9.8+.\n")
+            append("-- \n")
+            append("--   2. The rebuild ends with `PRAGMA foreign_keys = ON;`. If the\n")
+            append("--      prior state was OFF, it is NOT restored — use the d-migrate\n")
+            append("--      runner (`schema migrate --execute`) for Round-Trip-State-Compat.\n")
+            append("-- \n")
+            append("-- See docs/planning/in-progress/diffresult-migration-plan.md §H for\n")
+            append("-- the full contract.\n")
+            append("\n")
         }
     }
 

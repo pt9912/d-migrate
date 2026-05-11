@@ -75,11 +75,25 @@ internal data class SqliteCatalogSnapshot(
                     indexNames += idx.name ?: anonIndexName(tableName, idx)
                 }
             }
+            // Triggers are keyed in SchemaDefinition.triggers via
+            // ObjectKeyCodec.triggerKey(table, name) = "<table>::<name>".
+            // SQLite enforces collisions against the **bare** trigger
+            // SQL-name (no table prefix), so we extract the name
+            // component for the catalog snapshot. Hand-written file
+            // schemas that use bare names directly stay supported via
+            // the `::`-presence guard.
+            val triggerNames = schema.triggers.keys.asSequence().map { key ->
+                if (key.contains("::")) {
+                    dev.dmigrate.core.identity.ObjectKeyCodec.parseTriggerKey(key).second
+                } else {
+                    key
+                }
+            }.toSet()
             return SqliteCatalogSnapshot(
                 tables = schema.tables.keys.toSet(),
                 views = schema.views.keys.toSet(),
                 indices = indexNames,
-                triggers = schema.triggers.keys.toSet(),
+                triggers = triggerNames,
             )
         }
 
