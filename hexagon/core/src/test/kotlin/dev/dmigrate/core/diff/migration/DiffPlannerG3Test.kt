@@ -336,6 +336,42 @@ class DiffPlannerG3Test : FunSpec({
         val create = rA.operations.filterIsInstance<DiffOperation.CreateView>().single()
         drop.id shouldNotBe create.id
     }
+
+    // ---- W-2: DependencyAnalyzer chained views ----
+
+    test("CreateView depends on CreateView of declared dependencies.views (W-2 / chained views)") {
+        // Pre-G.3 the DependencyAnalyzer only wired CreateView → CreateTable.
+        // Chained views (`CREATE VIEW summary AS SELECT * FROM base_view`)
+        // had no edge between createBase and createSummary; topological
+        // order was incidentally correct only when the OperationMapper
+        // happened to emit them in the right order. G.3's view-replace-
+        // splits made the gap render-visible — this test pins the
+        // analyzer fix.
+        val users = TableDefinition(columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())))
+        val baseView = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val summaryView = ViewDefinition(
+            query = "SELECT id FROM base_view",
+            dependencies = DependencyInfo(views = listOf("base_view")),
+        )
+        val diff = SchemaDiff(
+            tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("users", users)),
+            viewsAdded = listOf(
+                dev.dmigrate.core.diff.NamedView("base_view", baseView),
+                dev.dmigrate.core.diff.NamedView("summary", summaryView),
+            ),
+        )
+        val emptySchema = SchemaDefinition(name = "App", version = "1")
+        val result = planner.plan(emptySchema, emptySchema, diff)
+        val createBase = result.operations.filterIsInstance<DiffOperation.CreateView>()
+            .single { it.objectRef.rootName == "base_view" }
+        val createSummary = result.operations.filterIsInstance<DiffOperation.CreateView>()
+            .single { it.objectRef.rootName == "summary" }
+        createSummary.dependencies shouldContain createBase.id
+        result.operations.indexOf(createBase) shouldBe (result.operations.indexOf(createSummary) - 1)
+    }
 })
 
 private infix fun Set<String>.shouldContain(id: String) {

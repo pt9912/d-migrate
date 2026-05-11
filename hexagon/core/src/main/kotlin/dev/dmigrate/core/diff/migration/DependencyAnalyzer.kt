@@ -20,7 +20,11 @@ import dev.dmigrate.core.model.ConstraintType
  * - `DropTable` → depends on the `DropConstraint` of every FK
  *   pointing at the dropped table (drop dependents first).
  * - `CreateView` → depends on the `CreateTable`s declared in
- *   `view.dependencies.tables`.
+ *   `view.dependencies.tables` **and** the `CreateView`s declared in
+ *   `view.dependencies.views` (chained views need create-before-create
+ *   ordering; matters especially when Phase G.3 splits a `ReplaceView`
+ *   into `DropView` + `CreateView` and the chained sibling does the
+ *   same around a shared column-altering op).
  *
  * Out of scope for this slice (carved out for Phase D — see Plan
  * §6.1 and the integration-test plan §6.4):
@@ -45,6 +49,8 @@ internal object DependencyAnalyzer {
     fun attach(ops: List<DiffOperation>): List<DiffOperation> {
         val createTableByName = ops.filterIsInstance<DiffOperation.CreateTable>()
             .associateBy { it.objectRef.rootName }
+        val createViewByName = ops.filterIsInstance<DiffOperation.CreateView>()
+            .associateBy { it.objectRef.rootName }
         // Build reverse indices once so DropTable's edge computation is
         // O(referenced-from-N-tables) instead of O(allOps) per drop —
         // matters for large warehouse-tier schemas.
@@ -59,7 +65,9 @@ internal object DependencyAnalyzer {
             }
         }
         return ops.map { op ->
-            val computed = computeDeps(op, createTableByName, dropConstraintsByRefTable, dropViewsByRefTable)
+            val computed = computeDeps(
+                op, createTableByName, createViewByName, dropConstraintsByRefTable, dropViewsByRefTable,
+            )
             val deps = op.dependencies + computed
             op.withDependencies(deps)
         }
@@ -68,6 +76,7 @@ internal object DependencyAnalyzer {
     private fun computeDeps(
         op: DiffOperation,
         createTableByName: Map<String, DiffOperation.CreateTable>,
+        createViewByName: Map<String, DiffOperation.CreateView>,
         dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
         dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> = when (op) {
@@ -75,7 +84,7 @@ internal object DependencyAnalyzer {
         is DiffOperation.AddColumn -> dependenciesForAddColumn(op, createTableByName)
         is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, createTableByName)
         is DiffOperation.DropTable -> dependenciesForDropTable(op, dropConstraintsByRefTable, dropViewsByRefTable)
-        is DiffOperation.CreateView -> dependenciesForCreateView(op, createTableByName)
+        is DiffOperation.CreateView -> dependenciesForCreateView(op, createTableByName, createViewByName)
         else -> emptySet()
     }
 
@@ -131,13 +140,31 @@ internal object DependencyAnalyzer {
         return deps
     }
 
+    /**
+     * A `CreateView` depends on:
+     *
+     * - every `CreateTable` listed in `view.dependencies.tables` —
+     *   classic table-before-view ordering.
+     * - every other `CreateView` listed in `view.dependencies.views`
+     *   — chained views (`CREATE VIEW A AS SELECT * FROM B`) must
+     *   create B before A. Phase G.3 makes this matter at plan time:
+     *   when both `ReplaceView` ops split into `DropView` + `CreateView`
+     *   around a shared column-altering op, the two `createA` /
+     *   `createB` ops need an edge or topological sort can place them
+     *   in arbitrary order, leading to a render-time "relation does
+     *   not exist" failure.
+     */
     private fun dependenciesForCreateView(
         op: DiffOperation.CreateView,
         createTableByName: Map<String, DiffOperation.CreateTable>,
+        createViewByName: Map<String, DiffOperation.CreateView>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         op.view.dependencies?.tables?.forEach { tableName ->
             createTableByName[tableName]?.let { if (it.id != op.id) deps += it.id }
+        }
+        op.view.dependencies?.views?.forEach { viewName ->
+            createViewByName[viewName]?.let { if (it.id != op.id) deps += it.id }
         }
         return deps
     }
