@@ -126,6 +126,19 @@ internal class SqliteRebuildRenderer(
         val safe = OperationRisk.SAFE
 
         // PREPARE phase: PRAGMA wrap + BEGIN. SAFE risk — these don't touch data.
+        // Phase H.3b: in EXECUTE mode emit a runner-hook marker so the
+        // d-migrate runner reads the prior FK state before this sequence.
+        // STANDALONE mode keeps the canonical 9-statement output bit-
+        // identical to pre-H.3b — the "prior OFF state not restored"
+        // warning lives in the artefact-file header at the CLI layer
+        // (`schema migrate --plan-only` output), not in the per-statement
+        // stream.
+        if (plan.emissionMode == SqliteRebuildEmissionMode.EXECUTE) {
+            ctx.emitRebuildStatement(
+                "-- dmigrate:runner-hook=save-fk-state-before-pragma-off",
+                opIds, risk = safe, phase = DiffPhase.PREPARE,
+            )
+        }
         ctx.emitRebuildStatement("PRAGMA foreign_keys = OFF;", opIds, risk = safe, phase = DiffPhase.PREPARE)
         ctx.emitRebuildStatement("BEGIN IMMEDIATE;", opIds, risk = safe, phase = DiffPhase.PREPARE)
 
@@ -214,7 +227,20 @@ internal class SqliteRebuildRenderer(
         // CLEANUP phase: integrity check + commit + re-enable FKs.
         ctx.emitRebuildStatement("PRAGMA foreign_key_check;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
         ctx.emitRebuildStatement("COMMIT;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
-        ctx.emitRebuildStatement("PRAGMA foreign_keys = ON;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
+        // Phase H.3b: in STANDALONE mode pin FK back to ON (the safe
+        // default for an external runner that doesn't know prior state).
+        // In EXECUTE mode emit a hook marker; the d-migrate runner
+        // reads `PRAGMA foreign_keys;` before the sequence and restores
+        // that value here.
+        when (plan.emissionMode) {
+            SqliteRebuildEmissionMode.STANDALONE ->
+                ctx.emitRebuildStatement("PRAGMA foreign_keys = ON;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
+            SqliteRebuildEmissionMode.EXECUTE ->
+                ctx.emitRebuildStatement(
+                    "-- dmigrate:runner-hook=restore-fk-state",
+                    opIds, risk = safe, phase = DiffPhase.CLEANUP,
+                )
+        }
 
         for (op in plan.bucketOperations) ctx.markRendered(op)
         ctx.applyBucketRisk(opIds, bucketRisk)

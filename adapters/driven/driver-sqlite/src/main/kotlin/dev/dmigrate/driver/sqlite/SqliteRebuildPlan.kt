@@ -116,7 +116,41 @@ internal data class SqliteRebuildPlan(
      * `DEPENDENCIES_KNOWN`, `FOREIGN_KEYS_CHECKABLE`) land in H.4.
      */
     val preflight: List<SqliteRebuildPreflightCheck> = emptyList(),
+
+    /**
+     * Phase H.3b: how the rebuild SQL is consumed. Affects the
+     * `PRAGMA foreign_keys` sequence at the boundaries of the
+     * canonical 9-statement output.
+     *
+     * - [SqliteRebuildEmissionMode.STANDALONE] (default): emits the
+     *   pauschal `PRAGMA foreign_keys = ON;` at the end of the
+     *   sequence so the SQL is self-contained when executed by an
+     *   external runner (`sqlite3` CLI, manual paste). A header
+     *   comment warns operators that prior `OFF` state is not
+     *   restored — Round-Trip-State-Compat requires the d-migrate
+     *   runner path.
+     * - [SqliteRebuildEmissionMode.EXECUTE]: omits the trailing
+     *   `PRAGMA foreign_keys = ON;` and emits a runner-hook
+     *   comment marker instead. The d-migrate runner is responsible
+     *   for reading the prior FK-state before executing the sequence
+     *   (`PRAGMA foreign_keys;`) and restoring it after Commit/Rollback.
+     *   Self-contained SQL artefacts must NOT use this mode — they
+     *   would leak the FK state on external execution.
+     */
+    val emissionMode: SqliteRebuildEmissionMode = SqliteRebuildEmissionMode.STANDALONE,
 )
+
+/**
+ * Phase H.3b: emission-mode switch on [SqliteRebuildPlan]. See the
+ * field's KDoc for the per-mode contract.
+ */
+internal enum class SqliteRebuildEmissionMode {
+    /** Self-contained SQL artefact for external execution. */
+    STANDALONE,
+
+    /** d-migrate runner consumption: runner restores prior FK state. */
+    EXECUTE,
+}
 
 /**
  * Carrier for `(name, ViewDefinition)`. The view-name is the
