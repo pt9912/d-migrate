@@ -76,7 +76,8 @@ class DiffPlanner {
         }
 
         val rawOps = OperationMapper.map(schemaDiff, current, desired, blockedTables)
-        val opsWithDeps = DependencyAnalyzer.attach(rawOps)
+        val splitOps = splitReplaceViewsForColumnConflicts(rawOps)
+        val opsWithDeps = DependencyAnalyzer.attach(splitOps)
         val sortResult = TopologicalSorter.sort(opsWithDeps)
 
         diagnostics += detectFkToBlockedTables(sortResult.sorted, blockedTables)
@@ -196,6 +197,125 @@ class DiffPlanner {
                     operationId = op.id,
                 )
             }
+        }
+        return out
+    }
+
+    /**
+     * Phase G.3 — Strict-Variante per Plan §G.3 / §10 L2078-L2083:
+     *
+     * `OperationMapper` emits a [DiffOperation.ReplaceView] for every
+     * `viewsChanged` entry. The default renderer path on PostgreSQL /
+     * MySQL emits `CREATE OR REPLACE VIEW`, which PG only accepts when
+     * the view's *visible* column signature (count / order / types)
+     * stays the same AND no referenced table column is altered or
+     * dropped in the same migration.
+     *
+     * When the planner can see (via `dependencies.columns`) that the
+     * view references a table-column that another op in the same
+     * migration alters (`DropColumn` / `AlterColumnType` /
+     * `AlterColumnNullability`), `CREATE OR REPLACE VIEW` cannot work
+     * — PG rejects the replace because the underlying column is gone
+     * or has shifted; MySQL behaves similarly; SQLite materialises the
+     * conflict via its rebuild pipeline.
+     *
+     * This step rewrites the affected `ReplaceView` as
+     * `DropView` (before the column op) + `CreateView` (after), with
+     * explicit dependency edges so the topological sorter places them
+     * around the column-altering ops. Both edge directions are wired:
+     *
+     * - column-altering op `dependencies += dropView.id` — the drop
+     *   must complete before the column op.
+     * - `createView.dependencies += column-altering-op.id` for every
+     *   conflicting op — the create must complete after all column
+     *   ops it depended on.
+     *
+     * Both sides of the change are checked (`before.dependencies` and
+     * `after.dependencies`): the old view's references must release
+     * the underlying column before it changes, and the new view's
+     * references must be satisfied by the post-change column shape.
+     *
+     * Reine Body-Änderungen ohne Tabellen-Impact (no overlap with any
+     * column-altering op in the same migration) bleiben `ReplaceView`
+     * — der `CREATE OR REPLACE VIEW`-Pfad bleibt aktiv, weil er
+     * idempotenter ist als drop + create (kein Berechtigungs-/
+     * Owner-/Grants-Drift).
+     *
+     * Spaltensignatur-Compatibility (view-eigene Spaltenanzahl/-
+     * reihenfolge/-typen, Plan-§G.3-Stufe 2) ist Carve-Out auf 0.9.8+
+     * — braucht eine `ViewColumn`-Modellebene oder einen Pre-Render-
+     * Probe; siehe Plan §10-Akzeptanzkriterien.
+     */
+    private fun splitReplaceViewsForColumnConflicts(ops: List<DiffOperation>): List<DiffOperation> {
+        val replaceViews = ops.filterIsInstance<DiffOperation.ReplaceView>()
+        if (replaceViews.isEmpty()) return ops
+
+        data class Split(val drop: DiffOperation.DropView, val create: DiffOperation.CreateView)
+
+        val replacements = mutableMapOf<String, Split>()
+        val conflictDepsByOpId = mutableMapOf<String, MutableSet<String>>()
+
+        for (rv in replaceViews) {
+            val referenced = referencedTableColumns(rv.before) + referencedTableColumns(rv.after)
+            if (referenced.isEmpty()) continue
+
+            val conflicting = ops.mapNotNull { op ->
+                val tc = columnAlteringTarget(op) ?: return@mapNotNull null
+                if (tc in referenced) op else null
+            }
+            if (conflicting.isEmpty()) continue
+
+            val drop = DiffOperation.DropView(
+                id = OperationIdFactory.makeId(
+                    "DropView",
+                    rv.objectRef,
+                    CanonicalPayload.view(rv.before) + "::g3-split",
+                ),
+                objectRef = rv.objectRef,
+                view = rv.before,
+            )
+            val create = DiffOperation.CreateView(
+                id = OperationIdFactory.makeId(
+                    "CreateView",
+                    rv.objectRef,
+                    CanonicalPayload.view(rv.after) + "::g3-split",
+                ),
+                objectRef = rv.objectRef,
+                view = rv.after,
+                dependencies = conflicting.map { it.id }.toSet(),
+            )
+            replacements[rv.id] = Split(drop, create)
+            for (c in conflicting) {
+                conflictDepsByOpId.getOrPut(c.id) { mutableSetOf() } += drop.id
+            }
+        }
+
+        if (replacements.isEmpty()) return ops
+
+        return ops.flatMap { op ->
+            when {
+                op is DiffOperation.ReplaceView && op.id in replacements -> {
+                    val split = replacements.getValue(op.id)
+                    listOf(split.drop, split.create)
+                }
+                op.id in conflictDepsByOpId ->
+                    listOf(op.withDependencies(op.dependencies + conflictDepsByOpId.getValue(op.id)))
+                else -> listOf(op)
+            }
+        }
+    }
+
+    /**
+     * Flatten `view.dependencies?.columns` into a `(table, column)`
+     * set. Returns empty when the view has no column-level dependency
+     * information — the §F.6.b check already blocks column-altering
+     * ops on such views, so the §G.3 split can safely skip them.
+     */
+    private fun referencedTableColumns(view: ViewDefinition): Set<Pair<String, String>> {
+        val cols = view.dependencies?.columns ?: return emptySet()
+        val out = mutableSetOf<Pair<String, String>>()
+        for ((table, columns) in cols) {
+            for (c in columns) out += table to c
         }
         return out
     }

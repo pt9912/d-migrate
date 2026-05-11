@@ -5,10 +5,11 @@
 > Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
 > Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
 > Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
-> Pfad, Edge-Cases). Phase G.1 (SQLite-Cast-Matrix) und G.2 (MySQL-
-> VIEW-Privilege-Preflight) sind im Code; G.3 (PostgreSQL-ReplaceView-
-> Compat-Decision) ist offen und schliesst den letzten §10-
-> Akzeptanzpunkt fuer 0.9.7.
+> Pfad, Edge-Cases). Phase G (Dialect-Hardening) ist vollstaendig im
+> Code: G.1 (SQLite-Cast-Matrix), G.2 (MySQL-VIEW-Privilege-Preflight),
+> G.3 (PostgreSQL-ReplaceView-Compat-Decision — Strict-Variante). Damit
+> sind alle §10-Akzeptanzpunkte fuer 0.9.7 geschlossen; Spaltensignatur-
+> Compatibility bleibt §10-Carve-Out auf 0.9.8+.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2056,30 +2057,51 @@ braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
   Privilegien fuer `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als
   unvollstaendige Dependency-Projektion" (L2096-L2099).
 
-- [ ] **G.3** PostgreSQL `ReplaceView` Compatibility-Decision —
-  `PostgresDiffDdlGenerator` rendert View-Aenderungen heute immer
-  als `CREATE OR REPLACE VIEW`. PG akzeptiert das aber nur, wenn
-  Spaltenanzahl, -reihenfolge und -typen unveraendert bleiben und
-  keine referenzierte Tabellenspalte geaendert / geloescht wird.
-  Zwei-Stufen-Loesung:
-  1. **Strict-Variante** (verbindlich fuer G.3): wenn die View in
-     `dependencies.columns` Spalten referenziert, die in derselben
-     Migration `DropColumn`/`AlterColumnType`/
-     `AlterColumnNullability` erfahren, splittet der Planner die
-     View-Aenderung in `DropView` (vor Spalten-Op) +
-     `CreateView` (nach Spalten-Op) — dependency-sicher. Reine
-     Body-Aenderungen ohne Tabellen-Impact bleiben weiter
-     `CREATE OR REPLACE VIEW`.
-  2. **Spaltensignatur-Compatibility** (Carve-Out): ohne Schema-
-     Diff der View-eigenen Spaltenanzahl/-reihenfolge/-typen ist
-     die Heuristik unvollstaendig. Voller Vergleich braucht
-     entweder eine `ViewColumn`-Modellebene (heute nicht
-     vorhanden) oder einen Pre-Render-Probe (nicht in 0.9.7).
-     Wird im Plan dokumentiert und auf 0.9.8+ verschoben.
+- [x] **G.3** PostgreSQL `ReplaceView` Compatibility-Decision ✅ (2026-05-11) —
+  Strict-Variante: `DiffPlanner.splitReplaceViewsForColumnConflicts`
+  laeuft zwischen `OperationMapper.map` und `DependencyAnalyzer.attach`.
+  Pro `ReplaceView`-Op sammelt der Planner die `(table, column)`-Paare
+  aus `view.before.dependencies.columns` und `view.after.dependencies.
+  columns` und prueft sie gegen `columnAlteringTarget(op)` aller
+  anderen Ops im Plan (deckt `DropColumn`, `AlterColumnType`,
+  `AlterColumnNullability` ab). Bei Konflikt:
+  - `ReplaceView` wird durch `DropView` (mit der `before`-Definition)
+    + `CreateView` (mit der `after`-Definition) ersetzt; IDs sind
+    deterministisch aus `OperationIdFactory.makeId` plus
+    `::g3-split`-Suffix.
+  - Conflicting Spalten-Ops bekommen `dependencies += dropView.id`
+    — laufen NACH dem Drop.
+  - `CreateView` bekommt `dependencies += conflictingOp.id` fuer
+    jeden konfligierende Spalten-Op — laeuft NACH allen.
+
+  Topologischer Sorter respektiert diese expliziten Dep-Edges
+  und ordnet `DropView → DropColumn → CreateView` (cross-phase).
+  Reine Body-Aenderungen ohne Tabellen-Impact bleiben `ReplaceView`
+  — der renderer-`CREATE OR REPLACE VIEW`-Pfad bleibt aktiv, weil
+  er idempotenter ist (kein Berechtigungs-/Owner-/Grants-Drift).
+
+  Views ohne `dependencies.columns` werden vom Split ignoriert
+  (kein Signal, welche Spalten relevant sind) — die F.6.b-Diagnose
+  `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` blockt diesen Fall
+  unabhaengig im Detection-Pfad des Planners. G.3 und F.6.b sind
+  komplementaer: F.6.b blockt bei fehlender Information, G.3
+  splittet bei vorhandener Information.
+
+  Implementierung ist dialect-agnostisch im Planner-Layer (siehe
+  Plan §6.4): SQLite rendert `ReplaceView` ohnehin als Drop+Create
+  (kein PG-Aequivalent), MySQL profitiert ebenso wie PostgreSQL.
+
+  **Carve-Out (auf 0.9.8+ verschoben)**: Spaltensignatur-Compatibility
+  (view-eigene Spaltenanzahl/-reihenfolge/-typen) braucht eine
+  `ViewColumn`-Modellebene oder Pre-Render-Probe; ohne diese
+  Information kann die strict variante false-negatives produzieren,
+  wenn die View ihre Spaltensignatur aendert ohne dass Tables-
+  referenzierte Spalten beruehrt werden.
+
   Adressiert §10-DoD "PostgreSQL rendert `ReplaceView` nur dann
   als `CREATE OR REPLACE VIEW`, wenn die View-Aenderung
-  kompatibel ist" (L2012-2016) — Strict-Variante. Spaltensignatur-
-  Compatibility bleibt §10-Carve-Out.
+  kompatibel ist" (L2078-L2083) — Strict-Variante. Spaltensignatur-
+  Compatibility bleibt §10-Carve-Out auf 0.9.8+.
 
 ---
 
@@ -2103,12 +2125,14 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [x] View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
-- [ ] PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
+- [x] PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
   die View-Aenderung kompatibel ist. Muss eine View wegen abhaengiger Tabellen-/
   Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
   entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
-  Reihenfolge. (Phase G.3 — Strict-Variante; Spaltensignatur-Compatibility
-  bleibt Carve-Out auf 0.9.8+.)
+  Reihenfolge. (Phase G.3 ✅ — `DiffPlanner.splitReplaceViewsForColumnConflicts`
+  splittet `ReplaceView` bei `dependencies.columns`-Konflikt in `DropView`
+  (vor Spalten-Op) + `CreateView` (nach Spalten-Op); Spaltensignatur-
+  Compatibility bleibt Carve-Out auf 0.9.8+.)
 - [x] PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
   Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
   planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
