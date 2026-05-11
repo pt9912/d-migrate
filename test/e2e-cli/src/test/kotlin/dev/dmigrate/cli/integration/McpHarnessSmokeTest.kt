@@ -1,13 +1,11 @@
 package dev.dmigrate.cli.integration
 
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldStartWith
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E1 smoke test: starts both transports against the
@@ -18,18 +16,11 @@ private val IntegrationTag = NamedTag("integration")
  * The full LF-012 / LN-038 scenario lands in LF-012 / LN-011 / LN-017 / LN-027-LF-017 / LF-024 / LN-030 / LN-031; E1 only pins the
  * harness plumbing.
  *
- * Tagged `integration` so the default fast-test loop skips it
- * (see root `build.gradle.kts` — `kotest.tags=!integration & !perf`
- * by default; `-PintegrationTests` flips it on). Uses the same
- * file-level `IntegrationTag` constant as the other LF-010 / LF-013 / LN-009 / LN-011 E2E
- * tests in this module — Kotest 6's discovery filter has been
- * observed to ignore inline `tags(NamedTag("…"))` calls in CI,
- * even though they work locally.
+ * Lives in :test:e2e-cli — the sub-project's test task only runs
+ * with `-PintegrationTests` (siehe Root build.gradle.kts).
  */
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpHarnessSmokeTest : FunSpec({
-
-    tags(IntegrationTag)
 
     test("stdio harness completes initialize and tools/list against the file-backed wiring") {
         val stateDir = IntegrationFixtures.freshStateDir("dmigrate-it-stdio-")

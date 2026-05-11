@@ -5,10 +5,8 @@ import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.IdempotencyStoreContractTests
-import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 private val testContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -34,7 +32,6 @@ class JdbcIdempotencyStoreContractTest : IdempotencyStoreContractTests({
     JdbcIdempotencyStore(JdbcTransactionRunner(ds))
 }) {
     init {
-        tags(IntegrationTag)
 
         beforeSpec {
             testContainer.start()

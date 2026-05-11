@@ -6,7 +6,6 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.PoolSettings
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.longs.shouldBeLessThan
@@ -14,7 +13,6 @@ import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 import java.sql.SQLException
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-011 / LN-017 / LN-027 Bench-Test: belegt empirisch das Cancel-Reaktions-Budget
@@ -36,7 +34,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class E07MysqlTimeoutBench : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

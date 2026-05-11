@@ -3,7 +3,6 @@ package dev.dmigrate.cli.integration
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -16,7 +15,6 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 Z. 1839 + 1963 + final-review point 1: spawn the
@@ -44,7 +42,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpRealCliSubprocessTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("real CLI subprocess: mcp serve --transport stdio initialises and exits cleanly on stdin EOF") {
         val stateDir = Files.createTempDirectory("dmigrate-it-real-cli-")

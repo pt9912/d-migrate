@@ -19,7 +19,6 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
@@ -27,7 +26,6 @@ import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * F.4 — SQLite round-trip smoke (`docs/planning/in-progress/diffresult-migration-plan.md §F.4`).
@@ -58,7 +56,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class SqliteMigrateRoundTripIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     fun newPool(): ConnectionPool = HikariConnectionPoolFactory.create(
         ConnectionConfig(

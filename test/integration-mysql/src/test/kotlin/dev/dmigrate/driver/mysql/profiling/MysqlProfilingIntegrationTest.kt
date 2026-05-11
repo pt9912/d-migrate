@@ -10,7 +10,6 @@ import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
 import dev.dmigrate.profiling.service.ProfileDatabaseService
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.collections.shouldContainExactly
@@ -19,11 +18,9 @@ import io.kotest.matchers.shouldNotBe
 import org.testcontainers.mysql.MySQLContainer
 import java.sql.DriverManager
 
-private val IntegrationTag = NamedTag("integration")
 
 class MysqlProfilingIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val primaryDb = "profiling_test"
     val tenantDb = "profiling_tenant"

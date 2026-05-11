@@ -12,13 +12,11 @@ import dev.dmigrate.server.core.job.ManagedJob
 import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.time.Instant
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(B): security-scrubbing canary per
@@ -60,7 +58,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpSecurityScrubbingScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("job_status_get scrubs planted Bearer / JDBC URL / tok_ values on both transports") {
         withFreshTransports { s, h ->

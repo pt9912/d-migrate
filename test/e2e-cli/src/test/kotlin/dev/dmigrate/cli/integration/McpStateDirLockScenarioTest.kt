@@ -3,7 +3,6 @@ package dev.dmigrate.cli.integration
 import com.google.gson.JsonObject
 import dev.dmigrate.cli.commands.McpStateDirLock
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
@@ -13,7 +12,6 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E7: lock-/concurrency tests for `<stateDir>.lock` per
@@ -44,7 +42,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpStateDirLockScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("stdio: second tryStart on the same stateDir while first runs is LockConflict, no audit event") {
         val dir = Files.createTempDirectory("dmigrate-it-lock-stdio-")

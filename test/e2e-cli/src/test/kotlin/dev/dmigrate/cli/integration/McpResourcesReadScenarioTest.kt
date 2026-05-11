@@ -2,12 +2,10 @@ package dev.dmigrate.cli.integration
 
 import com.google.gson.JsonObject
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E6: transport-neutral coverage of `resources/read` per
@@ -36,7 +34,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpResourcesReadScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("resources/read on a staged schema returns identical projection on stdio + http") {
         withFreshTransports { s, h ->

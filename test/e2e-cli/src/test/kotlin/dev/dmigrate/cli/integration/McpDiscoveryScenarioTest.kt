@@ -3,12 +3,10 @@ package dev.dmigrate.cli.integration
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-038: LF-012 / LN-038 transport-neutral coverage of the LF-012 / LN-038
@@ -33,7 +31,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpDiscoveryScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("job_list seeded with 3 records returns 3 jobs on both transports") {
         withFreshTransports { s, h ->

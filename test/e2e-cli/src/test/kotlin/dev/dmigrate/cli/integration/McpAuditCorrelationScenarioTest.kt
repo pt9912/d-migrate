@@ -6,13 +6,11 @@ import dev.dmigrate.server.core.audit.AuditEvent
 import dev.dmigrate.server.core.audit.AuditOutcome
 import dev.dmigrate.server.core.error.ToolErrorCode
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): audit-event correlation per
@@ -44,7 +42,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpAuditCorrelationScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("a successful tools/call records exactly one SUCCESS audit event with correct correlation") {
         withFreshTransports { s, h ->

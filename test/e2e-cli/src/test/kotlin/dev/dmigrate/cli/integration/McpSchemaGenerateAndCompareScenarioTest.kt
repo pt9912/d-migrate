@@ -4,12 +4,10 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E3: transport-neutral coverage of `schema_generate` and
@@ -37,7 +35,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpSchemaGenerateAndCompareScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("schema_generate small inline schema is transport-equivalent") {
         val arguments = JsonParser.parseString(

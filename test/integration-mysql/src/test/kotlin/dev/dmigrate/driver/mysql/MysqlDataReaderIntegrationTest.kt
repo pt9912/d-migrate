@@ -7,13 +7,11 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * Integration tests for MysqlDataReader / MysqlTableLister against a
@@ -33,7 +31,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class MysqlDataReaderIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

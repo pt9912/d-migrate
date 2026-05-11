@@ -5,7 +5,6 @@ import com.github.ajalt.clikt.core.subcommands
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.format.yaml.YamlSchemaCodec
@@ -18,7 +17,6 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.sql.DriverManager
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End Round-Trip: Export from source PostgreSQL, import into
@@ -36,7 +34,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class E2ERoundTripPostgresTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val source = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_src")

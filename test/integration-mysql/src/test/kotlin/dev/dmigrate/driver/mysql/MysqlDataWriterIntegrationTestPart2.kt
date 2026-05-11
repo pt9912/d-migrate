@@ -14,17 +14,14 @@ import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 
-private val MysqlWriterIntegrationTag = NamedTag("integration")
 
 class MysqlDataWriterIntegrationTestPart2 : FunSpec({
 
-    tags(MysqlWriterIntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

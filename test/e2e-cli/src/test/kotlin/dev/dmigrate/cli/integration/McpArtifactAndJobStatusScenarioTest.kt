@@ -4,13 +4,11 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.security.MessageDigest
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E5: read-only artefact-chunking + job-status slice of the
@@ -34,7 +32,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpArtifactAndJobStatusScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     // 64 bytes per chunk: a 200-byte payload spans 4 chunks (0..3),
     // which is small enough to keep the test data printable but big

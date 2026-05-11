@@ -5,13 +5,11 @@ import com.google.gson.JsonParser
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.fail
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 LF-012 / LN-011 / LN-017 / LN-027: drift guard + transport-neutral smoke for the two
@@ -33,7 +31,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpDiscoveryAndValidateScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("tools/list advertises the runtime tool matrix on both transports") {
         val (stdioTools, httpTools) = withFreshTransports { stdio, http ->

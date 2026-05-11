@@ -6,7 +6,6 @@ import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
@@ -19,7 +18,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data export` gegen einen realen PostgreSQL-
@@ -44,7 +42,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class DataExportE2EPostgresTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_e2e")

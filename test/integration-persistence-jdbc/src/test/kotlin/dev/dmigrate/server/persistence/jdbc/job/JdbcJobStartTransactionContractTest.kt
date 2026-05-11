@@ -7,10 +7,8 @@ import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.JobStartTransactionContractTests
 import dev.dmigrate.server.ports.contract.JobStartTransactionFixture
-import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 private val txTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -46,7 +44,6 @@ class JdbcJobStartTransactionContractTest : JobStartTransactionContractTests({
     )
 }) {
     init {
-        tags(IntegrationTag)
 
         beforeSpec {
             txTestContainer.start()

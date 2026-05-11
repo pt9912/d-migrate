@@ -2,14 +2,12 @@ package dev.dmigrate.server.persistence.jdbc.migration
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import org.testcontainers.postgresql.PostgreSQLContainer
 import javax.sql.DataSource
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * Integration test for the LF-012 / LN-011 / LN-017 / LN-027 Flyway initial migration.
@@ -29,7 +27,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class JdbcMigrationRunnerIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_state")

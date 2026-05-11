@@ -2,12 +2,10 @@ package dev.dmigrate.cli.integration
 
 import com.google.gson.JsonObject
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-038 sub-commit 2: LF-012 / LN-038 transport-neutral coverage of
@@ -34,7 +32,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpResourcesScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("resources/list HMAC cursor round-trips across both transports") {
         // Seed 60 jobs so the default 50-page-size walker emits a

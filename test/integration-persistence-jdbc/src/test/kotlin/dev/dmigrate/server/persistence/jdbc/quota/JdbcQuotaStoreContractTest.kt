@@ -5,10 +5,8 @@ import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.QuotaStoreContractTests
-import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 private val quotaStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -30,7 +28,6 @@ class JdbcQuotaStoreContractTest : QuotaStoreContractTests({
     JdbcQuotaStore(JdbcTransactionRunner(ds))
 }) {
     init {
-        tags(IntegrationTag)
 
         beforeSpec {
             quotaStoreTestContainer.start()

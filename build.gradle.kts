@@ -87,27 +87,17 @@ subprojects {
         }
         useJUnitPlatform()
         val explicitKotestTags = System.getProperty("kotest.tags")
-        // Per default integration-Tests ausschließen — sie brauchen Docker
-        // (Testcontainers) und überschreiten das 5-Minuten-CI-Budget des
-        // Default-Workflows. Aktivieren via `./gradlew test -PintegrationTests`
-        // (siehe .github/workflows/integration.yml und LF-008 / LF-009 / LF-013).
-        //
-        // Wir verwenden Kotest's natives Tag-System (System-Property
-        // `kotest.tags`), weil JUnit Jupiter's `excludeTags`/`@Tag` Discovery
-        // nicht mit Kotest's Spec-Lifecycle zusammenspielt — ohne das hier
-        // würden Specs mit @Tags("integration") trotzdem instanziiert und
-        // beforeSpec ausgeführt.
-        //
-        // Perf-Spikes (`perf`) sind ebenfalls opt-in und laufen nur, wenn
+        // Perf-Spikes (`perf`) sind opt-in und laufen nur, wenn
         // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
         // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
         // den Default hier.
+        //
+        // Integration-Tests sind nicht mehr per Kotest-Tag gefiltert —
+        // sie leben strukturell in :test:integration-* und :test:e2e-cli
+        // und werden via Sub-Projekt-onlyIf nur unter -PintegrationTests
+        // ausgefuehrt (siehe oben).
         if (explicitKotestTags == null) {
-            if (project.hasProperty("integrationTests")) {
-                systemProperty("kotest.tags", "!perf")
-            } else {
-                systemProperty("kotest.tags", "!integration & !perf")
-            }
+            systemProperty("kotest.tags", "!perf")
         }
 
         // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen

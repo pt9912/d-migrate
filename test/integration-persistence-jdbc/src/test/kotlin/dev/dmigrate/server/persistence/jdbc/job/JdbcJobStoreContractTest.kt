@@ -5,10 +5,8 @@ import com.zaxxer.hikari.HikariDataSource
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
 import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.ports.contract.JobStoreContractTests
-import io.kotest.core.NamedTag
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 private val jobStoreTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -33,7 +31,6 @@ class JdbcJobStoreContractTest : JobStoreContractTests({
     JdbcJobStore(JdbcTransactionRunner(ds))
 }) {
     init {
-        tags(IntegrationTag)
 
         beforeSpec {
             jobStoreTestContainer.start()

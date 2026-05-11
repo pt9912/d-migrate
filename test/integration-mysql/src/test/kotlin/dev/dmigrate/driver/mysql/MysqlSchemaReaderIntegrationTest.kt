@@ -9,7 +9,6 @@ import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.DatabaseDriverRegistry
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.shouldBe
@@ -19,11 +18,9 @@ import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.mysql.MySQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 class MysqlSchemaReaderIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

@@ -3,14 +3,12 @@ package dev.dmigrate.integration
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.sqlite.SqliteDriver
 import dev.dmigrate.migration.MigrationTool
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
 import java.sql.DriverManager
 import kotlin.io.path.writeText
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-011: Knex runtime validation against SQLite.
@@ -25,7 +23,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class KnexRuntimeTest : FunSpec({
 
-    tags(IntegrationTag)
 
     beforeSpec {
         DatabaseDriverRegistry.register(SqliteDriver())

@@ -9,7 +9,6 @@ import dev.dmigrate.cli.commands.SchemaCompareRequest
 import dev.dmigrate.cli.commands.SchemaCompareRunner
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
@@ -26,11 +25,9 @@ import java.sql.DriverManager
  * - Explicit NULL triggers the same path (lossy W115 semantics)
  * - Rollback DDL drops all support objects cleanly
  */
-private val IntegrationTag = NamedTag("integration")
 
 class MysqlSequenceEmulationIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8")
         .withDatabaseName("seqtest")

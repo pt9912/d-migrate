@@ -13,7 +13,6 @@ import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -23,7 +22,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicReference
 
-private val IntegrationTag = NamedTag("integration")
 
 private val sweeperTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -43,7 +41,6 @@ private var sweeperTestDataSource: HikariDataSource? = null
  */
 class QuotaReservationSweeperE2ETest : FunSpec({
 
-    tags(IntegrationTag)
 
     val key = QuotaKey(tenantId = TenantId("acme"), dimension = QuotaDimension.ACTIVE_JOBS)
 

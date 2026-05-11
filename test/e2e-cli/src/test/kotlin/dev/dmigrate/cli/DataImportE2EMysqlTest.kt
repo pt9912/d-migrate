@@ -8,7 +8,6 @@ import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.shouldBe
@@ -20,7 +19,6 @@ import java.nio.file.Files
 import java.sql.DriverManager
 import kotlin.io.path.deleteIfExists
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data import` gegen einen realen MySQL-
@@ -31,7 +29,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class DataImportE2EMysqlTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_e2e")

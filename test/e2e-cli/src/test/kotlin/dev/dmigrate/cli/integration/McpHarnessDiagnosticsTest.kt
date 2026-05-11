@@ -2,13 +2,11 @@ package dev.dmigrate.cli.integration
 
 import com.google.gson.JsonParser
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(C): proves the harness diagnostic dump per
@@ -28,7 +26,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpHarnessDiagnosticsTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("dumpDiagnostics on stdio + http names transport, reason, recent calls and stateDir files") {
         withFreshTransports { s, h ->

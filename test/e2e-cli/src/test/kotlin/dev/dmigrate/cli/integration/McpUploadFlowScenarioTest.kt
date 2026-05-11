@@ -4,7 +4,6 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
@@ -12,7 +11,6 @@ import java.security.MessageDigest
 import java.util.Base64
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 E4: end-to-end upload flow per Pflichtfluesse:
@@ -36,7 +34,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpUploadFlowScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     // Segment boundary small enough to trigger multi-segment uploads
     // with a parseable JSON schema that fits in a few hundred bytes

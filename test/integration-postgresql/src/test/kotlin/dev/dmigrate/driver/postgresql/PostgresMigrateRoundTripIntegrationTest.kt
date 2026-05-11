@@ -18,7 +18,6 @@ import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -26,7 +25,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
 import kotlin.io.path.createTempDirectory
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * F.2 — PostgreSQL round-trip smoke (`docs/planning/in-progress/diffresult-migration-plan.md §F.2`).
@@ -55,7 +53,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class PostgresMigrateRoundTripIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_test")

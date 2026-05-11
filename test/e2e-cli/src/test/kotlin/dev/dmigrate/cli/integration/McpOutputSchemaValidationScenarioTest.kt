@@ -11,12 +11,10 @@ import com.networknt.schema.SpecVersion
 import dev.dmigrate.mcp.protocol.ToolMetadata
 import dev.dmigrate.mcp.server.McpLimitsConfig
 import io.kotest.assertions.withClue
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import kotlin.io.path.deleteRecursively
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-012 / LN-027 / LN-028 / LN-038 LF-017 / LF-024 / LN-030 / LN-031(A): output-schema validation per
@@ -51,7 +49,6 @@ private val IntegrationTag = NamedTag("integration")
 @OptIn(kotlin.io.path.ExperimentalPathApi::class)
 class McpOutputSchemaValidationScenarioTest : FunSpec({
 
-    tags(IntegrationTag)
 
     test("schema_validate runtime output validates against the wire-published output schema (stdio + http)") {
         withFreshTransports { s, h ->

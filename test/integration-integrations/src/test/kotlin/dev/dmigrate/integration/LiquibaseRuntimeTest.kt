@@ -3,7 +3,6 @@ package dev.dmigrate.integration
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.migration.MigrationTool
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import liquibase.Liquibase
@@ -14,7 +13,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
 import java.sql.DriverManager
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-011: Liquibase runtime validation against PostgreSQL.
@@ -25,7 +23,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class LiquibaseRuntimeTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("liquibase_test")

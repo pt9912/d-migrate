@@ -8,7 +8,6 @@ import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.longs.shouldBeGreaterThan
@@ -22,7 +21,6 @@ import java.sql.DriverManager
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteIfExists
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data import` gegen einen realen PostgreSQL-
@@ -33,7 +31,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class DataImportE2EPostgresTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_e2e")

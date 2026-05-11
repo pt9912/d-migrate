@@ -11,7 +11,6 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.nulls.shouldNotBeNull
@@ -21,7 +20,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer
 import java.sql.Connection
 import java.time.Instant
 
-private val IntegrationTag = NamedTag("integration")
 
 private val ownerAwareTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -40,7 +38,6 @@ private var ownerAwareTestDataSource: HikariDataSource? = null
  */
 class JdbcOwnerAwareQuotaServiceTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val key = QuotaKey(
         tenantId = TenantId("acme"),

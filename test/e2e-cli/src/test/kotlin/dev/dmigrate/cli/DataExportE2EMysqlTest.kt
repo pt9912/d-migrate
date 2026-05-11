@@ -6,7 +6,6 @@ import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.SchemaCommand
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldNotThrowAny
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
@@ -18,7 +17,6 @@ import java.io.PrintStream
 import java.nio.file.Files
 import java.sql.DriverManager
 
-private val MysqlIntegrationTag = NamedTag("integration")
 
 /**
  * End-to-End-Tests für `d-migrate data export` gegen einen realen MySQL-
@@ -40,7 +38,6 @@ private val MysqlIntegrationTag = NamedTag("integration")
  */
 class DataExportE2EMysqlTest : FunSpec({
 
-    tags(MysqlIntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_e2e")

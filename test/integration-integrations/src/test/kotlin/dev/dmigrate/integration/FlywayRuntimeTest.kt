@@ -3,14 +3,12 @@ package dev.dmigrate.integration
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.migration.MigrationTool
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.flywaydb.core.Flyway
 import org.testcontainers.postgresql.PostgreSQLContainer
 import java.nio.file.Files
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * LF-011: Flyway runtime validation against PostgreSQL.
@@ -21,7 +19,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class FlywayRuntimeTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("flyway_test")

@@ -40,7 +40,6 @@ import dev.dmigrate.server.ports.SignalOutcome
 import dev.dmigrate.server.ports.contract.Fixtures
 import dev.dmigrate.server.ports.memory.InMemoryApprovalGrantStore
 import dev.dmigrate.server.ports.memory.InMemoryWorkerHandleRegistry
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
@@ -52,7 +51,6 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
-private val IntegrationTag = NamedTag("integration")
 
 private val pipelineTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -75,7 +73,6 @@ private var pipelineTestDataSource: HikariDataSource? = null
  */
 class ServerPipelineE2ETest : FunSpec({
 
-    tags(IntegrationTag)
 
     val tenant = Fixtures.tenant("acme")
     val principal = Fixtures.principal("alice")
