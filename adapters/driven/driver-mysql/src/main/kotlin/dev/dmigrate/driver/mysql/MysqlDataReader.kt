@@ -21,7 +21,8 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  *   der serverseitige Cursor steht für sich. Wir lassen es auf `false`,
  *   damit ein evtl. konsistenter Snapshot über den Stream hinweg möglich ist.
  *
- * Tests laufen im `@Tag("integration")`-Workflow gegen einen Testcontainers-
+ * Tests fuer den Live-DB-Pfad leben in `:test:integration-mysql`
+ * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
  * MySQL — siehe `.github/workflows/integration.yml`.
  */
 class MysqlDataReader : AbstractJdbcDataReader() {

@@ -173,8 +173,9 @@ class HikariConnectionPoolFactoryTest : FunSpec({
         // Stattdessen prüfen wir nur, dass defaultsFor(POSTGRESQL/MYSQL) leer ist
         // — das ist über das öffentliche Verhalten nicht direkt sichtbar, aber wir
         // verifizieren das indirekt im Round-Trip-Test oben.
-        // Dieser Test ist Platzhalter; konkrete PG/MySQL-Connection-Tests folgen
-        // in format reader mit Testcontainers (@Tag("integration")).
+        // Dieser Test ist Platzhalter; konkrete PG/MySQL-Connection-Tests
+        // leben in :test:integration-postgresql / :test:integration-mysql
+        // und laufen unter -PintegrationTests gegen Testcontainers-DBs.
     }
 
     // ─── ConnectionConfig.toString() Maskierung ──────────────────

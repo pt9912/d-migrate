@@ -19,9 +19,16 @@ import java.time.Clock
  *   serialisiert die Konflikt-Updates auf der PK-Zeile).
  * - `release` floored bei 0 via `GREATEST(used - ?, 0)`.
  *
- * Cross-TX-Komposition: jede Methode hat eine `*OnConnection`-Variante
- * (internal), die [JdbcOwnerAwareQuotaService] in einer geteilten
- * DB-TX aufruft. LF-012 / LN-011 / LN-017 / LN-027: Counter-Decrement und Owner-Status-CAS
+ * Cross-TX-Komposition: jede Methode hat eine `*OnConnection`-Variante,
+ * die [JdbcOwnerAwareQuotaService] in einer geteilten DB-TX aufruft.
+ * `reserveOnConnection` / `currentOnConnection` bleiben `internal` —
+ * Cross-Modul-Aufrufer haben keinen legitimen Bedarf an
+ * Connection-bewussten Reserve-/Read-Pfaden ohne den OwnerAware-Service.
+ * `releaseOnConnection` ist `open` (public), weil
+ * `:test:integration-persistence-jdbc.JdbcOwnerAwareQuotaServiceTest`
+ * sie ueber Modul-Grenze als Failure-Injection-Hook ueberschreibt
+ * (Crash-Window zwischen Owner-markReleased und Counter-Decrement).
+ * LF-012 / LN-011 / LN-017 / LN-027: Counter-Decrement und Owner-Status-CAS
  * MUESSEN gemeinsam atomar sein.
  */
 open class JdbcQuotaStore(

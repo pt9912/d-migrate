@@ -16,7 +16,8 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  *   [dev.dmigrate.driver.connection.HikariConnectionPoolFactory] über die
  *   `ApplicationName`-URL-Property gesetzt.
  *
- * Tests laufen im `@Tag("integration")`-Workflow gegen einen Testcontainers-
+ * Tests fuer den Live-DB-Pfad leben in `:test:integration-postgresql`
+ * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
  * PostgreSQL — siehe `.github/workflows/integration.yml`.
  */
 class PostgresDataReader : AbstractJdbcDataReader() {
