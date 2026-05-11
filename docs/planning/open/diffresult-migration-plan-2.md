@@ -213,9 +213,11 @@ Entscheidungspunkte:
 - Ein kontrollierter Migrationspfad fuer alte `rollback-sql v1`-Artefakte wird
   explizit entschieden: weiter unterstuetzen, upgraden oder ablehnen.
 - Artifact-Hash deckt Header, strukturierte Statement-Metadaten und den
-  ausfuehrbaren SQL-Body ab. `schema rollback --execute` rekonstruiert die
-  Statement-Liste aus den validierten Body-Ranges und fuehrt diese Body-
-  Statements aus.
+  ausfuehrbaren SQL-Body ab. Wie bei `rollback-sql v1` wird der Hash ueber den
+  kanonischen Header ohne das `artifactHash`-Feld plus den kanonischen SQL-Body
+  gebildet; das `artifactHash`-Feld selbst ist niemals Teil seines eigenen
+  Hash-Inputs. `schema rollback --execute` rekonstruiert die Statement-Liste
+  aus den validierten Body-Ranges und fuehrt diese Body-Statements aus.
 
 Vorbedingung fuer:
 
@@ -367,8 +369,9 @@ Entscheidung:
 - Explizite `USING`-Ausdruecke sind nur ueber einen versionierten
   Migrations-Overlay zulaessig, der an `sourceFingerprint`,
   `targetFingerprint`, Dialekt, Tabellenname, Spaltenname, Quelltyp und Zieltyp
-  gebunden ist. Schema-Metadaten bleiben dafuer tabu, weil die Konvertierung
-  ein Migrationsvertrag und kein Zielschemateil ist. Nach Workstream F.2 darf
+  gebunden ist und den Overlay-Grundvertrag aus F.0 erfuellt. Schema-Metadaten
+  bleiben dafuer tabu, weil die Konvertierung ein Migrationsvertrag und kein
+  Zielschemateil ist. Nach Workstream F.2 darf
   derselbe Vertrag in ein Plan-Artefakt eingebettet werden.
 - Der Overlay muss Up- und Down-Seite getrennt beschreiben:
   `upUsingExpression`, optional `downUsingExpression`, `dataRisk`,
@@ -389,7 +392,9 @@ Entscheidung:
   Referenzen auf andere Spalten sind erst in einem spaeteren Slice erlaubt,
   wenn der Overlay diese Dependencies explizit auflistet und der Planner sie
   gegen Rename-/Drop-Risiken validiert. Bis dahin blockieren solche
-  Expressions mit `MANUAL_REQUIRED`.
+  Expressions mit `primaryBlockedReason = MANUAL_ACTION_REQUIRED`. Falls ein
+  Down-Ausdruck fehlt, bleibt `MANUAL_REQUIRED` nur der Reversibility-/Down-
+  Status, nicht der maschinenlesbare primaere Blocker-Reason.
 
 Nicht akzeptabel:
 
@@ -626,7 +631,10 @@ Nicht akzeptabel:
 - Refresh still auslassen, wenn der Zielzustand danach fachlich stale ist
 - `CONCURRENTLY` rendern, ohne die PostgreSQL-Voraussetzungen zu belegen
 
-Sofortiger Guard vor jedem D.3-Ausbau:
+#### D.3a Sofortiger Materialized-View-Guard
+
+Dieser Guard ist ein eigener kleiner Safety-Slice und darf nicht auf den
+vollstaendigen Materialized-View-Vertrag warten:
 
 - Jede diff-basierte Operation auf `ViewDefinition.materialized = true` muss als
   Materialized-View-Operation erkannt und blockiert werden, solange kein eigener
@@ -638,6 +646,15 @@ Sofortiger Guard vor jedem D.3-Ausbau:
   `CREATE OR REPLACE VIEW` rendern. MySQL und SQLite duerfen Materialized Views
   im diff-basierten Migrationspfad nicht als Regular-View-Fallback rendern,
   solange D.3 keinen expliziten Emulations-/Blocker-Vertrag beschlossen hat.
+
+Akzeptanz fuer D.3a:
+
+- Positiv kein SQL-Render fuer `CreateView`/`ReplaceView`/`DropView` mit
+  `materialized = true`.
+- Blocker-Diagnostic nennt Objektname, Dialekt und Materialized-View-Status.
+- Bestehende Regular-View-Pfade bleiben unveraendert.
+
+#### D.3b Vollstaendiger Materialized-View-Vertrag
 
 Erwarteter Vertrag:
 
@@ -654,11 +671,14 @@ DoD:
   ein explizites Modellfeld.
 - [ ] MySQL-Dependency-Projektion deckt Table-, Column- und Routine-Usage ab
   oder blockiert bei unvollstaendiger Projektion.
-- [ ] Materialized Views sind nicht als normale Views modelliert.
 - [ ] Bis zum eigenen Materialized-View-Vertrag blockieren alle diff-basierten
   Operationen auf `ViewDefinition.materialized = true` vor Render.
+- [ ] Der D.3a-Guard ist separat testbar und nicht vom vollstaendigen
+  Refresh-/Staleness-Vertrag abhaengig.
+- [ ] Materialized Views sind vor D.3b nicht als normale Views renderbar; im
+  vollstaendigen D.3b-Vertrag bekommen sie eine eigene Objektklasse.
 - [ ] Refresh-, Staleness-, Locking- und Rollback-Verhalten fuer Materialized
-  Views sind im Report sichtbar.
+  Views sind fuer D.3b im Report sichtbar.
 - [ ] Tests decken kompatible View-Replaces, blockierende View-Dependencies und
   mindestens einen Materialized-View-Blocker ab.
 
@@ -806,6 +826,57 @@ DoD:
 
 ## 10. Workstream F - Datenmigration und DiffResult-Produktvertraege
 
+### F.0 Versionierter Migrations-Overlay-Grundvertrag
+
+Mehrere Workstreams brauchen Nutzerentscheidungen, die weder ins Zielschema
+gehoeren noch als ad-hoc CLI-Flag stabil genug sind:
+
+- PostgreSQL-`USING`-Expressions aus B.1
+- Rename-Mappings aus F.4
+- Extension-/Spatial-Verfuegbarkeitshinweise aus C, falls sie nicht aus dem
+  Schema selbst ableitbar sind
+- spaetere Daten-Transformationsvertraege aus F.1
+
+Dieser Grundvertrag ist ein kleiner eigener Vorbereitungs-Slice vor allen
+Features, die ein Overlay als Input akzeptieren.
+
+Entscheidung:
+
+- Overlay-Dateien sind versionierte, kanonisch lesbare JSON-Dokumente. YAML
+  oder andere Formate duerfen spaeter als Komfortschicht folgen, sind aber
+  nicht der erste stabile Austauschvertrag.
+- Jedes Overlay enthaelt mindestens `formatVersion`, `overlayKind`,
+  `sourceFingerprint`, `targetFingerprint`, `dialect`, `entries`,
+  `createdAt`, `createdByVersion` und `overlayHash`.
+- `overlayHash` ist ein SHA-256 ueber die kanonische JSON-Form ohne das
+  `overlayHash`-Feld. Aenderungen an Bindings, Entry-Reihenfolge,
+  Nutzerfreigaben, Risiken oder Expressions muessen den Hash aendern.
+- Entries sind strikt typisiert. Ein `USING`-Entry kann nicht als Rename-Entry
+  interpretiert werden und umgekehrt.
+- Stale Fingerprints, falscher Dialekt, unbekannte `formatVersion`, unbekannte
+  `overlayKind`, unbekannte Pflichtfelder und Hash-Mismatch blockieren vor
+  Render.
+- Unbekannte optionale Felder sind nur dekorative Producer-Metadaten. Jede
+  Semantik fuer Ausfuehrung, Risiko, Rollback, Dependencies, Preflights oder
+  Secrets braucht ein versioniertes Feld, ein `requiredFeature` oder eine neue
+  `formatVersion`.
+- Secret-Scrubbing gilt auch fuer Overlays. Als secret markierte Werte duerfen
+  nicht in Reports oder Plan-Artefakte kopiert werden; Reports duerfen nur
+  Quelle, Entry-ID, Hash und maschinenlesbare Diagnose ausweisen.
+- CLI-Flags duerfen nur auf Overlay-Dateien zeigen oder konkrete Overlay-
+  Policies aktivieren. Sie duerfen keine inline Renames, Expressions oder
+  Daten-Transformationslogik als unversionierten Vertrag einfuehren.
+
+Akzeptanz:
+
+- Golden-File-Test fuer kanonische Overlay-Serialisierung.
+- Ablehnung bei stale Fingerprint, Dialekt-Mismatch, unbekannter Version und
+  Hash-Mismatch.
+- Report nennt Overlay-Quelle, Entry-ID, Hash und Blocker-Diagnostic ohne
+  Secrets.
+- B.1 und F.4 haben je einen Test, der ohne gueltigen F.0-Overlay-Vertrag
+  blockiert.
+
 ### F.1 Automatische Daten-Transformationen
 
 Nicht im ersten 0.9.7-Plan abgedeckt:
@@ -940,10 +1011,11 @@ verwechselt.
 
 Entscheidung:
 
-- Rename-Mappings kommen aus einem versionierten Migrations-Overlay; nach
-  Workstream F.2 koennen sie in ein Plan-Artefakt eingebettet werden. CLI-Flags
-  duerfen hoechstens auf eine Overlay-Datei zeigen. Schema-Metadaten sind keine
-  Quelle, weil Renames eine Beziehung zwischen zwei Zustaenden beschreiben.
+- Rename-Mappings kommen aus einem versionierten Migrations-Overlay, der den
+  Grundvertrag aus F.0 erfuellt; nach Workstream F.2 koennen sie in ein
+  Plan-Artefakt eingebettet werden. CLI-Flags duerfen hoechstens auf eine
+  Overlay-Datei zeigen. Schema-Metadaten sind keine Quelle, weil Renames eine
+  Beziehung zwischen zwei Zustaenden beschreiben.
 - Jedes Mapping bindet `sourceFingerprint`, `targetFingerprint`, Dialekt,
   Objektart, alte Referenz, neue Referenz und optional erwartete Struktur-
   Fingerprints. Stale Fingerprints blockieren mit dem neuen geplanten
@@ -1008,6 +1080,8 @@ Akzeptanz:
 
 DoD:
 
+- [ ] Der F.0-Overlay-Grundvertrag ist fuer alle Overlay-basierten Workstreams
+  definiert, gehasht, fingerprint-gebunden und secret-scrubbed.
 - [ ] Automatische Daten-Transformationen haben ein explizites Up-/Down-Modell
   oder bleiben `MANUAL_REQUIRED`.
 - [ ] Versioniertes Plan-Artefakt hat kanonische Serialisierung,
@@ -1018,7 +1092,7 @@ DoD:
   validiert.
 - [ ] CHECK-/EXCLUDE-Diffbarkeit nutzt ein entschiedenes Vergleichsmodell und
   blockiert bei Dialekt- oder Enforcement-Unklarheit.
-- [ ] Fuer F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
+- [ ] Fuer F.0 und F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
   Blocker-Tests.
 - [ ] Kein Produktvertrag stellt ein unvollstaendiges Rollback als vollstaendig
   dar.
@@ -1052,7 +1126,7 @@ Fuer alle Workstreams gilt:
   werden darf
 - Datei-zu-Datei-Verhalten, wenn der Workstream Live-DB-Wissen braucht
 
-### 11.3 Artifact-Compatibility-Tests
+### 11.3 Artifact- und Overlay-Compatibility-Tests
 
 Sobald Workstream G oder F.2 Artefaktformate aendert:
 
@@ -1061,6 +1135,14 @@ Sobald Workstream G oder F.2 Artefaktformate aendert:
 - manipulierte Hashes blockieren
 - unbekannte Versionen blockieren
 - Secret-Scrubbing wird als Testfall gepinnt
+
+Sobald Workstream F.0 Overlay-Formate einfuehrt:
+
+- unbekannte Overlay-Versionen und unbekannte Overlay-Kinds blockieren
+- stale Fingerprints, Dialekt-Mismatch und manipulierte Overlay-Hashes
+  blockieren
+- Secret-Scrubbing und dekorative unbekannte Felder werden als Testfaelle
+  gepinnt
 
 DoD:
 
@@ -1073,6 +1155,9 @@ DoD:
   ausgeschlossen.
 - [ ] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
   manipulierte Hashes und Secret-Scrubbing ab.
+- [ ] Overlay-Compatibility-Tests decken unbekannte Versionen, unbekannte Kinds,
+  stale Fingerprints, Dialekt-Mismatch, manipulierte Hashes und Secret-
+  Scrubbing ab.
 
 ---
 
@@ -1087,21 +1172,27 @@ Empfohlene Reihenfolge nach Risiko und Abhaengigkeiten:
    Execute-Vertrag schaerfen, ohne neue Objektklassen freizuschalten.
 3. Workstream D.1/D.2: View-Dependency-Hardening fuer PostgreSQL/MySQL, weil
    Views bereits im ersten Slice enthalten sind.
-   Vor D.1/D.2 oder als erster Teil davon muss der D.3-Guard fuer
+   Vor D.1/D.2 oder als erster Teil davon muss der D.3a-Guard fuer
    `materialized = true` aktiv sein, damit Materialized Views nicht laenger ueber
    normale View-Pfade gerendert werden.
-4. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights.
-5. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
+4. Workstream F.0: versionierter Migrations-Overlay-Grundvertrag. Dieser kleine
+   Produktslice ist Vorbedingung fuer alle Features, die Nutzerentscheidungen
+   als Overlay akzeptieren, insbesondere B.1 und F.4.
+5. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights. B.1
+   darf erst Overlay-Input akzeptieren, wenn F.0 umgesetzt ist; B.2 kann separat
+   geplant werden.
+6. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
    bewusst blockiert.
-6. Workstream C/D.3/E: Extensions, Spatial, Materialized Views sowie
+7. Workstream C/D.3b/E: Extensions, Spatial, Materialized Views sowie
    Up-only/blockierende Routine-, Trigger- und Sequence-Slices, die keine
    unsichere Body-Speicherung und kein vollstaendiges Routine-/Trigger-
    Rollback-Artefakt brauchen.
-7. Workstream F.1-F.4: neue Produktvertraege fuer Daten-Transformationen,
-   Plan-Artefakte, Partial Rollbacks und Rename-Mappings. F.2 bzw. ein
-   expliziter Secret-/Body-Speichervertrag muss vor Routine-/Trigger-Slices
-   liegen, die alte Bodies im Artefakt speichern oder vollstaendige Replace-
-   Rollbacks versprechen.
+8. Workstream F.1-F.4: neue Produktvertraege fuer Daten-Transformationen,
+   Plan-Artefakte, Partial Rollbacks und Rename-Mappings. F.4 darf den bereits
+   umgesetzten F.0-Overlay-Vertrag nutzen; F.2 bzw. ein expliziter
+   Secret-/Body-Speichervertrag muss vor Routine-/Trigger-Slices liegen, die
+   alte Bodies im Artefakt speichern oder vollstaendige Replace-Rollbacks
+   versprechen.
 
 Diese Reihenfolge ist konservativ: erst Artefakt- und Runner-Sicherheiten,
 dann bestehende SQL-Oberflaeche haerten, danach neue Objektklassen und
@@ -1123,6 +1214,8 @@ vor Implementierung diese Checkboxen abgehakt sind:
 - [ ] Up- und Down-Verhalten sind getrennt bewertet.
 - [ ] Report- und Metadatenfelder sind stabilisiert.
 - [ ] Betroffene Dialekte und Dialektgrenzen sind dokumentiert.
+- [ ] Falls ein Slice Overlay-Input akzeptiert, ist F.0 erfuellt oder der Slice
+  bleibt bis dahin blockierend/diagnostisch.
 - [ ] Positive und blockierende Testpfade sind definiert.
 - [ ] Rollback-Test oder begruendeter Rollback-Blocker ist definiert.
 - [ ] Datei-zu-Datei-Verhalten ist fuer Live-DB-abhaengige Features definiert.
