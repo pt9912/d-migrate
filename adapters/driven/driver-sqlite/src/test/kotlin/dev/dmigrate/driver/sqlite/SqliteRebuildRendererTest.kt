@@ -14,6 +14,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.MigrationDdlResult
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -298,6 +299,141 @@ class SqliteRebuildRendererTest : FunSpec({
         val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
         r.primaryBlockedReason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
         r.diagnostics.any { it.code == "SQLITE_REBUILD_NOT_REVERSIBLE" } shouldBe true
+    }
+
+    // ---- Phase G.1: SQLite Cast-Matrix ----
+
+    /**
+     * Builds a single-column AlterColumnType rebuild and runs it through
+     * the generator. Returns the result so individual tests can assert
+     * blocked-state, diagnostics and emitted SQL.
+     */
+    fun runCastMatrixCase(from: NeutralType, to: NeutralType): MigrationDdlResult {
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "col" to ColumnDefinition(from),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "col" to ColumnDefinition(to),
+            ),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "col",
+                            type = ValueChange(from, to),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("u" to before))
+        val desired = schemaWith(mapOf("u" to after))
+        return gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+    }
+
+    test("G.1 whitelist: Integer-family casts emit CAST (all 6 ordered pairs)") {
+        val pairs = listOf(
+            NeutralType.SmallInt to NeutralType.Integer,
+            NeutralType.Integer to NeutralType.SmallInt,
+            NeutralType.SmallInt to NeutralType.BigInteger,
+            NeutralType.BigInteger to NeutralType.SmallInt,
+            NeutralType.Integer to NeutralType.BigInteger,
+            NeutralType.BigInteger to NeutralType.Integer,
+        )
+        for ((from, to) in pairs) {
+            val r = runCastMatrixCase(from, to)
+            r.isBlocked shouldBe false
+            val insert = r.statements.single { it.sql.startsWith("INSERT INTO") }.sql
+            insert shouldContain "CAST(\"col\" AS INTEGER)"
+        }
+    }
+
+    test("G.1 whitelist: Text-family widening (length non-narrowing)") {
+        val widening = listOf(
+            NeutralType.Text(maxLength = 20) to NeutralType.Text(maxLength = 50),
+            NeutralType.Text(maxLength = 20) to NeutralType.Text(maxLength = null),
+            NeutralType.Char(length = 10) to NeutralType.Char(length = 20),
+            NeutralType.Char(length = 10) to NeutralType.Text(maxLength = null),
+            NeutralType.Char(length = 10) to NeutralType.Text(maxLength = 20),
+            NeutralType.Text(maxLength = 10) to NeutralType.Char(length = 20),
+        )
+        for ((from, to) in widening) {
+            val r = runCastMatrixCase(from, to)
+            r.isBlocked shouldBe false
+        }
+    }
+
+    test("G.1 whitelist: Date -> DateTime(tz=false)") {
+        val r = runCastMatrixCase(NeutralType.Date, NeutralType.DateTime(timezone = false))
+        r.isBlocked shouldBe false
+    }
+
+    test("G.1 block: Text-family narrowing yields SQLITE_CAST_NOT_WHITELISTED") {
+        val narrowing = listOf(
+            NeutralType.Text(maxLength = 20) to NeutralType.Text(maxLength = 10),
+            NeutralType.Char(length = 20) to NeutralType.Char(length = 10),
+            NeutralType.Text(maxLength = null) to NeutralType.Text(maxLength = 10),
+            NeutralType.Text(maxLength = 20) to NeutralType.Char(length = 10),
+        )
+        for ((from, to) in narrowing) {
+            val r = runCastMatrixCase(from, to)
+            r.isBlocked shouldBe true
+            r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+            val diag = r.diagnostics.single { it.code == "SQLITE_CAST_NOT_WHITELISTED" }
+            diag.message shouldContain "would truncate"
+        }
+    }
+
+    test("G.1 block: structural carve-outs are blocked with SQLITE_CAST_NOT_WHITELISTED") {
+        val blocked = listOf(
+            // Float <-> Decimal
+            NeutralType.Float() to NeutralType.Decimal(10, 2),
+            NeutralType.Decimal(10, 2) to NeutralType.Float(),
+            // Boolean <-> Integer family
+            NeutralType.BooleanType to NeutralType.Integer,
+            NeutralType.Integer to NeutralType.BooleanType,
+            // DateTime tz changes / component loss
+            NeutralType.DateTime(timezone = true) to NeutralType.DateTime(timezone = false),
+            NeutralType.DateTime(timezone = false) to NeutralType.Date,
+            // Text -> Integer / Float / Uuid
+            NeutralType.Text() to NeutralType.Integer,
+            NeutralType.Text() to NeutralType.Float(),
+            NeutralType.Text() to NeutralType.Uuid,
+            // Integer / Float -> Text (carve-out per plan wording)
+            NeutralType.Integer to NeutralType.Text(),
+            NeutralType.Float() to NeutralType.Text(),
+            // Binary <-> Text (open question per plan)
+            NeutralType.Binary to NeutralType.Text(),
+            NeutralType.Text() to NeutralType.Binary,
+        )
+        for ((from, to) in blocked) {
+            val r = runCastMatrixCase(from, to)
+            r.isBlocked shouldBe true
+            r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+            r.diagnostics.any { it.code == "SQLITE_CAST_NOT_WHITELISTED" } shouldBe true
+        }
+    }
+
+    test("G.1 block: diagnostic carries source and target types in the message") {
+        val r = runCastMatrixCase(NeutralType.Integer, NeutralType.Text())
+        val diag = r.diagnostics.single { it.code == "SQLITE_CAST_NOT_WHITELISTED" }
+        diag.message shouldContain "Integer"
+        diag.message shouldContain "Text"
+        diag.message shouldContain "`col`"
+    }
+
+    test("G.1 block: rebuild emits no CAST SQL for blocked columns") {
+        val r = runCastMatrixCase(NeutralType.Text(), NeutralType.Integer)
+        r.statements.any { it.sql.contains("CAST(\"col\"") } shouldBe false
     }
 
     test("Constraint reshape (AddConstraint UNIQUE) triggers rebuild") {

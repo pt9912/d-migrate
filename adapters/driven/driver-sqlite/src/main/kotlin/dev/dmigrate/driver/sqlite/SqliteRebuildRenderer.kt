@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -98,7 +99,7 @@ internal class SqliteRebuildRenderer(
         ctx: SqliteDiffRenderContext,
     ) {
         val mapping = computeColumnMapping(source, target)
-        if (mapping.notNullBackfillBlocked.isNotEmpty()) {
+        if (mapping.notNullBackfillBlocked.isNotEmpty() || mapping.castNotWhitelisted.isNotEmpty()) {
             for (col in mapping.notNullBackfillBlocked) {
                 ctx.addDiagnostic(
                     DiffDiagnostic(
@@ -107,6 +108,19 @@ internal class SqliteRebuildRenderer(
                             "`$col` automatically — the column has no default and the existing " +
                             "rows have no source value. Either add a default to the schema, " +
                             "make the column nullable, or supply a manual data-migration step.",
+                        severity = DiffDiagnostic.Severity.BLOCKER,
+                    ),
+                )
+            }
+            for (block in mapping.castNotWhitelisted) {
+                ctx.addDiagnostic(
+                    DiffDiagnostic(
+                        code = "SQLITE_CAST_NOT_WHITELISTED",
+                        message = "RebuildTable for `$table` cannot CAST column `${block.column}` " +
+                            "from ${block.source} to ${block.target} automatically — " +
+                            "${SqliteCastMatrix.describeBlock(block.source, block.target)}. " +
+                            "Keep the type, change the schema to a whitelisted target, or " +
+                            "supply a manual data-migration step.",
                         severity = DiffDiagnostic.Severity.BLOCKER,
                     ),
                 )
@@ -204,13 +218,20 @@ internal class SqliteRebuildRenderer(
     private fun computeColumnMapping(source: TableDefinition, target: TableDefinition): ColumnMapping {
         val entries = mutableListOf<ColumnMappingEntry>()
         val blocked = mutableListOf<String>()
+        val castBlocks = mutableListOf<CastBlock>()
         for ((name, targetCol) in targetColumnOrder(target)) {
             val currentCol = source.columns[name]
             entries += when {
                 currentCol != null && currentCol.type == targetCol.type ->
                     ColumnMappingEntry(name, sql.quote(name))
-                currentCol != null ->
-                    ColumnMappingEntry(name, "CAST(${sql.quote(name)} AS ${sql.toSql(targetCol.type)})")
+                currentCol != null -> {
+                    if (!SqliteCastMatrix.isWhitelisted(currentCol.type, targetCol.type)) {
+                        castBlocks += CastBlock(name, currentCol.type, targetCol.type)
+                        ColumnMappingEntry(name, "/* unsafe cast */")
+                    } else {
+                        ColumnMappingEntry(name, "CAST(${sql.quote(name)} AS ${sql.toSql(targetCol.type)})")
+                    }
+                }
                 targetCol.default is DefaultValue.SequenceNextVal -> {
                     // SQLite has no sequences. Routing this to NULL would silently fill the column;
                     // surface it as NOT_NULL_BACKFILL_REQUIRED so the runner sees the conflict.
@@ -227,7 +248,11 @@ internal class SqliteRebuildRenderer(
                 }
             }
         }
-        return ColumnMapping(entries = entries, notNullBackfillBlocked = blocked)
+        return ColumnMapping(
+            entries = entries,
+            notNullBackfillBlocked = blocked,
+            castNotWhitelisted = castBlocks,
+        )
     }
 
     private fun defaultLiteral(col: ColumnDefinition): String {
@@ -243,8 +268,10 @@ internal class SqliteRebuildRenderer(
     }
 
     private data class ColumnMappingEntry(val targetName: String, val selectExpression: String)
+    private data class CastBlock(val column: String, val source: NeutralType, val target: NeutralType)
     private data class ColumnMapping(
         val entries: List<ColumnMappingEntry>,
         val notNullBackfillBlocked: List<String>,
+        val castNotWhitelisted: List<CastBlock>,
     )
 }

@@ -1,14 +1,14 @@
 # Implementierungsplan: `DiffResult` fuer diff-basierte Migrationen
 
-> Status: In Arbeit (2026-05-10), Ziel 0.9.7
+> Status: In Arbeit (2026-05-11), Ziel 0.9.7
 >
 > Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
 > Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
 > Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
-> Pfad, Edge-Cases). Phase G (Dialect-Hardening: SQLite-Cast-Matrix,
-> MySQL-VIEW-Privilege-Preflight, PostgreSQL-ReplaceView-Compat-
-> Decision) ist offen und schliesst die letzten drei §10-Akzeptanz-
-> punkte fuer 0.9.7.
+> Pfad, Edge-Cases). Phase G.1 (SQLite-Cast-Matrix) ist im Code; G.2
+> (MySQL-VIEW-Privilege-Preflight) und G.3 (PostgreSQL-ReplaceView-
+> Compat-Decision) sind offen und schliessen die letzten zwei §10-
+> Akzeptanzpunkte fuer 0.9.7.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -1995,17 +1995,32 @@ Schliesst die drei verbliebenen §10-Akzeptanzkriterien, die Phase F
 nicht abdeckt, weil es Renderer- bzw. Adapter-Implementierung
 braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
 
-- [ ] **G.1** SQLite `AlterColumnType` Cast-Matrix —
-  `SqliteRebuildRenderer` rendert das `INSERT-SELECT` aktuell mit
-  einer Type-Affinity-basierten `CAST`-Heuristik. Stattdessen muss
-  eine explizite Whitelist sicherer `(oldType, newType)`-Paare
-  geprueft werden; Paare ausserhalb der Matrix blockieren als
-  `MANUAL_REQUIRED`. Whitelist-Inhalt: Integer↔Text-affine
-  Konvertierungen die SQLite garantiert nicht-truncating
-  durchfuehrt; offene Fragen sind Numeric-Width-Verluste,
-  Text→Integer mit Non-Numeric-Daten, BLOB↔Text. Daten-
-  Preflights (zB SELECT COUNT(*) WHERE CAST(...) IS NULL fuer
-  unsichere Casts) sind Carve-Out, weil sie eine Live-DB
+- [x] **G.1** SQLite `AlterColumnType` Cast-Matrix ✅ (2026-05-11) —
+  `SqliteRebuildRenderer` pruefte das `INSERT-SELECT` bisher mit
+  einer Type-Affinity-basierten `CAST`-Heuristik. Ersetzt durch
+  eine explizite Whitelist sicherer `(source, target)`-Paare in
+  `SqliteCastMatrix`; Paare ausserhalb der Matrix blockieren als
+  `MANUAL_ACTION_REQUIRED` + Diagnose `SQLITE_CAST_NOT_WHITELISTED`.
+  Whitelist (im Code dokumentiert):
+  - Integer-Familie (`SmallInt`/`Integer`/`BigInteger`) — alle 6
+    geordneten Paare; SQLite-Storage ist nativ INTEGER ohne Width-
+    Constraint, daher CAST = identity; Range-Truncation ist
+    Downstream-Dialekt-Verantwortung.
+  - Text-Familie mit nicht-verkleinerndem Laengen-Constraint
+    (`Text(a)→Text(b)`, `Char(a)→Char(b)`, `Char(a)→Text(b)`,
+    `Text(a)→Char(b)` jeweils mit `b ≥ a` bzw. `b == null`).
+  - `Date → DateTime(tz=false)` — Date ist Teilmenge von DateTime;
+    Storage beidseitig TEXT (ISO-8601).
+  Explizit blockiert: `Float`↔`Decimal` (Praezision), `Boolean`↔
+  Integer-Familie (Bestandsdaten-Mehrdeutigkeit), `DateTime`-TZ-
+  und Komponenten-Loss, `Text`→`Integer`/`Float`/`Uuid` (silent
+  0/0.0/invalid), `Integer`/`Float`→`Text` (downstream-riskant),
+  `Binary`↔`Text` (offene Frage L2006), verkleinernde Laengen
+  (Truncation), `Identifier` (`AUTOINCREMENT`-Semantik), `Email`-
+  Mappings (semantische 254-char-Invariante ausserhalb der
+  strukturellen Matrix). Daten-Preflights (zB
+  `SELECT COUNT(*) WHERE CAST(...) IS NULL` fuer would-be unsafe
+  Casts) bleiben Carve-Out auf 0.9.8+, weil sie eine Live-DB
   voraussetzen und Phase G den Renderer-Layer hardened.
   Adressiert §10-DoD "SQLite-`AlterColumnType` nutzt automatische
   `CAST`-Ausdruecke nur mit expliziter, getesteter Quell-/Ziel-
@@ -2106,11 +2121,12 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
   deterministisch beschrieben und getestet.
-- [ ] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
+- [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
   Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
-  sonst blockiert die Operation als `MANUAL_REQUIRED`. (Phase G.1 — Cast-
-  Matrix; Daten-Preflights bleiben Carve-Out, weil sie eine Live-DB
+  sonst blockiert die Operation als `MANUAL_REQUIRED`. (Phase G.1 ✅ —
+  `SqliteCastMatrix` mit Whitelist + `SQLITE_CAST_NOT_WHITELISTED`-Diagnose;
+  Daten-Preflights bleiben Carve-Out auf 0.9.8+, weil sie eine Live-DB
   voraussetzen und Phase G den Renderer-Layer hardened.)
 - [x] SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
   blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
