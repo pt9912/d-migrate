@@ -162,7 +162,39 @@ internal object JdbcMigrationExecutor {
                 lastStatementOperationIds = lastIds,
             )
         } catch (e: SQLException) {
+            // Phase H.3b: restore prior FK-state even on rollback. §6.4
+            // L992/L1007: "Save/Restore des vorherigen foreign_keys-
+            // Zustands. Der Runner muss den vorherigen Zustand merken
+            // und nach Commit/Rollback wiederherstellen." The catch
+            // path only had ROLLBACK before; without the restore the
+            // connection's FK-state leaks the rebuild's intermediate
+            // OFF/ON setting after rollback. Best-effort — the original
+            // SQLException is the primary signal we want to surface.
+            tryRestoreFkStateAfterRollback(conn, hookState)
             return rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = false)
+        }
+    }
+
+    /**
+     * Phase H.3b rollback-path FK restore. Suppresses secondary
+     * exceptions — the caller's primary SQLException already drives
+     * the failure trace. Only fires when a paired save-marker had
+     * captured a prior value; if not, the rebuild never raced the FK
+     * pragma and there is nothing to restore.
+     */
+    private fun tryRestoreFkStateAfterRollback(
+        conn: java.sql.Connection,
+        hookState: RunnerHookHandler.State,
+    ) {
+        if (hookState.savedSqliteForeignKeysPragma == null) return
+        try {
+            conn.createStatement().use { stmt ->
+                RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
+            }
+        } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") _: Exception) {
+            // Best-effort restore. The connection may be in an
+            // undefined state after the original failure; surfacing
+            // this secondary exception would mask the real cause.
         }
     }
 

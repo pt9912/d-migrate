@@ -359,6 +359,14 @@ internal object SqliteRebuildPlanner {
      * Phase H.3a: triggers from [schema] whose `table` is [table].
      * Returned in alphabetical order by trigger name for deterministic
      * SQL emission.
+     *
+     * **Key vs. SQL-Name**: `SchemaDefinition.triggers` is keyed by
+     * `ObjectKeyCodec.triggerKey(table, name) = "<table>::<name>"` to
+     * disambiguate triggers across tables with the same trigger name.
+     * For the rebuild's DROP/CREATE TRIGGER SQL we need the **bare
+     * trigger name** (the SQLite-side identifier), not the canonical
+     * map-key. Decode the key via `parseTriggerKey` and emit only the
+     * name component.
      */
     private fun collectDependentTriggers(
         schema: dev.dmigrate.core.model.SchemaDefinition?,
@@ -368,7 +376,17 @@ internal object SqliteRebuildPlanner {
         return schema.triggers.entries
             .asSequence()
             .filter { (_, trigger) -> trigger.table == table }
-            .map { (name, trigger) -> NamedTriggerDefinition(name, trigger) }
+            .map { (key, trigger) ->
+                // Parse only when the key looks canonical; tolerate
+                // hand-written file paths where the map-key already is
+                // the SQL name (no `::` separator).
+                val sqlName = if (key.contains("::")) {
+                    dev.dmigrate.core.identity.ObjectKeyCodec.parseTriggerKey(key).second
+                } else {
+                    key
+                }
+                NamedTriggerDefinition(sqlName, trigger)
+            }
             .sortedBy { it.name }
             .toList()
     }

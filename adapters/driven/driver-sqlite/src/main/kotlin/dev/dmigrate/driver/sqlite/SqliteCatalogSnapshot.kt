@@ -19,9 +19,13 @@ import dev.dmigrate.core.model.SchemaDefinition
  *   [fromSchema]. The output may miss ad-hoc objects outside the
  *   schema model — the planner's caller is expected to flag this in
  *   the artefact header per §9 Phase H.2.
- * - **Execute (`schema migrate --execute`)**: the CLI fetches
- *   `sqlite_master` and folds the live names into a snapshot before
- *   plan-build. The merge is `fromSchema(current).union(live)`.
+ * - **Execute (`schema migrate --execute`)**: **TODO H.2.2 (0.9.8+)**
+ *   — heute nutzt `SchemaMigrateRunner` denselben
+ *   `fromSchema(current)`-Snapshot wie der `--plan-only`-Pfad. Die
+ *   geplante zusaetzliche `sqlite_master`-Live-Probe (`fromSqliteMaster`-
+ *   Loader + `union(...)` beim Bootstrap) ist als Folge-Slice H.2.2
+ *   verfolgt. Bis dahin sind ad-hoc-Objekte in der Live-DB ausserhalb
+ *   des Schema-Modells in keinem Pfad collision-protected.
  *
  * Both index- and trigger-names are global in SQLite (one namespace
  * per database) so they sit alongside table and view names in the

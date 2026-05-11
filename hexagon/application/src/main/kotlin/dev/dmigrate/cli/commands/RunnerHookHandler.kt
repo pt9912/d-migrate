@@ -28,7 +28,11 @@ object RunnerHookHandler {
     private val ALLOWED_HOOKS = setOf(
         "save-fk-state-before-pragma-off",
         "restore-fk-state",
+        "assert-foreign-keys-clean",
     )
+
+    /** Cap for the per-violation message — protects logs against pathological schemas. */
+    private const val FK_VIOLATION_SAMPLE_LIMIT = 50
 
     /** Per-stream state holder. One instance per `runStreamOwnedTransaction` invocation. */
     data class State(var savedSqliteForeignKeysPragma: Int? = null)
@@ -75,6 +79,29 @@ object RunnerHookHandler {
                 // mode tail and the safer post-migration state.
                 val value = state.savedSqliteForeignKeysPragma ?: 1
                 jdbcStmt.execute("PRAGMA foreign_keys = $value;")
+            }
+            "assert-foreign-keys-clean" -> {
+                // Phase H.4 FOREIGN_KEYS_CHECKABLE runner-vertrag: a
+                // non-empty `PRAGMA foreign_key_check;` result must abort
+                // the migration (rather than be treated as informational
+                // as `jdbcStmt.execute(...)` would do — execute discards
+                // the row set). Read the cursor and throw on the first
+                // violation so the surrounding catch in
+                // `runStreamOwnedTransaction` rolls back the stream.
+                val violations = mutableListOf<String>()
+                jdbcStmt.executeQuery("PRAGMA foreign_key_check;").use { rs ->
+                    while (rs.next() && violations.size < FK_VIOLATION_SAMPLE_LIMIT) {
+                        // Columns: table | rowid | parent | fkid
+                        violations += "table=${rs.getString(1)} rowid=${rs.getString(2)} " +
+                            "parent=${rs.getString(3)} fkid=${rs.getString(4)}"
+                    }
+                }
+                if (violations.isNotEmpty()) {
+                    throw java.sql.SQLException(
+                        "PRAGMA foreign_key_check reported ${violations.size} violation(s) — " +
+                            "aborting migration: ${violations.joinToString("; ")}",
+                    )
+                }
             }
             else -> error("RunnerHookHandler: unrecognised hook `$hook` — parseHook should have rejected it")
         }

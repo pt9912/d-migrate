@@ -111,6 +111,47 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
         verify { jdbcStmt.execute("PRAGMA foreign_keys = 0;") }
     }
 
+    test("apply assert-foreign-keys-clean: empty pragma_foreign_key_check passes silently") {
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { stmt ->
+                stmt.execute("PRAGMA foreign_keys = ON;")
+                stmt.execute("CREATE TABLE t (id INTEGER PRIMARY KEY);")
+                // No FK violations exist; the assert must not throw.
+                RunnerHookHandler.apply(stmt, "assert-foreign-keys-clean", RunnerHookHandler.State())
+            }
+        } finally {
+            conn.close()
+        }
+    }
+
+    test("apply assert-foreign-keys-clean: non-empty result throws SQLException") {
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { stmt ->
+                // Create FK violation: parent table is missing.
+                stmt.execute("PRAGMA foreign_keys = OFF;") // allow violation insert
+                stmt.execute("CREATE TABLE parent (id INTEGER PRIMARY KEY);")
+                stmt.execute(
+                    "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER " +
+                        "REFERENCES parent(id));",
+                )
+                stmt.execute("INSERT INTO child(id, parent_id) VALUES (1, 999);")
+                // Now PRAGMA foreign_key_check reports the violation.
+                stmt.execute("PRAGMA foreign_keys = ON;")
+                try {
+                    RunnerHookHandler.apply(stmt, "assert-foreign-keys-clean", RunnerHookHandler.State())
+                    throw AssertionError("expected SQLException for FK violation")
+                } catch (e: java.sql.SQLException) {
+                    (e.message ?: "").contains("violation") shouldBe true
+                    (e.message ?: "").contains("child") shouldBe true
+                }
+            }
+        } finally {
+            conn.close()
+        }
+    }
+
     test("end-to-end with embedded SQLite: prior OFF state is restored to OFF") {
         val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
         try {

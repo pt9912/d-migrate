@@ -2294,12 +2294,21 @@ fuer H.3/H.4:
   state` statt des pauschalen `PRAGMA = ON`). STANDALONE-Default ist
   bit-identisch zu pre-H.3b.
 
-  Runner-Layer-Vertrag (`JdbcMigrationExecutor.executeOrApplyHook`):
-  parsed die Marker; bei `save-fk-state-before-pragma-off` liest
-  `PRAGMA foreign_keys;` und cached den Wert in der per-Stream
-  `RunnerHookState`; bei `restore-fk-state` emittiert `PRAGMA
-  foreign_keys = <saved>;` (Default 1 wenn kein prior save —
-  defensiv).
+  Runner-Layer-Vertrag (`RunnerHookHandler` in hexagon:application,
+  geteilt zwischen `JdbcMigrationExecutor` und Test-Fixture
+  `MigrationExecutorTestSupport`): parsed die Marker; bei
+  `save-fk-state-before-pragma-off` liest `PRAGMA foreign_keys;` und
+  cached den Wert in der per-Stream `State`; bei `restore-fk-state`
+  emittiert `PRAGMA foreign_keys = <saved>;` (Default 1 wenn kein
+  prior save — defensiv).
+
+  **Rollback-Pfad-Restore**: `JdbcMigrationExecutor.runStreamOwnedTransaction`
+  ruft `tryRestoreFkStateAfterRollback(conn, hookState)` im catch-
+  Pfad — wenn ein paired `save` einen prior Wert gecached hat, wird
+  er auch nach SQLException restored (best-effort, sekundaere
+  Exceptions werden geschluckt damit die primaere Cause sichtbar
+  bleibt). §6.4 L992/L1007 verlangt Save/Restore nach
+  Commit/**Rollback** — vor dem Fix lief nur ROLLBACK ohne Restore.
 
   Caller-Wiring (`SchemaMigrateRunner`): wenn `request.execute = true`,
   wird `DdlGenerationOptions(executionMode = EXECUTE)` an
@@ -2313,10 +2322,19 @@ fuer H.3/H.4:
   bestehende Pfade (`--plan-only`, Rollback-Artefakt, alte Caller)
   bit-identisch.
 
-  Tests: `JdbcMigrationExecutorH3bTest` deckt parseRunnerHook +
-  executeOrApplyHook ueber MockK + zwei End-to-End-Tests mit
-  embedded SQLite (`jdbc:sqlite::memory:`): prior `OFF` wird auf
-  `OFF` restored; prior `ON` bleibt `ON`.
+  Tests: `JdbcMigrationExecutorH3bTest` deckt parseHook +
+  executeOrApply ueber MockK + Embedded-SQLite-End-to-Ends: prior
+  `OFF` wird auf `OFF` restored; prior `ON` bleibt `ON`; "two
+  rebuilds in one stream" pinnt den State-Carrier-Vertrag;
+  `assert-foreign-keys-clean` wirft bei FK-Violation; FK-State wird
+  auch nach Rollback restored.
+
+  **Per-statement fresh JDBC Statement**: der Hook-Pfad nutzt
+  Statement-internes `executeQuery("PRAGMA foreign_keys;")`, das
+  in xerial-sqlite das outer Statement nach ResultSet-Close
+  finalisiert. Loop iteriert daher `conn.createStatement().use { ... }`
+  pro statement — vermeidet "The prepared statement has been
+  finalized" beim folgenden Loop-Schritt.
 
   Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
   ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State

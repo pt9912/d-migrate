@@ -77,18 +77,24 @@ class SqliteRebuildH3bTest : FunSpec({
 
     test("H.3b — EXECUTE mode emits save-marker before PRAGMA OFF and restore-marker instead of PRAGMA ON") {
         val sqls = renderForMode(SqliteRebuildEmissionMode.EXECUTE)
-        // 10 statements: save-marker + 8 canonical (PRAGMA OFF → COMMIT) + restore-marker.
+        // 10 statements: save-marker + 8 canonical (PRAGMA OFF → COMMIT
+        // with assert-foreign-keys-clean instead of PRAGMA foreign_key_check)
+        // + restore-marker.
         sqls.size shouldBe 10
         sqls[0] shouldBe "-- dmigrate:runner-hook=save-fk-state-before-pragma-off"
         sqls[1] shouldBe "PRAGMA foreign_keys = OFF;"
         sqls[2] shouldBe "BEGIN IMMEDIATE;"
-        sqls[7] shouldBe "PRAGMA foreign_key_check;"
+        sqls[7] shouldBe "-- dmigrate:runner-hook=assert-foreign-keys-clean"
         sqls[8] shouldBe "COMMIT;"
         sqls[9] shouldBe "-- dmigrate:runner-hook=restore-fk-state"
         // The pauschal `PRAGMA = ON` must NOT appear in execute output —
         // it would force ON regardless of prior state and defeat the
         // runner-vertrag.
         sqls.any { it == "PRAGMA foreign_keys = ON;" } shouldBe false
+        // The pauschal `PRAGMA foreign_key_check;` must NOT appear in
+        // execute output — `jdbcStmt.execute(...)` discards the row set,
+        // so violations would be silently swallowed.
+        sqls.any { it == "PRAGMA foreign_key_check;" } shouldBe false
     }
 
     test("H.3b — default emission mode is STANDALONE (sicheres Default fuer Artefakte)") {
@@ -103,15 +109,14 @@ class SqliteRebuildH3bTest : FunSpec({
         plan.emissionMode shouldBe SqliteRebuildEmissionMode.STANDALONE
     }
 
-    test("H.3b — STANDALONE and EXECUTE share the same TABLES/INDEXES phase output") {
+    test("H.3b — STANDALONE and EXECUTE share the same TABLES + early-CLEANUP phase content") {
         val standalone = renderForMode(SqliteRebuildEmissionMode.STANDALONE)
         val execute = renderForMode(SqliteRebuildEmissionMode.EXECUTE)
-        // Strip prefix-markers from execute: skip first marker, then
-        // the rest of execute should overlap standalone's [0..7] with
-        // a one-position shift (PRAGMA OFF / BEGIN / … / COMMIT).
+        // Skip the save-marker prefix in execute. The first 6 statements
+        // are mode-shared: PRAGMA OFF, BEGIN, CREATE temp, INSERT, DROP,
+        // RENAME. Index 6 differs: STANDALONE has `PRAGMA foreign_key_check;`,
+        // EXECUTE has the assert-foreign-keys-clean marker.
         val executeAfterPrefixMarker = execute.drop(1)
-        // First 8 statements (PRAGMA OFF, BEGIN, CREATE temp, INSERT,
-        // DROP, RENAME, foreign_key_check, COMMIT) must match.
-        executeAfterPrefixMarker.take(8) shouldBe standalone.take(8)
+        executeAfterPrefixMarker.take(6) shouldBe standalone.take(6)
     }
 })

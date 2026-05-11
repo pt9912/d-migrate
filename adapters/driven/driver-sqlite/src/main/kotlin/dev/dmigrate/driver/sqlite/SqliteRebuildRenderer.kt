@@ -249,14 +249,42 @@ internal class SqliteRebuildRenderer(
             )
         }
 
-        // CLEANUP phase: integrity check + commit + re-enable FKs.
-        ctx.emitRebuildStatement("PRAGMA foreign_key_check;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
+        emitCleanupPhase(plan, ctx, opIds, safe)
+
+        for (op in plan.bucketOperations) ctx.markRendered(op)
+        ctx.applyBucketRisk(opIds, bucketRisk)
+    }
+
+    /**
+     * CLEANUP phase: integrity check + commit + re-enable FKs.
+     *
+     * Phase H.4 `FOREIGN_KEYS_CHECKABLE` runner-vertrag: in
+     * STANDALONE mode emit `PRAGMA foreign_key_check;` directly
+     * (external runners that don't read the result-set treat it as
+     * informational); in EXECUTE mode emit a hook marker so the
+     * d-migrate runner reads the cursor and throws on violation.
+     *
+     * Phase H.3b: STANDALONE pins FK back to ON (safe default for
+     * external runners); EXECUTE emits a hook marker so the
+     * d-migrate runner restores the prior value it captured in
+     * PREPARE.
+     */
+    private fun emitCleanupPhase(
+        plan: SqliteRebuildPlan,
+        ctx: SqliteDiffRenderContext,
+        opIds: Set<String>,
+        safe: OperationRisk,
+    ) {
+        when (plan.emissionMode) {
+            SqliteRebuildEmissionMode.STANDALONE ->
+                ctx.emitRebuildStatement("PRAGMA foreign_key_check;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
+            SqliteRebuildEmissionMode.EXECUTE ->
+                ctx.emitRebuildStatement(
+                    "-- dmigrate:runner-hook=assert-foreign-keys-clean",
+                    opIds, risk = safe, phase = DiffPhase.CLEANUP,
+                )
+        }
         ctx.emitRebuildStatement("COMMIT;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
-        // Phase H.3b: in STANDALONE mode pin FK back to ON (the safe
-        // default for an external runner that doesn't know prior state).
-        // In EXECUTE mode emit a hook marker; the d-migrate runner
-        // reads `PRAGMA foreign_keys;` before the sequence and restores
-        // that value here.
         when (plan.emissionMode) {
             SqliteRebuildEmissionMode.STANDALONE ->
                 ctx.emitRebuildStatement("PRAGMA foreign_keys = ON;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
@@ -266,9 +294,6 @@ internal class SqliteRebuildRenderer(
                     opIds, risk = safe, phase = DiffPhase.CLEANUP,
                 )
         }
-
-        for (op in plan.bucketOperations) ctx.markRendered(op)
-        ctx.applyBucketRisk(opIds, bucketRisk)
     }
 
     private fun buildCreateTempSql(tempName: String, target: TableDefinition): String {
