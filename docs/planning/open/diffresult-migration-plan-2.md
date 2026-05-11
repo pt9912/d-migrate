@@ -213,13 +213,37 @@ Der erste Slice berichtet `executionStarted`, `executionCompleted`,
 und `sideEffectsPossible`. Fuer komplexere DDL muss dieser Status erweitert
 werden, ohne bestehende Felder umzudeuten.
 
-Zu klaeren:
+Entscheidung:
 
-- Statement-Gruppen-IDs fuer Multi-Statement-Operationen.
-- `transactionBoundary` im Report: `before`, `inside`, `after`, `none`.
-- `recoverability` nach Ausfuehrungsfehler: `FULL_ROLLBACK_CONFIRMED`,
-  `ROLLBACK_ATTEMPTED`, `PARTIAL_STATE_POSSIBLE`, `UNKNOWN`.
-- Zusammenhang zwischen `transactionScope`, Dialekt und Exit `5`.
+- Multi-Statement-Operationen bekommen eine stabile `statementGroupId`.
+  Default ist die primaere Operation-ID; wenn eine Operation mehrere getrennte
+  Gruppen erzeugt, wird deterministisch mit `#1`, `#2`, ... suffixiert. Jedes
+  Statement referenziert genau eine Gruppe, und der Report aggregiert
+  `operationIds`, Statement-Indexbereich, `transactionScope` und
+  `transactionBoundary` pro Gruppe.
+- `transactionBoundary` beschreibt die Ausfuehrungsposition der Gruppe relativ
+  zur effektiven Transaktion:
+  - `before`: Gruppe lief vor einer Runner-Transaktion oder vor dem
+    stream-owned Transaktionsblock.
+  - `inside`: Gruppe lief innerhalb einer bestaetigt aktiven Transaktion.
+  - `after`: Gruppe lief nach Commit/Rollback eines stream-owned Blocks.
+  - `none`: keine Transaktion gilt fuer diese Gruppe.
+  Gemischte oder nicht belegbare Grenzen blockieren vor Execute mit
+  `primaryBlockedReason = TRANSACTION_SCOPE_UNSUPPORTED`.
+- `recoverability` wird nach einem Execute-Fehler aus Executor-Beobachtung,
+  `transactionScope` und Dialekt-Hinweisen abgeleitet:
+  - `FULL_ROLLBACK_CONFIRMED`: alle begonnenen Statements wurden nachweislich
+    zurueckgerollt.
+  - `ROLLBACK_ATTEMPTED`: Rollback wurde angestossen, das Ergebnis ist aber
+    nicht voll bestaetigt.
+  - `PARTIAL_STATE_POSSIBLE`: mindestens ein Statement kann trotz Fehler
+    committed oder side-effectful sein.
+  - `UNKNOWN`: der Runner kann den Zustand nicht belastbar einordnen.
+- Exit `5` bleibt fuer jeden Fehler nach begonnenem Execute verbindlich.
+  `transactionScope` veraendert nicht den Exit-Code, sondern nur
+  `transactionRolledBack`, `sideEffectsPossible`, `recoverability` und die
+  Diagnose. Ungueltige Scope-Kombinationen, die vor Execute erkannt werden,
+  bleiben Migrations-Blocker mit Exit `8`.
 
 Akzeptanz:
 
@@ -307,19 +331,34 @@ DoD:
 0.9.7 rendert `ALTER COLUMN TYPE` nur fuer explizit getestete implizite Casts
 ohne `USING`. Alles andere blockiert.
 
-Zu klaeren:
+Entscheidung:
 
-- Nutzervertrag fuer explizite `USING`-Ausdruecke.
-- Ablage solcher Ausdruecke:
-  - Schema-Metadatum
-  - Overlay-Datei
-  - Migrations-Request
-  - explizites Plan-Artefakt nach Workstream F
-- Risiko- und Reversibilitaetsmodell pro Konvertierung.
-- Down-Konvertierung: automatisch, manuell oder nicht reversibel.
-- Validierung gegen Quell-/Zieltyp und betroffene Spalte.
-- Ob Expressions auf andere Spalten zugreifen duerfen; falls ja, wie
-  Dependency und Rename-Risiko modelliert werden.
+- Explizite `USING`-Ausdruecke sind nur ueber einen versionierten
+  Migrations-Overlay zulaessig, der an `sourceFingerprint`,
+  `targetFingerprint`, Dialekt, Tabellenname, Spaltenname, Quelltyp und Zieltyp
+  gebunden ist. Schema-Metadaten bleiben dafuer tabu, weil die Konvertierung
+  ein Migrationsvertrag und kein Zielschemateil ist. Nach Workstream F.2 darf
+  derselbe Vertrag in ein Plan-Artefakt eingebettet werden.
+- Der Overlay muss Up- und Down-Seite getrennt beschreiben:
+  `upUsingExpression`, optional `downUsingExpression`, `dataRisk`,
+  `reversibility`, `expressionSource` und `reviewedByUser=true`.
+  Fehlt `downUsingExpression`, ist Down entweder `MANUAL_REQUIRED` oder
+  `NOT_REVERSIBLE`; der Renderer leitet keine Down-Expression aus Up ab.
+- Zulaessige Risiko-Werte sind mindestens `NO_DATA_LOSS_EXPECTED`,
+  `POSSIBLE_PRECISION_LOSS`, `POSSIBLE_TRUNCATION`,
+  `POSSIBLE_PARSE_FAILURE` und `USER_ASSERTED_SAFE`. Alles ausser
+  `NO_DATA_LOSS_EXPECTED` muss im Report sichtbar sein und kann je nach
+  Rollback-Anforderung blockieren.
+- Validierung erfolgt vor Render: Dialekt muss PostgreSQL sein, Operation muss
+  exakt zur gebundenen Spalte passen, Quell-/Zieltyp muessen mit dem geplanten
+  Diff uebereinstimmen, und die Expression muss eine einzelne PostgreSQL-
+  Expression ohne Statement-Separator sein. Der Report nennt die Overlay-Quelle
+  und die gebundenen Fingerprints.
+- Standardregel: Die Expression darf nur die betroffene Spalte referenzieren.
+  Referenzen auf andere Spalten sind erst in einem spaeteren Slice erlaubt,
+  wenn der Overlay diese Dependencies explizit auflistet und der Planner sie
+  gegen Rename-/Drop-Risiken validiert. Bis dahin blockieren solche
+  Expressions mit `MANUAL_REQUIRED`.
 
 Nicht akzeptabel:
 
@@ -341,15 +380,32 @@ Akzeptanz:
 0.9.7 hat die SQLite-Cast-Matrix gehaertet. Offen bleibt der Live-DB-
 Preflight vor whitelisted Casts.
 
-Zu klaeren:
+Entscheidung:
 
-- wann der Planner eine Connection braucht
-- ob der Preflight vor Render, vor Execute oder im Runner-Vertrag laeuft
-- wie nicht konvertierbare Bestandsdaten als `MANUAL_REQUIRED` blockieren
-- wie Datei-zu-Datei-Planung ohne Live-DB diesen Punkt berichtet
-- ob Preflight-SQL im Report offengelegt wird oder nur Ergebnis und Zaehlung
-- wie grosse Tabellen begrenzt oder sampled werden duerfen; Default muss
-  konservativ vollstaendig pruefen oder blockieren
+- Der Live-DB-Preflight ist eine Planner-Precondition fuer Datei-zu-DB-Targets
+  mit whitelisted SQLite-Casts, sobald Bestandsdaten betroffen sein koennen.
+  Er laeuft nach Diff-Planung und vor Render, damit fehlgeschlagene Datenchecks
+  als Migrations-Blocker mit Exit `8` enden und nicht erst als Execute-Fehler.
+- Der Runner fuehrt keinen verdeckten Cast-Preflight aus. Er darf nur einen im
+  Report/Plan gespeicherten `dataPreflightStatus = PASSED` fuer exakt dieselbe
+  DB-Fingerprint-/Tabellen-/Spaltenkombination ausfuehren. Fehlt dieser Status,
+  blockiert Execute vor dem ersten Statement.
+- Nicht konvertierbare Bestandsdaten erzeugen eine Blocker-Diagnostic mit
+  `primaryBlockedReason = MANUAL_ACTION_REQUIRED`, betroffener Tabelle/Spalte,
+  Gesamtzahl der problematischen Zeilen und optional einer begrenzten
+  Beispielmenge von Row-Identifiers, falls datenschutzarm verfuegbar.
+- Datei-zu-Datei-Planung rendert keinen optimistischen Pass. Sie setzt
+  `dataPreflightStatus = NOT_RUN_FILE_TARGET` und markiert die Operation als
+  nur planbar, nicht execute-freigegeben. Wenn der Cast ohne Live-Preflight
+  nicht verantwortbar ist, bleibt er fuer Execute blockierend.
+- Der Report enthaelt standardmaessig Ergebnis, Zaehlungen, Dialekt, Tabellen-/
+  Spaltenbindung und einen Hash des Preflight-SQL. Vollstaendiges Preflight-SQL
+  wird nur mit Debug-/Verbose-Option ausgegeben, damit Reports keine
+  schema- oder datenbezogenen Details unnoetig leaken.
+- Grosse Tabellen werden nicht automatisch sampled. Default ist vollstaendige
+  Pruefung. Eine spaetere Policy darf Limits erlauben, muss dann aber
+  `dataPreflightStatus = NOT_RUN_POLICY` oder einen nicht-execute-faehigen
+  Status setzen; ein Sample darf niemals als `PASSED` gelten.
 
 Akzeptanz:
 
@@ -475,13 +531,25 @@ Akzeptanz:
 0.9.7 behandelt `VIEW_TABLE_USAGE` als Vollstaendigkeitsproblem. Offen bleibt
 die analoge Behandlung fuer `VIEW_ROUTINE_USAGE`.
 
-Zu klaeren:
+Entscheidung:
 
-- separates `routineProjectionComplete`-Signal oder konsolidiertes
-  Dependency-Projektionsmodell
-- Tests fuer fehlende Tabelle, fehlende Privilegien und stille leere Projektion
-- Blocker fuer Views mit versteckten Routine-Abhaengigkeiten
-- Report-Felder fuer table-, column- und routine-level Projection-Completeness
+- Es wird kein separates Sonderfeld `routineProjectionComplete` eingefuehrt.
+  Stattdessen bekommt der MySQL-Dependency-Snapshot ein konsolidiertes
+  Projection-Completeness-Modell pro Objekt:
+  `tableProjectionStatus`, `columnProjectionStatus` und
+  `routineProjectionStatus`.
+- Jeder Status nutzt dieselbe Wertemenge: `COMPLETE`, `INCOMPLETE_PRIVILEGE`,
+  `INCOMPLETE_OBJECT_MISSING`, `EMPTY_VERIFIED`, `UNKNOWN`. Eine leere
+  Projektion ist nur dann verwertbar, wenn sie als `EMPTY_VERIFIED` aus einer
+  erfolgreichen Probe ohne Privilegienfehler stammt.
+- View-Replacement ist nur erlaubt, wenn alle drei Projection-Status fuer die
+  betroffene View `COMPLETE` oder `EMPTY_VERIFIED` sind. Jeder andere Status
+  blockiert vor Render mit einer Dependency-Diagnostic; versteckte Routine-
+  Abhaengigkeiten werden nicht als Warnung behandelt.
+- Der Report weist pro View `dependencyProjection` mit getrennten Table-,
+  Column- und Routine-Status, getesteten Information-Schema-Views und
+  Fehlerklasse aus. Tests muessen fehlende referenzierte Objekte, fehlende
+  Privilegien und stille leere Projektionen getrennt abdecken.
 
 Akzeptanz:
 
@@ -545,14 +613,29 @@ Vorbedingung:
 - Workstream G ist abgeschlossen, bevor Routine-Bodies mit `BEGIN ... END`
   sicher gerendert und rollbackfaehig gespeichert werden koennen.
 
-Zu klaeren:
+Entscheidung:
 
-- Body-Vergleich: kanonischer SQL-Text, Hash oder strukturierter Parser.
-- Security-/Definer-Attribute und Secrets im Report.
-- Down-Erzeugung bei Routine-Replace: alter Body muss bekannt und im Artefakt
-  sicher gespeichert sein.
-- MySQL-Delimiter sind CLI-/Client-Syntax, nicht Server-SQL; Renderer darf
-  keinen losen Delimiter-Vertrag in Artefakte schreiben.
+- Der erste Routine-Slice nutzt keinen strukturierenden SQL-Parser. Vergleich
+  und Identitaet basieren auf normalisiertem Routine-Text plus SHA-256-Hash:
+  line endings normalisieren, fuehrende/trailing Whitespace entfernen,
+  optionale abschliessende Semikolons kanonisieren, Body-Inhalt sonst
+  unveraendert lassen. Unterschiedliche Hashes bedeuten Replace oder Blocker,
+  kein semantisches Raten.
+- Security-, Definer- und Search-Path-/SQL-Mode-Attribute sind Teil der
+  Routine-Signatur. Reports zeigen Attribute maschinenlesbar, scrubben aber
+  potenziell sensitive Literale im Body und geben standardmaessig nur Hash,
+  Laenge und Scrubbed-Preview aus. Vollstaendige Bodies duerfen nur im
+  Artefakt landen, wenn Secret-Scrubbing und Speichervertrag aus Workstream G/F
+  greifen.
+- Down fuer Routine-Replace wird nur erzeugt, wenn der alte Body und alle
+  relevanten Attribute aus Current-Snapshot oder Plan-Artefakt vollstaendig
+  bekannt sind. Fehlt der Altzustand, ist Up optional renderbar, aber
+  `--generate-rollback` blockiert mit `ROLLBACK_NOT_POSSIBLE` oder
+  `MANUAL_ACTION_REQUIRED` je nach Operation.
+- MySQL-Delimiter werden nie in Artefakte geschrieben. Renderer speichern
+  Server-SQL als einzelnes strukturiertes Statement; CLI-Ausgaben fuer Menschen
+  duerfen Delimiter nur als Anzeigeformat ausserhalb des kanonischen Artefakts
+  ergaenzen.
 
 ### E.2 Trigger-Migration
 
@@ -567,11 +650,25 @@ Vorbedingung:
 - keine `\n\n`-Split-Heuristik fuer Artefakt-Statements mehr
 - keine BEGIN-String-Heuristik fuer Transaktionsfuehrung mehr
 
-Zu klaeren:
+Entscheidung:
 
-- Trigger-Aktivierungszustand und Timing/Event-Modell im neutralen Schema.
-- Down-Vertrag fuer Replace vs. Drop/Create.
-- SQLite-Rebuild-Interaktion bleibt mit Phase H abgestimmt.
+- Trigger werden als eigene Objektklasse modelliert. Das neutrale Mindestmodell
+  enthaelt `tableRef`, `timing` (`BEFORE`, `AFTER`, `INSTEAD_OF`),
+  `events` (`INSERT`, `UPDATE`, `DELETE` plus optionale Spaltenliste),
+  `orientation` (`ROW`, `STATEMENT`, falls Dialekt unterstuetzt),
+  `condition`, `bodyHash`, `bodyTextAvailability` und `enabledState`.
+  Dialektfeatures ausserhalb dieses Modells blockieren, statt still
+  normalisiert zu werden.
+- Replace ist nur ein logischer Operationstyp. Gerendert wird je Dialekt als
+  sicheres Drop/Create oder natives Replace, wenn vorhanden und getestet. Down
+  fuer Replace erfordert den vollstaendigen alten Triggerzustand; sonst wird
+  kein vollstaendiges Rollback-Artefakt erzeugt.
+- Drop/Create-Trigger werden in der Dependency-Sortierung um Tabellen,
+  Spalten, Routinen und Views herum geplant. Trigger, die auf geaenderte oder
+  gedroppte Objekte zeigen, blockieren bis die Dependencies eindeutig sind.
+- SQLite-Trigger innerhalb eines Rebuilds bleiben Phase-H-gebunden: Der
+  Rebuild-Plan muss Drop/Recreate, Temp-Namen und FK-Pragma-Vertrag kennen,
+  bevor Trigger-Migration fuer SQLite freigeschaltet wird.
 
 ### E.3 Sequence-Migrationen
 
@@ -586,12 +683,27 @@ Verweis:
 
 - `docs/planning/open/sqlite-sequence-emulation-plan.md`
 
-Zu klaeren:
+Entscheidung:
 
-- Ownership/Dependency zwischen Sequence und Spalten-Default.
-- Start-/Increment-/Min-/Max-/Cycle-/Cache-Diffbarkeit.
-- Datenabhaengiger aktueller Sequence-Wert: migrieren, pruefen oder blockieren.
-- Down-Verhalten bei bereits verbrauchten Werten.
+- Sequence und Spalten-Default werden als getrennte Objekte mit expliziter
+  Dependency modelliert. PostgreSQL-Ownership (`OWNED BY`) ist eine eigene
+  Kante; MySQL-/SQLite-Emulation referenziert die jeweilige Helper-Struktur.
+  Ein Default darf erst gerendert werden, wenn die referenzierte Sequence
+  existiert oder im selben Plan vorher erstellt wird.
+- Diffbar sind zunaechst nur deklarative Attribute:
+  `start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`,
+  `ownedBy` und Emulationsformat-Version. Unbekannte oder dialektspezifisch
+  nicht verlustfrei snapshotbare Attribute blockieren die Sequence-Operation.
+- Der aktuelle Sequence-Wert ist datenabhaengiger Laufzeitstatus. Automatische
+  Migration dieses Werts ist nur erlaubt, wenn eine Live-DB-Pruefung den Wert
+  liest, Zielkonflikte ausschliesst und die Policy `preserveCurrentValue`
+  explizit gesetzt ist. Datei-zu-Datei-Pfade markieren den Wert als
+  `NOT_RUN_FILE_TARGET` und rendern keine Wertuebernahme.
+- Down nach bereits verbrauchten Werten ist nicht voll reversibel. Rollback darf
+  deklarative Attribute zuruecksetzen, aber keinen frueheren Current-Value
+  versprechen, ausser ein expliziter Snapshot wurde im Artefakt gespeichert und
+  die Policy erlaubt das Zuruecksetzen. Andernfalls ist die Wertkomponente
+  `NOT_REVERSIBLE`.
 
 Akzeptanz fuer E:
 
@@ -653,15 +765,36 @@ Nicht im ersten 0.9.7-Plan abgedeckt:
 - `schema rollback` direkt aus Plan-Artefakt
 - versionierte Plan-Kompatibilitaet
 
-Zu klaeren:
+Entscheidung:
 
-- stabiles JSON-/YAML-Format
-- Secret-Scrubbing
-- Hash-/Signaturmodell
-- Kompatibilitaetsregeln zwischen d-migrate-Versionen
-- ob das Artefakt dialektneutral, dialektspezifisch oder beides enthaelt
-- ob gerenderte SQL-Statements Teil des Plan-Artefakts sind oder separat
-  materialisiert werden
+- Das oeffentliche Plan-Artefakt wird als kanonisches JSON definiert. YAML darf
+  spaeter als reine Anzeige-/Import-Komfortschicht folgen, ist aber nicht das
+  signierte oder gehashte Austauschformat. Feldreihenfolge, Null-Behandlung,
+  Zahlenformat und String-Escaping werden fuer Golden-Files festgelegt.
+- Secret-Scrubbing ist Pflicht vor Serialisierung. Connection-Strings,
+  Passwoerter, Tokens, Rollen-Passwoerter, `CREATE USER`-/`ALTER USER`-
+  Secrets und als secret markierte Overlay-Werte duerfen nicht im Artefakt
+  stehen. Bodies werden nur gespeichert, wenn der jeweilige Workstream einen
+  Scrubbing-Vertrag hat; sonst werden Hash und Blocker gespeichert.
+- `artifactHash` ist ein SHA-256 ueber die kanonische JSON-Form ohne das
+  `artifactHash`-Feld. Eine optionale Signatur kann spaeter denselben Hash
+  signieren; sie ist nicht Voraussetzung fuer v1. Jede Aenderung an
+  Operationsreihenfolge, Diagnostics oder gerenderten SQL-Referenzen muss den
+  Hash aendern.
+- Kompatibilitaet: gleiche `formatVersion` muss innerhalb einer
+  d-migrate-Minor-Linie lesbar bleiben. Unbekannte optionale Felder werden
+  ignoriert und beim Re-Emit nicht garantiert erhalten. Unbekannte Pflichtfelder
+  oder inkompatible `formatVersion` blockieren. Neue Pflichtfelder erfordern
+  eine neue `formatVersion`.
+- Das Artefakt enthaelt beide Ebenen: einen dialektneutralen Operationskern und
+  einen dialektspezifischen Render-Abschnitt fuer genau einen Zieldialekt.
+  Datei-zu-Datei kann den Render-Abschnitt auslassen, dann ist das Artefakt
+  nicht execute-faehig.
+- Gerenderte SQL-Statements sind nicht frei im Plan-Artefakt vermischt. Sie
+  werden entweder als strukturierter `renderedStatements`-Abschnitt mit
+  Statement-IDs, Gruppen, Hashes und `transactionScope` gespeichert oder als
+  separates SQL-Artefakt referenziert. In beiden Faellen prueft der Hash die
+  Bindung zwischen Plan und SQL.
 
 Mindestfelder:
 
@@ -718,14 +851,32 @@ Der erste 0.9.7-Plan bleibt bei Diagnose-Hints. Dieser zweite Plan braucht
 einen expliziten Rename-Input-Vertrag, sonst wird Drop+Add mit Datenverlust
 verwechselt.
 
-Zu klaeren:
+Entscheidung:
 
-- Mapping-Quelle: CLI-Flag, Overlay-Datei, Plan-Artefakt oder Schema-Metadatum.
-- Eindeutigkeit und Konfliktregeln bei mehreren Kandidaten.
-- Fingerprint-Bindung: Mapping muss zu konkretem Current-/Desired-Zustand
-  passen.
-- Down-Vertrag fuer Rename.
-- Interaktion mit FKs, Indizes, Constraints, Views, Triggers und Defaults.
+- Rename-Mappings kommen aus einem versionierten Migrations-Overlay; nach
+  Workstream F.2 koennen sie in ein Plan-Artefakt eingebettet werden. CLI-Flags
+  duerfen hoechstens auf eine Overlay-Datei zeigen. Schema-Metadaten sind keine
+  Quelle, weil Renames eine Beziehung zwischen zwei Zustaenden beschreiben.
+- Jedes Mapping bindet `sourceFingerprint`, `targetFingerprint`, Dialekt,
+  Objektart, alte Referenz, neue Referenz und optional erwartete Struktur-
+  Fingerprints. Stale Fingerprints blockieren mit
+  `primaryBlockedReason = TARGET_STATE_MISMATCH` oder einer eigenen
+  Rename-Mapping-Diagnostic.
+- Eindeutigkeit ist strikt: Ein altes Objekt darf genau ein neues Ziel haben
+  und ein neues Objekt genau eine alte Quelle. Ueberlappungen, Kettenrenames im
+  selben Slice, Case-Folding-Konflikte und mehrere plausible Kandidaten ohne
+  explizite Auswahl blockieren.
+- Down fuer Rename ist automatisch nur der inverse Rename, wenn die Up-
+  Operation allein ein Rename ist und keine zwischenzeitliche Drop/Add-
+  Semantik oder Objekt-Recreation erzeugt. Sobald abhaengige Objekte
+  mitgeaendert werden, muss der Down-Plan diese Dependencies explizit
+  enthalten oder `--generate-rollback` blockiert.
+- Abhaengigkeiten werden vor Render validiert. FKs, Indizes, Constraints,
+  Views, Trigger, Defaults, Routinen und Sequence-Defaults duerfen nicht auf
+  alte Namen zeigen bleiben. Kann der Planner eine Dependency nicht vollstaendig
+  projizieren, wird der Rename nicht gerendert. Datei-zu-Datei darf nur die im
+  Modell/Overlay bekannten Dependencies bewerten und muss fehlende Live-
+  Projektion im Report ausweisen.
 
 Akzeptanz:
 
