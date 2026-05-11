@@ -5,10 +5,10 @@
 > Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
 > Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
 > Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
-> Pfad, Edge-Cases). Phase G.1 (SQLite-Cast-Matrix) ist im Code; G.2
-> (MySQL-VIEW-Privilege-Preflight) und G.3 (PostgreSQL-ReplaceView-
-> Compat-Decision) sind offen und schliessen die letzten zwei §10-
-> Akzeptanzpunkte fuer 0.9.7.
+> Pfad, Edge-Cases). Phase G.1 (SQLite-Cast-Matrix) und G.2 (MySQL-
+> VIEW-Privilege-Preflight) sind im Code; G.3 (PostgreSQL-ReplaceView-
+> Compat-Decision) ist offen und schliesst den letzten §10-
+> Akzeptanzpunkt fuer 0.9.7.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2026,22 +2026,35 @@ braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
   `CAST`-Ausdruecke nur mit expliziter, getesteter Quell-/Ziel-
   Cast-Matrix" (L2040-2043).
 
-- [ ] **G.2** MySQL `VIEW_TABLE_USAGE` Privilege-Preflight —
-  `MysqlSchemaReader` muss erkennen, wann er `VIEW_TABLE_USAGE` /
-  `VIEW_ROUTINE_USAGE` nicht (vollstaendig) lesen kann:
-  Permission-Denied wirft heute schon, aber die "Stille
-  Unvollstaendigkeit" (Tabelle existiert, liefert 0 Rows fuer
-  einen bekannten View, weil der introspektierende User SHOW VIEW
-  auf abhaengigen Tabellen fehlt) wird nicht detektiert. Loesung:
-  Reader projiziert pro View ein `dependencyProjectionComplete`-
-  Flag in einer adapter-internen Struktur; Planner liest das
-  Flag und blockt View-Replacements oder spaltenveraendernde
-  Operationen unter dem View mit
-  `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`-BLOCKER-Diagnose
-  (analog zu F.6.b). Adressiert §10-DoD "MySQL behandelt
-  fehlende oder nicht belegbare Privilegien fuer
-  `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige
-  Dependency-Projektion" (L2027-2030).
+- [x] **G.2** MySQL `VIEW_TABLE_USAGE` Privilege-Preflight ✅ (2026-05-11) —
+  `MysqlSchemaReader` liest jetzt `VIEW_TABLE_USAGE` (zusaetzlich zu
+  `VIEW_ROUTINE_USAGE`) und befuellt `ViewDefinition.dependencies.tables`
+  fuer MySQL-Views. Detektion stiller Unvollstaendigkeit: wenn
+  `VIEW_TABLE_USAGE` 0 Rows fuer einen existierenden View liefert
+  (Permission-Denied wirft, aber fehlende SHOW VIEW-Privilegien auf
+  abhaengigen Tabellen sind silent), setzt der Reader
+  `DependencyInfo.projectionComplete = false`. Andere Adapter
+  (PostgreSQL via `pg_depend`, SQLite via `sqlite_master`-Deparse,
+  schema-file-Loader) defaulten auf `true`.
+
+  `DiffPlanner.detectIncompleteViewProjections` (analog F.6.b)
+  blockt zwei Operations-Klassen mit `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`:
+  - `ReplaceView` fuer die betroffene View — der Renderer wuerde die
+    DDL neu generieren, aber die Cascade-Effekte auf versteckte
+    Dependencies sind unbekannt.
+  - `DropColumn`/`AlterColumnType`/`AlterColumnNullability` auf einer
+    Tabelle in `dependencies.tables` der incomplete View — die
+    `tables`-Liste ist Adapter-trusted, auch wenn die Projektion
+    als Ganzes incomplete ist.
+
+  Spaltenveraendernde Ops auf Tabellen ausserhalb der listed-Tables
+  bleiben bewusst ungeblockt — ein konservativer All-or-Nothing-
+  Block waere unactionable. Die Incompleteness der `tables`-Liste
+  selbst wird ueber den ReplaceView-Block abgefangen.
+
+  Adressiert §10-DoD "MySQL behandelt fehlende oder nicht belegbare
+  Privilegien fuer `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als
+  unvollstaendige Dependency-Projektion" (L2096-L2099).
 
 - [ ] **G.3** PostgreSQL `ReplaceView` Compatibility-Decision —
   `PostgresDiffDdlGenerator` rendert View-Aenderungen heute immer
@@ -2108,10 +2121,14 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Views werden ohne explizite column-level Dependencies blockiert. (F.6.b
   via `DiffPlanner.detectViewColumnDepsBlockers` →
   `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Diagnose.)
-- [ ] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
+- [x] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
   `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
   Projektion und blockiert betroffene View-Replacements oder
-  spaltenveraendernde Operationen mit Diagnose. (Phase G.2.)
+  spaltenveraendernde Operationen mit Diagnose. (Phase G.2 ✅ —
+  `DependencyInfo.projectionComplete` + `MysqlRoutineReader.readViews`
+  detektiert leere `VIEW_TABLE_USAGE`-Projektion;
+  `DiffPlanner.detectIncompleteViewProjections` blockt mit
+  `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`-Diagnose.)
 - [x] `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen

@@ -9,14 +9,28 @@ internal class MysqlRoutineReader {
 
     fun readViews(session: JdbcOperations, database: String): Map<String, ViewDefinition> {
         val rows = MysqlMetadataQueries.listViews(session, database)
+        val viewTableDeps = MysqlMetadataQueries.listViewTableUsage(session, database)
         val viewFuncDeps = MysqlMetadataQueries.listViewRoutineUsage(session, database)
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
             val viewName = row["table_name"] as String
+            val tableDeps = viewTableDeps[viewName] ?: emptyList()
             val funcDeps = viewFuncDeps[viewName] ?: emptyList()
+            // Phase G.2: empty VIEW_TABLE_USAGE projection for an existing
+            // view means either "no table deps" (rare — most views select
+            // FROM at least one table) or "user lacks SHOW VIEW privilege
+            // on the referenced tables" (silent incomplete projection).
+            // MySQL cannot distinguish; the planner sees the flag and
+            // blocks view-replacing / column-altering ops with
+            // VIEW_DEPENDENCY_PROJECTION_INCOMPLETE.
+            val projectionComplete = tableDeps.isNotEmpty()
             result[viewName] = ViewDefinition(
                 query = row["view_definition"] as? String,
-                dependencies = if (funcDeps.isNotEmpty()) DependencyInfo(functions = funcDeps) else null,
+                dependencies = DependencyInfo(
+                    tables = tableDeps,
+                    functions = funcDeps,
+                    projectionComplete = projectionComplete,
+                ),
                 sourceDialect = "mysql",
             )
         }

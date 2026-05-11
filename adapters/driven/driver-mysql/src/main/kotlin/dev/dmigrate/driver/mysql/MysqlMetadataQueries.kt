@@ -145,6 +145,40 @@ object MysqlMetadataQueries {
         )
     }
 
+    /**
+     * Project per-view table dependencies via
+     * `INFORMATION_SCHEMA.VIEW_TABLE_USAGE`. Returns a `view → tables`
+     * map; empty list / missing key means either "view has no table
+     * dependencies" or "introspecting user lacks SHOW VIEW privilege"
+     * — INFORMATION_SCHEMA projects only rows visible to the current
+     * user, so the two cases are indistinguishable from MySQL's side.
+     *
+     * `MysqlRoutineReader` interprets an empty list as projection-
+     * incomplete and signals it through
+     * `DependencyInfo.projectionComplete = false`. The exception
+     * branch covers MySQL versions where the table does not exist at
+     * all (analog `listViewRoutineUsage`).
+     */
+    fun listViewTableUsage(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
+        return try {
+            val rows = session.queryList(
+                """
+                SELECT VIEW_NAME AS view_name, TABLE_NAME AS table_name
+                FROM INFORMATION_SCHEMA.VIEW_TABLE_USAGE
+                WHERE VIEW_SCHEMA = ?
+                ORDER BY view_name, table_name
+                """.trimIndent(), schemaName,
+            )
+            rows.groupBy(
+                { it["view_name"] as String },
+                { it["table_name"] as String },
+            )
+        } catch (_: Exception) {
+            // VIEW_TABLE_USAGE may not exist on older MySQL versions
+            emptyMap()
+        }
+    }
+
     fun listViewRoutineUsage(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
         return try {
             val rows = session.queryList(

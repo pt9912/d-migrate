@@ -120,6 +120,43 @@ class MysqlSchemaReaderTest : FunSpec({
         result.schema.views["active_users"]!!.sourceDialect shouldBe "mysql"
     }
 
+    test("G.2 — view with empty VIEW_TABLE_USAGE projection flags projectionComplete=false") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active = 1"),
+        )
+        // VIEW_TABLE_USAGE returns no rows for the view — either the view has
+        // no table deps (rare) or the introspecting user lacks SHOW VIEW on
+        // referenced tables. The reader cannot distinguish and must flag.
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies.shouldNotBeNull()
+        view.dependencies!!.projectionComplete shouldBe false
+        view.dependencies!!.tables.shouldBeEmpty()
+    }
+
+    test("G.2 — view with populated VIEW_TABLE_USAGE rows flags projectionComplete=true") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active = 1"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies.shouldNotBeNull()
+        view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tables shouldBe listOf("users")
+    }
+
     test("read includes functions with parameters") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(

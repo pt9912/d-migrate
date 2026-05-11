@@ -46,6 +46,14 @@ import dev.dmigrate.core.model.ViewDefinition
  * lacks column-level dependency info produce a
  * `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` blocker diagnostic. See
  * Plan §6.3.
+ *
+ * Phase G.2 decision (incomplete view projection): when an adapter
+ * reports `dependencies.projectionComplete = false` for a view
+ * (today only MySQL when `VIEW_TABLE_USAGE` / `VIEW_ROUTINE_USAGE`
+ * return 0 rows for an existing view), `ReplaceView` for the view
+ * and column-altering operations on listed dependency tables block
+ * with `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`. See Plan §G.2 /
+ * §10 L2096-L2099.
  */
 class DiffPlanner {
 
@@ -73,6 +81,7 @@ class DiffPlanner {
 
         diagnostics += detectFkToBlockedTables(sortResult.sorted, blockedTables)
         diagnostics += detectViewColumnDepsBlockers(sortResult.sorted, current, desired)
+        diagnostics += detectIncompleteViewProjections(sortResult.sorted, current, desired)
         if (sortResult.cycleIds.isNotEmpty()) {
             diagnostics += DiffDiagnostic(
                 code = "DEPENDENCY_CYCLE",
@@ -186,6 +195,102 @@ class DiffPlanner {
                     severity = DiffDiagnostic.Severity.BLOCKER,
                     operationId = op.id,
                 )
+            }
+        }
+        return out
+    }
+
+    /**
+     * Per Plan §G.2 / §10 L2096-L2099: when an adapter reports that
+     * its view dependency projection is incomplete
+     * (`dependencies.projectionComplete == false`), the planner
+     * cannot trust the per-view `tables` list. Two operation classes
+     * MUST block:
+     *
+     * - `ReplaceView` for the incomplete view — the renderer would
+     *   regenerate the view DDL but the diff cannot reason about
+     *   cascade effects on hidden dependencies.
+     * - `DropColumn` / `AlterColumnType` / `AlterColumnNullability`
+     *   on a table that *is* listed in the incomplete view's
+     *   `dependencies.tables`. (Tables NOT in the list might still
+     *   be referenced — the projection is incomplete — but blocking
+     *   "all column-altering ops if any view in the schema is
+     *   incomplete" would be unactionable. The listed-tables block
+     *   stays inside the part of the projection the adapter trusts;
+     *   the incompleteness of the list itself remains a
+     *   ReplaceView-side concern.)
+     *
+     * Today this only triggers for the MySQL adapter, which sets
+     * `projectionComplete=false` when `VIEW_TABLE_USAGE` returns 0
+     * rows for an existing view (typically a missing SHOW VIEW
+     * privilege). PostgreSQL/SQLite/file-loaders always default to
+     * `projectionComplete=true`.
+     */
+    private fun detectIncompleteViewProjections(
+        ops: List<DiffOperation>,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): List<DiffDiagnostic> {
+        val incomplete = collectIncompleteViews(current, desired)
+        if (incomplete.isEmpty()) return emptyList()
+        val out = mutableListOf<DiffDiagnostic>()
+        for (op in ops) {
+            when (op) {
+                is DiffOperation.ReplaceView -> {
+                    val viewName = op.objectRef.path.firstOrNull() ?: continue
+                    if (viewName !in incomplete) continue
+                    out += DiffDiagnostic(
+                        code = "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE",
+                        message = "Operation ${op.id} replaces view '$viewName' but the adapter " +
+                            "reported its dependency projection as incomplete " +
+                            "(`dependencies.projectionComplete = false`). For MySQL this typically " +
+                            "means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE returned 0 rows for an " +
+                            "existing view — the introspecting user likely lacks SHOW VIEW on " +
+                            "referenced tables. The planner cannot reason about cascade effects " +
+                            "until projection completeness is restored.",
+                        severity = DiffDiagnostic.Severity.BLOCKER,
+                        operationId = op.id,
+                    )
+                }
+                else -> {
+                    val (tableName, columnName) = columnAlteringTarget(op) ?: continue
+                    for ((viewName, view) in incomplete) {
+                        if (tableName !in (view.dependencies?.tables ?: emptyList())) continue
+                        out += DiffDiagnostic(
+                            code = "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE",
+                            message = "Operation ${op.id} alters column '$tableName.$columnName' " +
+                                "and view '$viewName' lists '$tableName' as a dependency, but the " +
+                                "view's projection is incomplete " +
+                                "(`dependencies.projectionComplete = false`). For MySQL this " +
+                                "typically means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE returned " +
+                                "incomplete rows — the planner cannot tell whether the view's " +
+                                "referenced columns include this one. Restore SHOW VIEW privilege " +
+                                "on referenced tables and re-introspect.",
+                            severity = DiffDiagnostic.Severity.BLOCKER,
+                            operationId = op.id,
+                        )
+                    }
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * `viewName → ViewDefinition` for views whose dependency projection
+     * is incomplete on either side. The desired-side definition wins
+     * for views present in both schemas — the planner only needs ONE
+     * incomplete signal to block.
+     */
+    private fun collectIncompleteViews(
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): Map<String, ViewDefinition> {
+        val out = mutableMapOf<String, ViewDefinition>()
+        for (schema in listOf(current, desired)) {
+            for ((viewName, view) in schema.views) {
+                val deps = view.dependencies ?: continue
+                if (!deps.projectionComplete) out[viewName] = view
             }
         }
         return out
