@@ -152,10 +152,11 @@ class DMigrate(
  * Command-Dispatch. Die CLI delegiert auf den gemeinsamen
  * `RuntimeBootstrap`, damit MCP und CLI denselben Pfad nutzen.
  *
- * `internal` für [Main.kt]-Tests, die die Bootstrap-Sequenz ohne
- * `exitProcess` ausführen wollen.
+ * Public, damit Cross-Module-E2E-Tests (:test:e2e-cli) die Bootstrap-
+ * Sequenz ohne `exitProcess` ausführen können — analog zum cli-internen
+ * `buildRootCommand`-Pfad. Production-Aufrufer bleiben `main`/`mainNoExit`.
  */
-internal fun registerDrivers() {
+fun registerDrivers() {
     RuntimeBootstrap.initialize()
 }
 

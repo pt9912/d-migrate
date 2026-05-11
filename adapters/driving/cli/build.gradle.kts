@@ -77,25 +77,9 @@ dependencies {
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 
-    // LF-008 / LF-009 / LF-013: Testcontainers-basierte E2E-Tests fuer `data export`
-    // gegen PostgreSQL und MySQL. Markiert mit Kotest's NamedTag("integration"),
-    // laeuft nur mit `-PintegrationTests` (siehe LF-008 / LF-009 / LF-013).
-    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:postgresql` →
-    // `org.testcontainers:testcontainers-postgresql` etc.
-    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
-
-    // AP 6.24: integration-test harnesses build JSON-RPC payloads with Gson.
-    // The mcp module uses Gson internally (transitive via lsp4j) but does
-    // not re-export it; the CLI test source-set declares it explicitly.
-    testImplementation("com.google.code.gson:gson:2.14.0")
-
-    // AP 6.24: validate tool runtime outputs against the
-    // McpToolSchemas output schemas (JSON Schema 2020-12). Test-
-    // scope only — the production server publishes the schemas via
-    // tools/list but does not validate dispatch responses against them.
-    testImplementation("com.networknt:json-schema-validator:1.5.4")
+    // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
+    // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli
+    // ausgelagert (Phase C des Specs-Move).
 }
 
 tasks.named<ProcessResources>("processResources") {

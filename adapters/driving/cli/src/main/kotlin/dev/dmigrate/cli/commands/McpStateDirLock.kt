@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * is intended for operator messages — never as a poor-man's
  * existence-based lock substitute.
  */
-internal class McpStateDirLock private constructor(
+class McpStateDirLock private constructor(
     private val channel: FileChannel,
     private val lock: FileLock,
     val instanceId: String,
