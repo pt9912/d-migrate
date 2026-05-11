@@ -27,21 +27,11 @@ dependencies {
     // ManagedJob/JobError/JobProgress/JobCancelRequest (managed_job-JSONB).
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:${rootProject.properties["jacksonVersion"]}")
 
+    // Unit-Tests (JdbcSqlSupport, JdbcTransactionRunner) nutzen
+    // org.sqlite.SQLiteDataSource als embedded JDBC-Quelle.
+    // Postgres-only Integration- und Contract-Tests leben in
+    // :test:integration-persistence-jdbc.
     testImplementation("org.xerial:sqlite-jdbc:${rootProject.properties["sqliteJdbcVersion"]}")
-
-    // LF-012 / LN-011 / LN-017 / LN-027: Flyway-Migrate gegen Testcontainers-Postgres als
-    // tagged @Tag("integration") — werden mit -PintegrationTests
-    // (.github/workflows/integration.yml) ausgefuehrt.
-    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
-
-    // LF-012 / LN-011 / LN-017 / LN-027: Contract-Test-Fixtures (IdempotencyStoreContractTests +
-    // Fixtures.tenant/principal/NOW). Selber JAR fuer alle server-state
-    // JDBC-Adapter-Contract-Tests.
-    testImplementation(testFixtures(project(":hexagon:ports-common")))
-    // LF-012 / LN-011 / LN-017 / LN-027: QuotaReservationOwnerStoreContractTests aus
-    // hexagon:application testFixtures.
-    testImplementation(testFixtures(project(":hexagon:application")))
 }
 
 kover {

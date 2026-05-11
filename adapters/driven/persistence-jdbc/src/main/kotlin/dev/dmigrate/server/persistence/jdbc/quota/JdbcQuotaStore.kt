@@ -81,9 +81,13 @@ open class JdbcQuotaStore(
      * geforderte „release fuer unbekannten Key ist no-op".
      *
      * `open` fuer Failure-Injection-Tests aus LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz (d)
-     * (Crash-Window zwischen Owner-markX und Counter-Decrement).
+     * (Crash-Window zwischen Owner-markX und Counter-Decrement). Public,
+     * weil JdbcOwnerAwareQuotaService die Funktion fuer Cross-Store-
+     * Transaction-Composition aufruft und der Failure-Injection-Test
+     * (:test:integration-persistence-jdbc) sie ueber Modul-Grenze
+     * ueberschreibt.
      */
-    internal open fun releaseOnConnection(conn: Connection, key: QuotaKey, amount: Long): Long {
+    open fun releaseOnConnection(conn: Connection, key: QuotaKey, amount: Long): Long {
         val keyText = QuotaJson.keyToText(key)
         val now = clock.instant()
         val updated = conn.querySingle(
