@@ -45,11 +45,54 @@ internal object SqliteRebuildPlanner {
             val target = tableOf(op)
             if (target != null && target in rebuildTables && isAbsorbedByRebuild(op)) {
                 buckets.getValue(target) += op
+                continue
+            }
+            // Phase H.3a: view/trigger ops on a rebuilt table are absorbed
+            // into the rebuild — the canonical sequence emits explicit
+            // DROP VIEW / DROP TRIGGER before `DROP TABLE` and CREATE
+            // statements after RENAME from the plan's
+            // dependentViewsTo{Drop,Recreate} / dependentTriggersTo{Drop,Recreate}
+            // lists. Letting the simpleOp run after the rebuild would
+            // double-emit. The absorbing bucket is the alphabetically-
+            // first matching rebuilt table the op references.
+            val absorbingBucket = absorbingRebuildTableFor(op, rebuildTables)
+            if (absorbingBucket != null) {
+                buckets.getValue(absorbingBucket) += op
             } else {
                 simple += op
             }
         }
         return Classification(rebuildBuckets = buckets, simpleOps = simple)
+    }
+
+    /**
+     * Phase H.3a: returns the alphabetically-first rebuild table this
+     * view/trigger op references, or `null` if the op is not a
+     * view/trigger op or references no rebuilt table.
+     *
+     * Edge case: a view referencing multiple rebuilt tables lands in
+     * one bucket only. The other bucket(s) drop the table without
+     * dropping this view first — SQLite tolerates the dangling view
+     * reference until a `SELECT` against the view fires. Documented
+     * as H.3a-Limitation; the planner could be lifted to multi-bucket
+     * absorption in a follow-up if real schemas hit this.
+     */
+    private fun absorbingRebuildTableFor(op: DiffOperation, rebuildTables: Set<String>): String? {
+        val referenced = viewOrTriggerTableRefs(op)
+        if (referenced.isEmpty()) return null
+        return (referenced intersect rebuildTables).minOrNull()
+    }
+
+    private fun viewOrTriggerTableRefs(op: DiffOperation): Set<String> = when (op) {
+        is DiffOperation.CreateTrigger -> setOf(op.trigger.table)
+        is DiffOperation.DropTrigger -> setOf(op.trigger.table)
+        is DiffOperation.ReplaceTrigger -> setOf(op.before.table, op.after.table)
+        is DiffOperation.CreateView -> (op.view.dependencies?.tables ?: emptyList()).toSet()
+        is DiffOperation.DropView -> (op.view.dependencies?.tables ?: emptyList()).toSet()
+        is DiffOperation.ReplaceView ->
+            ((op.before.dependencies?.tables ?: emptyList()) +
+                (op.after.dependencies?.tables ?: emptyList())).toSet()
+        else -> emptySet()
     }
 
     /**
@@ -121,6 +164,8 @@ internal object SqliteRebuildPlanner {
         bucketRisk: OperationRisk,
         sql: SqliteDiffSqlBuilders,
         catalog: SqliteCatalogSnapshot = SqliteCatalogSnapshot.EMPTY,
+        sourceSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+        targetSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
     ): SqliteRebuildPlan {
         val mapping = computeColumnMapping(source, target, sql)
         return SqliteRebuildPlan(
@@ -133,7 +178,48 @@ internal object SqliteRebuildPlanner {
             risk = bucketRisk,
             mapping = mapping,
             indexesToRecreate = target.indices,
+            dependentViewsToDrop = collectDependentViews(sourceSchema, table),
+            dependentViewsToRecreate = collectDependentViews(targetSchema, table),
+            dependentTriggersToDrop = collectDependentTriggers(sourceSchema, table),
+            dependentTriggersToRecreate = collectDependentTriggers(targetSchema, table),
         )
+    }
+
+    /**
+     * Phase H.3a: views from [schema] whose `dependencies.tables`
+     * contains [table]. Returned in alphabetical order by view name
+     * for deterministic SQL emission. Returns empty when [schema] is
+     * null (legacy callers that don't pass schemas).
+     */
+    private fun collectDependentViews(
+        schema: dev.dmigrate.core.model.SchemaDefinition?,
+        table: String,
+    ): List<NamedViewDefinition> {
+        if (schema == null) return emptyList()
+        return schema.views.entries
+            .asSequence()
+            .filter { (_, view) -> (view.dependencies?.tables ?: emptyList()).contains(table) }
+            .map { (name, view) -> NamedViewDefinition(name, view) }
+            .sortedBy { it.name }
+            .toList()
+    }
+
+    /**
+     * Phase H.3a: triggers from [schema] whose `table` is [table].
+     * Returned in alphabetical order by trigger name for deterministic
+     * SQL emission.
+     */
+    private fun collectDependentTriggers(
+        schema: dev.dmigrate.core.model.SchemaDefinition?,
+        table: String,
+    ): List<NamedTriggerDefinition> {
+        if (schema == null) return emptyList()
+        return schema.triggers.entries
+            .asSequence()
+            .filter { (_, trigger) -> trigger.table == table }
+            .map { (name, trigger) -> NamedTriggerDefinition(name, trigger) }
+            .sortedBy { it.name }
+            .toList()
     }
 
     private fun computeColumnMapping(

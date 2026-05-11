@@ -119,6 +119,9 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             // Swap schemas: the down-rebuild copies from desired (= post-up
             // state) into a target shaped like the original current.
+            // Phase H.3a: sourceSchema/targetSchema follow the same
+            // direction-aware swap (drop from current-of-the-direction,
+            // recreate into target-of-the-direction).
             val downCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
                 ?: SqliteCatalogSnapshot.EMPTY
             val downPlan = SqliteRebuildPlanner.planRebuild(
@@ -129,6 +132,8 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
                 bucketRisk = ctx.bucketRisk(bucket),
                 sql = sql,
                 catalog = downCatalog,
+                sourceSchema = diff.desiredSchema,
+                targetSchema = diff.currentSchema,
             )
             rebuildRenderer.render(downPlan, ctx)
             return
@@ -148,6 +153,8 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             bucketRisk = ctx.bucketRisk(bucket),
             sql = sql,
             catalog = upCatalog,
+            sourceSchema = diff.currentSchema,
+            targetSchema = diff.desiredSchema,
         )
         rebuildRenderer.render(upPlan, ctx)
     }

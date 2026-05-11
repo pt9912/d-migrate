@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
+import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
@@ -82,6 +83,35 @@ internal class SqliteDiffSqlBuilders {
 
     fun createViewSql(name: String, v: ViewDefinition): String =
         "CREATE VIEW ${quote(name)} AS ${v.query?.trimEnd(';')};"
+
+    /**
+     * Phase H.3a: render `CREATE TRIGGER ...` for a trigger that the
+     * SQLite rebuild pipeline must recreate after a `DROP TABLE` +
+     * RENAME cycle. Mirrors the format produced by
+     * `SqliteRoutineDdlHelper.generateTrigger` so a freshly recreated
+     * trigger is bit-identical to the originally-generated one.
+     *
+     * Returns `null` when the trigger cannot be rendered (missing
+     * body, foreign sourceDialect). The renderer surfaces the
+     * Null-return as a BLOCKER diagnostic instead of emitting
+     * malformed SQL.
+     */
+    fun createTriggerSql(name: String, trigger: TriggerDefinition): String? {
+        val body = trigger.body ?: return null
+        if (trigger.sourceDialect != null && trigger.sourceDialect != "sqlite") return null
+        val timing = trigger.timing.name
+        val event = trigger.event.name
+        val forEach = trigger.forEach.name
+        return buildString {
+            append("CREATE TRIGGER ${quote(name)}\n")
+            append("    $timing $event ON ${quote(trigger.table)}\n")
+            append("    FOR EACH $forEach")
+            if (trigger.condition != null) append("\n    WHEN ${trigger.condition}")
+            append("\nBEGIN\n")
+            append(body)
+            append("\nEND;")
+        }
+    }
 
     fun referentialActionSql(action: ReferentialAction): String = when (action) {
         ReferentialAction.RESTRICT -> "RESTRICT"

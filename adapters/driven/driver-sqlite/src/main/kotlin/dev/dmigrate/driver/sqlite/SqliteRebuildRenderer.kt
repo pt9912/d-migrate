@@ -139,6 +139,22 @@ internal class SqliteRebuildRenderer(
             buildInsertSelectSql(tempName, originalTable, plan.mapping),
             opIds, risk = bucketRisk, phase = DiffPhase.TABLES,
         )
+        // Phase H.3a: drop dependent triggers and views BEFORE the
+        // table drop. Triggers first (they reference the table
+        // directly); views next (some views may reference triggers
+        // via SQLite's INSTEAD-OF mechanism, so views go second).
+        for (named in plan.dependentTriggersToDrop) {
+            ctx.emitRebuildStatement(
+                "DROP TRIGGER IF EXISTS ${sql.quote(named.name)};",
+                opIds, risk = safe, phase = DiffPhase.TABLES,
+            )
+        }
+        for (named in plan.dependentViewsToDrop) {
+            ctx.emitRebuildStatement(
+                "DROP VIEW IF EXISTS ${sql.quote(named.name)};",
+                opIds, risk = safe, phase = DiffPhase.TABLES,
+            )
+        }
         ctx.emitRebuildStatement(
             "DROP TABLE ${sql.quote(originalTable)};",
             opIds, risk = bucketRisk, phase = DiffPhase.TABLES,
@@ -152,6 +168,45 @@ internal class SqliteRebuildRenderer(
         for (idx in plan.indexesToRecreate) {
             ctx.emitRebuildStatement(
                 sql.createIndexSql(originalTable, idx),
+                opIds, risk = safe, phase = DiffPhase.INDEXES,
+            )
+        }
+
+        // Phase H.3a: recreate dependent views and triggers AFTER the
+        // RENAME so they see the post-rebuild table shape. Views
+        // first (triggers may reference views), triggers next.
+        for (named in plan.dependentViewsToRecreate) {
+            ctx.emitRebuildStatement(
+                sql.createViewSql(named.name, named.definition),
+                opIds, risk = safe, phase = DiffPhase.INDEXES,
+            )
+        }
+        for (named in plan.dependentTriggersToRecreate) {
+            val triggerSql = sql.createTriggerSql(named.name, named.definition)
+            if (triggerSql == null) {
+                // Trigger body missing or non-SQLite source dialect; the
+                // recreate would produce malformed SQL. Surface as a
+                // BLOCKER but continue emitting the rebuild — the
+                // pre-recreate steps are still correct, the operator
+                // must supply a body before re-running.
+                ctx.addDiagnostic(
+                    dev.dmigrate.core.diff.migration.DiffDiagnostic(
+                        code = "SQLITE_REBUILD_TRIGGER_NOT_RENDERABLE",
+                        message = "RebuildTable for `$originalTable` cannot recreate trigger " +
+                            "`${named.name}` automatically — the trigger has no body or a " +
+                            "non-SQLite sourceDialect. Supply a SQLite-compatible body in the " +
+                            "schema definition.",
+                        severity = dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER,
+                    ),
+                )
+                ctx.addBlocker(
+                    dev.dmigrate.driver.migration.MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+                    operationIds = opIds,
+                )
+                continue
+            }
+            ctx.emitRebuildStatement(
+                triggerSql,
                 opIds, risk = safe, phase = DiffPhase.INDEXES,
             )
         }
