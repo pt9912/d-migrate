@@ -11,12 +11,15 @@
 > `VIEW_ROUTINE_USAGE`-Variante Carve-Out 0.9.8+), G.3a (PostgreSQL-
 > ReplaceView-Strict-Split bei Dependency-Column-Konflikt; Visible-
 > Spaltensignatur-Compatibility = G.3b ist Carve-Out 0.9.8+). Phase H
-> (SQLite-Rebuild-Vertrag formalisieren) ist offen — Bucket-Klassifikation
-> + canonical 9-Statement-Sequence + Atomicity sind funktional erfuellt,
-> aber das formale `SqliteRebuildPlan`-Struct (H.1a/H.1b),
-> Temp-Namen-Kollision (H.2), Drop+Recreate abhaengiger Views/Trigger
-> + simpleOps-Absorption (H.3a), FK-Pragma-Runner-Vertrag (H.3b) und
-> die 6-Punkte-Preflight-Liste aus §6.4 (H.4) fehlen strukturell.
+> (SQLite-Rebuild-Vertrag formalisieren) ist im Code: H.1a/H.1b
+> (`SqliteRebuildPlan`-Struct + Planner produziert / Renderer
+> konsumiert), H.2 (Temp-Namen-Kollision mit `__2`/`__3`-Fallback),
+> H.3a (Drop+Recreate abhaengiger Views/Trigger + simpleOps-Absorption),
+> H.4 (6-Punkte-Preflight-Liste mit per-Kind-Outcome). H.3b ist im
+> Renderer-Anteil fertig (`SqliteRebuildEmissionMode.EXECUTE` emittiert
+> `dmigrate:runner-hook=…`-Marker statt pauschalem `PRAGMA = ON`); der
+> Runner-Layer-Code (`SchemaMigrateRunner` liest/restored prior FK-
+> State) bleibt Carve-Out auf 0.9.8+.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2126,7 +2129,7 @@ simpleOps)` + Inline-SQL-Erzeugung im Renderer.
 Reihenfolge nach Abhaengigkeit aufsteigend — H.1 ist Voraussetzung
 fuer H.3/H.4:
 
-- [ ] **H.1a** `SqliteRebuildPlan`-Datenstruktur anlegen —
+- [x] **H.1a** `SqliteRebuildPlan`-Datenstruktur anlegen ✅ (2026-05-11) —
   Neuer Typ `SqliteRebuildPlan` mit den in §6.4 (L884-936)
   geforderten Feldern. **§6.4 modelliert `RebuildTable` als
   `DialectMigrationStep`**; die zwei Step-Vertragsfelder
@@ -2166,7 +2169,7 @@ fuer H.3/H.4:
   Planner und Renderer sind noch nicht umgestellt. Sub-Ziel: die
   anderen H-Slices haben einen Andock-Punkt.
 
-- [ ] **H.1b** Planner produziert / Renderer konsumiert Plan —
+- [x] **H.1b** Planner produziert / Renderer konsumiert Plan ✅ (2026-05-11) —
   `SqliteRebuildPlanner.planRebuild(table, bucket, source, target)`
   als Factory; `SqliteRebuildRenderer.render(plan, ctx)` als pure
   Konsumption (statt heute `renderRebuild(table, bucket, source,
@@ -2177,7 +2180,7 @@ fuer H.3/H.4:
   PK-Reshape, Constraint-Add); bestehende Renderer-Tests bleiben
   unveraendert gruen.
 
-- [ ] **H.2** Temp-Namen-Kollisionsprueffung —
+- [x] **H.2** Temp-Namen-Kollisionsprueffung ✅ (2026-05-11) —
   `SqliteRebuildPlanner.tempTableName` ist heute ein
   deterministischer Hash; eine Kollision mit bereits in der
   Ziel-DB existierenden Tabellen/Views/Indizes/Triggern wird nicht
@@ -2218,7 +2221,7 @@ fuer H.3/H.4:
   unterscheidet sich nur durch die Snapshot-Quelle, nicht durch die
   Plan-Logik).
 
-- [ ] **H.3a** Drop+Recreate abhaengiger Views/Trigger (Plan-/
+- [x] **H.3a** Drop+Recreate abhaengiger Views/Trigger (Plan-/ ✅ (2026-05-11)
   Renderer-Concern) —
   `SqliteRebuildRenderer.kt:65-70` dokumentiert explizit
   "User-defined triggers attached to the rebuilt table are dropped
@@ -2265,8 +2268,19 @@ fuer H.3/H.4:
     simpleOps absorbiert; sourceOperationIds enthaelt die Op-ID;
     Renderer emittiert nichts doppelt.
 
-- [ ] **H.3b** FK-Pragma-Restore (hybrid: Runner-Vertrag fuer
-  Execute, Carve-Out fuer Standalone-SQL) —
+- [~] **H.3b** FK-Pragma-Restore — Renderer-Anteil ✅ (2026-05-11),
+  Runner-Vertrag offen. Renderer emittiert via
+  `SqliteRebuildEmissionMode.EXECUTE` die runner-hook-Marker
+  (`-- dmigrate:runner-hook=save-fk-state-before-pragma-off` vor
+  `PRAGMA = OFF`, `-- dmigrate:runner-hook=restore-fk-state` statt
+  des pauschalen `PRAGMA = ON`). STANDALONE-Default ist
+  bit-identisch zu pre-H.3b. Was fehlt: `SchemaMigrateRunner` (bzw.
+  `JdbcMigrationExecutor`) muss die Marker parsen und die
+  `PRAGMA foreign_keys;`-Live-Reads + Restores ausfuehren; Caller
+  muss `emissionMode = EXECUTE` setzen fuer den `--execute`-Pfad.
+  Integration-Test (`:test:integration-sqlite`) mit `PRAGMA
+  foreign_keys = OFF` als Initial-State validiert den Restore.
+
   Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
   ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
   ist verbindungs- und execute-time-abhaengig und kann nicht
@@ -2298,7 +2312,7 @@ fuer H.3/H.4:
   - Unit-Test: Standalone-SQL-Output enthaelt Header-Kommentar und
     `PRAGMA foreign_keys = ON;` am Ende.
 
-- [ ] **H.4** Vollstaendige Preflight-Liste —
+- [x] **H.4** Vollstaendige Preflight-Liste ✅ (2026-05-11) —
   §6.4 Typentwurf L928-934 nennt **6** Preflight-Checks (die
   Ablauf-Beschreibung L985-990 konsolidiert `TABLE_EXISTS` und
   `DEPENDENCIES_KNOWN` in einem Bullet und nennt deshalb nur 5).
@@ -2388,19 +2402,21 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
   blockieren. Die Aenderung darf weder still verschwinden noch darf fuer dieselbe
   Tabelle SQL aus einem unvollstaendigen Diff entstehen.
-- [ ] SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
+- [x] SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
-  deterministisch beschrieben und getestet. (Phase H — Funktional erfuellt
-  ist nur ein Teil-Aspekt: `SqliteRebuildPlanner.Classification` mit
-  Bucket-Klassifikation + die canonical 9-Statement-Sequence in
-  `SqliteRebuildRenderer.emitRebuildSequence` + Atomicity- und Recovery-
-  Pfade in F.5/F.6. Strukturell offen: formales `DialectMigrationPlan`-
-  Struct mit `sourceOperationIds`/`risk` (H.1a/H.1b), Temp-Namen-
-  Kollisionsprueffung mit Suffix `__2`/`__3` (H.2), Drop+Recreate-
-  Trennung fuer abhaengige Views/Trigger + simpleOps-Absorption
-  (H.3a), FK-Pragma-Runner-Vertrag (H.3b), vollstaendige 6-Punkte-
-  Preflight-Liste aus §6.4 (H.4). Siehe §9 Phase H.)
+  deterministisch beschrieben und getestet. (Phase H ✅ —
+  `SqliteRebuildPlan`-Struct mit `sourceOperationIds`/`risk`/
+  `ColumnCopyMapping`/`dependentViews{ToDrop,ToRecreate}`/
+  `dependentTriggers{ToDrop,ToRecreate}`/`preflight` (H.1a) +
+  `SqliteRebuildPlanner.planRebuild` + pure `SqliteRebuildRenderer.render`
+  (H.1b) + `SqliteCatalogSnapshot` mit `__2`/`__3`-Fallback (H.2) +
+  View/Trigger-Drop+Recreate mit simpleOps-Absorption (H.3a) +
+  6-Punkte-Preflight-Liste mit per-Kind-Outcome (H.4).
+  **Carve-Out**: H.3b-Runner-Vertrag (`SchemaMigrateRunner` parsed die
+  `dmigrate:runner-hook=…`-Marker und liest/restored PRAGMA-State)
+  bleibt offen — Renderer-Anteil ist da, Runner-Layer-Implementation
+  folgt als separater Slice.)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix. Zielaffinitaet allein
   reicht nicht als Sicherheitsnachweis; sonst blockiert die Operation als

@@ -168,11 +168,12 @@ internal object SqliteRebuildPlanner {
         targetSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
     ): SqliteRebuildPlan {
         val mapping = computeColumnMapping(source, target, sql)
+        val resolvedTempName = resolveTempTableName(table, bucket, catalog)
         return SqliteRebuildPlan(
             originalTableName = table,
             oldTable = source,
             newTable = target,
-            newTableTempName = resolveTempTableName(table, bucket, catalog),
+            newTableTempName = resolvedTempName,
             bucketOperations = bucket,
             sourceOperationIds = bucket.map { it.id }.toSet(),
             risk = bucketRisk,
@@ -182,8 +183,158 @@ internal object SqliteRebuildPlanner {
             dependentViewsToRecreate = collectDependentViews(targetSchema, table),
             dependentTriggersToDrop = collectDependentTriggers(sourceSchema, table),
             dependentTriggersToRecreate = collectDependentTriggers(targetSchema, table),
+            preflight = buildPreflightChecks(table, source, mapping, resolvedTempName, catalog),
         )
     }
+
+    /**
+     * Phase H.4: build the 6-entry preflight list per Plan §6.4
+     * (L928-934 Typentwurf). Every plan carries all 6 entries with
+     * per-kind [SqliteRebuildPreflightOutcome] so consumers (Migrate-
+     * Report, MCP, JSON serialisation) can inspect the rebuild's
+     * readiness declaratively.
+     */
+    private fun buildPreflightChecks(
+        table: String,
+        source: TableDefinition,
+        mapping: SqliteColumnMappingModel,
+        resolvedTempName: String,
+        catalog: SqliteCatalogSnapshot,
+    ): List<SqliteRebuildPreflightCheck> {
+        val out = mutableListOf<SqliteRebuildPreflightCheck>()
+
+        // TABLE_EXISTS: source TableDefinition is non-null by contract
+        // (Generator already short-circuits if the table is missing
+        // from current/desired). The check is therefore PASS at this
+        // layer; the missing-source path is covered by the
+        // SQLITE_REBUILD_MISSING_SOURCES diagnostic in the dispatcher.
+        out += SqliteRebuildPreflightCheck(
+            kind = SqliteRebuildPreflightKind.TABLE_EXISTS,
+            outcome = SqliteRebuildPreflightOutcome.PASS,
+            target = table,
+            message = "table `$table` is present in the source schema snapshot",
+        )
+
+        // TEMP_NAME_AVAILABLE: Phase H.2 resolves the name with a
+        // deterministic __2/__3 suffix when the hash collides. The
+        // resolved name itself is guaranteed free (resolveTempTableName
+        // iterates until catalog.contains(...) is false).
+        //
+        // - FAIL: defensive — only if resolveTempTableName has a bug.
+        // - INFO: a suffix was appended → base name collided.
+        // - PASS: no suffix needed → base name was free.
+        val hadSuffix = resolvedTempName != resolvedTempName.removeSuffixIfMatches()
+        val tempNameInfo = when {
+            catalog.contains(resolvedTempName) -> SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.TEMP_NAME_AVAILABLE,
+                outcome = SqliteRebuildPreflightOutcome.FAIL,
+                target = resolvedTempName,
+                message = "resolved temp name `$resolvedTempName` still collides with the catalog — planner bug",
+            )
+            hadSuffix -> SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.TEMP_NAME_AVAILABLE,
+                outcome = SqliteRebuildPreflightOutcome.INFO,
+                target = resolvedTempName,
+                message = "temp name resolved with collision-suffix → `$resolvedTempName`",
+            )
+            else -> SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.TEMP_NAME_AVAILABLE,
+                outcome = SqliteRebuildPreflightOutcome.PASS,
+                target = resolvedTempName,
+                message = "temp name `$resolvedTempName` does not collide with the catalog snapshot",
+            )
+        }
+        out += tempNameInfo
+
+        // SOURCE_COLUMNS_EXIST: every preservedColumns.sourceColumn
+        // must exist in source.columns.keys. Reads the structured
+        // sourceColumn field of ColumnCopyMapping (H.1a contract) so
+        // no SQL expression parsing is needed.
+        val missingSources = mapping.preservedColumns
+            .map { it.sourceColumn }
+            .filter { it !in source.columns }
+        if (missingSources.isEmpty()) {
+            out += SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.SOURCE_COLUMNS_EXIST,
+                outcome = SqliteRebuildPreflightOutcome.PASS,
+                target = table,
+                message = "all preservedColumns.sourceColumn entries exist in oldTable.columns",
+            )
+        } else {
+            out += SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.SOURCE_COLUMNS_EXIST,
+                outcome = SqliteRebuildPreflightOutcome.FAIL,
+                target = missingSources.joinToString(","),
+                message = "ColumnCopyMapping references source column(s) not present in oldTable: " +
+                    missingSources.joinToString(", "),
+            )
+        }
+
+        // DEPENDENCIES_KNOWN: F.6.b (column-deps) and G.2 (view-table-
+        // usage privilege) blockers run in the DiffPlanner layer, not
+        // in the SQLite adapter. The preflight entry is informational
+        // here — it documents the runtime check chain rather than
+        // re-evaluating it.
+        out += SqliteRebuildPreflightCheck(
+            kind = SqliteRebuildPreflightKind.DEPENDENCIES_KNOWN,
+            outcome = SqliteRebuildPreflightOutcome.INFO,
+            target = table,
+            message = "view/trigger dependency projection completeness is validated by " +
+                "DiffPlanner.detectViewColumnDepsBlockers (F.6.b) and " +
+                "DiffPlanner.detectIncompleteViewProjections (G.2)",
+        )
+
+        // ADDED_COLUMNS_FILLABLE: aggregate NOT_NULL_BACKFILL +
+        // CAST_MATRIX outcomes from the mapping. The renderer's
+        // existing blocker codes stay parallel; this entry pins the
+        // failure declaratively.
+        if (mapping.isBlocked) {
+            val reasons = buildList {
+                if (mapping.notNullBackfillBlocked.isNotEmpty()) {
+                    add("NOT NULL backfill blocked: ${mapping.notNullBackfillBlocked.joinToString(", ")}")
+                }
+                if (mapping.castNotWhitelisted.isNotEmpty()) {
+                    add("cast-matrix block(s): ${mapping.castNotWhitelisted.joinToString(", ") { it.column }}")
+                }
+            }
+            out += SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.ADDED_COLUMNS_FILLABLE,
+                outcome = SqliteRebuildPreflightOutcome.FAIL,
+                target = table,
+                message = reasons.joinToString("; "),
+            )
+        } else {
+            out += SqliteRebuildPreflightCheck(
+                kind = SqliteRebuildPreflightKind.ADDED_COLUMNS_FILLABLE,
+                outcome = SqliteRebuildPreflightOutcome.PASS,
+                target = table,
+                message = "NOT NULL backfill + cast-matrix are satisfied for all added columns",
+            )
+        }
+
+        // FOREIGN_KEYS_CHECKABLE: runner-vertrag (execute-time). The
+        // renderer emits `PRAGMA foreign_key_check;` in the CLEANUP
+        // phase; the d-migrate runner must treat a non-empty result as
+        // a hard abort rather than informational.
+        out += SqliteRebuildPreflightCheck(
+            kind = SqliteRebuildPreflightKind.FOREIGN_KEYS_CHECKABLE,
+            outcome = SqliteRebuildPreflightOutcome.INFO,
+            target = table,
+            message = "runner-vertrag: a non-empty `PRAGMA foreign_key_check;` result must " +
+                "abort the migration (not be treated as informational)",
+        )
+
+        return out
+    }
+
+    /**
+     * Returns the temp-name with any trailing `__<digit>+` suffix
+     * removed — i.e. the base name as `tempTableName` would have
+     * emitted. Used by [buildPreflightChecks] to recompute the
+     * collision-probe target without re-running [tempTableName].
+     */
+    private fun String.removeSuffixIfMatches(): String =
+        replace(Regex("""__\d+$"""), "")
 
     /**
      * Phase H.3a: views from [schema] whose `dependencies.tables`

@@ -175,6 +175,7 @@ class SqliteRebuildPlanTest : FunSpec({
             preflight = listOf(
                 SqliteRebuildPreflightCheck(
                     kind = SqliteRebuildPreflightKind.TABLE_EXISTS,
+                    outcome = SqliteRebuildPreflightOutcome.PASS,
                     target = "users",
                     message = "expected table 'users' exists in current schema",
                 ),

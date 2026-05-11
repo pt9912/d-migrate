@@ -260,21 +260,39 @@ internal data class ColumnInsertEntry(
 )
 
 /**
- * Preflight check entries per Plan §6.4 (L928-934 Typentwurf,
+ * Preflight check entry per Plan §6.4 (L928-934 Typentwurf,
  * L985-990 Ablauf). Six discrete kinds with per-kind execution form
  * (plan-time static vs. runner-side execute-time) per the H.4
  * specification in §9 Phase H.
  *
- * Populated by Phase H.4; H.1a keeps this carrier shape so the other
- * H-slices have a stable contract to populate.
+ * Populated by Phase H.4: every [SqliteRebuildPlan] carries the full
+ * 6-entry list with per-entry [outcome]. Plan consumers (Migrate-
+ * Report, MCP tooling, JSON serialisation) read the list declaratively;
+ * the renderer's BLOCKER paths (NOT_NULL_BACKFILL_REQUIRED,
+ * SQLITE_CAST_NOT_WHITELISTED) stay parallel as the active emission
+ * channel — preflight is the deklarative Inspection-Schicht.
  */
 internal data class SqliteRebuildPreflightCheck(
     val kind: SqliteRebuildPreflightKind,
+    val outcome: SqliteRebuildPreflightOutcome,
     /** Optional descriptor — e.g. which column/view/trigger triggered the check. */
     val target: String? = null,
     /** Human-readable message for diagnostics or runner logs. */
     val message: String,
 )
+
+/**
+ * Phase H.4: outcome classification per preflight check.
+ *
+ * - [PASS]: plan-time-static check, condition satisfied.
+ * - [FAIL]: plan-time-static check, condition violated. Renderer
+ *   surfaces a parallel BLOCKER diagnostic (existing codes:
+ *   NOT_NULL_BACKFILL_REQUIRED, SQLITE_CAST_NOT_WHITELISTED).
+ * - [INFO]: runner-vertrag check or non-blocking advisory. Today
+ *   only FOREIGN_KEYS_CHECKABLE (runner-vertrag) and the
+ *   TEMP_NAME_AVAILABLE-with-suffix advisory use this outcome.
+ */
+internal enum class SqliteRebuildPreflightOutcome { PASS, FAIL, INFO }
 
 internal enum class SqliteRebuildPreflightKind {
     /** Expected table exists in `current` snapshot. Plan-time static. */
