@@ -2207,12 +2207,18 @@ fuer H.3/H.4:
     "Temp-Name-Probe nur gegen Schema-Modell; Live-DB-Catalog kann
     zusaetzliche Kollisionen haben — verifiziere via `d-migrate
     schema migrate --execute`".
-  - **Execute-Pfad** (`schema migrate --execute`): die CLI fetcht
-    `sqlite_master` **vor** dem Plan-Build und konsolidiert das
-    Resultat mit dem Schema-synthetisierten Snapshot in einen
-    einzigen `LiveCatalogSnapshot`, der dann an `planRebuild`
-    eingespeist wird. Das Plan-Output bleibt damit frozen; der
-    Runner muss `newTableTempName` nicht mehr verifizieren.
+  - **Execute-Pfad** (`schema migrate --execute`): heute nutzt
+    `SchemaMigrateRunner` denselben Schema-synthetisierten Snapshot
+    wie der `--plan-only`-Pfad — die zusaetzliche Live-`sqlite_master`-
+    Probe ist als Folge-Slice **H.2.2** auf 0.9.8+ verfolgt. Vorlage:
+    `SqliteCatalogSnapshot.union(otherFromLiveProbe)` ist schon
+    vorbereitet; was fehlt ist ein `SqliteCatalogSnapshot.fromSqliteMaster(conn)`-
+    Loader plus das CLI-Wiring beim Bootstrap. Ad-hoc-Objekte in der
+    Live-DB (nicht-importierte Indices/Tabellen) ausserhalb des
+    Schema-Modells laufen im Execute-Pfad heute in dasselbe
+    `--plan-only`-Risiko: Kollision mit ihnen wird nicht plan-time
+    erkannt, sondern slaegt erst beim CREATE-temp-Statement fehl
+    (BLOCKER mit `transactionRolledBack`-Trace).
 
   Bei Kollision: deterministischer Suffix-Fallback `__2`, `__3`, ...
   bis frei — komplett im Planner berechnet. Die fortlaufende Nummer
@@ -2268,6 +2274,18 @@ fuer H.3/H.4:
   - Planner-Test: View/Trigger-Op auf rebuilt-Table wird aus
     simpleOps absorbiert; sourceOperationIds enthaelt die Op-ID;
     Renderer emittiert nichts doppelt.
+
+  **Bekannte Limitation (H.3a-Limitation, dokumentiert)**: Eine View,
+  die *mehrere* rebuilt-Tables referenziert, wird vom Planner
+  alphabetisch in **einen** Bucket absorbiert. Die anderen Buckets
+  droppen ihre Table ohne paired DROP VIEW; SQLite tolerated das per
+  lazy resolution, aber `PRAGMA foreign_key_check` kann temporaere
+  Inkonsistenzen melden, wenn die View vor dem Rebuild-2 noch die
+  alte Definition haelt. Multi-Bucket-Absorption mit emit-dedup
+  (View landet in allen relevanten Buckets, View-Drop wird einmal
+  beim alphabetisch ersten emittiert, View-Create einmal beim
+  alphabetisch letzten) wuerde das sauberer loesen — als Folge-Slice
+  H.3a.2 fuer 0.9.8+ verfolgt.
 
 - [x] **H.3b** FK-Pragma-Restore ✅ (2026-05-11) —
   Renderer emittiert via `SqliteRebuildEmissionMode.EXECUTE` die

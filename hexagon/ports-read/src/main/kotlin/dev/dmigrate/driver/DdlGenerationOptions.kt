@@ -30,6 +30,13 @@ data class DdlGenerationOptions(
      * `schema rollback` artefact body) remain externally executable.
      * CLI/runner entry points set `EXECUTE` for the live-connection
      * `--execute` path.
+     *
+     * **Dialect-Reichweite (heute)**: nur der `SqliteDiffDdlGenerator`
+     * konsumiert das Feld; PostgreSQL- und MySQL-Renderer ignorieren es
+     * (ihre Streams sind ohnehin runner-owned-tx und brauchen keine
+     * Hook-Marker). Wenn `EXECUTE` an einen PG/MySQL-Target ueberreicht
+     * wird, ist es ein silent no-op — kein Funktionsbruch, kein Output-
+     * Drift.
      */
     val executionMode: ExecutionMode = ExecutionMode.STANDALONE,
 )

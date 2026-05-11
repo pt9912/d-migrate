@@ -83,6 +83,31 @@ internal class SqliteRebuildRenderer(
             return
         }
         emitRebuildSequence(plan, ctx)
+        emitPreflightInfoDiagnostics(plan, ctx)
+    }
+
+    /**
+     * Phase H.4: surface non-PASS preflight entries as
+     * [DiffDiagnostic]s on the render context so the migrate-report
+     * (and downstream MCP/JSON consumers) can see the per-kind
+     * outcome without inspecting the plan directly.
+     *
+     * Emits only the INFO entries — the FAIL pathway is covered by
+     * the existing parallel diagnostics (NOT_NULL_BACKFILL_REQUIRED,
+     * SQLITE_CAST_NOT_WHITELISTED) that the blocker path already
+     * raised. PASS entries are silent (no signal needed).
+     */
+    private fun emitPreflightInfoDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        for (check in plan.preflight) {
+            if (check.outcome != SqliteRebuildPreflightOutcome.INFO) continue
+            ctx.addDiagnostic(
+                dev.dmigrate.core.diff.migration.DiffDiagnostic(
+                    code = "SQLITE_REBUILD_PREFLIGHT_${check.kind.name}",
+                    message = check.message + (check.target?.let { " (target: $it)" } ?: ""),
+                    severity = dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.INFO,
+                ),
+            )
+        }
     }
 
     private fun emitBlockerDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {

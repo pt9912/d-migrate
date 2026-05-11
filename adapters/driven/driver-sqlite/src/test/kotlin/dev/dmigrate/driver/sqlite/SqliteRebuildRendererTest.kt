@@ -474,4 +474,39 @@ class SqliteRebuildRendererTest : FunSpec({
         r.statements.first().sql shouldBe "PRAGMA foreign_keys = OFF;"
         r.statements.last().sql shouldBe "PRAGMA foreign_keys = ON;"
     }
+
+    test("PK reshape (column change to PRIMARY KEY) renders the new key in CREATE temp + SELECT in column order") {
+        // Phase H.1b coverage: a real PK change (id → (id, tenant))
+        // should hit the rebuild path. Pin the CREATE-temp PRIMARY KEY
+        // line and the INSERT-SELECT preserving both columns.
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "tenant" to ColumnDefinition(NeutralType.Integer, required = true),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(primaryKey = listOf("id", "tenant"))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    primaryKey = ValueChange(listOf("id"), listOf("id", "tenant")),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("u" to before))
+        val desired = schemaWith(mapOf("u" to after))
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        r.isBlocked shouldBe false
+
+        val createTemp = r.statements.single { it.sql.startsWith("CREATE TABLE \"u__dmg_rebuild_") }.sql
+        // The new composite primary key must be on a separate line in the CREATE.
+        createTemp shouldContain "PRIMARY KEY (\"id\", \"tenant\")"
+
+        val insertSelect = r.statements.single { it.sql.startsWith("INSERT INTO") }.sql
+        // Both source columns should be SELECTed (deterministic sort by name: id, tenant).
+        insertSelect shouldContain "(\"id\", \"tenant\")"
+        insertSelect shouldContain "SELECT \"id\", \"tenant\""
+    }
 })

@@ -139,13 +139,20 @@ internal object JdbcMigrationExecutor {
         var attempted = 0
         var lastIds: Set<String> = emptySet()
         // Phase H.3b: runner-hook state for SQLite-rebuild PRAGMA save/restore.
-        val hookState = RunnerHookState()
+        // **Per-statement fresh JDBC Statement**: xerial-sqlite finalises
+        // a `Statement` after its ResultSet is closed (the hook's
+        // `PRAGMA foreign_keys;` query consumes one). Reusing the outer
+        // Statement across the loop then throws "The prepared statement
+        // has been finalized" on the next execute. A fresh Statement per
+        // iteration sidesteps the lifecycle quirk; the per-DDL cost is
+        // dominated by network/IO and irrelevant against the test budget.
+        val hookState = RunnerHookHandler.State()
         try {
-            conn.createStatement().use { jdbcStmt ->
-                for (stmt in statements) {
-                    lastIds = stmt.operationIds
-                    attempted++
-                    executeOrApplyHook(conn, jdbcStmt, stmt.sql, hookState)
+            for (stmt in statements) {
+                lastIds = stmt.operationIds
+                attempted++
+                conn.createStatement().use { jdbcStmt ->
+                    RunnerHookHandler.executeOrApply(jdbcStmt, stmt.sql, hookState)
                 }
             }
             return ExecutionTrace(
@@ -159,63 +166,11 @@ internal object JdbcMigrationExecutor {
         }
     }
 
-    /**
-     * Phase H.3b: if [sql] is a runner-hook marker comment, apply the
-     * hook side-effect on [conn] (read/restore PRAGMA-state). Otherwise
-     * execute the SQL via [jdbcStmt] as before.
-     *
-     * Hook markers are recognised by the `-- dmigrate:runner-hook=<name>`
-     * prefix on the trimmed first line. Unknown hooks throw — the
-     * renderer must never emit a hook the executor can't apply.
-     */
-    @Suppress("ReturnCount")
-    internal fun executeOrApplyHook(
-        conn: java.sql.Connection,
-        jdbcStmt: java.sql.Statement,
-        sql: String,
-        state: RunnerHookState,
-    ) {
-        val hook = parseRunnerHook(sql)
-        if (hook == null) {
-            jdbcStmt.execute(sql)
-            return
-        }
-        when (hook) {
-            "save-fk-state-before-pragma-off" -> {
-                state.savedSqliteForeignKeysPragma = readPragmaForeignKeys(conn)
-            }
-            "restore-fk-state" -> {
-                // If no prior save (e.g. renderer-bug or mid-stream hook
-                // without paired save) default to ON — that's the
-                // standalone-mode tail and the safer post-migration state.
-                val value = state.savedSqliteForeignKeysPragma ?: 1
-                conn.createStatement().use { it.execute("PRAGMA foreign_keys = $value;") }
-            }
-            else -> error("JdbcMigrationExecutor: unknown runner-hook `$hook`")
-        }
-    }
-
-    /**
-     * Returns the hook name when [sql] is a runner-hook marker comment
-     * of the form `-- dmigrate:runner-hook=<name>` (whitespace-tolerant),
-     * else null.
-     */
-    internal fun parseRunnerHook(sql: String): String? {
-        val trimmed = sql.trim()
-        val prefix = "-- dmigrate:runner-hook="
-        if (!trimmed.startsWith(prefix)) return null
-        return trimmed.removePrefix(prefix).trim().takeWhile { it != '\n' }
-    }
-
-    private fun readPragmaForeignKeys(conn: java.sql.Connection): Int {
-        conn.createStatement().use { stmt ->
-            stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
-                return if (rs.next()) rs.getInt(1) else 0
-            }
-        }
-    }
-
-    internal data class RunnerHookState(var savedSqliteForeignKeysPragma: Int? = null)
+    // Phase H.3b runner-hook parser + applier lives in shared
+    // [RunnerHookHandler] (hexagon:application) so the test-fixture
+    // variant in MigrationExecutorTestSupport applies the same hook
+    // contract instead of running the markers through jdbcStmt.execute
+    // as raw SQL comments.
 
     private fun rollbackTrace(
         conn: java.sql.Connection,

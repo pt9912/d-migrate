@@ -94,12 +94,20 @@ private fun runStreamOwnedTransaction(
     conn.autoCommit = true
     var attempted = 0
     var lastIds: Set<String> = emptySet()
+    // Phase H.3b: route Hook-Marker through the shared
+    // RunnerHookHandler so test-fixture behaviour matches the production
+    // executor. Before this, hooks were passed verbatim to
+    // jdbcStmt.execute as SQL comments (xerial-sqlite tolerated them
+    // silently, masking H.3b regressions in Application-layer tests).
+    val hookState = dev.dmigrate.cli.commands.RunnerHookHandler.State()
     return try {
-        conn.createStatement().use { jdbcStmt ->
-            for (s in statements) {
-                lastIds = s.operationIds
-                attempted++
-                jdbcStmt.execute(s.sql)
+        // Per-statement fresh Statement — see JdbcMigrationExecutor for
+        // the xerial-sqlite Statement-finalisation rationale.
+        for (s in statements) {
+            lastIds = s.operationIds
+            attempted++
+            conn.createStatement().use { jdbcStmt ->
+                dev.dmigrate.cli.commands.RunnerHookHandler.executeOrApply(jdbcStmt, s.sql, hookState)
             }
         }
         ExecutionTrace(

@@ -185,8 +185,18 @@ class SchemaMigrateRunner(
         val effectiveUp = applyDestructiveGuard(renderedUp, request.allowDestructive)
 
         // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result).
-        // Down output is always STANDALONE — rollback artefacts are
-        // self-contained SQL files consumed by external runners.
+        // Down output is always STANDALONE — rollback consumption goes
+        // through the artefact-body split (`SchemaRollbackRunner.
+        // splitArtefactBody`), which reconstructs the SQL from a
+        // self-contained text file and feeds it back through
+        // `JdbcMigrationExecutor`. If a future `schema rollback --execute`
+        // path needs runner-owned FK-state (Round-Trip-State-Compat for
+        // rollbacks), this is where to set
+        // `DdlGenerationOptions(executionMode = EXECUTE)` for the down
+        // path — but only after the artefact format has a way to carry
+        // the runner-hook semantics (today the artefact body is reparsed
+        // as raw SQL and runner hooks would be ambiguous between
+        // standalone and runner reads).
         val renderedDown = if (request.generateRollback) {
             cancellationToken.throwIfCancellationRequested()
             renderer.generateDown(plan, DdlGenerationOptions())
