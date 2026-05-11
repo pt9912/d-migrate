@@ -2118,9 +2118,9 @@ beim Audit der §10-DoD "SQLite-Rebuilds werden durch einen
 expliziten `DialectMigrationPlan` geplant" aufgedeckt wurden:
 Bucket-Klassifikation + canonical 9-Statement-Sequence + Atomicity
 sind funktional erfuellt, aber Plan-§6.4 verlangt zusaetzlich ein
-formales Plan-Struct, Temp-Namen-Kollisionsprueffung, Recreate
-abhaengiger Views/Trigger und eine 5-Punkte-Preflight-Liste. Der
-heutige Code hat stattdessen `Classification(rebuildBuckets,
+formales Plan-Struct mit `sourceOperationIds`/`risk`/Drop+Recreate-
+Trennung, Temp-Namen-Kollisionsprueffung und eine 6-Punkte-Preflight-
+Liste. Der heutige Code hat stattdessen `Classification(rebuildBuckets,
 simpleOps)` + Inline-SQL-Erzeugung im Renderer.
 
 Reihenfolge nach Abhaengigkeit aufsteigend — H.1 ist Voraussetzung
@@ -2128,11 +2128,32 @@ fuer H.3/H.4:
 
 - [ ] **H.1a** `SqliteRebuildPlan`-Datenstruktur anlegen —
   Neuer Typ `SqliteRebuildPlan` mit den in §6.4 (L884-936)
-  geforderten Feldern: `originalTableName`, `oldTable`, `newTable`,
-  `newTableTempName`, `preservedColumns`, `addedColumns`,
-  `droppedColumns`, `indexesToRecreate`, `dependentViewsToRecreate`,
-  `dependentTriggersToRecreate`, `preflight`. Inklusive
-  Carrier-Klassen (`ColumnCopyMapping`, `AddedColumnFill`,
+  geforderten Feldern. **§6.4 modelliert `RebuildTable` als
+  `DialectMigrationStep`**; die zwei Step-Vertragsfelder
+  `sourceOperationIds: Set<String>` und `risk: OperationRisk` MUESSEN
+  in den Plan, sonst geht Attribution (welche fachlichen Ops loest
+  der Rebuild aus), Risikoauswertung (BlockSet im Migrate-Report)
+  und Rollback-Verknuepfung verloren.
+
+  Vollstaendige Plan-Felder:
+
+  - `sourceOperationIds: Set<String>` — Vereinigung der Bucket-Op-IDs.
+  - `risk: OperationRisk` — pre-aggregiertes Bucket-Risiko (richtungs-
+    abhaengig; Planner bekommt direction beim Build).
+  - `originalTableName`, `oldTable`, `newTable`, `newTableTempName`
+  - `preservedColumns`, `addedColumns`, `droppedColumns`
+  - `indexesToRecreate`
+  - `dependentViewsToDrop: List<NamedViewDefinition>` —
+    aus `current.views` gefiltert auf Refs zur rebuilt-Table
+  - `dependentViewsToRecreate: List<NamedViewDefinition>` —
+    aus `desired.views` gefiltert auf Refs zur rebuilt-Table
+  - `dependentTriggersToDrop: List<NamedTriggerDefinition>` —
+    aus `current.triggers` gefiltert auf rebuilt-Table
+  - `dependentTriggersToRecreate: List<NamedTriggerDefinition>` —
+    aus `desired.triggers` gefiltert auf rebuilt-Table
+  - `preflight: List<SqliteRebuildPreflightCheck>`
+
+  Inklusive Carrier-Klassen (`ColumnCopyMapping`, `AddedColumnFill`,
   `NamedView`, `NamedTrigger`, `SqliteRebuildPreflight`-Enum) und
   Column-Mapping-Modell. H.1a bedeutet **nur das Struct steht**;
   Planner und Renderer sind noch nicht umgestellt. Sub-Ziel: die
@@ -2154,42 +2175,90 @@ fuer H.3/H.4:
   deterministischer Hash; eine Kollision mit bereits in der
   Ziel-DB existierenden Tabellen/Views/Indizes/Triggern wird nicht
   geprueft. §6.4 (L975-977) verlangt: bei Kollision Suffix `__2`,
-  `__3`, ... deterministisch vergeben. Erfordert Catalog-Snapshot
-  zum Plan-Zeitpunkt (oder Pre-Render-Probe gegen
-  `sqlite_master`). Test: Planner mit simuliertem Catalog-
-  Kollisions-Set → Plan emittiert `__2`-Suffix.
+  `__3`, ... deterministisch vergeben.
 
-- [ ] **H.3** Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
+  Catalog-Snapshot-Quelle haengt vom Plan-Pfad ab:
+
+  - **Datei-zu-Datei-Planning** (`schema migrate --plan-only`): es
+    gibt kein `sqlite_master`. Der Planner nutzt den
+    `current: SchemaDefinition`-Snapshot und prueft Kollision gegen
+    `current.tables`, `current.views`, `current.triggers` und alle
+    Index-Namen. Ad-hoc-Objekte ausserhalb des Modells (z.B. nicht
+    importierte temporaere Tabellen aus frueheren Migrationen) bleiben
+    ausserhalb dieser Garantie — der `--plan-only`-Output kommt mit
+    einem Header-Kommentar "Temp-Name-Probe nur gegen Schema-Modell;
+    Live-DB-Catalog kann zusaetzliche Kollisionen haben — verifiziere
+    via `d-migrate schema migrate --execute` oder Pre-Probe".
+  - **Execute-Pfad** (`schema migrate --execute`): zusaetzlich
+    Pre-Render-Probe gegen live `sqlite_master` ueber die Runner-
+    Connection; bei Kollision konsultiert der Plan beide Mengen und
+    nimmt die Vereinigung als Kollisions-Set.
+
+  Bei Kollision: deterministischer Suffix-Fallback `__2`, `__3`, ...
+  bis frei. Die fortlaufende Nummer ist Plan-Output und wird im
+  Metadatenblock ausgewiesen. Test: Planner mit simuliertem
+  Catalog-Kollisions-Set → Plan emittiert `__2`-Suffix (Datei-Pfad)
+  bzw. erkennt zusaetzlich live `sqlite_master`-Kollisionen
+  (Execute-Pfad).
+
+- [ ] **H.3** Drop+Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
   Zwei separate Concerns:
 
-  - **View/Trigger-Recreate (Plan-/Renderer-Concern)**:
+  - **View/Trigger Drop+Recreate (Plan-/Renderer-Concern)**:
     `SqliteRebuildRenderer.kt:65-70` dokumentiert explizit
     "User-defined triggers attached to the rebuilt table are dropped
     … and not recreated"; §6.4 (L995, L1004) verlangt das
-    Drop+Recreate aus gespeicherten Definitionen in
-    `dependentViewsToRecreate` / `dependentTriggersToRecreate` (aus
-    H.1a). Planner befuellt die Listen aus
-    `desired.views`/`desired.triggers` gefiltert auf
-    rebuilt-Table-Refs; Renderer emittiert die Drop-Statements vor
-    `DROP TABLE` und die Create-Statements nach RENAME.
+    Drop+Recreate aus gespeicherten Definitionen. **Zwei separate
+    Mengen** (nicht eine wie ursprueglich im Plan):
+    `dependentObjectsToDrop` aus `current.views`/`current.triggers`
+    gefiltert auf rebuilt-Table-Refs und `dependentObjectsToRecreate`
+    aus `desired.views`/`desired.triggers` analog. Begruendung:
+    Mengen koennen divergieren — eine View, die im selben Plan
+    entfernt wird, ist in `current.views` aber nicht in
+    `desired.views`; eine View, die so geaendert wird dass sie die
+    Tabelle nicht mehr referenziert, faellt in `current` an aber
+    nicht in `desired`. Renderer emittiert die Drop-Statements vor
+    `DROP TABLE` (aus `*ToDrop`) und die Create-Statements nach
+    RENAME (aus `*ToRecreate`).
 
-  - **FK-Pragma-Restore (Runner-Vertrag, NICHT Plan-Concern)**:
+  - **FK-Pragma-Restore (hybrid: Runner-Vertrag fuer Execute,
+    Carve-Out fuer Standalone-SQL)**:
     Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
     ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
     ist verbindungs- und execute-time-abhaengig und kann nicht
-    statisch in den Plan eingefroren werden (Datei-zu-Datei-Planning
-    + spaeter ausgefuehrte SQL-Artefakte). H.3 spezifiziert: der
-    Renderer emittiert das `PRAGMA foreign_keys = OFF;` mit einem
-    Phase-Marker, der den Runner verpflichtet, vor der Ausfuehrung
-    den aktuellen Wert via `PRAGMA foreign_keys;` zu lesen und nach
-    Commit/Rollback wiederherzustellen. Das pauschale `PRAGMA
-    foreign_keys = ON;` am Ende entfaellt zugunsten eines
-    Runner-Calls.
+    statisch in den Plan eingefroren werden.
 
-  Tests: Rebuild einer Table mit View + Trigger bringt beide nach
-  dem Rebuild zurueck (Renderer-Test). Runner-Vertrag: separater
-  Test im SQLite-Integration-Modul mit `PRAGMA foreign_keys = OFF`
-  als Initial-State validiert Restore auf `OFF`.
+    - **Execute-Pfad (`schema migrate --execute`)**: der Renderer
+      emittiert das `PRAGMA foreign_keys = OFF;` mit einem
+      Phase-Marker, der den d-migrate-Runner verpflichtet, vor der
+      Ausfuehrung den aktuellen Wert via `PRAGMA foreign_keys;` zu
+      lesen, fuer die Migration auf OFF zu setzen und nach
+      Commit/Rollback wiederherzustellen. Das `PRAGMA foreign_keys
+      = ON;` am Ende der Sequence entfaellt zugunsten eines
+      Runner-Calls.
+
+    - **Standalone-SQL-Pfad (`--plan-only` SQL-Artefakt)**: das
+      erzeugte SQL muss self-contained ausfuehrbar bleiben — externe
+      Runner werten Phase-Marker nicht aus. Daher behaelt der
+      Standalone-Output das pauschale `PRAGMA foreign_keys = ON;`
+      am Ende mit einem Header-Kommentar: "Standalone-Ausfuehrung
+      laesst FK auf ON; prior `OFF`-State wird nicht restored —
+      Runner-Pfad ist fuer Round-Trip-State-Compat erforderlich".
+      Plan-Diagnostic, wenn das Schema-Modell signalisiert dass
+      prior `OFF` zu erwarten ist (z.B. via Adapter-Hint).
+
+  Tests:
+  - Renderer-Test: Rebuild mit View+Trigger in `current`+`desired`
+    bringt beide nach Rebuild zurueck.
+  - Renderer-Test: View nur in `current` (im selben Plan removed)
+    wird gedroppt aber nicht recreated.
+  - Renderer-Test: View nur in `desired` (im selben Plan added)
+    wird recreated aber nicht gedroppt.
+  - Integration (`:test:integration-sqlite`): Runner-Vertrag mit
+    `PRAGMA foreign_keys = OFF` als Initial-State validiert Restore
+    auf `OFF` nach `--execute`.
+  - Unit-Test: Standalone-SQL-Output enthaelt Header-Kommentar und
+    `PRAGMA foreign_keys = ON;` am Ende.
 
 - [ ] **H.4** Vollstaendige Preflight-Liste —
   §6.4 Typentwurf L928-934 nennt **6** Preflight-Checks (die
@@ -2201,7 +2270,7 @@ fuer H.3/H.4:
   |---|---|---|
   | `TABLE_EXISTS` | Plan-time statisch | Diff hat `current.tables[name]`; Plan-Diagnostic, wenn fehlend. |
   | `TEMP_NAME_AVAILABLE` | Plan-time statisch via Catalog-Snapshot aus H.2 | H.2 prueft gegen `sqlite_master`-Snapshot; bei Kollision `__2`/`__3`-Fallback im Plan. |
-  | `SOURCE_COLUMNS_EXIST` | Plan-time statisch | preserved columns kommen aus `source.columns.keys ∩ target.columns.keys`; Plan-Diagnostic, wenn ein erwarteter source column fehlt. |
+  | `SOURCE_COLUMNS_EXIST` | Plan-time statisch | Check operiert NICHT ueber `source.columns.keys ∩ target.columns.keys` (das waere tautologisch — eine fehlende source-Spalte landet dann gar nicht erst in `preservedColumns`), sondern ueber `plan.mapping.preservedColumns.map { it.sourceColumn }` des **bereits gebauten** Plans gegen die `oldTable.columns.keys`. Damit erkennt der Check Mapping-Bugs (z.B. wenn H.2 das Mapping auf Basis eines stale Catalog-Snapshots gebaut hat) oder ColumnCopyMapping-Eintraege mit ungueltigen sourceColumn-Verweisen. Plan-Diagnostic bei Verletzung. |
   | `DEPENDENCIES_KNOWN` | Plan-time statisch via F.6.b + G.2 | View/Trigger-Dependencies-Projektion ist Adapter-Output; F.6.b/G.2 blocken bei Unvollstaendigkeit unabhaengig. |
   | `ADDED_COLUMNS_FILLABLE` | Plan-time statisch | NOT NULL-Backfill + Cast-Matrix; heute schon im Mapping, nur Umverdrahtung auf das `preflight`-Feld. |
   | `FOREIGN_KEYS_CHECKABLE` | **Runner-Vertrag (execute-time)** | FK-Constraint-Integritaet ist live-DB-abhaengig; Renderer emittiert das `PRAGMA foreign_key_check;` (heute schon vorhanden) mit Phase-Marker, der den Runner verpflichtet, einen Violation-Output als Abbruch zu behandeln statt als Informational. |
@@ -2289,10 +2358,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Bucket-Klassifikation + die canonical 9-Statement-Sequence in
   `SqliteRebuildRenderer.emitRebuildSequence` + Atomicity- und Recovery-
   Pfade in F.5/F.6. Strukturell offen: formales `DialectMigrationPlan`-
-  Struct (H.1), Temp-Namen-Kollisionsprueffung mit Suffix `__2`/`__3`
-  (H.2), Recreate abhaengiger Views/Trigger + FK-Pragma-Zustand
-  wiederherstellen (H.3), vollstaendige 5-Punkte-Preflight-Liste aus
-  §6.4 (H.4). Siehe §9 Phase H.)
+  Struct mit `sourceOperationIds`/`risk` (H.1a/H.1b), Temp-Namen-
+  Kollisionsprueffung mit Suffix `__2`/`__3` (H.2), Drop+Recreate-
+  Trennung fuer abhaengige Views/Trigger + FK-Pragma-Runner-Vertrag
+  (H.3), vollstaendige 6-Punkte-Preflight-Liste aus §6.4 (H.4). Siehe
+  §9 Phase H.)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix. Zielaffinitaet allein
   reicht nicht als Sicherheitsnachweis; sonst blockiert die Operation als
