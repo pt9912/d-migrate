@@ -33,6 +33,7 @@ include("test:integration-postgresql")
 include("test:integration-mysql")
 include("test:integration-sqlite")
 include("test:integration-server-state")
+include("test:integration-integrations")
 
 // Consumer integration probe (read-only surface verification)
 include("test:consumer-read-probe")
