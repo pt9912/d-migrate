@@ -185,6 +185,14 @@ Entscheidungspunkte:
   - JSON-Array im Metadatenblock mit SQL, Operation-IDs, Phase,
     `transactionScope`, Risiken und Hash pro Statement; oder
   - eindeutig spezifiziertes Length-Prefix-Format.
+- Der neue Vertrag bleibt ein Down-SQL-Artefakt, solange `schema rollback`
+  laut erstem Slice Down-SQL liest: Ein SQL-Kommentarheader enthaelt die
+  strukturierte Statement-Index-/Hash-Metadaten, der Body bleibt ein
+  ausfuehrbares SQL-Skript fuer den Zieldialekt. Die Struktur ersetzt nur die
+  Parser-Heuristik, nicht den ausfuehrbaren Body. Ein reines JSON- oder
+  Length-Prefix-Artefakt ohne direkt ausfuehrbaren SQL-Body waere ein neues
+  Artefaktformat und braucht vorher einen separaten CLI-/Kompatibilitaets-
+  Vertrag.
 - `formatVersion` unterscheidet alte und neue Formate eindeutig.
 - Parser lehnt unbekannte Versionen blockierend ab.
 - Ein kontrollierter Migrationspfad fuer alte `rollback-sql v1`-Artefakte wird
@@ -244,6 +252,11 @@ Entscheidung:
   `transactionRolledBack`, `sideEffectsPossible`, `recoverability` und die
   Diagnose. Ungueltige Scope-Kombinationen, die vor Execute erkannt werden,
   bleiben Migrations-Blocker mit Exit `8`.
+- Neue `primaryBlockedReason`-Werte aus diesem Workstream sind erst stabil,
+  wenn sie in `MigrationBlockedReason`, CLI-JSON, Report-Rendering und Tests
+  ergaenzt sind. Fuer diesen Slice ist `TRANSACTION_SCOPE_UNSUPPORTED` der
+  geplante neue Wert; bis zur Implementierung darf kein Report diesen String
+  als stabilen Vertrag ausgeben.
 
 Akzeptanz:
 
@@ -390,6 +403,14 @@ Entscheidung:
   Report/Plan gespeicherten `dataPreflightStatus = PASSED` fuer exakt dieselbe
   DB-Fingerprint-/Tabellen-/Spaltenkombination ausfuehren. Fehlt dieser Status,
   blockiert Execute vor dem ersten Statement.
+- `PASSED` ist kein dauerhaft gueltiger Freifahrtschein. Fuer Execute gilt es
+  nur innerhalb desselben geschuetzten Plan+Execute-Laufs, in dem der Preflight
+  auf derselben Connection und unter der fuer den Cast geltenden
+  Transaktions-/Lock-Strategie unmittelbar vor der Mutation validiert wurde.
+  Wird ein Plan spaeter oder aus einem gespeicherten Artefakt ausgefuehrt, muss
+  der Runner den Preflight vor dem ersten mutierenden Statement erneut
+  ausloesen oder vor Execute blockieren. Der gespeicherte Status im Report ist
+  dann nur Audit-Information.
 - Nicht konvertierbare Bestandsdaten erzeugen eine Blocker-Diagnostic mit
   `primaryBlockedReason = MANUAL_ACTION_REQUIRED`, betroffener Tabelle/Spalte,
   Gesamtzahl der problematischen Zeilen und optional einer begrenzten
@@ -412,7 +433,8 @@ Akzeptanz:
 - Positiv- und Negativtests mit realer SQLite-DB.
 - Datei-zu-Datei-Pfad bleibt deterministisch und markiert fehlende
   Live-Pruefung.
-- Keine Cast-Ausfuehrung gegen Live-Daten ohne dokumentierten Preflight-Status.
+- Keine Cast-Ausfuehrung gegen Live-Daten ohne dokumentierten und fuer diesen
+  Execute-Lauf frischen Preflight-Status.
 - Report unterscheidet `PASSED`, `FAILED`, `NOT_RUN_FILE_TARGET` und
   `NOT_RUN_POLICY`.
 
@@ -782,8 +804,13 @@ Entscheidung:
   Operationsreihenfolge, Diagnostics oder gerenderten SQL-Referenzen muss den
   Hash aendern.
 - Kompatibilitaet: gleiche `formatVersion` muss innerhalb einer
-  d-migrate-Minor-Linie lesbar bleiben. Unbekannte optionale Felder werden
-  ignoriert und beim Re-Emit nicht garantiert erhalten. Unbekannte Pflichtfelder
+  d-migrate-Minor-Linie lesbar bleiben. Das Artefakt enthaelt
+  `requiredFeatures` und optional `semanticExtensions`; unbekannte Eintraege in
+  diesen Listen blockieren vor Render oder Execute. Unbekannte optionale Felder
+  duerfen nur dekorative oder producer-spezifische Metadaten tragen, niemals
+  Ausfuehrungs-, Risiko-, Rollback-, Locking-, Preflight- oder
+  Secret-Scrubbing-Semantik. Solche Semantik muss entweder Pflichtfeld,
+  `requiredFeatures` oder neue `formatVersion` sein. Unbekannte Pflichtfelder
   oder inkompatible `formatVersion` blockieren. Neue Pflichtfelder erfordern
   eine neue `formatVersion`.
 - Das Artefakt enthaelt beide Ebenen: einen dialektneutralen Operationskern und
@@ -806,6 +833,7 @@ Mindestfelder:
 - `operations`
 - `diagnostics`
 - `reversibilitySummary`
+- `requiredFeatures`
 - `createdAt`
 - `artifactHash`
 
@@ -859,9 +887,11 @@ Entscheidung:
   Quelle, weil Renames eine Beziehung zwischen zwei Zustaenden beschreiben.
 - Jedes Mapping bindet `sourceFingerprint`, `targetFingerprint`, Dialekt,
   Objektart, alte Referenz, neue Referenz und optional erwartete Struktur-
-  Fingerprints. Stale Fingerprints blockieren mit
-  `primaryBlockedReason = TARGET_STATE_MISMATCH` oder einer eigenen
-  Rename-Mapping-Diagnostic.
+  Fingerprints. Stale Fingerprints blockieren mit dem neuen geplanten
+  `primaryBlockedReason = RENAME_MAPPING_INVALID` und einer maschinenlesbaren
+  Rename-Mapping-Diagnostic `STALE_FINGERPRINT`. `TARGET_STATE_MISMATCH` bleibt
+  fuer Rollback-Zielzustandsdrift reserviert und wird fuer stale
+  Rename-Overlays nicht wiederverwendet.
 - Eindeutigkeit ist strikt: Ein altes Objekt darf genau ein neues Ziel haben
   und ein neues Objekt genau eine alte Quelle. Ueberlappungen, Kettenrenames im
   selben Slice, Case-Folding-Konflikte und mehrere plausible Kandidaten ohne
@@ -877,6 +907,10 @@ Entscheidung:
   projizieren, wird der Rename nicht gerendert. Datei-zu-Datei darf nur die im
   Modell/Overlay bekannten Dependencies bewerten und muss fehlende Live-
   Projektion im Report ausweisen.
+- `RENAME_MAPPING_INVALID` ist wie `TRANSACTION_SCOPE_UNSUPPORTED` erst ein
+  stabiler Report-Wert, nachdem Enum, CLI-JSON, Report-Rendering und Tests
+  angepasst sind. Bis dahin muss ein Implementierungsslice auf bestehende
+  Blocker-Reasons mappen und die genauere Rename-Diagnostic separat ausweisen.
 
 Akzeptanz:
 
