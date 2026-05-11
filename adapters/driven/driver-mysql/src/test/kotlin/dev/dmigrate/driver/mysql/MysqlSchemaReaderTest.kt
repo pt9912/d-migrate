@@ -139,6 +139,42 @@ class MysqlSchemaReaderTest : FunSpec({
         view.dependencies!!.tables.shouldBeEmpty()
     }
 
+    test("N-1 — constant-only view (`SELECT 1 AS x`) is NOT flagged as incomplete") {
+        // Pre-N-1: empty VIEW_TABLE_USAGE rows → projectionComplete=false
+        // unconditionally → false-positive BLOCKER for views like
+        // `SELECT 1 AS x` that genuinely have no table deps.
+        // N-1 adds a body-regex probe: no FROM/JOIN token →
+        // projectionComplete=true.
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "v_const", "view_definition" to "SELECT 1 AS x, 'foo' AS y"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["v_const"]!!
+        view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tables.shouldBeEmpty()
+    }
+
+    test("N-1 — view body with FROM token but empty VIEW_TABLE_USAGE still flags incomplete") {
+        // Body says `FROM users` → conservative posture: probe assumes
+        // tables and the empty VIEW_TABLE_USAGE is the silent privilege
+        // gap. projectionComplete=false.
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "v_hidden", "view_definition" to "SELECT id FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        result.schema.views["v_hidden"]!!.dependencies!!.projectionComplete shouldBe false
+    }
+
     test("G.2 — view with populated VIEW_TABLE_USAGE rows flags projectionComplete=true") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(

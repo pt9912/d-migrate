@@ -14,18 +14,24 @@ internal class MysqlRoutineReader {
         val result = LinkedHashMap<String, ViewDefinition>()
         for (row in rows) {
             val viewName = row["table_name"] as String
+            val viewDefinition = row["view_definition"] as? String
             val tableDeps = viewTableDeps[viewName] ?: emptyList()
             val funcDeps = viewFuncDeps[viewName] ?: emptyList()
             // Phase G.2: empty VIEW_TABLE_USAGE projection for an existing
-            // view means either "no table deps" (rare — most views select
-            // FROM at least one table) or "user lacks SHOW VIEW privilege
-            // on the referenced tables" (silent incomplete projection).
-            // MySQL cannot distinguish; the planner sees the flag and
-            // blocks view-replacing / column-altering ops with
-            // VIEW_DEPENDENCY_PROJECTION_INCOMPLETE.
-            val projectionComplete = tableDeps.isNotEmpty()
+            // view typically means the introspecting user lacks SHOW VIEW
+            // privilege on the referenced tables (silent incomplete
+            // projection). But constant-only views (`SELECT 1 AS x`,
+            // `SELECT NOW()`) genuinely have no table deps and would be
+            // false-positive flagged as incomplete. A best-effort body
+            // probe (`FROM`/`JOIN` token search in VIEW_DEFINITION)
+            // discriminates the two cases. The probe is best-effort: a
+            // string literal `SELECT 'FROM is a keyword'` produces a
+            // false-positive incomplete flag, but conservative-on-failure
+            // is the right default (operator sees a clear BLOCKER instead
+            // of a silently-broken view).
+            val projectionComplete = tableDeps.isNotEmpty() || !viewBodyReferencesTables(viewDefinition)
             result[viewName] = ViewDefinition(
-                query = row["view_definition"] as? String,
+                query = viewDefinition,
                 dependencies = DependencyInfo(
                     tables = tableDeps,
                     functions = funcDeps,
@@ -35,6 +41,28 @@ internal class MysqlRoutineReader {
             )
         }
         return result
+    }
+
+    /**
+     * Best-effort regex probe: returns `true` when the SQL body looks
+     * like it references at least one table via `FROM <name>` or
+     * `JOIN <name>` (case-insensitive). Used to discriminate
+     * constant-only views from views with silently-incomplete
+     * VIEW_TABLE_USAGE projections.
+     *
+     * False-positives possible:
+     * - String literals containing FROM/JOIN words
+     * - Comments containing FROM/JOIN words
+     * Both cases default to "references tables" → projectionComplete=false,
+     * which is the safer planning posture.
+     */
+    private fun viewBodyReferencesTables(body: String?): Boolean {
+        if (body.isNullOrBlank()) return true // unknown body → assume tables (safe)
+        return TABLE_REFERENCE_PATTERN.containsMatchIn(body)
+    }
+
+    private companion object {
+        private val TABLE_REFERENCE_PATTERN = Regex("""\b(?:FROM|JOIN)\s+\w""", RegexOption.IGNORE_CASE)
     }
 
     fun readFunctions(
