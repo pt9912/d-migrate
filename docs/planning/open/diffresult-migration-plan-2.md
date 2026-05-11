@@ -355,6 +355,76 @@ DoD:
 - [ ] SQL-Metadatenblock und Report widersprechen sich nicht.
 - [ ] Dokumentation beschreibt die Grenzen der Aussagen pro Dialekt.
 
+### A.2 SQLite-Rebuild Live-`sqlite_master`-Probe im Execute-Pfad
+
+Phase H des ersten 0.9.7-Plans formalisiert den SQLite-Rebuild-Vertrag und
+loest Temp-Namen-Kollisionen plan-time ueber `SqliteCatalogSnapshot` mit
+deterministischem `__2`/`__3`-Fallback. Heute stammt dieser Snapshot im
+Execute-Pfad noch aus dem Schema-Modell. Ad-hoc-Objekte in der Live-DB, die
+nicht im neutralen `SchemaDefinition`-Snapshot stehen, koennen deshalb erst beim
+`CREATE TABLE <temp>` fehlschlagen. Dieser Slice ist die explizite H.2.2-
+Fortsetzung: keine Rueckplanung von Phase H, sondern Execute-Hardening fuer
+die bereits beschlossene Temp-Namen-Policy.
+
+Entscheidung:
+
+- `SqliteCatalogSnapshot` bekommt einen Live-Loader
+  `fromSqliteMaster(conn)` oder einen aequivalenten Adapter-Port, der
+  Tabellen, Views, Indizes und Trigger aus `sqlite_master`/`sqlite_schema`
+  liest. Systemobjekte wie `sqlite_%` werden nicht als Nutzer-Kollisionen
+  behandelt, ausser SQLite wuerde denselben Namen fuer ein explizites
+  User-Objekt reservieren.
+- Der Execute-Pfad fuer `schema migrate --execute` fuehrt die Probe vor dem
+  Rebuild-Plan-Build aus und uebergibt
+  `SqliteCatalogSnapshot.fromSchema(current).union(liveSnapshot)` an
+  `SqliteRebuildPlanner.planRebuild`.
+- Der Renderer bleibt pure consumption: `newTableTempName` wird weiterhin
+  ausschliesslich im Plan eingefroren und nicht waehrend der SQL-Emission
+  nachtraeglich geaendert.
+- Datei-zu-Datei- und `--plan-only`-Pfade duerfen keine Live-DB-Erkenntnis
+  vortaeuschen. Sie nutzen weiter den Schema-Snapshot und markieren im Report
+  bzw. Artefakt-Header, dass die Live-Catalog-Probe nicht ausgefuehrt wurde.
+- Datei-zu-DB ohne Execute muss explizit entscheiden, ob eine Live-Probe fuer
+  den Plan erlaubt ist. Wenn kein Connection-Kontext existiert, gilt dasselbe
+  Verhalten wie Datei-zu-Datei: schema-only Snapshot plus Diagnose
+  `NOT_RUN_FILE_TARGET` oder aequivalenter Status.
+- Wenn die Live-Probe wegen fehlender Berechtigung oder Metadata-Fehler
+  fehlschlaegt, blockiert Execute vor dem ersten mutierenden Statement mit
+  Exit `8` und maschinenlesbarer Diagnostic, statt in einen spaeteren
+  `CREATE TABLE`-Fehler zu laufen.
+- Trigger-Namen muessen gegen die echten SQLite-Objektnamen geprueft werden,
+  nicht gegen kanonische neutrale Map-Keys wie `table::trigger`. Der Loader
+  liefert deshalb SQL-Namen; `fromSchema` muss kanonische Keys fuer die
+  Kollisionsmenge entsprechend normalisieren.
+
+Akzeptanz:
+
+- Positivtest: Live-DB enthaelt ein ad-hoc-Objekt mit dem Basis-Temp-Namen;
+  `schema migrate --execute` plant deterministisch `<base>__2` und fuehrt den
+  Rebuild erfolgreich aus.
+- Suffix-Test: Live-DB enthaelt `<base>` und `<base>__2`; der Plan nutzt
+  `<base>__3`.
+- Trigger-Test: eine Live-Trigger-Kollision wird anhand des SQL-Triggernamens
+  erkannt, auch wenn der neutrale Schema-Snapshot kanonische Trigger-Keys nutzt.
+- Blocker-Test: Metadata-Probe-Fehler vor Execute endet ohne ausgefuehrte
+  Mutationsstatements mit Exit `8` und klarer Diagnostic.
+- Datei-zu-Datei-Test: derselbe Diff bleibt deterministisch, fuehrt keine
+  Live-Probe aus und berichtet den schema-only Status.
+- Report/SQL-Artefakt zeigen den verwendeten Catalog-Probe-Modus
+  (`SCHEMA_ONLY`, `LIVE_SQLITE_MASTER`, `NOT_RUN_FILE_TARGET`) und den finalen
+  Temp-Namen.
+
+DoD:
+
+- [ ] Live-Loader fuer SQLite-Catalog-Snapshot existiert und ist getrennt vom
+  schema-pure `DiffPlanner`.
+- [ ] Execute-Wiring uebergibt den Union-Snapshot vor `planRebuild`.
+- [ ] Renderer bleibt frei von Live-DB-Probes.
+- [ ] Datei-zu-Datei-/Plan-only-Verhalten ist explizit diagnostisch, nicht
+  optimistisch.
+- [ ] Trigger-Key-vs-SQL-Name-Kollisionen sind getestet.
+- [ ] Report- und Exit-Code-Erwartungen sind gepinnt.
+
 ---
 
 ## 6. Workstream B - Erweiterte Typkonvertierungen
@@ -1170,24 +1240,27 @@ Empfohlene Reihenfolge nach Risiko und Abhaengigkeiten:
    komplexe Bodies.
 2. Workstream A: Locking-/Transactional-DDL-Hinweise, weil sie den bestehenden
    Execute-Vertrag schaerfen, ohne neue Objektklassen freizuschalten.
-3. Workstream D.1/D.2: View-Dependency-Hardening fuer PostgreSQL/MySQL, weil
+3. Workstream A.2: SQLite-Rebuild Live-`sqlite_master`-Probe im Execute-Pfad,
+   weil sie den bestehenden Phase-H-Vertrag gegen Live-Catalog-Drift haertet,
+   ohne neuen SQL-Scope freizuschalten.
+4. Workstream D.1/D.2: View-Dependency-Hardening fuer PostgreSQL/MySQL, weil
    Views bereits im ersten Slice enthalten sind.
    Vor D.1/D.2 oder als erster Teil davon muss der D.3a-Guard fuer
    `materialized = true` aktiv sein, damit Materialized Views nicht laenger ueber
    normale View-Pfade gerendert werden.
-4. Workstream F.0: versionierter Migrations-Overlay-Grundvertrag. Dieser kleine
+5. Workstream F.0: versionierter Migrations-Overlay-Grundvertrag. Dieser kleine
    Produktslice ist Vorbedingung fuer alle Features, die Nutzerentscheidungen
    als Overlay akzeptieren, insbesondere B.1 und F.4.
-5. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights. B.1
+6. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights. B.1
    darf erst Overlay-Input akzeptieren, wenn F.0 umgesetzt ist; B.2 kann separat
    geplant werden.
-6. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
+7. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
    bewusst blockiert.
-7. Workstream C/D.3b/E: Extensions, Spatial, Materialized Views sowie
+8. Workstream C/D.3b/E: Extensions, Spatial, Materialized Views sowie
    Up-only/blockierende Routine-, Trigger- und Sequence-Slices, die keine
    unsichere Body-Speicherung und kein vollstaendiges Routine-/Trigger-
    Rollback-Artefakt brauchen.
-8. Workstream F.1-F.4: neue Produktvertraege fuer Daten-Transformationen,
+9. Workstream F.1-F.4: neue Produktvertraege fuer Daten-Transformationen,
    Plan-Artefakte, Partial Rollbacks und Rename-Mappings. F.4 darf den bereits
    umgesetzten F.0-Overlay-Vertrag nutzen; F.2 bzw. ein expliziter
    Secret-/Body-Speichervertrag muss vor Routine-/Trigger-Slices liegen, die
