@@ -75,7 +75,16 @@ subprojects {
         "testRuntimeOnly"("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     }
 
+    // Sub-Projekte unter :test:integration-* + :test:e2e-cli starten ihre
+    // Test-Tasks nur unter -PintegrationTests. Strukturell aequivalent zum
+    // Kotest-Tag-Filter weiter unten, aber spart Test-JVM-Startup und
+    // Test-Discovery, wenn die Property fehlt.
+    val isIntegrationProject = path.startsWith(":test:integration-") || path == ":test:e2e-cli"
+
     tasks.withType<Test> {
+        if (isIntegrationProject) {
+            onlyIf("requires -PintegrationTests") { project.hasProperty("integrationTests") }
+        }
         useJUnitPlatform()
         val explicitKotestTags = System.getProperty("kotest.tags")
         // Per default integration-Tests ausschließen — sie brauchen Docker
