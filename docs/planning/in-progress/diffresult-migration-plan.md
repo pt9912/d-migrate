@@ -14,9 +14,9 @@
 > (SQLite-Rebuild-Vertrag formalisieren) ist offen — Bucket-Klassifikation
 > + canonical 9-Statement-Sequence + Atomicity sind funktional erfuellt,
 > aber das formale `SqliteRebuildPlan`-Struct (H.1a/H.1b),
-> Temp-Namen-Kollision (H.2), Views/Trigger-Recreate + FK-Pragma-
-> Runner-Vertrag (H.3) und die 6-Punkte-Preflight-Liste aus §6.4 (H.4)
-> fehlen strukturell.
+> Temp-Namen-Kollision (H.2), Drop+Recreate abhaengiger Views/Trigger
+> + simpleOps-Absorption (H.3a), FK-Pragma-Runner-Vertrag (H.3b) und
+> die 6-Punkte-Preflight-Liste aus §6.4 (H.4) fehlen strukturell.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2218,69 +2218,41 @@ fuer H.3/H.4:
   unterscheidet sich nur durch die Snapshot-Quelle, nicht durch die
   Plan-Logik).
 
-- [ ] **H.3** Drop+Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
-  Zwei separate Concerns:
+- [ ] **H.3a** Drop+Recreate abhaengiger Views/Trigger (Plan-/
+  Renderer-Concern) —
+  `SqliteRebuildRenderer.kt:65-70` dokumentiert explizit
+  "User-defined triggers attached to the rebuilt table are dropped
+  … and not recreated"; §6.4 (L995, L1004) verlangt das
+  Drop+Recreate aus gespeicherten Definitionen. **Zwei separate
+  Mengen** (nicht eine wie ursprueglich im Plan):
+  `dependentObjectsToDrop` aus `current.views`/`current.triggers`
+  gefiltert auf rebuilt-Table-Refs und `dependentObjectsToRecreate`
+  aus `desired.views`/`desired.triggers` analog. Begruendung:
+  Mengen koennen divergieren — eine View, die im selben Plan
+  entfernt wird, ist in `current.views` aber nicht in
+  `desired.views`; eine View, die so geaendert wird dass sie die
+  Tabelle nicht mehr referenziert, faellt in `current` an aber
+  nicht in `desired`. Renderer emittiert die Drop-Statements vor
+  `DROP TABLE` (aus `*ToDrop`) und die Create-Statements nach
+  RENAME (aus `*ToRecreate`).
 
-  - **View/Trigger Drop+Recreate (Plan-/Renderer-Concern)**:
-    `SqliteRebuildRenderer.kt:65-70` dokumentiert explizit
-    "User-defined triggers attached to the rebuilt table are dropped
-    … and not recreated"; §6.4 (L995, L1004) verlangt das
-    Drop+Recreate aus gespeicherten Definitionen. **Zwei separate
-    Mengen** (nicht eine wie ursprueglich im Plan):
-    `dependentObjectsToDrop` aus `current.views`/`current.triggers`
-    gefiltert auf rebuilt-Table-Refs und `dependentObjectsToRecreate`
-    aus `desired.views`/`desired.triggers` analog. Begruendung:
-    Mengen koennen divergieren — eine View, die im selben Plan
-    entfernt wird, ist in `current.views` aber nicht in
-    `desired.views`; eine View, die so geaendert wird dass sie die
-    Tabelle nicht mehr referenziert, faellt in `current` an aber
-    nicht in `desired`. Renderer emittiert die Drop-Statements vor
-    `DROP TABLE` (aus `*ToDrop`) und die Create-Statements nach
-    RENAME (aus `*ToRecreate`).
-
-    **Absorption-Vertrag fuer simpleOps**: heute laesst
-    `SqliteRebuildPlanner.classify` View- und Trigger-Ops
-    (`CreateView`/`DropView`/`ReplaceView`/`CreateTrigger`/
-    `DropTrigger`/`ReplaceTrigger`) immer in `simpleOps`, und der
-    Generator rendert simpleOps **nach** den Rebuilds. Mit H.3
-    fuehrt das zu Doppel-Emission: eine `desired`-only View, die
-    durch `dependentViewsToRecreate` im Rebuild bereits ein
-    `CREATE VIEW` erhaelt, wuerde anschliessend nochmal von der
-    `CreateView`-simpleOp gerendert; analog wuerde eine
-    `current`-only View doppelt gedroppt. **H.3 absorbiert daher
-    View/Trigger-Ops aus simpleOps, sobald ihre Table-Referenz im
-    `rebuildTables`-Set ist** — die Drop/Recreate-Logik kommt
-    ausschliesslich aus dem Plan. `ReplaceView` auf eine rebuilt-
-    Table-Referenz wird in dieselben zwei Mengen gesplittet (drop-
-    aus-before-state, recreate-aus-after-state). Die absorbierten
-    Op-IDs werden in die `sourceOperationIds` des Rebuild-Plans
-    aufgenommen, damit Attribution erhalten bleibt.
-
-  - **FK-Pragma-Restore (hybrid: Runner-Vertrag fuer Execute,
-    Carve-Out fuer Standalone-SQL)**:
-    Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
-    ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
-    ist verbindungs- und execute-time-abhaengig und kann nicht
-    statisch in den Plan eingefroren werden.
-
-    - **Execute-Pfad (`schema migrate --execute`)**: der Renderer
-      emittiert das `PRAGMA foreign_keys = OFF;` mit einem
-      Phase-Marker, der den d-migrate-Runner verpflichtet, vor der
-      Ausfuehrung den aktuellen Wert via `PRAGMA foreign_keys;` zu
-      lesen, fuer die Migration auf OFF zu setzen und nach
-      Commit/Rollback wiederherzustellen. Das `PRAGMA foreign_keys
-      = ON;` am Ende der Sequence entfaellt zugunsten eines
-      Runner-Calls.
-
-    - **Standalone-SQL-Pfad (`--plan-only` SQL-Artefakt)**: das
-      erzeugte SQL muss self-contained ausfuehrbar bleiben — externe
-      Runner werten Phase-Marker nicht aus. Daher behaelt der
-      Standalone-Output das pauschale `PRAGMA foreign_keys = ON;`
-      am Ende mit einem Header-Kommentar: "Standalone-Ausfuehrung
-      laesst FK auf ON; prior `OFF`-State wird nicht restored —
-      Runner-Pfad ist fuer Round-Trip-State-Compat erforderlich".
-      Plan-Diagnostic, wenn das Schema-Modell signalisiert dass
-      prior `OFF` zu erwarten ist (z.B. via Adapter-Hint).
+  **Absorption-Vertrag fuer simpleOps**: heute laesst
+  `SqliteRebuildPlanner.classify` View- und Trigger-Ops
+  (`CreateView`/`DropView`/`ReplaceView`/`CreateTrigger`/
+  `DropTrigger`/`ReplaceTrigger`) immer in `simpleOps`, und der
+  Generator rendert simpleOps **nach** den Rebuilds. Mit H.3a
+  fuehrt das zu Doppel-Emission: eine `desired`-only View, die
+  durch `dependentViewsToRecreate` im Rebuild bereits ein
+  `CREATE VIEW` erhaelt, wuerde anschliessend nochmal von der
+  `CreateView`-simpleOp gerendert; analog wuerde eine
+  `current`-only View doppelt gedroppt. **H.3a absorbiert daher
+  View/Trigger-Ops aus simpleOps, sobald ihre Table-Referenz im
+  `rebuildTables`-Set ist** — die Drop/Recreate-Logik kommt
+  ausschliesslich aus dem Plan. `ReplaceView` auf eine rebuilt-
+  Table-Referenz wird in dieselben zwei Mengen gesplittet (drop-
+  aus-before-state, recreate-aus-after-state). Die absorbierten
+  Op-IDs werden in die `sourceOperationIds` des Rebuild-Plans
+  aufgenommen, damit Attribution erhalten bleibt.
 
   Tests:
   - Renderer-Test: Rebuild mit View+Trigger in `current`+`desired`
@@ -2289,6 +2261,37 @@ fuer H.3/H.4:
     wird gedroppt aber nicht recreated.
   - Renderer-Test: View nur in `desired` (im selben Plan added)
     wird recreated aber nicht gedroppt.
+  - Planner-Test: View/Trigger-Op auf rebuilt-Table wird aus
+    simpleOps absorbiert; sourceOperationIds enthaelt die Op-ID;
+    Renderer emittiert nichts doppelt.
+
+- [ ] **H.3b** FK-Pragma-Restore (hybrid: Runner-Vertrag fuer
+  Execute, Carve-Out fuer Standalone-SQL) —
+  Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
+  ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
+  ist verbindungs- und execute-time-abhaengig und kann nicht
+  statisch in den Plan eingefroren werden.
+
+  - **Execute-Pfad (`schema migrate --execute`)**: der Renderer
+    emittiert das `PRAGMA foreign_keys = OFF;` mit einem
+    Phase-Marker, der den d-migrate-Runner verpflichtet, vor der
+    Ausfuehrung den aktuellen Wert via `PRAGMA foreign_keys;` zu
+    lesen, fuer die Migration auf OFF zu setzen und nach
+    Commit/Rollback wiederherzustellen. Das `PRAGMA foreign_keys
+    = ON;` am Ende der Sequence entfaellt zugunsten eines
+    Runner-Calls.
+
+  - **Standalone-SQL-Pfad (`--plan-only` SQL-Artefakt)**: das
+    erzeugte SQL muss self-contained ausfuehrbar bleiben — externe
+    Runner werten Phase-Marker nicht aus. Daher behaelt der
+    Standalone-Output das pauschale `PRAGMA foreign_keys = ON;`
+    am Ende mit einem Header-Kommentar: "Standalone-Ausfuehrung
+    laesst FK auf ON; prior `OFF`-State wird nicht restored —
+    Runner-Pfad ist fuer Round-Trip-State-Compat erforderlich".
+    Plan-Diagnostic, wenn das Schema-Modell signalisiert dass
+    prior `OFF` zu erwarten ist (z.B. via Adapter-Hint).
+
+  Tests:
   - Integration (`:test:integration-sqlite`): Runner-Vertrag mit
     `PRAGMA foreign_keys = OFF` als Initial-State validiert Restore
     auf `OFF` nach `--execute`.
@@ -2395,9 +2398,9 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   Pfade in F.5/F.6. Strukturell offen: formales `DialectMigrationPlan`-
   Struct mit `sourceOperationIds`/`risk` (H.1a/H.1b), Temp-Namen-
   Kollisionsprueffung mit Suffix `__2`/`__3` (H.2), Drop+Recreate-
-  Trennung fuer abhaengige Views/Trigger + FK-Pragma-Runner-Vertrag
-  (H.3), vollstaendige 6-Punkte-Preflight-Liste aus §6.4 (H.4). Siehe
-  §9 Phase H.)
+  Trennung fuer abhaengige Views/Trigger + simpleOps-Absorption
+  (H.3a), FK-Pragma-Runner-Vertrag (H.3b), vollstaendige 6-Punkte-
+  Preflight-Liste aus §6.4 (H.4). Siehe §9 Phase H.)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix. Zielaffinitaet allein
   reicht nicht als Sicherheitsnachweis; sonst blockiert die Operation als
