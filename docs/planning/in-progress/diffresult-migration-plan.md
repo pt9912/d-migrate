@@ -2302,13 +2302,26 @@ fuer H.3/H.4:
   emittiert `PRAGMA foreign_keys = <saved>;` (Default 1 wenn kein
   prior save — defensiv).
 
-  **Rollback-Pfad-Restore**: `JdbcMigrationExecutor.runStreamOwnedTransaction`
-  ruft `tryRestoreFkStateAfterRollback(conn, hookState)` im catch-
-  Pfad — wenn ein paired `save` einen prior Wert gecached hat, wird
-  er auch nach SQLException restored (best-effort, sekundaere
-  Exceptions werden geschluckt damit die primaere Cause sichtbar
-  bleibt). §6.4 L992/L1007 verlangt Save/Restore nach
-  Commit/**Rollback** — vor dem Fix lief nur ROLLBACK ohne Restore.
+  **Rollback-Pfad-Restore (Order-of-Operations-Vertrag)**:
+  `JdbcMigrationExecutor.runStreamOwnedTransaction` reicht im catch-
+  Pfad einen `postRollback`-Callback an `rollbackTrace(...)`, der
+  `tryRestoreFkStateAfterRollback(conn, hookState)` **nach** dem
+  expliziten `ROLLBACK;`-Statement aufruft. Reihenfolge ist
+  vertragsrelevant, nicht kosmetisch: SQLite ignoriert
+  `PRAGMA foreign_keys = ...` innerhalb einer offenen Transaktion —
+  Restore-vor-Rollback waere ein no-op und liesse die Rebuild-
+  Zwischenwerte `OFF`/`ON` die Tx-Grenze ueberleben. Der
+  `postRollback`-Hook feuert nur bei erfolgreichem Rollback
+  (`rolledBack == true`); ein gescheiterter Rollback laesst die
+  Connection in undefiniertem Zustand, weitere PRAGMA-Emissionen
+  wuerden weiteren Drift riskieren. Restore selbst ist best-effort
+  (sekundaere Exceptions werden geschluckt damit die primaere
+  SQLException sichtbar bleibt). Test-Fixture
+  `MigrationExecutorTestSupport.runStreamOwnedTransaction` spiegelt
+  die Reihenfolge byte-identisch — Drift waere ein stiller
+  Vertragsbruch in den Application-Layer-Smoke-Tests. §6.4 L992/L1007
+  verlangt Save/Restore nach Commit/**Rollback** — vor dem Fix lief
+  Restore in offener Tx und blieb wirkungslos.
 
   Caller-Wiring (`SchemaMigrateRunner`): wenn `request.execute = true`,
   wird `DdlGenerationOptions(executionMode = EXECUTE)` an

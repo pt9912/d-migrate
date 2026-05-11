@@ -92,7 +92,13 @@ internal object JdbcMigrationExecutor {
         }
     }
 
-    private fun runAll(conn: java.sql.Connection, statements: List<MigrationDdlStatement>): ExecutionTrace =
+    /**
+     * Internal test seam: drives the stream against an already-open
+     * [java.sql.Connection], bypassing pool/Hikari wiring. Used by
+     * `JdbcMigrationExecutorH3bTest` to pin the H.3b rollback-path
+     * FK-restore contract against an embedded SQLite connection.
+     */
+    internal fun runAll(conn: java.sql.Connection, statements: List<MigrationDdlStatement>): ExecutionTrace =
         if (MigrationStreamClassifier.streamOwnsTransaction(statements)) {
             runStreamOwnedTransaction(conn, statements)
         } else {
@@ -162,16 +168,23 @@ internal object JdbcMigrationExecutor {
                 lastStatementOperationIds = lastIds,
             )
         } catch (e: SQLException) {
-            // Phase H.3b: restore prior FK-state even on rollback. §6.4
-            // L992/L1007: "Save/Restore des vorherigen foreign_keys-
-            // Zustands. Der Runner muss den vorherigen Zustand merken
-            // und nach Commit/Rollback wiederherstellen." The catch
-            // path only had ROLLBACK before; without the restore the
-            // connection's FK-state leaks the rebuild's intermediate
-            // OFF/ON setting after rollback. Best-effort — the original
-            // SQLException is the primary signal we want to surface.
-            tryRestoreFkStateAfterRollback(conn, hookState)
-            return rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = false)
+            // Phase H.3b: restore prior FK-state AFTER rollback. Plan §6.4
+            // L992/L1007 + L2305: "Restore nach Commit/Rollback". SQLite
+            // ignores `PRAGMA foreign_keys = ...` inside an open
+            // transaction — emitting the restore before ROLLBACK is a
+            // no-op and lets the rebuild's intermediate OFF/ON state
+            // leak past the rollback. The post-rollback callback is
+            // only invoked when the rollback statement itself succeeded;
+            // a failed rollback leaves the connection in an undefined
+            // state where issuing further PRAGMA risks further drift.
+            return rollbackTrace(
+                conn = conn,
+                attempted = attempted,
+                lastIds = lastIds,
+                cause = e,
+                jdbcRollback = false,
+                postRollback = { tryRestoreFkStateAfterRollback(conn, hookState) },
+            )
         }
     }
 
@@ -210,6 +223,7 @@ internal object JdbcMigrationExecutor {
         lastIds: Set<String>,
         cause: SQLException,
         jdbcRollback: Boolean,
+        postRollback: () -> Unit = {},
     ): ExecutionTrace {
         val (rolledBack, sideEffects) = try {
             if (jdbcRollback) {
@@ -223,6 +237,12 @@ internal object JdbcMigrationExecutor {
             true to false
         } catch (_: SQLException) {
             false to true
+        }
+        // Phase H.3b: post-rollback hook fires AFTER the rollback statement
+        // closes the SQLite tx so PRAGMA-based cleanup (FK-state restore)
+        // is no longer swallowed by the open-tx no-op.
+        if (rolledBack) {
+            postRollback()
         }
         return ExecutionTrace(
             executionStarted = true,

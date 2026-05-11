@@ -1,5 +1,8 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffPhase
+import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.driver.migration.MigrationDdlStatement
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
@@ -8,6 +11,14 @@ import io.mockk.verify
 import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Statement
+
+private fun ddl(sql: String): MigrationDdlStatement =
+    MigrationDdlStatement(
+        sql = sql,
+        operationIds = emptySet(),
+        risk = OperationRisk.SAFE,
+        phase = DiffPhase.TABLES,
+    )
 
 /**
  * Phase H.3b: runner-hook marker parsing + side-effect application
@@ -201,6 +212,121 @@ class JdbcMigrationExecutorH3bTest : FunSpec({
                 stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
                     rs.next() shouldBe true
                     rs.getInt(1) shouldBe 1
+                }
+            }
+        } finally {
+            conn.close()
+        }
+    }
+
+    test("H.3b rollback-path — prior FK=ON is restored to ON AFTER ROLLBACK when stream throws mid-rebuild") {
+        // Plan-Doc-Vertrag §6.4 L2305: "Restore nach Commit/Rollback".
+        // SQLite ignores `PRAGMA foreign_keys = ...` inside an open
+        // transaction, so the restore MUST run AFTER `ROLLBACK;` —
+        // otherwise the rebuild's intermediate `PRAGMA foreign_keys
+        // = OFF` leaks past the rollback and the next migration runs
+        // with FK enforcement silently disabled.
+        //
+        // This test drives the actual production [JdbcMigrationExecutor.runAll]
+        // against an embedded SQLite connection: stream is classified
+        // as stream-owned-tx (contains `BEGIN IMMEDIATE`), save-hook
+        // captures the prior FK=ON, PRAGMA OFF + a good CREATE run,
+        // then an invalid CREATE TABLE explodes. The catch path must
+        // first send `ROLLBACK;` and then re-apply
+        // `PRAGMA foreign_keys = 1`.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { it.execute("PRAGMA foreign_keys = ON;") }
+
+            val statements = listOf(
+                ddl("BEGIN IMMEDIATE;"),
+                ddl("-- dmigrate:runner-hook=save-fk-state-before-pragma-off"),
+                ddl("PRAGMA foreign_keys = OFF;"),
+                ddl("CREATE TABLE good (id INTEGER PRIMARY KEY);"),
+                // Syntax-Error → SQLException → catch-Pfad → ROLLBACK; → Restore.
+                ddl("CREATE TABLE BAD SQL THAT WILL THROW;"),
+                ddl("COMMIT;"),
+            )
+
+            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+
+            trace.executionStarted shouldBe true
+            trace.transactionRolledBack shouldBe true
+            trace.sideEffectsPossible shouldBe false
+            // FK must be back to the captured ON (1). If the restore
+            // had run before ROLLBACK; the PRAGMA would have been a
+            // no-op inside the open tx — assertion would observe 0.
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 1
+                }
+            }
+            // And the good CREATE was rolled back — no leaked side-effect.
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(
+                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='good';",
+                ).use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 0
+                }
+            }
+        } finally {
+            conn.close()
+        }
+    }
+
+    test("H.3b rollback-path — prior FK=OFF is restored to OFF AFTER ROLLBACK") {
+        // Symmetric to the OFF→ON case: an explicit prior OFF state must
+        // be re-asserted after rollback, not implicitly defaulted to ON.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { it.execute("PRAGMA foreign_keys = OFF;") }
+
+            val statements = listOf(
+                ddl("BEGIN IMMEDIATE;"),
+                ddl("-- dmigrate:runner-hook=save-fk-state-before-pragma-off"),
+                ddl("PRAGMA foreign_keys = OFF;"),
+                ddl("CREATE TABLE BAD SQL;"),
+                ddl("COMMIT;"),
+            )
+
+            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+
+            trace.transactionRolledBack shouldBe true
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 0
+                }
+            }
+        } finally {
+            conn.close()
+        }
+    }
+
+    test("H.3b rollback-path — no save-hook fired → no PRAGMA emission on rollback (no-op restore)") {
+        // Defensive: if a stream is stream-owned but never saved an FK
+        // state (rebuild not engaged), the rollback path must not
+        // accidentally emit `PRAGMA foreign_keys = 1` and clobber the
+        // session's existing OFF setting.
+        val conn = java.sql.DriverManager.getConnection("jdbc:sqlite::memory:")
+        try {
+            conn.createStatement().use { it.execute("PRAGMA foreign_keys = OFF;") }
+
+            val statements = listOf(
+                ddl("BEGIN IMMEDIATE;"),
+                ddl("CREATE TABLE BAD SQL;"),
+                ddl("COMMIT;"),
+            )
+
+            val trace = JdbcMigrationExecutor.runAll(conn, statements)
+
+            trace.transactionRolledBack shouldBe true
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
+                    rs.next() shouldBe true
+                    rs.getInt(1) shouldBe 0
                 }
             }
         } finally {

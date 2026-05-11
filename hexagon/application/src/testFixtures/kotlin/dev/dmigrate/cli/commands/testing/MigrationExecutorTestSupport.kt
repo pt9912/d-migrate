@@ -117,7 +117,33 @@ private fun runStreamOwnedTransaction(
             lastStatementOperationIds = lastIds,
         )
     } catch (e: SQLException) {
-        rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = false)
+        // Phase H.3b: post-rollback FK-state restore — must mirror
+        // production (`JdbcMigrationExecutor`) byte-for-byte so the
+        // application-layer smoke tests pin the same contract. SQLite
+        // ignores `PRAGMA foreign_keys = ...` inside an open tx, so
+        // the restore is gated on rollback success and emitted after.
+        rollbackTrace(
+            conn = conn,
+            attempted = attempted,
+            lastIds = lastIds,
+            cause = e,
+            jdbcRollback = false,
+            postRollback = { tryRestoreFkStateAfterRollback(conn, hookState) },
+        )
+    }
+}
+
+private fun tryRestoreFkStateAfterRollback(
+    conn: Connection,
+    hookState: dev.dmigrate.cli.commands.RunnerHookHandler.State,
+) {
+    if (hookState.savedSqliteForeignKeysPragma == null) return
+    try {
+        conn.createStatement().use { stmt ->
+            dev.dmigrate.cli.commands.RunnerHookHandler.apply(stmt, "restore-fk-state", hookState)
+        }
+    } catch (@Suppress("SwallowedException", "TooGenericExceptionCaught") _: Exception) {
+        // Best-effort: original SQLException already drives the trace.
     }
 }
 
@@ -127,6 +153,7 @@ private fun rollbackTrace(
     lastIds: Set<String>,
     cause: SQLException,
     jdbcRollback: Boolean,
+    postRollback: () -> Unit = {},
 ): ExecutionTrace {
     val (rolledBack, sideEffects) = try {
         if (jdbcRollback) {
@@ -137,6 +164,9 @@ private fun rollbackTrace(
         true to false
     } catch (_: SQLException) {
         false to true
+    }
+    if (rolledBack) {
+        postRollback()
     }
     return ExecutionTrace(
         executionStarted = true,
