@@ -5,15 +5,18 @@
 > Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
 > Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
 > Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
-> Pfad, Edge-Cases). Phase G (Dialect-Hardening) ist vollstaendig im
-> Code: G.1 (SQLite-Cast-Matrix), G.2 (MySQL-VIEW-Privilege-Preflight),
-> G.3 (PostgreSQL-ReplaceView-Compat-Decision — Strict-Variante). Phase H
+> Pfad, Edge-Cases). Phase G (Dialect-Hardening) deckt die in 0.9.7
+> verbindlichen DoDs: G.1 (SQLite-Cast-Matrix; Live-DB-Daten-Preflights
+> Carve-Out 0.9.8+), G.2 (MySQL-`VIEW_TABLE_USAGE`-Privilege-Preflight;
+> `VIEW_ROUTINE_USAGE`-Variante Carve-Out 0.9.8+), G.3a (PostgreSQL-
+> ReplaceView-Strict-Split bei Dependency-Column-Konflikt; Visible-
+> Spaltensignatur-Compatibility = G.3b ist Carve-Out 0.9.8+). Phase H
 > (SQLite-Rebuild-Vertrag formalisieren) ist offen — Bucket-Klassifikation
 > + canonical 9-Statement-Sequence + Atomicity sind funktional erfuellt,
-> aber das formale `DialectMigrationPlan`-Struct, Temp-Namen-Kollision,
-> Views/Trigger-Recreate und die 5-Punkte-Preflight-Liste aus §6.4 fehlen
-> strukturell. Spaltensignatur-Compatibility (G.3-Stufe 2) bleibt
-> §10-Carve-Out auf 0.9.8+.
+> aber das formale `SqliteRebuildPlan`-Struct (H.1a/H.1b),
+> Temp-Namen-Kollision (H.2), Views/Trigger-Recreate + FK-Pragma-
+> Runner-Vertrag (H.3) und die 6-Punkte-Preflight-Liste aus §6.4 (H.4)
+> fehlen strukturell.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2092,7 +2095,8 @@ braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
   splittet bei vorhandener Information.
 
   Implementierung ist dialect-agnostisch im Planner-Layer (siehe
-  Plan §6.4): SQLite rendert `ReplaceView` ohnehin als Drop+Create
+  Plan §6.2 — PostgreSQL-View-Vertrag; §6.4 ist der SQLite-Rebuild-
+  Vertrag): SQLite rendert `ReplaceView` ohnehin als Drop+Create
   (kein PG-Aequivalent), MySQL profitiert ebenso wie PostgreSQL.
 
   **Carve-Out (auf 0.9.8+ verschoben)**: Spaltensignatur-Compatibility
@@ -2122,16 +2126,28 @@ simpleOps)` + Inline-SQL-Erzeugung im Renderer.
 Reihenfolge nach Abhaengigkeit aufsteigend — H.1 ist Voraussetzung
 fuer H.3/H.4:
 
-- [ ] **H.1** `DialectMigrationPlan`-Datenstruktur anlegen —
-  Neuer Typ `SqliteRebuildPlan` mit den in §6.4 (L957-1008)
-  geforderten Feldern: `oldTable`, `newTable`, `newTableTempName`,
-  `preservedColumns`, `addedColumns`, `droppedColumns`,
-  `indexesToRecreate`, `dependentViewsToRecreate`,
-  `dependentTriggersToRecreate`, `preflight`. `SqliteRebuildPlanner`
-  produziert pro Bucket einen Plan; `SqliteRebuildRenderer`
-  konsumiert den Plan statt mit der `bucket: List<DiffOperation>`-
-  Liste direkt zu arbeiten. Tests pinnen die Plan-Form pro
-  Rebuild-Szenario (Type-Change, PK-Reshape, Constraint-Add).
+- [ ] **H.1a** `SqliteRebuildPlan`-Datenstruktur anlegen —
+  Neuer Typ `SqliteRebuildPlan` mit den in §6.4 (L884-936)
+  geforderten Feldern: `originalTableName`, `oldTable`, `newTable`,
+  `newTableTempName`, `preservedColumns`, `addedColumns`,
+  `droppedColumns`, `indexesToRecreate`, `dependentViewsToRecreate`,
+  `dependentTriggersToRecreate`, `preflight`. Inklusive
+  Carrier-Klassen (`ColumnCopyMapping`, `AddedColumnFill`,
+  `NamedView`, `NamedTrigger`, `SqliteRebuildPreflight`-Enum) und
+  Column-Mapping-Modell. H.1a bedeutet **nur das Struct steht**;
+  Planner und Renderer sind noch nicht umgestellt. Sub-Ziel: die
+  anderen H-Slices haben einen Andock-Punkt.
+
+- [ ] **H.1b** Planner produziert / Renderer konsumiert Plan —
+  `SqliteRebuildPlanner.planRebuild(table, bucket, source, target)`
+  als Factory; `SqliteRebuildRenderer.render(plan, ctx)` als pure
+  Konsumption (statt heute `renderRebuild(table, bucket, source,
+  target, ctx)`). Reines Refactoring: die emittierte SQL-Sequenz
+  bleibt bit-identisch zu pre-H.1b, weil die Plan-Feldwerte exakt
+  die Inputs sind, die der Renderer heute inline berechnet. Tests
+  pinnen die Plan-Form pro Rebuild-Szenario (Type-Change,
+  PK-Reshape, Constraint-Add); bestehende Renderer-Tests bleiben
+  unveraendert gruen.
 
 - [ ] **H.2** Temp-Namen-Kollisionsprueffung —
   `SqliteRebuildPlanner.tempTableName` ist heute ein
@@ -2144,29 +2160,57 @@ fuer H.3/H.4:
   Kollisions-Set → Plan emittiert `__2`-Suffix.
 
 - [ ] **H.3** Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
-  SqliteRebuildRenderer.kt:65-70 dokumentiert explizit "User-defined
-  triggers attached to the rebuilt table are dropped … and not
-  recreated"; §6.4 (L995, L1004) verlangt das Drop+Recreate aus
-  gespeicherten Definitionen in `dependentViewsToRecreate` /
-  `dependentTriggersToRecreate`. Plus: §6.4 (L992, L1007) verlangt
-  Save/Restore des vorherigen `PRAGMA foreign_keys`-Zustands; der
-  Renderer setzt heute pauschal `PRAGMA foreign_keys = ON;`.
-  Erfordert: Plan-Form aus H.1 + Live-Query `PRAGMA foreign_keys;`
-  zum Plan-Zeitpunkt (oder Runner-seitige Token-Substitution).
-  Test: Rebuild einer Table mit Trigger + View bringt beide nach
-  dem Rebuild wieder zurueck; `priorForeignKeyState=false` wird
-  am Ende auf `false` restored.
+  Zwei separate Concerns:
+
+  - **View/Trigger-Recreate (Plan-/Renderer-Concern)**:
+    `SqliteRebuildRenderer.kt:65-70` dokumentiert explizit
+    "User-defined triggers attached to the rebuilt table are dropped
+    … and not recreated"; §6.4 (L995, L1004) verlangt das
+    Drop+Recreate aus gespeicherten Definitionen in
+    `dependentViewsToRecreate` / `dependentTriggersToRecreate` (aus
+    H.1a). Planner befuellt die Listen aus
+    `desired.views`/`desired.triggers` gefiltert auf
+    rebuilt-Table-Refs; Renderer emittiert die Drop-Statements vor
+    `DROP TABLE` und die Create-Statements nach RENAME.
+
+  - **FK-Pragma-Restore (Runner-Vertrag, NICHT Plan-Concern)**:
+    Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
+    ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
+    ist verbindungs- und execute-time-abhaengig und kann nicht
+    statisch in den Plan eingefroren werden (Datei-zu-Datei-Planning
+    + spaeter ausgefuehrte SQL-Artefakte). H.3 spezifiziert: der
+    Renderer emittiert das `PRAGMA foreign_keys = OFF;` mit einem
+    Phase-Marker, der den Runner verpflichtet, vor der Ausfuehrung
+    den aktuellen Wert via `PRAGMA foreign_keys;` zu lesen und nach
+    Commit/Rollback wiederherzustellen. Das pauschale `PRAGMA
+    foreign_keys = ON;` am Ende entfaellt zugunsten eines
+    Runner-Calls.
+
+  Tests: Rebuild einer Table mit View + Trigger bringt beide nach
+  dem Rebuild zurueck (Renderer-Test). Runner-Vertrag: separater
+  Test im SQLite-Integration-Modul mit `PRAGMA foreign_keys = OFF`
+  als Initial-State validiert Restore auf `OFF`.
 
 - [ ] **H.4** Vollstaendige Preflight-Liste —
-  §6.4 (L985-990) nennt 5 Preflight-Checks: erwartete Tabelle
-  existiert, temporaerer Name ist frei, alle Quellspalten fuer
-  `preservedColumns` existieren, keine unbekannten abhaengigen
-  Views/Trigger blockieren den Drop, NOT NULL/Default-Regeln
-  erfuellt. Heute implementiert sind nur die letzten zwei (NOT
-  NULL-Backfill + Cast-Matrix). Erfordert: Plan-Form aus H.1 fuer
-  `preflight: List<PreflightCheck>`-Feld, Renderer emittiert die
-  Checks als Vorlauf-Statements oder als Plan-Diagnostics. Test:
-  pro Check Positiv- und Negativ-Pfad.
+  §6.4 Typentwurf L928-934 nennt **6** Preflight-Checks (die
+  Ablauf-Beschreibung L985-990 konsolidiert `TABLE_EXISTS` und
+  `DEPENDENCIES_KNOWN` in einem Bullet und nennt deshalb nur 5).
+  Pro Check festgelegt ist die Ausfuehrungs-Form:
+
+  | Check | Ausfuehrung | Begruendung |
+  |---|---|---|
+  | `TABLE_EXISTS` | Plan-time statisch | Diff hat `current.tables[name]`; Plan-Diagnostic, wenn fehlend. |
+  | `TEMP_NAME_AVAILABLE` | Plan-time statisch via Catalog-Snapshot aus H.2 | H.2 prueft gegen `sqlite_master`-Snapshot; bei Kollision `__2`/`__3`-Fallback im Plan. |
+  | `SOURCE_COLUMNS_EXIST` | Plan-time statisch | preserved columns kommen aus `source.columns.keys ∩ target.columns.keys`; Plan-Diagnostic, wenn ein erwarteter source column fehlt. |
+  | `DEPENDENCIES_KNOWN` | Plan-time statisch via F.6.b + G.2 | View/Trigger-Dependencies-Projektion ist Adapter-Output; F.6.b/G.2 blocken bei Unvollstaendigkeit unabhaengig. |
+  | `ADDED_COLUMNS_FILLABLE` | Plan-time statisch | NOT NULL-Backfill + Cast-Matrix; heute schon im Mapping, nur Umverdrahtung auf das `preflight`-Feld. |
+  | `FOREIGN_KEYS_CHECKABLE` | **Runner-Vertrag (execute-time)** | FK-Constraint-Integritaet ist live-DB-abhaengig; Renderer emittiert das `PRAGMA foreign_key_check;` (heute schon vorhanden) mit Phase-Marker, der den Runner verpflichtet, einen Violation-Output als Abbruch zu behandeln statt als Informational. |
+
+  Statisch ausgewertete Checks landen als Plan-Diagnostics (nicht
+  als Vorlauf-Statements), weil ein `SELECT 1 FROM <table>` keinen
+  garantierten Abbruch bei Verletzung produziert. Runner-seitige
+  Checks haben einen Phase-Marker und einen erwarteten Failure-
+  Modus. Test pro Check: Positiv- und Negativ-Pfad.
 
 ---
 
@@ -2190,14 +2234,18 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
 - [x] View-Abhaengigkeiten auf Tabellen und Spalten sind fuer Drop-/Alter-Planung
   entweder belastbar bekannt oder die betroffene Migration wird mit Diagnose
   blockiert.
-- [x] PostgreSQL rendert `ReplaceView` nur dann als `CREATE OR REPLACE VIEW`, wenn
-  die View-Aenderung kompatibel ist. Muss eine View wegen abhaengiger Tabellen-/
-  Spaltenaenderungen oder inkompatibler sichtbarer Spaltenform entfernt werden,
-  entstehen explizite `DROP VIEW`-/`CREATE VIEW`-Schritte in dependency-sicherer
-  Reihenfolge. (Phase G.3 ✅ — `DiffPlanner.splitReplaceViewsForColumnConflicts`
-  splittet `ReplaceView` bei `dependencies.columns`-Konflikt in `DropView`
-  (vor Spalten-Op) + `CreateView` (nach Spalten-Op); Spaltensignatur-
-  Compatibility bleibt Carve-Out auf 0.9.8+.)
+- [x] PostgreSQL splittet `ReplaceView` in explizite `DROP VIEW`-/
+  `CREATE VIEW`-Schritte in dependency-sicherer Reihenfolge, wenn die
+  View `dependencies.columns` referenziert, die in derselben Migration
+  veraendert werden. (Phase G.3a ✅ — `DiffPlanner.
+  splitReplaceViewsForColumnConflicts` — Dependency-Column-Konflikte.)
+- [ ] PostgreSQL splittet `ReplaceView` zusaetzlich, wenn die
+  sichtbare View-Spaltenform (Spaltenanzahl/-reihenfolge/-typen) sich
+  aendert — auch ohne Tabellen-/Spalten-Konflikt am Unterbau, weil PG
+  `CREATE OR REPLACE VIEW` nur bei identischer Visible-Signature
+  akzeptiert. (Phase G.3b — Visible-Signature-Compatibility,
+  Carve-Out auf 0.9.8+; braucht eine `ViewColumn`-Modellebene oder
+  einen Pre-Render-Probe gegen das Live-Schema.)
 - [x] PostgreSQL rendert einfache Enum-Custom-Types nur, wenn sie verlustfrei im
   Schema vorliegen und ihre Abhaengigkeiten zu Tabellen/Spalten eindeutig
   planbar sind; nicht triviale `ALTER TYPE`-Faelle werden diagnostiziert statt
@@ -2211,13 +2259,23 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   via `DiffPlanner.detectViewColumnDepsBlockers` →
   `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS`-Diagnose.)
 - [x] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
-  `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` als unvollstaendige Dependency-
-  Projektion und blockiert betroffene View-Replacements oder
-  spaltenveraendernde Operationen mit Diagnose. (Phase G.2 ✅ —
+  `VIEW_TABLE_USAGE` als unvollstaendige Dependency-Projektion und
+  blockiert betroffene View-Replacements oder spaltenveraendernde
+  Operationen mit Diagnose. (Phase G.2 ✅ —
   `DependencyInfo.projectionComplete` + `MysqlRoutineReader.readViews`
   detektiert leere `VIEW_TABLE_USAGE`-Projektion;
   `DiffPlanner.detectIncompleteViewProjections` blockt mit
   `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`-Diagnose.)
+- [ ] MySQL behandelt fehlende oder nicht belegbare Privilegien fuer
+  `VIEW_ROUTINE_USAGE` analog als unvollstaendige Dependency-Projektion.
+  (Carve-Out auf 0.9.8+. Heute: `MysqlMetadataQueries.listViewRoutineUsage`
+  faengt fehlende Tabelle / Privilegien-Denied per try-catch und liefert
+  `emptyMap()`. Eine View mit gefuellter `VIEW_TABLE_USAGE` aber
+  versteckten Routine-Deps wird heute faelschlich als
+  `projectionComplete=true` markiert. Erfordert ein zweites
+  `routineProjectionComplete`-Flag oder eine Konsolidierung mit
+  `projectionComplete` plus dialect-internem Tracking, ob die Routine-
+  Projektion belegbar gelesen werden konnte.)
 - [x] `CHECK`- und `EXCLUDE`-Constraint-Aenderungen werden nur als renderbare
   Operationen akzeptiert, wenn der Compare-Kern sie verlustfrei in `SchemaDiff`
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
@@ -2236,12 +2294,22 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   wiederherstellen (H.3), vollstaendige 5-Punkte-Preflight-Liste aus
   §6.4 (H.4). Siehe §9 Phase H.)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
-  expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
-  Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
-  sonst blockiert die Operation als `MANUAL_REQUIRED`. (Phase G.1 ✅ —
-  `SqliteCastMatrix` mit Whitelist + `SQLITE_CAST_NOT_WHITELISTED`-Diagnose;
-  Daten-Preflights bleiben Carve-Out auf 0.9.8+, weil sie eine Live-DB
-  voraussetzen und Phase G den Renderer-Layer hardened.)
+  expliziter, getesteter Quell-/Ziel-Cast-Matrix. Zielaffinitaet allein
+  reicht nicht als Sicherheitsnachweis; sonst blockiert die Operation als
+  `MANUAL_REQUIRED`. (Phase G.1 ✅ — `SqliteCastMatrix` mit Whitelist +
+  `SQLITE_CAST_NOT_WHITELISTED`-Diagnose. **Hinweis**: §5/§6.4 fordern
+  zusaetzlich Live-DB-Daten-Preflights vor jedem Cast; diese sind nach
+  Plan-§G.1 explizit Carve-Out auf 0.9.8+, weil sie eine Live-DB
+  voraussetzen und Phase G den Renderer-Layer hardened. Das narrowt
+  diesen DoD auf "matrix only, no live-data preflights" — der DoD im
+  vollen Wortlaut bleibt formal offen, siehe naechster Punkt.)
+- [ ] SQLite-`AlterColumnType` fuehrt vor jedem whitelisted Cast einen
+  Live-DB-Daten-Preflight aus, der nicht-konvertierbare Bestandsdaten
+  erkennt und die Operation als `MANUAL_REQUIRED` blockiert.
+  (Carve-Out auf 0.9.8+. Erfordert Connection zur Source-DB zum
+  Plan-/Pre-Render-Zeitpunkt; passt nicht in den heutigen
+  Datei-zu-Datei-Planning-Pfad und muesste als Pre-Render-Probe oder
+  Runner-Vertrag modelliert werden.)
 - [x] SQLite-Down-Rebuilds werden als eigene inverse Rebuild-Plaene erzeugt; ein
   blosses Vertauschen von `oldTable` und `newTable` reicht nicht als
   Down-Vertrag.
