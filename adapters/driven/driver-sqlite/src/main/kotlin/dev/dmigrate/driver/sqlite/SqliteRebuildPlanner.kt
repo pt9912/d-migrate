@@ -64,6 +64,37 @@ internal object SqliteRebuildPlanner {
         return "${table}__dmg_rebuild_$hex"
     }
 
+
+    /**
+     * Phase H.2: collision-aware temp-table-name resolver. Computes
+     * the base name via [tempTableName] and, if it collides with any
+     * object in [catalog], deterministically falls back to
+     * `<base>__2`, `<base>__3`, ... until a free name is found.
+     *
+     * The probe is plan-time: the caller passes a
+     * [SqliteCatalogSnapshot] **before** plan-build, the result is
+     * frozen into `SqliteRebuildPlan.newTableTempName`, and the
+     * renderer treats it as final.
+     *
+     * Worst-case termination: the catalog size N is finite, so at
+     * most N+1 attempts are needed. The deterministic suffix order
+     * keeps replanning idempotent.
+     */
+    fun resolveTempTableName(
+        table: String,
+        bucket: List<DiffOperation>,
+        catalog: SqliteCatalogSnapshot,
+    ): String {
+        val base = tempTableName(table, bucket)
+        if (!catalog.contains(base)) return base
+        var suffix = 2
+        while (true) {
+            val candidate = "${base}__$suffix"
+            if (!catalog.contains(candidate)) return candidate
+            suffix++
+        }
+    }
+
     /**
      * Phase H.1b: build the per-bucket [SqliteRebuildPlan] consumed by
      * [SqliteRebuildRenderer.render]. Pure function — no context, no
@@ -89,13 +120,14 @@ internal object SqliteRebuildPlanner {
         target: TableDefinition,
         bucketRisk: OperationRisk,
         sql: SqliteDiffSqlBuilders,
+        catalog: SqliteCatalogSnapshot = SqliteCatalogSnapshot.EMPTY,
     ): SqliteRebuildPlan {
         val mapping = computeColumnMapping(source, target, sql)
         return SqliteRebuildPlan(
             originalTableName = table,
             oldTable = source,
             newTable = target,
-            newTableTempName = tempTableName(table, bucket),
+            newTableTempName = resolveTempTableName(table, bucket, catalog),
             bucketOperations = bucket,
             sourceOperationIds = bucket.map { it.id }.toSet(),
             risk = bucketRisk,

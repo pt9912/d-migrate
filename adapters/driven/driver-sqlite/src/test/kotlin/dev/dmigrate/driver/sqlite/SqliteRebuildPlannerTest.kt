@@ -109,4 +109,113 @@ class SqliteRebuildPlannerTest : FunSpec({
         n1 shouldBe n2  // sort-by-id makes order irrelevant
         n1.startsWith("u__dmg_rebuild_") shouldBe true
     }
+
+    // ---- Phase H.2: temp-name collision resolution ----
+
+    val sampleBucket = listOf(
+        DiffOperation.AlterColumnType(
+            id = "op-1",
+            objectRef = dev.dmigrate.core.diff.migration.DiffObjectRef(
+                dev.dmigrate.core.diff.migration.DiffObjectType.COLUMN,
+                listOf("u", "x"),
+            ),
+            before = NeutralType.Integer,
+            after = NeutralType.BigInteger,
+        ),
+    )
+
+    test("H.2 — resolveTempTableName returns the base name when catalog is empty") {
+        val name = SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, SqliteCatalogSnapshot.EMPTY)
+        name shouldBe SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+    }
+
+    test("H.2 — collision with an existing table appends `__2`") {
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf(base))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, catalog) shouldBe "${base}__2"
+    }
+
+    test("H.2 — collision against a view (not just a table) also triggers __2") {
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(views = setOf(base))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, catalog) shouldBe "${base}__2"
+    }
+
+    test("H.2 — collision against an index name also triggers __2") {
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(indices = setOf(base))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, catalog) shouldBe "${base}__2"
+    }
+
+    test("H.2 — collision against a trigger name also triggers __2") {
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(triggers = setOf(base))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, catalog) shouldBe "${base}__2"
+    }
+
+    test("H.2 — when `__2` is also taken, falls back to `__3`") {
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(
+            tables = setOf(base, "${base}__2"),
+        )
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, catalog) shouldBe "${base}__3"
+    }
+
+    test("H.2 — fromSchema synthesises tables + views + triggers + index names") {
+        val schema = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf(
+                "users" to TableDefinition(
+                    columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = "idx_users_id",
+                            columns = listOf(IndexColumn("id")),
+                            type = IndexType.BTREE,
+                        ),
+                    ),
+                ),
+                "anon_idx_table" to TableDefinition(
+                    columns = mapOf("c" to ColumnDefinition(NeutralType.Text())),
+                    indices = listOf(
+                        IndexDefinition(
+                            name = null, // anonymous → fallback name
+                            columns = listOf(IndexColumn("c")),
+                            type = IndexType.BTREE,
+                        ),
+                    ),
+                ),
+            ),
+            views = mapOf("v_users" to dev.dmigrate.core.model.ViewDefinition(query = "SELECT id FROM users")),
+        )
+        val snap = SqliteCatalogSnapshot.fromSchema(schema)
+        snap.tables shouldBe setOf("users", "anon_idx_table")
+        snap.views shouldBe setOf("v_users")
+        snap.indices shouldBe setOf("idx_users_id", "anon_idx_table_c_idx")
+        snap.triggers.shouldBeEmpty()
+    }
+
+    test("H.2 — union of two snapshots") {
+        val a = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf("a"))
+        val b = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf("b"))
+        a.union(b).tables shouldBe setOf("a", "b")
+    }
+
+    test("H.2 — planRebuild uses the resolved (collision-aware) temp name") {
+        val before = TableDefinition(columns = mapOf("x" to ColumnDefinition(NeutralType.Integer)))
+        val after = before.copy(columns = mapOf("x" to ColumnDefinition(NeutralType.BigInteger)))
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val catalog = SqliteCatalogSnapshot.EMPTY.copy(tables = setOf(base))
+
+        val plan = SqliteRebuildPlanner.planRebuild(
+            table = "u",
+            bucket = sampleBucket,
+            source = before,
+            target = after,
+            bucketRisk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+            sql = SqliteDiffSqlBuilders(),
+            catalog = catalog,
+        )
+        plan.newTableTempName shouldBe "${base}__2"
+    }
 })

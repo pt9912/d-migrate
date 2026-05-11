@@ -119,6 +119,8 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             // Swap schemas: the down-rebuild copies from desired (= post-up
             // state) into a target shaped like the original current.
+            val downCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
+                ?: SqliteCatalogSnapshot.EMPTY
             val downPlan = SqliteRebuildPlanner.planRebuild(
                 table = table,
                 bucket = bucket,
@@ -126,10 +128,18 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
                 target = current,
                 bucketRisk = ctx.bucketRisk(bucket),
                 sql = sql,
+                catalog = downCatalog,
             )
             rebuildRenderer.render(downPlan, ctx)
             return
         }
+        // Phase H.2: synthesise the temp-name collision-probe catalog
+        // from the current-schema snapshot. The execute-pipeline can
+        // fold a live `sqlite_master` probe on top via
+        // SqliteCatalogSnapshot.union() — at the CLI/runner layer,
+        // not here.
+        val upCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
+            ?: SqliteCatalogSnapshot.EMPTY
         val upPlan = SqliteRebuildPlanner.planRebuild(
             table = table,
             bucket = bucket,
@@ -137,6 +147,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             target = desired,
             bucketRisk = ctx.bucketRisk(bucket),
             sql = sql,
+            catalog = upCatalog,
         )
         rebuildRenderer.render(upPlan, ctx)
     }
