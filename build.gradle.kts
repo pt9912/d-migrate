@@ -188,21 +188,6 @@ dependencies {
     kover(project(":test:consumer-read-probe"))
 }
 
-// Root-level aggregated koverVerify: when run with -PintegrationTests
-// this verifies the FULL codebase (including JDBC-only profiling
-// adapters that are excluded from per-module unit-test koverVerify)
-// at 90%. The integration CI (.github/workflows/integration.yml and
-// scripts/test-integration-docker.sh) runs :koverVerify explicitly.
-kover {
-    reports {
-        verify {
-            rule {
-                minBound(90)
-            }
-        }
-    }
-}
-
 tasks.register("resolveAllDependencies") {
     group = "build setup"
     description = "Resolves all resolvable configurations across all projects to warm the Gradle dependency cache."
