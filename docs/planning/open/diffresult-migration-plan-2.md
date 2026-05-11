@@ -182,9 +182,10 @@ Das ist nur sicher, solange Statement-SQL selbst keine Leerzeilen enthaelt.
 Entscheidungspunkte:
 
 - Rollback-Artefakt speichert Statements strukturiert, zum Beispiel:
-  - JSON-Array im Metadatenblock mit SQL, Operation-IDs, Phase,
-    `transactionScope`, Risiken und Hash pro Statement; oder
-  - eindeutig spezifiziertes Length-Prefix-Format.
+  - JSON-Array im Metadatenblock mit Operation-IDs, Phase,
+    `transactionScope`, Risiken, Byte-Range/Statement-Index und Hash pro
+    Statement; oder
+  - eindeutig spezifiziertes Length-Prefix-/Range-Format.
 - Der neue Vertrag bleibt ein Down-SQL-Artefakt, solange `schema rollback`
   laut erstem Slice Down-SQL liest: Ein SQL-Kommentarheader enthaelt die
   strukturierte Statement-Index-/Hash-Metadaten, der Body bleibt ein
@@ -193,11 +194,20 @@ Entscheidungspunkte:
   Length-Prefix-Artefakt ohne direkt ausfuehrbaren SQL-Body waere ein neues
   Artefaktformat und braucht vorher einen separaten CLI-/Kompatibilitaets-
   Vertrag.
+- Kanonische SQL-Quelle ist in diesem Vertrag genau der ausfuehrbare
+  SQL-Body. Strukturierte Metadaten duerfen keine zweite, abweichungsfaehige
+  SQL-Kopie als Ausfuehrungsquelle einfuehren; sie beschreiben nur Grenzen,
+  Zuordnung und Hashes der Body-Statements. Falls ein spaeteres Format
+  zusaetzlich SQL-Text in Metadaten dupliziert, muss der Parser Byte-/Statement-
+  Aequivalenz gegen den Body pruefen und bei Mismatch blockieren.
 - `formatVersion` unterscheidet alte und neue Formate eindeutig.
 - Parser lehnt unbekannte Versionen blockierend ab.
 - Ein kontrollierter Migrationspfad fuer alte `rollback-sql v1`-Artefakte wird
   explizit entschieden: weiter unterstuetzen, upgraden oder ablehnen.
-- Artifact-Hash deckt Header und strukturierten Statement-Body ab.
+- Artifact-Hash deckt Header, strukturierte Statement-Metadaten und den
+  ausfuehrbaren SQL-Body ab. `schema rollback --execute` rekonstruiert die
+  Statement-Liste aus den validierten Body-Ranges und fuehrt diese Body-
+  Statements aus.
 
 Vorbedingung fuer:
 
@@ -399,18 +409,20 @@ Entscheidung:
   mit whitelisted SQLite-Casts, sobald Bestandsdaten betroffen sein koennen.
   Er laeuft nach Diff-Planung und vor Render, damit fehlgeschlagene Datenchecks
   als Migrations-Blocker mit Exit `8` enden und nicht erst als Execute-Fehler.
-- Der Runner fuehrt keinen verdeckten Cast-Preflight aus. Er darf nur einen im
-  Report/Plan gespeicherten `dataPreflightStatus = PASSED` fuer exakt dieselbe
-  DB-Fingerprint-/Tabellen-/Spaltenkombination ausfuehren. Fehlt dieser Status,
-  blockiert Execute vor dem ersten Statement.
+- Der Runner erfindet keinen verdeckten Cast-Preflight. Er darf nur einen im
+  Plan deklarierten Preflight (`preflightSqlHash`, Dialekt, Tabelle, Spalte,
+  erwartete Statuswerte und Validierungszeitpunkt) ausfuehren oder
+  revalidieren. Fehlt diese Deklaration, blockiert Execute vor dem ersten
+  Statement; ein bloss gespeichertes `dataPreflightStatus = PASSED` reicht dann
+  nicht.
 - `PASSED` ist kein dauerhaft gueltiger Freifahrtschein. Fuer Execute gilt es
   nur innerhalb desselben geschuetzten Plan+Execute-Laufs, in dem der Preflight
   auf derselben Connection und unter der fuer den Cast geltenden
   Transaktions-/Lock-Strategie unmittelbar vor der Mutation validiert wurde.
   Wird ein Plan spaeter oder aus einem gespeicherten Artefakt ausgefuehrt, muss
-  der Runner den Preflight vor dem ersten mutierenden Statement erneut
-  ausloesen oder vor Execute blockieren. Der gespeicherte Status im Report ist
-  dann nur Audit-Information.
+  der Runner den im Plan deklarierten Preflight vor dem ersten mutierenden
+  Statement erneut ausfuehren oder vor Execute blockieren. Der gespeicherte
+  Status im Report ist dann nur Audit-Information.
 - Nicht konvertierbare Bestandsdaten erzeugen eine Blocker-Diagnostic mit
   `primaryBlockedReason = MANUAL_ACTION_REQUIRED`, betroffener Tabelle/Spalte,
   Gesamtzahl der problematischen Zeilen und optional einer begrenzten
@@ -649,6 +661,11 @@ Entscheidung:
   Laenge und Scrubbed-Preview aus. Vollstaendige Bodies duerfen nur im
   Artefakt landen, wenn Secret-Scrubbing und Speichervertrag aus Workstream G/F
   greifen.
+- Solange F.2 bzw. ein expliziter Secret-/Body-Speichervertrag nicht
+  abgeschlossen ist, ist der erste Routine-Slice fuer Body-Artefakte Up-only:
+  Replace/Create darf nur gerendert werden, wenn die Up-Seite sicher ist;
+  `--generate-rollback` fuer Routine-Replace blockiert, statt alte Bodies
+  unsicher im Rollback-Artefakt zu speichern.
 - Down fuer Routine-Replace wird nur erzeugt, wenn der alte Body und alle
   relevanten Attribute aus Current-Snapshot oder Plan-Artefakt vollstaendig
   bekannt sind. Fehlt der Altzustand, ist Up optional renderbar, aber
@@ -859,8 +876,10 @@ Erwarteter Vertrag:
 - keine Darstellung als vollstaendiges Rollback
 - Exit-/Report-Semantik unterscheidet "vollstaendig erzeugt" und
   "partial bewusst erzeugt"
-- `schema rollback` bestaetigt vor Execute erneut, dass das Artefakt partial
-  ist
+- `schema rollback --execute` akzeptiert partial Artefakte nur mit expliziter
+  nicht-interaktiver Freigabe, zum Beispiel `--allow-partial-rollback` oder
+  einer gleichwertigen Policy im Artefakt/Request. Es gibt keine TTY-Rueckfrage;
+  ohne diese Freigabe blockiert Execute vor dem ersten Statement.
 
 Nicht akzeptabel:
 
@@ -1031,10 +1050,15 @@ Empfohlene Reihenfolge nach Risiko und Abhaengigkeiten:
 4. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights.
 5. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
    bewusst blockiert.
-6. Workstream C/D.3/E: Extensions, Spatial, Materialized Views, Routinen,
-   Trigger und Sequences.
+6. Workstream C/D.3/E: Extensions, Spatial, Materialized Views sowie
+   Up-only/blockierende Routine-, Trigger- und Sequence-Slices, die keine
+   unsichere Body-Speicherung und kein vollstaendiges Routine-/Trigger-
+   Rollback-Artefakt brauchen.
 7. Workstream F.1-F.4: neue Produktvertraege fuer Daten-Transformationen,
-   Plan-Artefakte, Partial Rollbacks und Rename-Mappings.
+   Plan-Artefakte, Partial Rollbacks und Rename-Mappings. F.2 bzw. ein
+   expliziter Secret-/Body-Speichervertrag muss vor Routine-/Trigger-Slices
+   liegen, die alte Bodies im Artefakt speichern oder vollstaendige Replace-
+   Rollbacks versprechen.
 
 Diese Reihenfolge ist konservativ: erst Artefakt- und Runner-Sicherheiten,
 dann bestehende SQL-Oberflaeche haerten, danach neue Objektklassen und
