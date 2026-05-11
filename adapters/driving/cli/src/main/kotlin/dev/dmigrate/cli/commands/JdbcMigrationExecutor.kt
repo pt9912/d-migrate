@@ -138,12 +138,14 @@ internal object JdbcMigrationExecutor {
         conn.autoCommit = true
         var attempted = 0
         var lastIds: Set<String> = emptySet()
+        // Phase H.3b: runner-hook state for SQLite-rebuild PRAGMA save/restore.
+        val hookState = RunnerHookState()
         try {
             conn.createStatement().use { jdbcStmt ->
                 for (stmt in statements) {
                     lastIds = stmt.operationIds
                     attempted++
-                    jdbcStmt.execute(stmt.sql)
+                    executeOrApplyHook(conn, jdbcStmt, stmt.sql, hookState)
                 }
             }
             return ExecutionTrace(
@@ -156,6 +158,64 @@ internal object JdbcMigrationExecutor {
             return rollbackTrace(conn, attempted, lastIds, e, jdbcRollback = false)
         }
     }
+
+    /**
+     * Phase H.3b: if [sql] is a runner-hook marker comment, apply the
+     * hook side-effect on [conn] (read/restore PRAGMA-state). Otherwise
+     * execute the SQL via [jdbcStmt] as before.
+     *
+     * Hook markers are recognised by the `-- dmigrate:runner-hook=<name>`
+     * prefix on the trimmed first line. Unknown hooks throw — the
+     * renderer must never emit a hook the executor can't apply.
+     */
+    @Suppress("ReturnCount")
+    internal fun executeOrApplyHook(
+        conn: java.sql.Connection,
+        jdbcStmt: java.sql.Statement,
+        sql: String,
+        state: RunnerHookState,
+    ) {
+        val hook = parseRunnerHook(sql)
+        if (hook == null) {
+            jdbcStmt.execute(sql)
+            return
+        }
+        when (hook) {
+            "save-fk-state-before-pragma-off" -> {
+                state.savedSqliteForeignKeysPragma = readPragmaForeignKeys(conn)
+            }
+            "restore-fk-state" -> {
+                // If no prior save (e.g. renderer-bug or mid-stream hook
+                // without paired save) default to ON — that's the
+                // standalone-mode tail and the safer post-migration state.
+                val value = state.savedSqliteForeignKeysPragma ?: 1
+                conn.createStatement().use { it.execute("PRAGMA foreign_keys = $value;") }
+            }
+            else -> error("JdbcMigrationExecutor: unknown runner-hook `$hook`")
+        }
+    }
+
+    /**
+     * Returns the hook name when [sql] is a runner-hook marker comment
+     * of the form `-- dmigrate:runner-hook=<name>` (whitespace-tolerant),
+     * else null.
+     */
+    internal fun parseRunnerHook(sql: String): String? {
+        val trimmed = sql.trim()
+        val prefix = "-- dmigrate:runner-hook="
+        if (!trimmed.startsWith(prefix)) return null
+        return trimmed.removePrefix(prefix).trim().takeWhile { it != '\n' }
+    }
+
+    private fun readPragmaForeignKeys(conn: java.sql.Connection): Int {
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery("PRAGMA foreign_keys;").use { rs ->
+                return if (rs.next()) rs.getInt(1) else 0
+            }
+        }
+    }
+
+    internal data class RunnerHookState(var savedSqliteForeignKeysPragma: Int? = null)
 
     private fun rollbackTrace(
         conn: java.sql.Connection,

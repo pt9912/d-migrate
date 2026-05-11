@@ -16,7 +16,36 @@ data class DdlGenerationOptions(
     val deterministic: Boolean = false,
     /** Emit foreign keys as deferred ALTER TABLE statements instead of inline CREATE TABLE clauses. */
     val deferForeignKeys: Boolean = false,
+    /**
+     * Phase H.3b: runner-aware rendering opt-in. When `EXECUTE`, the
+     * dialect renderer may emit runner-hook comment markers (today only
+     * SQLite-Rebuild uses this: `dmigrate:runner-hook=save-fk-state-...`
+     * / `restore-fk-state` instead of the pauschal `PRAGMA foreign_keys
+     * = ON;` at the end of the rebuild sequence). The d-migrate runner
+     * (`JdbcMigrationExecutor`) parses these markers and reads/restores
+     * the prior PRAGMA state. STANDALONE keeps self-contained SQL for
+     * external execution.
+     *
+     * Default `STANDALONE` so SQL artefacts (`schema migrate --plan-only`,
+     * `schema rollback` artefact body) remain externally executable.
+     * CLI/runner entry points set `EXECUTE` for the live-connection
+     * `--execute` path.
+     */
+    val executionMode: ExecutionMode = ExecutionMode.STANDALONE,
 )
+
+/**
+ * Phase H.3b: rendering target awareness — STANDALONE for SQL
+ * artefacts an external runner consumes, EXECUTE for live d-migrate-
+ * runner execution where runner-hook markers are interpreted.
+ */
+enum class ExecutionMode {
+    /** Self-contained SQL artefact for external execution. */
+    STANDALONE,
+
+    /** Live d-migrate-runner execution; runner-hook markers active. */
+    EXECUTE,
+}
 
 /**
  * Spatial profile controlling how geometry columns are mapped to DDL.

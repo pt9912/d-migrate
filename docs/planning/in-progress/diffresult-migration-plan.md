@@ -15,11 +15,12 @@
 > (`SqliteRebuildPlan`-Struct + Planner produziert / Renderer
 > konsumiert), H.2 (Temp-Namen-Kollision mit `__2`/`__3`-Fallback),
 > H.3a (Drop+Recreate abhaengiger Views/Trigger + simpleOps-Absorption),
-> H.4 (6-Punkte-Preflight-Liste mit per-Kind-Outcome). H.3b ist im
-> Renderer-Anteil fertig (`SqliteRebuildEmissionMode.EXECUTE` emittiert
-> `dmigrate:runner-hook=…`-Marker statt pauschalem `PRAGMA = ON`); der
-> Runner-Layer-Code (`SchemaMigrateRunner` liest/restored prior FK-
-> State) bleibt Carve-Out auf 0.9.8+.
+> H.4 (6-Punkte-Preflight-Liste mit per-Kind-Outcome) und H.3b
+> (`SqliteRebuildEmissionMode.EXECUTE` emittiert
+> `dmigrate:runner-hook=…`-Marker; `JdbcMigrationExecutor` parsed sie
+> und liest/restored prior FK-State via `PRAGMA foreign_keys;`;
+> `DdlGenerationOptions.executionMode` schaltet zwischen STANDALONE
+> und EXECUTE).
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2268,18 +2269,36 @@ fuer H.3/H.4:
     simpleOps absorbiert; sourceOperationIds enthaelt die Op-ID;
     Renderer emittiert nichts doppelt.
 
-- [~] **H.3b** FK-Pragma-Restore — Renderer-Anteil ✅ (2026-05-11),
-  Runner-Vertrag offen. Renderer emittiert via
-  `SqliteRebuildEmissionMode.EXECUTE` die runner-hook-Marker
-  (`-- dmigrate:runner-hook=save-fk-state-before-pragma-off` vor
-  `PRAGMA = OFF`, `-- dmigrate:runner-hook=restore-fk-state` statt
-  des pauschalen `PRAGMA = ON`). STANDALONE-Default ist
-  bit-identisch zu pre-H.3b. Was fehlt: `SchemaMigrateRunner` (bzw.
-  `JdbcMigrationExecutor`) muss die Marker parsen und die
-  `PRAGMA foreign_keys;`-Live-Reads + Restores ausfuehren; Caller
-  muss `emissionMode = EXECUTE` setzen fuer den `--execute`-Pfad.
-  Integration-Test (`:test:integration-sqlite`) mit `PRAGMA
-  foreign_keys = OFF` als Initial-State validiert den Restore.
+- [x] **H.3b** FK-Pragma-Restore ✅ (2026-05-11) —
+  Renderer emittiert via `SqliteRebuildEmissionMode.EXECUTE` die
+  runner-hook-Marker (`-- dmigrate:runner-hook=save-fk-state-before-
+  pragma-off` vor `PRAGMA = OFF`, `-- dmigrate:runner-hook=restore-fk-
+  state` statt des pauschalen `PRAGMA = ON`). STANDALONE-Default ist
+  bit-identisch zu pre-H.3b.
+
+  Runner-Layer-Vertrag (`JdbcMigrationExecutor.executeOrApplyHook`):
+  parsed die Marker; bei `save-fk-state-before-pragma-off` liest
+  `PRAGMA foreign_keys;` und cached den Wert in der per-Stream
+  `RunnerHookState`; bei `restore-fk-state` emittiert `PRAGMA
+  foreign_keys = <saved>;` (Default 1 wenn kein prior save —
+  defensiv).
+
+  Caller-Wiring (`SchemaMigrateRunner`): wenn `request.execute = true`,
+  wird `DdlGenerationOptions(executionMode = EXECUTE)` an
+  `renderer.generateUp(...)` gereicht — der SQLite-Diff-Generator
+  setzt `plan.emissionMode = EXECUTE` und der Renderer emittiert die
+  Marker. Down-Rendering (`--generate-rollback`) bleibt STANDALONE,
+  weil Rollback-Artefakte self-contained sind.
+
+  `DdlGenerationOptions` bekommt das neue `executionMode:
+  ExecutionMode = STANDALONE`-Feld; der `STANDALONE`-Default haelt
+  bestehende Pfade (`--plan-only`, Rollback-Artefakt, alte Caller)
+  bit-identisch.
+
+  Tests: `JdbcMigrationExecutorH3bTest` deckt parseRunnerHook +
+  executeOrApplyHook ueber MockK + zwei End-to-End-Tests mit
+  embedded SQLite (`jdbc:sqlite::memory:`): prior `OFF` wird auf
+  `OFF` restored; prior `ON` bleibt `ON`.
 
   Das pauschale `PRAGMA foreign_keys = ON;` am Ende der Sequence
   ist ungenuegend, wenn der prior State `OFF` war. PRAGMA-State
@@ -2413,10 +2432,11 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   (H.1b) + `SqliteCatalogSnapshot` mit `__2`/`__3`-Fallback (H.2) +
   View/Trigger-Drop+Recreate mit simpleOps-Absorption (H.3a) +
   6-Punkte-Preflight-Liste mit per-Kind-Outcome (H.4).
-  **Carve-Out**: H.3b-Runner-Vertrag (`SchemaMigrateRunner` parsed die
-  `dmigrate:runner-hook=…`-Marker und liest/restored PRAGMA-State)
-  bleibt offen — Renderer-Anteil ist da, Runner-Layer-Implementation
-  folgt als separater Slice.)
+  H.3b ✅: `JdbcMigrationExecutor.executeOrApplyHook` parsed die
+  `dmigrate:runner-hook=…`-Marker; `SchemaMigrateRunner` setzt
+  `DdlGenerationOptions.executionMode = EXECUTE` fuer den
+  `--execute`-Pfad; `DdlGenerationOptions` ist um `ExecutionMode`
+  erweitert (Default `STANDALONE`).)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix. Zielaffinitaet allein
   reicht nicht als Sicherheitsnachweis; sonst blockiert die Operation als

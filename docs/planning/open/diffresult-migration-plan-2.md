@@ -7,11 +7,11 @@
 > separat entschieden, vertraglich stabilisiert oder bewusst nachgelagert
 > werden muessen.
 >
-> Ausdruecklich nicht Teil dieses Dokuments: Phase H aus
+> Ausdruecklich nicht Teil dieses Dokuments: erneute Planung von Phase H aus
 > `docs/planning/in-progress/diffresult-migration-plan.md`
-> (SQLite-Rebuild-Vertrag formalisieren). Phase H bleibt im 0.9.7-Plan
-> selbst gefuehrt, weil sie dort als strukturelle Akzeptanzluecke dokumentiert
-> ist.
+> (SQLite-Rebuild-Vertrag formalisieren). Die dort abgeschlossenen
+> SQLite-Rebuild-Vertraege gelten hier als Voraussetzung und werden nicht
+> dupliziert.
 >
 > Referenzen:
 > - `docs/planning/in-progress/diffresult-migration-plan.md`
@@ -57,9 +57,8 @@ das Verhalten blockierend oder diagnostisch.
 
 Nicht Bestandteil dieses Plans:
 
-- Phase H: formaler SQLite-Rebuild-Plan, Temp-Namen-Kollision,
-  Drop+Recreate abhaengiger Views/Trigger, FK-Pragma-Restore und
-  vollstaendige SQLite-Rebuild-Preflights
+- erneute Planung oder Duplizierung des abgeschlossenen Phase-H-Vertrags fuer
+  SQLite-Rebuilds aus dem ersten 0.9.7-Plan
 - Ruecknahme der 0.9.7-Blocker-Strategie
 - generisches SQL-Raten bei unbekannten Dependencies
 - automatische Datenmigration ohne expliziten Nutzervertrag
@@ -67,8 +66,9 @@ Nicht Bestandteil dieses Plans:
 - oeffentliche Stabilitaetsgarantie fuer interne `DiffResult`-Details, solange
   kein versioniertes Plan-Artefakt beschlossen ist
 
-Phase H wird absichtlich nicht dupliziert. Sobald Phase H abgeschlossen ist,
-kann dieses Dokument darauf aufbauen, ohne die H-Tasks neu zu definieren.
+Die abgeschlossenen SQLite-Rebuild-Vertraege aus Phase H gelten als Grundlage
+dieses Folgeplans. Dieses Dokument baut darauf auf, ohne die H-Tasks erneut zu
+definieren.
 
 ---
 

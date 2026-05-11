@@ -167,12 +167,26 @@ class SchemaMigrateRunner(
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
         cancellationToken.throwIfCancellationRequested()
-        val renderedUp = renderer.generateUp(plan, DdlGenerationOptions())
+        // Phase H.3b: when running with --execute, the SQL stream is
+        // consumed by JdbcMigrationExecutor on a live JDBC connection
+        // — the SQLite-rebuild renderer can emit runner-hook markers
+        // for FK-state save/restore. --plan-only emits self-contained
+        // SQL (STANDALONE) for external execution.
+        val renderOptions = DdlGenerationOptions(
+            executionMode = if (request.execute) {
+                dev.dmigrate.driver.ExecutionMode.EXECUTE
+            } else {
+                dev.dmigrate.driver.ExecutionMode.STANDALONE
+            },
+        )
+        val renderedUp = renderer.generateUp(plan, renderOptions)
 
         // 7. Block on destructive without --allow-destructive
         val effectiveUp = applyDestructiveGuard(renderedUp, request.allowDestructive)
 
-        // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result)
+        // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result).
+        // Down output is always STANDALONE — rollback artefacts are
+        // self-contained SQL files consumed by external runners.
         val renderedDown = if (request.generateRollback) {
             cancellationToken.throwIfCancellationRequested()
             renderer.generateDown(plan, DdlGenerationOptions())

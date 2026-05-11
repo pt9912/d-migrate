@@ -134,7 +134,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
                 catalog = downCatalog,
                 sourceSchema = diff.desiredSchema,
                 targetSchema = diff.currentSchema,
-            )
+            ).copy(emissionMode = emissionModeFor(ctx.options))
             rebuildRenderer.render(downPlan, ctx)
             return
         }
@@ -155,9 +155,24 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             catalog = upCatalog,
             sourceSchema = diff.currentSchema,
             targetSchema = diff.desiredSchema,
-        )
+        ).copy(emissionMode = emissionModeFor(ctx.options))
         rebuildRenderer.render(upPlan, ctx)
     }
+
+    /**
+     * Phase H.3b: map the dialect-agnostic
+     * [dev.dmigrate.driver.ExecutionMode] from
+     * [dev.dmigrate.driver.DdlGenerationOptions] to the SQLite-internal
+     * [SqliteRebuildEmissionMode]. Default `STANDALONE` keeps the
+     * pauschal `PRAGMA foreign_keys = ON;` at the rebuild tail; EXECUTE
+     * activates the runner-hook markers consumed by
+     * `JdbcMigrationExecutor.runStreamOwnedTransaction`.
+     */
+    private fun emissionModeFor(options: dev.dmigrate.driver.DdlGenerationOptions): SqliteRebuildEmissionMode =
+        when (options.executionMode) {
+            dev.dmigrate.driver.ExecutionMode.STANDALONE -> SqliteRebuildEmissionMode.STANDALONE
+            dev.dmigrate.driver.ExecutionMode.EXECUTE -> SqliteRebuildEmissionMode.EXECUTE
+        }
 
     @Suppress("CyclomaticComplexMethod")
     private fun renderSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
