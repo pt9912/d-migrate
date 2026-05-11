@@ -186,6 +186,14 @@ Entscheidungspunkte:
     `transactionScope`, Risiken, Byte-Range/Statement-Index und Hash pro
     Statement; oder
   - eindeutig spezifiziertes Length-Prefix-/Range-Format.
+- Falls Byte-Ranges genutzt werden, ist die Range-Kanonik Teil des Formats und
+  nicht Implementierungsdetail: Ranges beziehen sich auf UTF-8-Bytes des
+  LF-normalisierten SQL-Bodys nach dem Metadaten-Endbegrenzer, nutzen
+  `startInclusive`/`endExclusive`, zaehlen Kommentare und Whitespace im Body mit
+  und erwarten genau eine finale Newline im kanonischen Artefakt. Hashes werden
+  ueber genau diese Byte-Slices gebildet. Rohdatei-Offsets, Kotlin-String-
+  Indizes oder dialektspezifische Statement-Normalisierung duerfen nicht als
+  interoperabler Vertrag verwendet werden.
 - Der neue Vertrag bleibt ein Down-SQL-Artefakt, solange `schema rollback`
   laut erstem Slice Down-SQL liest: Ein SQL-Kommentarheader enthaelt die
   strukturierte Statement-Index-/Hash-Metadaten, der Body bleibt ein
@@ -405,10 +413,18 @@ Preflight vor whitelisted Casts.
 
 Entscheidung:
 
-- Der Live-DB-Preflight ist eine Planner-Precondition fuer Datei-zu-DB-Targets
-  mit whitelisted SQLite-Casts, sobald Bestandsdaten betroffen sein koennen.
-  Er laeuft nach Diff-Planung und vor Render, damit fehlgeschlagene Datenchecks
-  als Migrations-Blocker mit Exit `8` enden und nicht erst als Execute-Fehler.
+- Der Live-DB-Preflight ist eine Pre-Render-Planungsbedingung fuer Datei-zu-DB-
+  Targets mit whitelisted SQLite-Casts, sobald Bestandsdaten betroffen sein
+  koennen. Er laeuft nach Diff-Planung und vor Render, damit fehlgeschlagene
+  Datenchecks als Migrations-Blocker mit Exit `8` enden und nicht erst als
+  Execute-Fehler.
+- Der schema-pure `DiffPlanner` bleibt frei von Live-DB-Wissen. Die Preflight-
+  Deklarationen erzeugt ein eigener `MigrationPreflightPlanner` zwischen
+  `DiffPlanner` und Dialekt-Render: Input sind `DiffResult`, Zieldialekt,
+  Target-Modus und, bei Datei-zu-DB, ein Preflight-Capability-/Connection-
+  Kontext. Output ist ein erweiterter, weiterhin deterministischer Plananhang
+  mit `preflightDeclarations`; Datei-zu-Datei erzeugt dieselben Operation-
+  Bindungen mit Status `NOT_RUN_FILE_TARGET`, aber keine Live-SQL-Ausfuehrung.
 - Der Runner erfindet keinen verdeckten Cast-Preflight. Er darf nur einen im
   Plan deklarierten Preflight (`preflightSqlHash`, Dialekt, Tabelle, Spalte,
   erwartete Statuswerte und Validierungszeitpunkt) ausfuehren oder
@@ -457,6 +473,8 @@ DoD:
   blockierend als manuell/nicht reversibel markiert.
 - [ ] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
 - [ ] SQLite-Live-Preflight-Status ist im Report maschinenlesbar.
+- [ ] `MigrationPreflightPlanner` oder ein aequivalenter Pre-Render-Baustein
+  erzeugt die Preflight-Deklarationen; der Runner erfindet keine Preflight-SQL.
 - [ ] Datei-zu-Datei-Planung berichtet fehlende Live-Pruefung ohne
   optimistischen Pass.
 - [ ] Positive und blockierende Tests existieren fuer PostgreSQL `USING` und
@@ -608,6 +626,19 @@ Nicht akzeptabel:
 - Refresh still auslassen, wenn der Zielzustand danach fachlich stale ist
 - `CONCURRENTLY` rendern, ohne die PostgreSQL-Voraussetzungen zu belegen
 
+Sofortiger Guard vor jedem D.3-Ausbau:
+
+- Jede diff-basierte Operation auf `ViewDefinition.materialized = true` muss als
+  Materialized-View-Operation erkannt und blockiert werden, solange kein eigener
+  Materialized-View-Vertrag implementiert ist. Das gilt auch fuer bestehende
+  `CreateView`-/`ReplaceView`-/`DropView`-Operationen, damit Renderer
+  Materialized Views nicht versehentlich ueber normale View-SQL-Pfade
+  behandeln.
+- PostgreSQL darf fuer `ReplaceView` mit `materialized = true` niemals
+  `CREATE OR REPLACE VIEW` rendern. MySQL und SQLite duerfen Materialized Views
+  im diff-basierten Migrationspfad nicht als Regular-View-Fallback rendern,
+  solange D.3 keinen expliziten Emulations-/Blocker-Vertrag beschlossen hat.
+
 Erwarteter Vertrag:
 
 - Materialized Views bekommen eigene Objektklasse und Diagnostics.
@@ -624,6 +655,8 @@ DoD:
 - [ ] MySQL-Dependency-Projektion deckt Table-, Column- und Routine-Usage ab
   oder blockiert bei unvollstaendiger Projektion.
 - [ ] Materialized Views sind nicht als normale Views modelliert.
+- [ ] Bis zum eigenen Materialized-View-Vertrag blockieren alle diff-basierten
+  Operationen auf `ViewDefinition.materialized = true` vor Render.
 - [ ] Refresh-, Staleness-, Locking- und Rollback-Verhalten fuer Materialized
   Views sind im Report sichtbar.
 - [ ] Tests decken kompatible View-Replaces, blockierende View-Dependencies und
@@ -834,6 +867,13 @@ Entscheidung:
   einen dialektspezifischen Render-Abschnitt fuer genau einen Zieldialekt.
   Datei-zu-Datei kann den Render-Abschnitt auslassen, dann ist das Artefakt
   nicht execute-faehig.
+- Unbekannte Felder sind per Definition ignorierbare dekorative Producer-
+  Metadaten. Ein unbekanntes Feld kann nicht nachtraeglich als Pflichtfeld
+  interpretiert werden. Jede neue Semantik, die Ausfuehrung, Risiko, Rollback,
+  Locking, Preflight, Secret-Scrubbing oder SQL-Bindung beeinflusst, muss
+  entweder ueber `requiredFeatures`, eine neue `formatVersion` oder ein
+  explizit versioniertes Schema-Feld signalisiert werden; fehlt dieses Signal,
+  muss der Consumer das Feld ignorieren und darf daraus keine Semantik ableiten.
 - Gerenderte SQL-Statements sind nicht frei im Plan-Artefakt vermischt. Sie
   werden entweder als strukturierter `renderedStatements`-Abschnitt mit
   Statement-IDs, Gruppen, Hashes und `transactionScope` gespeichert oder als
@@ -1047,6 +1087,9 @@ Empfohlene Reihenfolge nach Risiko und Abhaengigkeiten:
    Execute-Vertrag schaerfen, ohne neue Objektklassen freizuschalten.
 3. Workstream D.1/D.2: View-Dependency-Hardening fuer PostgreSQL/MySQL, weil
    Views bereits im ersten Slice enthalten sind.
+   Vor D.1/D.2 oder als erster Teil davon muss der D.3-Guard fuer
+   `materialized = true` aktiv sein, damit Materialized Views nicht laenger ueber
+   normale View-Pfade gerendert werden.
 4. Workstream B: erweiterte Typkonvertierungen und Live-Daten-Preflights.
 5. Workstream F.5: CHECK-/EXCLUDE-Diffbarkeit, weil der erste Slice hier
    bewusst blockiert.
