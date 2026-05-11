@@ -44,11 +44,19 @@ internal data class SqliteRebuildPlan(
     val newTableTempName: String,
 
     /**
-     * Union of all op-ids the rebuild absorbs — column-altering ops
-     * directly plus, in H.3, any view/trigger ops on a rebuilt-table-
-     * referencing object. Every statement the renderer emits is tagged
-     * with this set so runner failures and the migrate-report can
-     * attribute back to the absorbed business ops. §6.4 L880-915
+     * The full bucket of operations this rebuild absorbs — required
+     * for context-side book-keeping (`ctx.markRendered(op)` keys on
+     * `op` itself, not just its id). The planner attaches the bucket
+     * here from `SqliteRebuildPlanner.classify`'s output.
+     */
+    val bucketOperations: List<dev.dmigrate.core.diff.migration.DiffOperation>,
+
+    /**
+     * Union of all op-ids the rebuild absorbs — equals
+     * [bucketOperations].map { it.id }.toSet() by construction.
+     * Stored explicitly because every statement the renderer emits is
+     * tagged with this set, and pre-computing it once avoids walking
+     * the bucket on each emit. §6.4 L880-915
      * `DialectMigrationStep.sourceOperationIds`.
      */
     val sourceOperationIds: Set<String>,

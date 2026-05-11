@@ -119,10 +119,26 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             // Swap schemas: the down-rebuild copies from desired (= post-up
             // state) into a target shaped like the original current.
-            rebuildRenderer.renderRebuild(table, bucket, source = desired, target = current, ctx)
+            val downPlan = SqliteRebuildPlanner.planRebuild(
+                table = table,
+                bucket = bucket,
+                source = desired,
+                target = current,
+                bucketRisk = ctx.bucketRisk(bucket),
+                sql = sql,
+            )
+            rebuildRenderer.render(downPlan, ctx)
             return
         }
-        rebuildRenderer.renderRebuild(table, bucket, source = current, target = desired, ctx)
+        val upPlan = SqliteRebuildPlanner.planRebuild(
+            table = table,
+            bucket = bucket,
+            source = current,
+            target = desired,
+            bucketRisk = ctx.bucketRisk(bucket),
+            sql = sql,
+        )
+        rebuildRenderer.render(upPlan, ctx)
     }
 
     @Suppress("CyclomaticComplexMethod")

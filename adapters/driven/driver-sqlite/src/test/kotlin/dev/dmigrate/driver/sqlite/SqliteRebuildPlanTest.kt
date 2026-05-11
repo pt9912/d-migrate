@@ -39,6 +39,7 @@ class SqliteRebuildPlanTest : FunSpec({
         oldTable = sampleTable,
         newTable = sampleTable,
         newTableTempName = "users__dmg_rebuild_abcd1234",
+        bucketOperations = emptyList(),
         sourceOperationIds = setOf("op-1"),
         risk = OperationRisk.SAFE,
         mapping = emptyMapping(),

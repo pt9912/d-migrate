@@ -1,6 +1,10 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.util.sha256Hex
 
 /**
@@ -58,6 +62,122 @@ internal object SqliteRebuildPlanner {
         val payload = bucket.map { it.id }.sorted().joinToString("")
         val hex = sha256Hex(payload).take(8)
         return "${table}__dmg_rebuild_$hex"
+    }
+
+    /**
+     * Phase H.1b: build the per-bucket [SqliteRebuildPlan] consumed by
+     * [SqliteRebuildRenderer.render]. Pure function — no context, no
+     * live-DB lookups. The caller pre-computes [bucketRisk] via
+     * `SqliteDiffRenderContext.bucketRisk` (which is direction-aware)
+     * and passes it in; the planner can't read direction on its own.
+     *
+     * SQL emission stays bit-identical to the pre-H.1b path because
+     * the plan's field values are exactly the inputs the renderer
+     * used to compute inline. [sql] is threaded for identifier
+     * quoting + type-mapping during the column-mapping build.
+     *
+     * Empty defaults for [SqliteRebuildPlan.dependentViewsToDrop] /
+     * [SqliteRebuildPlan.dependentViewsToRecreate] /
+     * [SqliteRebuildPlan.dependentTriggersToDrop] /
+     * [SqliteRebuildPlan.dependentTriggersToRecreate] /
+     * [SqliteRebuildPlan.preflight] — placeholders for H.3 / H.4.
+     */
+    fun planRebuild(
+        table: String,
+        bucket: List<DiffOperation>,
+        source: TableDefinition,
+        target: TableDefinition,
+        bucketRisk: OperationRisk,
+        sql: SqliteDiffSqlBuilders,
+    ): SqliteRebuildPlan {
+        val mapping = computeColumnMapping(source, target, sql)
+        return SqliteRebuildPlan(
+            originalTableName = table,
+            oldTable = source,
+            newTable = target,
+            newTableTempName = tempTableName(table, bucket),
+            bucketOperations = bucket,
+            sourceOperationIds = bucket.map { it.id }.toSet(),
+            risk = bucketRisk,
+            mapping = mapping,
+            indexesToRecreate = target.indices,
+        )
+    }
+
+    private fun computeColumnMapping(
+        source: TableDefinition,
+        target: TableDefinition,
+        sql: SqliteDiffSqlBuilders,
+    ): SqliteColumnMappingModel {
+        val preserved = mutableListOf<ColumnCopyMapping>()
+        val added = mutableListOf<AddedColumnFill>()
+        val notNullBlocked = mutableListOf<String>()
+        val castBlocked = mutableListOf<CastBlockEntry>()
+        // Deterministic key order — same as pre-H.1b `targetColumnOrder`
+        // so resulting SQL doesn't shift.
+        for ((name, targetCol) in target.columns.entries.sortedBy { it.key }) {
+            val sourceCol = source.columns[name]
+            val quoted = sql.quote(name)
+            when {
+                sourceCol != null && sourceCol.type == targetCol.type ->
+                    preserved += ColumnCopyMapping(
+                        sourceColumn = name,
+                        targetColumn = name,
+                        expressionSql = quoted,
+                        typeChanged = false,
+                    )
+                sourceCol != null -> {
+                    if (!SqliteCastMatrix.isWhitelisted(sourceCol.type, targetCol.type)) {
+                        castBlocked += CastBlockEntry(name, sourceCol.type, targetCol.type)
+                        preserved += ColumnCopyMapping(
+                            sourceColumn = name,
+                            targetColumn = name,
+                            expressionSql = "/* unsafe cast */",
+                            typeChanged = true,
+                        )
+                    } else {
+                        preserved += ColumnCopyMapping(
+                            sourceColumn = name,
+                            targetColumn = name,
+                            expressionSql = "CAST($quoted AS ${sql.toSql(targetCol.type)})",
+                            typeChanged = true,
+                        )
+                    }
+                }
+                targetCol.default is DefaultValue.SequenceNextVal -> {
+                    notNullBlocked += name
+                    added += AddedColumnFill(name, "/* sequence-default not supported */")
+                }
+                targetCol.default != null ->
+                    added += AddedColumnFill(name, defaultLiteral(targetCol))
+                !targetCol.required ->
+                    added += AddedColumnFill(name, "NULL")
+                else -> {
+                    notNullBlocked += name
+                    added += AddedColumnFill(name, "/* unfilled */")
+                }
+            }
+        }
+        val droppedNames = source.columns.keys.filter { it !in target.columns }.sorted()
+        return SqliteColumnMappingModel(
+            preservedColumns = preserved,
+            addedColumns = added,
+            droppedColumnNames = droppedNames,
+            notNullBackfillBlocked = notNullBlocked,
+            castNotWhitelisted = castBlocked,
+        )
+    }
+
+    private fun defaultLiteral(col: ColumnDefinition): String {
+        val dv = col.default ?: return "NULL"
+        return when (dv) {
+            is DefaultValue.StringLiteral -> "'${dv.value.replace("'", "''")}'"
+            is DefaultValue.NumberLiteral -> dv.value.toString()
+            is DefaultValue.BooleanLiteral -> if (dv.value) "1" else "0"
+            is DefaultValue.FunctionCall -> if (dv.name == "current_timestamp") "CURRENT_TIMESTAMP"
+                else "${dv.name}()"
+            is DefaultValue.SequenceNextVal -> "NULL"
+        }
     }
 
     private fun isRebuildTrigger(op: DiffOperation): Boolean = when (op) {
