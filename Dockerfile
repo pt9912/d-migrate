@@ -71,12 +71,19 @@ COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/dri
 COPY --chown=gradle:gradle adapters/driven/audit-logging/build.gradle.kts adapters/driven/audit-logging/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/connection-config/build.gradle.kts adapters/driven/connection-config/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/persistence-jdbc/build.gradle.kts adapters/driven/persistence-jdbc/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/storage-file/build.gradle.kts adapters/driven/storage-file/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/streaming/build.gradle.kts adapters/driven/streaming/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/text-icu/build.gradle.kts adapters/driven/text-icu/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driving/cli/build.gradle.kts adapters/driving/cli/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driving/mcp/build.gradle.kts adapters/driving/mcp/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-postgresql/build.gradle.kts test/integration-postgresql/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-mysql/build.gradle.kts test/integration-mysql/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-sqlite/build.gradle.kts test/integration-sqlite/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-server-state/build.gradle.kts test/integration-server-state/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-integrations/build.gradle.kts test/integration-integrations/build.gradle.kts
+COPY --chown=gradle:gradle test/integration-persistence-jdbc/build.gradle.kts test/integration-persistence-jdbc/build.gradle.kts
+COPY --chown=gradle:gradle test/e2e-cli/build.gradle.kts test/e2e-cli/build.gradle.kts
 COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consumer-read-probe/build.gradle.kts
 
 RUN gradle --no-daemon resolveAllDependencies
