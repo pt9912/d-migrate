@@ -2141,7 +2141,14 @@ fuer H.3/H.4:
   - `risk: OperationRisk` — pre-aggregiertes Bucket-Risiko (richtungs-
     abhaengig; Planner bekommt direction beim Build).
   - `originalTableName`, `oldTable`, `newTable`, `newTableTempName`
-  - `preservedColumns`, `addedColumns`, `droppedColumns`
+  - `preservedColumns: List<ColumnCopyMapping>` mit **strukturierten**
+    Feldern pro Eintrag (`sourceColumn: String`, `targetColumn: String`,
+    `expressionSql: String`) — nicht nur ein opaker `selectExpression`-
+    String. H.4 `SOURCE_COLUMNS_EXIST` braucht `sourceColumn` als
+    eigenes Feld, sonst muesste der Check SQL-Expressions parsen.
+  - `addedColumns: List<AddedColumnFill>` (`targetColumn`,
+    `expressionSql`), `droppedColumns: List<String>` (source-only
+    column names).
   - `indexesToRecreate`
   - `dependentViewsToDrop: List<NamedViewDefinition>` —
     aus `current.views` gefiltert auf Refs zur rebuilt-Table
@@ -2177,29 +2184,39 @@ fuer H.3/H.4:
   geprueft. §6.4 (L975-977) verlangt: bei Kollision Suffix `__2`,
   `__3`, ... deterministisch vergeben.
 
+  **Vertrag: der `LiveCatalogSnapshot` wird VOR `planRebuild`
+  eingespeist** (analog zum `current: SchemaDefinition`-Input). H.1b
+  pinnt den Plan als frozen-after-build; der Renderer ist pure
+  Konsumption und darf den `newTableTempName` nicht nachtraeglich
+  aendern. Der Catalog-Snapshot ist daher kein Runner-side Probe-
+  Resultat, sondern Planner-Input.
+
   Catalog-Snapshot-Quelle haengt vom Plan-Pfad ab:
 
-  - **Datei-zu-Datei-Planning** (`schema migrate --plan-only`): es
-    gibt kein `sqlite_master`. Der Planner nutzt den
-    `current: SchemaDefinition`-Snapshot und prueft Kollision gegen
-    `current.tables`, `current.views`, `current.triggers` und alle
-    Index-Namen. Ad-hoc-Objekte ausserhalb des Modells (z.B. nicht
-    importierte temporaere Tabellen aus frueheren Migrationen) bleiben
-    ausserhalb dieser Garantie — der `--plan-only`-Output kommt mit
-    einem Header-Kommentar "Temp-Name-Probe nur gegen Schema-Modell;
-    Live-DB-Catalog kann zusaetzliche Kollisionen haben — verifiziere
-    via `d-migrate schema migrate --execute` oder Pre-Probe".
-  - **Execute-Pfad** (`schema migrate --execute`): zusaetzlich
-    Pre-Render-Probe gegen live `sqlite_master` ueber die Runner-
-    Connection; bei Kollision konsultiert der Plan beide Mengen und
-    nimmt die Vereinigung als Kollisions-Set.
+  - **Datei-zu-Datei-Planning** (`schema migrate --plan-only` ohne
+    Connection): es gibt kein live `sqlite_master`. Der Snapshot
+    wird aus `current: SchemaDefinition` synthetisiert (tables, views,
+    triggers, alle Index-Namen). Ad-hoc-Objekte ausserhalb des Modells
+    (z.B. nicht importierte temporaere Tabellen aus frueheren
+    Migrationen) bleiben ausserhalb dieser Garantie. Der
+    `--plan-only`-Output kommt mit einem Header-Kommentar
+    "Temp-Name-Probe nur gegen Schema-Modell; Live-DB-Catalog kann
+    zusaetzliche Kollisionen haben — verifiziere via `d-migrate
+    schema migrate --execute`".
+  - **Execute-Pfad** (`schema migrate --execute`): die CLI fetcht
+    `sqlite_master` **vor** dem Plan-Build und konsolidiert das
+    Resultat mit dem Schema-synthetisierten Snapshot in einen
+    einzigen `LiveCatalogSnapshot`, der dann an `planRebuild`
+    eingespeist wird. Das Plan-Output bleibt damit frozen; der
+    Runner muss `newTableTempName` nicht mehr verifizieren.
 
   Bei Kollision: deterministischer Suffix-Fallback `__2`, `__3`, ...
-  bis frei. Die fortlaufende Nummer ist Plan-Output und wird im
-  Metadatenblock ausgewiesen. Test: Planner mit simuliertem
-  Catalog-Kollisions-Set → Plan emittiert `__2`-Suffix (Datei-Pfad)
-  bzw. erkennt zusaetzlich live `sqlite_master`-Kollisionen
-  (Execute-Pfad).
+  bis frei — komplett im Planner berechnet. Die fortlaufende Nummer
+  ist Plan-Output und wird im Metadatenblock ausgewiesen. Test:
+  Planner mit simuliertem Catalog-Kollisions-Set → Plan emittiert
+  `__2`-Suffix (rein Plan-Time-deterministisch; Execute-Pfad
+  unterscheidet sich nur durch die Snapshot-Quelle, nicht durch die
+  Plan-Logik).
 
 - [ ] **H.3** Drop+Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
   Zwei separate Concerns:
@@ -2220,6 +2237,24 @@ fuer H.3/H.4:
     nicht in `desired`. Renderer emittiert die Drop-Statements vor
     `DROP TABLE` (aus `*ToDrop`) und die Create-Statements nach
     RENAME (aus `*ToRecreate`).
+
+    **Absorption-Vertrag fuer simpleOps**: heute laesst
+    `SqliteRebuildPlanner.classify` View- und Trigger-Ops
+    (`CreateView`/`DropView`/`ReplaceView`/`CreateTrigger`/
+    `DropTrigger`/`ReplaceTrigger`) immer in `simpleOps`, und der
+    Generator rendert simpleOps **nach** den Rebuilds. Mit H.3
+    fuehrt das zu Doppel-Emission: eine `desired`-only View, die
+    durch `dependentViewsToRecreate` im Rebuild bereits ein
+    `CREATE VIEW` erhaelt, wuerde anschliessend nochmal von der
+    `CreateView`-simpleOp gerendert; analog wuerde eine
+    `current`-only View doppelt gedroppt. **H.3 absorbiert daher
+    View/Trigger-Ops aus simpleOps, sobald ihre Table-Referenz im
+    `rebuildTables`-Set ist** — die Drop/Recreate-Logik kommt
+    ausschliesslich aus dem Plan. `ReplaceView` auf eine rebuilt-
+    Table-Referenz wird in dieselben zwei Mengen gesplittet (drop-
+    aus-before-state, recreate-aus-after-state). Die absorbierten
+    Op-IDs werden in die `sourceOperationIds` des Rebuild-Plans
+    aufgenommen, damit Attribution erhalten bleibt.
 
   - **FK-Pragma-Restore (hybrid: Runner-Vertrag fuer Execute,
     Carve-Out fuer Standalone-SQL)**:
@@ -2270,7 +2305,7 @@ fuer H.3/H.4:
   |---|---|---|
   | `TABLE_EXISTS` | Plan-time statisch | Diff hat `current.tables[name]`; Plan-Diagnostic, wenn fehlend. |
   | `TEMP_NAME_AVAILABLE` | Plan-time statisch via Catalog-Snapshot aus H.2 | H.2 prueft gegen `sqlite_master`-Snapshot; bei Kollision `__2`/`__3`-Fallback im Plan. |
-  | `SOURCE_COLUMNS_EXIST` | Plan-time statisch | Check operiert NICHT ueber `source.columns.keys ∩ target.columns.keys` (das waere tautologisch — eine fehlende source-Spalte landet dann gar nicht erst in `preservedColumns`), sondern ueber `plan.mapping.preservedColumns.map { it.sourceColumn }` des **bereits gebauten** Plans gegen die `oldTable.columns.keys`. Damit erkennt der Check Mapping-Bugs (z.B. wenn H.2 das Mapping auf Basis eines stale Catalog-Snapshots gebaut hat) oder ColumnCopyMapping-Eintraege mit ungueltigen sourceColumn-Verweisen. Plan-Diagnostic bei Verletzung. |
+  | `SOURCE_COLUMNS_EXIST` | Plan-time statisch | Check operiert NICHT ueber `source.columns.keys ∩ target.columns.keys` (das waere tautologisch — eine fehlende source-Spalte landet dann gar nicht erst in `preservedColumns`), sondern ueber `plan.mapping.preservedColumns.map { it.sourceColumn }` (strukturiertes Feld aus H.1a's `ColumnCopyMapping`, NICHT der opake `expressionSql`-String) des **bereits gebauten** Plans gegen die `oldTable.columns.keys`. Damit erkennt der Check Mapping-Bugs (z.B. ColumnCopyMapping-Eintraege mit ungueltigen sourceColumn-Verweisen) ohne SQL-Expression-Parsing. Plan-Diagnostic bei Verletzung. |
   | `DEPENDENCIES_KNOWN` | Plan-time statisch via F.6.b + G.2 | View/Trigger-Dependencies-Projektion ist Adapter-Output; F.6.b/G.2 blocken bei Unvollstaendigkeit unabhaengig. |
   | `ADDED_COLUMNS_FILLABLE` | Plan-time statisch | NOT NULL-Backfill + Cast-Matrix; heute schon im Mapping, nur Umverdrahtung auf das `preflight`-Feld. |
   | `FOREIGN_KEYS_CHECKABLE` | **Runner-Vertrag (execute-time)** | FK-Constraint-Integritaet ist live-DB-abhaengig; Renderer emittiert das `PRAGMA foreign_key_check;` (heute schon vorhanden) mit Phase-Marker, der den Runner verpflichtet, einen Violation-Output als Abbruch zu behandeln statt als Informational. |
