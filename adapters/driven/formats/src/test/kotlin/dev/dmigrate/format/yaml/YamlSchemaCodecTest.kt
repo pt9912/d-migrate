@@ -303,6 +303,54 @@ class YamlSchemaCodecTest : FunSpec({
         )
     }
 
+    test("G.2 — projection_complete=false survives a YAML roundtrip") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "Views"
+            version: "1.0.0"
+            views:
+              v_incomplete:
+                query: "SELECT id FROM users"
+                dependencies:
+                  tables: []
+                  projection_complete: false
+                source_dialect: mysql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+        val view = schema.views["v_incomplete"]!!
+        view.dependencies!!.projectionComplete shouldBe false
+
+        // Round-trip: write and re-read.
+        val out = java.io.ByteArrayOutputStream()
+        codec.write(out, schema)
+        val rt = codec.read(out.toByteArray().inputStream())
+        rt.views["v_incomplete"]!!.dependencies!!.projectionComplete shouldBe false
+    }
+
+    test("G.2 — projection_complete defaults to true when omitted") {
+        val yaml = """
+            schema_format: "1.0"
+            name: "Views"
+            version: "1.0.0"
+            views:
+              v_default:
+                query: "SELECT id FROM users"
+                dependencies:
+                  tables: [users]
+                source_dialect: postgresql
+        """.trimIndent()
+
+        val schema = codec.read(yaml.byteInputStream())
+        schema.views["v_default"]!!.dependencies!!.projectionComplete shouldBe true
+
+        // And builder omits the key when the value is the default.
+        val out = java.io.ByteArrayOutputStream()
+        codec.write(out, schema)
+        val written = out.toByteArray().decodeToString()
+        written.contains("projection_complete") shouldBe false
+    }
+
     test("parse schema via Path") {
         val path = java.nio.file.Paths.get(
             YamlSchemaCodecTest::class.java.getResource("/fixtures/schemas/minimal.yaml")!!.toURI()

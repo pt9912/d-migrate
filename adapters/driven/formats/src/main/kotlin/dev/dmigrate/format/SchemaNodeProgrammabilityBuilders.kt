@@ -163,5 +163,13 @@ private fun buildDependencies(
     if (dependencies.functions.isNotEmpty()) {
         node.set<ArrayNode>("functions", stringArray(mapper, dependencies.functions))
     }
+    // Phase G.2: only serialise `projection_complete` when it diverges
+    // from the default `true`. MySQL-introspected views with stille
+    // Unvollstaendigkeit (empty VIEW_TABLE_USAGE) get `false` written,
+    // so a downstream `schema load` + `schema diff` re-honours the
+    // planner's VIEW_DEPENDENCY_PROJECTION_INCOMPLETE block.
+    if (!dependencies.projectionComplete) {
+        node.put("projection_complete", false)
+    }
     return node
 }
