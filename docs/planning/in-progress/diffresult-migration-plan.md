@@ -7,9 +7,13 @@
 > Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
 > Pfad, Edge-Cases). Phase G (Dialect-Hardening) ist vollstaendig im
 > Code: G.1 (SQLite-Cast-Matrix), G.2 (MySQL-VIEW-Privilege-Preflight),
-> G.3 (PostgreSQL-ReplaceView-Compat-Decision — Strict-Variante). Damit
-> sind alle §10-Akzeptanzpunkte fuer 0.9.7 geschlossen; Spaltensignatur-
-> Compatibility bleibt §10-Carve-Out auf 0.9.8+.
+> G.3 (PostgreSQL-ReplaceView-Compat-Decision — Strict-Variante). Phase H
+> (SQLite-Rebuild-Vertrag formalisieren) ist offen — Bucket-Klassifikation
+> + canonical 9-Statement-Sequence + Atomicity sind funktional erfuellt,
+> aber das formale `DialectMigrationPlan`-Struct, Temp-Namen-Kollision,
+> Views/Trigger-Recreate und die 5-Punkte-Preflight-Liste aus §6.4 fehlen
+> strukturell. Spaltensignatur-Compatibility (G.3-Stufe 2) bleibt
+> §10-Carve-Out auf 0.9.8+.
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`
@@ -2103,6 +2107,67 @@ braucht (nicht nur Tests). Reihenfolge nach Aufwand aufsteigend:
   kompatibel ist" (L2078-L2083) — Strict-Variante. Spaltensignatur-
   Compatibility bleibt §10-Carve-Out auf 0.9.8+.
 
+### Phase H - SQLite-Rebuild-Vertrag formalisieren
+
+Schliesst die strukturellen Luecken im SQLite-Rebuild-Vertrag, die
+beim Audit der §10-DoD "SQLite-Rebuilds werden durch einen
+expliziten `DialectMigrationPlan` geplant" aufgedeckt wurden:
+Bucket-Klassifikation + canonical 9-Statement-Sequence + Atomicity
+sind funktional erfuellt, aber Plan-§6.4 verlangt zusaetzlich ein
+formales Plan-Struct, Temp-Namen-Kollisionsprueffung, Recreate
+abhaengiger Views/Trigger und eine 5-Punkte-Preflight-Liste. Der
+heutige Code hat stattdessen `Classification(rebuildBuckets,
+simpleOps)` + Inline-SQL-Erzeugung im Renderer.
+
+Reihenfolge nach Abhaengigkeit aufsteigend — H.1 ist Voraussetzung
+fuer H.3/H.4:
+
+- [ ] **H.1** `DialectMigrationPlan`-Datenstruktur anlegen —
+  Neuer Typ `SqliteRebuildPlan` mit den in §6.4 (L957-1008)
+  geforderten Feldern: `oldTable`, `newTable`, `newTableTempName`,
+  `preservedColumns`, `addedColumns`, `droppedColumns`,
+  `indexesToRecreate`, `dependentViewsToRecreate`,
+  `dependentTriggersToRecreate`, `preflight`. `SqliteRebuildPlanner`
+  produziert pro Bucket einen Plan; `SqliteRebuildRenderer`
+  konsumiert den Plan statt mit der `bucket: List<DiffOperation>`-
+  Liste direkt zu arbeiten. Tests pinnen die Plan-Form pro
+  Rebuild-Szenario (Type-Change, PK-Reshape, Constraint-Add).
+
+- [ ] **H.2** Temp-Namen-Kollisionsprueffung —
+  `SqliteRebuildPlanner.tempTableName` ist heute ein
+  deterministischer Hash; eine Kollision mit bereits in der
+  Ziel-DB existierenden Tabellen/Views/Indizes/Triggern wird nicht
+  geprueft. §6.4 (L975-977) verlangt: bei Kollision Suffix `__2`,
+  `__3`, ... deterministisch vergeben. Erfordert Catalog-Snapshot
+  zum Plan-Zeitpunkt (oder Pre-Render-Probe gegen
+  `sqlite_master`). Test: Planner mit simuliertem Catalog-
+  Kollisions-Set → Plan emittiert `__2`-Suffix.
+
+- [ ] **H.3** Recreate abhaengiger Views/Trigger + FK-Pragma-Restore —
+  SqliteRebuildRenderer.kt:65-70 dokumentiert explizit "User-defined
+  triggers attached to the rebuilt table are dropped … and not
+  recreated"; §6.4 (L995, L1004) verlangt das Drop+Recreate aus
+  gespeicherten Definitionen in `dependentViewsToRecreate` /
+  `dependentTriggersToRecreate`. Plus: §6.4 (L992, L1007) verlangt
+  Save/Restore des vorherigen `PRAGMA foreign_keys`-Zustands; der
+  Renderer setzt heute pauschal `PRAGMA foreign_keys = ON;`.
+  Erfordert: Plan-Form aus H.1 + Live-Query `PRAGMA foreign_keys;`
+  zum Plan-Zeitpunkt (oder Runner-seitige Token-Substitution).
+  Test: Rebuild einer Table mit Trigger + View bringt beide nach
+  dem Rebuild wieder zurueck; `priorForeignKeyState=false` wird
+  am Ende auf `false` restored.
+
+- [ ] **H.4** Vollstaendige Preflight-Liste —
+  §6.4 (L985-990) nennt 5 Preflight-Checks: erwartete Tabelle
+  existiert, temporaerer Name ist frei, alle Quellspalten fuer
+  `preservedColumns` existieren, keine unbekannten abhaengigen
+  Views/Trigger blockieren den Drop, NOT NULL/Default-Regeln
+  erfuellt. Heute implementiert sind nur die letzten zwei (NOT
+  NULL-Backfill + Cast-Matrix). Erfordert: Plan-Form aus H.1 fuer
+  `preflight: List<PreflightCheck>`-Feld, Renderer emittiert die
+  Checks als Vorlauf-Statements oder als Plan-Diagnostics. Test:
+  pro Check Positiv- und Negativ-Pfad.
+
 ---
 
 ## 10. Akzeptanzkriterien
@@ -2158,10 +2223,18 @@ Ein erster `DiffResult`-Milestone ist belastbar, wenn gilt:
   abbildet; andernfalls muss ein Vor-Normalisierungs-Detector betroffene Tabellen
   blockieren. Die Aenderung darf weder still verschwinden noch darf fuer dieselbe
   Tabelle SQL aus einem unvollstaendigen Diff entstehen.
-- [x] SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
+- [ ] SQLite-Rebuilds werden durch einen expliziten `DialectMigrationPlan` geplant:
   Spaltenmapping, temporaere Namen, Index-/Constraint-/Trigger-/View-
   Wiederaufbau, Preflight, Transaktionsgrenzen und Fehler-Rollback sind
-  deterministisch beschrieben und getestet.
+  deterministisch beschrieben und getestet. (Phase H — Funktional erfuellt
+  ist nur ein Teil-Aspekt: `SqliteRebuildPlanner.Classification` mit
+  Bucket-Klassifikation + die canonical 9-Statement-Sequence in
+  `SqliteRebuildRenderer.emitRebuildSequence` + Atomicity- und Recovery-
+  Pfade in F.5/F.6. Strukturell offen: formales `DialectMigrationPlan`-
+  Struct (H.1), Temp-Namen-Kollisionsprueffung mit Suffix `__2`/`__3`
+  (H.2), Recreate abhaengiger Views/Trigger + FK-Pragma-Zustand
+  wiederherstellen (H.3), vollstaendige 5-Punkte-Preflight-Liste aus
+  §6.4 (H.4). Siehe §9 Phase H.)
 - [x] SQLite-`AlterColumnType` nutzt automatische `CAST`-Ausdruecke nur mit
   expliziter, getesteter Quell-/Ziel-Cast-Matrix und den noetigen
   Daten-Preflights. Zielaffinitaet allein reicht nicht als Sicherheitsnachweis;
