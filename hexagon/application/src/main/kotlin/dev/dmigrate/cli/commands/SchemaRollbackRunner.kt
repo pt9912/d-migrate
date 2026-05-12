@@ -183,11 +183,15 @@ class SchemaRollbackRunner(
         targetOp: CompareOperand.Database,
         exec: ExecutorFn,
     ): Int {
-        val statements = splitArtefactBody(
-            sqlBody = parsed.sqlBody,
-            operationIds = parsed.operationIds.toSet(),
-            destructive = parsed.risk.destructive,
-        )
+        val statements = if (parsed.statementIndex.isNotEmpty()) {
+            parsed.statementsFromIndex()
+        } else {
+            splitLegacyArtefactBody(
+                sqlBody = parsed.sqlBody,
+                operationIds = parsed.operationIds.toSet(),
+                destructive = parsed.risk.destructive,
+            )
+        }
         val trace = try {
             exec(targetOp, statements, request.cliConfigPath)
         } catch (e: Exception) {
@@ -206,7 +210,7 @@ class SchemaRollbackRunner(
     }
 
     /**
-     * Split the artefact's `sqlBody` back into individual
+     * Legacy v1 fallback: split the artefact's `sqlBody` back into individual
      * [MigrationDdlStatement]s. The builder ([RollbackArtefactBuilder.canonicalBody])
      * joins per-statement SQL with `\n\n`, so we reverse that exact
      * separator. JDBC drivers (e.g. xerial-sqlite) do NOT execute
@@ -220,21 +224,12 @@ class SchemaRollbackRunner(
      * statement with [DiffPhase.TABLES] as a generic "executable
      * body" placeholder.
      *
-     * Plan-2 §G.1 transitional fallback: the `rollback-sql v1`
-     * artefact format does not yet carry per-statement
-     * [TransactionScope]; Plan-2 §G.2 will replace this whole
-     * `\n\n`-split with a structured serialization that does. Until
-     * then the SQLite-Rebuild rollback round-trip needs *some* way
-     * to signal STREAM_OWNED execution, so the rollback runner's
-     * artefact-body splitter (this method, not
-     * [RollbackArtefactParser] / [MigrationStreamClassifier] / the
-     * executor) detects `BEGIN`-prefixed statements and stamps
-     * every split statement with the inferred scope. The
-     * classifier and executor are kept free of SQL-content sniffing
-     * per §G.1; this fallback is scoped to one method and dies with
-     * §G.2.
+     * New v2 artefacts bypass this method completely: their validated
+     * `statementIndex` carries byte ranges, hashes and [TransactionScope].
+     * This method remains only as the controlled compatibility path for
+     * pre-G.2 v1 artefacts.
      */
-    private fun splitArtefactBody(
+    private fun splitLegacyArtefactBody(
         sqlBody: String,
         operationIds: Set<String>,
         destructive: Boolean,

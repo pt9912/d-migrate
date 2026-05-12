@@ -864,6 +864,15 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 DROP COLUMN "legacy_field";
 ```
 
+Diff-basierte Rollback-Artefakte aus `schema migrate --generate-rollback`
+werden als ausführbarer SQL-Body plus `d-migrate rollback-sql v2`-
+Metadatenblock geschrieben. Der Body bleibt das einzige ausführbare SQL. Der
+Header enthält `statementIndex[]` mit UTF-8-Byte-Ranges, Statement-Hashes,
+Operation-IDs, Phase, Risiko und `transactionScope`. `schema rollback
+--execute` rekonstruiert Statements aus diesen validierten Body-Ranges; ein
+Split anhand leerer Zeilen ist für v2 verboten. `rollback-sql v1` wird nur als
+Legacy-Lesepfad unterstützt.
+
 ---
 
 ## 13. Formatierung

@@ -34,8 +34,9 @@ class SchemaRollbackRunnerTest : FunSpec({
         recovery: Boolean = false,
         postUpVerified: Boolean = false,
         allowedPostUpFingerprints: List<String>? = null,
-    ): String = RollbackArtefactBuilder.build(
-        RollbackArtefactBuilder.Input(
+        legacyV1: Boolean = false,
+    ): String {
+        val input = RollbackArtefactBuilder.Input(
             dialect = dialect,
             currentFingerprint = currentFp,
             desiredFingerprint = desiredFp,
@@ -52,8 +53,9 @@ class SchemaRollbackRunnerTest : FunSpec({
             recovery = recovery,
             postUpVerified = postUpVerified,
             allowedPostUpFingerprints = allowedPostUpFingerprints,
-        ),
-    )
+        )
+        return if (legacyV1) RollbackArtefactBuilder.buildLegacyV1(input) else RollbackArtefactBuilder.build(input)
+    }
 
     fun writeArtefact(name: String, text: String): Path {
         val p = tmpDir.resolve(name)
@@ -463,10 +465,91 @@ class SchemaRollbackRunnerTest : FunSpec({
         executorCalls shouldBe emptyList()
     }
 
-    // ── Plan-2 §G.1 transitional fallback: splitArtefactBody scope inference ──
+    test("G.2 — v2 rollback execute reconstructs statements from structured ranges") {
+        val matchingSchema = SchemaDefinition(name = "App", version = "1")
+        val fp = MigrationFingerprint.compute(matchingSchema)
+        val routineLikeBody = """
+            CREATE FUNCTION f()
+            RETURNS INT
+            BEGIN
+
+            RETURN 1;
+            END;
+        """.trimIndent()
+        val artefact = RollbackArtefactBuilder.build(
+            RollbackArtefactBuilder.Input(
+                dialect = DatabaseDialect.POSTGRESQL,
+                currentFingerprint = "fp-pre",
+                desiredFingerprint = fp,
+                postUpFingerprint = fp,
+                operationIds = setOf("routine-1", "table-1"),
+                risk = RollbackArtefactBuilder.Risk(
+                    destructive = false,
+                    dataLossPossible = false,
+                    requiresManualConfirmation = false,
+                    operationIds = setOf("routine-1", "table-1"),
+                ),
+                downStatements = listOf(
+                    MigrationDdlStatement(
+                        sql = routineLikeBody,
+                        operationIds = setOf("routine-1"),
+                        risk = OperationRisk.SAFE,
+                        phase = DiffPhase.ROUTINES,
+                        transactionScope = TransactionScope.RUNNER_OWNED,
+                    ),
+                    MigrationDdlStatement(
+                        sql = "DROP TABLE x;",
+                        operationIds = setOf("table-1"),
+                        risk = OperationRisk(destructive = true),
+                        phase = DiffPhase.TABLES,
+                        transactionScope = TransactionScope.NO_TRANSACTION,
+                    ),
+                ),
+                createdByVersion = "test/0.0.0",
+            ),
+        )
+        val artefactPath = writeArtefact("g2-v2-structured.sql", artefact)
+        val captured = mutableListOf<MigrationDdlStatement>()
+        val runner = SchemaRollbackRunner(
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = matchingSchema,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            executor = { _, statements, _ ->
+                captured += statements
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                )
+            },
+            printError = { _, _ -> },
+        )
+
+        runner.execute(
+            SchemaRollbackRequest(
+                source = artefactPath,
+                target = "db:postgres://localhost",
+                execute = true,
+                allowDestructive = true,
+            ),
+        ) shouldBe 0
+        captured.map { it.sql } shouldBe listOf(routineLikeBody, "DROP TABLE x;")
+        captured.map { it.phase } shouldBe listOf(DiffPhase.ROUTINES, DiffPhase.TABLES)
+        captured.map { it.transactionScope } shouldBe listOf(
+            TransactionScope.RUNNER_OWNED,
+            TransactionScope.NO_TRANSACTION,
+        )
+    }
+
+    // ── Legacy v1 fallback: splitLegacyArtefactBody scope inference ──
     //
     // `rollback-sql v1` does not carry per-statement TransactionScope.
-    // SchemaRollbackRunner.splitArtefactBody stamps the field from a
+    // SchemaRollbackRunner.splitLegacyArtefactBody stamps the field from a
     // leading-BEGIN sniff so SQLite-rebuild rollback round-trips still
     // dispatch as stream-owned. These tests pin the inference until §G.2
     // replaces the splitter with structured serialization.
@@ -476,7 +559,7 @@ class SchemaRollbackRunnerTest : FunSpec({
         val fp = MigrationFingerprint.compute(matchingSchema)
         val artefactPath = writeArtefact(
             "scope-${body.hashCode()}.sql",
-            buildArtefact(currentFp = "fp-pre", desiredFp = fp, postUpFp = fp, sql = body),
+            buildArtefact(currentFp = "fp-pre", desiredFp = fp, postUpFp = fp, sql = body, legacyV1 = true),
         )
         val captured = mutableListOf<MigrationDdlStatement>()
         val runner = SchemaRollbackRunner(
@@ -508,7 +591,7 @@ class SchemaRollbackRunnerTest : FunSpec({
         return captured
     }
 
-    test("splitArtefactBody — body with BEGIN IMMEDIATE stamps every statement STREAM_OWNED") {
+    test("splitLegacyArtefactBody — body with BEGIN IMMEDIATE stamps every statement STREAM_OWNED") {
         val statements = runWithBody("BEGIN IMMEDIATE;\n\nCREATE TABLE x (id INT);\n\nCOMMIT;")
         statements.map { it.transactionScope } shouldBe listOf(
             TransactionScope.STREAM_OWNED,
@@ -517,29 +600,29 @@ class SchemaRollbackRunnerTest : FunSpec({
         )
     }
 
-    test("splitArtefactBody — bare BEGIN; alone is detected") {
+    test("splitLegacyArtefactBody — bare BEGIN; alone is detected") {
         val statements = runWithBody("BEGIN;")
         statements.single().transactionScope shouldBe TransactionScope.STREAM_OWNED
     }
 
-    test("splitArtefactBody — BEGIN TRANSACTION/DEFERRED/EXCLUSIVE variants are detected") {
+    test("splitLegacyArtefactBody — BEGIN TRANSACTION/DEFERRED/EXCLUSIVE variants are detected") {
         listOf("BEGIN TRANSACTION;", "BEGIN DEFERRED;", "BEGIN EXCLUSIVE;").forEach { begin ->
             val statements = runWithBody("$begin\n\nCREATE TABLE t (id INT);\n\nCOMMIT;")
             statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
         }
     }
 
-    test("splitArtefactBody — leading whitespace before BEGIN is detected") {
+    test("splitLegacyArtefactBody — leading whitespace before BEGIN is detected") {
         val statements = runWithBody("  \t  BEGIN IMMEDIATE;\n\nCREATE TABLE t (id INT);")
         statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
     }
 
-    test("splitArtefactBody — lowercase begin is detected (case-insensitive)") {
+    test("splitLegacyArtefactBody — lowercase begin is detected (case-insensitive)") {
         val statements = runWithBody("begin transaction;\n\ncreate table t (id int);")
         statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
     }
 
-    test("splitArtefactBody — pure DDL body without BEGIN stays RUNNER_OWNED") {
+    test("splitLegacyArtefactBody — pure DDL body without BEGIN stays RUNNER_OWNED") {
         val statements = runWithBody("DROP TABLE x;\n\nALTER TABLE y ADD COLUMN z TEXT;")
         statements.map { it.transactionScope } shouldBe listOf(
             TransactionScope.RUNNER_OWNED,
@@ -547,13 +630,13 @@ class SchemaRollbackRunnerTest : FunSpec({
         )
     }
 
-    test("splitArtefactBody — false-prefix BEGINNING_OF_TIME stays RUNNER_OWNED") {
+    test("splitLegacyArtefactBody — false-prefix BEGINNING_OF_TIME stays RUNNER_OWNED") {
         // Defensive: the token check is BEGIN-token, not BEGIN-substring.
         val statements = runWithBody("ALTER TABLE x ADD COLUMN BEGINNING_OF_TIME TIMESTAMPTZ;")
         statements.single().transactionScope shouldBe TransactionScope.RUNNER_OWNED
     }
 
-    test("splitArtefactBody — column named begin_time stays RUNNER_OWNED") {
+    test("splitLegacyArtefactBody — column named begin_time stays RUNNER_OWNED") {
         // The trimmed first token of the statement is ALTER, not BEGIN —
         // a column named begin_time must not flip the inference.
         val statements = runWithBody("ALTER TABLE events ADD COLUMN begin_time TIMESTAMPTZ;")

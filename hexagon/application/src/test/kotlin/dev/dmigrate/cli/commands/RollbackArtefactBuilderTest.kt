@@ -40,8 +40,8 @@ class RollbackArtefactBuilderTest : FunSpec({
                 createdByVersion = "test/0.0.0",
             ),
         )
-        out shouldStartWith "-- d-migrate rollback-sql v1 begin\n"
-        out shouldContain "-- d-migrate rollback-sql v1 end\n"
+        out shouldStartWith "-- d-migrate rollback-sql v2 begin\n"
+        out shouldContain "-- d-migrate rollback-sql v2 end\n"
         out shouldEndWith "DROP TABLE x;\n"
     }
 
@@ -60,6 +60,9 @@ class RollbackArtefactBuilderTest : FunSpec({
         )
         // operationIds are sorted alphabetically: ["op-a","op-z"]
         out shouldContain "\"operationIds\":[\"op-a\",\"op-z\"]"
+        out shouldContain "\"formatVersion\":\"v2\""
+        out shouldContain "\"statementIndex\":["
+        out shouldContain "\"transactionScope\":\"RUNNER_OWNED\""
         // Top-level keys are sorted: artifactHash, artifactHashAlgorithm, createdByVersion, currentFingerprint, …
         out shouldContain "\"artifactHash\":"
         // artifactHash precedes artifactHashAlgorithm

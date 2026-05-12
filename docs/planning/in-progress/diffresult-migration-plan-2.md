@@ -153,12 +153,10 @@ Carve-outs aus dem ersten Slice auf:
 > `RUNNER_OWNED`/`STREAM_OWNED`/`NO_TRANSACTION`,
 > `MigrationDdlStatement.transactionScope`, PG/MySQL/SQLite-Renderer
 > setzen das Feld explizit, `MigrationStreamClassifier` dispatcht ueber
-> das Feld statt ueber SQL-Content. Transitionaler Fallback in
-> `SchemaRollbackRunner.splitArtefactBody`: das `rollback-sql v1`-
-> Format traegt noch kein `transactionScope`, deshalb stempelt der
-> Artefakt-Splitter den Scope bis G.2 anhand fuehrender BEGIN-Tokens.
-> Executor und Classifier sind frei von SQL-Heuristik. G.2/G.3 bleiben
-> offen.
+> das Feld statt ueber SQL-Content. Neue `rollback-sql v2`-Artefakte tragen
+> `transactionScope` im strukturierten Statement-Index. Executor und
+> Classifier sind frei von SQL-Heuristik; nur der Legacy-v1-Lesepfad des
+> Rollback-Runners enthaelt noch den alten BEGIN-Fallback. G.3 bleibt offen.
 
 0.9.7 erkennt stream-owned Transaktionen ueber SQL-Content, konkret ueber
 fuehrende `BEGIN`-Statements. Das ist nur sicher, solange keine
@@ -188,6 +186,16 @@ Akzeptanz:
   realistisch ist.
 
 ### G.2 Strukturierte Statement-Serialisierung im Rollback-Artefakt
+
+> Status: implementiert (2026-05-12). Neue `schema migrate
+> --generate-rollback`-Artefakte verwenden `rollback-sql v2` mit
+> `formatVersion=v2` und einem strukturierten `statementIndex` im
+> Metadatenblock. Der Index enthaelt pro Statement Operation-IDs, Phase,
+> `transactionScope`, Risiko-Felder, UTF-8-Byte-Range und SHA-256-Hash des
+> Body-Slices. `schema rollback --execute` rekonstruiert v2-Statements aus
+> den validierten Ranges statt per Whitespace-Split. Alte `rollback-sql v1`-
+> Artefakte bleiben als expliziter Legacy-Kompatibilitaetspfad unterstuetzt;
+> nur dort existiert der alte BEGIN-Fallback noch.
 
 0.9.7 rekonstruiert Statements aus dem Rollback-Artefakt per `\n\n`-Split.
 Das ist nur sicher, solange Statement-SQL selbst keine Leerzeilen enthaelt.
@@ -314,12 +322,12 @@ DoD:
 - [x] Alle bestehenden Renderer setzen `transactionScope` explizit. (G.1)
 - [~] Runner und Test-Support nutzen keine BEGIN-String-Heuristik mehr.
   `MigrationStreamClassifier` und `JdbcMigrationExecutor` lesen das Feld
-  (G.1). Verbleibender transitionaler Sniff in
-  `SchemaRollbackRunner.splitArtefactBody`, weil `rollback-sql v1` das
-  Feld nicht traegt; faellt mit G.2 weg.
-- [ ] Rollback-Artefakte serialisieren Statements strukturiert und ohne
+  (G.1). Verbleibender Legacy-v1-Sniff in
+  `SchemaRollbackRunner.splitLegacyArtefactBody`, weil alte `rollback-sql v1`-
+  Artefakte das Feld nicht tragen; neue v2-Artefakte nutzen ihn nicht.
+- [x] Rollback-Artefakte serialisieren Statements strukturiert und ohne
   `\n\n`-Split-Vertrag. (G.2)
-- [ ] Parser prueft `formatVersion`, Artifact-Hash und Statement-Reihenfolge.
+- [x] Parser prueft `formatVersion`, Artifact-Hash und Statement-Reihenfolge.
   (formatVersion + Hash bereits in v1; Statement-Reihenfolge G.2)
 - [ ] Execution-Report deckt Statement-Gruppen, Transaktionsgrenzen und
   Recoverability ab. (G.3)
@@ -327,7 +335,7 @@ DoD:
   ist als Regressionstest gepinnt. (G.3)
 - [x] Regressionstest fuer SQL-Body mit `BEGIN`-Token ohne Stream-Owned-
   Klassifikation. (G.1)
-- [ ] Regressionstests fuer Leerzeilen-Bodies und manipulierte Artefakte. (G.2)
+- [x] Regressionstests fuer Leerzeilen-Bodies und manipulierte Artefakte. (G.2)
 - [ ] Routine-/Trigger-Renderer bleiben blockiert, bis diese Checkboxen erfuellt
   sind. (gilt bis G.2 und G.3)
 

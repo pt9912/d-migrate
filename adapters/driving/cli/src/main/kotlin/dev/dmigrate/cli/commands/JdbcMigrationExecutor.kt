@@ -19,20 +19,17 @@ import java.sql.SQLException
  * 2. Open a Hikari pool and dispatch on the statement stream's
  *    transaction-ownership model (see [runAll] below).
  *
- * Two transaction-ownership models are supported, dispatched per-
- * stream by inspecting the SQL content for an explicit `BEGIN`
- * marker:
+ * Two transaction-ownership models are supported, dispatched from
+ * [MigrationDdlStatement.transactionScope]:
  *
  * - **Runner-owned tx (default)** — for PG, MySQL, and SQLite-
  *   direct streams. `autoCommit = false`, all statements run inside
  *   one outer JDBC transaction, `conn.commit()` on success,
  *   `conn.rollback()` on `SQLException`.
  *
- * - **SQL-stream-owned tx** — for SQLite-rebuild streams (`migrate
- *   --execute` ones rendered by `SqliteRebuildRenderer`; `rollback
- *   --execute` ones reconstructed by `SchemaRollbackRunner.splitArtefactBody`
- *   from the artefact body). Detected by the presence of an
- *   explicit `BEGIN ` statement in the stream. Setting
+ * - **SQL-stream-owned tx** — for SQLite-rebuild streams and any
+ *   rollback statements reconstructed from a structured rollback
+ *   artefact with `transactionScope=STREAM_OWNED`. Setting
  *   `autoCommit = false` here would race xerial-sqlite's implicit-
  *   tx-on-first-statement and produce
  *   `cannot start a transaction within a transaction` (F.4 was the
@@ -40,12 +37,8 @@ import java.sql.SQLException
  *   and never call `conn.commit()` — the stream's own COMMIT closes
  *   the rebuild, surrounding PRAGMAs run outside any tx.
  *
- * The detection key is the SQL itself rather than the
- * [MigrationDdlStatement.phase] tag because the rollback path
- * cannot reconstruct per-statement phases from the artefact body.
- * Long-term: an explicit `transactionScope` field on
- * [MigrationDdlStatement] (and round-tripped through the artefact)
- * would let renderers declare ownership directly.
+ * The executor does not inspect SQL text to infer transaction
+ * ownership.
  *
  * Error mapping (runner-owned tx):
  *

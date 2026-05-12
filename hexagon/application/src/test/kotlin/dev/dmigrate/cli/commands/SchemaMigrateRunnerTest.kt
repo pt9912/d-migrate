@@ -328,12 +328,13 @@ class SchemaMigrateRunnerTest : FunSpec({
         )
         runner.execute(request) shouldBe 0
         val artefact = capture["wrote:$downPath"]!!
-        artefact shouldContain "-- d-migrate rollback-sql v1 begin"
-        artefact shouldContain "-- d-migrate rollback-sql v1 end"
+        artefact shouldContain "-- d-migrate rollback-sql v2 begin"
+        artefact shouldContain "-- d-migrate rollback-sql v2 end"
         artefact shouldContain "\"format\":\"d-migrate rollback-sql\""
-        artefact shouldContain "\"formatVersion\":\"v1\""
+        artefact shouldContain "\"formatVersion\":\"v2\""
         artefact shouldContain "\"dialect\":\"POSTGRESQL\""
-        artefact shouldContain "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v1\""
+        artefact shouldContain "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v2\""
+        artefact shouldContain "\"statementIndex\":["
         artefact shouldContain "\"recovery\":false"
         artefact shouldContain "\"postUpVerified\":false"
         artefact shouldContain "DROP TABLE x;"

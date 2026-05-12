@@ -68,6 +68,27 @@ class RollbackArtefactParserTest : FunSpec({
         ),
     )
 
+    fun makeMultiStatementArtefact(): String = RollbackArtefactBuilder.build(
+        RollbackArtefactBuilder.Input(
+            dialect = DatabaseDialect.POSTGRESQL,
+            currentFingerprint = "fp-current",
+            desiredFingerprint = "fp-desired",
+            postUpFingerprint = "fp-desired",
+            operationIds = setOf("op-1", "op-2"),
+            risk = RollbackArtefactBuilder.Risk(
+                destructive = false,
+                dataLossPossible = false,
+                requiresManualConfirmation = false,
+                operationIds = setOf("op-1", "op-2"),
+            ),
+            downStatements = listOf(
+                stmt("CREATE FUNCTION f()\nBEGIN\n\nRETURN 1;\nEND;").copy(operationIds = setOf("op-1")),
+                stmt("DROP TABLE x;").copy(operationIds = setOf("op-2")),
+            ),
+            createdByVersion = "test/0.0.0",
+        ),
+    )
+
     test("round-trips a freshly-built artefact and verifies the hash") {
         val text = makeArtefact()
         val r = RollbackArtefactParser.parse(text)
@@ -75,6 +96,43 @@ class RollbackArtefactParserTest : FunSpec({
         r.parsed.dialect shouldBe "POSTGRESQL"
         r.parsed.currentFingerprint shouldBe "fp-current"
         r.parsed.operationIds shouldBe listOf("op-1")
+    }
+
+    test("v2 statementIndex reconstructs statements with embedded blank lines") {
+        val r = RollbackArtefactParser.parse(makeMultiStatementArtefact())
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
+
+        r.parsed.formatVersion shouldBe "v2"
+        r.parsed.statementIndex.map { it.index } shouldBe listOf(0, 1)
+        r.parsed.statementsFromIndex().map { it.sql } shouldBe listOf(
+            "CREATE FUNCTION f()\nBEGIN\n\nRETURN 1;\nEND;",
+            "DROP TABLE x;",
+        )
+    }
+
+    test("v2 statementIndex order mismatch is rejected") {
+        val text = makeMultiStatementArtefact()
+        val tampered = text.replace("\"index\":1", "\"index\":2")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "STATEMENT_INDEX_ORDER_MISMATCH"
+    }
+
+    test("v2 without statementIndex is rejected") {
+        val text = makeArtefact()
+        val tampered = text.replace(Regex(",\"statementIndex\":\\[.*\\](?=})"), "")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "MISSING_FIELD_STATEMENTINDEX"
+    }
+
+    test("delimiter version must match header formatVersion") {
+        val tampered = makeArtefact()
+            .replace("-- d-migrate rollback-sql v2 begin", "-- d-migrate rollback-sql v1 begin")
+            .replace("-- d-migrate rollback-sql v2 end", "-- d-migrate rollback-sql v1 end")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "FORMAT_VERSION_DELIMITER_MISMATCH"
     }
 
     test("recovery=true with allowedPostUpFingerprints round-trips") {
@@ -108,12 +166,12 @@ class RollbackArtefactParserTest : FunSpec({
         r.code shouldBe "MULTIPLE_METADATA_BLOCKS"
     }
 
-    test("tampered SQL body is detected via ARTIFACT_HASH_MISMATCH") {
+    test("tampered SQL body is detected") {
         val text = makeArtefact()
         val tampered = text.replace("DROP TABLE x;", "DROP TABLE y;")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     test("tampered fingerprint in header is detected via ARTIFACT_HASH_MISMATCH") {
@@ -121,7 +179,7 @@ class RollbackArtefactParserTest : FunSpec({
         val tampered = text.replace("\"fp-desired\"", "\"fp-attacker\"")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     test("recovery=true without allowedPostUpFingerprints is MISSING_ALLOWED_POST_UP_FINGERPRINTS") {
@@ -166,17 +224,16 @@ class RollbackArtefactParserTest : FunSpec({
         val tampered = text.replace("\"dialect\":\"POSTGRESQL\"", "\"dialect\":\"MYSQL\"")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     test("F.6.d — tampered formatVersion is detected via ARTIFACT_HASH_MISMATCH") {
         val text = makeArtefact()
-        val tampered = text.replace("\"formatVersion\":\"v1\"", "\"formatVersion\":\"v2\"")
+        val tampered = text.replace("\"formatVersion\":\"v2\"", "\"formatVersion\":\"v99\"")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        // Either an UNKNOWN_FORMAT_VERSION pre-hash check or the hash
-        // mismatch — both are strict-rejection signals.
-        (r.code == "UNKNOWN_FORMAT_VERSION" || r.code == "ARTIFACT_HASH_MISMATCH") shouldBe true
+        // The delimiter/header cross-check fires before hash verification.
+        r.code shouldBe "FORMAT_VERSION_DELIMITER_MISMATCH"
     }
 
     test("F.6.d — tampered risk.destructive is detected via ARTIFACT_HASH_MISMATCH") {
@@ -184,7 +241,7 @@ class RollbackArtefactParserTest : FunSpec({
         val tampered = text.replace("\"destructive\":false", "\"destructive\":true")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     test("F.6.d — tampered operationIds list is detected via ARTIFACT_HASH_MISMATCH") {
@@ -192,7 +249,7 @@ class RollbackArtefactParserTest : FunSpec({
         val tampered = text.replace("\"operationIds\":[\"op-1\"]", "\"operationIds\":[\"op-99\"]")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     test("F.6.d — tampered artifactHash itself (re-hash dance) is detected") {
@@ -210,7 +267,7 @@ class RollbackArtefactParserTest : FunSpec({
             )
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "ARTIFACT_HASH_MISMATCH"
+        (r.code == "ARTIFACT_HASH_MISMATCH" || r.code == "STATEMENT_HASH_MISMATCH") shouldBe true
     }
 
     // ── F.6.d: Secret-Scrubbing — pin the contract from §7.3 / §10
@@ -244,23 +301,18 @@ class RollbackArtefactParserTest : FunSpec({
     //         MISSING_*_DELIMITER, and the two original tampering
     //         cases were actually pinned. These tests close the gap.
 
-    test("F.6.d — UNKNOWN_FORMAT_VERSION fires for a recognised-but-unsupported version") {
-        // Tampered formatVersion="v99" parses fine as a String but the
-        // parser's pre-hash check rejects via UNKNOWN_FORMAT_VERSION
-        // before verifyHash even runs. Asserting the EXACT code (not the
-        // disjunction the F.6.d main test uses) pins the ordering
-        // contract: structural pre-checks fire before hash verification.
+    test("F.6.d — formatVersion delimiter mismatch fires before hash verification") {
         val text = makeArtefact()
-        val tampered = text.replace("\"formatVersion\":\"v1\"", "\"formatVersion\":\"v99\"")
+        val tampered = text.replace("\"formatVersion\":\"v2\"", "\"formatVersion\":\"v99\"")
         val r = RollbackArtefactParser.parse(tampered)
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
-        r.code shouldBe "UNKNOWN_FORMAT_VERSION"
+        r.code shouldBe "FORMAT_VERSION_DELIMITER_MISMATCH"
     }
 
     test("F.6.d — UNKNOWN_ARTIFACT_HASH_ALGORITHM fires for a recognised-but-unsupported algo") {
         val text = makeArtefact()
         val tampered = text.replace(
-            "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v1\"",
+            "\"artifactHashAlgorithm\":\"sha256-rollback-artifact-v2\"",
             "\"artifactHashAlgorithm\":\"md5-legacy\"",
         )
         val r = RollbackArtefactParser.parse(tampered)
@@ -329,8 +381,8 @@ class RollbackArtefactParserTest : FunSpec({
  * leak the END_DELIMITER prefix into the captured body.
  */
 private fun extractCanonicalHeader(artefact: String): String {
-    val begin = "-- d-migrate rollback-sql v1 begin\n"
-    val end = "\n-- d-migrate rollback-sql v1 end"
+    val begin = "-- d-migrate rollback-sql v2 begin\n"
+    val end = "\n-- d-migrate rollback-sql v2 end"
     val between = artefact.substringAfter(begin).substringBefore(end)
     val lines = between.lines().filter { it.isNotBlank() }
     return lines.single().trim().removePrefix("-- ")

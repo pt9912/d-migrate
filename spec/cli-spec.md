@@ -685,6 +685,16 @@ Vor jeder Ausführung prüft der Runner strikt den im Artefakt eingebetteten
 `postUpFingerprint`/`allowedPostUpFingerprints`, `dialect`, Risiko-Felder).
 Eine Abweichung führt vor jedem DB-Zugriff zu Exit `7` (Artefakt ungültig).
 
+Neue Rollback-Artefakte verwenden `rollback-sql v2` mit
+`formatVersion=v2`. Der Kommentar-Metadatenblock enthält zusätzlich
+`statementIndex[]`; jeder Eintrag beschreibt genau einen ausführbaren Body-
+Slice mit `index`, `operationIds`, `phase`, `transactionScope`, Risiko-
+Feldern, `startInclusive`, `endExclusive` und `sha256`. Ranges beziehen sich
+auf UTF-8-Bytes des LF-normalisierten SQL-Bodys nach dem End-Delimiter.
+`schema rollback --execute` führt bei v2 ausschließlich die validierten
+Body-Slices aus und darf Statements nicht per Leerzeilen-Split rekonstruieren.
+Alte `rollback-sql v1`-Artefakte bleiben lesbar als Legacy-Pfad.
+
 Bei `--execute`:
 
 1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.

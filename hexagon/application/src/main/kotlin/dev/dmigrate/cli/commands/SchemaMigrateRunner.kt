@@ -25,7 +25,7 @@ import kotlin.io.path.writeText
  * - **E.1**: file-to-file mode. `--dialect` mandatory.
  * - **E.2**: DB-target (and DB-source) mode via the injected
  *   `dbLoader`.
- * - **E.3**: `--generate-rollback` + `d-migrate rollback-sql v1`
+ * - **E.3/G.2**: `--generate-rollback` + `d-migrate rollback-sql v2`
  *   metadata block on the Down artefact.
  * - **E.4**: `--execute` runs the Up-SQL against the DB target via
  *   the injected `executor`, captures an `ExecutionTrace`, runs a
@@ -243,10 +243,9 @@ class SchemaMigrateRunner(
 
         // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result).
         // Down output is always STANDALONE — rollback consumption goes
-        // through the artefact-body split (`SchemaRollbackRunner.
-        // splitArtefactBody`), which reconstructs the SQL from a
-        // self-contained text file and feeds it back through
-        // `JdbcMigrationExecutor`. If a future `schema rollback --execute`
+        // through the artefact's structured statement index and feeds
+        // validated body slices back through `JdbcMigrationExecutor`.
+        // If a future `schema rollback --execute`
         // path needs runner-owned FK-state (Round-Trip-State-Compat for
         // rollbacks), this is where to set
         // `DdlGenerationOptions(executionMode = EXECUTE)` for the down

@@ -1,18 +1,22 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffPhase
+import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.core.util.sha256Hex
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /**
- * Strict parser for the `d-migrate rollback-sql v1` artefact per
+ * Strict parser for the `d-migrate rollback-sql` artefact per
  * `docs/planning/done/diffresult-migration-plan.md §7.3`.
  *
  * The input must contain exactly one delimited block:
  *
  * ```
- * -- d-migrate rollback-sql v1 begin
+ * -- d-migrate rollback-sql v2 begin
  * -- {"format":"d-migrate rollback-sql",…}
- * -- d-migrate rollback-sql v1 end
+ * -- d-migrate rollback-sql v2 end
  * <SQL body, LF-only, single trailing newline>
  * ```
  *
@@ -33,8 +37,20 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  */
 internal object RollbackArtefactParser {
 
-    private const val BEGIN_DELIMITER = "-- d-migrate rollback-sql v1 begin"
-    private const val END_DELIMITER = "-- d-migrate rollback-sql v1 end"
+    private val DELIMITERS = listOf(
+        Delimiters(
+            formatVersion = RollbackArtefactBuilder.FORMAT_VERSION,
+            artifactHashAlgorithm = RollbackArtefactBuilder.ARTIFACT_HASH_ALGORITHM,
+            begin = RollbackArtefactBuilder.BEGIN_DELIMITER,
+            end = RollbackArtefactBuilder.END_DELIMITER,
+        ),
+        Delimiters(
+            formatVersion = RollbackArtefactBuilder.FORMAT_VERSION_V1,
+            artifactHashAlgorithm = RollbackArtefactBuilder.ARTIFACT_HASH_ALGORITHM_V1,
+            begin = RollbackArtefactBuilder.BEGIN_DELIMITER_V1,
+            end = RollbackArtefactBuilder.END_DELIMITER_V1,
+        ),
+    )
 
     sealed interface Result {
         data class Success(val parsed: ParsedRollbackArtefact) : Result
@@ -43,19 +59,27 @@ internal object RollbackArtefactParser {
 
     fun parse(text: String): Result {
         val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
-        val beginIdx = normalized.indexOf(BEGIN_DELIMITER)
-        if (beginIdx < 0) return Result.Failure("MISSING_BEGIN_DELIMITER", "no `$BEGIN_DELIMITER` found")
-        val endIdx = normalized.indexOf(END_DELIMITER, startIndex = beginIdx + BEGIN_DELIMITER.length)
-        if (endIdx < 0) return Result.Failure("MISSING_END_DELIMITER", "no `$END_DELIMITER` after begin")
+        val matched = DELIMITERS.mapNotNull { delimiters ->
+            val idx = normalized.indexOf(delimiters.begin)
+            if (idx < 0) null else FoundDelimiters(delimiters, idx)
+        }.minByOrNull { it.beginIdx }
+            ?: return Result.Failure("MISSING_BEGIN_DELIMITER", "no rollback-sql begin delimiter found")
+        val delimiters = matched.delimiters
+        val beginIdx = matched.beginIdx
+        val endIdx = normalized.indexOf(delimiters.end, startIndex = beginIdx + delimiters.begin.length)
+        if (endIdx < 0) return Result.Failure("MISSING_END_DELIMITER", "no `${delimiters.end}` after begin")
 
         // Reject multiple metadata blocks (Plan §7.3 strictness).
-        val secondBeginIdx = normalized.indexOf(BEGIN_DELIMITER, startIndex = endIdx + END_DELIMITER.length)
-        if (secondBeginIdx >= 0) {
-            return Result.Failure("MULTIPLE_METADATA_BLOCKS", "more than one v1 begin delimiter found")
+        val secondBeginIdx = DELIMITERS
+            .map { normalized.indexOf(it.begin, startIndex = endIdx + delimiters.end.length) }
+            .filter { it >= 0 }
+            .minOrNull()
+        if (secondBeginIdx != null) {
+            return Result.Failure("MULTIPLE_METADATA_BLOCKS", "more than one rollback-sql begin delimiter found")
         }
 
         // Extract the single comment line between the delimiters.
-        val between = normalized.substring(beginIdx + BEGIN_DELIMITER.length, endIdx).trim('\n', ' ')
+        val between = normalized.substring(beginIdx + delimiters.begin.length, endIdx).trim('\n', ' ')
         val lines = between.lines().filter { it.isNotBlank() }
         if (lines.size != 1) {
             return Result.Failure(
@@ -70,13 +94,13 @@ internal object RollbackArtefactParser {
         val json = header.substring(3).trim()
 
         // Body = everything after the END_DELIMITER + following newline.
-        val afterEnd = endIdx + END_DELIMITER.length
+        val afterEnd = endIdx + delimiters.end.length
         val bodyStart = if (afterEnd < normalized.length && normalized[afterEnd] == '\n') afterEnd + 1 else afterEnd
         val sqlBody = if (bodyStart >= normalized.length) "" else normalized.substring(bodyStart)
 
         return try {
             val obj = MiniJson.parseObject(json)
-            val parsed = decode(obj, sqlBody)
+            val parsed = decode(obj, sqlBody, delimiters.formatVersion)
             verifyHash(parsed, sqlBody)?.let { return it }
             Result.Success(parsed)
         } catch (e: ParseException) {
@@ -84,17 +108,28 @@ internal object RollbackArtefactParser {
         }
     }
 
-    private fun decode(obj: Map<String, Any?>, sqlBody: String): ParsedRollbackArtefact {
+    private fun decode(
+        obj: Map<String, Any?>,
+        sqlBody: String,
+        delimiterFormatVersion: String,
+    ): ParsedRollbackArtefact {
         val format = obj.requireString("format")
         if (format != RollbackArtefactBuilder.FORMAT) {
             throw ParseException("UNKNOWN_FORMAT", "unexpected format `$format`")
         }
         val formatVersion = obj.requireString("formatVersion")
-        if (formatVersion != RollbackArtefactBuilder.FORMAT_VERSION) {
+        if (formatVersion != delimiterFormatVersion) {
+            throw ParseException(
+                "FORMAT_VERSION_DELIMITER_MISMATCH",
+                "formatVersion `$formatVersion` does not match rollback delimiter `$delimiterFormatVersion`",
+            )
+        }
+        val supported = DELIMITERS.firstOrNull { it.formatVersion == formatVersion }
+        if (supported == null) {
             throw ParseException("UNKNOWN_FORMAT_VERSION", "unsupported formatVersion `$formatVersion`")
         }
         val artifactHashAlgo = obj.requireString("artifactHashAlgorithm")
-        if (artifactHashAlgo != RollbackArtefactBuilder.ARTIFACT_HASH_ALGORITHM) {
+        if (artifactHashAlgo != supported.artifactHashAlgorithm) {
             throw ParseException(
                 "UNKNOWN_ARTIFACT_HASH_ALGORITHM",
                 "unsupported artifactHashAlgorithm `$artifactHashAlgo`",
@@ -127,8 +162,64 @@ internal object RollbackArtefactParser {
             recovery = recovery,
             postUpVerified = obj.requireBool("postUpVerified"),
             allowedPostUpFingerprints = (allowed as? List<String>),
+            statementIndex = decodeStatementIndex(formatVersion, obj["statementIndex"], sqlBody),
             sqlBody = sqlBody,
         )
+    }
+
+    private fun decodeStatementIndex(
+        formatVersion: String,
+        node: Any?,
+        sqlBody: String,
+    ): List<ParsedStatementIndexEntry> {
+        if (formatVersion == RollbackArtefactBuilder.FORMAT_VERSION_V1) return emptyList()
+        if (node !is List<*>) {
+            throw ParseException("MISSING_FIELD_STATEMENTINDEX", "v2 requires statementIndex")
+        }
+        val entries = node.mapIndexed { expectedIndex, raw ->
+            if (raw !is Map<*, *>) throw ParseException("MALFORMED_STATEMENTINDEX", "statementIndex entries must be objects")
+            @Suppress("UNCHECKED_CAST")
+            val m = raw as Map<String, Any?>
+            val entry = ParsedStatementIndexEntry(
+                index = m.requireInt("index"),
+                operationIds = m.requireStringList("operationIds"),
+                phase = m.requireString("phase"),
+                transactionScope = m.requireString("transactionScope"),
+                destructive = m.requireBool("destructive"),
+                dataLossPossible = m.requireBool("dataLossPossible"),
+                requiresManualConfirmation = m.requireBool("requiresManualConfirmation"),
+                startInclusive = m.requireInt("startInclusive"),
+                endExclusive = m.requireInt("endExclusive"),
+                sha256 = m.requireString("sha256"),
+            )
+            if (entry.index != expectedIndex) {
+                throw ParseException("STATEMENT_INDEX_ORDER_MISMATCH", "statementIndex entry ${entry.index} is out of order")
+            }
+            entry
+        }
+        validateStatementRanges(entries, sqlBody)
+        return entries
+    }
+
+    private fun validateStatementRanges(entries: List<ParsedStatementIndexEntry>, sqlBody: String) {
+        val bodyBytes = sqlBody.toByteArray(Charsets.UTF_8)
+        var previousEnd = 0
+        entries.forEachIndexed { ordinal, entry ->
+            if (entry.startInclusive < previousEnd || entry.endExclusive < entry.startInclusive) {
+                throw ParseException("STATEMENT_RANGE_INVALID", "invalid statement range at index ${entry.index}")
+            }
+            if (entry.endExclusive > bodyBytes.size) {
+                throw ParseException("STATEMENT_RANGE_OUT_OF_BOUNDS", "statement range exceeds SQL body")
+            }
+            if (ordinal > 0 && entry.startInclusive != previousEnd + 2) {
+                throw ParseException("STATEMENT_RANGE_GAP", "statement ranges must be separated by exactly one blank line")
+            }
+            val slice = bodyBytes.copyOfRange(entry.startInclusive, entry.endExclusive).toString(Charsets.UTF_8)
+            if (sha256Hex(slice) != entry.sha256) {
+                throw ParseException("STATEMENT_HASH_MISMATCH", "statement hash mismatch at index ${entry.index}")
+            }
+            previousEnd = entry.endExclusive
+        }
     }
 
     private fun decodeRisk(node: Any?): ParsedRisk {
@@ -144,31 +235,39 @@ internal object RollbackArtefactParser {
     }
 
     private fun verifyHash(parsed: ParsedRollbackArtefact, sqlBody: String): Result.Failure? {
-        val rebuilt = RollbackArtefactBuilder.build(
-            RollbackArtefactBuilder.Input(
-                dialect = DatabaseDialect.valueOf(parsed.dialect),
-                currentFingerprint = parsed.currentFingerprint,
-                desiredFingerprint = parsed.desiredFingerprint,
-                postUpFingerprint = parsed.postUpFingerprint,
+        val statements = if (parsed.formatVersion == RollbackArtefactBuilder.FORMAT_VERSION) {
+            parsed.statementsFromIndex()
+        } else {
+            listOf(MigrationDdlStatement(
+                sql = sqlBody.trimEnd('\n'),
                 operationIds = parsed.operationIds.toSet(),
-                risk = RollbackArtefactBuilder.Risk(
-                    destructive = parsed.risk.destructive,
-                    dataLossPossible = parsed.risk.dataLossPossible,
-                    requiresManualConfirmation = parsed.risk.requiresManualConfirmation,
-                    operationIds = parsed.risk.operationIds.toSet(),
-                ),
-                downStatements = listOf(MigrationDdlStatement(
-                    sql = sqlBody.trimEnd('\n'),
-                    operationIds = parsed.operationIds.toSet(),
-                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
-                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
-                )),
-                createdByVersion = parsed.createdByVersion,
-                recovery = parsed.recovery,
-                postUpVerified = parsed.postUpVerified,
-                allowedPostUpFingerprints = parsed.allowedPostUpFingerprints,
+                risk = OperationRisk.SAFE,
+                phase = DiffPhase.TABLES,
+            ))
+        }
+        val input = RollbackArtefactBuilder.Input(
+            dialect = DatabaseDialect.valueOf(parsed.dialect),
+            currentFingerprint = parsed.currentFingerprint,
+            desiredFingerprint = parsed.desiredFingerprint,
+            postUpFingerprint = parsed.postUpFingerprint,
+            operationIds = parsed.operationIds.toSet(),
+            risk = RollbackArtefactBuilder.Risk(
+                destructive = parsed.risk.destructive,
+                dataLossPossible = parsed.risk.dataLossPossible,
+                requiresManualConfirmation = parsed.risk.requiresManualConfirmation,
+                operationIds = parsed.risk.operationIds.toSet(),
             ),
+            downStatements = statements,
+            createdByVersion = parsed.createdByVersion,
+            recovery = parsed.recovery,
+            postUpVerified = parsed.postUpVerified,
+            allowedPostUpFingerprints = parsed.allowedPostUpFingerprints,
         )
+        val rebuilt = if (parsed.formatVersion == RollbackArtefactBuilder.FORMAT_VERSION) {
+            RollbackArtefactBuilder.build(input)
+        } else {
+            RollbackArtefactBuilder.buildLegacyV1(input)
+        }
         val rebuiltHash = Regex("\"artifactHash\":\"([a-f0-9]+)\"").find(rebuilt)?.groupValues?.get(1)
         if (rebuiltHash != parsed.artifactHash) {
             return Result.Failure(
@@ -201,6 +300,19 @@ internal object RollbackArtefactParser {
         return v.map {
             it as? String ?: throw ParseException("TYPE_MISMATCH_$key".uppercase(), "field `$key` must be array of strings")
         }
+    }
+
+    private fun Map<String, Any?>.requireInt(key: String): Int {
+        val v = this[key] ?: throw ParseException("MISSING_FIELD_$key".uppercase(), "missing required field `$key`")
+        val n = when (v) {
+            is Long -> v
+            is Int -> v.toLong()
+            else -> throw ParseException("TYPE_MISMATCH_$key".uppercase(), "field `$key` must be an integer")
+        }
+        if (n !in Int.MIN_VALUE..Int.MAX_VALUE) {
+            throw ParseException("TYPE_MISMATCH_$key".uppercase(), "field `$key` is out of integer range")
+        }
+        return n.toInt()
     }
 
     private object MiniJson {
@@ -319,6 +431,18 @@ internal object RollbackArtefactParser {
             return token.toLongOrNull() ?: token.toDouble()
         }
     }
+
+    private data class Delimiters(
+        val formatVersion: String,
+        val artifactHashAlgorithm: String,
+        val begin: String,
+        val end: String,
+    )
+
+    private data class FoundDelimiters(
+        val delimiters: Delimiters,
+        val beginIdx: Int,
+    )
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────
@@ -339,6 +463,7 @@ internal data class ParsedRollbackArtefact(
     val recovery: Boolean,
     val postUpVerified: Boolean,
     val allowedPostUpFingerprints: List<String>?,
+    val statementIndex: List<ParsedStatementIndexEntry>,
     val sqlBody: String,
 )
 
@@ -348,3 +473,34 @@ internal data class ParsedRisk(
     val requiresManualConfirmation: Boolean,
     val operationIds: List<String>,
 )
+
+internal data class ParsedStatementIndexEntry(
+    val index: Int,
+    val operationIds: List<String>,
+    val phase: String,
+    val transactionScope: String,
+    val destructive: Boolean,
+    val dataLossPossible: Boolean,
+    val requiresManualConfirmation: Boolean,
+    val startInclusive: Int,
+    val endExclusive: Int,
+    val sha256: String,
+)
+
+internal fun ParsedRollbackArtefact.statementsFromIndex(): List<MigrationDdlStatement> {
+    val bodyBytes = sqlBody.toByteArray(Charsets.UTF_8)
+    return statementIndex.map { entry ->
+        val sql = bodyBytes.copyOfRange(entry.startInclusive, entry.endExclusive).toString(Charsets.UTF_8)
+        MigrationDdlStatement(
+            sql = sql,
+            operationIds = entry.operationIds.toSet(),
+            risk = OperationRisk(
+                destructive = entry.destructive,
+                dataLossPossible = entry.dataLossPossible,
+                requiresManualConfirmation = entry.requiresManualConfirmation,
+            ),
+            phase = DiffPhase.valueOf(entry.phase),
+            transactionScope = TransactionScope.valueOf(entry.transactionScope),
+        )
+    }
+}
