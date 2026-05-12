@@ -7,12 +7,61 @@ internal object PostgresProgrammabilityMetadataQueries {
     fun listViews(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
-            SELECT table_name, view_definition
-            FROM information_schema.views
-            WHERE table_schema = ?
-            ORDER BY table_name
+            SELECT c.relname AS table_name,
+                   pg_get_viewdef(c.oid, true) AS view_definition,
+                   c.relkind = 'm' AS is_materialized
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = ?
+              AND c.relkind IN ('v', 'm')
+            ORDER BY c.relname
             """.trimIndent(), schemaName,
         )
+    }
+
+    fun listViewRelationDependencies(session: JdbcOperations, schemaName: String): Map<String, ViewRelationDependencies> {
+        val rows = session.queryList(
+            """
+            SELECT DISTINCT
+                   v.relname AS view_name,
+                   r.relname AS relation_name,
+                   r.relkind AS relation_kind,
+                   a.attname AS column_name
+            FROM pg_depend d
+            JOIN pg_rewrite rw ON rw.oid = d.objid
+            JOIN pg_class v ON v.oid = rw.ev_class AND v.relkind IN ('v', 'm')
+            JOIN pg_namespace vn ON vn.oid = v.relnamespace AND vn.nspname = ?
+            JOIN pg_class r ON r.oid = d.refobjid
+            JOIN pg_namespace rn ON rn.oid = r.relnamespace AND rn.nspname = ?
+            LEFT JOIN pg_attribute a ON a.attrelid = r.oid
+                                      AND a.attnum = d.refobjsubid
+                                      AND NOT a.attisdropped
+            WHERE d.classid = 'pg_rewrite'::regclass
+              AND d.refclassid = 'pg_class'::regclass
+              AND d.deptype IN ('n', 'a')
+              AND r.relkind IN ('r', 'p', 'v', 'm', 'f')
+            ORDER BY view_name, relation_name, column_name
+            """.trimIndent(), schemaName, schemaName,
+        )
+
+        val grouped = linkedMapOf<String, MutableViewRelationDependencies>()
+        for (row in rows) {
+            val viewName = row["view_name"] as String
+            val relationName = row["relation_name"] as String
+            val relationKind = row["relation_kind"] as String
+            val columnName = row["column_name"] as? String
+            val deps = grouped.getOrPut(viewName) { MutableViewRelationDependencies() }
+            when (relationKind) {
+                "v", "m" -> {
+                    if (relationName != viewName) deps.views += relationName
+                }
+                else -> {
+                    deps.tables += relationName
+                    if (columnName != null) deps.columns.getOrPut(relationName) { linkedSetOf() } += columnName
+                }
+            }
+        }
+        return grouped.mapValues { (_, deps) -> deps.toImmutable() }
     }
 
     fun listViewFunctionDependencies(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
@@ -92,4 +141,23 @@ internal object PostgresProgrammabilityMetadataQueries {
             """.trimIndent(), schemaName,
         )
     }
+}
+
+internal data class ViewRelationDependencies(
+    val tables: List<String> = emptyList(),
+    val views: List<String> = emptyList(),
+    val columns: Map<String, List<String>> = emptyMap(),
+)
+
+private class MutableViewRelationDependencies {
+    val tables = linkedSetOf<String>()
+    val views = linkedSetOf<String>()
+    val columns = linkedMapOf<String, LinkedHashSet<String>>()
+
+    fun toImmutable(): ViewRelationDependencies =
+        ViewRelationDependencies(
+            tables = tables.toList(),
+            views = views.toList(),
+            columns = columns.mapValues { (_, names) -> names.toList() },
+        )
 }

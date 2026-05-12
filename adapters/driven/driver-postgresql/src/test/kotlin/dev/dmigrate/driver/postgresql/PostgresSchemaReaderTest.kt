@@ -53,7 +53,8 @@ class PostgresSchemaReaderTest : FunSpec({
         // Extensions
         every { jdbc.queryList(match { it.contains("pg_extension") }) } returns emptyList()
         // Views, view→function deps, functions, procedures, triggers
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
@@ -163,8 +164,12 @@ class PostgresSchemaReaderTest : FunSpec({
 
     test("read includes views when enabled") {
         stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
-            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active"),
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users",
+                "view_definition" to "SELECT * FROM users WHERE active",
+                "is_materialized" to false,
+            ),
         )
 
         val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
@@ -172,6 +177,33 @@ class PostgresSchemaReaderTest : FunSpec({
 
         result.schema.views.mapShouldHaveSize(1)
         result.schema.views["active_users"]!!.sourceDialect shouldBe "postgresql"
+    }
+
+    test("read includes PostgreSQL view relation dependencies and materialized flag") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users_mv",
+                "view_definition" to "SELECT id FROM users",
+                "is_materialized" to true,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns listOf(
+            mapOf(
+                "view_name" to "active_users_mv",
+                "relation_name" to "users",
+                "relation_kind" to "r",
+                "column_name" to "id",
+            ),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users_mv"]!!
+        view.materialized shouldBe true
+        view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.columns shouldBe mapOf("users" to listOf("id"))
     }
 
     test("read includes functions with parameters") {

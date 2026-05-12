@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.NamedTable
+import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
@@ -8,6 +9,7 @@ import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
@@ -154,6 +156,82 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         rUp.statements[1].sql shouldContainStr "SELECT 2"
         // Both statements share the same operation id (single ReplaceView).
         rUp.statements.flatMap { it.operationIds }.distinct().size shouldBe 1
+    }
+
+    test("materialized view operations are blocked before SQL render") {
+        val view = ViewDefinition(query = "SELECT 1", materialized = true)
+        val create = planAndUp(SchemaDiff(viewsAdded = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
+
+        create.statements.shouldBeEmpty()
+        create.isBlocked shouldBe true
+        create.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        val diagnostic = create.diagnostics.single { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" }
+        diagnostic.message shouldContainStr "mv"
+        diagnostic.message shouldContainStr "sqlite"
+        diagnostic.message shouldContainStr "materialized=true"
+
+        val current = emptySchema().copy(views = mapOf("mv" to view))
+        val desired = emptySchema().copy(views = mapOf("mv" to view.copy(query = "SELECT 2")))
+        val replace = gen.generateUp(
+            planner.plan(
+                current,
+                desired,
+                SchemaDiff(viewsChanged = listOf(
+                    dev.dmigrate.core.diff.ViewDiff(name = "mv", query = ValueChange("SELECT 1", "SELECT 2")),
+                )),
+            ),
+            DdlGenerationOptions(),
+        )
+        replace.statements.shouldBeEmpty()
+        replace.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+
+        val drop = planAndUp(SchemaDiff(viewsRemoved = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
+        drop.statements.shouldBeEmpty()
+        drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+    }
+
+    test("rebuild does not recreate dependent materialized view as a regular view") {
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Identifier()),
+                "name" to ColumnDefinition(NeutralType.Text()),
+            ),
+        )
+        val after = before.copy(
+            columns = before.columns + ("name" to ColumnDefinition(NeutralType.Text(maxLength = 100))),
+        )
+        val view = ViewDefinition(
+            query = "SELECT id FROM users",
+            materialized = true,
+            dependencies = DependencyInfo(
+                tables = listOf("users"),
+                columns = mapOf("users" to listOf("id")),
+            ),
+        )
+        val current = emptySchema().copy(tables = mapOf("users" to before), views = mapOf("mv_users" to view))
+        val desired = emptySchema().copy(tables = mapOf("users" to after), views = mapOf("mv_users" to view))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsChanged = listOf(
+                        ColumnDiff(
+                            name = "name",
+                            type = ValueChange(NeutralType.Text(), NeutralType.Text(maxLength = 100)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = planAndUp(diff, current, desired)
+
+        result.statements.shouldBeEmpty()
+        result.isBlocked shouldBe true
+        val diagnostic = result.diagnostics.single { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" }
+        diagnostic.message shouldContainStr "mv_users"
+        diagnostic.message shouldContainStr "sqlite"
+        diagnostic.message shouldContainStr "materialized=true"
     }
 
     test("Out-of-matrix CreateCustomType (SQLite has no CREATE TYPE) is DIALECT_UNSUPPORTED") {

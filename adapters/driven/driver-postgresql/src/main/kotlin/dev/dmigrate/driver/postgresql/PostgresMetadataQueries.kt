@@ -63,6 +63,9 @@ object PostgresMetadataQueries {
     fun listViews(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> =
         PostgresProgrammabilityMetadataQueries.listViews(session, schemaName)
 
+    internal fun listViewRelationDependencies(session: JdbcOperations, schemaName: String): Map<String, ViewRelationDependencies> =
+        PostgresProgrammabilityMetadataQueries.listViewRelationDependencies(session, schemaName)
+
     fun listViewFunctionDependencies(session: JdbcOperations, schemaName: String): Map<String, List<String>> =
         PostgresProgrammabilityMetadataQueries.listViewFunctionDependencies(session, schemaName)
 

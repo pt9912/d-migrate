@@ -9,15 +9,27 @@ internal fun readPostgresViews(
     schema: String,
 ): Map<String, ViewDefinition> {
     val rows = PostgresMetadataQueries.listViews(session, schema)
+    val viewRelationDependencies = PostgresMetadataQueries.listViewRelationDependencies(session, schema)
     val viewFunctionDependencies = PostgresMetadataQueries.listViewFunctionDependencies(session, schema)
     val result = LinkedHashMap<String, ViewDefinition>()
     for (row in rows) {
         val viewName = row["table_name"] as String
+        val relationDependencies = viewRelationDependencies[viewName]
         val functionDependencies = viewFunctionDependencies[viewName] ?: emptyList()
         result[viewName] = ViewDefinition(
             query = row["view_definition"] as? String,
-            dependencies = if (functionDependencies.isNotEmpty()) {
-                DependencyInfo(functions = functionDependencies)
+            materialized = (row["is_materialized"] as? Boolean) == true,
+            dependencies = if (
+                relationDependencies != null ||
+                functionDependencies.isNotEmpty()
+            ) {
+                DependencyInfo(
+                    tables = relationDependencies?.tables ?: emptyList(),
+                    views = relationDependencies?.views ?: emptyList(),
+                    columns = relationDependencies?.columns ?: emptyMap(),
+                    functions = functionDependencies,
+                    projectionComplete = true,
+                )
             } else {
                 null
             },

@@ -193,6 +193,67 @@ class MysqlSchemaReaderTest : FunSpec({
         view.dependencies!!.tables shouldBe listOf("users")
     }
 
+    test("D.2 — visible routine call with empty VIEW_ROUTINE_USAGE flags projectionComplete=false") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "is_active",
+                "routine_type" to "FUNCTION",
+                "data_type" to "int",
+                "dtd_identifier" to "int",
+                "routine_definition" to "RETURN 1;",
+                "is_deterministic" to "YES",
+                "routine_body" to "SQL",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT is_active(id) FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.functions.shouldBeEmpty()
+        view.dependencies!!.projectionComplete shouldBe false
+    }
+
+    test("D.2 — populated VIEW_ROUTINE_USAGE for visible routine keeps projectionComplete=true") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "is_active",
+                "routine_type" to "FUNCTION",
+                "data_type" to "int",
+                "dtd_identifier" to "int",
+                "routine_definition" to "RETURN 1;",
+                "is_deterministic" to "YES",
+                "routine_body" to "SQL",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT is_active(id) FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "routine_name" to "is_active"),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies!!.functions shouldBe listOf("is_active")
+        view.dependencies!!.projectionComplete shouldBe true
+    }
+
     test("read includes functions with parameters") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(

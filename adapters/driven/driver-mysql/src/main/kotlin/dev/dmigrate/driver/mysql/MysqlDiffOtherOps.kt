@@ -89,6 +89,10 @@ internal object MysqlDiffOtherOps {
 
     fun renderCreateView(op: DiffOperation.CreateView, ctx: MysqlDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
             return
@@ -99,11 +103,34 @@ internal object MysqlDiffOtherOps {
     fun renderReplaceView(op: DiffOperation.ReplaceView, ctx: MysqlDiffRenderContext) {
         val name = op.objectRef.rootName
         val target = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
+        if (op.before.materialized || op.after.materialized || target.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, ctx.sql.replaceViewSql(name, target))
     }
 
     fun renderDropView(op: DiffOperation.DropView, ctx: MysqlDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
+    }
+
+    private fun blockMaterializedView(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        name: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets materialized view '$name' for dialect mysql " +
+                "(materialized=true). Diff-based materialized-view migrations are blocked until " +
+                "a dedicated emulation/refresh contract exists.",
+            code = "MATERIALIZED_VIEW_DIFF_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 }

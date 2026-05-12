@@ -245,6 +245,38 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
             .statements.single().sql shouldContainStr "SELECT 1"
     }
 
+    test("materialized view operations are blocked before SQL render") {
+        val view = ViewDefinition(query = "SELECT 1", materialized = true)
+        val create = planAndUp(SchemaDiff(viewsAdded = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
+
+        create.statements.shouldBeEmpty()
+        create.isBlocked shouldBe true
+        create.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        val diagnostic = create.diagnostics.single { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" }
+        diagnostic.message shouldContainStr "mv"
+        diagnostic.message shouldContainStr "mysql"
+        diagnostic.message shouldContainStr "materialized=true"
+
+        val current = emptySchema().copy(views = mapOf("mv" to view))
+        val desired = emptySchema().copy(views = mapOf("mv" to view.copy(query = "SELECT 2")))
+        val replace = gen.generateUp(
+            planner.plan(
+                current,
+                desired,
+                SchemaDiff(viewsChanged = listOf(
+                    dev.dmigrate.core.diff.ViewDiff(name = "mv", query = ValueChange("SELECT 1", "SELECT 2")),
+                )),
+            ),
+            DdlGenerationOptions(),
+        )
+        replace.statements.shouldBeEmpty()
+        replace.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+
+        val drop = planAndUp(SchemaDiff(viewsRemoved = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
+        drop.statements.shouldBeEmpty()
+        drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+    }
+
     test("Out-of-matrix operations (Sequence) yield DIALECT_UNSUPPORTED_OPERATION") {
         val seq = dev.dmigrate.core.model.SequenceDefinition(start = 1)
         val r = planAndUp(SchemaDiff(sequencesAdded = listOf(dev.dmigrate.core.diff.NamedSequence("s", seq))))

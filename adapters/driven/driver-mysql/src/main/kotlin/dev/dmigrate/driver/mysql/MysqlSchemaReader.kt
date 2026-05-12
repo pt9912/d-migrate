@@ -29,7 +29,12 @@ class MysqlSchemaReader(
             val scope = ReverseScope(catalogName = metaDb, schemaName = metaDb)
 
             val tables = readTables(session, metaDb, lctn, notes)
-            val views = if (options.includeViews) routineReader.readViews(session, metaDb) else emptyMap()
+            val visibleFunctionNames = if (options.includeViews) {
+                routineReader.readFunctionNames(session, metaDb)
+            } else {
+                emptySet()
+            }
+            val views = if (options.includeViews) routineReader.readViews(session, metaDb, visibleFunctionNames) else emptyMap()
             val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
             val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
             val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()

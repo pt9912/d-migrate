@@ -78,6 +78,10 @@ internal class SqliteRebuildRenderer(
      * sequence from a pre-built [SqliteRebuildPlan]. Pure consumption.
      */
     fun render(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        if (plan.hasMaterializedDependentViews()) {
+            emitMaterializedViewBlocker(plan, ctx)
+            return
+        }
         if (plan.mapping.isBlocked) {
             emitBlockerDiagnostics(plan, ctx)
             return
@@ -141,6 +145,28 @@ internal class SqliteRebuildRenderer(
             operationIds = plan.sourceOperationIds,
         )
         for (op in plan.bucketOperations) ctx.markRendered(op)
+    }
+
+    private fun SqliteRebuildPlan.hasMaterializedDependentViews(): Boolean =
+        (dependentViewsToDrop + dependentViewsToRecreate).any { it.definition.materialized }
+
+    private fun emitMaterializedViewBlocker(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        val names = (plan.dependentViewsToDrop + plan.dependentViewsToRecreate)
+            .filter { it.definition.materialized }
+            .map { it.name }
+            .distinct()
+            .sorted()
+        val message = "RebuildTable for `${plan.originalTableName}` would drop/recreate " +
+            "materialized view(s) ${names.joinToString(", ")} for dialect sqlite " +
+            "(materialized=true). Diff-based materialized-view migrations are blocked " +
+            "until a dedicated emulation/refresh contract exists."
+        for (op in plan.bucketOperations) {
+            ctx.skip(op, message, code = "MATERIALIZED_VIEW_DIFF_UNSUPPORTED")
+        }
+        ctx.addBlocker(
+            MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+            operationIds = plan.sourceOperationIds,
+        )
     }
 
     private fun emitRebuildSequence(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
@@ -349,4 +375,3 @@ internal class SqliteRebuildRenderer(
             "SELECT $selectExprs FROM ${sql.quote(originalTable)};"
     }
 }
-

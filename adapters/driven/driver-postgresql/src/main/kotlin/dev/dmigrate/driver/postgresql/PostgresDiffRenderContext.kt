@@ -85,10 +85,10 @@ internal class PostgresDiffRenderContext(
             )
         }
 
-    fun skip(op: DiffOperation, message: String) {
+    fun skip(op: DiffOperation, message: String, code: String = "POSTGRES_RENDER_SKIP") {
         skipped += op.id
         diagnostics += DiffDiagnostic(
-            code = "POSTGRES_RENDER_SKIP",
+            code = code,
             message = message,
             severity = DiffDiagnostic.Severity.BLOCKER,
             operationId = op.id,

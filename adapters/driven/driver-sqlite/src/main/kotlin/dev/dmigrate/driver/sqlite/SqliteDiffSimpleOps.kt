@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
  * Per-operation renderers for SQLite operations that *don't* need a
@@ -83,6 +84,10 @@ internal object SqliteDiffSimpleOps {
 
     fun renderCreateView(op: DiffOperation.CreateView, ctx: SqliteDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
             return
@@ -92,6 +97,10 @@ internal object SqliteDiffSimpleOps {
 
     fun renderDropView(op: DiffOperation.DropView, ctx: SqliteDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
     }
 
@@ -104,7 +113,26 @@ internal object SqliteDiffSimpleOps {
     fun renderReplaceView(op: DiffOperation.ReplaceView, ctx: SqliteDiffRenderContext) {
         val name = op.objectRef.rootName
         val target = if (ctx.direction == SqliteRenderDirection.UP) op.after else op.before
+        if (op.before.materialized || op.after.materialized || target.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, "DROP VIEW IF EXISTS ${ctx.sql.quote(name)};")
         ctx.emit(op, ctx.sql.createViewSql(name, target))
+    }
+
+    private fun blockMaterializedView(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        name: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets materialized view '$name' for dialect sqlite " +
+                "(materialized=true). Diff-based materialized-view migrations are blocked until " +
+                "a dedicated emulation/refresh contract exists.",
+            code = "MATERIALIZED_VIEW_DIFF_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 }

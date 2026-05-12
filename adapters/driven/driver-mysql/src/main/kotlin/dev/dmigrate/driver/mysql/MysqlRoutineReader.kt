@@ -7,7 +7,16 @@ import dev.dmigrate.driver.metadata.JdbcOperations
 
 internal class MysqlRoutineReader {
 
-    fun readViews(session: JdbcOperations, database: String): Map<String, ViewDefinition> {
+    fun readFunctionNames(session: JdbcOperations, database: String): Set<String> =
+        MysqlMetadataQueries.listFunctions(session, database)
+            .mapNotNull { it["routine_name"] as? String }
+            .toSet()
+
+    fun readViews(
+        session: JdbcOperations,
+        database: String,
+        visibleFunctionNames: Set<String> = emptySet(),
+    ): Map<String, ViewDefinition> {
         val rows = MysqlMetadataQueries.listViews(session, database)
         val viewTableDeps = MysqlMetadataQueries.listViewTableUsage(session, database)
         val viewFuncDeps = MysqlMetadataQueries.listViewRoutineUsage(session, database)
@@ -29,13 +38,15 @@ internal class MysqlRoutineReader {
             // false-positive incomplete flag, but conservative-on-failure
             // is the right default (operator sees a clear BLOCKER instead
             // of a silently-broken view).
-            val projectionComplete = tableDeps.isNotEmpty() || !viewBodyReferencesTables(viewDefinition)
+            val tableProjectionComplete = tableDeps.isNotEmpty() || !viewBodyReferencesTables(viewDefinition)
+            val routineProjectionComplete =
+                funcDeps.isNotEmpty() || !viewBodyReferencesVisibleRoutines(viewDefinition, visibleFunctionNames)
             result[viewName] = ViewDefinition(
                 query = viewDefinition,
                 dependencies = DependencyInfo(
                     tables = tableDeps,
                     functions = funcDeps,
-                    projectionComplete = projectionComplete,
+                    projectionComplete = tableProjectionComplete && routineProjectionComplete,
                 ),
                 sourceDialect = "mysql",
             )
@@ -61,8 +72,20 @@ internal class MysqlRoutineReader {
         return TABLE_REFERENCE_PATTERN.containsMatchIn(body)
     }
 
+    private fun viewBodyReferencesVisibleRoutines(body: String?, visibleFunctionNames: Set<String>): Boolean {
+        if (body.isNullOrBlank() || visibleFunctionNames.isEmpty()) return false
+        val normalizedFunctions = visibleFunctionNames.map { normalizeRoutineName(it) }.toSet()
+        return FUNCTION_CALL_PATTERN.findAll(body)
+            .map { normalizeRoutineName(it.groupValues[1]) }
+            .any { it in normalizedFunctions }
+    }
+
+    private fun normalizeRoutineName(name: String): String =
+        name.substringAfterLast('.').trim('`').lowercase()
+
     private companion object {
         private val TABLE_REFERENCE_PATTERN = Regex("""\b(?:FROM|JOIN)\s+\w""", RegexOption.IGNORE_CASE)
+        private val FUNCTION_CALL_PATTERN = Regex("""(?i)\b([`A-Za-z_][`A-Za-z0-9_$.]*)\s*\(""")
     }
 
     fun readFunctions(

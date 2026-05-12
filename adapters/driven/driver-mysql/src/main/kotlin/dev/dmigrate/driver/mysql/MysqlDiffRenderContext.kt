@@ -69,10 +69,10 @@ internal class MysqlDiffRenderContext(
             )
         }
 
-    fun skip(op: DiffOperation, message: String) {
+    fun skip(op: DiffOperation, message: String, code: String = "MYSQL_RENDER_SKIP") {
         skipped += op.id
         diagnostics += DiffDiagnostic(
-            code = "MYSQL_RENDER_SKIP",
+            code = code,
             message = message,
             severity = DiffDiagnostic.Severity.BLOCKER,
             operationId = op.id,

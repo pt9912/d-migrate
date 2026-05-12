@@ -95,6 +95,10 @@ internal object PostgresDiffOtherOps {
 
     fun renderCreateView(op: DiffOperation.CreateView, ctx: PostgresDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};", PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
             return
@@ -107,11 +111,34 @@ internal object PostgresDiffOtherOps {
     fun renderReplaceView(op: DiffOperation.ReplaceView, ctx: PostgresDiffRenderContext) {
         val name = op.objectRef.rootName
         val target = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        if (op.before.materialized || op.after.materialized || target.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, ctx.sql.replaceViewSql(name, target), PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
 
     fun renderDropView(op: DiffOperation.DropView, ctx: PostgresDiffRenderContext) {
         val name = op.objectRef.rootName
+        if (op.view.materialized) {
+            blockMaterializedView(op, ctx, name)
+            return
+        }
         ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};", PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
+    }
+
+    private fun blockMaterializedView(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        name: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets materialized view '$name' for dialect postgresql " +
+                "(materialized=true). Diff-based materialized-view migrations are blocked until " +
+                "a dedicated refresh/staleness contract exists.",
+            code = "MATERIALIZED_VIEW_DIFF_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 }

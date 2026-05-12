@@ -303,12 +303,46 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listViews ──────────────────────────────────
 
     test("listViews returns view maps") {
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
-            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active"),
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users",
+                "view_definition" to "SELECT * FROM users WHERE active",
+                "is_materialized" to false,
+            ),
         )
         val result = PostgresMetadataQueries.listViews(jdbc, "public")
         result shouldHaveSize 1
         result[0]["table_name"] shouldBe "active_users"
+        result[0]["is_materialized"] shouldBe false
+    }
+
+    test("listViewRelationDependencies separates table, view and column dependencies") {
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns listOf(
+            mapOf(
+                "view_name" to "v_orders",
+                "relation_name" to "orders",
+                "relation_kind" to "r",
+                "column_name" to "id",
+            ),
+            mapOf(
+                "view_name" to "v_orders",
+                "relation_name" to "orders",
+                "relation_kind" to "r",
+                "column_name" to "status",
+            ),
+            mapOf(
+                "view_name" to "v_summary",
+                "relation_name" to "v_orders",
+                "relation_kind" to "v",
+                "column_name" to "id",
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listViewRelationDependencies(jdbc, "public")
+
+        result["v_orders"]!!.tables shouldBe listOf("orders")
+        result["v_orders"]!!.columns shouldBe mapOf("orders" to listOf("id", "status"))
+        result["v_summary"]!!.views shouldBe listOf("v_orders")
     }
 
     // ── listViewFunctionDependencies ─────────────────
