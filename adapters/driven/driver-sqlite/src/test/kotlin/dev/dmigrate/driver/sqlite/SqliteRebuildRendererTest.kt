@@ -559,11 +559,32 @@ class SqliteRebuildRendererTest : FunSpec({
         pragmaOff.hints.lockBehavior shouldBe LockBehavior.NONE
         pragmaOff.hints.sideEffectsPossible shouldBe true
 
+        // BEGIN/COMMIT and PRAGMA foreign_key_check are TX-markers /
+        // read-only checks inside the bracket — FULLY_TRANSACTIONAL
+        // but NOT lock-heavy DDL.
+        val beginMarker = r.statements[1]
+        beginMarker.sql shouldBe "BEGIN IMMEDIATE;"
+        beginMarker.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        beginMarker.hints.lockBehavior shouldBe LockBehavior.NONE
+        beginMarker.hints.requiresExclusiveAccess shouldBe false
+
         val createTemp = r.statements[2]
         createTemp.sql shouldContain "CREATE TABLE \"u__dmg_rebuild_"
         createTemp.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
         createTemp.hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
         createTemp.hints.requiresExclusiveAccess shouldBe true
+
+        val fkCheck = r.statements[6]
+        fkCheck.sql shouldBe "PRAGMA foreign_key_check;"
+        fkCheck.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        fkCheck.hints.lockBehavior shouldBe LockBehavior.NONE
+        fkCheck.hints.requiresExclusiveAccess shouldBe false
+
+        val commitMarker = r.statements[7]
+        commitMarker.sql shouldBe "COMMIT;"
+        commitMarker.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        commitMarker.hints.lockBehavior shouldBe LockBehavior.NONE
+        commitMarker.hints.requiresExclusiveAccess shouldBe false
 
         val pragmaOn = r.statements[8]
         pragmaOn.sql shouldBe "PRAGMA foreign_keys = ON;"

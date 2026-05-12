@@ -394,4 +394,56 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         hints.sideEffectsPossible shouldBe false
         hints.requiresExclusiveAccess shouldBe true
     }
+
+    test("§A.1: PostgreSQL CREATE INDEX uses TABLE_SHARED + no exclusive access") {
+        // PG `CREATE INDEX` (non-CONCURRENTLY) takes SHARE lock —
+        // writes block, reads proceed. Honest LockBehavior is shared.
+        val before = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(
+            indices = listOf(
+                IndexDefinition(name = "ix_t_id", columns = listOf(IndexColumn("id")), type = IndexType.BTREE),
+            ),
+        )
+        val current = SchemaDefinition(name = "App", version = "1", tables = mapOf("t" to before))
+        val desired = SchemaDefinition(name = "App", version = "1", tables = mapOf("t" to after))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(TableDiff(name = "t", indicesAdded = after.indices)),
+        )
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val createIndex = r.statements.single { it.sql.startsWith("CREATE INDEX") }
+        createIndex.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        createIndex.hints.lockBehavior shouldBe LockBehavior.TABLE_SHARED
+        createIndex.hints.requiresExclusiveAccess shouldBe false
+    }
+
+    test("§A.1: PostgreSQL CREATE VIEW uses METADATA + no exclusive access") {
+        val view = ViewDefinition(query = "SELECT 1 AS x", sourceDialect = "postgresql")
+        val desired = SchemaDefinition(name = "App", version = "1", views = mapOf("v" to view))
+        val diff = SchemaDiff(viewsAdded = listOf(dev.dmigrate.core.diff.NamedView("v", view)))
+        val r = gen.generateUp(planner.plan(emptySchema(), desired, diff), DdlGenerationOptions())
+        val createView = r.statements.single { it.sql.startsWith("CREATE VIEW") }
+        createView.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        createView.hints.lockBehavior shouldBe LockBehavior.METADATA
+        createView.hints.requiresExclusiveAccess shouldBe false
+    }
+
+    test("§A.1: PostgreSQL CREATE TYPE uses METADATA + no exclusive access") {
+        val enumType = CustomTypeDefinition(kind = CustomTypeKind.ENUM, values = listOf("a", "b"))
+        val desired = SchemaDefinition(
+            name = "App",
+            version = "1",
+            customTypes = mapOf("status_t" to enumType),
+        )
+        val diff = SchemaDiff(
+            customTypesAdded = listOf(dev.dmigrate.core.diff.NamedCustomType("status_t", enumType)),
+        )
+        val r = gen.generateUp(planner.plan(emptySchema(), desired, diff), DdlGenerationOptions())
+        val createType = r.statements.single { it.sql.startsWith("CREATE TYPE") }
+        createType.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        createType.hints.lockBehavior shouldBe LockBehavior.METADATA
+        createType.hints.requiresExclusiveAccess shouldBe false
+    }
 })

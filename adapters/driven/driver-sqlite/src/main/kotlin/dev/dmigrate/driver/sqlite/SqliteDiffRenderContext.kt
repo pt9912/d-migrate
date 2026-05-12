@@ -222,9 +222,12 @@ internal class SqliteDiffRenderContext(
 
         /**
          * Default hints for rebuild statements emitted *between*
-         * `BEGIN IMMEDIATE;` and `COMMIT;`. Includes the BEGIN/COMMIT
-         * markers themselves and `PRAGMA foreign_key_check;` (which
-         * runs inside the tx). Plan-2 §A.1.
+         * `BEGIN IMMEDIATE;` and `COMMIT;` that perform actual DDL
+         * (CREATE temp, INSERT-SELECT, DROP, RENAME, DROP/CREATE
+         * dependent triggers/views, CREATE INDEX). The BEGIN/COMMIT
+         * markers themselves and `PRAGMA foreign_key_check;` use
+         * [SQLITE_TX_MARKER_HINTS] — they're transaction-control or
+         * read-only checks, not table-locking DDL. Plan-2 §A.1.
          */
         internal val SQLITE_REBUILD_INSIDE_TX_HINTS = DialectExecutionHints(
             transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
@@ -232,6 +235,26 @@ internal class SqliteDiffRenderContext(
             implicitCommitPossible = false,
             sideEffectsPossible = false,
             requiresExclusiveAccess = true,
+        )
+
+        /**
+         * Hints for rebuild statements that run *inside* the
+         * `BEGIN IMMEDIATE;` … `COMMIT;` bracket but are not body
+         * DDL — i.e. the BEGIN/COMMIT markers themselves,
+         * `PRAGMA foreign_key_check;` (read-only integrity check),
+         * and runner-hook markers like
+         * `-- dmigrate:runner-hook=assert-foreign-keys-clean` that
+         * SQLite never sees because the d-migrate runner intercepts
+         * them. They participate in the transactional contract
+         * (FULLY_TRANSACTIONAL) but don't take a table-exclusive
+         * lock and don't require exclusive access. Plan-2 §A.1.
+         */
+        internal val SQLITE_TX_MARKER_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.NONE,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
         )
 
         /**

@@ -41,20 +41,30 @@ internal class PostgresDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
-    fun emit(op: DiffOperation, sqlText: String) {
-        // Plan-2 §A.1: PostgreSQL DDL is fully transactional and takes
-        // an exclusive table lock for the duration of the statement.
-        // No implicit commits and no side-effect risk under normal
-        // wrap-in-tx execution. CREATE INDEX CONCURRENTLY (which
-        // requires TransactionScope.NO_TRANSACTION + NOT_TRANSACTIONAL)
-        // is not yet rendered by this adapter.
+    fun emit(
+        op: DiffOperation,
+        sqlText: String,
+        hints: DialectExecutionHints = POSTGRES_TRANSACTIONAL_DDL_HINTS,
+    ) {
+        // Plan-2 §A.1: PostgreSQL DDL is fully transactional. The
+        // default `hints` cover the lock-heavy ALTER TABLE / DROP
+        // TABLE / CREATE TABLE / DROP INDEX / constraint paths
+        // (TABLE_EXCLUSIVE + requiresExclusiveAccess). Callers
+        // emitting lighter-lock DDL override:
+        //   - CREATE INDEX (non-CONCURRENTLY) → SHARE lock →
+        //     [POSTGRES_CREATE_INDEX_HINTS]
+        //   - CREATE/DROP TYPE, CREATE/DROP/REPLACE VIEW →
+        //     pg_type / view catalog only →
+        //     [POSTGRES_METADATA_HINTS]
+        // CREATE INDEX CONCURRENTLY (TransactionScope.NO_TRANSACTION +
+        // NOT_TRANSACTIONAL) is not yet rendered by this adapter.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
-            hints = POSTGRES_TRANSACTIONAL_DDL_HINTS,
+            hints = hints,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id
@@ -129,13 +139,52 @@ internal class PostgresDiffRenderContext(
         )
     }
 
-    private companion object {
-        private val POSTGRES_TRANSACTIONAL_DDL_HINTS = DialectExecutionHints(
+    companion object {
+        /**
+         * Default PostgreSQL DDL hint: fully transactional under the
+         * runner-owned tx, takes an exclusive table lock for the
+         * statement's duration. Covers ALTER TABLE (incl. ADD/DROP
+         * COLUMN, ALTER COLUMN, ADD/DROP CONSTRAINT, ADD/DROP PK),
+         * CREATE TABLE, DROP TABLE, DROP INDEX.
+         */
+        internal val POSTGRES_TRANSACTIONAL_DDL_HINTS = DialectExecutionHints(
             transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
             lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
             implicitCommitPossible = false,
             sideEffectsPossible = false,
             requiresExclusiveAccess = true,
+        )
+
+        /**
+         * Hint for `CREATE INDEX` (non-CONCURRENTLY) on a regular
+         * table: PostgreSQL takes a SHARE lock — writes block, reads
+         * proceed. Honest LockBehavior is TABLE_SHARED;
+         * `requiresExclusiveAccess` is false because concurrent
+         * readers are fine.
+         */
+        internal val POSTGRES_CREATE_INDEX_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_SHARED,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
+        )
+
+        /**
+         * Hint for catalog-only operations that don't touch user
+         * tables: CREATE/DROP TYPE (writes `pg_type`), CREATE/DROP/
+         * CREATE OR REPLACE VIEW (writes the view's `pg_class` row;
+         * takes AccessShareLock on referenced relations during
+         * planning, not exclusive). LockBehavior is METADATA;
+         * `requiresExclusiveAccess` is false because no user-data
+         * table is locked.
+         */
+        internal val POSTGRES_METADATA_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.METADATA,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
         )
     }
 }
