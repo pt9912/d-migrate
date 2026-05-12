@@ -253,6 +253,43 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_INVALID_EXPRESSION")
     }
 
+    test("AlterColumnType: duplicate matching using entries are ambiguous") {
+        val diff = integerToTextDiff()
+
+        val r = planAndUp(diff) { planned ->
+            listOf(
+                MigrationOverlayDocument(
+                    source = "overlays/age-using.json",
+                    overlay = usingOverlay(planned, upExpression = "\"age\"::TEXT", duplicateEntry = true),
+                ),
+            )
+        }
+
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_AMBIGUOUS")
+    }
+
+    test("AlterColumnType: secret using-expression is not copied into rendered SQL") {
+        val diff = integerToTextDiff()
+        val secret = "secret_cast_expression"
+
+        val r = planAndUp(diff) { planned ->
+            listOf(
+                MigrationOverlayDocument(
+                    source = "overlays/age-using.json",
+                    overlay = usingOverlay(planned, upExpression = secret, upSecret = true),
+                ),
+            )
+        }
+
+        r.isBlocked shouldBe true
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_SECRET_EXPRESSION")
+        r.toString().contains(secret) shouldBe false
+    }
+
     test("AlterColumnNullability: required→nullable up + down toggles") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
@@ -591,6 +628,8 @@ private fun usingOverlay(
     planned: DiffResult,
     upExpression: String,
     downExpression: String? = null,
+    upSecret: Boolean = false,
+    duplicateEntry: Boolean = false,
     dataRisk: MigrationOverlayDataRisk = MigrationOverlayDataRisk.USER_ASSERTED_SAFE,
     reversibility: MigrationOverlayConversionReversibility =
         if (downExpression == null) {
@@ -604,21 +643,52 @@ private fun usingOverlay(
         sourceFingerprint = planned.current.fingerprint!!,
         targetFingerprint = planned.desired.fingerprint!!,
         dialect = "postgresql",
-        entries = listOf(
-            UsingExpressionOverlayEntry(
-                id = "age-int-to-text",
-                table = "users",
-                column = "age",
-                sourceType = "INTEGER",
-                targetType = "TEXT",
-                upUsingExpression = OverlayText(upExpression),
-                downUsingExpression = downExpression?.let(::OverlayText),
-                dataRisk = dataRisk,
-                conversionReversibility = reversibility,
-                expressionSource = "user",
-                reviewedByUser = true,
-            ),
-        ),
+        entries = buildList {
+            add(
+                usingEntry(
+                    id = "age-int-to-text",
+                    upExpression = upExpression,
+                    upSecret = upSecret,
+                    downExpression = downExpression,
+                    dataRisk = dataRisk,
+                    reversibility = reversibility,
+                ),
+            )
+            if (duplicateEntry) {
+                add(
+                    usingEntry(
+                        id = "age-int-to-text-duplicate",
+                        upExpression = upExpression,
+                        upSecret = upSecret,
+                        downExpression = downExpression,
+                        dataRisk = dataRisk,
+                        reversibility = reversibility,
+                    ),
+                )
+            }
+        },
         createdAt = "2026-05-12T10:15:30Z",
         createdByVersion = "d-migrate-test",
     ).withComputedHash()
+
+private fun usingEntry(
+    id: String,
+    upExpression: String,
+    upSecret: Boolean,
+    downExpression: String?,
+    dataRisk: MigrationOverlayDataRisk,
+    reversibility: MigrationOverlayConversionReversibility,
+): UsingExpressionOverlayEntry =
+    UsingExpressionOverlayEntry(
+        id = id,
+        table = "users",
+        column = "age",
+        sourceType = "INTEGER",
+        targetType = "TEXT",
+        upUsingExpression = OverlayText(upExpression, secret = upSecret),
+        downUsingExpression = downExpression?.let(::OverlayText),
+        dataRisk = dataRisk,
+        conversionReversibility = reversibility,
+        expressionSource = "user",
+        reviewedByUser = true,
+    )

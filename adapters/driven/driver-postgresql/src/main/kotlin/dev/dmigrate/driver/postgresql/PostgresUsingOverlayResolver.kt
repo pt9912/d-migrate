@@ -4,9 +4,11 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidationContext
+import dev.dmigrate.core.diff.migration.overlay.OverlayText
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -16,17 +18,7 @@ internal object PostgresUsingOverlayResolver {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val sourceType = ctx.sql.toSql(op.before)
         val targetType = ctx.sql.toSql(op.after)
-        val candidates = ctx.migrationOverlays.mapNotNull { doc ->
-            val entry = doc.overlay.entries
-                .filterIsInstance<UsingExpressionOverlayEntry>()
-                .singleOrNull {
-                    it.table == table &&
-                        it.column == column &&
-                        canonicalType(it.sourceType) == canonicalType(sourceType) &&
-                        canonicalType(it.targetType) == canonicalType(targetType)
-                }
-            entry?.let { doc to it }
-        }
+        val candidates = matchingCandidates(ctx.migrationOverlays, table, column, sourceType, targetType)
 
         if (candidates.isEmpty()) {
             return block(
@@ -54,7 +46,7 @@ internal object PostgresUsingOverlayResolver {
     }
 
     private fun validateOverlayContract(
-        document: dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument,
+        document: MigrationOverlayDocument,
         entry: UsingExpressionOverlayEntry,
         op: DiffOperation.AlterColumnType,
         ctx: PostgresDiffRenderContext,
@@ -106,11 +98,21 @@ internal object PostgresUsingOverlayResolver {
         entry: UsingExpressionOverlayEntry,
     ): String? {
         val expression = if (ctx.direction == PostgresRenderDirection.UP) {
-            entry.upUsingExpression.value
+            entry.upUsingExpression
         } else {
-            entry.downUsingExpression?.value ?: return blockMissingDown(op, ctx, source, entry)
+            entry.downUsingExpression ?: return blockMissingDown(op, ctx, source, entry)
         }
-        val error = validateExpression(expression, entry.column)
+        if (expression.secret) {
+            return block(
+                op = op,
+                ctx = ctx,
+                reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+                code = "PG_USING_OVERLAY_SECRET_EXPRESSION",
+                message = "Using overlay source=$source entry=${entry.id} marks the selected expression as secret; " +
+                    "secret overlay values cannot be copied into rendered SQL artifacts.",
+            )
+        }
+        val error = validateExpression(expression.value, entry.column)
         if (error != null) {
             return block(
                 op = op,
@@ -132,8 +134,27 @@ internal object PostgresUsingOverlayResolver {
             message = "Using overlay source=$source entry=${entry.id} hash=$overlayHash " +
                 "dataRisk=${entry.dataRisk.name} downStatus=$downStatus expressionSource=${entry.expressionSource}",
         )
-        return expression
+        return expression.value
     }
+
+    private fun matchingCandidates(
+        documents: List<MigrationOverlayDocument>,
+        table: String,
+        column: String,
+        sourceType: String,
+        targetType: String,
+    ): List<Pair<MigrationOverlayDocument, UsingExpressionOverlayEntry>> =
+        documents.flatMap { doc ->
+            doc.overlay.entries
+                .filterIsInstance<UsingExpressionOverlayEntry>()
+                .filter {
+                    it.table == table &&
+                        it.column == column &&
+                        canonicalType(it.sourceType) == canonicalType(sourceType) &&
+                        canonicalType(it.targetType) == canonicalType(targetType)
+                }
+                .map { doc to it }
+        }
 
     private fun blockMissingDown(
         op: DiffOperation.AlterColumnType,
