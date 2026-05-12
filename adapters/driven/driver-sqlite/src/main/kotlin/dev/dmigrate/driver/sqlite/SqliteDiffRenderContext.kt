@@ -9,8 +9,11 @@ import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.DialectExecutionHints
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionBehavior
 import dev.dmigrate.driver.migration.TransactionScope
 
 /** Rendering direction. */
@@ -32,12 +35,17 @@ internal class SqliteDiffRenderContext(
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
     fun emit(op: DiffOperation, sqlText: String) {
+        // Plan-2 §A.1: direct SQLite DDL via this path is wrapped by
+        // the runner's outer JDBC transaction; SQLite rolls back the
+        // statement on failure. Lock footprint is the schema's
+        // exclusive write-lock until commit.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = SQLITE_DIRECT_DDL_HINTS,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id
@@ -106,6 +114,7 @@ internal class SqliteDiffRenderContext(
         opIds: Set<String>,
         risk: OperationRisk = OperationRisk.SAFE,
         phase: DiffPhase = DiffPhase.TABLES,
+        hints: DialectExecutionHints = SQLITE_REBUILD_INSIDE_TX_HINTS,
     ) {
         // Plan-2 §G.1: the SQLite rebuild pipeline emits its own
         // BEGIN IMMEDIATE / COMMIT bracket plus pre-/post-PRAGMAs.
@@ -113,12 +122,19 @@ internal class SqliteDiffRenderContext(
         // the executor leaves autoCommit untouched. Per-statement
         // boundary refinement (PRAGMA vs. inside-tx vs. COMMIT) is
         // tracked as Plan-2 §G.3 (`transactionBoundary`).
+        //
+        // Plan-2 §A.1: the default `hints` describe a statement
+        // inside the BEGIN/COMMIT bracket (FULLY_TRANSACTIONAL +
+        // TABLE_EXCLUSIVE). Callers emitting PRAGMAs or runner-hook
+        // markers outside the bracket override via
+        // [SQLITE_REBUILD_OUTSIDE_TX_HINTS].
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = opIds,
             risk = risk,
             phase = phase,
             transactionScope = TransactionScope.STREAM_OWNED,
+            hints = hints,
         )
     }
 
@@ -192,6 +208,45 @@ internal class SqliteDiffRenderContext(
             blockers = effectiveBlockers,
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
+        )
+    }
+
+    companion object {
+        internal val SQLITE_DIRECT_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = true,
+        )
+
+        /**
+         * Default hints for rebuild statements emitted *between*
+         * `BEGIN IMMEDIATE;` and `COMMIT;`. Includes the BEGIN/COMMIT
+         * markers themselves and `PRAGMA foreign_key_check;` (which
+         * runs inside the tx). Plan-2 §A.1.
+         */
+        internal val SQLITE_REBUILD_INSIDE_TX_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = true,
+        )
+
+        /**
+         * Hints for rebuild statements emitted *outside* the
+         * BEGIN/COMMIT bracket: pre-BEGIN `PRAGMA foreign_keys = OFF`
+         * + save-fk-state hook, post-COMMIT `PRAGMA foreign_keys = ON`
+         * / restore-fk-state hook. Run under autocommit; SQLite makes
+         * no transactional guarantee for them. Plan-2 §A.1.
+         */
+        internal val SQLITE_REBUILD_OUTSIDE_TX_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.NOT_TRANSACTIONAL,
+            lockBehavior = LockBehavior.NONE,
+            implicitCommitPossible = false,
+            sideEffectsPossible = true,
+            requiresExclusiveAccess = false,
         )
     }
 }

@@ -20,7 +20,9 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.TransactionBehavior
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -269,5 +271,21 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         )
         val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "t", indicesAdded = listOf(idx))))
         planAndUp(diff).statements.single().sql shouldContainStr "USING HASH"
+    }
+
+    // ── Plan-2 §A.1: dialect execution hints ──
+
+    test("§A.1: MySQL CreateTable statements carry IMPLICIT_COMMIT + sideEffectsPossible hints") {
+        val t = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))))
+        val hints = r.statements.single().hints
+        hints.transactionBehavior shouldBe TransactionBehavior.IMPLICIT_COMMIT
+        hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        hints.implicitCommitPossible shouldBe true
+        hints.sideEffectsPossible shouldBe true
+        hints.requiresExclusiveAccess shouldBe true
     }
 })

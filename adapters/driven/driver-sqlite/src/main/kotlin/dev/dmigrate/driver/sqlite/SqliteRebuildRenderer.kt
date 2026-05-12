@@ -162,9 +162,14 @@ internal class SqliteRebuildRenderer(
             ctx.emitRebuildStatement(
                 "-- dmigrate:runner-hook=save-fk-state-before-pragma-off",
                 opIds, risk = safe, phase = DiffPhase.PREPARE,
+                hints = SqliteDiffRenderContext.SQLITE_REBUILD_OUTSIDE_TX_HINTS,
             )
         }
-        ctx.emitRebuildStatement("PRAGMA foreign_keys = OFF;", opIds, risk = safe, phase = DiffPhase.PREPARE)
+        ctx.emitRebuildStatement(
+            "PRAGMA foreign_keys = OFF;",
+            opIds, risk = safe, phase = DiffPhase.PREPARE,
+            hints = SqliteDiffRenderContext.SQLITE_REBUILD_OUTSIDE_TX_HINTS,
+        )
         ctx.emitRebuildStatement("BEGIN IMMEDIATE;", opIds, risk = safe, phase = DiffPhase.PREPARE)
 
         // TABLES phase: schema reshape. Statements that touch data inherit bucketRisk;
@@ -287,11 +292,16 @@ internal class SqliteRebuildRenderer(
         ctx.emitRebuildStatement("COMMIT;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
         when (plan.emissionMode) {
             SqliteRebuildEmissionMode.STANDALONE ->
-                ctx.emitRebuildStatement("PRAGMA foreign_keys = ON;", opIds, risk = safe, phase = DiffPhase.CLEANUP)
+                ctx.emitRebuildStatement(
+                    "PRAGMA foreign_keys = ON;",
+                    opIds, risk = safe, phase = DiffPhase.CLEANUP,
+                    hints = SqliteDiffRenderContext.SQLITE_REBUILD_OUTSIDE_TX_HINTS,
+                )
             SqliteRebuildEmissionMode.EXECUTE ->
                 ctx.emitRebuildStatement(
                     "-- dmigrate:runner-hook=restore-fk-state",
                     opIds, risk = safe, phase = DiffPhase.CLEANUP,
+                    hints = SqliteDiffRenderContext.SQLITE_REBUILD_OUTSIDE_TX_HINTS,
                 )
         }
     }

@@ -8,8 +8,11 @@ import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.DialectExecutionHints
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionBehavior
 import dev.dmigrate.driver.migration.TransactionScope
 
 /**
@@ -39,12 +42,19 @@ internal class PostgresDiffRenderContext(
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
     fun emit(op: DiffOperation, sqlText: String) {
+        // Plan-2 §A.1: PostgreSQL DDL is fully transactional and takes
+        // an exclusive table lock for the duration of the statement.
+        // No implicit commits and no side-effect risk under normal
+        // wrap-in-tx execution. CREATE INDEX CONCURRENTLY (which
+        // requires TransactionScope.NO_TRANSACTION + NOT_TRANSACTIONAL)
+        // is not yet rendered by this adapter.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = POSTGRES_TRANSACTIONAL_DDL_HINTS,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id
@@ -116,6 +126,16 @@ internal class PostgresDiffRenderContext(
             blockers = effectiveBlockers,
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
+        )
+    }
+
+    private companion object {
+        private val POSTGRES_TRANSACTIONAL_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = false,
+            sideEffectsPossible = false,
+            requiresExclusiveAccess = true,
         )
     }
 }

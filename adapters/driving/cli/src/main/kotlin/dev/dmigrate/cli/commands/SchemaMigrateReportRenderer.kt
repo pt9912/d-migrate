@@ -57,6 +57,9 @@ internal object SchemaMigrateReportRenderer {
             sb.append("  primaryBlockedReason: ").append(yamlOptional(primaryBlockedReason)).append('\n')
             sb.append("  downStatementsTotal: ").append(yamlOptional(downStatementsTotal?.toString())).append('\n')
             sb.append("  downBlocked: ").append(downBlocked).append('\n')
+            sb.append("  planHasImplicitCommitDdl: ").append(planHasImplicitCommitDdl).append('\n')
+            sb.append("  planFullyRollbackable: ").append(planFullyRollbackable).append('\n')
+            sb.append("  planRequiresExclusiveAccess: ").append(planRequiresExclusiveAccess).append('\n')
         }
         sb.append("blockers:").append(if (report.blockers.isEmpty()) " []\n" else "\n")
         for (b in report.blockers) {
@@ -116,7 +119,10 @@ internal object SchemaMigrateReportRenderer {
         append("\"nonReversibleCount\":${s.nonReversibleCount},")
         append("\"primaryBlockedReason\":${jsonOptString(s.primaryBlockedReason)},")
         append("\"downStatementsTotal\":${s.downStatementsTotal ?: "null"},")
-        append("\"downBlocked\":${s.downBlocked}")
+        append("\"downBlocked\":${s.downBlocked},")
+        append("\"planHasImplicitCommitDdl\":${s.planHasImplicitCommitDdl},")
+        append("\"planFullyRollbackable\":${s.planFullyRollbackable},")
+        append("\"planRequiresExclusiveAccess\":${s.planRequiresExclusiveAccess}")
         append('}')
     }
 

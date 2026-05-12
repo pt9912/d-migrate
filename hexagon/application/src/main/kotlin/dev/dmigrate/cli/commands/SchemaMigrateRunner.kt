@@ -1110,4 +1110,26 @@ data class SchemaMigrateSummary(
     val downStatementsTotal: Int? = null,
     /** True iff the Down-rendering produced blockers (independent of Up-side blockers). */
     val downBlocked: Boolean = false,
+    /**
+     * Plan-2 §A.1: true iff at least one rendered statement carries
+     * `transactionBehavior = IMPLICIT_COMMIT`. Implies the runner
+     * cannot guarantee a full rollback on later failure — MySQL DDL
+     * is the canonical case. The runner's post-execute
+     * `sideEffectsPossible` is a separate observation.
+     */
+    val planHasImplicitCommitDdl: Boolean = false,
+    /**
+     * Plan-2 §A.1: true iff every rendered statement carries
+     * `transactionBehavior = FULLY_TRANSACTIONAL`. False when any
+     * statement is `IMPLICIT_COMMIT`, `NOT_TRANSACTIONAL`, or
+     * `UNKNOWN`. Empty plans are trivially rollbackable
+     * (no statements ⇒ no risk).
+     */
+    val planFullyRollbackable: Boolean = true,
+    /**
+     * Plan-2 §A.1: true iff at least one rendered statement carries
+     * `requiresExclusiveAccess = true`. Surfaces concurrency impact
+     * without requiring callers to scan per-statement hints.
+     */
+    val planRequiresExclusiveAccess: Boolean = false,
 )

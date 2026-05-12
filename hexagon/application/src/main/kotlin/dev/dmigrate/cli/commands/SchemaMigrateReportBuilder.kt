@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.TransactionBehavior
 
 /**
  * `SchemaMigrateReport` construction split out of [SchemaMigrateRunner]
@@ -90,6 +91,13 @@ internal object SchemaMigrateReportBuilder {
                 primaryBlockedReason = rendered.primaryBlockedReason?.name,
                 downStatementsTotal = renderedDown?.statements?.size,
                 downBlocked = renderedDown?.isBlocked ?: false,
+                planHasImplicitCommitDdl = rendered.statements.any {
+                    it.hints.transactionBehavior == TransactionBehavior.IMPLICIT_COMMIT
+                },
+                planFullyRollbackable = rendered.statements.all {
+                    it.hints.transactionBehavior == TransactionBehavior.FULLY_TRANSACTIONAL
+                },
+                planRequiresExclusiveAccess = rendered.statements.any { it.hints.requiresExclusiveAccess },
             ),
             execution = if (rendered.executionStarted || rendered.executionError != null) {
                 SchemaMigrateExecutionView(

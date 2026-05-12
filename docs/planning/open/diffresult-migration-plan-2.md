@@ -335,6 +335,20 @@ DoD:
 
 ### A.1 Locking- und Transactional-DDL-Hinweise
 
+> Status: implementiert (2026-05-12). `TransactionBehavior`,
+> `LockBehavior` und `DialectExecutionHints` in
+> `hexagon/ports-read`; per-Statement `hints`-Feld auf
+> `MigrationDdlStatement`. PG-Renderer →
+> `FULLY_TRANSACTIONAL`/`TABLE_EXCLUSIVE`. MySQL →
+> `IMPLICIT_COMMIT`/`TABLE_EXCLUSIVE` mit
+> `implicitCommitPossible`/`sideEffectsPossible=true`. SQLite
+> differenziert PRAGMAs ausserhalb des `BEGIN/COMMIT`-Brackets
+> (`NOT_TRANSACTIONAL`/`NONE`) gegenueber Inside-Tx-Statements
+> (`FULLY_TRANSACTIONAL`/`TABLE_EXCLUSIVE`). `SchemaMigrateSummary`
+> aggregiert `planHasImplicitCommitDdl`, `planFullyRollbackable`,
+> `planRequiresExclusiveAccess`; `SchemaMigrateReportRenderer`
+> emittiert die Felder in JSON und YAML.
+
 Aus 0.9.7 offen:
 
 - PostgreSQL-, MySQL- und SQLite-spezifische Hinweise zu DDL-Transaktionen,
@@ -373,16 +387,26 @@ Akzeptanz:
 
 DoD:
 
-- [ ] `transactionBehavior` und `lockBehavior` sind als stabile Report-Felder
-  definiert.
-- [ ] PostgreSQL-, MySQL- und SQLite-Renderer liefern Dialekt-Hinweise fuer die
+- [x] `transactionBehavior` und `lockBehavior` sind als stabile Report-Felder
+  definiert. (per-Statement `DialectExecutionHints`; Plan-Level
+  `planHasImplicitCommitDdl` / `planFullyRollbackable` /
+  `planRequiresExclusiveAccess` in `SchemaMigrateSummary`)
+- [x] PostgreSQL-, MySQL- und SQLite-Renderer liefern Dialekt-Hinweise fuer die
   erste relevante Statement-Matrix.
-- [ ] Implizite Commits und nicht voll rollbackfaehige DDL werden nicht als
-  garantiert transaktional berichtet.
-- [ ] `sideEffectsPossible` ist aus Dialekt- und Scope-Information ableitbar und
-  getestet.
-- [ ] SQL-Metadatenblock und Report widersprechen sich nicht.
-- [ ] Dokumentation beschreibt die Grenzen der Aussagen pro Dialekt.
+- [x] Implizite Commits und nicht voll rollbackfaehige DDL werden nicht als
+  garantiert transaktional berichtet. (`planFullyRollbackable` ist
+  `false`, sobald irgendein Statement nicht `FULLY_TRANSACTIONAL` ist.)
+- [x] `sideEffectsPossible` ist aus Dialekt- und Scope-Information ableitbar und
+  getestet. (Renderer-Hint, Aggregation getestet in
+  `SchemaMigrateReportBuilderHintsTest`.)
+- [~] SQL-Metadatenblock und Report widersprechen sich nicht.
+  SQL-Metadatenblock ist laut Plan optional; aktueller Slice fuehrt
+  ihn nicht und nutzt den Report als kanonische Quelle. Widerspruch
+  unmoeglich, solange kein Metadatenblock existiert.
+- [x] Dokumentation beschreibt die Grenzen der Aussagen pro Dialekt.
+  (KDoc auf `TransactionBehavior`, `LockBehavior`,
+  `DialectExecutionHints` und den drei dialektspezifischen
+  Konstanten.)
 
 ### A.2 SQLite-Rebuild Live-`sqlite_master`-Probe im Execute-Pfad
 

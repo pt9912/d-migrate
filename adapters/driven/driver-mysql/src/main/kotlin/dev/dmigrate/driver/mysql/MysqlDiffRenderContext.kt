@@ -8,8 +8,11 @@ import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.DialectExecutionHints
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionBehavior
 import dev.dmigrate.driver.migration.TransactionScope
 
 /** Rendering direction. */
@@ -32,17 +35,23 @@ internal class MysqlDiffRenderContext(
 
     fun emit(op: DiffOperation, sqlText: String) {
         // Plan-2 §G.1: MySQL DDL renders inside the runner-managed JDBC
-        // transaction by default. Statements with MySQL implicit-commit
-        // semantics will be reclassified once Plan-2 §A.1 lands; until
-        // then the executor receives RUNNER_OWNED, and the implicit-
-        // commit caveat is captured in the migrate report, not in the
-        // transactionScope field.
+        // transaction at the dispatch layer (TransactionScope.RUNNER_OWNED),
+        // but Plan-2 §A.1 records the dialect-level caveat: every
+        // MySQL DDL implicitly commits surrounding work and is not
+        // rolled back on later failure, so the hints carry
+        // IMPLICIT_COMMIT + sideEffectsPossible=true. The implicit-
+        // commit caveat is surfaced in the migrate report's plan-level
+        // aggregation; it does not change executor dispatch.
+        // Online vs. copy ALTER cannot be determined offline, so
+        // requiresExclusiveAccess stays conservatively true and
+        // lockBehavior reports TABLE_EXCLUSIVE.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
             transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = MYSQL_IMPLICIT_COMMIT_DDL_HINTS,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id
@@ -101,6 +110,16 @@ internal class MysqlDiffRenderContext(
             blockers = effectiveBlockers,
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
+        )
+    }
+
+    private companion object {
+        private val MYSQL_IMPLICIT_COMMIT_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.IMPLICIT_COMMIT,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = true,
+            sideEffectsPossible = true,
+            requiresExclusiveAccess = true,
         )
     }
 }

@@ -21,7 +21,9 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.TransactionBehavior
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
@@ -375,5 +377,21 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         val rendererBlocker = r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION &&
             it.diagnostics.isEmpty() } || r.diagnostics.any { it.code == "POSTGRES_RENDER_SKIP" }
         rendererBlocker shouldBe true
+    }
+
+    // ── Plan-2 §A.1: dialect execution hints ──
+
+    test("§A.1: PostgreSQL CreateTable statements carry FULLY_TRANSACTIONAL + TABLE_EXCLUSIVE hints") {
+        val t = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            primaryKey = listOf("id"),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("t", t))))
+        val hints = r.statements.single().hints
+        hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        hints.implicitCommitPossible shouldBe false
+        hints.sideEffectsPossible shouldBe false
+        hints.requiresExclusiveAccess shouldBe true
     }
 })

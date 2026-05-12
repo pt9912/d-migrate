@@ -13,8 +13,10 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.TransactionBehavior
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -508,5 +510,63 @@ class SqliteRebuildRendererTest : FunSpec({
         // Both source columns should be SELECTed (deterministic sort by name: id, tenant).
         insertSelect shouldContain "(\"id\", \"tenant\")"
         insertSelect shouldContain "SELECT \"id\", \"tenant\""
+    }
+
+    // ── Plan-2 §A.1: dialect execution hints for the rebuild bracket ──
+
+    test("§A.1: rebuild hints differentiate outside-tx PRAGMAs from inside-tx statements") {
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "age" to ColumnDefinition(NeutralType.SmallInt),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                "age" to ColumnDefinition(NeutralType.Integer),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    columnsChanged = listOf(
+                        dev.dmigrate.core.diff.ColumnDiff(
+                            name = "age",
+                            type = ValueChange(NeutralType.SmallInt, NeutralType.Integer),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val current = schemaWith(mapOf("u" to before))
+        val desired = schemaWith(mapOf("u" to after))
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+
+        // Canonical 9-statement order from the test above:
+        //   0: PRAGMA foreign_keys = OFF;        → OUTSIDE tx
+        //   1: BEGIN IMMEDIATE;                  → INSIDE tx (marker)
+        //   2..5: CREATE/INSERT/DROP/RENAME      → INSIDE tx
+        //   6: PRAGMA foreign_key_check;         → INSIDE tx
+        //   7: COMMIT;                           → INSIDE tx (marker)
+        //   8: PRAGMA foreign_keys = ON;         → OUTSIDE tx
+        val pragmaOff = r.statements[0]
+        pragmaOff.sql shouldBe "PRAGMA foreign_keys = OFF;"
+        pragmaOff.hints.transactionBehavior shouldBe TransactionBehavior.NOT_TRANSACTIONAL
+        pragmaOff.hints.lockBehavior shouldBe LockBehavior.NONE
+        pragmaOff.hints.sideEffectsPossible shouldBe true
+
+        val createTemp = r.statements[2]
+        createTemp.sql shouldContain "CREATE TABLE \"u__dmg_rebuild_"
+        createTemp.hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        createTemp.hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        createTemp.hints.requiresExclusiveAccess shouldBe true
+
+        val pragmaOn = r.statements[8]
+        pragmaOn.sql shouldBe "PRAGMA foreign_keys = ON;"
+        pragmaOn.hints.transactionBehavior shouldBe TransactionBehavior.NOT_TRANSACTIONAL
     }
 })

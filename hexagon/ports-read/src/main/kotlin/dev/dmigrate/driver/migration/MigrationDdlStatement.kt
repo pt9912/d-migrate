@@ -25,6 +25,13 @@ import dev.dmigrate.core.diff.migration.OperationRisk
  * sites (test fixtures, artefact parser) can stay terse. Executors
  * and classifiers dispatch on this field — they MUST NOT parse the
  * SQL body to infer transaction ownership.
+ *
+ * [hints] carries renderer-supplied dialect-execution metadata
+ * (transactional contract, locking, implicit commits, side-effect
+ * risk) per Plan-2 §A.1. Renderers MUST supply concrete hints; the
+ * [DialectExecutionHints.UNKNOWN] default is the conservative
+ * fallback for non-renderer construction sites only. The report
+ * treats UNKNOWN as "no claim" and never as "fully transactional".
  */
 data class MigrationDdlStatement(
     val sql: String,
@@ -33,4 +40,5 @@ data class MigrationDdlStatement(
     val phase: DiffPhase,
     val notes: List<DiffDiagnostic> = emptyList(),
     val transactionScope: TransactionScope = TransactionScope.RUNNER_OWNED,
+    val hints: DialectExecutionHints = DialectExecutionHints.UNKNOWN,
 )
