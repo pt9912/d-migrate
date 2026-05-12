@@ -674,6 +674,16 @@ Zu entscheiden:
   `missingExtensions` und `extensionInstallStatements`.
 - Privilegienfehler: Blocker vor Render oder Execute-Fehler nach Start.
 
+> Umgesetzt in `282777e3`: port-weite Extension-Availability-Deklarationen
+> und Renderer-Reports; PostgreSQL/PostGIS- und SQLite/SpatiaLite-Geometry-DDL
+> blockiert bei `UNKNOWN`/`MISSING` und rendert nur bei `VERIFIED_PRESENT`.
+> Reports aggregieren `requiredExtensions`, `verifiedExtensions`,
+> `missingExtensions` und `extensionInstallStatements`; `CREATE EXTENSION`
+> wird weiterhin nicht implizit gerendert.
+>
+> Offen bleiben Install-Policy/Flag, Privilegien-Diagnostics und die
+> Reverse-Unterscheidung "Extension vorhanden" vs. "Objekt nutzt Extension".
+
 ### C.2 Spatial-Migrationen
 
 Offen:
