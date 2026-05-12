@@ -10,6 +10,7 @@ import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Rendering direction. Up emits the migration as planned; Down
@@ -43,6 +44,7 @@ internal class PostgresDiffRenderContext(
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id

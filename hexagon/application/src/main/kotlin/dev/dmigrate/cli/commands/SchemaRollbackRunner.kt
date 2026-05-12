@@ -4,6 +4,7 @@ import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -217,10 +218,21 @@ class SchemaRollbackRunner(
      * Phase tagging: the artefact format does not preserve the
      * planner's per-statement [DiffPhase], so we stamp every split
      * statement with [DiffPhase.TABLES] as a generic "executable
-     * body" placeholder. The executor's rebuild detection looks at
-     * the SQL itself ("any statement starts with BEGIN") rather than
-     * the phase tag, so the round-trip still picks the right
-     * transaction-ownership model.
+     * body" placeholder.
+     *
+     * Plan-2 §G.1 transitional fallback: the `rollback-sql v1`
+     * artefact format does not yet carry per-statement
+     * [TransactionScope]; Plan-2 §G.2 will replace this whole
+     * `\n\n`-split with a structured serialization that does. Until
+     * then the SQLite-Rebuild rollback round-trip needs *some* way
+     * to signal STREAM_OWNED execution, so the rollback runner's
+     * artefact-body splitter (this method, not
+     * [RollbackArtefactParser] / [MigrationStreamClassifier] / the
+     * executor) detects `BEGIN`-prefixed statements and stamps
+     * every split statement with the inferred scope. The
+     * classifier and executor are kept free of SQL-content sniffing
+     * per §G.1; this fallback is scoped to one method and dies with
+     * §G.2.
      */
     private fun splitArtefactBody(
         sqlBody: String,
@@ -232,17 +244,30 @@ class SchemaRollbackRunner(
         } else {
             dev.dmigrate.core.diff.migration.OperationRisk.SAFE
         }
-        return sqlBody.split("\n\n")
+        val splitSql = sqlBody.split("\n\n")
             .map { it.trim() }
             .filter { it.isNotEmpty() }
-            .map { sql ->
-                MigrationDdlStatement(
-                    sql = sql,
-                    operationIds = operationIds,
-                    risk = risk,
-                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
-                )
-            }
+        val inferredScope = if (splitSql.any { startsWithBeginToken(it) }) {
+            TransactionScope.STREAM_OWNED
+        } else {
+            TransactionScope.RUNNER_OWNED
+        }
+        return splitSql.map { sql ->
+            MigrationDdlStatement(
+                sql = sql,
+                operationIds = operationIds,
+                risk = risk,
+                phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                transactionScope = inferredScope,
+            )
+        }
+    }
+
+    private fun startsWithBeginToken(sql: String): Boolean {
+        val trimmed = sql.trimStart().uppercase()
+        return trimmed.startsWith("BEGIN;") ||
+            trimmed.startsWith("BEGIN ") ||
+            trimmed == "BEGIN"
     }
 
     private fun validateRequest(request: SchemaRollbackRequest): Int? {

@@ -10,6 +10,7 @@ import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /** Rendering direction. */
 internal enum class MysqlRenderDirection { UP, DOWN }
@@ -30,11 +31,18 @@ internal class MysqlDiffRenderContext(
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
     fun emit(op: DiffOperation, sqlText: String) {
+        // Plan-2 §G.1: MySQL DDL renders inside the runner-managed JDBC
+        // transaction by default. Statements with MySQL implicit-commit
+        // semantics will be reclassified once Plan-2 §A.1 lands; until
+        // then the executor receives RUNNER_OWNED, and the implicit-
+        // commit caveat is captured in the migrate report, not in the
+        // transactionScope field.
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id

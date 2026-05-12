@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /**
  * Classifies a migration SQL stream by which side owns the JDBC
@@ -15,46 +16,32 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
  *
  * - **Stream-owned** (`streamOwnsTransaction = true`): the executor
  *   leaves `autoCommit = true` and never calls `conn.commit()`. The
- *   rendered SQL stream contains its OWN `BEGIN IMMEDIATE` / `COMMIT`
- *   markers (`SqliteRebuildRenderer`'s 9-statement rebuild). On
- *   failure the executor sends an explicit `ROLLBACK;` statement.
+ *   rendered SQL stream contains its own `BEGIN IMMEDIATE` / `COMMIT`
+ *   markers (`SqliteRebuildRenderer`'s rebuild bracket). On failure
+ *   the executor sends an explicit `ROLLBACK;` statement.
  *
- * See `docs/planning/in-progress/diffresult-migration-plan.md §11.2`
- * Carve-out F.4-1 for the long-term plan: replace this content-
- * sniffing heuristic with an explicit `transactionScope` field on
- * [MigrationDdlStatement] before any diff renderer starts emitting
- * statements that themselves contain `BEGIN ... END` routine bodies.
+ * Plan-2 §G.1: classification is now sourced from
+ * [MigrationDdlStatement.transactionScope] set by the renderer.
+ * The earlier SQL-content sniff (`sql.trimStart().startsWith("BEGIN")`)
+ * is gone — renderers that emit routine bodies starting with
+ * `BEGIN ... END` (PL/pgSQL, MySQL stored procedures, planned for
+ * Plan-2 §E.1/§E.2) used to silently misclassify the stream and
+ * disable the runner-managed tx for PG/MySQL.
  */
 object MigrationStreamClassifier {
 
     /**
-     * True iff the rendered SQL stream owns its own transaction via
-     * an explicit `BEGIN`-style statement.
-     *
-     * Detection: any statement's first non-whitespace token is
-     * `BEGIN` (case-insensitive), optionally followed by a transaction
-     * mode (`IMMEDIATE`, `DEFERRED`, `EXCLUSIVE`, `TRANSACTION`) or
-     * a terminator (`;`). Currently only emitted by
-     * `SqliteRebuildRenderer`.
-     *
-     * Bounded false-positive risk: a future renderer that emits a
-     * routine body whose first token is `BEGIN ... END` (PL/pgSQL,
-     * MySQL stored procedures) would misclassify the stream and
-     * silently disable the runner-managed tx for PG/MySQL. Currently
-     * no diff renderer takes that path — see Carve-out F.4-1.
+     * True iff any statement in the stream is rendered with
+     * `transactionScope = STREAM_OWNED`. A mixed stream (some
+     * STREAM_OWNED + some RUNNER_OWNED statements) currently
+     * resolves to stream-owned for executor dispatch — the §G.1
+     * "gemischte Streams blockieren vor Ausfuehrung" rule is
+     * deferred to Plan-2 §G.3, which introduces the
+     * `TRANSACTION_SCOPE_UNSUPPORTED` blocker and the
+     * `transactionBoundary` contract. Until §G.3 lands, no current
+     * renderer produces mixed streams; this method's fallthrough is
+     * a known gap, not silent best-effort.
      */
     fun streamOwnsTransaction(statements: List<MigrationDdlStatement>): Boolean =
-        statements.any { isBeginStatement(it.sql) }
-
-    /**
-     * Per-statement begin-token check. Internal so unit tests can
-     * exercise the boundary cases directly without constructing
-     * full [MigrationDdlStatement] lists.
-     */
-    internal fun isBeginStatement(sql: String): Boolean {
-        val trimmed = sql.trimStart().uppercase()
-        return trimmed.startsWith("BEGIN;") ||
-            trimmed.startsWith("BEGIN ") ||
-            trimmed == "BEGIN"
-    }
+        statements.any { it.transactionScope == TransactionScope.STREAM_OWNED }
 }

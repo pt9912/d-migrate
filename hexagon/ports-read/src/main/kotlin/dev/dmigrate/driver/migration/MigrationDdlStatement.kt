@@ -17,6 +17,14 @@ import dev.dmigrate.core.diff.migration.OperationRisk
  * operation's `OperationRisks.down` into the statement's `risk`
  * field — callers see a uniform "risk for the direction I am about
  * to execute" view.
+ *
+ * [transactionScope] tells the executor who owns the JDBC
+ * transaction during this statement (Plan-2 §G.1). Renderers MUST
+ * set this explicitly per the dialect's execution contract; the
+ * `RUNNER_OWNED` default exists only so non-renderer construction
+ * sites (test fixtures, artefact parser) can stay terse. Executors
+ * and classifiers dispatch on this field — they MUST NOT parse the
+ * SQL body to infer transaction ownership.
  */
 data class MigrationDdlStatement(
     val sql: String,
@@ -24,4 +32,5 @@ data class MigrationDdlStatement(
     val risk: OperationRisk,
     val phase: DiffPhase,
     val notes: List<DiffDiagnostic> = emptyList(),
+    val transactionScope: TransactionScope = TransactionScope.RUNNER_OWNED,
 )

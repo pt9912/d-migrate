@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
@@ -460,5 +461,102 @@ class SchemaRollbackRunnerTest : FunSpec({
         runner.execute(request) shouldBe 8
         // Executor must NOT have been called when state-check fails.
         executorCalls shouldBe emptyList()
+    }
+
+    // ── Plan-2 §G.1 transitional fallback: splitArtefactBody scope inference ──
+    //
+    // `rollback-sql v1` does not carry per-statement TransactionScope.
+    // SchemaRollbackRunner.splitArtefactBody stamps the field from a
+    // leading-BEGIN sniff so SQLite-rebuild rollback round-trips still
+    // dispatch as stream-owned. These tests pin the inference until §G.2
+    // replaces the splitter with structured serialization.
+
+    fun runWithBody(body: String): List<MigrationDdlStatement> {
+        val matchingSchema = SchemaDefinition(name = "App", version = "1")
+        val fp = MigrationFingerprint.compute(matchingSchema)
+        val artefactPath = writeArtefact(
+            "scope-${body.hashCode()}.sql",
+            buildArtefact(currentFp = "fp-pre", desiredFp = fp, postUpFp = fp, sql = body),
+        )
+        val captured = mutableListOf<MigrationDdlStatement>()
+        val runner = SchemaRollbackRunner(
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = matchingSchema,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.POSTGRESQL,
+                )
+            },
+            executor = { _, statements, _ ->
+                captured += statements
+                ExecutionTrace(
+                    executionStarted = true,
+                    executionCompleted = true,
+                    statementsAttempted = statements.size,
+                )
+            },
+            printError = { _, _ -> },
+        )
+        runner.execute(
+            SchemaRollbackRequest(
+                source = artefactPath,
+                target = "db:postgres://localhost",
+                execute = true,
+            ),
+        ) shouldBe 0
+        return captured
+    }
+
+    test("splitArtefactBody — body with BEGIN IMMEDIATE stamps every statement STREAM_OWNED") {
+        val statements = runWithBody("BEGIN IMMEDIATE;\n\nCREATE TABLE x (id INT);\n\nCOMMIT;")
+        statements.map { it.transactionScope } shouldBe listOf(
+            TransactionScope.STREAM_OWNED,
+            TransactionScope.STREAM_OWNED,
+            TransactionScope.STREAM_OWNED,
+        )
+    }
+
+    test("splitArtefactBody — bare BEGIN; alone is detected") {
+        val statements = runWithBody("BEGIN;")
+        statements.single().transactionScope shouldBe TransactionScope.STREAM_OWNED
+    }
+
+    test("splitArtefactBody — BEGIN TRANSACTION/DEFERRED/EXCLUSIVE variants are detected") {
+        listOf("BEGIN TRANSACTION;", "BEGIN DEFERRED;", "BEGIN EXCLUSIVE;").forEach { begin ->
+            val statements = runWithBody("$begin\n\nCREATE TABLE t (id INT);\n\nCOMMIT;")
+            statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
+        }
+    }
+
+    test("splitArtefactBody — leading whitespace before BEGIN is detected") {
+        val statements = runWithBody("  \t  BEGIN IMMEDIATE;\n\nCREATE TABLE t (id INT);")
+        statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
+    }
+
+    test("splitArtefactBody — lowercase begin is detected (case-insensitive)") {
+        val statements = runWithBody("begin transaction;\n\ncreate table t (id int);")
+        statements.first().transactionScope shouldBe TransactionScope.STREAM_OWNED
+    }
+
+    test("splitArtefactBody — pure DDL body without BEGIN stays RUNNER_OWNED") {
+        val statements = runWithBody("DROP TABLE x;\n\nALTER TABLE y ADD COLUMN z TEXT;")
+        statements.map { it.transactionScope } shouldBe listOf(
+            TransactionScope.RUNNER_OWNED,
+            TransactionScope.RUNNER_OWNED,
+        )
+    }
+
+    test("splitArtefactBody — false-prefix BEGINNING_OF_TIME stays RUNNER_OWNED") {
+        // Defensive: the token check is BEGIN-token, not BEGIN-substring.
+        val statements = runWithBody("ALTER TABLE x ADD COLUMN BEGINNING_OF_TIME TIMESTAMPTZ;")
+        statements.single().transactionScope shouldBe TransactionScope.RUNNER_OWNED
+    }
+
+    test("splitArtefactBody — column named begin_time stays RUNNER_OWNED") {
+        // The trimmed first token of the statement is ALTER, not BEGIN —
+        // a column named begin_time must not flip the inference.
+        val statements = runWithBody("ALTER TABLE events ADD COLUMN begin_time TIMESTAMPTZ;")
+        statements.single().transactionScope shouldBe TransactionScope.RUNNER_OWNED
     }
 })

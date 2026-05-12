@@ -147,6 +147,17 @@ Carve-outs aus dem ersten Slice auf:
 
 ### G.1 Strukturiertes `transactionScope`
 
+> Status: implementiert (2026-05-12). `TransactionScope`-Enum mit
+> `RUNNER_OWNED`/`STREAM_OWNED`/`NO_TRANSACTION`,
+> `MigrationDdlStatement.transactionScope`, PG/MySQL/SQLite-Renderer
+> setzen das Feld explizit, `MigrationStreamClassifier` dispatcht ueber
+> das Feld statt ueber SQL-Content. Transitionaler Fallback in
+> `SchemaRollbackRunner.splitArtefactBody`: das `rollback-sql v1`-
+> Format traegt noch kein `transactionScope`, deshalb stempelt der
+> Artefakt-Splitter den Scope bis G.2 anhand fuehrender BEGIN-Tokens.
+> Executor und Classifier sind frei von SQL-Heuristik. G.2/G.3 bleiben
+> offen.
+
 0.9.7 erkennt stream-owned Transaktionen ueber SQL-Content, konkret ueber
 fuehrende `BEGIN`-Statements. Das ist nur sicher, solange keine
 Routinen-/Trigger-Bodies als normale Statements gerendert werden.
@@ -277,28 +288,46 @@ Entscheidung:
   ergaenzt sind. Fuer diesen Slice ist `TRANSACTION_SCOPE_UNSUPPORTED` der
   geplante neue Wert; bis zur Implementierung darf kein Report diesen String
   als stabilen Vertrag ausgeben.
+- Mixed-Stream-Blocker: sobald ein Stream sowohl `STREAM_OWNED`- als auch
+  `RUNNER_OWNED`-/`NO_TRANSACTION`-Statements enthaelt, blockiert die Ausfuehrung
+  vor dem ersten Statement mit `TRANSACTION_SCOPE_UNSUPPORTED`. Bis dieser
+  Slice umgesetzt ist, faellt der Classifier still auf "stream-owned" zurueck,
+  sobald ein einziges Statement `STREAM_OWNED` ist. Das ist kein silent best-
+  effort, sondern eine dokumentierte §G.3-Luecke; aktuelle Renderer
+  produzieren keine Mixed Streams.
 
 Akzeptanz:
 
 - Je Dialekt ein Fehlerpfad nach begonnenem Execute.
 - Report bleibt fuer alte Felder rueckwaertskompatibel.
 - Keine Down-SQL-Finalisierung, wenn Up-Ausfuehrung partiell oder unklar ist.
+- Mixed-Stream-Fall blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` und einem
+  Regressionstest pro Dialekt; `MigrationStreamClassifier`-KDoc verweist auf
+  diesen Vertrag.
 
 DoD:
 
-- [ ] `MigrationDdlStatement` hat ein strukturiertes `transactionScope`-Feld
-  mit dokumentierten Werten.
-- [ ] Alle bestehenden Renderer setzen `transactionScope` explizit.
-- [ ] Runner und Test-Support nutzen keine BEGIN-String-Heuristik mehr.
+- [x] `MigrationDdlStatement` hat ein strukturiertes `transactionScope`-Feld
+  mit dokumentierten Werten. (G.1)
+- [x] Alle bestehenden Renderer setzen `transactionScope` explizit. (G.1)
+- [~] Runner und Test-Support nutzen keine BEGIN-String-Heuristik mehr.
+  `MigrationStreamClassifier` und `JdbcMigrationExecutor` lesen das Feld
+  (G.1). Verbleibender transitionaler Sniff in
+  `SchemaRollbackRunner.splitArtefactBody`, weil `rollback-sql v1` das
+  Feld nicht traegt; faellt mit G.2 weg.
 - [ ] Rollback-Artefakte serialisieren Statements strukturiert und ohne
-  `\n\n`-Split-Vertrag.
+  `\n\n`-Split-Vertrag. (G.2)
 - [ ] Parser prueft `formatVersion`, Artifact-Hash und Statement-Reihenfolge.
+  (formatVersion + Hash bereits in v1; Statement-Reihenfolge G.2)
 - [ ] Execution-Report deckt Statement-Gruppen, Transaktionsgrenzen und
-  Recoverability ab.
-- [ ] Regressionstests decken SQL-Bodies mit `BEGIN`, Leerzeilen und
-  manipulierten Artefakten ab.
+  Recoverability ab. (G.3)
+- [ ] Mixed-Stream-Fall blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` und
+  ist als Regressionstest gepinnt. (G.3)
+- [x] Regressionstest fuer SQL-Body mit `BEGIN`-Token ohne Stream-Owned-
+  Klassifikation. (G.1)
+- [ ] Regressionstests fuer Leerzeilen-Bodies und manipulierte Artefakte. (G.2)
 - [ ] Routine-/Trigger-Renderer bleiben blockiert, bis diese Checkboxen erfuellt
-  sind.
+  sind. (gilt bis G.2 und G.3)
 
 ---
 

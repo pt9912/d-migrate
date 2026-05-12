@@ -11,6 +11,7 @@ import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 
 /** Rendering direction. */
 internal enum class SqliteRenderDirection { UP, DOWN }
@@ -36,6 +37,7 @@ internal class SqliteDiffRenderContext(
             operationIds = setOf(op.id),
             risk = riskFor(op),
             phase = op.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
         )
         rendered += op.id
         if (riskFor(op).destructive) destructive += op.id
@@ -105,11 +107,18 @@ internal class SqliteDiffRenderContext(
         risk: OperationRisk = OperationRisk.SAFE,
         phase: DiffPhase = DiffPhase.TABLES,
     ) {
+        // Plan-2 §G.1: the SQLite rebuild pipeline emits its own
+        // BEGIN IMMEDIATE / COMMIT bracket plus pre-/post-PRAGMAs.
+        // The whole rebuild group is dispatched as STREAM_OWNED so
+        // the executor leaves autoCommit untouched. Per-statement
+        // boundary refinement (PRAGMA vs. inside-tx vs. COMMIT) is
+        // tracked as Plan-2 §G.3 (`transactionBoundary`).
         statements += MigrationDdlStatement(
             sql = sqlText,
             operationIds = opIds,
             risk = risk,
             phase = phase,
+            transactionScope = TransactionScope.STREAM_OWNED,
         )
     }
 

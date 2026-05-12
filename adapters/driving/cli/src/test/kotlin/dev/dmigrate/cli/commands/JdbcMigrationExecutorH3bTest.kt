@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.mockk.every
@@ -12,12 +13,19 @@ import java.sql.Connection
 import java.sql.ResultSet
 import java.sql.Statement
 
+// Every ddl() call in this file builds a SQLite-rebuild-shaped stream
+// (PRAGMA wrapper + BEGIN/COMMIT bracket), which the renderer marks as
+// STREAM_OWNED so JdbcMigrationExecutor picks the stream-owned-tx
+// dispatch path. Plan-2 §G.1: that dispatch reads
+// MigrationDdlStatement.transactionScope, not the SQL body — so this
+// test fixture must stamp the field explicitly.
 private fun ddl(sql: String): MigrationDdlStatement =
     MigrationDdlStatement(
         sql = sql,
         operationIds = emptySet(),
         risk = OperationRisk.SAFE,
         phase = DiffPhase.TABLES,
+        transactionScope = TransactionScope.STREAM_OWNED,
     )
 
 /**
