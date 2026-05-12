@@ -1,8 +1,11 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.driver.ExecutionMode
+import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -86,8 +89,77 @@ internal class SqliteRebuildRenderer(
             emitBlockerDiagnostics(plan, ctx)
             return
         }
+        if (emitCastPreflightBlockersIfAny(plan, ctx)) return
         emitRebuildSequence(plan, ctx)
         emitPreflightInfoDiagnostics(plan, ctx)
+        emitCastPreflightInfoDiagnostics(plan, ctx)
+    }
+
+    private fun emitCastPreflightBlockersIfAny(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext): Boolean {
+        val required = requiredCastPreflights(plan, ctx.direction)
+        if (required.isEmpty()) return false
+        val byKey = ctx.options.sqliteCastPreflights.associateBy { it.bindingKey }
+        var blocked = false
+        for (binding in required) {
+            val declaration = byKey[binding.bindingKey]
+            when {
+                ctx.options.executionMode == ExecutionMode.EXECUTE && declaration == null -> {
+                    ctx.addDiagnostic(
+                        DiffDiagnostic(
+                            code = "SQLITE_CAST_PREFLIGHT_MISSING",
+                            message = "SQLite RebuildTable cast preflight is missing for " +
+                                "`${binding.table}.${binding.column}` (${binding.sourceTypeText} -> " +
+                                "${binding.targetTypeText}, sqlHash=${binding.sqlHash}). Execute is blocked " +
+                                "before rendering the CAST copy step.",
+                            severity = DiffDiagnostic.Severity.BLOCKER,
+                            operationId = binding.operationId,
+                        ),
+                    )
+                    blocked = true
+                }
+                declaration?.status == SqliteCastPreflightStatus.FAILED -> {
+                    val sample = if (declaration.sampleRowIds.isEmpty()) {
+                        ""
+                    } else {
+                        "; sample rowids=" + declaration.sampleRowIds.joinToString(",")
+                    }
+                    ctx.addDiagnostic(
+                        DiffDiagnostic(
+                            code = "SQLITE_CAST_PREFLIGHT_FAILED",
+                            message = "SQLite RebuildTable cast preflight failed for " +
+                                "`${binding.table}.${binding.column}` (${binding.sourceTypeText} -> " +
+                                "${binding.targetTypeText}, sqlHash=${binding.sqlHash}): " +
+                                "${declaration.failingRows ?: 0} row(s) are not safely convertible$sample.",
+                            severity = DiffDiagnostic.Severity.BLOCKER,
+                            operationId = binding.operationId,
+                        ),
+                    )
+                    blocked = true
+                }
+                declaration != null && declaration.status != SqliteCastPreflightStatus.PASSED -> {
+                    ctx.addDiagnostic(
+                        DiffDiagnostic(
+                            code = "SQLITE_CAST_PREFLIGHT_${declaration.status.name}",
+                            message = "SQLite RebuildTable cast preflight for " +
+                                "`${binding.table}.${binding.column}` has status ${declaration.status} " +
+                                "(sqlHash=${binding.sqlHash}); execute requires PASSED.",
+                            severity = if (ctx.options.executionMode == ExecutionMode.EXECUTE) {
+                                DiffDiagnostic.Severity.BLOCKER
+                            } else {
+                                DiffDiagnostic.Severity.INFO
+                            },
+                            operationId = binding.operationId,
+                        ),
+                    )
+                    if (ctx.options.executionMode == ExecutionMode.EXECUTE) blocked = true
+                }
+            }
+        }
+        if (blocked) {
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, required.map { it.operationId }.toSet())
+            for (op in plan.bucketOperations) ctx.markRendered(op)
+        }
+        return blocked
     }
 
     /**
@@ -112,6 +184,61 @@ internal class SqliteRebuildRenderer(
                 ),
             )
         }
+    }
+
+    private fun emitCastPreflightInfoDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
+        val required = requiredCastPreflights(plan, ctx.direction)
+        if (required.isEmpty()) return
+        val byKey = ctx.options.sqliteCastPreflights.associateBy { it.bindingKey }
+        for (binding in required) {
+            val declaration = byKey[binding.bindingKey]
+            if (declaration == null) {
+                ctx.addDiagnostic(
+                    DiffDiagnostic(
+                        code = "SQLITE_CAST_PREFLIGHT_NOT_RUN_FILE_TARGET",
+                        message = "SQLite RebuildTable cast preflight was not run for " +
+                            "`${binding.table}.${binding.column}` (${binding.sourceTypeText} -> " +
+                            "${binding.targetTypeText}, status=NOT_RUN_FILE_TARGET, sqlHash=${binding.sqlHash}).",
+                        severity = DiffDiagnostic.Severity.INFO,
+                        operationId = binding.operationId,
+                    ),
+                )
+                continue
+            }
+            ctx.addDiagnostic(
+                DiffDiagnostic(
+                    code = "SQLITE_CAST_PREFLIGHT_${declaration.status.name}",
+                    message = "SQLite RebuildTable cast preflight ${declaration.status} for " +
+                        "`${binding.table}.${binding.column}` (${binding.sourceTypeText} -> " +
+                        "${binding.targetTypeText}, totalRows=${declaration.totalRows ?: "unknown"}, " +
+                        "failingRows=${declaration.failingRows ?: "unknown"}, sqlHash=${binding.sqlHash}).",
+                    severity = DiffDiagnostic.Severity.INFO,
+                    operationId = binding.operationId,
+                ),
+            )
+        }
+    }
+
+    private fun requiredCastPreflights(
+        plan: SqliteRebuildPlan,
+        direction: SqliteRenderDirection,
+    ): List<SqliteCastPreflightBinding> {
+        val out = mutableListOf<SqliteCastPreflightBinding>()
+        for (op in plan.bucketOperations) {
+            if (op !is DiffOperation.AlterColumnType) continue
+            val source = if (direction == SqliteRenderDirection.UP) op.before else op.after
+            val target = if (direction == SqliteRenderDirection.UP) op.after else op.before
+            if (!SqliteCastMatrix.isWhitelisted(source, target)) continue
+            out += SqliteCastPreflightSql.bindingFor(
+                operationId = op.id,
+                table = plan.originalTableName,
+                column = op.objectRef.path[1],
+                sourceType = source,
+                targetType = target,
+                sql = sql,
+            )
+        }
+        return out.sortedWith(compareBy({ it.table }, { it.column }, { it.operationId }))
     }
 
     private fun emitBlockerDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {

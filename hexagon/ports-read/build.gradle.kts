@@ -27,6 +27,8 @@ kover {
                     "dev.dmigrate.driver.SchemaReadNote",
                     "dev.dmigrate.driver.SchemaReadReportInput",
                     "dev.dmigrate.driver.DdlGenerationOptions",
+                    "dev.dmigrate.driver.SqliteCastPreflightDeclaration",
+                    "dev.dmigrate.driver.SqliteCastPreflightStatus",
                     "dev.dmigrate.driver.SpatialProfile",
                     "dev.dmigrate.driver.SpatialProfilePolicy",
                     "dev.dmigrate.driver.SpatialProfilePolicy\$Result",

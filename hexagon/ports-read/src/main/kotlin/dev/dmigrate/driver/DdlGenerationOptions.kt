@@ -54,6 +54,18 @@ data class DdlGenerationOptions(
      */
     val liveSqliteCatalog: SqliteLiveCatalog? = null,
     /**
+     * Plan-2 §B.2: declarations for SQLite RebuildTable CAST live-data
+     * preflights. `schema migrate --execute` populates this after
+     * DiffPlanning and before rendering by running read-only count
+     * probes against the target SQLite DB. The SQLite renderer refuses
+     * to emit a data-copy CAST in EXECUTE mode unless the matching
+     * declaration is present with status `PASSED`.
+     *
+     * File/plan-only paths leave this empty; the renderer reports
+     * `NOT_RUN_FILE_TARGET` for the affected operation bindings.
+     */
+    val sqliteCastPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
+    /**
      * Plan-2 §A.2: which input fed the SQLite-rebuild temp-name
      * collision catalog. `SCHEMA_ONLY` (the default) covers
      * file-to-file, plan-only, non-SQLite, and SQLite-with-execute

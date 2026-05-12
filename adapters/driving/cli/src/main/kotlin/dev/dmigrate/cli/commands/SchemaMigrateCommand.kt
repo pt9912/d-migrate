@@ -84,6 +84,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = JdbcMigrationExecutor::execute,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
+            sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },
@@ -119,4 +120,3 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         }
     }
 }
-

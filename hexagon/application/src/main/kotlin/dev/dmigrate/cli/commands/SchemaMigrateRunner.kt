@@ -53,6 +53,7 @@ import kotlin.io.path.writeText
  * - `7` — local I/O / planning / render / artefact-write error
  * - `8` — `MIGRATION_BLOCKED` (renderer or planner blockers)
  */
+@Suppress("LargeClass")
 class SchemaMigrateRunner(
     private val operandParser: (String) -> CompareOperand = CompareOperandParser::parse,
     private val fileLoader: (CompareOperand.File) -> ResolvedSchemaOperand,
@@ -78,6 +79,13 @@ class SchemaMigrateRunner(
      * targets, plan-only, and tests that don't exercise the probe.
      */
     private val sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)? = null,
+    /**
+     * Plan-2 §B.2: read-only live-data preflight for whitelisted
+     * SQLite RebuildTable casts. Wired only by the CLI adapter; null
+     * keeps application tests and non-SQLite paths independent from
+     * the SQLite driver adapter.
+     */
+    private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -182,6 +190,13 @@ class SchemaMigrateRunner(
         // SQLite + --execute path so the temp-name resolution sees
         // ad-hoc live objects. Other paths skip the probe.
         val probeOutcome = SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, effectiveDialect)
+        val castPreflightOutcome = SqliteCastPreflightStage.run(
+            sqliteCastPreflightProbe,
+            request,
+            targetOp,
+            effectiveDialect,
+            plan,
+        )
         // Phase H.3b: when running with --execute, the SQL stream is
         // consumed by JdbcMigrationExecutor on a live JDBC connection
         // — the SQLite-rebuild renderer can emit runner-hook markers
@@ -194,6 +209,8 @@ class SchemaMigrateRunner(
                 dev.dmigrate.driver.ExecutionMode.STANDALONE
             },
             liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
+            sqliteCastPreflights =
+                (castPreflightOutcome as? SqliteCastPreflightStage.Outcome.Succeeded)?.declarations.orEmpty(),
             catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
                 SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
             } else {
@@ -205,6 +222,11 @@ class SchemaMigrateRunner(
             // block before any mutation. Render is skipped so a
             // partially valid SQL stream can't even be inspected.
             SqliteProbeStage.buildFailureResult(probeOutcome.message)
+        } else if (castPreflightOutcome is SqliteCastPreflightStage.Outcome.Failed) {
+            // Synthetic blocked result — Plan-2 §B.2 demands a hard
+            // block before render/execute if the live-data cast
+            // preflight itself cannot complete.
+            SqliteCastPreflightStage.buildFailureResult(castPreflightOutcome.message)
         } else {
             val rendered = renderer.generateUp(plan, renderOptions)
             if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
