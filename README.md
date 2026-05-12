@@ -38,7 +38,8 @@ d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migra
 
 ### Voraussetzungen
 
-- **JDK 21** oder neuer — _oder_ Docker (siehe unten, kein lokales JDK erforderlich)
+- Docker
+- Optional fuer lokale Entwicklung ohne Container: **JDK 21** oder neuer
 
 ### Installation
 
@@ -62,7 +63,7 @@ noch kein vollautomatischer Standard-Installationspfad.
 #### Aus Quellcode bauen
 
 ```bash
-./gradlew build
+make ci-build
 ```
 
 #### Makefile-Komfortziele
@@ -78,48 +79,55 @@ make help
 Haeufige Ziele:
 
 ```bash
-make build             # ./gradlew build
-make test              # ./gradlew test
-make gates             # Gradle check, Coverage-Gate und docs-check
-make ci                # ./gradlew build plus Coverage-Gate und docs-check
+make ci-build          # Build/Test/Coverage-Gate in der Dockerfile-Build-Stage
+make docker-check      # Gradle check in der Dockerfile-Build-Stage
+make docker-test       # Gradle test in der Dockerfile-Build-Stage
+make docker-detekt     # Detekt in der Dockerfile-Detekt-Stage
+make docker-coverage-gate  # Kover-Gate in der Dockerfile-Coverage-Stage
+make gates             # Docker-Check, Docker-Coverage-Gate und docs-check
+make ci                # Docker-CI-Build plus docs-check
 make smoke             # CLI-Distribution bauen und --version/--help pruefen
 make integration       # Testcontainers-Integrationstests via Docker-Script
 make docs-check        # Markdown-Linkziele in docs/ pruefen
 make docker-gates      # Docker-Runtime-Build, Coverage-Gate und Runtime-Smoke
 make docker-full-gates # docker-gates plus Docker-Integrationstests
-make release-assets    # ZIP, TAR, Fat JAR und SHA256 bauen
+make release-assets    # ZIP, TAR, Fat JAR und SHA256 via Dockerfile bauen
+make docker-oci-build  # Jib-OCI-Image via Dockerfile bauen und docker load ausfuehren
 ```
 
 #### Release-Assets lokal bauen
 
 ```bash
-./gradlew :adapters:driving:cli:assembleReleaseAssets
+make release-assets
 ls -1 adapters/driving/cli/build/release
 ```
 
 ### CLI ausführen
 
 ```bash
+# Einmal lokal bauen
+make docker-build
+
 # Schema validieren
-./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
+docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 
 # Zwei Schemas vergleichen
-./gradlew :adapters:driving:cli:run --args="schema compare --source schema.yaml --target schema-new.yaml"
+docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source /work/schema.yaml --target /work/schema-new.yaml
 
 # PostgreSQL-DDL generieren
-./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target postgresql"
+docker run --rm -v $(pwd):/work d-migrate:dev schema generate --source /work/schema.yaml --target postgresql
 
 # MySQL-DDL mit Rollback generieren
-./gradlew :adapters:driving:cli:run --args="schema generate --source schema.yaml --target mysql --generate-rollback"
+docker run --rm -v $(pwd):/work d-migrate:dev schema generate --source /work/schema.yaml --target mysql --generate-rollback
 
 # Schema aus bestehender Datenbank extrahieren
-./gradlew :adapters:driving:cli:run --args="schema reverse --source mydb --output reverse.yaml --report reverse.report.yaml"
+docker run --rm -v $(pwd):/work d-migrate:dev schema reverse --source mydb --output /work/reverse.yaml --report /work/reverse.report.yaml
 
 # DB-basierter Schema-Vergleich
-./gradlew :adapters:driving:cli:run --args="schema compare --source file:schema.yaml --target db:mydb"
+docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source file:/work/schema.yaml --target db:mydb
 
 # DB-zu-DB Datentransfer
-./gradlew :adapters:driving:cli:run --args="data transfer --source sourcedb --target targetdb --tables users,orders"
+docker run --rm -v $(pwd):/work d-migrate:dev data transfer --source sourcedb --target targetdb --tables users,orders
 ```
 
 ### Docker
@@ -195,9 +203,9 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 <details>
 <summary>Build- und Runtime-Stages</summary>
 
-- Build-Stage: `eclipse-temurin:21-jdk-noble`
-- Runtime-Stage: `eclipse-temurin:21-jre-noble` (wie beim offiziellen OCI-Image aus `:adapters:driving:cli:jibDockerBuild`)
-- Gradle-Dependencies werden über BuildKit-Cache-Mounts gecacht.
+- Build-Stage: `gradle:8.12-jdk21`
+- Runtime-Stage: `eclipse-temurin:21-jre-noble` (wie beim offiziellen Jib-OCI-Image)
+- Gradle-Dependencies werden in einer eigenen `deps`-Stage vorgewärmt.
 - Vollständiger `docker build` landet immer in der `runtime`-Stage.
 - Bei `GRADLE_TASKS`-Überschreibung ergänzen: `:adapters:driving:cli:installDist`
 - Für reinen Build/Test ohne Runtime-Image: `--target build`
@@ -211,6 +219,15 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 - `coverage`: HTML-Report wird auch bei unterschrittenem 90%-Gate erzeugt.
 - `coverage-json`: identischer Root-Kover-Report als JaCoCo-ähnliches JSON auf `stdout` (via `ENTRYPOINT`).
 - `coverage-verify`: hartes `koverVerify`; Build-Target bricht bei nicht erfülltem Mindestwert mit Fehler ab.
+- `coverage-modules-html`: per-Modul-Kover-HTML-Reports als Tar-Stream fuer `make coverage-modules-html`.
+
+</details>
+
+<details>
+<summary>Release- und OCI-Stages</summary>
+
+- `release-assets`: baut ZIP, TAR, Fat JAR und SHA256 und streamt `adapters/driving/cli/build/release` als Tar fuer `make release-assets`.
+- `jib-image-tar`: baut das Jib-OCI-Image als Tar, inklusive Jib-Labels; `make docker-oci-build` laedt es danach per `docker load`.
 
 </details>
 
@@ -265,13 +282,14 @@ tables:
 Dann validierst du es so:
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema validate --source schema.yaml"
+make docker-build
+docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 ```
 
 Und vergleichst zwei Versionen so:
 
 ```bash
-./gradlew :adapters:driving:cli:run --args="schema compare --source schema.yaml --target schema-v2.yaml"
+docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source /work/schema.yaml --target /work/schema-v2.yaml
 ```
 
 ## Aktueller Stand
@@ -338,7 +356,7 @@ Beiträge sind willkommen! Bitte erstelle ein Issue oder einen Pull Request auf 
 1. Forke das Repository
 2. Erstelle einen Feature-Branch von `develop`
 3. Schreibe Tests für deine Änderungen
-4. Stelle sicher, dass alle Tests laufen (`./gradlew build`)
+4. Stelle sicher, dass die Docker-CI-Gates laufen (`make ci`)
 5. Reiche einen Pull Request gegen `develop` ein
 
 ## Lizenz
