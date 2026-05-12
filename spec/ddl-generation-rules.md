@@ -390,6 +390,15 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 > **Trusted Input**: `constraint.expression` wird als Raw-SQL-Fragment direkt
 > in die DDL-Ausgabe interpoliert. Der Wert stammt aus der Schema-YAML-Datei,
 > die vom Schema-Autor kontrolliert wird. Keine Sanitization findet statt.
+>
+> **Diff-Migrationen (Plan-2 §F.5)**: `CHECK`- und `EXCLUDE`-Constraints
+> werden im Diff-Pfad nur konservativ per SQL-Text verglichen. Der Vergleich
+> normalisiert Zeilenenden auf LF und ignoriert umgebenden Whitespace, fuehrt
+> aber keine semantische SQL-Kanonisierung durch. Unveraenderte Constraints
+> blockieren andere Tabellenoperationen nicht. Hinzugefuegte, entfernte oder
+> geaenderte `CHECK`-/`EXCLUDE`-Constraints bleiben mit
+> `CONSTRAINT_NOT_DIFFABLE` blockierend, bis ein dialektspezifischer Render-,
+> Enforcement- und Daten-Preflight-Vertrag existiert.
 
 ```sql
 -- PostgreSQL

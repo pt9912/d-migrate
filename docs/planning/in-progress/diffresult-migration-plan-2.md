@@ -1,8 +1,8 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2
-> sind implementiert (siehe Status-Bloecke in §4 und §5); die Workstreams
-> B/C/D/E/F sind noch offen.
+> Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2,
+> D.1-D.3b und die konservative F.5-Erstscheibe sind implementiert (siehe
+> Status-Bloecke in §4, §5, §8 und §10); weitere B/C/E/F-Slices bleiben offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -1281,6 +1281,16 @@ Akzeptanz:
 
 ### F.5 CHECK-/EXCLUDE-Constraint-Diffbarkeit
 
+> Status: konservativer erster Slice implementiert (2026-05-12).
+> CHECK-/EXCLUDE-Constraints werden nicht mehr pauschal aus dem Vergleich
+> entfernt. Der Comparator nutzt einen stabilen, konservativen SQL-Textvergleich
+> (LF-normalisierte, getrimmte Expression; keine semantische SQL-
+> Kanonisierung). Unveraenderte CHECK-/EXCLUDE-Constraints blockieren
+> migrationsfremde Tabellenoperationen dadurch nicht mehr. Hinzugefuegte,
+> entfernte oder geaenderte CHECK-/EXCLUDE-Constraints bleiben mit
+> `CONSTRAINT_NOT_DIFFABLE` blockierend, bis ein dialektspezifischer Render-,
+> Enforcement- und Daten-Preflight-Vertrag existiert.
+
 0.9.7 blockiert Tabellen mit `CHECK`-/`EXCLUDE`-Constraints ueber einen
 Pre-Normalization-Detector, statt sie still wegzunormalisieren.
 
@@ -1319,8 +1329,10 @@ DoD:
   listen ausgelassene Operationen.
 - [ ] Rename-Mappings sind fingerprint-gebunden und gegen Mehrdeutigkeit
   validiert.
-- [ ] CHECK-/EXCLUDE-Diffbarkeit nutzt ein entschiedenes Vergleichsmodell und
+- [x] CHECK-/EXCLUDE-Diffbarkeit nutzt ein entschiedenes Vergleichsmodell und
   blockiert bei Dialekt- oder Enforcement-Unklarheit.
+  (F.5-Erstscheibe: konservativer SQL-Textvergleich fuer unveraenderte
+  Constraints; echte CHECK-/EXCLUDE-Diffs blockieren weiter.)
 - [ ] Fuer F.0 und F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
   Blocker-Tests.
 - [ ] Kein Produktvertrag stellt ein unvollstaendiges Rollback als vollstaendig

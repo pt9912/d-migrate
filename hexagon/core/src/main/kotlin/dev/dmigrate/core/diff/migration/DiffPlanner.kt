@@ -1,7 +1,9 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -31,14 +33,13 @@ import dev.dmigrate.core.model.ViewDefinition
  * - View-level fine-grained column tracking.
  * - Routine-only dependencies between Functions/Procedures and Views.
  *
- * Phase A decision (CHECK/EXCLUDE constraints): tables carrying these
- * are surfaced via a `CONSTRAINT_NOT_DIFFABLE` blocker diagnostic and
- * skipped in the operation list — see
- * `docs/planning/done/diffresult-migration-plan.md §11.1`. Operations
- * on *unblocked* tables that nonetheless reference a blocked table
- * (FK column / FK constraint) are tagged with a
- * `FK_TO_BLOCKED_TABLE` blocker so the renderer cannot silently emit
- * dangling references.
+ * Plan-2 §F.5 first slice (CHECK/EXCLUDE constraints): unchanged raw-SQL
+ * constraints are comparable by conservative SQL text. Added, removed or
+ * changed CHECK/EXCLUDE constraints still surface a `CONSTRAINT_NOT_DIFFABLE`
+ * blocker and the affected table is skipped in the operation list. Operations
+ * on unblocked tables that nonetheless reference a blocked table (FK column /
+ * FK constraint) are tagged with a `FK_TO_BLOCKED_TABLE` blocker so the
+ * renderer cannot silently emit dangling references.
  *
  * Phase F.6.b decision (View column-level deps): column-altering
  * operations (`DropColumn`, `AlterColumnType`,
@@ -67,10 +68,11 @@ class DiffPlanner {
         if (blockedTables.isNotEmpty()) {
             diagnostics += DiffDiagnostic(
                 code = "CONSTRAINT_NOT_DIFFABLE",
-                message = "Table(s) carry CHECK/EXCLUDE constraints which the comparator does not " +
-                    "diff lossless: ${blockedTables.sorted().joinToString(", ")}. Migration cannot " +
-                    "be planned for these tables (Phase A decision; see " +
-                    "`docs/planning/done/diffresult-migration-plan.md §11.1`).",
+                message = "Table(s) add, remove or change CHECK/EXCLUDE constraints which are only " +
+                    "comparable by conservative SQL text in Plan-2 §F.5: " +
+                    "${blockedTables.sorted().joinToString(", ")}. Migration cannot be planned " +
+                    "for these tables until the constraint change has a dialect-specific render " +
+                    "and validation contract.",
                 severity = DiffDiagnostic.Severity.BLOCKER,
             )
         }
@@ -118,15 +120,16 @@ class DiffPlanner {
     private fun detectConstraintNotDiffableTables(
         current: SchemaDefinition,
         desired: SchemaDefinition,
-    ): Set<String> {
-        val blocked = mutableSetOf<String>()
-        for ((name, table) in current.tables) if (hasNotDiffableConstraint(table)) blocked += name
-        for ((name, table) in desired.tables) if (hasNotDiffableConstraint(table)) blocked += name
-        return blocked
-    }
+    ): Set<String> =
+        (current.tables.keys + desired.tables.keys).filterTo(mutableSetOf()) { tableName ->
+            rawSqlConstraints(current.tables[tableName]) != rawSqlConstraints(desired.tables[tableName])
+        }
 
-    private fun hasNotDiffableConstraint(table: TableDefinition): Boolean =
-        table.constraints.any { it.type == ConstraintType.CHECK || it.type == ConstraintType.EXCLUDE }
+    private fun rawSqlConstraints(table: TableDefinition?): Map<String, ConstraintDefinition> =
+        table?.constraints
+            ?.filter(ConstraintDiffContract::isRawSqlConstraint)
+            ?.associate { it.name to ConstraintDiffContract.comparable(it) }
+            .orEmpty()
 
     private fun detectFkToBlockedTables(
         ops: List<DiffOperation>,

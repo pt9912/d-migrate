@@ -179,8 +179,10 @@ internal class TableComparator {
                     }
                 }
 
-                constraint.type == ConstraintType.CHECK || constraint.type == ConstraintType.EXCLUDE -> {}
-                else -> multi[constraint.name] = constraint
+                ConstraintDiffContract.isRawSqlConstraint(constraint) ->
+                    multi[constraint.name] = ConstraintDiffContract.comparable(constraint)
+
+                else -> multi[constraint.name] = ConstraintDiffContract.comparable(constraint)
             }
         }
 

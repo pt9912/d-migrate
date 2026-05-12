@@ -130,7 +130,7 @@ class DiffPlannerTest : FunSpec({
         addConstraint.dependencies shouldContain createUsers.id
     }
 
-    test("CHECK / EXCLUDE constraints in current OR desired produce CONSTRAINT_NOT_DIFFABLE blocker") {
+    test("CHECK / EXCLUDE constraint diffs produce CONSTRAINT_NOT_DIFFABLE blocker") {
         val tableWithCheck = TableDefinition(
             columns = mapOf("age" to ColumnDefinition(NeutralType.Integer)),
             constraints = listOf(
