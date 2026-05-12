@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -31,6 +32,9 @@ internal class PostgresDiffRenderContext(
     val direction: PostgresRenderDirection,
     val sql: PostgresDiffSqlBuilders,
     @Suppress("unused") val options: DdlGenerationOptions,
+    val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+    val sourceFingerprint: String? = null,
+    val targetFingerprint: String? = null,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()
@@ -100,10 +104,19 @@ internal class PostgresDiffRenderContext(
     }
 
     fun addInfoDiagnostic(code: String, operationId: String, message: String) {
+        addDiagnostic(code, operationId, message, DiffDiagnostic.Severity.INFO)
+    }
+
+    fun addDiagnostic(
+        code: String,
+        operationId: String,
+        message: String,
+        severity: DiffDiagnostic.Severity = DiffDiagnostic.Severity.BLOCKER,
+    ) {
         diagnostics += DiffDiagnostic(
             code = code,
             message = message,
-            severity = DiffDiagnostic.Severity.INFO,
+            severity = severity,
             operationId = operationId,
         )
     }

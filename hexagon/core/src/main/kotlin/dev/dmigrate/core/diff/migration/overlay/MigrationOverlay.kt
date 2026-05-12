@@ -28,6 +28,11 @@ data class MigrationOverlay(
     }
 }
 
+data class MigrationOverlayDocument(
+    val source: String,
+    val overlay: MigrationOverlay,
+)
+
 object MigrationOverlayKinds {
     const val USING_EXPRESSION: String = "using-expression"
     const val RENAME_MAPPING: String = "rename-mapping"
@@ -44,11 +49,32 @@ data class OverlayText(
     val secret: Boolean = false,
 )
 
+enum class MigrationOverlayDataRisk {
+    NO_DATA_LOSS_EXPECTED,
+    POSSIBLE_PRECISION_LOSS,
+    POSSIBLE_TRUNCATION,
+    POSSIBLE_PARSE_FAILURE,
+    USER_ASSERTED_SAFE,
+}
+
+enum class MigrationOverlayConversionReversibility {
+    AUTOMATIC,
+    MANUAL_REQUIRED,
+    NOT_REVERSIBLE,
+}
+
 data class UsingExpressionOverlayEntry(
     override val id: String,
     val table: String,
     val column: String,
-    val expression: OverlayText,
+    val sourceType: String,
+    val targetType: String,
+    val upUsingExpression: OverlayText,
+    val downUsingExpression: OverlayText? = null,
+    val dataRisk: MigrationOverlayDataRisk,
+    val conversionReversibility: MigrationOverlayConversionReversibility,
+    val expressionSource: String,
+    val reviewedByUser: Boolean,
     override val requiredFeatures: Set<String> = emptySet(),
 ) : MigrationOverlayEntry {
     override val kind: String = MigrationOverlayKinds.USING_EXPRESSION

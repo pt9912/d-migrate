@@ -5,6 +5,14 @@ import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
+import dev.dmigrate.core.diff.migration.overlay.OverlayText
+import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintReferenceDefinition
@@ -36,11 +44,29 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
     val gen = PostgresDiffDdlGenerator()
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
-    fun planAndUp(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
-        gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+    fun plan(
+        diff: SchemaDiff,
+        current: SchemaDefinition = emptySchema(),
+        desired: SchemaDefinition = emptySchema(),
+        overlays: (DiffResult) -> List<MigrationOverlayDocument> = { emptyList() },
+    ): DiffResult {
+        val planned = planner.plan(current, desired, diff)
+        return planned.copy(migrationOverlays = overlays(planned))
+    }
 
-    fun planAndDown(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
-        gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+    fun planAndUp(
+        diff: SchemaDiff,
+        current: SchemaDefinition = emptySchema(),
+        desired: SchemaDefinition = emptySchema(),
+        overlays: (DiffResult) -> List<MigrationOverlayDocument> = { emptyList() },
+    ) = gen.generateUp(plan(diff, current, desired, overlays), DdlGenerationOptions())
+
+    fun planAndDown(
+        diff: SchemaDiff,
+        current: SchemaDefinition = emptySchema(),
+        desired: SchemaDefinition = emptySchema(),
+        overlays: (DiffResult) -> List<MigrationOverlayDocument> = { emptyList() },
+    ) = gen.generateDown(plan(diff, current, desired, overlays), DdlGenerationOptions())
 
     test("dialect is POSTGRESQL") {
         gen.dialect.name shouldBe "POSTGRESQL"
@@ -148,7 +174,7 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         r.isBlocked shouldBe false
     }
 
-    test("AlterColumnType: Integer → Text needs USING and is blocked") {
+    test("AlterColumnType: Integer → Text needs USING overlay and is blocked without it") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -164,8 +190,67 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         )
         val r = planAndUp(diff)
         r.isBlocked shouldBe true
-        r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION } shouldBe true
+        r.blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED } shouldBe true
         r.statements.shouldBeEmpty()
+    }
+
+    test("AlterColumnType: explicit using-expression overlay renders USING clause") {
+        val diff = integerToTextDiff()
+
+        val r = planAndUp(diff) { planned ->
+            listOf(
+                MigrationOverlayDocument(
+                    source = "overlays/age-using.json",
+                    overlay = usingOverlay(planned, upExpression = "\"age\"::TEXT"),
+                ),
+            )
+        }
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldBe
+            "ALTER TABLE \"users\" ALTER COLUMN \"age\" TYPE TEXT USING \"age\"::TEXT;"
+        r.diagnostics.single { it.code == "PG_USING_OVERLAY_APPLIED" }.message shouldContainStr
+            "source=overlays/age-using.json"
+    }
+
+    test("AlterColumnType: missing downUsingExpression blocks rollback render") {
+        val diff = integerToTextDiff()
+
+        val r = planAndDown(diff) { planned ->
+            listOf(
+                MigrationOverlayDocument(
+                    source = "overlays/age-using.json",
+                    overlay = usingOverlay(
+                        planned,
+                        upExpression = "\"age\"::TEXT",
+                        reversibility = MigrationOverlayConversionReversibility.NOT_REVERSIBLE,
+                    ),
+                ),
+            )
+        }
+
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_DOWN_MISSING")
+    }
+
+    test("AlterColumnType: using-expression overlay may not reference another column") {
+        val diff = integerToTextDiff()
+
+        val r = planAndUp(diff) { planned ->
+            listOf(
+                MigrationOverlayDocument(
+                    source = "overlays/age-using.json",
+                    overlay = usingOverlay(planned, upExpression = "\"other_column\"::TEXT"),
+                ),
+            )
+        }
+
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_INVALID_EXPRESSION")
     }
 
     test("AlterColumnNullability: required→nullable up + down toggles") {
@@ -486,3 +571,54 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         createType.hints.requiresExclusiveAccess shouldBe false
     }
 })
+
+private fun integerToTextDiff(): SchemaDiff =
+    SchemaDiff(
+        tablesChanged = listOf(
+            TableDiff(
+                name = "users",
+                columnsChanged = listOf(
+                    dev.dmigrate.core.diff.ColumnDiff(
+                        name = "age",
+                        type = ValueChange(NeutralType.Integer, NeutralType.Text()),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+private fun usingOverlay(
+    planned: DiffResult,
+    upExpression: String,
+    downExpression: String? = null,
+    dataRisk: MigrationOverlayDataRisk = MigrationOverlayDataRisk.USER_ASSERTED_SAFE,
+    reversibility: MigrationOverlayConversionReversibility =
+        if (downExpression == null) {
+            MigrationOverlayConversionReversibility.NOT_REVERSIBLE
+        } else {
+            MigrationOverlayConversionReversibility.AUTOMATIC
+        },
+): MigrationOverlay =
+    MigrationOverlay(
+        overlayKind = MigrationOverlayKinds.USING_EXPRESSION,
+        sourceFingerprint = planned.current.fingerprint!!,
+        targetFingerprint = planned.desired.fingerprint!!,
+        dialect = "postgresql",
+        entries = listOf(
+            UsingExpressionOverlayEntry(
+                id = "age-int-to-text",
+                table = "users",
+                column = "age",
+                sourceType = "INTEGER",
+                targetType = "TEXT",
+                upUsingExpression = OverlayText(upExpression),
+                downUsingExpression = downExpression?.let(::OverlayText),
+                dataRisk = dataRisk,
+                conversionReversibility = reversibility,
+                expressionSource = "user",
+                reviewedByUser = true,
+            ),
+        ),
+        createdAt = "2026-05-12T10:15:30Z",
+        createdByVersion = "d-migrate-test",
+    ).withComputedHash()

@@ -2,6 +2,8 @@ package dev.dmigrate.format.overlay
 
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayCanonicalJson
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
@@ -94,7 +96,13 @@ private fun signedOverlay(): MigrationOverlay =
                 id = "use-email",
                 table = "users",
                 column = "email",
-                expression = OverlayText("COALESCE(profile->>'email', '')"),
+                sourceType = "TEXT",
+                targetType = "TEXT",
+                upUsingExpression = OverlayText("COALESCE(profile->>'email', '')"),
+                dataRisk = MigrationOverlayDataRisk.NO_DATA_LOSS_EXPECTED,
+                conversionReversibility = MigrationOverlayConversionReversibility.AUTOMATIC,
+                expressionSource = "user",
+                reviewedByUser = true,
             ),
         ),
         createdAt = "2026-05-12T10:15:30Z",

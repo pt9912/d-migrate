@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayCanonicalJson
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
@@ -96,7 +98,20 @@ class MigrationOverlayJsonCodec {
             id = node.requiredText("id", path),
             table = node.requiredText("table", path),
             column = node.requiredText("column", path),
-            expression = parseText(node.requiredObject("expression", path), "$path.expression"),
+            sourceType = node.requiredText("sourceType", path),
+            targetType = node.requiredText("targetType", path),
+            upUsingExpression = parseText(node.requiredObject("upUsingExpression", path), "$path.upUsingExpression"),
+            downUsingExpression = node.get("downUsingExpression")?.let {
+                parseText(node.requiredObject("downUsingExpression", path), "$path.downUsingExpression")
+            },
+            dataRisk = node.requiredEnum("dataRisk", path, MigrationOverlayDataRisk.entries.associateBy { it.name }),
+            conversionReversibility = node.requiredEnum(
+                "reversibility",
+                path,
+                MigrationOverlayConversionReversibility.entries.associateBy { it.name },
+            ),
+            expressionSource = node.requiredText("expressionSource", path),
+            reviewedByUser = node.requiredBoolean("reviewedByUser", path),
             requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), "$path.requiredFeatures"),
         )
     }
@@ -178,6 +193,28 @@ class MigrationOverlayJsonCodec {
         return value
     }
 
+    private fun JsonNode.requiredBoolean(field: String, path: String): Boolean {
+        val value = get(field)
+            ?: decode(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$path.$field", "Required field is missing")
+        if (!value.isBoolean) {
+            decode(MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH, "$path.$field", "Expected boolean")
+        }
+        return value.asBoolean()
+    }
+
+    private fun <T : Enum<T>> JsonNode.requiredEnum(
+        field: String,
+        path: String,
+        values: Map<String, T>,
+    ): T {
+        val raw = requiredText(field, path)
+        return values[raw] ?: decode(
+            MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+            "$path.$field",
+            "Unsupported enum value '$raw'",
+        )
+    }
+
     private fun requireOnlyFields(node: JsonNode, allowedFields: Set<String>, path: String) {
         val unknown = node.fieldNames().asSequence().filter { it !in allowedFields }.toList()
         if (unknown.isNotEmpty()) {
@@ -214,7 +251,14 @@ class MigrationOverlayJsonCodec {
             "id",
             "table",
             "column",
-            "expression",
+            "sourceType",
+            "targetType",
+            "upUsingExpression",
+            "downUsingExpression",
+            "dataRisk",
+            "reversibility",
+            "expressionSource",
+            "reviewedByUser",
             "requiredFeatures",
         )
         private val RENAME_ENTRY_FIELDS = setOf(

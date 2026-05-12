@@ -104,6 +104,7 @@ class DiffPlanner {
             diagnostics = diagnostics,
             currentSchema = current,
             desiredSchema = desired,
+            migrationOverlays = emptyList(),
         )
     }
 

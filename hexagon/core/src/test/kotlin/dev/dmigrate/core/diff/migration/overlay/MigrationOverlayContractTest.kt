@@ -24,10 +24,16 @@ class MigrationOverlayContractTest : FunSpec({
                   "id": "use-email",
                   "table": "users",
                   "column": "email",
-                  "expression": {
+                  "sourceType": "TEXT",
+                  "targetType": "TEXT",
+                  "upUsingExpression": {
                     "value": "COALESCE(profile->>'email', '')",
                     "secret": false
                   },
+                  "dataRisk": "NO_DATA_LOSS_EXPECTED",
+                  "reversibility": "AUTOMATIC",
+                  "expressionSource": "user",
+                  "reviewedByUser": true,
                   "requiredFeatures": []
                 }
               ],
@@ -112,7 +118,7 @@ class MigrationOverlayContractTest : FunSpec({
             entries = listOf(
                 usingEntry(
                     column = "",
-                    expression = OverlayText(""),
+                    upUsingExpression = OverlayText(""),
                 ),
             ),
         ).withComputedHash()
@@ -127,7 +133,7 @@ class MigrationOverlayContractTest : FunSpec({
         val renameResult = MigrationOverlayValidator.validate(rename, validationContext(), "overlays/rename.json")
 
         usingResult.diagnostics.map { it.message }.shouldContain("column is required")
-        usingResult.diagnostics.map { it.message }.shouldContain("expression.value is required")
+        usingResult.diagnostics.map { it.message }.shouldContain("upUsingExpression.value is required")
         renameResult.diagnostics.map { it.message }.shouldContain("objectType is required")
         renameResult.diagnostics.map { it.message }.shouldContain("toName is required")
     }
@@ -138,7 +144,7 @@ class MigrationOverlayContractTest : FunSpec({
             overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
             entries = listOf(
                 usingEntry(
-                    expression = OverlayText(secret, secret = true),
+                    upUsingExpression = OverlayText(secret, secret = true),
                 ),
             ),
         ).withComputedHash()
@@ -195,13 +201,28 @@ private fun unsignedRenameOverlay(entry: RenameMappingOverlayEntry = renameEntry
 private fun usingEntry(
     id: String = "use-email",
     column: String = "email",
-    expression: OverlayText = OverlayText("COALESCE(profile->>'email', '')"),
+    sourceType: String = "TEXT",
+    targetType: String = "TEXT",
+    upUsingExpression: OverlayText = OverlayText("COALESCE(profile->>'email', '')"),
+    downUsingExpression: OverlayText? = null,
+    dataRisk: MigrationOverlayDataRisk = MigrationOverlayDataRisk.NO_DATA_LOSS_EXPECTED,
+    conversionReversibility: MigrationOverlayConversionReversibility =
+        MigrationOverlayConversionReversibility.AUTOMATIC,
+    expressionSource: String = "user",
+    reviewedByUser: Boolean = true,
 ): UsingExpressionOverlayEntry =
     UsingExpressionOverlayEntry(
         id = id,
         table = "users",
         column = column,
-        expression = expression,
+        sourceType = sourceType,
+        targetType = targetType,
+        upUsingExpression = upUsingExpression,
+        downUsingExpression = downUsingExpression,
+        dataRisk = dataRisk,
+        conversionReversibility = conversionReversibility,
+        expressionSource = expressionSource,
+        reviewedByUser = reviewedByUser,
     )
 
 private fun renameEntry(

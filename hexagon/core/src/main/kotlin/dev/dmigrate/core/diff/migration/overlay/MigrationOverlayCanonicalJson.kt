@@ -36,14 +36,21 @@ object MigrationOverlayCanonicalJson {
     private fun entryValue(entry: MigrationOverlayEntry): JsonValue =
         when (entry) {
             is UsingExpressionOverlayEntry -> JsonObject(
-                listOf(
-                    "kind" to JsonString(entry.kind),
-                    "id" to JsonString(entry.id),
-                    "table" to JsonString(entry.table),
-                    "column" to JsonString(entry.column),
-                    "expression" to textValue(entry.expression),
-                    "requiredFeatures" to stringArray(entry.requiredFeatures.sorted()),
-                ),
+                buildList {
+                    add("kind" to JsonString(entry.kind))
+                    add("id" to JsonString(entry.id))
+                    add("table" to JsonString(entry.table))
+                    add("column" to JsonString(entry.column))
+                    add("sourceType" to JsonString(entry.sourceType))
+                    add("targetType" to JsonString(entry.targetType))
+                    add("upUsingExpression" to textValue(entry.upUsingExpression))
+                    entry.downUsingExpression?.let { add("downUsingExpression" to textValue(it)) }
+                    add("dataRisk" to JsonString(entry.dataRisk.name))
+                    add("reversibility" to JsonString(entry.conversionReversibility.name))
+                    add("expressionSource" to JsonString(entry.expressionSource))
+                    add("reviewedByUser" to JsonBoolean(entry.reviewedByUser))
+                    add("requiredFeatures" to stringArray(entry.requiredFeatures.sorted()))
+                },
             )
 
             is RenameMappingOverlayEntry -> JsonObject(

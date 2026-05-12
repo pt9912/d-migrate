@@ -50,6 +50,7 @@ object MigrationOverlayDiagnostics {
     const val ENTRY_KIND_MISMATCH: String = "OVERLAY_ENTRY_KIND_MISMATCH"
     const val UNKNOWN_REQUIRED_FEATURE: String = "OVERLAY_UNKNOWN_REQUIRED_FEATURE"
     const val RESERVED_OPTIONAL_FIELD: String = "OVERLAY_RESERVED_OPTIONAL_FIELD"
+    const val USER_REVIEW_REQUIRED: String = "OVERLAY_USER_REVIEW_REQUIRED"
 }
 
 object MigrationOverlayValidator {
@@ -177,7 +178,18 @@ object MigrationOverlayValidator {
             is UsingExpressionOverlayEntry -> {
                 requireEntryNonBlank("table", entry.table)
                 requireEntryNonBlank("column", entry.column)
-                requireEntryNonBlank("expression.value", entry.expression.value)
+                requireEntryNonBlank("sourceType", entry.sourceType)
+                requireEntryNonBlank("targetType", entry.targetType)
+                requireEntryNonBlank("upUsingExpression.value", entry.upUsingExpression.value)
+                entry.downUsingExpression?.let { requireEntryNonBlank("downUsingExpression.value", it.value) }
+                requireEntryNonBlank("expressionSource", entry.expressionSource)
+                if (!entry.reviewedByUser) {
+                    block(
+                        MigrationOverlayDiagnostics.USER_REVIEW_REQUIRED,
+                        "reviewedByUser must be true for using-expression entries",
+                        entry.id,
+                    )
+                }
             }
 
             is RenameMappingOverlayEntry -> {

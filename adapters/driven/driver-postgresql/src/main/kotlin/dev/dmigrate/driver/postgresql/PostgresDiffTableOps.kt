@@ -66,17 +66,18 @@ internal object PostgresDiffTableOps {
     }
 
     fun renderAlterColumnType(op: DiffOperation.AlterColumnType, ctx: PostgresDiffRenderContext) {
-        if (!ctx.sql.isSafeImplicitCast(op.before, op.after)) {
-            ctx.skip(op, "AlterColumnType from ${op.before} to ${op.after} requires an explicit USING cast.")
-            ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
-            return
-        }
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val targetType = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        val usingExpression = if (ctx.sql.isSafeImplicitCast(op.before, op.after)) {
+            null
+        } else {
+            PostgresUsingOverlayResolver.resolve(op, ctx) ?: return
+        }
+        val usingClause = usingExpression?.let { " USING $it" }.orEmpty()
         ctx.emit(
             op,
             "ALTER TABLE ${ctx.sql.quote(table)} ALTER COLUMN ${ctx.sql.quote(column)} " +
-                "TYPE ${ctx.sql.toSql(targetType)};",
+                "TYPE ${ctx.sql.toSql(targetType)}$usingClause;",
         )
     }
 

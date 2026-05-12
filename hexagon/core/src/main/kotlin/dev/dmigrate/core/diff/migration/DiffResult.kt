@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 
 /**
@@ -16,14 +17,18 @@ import dev.dmigrate.core.model.SchemaDefinition
  *   → SQL artefacts | DB-Execute
  * ```
  *
- * `DiffResult` adds three things on top of [SchemaDiff]:
+ * `DiffResult` adds four things on top of [SchemaDiff]:
  *
  * 1. an ordered list of [DiffOperation]s with stable IDs,
  *    explicit dependencies, phase tie-breakers, and per-direction
  *    risk flags;
  * 2. endpoint metadata ([current], [desired]) for fingerprint /
  *    drift tracking and the SQL metadata-block;
- * 3. planner [diagnostics] that surface non-blocking notes and
+ * 3. optional [migrationOverlays] carrying versioned operator input
+ *    such as PostgreSQL USING expressions, bound to the endpoint
+ *    fingerprints and consumed by renderers that support that
+ *    contract;
+ * 4. planner [diagnostics] that surface non-blocking notes and
  *    blocking diagnoses (e.g. `CONSTRAINT_NOT_DIFFABLE` for tables
  *    that carry CHECK / EXCLUDE constraints — see
  *    `docs/planning/done/diffresult-migration-plan.md §11.1`).
@@ -52,6 +57,7 @@ data class DiffResult(
      */
     val currentSchema: SchemaDefinition? = null,
     val desiredSchema: SchemaDefinition? = null,
+    val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
 ) {
     /** True iff at least one diagnostic is a [DiffDiagnostic.Severity.BLOCKER]. */
     val hasBlockers: Boolean
