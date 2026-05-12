@@ -52,6 +52,7 @@ data class MigrationDdlResult(
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
     val extensionDependencies: List<ExtensionDependencyReport> = emptyList(),
+    val spatialProfile: String? = null,
 ) {
     /** Convenience: the plan must not execute. */
     val isBlocked: Boolean get() = blockers.isNotEmpty()

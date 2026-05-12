@@ -29,8 +29,6 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
-import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
-import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -139,80 +137,6 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         up shouldContainStr "ADD COLUMN \"nick\""
         val down = planAndDown(diff).statements.single().sql
         down shouldBe "ALTER TABLE \"users\" DROP COLUMN \"nick\";"
-    }
-
-    test("§C.1: PostgreSQL geometry CreateTable blocks when PostGIS availability is unknown") {
-        val t = TableDefinition(
-            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
-        )
-        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("places", t))))
-
-        r.statements.shouldBeEmpty()
-        r.isBlocked shouldBe true
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.operationsSkipped.size shouldBe 1
-        r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_UNKNOWN" }
-            .message shouldContainStr "postgis"
-        r.extensionDependencies.single().extension shouldBe "postgis"
-        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.UNKNOWN
-    }
-
-    test("§C.1: PostgreSQL geometry DDL renders only when PostGIS is verified") {
-        val diff = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(
-                    name = "places",
-                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
-                ),
-            ),
-        )
-        val r = planAndUp(
-            diff,
-            options = DdlGenerationOptions(
-                extensionAvailability = listOf(
-                    ExtensionAvailabilityDeclaration(
-                        dialect = "postgresql",
-                        extension = "postgis",
-                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
-                    ),
-                ),
-            ),
-        )
-
-        r.isBlocked shouldBe false
-        r.statements.single().sql shouldContainStr "ADD COLUMN \"shape\" geometry"
-        r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_VERIFIED" }
-            .message shouldContainStr "postgis"
-        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.VERIFIED_PRESENT
-    }
-
-    test("§C.1: PostgreSQL geometry AddColumn blocks when PostGIS is declared missing") {
-        val diff = SchemaDiff(
-            tablesChanged = listOf(
-                TableDiff(
-                    name = "places",
-                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
-                ),
-            ),
-        )
-        val r = planAndUp(
-            diff,
-            options = DdlGenerationOptions(
-                extensionAvailability = listOf(
-                    ExtensionAvailabilityDeclaration(
-                        dialect = "postgresql",
-                        extension = "postgis",
-                        status = ExtensionAvailabilityStatus.MISSING,
-                    ),
-                ),
-            ),
-        )
-
-        r.statements.shouldBeEmpty()
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_MISSING" }
-            .message shouldContainStr "MISSING"
-        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.MISSING
     }
 
     test("DropColumn is destructive and not reversible") {

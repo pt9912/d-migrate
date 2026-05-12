@@ -5,6 +5,9 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -22,7 +25,9 @@ internal enum class MysqlRenderDirection { UP, DOWN }
 internal class MysqlDiffRenderContext(
     val direction: MysqlRenderDirection,
     val sql: MysqlDiffSqlBuilders,
-    @Suppress("unused") val options: DdlGenerationOptions,
+    val options: DdlGenerationOptions,
+    private val currentSchema: SchemaDefinition? = null,
+    private val desiredSchema: SchemaDefinition? = null,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()
@@ -83,6 +88,12 @@ internal class MysqlDiffRenderContext(
         blockers += MigrationBlocker(reason = reason, operationIds = operationIds)
     }
 
+    fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+    }
+
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
@@ -110,6 +121,7 @@ internal class MysqlDiffRenderContext(
             blockers = effectiveBlockers,
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
+            spatialProfile = options.spatialProfile.name,
         )
     }
 

@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -23,6 +24,10 @@ internal object MysqlDiffTableOps {
         val tableName = op.objectRef.rootName
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
+            return
+        }
+        if (op.table.indices.any { it.referencesGeometry(op.table) }) {
+            blockSpatialIndex(op, ctx, tableName)
             return
         }
         val lines = mutableListOf<String>()
@@ -125,5 +130,18 @@ internal object MysqlDiffTableOps {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP PRIMARY KEY;")
+    }
+
+    private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
+        columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+
+    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, tableName: String) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} would create table `$tableName` with an index on a geometry column. " +
+                "MySQL requires SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
+            code = "SPATIAL_INDEX_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 }

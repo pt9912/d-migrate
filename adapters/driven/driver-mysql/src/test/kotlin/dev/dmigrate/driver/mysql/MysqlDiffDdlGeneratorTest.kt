@@ -20,6 +20,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -35,8 +36,12 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
     val gen = MysqlDiffDdlGenerator()
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
-    fun planAndUp(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
-        gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+    fun planAndUp(
+        diff: SchemaDiff,
+        current: SchemaDefinition = emptySchema(),
+        desired: SchemaDefinition = emptySchema(),
+        options: DdlGenerationOptions = DdlGenerationOptions(),
+    ) = gen.generateUp(planner.plan(current, desired, diff), options)
 
     fun planAndDown(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
         gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
@@ -68,6 +73,36 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         )
         planAndUp(diff).statements.single().sql shouldContainStr "ADD COLUMN `nick`"
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE `users` DROP COLUMN `nick`;"
+    }
+
+    test("§C.2: MySQL geometry AddColumn uses native spatial type") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "places", columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry()))),
+            ),
+        )
+        val r = planAndUp(diff, options = DdlGenerationOptions(spatialProfile = SpatialProfile.NATIVE))
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContainStr "ADD COLUMN `shape` GEOMETRY"
+        r.spatialProfile shouldBe "NATIVE"
+    }
+
+    test("§C.2: MySQL index on geometry column is blocked") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")))
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current, desired)
+
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.single { it.code == "SPATIAL_INDEX_UNSUPPORTED" }
+            .message shouldContainStr "SPATIAL INDEX"
     }
 
     test("AlterColumnType safe cast: MODIFY COLUMN clause; unsafe cast blocks") {

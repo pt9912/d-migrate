@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -203,6 +204,7 @@ class SchemaMigrateRunner(
         // for FK-state save/restore. --plan-only emits self-contained
         // SQL (STANDALONE) for external execution.
         val renderOptions = DdlGenerationOptions(
+            spatialProfile = SpatialProfilePolicy.defaultFor(effectiveDialect),
             executionMode = if (request.execute) {
                 dev.dmigrate.driver.ExecutionMode.EXECUTE
             } else {
@@ -254,7 +256,10 @@ class SchemaMigrateRunner(
         // standalone and runner reads).
         val renderedDown = if (request.generateRollback) {
             cancellationToken.throwIfCancellationRequested()
-            renderer.generateDown(plan, DdlGenerationOptions())
+            renderer.generateDown(
+                plan,
+                renderOptions.copy(executionMode = dev.dmigrate.driver.ExecutionMode.STANDALONE),
+            )
         } else {
             null
         }
@@ -1191,6 +1196,8 @@ data class SchemaMigrateSummary(
      * import the dialect-specific type.
      */
     val catalogProbeMode: String = "SCHEMA_ONLY",
+    /** Spatial profile used by the dialect renderer for this plan. */
+    val spatialProfile: String? = null,
     /** Extension names required by rendered or blocked operations. */
     val requiredExtensions: List<String> = emptyList(),
     /** Required extension names whose target availability was verified. */

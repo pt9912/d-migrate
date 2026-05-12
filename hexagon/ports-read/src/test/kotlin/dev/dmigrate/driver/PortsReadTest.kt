@@ -146,6 +146,31 @@ class PortsReadTest : FunSpec({
         opts.toString() shouldContain "HELPER_TABLE"
     }
 
+    test("SqliteCastPreflightDeclaration bindingKey is stable") {
+        val declaration = SqliteCastPreflightDeclaration(
+            operationId = "op-1",
+            table = "orders",
+            column = "amount",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            status = SqliteCastPreflightStatus.PASSED,
+            sqlHash = "abc123",
+        )
+        val expected = listOf("op-1", "sqlite", "orders", "amount", "TEXT", "INTEGER", "abc123")
+            .joinToString("\u001f")
+
+        declaration.bindingKey shouldBe expected
+        SqliteCastPreflightDeclaration.bindingKey(
+            operationId = "op-1",
+            dialect = "sqlite",
+            table = "orders",
+            column = "amount",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            sqlHash = "abc123",
+        ) shouldBe expected
+    }
+
     test("SpatialProfilePolicy.resolve returns NotAllowedForDialect for spatialite on PostgreSQL") {
         val result = SpatialProfilePolicy.resolve(DatabaseDialect.POSTGRESQL, "spatialite")
         result shouldBe SpatialProfilePolicy.Result.NotAllowedForDialect(

@@ -2,6 +2,8 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -53,6 +55,7 @@ internal object PostgresDiffOtherOps {
             )
             return
         }
+        if (!guardSpatialIndex(op, op.index, ctx, table)) return
         // CREATE INDEX (non-CONCURRENTLY): SHARE lock — writes block,
         // reads proceed. Plan-2 §A.1.
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
@@ -61,10 +64,31 @@ internal object PostgresDiffOtherOps {
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == PostgresRenderDirection.DOWN) {
+            if (!guardSpatialIndex(op, op.index, ctx, table)) return
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index), PostgresDiffRenderContext.POSTGRES_CREATE_INDEX_HINTS)
             return
         }
         ctx.emit(op, "DROP INDEX ${ctx.sql.quote(ctx.sql.effectiveIndexName(table, op.index))};")
+    }
+
+    private fun guardSpatialIndex(
+        op: DiffOperation,
+        index: IndexDefinition,
+        ctx: PostgresDiffRenderContext,
+        table: String,
+    ): Boolean {
+        if (!ctx.indexTouchesGeometry(table, index)) return true
+        if (index.type != IndexType.GIST) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} targets a geometry-column index on `$table`, but index type " +
+                    "${index.type.name} is not a supported PostgreSQL spatial index. Use GIST or block manually.",
+                code = "SPATIAL_INDEX_UNSUPPORTED",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+        return ctx.requireExtension(op, "postgis", "spatial index on `$table`")
     }
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: PostgresDiffRenderContext) {

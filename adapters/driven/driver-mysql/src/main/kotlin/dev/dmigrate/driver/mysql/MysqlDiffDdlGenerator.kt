@@ -48,7 +48,13 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         options: DdlGenerationOptions,
         direction: MysqlRenderDirection,
     ): MigrationDdlResult {
-        val ctx = MysqlDiffRenderContext(direction = direction, sql = sql, options = options)
+        val ctx = MysqlDiffRenderContext(
+            direction = direction,
+            sql = sql,
+            options = options,
+            currentSchema = diff.currentSchema,
+            desiredSchema = diff.desiredSchema,
+        )
         val ops = if (direction == MysqlRenderDirection.UP) diff.operations else diff.operations.reversed()
         for (op in ops) renderOp(op, ctx)
         return ctx.toResult(diff)

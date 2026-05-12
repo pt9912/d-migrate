@@ -136,6 +136,7 @@ internal object SchemaMigrateReportBuilder {
             },
             planRequiresExclusiveAccess = rendered.statements.any { it.hints.requiresExclusiveAccess },
             catalogProbeMode = catalogProbeMode.name,
+            spatialProfile = rendered.spatialProfile,
             requiredExtensions = extensionDependencies.namesWithStatus(),
             verifiedExtensions = extensionDependencies.namesWithStatus(ExtensionAvailabilityStatus.VERIFIED_PRESENT),
             missingExtensions = extensionDependencies.namesWithoutStatus(ExtensionAvailabilityStatus.VERIFIED_PRESENT),

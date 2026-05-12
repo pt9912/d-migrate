@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -22,6 +23,13 @@ internal object PostgresDiffTableOps {
         if (op.table.hasGeometryColumns() &&
             !ctx.requireExtension(op, POSTGIS_EXTENSION, "geometry columns on table `$tableName`")
         ) {
+            return
+        }
+        val unsupportedSpatialIndex = op.table.indices.firstOrNull { idx ->
+            idx.referencesGeometry(op.table) && idx.type != IndexType.GIST
+        }
+        if (unsupportedSpatialIndex != null) {
+            blockSpatialIndex(op, ctx, tableName, unsupportedSpatialIndex.type.name)
             return
         }
         val lines = mutableListOf<String>()
@@ -163,6 +171,25 @@ internal object PostgresDiffTableOps {
 
     private fun TableDefinition.hasGeometryColumns(): Boolean =
         columns.values.any { it.type is NeutralType.Geometry }
+
+    private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
+        columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+
+    private fun blockSpatialIndex(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+        tableName: String,
+        indexType: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} would create table `$tableName` with a geometry-column index of type " +
+                "$indexType. PostgreSQL spatial indexes require explicit GIST modelling; blocking to avoid " +
+                "a partial spatial migration.",
+            code = "SPATIAL_INDEX_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+    }
 
     private const val POSTGIS_EXTENSION = "postgis"
 }

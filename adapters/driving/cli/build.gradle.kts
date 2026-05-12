@@ -201,6 +201,11 @@ kover {
                     // `McpServeWiring(serverStateFactory = ...)`. Real-Coverage
                     // entsteht im :test:integration-server-state-Modul.
                     "dev.dmigrate.cli.commands.DefaultServerStateFactory*",
+                    // SQLite live probes open real JDBC/Hikari connections;
+                    // runner-stage behaviour is unit-tested in :hexagon:application,
+                    // connection behaviour belongs to integration coverage.
+                    "dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*",
+                    "dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*",
                     // Private data class for the excluded ExportCommand*
                     // shells; carries no behaviour beyond field accessors.
                     "dev.dmigrate.cli.commands.ExportParams*",

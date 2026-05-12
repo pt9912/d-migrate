@@ -61,7 +61,13 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         options: DdlGenerationOptions,
         direction: SqliteRenderDirection,
     ): MigrationDdlResult {
-        val ctx = SqliteDiffRenderContext(direction = direction, sql = sql, options = options)
+        val ctx = SqliteDiffRenderContext(
+            direction = direction,
+            sql = sql,
+            options = options,
+            currentSchema = diff.currentSchema,
+            desiredSchema = diff.desiredSchema,
+        )
         val ops = if (direction == SqliteRenderDirection.UP) diff.operations else diff.operations.reversed()
 
         val classification = SqliteRebuildPlanner.classify(ops)

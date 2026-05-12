@@ -64,16 +64,34 @@ internal object MysqlDiffOtherOps {
             ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
             return
         }
+        if (ctx.indexTouchesGeometry(table, op.index)) {
+            blockSpatialIndex(op, ctx, table)
+            return
+        }
         ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
     }
 
     fun renderDropIndex(op: DiffOperation.DropIndex, ctx: MysqlDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == MysqlRenderDirection.DOWN) {
+            if (ctx.indexTouchesGeometry(table, op.index)) {
+                blockSpatialIndex(op, ctx, table)
+                return
+            }
             ctx.emit(op, ctx.sql.createIndexSql(table, op.index))
             return
         }
         ctx.emit(op, ctx.sql.dropIndexSql(table, op.index))
+    }
+
+    private fun blockSpatialIndex(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets an index on a geometry column in `$table`. MySQL requires " +
+                "SPATIAL INDEX semantics, which the neutral index model cannot express yet.",
+            code = "SPATIAL_INDEX_UNSUPPORTED",
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
     fun renderCreateCustomType(op: DiffOperation.CreateCustomType, ctx: MysqlDiffRenderContext) {

@@ -62,6 +62,8 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             migrationOverlays = diff.migrationOverlays,
             sourceFingerprint = diff.current.fingerprint,
             targetFingerprint = diff.desired.fingerprint,
+            currentSchema = diff.currentSchema,
+            desiredSchema = diff.desiredSchema,
         )
         val ops = if (direction == PostgresRenderDirection.UP) diff.operations else diff.operations.reversed()
         for (op in ops) renderOp(op, ctx)

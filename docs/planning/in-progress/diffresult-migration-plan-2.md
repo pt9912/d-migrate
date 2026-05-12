@@ -701,18 +701,29 @@ Akzeptanz:
 - Spatial-Indizes und Metadaten werden entweder vollstaendig migriert oder
   blockieren die betroffene Operation
 
+> Umgesetzt in dieser C.2-Scheibe: `schema migrate` propagiert das
+> dialect-default Spatial-Profil in UP und DOWN und schreibt es in JSON/YAML-
+> Reports. PostgreSQL rendert Geometry-DDL nur mit verifiziertem PostGIS und
+> erlaubt Geometry-Indizes nur als `GIST`; andere Geometry-Indizes blockieren.
+> MySQL rendert native Geometry-Spalten, blockiert aber Geometry-Indizes, weil
+> das neutrale Indexmodell kein `SPATIAL INDEX` ausdrueckt. SQLite/SpatiaLite
+> rendert Geometry-Spalten ueber `AddGeometryColumn`/`DiscardGeometryColumn`
+> statt inline `GEOMETRY` und blockiert nicht abbildbare Geometry-Metadaten
+> oder Geometry-Indizes hart. Alle drei Dialekte haben positive und
+> blockierende Spatial-Migrate-Testpfade.
+
 DoD:
 
-- [ ] Extension-Dependencies werden im Modell oder Report sichtbar, nicht
+- [x] Extension-Dependencies werden im Modell oder Report sichtbar, nicht
   implizit installiert.
 - [ ] Policy/Flag fuer Extension-Installation ist entschieden und getestet.
 - [ ] Fehlende Extension, fehlendes Privileg und unbekannte Verfuegbarkeit
   erzeugen unterschiedliche Diagnostics.
-- [ ] Spatial-Spalten, Spatial-Metadaten und Spatial-Indizes werden je Dialekt
+- [x] Spatial-Spalten, Spatial-Metadaten und Spatial-Indizes werden je Dialekt
   vollstaendig geplant oder blockieren.
-- [ ] Datei-zu-Datei-Pfad nimmt Extension-Verfuegbarkeit nicht ohne Schema- oder
+- [x] Datei-zu-Datei-Pfad nimmt Extension-Verfuegbarkeit nicht ohne Schema- oder
   Overlay-Signal an.
-- [ ] PostgreSQL/PostGIS, MySQL Spatial und SQLite/SpatiaLite haben je einen
+- [x] PostgreSQL/PostGIS, MySQL Spatial und SQLite/SpatiaLite haben je einen
   positiven und einen blockierenden Testpfad.
 
 ---

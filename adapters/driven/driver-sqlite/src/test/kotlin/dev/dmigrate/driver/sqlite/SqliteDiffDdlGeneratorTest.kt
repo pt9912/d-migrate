@@ -20,6 +20,7 @@ import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
+import dev.dmigrate.driver.SpatialProfile
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -80,7 +81,10 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         val t = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
         )
-        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("places", t))))
+        val r = planAndUp(
+            SchemaDiff(tablesAdded = listOf(NamedTable("places", t))),
+            options = DdlGenerationOptions(spatialProfile = SpatialProfile.SPATIALITE),
+        )
 
         r.statements.shouldBeEmpty()
         r.isBlocked shouldBe true
@@ -103,6 +107,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         val r = planAndUp(
             diff,
             options = DdlGenerationOptions(
+                spatialProfile = SpatialProfile.SPATIALITE,
                 extensionAvailability = listOf(
                     ExtensionAvailabilityDeclaration(
                         dialect = "sqlite",
@@ -114,10 +119,84 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         )
 
         r.isBlocked shouldBe false
-        r.statements.single().sql shouldContainStr "ADD COLUMN \"shape\" GEOMETRY"
+        r.statements.single().sql shouldContainStr
+            "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
         r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_VERIFIED" }
             .message shouldContainStr "spatialite"
         r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.VERIFIED_PRESENT
+    }
+
+    test("§C.2: SQLite geometry AddColumn blocks without SpatiaLite profile") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "places",
+                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+                ),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.single { it.code == "SPATIAL_PROFILE_REQUIRED" }
+            .message shouldContainStr "SPATIALITE"
+    }
+
+    test("§C.2: SQLite geometry CreateTable uses SpatiaLite metadata functions") {
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(NeutralType.Integer),
+                "shape" to ColumnDefinition(NeutralType.Geometry()),
+            ),
+        )
+        val r = planAndUp(
+            SchemaDiff(tablesAdded = listOf(NamedTable("places", table))),
+            options = DdlGenerationOptions(
+                spatialProfile = SpatialProfile.SPATIALITE,
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        r.statements.size shouldBe 2
+        r.statements[0].sql shouldContainStr "CREATE TABLE \"places\""
+        r.statements[0].sql.contains("\"shape\"") shouldBe false
+        r.statements[1].sql shouldContainStr "AddGeometryColumn('places', 'shape', 0, 'GEOMETRY', 'XY')"
+    }
+
+    test("§C.2: SQLite index on geometry column is blocked") {
+        val before = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val index = IndexDefinition(name = "idx_places_shape", columns = listOf(IndexColumn("shape")))
+        val after = before.copy(indices = listOf(index))
+        val current = emptySchema().copy(tables = mapOf("places" to before))
+        val desired = emptySchema().copy(tables = mapOf("places" to after))
+        val diff = SchemaDiff(tablesChanged = listOf(TableDiff(name = "places", indicesAdded = listOf(index))))
+        val r = planAndUp(diff, current = current, desired = desired)
+
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.single { it.code == "SPATIAL_INDEX_UNSUPPORTED" }
+            .message shouldContainStr "spatial-index metadata"
     }
 
     test("DropColumn renders DROP COLUMN") {

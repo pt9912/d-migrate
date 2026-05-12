@@ -126,6 +126,7 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
     test("extension dependencies aggregate into summary fields") {
         val s = build(
             render(emptyList()).copy(
+                spatialProfile = "POSTGIS",
                 extensionDependencies = listOf(
                     ExtensionDependencyReport(
                         dialect = "postgresql",
@@ -143,6 +144,7 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
             ),
         )
 
+        s.spatialProfile shouldBe "POSTGIS"
         s.requiredExtensions shouldBe listOf("postgis", "uuid-ossp")
         s.verifiedExtensions shouldBe listOf("uuid-ossp")
         s.missingExtensions shouldBe listOf("postgis")

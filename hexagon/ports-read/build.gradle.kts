@@ -30,6 +30,7 @@ kover {
                     "dev.dmigrate.driver.ExtensionAvailabilityDeclaration",
                     "dev.dmigrate.driver.ExtensionAvailabilityStatus",
                     "dev.dmigrate.driver.ExtensionDependencyReport",
+                    "dev.dmigrate.driver.SqliteLiveCatalog",
                     "dev.dmigrate.driver.SqliteCastPreflightDeclaration",
                     "dev.dmigrate.driver.SqliteCastPreflightStatus",
                     "dev.dmigrate.driver.SpatialProfile",

@@ -19,9 +19,11 @@ class MigrationDdlResultTest : FunSpec({
         val r = MigrationDdlResult(
             statements = emptyList(),
             operationsRendered = emptySet(),
+            spatialProfile = "POSTGIS",
         )
         r.isEmpty shouldBe true
         r.isBlocked shouldBe false
+        r.spatialProfile shouldBe "POSTGIS"
     }
 
     test("non-empty rendered + skipped operations are disjoint — overlap throws") {

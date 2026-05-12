@@ -246,6 +246,7 @@ class SchemaMigrateRunnerTest : FunSpec({
 
     test("--generate-rollback --plan-only is a capability check; report.summary reflects Down-side") {
         val capture = mutableMapOf<String, String>()
+        var capturedDownOptions: DdlGenerationOptions? = null
         val runner = SchemaMigrateRunner(
             fileLoader = { _ ->
                 ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
@@ -256,8 +257,13 @@ class SchemaMigrateRunnerTest : FunSpec({
                     override val dialect: DatabaseDialect = dialect
                     override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
                         fakeRendered()
-                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
-                        fakeRendered()
+                    override fun generateDown(
+                        diff: dev.dmigrate.core.diff.migration.DiffResult,
+                        options: DdlGenerationOptions,
+                    ): MigrationDdlResult {
+                        capturedDownOptions = options
+                        return fakeRendered()
+                    }
                 }
             },
             renderReport = { r, _ ->
@@ -269,11 +275,13 @@ class SchemaMigrateRunnerTest : FunSpec({
         val request = SchemaMigrateRequest(
             source = sourcePath.toString(),
             target = targetPath.toString(),
-            dialect = DatabaseDialect.POSTGRESQL,
+            dialect = DatabaseDialect.MYSQL,
             generateRollback = true,
             planOnly = true,
         )
         runner.execute(request) shouldBe 0
+        capturedDownOptions?.spatialProfile shouldBe dev.dmigrate.driver.SpatialProfile.NATIVE
+        capturedDownOptions?.executionMode shouldBe dev.dmigrate.driver.ExecutionMode.STANDALONE
         capture["stdout"] shouldContain "\"downStatementsTotal\":1"
         capture["stdout"] shouldContain "\"downBlocked\":false"
     }

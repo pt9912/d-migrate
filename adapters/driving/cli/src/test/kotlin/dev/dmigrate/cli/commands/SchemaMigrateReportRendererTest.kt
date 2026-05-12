@@ -36,6 +36,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
             operationsTotal = 1,
             operationsRendered = 1,
             statementsTotal = statements?.size ?: 0,
+            spatialProfile = "POSTGIS",
             requiredExtensions = listOf("postgis"),
             missingExtensions = listOf("postgis"),
         ),
@@ -52,6 +53,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"statements\": null"
         out shouldContain "\"requiredExtensions\":[\"postgis\"]"
         out shouldContain "\"missingExtensions\":[\"postgis\"]"
+        out shouldContain "\"spatialProfile\":\"POSTGIS\""
     }
 
     test("JSON renderer emits statements when --plan-only is off") {
@@ -108,11 +110,24 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "drop is destructive"
     }
 
+    test("JSON renderer escapes special characters") {
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                source = "file:\"src\".yaml",
+                target = "line1\nline2\t\u0001",
+            ),
+            "json",
+        )
+        out shouldContain "file:\\\"src\\\".yaml"
+        out shouldContain "line1\\nline2\\t\\u0001"
+    }
+
     test("YAML renderer emits the canonical keys") {
         val out = SchemaMigrateReportRenderer.render(report(), "yaml")
         out shouldContain "status: ok"
         out shouldContain "dialect: POSTGRESQL"
         out shouldContain "summary:"
+        out shouldContain "spatialProfile: POSTGIS"
         out shouldContain "requiredExtensions: [postgis]"
     }
 
@@ -120,5 +135,51 @@ class SchemaMigrateReportRendererTest : FunSpec({
         val r = report().copy(target = "db:postgres://localhost:5432")
         val out = SchemaMigrateReportRenderer.render(r, "yaml")
         out shouldContain "\"db:postgres://localhost:5432\""
+    }
+
+    test("YAML renderer emits blockers diagnostics and execution") {
+        val exec = SchemaMigrateExecutionView(
+            started = true,
+            completed = false,
+            statementsAttempted = 2,
+            lastStatementOperationIds = listOf("op-1"),
+            transactionRolledBack = true,
+            sideEffectsPossible = true,
+            executionError = "boom: failed",
+        )
+        val out = SchemaMigrateReportRenderer.render(
+            report(
+                execution = exec,
+                blockers = listOf(
+                    SchemaMigrateBlockerView(
+                        reason = "MANUAL_ACTION_REQUIRED",
+                        operationIds = listOf("op-1"),
+                        diagnosticCodes = listOf("SPATIAL_INDEX_UNSUPPORTED"),
+                    ),
+                ),
+                diagnostics = listOf(
+                    SchemaMigrateDiagnosticView(
+                        code = "SPATIAL_INDEX_UNSUPPORTED",
+                        severity = "BLOCKER",
+                        message = "manual spatial index required",
+                        operationId = "op-1",
+                    ),
+                    SchemaMigrateDiagnosticView(
+                        code = "NOTE",
+                        severity = "INFO",
+                        message = "line1\nline2",
+                        operationId = null,
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+        out shouldContain "blockers:\n  - reason: MANUAL_ACTION_REQUIRED"
+        out shouldContain "diagnosticCodes: [SPATIAL_INDEX_UNSUPPORTED]"
+        out shouldContain "diagnostics:\n  - code: SPATIAL_INDEX_UNSUPPORTED"
+        out shouldContain "operationId: op-1"
+        out shouldContain "message: \"line1\nline2\""
+        out shouldContain "execution:\n  started: true"
+        out shouldContain "executionError: \"boom: failed\""
     }
 })
