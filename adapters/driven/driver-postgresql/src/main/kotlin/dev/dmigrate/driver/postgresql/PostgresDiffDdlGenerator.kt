@@ -20,8 +20,10 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  * simple ENUM custom types.
  *
  * Out of scope (rendered as `DIALECT_UNSUPPORTED_OPERATION`):
- * routines, triggers, sequence operations, `AlterCustomType`, and
- * `AlterColumnType` casts that are not in the safe-cast allow-list.
+ * routines, triggers, `AlterCustomType`, and `AlterColumnType` casts
+ * that are not in the safe-cast allow-list. PostgreSQL sequences are
+ * renderable for the declarative attributes in `SequenceDefinition`;
+ * live current-value migration remains out of scope.
  *
  * The renderer is stateless and thread-safe. `generateUp` consumes
  * the planner's topo-sorted operations as-is; `generateDown` walks
@@ -96,10 +98,10 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> PostgresDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> PostgresDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> PostgresDiffOtherOps.renderDropView(op, ctx)
+            is DiffOperation.CreateSequence -> PostgresDiffSequenceOps.renderCreateSequence(op, ctx)
+            is DiffOperation.AlterSequence -> PostgresDiffSequenceOps.renderAlterSequence(op, ctx)
+            is DiffOperation.DropSequence -> PostgresDiffSequenceOps.renderDropSequence(op, ctx)
             is DiffOperation.AlterCustomType,
-            is DiffOperation.CreateSequence,
-            is DiffOperation.AlterSequence,
-            is DiffOperation.DropSequence,
             is DiffOperation.CreateFunction,
             is DiffOperation.ReplaceFunction,
             is DiffOperation.DropFunction,

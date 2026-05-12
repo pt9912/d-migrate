@@ -572,6 +572,15 @@ Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/done/mysql-sequen
 
 SQLite: Keine nativen benannten Sequenzen. `action_required` (E056) wird erzeugt.
 
+> **Diff-Migrationen (Plan-2 §E.3)**: PostgreSQL rendert im
+> diffbasierten Migrationspfad deklarative `CREATE SEQUENCE`,
+> `ALTER SEQUENCE` und `DROP SEQUENCE`-Operationen fuer die neutralen
+> Attribute `start`, `increment`, `minValue`, `maxValue`, `cycle` und
+> `cache`. `sequence_nextval`-Defaults werden im Plan nach einer im selben
+> Diff erzeugten Sequence sortiert. Der live aktuelle Sequence-Wert wird in
+> diesem Slice nicht uebernommen oder zurueckgesetzt; MySQL- und
+> SQLite-Sequence-Migrationen bleiben blockierend bzw. emulationsgebunden.
+
 ---
 
 ## 8. View-Generierung

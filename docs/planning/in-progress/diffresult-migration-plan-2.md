@@ -1,8 +1,9 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
 > Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2,
-> D.1-D.3b und die konservative F.5-Erstscheibe sind implementiert (siehe
-> Status-Bloecke in §4, §5, §8 und §10); weitere B/C/E/F-Slices bleiben offen.
+> D.1-D.3b, die konservative F.5-Erstscheibe und ein PostgreSQL-E.3-
+> Sequence-Slice sind implementiert (siehe Status-Bloecke in §4, §5, §8,
+> §9 und §10); weitere B/C/E/F-Slices bleiben offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -993,9 +994,18 @@ Entscheidung:
 
 ### E.3 Sequence-Migrationen
 
+> Status: PostgreSQL-Erstscheibe implementiert (2026-05-12).
+> Diff-basierte PostgreSQL-Migrationen rendern deklarative
+> `CreateSequence`-/`AlterSequence`-/`DropSequence`-Operationen fuer
+> `start`, `increment`, `minValue`, `maxValue`, `cycle` und `cache`.
+> `SequenceNextVal`-Defaults haengen explizit von im selben Plan erzeugten
+> `CreateSequence`-Operationen ab, sodass Tabellen-/Spalten-DDL nicht vor der
+> referenzierten Sequence gerendert wird. Der aktuelle Sequence-Wert bleibt
+> bewusst ausserhalb dieses Slice; MySQL-/SQLite-Sequence-Migrationen bleiben
+> im diffbasierten Pfad blockierend.
+
 Nicht in der ersten Matrix:
 
-- PostgreSQL `CREATE/ALTER/DROP SEQUENCE`
 - MySQL-Sequence-Emulation-Migration
 - SQLite-Sequence-Emulation-Migration
 - Nutzung von Sequences in Defaults und deren Reverse-/Compare-Stabilisierung

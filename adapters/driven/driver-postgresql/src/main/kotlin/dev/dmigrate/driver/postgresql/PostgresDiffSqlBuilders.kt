@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferentialAction
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqlIdentifiers
@@ -77,6 +78,20 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
         return "CREATE TYPE ${quote(name)} AS ENUM ($values);"
     }
 
+    fun createSequenceSql(name: String, seq: SequenceDefinition): String =
+        buildString {
+            append("CREATE SEQUENCE ${quote(name)}")
+            appendSequenceAttributes(seq)
+            append(";")
+        }
+
+    fun alterSequenceSql(name: String, seq: SequenceDefinition): String =
+        buildString {
+            append("ALTER SEQUENCE ${quote(name)}")
+            appendSequenceAttributes(seq)
+            append(";")
+        }
+
     fun createViewSql(name: String, v: ViewDefinition): String {
         val materialized = if (v.materialized) "MATERIALIZED " else ""
         return "CREATE ${materialized}VIEW ${quote(name)} AS ${v.query?.trimEnd(';')};"
@@ -100,6 +115,15 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
 
     fun toDefaultSql(default: dev.dmigrate.core.model.DefaultValue, type: NeutralType): String =
         typeMapper.toDefaultSql(default, type)
+
+    private fun StringBuilder.appendSequenceAttributes(seq: SequenceDefinition) {
+        append(" START WITH ${seq.start}")
+        append(" INCREMENT BY ${seq.increment}")
+        append(seq.minValue?.let { " MINVALUE $it" } ?: " NO MINVALUE")
+        append(seq.maxValue?.let { " MAXVALUE $it" } ?: " NO MAXVALUE")
+        append(if (seq.cycle) " CYCLE" else " NO CYCLE")
+        seq.cache?.let { append(" CACHE $it") }
+    }
 
     /**
      * Allow-list of implicit casts that PostgreSQL accepts without a

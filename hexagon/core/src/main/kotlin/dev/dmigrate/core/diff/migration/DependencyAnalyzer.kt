@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.DefaultValue
 
 /**
  * Computes [DiffOperation.dependencies] edges between operations
@@ -19,6 +20,8 @@ import dev.dmigrate.core.model.ConstraintType
  *   table's `CreateTable`.
  * - `DropTable` → depends on the `DropConstraint` of every FK
  *   pointing at the dropped table (drop dependents first).
+ * - `CreateTable` / `AddColumn` / `AlterColumnDefault` with
+ *   `SequenceNextVal` → depends on the referenced `CreateSequence`.
  * - `CreateView` → depends on the `CreateTable`s declared in
  *   `view.dependencies.tables` **and** the `CreateView`s declared in
  *   `view.dependencies.views` (chained views need create-before-create
@@ -49,6 +52,8 @@ internal object DependencyAnalyzer {
     fun attach(ops: List<DiffOperation>): List<DiffOperation> {
         val createTableByName = ops.filterIsInstance<DiffOperation.CreateTable>()
             .associateBy { it.objectRef.rootName }
+        val createSequenceByName = ops.filterIsInstance<DiffOperation.CreateSequence>()
+            .associateBy { it.objectRef.rootName }
         val createViewByName = ops.filterIsInstance<DiffOperation.CreateView>()
             .associateBy { it.objectRef.rootName }
         // Build reverse indices once so DropTable's edge computation is
@@ -66,7 +71,12 @@ internal object DependencyAnalyzer {
         }
         return ops.map { op ->
             val computed = computeDeps(
-                op, createTableByName, createViewByName, dropConstraintsByRefTable, dropViewsByRefTable,
+                op,
+                createTableByName,
+                createSequenceByName,
+                createViewByName,
+                dropConstraintsByRefTable,
+                dropViewsByRefTable,
             )
             val deps = op.dependencies + computed
             op.withDependencies(deps)
@@ -76,12 +86,14 @@ internal object DependencyAnalyzer {
     private fun computeDeps(
         op: DiffOperation,
         createTableByName: Map<String, DiffOperation.CreateTable>,
+        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
         createViewByName: Map<String, DiffOperation.CreateView>,
         dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
         dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> = when (op) {
-        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, createTableByName)
-        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, createTableByName)
+        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, createTableByName, createSequenceByName)
+        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, createTableByName, createSequenceByName)
+        is DiffOperation.AlterColumnDefault -> dependenciesForAlterColumnDefault(op, createSequenceByName)
         is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, createTableByName)
         is DiffOperation.DropTable -> dependenciesForDropTable(op, dropConstraintsByRefTable, dropViewsByRefTable)
         is DiffOperation.CreateView -> dependenciesForCreateView(op, createTableByName, createViewByName)
@@ -91,11 +103,17 @@ internal object DependencyAnalyzer {
     private fun dependenciesForCreateTable(
         op: DiffOperation.CreateTable,
         createTableByName: Map<String, DiffOperation.CreateTable>,
+        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         op.table.columns.values
             .mapNotNull { it.references?.table }
             .mapNotNull { createTableByName[it] }
+            .filter { it.id != op.id }
+            .forEach { deps += it.id }
+        op.table.columns.values
+            .mapNotNull { sequenceName(it.default) }
+            .mapNotNull { createSequenceByName[it] }
             .filter { it.id != op.id }
             .forEach { deps += it.id }
         op.table.constraints
@@ -110,12 +128,31 @@ internal object DependencyAnalyzer {
     private fun dependenciesForAddColumn(
         op: DiffOperation.AddColumn,
         createTableByName: Map<String, DiffOperation.CreateTable>,
+        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
     ): Set<String> {
-        val ref = op.column.references ?: return emptySet()
-        val target = createTableByName[ref.table] ?: return emptySet()
-        if (target.id == op.id) return emptySet()
-        return setOf(target.id)
+        val deps = mutableSetOf<String>()
+        val ref = op.column.references
+        val target = ref?.let { createTableByName[it.table] }
+        if (target != null && target.id != op.id) deps += target.id
+        sequenceName(op.column.default)
+            ?.let(createSequenceByName::get)
+            ?.takeIf { it.id != op.id }
+            ?.let { deps += it.id }
+        return deps
     }
+
+    private fun dependenciesForAlterColumnDefault(
+        op: DiffOperation.AlterColumnDefault,
+        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
+    ): Set<String> =
+        sequenceName(op.after)
+            ?.let(createSequenceByName::get)
+            ?.takeIf { it.id != op.id }
+            ?.let { setOf(it.id) }
+            ?: emptySet()
+
+    private fun sequenceName(defaultValue: DefaultValue?): String? =
+        (defaultValue as? DefaultValue.SequenceNextVal)?.sequenceName
 
     private fun dependenciesForAddConstraint(
         op: DiffOperation.AddConstraint,

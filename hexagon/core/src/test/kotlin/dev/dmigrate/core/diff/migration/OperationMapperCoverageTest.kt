@@ -19,6 +19,7 @@ import dev.dmigrate.core.diff.ViewDiff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.CustomTypeDefinition
 import dev.dmigrate.core.model.CustomTypeKind
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
 import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
@@ -112,6 +113,59 @@ class OperationMapperCoverageTest : FunSpec({
         val diff = SchemaDiff(sequencesChanged = listOf(SequenceDiff(name = "missing_s")))
         val result = planner.plan(emptySchema(), emptySchema(), diff)
         result.operations.filterIsInstance<DiffOperation.AlterSequence>().size shouldBe 0
+    }
+
+    test("table and column defaults depending on new sequences are ordered after CreateSequence") {
+        val sequence = SequenceDefinition(start = 10)
+        val current = emptySchema().copy(
+            tables = mapOf(
+                "existing" to TableDefinition(
+                    columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
+                ),
+            ),
+        )
+        val desired = emptySchema().copy(
+            sequences = mapOf("invoice_seq" to sequence),
+            tables = mapOf(
+                "invoice" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(
+                            NeutralType.Integer,
+                            default = DefaultValue.SequenceNextVal("invoice_seq"),
+                        ),
+                    ),
+                ),
+                "existing" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(NeutralType.Integer),
+                        "invoice_id" to ColumnDefinition(
+                            NeutralType.Integer,
+                            default = DefaultValue.SequenceNextVal("invoice_seq"),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val diff = SchemaDiff(
+            sequencesAdded = listOf(NamedSequence("invoice_seq", sequence)),
+            tablesAdded = listOf(NamedTable("invoice", desired.tables.getValue("invoice"))),
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "existing",
+                    columnsAdded = mapOf("invoice_id" to desired.tables.getValue("existing").columns.getValue("invoice_id")),
+                ),
+            ),
+        )
+
+        val result = planner.plan(current, desired, diff)
+        val createSequence = result.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
+        val createTable = result.operations.filterIsInstance<DiffOperation.CreateTable>().single()
+        val addColumn = result.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+
+        createTable.dependencies shouldBe setOf(createSequence.id)
+        addColumn.dependencies shouldBe setOf(createSequence.id)
+        (result.operations.indexOf(createSequence) < result.operations.indexOf(createTable)) shouldBe true
+        (result.operations.indexOf(createSequence) < result.operations.indexOf(addColumn)) shouldBe true
     }
 
     test("functions added / removed / changed all map") {

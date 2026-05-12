@@ -1,7 +1,9 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.NamedTable
+import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.SequenceDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
@@ -26,6 +28,7 @@ import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewColumnDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -155,6 +158,59 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         r.destructiveOperations shouldContain opId
         r.nonReversibleOperations shouldContain opId
         r.requiresConfirmation shouldBe true
+    }
+
+    test("CreateSequence renders PostgreSQL sequence DDL and down drops it") {
+        val sequence = SequenceDefinition(start = 10, increment = 5, minValue = 10, maxValue = 999, cycle = true, cache = 20)
+        val diff = SchemaDiff(sequencesAdded = listOf(NamedSequence("invoice_seq", sequence)))
+
+        val up = planAndUp(diff)
+        val down = planAndDown(diff)
+
+        up.isBlocked shouldBe false
+        up.statements.single().sql shouldBe
+            "CREATE SEQUENCE \"invoice_seq\" START WITH 10 INCREMENT BY 5 MINVALUE 10 MAXVALUE 999 CYCLE CACHE 20;"
+        up.statements.single().hints.transactionBehavior shouldBe TransactionBehavior.FULLY_TRANSACTIONAL
+        up.statements.single().hints.lockBehavior shouldBe LockBehavior.METADATA
+        down.statements.single().sql shouldBe "DROP SEQUENCE \"invoice_seq\";"
+    }
+
+    test("AlterSequence renders declarative attributes in both directions") {
+        val before = SequenceDefinition(start = 1, increment = 1, minValue = 1, maxValue = 100, cycle = false, cache = 5)
+        val after = SequenceDefinition(start = 50, increment = 10, minValue = null, maxValue = null, cycle = true, cache = 20)
+        val current = emptySchema().copy(sequences = mapOf("invoice_seq" to before))
+        val desired = emptySchema().copy(sequences = mapOf("invoice_seq" to after))
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(
+                SequenceDiff(
+                    name = "invoice_seq",
+                    start = ValueChange(1L, 50L),
+                    increment = ValueChange(1L, 10L),
+                    minValue = ValueChange(1L, null),
+                    maxValue = ValueChange(100L, null),
+                    cycle = ValueChange(false, true),
+                    cache = ValueChange(5, 20),
+                ),
+            ),
+        )
+
+        planAndUp(diff, current, desired).statements.single().sql shouldBe
+            "ALTER SEQUENCE \"invoice_seq\" START WITH 50 INCREMENT BY 10 NO MINVALUE NO MAXVALUE CYCLE CACHE 20;"
+        planAndDown(diff, current, desired).statements.single().sql shouldBe
+            "ALTER SEQUENCE \"invoice_seq\" START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 100 NO CYCLE CACHE 5;"
+    }
+
+    test("DropSequence renders DROP and can recreate declarative state on down") {
+        val sequence = SequenceDefinition(start = 10, increment = 5, minValue = 10, maxValue = 999, cycle = false)
+        val diff = SchemaDiff(sequencesRemoved = listOf(NamedSequence("invoice_seq", sequence)))
+
+        val up = planAndUp(diff)
+        val down = planAndDown(diff)
+
+        up.statements.single().sql shouldBe "DROP SEQUENCE \"invoice_seq\";"
+        up.requiresConfirmation shouldBe true
+        down.statements.single().sql shouldBe
+            "CREATE SEQUENCE \"invoice_seq\" START WITH 10 INCREMENT BY 5 MINVALUE 10 MAXVALUE 999 NO CYCLE;"
     }
 
     test("AlterColumnType: SmallInt → Integer is safe, rendered with TYPE clause") {
@@ -529,9 +585,9 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
     }
 
-    test("Out-of-matrix operations (Sequence) become DIALECT_UNSUPPORTED_OPERATION") {
-        val seq = dev.dmigrate.core.model.SequenceDefinition(start = 1)
-        val r = planAndUp(SchemaDiff(sequencesAdded = listOf(dev.dmigrate.core.diff.NamedSequence("s", seq))))
+    test("Out-of-matrix operations (Function) become DIALECT_UNSUPPORTED_OPERATION") {
+        val function = dev.dmigrate.core.model.FunctionDefinition(body = "BEGIN RETURN 1; END")
+        val r = planAndUp(SchemaDiff(functionsAdded = listOf(dev.dmigrate.core.diff.NamedFunction("f", function))))
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         r.operationsSkipped.size shouldBe 1
