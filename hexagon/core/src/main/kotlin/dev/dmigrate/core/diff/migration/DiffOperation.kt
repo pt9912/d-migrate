@@ -27,7 +27,7 @@ import dev.dmigrate.core.model.DefaultValue
  *
  * IDs are assigned by [OperationIdFactory]; subtypes do not generate
  * them themselves so the planner controls the deterministic ID
- * derivation per `docs/planning/in-progress/diffresult-migration-plan.md
+ * derivation per `docs/planning/done/diffresult-migration-plan.md
  * §4.2.1`.
  *
  * The catalog mirrors the §4.3 list. A dialect renderer that does not

@@ -24,7 +24,7 @@ enum class DiffObjectType {
  * [DiffOperation] targets. The [path] is the canonical identity used
  * for equality, dependency edges, and Operation-ID derivation.
  *
- * Path conventions per `docs/planning/in-progress/diffresult-migration-plan.md
+ * Path conventions per `docs/planning/done/diffresult-migration-plan.md
  * §4.3`:
  *
  * - `TABLE`: `["orders"]`

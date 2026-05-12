@@ -26,7 +26,7 @@ import dev.dmigrate.core.model.SchemaDefinition
  * 3. planner [diagnostics] that surface non-blocking notes and
  *    blocking diagnoses (e.g. `CONSTRAINT_NOT_DIFFABLE` for tables
  *    that carry CHECK / EXCLUDE constraints — see
- *    `docs/planning/in-progress/diffresult-migration-plan.md §11.1`).
+ *    `docs/planning/done/diffresult-migration-plan.md §11.1`).
  *
  * The planner direction is `current → desired`. The down-side of an
  * automatic rollback uses the inverse via per-operation

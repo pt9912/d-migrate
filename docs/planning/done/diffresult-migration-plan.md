@@ -1,26 +1,34 @@
 # Implementierungsplan: `DiffResult` fuer diff-basierte Migrationen
 
-> Status: In Arbeit (2026-05-11), Ziel 0.9.7
+> Status: Done (2026-05-12), 0.9.7-Scope abgeschlossen.
 >
-> Phase A-F sind im Code (Spec, Core-Vertrag, Planner, Renderer fuer
-> Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner mit Up/Down/
-> Execute, Golden-DDL-Tests, Round-Trip-Smokes pro Dialekt, Recovery-
-> Pfad, Edge-Cases). Phase G (Dialect-Hardening) deckt die in 0.9.7
-> verbindlichen DoDs: G.1 (SQLite-Cast-Matrix; Live-DB-Daten-Preflights
-> Carve-Out 0.9.8+), G.2 (MySQL-`VIEW_TABLE_USAGE`-Privilege-Preflight;
-> `VIEW_ROUTINE_USAGE`-Variante Carve-Out 0.9.8+), G.3a (PostgreSQL-
-> ReplaceView-Strict-Split bei Dependency-Column-Konflikt; Visible-
-> Spaltensignatur-Compatibility = G.3b ist Carve-Out 0.9.8+). Phase H
-> (SQLite-Rebuild-Vertrag formalisieren) ist im Code: H.1a/H.1b
-> (`SqliteRebuildPlan`-Struct + Planner produziert / Renderer
-> konsumiert), H.2 (Temp-Namen-Kollision mit `__2`/`__3`-Fallback),
-> H.3a (Drop+Recreate abhaengiger Views/Trigger + simpleOps-Absorption),
-> H.4 (6-Punkte-Preflight-Liste mit per-Kind-Outcome) und H.3b
-> (`SqliteRebuildEmissionMode.EXECUTE` emittiert
+> Phasen A-H sind im Code. Phase A-F: Spec, Core-Vertrag, Planner,
+> Renderer fuer Postgres/MySQL/SQLite inkl. RebuildTable, CLI-Runner
+> mit Up/Down/Execute, Golden-DDL-Tests, Round-Trip-Smokes pro
+> Dialekt, Recovery-Pfad, Edge-Cases. Phase G (Dialect-Hardening)
+> deckt die in 0.9.7 verbindlichen DoDs: G.1 (SQLite-Cast-Matrix;
+> Live-DB-Daten-Preflights Carve-Out 0.9.8+), G.2 (MySQL-
+> `VIEW_TABLE_USAGE`-Privilege-Preflight; `VIEW_ROUTINE_USAGE`-Variante
+> Carve-Out 0.9.8+), G.3a (PostgreSQL-ReplaceView-Strict-Split bei
+> Dependency-Column-Konflikt; Visible-Spaltensignatur-Compatibility =
+> G.3b ist Carve-Out 0.9.8+). Phase H (SQLite-Rebuild-Vertrag
+> formalisieren): H.1a/H.1b (`SqliteRebuildPlan`-Struct + Planner
+> produziert / Renderer konsumiert), H.2 (Temp-Namen-Kollision mit
+> `__2`/`__3`-Fallback), H.3a (Drop+Recreate abhaengiger Views/Trigger
+> + simpleOps-Absorption), H.4 (6-Punkte-Preflight-Liste mit per-Kind-
+> Outcome), H.3b (`SqliteRebuildEmissionMode.EXECUTE` emittiert
 > `dmigrate:runner-hook=…`-Marker; `JdbcMigrationExecutor` parsed sie
 > und liest/restored prior FK-State via `PRAGMA foreign_keys;`;
 > `DdlGenerationOptions.executionMode` schaltet zwischen STANDALONE
 > und EXECUTE).
+>
+> Carve-Outs auf 0.9.8+ (VIEW_ROUTINE_USAGE-Vollabdeckung, SQLite
+> Live-Daten-Preflight fuer Casts, PostgreSQL ReplaceView Visible-
+> Spaltensignatur-Compatibility, F.4-1/F.4-2 Artefakt-/Runner-
+> Vertraege) sind in
+> [`docs/planning/in-progress/diffresult-migration-plan-2.md`](../in-progress/diffresult-migration-plan-2.md)
+> verfolgt; dessen Workstreams G.1 und A.1 sind bereits umgesetzt
+> (2026-05-12).
 >
 > Zweck: Planung fuer einen stabilen, migrationsfaehigen `DiffResult`-
 > Vertrag als Grundlage fuer den 0.9.7-Migrationspfad `schema migrate`

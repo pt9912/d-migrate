@@ -643,7 +643,7 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
 - `--generate-rollback` angefordert, aber mindestens eine Operation ist `MANUAL_REQUIRED`
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
 
-Detaillierter Implementierungs-Plan: [`docs/planning/in-progress/diffresult-migration-plan.md`](../docs/planning/in-progress/diffresult-migration-plan.md).
+Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 
 Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
 
@@ -690,7 +690,7 @@ Exit-Codes:
 | `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
 | `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
 
-Detaillierter Implementierungs-Plan: [`docs/planning/in-progress/diffresult-migration-plan.md §7.2`](../docs/planning/in-progress/diffresult-migration-plan.md).
+Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md §7.2`](../docs/planning/done/diffresult-migration-plan.md).
 
 ### 6.2 data
 

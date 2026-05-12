@@ -672,7 +672,7 @@ Datenfluss: `(current, desired) → SchemaComparator → SchemaDiff →
 DiffPlanner → DiffResult → MigrationDdlRenderer → MigrationDdlResult →
 SQL-Datei | DB-Execute`.
 
-Detaillierter Plan: [`docs/planning/in-progress/diffresult-migration-plan.md`](../docs/planning/in-progress/diffresult-migration-plan.md).
+Detaillierter Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 CLI-Vertrag: [`spec/cli-spec.md §6.1 schema migrate / schema rollback`](./cli-spec.md).
 
 ---

@@ -1,6 +1,8 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: Draft, verfeinert (2026-05-11)
+> Status: In Progress (seit 2026-05-12). Workstream G.1 und A.1 sind
+> implementiert (siehe Status-Bloecke in §4 und §5); G.2, G.3, A.2 und
+> die Workstreams B/C/D/E/F sind noch offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -8,13 +10,13 @@
 > werden muessen.
 >
 > Ausdruecklich nicht Teil dieses Dokuments: erneute Planung von Phase H aus
-> `docs/planning/in-progress/diffresult-migration-plan.md`
+> `docs/planning/done/diffresult-migration-plan.md`
 > (SQLite-Rebuild-Vertrag formalisieren). Die dort abgeschlossenen
 > SQLite-Rebuild-Vertraege gelten hier als Voraussetzung und werden nicht
 > dupliziert.
 >
 > Referenzen:
-> - `docs/planning/in-progress/diffresult-migration-plan.md`
+> - `docs/planning/done/diffresult-migration-plan.md`
 > - `docs/planning/in-progress/roadmap.md`
 > - `spec/cli-spec.md` Abschnitt `schema migrate` / `schema rollback`
 > - `spec/ddl-generation-rules.md`

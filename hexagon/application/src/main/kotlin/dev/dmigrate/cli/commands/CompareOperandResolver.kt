@@ -51,7 +51,7 @@ object CompareOperandParser {
  * The actual marker handling is delegated to
  * [dev.dmigrate.core.diff.migration.ReverseMarkerNormalizer] so the
  * `schema migrate` `DiffPlanner` and `schema compare` share the same
- * contract per `docs/planning/in-progress/diffresult-migration-plan.md §11.1`.
+ * contract per `docs/planning/done/diffresult-migration-plan.md §11.1`.
  * This wrapper just lifts the normalisation onto the operand record
  * so the operand's `reference` survives in error messages.
  *

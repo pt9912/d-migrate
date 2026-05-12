@@ -34,7 +34,7 @@ import dev.dmigrate.core.model.ViewDefinition
  * Phase A decision (CHECK/EXCLUDE constraints): tables carrying these
  * are surfaced via a `CONSTRAINT_NOT_DIFFABLE` blocker diagnostic and
  * skipped in the operation list — see
- * `docs/planning/in-progress/diffresult-migration-plan.md §11.1`. Operations
+ * `docs/planning/done/diffresult-migration-plan.md §11.1`. Operations
  * on *unblocked* tables that nonetheless reference a blocked table
  * (FK column / FK constraint) are tagged with a
  * `FK_TO_BLOCKED_TABLE` blocker so the renderer cannot silently emit
@@ -70,7 +70,7 @@ class DiffPlanner {
                 message = "Table(s) carry CHECK/EXCLUDE constraints which the comparator does not " +
                     "diff lossless: ${blockedTables.sorted().joinToString(", ")}. Migration cannot " +
                     "be planned for these tables (Phase A decision; see " +
-                    "`docs/planning/in-progress/diffresult-migration-plan.md §11.1`).",
+                    "`docs/planning/done/diffresult-migration-plan.md §11.1`).",
                 severity = DiffDiagnostic.Severity.BLOCKER,
             )
         }

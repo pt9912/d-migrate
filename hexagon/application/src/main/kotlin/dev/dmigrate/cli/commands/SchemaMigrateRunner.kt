@@ -766,7 +766,7 @@ class SchemaMigrateRunner(
             append("--      prior state was OFF, it is NOT restored — use the d-migrate\n")
             append("--      runner (`schema migrate --execute`) for Round-Trip-State-Compat.\n")
             append("-- \n")
-            append("-- See docs/planning/in-progress/diffresult-migration-plan.md §H for\n")
+            append("-- See docs/planning/done/diffresult-migration-plan.md §H for\n")
             append("-- the full contract.\n")
             append("\n")
         }

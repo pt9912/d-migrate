@@ -17,7 +17,7 @@ package dev.dmigrate.core.diff.migration
  *   but its Down-side may lose data (e.g. `CreateTable` ↔ `DropTable`).
  *   The Down operation carries its own [OperationRisk] independently.
  *
- * See `docs/planning/in-progress/diffresult-migration-plan.md §4.5`.
+ * See `docs/planning/done/diffresult-migration-plan.md §4.5`.
  */
 enum class Reversibility {
     /** Inverse exists and is safe (e.g. AlterColumnDefault). */
