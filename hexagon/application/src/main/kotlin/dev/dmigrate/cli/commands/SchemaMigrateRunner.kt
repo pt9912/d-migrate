@@ -1191,4 +1191,12 @@ data class SchemaMigrateSummary(
      * import the dialect-specific type.
      */
     val catalogProbeMode: String = "SCHEMA_ONLY",
+    /** Extension names required by rendered or blocked operations. */
+    val requiredExtensions: List<String> = emptyList(),
+    /** Required extension names whose target availability was verified. */
+    val verifiedExtensions: List<String> = emptyList(),
+    /** Required extension names missing or not verifiable for the target. */
+    val missingExtensions: List<String> = emptyList(),
+    /** Extension install statements rendered by an explicit policy; empty by default. */
+    val extensionInstallStatements: List<String> = emptyList(),
 )

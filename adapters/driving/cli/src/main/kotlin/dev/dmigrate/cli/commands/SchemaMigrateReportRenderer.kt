@@ -61,6 +61,10 @@ internal object SchemaMigrateReportRenderer {
             sb.append("  planFullyRollbackable: ").append(planFullyRollbackable).append('\n')
             sb.append("  planRequiresExclusiveAccess: ").append(planRequiresExclusiveAccess).append('\n')
             sb.append("  catalogProbeMode: ").append(catalogProbeMode).append('\n')
+            sb.append("  requiredExtensions: ").append(yamlList(requiredExtensions)).append('\n')
+            sb.append("  verifiedExtensions: ").append(yamlList(verifiedExtensions)).append('\n')
+            sb.append("  missingExtensions: ").append(yamlList(missingExtensions)).append('\n')
+            sb.append("  extensionInstallStatements: ").append(yamlList(extensionInstallStatements)).append('\n')
         }
         sb.append("blockers:").append(if (report.blockers.isEmpty()) " []\n" else "\n")
         for (b in report.blockers) {
@@ -124,7 +128,11 @@ internal object SchemaMigrateReportRenderer {
         append("\"planHasImplicitCommitDdl\":${s.planHasImplicitCommitDdl},")
         append("\"planFullyRollbackable\":${s.planFullyRollbackable},")
         append("\"planRequiresExclusiveAccess\":${s.planRequiresExclusiveAccess},")
-        append("\"catalogProbeMode\":${jsonString(s.catalogProbeMode)}")
+        append("\"catalogProbeMode\":${jsonString(s.catalogProbeMode)},")
+        append("\"requiredExtensions\":${jsonStringArray(s.requiredExtensions)},")
+        append("\"verifiedExtensions\":${jsonStringArray(s.verifiedExtensions)},")
+        append("\"missingExtensions\":${jsonStringArray(s.missingExtensions)},")
+        append("\"extensionInstallStatements\":${jsonStringArray(s.extensionInstallStatements)}")
         append('}')
     }
 

@@ -2,6 +2,8 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.ExtensionAvailabilityStatus
+import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -82,26 +84,7 @@ internal object SchemaMigrateReportBuilder {
                     destructive = s.risk.destructive,
                 )
             },
-            summary = SchemaMigrateSummary(
-                operationsTotal = plan.operations.size,
-                operationsRendered = rendered.operationsRendered.size,
-                operationsSkipped = rendered.operationsSkipped.size,
-                statementsTotal = rendered.statements.size,
-                destructiveCount = rendered.destructiveOperations.size,
-                manualActionCount = rendered.manualActions.size,
-                nonReversibleCount = rendered.nonReversibleOperations.size,
-                primaryBlockedReason = rendered.primaryBlockedReason?.name,
-                downStatementsTotal = renderedDown?.statements?.size,
-                downBlocked = renderedDown?.isBlocked ?: false,
-                planHasImplicitCommitDdl = rendered.statements.any {
-                    it.hints.transactionBehavior == TransactionBehavior.IMPLICIT_COMMIT
-                },
-                planFullyRollbackable = rendered.statements.all {
-                    it.hints.transactionBehavior == TransactionBehavior.FULLY_TRANSACTIONAL
-                },
-                planRequiresExclusiveAccess = rendered.statements.any { it.hints.requiresExclusiveAccess },
-                catalogProbeMode = catalogProbeMode.name,
-            ),
+            summary = buildSummary(plan, rendered, renderedDown, catalogProbeMode),
             execution = if (rendered.executionStarted || rendered.executionError != null) {
                 SchemaMigrateExecutionView(
                     started = rendered.executionStarted,
@@ -126,4 +109,57 @@ internal object SchemaMigrateReportBuilder {
             },
         )
     }
+
+    private fun buildSummary(
+        plan: DiffResult,
+        rendered: MigrationDdlResult,
+        renderedDown: MigrationDdlResult?,
+        catalogProbeMode: SqliteCatalogProbeMode,
+    ): SchemaMigrateSummary {
+        val extensionDependencies = rendered.extensionDependencies
+        return SchemaMigrateSummary(
+            operationsTotal = plan.operations.size,
+            operationsRendered = rendered.operationsRendered.size,
+            operationsSkipped = rendered.operationsSkipped.size,
+            statementsTotal = rendered.statements.size,
+            destructiveCount = rendered.destructiveOperations.size,
+            manualActionCount = rendered.manualActions.size,
+            nonReversibleCount = rendered.nonReversibleOperations.size,
+            primaryBlockedReason = rendered.primaryBlockedReason?.name,
+            downStatementsTotal = renderedDown?.statements?.size,
+            downBlocked = renderedDown?.isBlocked ?: false,
+            planHasImplicitCommitDdl = rendered.statements.any {
+                it.hints.transactionBehavior == TransactionBehavior.IMPLICIT_COMMIT
+            },
+            planFullyRollbackable = rendered.statements.all {
+                it.hints.transactionBehavior == TransactionBehavior.FULLY_TRANSACTIONAL
+            },
+            planRequiresExclusiveAccess = rendered.statements.any { it.hints.requiresExclusiveAccess },
+            catalogProbeMode = catalogProbeMode.name,
+            requiredExtensions = extensionDependencies.namesWithStatus(),
+            verifiedExtensions = extensionDependencies.namesWithStatus(ExtensionAvailabilityStatus.VERIFIED_PRESENT),
+            missingExtensions = extensionDependencies.namesWithoutStatus(ExtensionAvailabilityStatus.VERIFIED_PRESENT),
+            extensionInstallStatements = extensionDependencies
+                .mapNotNull { it.installStatement }
+                .distinct(),
+        )
+    }
+
+    private fun List<ExtensionDependencyReport>.namesWithStatus(
+        status: ExtensionAvailabilityStatus? = null,
+    ): List<String> = asSequence()
+        .filter { status == null || it.status == status }
+        .map { it.extension }
+        .distinct()
+        .sorted()
+        .toList()
+
+    private fun List<ExtensionDependencyReport>.namesWithoutStatus(
+        status: ExtensionAvailabilityStatus,
+    ): List<String> = asSequence()
+        .filter { it.status != status }
+        .map { it.extension }
+        .distinct()
+        .sorted()
+        .toList()
 }

@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.migration
 
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.driver.ExtensionDependencyReport
 
 /**
  * Output of [DiffDdlGenerator.generateUp] / [DiffDdlGenerator.generateDown].
@@ -50,6 +51,7 @@ data class MigrationDdlResult(
     val transactionRolledBack: Boolean = false,
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
+    val extensionDependencies: List<ExtensionDependencyReport> = emptyList(),
 ) {
     /** Convenience: the plan must not execute. */
     val isBlocked: Boolean get() = blockers.isNotEmpty()

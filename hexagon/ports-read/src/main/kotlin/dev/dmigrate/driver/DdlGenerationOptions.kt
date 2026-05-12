@@ -75,6 +75,14 @@ data class DdlGenerationOptions(
      * reaches this field.
      */
     val catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
+    /**
+     * Plan-2 §C.1: explicit target-extension availability declarations
+     * for dependency-hardening. Empty means "not verified", especially
+     * for file-to-file rendering; dialect renderers must not infer an
+     * extension is present from type names alone and must not emit
+     * `CREATE EXTENSION` unless a future explicit install policy allows it.
+     */
+    val extensionAvailability: List<ExtensionAvailabilityDeclaration> = emptyList(),
 )
 
 /**

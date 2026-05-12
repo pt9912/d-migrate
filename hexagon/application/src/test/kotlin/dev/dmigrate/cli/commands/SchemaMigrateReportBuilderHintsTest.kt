@@ -8,6 +8,8 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.ExtensionAvailabilityStatus
+import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -119,5 +121,31 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         s.planHasImplicitCommitDdl shouldBe false
         s.planFullyRollbackable shouldBe false
         s.planRequiresExclusiveAccess shouldBe false
+    }
+
+    test("extension dependencies aggregate into summary fields") {
+        val s = build(
+            render(emptyList()).copy(
+                extensionDependencies = listOf(
+                    ExtensionDependencyReport(
+                        dialect = "postgresql",
+                        extension = "postgis",
+                        status = ExtensionAvailabilityStatus.UNKNOWN,
+                        operationIds = setOf("op-1"),
+                    ),
+                    ExtensionDependencyReport(
+                        dialect = "postgresql",
+                        extension = "uuid-ossp",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                        operationIds = setOf("op-2"),
+                    ),
+                ),
+            ),
+        )
+
+        s.requiredExtensions shouldBe listOf("postgis", "uuid-ossp")
+        s.verifiedExtensions shouldBe listOf("uuid-ossp")
+        s.missingExtensions shouldBe listOf("postgis")
+        s.extensionInstallStatements shouldBe emptyList()
     }
 })

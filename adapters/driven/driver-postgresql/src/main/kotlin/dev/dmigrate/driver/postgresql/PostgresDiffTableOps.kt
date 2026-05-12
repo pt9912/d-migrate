@@ -2,6 +2,7 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -16,6 +17,11 @@ internal object PostgresDiffTableOps {
         val tableName = op.objectRef.rootName
         if (ctx.direction == PostgresRenderDirection.DOWN) {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
+            return
+        }
+        if (op.table.hasGeometryColumns() &&
+            !ctx.requireExtension(op, POSTGIS_EXTENSION, "geometry columns on table `$tableName`")
+        ) {
             return
         }
         val lines = mutableListOf<String>()
@@ -57,6 +63,11 @@ internal object PostgresDiffTableOps {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
             return
         }
+        if (op.column.type is NeutralType.Geometry &&
+            !ctx.requireExtension(op, POSTGIS_EXTENSION, "geometry column `$table.$column`")
+        ) {
+            return
+        }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
     }
 
@@ -68,6 +79,11 @@ internal object PostgresDiffTableOps {
     fun renderAlterColumnType(op: DiffOperation.AlterColumnType, ctx: PostgresDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         val targetType = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
+        if (targetType is NeutralType.Geometry &&
+            !ctx.requireExtension(op, POSTGIS_EXTENSION, "geometry type `$table.$column`")
+        ) {
+            return
+        }
         val usingExpression = if (ctx.sql.isSafeImplicitCast(op.before, op.after)) {
             null
         } else {
@@ -144,4 +160,9 @@ internal object PostgresDiffTableOps {
                 "mismatch and leave the PK in place.",
         )
     }
+
+    private fun TableDefinition.hasGeometryColumns(): Boolean =
+        columns.values.any { it.type is NeutralType.Geometry }
+
+    private const val POSTGIS_EXTENSION = "postgis"
 }

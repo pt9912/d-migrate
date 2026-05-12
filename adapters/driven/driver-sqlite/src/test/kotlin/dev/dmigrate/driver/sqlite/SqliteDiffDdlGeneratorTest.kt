@@ -18,6 +18,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
+import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -30,8 +32,12 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
     val gen = SqliteDiffDdlGenerator()
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
-    fun planAndUp(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
-        gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+    fun planAndUp(
+        diff: SchemaDiff,
+        current: SchemaDefinition = emptySchema(),
+        desired: SchemaDefinition = emptySchema(),
+        options: DdlGenerationOptions = DdlGenerationOptions(),
+    ) = gen.generateUp(planner.plan(current, desired, diff), options)
 
     fun planAndDown(diff: SchemaDiff, current: SchemaDefinition = emptySchema(), desired: SchemaDefinition = emptySchema()) =
         gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
@@ -68,6 +74,50 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         )
         planAndUp(diff).statements.single().sql shouldContainStr "ADD COLUMN \"nick\""
         planAndDown(diff).statements.single().sql shouldBe "ALTER TABLE \"u\" DROP COLUMN \"nick\";"
+    }
+
+    test("§C.1: SQLite geometry CreateTable blocks when SpatiaLite availability is unknown") {
+        val t = TableDefinition(
+            columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+        )
+        val r = planAndUp(SchemaDiff(tablesAdded = listOf(NamedTable("places", t))))
+
+        r.statements.shouldBeEmpty()
+        r.isBlocked shouldBe true
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_UNKNOWN" }
+            .message shouldContainStr "spatialite"
+        r.extensionDependencies.single().extension shouldBe "spatialite"
+        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.UNKNOWN
+    }
+
+    test("§C.1: SQLite geometry AddColumn renders only when SpatiaLite is verified") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "places",
+                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+                ),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "sqlite",
+                        extension = "spatialite",
+                        status = ExtensionAvailabilityStatus.VERIFIED_PRESENT,
+                    ),
+                ),
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldContainStr "ADD COLUMN \"shape\" GEOMETRY"
+        r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_VERIFIED" }
+            .message shouldContainStr "spatialite"
+        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.VERIFIED_PRESENT
     }
 
     test("DropColumn renders DROP COLUMN") {

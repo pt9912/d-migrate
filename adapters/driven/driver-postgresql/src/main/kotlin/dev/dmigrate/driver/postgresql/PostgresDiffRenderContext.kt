@@ -7,6 +7,8 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.ExtensionAvailabilityStatus
+import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.DialectExecutionHints
@@ -31,7 +33,7 @@ internal enum class PostgresRenderDirection { UP, DOWN }
 internal class PostgresDiffRenderContext(
     val direction: PostgresRenderDirection,
     val sql: PostgresDiffSqlBuilders,
-    @Suppress("unused") val options: DdlGenerationOptions,
+    val options: DdlGenerationOptions,
     val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     val sourceFingerprint: String? = null,
     val targetFingerprint: String? = null,
@@ -44,6 +46,7 @@ internal class PostgresDiffRenderContext(
     private val nonReversible = mutableSetOf<String>()
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
+    private val extensionDependencies = linkedMapOf<String, ExtensionDependencyAccumulator>()
 
     fun emit(
         op: DiffOperation,
@@ -121,6 +124,62 @@ internal class PostgresDiffRenderContext(
         )
     }
 
+    fun requireExtension(op: DiffOperation, extension: String, detail: String): Boolean {
+        val status = extensionStatus(extension)
+        recordExtensionDependency(extension, status, op.id)
+        return when (status) {
+            ExtensionAvailabilityStatus.VERIFIED_PRESENT -> {
+                addInfoDiagnostic(
+                    code = "EXTENSION_DEPENDENCY_VERIFIED",
+                    operationId = op.id,
+                    message = "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail; " +
+                        "target availability is verified.",
+                )
+                true
+            }
+            ExtensionAvailabilityStatus.MISSING -> {
+                skip(
+                    op,
+                    "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail, " +
+                        "but target availability is declared MISSING.",
+                    code = "EXTENSION_DEPENDENCY_MISSING",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                false
+            }
+            ExtensionAvailabilityStatus.UNKNOWN -> {
+                skip(
+                    op,
+                    "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail, " +
+                        "but target availability is not verified.",
+                    code = "EXTENSION_DEPENDENCY_UNKNOWN",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+                false
+            }
+        }
+    }
+
+    private fun extensionStatus(extension: String): ExtensionAvailabilityStatus =
+        options.extensionAvailability.firstOrNull { declaration ->
+            declaration.dialect.equals("postgresql", ignoreCase = true) &&
+                declaration.extension.equals(extension, ignoreCase = true)
+        }?.status ?: ExtensionAvailabilityStatus.UNKNOWN
+
+    private fun recordExtensionDependency(
+        extension: String,
+        status: ExtensionAvailabilityStatus,
+        operationId: String,
+    ) {
+        val key = extension.lowercase()
+        val existing = extensionDependencies[key]
+        if (existing == null) {
+            extensionDependencies[key] = ExtensionDependencyAccumulator(extension, status, mutableSetOf(operationId))
+        } else {
+            existing.operationIds += operationId
+        }
+    }
+
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
@@ -149,8 +208,23 @@ internal class PostgresDiffRenderContext(
             blockers = effectiveBlockers,
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
+            extensionDependencies = extensionDependencies.values.map { dep ->
+                ExtensionDependencyReport(
+                    dialect = "postgresql",
+                    extension = dep.extension,
+                    status = dep.status,
+                    operationIds = dep.operationIds.toSet(),
+                    installStatement = null,
+                )
+            },
         )
     }
+
+    private data class ExtensionDependencyAccumulator(
+        val extension: String,
+        val status: ExtensionAvailabilityStatus,
+        val operationIds: MutableSet<String>,
+    )
 
     companion object {
         /**

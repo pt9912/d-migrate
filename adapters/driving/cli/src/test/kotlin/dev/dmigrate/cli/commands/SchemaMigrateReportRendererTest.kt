@@ -36,6 +36,8 @@ class SchemaMigrateReportRendererTest : FunSpec({
             operationsTotal = 1,
             operationsRendered = 1,
             statementsTotal = statements?.size ?: 0,
+            requiredExtensions = listOf("postgis"),
+            missingExtensions = listOf("postgis"),
         ),
         execution = execution,
     )
@@ -48,6 +50,8 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"operations\":"
         out shouldContain "\"summary\":"
         out shouldContain "\"statements\": null"
+        out shouldContain "\"requiredExtensions\":[\"postgis\"]"
+        out shouldContain "\"missingExtensions\":[\"postgis\"]"
     }
 
     test("JSON renderer emits statements when --plan-only is off") {
@@ -109,6 +113,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "status: ok"
         out shouldContain "dialect: POSTGRESQL"
         out shouldContain "summary:"
+        out shouldContain "requiredExtensions: [postgis]"
     }
 
     test("YAML renderer quotes strings containing colons") {

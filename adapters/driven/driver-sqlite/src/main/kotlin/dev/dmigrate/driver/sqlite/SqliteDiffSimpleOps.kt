@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -15,6 +17,11 @@ internal object SqliteDiffSimpleOps {
         val tableName = op.objectRef.rootName
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             ctx.emit(op, "DROP TABLE ${ctx.sql.quote(tableName)};")
+            return
+        }
+        if (op.table.hasGeometryColumns() &&
+            !ctx.requireExtension(op, SPATIALITE_EXTENSION, "geometry columns on table `$tableName`")
+        ) {
             return
         }
         val lines = mutableListOf<String>()
@@ -53,6 +60,11 @@ internal object SqliteDiffSimpleOps {
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             // SQLite ≥ 3.35.0 supports DROP COLUMN. The runner enforces the version policy.
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
+            return
+        }
+        if (op.column.type is NeutralType.Geometry &&
+            !ctx.requireExtension(op, SPATIALITE_EXTENSION, "geometry column `$table.$column`")
+        ) {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
@@ -135,4 +147,9 @@ internal object SqliteDiffSimpleOps {
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
+
+    private fun TableDefinition.hasGeometryColumns(): Boolean =
+        columns.values.any { it.type is NeutralType.Geometry }
+
+    private const val SPATIALITE_EXTENSION = "spatialite"
 }
