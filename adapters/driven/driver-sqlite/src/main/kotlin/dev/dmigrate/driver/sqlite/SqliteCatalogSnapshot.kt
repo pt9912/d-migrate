@@ -19,14 +19,17 @@ import dev.dmigrate.driver.SqliteLiveCatalog
  *   connection)**: synthesised from `current: SchemaDefinition` via
  *   [fromSchema]. The output may miss ad-hoc objects outside the
  *   schema model — the planner's caller is expected to flag this in
- *   the artefact header per §9 Phase H.2.
- * - **Execute (`schema migrate --execute`)**: **TODO H.2.2 (0.9.8+)**
- *   — heute nutzt `SchemaMigrateRunner` denselben
- *   `fromSchema(current)`-Snapshot wie der `--plan-only`-Pfad. Die
- *   geplante zusaetzliche `sqlite_master`-Live-Probe (`fromSqliteMaster`-
- *   Loader + `union(...)` beim Bootstrap) ist als Folge-Slice H.2.2
- *   verfolgt. Bis dahin sind ad-hoc-Objekte in der Live-DB ausserhalb
- *   des Schema-Modells in keinem Pfad collision-protected.
+ *   the artefact header per §9 Phase H.2. The migrate runner also
+ *   appends a `SQLITE_LIVE_CATALOG_NOT_RUN_FILE_TARGET` INFO
+ *   diagnostic (Plan-2 §A.2) so the operator sees that no live
+ *   probe ran.
+ * - **Execute (`schema migrate --execute`)**: Plan-2 §A.2 — the
+ *   runner calls `SqliteLiveCatalogProbe.probe(conn)` before render
+ *   and the SQLite renderer unions the result via
+ *   [fromLiveCatalog] with `fromSchema(current)`. Ad-hoc objects
+ *   in the live DB outside the schema model now participate in the
+ *   temp-name collision check. A failing probe blocks before any
+ *   mutation with `SQLITE_LIVE_CATALOG_PROBE_FAILED` (Exit 8).
  *
  * Both index- and trigger-names are global in SQLite (one namespace
  * per database) so they sit alongside table and view names in the
