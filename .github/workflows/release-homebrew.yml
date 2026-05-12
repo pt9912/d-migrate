@@ -16,17 +16,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          cache-disabled: true
-
       - name: Derive release metadata
         id: meta
         run: |
@@ -36,16 +25,7 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
       - name: Build release assets
-        # --no-build-cache spiegelt build.yml: ohne das Flag bekommt
-        # :hexagon:core:koverVerify hier stale Coverage-Daten aus dem
-        # gradle Task-Output-Cache und scheitert am 90%-Gate, obwohl
-        # der parallele build.yml-Lauf gruen ist (vgl. v0.9.6 Tag-Lauf
-        # 25552688700, 75.509%).
-        run: >-
-          ./gradlew --no-daemon --no-build-cache
-          -PreleaseVersion=${{ steps.meta.outputs.version }}
-          build
-          :adapters:driving:cli:assembleReleaseAssets
+        run: make release-assets RELEASE_VERSION=${{ steps.meta.outputs.version }}
 
       - name: Build Homebrew tarball
         run: |

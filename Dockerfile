@@ -16,6 +16,17 @@
 #       --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
 #       -t d-migrate:phase-a .
 #
+#   Build the Jib image tar inside Docker, then load it into the host daemon:
+#     docker build --target jib-image-tar -t d-migrate:jib-image-tar .
+#     docker run --rm d-migrate:jib-image-tar > jib-image.tar
+#     docker load -i jib-image.tar
+#
+#   Build and extract CI artifacts without host Gradle:
+#     docker build --target coverage-modules-html -t d-migrate:coverage-modules-html .
+#     docker run --rm d-migrate:coverage-modules-html | tar xf -
+#     docker build --target release-assets -t d-migrate:release-assets .
+#     docker run --rm d-migrate:release-assets | tar xf -
+#
 #   Run the CLI from the final stage:
 #     docker run --rm -v "$(pwd):/work" d-migrate:dev schema validate --source /work/schema.yaml
 #
@@ -155,6 +166,61 @@ FROM compile AS build
 ARG GRADLE_TASKS="build :adapters:driving:cli:installDist"
 
 RUN gradle --no-daemon ${GRADLE_TASKS}
+
+# ---- Stage 1b: Jib image tar ----------------------------------------------
+# `jibDockerBuild` requires a Docker daemon and cannot run inside a normal
+# Dockerfile build stage. Build the equivalent Jib tar instead; the existing
+# Jib container config, including OCI labels, is preserved in the tar.
+FROM compile AS jib-image-tar
+
+RUN gradle --no-daemon :adapters:driving:cli:jibBuildTar
+
+ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
+
+# ---- Stage 1c: coverage modules HTML --------------------------------------
+# Produces per-module Kover HTML reports and streams them as a tar archive so
+# GitHub Actions can upload them from the checked-out workspace.
+FROM compile AS coverage-modules-html
+
+ARG COVERAGE_MODULES_HTML_TASKS="\
+:hexagon:core:koverHtmlReport \
+:hexagon:ports-common:koverHtmlReport \
+:hexagon:ports-read:koverHtmlReport \
+:hexagon:ports-write:koverHtmlReport \
+:hexagon:application:koverHtmlReport \
+:hexagon:profiling:koverHtmlReport \
+:adapters:driven:driver-common:koverHtmlReport \
+:adapters:driven:driver-postgresql:koverHtmlReport \
+:adapters:driven:driver-postgresql-profiling:koverHtmlReport \
+:adapters:driven:driver-mysql:koverHtmlReport \
+:adapters:driven:driver-mysql-profiling:koverHtmlReport \
+:adapters:driven:driver-sqlite:koverHtmlReport \
+:adapters:driven:driver-sqlite-profiling:koverHtmlReport \
+:adapters:driven:formats:koverHtmlReport \
+:adapters:driven:integrations:koverHtmlReport \
+:adapters:driven:streaming:koverHtmlReport \
+:adapters:driving:cli:koverHtmlReport \
+"
+
+RUN gradle --no-daemon ${COVERAGE_MODULES_HTML_TASKS}
+RUN find /src -path "*/build/reports/kover/html/*" -type f \
+      -printf '%P\n' | tar cf /src/coverage-modules-html.tar -C /src -T -
+
+ENTRYPOINT ["cat", "/src/coverage-modules-html.tar"]
+
+# ---- Stage 1d: release assets ---------------------------------------------
+# Builds release assets and streams them as a tar archive for CI upload.
+FROM compile AS release-assets
+
+ARG RELEASE_VERSION=""
+RUN if [ -n "${RELEASE_VERSION}" ]; then \
+      gradle --no-daemon -PreleaseVersion="${RELEASE_VERSION}" :adapters:driving:cli:assembleReleaseAssets; \
+    else \
+      gradle --no-daemon :adapters:driving:cli:assembleReleaseAssets; \
+    fi
+RUN tar cf /src/release-assets.tar -C /src adapters/driving/cli/build/release
+
+ENTRYPOINT ["cat", "/src/release-assets.tar"]
 
 # ---- Stage 2: integration-test (JDK + Python + Django + Node.js) -----------
 # Used by scripts/test-integration-docker.sh for the full runtime matrix.

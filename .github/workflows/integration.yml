@@ -6,7 +6,7 @@ name: Integration Tests
 # to develop/main, but in a separate job that does NOT block the main build.
 #
 # Activation: Tests tagged @Tag("integration") are excluded from the default
-# `./gradlew test` (see root build.gradle.kts) and only run when the
+# test task (see root build.gradle.kts) and only run when the
 # `-PintegrationTests` Gradle property is set.
 
 on:

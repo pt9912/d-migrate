@@ -27,31 +27,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          cache-disabled: true
-
       - name: Build, test, run detekt and verify coverage
         # --no-build-cache: kover-Verify konsumiert die `.exec`-Daten
-        # aus dem konkreten Test-Lauf. Der gradle/actions/setup-gradle
-        # Cache-Restore zwischen Runs hat in der Vergangenheit stale
-        # Execution-Daten zurueckgespielt (knapp-unter-90% Boundary-
-        # Flakes auf z.B. :hexagon:core). Die per-Modul-Konfiguration
-        # in build.gradle.kts (`outputs.cacheIf { false }` auf Test +
-        # koverVerify/koverGenerate*) reicht dafuer in CI nicht aus.
-        # Seit 0.9.6 ist `cache-disabled: true` deshalb fuer alle Runs
-        # gesetzt (vorher nur fuer Tag-Builds). Damit ist sowohl die
-        # Task-Output-Wiederverwendung (`--no-build-cache`) als auch der
-        # Dependency-/Kotlin-Compiler-Cache der setup-gradle-Action
-        # ausgeschaltet. Bei Persistenz des Flakes ggf. zusaetzlich
-        # `outputs.upToDateWhen { false }` auf Test-Tasks setzen.
+        # aus dem konkreten Test-Lauf. Deshalb bleibt der CI-Build in der
+        # Dockerfile-Stage ebenfalls mit `--no-build-cache` verdrahtet.
         run: make ci-build
 
       - name: Generate coverage reports
@@ -103,17 +82,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '21'
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-
       - name: Build OCI image locally
-        run: make oci-build
+        run: make docker-oci-build
 
       - name: Login to GitHub Container Registry
         if: startsWith(github.ref, 'refs/tags/v')
