@@ -20,6 +20,7 @@ object SqliteCastPreflightProbe {
             val failingRows = if (binding.failingSql == null) 0L else readLong(connection, binding.countSql)
             SqliteCastPreflightDeclaration(
                 operationId = binding.operationId,
+                dialect = binding.dialect,
                 table = binding.table,
                 column = binding.column,
                 sourceType = binding.sourceTypeText,

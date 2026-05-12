@@ -11,6 +11,7 @@ package dev.dmigrate.driver
  */
 data class SqliteCastPreflightDeclaration(
     val operationId: String,
+    val dialect: String = "sqlite",
     val table: String,
     val column: String,
     val sourceType: String,
@@ -23,17 +24,19 @@ data class SqliteCastPreflightDeclaration(
     val problem: String? = null,
 ) {
     val bindingKey: String
-        get() = bindingKey(operationId, table, column, sourceType, targetType, sqlHash)
+        get() = bindingKey(operationId, dialect, table, column, sourceType, targetType, sqlHash)
 
     companion object {
         fun bindingKey(
             operationId: String,
+            dialect: String,
             table: String,
             column: String,
             sourceType: String,
             targetType: String,
             sqlHash: String,
-        ): String = listOf(operationId, table, column, sourceType, targetType, sqlHash).joinToString("\u001f")
+        ): String = listOf(operationId, dialect, table, column, sourceType, targetType, sqlHash)
+            .joinToString("\u001f")
     }
 }
 

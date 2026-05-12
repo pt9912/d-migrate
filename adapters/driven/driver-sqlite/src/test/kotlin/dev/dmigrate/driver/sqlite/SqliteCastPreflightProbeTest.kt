@@ -73,6 +73,8 @@ class SqliteCastPreflightProbeTest : FunSpec({
 
             declarations shouldHaveSize 1
             declarations.single().status shouldBe SqliteCastPreflightStatus.PASSED
+            declarations.single().dialect shouldBe "sqlite"
+            declarations.single().sqlHash.length shouldBe 64
             declarations.single().failingRows shouldBe 0
 
             val rendered = generator.generateUp(
@@ -143,6 +145,7 @@ class SqliteCastPreflightProbeTest : FunSpec({
                 sqliteCastPreflights = listOf(
                     SqliteCastPreflightDeclaration(
                         operationId = binding.operationId,
+                        dialect = binding.dialect,
                         table = binding.table,
                         column = binding.column,
                         sourceType = binding.sourceTypeText,

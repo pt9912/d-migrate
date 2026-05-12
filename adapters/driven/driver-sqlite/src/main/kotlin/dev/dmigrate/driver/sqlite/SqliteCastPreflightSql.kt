@@ -15,11 +15,13 @@ internal data class SqliteCastPreflightBinding(
     val countSql: String,
     val failingSql: String?,
 ) {
+    val dialect: String = "sqlite"
     val sourceTypeText: String = sourceType.toString()
     val targetTypeText: String = targetType.toString()
-    val sqlHash: String = sha256Hex(countSql).take(16)
+    val sqlHash: String = sha256Hex(countSql)
     val bindingKey: String = SqliteCastPreflightDeclaration.bindingKey(
         operationId = operationId,
+        dialect = dialect,
         table = table,
         column = column,
         sourceType = sourceTypeText,
