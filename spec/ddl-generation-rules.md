@@ -602,6 +602,15 @@ CREATE MATERIALIZED VIEW "monthly_revenue" AS
 -- MySQL/SQLite: Nicht unterstützt → Standard-View + W103
 ```
 
+Im diff-basierten `schema migrate`-Pfad werden Materialized Views nicht als
+normale Views gerendert. Operationen mit `materialized: true` blockieren, bis
+ein ausführbarer Refresh-/Staleness-Vertrag existiert. Der Migrationsreport
+weist diese Operationen als `MATERIALIZED_VIEW` aus und enthält unter
+`materializedViews[]` die Felder `stalenessAfterUp`, `refreshSteps`,
+`locking` und `rollback`; vor einem ausführbaren Vertrag steht
+`stalenessAfterUp` auf `UNKNOWN_BLOCKED` und der einzige geplante
+Refresh-Schritt ist `BLOCKED_REFRESH_CONTRACT_REQUIRED`.
+
 ### 8.3 View-Query-Transformation
 
 View-Queries können dialektspezifische Funktionen enthalten. Der DDL-Generator führt **regelbasierte Textsubstitution** auf dem Query-String durch.

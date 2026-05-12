@@ -989,6 +989,7 @@ data class SchemaMigrateReport(
     val statements: List<SchemaMigrateStatementView>?,
     val blockers: List<SchemaMigrateBlockerView>,
     val diagnostics: List<SchemaMigrateDiagnosticView>,
+    val materializedViews: List<SchemaMigrateMaterializedViewContractView> = emptyList(),
     val summary: SchemaMigrateSummary,
     val execution: SchemaMigrateExecutionView? = null,
 )
@@ -1051,6 +1052,18 @@ data class SchemaMigrateDiagnosticView(
     val severity: String,
     val message: String,
     val operationId: String?,
+)
+
+data class SchemaMigrateMaterializedViewContractView(
+    val operationId: String,
+    val action: String,
+    val path: List<String>,
+    val dialect: String,
+    val status: String,
+    val stalenessAfterUp: String,
+    val refreshSteps: List<String>,
+    val locking: String,
+    val rollback: String,
 )
 
 /**

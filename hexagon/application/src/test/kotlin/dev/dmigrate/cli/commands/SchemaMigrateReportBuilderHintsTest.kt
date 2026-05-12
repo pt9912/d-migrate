@@ -2,10 +2,14 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffEndpoint
+import dev.dmigrate.core.diff.migration.DiffObjectRef
+import dev.dmigrate.core.diff.migration.DiffObjectType
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -44,7 +48,10 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         )
     }
 
-    fun build(rendered: MigrationDdlResult): SchemaMigrateSummary {
+    fun buildReport(
+        rendered: MigrationDdlResult,
+        operations: List<DiffOperation> = emptyList(),
+    ): SchemaMigrateReport {
         val schema = SchemaDefinition(name = "App", version = "1")
         val operand = ResolvedSchemaOperand(
             reference = "file:test.yaml",
@@ -55,7 +62,7 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
             current = DiffEndpoint(schemaName = "App"),
             desired = DiffEndpoint(schemaName = "App"),
             schemaDiff = SchemaDiff(),
-            operations = emptyList(),
+            operations = operations,
         )
         val request = SchemaMigrateRequest(source = operand.reference, target = operand.reference)
         return SchemaMigrateReportBuilder.build(
@@ -66,8 +73,10 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
             rendered = rendered,
             dialect = DatabaseDialect.POSTGRESQL,
             renderedDown = null,
-        ).summary
+        )
     }
+
+    fun build(rendered: MigrationDdlResult): SchemaMigrateSummary = buildReport(rendered).summary
 
     val pg = DialectExecutionHints(
         transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
@@ -149,5 +158,35 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         s.verifiedExtensions shouldBe listOf("uuid-ossp")
         s.missingExtensions shouldBe listOf("postgis")
         s.extensionInstallStatements shouldBe emptyList()
+    }
+
+    test("materialized view operations surface the refresh staleness contract") {
+        val op = DiffOperation.ReplaceView(
+            id = "view-1",
+            objectRef = DiffObjectRef(DiffObjectType.VIEW, listOf("order_summary_mv")),
+            before = ViewDefinition(query = "SELECT 1", materialized = true),
+            after = ViewDefinition(query = "SELECT 2", materialized = true),
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("view-1"),
+            ),
+            operations = listOf(op),
+        )
+
+        report.operations.single().objectType shouldBe "MATERIALIZED_VIEW"
+        report.materializedViews.single() shouldBe SchemaMigrateMaterializedViewContractView(
+            operationId = "view-1",
+            action = "REPLACE",
+            path = listOf("order_summary_mv"),
+            dialect = "POSTGRESQL",
+            status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
+            stalenessAfterUp = "UNKNOWN_BLOCKED",
+            refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
+            locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+            rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
+        )
     }
 })

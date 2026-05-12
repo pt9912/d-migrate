@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
@@ -64,11 +65,16 @@ internal object SchemaMigrateReportBuilder {
                     operationId = diag.operationId,
                 )
             },
+            materializedViews = buildMaterializedViewContracts(plan, dialect),
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
                     id = op.id,
                     kind = op::class.simpleName ?: "Unknown",
-                    objectType = op.objectType.name,
+                    objectType = if (op.materializedViewDefinition() != null) {
+                        "MATERIALIZED_VIEW"
+                    } else {
+                        op.objectType.name
+                    },
                     path = op.objectRef.path,
                     phase = op.phase.name,
                     reversibility = op.reversibility.name,
@@ -108,6 +114,54 @@ internal object SchemaMigrateReportBuilder {
                 null
             },
         )
+    }
+
+    private fun buildMaterializedViewContracts(
+        plan: DiffResult,
+        dialect: DatabaseDialect,
+    ): List<SchemaMigrateMaterializedViewContractView> =
+        plan.operations.mapNotNull { op ->
+            op.materializedViewDefinition() ?: return@mapNotNull null
+            SchemaMigrateMaterializedViewContractView(
+                operationId = op.id,
+                action = op.materializedViewAction(),
+                path = op.objectRef.path,
+                dialect = dialect.name,
+                status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
+                stalenessAfterUp = "UNKNOWN_BLOCKED",
+                refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
+                locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                rollback = op.materializedViewRollbackContract(),
+            )
+        }
+
+    private fun DiffOperation.materializedViewDefinition() = when (this) {
+        is DiffOperation.CreateView -> view.takeIf { it.materialized }
+        is DiffOperation.ReplaceView -> after.takeIf { before.materialized || after.materialized }
+        is DiffOperation.DropView -> view.takeIf { it.materialized }
+        else -> null
+    }
+
+    private fun DiffOperation.materializedViewAction(): String = when (this) {
+        is DiffOperation.CreateView -> "CREATE"
+        is DiffOperation.ReplaceView -> "REPLACE"
+        is DiffOperation.DropView -> "DROP"
+        else -> "UNKNOWN"
+    }
+
+    private fun DiffOperation.materializedViewRollbackContract(): String = when (this) {
+        is DiffOperation.CreateView -> "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED"
+        is DiffOperation.ReplaceView -> if (before.query == null) {
+            "MANUAL_RECONSTRUCTION_REQUIRED"
+        } else {
+            "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+        }
+        is DiffOperation.DropView -> if (view.query == null) {
+            "MANUAL_RECONSTRUCTION_REQUIRED"
+        } else {
+            "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+        }
+        else -> "MANUAL_RECONSTRUCTION_REQUIRED"
     }
 
     private fun buildSummary(

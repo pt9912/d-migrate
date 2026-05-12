@@ -24,6 +24,7 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "planOnly", report.planOnly.toString(), indent = 1)
         appendField(sb, "blockers", renderBlockers(report.blockers), indent = 1)
         appendField(sb, "diagnostics", renderDiagnostics(report.diagnostics), indent = 1)
+        appendField(sb, "materializedViews", renderMaterializedViews(report.materializedViews), indent = 1)
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
         report.execution?.let { appendField(sb, "execution", renderExecution(it), indent = 1) }
         appendField(sb, "operations", renderOperations(report.operations), indent = 1)
@@ -80,6 +81,18 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    message: ").append(yamlString(d.message)).append('\n')
             d.operationId?.let { sb.append("    operationId: ").append(it).append('\n') }
         }
+        sb.append("materializedViews:").append(if (report.materializedViews.isEmpty()) " []\n" else "\n")
+        for (mv in report.materializedViews) {
+            sb.append("  - operationId: ").append(mv.operationId).append('\n')
+            sb.append("    action: ").append(mv.action).append('\n')
+            sb.append("    path: ").append(yamlList(mv.path)).append('\n')
+            sb.append("    dialect: ").append(mv.dialect).append('\n')
+            sb.append("    status: ").append(mv.status).append('\n')
+            sb.append("    stalenessAfterUp: ").append(mv.stalenessAfterUp).append('\n')
+            sb.append("    refreshSteps: ").append(yamlList(mv.refreshSteps)).append('\n')
+            sb.append("    locking: ").append(mv.locking).append('\n')
+            sb.append("    rollback: ").append(mv.rollback).append('\n')
+        }
         report.execution?.let {
             sb.append("execution:\n")
             sb.append("  started: ").append(it.started).append('\n')
@@ -112,6 +125,16 @@ internal object SchemaMigrateReportRenderer {
             val opId = d.operationId?.let { ",\"operationId\":${jsonString(it)}" } ?: ""
             "{\"code\":${jsonString(d.code)},\"severity\":${jsonString(d.severity)}," +
                 "\"message\":${jsonString(d.message)}$opId}"
+        }
+
+    private fun renderMaterializedViews(views: List<SchemaMigrateMaterializedViewContractView>): String =
+        views.joinToString(prefix = "[", postfix = "]", separator = ",") { v ->
+            "{\"operationId\":${jsonString(v.operationId)},\"action\":${jsonString(v.action)}," +
+                "\"path\":${jsonStringArray(v.path)},\"dialect\":${jsonString(v.dialect)}," +
+                "\"status\":${jsonString(v.status)}," +
+                "\"stalenessAfterUp\":${jsonString(v.stalenessAfterUp)}," +
+                "\"refreshSteps\":${jsonStringArray(v.refreshSteps)}," +
+                "\"locking\":${jsonString(v.locking)},\"rollback\":${jsonString(v.rollback)}}"
         }
 
     private fun renderSummary(s: SchemaMigrateSummary): String = buildString {

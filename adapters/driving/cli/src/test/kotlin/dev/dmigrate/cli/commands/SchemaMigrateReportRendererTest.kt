@@ -49,6 +49,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"exitCode\": 0"
         out shouldContain "\"dialect\": \"POSTGRESQL\""
         out shouldContain "\"operations\":"
+        out shouldContain "\"materializedViews\":"
         out shouldContain "\"summary\":"
         out shouldContain "\"statements\": null"
         out shouldContain "\"requiredExtensions\":[\"postgis\"]"
@@ -108,6 +109,33 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION"
         out shouldContain "\"code\":\"X1\""
         out shouldContain "drop is destructive"
+    }
+
+    test("JSON renderer emits materialized view refresh staleness contract") {
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "view-1",
+                        action = "REPLACE",
+                        path = listOf("order_summary_mv"),
+                        dialect = "POSTGRESQL",
+                        status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
+                        stalenessAfterUp = "UNKNOWN_BLOCKED",
+                        refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
+                        locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                        rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
+                    ),
+                ),
+            ),
+            "json",
+        )
+
+        out shouldContain "\"materializedViews\": ["
+        out shouldContain "\"stalenessAfterUp\":\"UNKNOWN_BLOCKED\""
+        out shouldContain "\"refreshSteps\":[\"BLOCKED_REFRESH_CONTRACT_REQUIRED\"]"
+        out shouldContain "\"locking\":\"UNKNOWN_REQUIRES_MANUAL_CONTRACT\""
+        out shouldContain "\"rollback\":\"SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED\""
     }
 
     test("JSON renderer escapes special characters") {
@@ -181,5 +209,32 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "message: \"line1\nline2\""
         out shouldContain "execution:\n  started: true"
         out shouldContain "executionError: \"boom: failed\""
+    }
+
+    test("YAML renderer emits materialized view contract") {
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "view-1",
+                        action = "DROP",
+                        path = listOf("order_summary_mv"),
+                        dialect = "POSTGRESQL",
+                        status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
+                        stalenessAfterUp = "UNKNOWN_BLOCKED",
+                        refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
+                        locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                        rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+
+        out shouldContain "materializedViews:\n  - operationId: view-1"
+        out shouldContain "stalenessAfterUp: UNKNOWN_BLOCKED"
+        out shouldContain "refreshSteps: [BLOCKED_REFRESH_CONTRACT_REQUIRED]"
+        out shouldContain "locking: UNKNOWN_REQUIRES_MANUAL_CONTRACT"
+        out shouldContain "rollback: SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
     }
 })

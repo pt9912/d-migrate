@@ -624,6 +624,20 @@ Ausgabevertrag:
 - **Report**: Mit `--report` in Datei, ohne bei `--plan-only` nach `stdout`. `--execute` ohne `--report` ist Exit `2` (auditpflichtig).
 - **Atomare Finalisierung**: Up-SQL, Down-SQL und Reports werden in eine temporäre Datei im Zielverzeichnis geschrieben und erst nach erfolgreichem Planning, Rendering und Blocker-Check atomar verschoben. Bei Render- oder Ausführungsfehlern bleiben bestehende Zielpfade unverändert.
 
+Report-Felder für Materialized Views:
+
+- `operations[].objectType` ist `MATERIALIZED_VIEW`, wenn die zugrunde
+  liegende View-Operation `materialized: true` trägt.
+- `materializedViews[]` enthält pro betroffener Operation
+  `operationId`, `action`, `path`, `dialect`, `status`,
+  `stalenessAfterUp`, `refreshSteps`, `locking` und `rollback`.
+- Solange kein ausführbarer Refresh-/Staleness-Vertrag existiert, bleibt
+  `status=BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`,
+  `stalenessAfterUp=UNKNOWN_BLOCKED` und
+  `refreshSteps=[BLOCKED_REFRESH_CONTRACT_REQUIRED]`. Der Report beschreibt
+  damit das nötige manuelle Vorgehen; der Renderer darf Materialized Views
+  nicht als normale Views ausgeben.
+
 Exit-Codes:
 
 | Exit | Bedeutung |

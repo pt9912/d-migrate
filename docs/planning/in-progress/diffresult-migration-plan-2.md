@@ -859,6 +859,18 @@ Akzeptanz fuer D.3a:
 
 #### D.3b Vollstaendiger Materialized-View-Vertrag
 
+> Status: konservativer Report-Vertrag implementiert (2026-05-12).
+> `schema migrate` weist Materialized-View-Operationen im Report als
+> `MATERIALIZED_VIEW` und zusaetzlich im Top-Level-Feld
+> `materializedViews` aus. Der Contract bleibt blockierend:
+> `status=BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`,
+> `stalenessAfterUp=UNKNOWN_BLOCKED`, ein expliziter
+> `BLOCKED_REFRESH_CONTRACT_REQUIRED`-Refresh-Schritt,
+> `locking=UNKNOWN_REQUIRES_MANUAL_CONTRACT` und
+> rollbackbezogene Rekonstruktions-/Refresh-Hinweise. D.3b macht
+> Materialized Views damit maschinenlesbar sichtbar, ohne sie automatisch zu
+> rendern oder `REFRESH MATERIALIZED VIEW CONCURRENTLY` zu erraten.
+
 Erwarteter Vertrag:
 
 - Materialized Views bekommen eigene Objektklasse und Diagnostics.
@@ -880,7 +892,7 @@ DoD:
   Refresh-/Staleness-Vertrag abhaengig.
 - [x] Materialized Views sind vor D.3b nicht als normale Views renderbar; im
   vollstaendigen D.3b-Vertrag bekommen sie eine eigene Objektklasse.
-- [ ] Refresh-, Staleness-, Locking- und Rollback-Verhalten fuer Materialized
+- [x] Refresh-, Staleness-, Locking- und Rollback-Verhalten fuer Materialized
   Views sind fuer D.3b im Report sichtbar.
 - [x] Tests decken kompatible View-Replaces, blockierende View-Dependencies und
   mindestens einen Materialized-View-Blocker ab.
