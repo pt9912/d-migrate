@@ -2,8 +2,9 @@
 
 > Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2,
 > D.1-D.3b, die konservative F.5-Erstscheibe und ein PostgreSQL-E.3-
-> Sequence-Slice sind implementiert (siehe Status-Bloecke in §4, §5, §8,
-> §9 und §10); weitere B/C/E/F-Slices bleiben offen.
+> Sequence-Slice sind implementiert. C.1 hat zusaetzlich eine explizite
+> PostgreSQL-Extension-Install-Policy (siehe Status-Bloecke in §4, §5, §7,
+> §8, §9 und §10); weitere B/C/E/F-Slices bleiben offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -696,8 +697,17 @@ Zu entscheiden:
 > `missingExtensions` und `extensionInstallStatements`; `CREATE EXTENSION`
 > wird weiterhin nicht implizit gerendert.
 >
-> Offen bleiben Install-Policy/Flag, Privilegien-Diagnostics und die
-> Reverse-Unterscheidung "Extension vorhanden" vs. "Objekt nutzt Extension".
+> Status-Update (2026-05-12): `schema migrate --allow-extension-install`
+> setzt `ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING`. PostgreSQL darf dann
+> fuer extension-abhaengige Operationen mit `MISSING` oder `UNKNOWN`
+> Availability ein vorausgehendes `CREATE EXTENSION IF NOT EXISTS ...`
+> rendern; ohne Flag bleibt das bisherige Blockierverhalten erhalten. Der
+> Report fuehrt das Statement ueber `extensionInstallStatements`, und der
+> SQL-Stream markiert das Install-Statement als Side-Effect mit manueller
+> Bestaetigung.
+>
+> Offen bleiben Privilegien-Diagnostics und die Reverse-Unterscheidung
+> "Extension vorhanden" vs. "Objekt nutzt Extension".
 
 ### C.2 Spatial-Migrationen
 
@@ -731,9 +741,11 @@ DoD:
 
 - [x] Extension-Dependencies werden im Modell oder Report sichtbar, nicht
   implizit installiert.
-- [ ] Policy/Flag fuer Extension-Installation ist entschieden und getestet.
+- [x] Policy/Flag fuer Extension-Installation ist entschieden und getestet.
 - [ ] Fehlende Extension, fehlendes Privileg und unbekannte Verfuegbarkeit
   erzeugen unterschiedliche Diagnostics.
+  (MISSING/UNKNOWN sind getrennte Renderer-Diagnostics; explizite
+  Privilegien-Diagnostics bleiben offen.)
 - [x] Spatial-Spalten, Spatial-Metadaten und Spatial-Indizes werden je Dialekt
   vollstaendig geplant oder blockieren.
 - [x] Datei-zu-Datei-Pfad nimmt Extension-Verfuegbarkeit nicht ohne Schema- oder

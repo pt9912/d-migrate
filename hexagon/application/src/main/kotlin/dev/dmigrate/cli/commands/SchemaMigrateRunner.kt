@@ -9,6 +9,7 @@ import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
@@ -221,6 +222,11 @@ class SchemaMigrateRunner(
                 SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
             } else {
                 SqliteCatalogProbeMode.SCHEMA_ONLY
+            },
+            extensionInstallPolicy = if (request.allowExtensionInstall) {
+                ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
+            } else {
+                ExtensionInstallPolicy.NEVER
             },
         )
         val renderedUp = if (probeOutcome is SqliteProbeStage.Outcome.Failed) {
@@ -1006,6 +1012,7 @@ data class SchemaMigrateRequest(
     val reportFormat: String = "json",
     val planOnly: Boolean = false,
     val allowDestructive: Boolean = false,
+    val allowExtensionInstall: Boolean = false,
     val generateRollback: Boolean = false,
     val execute: Boolean = false,
     val dryRun: Boolean = false,

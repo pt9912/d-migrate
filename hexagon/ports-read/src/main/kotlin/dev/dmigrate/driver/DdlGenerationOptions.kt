@@ -83,6 +83,14 @@ data class DdlGenerationOptions(
      * `CREATE EXTENSION` unless a future explicit install policy allows it.
      */
     val extensionAvailability: List<ExtensionAvailabilityDeclaration> = emptyList(),
+    /**
+     * Plan-2 §C.1: explicit policy for renderer-owned extension installation.
+     * The default remains conservative and blocks extension-dependent
+     * operations unless availability is verified. `ALLOW_CREATE_IF_MISSING`
+     * permits dialect renderers with a native install statement to emit an
+     * install prerequisite when availability is MISSING or UNKNOWN.
+     */
+    val extensionInstallPolicy: ExtensionInstallPolicy = ExtensionInstallPolicy.NEVER,
 )
 
 /**

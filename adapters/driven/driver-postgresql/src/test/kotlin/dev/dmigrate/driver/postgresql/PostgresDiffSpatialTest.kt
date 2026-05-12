@@ -14,6 +14,7 @@ import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
+import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -97,6 +98,34 @@ class PostgresDiffSpatialTest : FunSpec({
         r.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_MISSING" }
             .message shouldContain "MISSING"
         r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.MISSING
+    }
+
+    test("§C.1: PostgreSQL can plan explicit PostGIS install before dependent DDL") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "places",
+                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+                ),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionInstallPolicy = ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING,
+            ),
+        )
+
+        r.isBlocked shouldBe false
+        r.requiresConfirmation shouldBe true
+        r.statements.map { it.sql } shouldBe listOf(
+            "CREATE EXTENSION IF NOT EXISTS \"postgis\";",
+            "ALTER TABLE \"places\" ADD COLUMN \"shape\" geometry(Geometry, 0);",
+        )
+        r.diagnostics.single { it.code == "EXTENSION_INSTALL_PLANNED" }
+            .message shouldContain "explicitly allowed"
+        r.extensionDependencies.single().installStatement shouldBe
+            "CREATE EXTENSION IF NOT EXISTS \"postgis\";"
     }
 
     test("§C.2: PostgreSQL GIST index on geometry column renders with verified PostGIS") {

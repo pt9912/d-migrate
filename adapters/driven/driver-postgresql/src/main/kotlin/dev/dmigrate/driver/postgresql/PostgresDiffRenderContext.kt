@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
+import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.DialectExecutionHints
@@ -52,6 +53,7 @@ internal class PostgresDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
     private val extensionDependencies = linkedMapOf<String, ExtensionDependencyAccumulator>()
+    private val plannedExtensionInstalls = mutableSetOf<String>()
 
     fun emit(
         op: DiffOperation,
@@ -143,6 +145,10 @@ internal class PostgresDiffRenderContext(
                 true
             }
             ExtensionAvailabilityStatus.MISSING -> {
+                if (options.extensionInstallPolicy == ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING) {
+                    planExtensionInstall(op, extension, detail, status)
+                    return true
+                }
                 skip(
                     op,
                     "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail, " +
@@ -153,6 +159,10 @@ internal class PostgresDiffRenderContext(
                 false
             }
             ExtensionAvailabilityStatus.UNKNOWN -> {
+                if (options.extensionInstallPolicy == ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING) {
+                    planExtensionInstall(op, extension, detail, status)
+                    return true
+                }
                 skip(
                     op,
                     "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail, " +
@@ -164,6 +174,36 @@ internal class PostgresDiffRenderContext(
             }
         }
     }
+
+    private fun planExtensionInstall(
+        op: DiffOperation,
+        extension: String,
+        detail: String,
+        status: ExtensionAvailabilityStatus,
+    ) {
+        val sqlText = createExtensionSql(extension)
+        extensionDependencies[extension.lowercase()]?.installStatement = sqlText
+        if (plannedExtensionInstalls.add(extension.lowercase())) {
+            statements += MigrationDdlStatement(
+                sql = sqlText,
+                operationIds = setOf(op.id),
+                risk = OperationRisk(requiresManualConfirmation = true),
+                phase = op.phase,
+                transactionScope = TransactionScope.RUNNER_OWNED,
+                hints = POSTGRES_EXTENSION_INSTALL_HINTS,
+            )
+            manualActions += op.id
+        }
+        addInfoDiagnostic(
+            code = "EXTENSION_INSTALL_PLANNED",
+            operationId = op.id,
+            message = "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail; " +
+                "target availability is $status and extension installation was explicitly allowed.",
+        )
+    }
+
+    private fun createExtensionSql(extension: String): String =
+        "CREATE EXTENSION IF NOT EXISTS ${quotePostgresIdentifier(extension)};"
 
     private fun extensionStatus(extension: String): ExtensionAvailabilityStatus =
         options.extensionAvailability.firstOrNull { declaration ->
@@ -226,7 +266,7 @@ internal class PostgresDiffRenderContext(
                     extension = dep.extension,
                     status = dep.status,
                     operationIds = dep.operationIds.toSet(),
-                    installStatement = null,
+                    installStatement = dep.installStatement,
                 )
             },
         )
@@ -236,6 +276,7 @@ internal class PostgresDiffRenderContext(
         val extension: String,
         val status: ExtensionAvailabilityStatus,
         val operationIds: MutableSet<String>,
+        var installStatement: String? = null,
     )
 
     companion object {
@@ -266,6 +307,14 @@ internal class PostgresDiffRenderContext(
             lockBehavior = LockBehavior.TABLE_SHARED,
             implicitCommitPossible = false,
             sideEffectsPossible = false,
+            requiresExclusiveAccess = false,
+        )
+
+        internal val POSTGRES_EXTENSION_INSTALL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.FULLY_TRANSACTIONAL,
+            lockBehavior = LockBehavior.METADATA,
+            implicitCommitPossible = false,
+            sideEffectsPossible = true,
             requiresExclusiveAccess = false,
         )
 

@@ -10,6 +10,7 @@ import dev.dmigrate.core.validation.ValidationError
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -64,6 +65,7 @@ class SchemaMigrateRunnerTest : FunSpec({
         sourceValidation: ValidationResult = ValidationResult(),
         targetValidation: ValidationResult = ValidationResult(),
         renderedFor: (DatabaseDialect) -> MigrationDdlResult = { fakeRendered() },
+        capturedOptions: MutableList<DdlGenerationOptions> = mutableListOf(),
     ): Pair<SchemaMigrateRunner, MutableMap<String, String>> {
         val capture = mutableMapOf<String, String>()
         val runner = SchemaMigrateRunner(
@@ -85,10 +87,20 @@ class SchemaMigrateRunnerTest : FunSpec({
             rendererFor = { dialect ->
                 object : DiffDdlGenerator {
                     override val dialect: DatabaseDialect = dialect
-                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
-                        renderedFor(dialect)
-                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
-                        renderedFor(dialect)
+                    override fun generateUp(
+                        diff: dev.dmigrate.core.diff.migration.DiffResult,
+                        options: DdlGenerationOptions,
+                    ): MigrationDdlResult {
+                        capturedOptions += options
+                        return renderedFor(dialect)
+                    }
+                    override fun generateDown(
+                        diff: dev.dmigrate.core.diff.migration.DiffResult,
+                        options: DdlGenerationOptions,
+                    ): MigrationDdlResult {
+                        capturedOptions += options
+                        return renderedFor(dialect)
+                    }
                 }
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -185,6 +197,23 @@ class SchemaMigrateRunnerTest : FunSpec({
             planOnly = true,
         )
         runner.execute(request) shouldBe 0
+    }
+
+    test("--allow-extension-install enables extension install policy in render options") {
+        val capturedOptions = mutableListOf<DdlGenerationOptions>()
+        val (runner, _) = captureRunner(capturedOptions = capturedOptions)
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+            allowExtensionInstall = true,
+        )
+
+        runner.execute(request) shouldBe 0
+
+        capturedOptions.single().extensionInstallPolicy shouldBe
+            ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
     }
 
     test("renderer-side blockers (DIALECT_UNSUPPORTED) yield exit 8") {

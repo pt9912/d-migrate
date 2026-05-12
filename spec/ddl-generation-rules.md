@@ -1216,9 +1216,15 @@ CREATE TABLE "places" (
 
 **Regeln**:
 
-- Phase 1 emittiert kein automatisches `CREATE EXTENSION IF NOT EXISTS postgis;`.
-  Stattdessen wird ein Info-Hinweis im Report aufgenommen, dass das Zielsystem
-  PostGIS bereitstellen muss.
+- Ohne explizite Extension-Install-Policy emittiert der Migrate-Pfad kein
+  automatisches `CREATE EXTENSION IF NOT EXISTS postgis;`. Stattdessen
+  blockieren extension-abhaengige Operationen, wenn die Zielverfuegbarkeit
+  nicht `VERIFIED_PRESENT` ist.
+- Mit `schema migrate --allow-extension-install` darf PostgreSQL vor der
+  ersten PostGIS-abhaengigen Operation `CREATE EXTENSION IF NOT EXISTS
+  "postgis";` rendern, auch wenn die Availability `MISSING` oder `UNKNOWN`
+  ist. Das Statement erscheint im Report unter `extensionInstallStatements`
+  und wird als Side-Effect mit manueller Bestaetigung markiert.
 - Rollback-Statement: `ALTER TABLE "<table>" DROP COLUMN "<column>";`
 
 ### 16.3 PostgreSQL / PostGIS (Profil: `none`)

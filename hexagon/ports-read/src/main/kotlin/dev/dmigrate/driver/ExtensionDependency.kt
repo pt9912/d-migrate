@@ -18,6 +18,11 @@ enum class ExtensionAvailabilityStatus {
     UNKNOWN,
 }
 
+enum class ExtensionInstallPolicy {
+    NEVER,
+    ALLOW_CREATE_IF_MISSING,
+}
+
 /**
  * Renderer-produced summary of an extension dependency discovered
  * while translating a migration plan.

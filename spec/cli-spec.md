@@ -586,7 +586,7 @@ d-migrate schema migrate --source <desired> --target <current> \
   [--dialect <id>] [--output <up.sql>] \
   [--generate-rollback --rollback-output <down.sql>] \
   [--plan-only] [--report <report.yaml>] \
-  [--execute] [--allow-destructive] [--dry-run]
+  [--execute] [--allow-destructive] [--allow-extension-install] [--dry-run]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -601,6 +601,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
+| `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
 
 Begriffe (vollständig in `spec/design.md`):

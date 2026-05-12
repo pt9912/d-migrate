@@ -44,6 +44,10 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         .choice("json", "yaml").default("json")
     val planOnly by option("--plan-only", help = "Only render the plan / report; no SQL output").flag()
     val allowDestructive by option("--allow-destructive", help = "Permit destructive Up operations").flag()
+    val allowExtensionInstall by option(
+        "--allow-extension-install",
+        help = "Permit PostgreSQL CREATE EXTENSION prerequisites for extension-dependent migrations",
+    ).flag()
     val generateRollback by option("--generate-rollback", help = "Render Down-SQL alongside Up").flag()
     val execute by option("--execute", help = "Execute Up-SQL against --target (DB only)").flag()
     val dryRun by option("--dry-run", help = "Plan/SQL only, do not execute").flag()
@@ -64,6 +68,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             reportFormat = reportFormat,
             planOnly = planOnly,
             allowDestructive = allowDestructive,
+            allowExtensionInstall = allowExtensionInstall,
             generateRollback = generateRollback,
             execute = execute,
             dryRun = dryRun,
