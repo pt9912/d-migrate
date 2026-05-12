@@ -85,6 +85,37 @@ class MigrationDdlResultTest : FunSpec({
         b.diagnostics.isEmpty() shouldBe true
     }
 
+    test("G.3 execution statement groups and recoverability are carried by result") {
+        val group = MigrationExecutionStatementGroup(
+            statementGroupId = "op-a",
+            operationIds = setOf("op-a"),
+            statementStartInclusive = 0,
+            statementEndExclusive = 1,
+            transactionScope = TransactionScope.RUNNER_OWNED,
+            transactionBoundary = TransactionBoundary.INSIDE,
+        )
+        val r = MigrationDdlResult(
+            statements = listOf(stmt("op-a")),
+            operationsRendered = setOf("op-a"),
+            executionStatementGroups = listOf(group),
+            recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
+        )
+
+        r.executionStatementGroups.single() shouldBe group
+        r.recoverability shouldBe ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED
+    }
+
+    test("G.3 transaction-scope blocker reason is a stable enum value") {
+        MigrationBlockedReason.TRANSACTION_SCOPE_UNSUPPORTED.name shouldBe "TRANSACTION_SCOPE_UNSUPPORTED"
+        TransactionBoundary.entries.map { it.name } shouldBe listOf("BEFORE", "INSIDE", "AFTER", "NONE")
+        ExecutionRecoverability.entries.map { it.name } shouldBe listOf(
+            "FULL_ROLLBACK_CONFIRMED",
+            "ROLLBACK_ATTEMPTED",
+            "PARTIAL_STATE_POSSIBLE",
+            "UNKNOWN",
+        )
+    }
+
     test("manualActions must be a subset of operationsRendered") {
         shouldThrow<IllegalArgumentException> {
             MigrationDdlResult(

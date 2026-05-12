@@ -101,6 +101,16 @@ internal object SchemaMigrateReportRenderer {
             sb.append("  transactionRolledBack: ").append(it.transactionRolledBack).append('\n')
             sb.append("  sideEffectsPossible: ").append(it.sideEffectsPossible).append('\n')
             it.executionError?.let { e -> sb.append("  executionError: ").append(yamlString(e)).append('\n') }
+            sb.append("  recoverability: ").append(yamlOptional(it.recoverability)).append('\n')
+            sb.append("  statementGroups:").append(if (it.statementGroups.isEmpty()) " []\n" else "\n")
+            for (group in it.statementGroups) {
+                sb.append("    - statementGroupId: ").append(yamlString(group.statementGroupId)).append('\n')
+                sb.append("      operationIds: ").append(yamlList(group.operationIds)).append('\n')
+                sb.append("      statementStartInclusive: ").append(group.statementStartInclusive).append('\n')
+                sb.append("      statementEndExclusive: ").append(group.statementEndExclusive).append('\n')
+                sb.append("      transactionScope: ").append(group.transactionScope).append('\n')
+                sb.append("      transactionBoundary: ").append(group.transactionBoundary).append('\n')
+            }
         }
         return sb.toString()
     }
@@ -169,9 +179,21 @@ internal object SchemaMigrateReportRenderer {
         append("\"lastStatementOperationIds\":${jsonStringArray(e.lastStatementOperationIds)},")
         append("\"transactionRolledBack\":${e.transactionRolledBack},")
         append("\"sideEffectsPossible\":${e.sideEffectsPossible},")
-        append("\"executionError\":${jsonOptString(e.executionError)}")
+        append("\"executionError\":${jsonOptString(e.executionError)},")
+        append("\"recoverability\":${jsonOptString(e.recoverability)},")
+        append("\"statementGroups\":${renderStatementGroups(e.statementGroups)}")
         append('}')
     }
+
+    private fun renderStatementGroups(groups: List<SchemaMigrateStatementGroupView>): String =
+        groups.joinToString(prefix = "[", postfix = "]", separator = ",") { group ->
+            "{\"statementGroupId\":${jsonString(group.statementGroupId)}," +
+                "\"operationIds\":${jsonStringArray(group.operationIds)}," +
+                "\"statementStartInclusive\":${group.statementStartInclusive}," +
+                "\"statementEndExclusive\":${group.statementEndExclusive}," +
+                "\"transactionScope\":${jsonString(group.transactionScope)}," +
+                "\"transactionBoundary\":${jsonString(group.transactionBoundary)}}"
+        }
 
     private fun renderOperations(ops: List<SchemaMigrateOperationView>): String =
         ops.joinToString(prefix = "[", postfix = "]", separator = ",") { o ->

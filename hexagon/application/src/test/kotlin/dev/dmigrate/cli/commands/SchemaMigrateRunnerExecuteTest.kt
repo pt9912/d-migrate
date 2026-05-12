@@ -8,6 +8,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionScope
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -429,6 +430,81 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
         runner.execute(request) shouldBe 5
         // No Down artefact should be written on drift.
         capture.containsKey("wrote:$downPath") shouldBe false
+    }
+
+    test("§G.3 --execute blocks mixed transaction scopes before executor call") {
+        val capture = mutableMapOf<String, String>()
+        var executorCalled = false
+        val mixedScopeRendered = MigrationDdlResult(
+            statements = listOf(
+                MigrationDdlStatement(
+                    sql = "BEGIN IMMEDIATE;",
+                    operationIds = setOf("op-1"),
+                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                    transactionScope = TransactionScope.STREAM_OWNED,
+                ),
+                MigrationDdlStatement(
+                    sql = "ALTER TABLE x ADD COLUMN y INT;",
+                    operationIds = setOf("op-2"),
+                    risk = dev.dmigrate.core.diff.migration.OperationRisk.SAFE,
+                    phase = dev.dmigrate.core.diff.migration.DiffPhase.TABLES,
+                    transactionScope = TransactionScope.RUNNER_OWNED,
+                ),
+            ),
+            operationsRendered = setOf("op-1", "op-2"),
+        )
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = { op, _ ->
+                ResolvedSchemaOperand(
+                    reference = "db:${op.source}",
+                    schema = SchemaDefinition(name = "App", version = "1"),
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.SQLITE,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        mixedScopeRendered
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered()
+                }
+            },
+            executor = { _, _, _ ->
+                executorCalled = true
+                ExecutionTrace(executionStarted = true, executionCompleted = true)
+            },
+            atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
+            renderReport = { r, _ ->
+                "{" +
+                    "\"status\":\"${r.status}\"," +
+                    "\"exitCode\":${r.exitCode}," +
+                    "\"primaryBlockedReason\":\"${r.summary.primaryBlockedReason}\"," +
+                    "\"blocker\":\"${r.blockers.single().reason}\"" +
+                    "}"
+            },
+            printError = { msg, src -> capture["error:$src"] = msg },
+        )
+        val reportPath = tmpDir.resolve("g3-mixed-scope.json")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:sqlite://localhost/test",
+            dialect = DatabaseDialect.SQLITE,
+            execute = true,
+            report = reportPath,
+        )
+
+        runner.execute(request) shouldBe 8
+        executorCalled shouldBe false
+        val report = capture["wrote:$reportPath"]!!
+        report shouldContain "\"status\":\"blocked\""
+        report shouldContain "TRANSACTION_SCOPE_UNSUPPORTED"
     }
 
 

@@ -856,6 +856,12 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |
 | `ALTER TABLE ALTER COLUMN "c" TYPE t` | `ALTER TABLE ALTER COLUMN "c" TYPE <alter_typ>` |
 
+Execution-Reports gruppieren gerenderte Statements unabhängig vom SQL-Text:
+Jede Gruppe trägt eine stabile `statementGroupId`, Operation-IDs,
+Statement-Indexrange, `transactionScope` und `transactionBoundary`. Gemischte
+Transaction-Scope-Streams werden vor Ausführung blockiert; Renderer dürfen
+keine still gemischten Runner-/Stream-/No-Transaction-Statements erzeugen.
+
 **Nicht-reversible Operationen** erzeugen einen Kommentar:
 
 ```sql

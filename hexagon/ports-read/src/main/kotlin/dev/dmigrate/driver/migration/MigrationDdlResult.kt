@@ -51,6 +51,8 @@ data class MigrationDdlResult(
     val transactionRolledBack: Boolean = false,
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
+    val executionStatementGroups: List<MigrationExecutionStatementGroup> = emptyList(),
+    val recoverability: ExecutionRecoverability? = null,
     val extensionDependencies: List<ExtensionDependencyReport> = emptyList(),
     val spatialProfile: String? = null,
 ) {

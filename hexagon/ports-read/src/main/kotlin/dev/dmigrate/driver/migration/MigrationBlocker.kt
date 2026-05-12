@@ -30,6 +30,12 @@ enum class MigrationBlockedReason {
 
     /** The chosen dialect cannot render one of the operations in the plan. */
     DIALECT_UNSUPPORTED_OPERATION,
+
+    /**
+     * The rendered statement stream mixes transaction ownership models
+     * that the runner cannot execute as one safe unit.
+     */
+    TRANSACTION_SCOPE_UNSUPPORTED,
 }
 
 /**

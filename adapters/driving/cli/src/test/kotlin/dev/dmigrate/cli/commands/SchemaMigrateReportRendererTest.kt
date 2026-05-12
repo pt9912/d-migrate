@@ -79,10 +79,24 @@ class SchemaMigrateReportRendererTest : FunSpec({
             transactionRolledBack = false,
             sideEffectsPossible = false,
             executionError = null,
+            statementGroups = listOf(
+                SchemaMigrateStatementGroupView(
+                    statementGroupId = "op-1",
+                    operationIds = listOf("op-1"),
+                    statementStartInclusive = 0,
+                    statementEndExclusive = 2,
+                    transactionScope = "RUNNER_OWNED",
+                    transactionBoundary = "INSIDE",
+                ),
+            ),
+            recoverability = "FULL_ROLLBACK_CONFIRMED",
         )
         val out = SchemaMigrateReportRenderer.render(report(execution = exec), "json")
         out shouldContain "\"execution\":"
         out shouldContain "\"statementsAttempted\":3"
+        out shouldContain "\"recoverability\":\"FULL_ROLLBACK_CONFIRMED\""
+        out shouldContain "\"statementGroups\":["
+        out shouldContain "\"transactionBoundary\":\"INSIDE\""
     }
 
     test("JSON renderer emits blockers and diagnostics") {
@@ -174,6 +188,17 @@ class SchemaMigrateReportRendererTest : FunSpec({
             transactionRolledBack = true,
             sideEffectsPossible = true,
             executionError = "boom: failed",
+            statementGroups = listOf(
+                SchemaMigrateStatementGroupView(
+                    statementGroupId = "op-1#1",
+                    operationIds = listOf("op-1"),
+                    statementStartInclusive = 0,
+                    statementEndExclusive = 1,
+                    transactionScope = "STREAM_OWNED",
+                    transactionBoundary = "BEFORE",
+                ),
+            ),
+            recoverability = "ROLLBACK_ATTEMPTED",
         )
         val out = SchemaMigrateReportRenderer.render(
             report(
@@ -209,6 +234,9 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "message: \"line1\nline2\""
         out shouldContain "execution:\n  started: true"
         out shouldContain "executionError: \"boom: failed\""
+        out shouldContain "recoverability: ROLLBACK_ATTEMPTED"
+        out shouldContain "statementGroups:\n    - statementGroupId: op-1#1"
+        out shouldContain "transactionBoundary: BEFORE"
     }
 
     test("YAML renderer emits materialized view contract") {

@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
@@ -11,9 +12,12 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
+import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.DiffDdlGenerator
+import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.MigrationExecutionStatementGroup
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -263,10 +267,11 @@ class SchemaMigrateRunner(
             null
         }
         val combined = if (renderedDown == null) effectiveUp else mergeDownIntoUp(effectiveUp, renderedDown)
+        val executableCombined = applyTransactionScopeGuard(request, combined)
 
         // 9. Execute Up against the DB target if --execute. Skipped on blockers.
-        val executionTrace = maybeExecute(request, targetOp, combined, cancellationToken)
-        val withExecution = if (executionTrace != null) combined.copy(
+        val executionTrace = maybeExecute(request, targetOp, executableCombined, cancellationToken)
+        val withExecution = if (executionTrace != null) executableCombined.copy(
             executionStarted = executionTrace.executionStarted,
             executionCompleted = executionTrace.executionCompleted,
             statementsAttempted = executionTrace.statementsAttempted,
@@ -274,7 +279,9 @@ class SchemaMigrateRunner(
             transactionRolledBack = executionTrace.transactionRolledBack,
             sideEffectsPossible = executionTrace.sideEffectsPossible,
             executionError = executionTrace.executionError,
-        ) else combined
+            executionStatementGroups = executionTrace.statementGroups,
+            recoverability = executionTrace.recoverability,
+        ) else executableCombined
 
         // 10. Post-compare after a successful execute (if --execute and no error).
         val postCompareOutcome: PostCompareOutcome? =
@@ -303,7 +310,7 @@ class SchemaMigrateRunner(
         //     §10 acceptance — see Plan F.5.b.
         val rollbackArtefact = maybeBuildRollback(
             request,
-            combined,
+            executableCombined,
             renderedDown,
             executionTrace,
             postCompareOutcome,
@@ -318,7 +325,7 @@ class SchemaMigrateRunner(
         val recoveryContext: RecoveryContext? = if (
             request.generateRollback &&
             renderedDown != null &&
-            !combined.isBlocked
+            !executableCombined.isBlocked
         ) {
             RecoveryContext(
                 build = { fp, verified ->
@@ -370,8 +377,10 @@ class SchemaMigrateRunner(
         val dbOperand = target as? CompareOperand.Database
             ?: error("validateRequest must reject --execute with non-DB target before reaching the executor.")
         cancellationToken.throwIfCancellationRequested()
+        val statementGroups = MigrationExecutionStatusBuilder.statementGroups(combined.statements)
         return try {
             exec(dbOperand, combined.statements, request.cliConfigPath)
+                .withG3Defaults(statementGroups)
         } catch (e: Exception) {
             ExecutionTrace(
                 executionStarted = true,
@@ -381,7 +390,7 @@ class SchemaMigrateRunner(
                 transactionRolledBack = false,
                 sideEffectsPossible = true,
                 executionError = e.message ?: e::class.simpleName,
-            )
+            ).withG3Defaults(statementGroups)
         }
     }
 
@@ -467,6 +476,32 @@ class SchemaMigrateRunner(
             blockers = merged,
             primaryBlockedReason = primary,
             diagnostics = up.diagnostics + down.diagnostics,
+        )
+    }
+
+    private fun applyTransactionScopeGuard(
+        request: SchemaMigrateRequest,
+        rendered: MigrationDdlResult,
+    ): MigrationDdlResult {
+        if (!request.execute || rendered.isBlocked) return rendered
+        val reason = MigrationStreamClassifier.unsupportedTransactionScopeReason(rendered.statements) ?: return rendered
+        val opIds = rendered.statements.flatMap { it.operationIds }.toSortedSet()
+        val diagnostic = DiffDiagnostic(
+            code = "TRANSACTION_SCOPE_UNSUPPORTED",
+            message = reason,
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = opIds.singleOrNull(),
+        )
+        val blocker = MigrationBlocker(
+            reason = MigrationBlockedReason.TRANSACTION_SCOPE_UNSUPPORTED,
+            operationIds = opIds,
+            diagnostics = listOf(diagnostic),
+        )
+        return rendered.copy(
+            blockers = rendered.blockers + blocker,
+            primaryBlockedReason = rendered.primaryBlockedReason
+                ?: MigrationBlockedReason.TRANSACTION_SCOPE_UNSUPPORTED,
+            diagnostics = rendered.diagnostics + diagnostic,
         )
     }
 
@@ -1001,6 +1036,8 @@ data class SchemaMigrateExecutionView(
     val transactionRolledBack: Boolean,
     val sideEffectsPossible: Boolean,
     val executionError: String?,
+    val statementGroups: List<SchemaMigrateStatementGroupView> = emptyList(),
+    val recoverability: String? = null,
     /**
      * True iff Up-DDL was applied to the DB and stuck (executor was
      * started AND the runner-managed transaction wasn't rolled back).
@@ -1020,6 +1057,15 @@ data class SchemaMigrateExecutionView(
      * Down-render itself was blocked.
      */
     val rollbackFinalized: Boolean? = null,
+)
+
+data class SchemaMigrateStatementGroupView(
+    val statementGroupId: String,
+    val operationIds: List<String>,
+    val statementStartInclusive: Int,
+    val statementEndExclusive: Int,
+    val transactionScope: String,
+    val transactionBoundary: String,
 )
 
 data class SchemaMigrateOperationView(
@@ -1091,6 +1137,15 @@ data class ExecutionTrace(
     val transactionRolledBack: Boolean = false,
     val sideEffectsPossible: Boolean = false,
     val executionError: String? = null,
+    val statementGroups: List<MigrationExecutionStatementGroup> = emptyList(),
+    val recoverability: ExecutionRecoverability? = null,
+)
+
+private fun ExecutionTrace.withG3Defaults(
+    statementGroups: List<MigrationExecutionStatementGroup>,
+): ExecutionTrace = copy(
+    statementGroups = this.statementGroups.ifEmpty { statementGroups },
+    recoverability = recoverability ?: MigrationExecutionStatusBuilder.recoverability(this),
 )
 
 /**

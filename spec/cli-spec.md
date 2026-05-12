@@ -638,6 +638,26 @@ Report-Felder für Materialized Views:
   damit das nötige manuelle Vorgehen; der Renderer darf Materialized Views
   nicht als normale Views ausgeben.
 
+Report-Felder für `--execute`:
+
+- Bestehende Felder `execution.started`, `execution.completed`,
+  `execution.statementsAttempted`, `execution.lastStatementOperationIds`,
+  `execution.transactionRolledBack`, `execution.sideEffectsPossible` und
+  `execution.executionError` bleiben unveraendert.
+- `execution.statementGroups[]` enthaelt pro ausgefuehrter Statement-Gruppe
+  `statementGroupId`, `operationIds`, `statementStartInclusive`,
+  `statementEndExclusive`, `transactionScope` und `transactionBoundary`.
+  Statement-Indizes sind nullbasiert und end-exklusiv.
+- `transactionBoundary` ist `BEFORE`, `INSIDE`, `AFTER` oder `NONE` relativ
+  zur effektiven Runner- oder Stream-Transaktion.
+- Nach Execute-Fehlern enthaelt `execution.recoverability` eine konservative
+  Einschaetzung: `FULL_ROLLBACK_CONFIRMED`, `ROLLBACK_ATTEMPTED`,
+  `PARTIAL_STATE_POSSIBLE` oder `UNKNOWN`. Bei erfolgreichem Execute ist das
+  Feld `null`.
+- Gemischte oder nicht unterstuetzte Transaction-Scope-Streams blockieren vor
+  dem ersten Statement mit `primaryBlockedReason=TRANSACTION_SCOPE_UNSUPPORTED`
+  und Exit `8`.
+
 Exit-Codes:
 
 | Exit | Bedeutung |
@@ -656,6 +676,8 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
 - `--generate-rollback` angefordert, aber mindestens eine Operation ist `NOT_REVERSIBLE`
 - `--generate-rollback` angefordert, aber mindestens eine Operation ist `MANUAL_REQUIRED`
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
+- gerenderter Execute-Stream mischt nicht gemeinsam ausfuehrbare
+  `transactionScope`-Werte (`TRANSACTION_SCOPE_UNSUPPORTED`)
 
 Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 

@@ -100,6 +100,17 @@ internal object SchemaMigrateReportBuilder {
                     transactionRolledBack = rendered.transactionRolledBack,
                     sideEffectsPossible = rendered.sideEffectsPossible,
                     executionError = rendered.executionError,
+                    statementGroups = rendered.executionStatementGroups.map { group ->
+                        SchemaMigrateStatementGroupView(
+                            statementGroupId = group.statementGroupId,
+                            operationIds = group.operationIds.toList(),
+                            statementStartInclusive = group.statementStartInclusive,
+                            statementEndExclusive = group.statementEndExclusive,
+                            transactionScope = group.transactionScope.name,
+                            transactionBoundary = group.transactionBoundary.name,
+                        )
+                    },
+                    recoverability = rendered.recoverability?.name,
                     // Up-DDL was applied to the DB iff the executor was
                     // started AND the runner-managed transaction wasn't
                     // rolled back. A clean rollback after a failed Up

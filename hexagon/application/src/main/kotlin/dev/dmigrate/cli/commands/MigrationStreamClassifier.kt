@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionBehavior
 import dev.dmigrate.driver.migration.TransactionScope
 
 /**
@@ -44,4 +45,25 @@ object MigrationStreamClassifier {
      */
     fun streamOwnsTransaction(statements: List<MigrationDdlStatement>): Boolean =
         statements.any { it.transactionScope == TransactionScope.STREAM_OWNED }
+
+    /**
+     * Plan-2 §G.3 execute guard. The current executor can run one
+     * coherent ownership model at a time. Mixed scopes, standalone
+     * `NO_TRANSACTION` statements and stream-owned statements without
+     * boundary hints are rejected before the first SQL statement.
+     */
+    fun unsupportedTransactionScopeReason(statements: List<MigrationDdlStatement>): String? {
+        if (statements.isEmpty()) return null
+        val scopes = statements.map { it.transactionScope }.toSet()
+        return when {
+            TransactionScope.NO_TRANSACTION in scopes ->
+                "NO_TRANSACTION statements require a dedicated execution strategy"
+            scopes.size > 1 ->
+                "mixed transaction scopes are not executable as one migration stream"
+            scopes.single() == TransactionScope.STREAM_OWNED &&
+                statements.any { it.hints.transactionBehavior == TransactionBehavior.UNKNOWN } ->
+                "stream-owned transaction boundaries are not fully described"
+            else -> null
+        }
+    }
 }

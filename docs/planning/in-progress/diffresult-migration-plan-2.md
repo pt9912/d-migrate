@@ -1,8 +1,8 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12). Workstream G.1 und A.1 sind
-> implementiert (siehe Status-Bloecke in §4 und §5); G.2, G.3, A.2 und
-> die Workstreams B/C/D/E/F sind noch offen.
+> Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2
+> sind implementiert (siehe Status-Bloecke in §4 und §5); die Workstreams
+> B/C/D/E/F sind noch offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -257,6 +257,17 @@ Akzeptanz:
 
 ### G.3 Execution-Status als stabiler Report-Vertrag
 
+> Status: implementiert (2026-05-12). `schema migrate --execute` ergaenzt den
+> Report um `execution.statementGroups[]` mit stabiler `statementGroupId`,
+> Operation-IDs, Statement-Indexrange, `transactionScope` und
+> `transactionBoundary`. Nach Execute-Fehlern wird `recoverability` aus
+> Executor-Beobachtung (`transactionRolledBack`, `sideEffectsPossible`) als
+> `FULL_ROLLBACK_CONFIRMED`, `ROLLBACK_ATTEMPTED`,
+> `PARTIAL_STATE_POSSIBLE` oder `UNKNOWN` berichtet. Mixed-Scope-Streams und
+> noch nicht unterstuetzte `NO_TRANSACTION`-Streams blockieren vor dem ersten
+> Statement mit `TRANSACTION_SCOPE_UNSUPPORTED`; bestehende Execute-Felder und
+> Exit-Code-Semantik bleiben rueckwaertskompatibel.
+
 Der erste Slice berichtet `executionStarted`, `executionCompleted`,
 `statementsAttempted`, `lastStatementOperationIds`, `transactionRolledBack`
 und `sideEffectsPossible`. Fuer komplexere DDL muss dieser Status erweitert
@@ -293,18 +304,13 @@ Entscheidung:
   `transactionRolledBack`, `sideEffectsPossible`, `recoverability` und die
   Diagnose. Ungueltige Scope-Kombinationen, die vor Execute erkannt werden,
   bleiben Migrations-Blocker mit Exit `8`.
-- Neue `primaryBlockedReason`-Werte aus diesem Workstream sind erst stabil,
-  wenn sie in `MigrationBlockedReason`, CLI-JSON, Report-Rendering und Tests
-  ergaenzt sind. Fuer diesen Slice ist `TRANSACTION_SCOPE_UNSUPPORTED` der
-  geplante neue Wert; bis zur Implementierung darf kein Report diesen String
-  als stabilen Vertrag ausgeben.
+- `TRANSACTION_SCOPE_UNSUPPORTED` ist seit diesem Slice stabil in
+  `MigrationBlockedReason`, CLI-JSON/YAML, Report-Rendering und Tests.
 - Mixed-Stream-Blocker: sobald ein Stream sowohl `STREAM_OWNED`- als auch
   `RUNNER_OWNED`-/`NO_TRANSACTION`-Statements enthaelt, blockiert die Ausfuehrung
-  vor dem ersten Statement mit `TRANSACTION_SCOPE_UNSUPPORTED`. Bis dieser
-  Slice umgesetzt ist, faellt der Classifier still auf "stream-owned" zurueck,
-  sobald ein einziges Statement `STREAM_OWNED` ist. Das ist kein silent best-
-  effort, sondern eine dokumentierte §G.3-Luecke; aktuelle Renderer
-  produzieren keine Mixed Streams.
+  vor dem ersten Statement mit `TRANSACTION_SCOPE_UNSUPPORTED`. Reine
+  `NO_TRANSACTION`-Streams blockieren ebenfalls, bis ein dedizierter
+  autocommit-/outside-transaction Executor-Vertrag implementiert ist.
 
 Akzeptanz:
 
@@ -329,14 +335,14 @@ DoD:
   `\n\n`-Split-Vertrag. (G.2)
 - [x] Parser prueft `formatVersion`, Artifact-Hash und Statement-Reihenfolge.
   (formatVersion + Hash bereits in v1; Statement-Reihenfolge G.2)
-- [ ] Execution-Report deckt Statement-Gruppen, Transaktionsgrenzen und
+- [x] Execution-Report deckt Statement-Gruppen, Transaktionsgrenzen und
   Recoverability ab. (G.3)
-- [ ] Mixed-Stream-Fall blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` und
+- [x] Mixed-Stream-Fall blockiert mit `TRANSACTION_SCOPE_UNSUPPORTED` und
   ist als Regressionstest gepinnt. (G.3)
 - [x] Regressionstest fuer SQL-Body mit `BEGIN`-Token ohne Stream-Owned-
   Klassifikation. (G.1)
 - [x] Regressionstests fuer Leerzeilen-Bodies und manipulierte Artefakte. (G.2)
-- [ ] Routine-/Trigger-Renderer bleiben blockiert, bis diese Checkboxen erfuellt
+- [x] Routine-/Trigger-Renderer bleiben blockiert, bis diese Checkboxen erfuellt
   sind. (gilt bis G.2 und G.3)
 
 ---

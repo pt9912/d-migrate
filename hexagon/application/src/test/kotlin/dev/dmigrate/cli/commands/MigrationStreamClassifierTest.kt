@@ -6,6 +6,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.TransactionScope
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 
 /**
  * Unit-level guard for [MigrationStreamClassifier]. The classifier
@@ -91,5 +92,20 @@ class MigrationStreamClassifierTest : FunSpec({
         // dispatch is a separate concern (Plan-2 §A.1).
         val statements = listOf(stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION))
         MigrationStreamClassifier.streamOwnsTransaction(statements) shouldBe false
+    }
+
+    test("§G.3 mixed transaction scopes are unsupported before execute") {
+        val statements = listOf(
+            stmt("BEGIN IMMEDIATE;", TransactionScope.STREAM_OWNED),
+            stmt("ALTER TABLE \"users\" ADD COLUMN \"email\" TEXT;", TransactionScope.RUNNER_OWNED),
+        )
+
+        MigrationStreamClassifier.unsupportedTransactionScopeReason(statements) shouldNotBe null
+    }
+
+    test("§G.3 NO_TRANSACTION requires an explicit execution strategy") {
+        val statements = listOf(stmt("CREATE INDEX CONCURRENTLY ix ON t (c);", TransactionScope.NO_TRANSACTION))
+
+        MigrationStreamClassifier.unsupportedTransactionScopeReason(statements) shouldNotBe null
     }
 })
