@@ -684,8 +684,16 @@ views:
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE o.status NOT IN ('delivered', 'cancelled')
+    columns:                         # optional: sichtbare View-Signatur
+      - name: id
+        type: integer
+      - name: customer_name
+        type: text
     dependencies:
       tables: [orders, customers]
+      table_projection_status: complete
+      column_projection_status: complete
+      routine_projection_status: empty_verified
     source_dialect: postgresql
 
   monthly_revenue:
@@ -707,11 +715,12 @@ views:
 ```
 
 **Transformationshinweise**:
-- Materialized Views werden in MySQL als reguläre Tabelle mit Trigger/Event-basiertem Refresh emuliert (Warnung wird erzeugt)
-- SQLite unterstützt keine Materialized Views; Fallback auf reguläre View mit Hinweis
+- Diff-basierte Migrationen blockieren Materialized Views bis zu einem eigenen Refresh-/Staleness-Vertrag; sie werden nicht als normale Views gerendert.
 - `DATE_TRUNC` wird pro Dialekt übersetzt (PostgreSQL: nativ, MySQL: `DATE_FORMAT`, SQLite: `strftime`)
 - `dependencies.tables` enthält bei Views die Basistabellen, die von der Query gelesen werden
 - `dependencies.views` enthält optionale Abhängigkeiten auf andere Views, die vor dieser View erzeugt werden müssen
+- `columns` enthaelt optional die sichtbare View-Signatur. PostgreSQL nutzt sie, um `CREATE OR REPLACE VIEW` nur bei kompatibler Spaltenanzahl, Reihenfolge, Namen und sichtbaren Typen zu rendern.
+- `table_projection_status`, `column_projection_status` und `routine_projection_status` koennen `complete`, `empty_verified`, `incomplete_privilege`, `incomplete_object_missing` oder `unknown` sein. Nicht verwendbare Status blockieren migrationskritische View-Operationen.
 - Generatoren dürfen zusätzliche View-Abhängigkeiten best effort aus der Query ableiten; deklarierte `dependencies.views` haben dabei Vorrang für die Emissionsreihenfolge
 
 ---

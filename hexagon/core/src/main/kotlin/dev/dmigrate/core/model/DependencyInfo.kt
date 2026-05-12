@@ -22,4 +22,26 @@ data class DependencyInfo(
      * with a `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE` diagnostic.
      */
     val projectionComplete: Boolean = true,
-)
+    val tableProjectionStatus: DependencyProjectionStatus = DependencyProjectionStatus.COMPLETE,
+    val columnProjectionStatus: DependencyProjectionStatus = DependencyProjectionStatus.COMPLETE,
+    val routineProjectionStatus: DependencyProjectionStatus = DependencyProjectionStatus.COMPLETE,
+    val projectionSources: List<String> = emptyList(),
+    val projectionErrorClass: String? = null,
+) {
+    fun dependencyProjectionUsable(): Boolean =
+        projectionComplete &&
+            tableProjectionStatus.isUsable() &&
+            columnProjectionStatus.isUsable() &&
+            routineProjectionStatus.isUsable()
+}
+
+enum class DependencyProjectionStatus {
+    COMPLETE,
+    INCOMPLETE_PRIVILEGE,
+    INCOMPLETE_OBJECT_MISSING,
+    EMPTY_VERIFIED,
+    UNKNOWN,
+    ;
+
+    fun isUsable(): Boolean = this == COMPLETE || this == EMPTY_VERIFIED
+}

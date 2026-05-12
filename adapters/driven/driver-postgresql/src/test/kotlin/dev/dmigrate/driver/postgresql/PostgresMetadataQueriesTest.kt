@@ -345,6 +345,30 @@ class PostgresMetadataQueriesTest : FunSpec({
         result["v_summary"]!!.views shouldBe listOf("v_orders")
     }
 
+    test("listViewColumns returns visible signature in ordinal order") {
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns listOf(
+            mapOf(
+                "view_name" to "v_orders",
+                "column_name" to "id",
+                "column_type" to "integer",
+                "ordinal_position" to 1,
+            ),
+            mapOf(
+                "view_name" to "v_orders",
+                "column_name" to "status",
+                "column_type" to "text",
+                "ordinal_position" to 2,
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listViewColumns(jdbc, "public")
+
+        result["v_orders"]!![0].name shouldBe "id"
+        result["v_orders"]!![0].type shouldBe "integer"
+        result["v_orders"]!![1].name shouldBe "status"
+        result["v_orders"]!![1].type shouldBe "text"
+    }
+
     // ── listViewFunctionDependencies ─────────────────
 
     test("listViewFunctionDependencies groups by view name") {

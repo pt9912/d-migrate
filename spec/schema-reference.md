@@ -254,8 +254,14 @@ views:
     refresh: on_demand         # on_demand | on_commit (nur materialized, nur PG)
     query: |
       SELECT * FROM orders WHERE status != 'delivered'
+    columns:
+      - name: id
+        type: integer
     dependencies:
       tables: [orders]
+      table_projection_status: complete
+      column_projection_status: complete
+      routine_projection_status: empty_verified
     source_dialect: postgresql
 ```
 
@@ -263,6 +269,13 @@ views:
 Abhaengigkeiten auf andere Views werden in `dependencies.views`
 aufgefuehrt. Generatoren duerfen zusaetzliche View-Abhaengigkeiten best
 effort aus `query` ableiten.
+
+`columns` ist optional und beschreibt die sichtbare View-Signatur in
+Ausgabereihenfolge. PostgreSQL-Diff-Migrationen rendern `CREATE OR REPLACE
+VIEW` nur, wenn diese Signatur fuer Vorher- und Nachher-Zustand bekannt und
+kompatibel ist. Projection-Status-Felder in `dependencies` nutzen die Werte
+`complete`, `empty_verified`, `incomplete_privilege`,
+`incomplete_object_missing` oder `unknown`.
 
 ---
 

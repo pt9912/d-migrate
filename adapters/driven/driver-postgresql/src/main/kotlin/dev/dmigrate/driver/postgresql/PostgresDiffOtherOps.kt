@@ -139,6 +139,7 @@ internal object PostgresDiffOtherOps {
             blockMaterializedView(op, ctx, name)
             return
         }
+        if (!guardViewSignatureCompatibility(op, ctx, name)) return
         ctx.emit(op, ctx.sql.replaceViewSql(name, target), PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
 
@@ -164,5 +165,37 @@ internal object PostgresDiffOtherOps {
             code = "MATERIALIZED_VIEW_DIFF_UNSUPPORTED",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+    }
+
+    private fun guardViewSignatureCompatibility(
+        op: DiffOperation.ReplaceView,
+        ctx: PostgresDiffRenderContext,
+        name: String,
+    ): Boolean {
+        val before = op.before.columns
+        val after = op.after.columns
+        if (before == null || after == null) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} replaces PostgreSQL view '$name' without visible view-column " +
+                    "signature metadata. CREATE OR REPLACE VIEW is blocked until column count, order, " +
+                    "names and visible types are known.",
+                code = "VIEW_SIGNATURE_UNKNOWN",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+        if (before != after) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} replaces PostgreSQL view '$name' with an incompatible visible " +
+                    "signature. CREATE OR REPLACE VIEW is only renderable when view columns keep the " +
+                    "same count, order, names and visible types.",
+                code = "VIEW_SIGNATURE_INCOMPATIBLE",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+        return true
     }
 }

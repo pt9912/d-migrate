@@ -49,6 +49,11 @@ kover {
                     "dev.dmigrate.driver.ReverseSourceRef",
                     "dev.dmigrate.driver.SchemaReadSeverity",
                     "dev.dmigrate.format.data.FormatReadOptions",
+                    // Neutral model DTOs pulled transitively into the read-port coverage graph
+                    "dev.dmigrate.core.model.DependencyInfo",
+                    "dev.dmigrate.core.model.DependencyProjectionStatus",
+                    "dev.dmigrate.core.model.ViewDefinition",
+                    "dev.dmigrate.core.model.ViewColumnDefinition",
                     // 0.9.7 migration port (Phase D.1)
                     "dev.dmigrate.driver.migration.DiffDdlGenerator",
                     "dev.dmigrate.driver.migration.MigrationBlocker",

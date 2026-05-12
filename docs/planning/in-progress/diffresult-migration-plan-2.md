@@ -732,6 +732,14 @@ DoD:
 
 ### D.1 PostgreSQL Visible-Signature-Compatibility fuer Views
 
+> Status: implementiert (2026-05-12). `ViewDefinition.columns` speichert die
+> sichtbare View-Signatur als geordnete `ViewColumnDefinition`-Liste.
+> PostgreSQL-Reverse liest diese Signatur aus `pg_attribute`/`format_type`.
+> `PostgresDiffDdlGenerator` rendert `CREATE OR REPLACE VIEW` nur noch, wenn
+> Vorher-/Nachher-Signatur vorhanden und identisch ist; fehlende Signaturdaten
+> blockieren mit `VIEW_SIGNATURE_UNKNOWN`, abweichende Signaturen mit
+> `VIEW_SIGNATURE_INCOMPATIBLE`.
+
 0.9.7 splittet `ReplaceView`, wenn referenzierte Tabellen-/Spaltenoperationen
 konfligieren. Offen bleibt die sichtbare View-Spaltenform:
 
@@ -762,6 +770,17 @@ Akzeptanz:
   explizites Modellfeld.
 
 ### D.2 MySQL `VIEW_ROUTINE_USAGE`-Privilege-Preflight
+
+> Status: implementiert (2026-05-12). `DependencyInfo` fuehrt
+> `tableProjectionStatus`, `columnProjectionStatus` und
+> `routineProjectionStatus` mit den Statuswerten `COMPLETE`,
+> `INCOMPLETE_PRIVILEGE`, `INCOMPLETE_OBJECT_MISSING`, `EMPTY_VERIFIED` und
+> `UNKNOWN`. Der MySQL-Reader befuellt Table/Routine aus
+> `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE`; Column-Usage bleibt bei
+> tabellenabhaengigen Views `UNKNOWN`, weil MySQL keine belastbare
+> `VIEW_COLUMN_USAGE`-Quelle bietet. Der Planner blockiert View-Replacement
+> und betroffene Spaltenoperationen, sobald einer der drei Status nicht
+> `COMPLETE` oder `EMPTY_VERIFIED` ist.
 
 0.9.7 behandelt `VIEW_TABLE_USAGE` als Vollstaendigkeitsproblem. Offen bleibt
 die analoge Behandlung fuer `VIEW_ROUTINE_USAGE`.
@@ -811,6 +830,12 @@ Nicht akzeptabel:
 
 #### D.3a Sofortiger Materialized-View-Guard
 
+> Status: implementiert (2026-05-12). PostgreSQL, MySQL und SQLite blockieren
+> diff-basierte `CreateView`-/`ReplaceView`-/`DropView`-Operationen mit
+> `materialized = true` vor SQL-Render mit
+> `MATERIALIZED_VIEW_DIFF_UNSUPPORTED`; Regular-View-Pfade bleiben
+> unveraendert.
+
 Dieser Guard ist ein eigener kleiner Safety-Slice und darf nicht auf den
 vollstaendigen Materialized-View-Vertrag warten:
 
@@ -843,21 +868,21 @@ Erwarteter Vertrag:
 
 DoD:
 
-- [ ] PostgreSQL-View-Replacement nutzt `CREATE OR REPLACE VIEW` nur bei
+- [x] PostgreSQL-View-Replacement nutzt `CREATE OR REPLACE VIEW` nur bei
   belegter sichtbarer Signaturkompatibilitaet.
-- [ ] Datei-zu-Datei-Pfad ohne Signaturdaten blockiert konservativ oder nutzt
+- [x] Datei-zu-Datei-Pfad ohne Signaturdaten blockiert konservativ oder nutzt
   ein explizites Modellfeld.
-- [ ] MySQL-Dependency-Projektion deckt Table-, Column- und Routine-Usage ab
+- [x] MySQL-Dependency-Projektion deckt Table-, Column- und Routine-Usage ab
   oder blockiert bei unvollstaendiger Projektion.
-- [ ] Bis zum eigenen Materialized-View-Vertrag blockieren alle diff-basierten
+- [x] Bis zum eigenen Materialized-View-Vertrag blockieren alle diff-basierten
   Operationen auf `ViewDefinition.materialized = true` vor Render.
-- [ ] Der D.3a-Guard ist separat testbar und nicht vom vollstaendigen
+- [x] Der D.3a-Guard ist separat testbar und nicht vom vollstaendigen
   Refresh-/Staleness-Vertrag abhaengig.
-- [ ] Materialized Views sind vor D.3b nicht als normale Views renderbar; im
+- [x] Materialized Views sind vor D.3b nicht als normale Views renderbar; im
   vollstaendigen D.3b-Vertrag bekommen sie eine eigene Objektklasse.
 - [ ] Refresh-, Staleness-, Locking- und Rollback-Verhalten fuer Materialized
   Views sind fuer D.3b im Report sichtbar.
-- [ ] Tests decken kompatible View-Replaces, blockierende View-Dependencies und
+- [x] Tests decken kompatible View-Replaces, blockierende View-Dependencies und
   mindestens einen Materialized-View-Blocker ab.
 
 ---

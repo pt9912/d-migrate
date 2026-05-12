@@ -56,6 +56,7 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
@@ -196,12 +197,22 @@ class PostgresSchemaReaderTest : FunSpec({
                 "column_name" to "id",
             ),
         )
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns listOf(
+            mapOf(
+                "view_name" to "active_users_mv",
+                "column_name" to "id",
+                "column_type" to "integer",
+                "ordinal_position" to 1,
+            ),
+        )
 
         val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
             includeProcedures = false, includeTriggers = false))
 
         val view = result.schema.views["active_users_mv"]!!
         view.materialized shouldBe true
+        view.columns!![0].name shouldBe "id"
+        view.columns!![0].type shouldBe "integer"
         view.dependencies!!.tables shouldBe listOf("users")
         view.dependencies!!.columns shouldBe mapOf("users" to listOf("id"))
     }

@@ -131,6 +131,7 @@ class SchemaComparator {
             materialized = valueChangeOrNull(left.materialized, right.materialized),
             refresh = valueChangeOrNull(left.refresh, right.refresh),
             query = valueChangeOrNull(left.query, right.query),
+            columnsChanged = left.columns != right.columns,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
         )
         return if (diff.hasChanges()) diff else null

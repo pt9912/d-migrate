@@ -27,6 +27,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ReferenceDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.ViewColumnDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.LockBehavior
@@ -425,19 +426,68 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
     }
 
     test("ReplaceView emits CREATE OR REPLACE in both directions, with target swap on Down") {
-        val before = ViewDefinition(query = "SELECT 1")
-        val after = ViewDefinition(query = "SELECT 2")
+        val signature = listOf(ViewColumnDefinition("x", "integer"))
+        val before = ViewDefinition(query = "SELECT 1 AS x", columns = signature)
+        val after = ViewDefinition(query = "SELECT 2 AS x", columns = signature)
         val current = emptySchema().copy(views = mapOf("v_x" to before))
         val desired = emptySchema().copy(views = mapOf("v_x" to after))
         val diff = SchemaDiff(
             viewsChanged = listOf(
-                dev.dmigrate.core.diff.ViewDiff(name = "v_x", query = ValueChange("SELECT 1", "SELECT 2")),
+                dev.dmigrate.core.diff.ViewDiff(name = "v_x", query = ValueChange(before.query, after.query)),
             ),
         )
         val up = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
         up.statements.single().sql shouldContainStr "SELECT 2"
         val down = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
         down.statements.single().sql shouldContainStr "SELECT 1"
+    }
+
+    test("ReplaceView blocks without PostgreSQL visible signature metadata") {
+        val before = ViewDefinition(query = "SELECT 1")
+        val after = ViewDefinition(query = "SELECT 2")
+        val current = emptySchema().copy(views = mapOf("v_x" to before))
+        val desired = emptySchema().copy(views = mapOf("v_x" to after))
+        val diff = SchemaDiff(
+            viewsChanged = listOf(
+                dev.dmigrate.core.diff.ViewDiff(name = "v_x", query = ValueChange(before.query, after.query)),
+            ),
+        )
+
+        val result = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+
+        result.statements.shouldBeEmpty()
+        result.isBlocked shouldBe true
+        result.diagnostics.single { it.code == "VIEW_SIGNATURE_UNKNOWN" }
+            .message shouldContainStr "v_x"
+    }
+
+    test("ReplaceView blocks incompatible PostgreSQL visible signatures") {
+        val before = ViewDefinition(
+            query = "SELECT 1 AS x",
+            columns = listOf(ViewColumnDefinition("x", "integer")),
+        )
+        val after = ViewDefinition(
+            query = "SELECT 1 AS y",
+            columns = listOf(ViewColumnDefinition("y", "integer")),
+        )
+        val current = emptySchema().copy(views = mapOf("v_x" to before))
+        val desired = emptySchema().copy(views = mapOf("v_x" to after))
+        val diff = SchemaDiff(
+            viewsChanged = listOf(
+                dev.dmigrate.core.diff.ViewDiff(
+                    name = "v_x",
+                    query = ValueChange(before.query, after.query),
+                    columnsChanged = true,
+                ),
+            ),
+        )
+
+        val result = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+
+        result.statements.shouldBeEmpty()
+        result.isBlocked shouldBe true
+        result.diagnostics.single { it.code == "VIEW_SIGNATURE_INCOMPATIBLE" }
+            .message shouldContainStr "v_x"
     }
 
     test("materialized view operations are blocked before SQL render") {

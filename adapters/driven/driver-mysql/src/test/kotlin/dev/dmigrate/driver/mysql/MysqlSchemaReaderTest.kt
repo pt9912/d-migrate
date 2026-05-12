@@ -191,6 +191,13 @@ class MysqlSchemaReaderTest : FunSpec({
         view.dependencies.shouldNotBeNull()
         view.dependencies!!.projectionComplete shouldBe true
         view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.tableProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+        view.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        view.dependencies!!.routineProjectionStatus shouldBe DependencyProjectionStatus.EMPTY_VERIFIED
+        view.dependencies!!.projectionSources shouldBe listOf(
+            "INFORMATION_SCHEMA.VIEW_TABLE_USAGE",
+            "INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE",
+        )
     }
 
     test("D.2 — visible routine call with empty VIEW_ROUTINE_USAGE flags projectionComplete=false") {
@@ -252,6 +259,9 @@ class MysqlSchemaReaderTest : FunSpec({
         val view = result.schema.views["active_users"]!!
         view.dependencies!!.functions shouldBe listOf("is_active")
         view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tableProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+        view.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        view.dependencies!!.routineProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
     }
 
     test("read includes functions with parameters") {

@@ -311,21 +311,37 @@ class YamlSchemaCodecTest : FunSpec({
             views:
               v_incomplete:
                 query: "SELECT id FROM users"
+                columns:
+                  - name: id
+                    type: integer
                 dependencies:
                   tables: []
                   projection_complete: false
+                  table_projection_status: incomplete_privilege
+                  column_projection_status: unknown
+                  routine_projection_status: empty_verified
+                  projection_sources: [INFORMATION_SCHEMA.VIEW_TABLE_USAGE]
+                  projection_error_class: privilege
                 source_dialect: mysql
         """.trimIndent()
 
         val schema = codec.read(yaml.byteInputStream())
         val view = schema.views["v_incomplete"]!!
+        view.columns!![0].name shouldBe "id"
+        view.columns!![0].type shouldBe "integer"
         view.dependencies!!.projectionComplete shouldBe false
+        view.dependencies!!.tableProjectionStatus shouldBe DependencyProjectionStatus.INCOMPLETE_PRIVILEGE
+        view.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        view.dependencies!!.routineProjectionStatus shouldBe DependencyProjectionStatus.EMPTY_VERIFIED
+        view.dependencies!!.projectionSources shouldBe listOf("INFORMATION_SCHEMA.VIEW_TABLE_USAGE")
+        view.dependencies!!.projectionErrorClass shouldBe "privilege"
 
         // Round-trip: write and re-read.
         val out = java.io.ByteArrayOutputStream()
         codec.write(out, schema)
         val rt = codec.read(out.toByteArray().inputStream())
         rt.views["v_incomplete"]!!.dependencies!!.projectionComplete shouldBe false
+        rt.views["v_incomplete"]!!.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
     }
 
     test("G.2 — projection_complete defaults to true when omitted") {

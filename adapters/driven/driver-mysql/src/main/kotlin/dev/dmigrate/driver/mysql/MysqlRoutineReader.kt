@@ -38,15 +38,35 @@ internal class MysqlRoutineReader {
             // false-positive incomplete flag, but conservative-on-failure
             // is the right default (operator sees a clear BLOCKER instead
             // of a silently-broken view).
-            val tableProjectionComplete = tableDeps.isNotEmpty() || !viewBodyReferencesTables(viewDefinition)
+            val tableProjectionStatus = when {
+                tableDeps.isNotEmpty() -> DependencyProjectionStatus.COMPLETE
+                viewBodyReferencesTables(viewDefinition) -> DependencyProjectionStatus.INCOMPLETE_PRIVILEGE
+                else -> DependencyProjectionStatus.EMPTY_VERIFIED
+            }
             val routineProjectionComplete =
                 funcDeps.isNotEmpty() || !viewBodyReferencesVisibleRoutines(viewDefinition, visibleFunctionNames)
+            val routineProjectionStatus = when {
+                funcDeps.isNotEmpty() -> DependencyProjectionStatus.COMPLETE
+                routineProjectionComplete -> DependencyProjectionStatus.EMPTY_VERIFIED
+                else -> DependencyProjectionStatus.INCOMPLETE_PRIVILEGE
+            }
+            val columnProjectionStatus = when (tableProjectionStatus) {
+                DependencyProjectionStatus.EMPTY_VERIFIED -> DependencyProjectionStatus.EMPTY_VERIFIED
+                else -> DependencyProjectionStatus.UNKNOWN
+            }
             result[viewName] = ViewDefinition(
                 query = viewDefinition,
                 dependencies = DependencyInfo(
                     tables = tableDeps,
                     functions = funcDeps,
-                    projectionComplete = tableProjectionComplete && routineProjectionComplete,
+                    projectionComplete = tableProjectionStatus.isUsable() && routineProjectionStatus.isUsable(),
+                    tableProjectionStatus = tableProjectionStatus,
+                    columnProjectionStatus = columnProjectionStatus,
+                    routineProjectionStatus = routineProjectionStatus,
+                    projectionSources = listOf(
+                        "INFORMATION_SCHEMA.VIEW_TABLE_USAGE",
+                        "INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE",
+                    ),
                 ),
                 sourceDialect = "mysql",
             )

@@ -89,11 +89,26 @@ internal fun buildViews(
         if (definition.materialized) viewNode.put("materialized", true)
         if (definition.refresh != null) viewNode.put("refresh", definition.refresh)
         if (definition.query != null) viewNode.put("query", definition.query)
+        val columns = definition.columns
+        if (columns != null) {
+            viewNode.set<ArrayNode>("columns", buildViewColumns(mapper, columns))
+        }
         if (definition.dependencies != null) {
             viewNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) viewNode.put("source_dialect", definition.sourceDialect)
         node.set<ObjectNode>(name, viewNode)
+    }
+    return node
+}
+
+private fun buildViewColumns(mapper: ObjectMapper, columns: List<ViewColumnDefinition>): ArrayNode {
+    val node = mapper.createArrayNode()
+    for (column in columns) {
+        val columnNode = mapper.createObjectNode()
+        columnNode.put("name", column.name)
+        if (column.type != null) columnNode.put("type", column.type)
+        node.add(columnNode)
     }
     return node
 }
@@ -170,6 +185,21 @@ private fun buildDependencies(
     // planner's VIEW_DEPENDENCY_PROJECTION_INCOMPLETE block.
     if (!dependencies.projectionComplete) {
         node.put("projection_complete", false)
+    }
+    if (dependencies.tableProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("table_projection_status", dependencies.tableProjectionStatus.name.lowercase())
+    }
+    if (dependencies.columnProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("column_projection_status", dependencies.columnProjectionStatus.name.lowercase())
+    }
+    if (dependencies.routineProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("routine_projection_status", dependencies.routineProjectionStatus.name.lowercase())
+    }
+    if (dependencies.projectionSources.isNotEmpty()) {
+        node.set<ArrayNode>("projection_sources", stringArray(mapper, dependencies.projectionSources))
+    }
+    if (dependencies.projectionErrorClass != null) {
+        node.put("projection_error_class", dependencies.projectionErrorClass)
     }
     return node
 }

@@ -359,16 +359,15 @@ class DiffPlanner {
             when (op) {
                 is DiffOperation.ReplaceView -> {
                     val viewName = op.objectRef.path.firstOrNull() ?: continue
-                    if (viewName !in incomplete) continue
+                    val view = incomplete[viewName] ?: continue
                     out += DiffDiagnostic(
                         code = "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE",
                         message = "Operation ${op.id} replaces view '$viewName' but the adapter " +
-                            "reported its dependency projection as incomplete " +
-                            "(`dependencies.projectionComplete = false`). For MySQL this typically " +
-                            "means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE returned 0 rows for an " +
-                            "existing view — the introspecting user likely lacks SHOW VIEW on " +
-                            "referenced tables. The planner cannot reason about cascade effects " +
-                            "until projection completeness is restored.",
+                            "reported an incomplete dependency projection (${view.projectionStatusSummary()}). " +
+                            "For MySQL this typically means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE returned " +
+                            "incomplete rows, VIEW_COLUMN_USAGE is unavailable, or the introspecting user " +
+                            "lacks SHOW VIEW on referenced objects. The planner cannot reason about " +
+                            "cascade effects until projection completeness is restored.",
                         severity = DiffDiagnostic.Severity.BLOCKER,
                         operationId = op.id,
                     )
@@ -381,12 +380,11 @@ class DiffPlanner {
                             code = "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE",
                             message = "Operation ${op.id} alters column '$tableName.$columnName' " +
                                 "and view '$viewName' lists '$tableName' as a dependency, but the " +
-                                "view's projection is incomplete " +
-                                "(`dependencies.projectionComplete = false`). For MySQL this " +
-                                "typically means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE returned " +
-                                "incomplete rows — the planner cannot tell whether the view's " +
-                                "referenced columns include this one. Restore SHOW VIEW privilege " +
-                                "on referenced tables and re-introspect.",
+                                "view's projection is incomplete (${view.projectionStatusSummary()}). " +
+                                "For MySQL this typically means VIEW_TABLE_USAGE / VIEW_ROUTINE_USAGE " +
+                                "returned incomplete rows or column usage is unavailable — the planner " +
+                                "cannot tell whether the view's referenced columns include this one. " +
+                                "Restore SHOW VIEW privilege on referenced objects and re-introspect.",
                             severity = DiffDiagnostic.Severity.BLOCKER,
                             operationId = op.id,
                         )
@@ -411,10 +409,17 @@ class DiffPlanner {
         for (schema in listOf(current, desired)) {
             for ((viewName, view) in schema.views) {
                 val deps = view.dependencies ?: continue
-                if (!deps.projectionComplete) out[viewName] = view
+                if (!deps.dependencyProjectionUsable()) out[viewName] = view
             }
         }
         return out
+    }
+
+    private fun ViewDefinition.projectionStatusSummary(): String {
+        val deps = dependencies ?: return "no dependency metadata"
+        return "projectionComplete=${deps.projectionComplete}, " +
+            "table=${deps.tableProjectionStatus}, column=${deps.columnProjectionStatus}, " +
+            "routine=${deps.routineProjectionStatus}"
     }
 
     /**

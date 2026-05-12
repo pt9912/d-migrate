@@ -86,6 +86,34 @@ internal object PostgresProgrammabilityMetadataQueries {
         )
     }
 
+    fun listViewColumns(session: JdbcOperations, schemaName: String): Map<String, List<ViewColumnProjection>> {
+        val rows = session.queryList(
+            """
+            SELECT c.relname AS view_name,
+                   a.attname AS column_name,
+                   pg_catalog.format_type(a.atttypid, a.atttypmod) AS column_type,
+                   a.attnum AS ordinal_position
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_attribute a ON a.attrelid = c.oid
+            WHERE n.nspname = ?
+              AND c.relkind IN ('v', 'm')
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            ORDER BY c.relname, a.attnum
+            """.trimIndent(), schemaName,
+        )
+        return rows.groupBy(
+            { it["view_name"] as String },
+            {
+                ViewColumnProjection(
+                    name = it["column_name"] as String,
+                    type = it["column_type"] as? String,
+                )
+            },
+        )
+    }
+
     fun listFunctions(session: JdbcOperations, schemaName: String): List<Map<String, Any?>> {
         return session.queryList(
             """
@@ -147,6 +175,11 @@ internal data class ViewRelationDependencies(
     val tables: List<String> = emptyList(),
     val views: List<String> = emptyList(),
     val columns: Map<String, List<String>> = emptyMap(),
+)
+
+internal data class ViewColumnProjection(
+    val name: String,
+    val type: String?,
 )
 
 private class MutableViewRelationDependencies {

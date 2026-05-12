@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.ViewDiff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DependencyInfo
+import dev.dmigrate.core.model.DependencyProjectionStatus
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -97,6 +98,49 @@ class DiffPlannerG2Test : FunSpec({
         )
         val result = planner.plan(current, desired, diff)
         result.diagnostics.any { it.code == "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE" } shouldBe false
+    }
+
+    test("ReplaceView blocks when split projection status is not usable") {
+        val users = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
+        )
+        val viewBefore = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(
+                tables = listOf("users"),
+                projectionComplete = true,
+                tableProjectionStatus = DependencyProjectionStatus.COMPLETE,
+                columnProjectionStatus = DependencyProjectionStatus.UNKNOWN,
+                routineProjectionStatus = DependencyProjectionStatus.EMPTY_VERIFIED,
+            ),
+        )
+        val viewAfter = viewBefore.copy(query = "SELECT id, id AS id2 FROM users")
+        val current = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to viewBefore),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("users" to users),
+            views = mapOf("v_users" to viewAfter),
+        )
+        val result = planner.plan(
+            current,
+            desired,
+            SchemaDiff(
+                viewsChanged = listOf(
+                    ViewDiff(
+                        name = "v_users",
+                        query = ValueChange(viewBefore.query, viewAfter.query),
+                    ),
+                ),
+            ),
+        )
+
+        val diag = result.diagnostics.single { it.code == "VIEW_DEPENDENCY_PROJECTION_INCOMPLETE" }
+        diag.message shouldContainStr "column=UNKNOWN"
+        diag.message shouldContainStr "routine=EMPTY_VERIFIED"
     }
 
     test("column-altering op on listed table of incomplete view blocks") {

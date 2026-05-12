@@ -92,10 +92,19 @@ internal object CanonicalPayload {
             .append(SEP).append("refresh=").append(v.refresh ?: "")
             .append(SEP).append("query=").append(v.query ?: "")
             .append(SEP).append("source_dialect=").append(v.sourceDialect ?: "")
+        append(SEP).append("view_columns[").append(v.columns?.size ?: 0).append(']')
+        v.columns?.forEach { col ->
+            append(SEP).append(col.name).append(':').append(col.type ?: "")
+        }
         val deps = v.dependencies
         if (deps != null) {
             append(SEP).append("deps_tables=").append(deps.tables.sorted().joinToString(","))
             append(SEP).append("deps_views=").append(deps.views.sorted().joinToString(","))
+            append(SEP).append("deps_functions=").append(deps.functions.sorted().joinToString(","))
+            append(SEP).append("deps_projection_complete=").append(deps.projectionComplete)
+            append(SEP).append("deps_table_projection=").append(deps.tableProjectionStatus.name)
+            append(SEP).append("deps_column_projection=").append(deps.columnProjectionStatus.name)
+            append(SEP).append("deps_routine_projection=").append(deps.routineProjectionStatus.name)
             append(SEP).append("deps_columns[").append(deps.columns.size).append(']')
             for ((tableName, cols) in deps.columns.entries.sortedBy { it.key }) {
                 append(SEP).append(tableName).append('=').append(cols.sorted().joinToString(","))

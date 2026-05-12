@@ -56,10 +56,25 @@ internal fun parseViews(node: JsonNode?): Map<String, ViewDefinition> =
             materialized = childNode.boolOrDefault("materialized", false),
             refresh = childNode.optionalText("refresh"),
             query = childNode.optionalText("query"),
+            columns = parseViewColumns(childNode["columns"]),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
         )
     }
+
+private fun parseViewColumns(node: JsonNode?): List<ViewColumnDefinition>? {
+    if (node == null || !node.isArray) return null
+    return node.map { childNode ->
+        if (childNode.isObject) {
+            ViewColumnDefinition(
+                name = childNode.requiredText("name"),
+                type = childNode.optionalText("type"),
+            )
+        } else {
+            ViewColumnDefinition(name = childNode.asText())
+        }
+    }
+}
 
 internal fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> =
     parseNamedObjectMap(node) { childNode ->
@@ -106,5 +121,16 @@ private fun parseDependencies(node: JsonNode?): DependencyInfo? {
         // the planner's `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`
         // block effective.
         projectionComplete = node["projection_complete"]?.asBoolean(true) ?: true,
+        tableProjectionStatus = node["table_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        columnProjectionStatus = node["column_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        routineProjectionStatus = node["routine_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        projectionSources = node["projection_sources"]?.toStringList() ?: emptyList(),
+        projectionErrorClass = node.optionalText("projection_error_class"),
     )
 }
+
+private fun String.toDependencyProjectionStatus(): DependencyProjectionStatus =
+    DependencyProjectionStatus.valueOf(uppercase())
