@@ -31,6 +31,21 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         out.toString(Charsets.UTF_8) shouldBe MigrationOverlayCanonicalJson.encode(overlay)
     }
 
+    test("writer rejects unsigned or stale-hash overlays") {
+        val unsigned = signedOverlay().copy(overlayHash = null)
+        val stale = signedOverlay().copy(createdByVersion = "changed")
+
+        val missing = shouldThrow<MigrationOverlayJsonEncodeException> {
+            codec.write(ByteArrayOutputStream(), unsigned)
+        }
+        val mismatch = shouldThrow<MigrationOverlayJsonEncodeException> {
+            codec.write(ByteArrayOutputStream(), stale)
+        }
+
+        missing.code shouldBe MigrationOverlayDiagnostics.HASH_MISSING
+        mismatch.code shouldBe MigrationOverlayDiagnostics.HASH_MISMATCH
+    }
+
     test("rejects unknown top-level fields before validation") {
         val encoded = MigrationOverlayCanonicalJson.encode(signedOverlay())
             .replace("\"overlayHash\"", "\"rollback\": {},\n  \"overlayHash\"")

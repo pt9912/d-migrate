@@ -119,6 +119,7 @@ object MigrationOverlayValidator {
             if (entry.id.isBlank()) {
                 block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "entry id is required", entryId = entry.id)
             }
+            validateEntryRequiredFields(entry, ::block)
             if (entry.kind != overlay.overlayKind) {
                 block(
                     MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH,
@@ -159,6 +160,35 @@ object MigrationOverlayValidator {
     ) {
         if (value.isBlank()) {
             block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required", null)
+        }
+    }
+
+    private fun validateEntryRequiredFields(
+        entry: MigrationOverlayEntry,
+        block: (String, String, String?) -> Unit,
+    ) {
+        fun requireEntryNonBlank(fieldName: String, value: String) {
+            if (value.isBlank()) {
+                block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required", entry.id)
+            }
+        }
+
+        when (entry) {
+            is UsingExpressionOverlayEntry -> {
+                requireEntryNonBlank("table", entry.table)
+                requireEntryNonBlank("column", entry.column)
+                requireEntryNonBlank("expression.value", entry.expression.value)
+            }
+
+            is RenameMappingOverlayEntry -> {
+                requireEntryNonBlank("objectType", entry.objectType)
+                requireEntryNonBlank("fromName", entry.fromName)
+                requireEntryNonBlank("toName", entry.toName)
+            }
+        }
+
+        if (entry.requiredFeatures.any { it.isBlank() }) {
+            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "requiredFeatures entries must be non-blank", entry.id)
         }
     }
 

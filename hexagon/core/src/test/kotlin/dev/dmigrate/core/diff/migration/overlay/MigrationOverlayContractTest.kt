@@ -107,6 +107,31 @@ class MigrationOverlayContractTest : FunSpec({
         result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RESERVED_OPTIONAL_FIELD)
     }
 
+    test("programmatic entries still require their typed contract fields") {
+        val using = unsignedUsingOverlay(
+            entries = listOf(
+                usingEntry(
+                    column = "",
+                    expression = OverlayText(""),
+                ),
+            ),
+        ).withComputedHash()
+        val rename = unsignedRenameOverlay(
+            entry = renameEntry(
+                objectType = "",
+                toName = "",
+            ),
+        ).withComputedHash()
+
+        val usingResult = MigrationOverlayValidator.validate(using, validationContext(), "overlays/using.json")
+        val renameResult = MigrationOverlayValidator.validate(rename, validationContext(), "overlays/rename.json")
+
+        usingResult.diagnostics.map { it.message }.shouldContain("column is required")
+        usingResult.diagnostics.map { it.message }.shouldContain("expression.value is required")
+        renameResult.diagnostics.map { it.message }.shouldContain("objectType is required")
+        renameResult.diagnostics.map { it.message }.shouldContain("toName is required")
+    }
+
     test("report exposes source entry id hash and diagnostic code without secret values") {
         val secret = "prod-secret-password"
         val overlay = unsignedUsingOverlay(
@@ -161,10 +186,10 @@ private fun unsignedUsingOverlay(
         producerMetadata = producerMetadata,
     )
 
-private fun unsignedRenameOverlay(): MigrationOverlay =
+private fun unsignedRenameOverlay(entry: RenameMappingOverlayEntry = renameEntry()): MigrationOverlay =
     unsignedUsingOverlay(
         overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-        entries = listOf(renameEntry()),
+        entries = listOf(entry),
     )
 
 private fun usingEntry(
@@ -179,10 +204,13 @@ private fun usingEntry(
         expression = expression,
     )
 
-private fun renameEntry(): RenameMappingOverlayEntry =
+private fun renameEntry(
+    objectType: String = "table",
+    toName: String = "users",
+): RenameMappingOverlayEntry =
     RenameMappingOverlayEntry(
         id = "rename-users",
-        objectType = "table",
+        objectType = objectType,
         fromName = "app_user",
-        toName = "users",
+        toName = toName,
     )

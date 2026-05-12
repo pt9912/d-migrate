@@ -21,6 +21,11 @@ class MigrationOverlayJsonDecodeException(
     message: String,
 ) : IllegalArgumentException("$code at $path: $message")
 
+class MigrationOverlayJsonEncodeException(
+    val code: String,
+    message: String,
+) : IllegalArgumentException("$code: $message")
+
 class MigrationOverlayJsonCodec {
 
     private val readMapper = ObjectMapper(JsonFactory()).apply {
@@ -50,6 +55,18 @@ class MigrationOverlayJsonCodec {
     }
 
     fun write(output: OutputStream, overlay: MigrationOverlay) {
+        val actualHash = MigrationOverlayCanonicalJson.computeHash(overlay)
+        when {
+            overlay.overlayHash.isNullOrBlank() -> encode(
+                MigrationOverlayDiagnostics.HASH_MISSING,
+                "overlayHash is required before writing a migration overlay",
+            )
+
+            overlay.overlayHash != actualHash -> encode(
+                MigrationOverlayDiagnostics.HASH_MISMATCH,
+                "overlayHash does not match canonical overlay content",
+            )
+        }
         output.write(MigrationOverlayCanonicalJson.encode(overlay).toByteArray(Charsets.UTF_8))
     }
 
@@ -175,6 +192,9 @@ class MigrationOverlayJsonCodec {
 
     private fun decode(code: String, path: String, message: String): Nothing =
         throw MigrationOverlayJsonDecodeException(code, path, message)
+
+    private fun encode(code: String, message: String): Nothing =
+        throw MigrationOverlayJsonEncodeException(code, message)
 
     companion object {
         private val TOP_LEVEL_FIELDS = setOf(
