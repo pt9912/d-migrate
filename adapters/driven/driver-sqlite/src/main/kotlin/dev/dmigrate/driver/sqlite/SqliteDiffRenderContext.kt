@@ -23,7 +23,7 @@ internal enum class SqliteRenderDirection { UP, DOWN }
 internal class SqliteDiffRenderContext(
     val direction: SqliteRenderDirection,
     val sql: SqliteDiffSqlBuilders,
-    @Suppress("unused") val options: DdlGenerationOptions,
+    val options: DdlGenerationOptions,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()

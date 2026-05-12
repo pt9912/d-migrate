@@ -39,6 +39,30 @@ data class DdlGenerationOptions(
      * Drift.
      */
     val executionMode: ExecutionMode = ExecutionMode.STANDALONE,
+    /**
+     * Plan-2 §A.2: live `sqlite_master` catalog snapshot for the
+     * SQLite-rebuild temp-name collision probe. Set by
+     * `SchemaMigrateRunner` when running `--execute` against a SQLite
+     * target; null for file targets, non-execute, and non-SQLite
+     * dialects. The SQLite renderer unions this with the schema-
+     * derived catalog snapshot **before** the rebuild plan is built,
+     * so ad-hoc objects in the live DB that aren't in
+     * `SchemaDefinition` participate in temp-name resolution.
+     *
+     * The renderer ignores this field on PG/MySQL targets — they have
+     * no rebuild pipeline.
+     */
+    val liveSqliteCatalog: SqliteLiveCatalog? = null,
+    /**
+     * Plan-2 §A.2: which input fed the SQLite-rebuild temp-name
+     * collision catalog. `SCHEMA_ONLY` (the default) covers
+     * file-to-file, plan-only, non-SQLite, and SQLite-with-execute
+     * paths whose probe was suppressed by configuration. The runner
+     * sets `LIVE_SQLITE_MASTER` only after a successful `sqlite_master`
+     * read; a failed probe blocks before render with Exit 8 and never
+     * reaches this field.
+     */
+    val catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
 )
 
 /**

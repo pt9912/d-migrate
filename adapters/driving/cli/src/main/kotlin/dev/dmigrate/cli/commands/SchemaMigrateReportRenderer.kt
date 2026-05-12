@@ -60,6 +60,7 @@ internal object SchemaMigrateReportRenderer {
             sb.append("  planHasImplicitCommitDdl: ").append(planHasImplicitCommitDdl).append('\n')
             sb.append("  planFullyRollbackable: ").append(planFullyRollbackable).append('\n')
             sb.append("  planRequiresExclusiveAccess: ").append(planRequiresExclusiveAccess).append('\n')
+            sb.append("  catalogProbeMode: ").append(catalogProbeMode).append('\n')
         }
         sb.append("blockers:").append(if (report.blockers.isEmpty()) " []\n" else "\n")
         for (b in report.blockers) {
@@ -122,7 +123,8 @@ internal object SchemaMigrateReportRenderer {
         append("\"downBlocked\":${s.downBlocked},")
         append("\"planHasImplicitCommitDdl\":${s.planHasImplicitCommitDdl},")
         append("\"planFullyRollbackable\":${s.planFullyRollbackable},")
-        append("\"planRequiresExclusiveAccess\":${s.planRequiresExclusiveAccess}")
+        append("\"planRequiresExclusiveAccess\":${s.planRequiresExclusiveAccess},")
+        append("\"catalogProbeMode\":${jsonString(s.catalogProbeMode)}")
         append('}')
     }
 

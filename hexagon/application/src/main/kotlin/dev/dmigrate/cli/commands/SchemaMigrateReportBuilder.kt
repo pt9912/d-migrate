@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.TransactionBehavior
 
@@ -29,6 +30,7 @@ internal object SchemaMigrateReportBuilder {
         rendered: MigrationDdlResult,
         dialect: DatabaseDialect,
         renderedDown: MigrationDdlResult?,
+        catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
     ): SchemaMigrateReport {
         val isBlocked = rendered.isBlocked
         val isEmpty = plan.operations.isEmpty()
@@ -98,6 +100,7 @@ internal object SchemaMigrateReportBuilder {
                     it.hints.transactionBehavior == TransactionBehavior.FULLY_TRANSACTIONAL
                 },
                 planRequiresExclusiveAccess = rendered.statements.any { it.hints.requiresExclusiveAccess },
+                catalogProbeMode = catalogProbeMode.name,
             ),
             execution = if (rendered.executionStarted || rendered.executionError != null) {
                 SchemaMigrateExecutionView(

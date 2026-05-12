@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.SqliteLiveCatalog
 
 /**
  * Phase H.2: the set of object names the planner must avoid when
@@ -101,5 +102,19 @@ internal data class SqliteCatalogSnapshot(
             table: String,
             idx: dev.dmigrate.core.model.IndexDefinition,
         ): String = "${table}_${idx.columns.joinToString("_") { it.name }}_idx"
+
+        /**
+         * Plan-2 §A.2: lift a port-level [SqliteLiveCatalog] (read by
+         * `SqliteLiveCatalogProbe.probe()` at the runner layer) into
+         * the renderer-internal snapshot. The two types are 1:1 on
+         * the four name sets — only the package boundary differs.
+         */
+        fun fromLiveCatalog(live: SqliteLiveCatalog): SqliteCatalogSnapshot =
+            SqliteCatalogSnapshot(
+                tables = live.tables,
+                views = live.views,
+                indices = live.indices,
+                triggers = live.triggers,
+            )
     }
 }

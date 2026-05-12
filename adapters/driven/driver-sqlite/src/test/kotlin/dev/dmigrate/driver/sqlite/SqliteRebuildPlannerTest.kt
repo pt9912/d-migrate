@@ -263,4 +263,46 @@ class SqliteRebuildPlannerTest : FunSpec({
         )
         plan.newTableTempName shouldBe "${base}__2"
     }
+
+    // ── Plan-2 §A.2: live-catalog probe path ──────────────────────
+
+    test("§A.2 — fromLiveCatalog lifts the four SQLite name sets verbatim") {
+        val live = dev.dmigrate.driver.SqliteLiveCatalog(
+            tables = setOf("t1", "t2"),
+            views = setOf("v"),
+            indices = setOf("ix"),
+            triggers = setOf("tr"),
+        )
+        val snap = SqliteCatalogSnapshot.fromLiveCatalog(live)
+        snap.tables shouldBe setOf("t1", "t2")
+        snap.views shouldBe setOf("v")
+        snap.indices shouldBe setOf("ix")
+        snap.triggers shouldBe setOf("tr")
+    }
+
+    test("§A.2 — live-catalog union pushes temp-name resolution to __2/__3") {
+        // The live catalog carries the base temp-name that the schema-
+        // derived snapshot doesn't know about (ad-hoc DB object). The
+        // resolver must escalate to __2; if both are taken, __3.
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val schemaCatalog = SqliteCatalogSnapshot.EMPTY
+        val live = dev.dmigrate.driver.SqliteLiveCatalog(tables = setOf(base))
+        val unioned = schemaCatalog.union(SqliteCatalogSnapshot.fromLiveCatalog(live))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, unioned) shouldBe "${base}__2"
+
+        val live2 = dev.dmigrate.driver.SqliteLiveCatalog(tables = setOf(base, "${base}__2"))
+        val unioned2 = schemaCatalog.union(SqliteCatalogSnapshot.fromLiveCatalog(live2))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, unioned2) shouldBe "${base}__3"
+    }
+
+    test("§A.2 — live trigger by SQL name collides with rebuild temp name") {
+        // The renderer-internal `fromSchema` already normalises the
+        // canonical `table::trigger` map-key into bare SQL trigger
+        // names so the live catalog's bare SQL trigger names compose
+        // directly via union.
+        val base = SqliteRebuildPlanner.tempTableName("u", sampleBucket)
+        val live = dev.dmigrate.driver.SqliteLiveCatalog(triggers = setOf(base))
+        val unioned = SqliteCatalogSnapshot.EMPTY.union(SqliteCatalogSnapshot.fromLiveCatalog(live))
+        SqliteRebuildPlanner.resolveTempTableName("u", sampleBucket, unioned) shouldBe "${base}__2"
+    }
 })

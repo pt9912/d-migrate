@@ -8,6 +8,8 @@ import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SqliteCatalogProbeMode
+import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -67,6 +69,15 @@ class SchemaMigrateRunner(
      * transaction policy.
      */
     private val executor: ExecutorFn? = null,
+    /**
+     * Plan-2 §A.2: reads the live `sqlite_master` catalog from the
+     * target before `renderer.generateUp` so the SQLite-rebuild
+     * temp-name resolution can union ad-hoc objects in the live DB
+     * with the schema-derived snapshot. The CLI factory wires this
+     * for SQLite + `--execute` paths; null for non-SQLite, file
+     * targets, plan-only, and tests that don't exercise the probe.
+     */
+    private val sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -167,6 +178,10 @@ class SchemaMigrateRunner(
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
         cancellationToken.throwIfCancellationRequested()
+        // Plan-2 §A.2: probe `sqlite_master` before render for the
+        // SQLite + --execute path so the temp-name resolution sees
+        // ad-hoc live objects. Other paths skip the probe.
+        val probeOutcome = SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, effectiveDialect)
         // Phase H.3b: when running with --execute, the SQL stream is
         // consumed by JdbcMigrationExecutor on a live JDBC connection
         // — the SQLite-rebuild renderer can emit runner-hook markers
@@ -178,11 +193,29 @@ class SchemaMigrateRunner(
             } else {
                 dev.dmigrate.driver.ExecutionMode.STANDALONE
             },
+            liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
+            catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
+                SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
+            } else {
+                SqliteCatalogProbeMode.SCHEMA_ONLY
+            },
         )
-        val renderedUp = renderer.generateUp(plan, renderOptions)
+        val renderedUp = if (probeOutcome is SqliteProbeStage.Outcome.Failed) {
+            // Synthetic blocked result — Plan-2 §A.2 demands a hard
+            // block before any mutation. Render is skipped so a
+            // partially valid SQL stream can't even be inspected.
+            SqliteProbeStage.buildFailureResult(probeOutcome.message)
+        } else {
+            val rendered = renderer.generateUp(plan, renderOptions)
+            if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
+                rendered.copy(diagnostics = rendered.diagnostics + SqliteProbeStage.buildNotRunDiagnostic())
+            } else {
+                rendered
+            }
+        }
 
         // 7. Block on destructive without --allow-destructive
-        val effectiveUp = applyDestructiveGuard(renderedUp, request.allowDestructive)
+        val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
 
         // 8. Render DOWN if --generate-rollback (lift any Down-side blockers into the result).
         // Down output is always STANDALONE — rollback consumption goes
@@ -226,7 +259,16 @@ class SchemaMigrateRunner(
             }
 
         // 11. Build report
-        val report = buildReport(request, sourceResolved, targetResolved, plan, withExecution, effectiveDialect, renderedDown)
+        val report = buildReport(
+            request,
+            sourceResolved,
+            targetResolved,
+            plan,
+            withExecution,
+            effectiveDialect,
+            renderedDown,
+            renderOptions.catalogProbeMode,
+        )
 
         // 12. Build the rollback artefact text if Down rendered cleanly AND the
         //     execute path didn't leave the target in an unknown state. The
@@ -575,23 +617,7 @@ class SchemaMigrateRunner(
         return 3
     }
 
-    private fun applyDestructiveGuard(
-        rendered: MigrationDdlResult,
-        allowDestructive: Boolean,
-    ): MigrationDdlResult {
-        if (allowDestructive || rendered.destructiveOperations.isEmpty()) return rendered
-        if (rendered.blockers.any { it.reason == MigrationBlockedReason.DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION }) {
-            return rendered
-        }
-        val withGuard = rendered.copy(
-            blockers = rendered.blockers + dev.dmigrate.driver.migration.MigrationBlocker(
-                reason = MigrationBlockedReason.DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION,
-                operationIds = rendered.destructiveOperations,
-            ),
-        )
-        return withGuard.copy(primaryBlockedReason = MigrationBlockedReason.DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION)
-    }
-
+    @Suppress("LongParameterList")
     private fun buildReport(
         request: SchemaMigrateRequest,
         source: ResolvedSchemaOperand,
@@ -600,8 +626,9 @@ class SchemaMigrateRunner(
         rendered: MigrationDdlResult,
         dialect: DatabaseDialect,
         renderedDown: MigrationDdlResult? = null,
+        catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
     ): SchemaMigrateReport = SchemaMigrateReportBuilder.build(
-        request, source, target, plan, rendered, dialect, renderedDown,
+        request, source, target, plan, rendered, dialect, renderedDown, catalogProbeMode,
     )
 
     /**
@@ -1132,4 +1159,12 @@ data class SchemaMigrateSummary(
      * without requiring callers to scan per-statement hints.
      */
     val planRequiresExclusiveAccess: Boolean = false,
+    /**
+     * Plan-2 §A.2: which input fed the SQLite-rebuild temp-name
+     * collision catalog. `SCHEMA_ONLY` for file-to-file / non-SQLite /
+     * SQLite-without-execute; `LIVE_SQLITE_MASTER` after a successful
+     * probe. Reported as the enum name so consumers don't need to
+     * import the dialect-specific type.
+     */
+    val catalogProbeMode: String = "SCHEMA_ONLY",
 )

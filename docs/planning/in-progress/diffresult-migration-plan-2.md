@@ -412,6 +412,25 @@ DoD:
 
 ### A.2 SQLite-Rebuild Live-`sqlite_master`-Probe im Execute-Pfad
 
+> Status: implementiert (2026-05-12). Public Port-Typen
+> `SqliteLiveCatalog` und `SqliteCatalogProbeMode` in `hexagon/ports-read`;
+> `SqliteCatalogSnapshot` bleibt adapter-intern. Public Adapter-Helper
+> `SqliteLiveCatalogProbe.probe(conn)` liest `sqlite_master` und filtert
+> `sqlite_%`-Systemobjekte. `SchemaMigrateRunner` ruft den Probe-Callback
+> nur bei SQLite-Target + `--execute`; Erfolg liefert die Live-Snapshot
+> per `DdlGenerationOptions.liveSqliteCatalog`, der Renderer unioniert
+> mit `fromSchema(current)`. Probe-Fehler erzeugen einen synthetischen
+> geblockten `MigrationDdlResult` mit `SQLITE_LIVE_CATALOG_PROBE_FAILED`-
+> Diagnostic, Render und Execute werden uebersprungen (Exit 8). Andere
+> SQLite-Pfade (Plan-only, File-Target, ohne Probe-Callback) erhalten
+> eine `SQLITE_LIVE_CATALOG_NOT_RUN_FILE_TARGET`-INFO-Diagnostic;
+> Non-SQLite-Pfade sind silent. `catalogProbeMode` ist im
+> `SchemaMigrateSummary` und JSON/YAML-Report sichtbar. CLI-Wiring
+> via `SqliteLiveCatalogProbeRunner` mit Hikari-Pool. Probe-Logik
+> liegt im neuen `SqliteProbeStage`-Objekt; `MigrateDestructiveGuard`
+> wurde im selben Slice aus `SchemaMigrateRunner` extrahiert, um das
+> Detekt-LargeClass-Budget zu halten.
+
 Phase H des ersten 0.9.7-Plans formalisiert den SQLite-Rebuild-Vertrag und
 loest Temp-Namen-Kollisionen plan-time ueber `SqliteCatalogSnapshot` mit
 deterministischem `__2`/`__3`-Fallback. Heute stammt dieser Snapshot im
@@ -471,14 +490,27 @@ Akzeptanz:
 
 DoD:
 
-- [ ] Live-Loader fuer SQLite-Catalog-Snapshot existiert und ist getrennt vom
-  schema-pure `DiffPlanner`.
-- [ ] Execute-Wiring uebergibt den Union-Snapshot vor `planRebuild`.
-- [ ] Renderer bleibt frei von Live-DB-Probes.
-- [ ] Datei-zu-Datei-/Plan-only-Verhalten ist explizit diagnostisch, nicht
-  optimistisch.
-- [ ] Trigger-Key-vs-SQL-Name-Kollisionen sind getestet.
-- [ ] Report- und Exit-Code-Erwartungen sind gepinnt.
+- [x] Live-Loader fuer SQLite-Catalog-Snapshot existiert und ist getrennt vom
+  schema-pure `DiffPlanner`. (`SqliteLiveCatalogProbe.probe(conn)` im
+  SQLite-Adapter, ports-Daten `SqliteLiveCatalog` im `hexagon/ports-read`.)
+- [x] Execute-Wiring uebergibt den Union-Snapshot vor `planRebuild`.
+  (`SchemaMigrateRunner` → `SqliteProbeStage.run` →
+  `DdlGenerationOptions.liveSqliteCatalog` → `SqliteDiffDdlGenerator`
+  unioniert mit `fromSchema(current)`.)
+- [x] Renderer bleibt frei von Live-DB-Probes. (Renderer liest nur das
+  Options-Feld; Connection-Lifecycle lebt im CLI-Layer
+  `SqliteLiveCatalogProbeRunner`.)
+- [x] Datei-zu-Datei-/Plan-only-Verhalten ist explizit diagnostisch, nicht
+  optimistisch. (`SQLITE_LIVE_CATALOG_NOT_RUN_FILE_TARGET`-INFO im Report,
+  `catalogProbeMode = SCHEMA_ONLY`.)
+- [x] Trigger-Key-vs-SQL-Name-Kollisionen sind getestet.
+  (`SqliteRebuildPlannerTest` §A.2-Block: live trigger SQL-Name uebernimmt
+  in die `fromLiveCatalog`-Union, kanonische `table::name`-Keys werden
+  in `fromSchema` bereits zu SQL-Namen normalisiert.)
+- [x] Report- und Exit-Code-Erwartungen sind gepinnt.
+  (`SchemaMigrateRunnerSqliteProbeTest`: Erfolg → Exit 0 + `LIVE_SQLITE_MASTER`;
+  Probe-Fehler → Exit 8 + `SQLITE_LIVE_CATALOG_PROBE_FAILED`; Plan-only →
+  Exit 0 + `NOT_RUN_FILE_TARGET`; PG/MySQL silent.)
 
 ---
 

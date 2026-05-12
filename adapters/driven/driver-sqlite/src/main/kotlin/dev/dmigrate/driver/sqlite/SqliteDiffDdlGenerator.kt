@@ -122,6 +122,12 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             // Phase H.3a: sourceSchema/targetSchema follow the same
             // direction-aware swap (drop from current-of-the-direction,
             // recreate into target-of-the-direction).
+            // Plan-2 §A.2: down path renders against the desired→current
+            // direction. The DOWN catalog comes from `currentSchema` (the
+            // target the down-rebuild reconstructs). A live SQLite probe
+            // is meaningful only for the UP path's actual target DB; the
+            // down artefact is generated for later external use, so no
+            // live probe is unioned here.
             val downCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
                 ?: SqliteCatalogSnapshot.EMPTY
             val downPlan = SqliteRebuildPlanner.planRebuild(
@@ -138,13 +144,18 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             rebuildRenderer.render(downPlan, ctx)
             return
         }
-        // Phase H.2: synthesise the temp-name collision-probe catalog
-        // from the current-schema snapshot. The execute-pipeline can
-        // fold a live `sqlite_master` probe on top via
-        // SqliteCatalogSnapshot.union() — at the CLI/runner layer,
-        // not here.
-        val upCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
+        // Phase H.2 + Plan-2 §A.2: synthesise the temp-name collision-
+        // probe catalog from the current-schema snapshot, and union
+        // with the live `sqlite_master` snapshot when the runner has
+        // wired one through `DdlGenerationOptions.liveSqliteCatalog`
+        // (SQLite + --execute path). The renderer remains pure
+        // consumption: `newTableTempName` is frozen in the plan and
+        // never re-resolved during SQL emission.
+        val schemaCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
             ?: SqliteCatalogSnapshot.EMPTY
+        val upCatalog = ctx.options.liveSqliteCatalog
+            ?.let { schemaCatalog.union(SqliteCatalogSnapshot.fromLiveCatalog(it)) }
+            ?: schemaCatalog
         val upPlan = SqliteRebuildPlanner.planRebuild(
             table = table,
             bucket = bucket,

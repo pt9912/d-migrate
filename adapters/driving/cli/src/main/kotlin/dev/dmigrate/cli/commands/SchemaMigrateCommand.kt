@@ -83,6 +83,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             comparator = { left, right -> SchemaComparator().compare(left, right) },
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = JdbcMigrationExecutor::execute,
+            sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },
