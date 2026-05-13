@@ -586,7 +586,8 @@ d-migrate schema migrate --source <desired> --target <current> \
   [--dialect <id>] [--output <up.sql>] \
   [--generate-rollback --rollback-output <down.sql>] \
   [--plan-only] [--report <report.yaml>] \
-  [--execute] [--allow-destructive] [--allow-extension-install] [--dry-run]
+  [--execute] [--allow-destructive] [--allow-extension-install] \
+  [--migration-overlay <overlay.json>]... [--dry-run]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
@@ -602,6 +603,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
 | `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON nach `migration-overlay.v1`; vor dem Rendern gegen Quell-/Ziel-Fingerprint, Dialekt und `overlayHash` validiert |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
 
 Begriffe (vollständig in `spec/design.md`):

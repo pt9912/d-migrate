@@ -32,6 +32,15 @@ class SchemaMigrateReportRendererTest : FunSpec({
         statements = statements,
         blockers = blockers,
         diagnostics = diagnostics,
+        overlays = listOf(
+            SchemaMigrateOverlayView(
+                source = "overlays/using.json",
+                entryId = "use-email",
+                overlayHash = "a".repeat(64),
+                diagnosticCode = "OVERLAY_HASH_MISMATCH",
+                severity = "BLOCKER",
+            ),
+        ),
         summary = SchemaMigrateSummary(
             operationsTotal = 1,
             operationsRendered = 1,
@@ -50,11 +59,13 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"dialect\": \"POSTGRESQL\""
         out shouldContain "\"operations\":"
         out shouldContain "\"materializedViews\":"
+        out shouldContain "\"overlays\":"
         out shouldContain "\"summary\":"
         out shouldContain "\"statements\": null"
         out shouldContain "\"requiredExtensions\":[\"postgis\"]"
         out shouldContain "\"missingExtensions\":[\"postgis\"]"
         out shouldContain "\"spatialProfile\":\"POSTGIS\""
+        out shouldContain "\"diagnosticCode\":\"OVERLAY_HASH_MISMATCH\""
     }
 
     test("JSON renderer emits statements when --plan-only is off") {
@@ -171,6 +182,8 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "summary:"
         out shouldContain "spatialProfile: POSTGIS"
         out shouldContain "requiredExtensions: [postgis]"
+        out shouldContain "overlays:\n  - source: overlays/using.json"
+        out shouldContain "diagnosticCode: OVERLAY_HASH_MISMATCH"
     }
 
     test("YAML renderer quotes strings containing colons") {

@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
@@ -191,18 +192,28 @@ class SchemaMigrateRunner(
         // 6. Pipeline: compare → plan → render UP
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
+            .copy(migrationOverlays = request.migrationOverlays)
         cancellationToken.throwIfCancellationRequested()
+        val overlayPreflight = MigrationOverlayPreflight.validate(plan, effectiveDialect)
         // Plan-2 §A.2: probe `sqlite_master` before render for the
         // SQLite + --execute path so the temp-name resolution sees
         // ad-hoc live objects. Other paths skip the probe.
-        val probeOutcome = SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, effectiveDialect)
-        val castPreflightOutcome = SqliteCastPreflightStage.run(
-            sqliteCastPreflightProbe,
-            request,
-            targetOp,
-            effectiveDialect,
-            plan,
-        )
+        val probeOutcome = if (overlayPreflight.hasBlockers) {
+            SqliteProbeStage.Outcome.NotRun
+        } else {
+            SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, effectiveDialect)
+        }
+        val castPreflightOutcome = if (overlayPreflight.hasBlockers) {
+            SqliteCastPreflightStage.Outcome.NotRun
+        } else {
+            SqliteCastPreflightStage.run(
+                sqliteCastPreflightProbe,
+                request,
+                targetOp,
+                effectiveDialect,
+                plan,
+            )
+        }
         // Phase H.3b: when running with --execute, the SQL stream is
         // consumed by JdbcMigrationExecutor on a live JDBC connection
         // — the SQLite-rebuild renderer can emit runner-hook markers
@@ -229,7 +240,9 @@ class SchemaMigrateRunner(
                 ExtensionInstallPolicy.NEVER
             },
         )
-        val renderedUp = if (probeOutcome is SqliteProbeStage.Outcome.Failed) {
+        val renderedUp = if (overlayPreflight.hasBlockers) {
+            MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
+        } else if (probeOutcome is SqliteProbeStage.Outcome.Failed) {
             // Synthetic blocked result — Plan-2 §A.2 demands a hard
             // block before any mutation. Render is skipped so a
             // partially valid SQL stream can't even be inspected.
@@ -263,7 +276,7 @@ class SchemaMigrateRunner(
         // the runner-hook semantics (today the artefact body is reparsed
         // as raw SQL and runner hooks would be ambiguous between
         // standalone and runner reads).
-        val renderedDown = if (request.generateRollback) {
+        val renderedDown = if (request.generateRollback && !overlayPreflight.hasBlockers) {
             cancellationToken.throwIfCancellationRequested()
             renderer.generateDown(
                 plan,
@@ -307,6 +320,7 @@ class SchemaMigrateRunner(
             effectiveDialect,
             renderedDown,
             renderOptions.catalogProbeMode,
+            overlayPreflight,
         )
 
         // 12. Build the rollback artefact text if Down rendered cleanly AND the
@@ -694,8 +708,9 @@ class SchemaMigrateRunner(
         dialect: DatabaseDialect,
         renderedDown: MigrationDdlResult? = null,
         catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
+        overlayPreflight: MigrationOverlayPreflightResult = MigrationOverlayPreflightResult(emptyList(), emptyList()),
     ): SchemaMigrateReport = SchemaMigrateReportBuilder.build(
-        request, source, target, plan, rendered, dialect, renderedDown, catalogProbeMode,
+        request, source, target, plan, rendered, dialect, renderedDown, catalogProbeMode, overlayPreflight.reportItems,
     )
 
     /**
@@ -1017,6 +1032,7 @@ data class SchemaMigrateRequest(
     val execute: Boolean = false,
     val dryRun: Boolean = false,
     val cliConfigPath: Path? = null,
+    val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
 )
 
 data class SchemaMigrateReport(
@@ -1031,6 +1047,7 @@ data class SchemaMigrateReport(
     val blockers: List<SchemaMigrateBlockerView>,
     val diagnostics: List<SchemaMigrateDiagnosticView>,
     val materializedViews: List<SchemaMigrateMaterializedViewContractView> = emptyList(),
+    val overlays: List<SchemaMigrateOverlayView> = emptyList(),
     val summary: SchemaMigrateSummary,
     val execution: SchemaMigrateExecutionView? = null,
 )
@@ -1116,6 +1133,14 @@ data class SchemaMigrateMaterializedViewContractView(
     val refreshSteps: List<String>,
     val locking: String,
     val rollback: String,
+)
+
+data class SchemaMigrateOverlayView(
+    val source: String,
+    val entryId: String?,
+    val overlayHash: String,
+    val diagnosticCode: String,
+    val severity: String,
 )
 
 /**

@@ -5,6 +5,7 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.parameters.options.default
 import com.github.ajalt.clikt.parameters.options.flag
+import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
@@ -14,6 +15,7 @@ import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
@@ -22,7 +24,9 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.format.SchemaFileResolver
+import dev.dmigrate.format.overlay.MigrationOverlayJsonCodec
 import dev.dmigrate.text.icu.IcuUnicodeTextService
+import kotlin.io.path.inputStream
 
 class SchemaMigrateCommand : CliktCommand(name = "migrate") {
     override fun help(context: Context) =
@@ -48,6 +52,10 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         "--allow-extension-install",
         help = "Permit PostgreSQL CREATE EXTENSION prerequisites for extension-dependent migrations",
     ).flag()
+    val migrationOverlays by option(
+        "--migration-overlay",
+        help = "Versioned migration overlay JSON file (repeatable)",
+    ).path(mustExist = true, canBeDir = false, mustBeReadable = true).multiple()
     val generateRollback by option("--generate-rollback", help = "Render Down-SQL alongside Up").flag()
     val execute by option("--execute", help = "Execute Up-SQL against --target (DB only)").flag()
     val dryRun by option("--dry-run", help = "Plan/SQL only, do not execute").flag()
@@ -73,6 +81,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             execute = execute,
             dryRun = dryRun,
             cliConfigPath = root?.config,
+            migrationOverlays = loadMigrationOverlays(migrationOverlays),
         )
 
         val runner = SchemaMigrateRunner(
@@ -122,6 +131,18 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 skippedObjects = result.skippedObjects,
                 dialect = config.dialect,
             )
+        }
+    }
+
+    private fun loadMigrationOverlays(paths: List<java.nio.file.Path>): List<MigrationOverlayDocument> {
+        val codec = MigrationOverlayJsonCodec()
+        return paths.map { path ->
+            path.inputStream().use { input ->
+                MigrationOverlayDocument(
+                    source = path.toString(),
+                    overlay = codec.read(input),
+                )
+            }
         }
     }
 }

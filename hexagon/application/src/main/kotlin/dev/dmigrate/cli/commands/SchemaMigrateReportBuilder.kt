@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
@@ -34,6 +35,7 @@ internal object SchemaMigrateReportBuilder {
         dialect: DatabaseDialect,
         renderedDown: MigrationDdlResult?,
         catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
+        overlayReportItems: List<MigrationOverlayReportItem> = emptyList(),
     ): SchemaMigrateReport {
         val isBlocked = rendered.isBlocked
         val isEmpty = plan.operations.isEmpty()
@@ -66,6 +68,15 @@ internal object SchemaMigrateReportBuilder {
                 )
             },
             materializedViews = buildMaterializedViewContracts(plan, dialect),
+            overlays = overlayReportItems.map { item ->
+                SchemaMigrateOverlayView(
+                    source = item.source,
+                    entryId = item.entryId,
+                    overlayHash = item.overlayHash,
+                    diagnosticCode = item.diagnosticCode,
+                    severity = item.severity.name,
+                )
+            },
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
                     id = op.id,

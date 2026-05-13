@@ -25,6 +25,7 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "blockers", renderBlockers(report.blockers), indent = 1)
         appendField(sb, "diagnostics", renderDiagnostics(report.diagnostics), indent = 1)
         appendField(sb, "materializedViews", renderMaterializedViews(report.materializedViews), indent = 1)
+        appendField(sb, "overlays", renderOverlays(report.overlays), indent = 1)
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
         report.execution?.let { appendField(sb, "execution", renderExecution(it), indent = 1) }
         appendField(sb, "operations", renderOperations(report.operations), indent = 1)
@@ -93,6 +94,14 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    locking: ").append(mv.locking).append('\n')
             sb.append("    rollback: ").append(mv.rollback).append('\n')
         }
+        sb.append("overlays:").append(if (report.overlays.isEmpty()) " []\n" else "\n")
+        for (overlay in report.overlays) {
+            sb.append("  - source: ").append(yamlString(overlay.source)).append('\n')
+            overlay.entryId?.let { sb.append("    entryId: ").append(yamlString(it)).append('\n') }
+            sb.append("    overlayHash: ").append(yamlString(overlay.overlayHash)).append('\n')
+            sb.append("    diagnosticCode: ").append(overlay.diagnosticCode).append('\n')
+            sb.append("    severity: ").append(overlay.severity).append('\n')
+        }
         report.execution?.let {
             sb.append("execution:\n")
             sb.append("  started: ").append(it.started).append('\n')
@@ -145,6 +154,15 @@ internal object SchemaMigrateReportRenderer {
                 "\"stalenessAfterUp\":${jsonString(v.stalenessAfterUp)}," +
                 "\"refreshSteps\":${jsonStringArray(v.refreshSteps)}," +
                 "\"locking\":${jsonString(v.locking)},\"rollback\":${jsonString(v.rollback)}}"
+        }
+
+    private fun renderOverlays(overlays: List<SchemaMigrateOverlayView>): String =
+        overlays.joinToString(prefix = "[", postfix = "]", separator = ",") { overlay ->
+            val entryId = overlay.entryId?.let { ",\"entryId\":${jsonString(it)}" } ?: ""
+            "{\"source\":${jsonString(overlay.source)}$entryId," +
+                "\"overlayHash\":${jsonString(overlay.overlayHash)}," +
+                "\"diagnosticCode\":${jsonString(overlay.diagnosticCode)}," +
+                "\"severity\":${jsonString(overlay.severity)}}"
         }
 
     private fun renderSummary(s: SchemaMigrateSummary): String = buildString {
