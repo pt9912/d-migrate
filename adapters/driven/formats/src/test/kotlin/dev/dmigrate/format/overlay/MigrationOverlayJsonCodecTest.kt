@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
+import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.diff.migration.overlay.UsingExpressionOverlayEntry
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
@@ -38,6 +39,13 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         codec.write(out, overlay)
 
         out.toString(Charsets.UTF_8) shouldBe MigrationOverlayCanonicalJson.encode(overlay)
+    }
+
+    test("F.4 reads rename mapping structure fingerprints") {
+        val overlay = signedRenameOverlay()
+        val encoded = MigrationOverlayCanonicalJson.encode(overlay)
+
+        codec.read(encoded.byteInputStream()) shouldBe overlay
     }
 
     test("writer rejects unsigned or stale-hash overlays") {
@@ -110,6 +118,26 @@ private fun signedOverlay(): MigrationOverlay =
                 conversionReversibility = MigrationOverlayConversionReversibility.AUTOMATIC,
                 expressionSource = "user",
                 reviewedByUser = true,
+            ),
+        ),
+        createdAt = "2026-05-12T10:15:30Z",
+        createdByVersion = "d-migrate-test",
+    ).withComputedHash()
+
+private fun signedRenameOverlay(): MigrationOverlay =
+    MigrationOverlay(
+        overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
+        sourceFingerprint = "src-fp",
+        targetFingerprint = "dst-fp",
+        dialect = "postgresql",
+        entries = listOf(
+            RenameMappingOverlayEntry(
+                id = "rename-users",
+                objectType = "table",
+                fromName = "app_user",
+                toName = "users",
+                fromStructureFingerprint = "from-struct-fp",
+                toStructureFingerprint = "to-struct-fp",
             ),
         ),
         createdAt = "2026-05-12T10:15:30Z",

@@ -85,6 +85,8 @@ data class RenameMappingOverlayEntry(
     val objectType: String,
     val fromName: String,
     val toName: String,
+    val fromStructureFingerprint: String? = null,
+    val toStructureFingerprint: String? = null,
     override val requiredFeatures: Set<String> = emptySet(),
 ) : MigrationOverlayEntry {
     override val kind: String = MigrationOverlayKinds.RENAME_MAPPING

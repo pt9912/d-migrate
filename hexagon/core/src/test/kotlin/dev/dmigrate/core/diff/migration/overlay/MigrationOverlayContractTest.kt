@@ -101,6 +101,76 @@ class MigrationOverlayContractTest : FunSpec({
         )
     }
 
+    test("F.4 canonical rename overlay binds structure fingerprints") {
+        val overlay = unsignedRenameOverlay(
+            entry = renameEntry(
+                fromStructureFingerprint = "from-struct-fp",
+                toStructureFingerprint = "to-struct-fp",
+            ),
+        )
+        val expectedUnsigned = """
+            {
+              "formatVersion": "migration-overlay.v1",
+              "overlayKind": "rename-mapping",
+              "sourceFingerprint": "src-fp",
+              "targetFingerprint": "dst-fp",
+              "dialect": "postgresql",
+              "entries": [
+                {
+                  "kind": "rename-mapping",
+                  "id": "rename-users",
+                  "objectType": "table",
+                  "fromName": "app_user",
+                  "toName": "users",
+                  "fromStructureFingerprint": "from-struct-fp",
+                  "toStructureFingerprint": "to-struct-fp",
+                  "requiredFeatures": []
+                }
+              ],
+              "createdAt": "2026-05-12T10:15:30Z",
+              "createdByVersion": "d-migrate-test"
+            }
+        """.trimIndent() + "\n"
+
+        MigrationOverlayCanonicalJson.encodeUnsigned(overlay) shouldBe expectedUnsigned
+        MigrationOverlayCanonicalJson.computeHash(overlay) shouldBe sha256Hex(expectedUnsigned)
+    }
+
+    test("F.4 rename overlay rejects stale fingerprints with rename-specific diagnostics") {
+        val overlay = unsignedRenameOverlay(
+            sourceFingerprint = "old-src",
+            targetFingerprint = "old-dst",
+        ).withComputedHash()
+
+        val result = MigrationOverlayValidator.validate(overlay, validationContext(), "overlays/rename.json")
+
+        result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.STALE_SOURCE_FINGERPRINT)
+        result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.STALE_TARGET_FINGERPRINT)
+        result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_STALE_FINGERPRINT)
+    }
+
+    test("F.4 rename overlay rejects ambiguous mappings and chains") {
+        val ambiguous = unsignedRenameOverlay(
+            entries = listOf(
+                renameEntry(id = "rename-a", fromName = "app_user", toName = "users"),
+                renameEntry(id = "rename-b", fromName = "APP_USER", toName = "accounts"),
+            ),
+        ).withComputedHash()
+        val chain = unsignedRenameOverlay(
+            entries = listOf(
+                renameEntry(id = "rename-users", fromName = "users_old", toName = "users"),
+                renameEntry(id = "rename-accounts", fromName = "users", toName = "accounts"),
+            ),
+        ).withComputedHash()
+
+        val ambiguousResult = MigrationOverlayValidator.validate(ambiguous, validationContext(), "overlays/ambiguous.json")
+        val chainResult = MigrationOverlayValidator.validate(chain, validationContext(), "overlays/chain.json")
+
+        ambiguousResult.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS)
+        ambiguousResult.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_CASE_CONFLICT)
+        chainResult.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_CHAIN_UNSUPPORTED)
+    }
+
     test("entry type mismatches and reserved optional execution metadata are blockers") {
         val overlay = unsignedUsingOverlay(
             entries = listOf(renameEntry()),
@@ -192,10 +262,17 @@ private fun unsignedUsingOverlay(
         producerMetadata = producerMetadata,
     )
 
-private fun unsignedRenameOverlay(entry: RenameMappingOverlayEntry = renameEntry()): MigrationOverlay =
+private fun unsignedRenameOverlay(
+    sourceFingerprint: String = "src-fp",
+    targetFingerprint: String = "dst-fp",
+    entry: RenameMappingOverlayEntry = renameEntry(),
+    entries: List<RenameMappingOverlayEntry> = listOf(entry),
+): MigrationOverlay =
     unsignedUsingOverlay(
         overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
-        entries = listOf(entry),
+        sourceFingerprint = sourceFingerprint,
+        targetFingerprint = targetFingerprint,
+        entries = entries,
     )
 
 private fun usingEntry(
@@ -226,12 +303,18 @@ private fun usingEntry(
     )
 
 private fun renameEntry(
+    id: String = "rename-users",
     objectType: String = "table",
+    fromName: String = "app_user",
     toName: String = "users",
+    fromStructureFingerprint: String? = null,
+    toStructureFingerprint: String? = null,
 ): RenameMappingOverlayEntry =
     RenameMappingOverlayEntry(
-        id = "rename-users",
+        id = id,
         objectType = objectType,
-        fromName = "app_user",
+        fromName = fromName,
         toName = toName,
+        fromStructureFingerprint = fromStructureFingerprint,
+        toStructureFingerprint = toStructureFingerprint,
     )

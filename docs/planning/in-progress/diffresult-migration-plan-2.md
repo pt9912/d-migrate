@@ -1388,6 +1388,14 @@ Akzeptanz:
 - Blocker-Test fuer mehrdeutiges Mapping.
 - Blocker-Test fuer stale Mapping gegen veraenderten Fingerprint.
 
+> Status-Update (2026-05-13): F.4 hat einen ersten Rename-Overlay-
+> Vertragsslice. `rename-mapping`-Eintraege koennen optionale
+> Struktur-Fingerprints fuer Quelle/Ziel tragen, die kanonisch gehasht und im
+> JSON-Codec gelesen werden. Der Overlay-Validator meldet stale Rename-
+> Mappings mit eigenem Diagnostic-Code und blockiert mehrdeutige Quellen/Ziele,
+> Case-Folding-Konflikte und Kettenrenames im selben Slice. Rendering von
+> `RenameTable`/`RenameColumn` bleibt ein Folgeslice.
+
 ### F.5 CHECK-/EXCLUDE-Constraint-Diffbarkeit
 
 > Status: konservativer erster Slice implementiert (2026-05-12).
@@ -1436,7 +1444,7 @@ DoD:
   `formatVersion`, Hash und Secret-Scrubbing.
 - [x] Partial-Rollback-Artefakte sind maschinenlesbar als partial markiert und
   listen ausgelassene Operationen.
-- [ ] Rename-Mappings sind fingerprint-gebunden und gegen Mehrdeutigkeit
+- [x] Rename-Mappings sind fingerprint-gebunden und gegen Mehrdeutigkeit
   validiert.
 - [x] CHECK-/EXCLUDE-Diffbarkeit nutzt ein entschiedenes Vergleichsmodell und
   blockiert bei Dialekt- oder Enforcement-Unklarheit.

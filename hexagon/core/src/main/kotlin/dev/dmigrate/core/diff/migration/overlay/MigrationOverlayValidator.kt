@@ -1,5 +1,7 @@
 package dev.dmigrate.core.diff.migration.overlay
 
+import java.util.Locale
+
 data class MigrationOverlayValidationContext(
     val expectedSourceFingerprint: String,
     val expectedTargetFingerprint: String,
@@ -51,6 +53,10 @@ object MigrationOverlayDiagnostics {
     const val UNKNOWN_REQUIRED_FEATURE: String = "OVERLAY_UNKNOWN_REQUIRED_FEATURE"
     const val RESERVED_OPTIONAL_FIELD: String = "OVERLAY_RESERVED_OPTIONAL_FIELD"
     const val USER_REVIEW_REQUIRED: String = "OVERLAY_USER_REVIEW_REQUIRED"
+    const val RENAME_MAPPING_STALE_FINGERPRINT: String = "OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT"
+    const val RENAME_MAPPING_AMBIGUOUS: String = "OVERLAY_RENAME_MAPPING_AMBIGUOUS"
+    const val RENAME_MAPPING_CASE_CONFLICT: String = "OVERLAY_RENAME_MAPPING_CASE_CONFLICT"
+    const val RENAME_MAPPING_CHAIN_UNSUPPORTED: String = "OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED"
 }
 
 object MigrationOverlayValidator {
@@ -137,6 +143,7 @@ object MigrationOverlayValidator {
                 )
             }
         }
+        validateRenameMappings(overlay, context, ::block)
 
         for (key in overlay.producerMetadata.keys) {
             if (key.isReservedExecutionField()) {
@@ -196,6 +203,8 @@ object MigrationOverlayValidator {
                 requireEntryNonBlank("objectType", entry.objectType)
                 requireEntryNonBlank("fromName", entry.fromName)
                 requireEntryNonBlank("toName", entry.toName)
+                entry.fromStructureFingerprint?.let { requireEntryNonBlank("fromStructureFingerprint", it) }
+                entry.toStructureFingerprint?.let { requireEntryNonBlank("toStructureFingerprint", it) }
             }
         }
 
@@ -204,6 +213,91 @@ object MigrationOverlayValidator {
         }
     }
 
+    private fun validateRenameMappings(
+        overlay: MigrationOverlay,
+        context: MigrationOverlayValidationContext,
+        block: (String, String, String?) -> Unit,
+    ) {
+        val entries = overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()
+        if (entries.isEmpty()) return
+        if (overlay.sourceFingerprint != context.expectedSourceFingerprint ||
+            overlay.targetFingerprint != context.expectedTargetFingerprint
+        ) {
+            entries.forEach { entry ->
+                block(
+                    MigrationOverlayDiagnostics.RENAME_MAPPING_STALE_FINGERPRINT,
+                    "Rename mapping is stale for the current source/target fingerprints",
+                    entry.id,
+                )
+            }
+        }
+        validateRenameUniqueness(entries, block)
+        validateRenameChains(entries, block)
+    }
+
+    private fun validateRenameUniqueness(
+        entries: List<RenameMappingOverlayEntry>,
+        block: (String, String, String?) -> Unit,
+    ) {
+        val sources = entries.groupBy { it.sourceKey() }
+        val targets = entries.groupBy { it.targetKey() }
+        val sourceConflict = sources.values.firstOrNull { group ->
+            group.map { it.toName.caseFold() }.distinct().size > 1 || group.map { it.fromName }.distinct().size > 1
+        }
+        val targetConflict = targets.values.firstOrNull { group ->
+            group.map { it.fromName.caseFold() }.distinct().size > 1 || group.map { it.toName }.distinct().size > 1
+        }
+        sourceConflict?.forEach { entry ->
+            block(
+                MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
+                "Rename mapping source '${entry.fromName}' is ambiguous",
+                entry.id,
+            )
+        }
+        targetConflict?.forEach { entry ->
+            block(
+                MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
+                "Rename mapping target '${entry.toName}' is ambiguous",
+                entry.id,
+            )
+        }
+        val caseConflict = (sources.values + targets.values).firstOrNull { group ->
+            group.map { it.fromName }.distinct().size > 1 || group.map { it.toName }.distinct().size > 1
+        }
+        caseConflict?.forEach { entry ->
+            block(
+                MigrationOverlayDiagnostics.RENAME_MAPPING_CASE_CONFLICT,
+                "Rename mapping '${entry.fromName}' -> '${entry.toName}' conflicts after case folding",
+                entry.id,
+            )
+        }
+    }
+
+    private fun validateRenameChains(
+        entries: List<RenameMappingOverlayEntry>,
+        block: (String, String, String?) -> Unit,
+    ) {
+        val sources = entries.map { it.sourceKey() }.toSet()
+        entries.filter { it.targetKey() in sources }.forEach { entry ->
+            block(
+                MigrationOverlayDiagnostics.RENAME_MAPPING_CHAIN_UNSUPPORTED,
+                "Rename mapping '${entry.fromName}' -> '${entry.toName}' forms an unsupported chain",
+                entry.id,
+            )
+        }
+    }
+
+    private fun RenameMappingOverlayEntry.sourceKey(): RenameMappingKey =
+        RenameMappingKey(objectType.caseFold(), fromName.caseFold())
+
+    private fun RenameMappingOverlayEntry.targetKey(): RenameMappingKey =
+        RenameMappingKey(objectType.caseFold(), toName.caseFold())
+
+    private data class RenameMappingKey(
+        val objectType: String,
+        val name: String,
+    )
+
     private fun String.isReservedExecutionField(): Boolean =
         startsWith("execution.") ||
             startsWith("risk.") ||
@@ -211,4 +305,6 @@ object MigrationOverlayValidator {
             startsWith("dependencies.") ||
             startsWith("preflights.") ||
             startsWith("secrets.")
+
+    private fun String.caseFold(): String = lowercase(Locale.ROOT)
 }

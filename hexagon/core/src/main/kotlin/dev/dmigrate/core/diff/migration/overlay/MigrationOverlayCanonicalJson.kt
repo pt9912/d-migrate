@@ -54,14 +54,16 @@ object MigrationOverlayCanonicalJson {
             )
 
             is RenameMappingOverlayEntry -> JsonObject(
-                listOf(
-                    "kind" to JsonString(entry.kind),
-                    "id" to JsonString(entry.id),
-                    "objectType" to JsonString(entry.objectType),
-                    "fromName" to JsonString(entry.fromName),
-                    "toName" to JsonString(entry.toName),
-                    "requiredFeatures" to stringArray(entry.requiredFeatures.sorted()),
-                ),
+                buildList {
+                    add("kind" to JsonString(entry.kind))
+                    add("id" to JsonString(entry.id))
+                    add("objectType" to JsonString(entry.objectType))
+                    add("fromName" to JsonString(entry.fromName))
+                    add("toName" to JsonString(entry.toName))
+                    entry.fromStructureFingerprint?.let { add("fromStructureFingerprint" to JsonString(it)) }
+                    entry.toStructureFingerprint?.let { add("toStructureFingerprint" to JsonString(it)) }
+                    add("requiredFeatures" to stringArray(entry.requiredFeatures.sorted()))
+                },
             )
         }
 

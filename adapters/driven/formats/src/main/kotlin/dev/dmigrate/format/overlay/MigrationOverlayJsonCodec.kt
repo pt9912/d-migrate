@@ -123,6 +123,8 @@ class MigrationOverlayJsonCodec {
             objectType = node.requiredText("objectType", path),
             fromName = node.requiredText("fromName", path),
             toName = node.requiredText("toName", path),
+            fromStructureFingerprint = node.optionalText("fromStructureFingerprint", path),
+            toStructureFingerprint = node.optionalText("toStructureFingerprint", path),
             requiredFeatures = parseRequiredFeatures(node.get("requiredFeatures"), "$path.requiredFeatures"),
         )
     }
@@ -275,6 +277,8 @@ class MigrationOverlayJsonCodec {
             "objectType",
             "fromName",
             "toName",
+            "fromStructureFingerprint",
+            "toStructureFingerprint",
             "requiredFeatures",
         )
         private val TEXT_FIELDS = setOf("value", "secret")
