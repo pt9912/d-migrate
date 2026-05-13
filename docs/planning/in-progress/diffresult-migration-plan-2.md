@@ -1290,6 +1290,16 @@ Akzeptanz:
 - Golden-File-Test fuer kanonische Serialisierung.
 - Forward-/Backward-Kompatibilitaetstest fuer unbekannte optionale Felder.
 - Ablehnung unbekannter Pflichtfelder oder inkompatibler `formatVersion`.
+
+> Status-Update (2026-05-13): F.2 hat einen ersten oeffentlichen
+> `migration-plan.v1`-Artefaktvertrag. Das Modell speichert stabile
+> Operation-IDs, Diagnostics, Reversibility-Summary und Render-Bindungen ueber
+> Statement-/SQL-Hashes statt freiem SQL. Die kanonische JSON-Serialisierung
+> schliesst `artifactHash` aus dem signierten Payload aus; Validatoren
+> blockieren unbekannte Versionen, Hash-Mismatch, unbekannte
+> `requiredFeatures`, unbekannte `semanticExtensions` und reservierte
+> producer-Metadaten fuer Ausfuehrungs-/Risiko-/Rollback-/Preflight- oder
+> Secret-Semantik. Secret-nahe producer-Metadaten werden ebenfalls blockiert.
 - Nachweis, dass keine Connection-Strings, Passwoerter oder Secrets landen.
 
 ### F.3 Partial Rollbacks
@@ -1414,7 +1424,7 @@ DoD:
   definiert, gehasht, fingerprint-gebunden und secret-scrubbed.
 - [x] Automatische Daten-Transformationen haben ein explizites Up-/Down-Modell
   oder bleiben `MANUAL_REQUIRED`.
-- [ ] Versioniertes Plan-Artefakt hat kanonische Serialisierung,
+- [x] Versioniertes Plan-Artefakt hat kanonische Serialisierung,
   `formatVersion`, Hash und Secret-Scrubbing.
 - [ ] Partial-Rollback-Artefakte sind maschinenlesbar als partial markiert und
   listen ausgelassene Operationen.
