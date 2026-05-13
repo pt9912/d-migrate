@@ -1185,10 +1185,12 @@ Akzeptanz:
 > `migration-overlay.v1` umgesetzt. Overlays sind kanonisch gehashte JSON-
 > Dokumente mit Fingerprint-/Dialektbindung; unbekannte Versionen/Kinds,
 > stale Fingerprints, Hash-Mismatch, unbekannte Pflichtfelder und reservierte
-> optionale Semantikfelder blockieren vor Render. Reports enthalten Quelle,
-> Entry-ID, Hash und Diagnosecode ohne Secret-Werte. B.1 (`using-expression`)
-> und F.4 (`rename-mapping`) haben Preflight-Tests, die unsigned Overlays vor
-> Render blockieren.
+> optionale Semantikfelder blockieren vor Render. Dekorative Producer-Metadata
+> bleibt erlaubt; secret-bearing Metadata und als secret markierte Overlay-
+> Expressions blockieren. Reports enthalten Quelle, Entry-ID, Hash und
+> Diagnosecode ohne Secret-Werte. B.1 (`using-expression`) und F.4
+> (`rename-mapping`) haben Preflight-Tests, die unsigned Overlays vor Render
+> blockieren.
 
 ### F.1 Automatische Daten-Transformationen
 
@@ -1525,7 +1527,7 @@ DoD:
   ausgeschlossen.
 - [ ] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
   manipulierte Hashes und Secret-Scrubbing ab.
-- [ ] Overlay-Compatibility-Tests decken unbekannte Versionen, unbekannte Kinds,
+- [x] Overlay-Compatibility-Tests decken unbekannte Versionen, unbekannte Kinds,
   stale Fingerprints, Dialekt-Mismatch, manipulierte Hashes und Secret-
   Scrubbing ab.
 

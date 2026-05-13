@@ -52,6 +52,8 @@ object MigrationOverlayDiagnostics {
     const val ENTRY_KIND_MISMATCH: String = "OVERLAY_ENTRY_KIND_MISMATCH"
     const val UNKNOWN_REQUIRED_FEATURE: String = "OVERLAY_UNKNOWN_REQUIRED_FEATURE"
     const val RESERVED_OPTIONAL_FIELD: String = "OVERLAY_RESERVED_OPTIONAL_FIELD"
+    const val SECRET_BEARING_FIELD: String = "OVERLAY_SECRET_BEARING_FIELD"
+    const val SECRET_BEARING_PRODUCER_METADATA: String = "OVERLAY_SECRET_BEARING_PRODUCER_METADATA"
     const val USER_REVIEW_REQUIRED: String = "OVERLAY_USER_REVIEW_REQUIRED"
     const val RENAME_MAPPING_STALE_FINGERPRINT: String = "OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT"
     const val RENAME_MAPPING_AMBIGUOUS: String = "OVERLAY_RENAME_MAPPING_AMBIGUOUS"
@@ -153,6 +155,15 @@ object MigrationOverlayValidator {
                 )
             }
         }
+        val secretBearingMetadata = overlay.producerMetadata.entries.sortedBy { it.key }.firstOrNull {
+            it.key.containsSecretMarker() || it.value.containsSecretMarker()
+        }
+        if (secretBearingMetadata != null) {
+            block(
+                MigrationOverlayDiagnostics.SECRET_BEARING_PRODUCER_METADATA,
+                "Producer metadata field '${secretBearingMetadata.key}' may contain secret-bearing material",
+            )
+        }
 
         return MigrationOverlayValidationResult(
             source = source,
@@ -189,6 +200,20 @@ object MigrationOverlayValidator {
                 requireEntryNonBlank("targetType", entry.targetType)
                 requireEntryNonBlank("upUsingExpression.value", entry.upUsingExpression.value)
                 entry.downUsingExpression?.let { requireEntryNonBlank("downUsingExpression.value", it.value) }
+                if (entry.upUsingExpression.secret) {
+                    block(
+                        MigrationOverlayDiagnostics.SECRET_BEARING_FIELD,
+                        "upUsingExpression is marked secret and cannot be embedded in migration overlays",
+                        entry.id,
+                    )
+                }
+                if (entry.downUsingExpression?.secret == true) {
+                    block(
+                        MigrationOverlayDiagnostics.SECRET_BEARING_FIELD,
+                        "downUsingExpression is marked secret and cannot be embedded in migration overlays",
+                        entry.id,
+                    )
+                }
                 requireEntryNonBlank("expressionSource", entry.expressionSource)
                 if (!entry.reviewedByUser) {
                     block(
@@ -305,6 +330,29 @@ object MigrationOverlayValidator {
             startsWith("dependencies.") ||
             startsWith("preflights.") ||
             startsWith("secrets.")
+
+    private fun String.containsSecretMarker(): Boolean {
+        val normalized = lowercase(Locale.ROOT)
+        val compact = normalized.filter(Char::isLetterOrDigit)
+        return secretMarkers.any { marker ->
+            normalized.contains(marker) || compact.contains(marker.filter(Char::isLetterOrDigit))
+        }
+    }
+
+    private val secretMarkers: Set<String> = setOf(
+        "connection string",
+        "connectionstring",
+        "credential",
+        "jdbc:",
+        "mysql://",
+        "passwd",
+        "password",
+        "postgres://",
+        "postgresql://",
+        "pwd",
+        "secret",
+        "token",
+    )
 
     private fun String.caseFold(): String = lowercase(Locale.ROOT)
 }

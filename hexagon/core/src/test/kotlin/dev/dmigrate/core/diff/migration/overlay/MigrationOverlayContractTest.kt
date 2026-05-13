@@ -183,6 +183,40 @@ class MigrationOverlayContractTest : FunSpec({
         result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RESERVED_OPTIONAL_FIELD)
     }
 
+    test("F.0 decorative producer metadata is accepted but secret-bearing metadata blocks") {
+        val decorative = unsignedUsingOverlay(
+            producerMetadata = mapOf("producer.note" to "human readable"),
+        ).withComputedHash()
+        val secretBearing = unsignedUsingOverlay(
+            producerMetadata = mapOf("producer.note" to "jdbc:postgresql://db.example/prod?password=prod-secret"),
+        ).withComputedHash()
+
+        MigrationOverlayValidator.validate(decorative, validationContext(), "overlays/decorative.json")
+            .hasBlockers shouldBe false
+        MigrationOverlayValidator.validate(secretBearing, validationContext(), "overlays/secret-metadata.json")
+            .diagnostics.map { it.code }
+            .shouldContain(MigrationOverlayDiagnostics.SECRET_BEARING_PRODUCER_METADATA)
+    }
+
+    test("F.0 secret-bearing overlay values block compatibility without leaking values") {
+        val secret = "prod-secret-password"
+        val overlay = unsignedUsingOverlay(
+            entries = listOf(
+                usingEntry(
+                    upUsingExpression = OverlayText(secret, secret = true),
+                    downUsingExpression = OverlayText(secret, secret = true),
+                ),
+            ),
+        ).withComputedHash()
+
+        val result = MigrationOverlayValidator.validate(overlay, validationContext(), "overlays/secret.json")
+        val report = MigrationOverlayReport.fromValidation(result)
+
+        result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.SECRET_BEARING_FIELD)
+        result.diagnostics.joinToString("\n") { it.message }.contains(secret) shouldBe false
+        report.toString().contains(secret) shouldBe false
+    }
+
     test("programmatic entries still require their typed contract fields") {
         val using = unsignedUsingOverlay(
             entries = listOf(
