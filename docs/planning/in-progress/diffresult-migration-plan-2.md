@@ -1477,6 +1477,14 @@ Akzeptanz:
 - Up+Down-Smoke fuer `NOT NULL -> NULL -> NOT NULL`, soweit reversibel.
 - Report weist Datenrisiko und Locking-Hinweis aus.
 
+> Status-Update (2026-05-13): `AlterColumnNullability` bleibt fuer MySQL ein
+> bewusst blockierender Fall. MySQL rendert Nullability-Aenderungen ueber
+> `MODIFY COLUMN` und braucht dafuer den vollstaendigen Spaltentyp, den die
+> standalone Operation nicht traegt. Der Renderer blockiert mit
+> `MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE`, `DIALECT_UNSUPPORTED_OPERATION`,
+> ohne Statements zu emittieren; der MySQL-Round-Trip-Smoke dokumentiert den
+> Carve-out.
+
 ### 11.2 Cross-Dialekt-Regressionsmatrix
 
 Fuer alle Workstreams gilt:
@@ -1508,7 +1516,7 @@ Sobald Workstream F.0 Overlay-Formate einfuehrt:
 
 DoD:
 
-- [ ] MySQL-`AlterColumnNullability` ist im Round-Trip-Smoke abgedeckt oder als
+- [x] MySQL-`AlterColumnNullability` ist im Round-Trip-Smoke abgedeckt oder als
   bewusst blockierender Fall dokumentiert.
 - [ ] Jeder umgesetzte Workstream hat mindestens einen Positivpfad und einen
   blockierenden Pfad.

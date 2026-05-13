@@ -96,7 +96,11 @@ internal object MysqlDiffTableOps {
         // MySQL has no SET/DROP NOT NULL — MODIFY COLUMN needs the full type, which
         // this op doesn't carry. Surface as DIALECT_UNSUPPORTED until the planner can
         // attach the current type to nullability ops.
-        ctx.skip(op, "MySQL requires the column type to change nullability; not in the first matrix.")
+        ctx.skip(
+            op,
+            "MySQL requires the column type to change nullability; not in the first matrix.",
+            code = "MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE",
+        )
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 

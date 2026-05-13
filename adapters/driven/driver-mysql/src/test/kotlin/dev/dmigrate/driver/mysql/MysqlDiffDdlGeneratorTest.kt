@@ -139,7 +139,7 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION } shouldBe true
     }
 
-    test("AlterColumnNullability is blocked: MySQL needs the type") {
+    test("§11.1 AlterColumnNullability is a documented blocker because MySQL needs the full type") {
         val diff = SchemaDiff(
             tablesChanged = listOf(
                 TableDiff(
@@ -152,7 +152,11 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         )
         val r = planAndUp(diff)
         r.isBlocked shouldBe true
-        r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION } shouldBe true
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.operationsSkipped.size shouldBe 1
+        r.diagnostics.single().code shouldBe "MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE"
+        r.diagnostics.single().message shouldContainStr "requires the column type"
     }
 
     test("AlterColumnDefault uses ALTER … SET / DROP DEFAULT") {

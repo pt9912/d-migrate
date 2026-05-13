@@ -41,8 +41,11 @@ import kotlin.io.path.createTempDirectory
  *   and always populates `metadata = TableMetadata(engine = "InnoDB")`
  *   (`MysqlSchemaReader.kt:186`); the in-code Soll/Ausgangsschema must
  *   match exactly to keep content fingerprints equal.
- * - `AlterColumnNullability` stays carve-out per §F.3; this smoke
- *   never exercises it (only AddColumn↔DropColumn).
+ * - `AlterColumnNullability` stays a documented blocker per Plan §11.1;
+ *   MySQL `MODIFY COLUMN` needs the full column type, which the standalone
+ *   nullability op does not carry. The unit-level renderer contract pins
+ *   `MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE`; this smoke exercises only
+ *   AddColumn↔DropColumn.
  *
  * Steps mirror F.2 §1-5: set up Ausgangs-DB, run
  * `schema migrate --execute --generate-rollback`, independent
