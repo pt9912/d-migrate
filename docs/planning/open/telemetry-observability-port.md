@@ -353,10 +353,12 @@ value class MigrationTelemetryAttributes private constructor(
 ```
 
 `of(...)` validiert ausschliesslich freigegebene Keys, begrenzte Werte-Laengen
-und defensives Secret-Scrubbing. Fuer den ersten Milestone reichen technische
-Keys wie `environment`, `artifact_ref`, `checkpoint_ref` und
-`idempotency_key_hash`. Keine Call-Site darf einen rohen Idempotency-Key, eine
-URL, SQL oder Filterliterale als Attribut durchreichen.
+und defensives Secret-Scrubbing. Die Factory kopiert die validierten Werte in
+eine immutable, deterministisch geordnete Map, damit mutable Input-Maps nach der
+Validierung keine freien oder sensitiven Keys mehr einschleusen koennen. Fuer den
+ersten Milestone reichen technische Keys wie `environment`, `artifact_ref`,
+`checkpoint_ref` und `idempotency_key_hash`. Keine Call-Site darf einen rohen
+Idempotency-Key, eine URL, SQL oder Filterliterale als Attribut durchreichen.
 
 Endpoint:
 
@@ -482,7 +484,8 @@ Gradle-Wiring:
 
 Aufgaben:
 
-1. Event-Serialisierung mit bestehendem JSON-Stack.
+1. Event-Serialisierung mit direktem DSL-JSON `JsonWriter` gemaess Gradle-
+   Wiring; keine Abhaengigkeit auf `adapters:driven:formats`.
 2. Ein Event pro Zeile.
 3. Deterministische Feldreihenfolge fuer Tests.
 4. Flush-Verhalten fuer langlaufende Operationen.
@@ -688,6 +691,19 @@ Semantik:
   Tabellenaggregate fuer einfache Auswertung.
 * `all`: jedes bestaetigte Chunk erzeugt ein `ChunkProcessed`-Event.
 
+Checkpoint-Event-Drosselung:
+
+* `CheckpointSaved` darf nicht jeden chunknahen Manifest-Save spiegeln. Export
+  und Import speichern Checkpoints heute bei Chunk-Commit/-Progress; eine
+  1:1-Emission wuerde `--telemetry-chunk-events none|summary` umgehen.
+* Im Modus `none` werden nur initiale, finale und fehlerrelevante
+  Checkpoint-Events emittiert; chunknahe Fortschreibungen bleiben still.
+* Im Modus `summary` wird hoechstens ein aggregiertes `CheckpointSaved` pro
+  Tabelle emittiert, z.B. zusammen mit `ChunkSummary` oder `TableFinished`.
+* Nur im Modus `all` duerfen chunknahe Checkpoint-Events emittiert werden.
+* Tests muessen sicherstellen, dass grosse Tabellen im Modus `none` oder
+  `summary` keine checkpointgetriebene Event-Flut erzeugen.
+
 Zusaetzliche Transfer-Aenderung:
 
 `DataTransferRunner` kann heute nur tabellenweise Fortschritt melden. Fuer
@@ -835,6 +851,8 @@ Unit-Tests:
 * JSONL-Adapter schreibt gueltige JSON-Zeilen.
 * Secrets werden nicht serialisiert.
 * Attribut-Allowlist verhindert freie oder sensitive Keys.
+* `MigrationTelemetryAttributes.of(...)` kopiert mutable Input-Maps nach
+  Validierung in eine immutable, deterministisch geordnete Map.
 * `best-effort` verschluckt kontrolliert Schreibfehler.
 * `strict` meldet Schreibfehler sauber.
 * JSONL-Adapter oeffnet neue Dateien fail-if-exists und Resume-Dateien im
@@ -910,6 +928,8 @@ Integration:
 * SQLite Export/Import mit JSONL-Telemetry.
 * PostgreSQL/MySQL Testcontainers Transfer mit Telemetry-Smoke.
 * Resume/Checkpoint-Lauf erzeugt `CheckpointSaved`.
+* Resume/Checkpoint-Lauf erzeugt bei `--telemetry-chunk-events none|summary`
+  keine chunkweise `CheckpointSaved`-Event-Flut.
 
 ---
 
