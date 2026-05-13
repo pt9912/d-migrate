@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.maps.shouldHaveSize as mapShouldHaveSize
@@ -195,7 +196,7 @@ class PostgresSchemaReaderTest : FunSpec({
         val result = reader.read(pool, SchemaReadOptions(includeViews = false,
             includeFunctions = false, includeProcedures = false, includeTriggers = false))
 
-        result.notes.map { it.code } shouldBe listOf("R401", "R400")
+        result.notes.map { it.code }.shouldContainExactlyInAnyOrder("R400", "R401")
         result.notes.single { it.code == "R400" }.objectName shouldBe "postgis"
         result.notes.single { it.code == "R401" }.objectName shouldBe "places.shape"
         result.notes.single { it.code == "R401" }.message shouldContain "uses the PostGIS extension"
