@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
@@ -93,10 +94,14 @@ class MigrationOverlayPreflightTest : FunSpec({
         val plan = planWith(overlay, "overlays/secret.json")
 
         val result = MigrationOverlayPreflight.validate(plan, DatabaseDialect.POSTGRESQL)
+        val mismatch = result.reportItems.single {
+            it.diagnosticCode == MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH
+        }
 
-        result.reportItems.single().source shouldBe "overlays/secret.json"
-        result.reportItems.single().entryId shouldBe "use-email"
-        result.reportItems.single().diagnosticCode shouldBe "OVERLAY_ENTRY_KIND_MISMATCH"
+        mismatch.source shouldBe "overlays/secret.json"
+        mismatch.entryId shouldBe "use-email"
+        result.reportItems.map { it.diagnosticCode }
+            .shouldContain(MigrationOverlayDiagnostics.SECRET_BEARING_FIELD)
         result.toString().contains(secret) shouldBe false
     }
 })
