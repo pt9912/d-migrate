@@ -542,6 +542,14 @@ Adapter-Initialisierung:
 
 * JSONL-Adapter-Initialisierung und Datei-Open passieren im CLI-Wiring vor dem
   Start des fachlichen Runners und vor Datenbank-/Import-/Export-Seiteneffekten.
+* Fuer checkpoint-faehige Resume-Laeufe muss vorher ein read-only
+  Resume-Preflight laufen: Checkpoint-Manifest laden, ein explizites `--run-id`
+  gegen die Manifest-`operationId` validieren und bei aktivierter JSONL-Telemetry
+  den aktuellen `telemetryOutputRefHash` gegen das Manifest pruefen, sofern dort
+  ein Wert vorhanden ist.
+* Erst nach erfolgreichem Resume-Preflight darf die JSONL-Datei geoeffnet oder
+  neu erzeugt werden. Ein Hash-Mismatch muss Exit `2` liefern, ohne eine neue
+  Telemetry-Datei am falschen Pfad anzulegen.
 * Im `strict`-Modus fuehrt ein Initialisierungs-/Open-Fehler ohne gestarteten
   Primaerlauf direkt zu Exit `7`; der Runner wird nicht ausgefuehrt.
 * Im `best-effort`-Modus wird ein Initialisierungs-/Open-Fehler genau einmal als
@@ -625,12 +633,16 @@ Checkpoint-Manifest-Versionierung:
 * `telemetryOutputRefHash` wird als optionales Top-Level-Feld auf
   `CheckpointManifest` eingefuehrt, nicht unter `operationSpecific`, weil die
   Ausgabereferenz eine operationstypuebergreifende Resume-Invariante ist.
-* Die Manifest-Version wird von `2` auf `3` erhoeht. Das Feld bleibt optional,
-  damit Legacy-Manifeste mit `schemaVersion` 1 oder 2 weiterhin geladen werden
-  koennen.
+* Das additive optionale Feld erfordert fuer sich keine Manifest-Versionserhoehung.
+  `CURRENT_SCHEMA_VERSION` bleibt `2`, damit frische Default-Laeufe ohne
+  aktivierte Telemetry keine fuer aeltere 0.9.x-Builds unnoetig inkompatiblen
+  Checkpoints erzeugen.
+* Loader muessen Legacy-Manifeste mit `schemaVersion` 1 oder 2 ohne
+  `telemetryOutputRefHash` weiterhin akzeptieren. Falls spaeter eine echte
+  inkompatible Manifest-Aenderung noetig wird, wird sie separat versioniert.
 * `FileCheckpointStore` in `adapters:driven:streaming` muss das Feld schreiben
   und lesen. Tests muessen beide Richtungen abdecken:
-  * neue v3-Manifeste mit `telemetryOutputRefHash`
+  * neue v2-Manifeste mit `telemetryOutputRefHash`
   * Legacy-v1-/v2-Manifeste ohne Feld
   * Roundtrip ohne rohe lokale Telemetry-Pfade
 
@@ -855,6 +867,9 @@ CLI-Tests:
 * Resume mit aktivierter JSONL-Telemetry und abweichendem
   `--telemetry-output` gegen einen vorhandenen `telemetryOutputRefHash` im
   Manifest endet mit Exit `2`.
+* Resume mit aktivierter JSONL-Telemetry und abweichendem
+  `--telemetry-output` erzeugt vor dem Exit `2` keine neue JSONL-Datei am
+  falschen Pfad.
 * Resume mit Legacy-Manifest ohne `telemetryOutputRefHash` verwendet die
   explizit angegebene Telemetry-Datei append-only und ueberschreibt nichts.
 * Aktivierte Telemetry fuer nicht angebundene Commands endet mit Exit `2`.
@@ -957,7 +972,7 @@ Gezielte Tests:
 
 ```bash
 docker build --target build \
-  --build-arg GRADLE_TASKS=":hexagon:ports-common:test :hexagon:application:test :adapters:driven:observability-jsonl:test :adapters:driving:cli:test --rerun-tasks" \
+  --build-arg GRADLE_TASKS=":hexagon:ports-common:test :hexagon:ports-write:test :hexagon:application:test :adapters:driven:streaming:test :adapters:driven:observability-jsonl:test :adapters:driving:cli:test --rerun-tasks" \
   -t d-migrate:telemetry-tests .
 ```
 
