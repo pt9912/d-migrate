@@ -1454,7 +1454,7 @@ DoD:
   blockiert bei Dialekt- oder Enforcement-Unklarheit.
   (F.5-Erstscheibe: konservativer SQL-Textvergleich fuer unveraenderte
   Constraints; echte CHECK-/EXCLUDE-Diffs blockieren weiter.)
-- [ ] Fuer F.0 und F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
+- [x] Fuer F.0 und F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
   Blocker-Tests.
 - [x] Kein Produktvertrag stellt ein unvollstaendiges Rollback als vollstaendig
   dar.
