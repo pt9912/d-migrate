@@ -755,6 +755,12 @@ Zu entscheiden:
 > (`R401`, Spalte nutzt PostGIS/Geometry). Ein Regressionstest pinnt beide
 > Notes nebeneinander, damit Reverse-Reports nicht mehr aus einer installierten
 > Extension ableiten, welche Objekte sie tatsaechlich nutzen.
+>
+> Status-Update (2026-05-13): C.1-Diagnostics sind jetzt als Vertrag gepinnt:
+> unbekannte Extension-Verfuegbarkeit blockiert mit
+> `EXTENSION_DEPENDENCY_UNKNOWN`, explizit fehlende Extension mit
+> `EXTENSION_DEPENDENCY_MISSING`, und fehlende `CREATE EXTENSION`-Rechte mit
+> `EXTENSION_INSTALL_PRIVILEGE_MISSING`.
 
 ### C.2 Spatial-Migrationen
 
@@ -789,10 +795,10 @@ DoD:
 - [x] Extension-Dependencies werden im Modell oder Report sichtbar, nicht
   implizit installiert.
 - [x] Policy/Flag fuer Extension-Installation ist entschieden und getestet.
-- [ ] Fehlende Extension, fehlendes Privileg und unbekannte Verfuegbarkeit
+- [x] Fehlende Extension, fehlendes Privileg und unbekannte Verfuegbarkeit
   erzeugen unterschiedliche Diagnostics.
-  (MISSING/UNKNOWN sind getrennte Renderer-Diagnostics; explizite
-  Privilegien-Diagnostics bleiben offen.)
+  (MISSING/UNKNOWN und explizit fehlende Privilegien haben getrennte
+  Renderer-Diagnostics.)
 - [x] Spatial-Spalten, Spatial-Metadaten und Spatial-Indizes werden je Dialekt
   vollstaendig geplant oder blockieren.
 - [x] Datei-zu-Datei-Pfad nimmt Extension-Verfuegbarkeit nicht ohne Schema- oder

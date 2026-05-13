@@ -156,6 +156,45 @@ class PostgresDiffSpatialTest : FunSpec({
         r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.UNKNOWN
     }
 
+    test("§C.1: extension blockers use distinct diagnostics for unknown, missing and missing privilege") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "places",
+                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+                ),
+            ),
+        )
+
+        val unknown = planAndUp(diff)
+        val missing = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionAvailability = listOf(
+                    ExtensionAvailabilityDeclaration(
+                        dialect = "postgresql",
+                        extension = "postgis",
+                        status = ExtensionAvailabilityStatus.MISSING,
+                    ),
+                ),
+            ),
+        )
+        val missingPrivilege = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionInstallPolicy = ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING,
+                extensionInstallPrivilegeStatus = ExtensionInstallPrivilegeStatus.MISSING,
+            ),
+        )
+
+        val codes = listOf(
+            unknown.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_UNKNOWN" }.code,
+            missing.diagnostics.single { it.code == "EXTENSION_DEPENDENCY_MISSING" }.code,
+            missingPrivilege.diagnostics.single { it.code == "EXTENSION_INSTALL_PRIVILEGE_MISSING" }.code,
+        )
+        codes.toSet().size shouldBe 3
+    }
+
     test("§C.2: PostgreSQL GIST index on geometry column renders with verified PostGIS") {
         val before = TableDefinition(
             columns = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
