@@ -1181,6 +1181,15 @@ Akzeptanz:
 - B.1 und F.4 haben je einen Test, der ohne gueltigen F.0-Overlay-Vertrag
   blockiert.
 
+> Status-Update (2026-05-13): Der F.0-Grundvertrag ist als
+> `migration-overlay.v1` umgesetzt. Overlays sind kanonisch gehashte JSON-
+> Dokumente mit Fingerprint-/Dialektbindung; unbekannte Versionen/Kinds,
+> stale Fingerprints, Hash-Mismatch, unbekannte Pflichtfelder und reservierte
+> optionale Semantikfelder blockieren vor Render. Reports enthalten Quelle,
+> Entry-ID, Hash und Diagnosecode ohne Secret-Werte. B.1 (`using-expression`)
+> und F.4 (`rename-mapping`) haben Preflight-Tests, die unsigned Overlays vor
+> Render blockieren.
+
 ### F.1 Automatische Daten-Transformationen
 
 Nicht im ersten 0.9.7-Plan abgedeckt:
@@ -1394,7 +1403,7 @@ Akzeptanz:
 
 DoD:
 
-- [ ] Der F.0-Overlay-Grundvertrag ist fuer alle Overlay-basierten Workstreams
+- [x] Der F.0-Overlay-Grundvertrag ist fuer alle Overlay-basierten Workstreams
   definiert, gehasht, fingerprint-gebunden und secret-scrubbed.
 - [ ] Automatische Daten-Transformationen haben ein explizites Up-/Down-Modell
   oder bleiben `MANUAL_REQUIRED`.

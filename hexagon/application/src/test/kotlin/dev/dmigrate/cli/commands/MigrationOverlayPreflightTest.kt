@@ -47,6 +47,24 @@ class MigrationOverlayPreflightTest : FunSpec({
         failure.statements shouldBe emptyList()
     }
 
+    test("unsigned using-expression overlay blocks before render") {
+        val plan = planWith(
+            overlay = usingOverlay(),
+            source = "overlays/using.json",
+        )
+
+        val result = MigrationOverlayPreflight.validate(plan, DatabaseDialect.POSTGRESQL)
+        val failure = MigrationOverlayPreflight.buildFailureResult(plan, result)
+
+        result.hasBlockers shouldBe true
+        result.reportItems.single().source shouldBe "overlays/using.json"
+        result.reportItems.single().entryId shouldBe null
+        result.reportItems.single().diagnosticCode shouldBe "OVERLAY_HASH_MISSING"
+        failure.isBlocked shouldBe true
+        failure.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        failure.statements shouldBe emptyList()
+    }
+
     test("overlay load failures block through the F0 preflight report") {
         val result = MigrationOverlayPreflight.validate(
             planWithoutOverlays(),
