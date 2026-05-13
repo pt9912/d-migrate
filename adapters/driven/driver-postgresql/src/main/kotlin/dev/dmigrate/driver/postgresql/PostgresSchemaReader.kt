@@ -67,7 +67,7 @@ private fun readPostgresExtensionNotes(
             code = "R400",
             objectName = extension,
             message = "PostgreSQL extension '$extension' is installed",
-            hint = "Extension-dependent objects may require this extension in the target database",
+            hint = "This records installation only; object-level extension usage is reported separately",
         )
     }
 }

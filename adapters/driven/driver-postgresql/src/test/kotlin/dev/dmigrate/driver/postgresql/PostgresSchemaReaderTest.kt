@@ -161,6 +161,44 @@ class PostgresSchemaReaderTest : FunSpec({
         result.notes shouldHaveSize 1
         result.notes[0].code shouldBe "R400"
         result.notes[0].objectName shouldBe "uuid-ossp"
+        result.notes[0].hint shouldContain "installation only"
+    }
+
+    test("read distinguishes installed extensions from objects that use extensions") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("pg_extension") }) } returns listOf(
+            mapOf("extname" to "postgis"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "places", "table_schema" to "public", "table_type" to "BASE TABLE"),
+        )
+        stubTableQueries(
+            columns = listOf(
+                mapOf(
+                    "column_name" to "shape",
+                    "data_type" to "user-defined",
+                    "udt_name" to "geometry",
+                    "is_nullable" to "YES",
+                    "column_default" to null,
+                    "ordinal_position" to 1,
+                    "character_maximum_length" to null,
+                    "numeric_precision" to null,
+                    "numeric_scale" to null,
+                    "is_identity" to "NO",
+                    "identity_generation" to null,
+                    "generated_sequence_name" to null,
+                ),
+            ),
+            pkColumns = emptyList(),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
+            includeFunctions = false, includeProcedures = false, includeTriggers = false))
+
+        result.notes.map { it.code } shouldBe listOf("R401", "R400")
+        result.notes.single { it.code == "R400" }.objectName shouldBe "postgis"
+        result.notes.single { it.code == "R401" }.objectName shouldBe "places.shape"
+        result.notes.single { it.code == "R401" }.message shouldContain "uses the PostGIS extension"
     }
 
     test("read includes views when enabled") {

@@ -717,6 +717,12 @@ Zu entscheiden:
 > bisherige Install-Policy-Verhalten, werden aber mit
 > `EXTENSION_INSTALL_PRIVILEGE_UNVERIFIED` sichtbar. Offen bleibt die
 > Reverse-Unterscheidung "Extension vorhanden" vs. "Objekt nutzt Extension".
+>
+> Status-Update (2026-05-13): Die PostgreSQL-Reverse-Seite unterscheidet den
+> Installationsbefund (`R400`, Extension ist installiert) vom Objektbefund
+> (`R401`, Spalte nutzt PostGIS/Geometry). Ein Regressionstest pinnt beide
+> Notes nebeneinander, damit Reverse-Reports nicht mehr aus einer installierten
+> Extension ableiten, welche Objekte sie tatsaechlich nutzen.
 
 ### C.2 Spatial-Migrationen
 
