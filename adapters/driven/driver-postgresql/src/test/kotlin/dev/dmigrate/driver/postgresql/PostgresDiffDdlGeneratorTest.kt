@@ -11,6 +11,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayConversionReversibility
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDataRisk
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.OverlayText
@@ -345,7 +346,7 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
 
         r.isBlocked shouldBe true
         r.statements.shouldBeEmpty()
-        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_SECRET_EXPRESSION")
+        r.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.SECRET_BEARING_FIELD)
         r.toString().contains(secret) shouldBe false
     }
 
