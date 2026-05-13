@@ -362,16 +362,29 @@ Endpoint:
 
 ```kotlin
 data class TelemetryEndpoint(
-    val kind: String,
+    val kind: TelemetryEndpointKind,
     val name: String? = null,
     val dialect: DatabaseDialect? = null,
     val database: String? = null,
     val schema: String? = null,
 )
+
+enum class TelemetryEndpointKind {
+    DATABASE,
+    FILE,
+    ARTIFACT,
+    MCP,
+    OTHER
+}
 ```
 
 Endpoint-Sicherheitsregel:
 
+* `kind` ist kein freier String. Er wird ueber `TelemetryEndpointKind`
+  allowlistiert; neue Werte muessen bewusst im Eventmodell ergaenzt und
+  getestet werden.
+* `OTHER` ist nur fuer kontrollierte interne Uebergangspfade erlaubt und darf
+  keine rohen Connection-URLs, Pfade oder freien Adapterbezeichnungen tragen.
 * `name` ist der bevorzugte Wert und meint einen benannten Connection-Alias
   oder eine explizit konfigurierte Kurzreferenz.
 * `database` darf nicht blind aus `ConnectionConfig.database` uebernommen
@@ -456,8 +469,15 @@ Gradle-Wiring:
 
 1. `settings.gradle.kts` ergaenzt `include("adapters:driven:observability-jsonl")`.
 2. `adapters/driven/observability-jsonl/build.gradle.kts` haengt an
-   `:hexagon:ports-common` und verwendet den bestehenden JSON-Stack.
-3. `adapters/driving/cli/build.gradle.kts` bekommt eine
+   `:hexagon:ports-common`.
+3. Der JSONL-Adapter bekommt eine eigene direkte Runtime-Dependency auf
+   `com.dslplatform:dsl-json-java8` und verwendet DSL-JSONs Low-Level-
+   `JsonWriter` fuer deterministische, streaming-freundliche Ausgabe. Er haengt
+   nicht an `adapters:driven:formats`, damit kein formatbezogener Adapter als
+   technische Transitiv-Abhaengigkeit in Observability gezogen wird.
+4. Gemeinsame JSON-Hilfen werden nur dann extrahiert, wenn sie adapterneutral
+   bleiben und keine Format-Adapter-Abhaengigkeit einfuehren.
+5. `adapters/driving/cli/build.gradle.kts` bekommt eine
    `implementation(project(":adapters:driven:observability-jsonl"))`-Abhaengigkeit.
 
 Aufgaben:
@@ -706,6 +726,11 @@ Optionsvalidierung:
 * `--trace-id`, `--telemetry-output`, `--telemetry-fail-mode` und
   `--telemetry-chunk-events` haben in diesem Milestone nur bei aktivierter
   Telemetry fuer angebundene Commands Wirkung.
+* `--telemetry-fail-mode` hat den Default `best-effort`. Dadurch bleibt ein
+  aktivierter lokaler Observability-Adapter standardmaessig diagnostisch und
+  bricht Migrationen nicht wegen Telemetry-I/O-Problemen ab.
+* Wer das Telemetry-Artefakt als verbindlichen Audit-Nachweis braucht, muss
+  explizit `--telemetry-fail-mode strict` setzen.
 * `--telemetry-output` mit `--telemetry none` ist eine ungueltige Kombination und
   endet mit Exit `2`, damit nicht versehentlich ein erwartetes Audit-Artefakt
   ausbleibt.
@@ -814,7 +839,10 @@ Unit-Tests:
 * `strict` meldet Schreibfehler sauber.
 * JSONL-Adapter oeffnet neue Dateien fail-if-exists und Resume-Dateien im
   Append-Modus.
+* JSONL-Adapter verwendet die dokumentierte direkte DSL-JSON-Dependency und
+  keine Abhaengigkeit auf `adapters:driven:formats`.
 * Telemetry-Output-Referenzhashes werden ohne rohe Pfade erzeugt und validiert.
+* `TelemetryEndpointKind` verhindert freie Endpoint-Kind-Werte.
 
 Runner-Tests:
 
@@ -857,6 +885,8 @@ CLI-Tests:
   warnt im `best-effort`-Modus und fuehrt den Primaerlauf weiter.
 * Neuer JSONL-Lauf mit fehlendem oder nicht schreibbarem Parent-Verzeichnis
   endet im `strict`-Modus ohne Primaerfehler mit Exit `7`.
+* `--telemetry jsonl` ohne explizites `--telemetry-fail-mode` verwendet
+  `best-effort`.
 * `--run-id` erscheint in allen Events.
 * `--run-id` auf einem neuen CLI-Lauf setzt dieselbe ID wie `operationId`.
 * `--run-id` auf einem neuen `data export`-/`data import`-/`data transfer`-Lauf
