@@ -10,6 +10,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         execution: SchemaMigrateExecutionView? = null,
         blockers: List<SchemaMigrateBlockerView> = emptyList(),
         diagnostics: List<SchemaMigrateDiagnosticView> = emptyList(),
+        sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
     ) = SchemaMigrateReport(
         status = "ok",
         exitCode = 0,
@@ -41,6 +42,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
                 severity = "BLOCKER",
             ),
         ),
+        sqliteCastPreflights = sqliteCastPreflights,
         summary = SchemaMigrateSummary(
             operationsTotal = 1,
             operationsRendered = 1,
@@ -60,12 +62,44 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"operations\":"
         out shouldContain "\"materializedViews\":"
         out shouldContain "\"overlays\":"
+        out shouldContain "\"sqliteCastPreflights\":"
         out shouldContain "\"summary\":"
         out shouldContain "\"statements\": null"
         out shouldContain "\"requiredExtensions\":[\"postgis\"]"
         out shouldContain "\"missingExtensions\":[\"postgis\"]"
         out shouldContain "\"spatialProfile\":\"POSTGIS\""
         out shouldContain "\"diagnosticCode\":\"OVERLAY_HASH_MISMATCH\""
+    }
+
+    test("JSON renderer emits SQLite cast preflight details") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(
+                sqliteCastPreflights = listOf(
+                    SchemaMigrateSqliteCastPreflightView(
+                        operationId = "op-cast",
+                        dialect = "sqlite",
+                        table = "users",
+                        column = "age",
+                        sourceType = "TEXT",
+                        targetType = "INTEGER",
+                        status = "FAILED",
+                        sqlHash = "b".repeat(64),
+                        totalRows = 10,
+                        failingRows = 2,
+                        sampleRowIds = listOf("7", "9"),
+                        problem = "not safely convertible",
+                    ),
+                ),
+            ),
+            "json",
+        )
+
+        out shouldContain "\"sqliteCastPreflights\": ["
+        out shouldContain "\"operationId\":\"op-cast\""
+        out shouldContain "\"status\":\"FAILED\""
+        out shouldContain "\"sqlHash\":\"${"b".repeat(64)}\""
+        out shouldContain "\"failingRows\":2"
+        out shouldContain "\"sampleRowIds\":[\"7\",\"9\"]"
     }
 
     test("JSON renderer emits statements when --plan-only is off") {
@@ -183,7 +217,37 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "spatialProfile: POSTGIS"
         out shouldContain "requiredExtensions: [postgis]"
         out shouldContain "overlays:\n  - source: overlays/using.json"
+        out shouldContain "sqliteCastPreflights: []"
         out shouldContain "diagnosticCode: OVERLAY_HASH_MISMATCH"
+    }
+
+    test("YAML renderer emits SQLite cast preflight details") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(
+                sqliteCastPreflights = listOf(
+                    SchemaMigrateSqliteCastPreflightView(
+                        operationId = "op-cast",
+                        dialect = "sqlite",
+                        table = "users",
+                        column = "age",
+                        sourceType = "TEXT",
+                        targetType = "INTEGER",
+                        status = "NOT_RUN_FILE_TARGET",
+                        sqlHash = "c".repeat(64),
+                        totalRows = null,
+                        failingRows = null,
+                        sampleRowIds = emptyList(),
+                        problem = null,
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+
+        out shouldContain "sqliteCastPreflights:\n  - operationId: op-cast"
+        out shouldContain "status: NOT_RUN_FILE_TARGET"
+        out shouldContain "sqlHash: ${"c".repeat(64)}"
+        out shouldContain "totalRows: null"
     }
 
     test("YAML renderer quotes strings containing colons") {

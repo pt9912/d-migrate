@@ -1053,6 +1053,7 @@ data class SchemaMigrateReport(
     val diagnostics: List<SchemaMigrateDiagnosticView>,
     val materializedViews: List<SchemaMigrateMaterializedViewContractView> = emptyList(),
     val overlays: List<SchemaMigrateOverlayView> = emptyList(),
+    val sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
     val summary: SchemaMigrateSummary,
     val execution: SchemaMigrateExecutionView? = null,
 )
@@ -1146,6 +1147,21 @@ data class SchemaMigrateOverlayView(
     val overlayHash: String,
     val diagnosticCode: String,
     val severity: String,
+)
+
+data class SchemaMigrateSqliteCastPreflightView(
+    val operationId: String,
+    val dialect: String,
+    val table: String,
+    val column: String,
+    val sourceType: String,
+    val targetType: String,
+    val status: String,
+    val sqlHash: String,
+    val totalRows: Long?,
+    val failingRows: Long?,
+    val sampleRowIds: List<String>,
+    val problem: String?,
 )
 
 /**

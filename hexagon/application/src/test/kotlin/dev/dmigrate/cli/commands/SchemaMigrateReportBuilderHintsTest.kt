@@ -14,6 +14,8 @@ import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
+import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -158,6 +160,43 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         s.verifiedExtensions shouldBe listOf("uuid-ossp")
         s.missingExtensions shouldBe listOf("postgis")
         s.extensionInstallStatements shouldBe emptyList()
+    }
+
+    test("SQLite cast preflights are exposed as machine-readable report items") {
+        val report = buildReport(
+            rendered = render(emptyList()).copy(
+                sqliteCastPreflights = listOf(
+                    SqliteCastPreflightDeclaration(
+                        operationId = "op-cast",
+                        table = "users",
+                        column = "age",
+                        sourceType = "TEXT",
+                        targetType = "INTEGER",
+                        status = SqliteCastPreflightStatus.FAILED,
+                        sqlHash = "d".repeat(64),
+                        totalRows = 10,
+                        failingRows = 2,
+                        sampleRowIds = listOf("7", "9"),
+                        problem = "not safely convertible",
+                    ),
+                ),
+            ),
+        )
+
+        report.sqliteCastPreflights.single() shouldBe SchemaMigrateSqliteCastPreflightView(
+            operationId = "op-cast",
+            dialect = "sqlite",
+            table = "users",
+            column = "age",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            status = "FAILED",
+            sqlHash = "d".repeat(64),
+            totalRows = 10,
+            failingRows = 2,
+            sampleRowIds = listOf("7", "9"),
+            problem = "not safely convertible",
+        )
     }
 
     test("materialized view operations surface the refresh staleness contract") {

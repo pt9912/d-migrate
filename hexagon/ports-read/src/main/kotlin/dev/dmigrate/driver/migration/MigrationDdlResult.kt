@@ -2,6 +2,7 @@ package dev.dmigrate.driver.migration
 
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.driver.ExtensionDependencyReport
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 
 /**
  * Output of [DiffDdlGenerator.generateUp] / [DiffDdlGenerator.generateDown].
@@ -54,6 +55,7 @@ data class MigrationDdlResult(
     val executionStatementGroups: List<MigrationExecutionStatementGroup> = emptyList(),
     val recoverability: ExecutionRecoverability? = null,
     val extensionDependencies: List<ExtensionDependencyReport> = emptyList(),
+    val sqliteCastPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
     val spatialProfile: String? = null,
 ) {
     /** Convenience: the plan must not execute. */

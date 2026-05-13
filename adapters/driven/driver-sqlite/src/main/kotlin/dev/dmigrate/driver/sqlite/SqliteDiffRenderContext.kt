@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.DialectExecutionHints
@@ -41,6 +42,7 @@ internal class SqliteDiffRenderContext(
     private val blockers = mutableListOf<MigrationBlocker>()
     private val diagnostics = mutableListOf<DiffDiagnostic>()
     private val extensionDependencies = linkedMapOf<String, ExtensionDependencyAccumulator>()
+    private val sqliteCastPreflights = linkedMapOf<String, SqliteCastPreflightDeclaration>()
 
     fun emit(op: DiffOperation, sqlText: String) {
         // Plan-2 §A.1: direct SQLite DDL via this path is wrapped by
@@ -255,6 +257,10 @@ internal class SqliteDiffRenderContext(
         diagnostics += d
     }
 
+    fun recordSqliteCastPreflight(declaration: SqliteCastPreflightDeclaration) {
+        sqliteCastPreflights[declaration.bindingKey] = declaration
+    }
+
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
@@ -282,6 +288,7 @@ internal class SqliteDiffRenderContext(
             primaryBlockedReason = primary,
             diagnostics = combinedDiagnostics,
             spatialProfile = options.spatialProfile.name,
+            sqliteCastPreflights = sqliteCastPreflights.values.toList(),
             extensionDependencies = extensionDependencies.values.map { dep ->
                 ExtensionDependencyReport(
                     dialect = "sqlite",

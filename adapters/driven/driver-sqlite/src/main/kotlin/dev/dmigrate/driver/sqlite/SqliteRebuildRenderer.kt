@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPhase
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.driver.ExecutionMode
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -118,6 +119,7 @@ internal class SqliteRebuildRenderer(
                     blocked = true
                 }
                 declaration?.status == SqliteCastPreflightStatus.FAILED -> {
+                    ctx.recordSqliteCastPreflight(declaration)
                     val sample = if (declaration.sampleRowIds.isEmpty()) {
                         ""
                     } else {
@@ -137,6 +139,7 @@ internal class SqliteRebuildRenderer(
                     blocked = true
                 }
                 declaration != null && declaration.status != SqliteCastPreflightStatus.PASSED -> {
+                    ctx.recordSqliteCastPreflight(declaration)
                     ctx.addDiagnostic(
                         DiffDiagnostic(
                             code = "SQLITE_CAST_PREFLIGHT_${declaration.status.name}",
@@ -193,6 +196,7 @@ internal class SqliteRebuildRenderer(
         for (binding in required) {
             val declaration = byKey[binding.bindingKey]
             if (declaration == null) {
+                ctx.recordSqliteCastPreflight(binding.toDeclaration(SqliteCastPreflightStatus.NOT_RUN_FILE_TARGET))
                 ctx.addDiagnostic(
                     DiffDiagnostic(
                         code = "SQLITE_CAST_PREFLIGHT_NOT_RUN_FILE_TARGET",
@@ -205,6 +209,7 @@ internal class SqliteRebuildRenderer(
                 )
                 continue
             }
+            ctx.recordSqliteCastPreflight(declaration)
             ctx.addDiagnostic(
                 DiffDiagnostic(
                     code = "SQLITE_CAST_PREFLIGHT_${declaration.status.name}",
@@ -240,6 +245,20 @@ internal class SqliteRebuildRenderer(
         }
         return out.sortedWith(compareBy({ it.table }, { it.column }, { it.operationId }))
     }
+
+    private fun SqliteCastPreflightBinding.toDeclaration(
+        status: SqliteCastPreflightStatus,
+    ): SqliteCastPreflightDeclaration =
+        SqliteCastPreflightDeclaration(
+            operationId = operationId,
+            dialect = dialect,
+            table = table,
+            column = column,
+            sourceType = sourceTypeText,
+            targetType = targetTypeText,
+            status = status,
+            sqlHash = sqlHash,
+        )
 
     private fun emitBlockerDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         for (col in plan.mapping.notNullBackfillBlocked) {

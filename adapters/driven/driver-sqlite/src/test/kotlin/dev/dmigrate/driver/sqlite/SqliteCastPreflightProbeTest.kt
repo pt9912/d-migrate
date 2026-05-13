@@ -86,6 +86,8 @@ class SqliteCastPreflightProbeTest : FunSpec({
             )
             rendered.isBlocked shouldBe false
             rendered.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_PASSED" } shouldBe true
+            rendered.sqliteCastPreflights.single().status shouldBe SqliteCastPreflightStatus.PASSED
+            rendered.sqliteCastPreflights.single().totalRows shouldBe 1
         }
     }
 
@@ -113,6 +115,8 @@ class SqliteCastPreflightProbeTest : FunSpec({
             rendered.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
             rendered.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_FAILED" } shouldBe true
             rendered.statements.any { it.sql.contains("CAST(\"age\" AS INTEGER)") } shouldBe false
+            rendered.sqliteCastPreflights.single().status shouldBe SqliteCastPreflightStatus.FAILED
+            rendered.sqliteCastPreflights.single().failingRows shouldBe 1
         }
     }
 
@@ -134,6 +138,7 @@ class SqliteCastPreflightProbeTest : FunSpec({
         first.isBlocked shouldBe false
         first.statements.map { it.sql } shouldBe second.statements.map { it.sql }
         first.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_NOT_RUN_FILE_TARGET" } shouldBe true
+        first.sqliteCastPreflights.single().status shouldBe SqliteCastPreflightStatus.NOT_RUN_FILE_TARGET
     }
 
     test("B.2 report distinguishes NOT_RUN_POLICY from file-target not-run") {
@@ -160,5 +165,6 @@ class SqliteCastPreflightProbeTest : FunSpec({
         rendered.isBlocked shouldBe false
         rendered.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_NOT_RUN_POLICY" } shouldBe true
         rendered.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_NOT_RUN_FILE_TARGET" } shouldBe false
+        rendered.sqliteCastPreflights.single().status shouldBe SqliteCastPreflightStatus.NOT_RUN_POLICY
     }
 })

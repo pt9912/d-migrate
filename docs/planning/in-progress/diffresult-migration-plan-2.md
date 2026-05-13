@@ -650,13 +650,22 @@ DoD:
 - [ ] Up- und Down-Expressions werden getrennt gespeichert oder Down wird
   blockierend als manuell/nicht reversibel markiert.
 - [ ] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
-- [ ] SQLite-Live-Preflight-Status ist im Report maschinenlesbar.
+- [x] SQLite-Live-Preflight-Status ist im Report maschinenlesbar.
 - [ ] `MigrationPreflightPlanner` oder ein aequivalenter Pre-Render-Baustein
   erzeugt die Preflight-Deklarationen; der Runner erfindet keine Preflight-SQL.
 - [ ] Datei-zu-Datei-Planung berichtet fehlende Live-Pruefung ohne
   optimistischen Pass.
 - [ ] Positive und blockierende Tests existieren fuer PostgreSQL `USING` und
   SQLite Live-Casts.
+
+> Status-Update (2026-05-13): SQLite-Cast-Preflight-Ergebnisse werden jetzt
+> zusaetzlich zu den bisherigen Diagnostics als strukturierte
+> `sqliteCastPreflights` im `schema migrate`-Report ausgegeben. Die Eintraege
+> enthalten Operation, Dialekt, Tabelle, Spalte, Quell-/Zieltyp, Status,
+> `sqlHash`, Zeilenzaehlungen, Beispiel-RowIDs und Problemtext. Der SQLite-
+> Renderer liefert diese Reportdaten fuer `PASSED`, `FAILED`,
+> `NOT_RUN_FILE_TARGET` und `NOT_RUN_POLICY`; JSON/YAML-Renderer und
+> Builder-Tests pinnen das maschinenlesbare Format.
 
 ---
 

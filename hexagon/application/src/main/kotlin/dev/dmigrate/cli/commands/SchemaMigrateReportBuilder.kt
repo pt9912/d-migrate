@@ -77,6 +77,7 @@ internal object SchemaMigrateReportBuilder {
                     severity = item.severity.name,
                 )
             },
+            sqliteCastPreflights = buildSqliteCastPreflightViews(rendered),
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
                     id = op.id,
@@ -137,6 +138,26 @@ internal object SchemaMigrateReportBuilder {
             },
         )
     }
+
+    private fun buildSqliteCastPreflightViews(
+        rendered: MigrationDdlResult,
+    ): List<SchemaMigrateSqliteCastPreflightView> =
+        rendered.sqliteCastPreflights.map { preflight ->
+            SchemaMigrateSqliteCastPreflightView(
+                operationId = preflight.operationId,
+                dialect = preflight.dialect,
+                table = preflight.table,
+                column = preflight.column,
+                sourceType = preflight.sourceType,
+                targetType = preflight.targetType,
+                status = preflight.status.name,
+                sqlHash = preflight.sqlHash,
+                totalRows = preflight.totalRows,
+                failingRows = preflight.failingRows,
+                sampleRowIds = preflight.sampleRowIds,
+                problem = preflight.problem,
+            )
+        }
 
     private fun buildMaterializedViewContracts(
         plan: DiffResult,

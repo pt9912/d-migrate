@@ -26,6 +26,7 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "diagnostics", renderDiagnostics(report.diagnostics), indent = 1)
         appendField(sb, "materializedViews", renderMaterializedViews(report.materializedViews), indent = 1)
         appendField(sb, "overlays", renderOverlays(report.overlays), indent = 1)
+        appendField(sb, "sqliteCastPreflights", renderSqliteCastPreflights(report.sqliteCastPreflights), indent = 1)
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
         report.execution?.let { appendField(sb, "execution", renderExecution(it), indent = 1) }
         appendField(sb, "operations", renderOperations(report.operations), indent = 1)
@@ -102,6 +103,21 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    diagnosticCode: ").append(overlay.diagnosticCode).append('\n')
             sb.append("    severity: ").append(overlay.severity).append('\n')
         }
+        sb.append("sqliteCastPreflights:").append(if (report.sqliteCastPreflights.isEmpty()) " []\n" else "\n")
+        for (preflight in report.sqliteCastPreflights) {
+            sb.append("  - operationId: ").append(yamlString(preflight.operationId)).append('\n')
+            sb.append("    dialect: ").append(preflight.dialect).append('\n')
+            sb.append("    table: ").append(yamlString(preflight.table)).append('\n')
+            sb.append("    column: ").append(yamlString(preflight.column)).append('\n')
+            sb.append("    sourceType: ").append(yamlString(preflight.sourceType)).append('\n')
+            sb.append("    targetType: ").append(yamlString(preflight.targetType)).append('\n')
+            sb.append("    status: ").append(preflight.status).append('\n')
+            sb.append("    sqlHash: ").append(yamlString(preflight.sqlHash)).append('\n')
+            sb.append("    totalRows: ").append(yamlOptional(preflight.totalRows?.toString())).append('\n')
+            sb.append("    failingRows: ").append(yamlOptional(preflight.failingRows?.toString())).append('\n')
+            sb.append("    sampleRowIds: ").append(yamlList(preflight.sampleRowIds)).append('\n')
+            sb.append("    problem: ").append(yamlOptional(preflight.problem)).append('\n')
+        }
         report.execution?.let {
             sb.append("execution:\n")
             sb.append("  started: ").append(it.started).append('\n')
@@ -163,6 +179,22 @@ internal object SchemaMigrateReportRenderer {
                 "\"overlayHash\":${jsonString(overlay.overlayHash)}," +
                 "\"diagnosticCode\":${jsonString(overlay.diagnosticCode)}," +
                 "\"severity\":${jsonString(overlay.severity)}}"
+        }
+
+    private fun renderSqliteCastPreflights(preflights: List<SchemaMigrateSqliteCastPreflightView>): String =
+        preflights.joinToString(prefix = "[", postfix = "]", separator = ",") { preflight ->
+            "{\"operationId\":${jsonString(preflight.operationId)}," +
+                "\"dialect\":${jsonString(preflight.dialect)}," +
+                "\"table\":${jsonString(preflight.table)}," +
+                "\"column\":${jsonString(preflight.column)}," +
+                "\"sourceType\":${jsonString(preflight.sourceType)}," +
+                "\"targetType\":${jsonString(preflight.targetType)}," +
+                "\"status\":${jsonString(preflight.status)}," +
+                "\"sqlHash\":${jsonString(preflight.sqlHash)}," +
+                "\"totalRows\":${preflight.totalRows ?: "null"}," +
+                "\"failingRows\":${preflight.failingRows ?: "null"}," +
+                "\"sampleRowIds\":${jsonStringArray(preflight.sampleRowIds)}," +
+                "\"problem\":${jsonOptString(preflight.problem)}}"
         }
 
     private fun renderSummary(s: SchemaMigrateSummary): String = buildString {
