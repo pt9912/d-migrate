@@ -646,7 +646,7 @@ Akzeptanz:
 
 DoD:
 
-- [ ] PostgreSQL-`USING`-Expression-Quelle ist festgelegt und validiert.
+- [x] PostgreSQL-`USING`-Expression-Quelle ist festgelegt und validiert.
 - [ ] Up- und Down-Expressions werden getrennt gespeichert oder Down wird
   blockierend als manuell/nicht reversibel markiert.
 - [ ] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
@@ -672,6 +672,12 @@ DoD:
 > fuer DB-Execute bzw. `NOT_RUN_FILE_TARGET` fuer Datei-/Plan-Pfade. Der
 > Runner konsumiert diese Deklarationen; die SQLite-spezifische SQL-Bindung
 > bleibt im SQLite-Adapter.
+>
+> Status-Update (2026-05-13): PostgreSQL-`USING`-Overlays akzeptieren
+> `expressionSource` nur aus einer ersten expliziten Allowlist (`user`,
+> `reviewed-user`, `migration-overlay`). Schema-Kommentare oder sonstige
+> Ad-hoc-Quellen blockieren vor Render mit
+> `PG_USING_OVERLAY_INVALID_EXPRESSION_SOURCE`.
 
 ---
 

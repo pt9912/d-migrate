@@ -112,6 +112,16 @@ internal object PostgresUsingOverlayResolver {
                     "secret overlay values cannot be copied into rendered SQL artifacts.",
             )
         }
+        if (entry.expressionSource !in ALLOWED_EXPRESSION_SOURCES) {
+            return block(
+                op = op,
+                ctx = ctx,
+                reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+                code = "PG_USING_OVERLAY_INVALID_EXPRESSION_SOURCE",
+                message = "Using overlay source=$source entry=${entry.id} has unsupported expressionSource " +
+                    "'${entry.expressionSource}'. Supported values: ${ALLOWED_EXPRESSION_SOURCES.sorted().joinToString(", ")}.",
+            )
+        }
         val error = validateExpression(expression.value, entry.column)
         if (error != null) {
             return block(
@@ -233,6 +243,12 @@ internal object PostgresUsingOverlayResolver {
 
     private fun canonicalType(type: String): String =
         type.trim().replace(Regex("\\s+"), " ").uppercase()
+
+    private val ALLOWED_EXPRESSION_SOURCES: Set<String> = setOf(
+        "user",
+        "reviewed-user",
+        "migration-overlay",
+    )
 
     private fun block(
         op: DiffOperation.AlterColumnType,
