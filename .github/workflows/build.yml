@@ -35,7 +35,7 @@ jobs:
 
       - name: Generate coverage reports
         if: always()
-        run: make coverage-modules-html
+        run: make docker-coverage-modules-html
 
       - name: Upload test results
         if: always()

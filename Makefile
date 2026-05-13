@@ -5,7 +5,7 @@ IMAGE ?= d-migrate
 IMAGE_TAG ?= dev
 DOCKER_OCI_TAR_IMAGE ?= $(IMAGE):jib-image-tar
 DOCKER_OCI_TAR ?= build/docker/jib-image.tar
-COVERAGE_MODULES_HTML_IMAGE ?= $(IMAGE):coverage-modules-html
+DOCKER_COVERAGE_MODULES_HTML_IMAGE ?= $(IMAGE):coverage-modules-html
 RELEASE_ASSETS_IMAGE ?= $(IMAGE):release-assets
 RELEASE_VERSION ?= $(DMIGRATE_VERSION)
 CLI_PROJECT ?= :adapters:driving:cli
@@ -46,24 +46,20 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run coverage-gate coverage-report coverage-modules-html integration docs-check smoke gates ci ci-build release-assets oci-build docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make dev              Install the local CLI distribution and run --help' \
 		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
-		'  make coverage-gate    Run tests and root Kover verification' \
-		'  make coverage-report  Generate Kover HTML/XML reports' \
-		'  make coverage-modules-html  Generate selected per-module Kover HTML reports' \
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links in docs/' \
-		'  make smoke            Build the CLI distribution and run --version/--help' \
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
-		'  make oci-build        Build the Jib OCI image locally' \
+		'  make docker-resolve-deps  Warm Gradle dependencies in Docker' \
 		'  make docker-oci-build Build the Jib OCI image via the Dockerfile stage' \
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
@@ -73,6 +69,7 @@ help:
 		'  make docker-coverage-gate  Run Kover verification inside Docker' \
 		'  make docker-coverage-json  Build Kover JSON coverage image' \
 		'  make docker-coverage-modules  Build per-module Kover report image' \
+		'  make docker-coverage-modules-html  Extract selected per-module Kover HTML reports' \
 		'  make docker-coverage-modules-summary  Print per-module Kover summary inside Docker' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
@@ -83,15 +80,12 @@ help:
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
 		'  DOCKER_OCI_TAR_IMAGE=d-migrate:jib-image-tar DOCKER_OCI_TAR=build/docker/jib-image.tar' \
-		'  COVERAGE_MODULES_HTML_IMAGE=d-migrate:coverage-modules-html RELEASE_ASSETS_IMAGE=d-migrate:release-assets' \
+		'  DOCKER_COVERAGE_MODULES_HTML_IMAGE=d-migrate:coverage-modules-html RELEASE_ASSETS_IMAGE=d-migrate:release-assets' \
 		'  RELEASE_VERSION=0.9.7' \
 		'  ARGS="schema validate --source schema.yaml"' \
 		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"' \
 		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test)' \
 		'  DOCKER_TAG=d-migrate:dev-targeted'
-
-resolve-deps:
-	$(GRADLE) resolveAllDependencies
 
 dev:
 	$(GRADLE) $(CLI_PROJECT):installDist
@@ -100,28 +94,17 @@ dev:
 run:
 	$(GRADLE) $(CLI_PROJECT):run --args="$(ARGS)"
 
-coverage-gate:
-	$(GRADLE) test koverVerify
-
-coverage-report:
-	$(GRADLE) test koverHtmlReport koverXmlReport
-
-coverage-modules-html:
-	$(DOCKER) build --target coverage-modules-html \
+docker-coverage-modules-html:
+	$(DOCKER) build --target docker-coverage-modules-html \
 	  $(if $(strip $(COVERAGE_MODULES_HTML_TASKS)),--build-arg COVERAGE_MODULES_HTML_TASKS="$(COVERAGE_MODULES_HTML_TASKS)",) \
-	  -t $(COVERAGE_MODULES_HTML_IMAGE) .
-	$(DOCKER) run --rm $(COVERAGE_MODULES_HTML_IMAGE) | tar xf -
+	  -t $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) .
+	$(DOCKER) run --rm $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) | tar xf -
 
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
 docs-check:
 	./scripts/verify-doc-refs.sh
-
-smoke:
-	$(GRADLE) $(CLI_PROJECT):installDist
-	$(CLI_BIN) --version
-	$(CLI_BIN) --help
 
 gates: docker-check docker-coverage-gate docs-check
 
@@ -138,8 +121,8 @@ release-assets:
 	  -t $(RELEASE_ASSETS_IMAGE) .
 	$(DOCKER) run --rm $(RELEASE_ASSETS_IMAGE) | tar xf -
 
-oci-build:
-	$(GRADLE) $(CLI_PROJECT):jibDockerBuild
+docker-resolve-deps:
+	$(DOCKER) build --target deps -t $(IMAGE):deps .
 
 docker-oci-build:
 	$(DOCKER) build --target jib-image-tar -t $(DOCKER_OCI_TAR_IMAGE) .

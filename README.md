@@ -79,14 +79,15 @@ make help
 Haeufige Ziele:
 
 ```bash
-make ci-build          # Build/Test/Coverage-Gate in der Dockerfile-Build-Stage
-make docker-check      # Gradle check in der Dockerfile-Build-Stage
-make docker-test       # Gradle test in der Dockerfile-Build-Stage
-make docker-detekt     # Detekt in der Dockerfile-Detekt-Stage
+make ci-build             # Build/Test/Coverage-Gate in der Dockerfile-Build-Stage
+make docker-resolve-deps  # Gradle-Dependencies in der Dockerfile-Deps-Stage vorwaermen
+make docker-check         # Gradle check in der Dockerfile-Build-Stage
+make docker-test          # Gradle test in der Dockerfile-Build-Stage
+make docker-detekt        # Detekt in der Dockerfile-Detekt-Stage
 make docker-coverage-gate  # Kover-Gate in der Dockerfile-Coverage-Stage
 make gates             # Docker-Check, Docker-Coverage-Gate und docs-check
 make ci                # Docker-CI-Build plus docs-check
-make smoke             # CLI-Distribution bauen und --version/--help pruefen
+make docker-smoke      # Docker-Runtime-Image bauen und --version/--help pruefen
 make integration       # Testcontainers-Integrationstests via Docker-Script
 make docs-check        # Markdown-Linkziele in docs/ pruefen
 make docker-gates      # Docker-Runtime-Build, Coverage-Gate und Runtime-Smoke
@@ -219,7 +220,7 @@ docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/sch
 - `coverage`: HTML-Report wird auch bei unterschrittenem 90%-Gate erzeugt.
 - `coverage-json`: identischer Root-Kover-Report als JaCoCo-ähnliches JSON auf `stdout` (via `ENTRYPOINT`).
 - `coverage-verify`: hartes `koverVerify`; Build-Target bricht bei nicht erfülltem Mindestwert mit Fehler ab.
-- `coverage-modules-html`: per-Modul-Kover-HTML-Reports als Tar-Stream fuer `make coverage-modules-html`.
+- `docker-coverage-modules-html`: per-Modul-Kover-HTML-Reports als Tar-Stream fuer `make docker-coverage-modules-html`.
 
 </details>
 

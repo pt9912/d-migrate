@@ -22,7 +22,7 @@
 #     docker load -i jib-image.tar
 #
 #   Build and extract CI artifacts without host Gradle:
-#     docker build --target coverage-modules-html -t d-migrate:coverage-modules-html .
+#     docker build --target docker-coverage-modules-html -t d-migrate:coverage-modules-html .
 #     docker run --rm d-migrate:coverage-modules-html | tar xf -
 #     docker build --target release-assets -t d-migrate:release-assets .
 #     docker run --rm d-migrate:release-assets | tar xf -
@@ -180,7 +180,7 @@ ENTRYPOINT ["cat", "/src/adapters/driving/cli/build/jib-image.tar"]
 # ---- Stage 1c: coverage modules HTML --------------------------------------
 # Produces per-module Kover HTML reports and streams them as a tar archive so
 # GitHub Actions can upload them from the checked-out workspace.
-FROM compile AS coverage-modules-html
+FROM compile AS docker-coverage-modules-html
 
 ARG COVERAGE_MODULES_HTML_TASKS="\
 :hexagon:core:koverHtmlReport \
