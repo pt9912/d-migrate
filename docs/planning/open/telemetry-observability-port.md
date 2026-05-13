@@ -248,8 +248,11 @@ JSONL ist absichtlich der erste Adapter, weil er:
    * Im CLI-Pfad ist `runId` standardmaessig identisch zur bestehenden
      `operationId`, damit Progress, Checkpoint/Resume, Result und Telemetry
      dieselbe Laufreferenz verwenden.
-   * `--run-id <id>` setzt fuer neue CLI-Laeufe sowohl `runId` als auch
-     `operationId`.
+   * `--run-id <id>` setzt fuer neue CLI-Laeufe der in diesem Milestone
+     angebundenen Datenkommandos sowohl `runId` als auch `operationId` -
+     unabhaengig davon, ob Telemetry aktiviert ist. Die Option ist damit kein
+     reines Telemetry-Flag, sondern der explizite CLI-Einstieg fuer die
+     bestehende Lauf-/Checkpoint-Korrelation.
    * Diese ID wird nicht nur im Telemetry-Kontext gesetzt, sondern bis in die
      vorhandenen Request-/Resume-/Checkpoint-Pfade durchgereicht:
      `DataExportRequest`, `DataImportRequest`, `DataTransferRequest`, die
@@ -258,6 +261,9 @@ JSONL ist absichtlich der erste Adapter, weil er:
    * Bei `--resume` gewinnt die `operationId` aus dem Checkpoint-Manifest.
      Weicht ein explizites `--run-id` davon ab, endet der Aufruf mit Exit `2`;
      stille Doppel-IDs sind nicht erlaubt.
+   * Bei nicht angebundenen Commands wird `--run-id` syntaktisch akzeptiert,
+     solange Telemetry nicht aktiviert ist, hat dort aber in diesem Milestone
+     keine Wirkung auf fachliche Operation-IDs.
    * `jobId` bleibt eine zusaetzliche MCP-/Async-Korrelation und ersetzt
      `runId`/`operationId` nicht.
    * `traceId` ist fuer externe Trace-Korrelation reserviert und darf keinen
@@ -459,8 +465,8 @@ behandelt oder als Exit `7` sichtbar werden.
 
 JSONL-Wire-Format:
 
-* Jedes Event wird als flaches JSON-Objekt mit deterministischer Feldreihenfolge
-  geschrieben.
+* Jedes Event wird als JSON-Objekt mit deterministischer Top-Level-
+  Feldreihenfolge geschrieben.
 * Pflichtfelder stehen zuerst in dieser Reihenfolge:
   `type`, `timestamp`, `run_id`, `operation_id`, `command`.
 * Der JSONL-Adapter ist in diesem Milestone nur fuer produktiv angebundene
@@ -470,8 +476,9 @@ JSONL-Wire-Format:
   nicht stillschweigend mit fehlendem `operation_id` serialisiert.
 * Optionale Korrelationsfelder folgen in dieser Reihenfolge und werden bei
   `null` ausgelassen: `job_id`, `parent_run_id`, `trace_id`.
-* Endpoint-Felder werden als `source` und `target` jeweils als Objekt
-  serialisiert; auch dort werden `null`-Felder ausgelassen.
+* Endpoint-Felder werden bewusst nicht flachgezogen, sondern als `source` und
+  `target` jeweils als Objekt serialisiert; auch dort werden `null`-Felder
+  ausgelassen und die innere Feldreihenfolge bleibt deterministisch.
 * Event-spezifische Felder folgen nach dem Kontext, z.B. `table`,
   `chunk_index`, `rows_read`, `rows_written`, `rows_failed`, `bytes_written`,
   `duration_ms`, `status`, `exit_code`, `error_class`.
@@ -500,6 +507,19 @@ Output-Open-Mode:
 * Fuer Resume-Laeufe wird dieselbe Ausgabedatei im Append-Modus geoeffnet, wenn
   sie existiert. Fehlt sie, wird sie neu erzeugt.
 * Resume-Append darf keine vorhandenen Zeilen kuerzen oder ueberschreiben.
+* Fuer checkpoint-faehige Resume-Laeufe (`data export`, `data import`) wird auf
+  frischen Laeufen bei aktivierter JSONL-Telemetry zusaetzlich ein
+  `telemetryOutputRefHash` im Checkpoint-Manifest persistiert. Der Wert ist ein
+  stabiler Hash der normalisierten Telemetry-Ausgabereferenz und enthaelt keinen
+  rohen Pfad.
+* Bei `--resume` mit aktivierter JSONL-Telemetry muss der Hash des aktuellen
+  `--telemetry-output` mit dem Manifest-Wert uebereinstimmen, sofern das
+  Manifest diesen Wert enthaelt. Eine Abweichung ist Exit `2`, damit eine
+  Attempt-Historie nicht versehentlich auf mehrere JSONL-Dateien verteilt wird.
+  Legacy-Manifeste ohne `telemetryOutputRefHash` duerfen weiter resuming sein;
+  in diesem Fall wird die explizit angegebene Datei append-only verwendet.
+* `data transfer` besitzt in diesem Milestone keinen Checkpoint-Resume-Pfad.
+  Fail-if-exists gilt dort deshalb immer fuer neue JSONL-Dateien.
 * Terminale Events bleiben pro Prozessaufruf eindeutig. Ein wiederaufgenommener
   Lauf kann deshalb mehrere `run_started`-Events ueber dieselbe `run_id`
   enthalten, aber pro CLI-Aufruf genau ein terminales Run-Event.
@@ -566,6 +586,9 @@ Run-ID-/Operation-ID-Wiring:
 * Bei `--resume` validieren die Checkpoint-Manager ein explizites `--run-id`
   gegen die Manifest-`operationId`, bevor Events emittiert oder neue
   Checkpoints geschrieben werden.
+* Bei aktivierter JSONL-Telemetry persistieren die Checkpoint-Manager fuer
+  frische Export-/Import-Laeufe einen `telemetryOutputRefHash` im Manifest und
+  validieren ihn auf Resume, falls der Manifest-Wert vorhanden ist.
 * Progress- und Result-Objekte muessen dieselbe `operationId` tragen wie die
   Telemetry-Events desselben CLI-Aufrufs.
 
@@ -620,8 +643,15 @@ Optionsvalidierung:
   endet der Aufruf mit Exit `2`.
 * `--telemetry-output`, `--telemetry-fail-mode`,
   `--telemetry-chunk-events`, `--run-id` und `--trace-id` duerfen syntaktisch am
-  Root-Command stehen. Wirkung haben sie in diesem Milestone nur bei aktivierter
-  Telemetry fuer angebundene Commands.
+  Root-Command stehen.
+* `--run-id` wirkt fuer neue Laeufe von `data export`, `data import` und
+  `data transfer` auch ohne aktivierte Telemetry, weil es dieselbe Laufreferenz
+  fuer Result, Progress und Checkpoint/Resume setzt. Fuer andere Commands hat
+  `--run-id` in diesem Milestone keine Wirkung, solange Telemetry nicht
+  aktiviert ist.
+* `--trace-id`, `--telemetry-output`, `--telemetry-fail-mode` und
+  `--telemetry-chunk-events` haben in diesem Milestone nur bei aktivierter
+  Telemetry fuer angebundene Commands Wirkung.
 * `--telemetry-output` mit `--telemetry none` ist eine ungueltige Kombination und
   endet mit Exit `2`, damit nicht versehentlich ein erwartetes Audit-Artefakt
   ausbleibt.
@@ -633,7 +663,9 @@ Optionsvalidierung:
   Telemetry-Schreibfehler: `best-effort` warnt, `strict` fuehrt ohne
   Primaerfehler zu Exit `7`.
 * Neue JSONL-Laeufe verwenden fail-if-exists fuer die Ausgabedatei. Resume-Laeufe
-  verwenden Append gemaess Output-Open-Mode in Phase C.
+  verwenden Append gemaess Output-Open-Mode in Phase C; fuer checkpoint-faehige
+  Resume-Laeufe wird die Telemetry-Ausgabereferenz gegen das Manifest validiert,
+  wenn dort ein `telemetryOutputRefHash` vorhanden ist.
 
 Geltungsbereich:
 
@@ -728,6 +760,7 @@ Unit-Tests:
 * `strict` meldet Schreibfehler sauber.
 * JSONL-Adapter oeffnet neue Dateien fail-if-exists und Resume-Dateien im
   Append-Modus.
+* Telemetry-Output-Referenzhashes werden ohne rohe Pfade erzeugt und validiert.
 
 Runner-Tests:
 
@@ -754,11 +787,24 @@ CLI-Tests:
 
 * `--telemetry none` bleibt Default.
 * `--telemetry jsonl --telemetry-output file` erzeugt Datei.
+* Neuer JSONL-Lauf mit bereits vorhandener Ausgabedatei endet im `strict`-Modus
+  ohne Primaerfehler mit Exit `7` und ueberschreibt die Datei nicht.
+* Neuer JSONL-Lauf mit fehlendem oder nicht schreibbarem Parent-Verzeichnis
+  warnt im `best-effort`-Modus und fuehrt den Primaerlauf weiter.
+* Neuer JSONL-Lauf mit fehlendem oder nicht schreibbarem Parent-Verzeichnis
+  endet im `strict`-Modus ohne Primaerfehler mit Exit `7`.
 * `--run-id` erscheint in allen Events.
 * `--run-id` auf einem neuen CLI-Lauf setzt dieselbe ID wie `operationId`.
+* `--run-id` auf einem neuen `data export`-/`data import`-/`data transfer`-Lauf
+  setzt dieselbe `operationId` auch bei `--telemetry none`.
 * `--resume --run-id <abweichend>` endet mit Exit `2`.
 * Resume mit passendem `--run-id` haengt an eine vorhandene Telemetry-Datei an,
   ohne alte Zeilen zu ueberschreiben.
+* Resume mit aktivierter JSONL-Telemetry und abweichendem
+  `--telemetry-output` gegen einen vorhandenen `telemetryOutputRefHash` im
+  Manifest endet mit Exit `2`.
+* Resume mit Legacy-Manifest ohne `telemetryOutputRefHash` verwendet die
+  explizit angegebene Telemetry-Datei append-only und ueberschreibt nichts.
 * Aktivierte Telemetry fuer nicht angebundene Commands endet mit Exit `2`.
 * ungueltige Kombinationen enden mit Exit `2`.
 
@@ -786,6 +832,9 @@ hexagon/application
   ImportCheckpointManager
   TransferExecutor
   ggf. gemeinsame Runner-Kontextobjekte
+
+hexagon/ports-write
+  CheckpointManifest / Checkpoint-Serialisierung fuer telemetryOutputRefHash
 
 adapters/driven
   observability-jsonl/
@@ -827,6 +876,9 @@ CHANGELOG.md
 * JSONL-Ausgabe ist deterministisch genug fuer Tests und CI-Auswertung.
 * JSONL-Dateien werden bei neuen Laeufen nicht versehentlich ueberschrieben;
   Resume-Laeufe haengen an vorhandene Telemetry-Dateien an.
+* Checkpoint-faehige Resume-Laeufe validieren eine aktivierte JSONL-
+  Ausgabereferenz gegen den Manifest-`telemetryOutputRefHash`, ohne rohe lokale
+  Pfade im Manifest zu speichern.
 * No-op-, Erfolgs- und Fehlerpfade sind getestet.
 * Cancellation wird fuer die in diesem Milestone cancellable Runner als
   `RunCancelled` mit Exit `130` sichtbar und erzeugt keine falschen
