@@ -457,6 +457,49 @@ Muster. Details:
 > `NeutralType.Identifier`) und migriert keine handgeschriebenen
 > SQLite-Sequence-Loesungen.
 
+#### Aktueller Arbeitsstand 0.9.7 (2026-05-13)
+
+0.9.7 ist weiterhin in Arbeit; die Zeilen A-E oben beschreiben abgeschlossene
+Migrate-Basis-Slices, nicht den vollstaendigen Milestone-Abschluss.
+
+Zusätzlich erledigt seit dem 2026-05-08-Stand:
+
+- **G**: KI-nahe MCP-Tools / Prompts / Provider-Quotas abgeschlossen.
+- **A**: Migrate-Spezifikation und Namensbereinigung abgeschlossen.
+- **D.1/D.2/D.3a/D.3b**: erste dialektspezifische DDL-Matrix fuer
+  PostgreSQL, MySQL und SQLite-Simple/Rebuild ist umgesetzt.
+- **C.2**: Planner-/Dependency-Slice abgeschlossen.
+- **C.1 Install-Policy-Slice**: Extension-Install-Policy konservativ
+  umgesetzt; MISSING/UNKNOWN/Privilege-Diagnostik bleibt offen.
+- **E.3 PostgreSQL-Sequences**: erster Sequence-Slice ist umgesetzt;
+  Preserve-/aktueller-Wert-Policy und Cross-Dialect-Sequencing bleiben offen.
+- **F.0/F.5 Vorarbeiten**: versionierte Plan-/Overlay-Vertraege,
+  Reversibilitaets-Summaries, CHECK-/EXCLUDE-Blocker und Overlay-
+  Secret-Diagnostik sind stabilisiert; echte CHECK-/EXCLUDE-Aenderungen
+  bleiben bewusst blockierend.
+- **Telemetry/Observability-Plan**: Adaptervertrag, Gates und Port-Grenzen
+  sind dokumentiert; produktives Metrics-/Tracing-Wiring ist kein 0.9.7-Scope.
+
+Aktuell offene 0.9.7-Restpunkte:
+
+- **B**: Typkonvertierungen und Live-Daten-Preflights, inklusive
+  PostgreSQL-`USING`-Quellenvertrag, Up/Down-Trennung, SQLite-Live-Cast-
+  Preflight-Report und positive/blockierende Tests.
+- **C.1 Rest**: unterschiedliche Diagnostics fuer MISSING, UNKNOWN und
+  fehlende Privilegien; Reverse-Unterscheidung "Extension vorhanden" vs.
+  "Objekt nutzt Extension".
+- **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
+  Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
+  Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
+- **F.0-F.4 Rest**: automatische Daten-Transformationen,
+  versionierte Plan-Artefakte, Partial-Rollback-Artefakte sowie
+  Rename-Mappings mit Fingerprints.
+- **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
+  Vertrag und Daten-Preflight.
+- **Coverage/QA**: MySQL-`AlterColumnNullability` Round-Trip-Smoke oder
+  dokumentierter Blocker, breitere Report-/Exit-Code-Erwartungen,
+  Rollback-Verhalten je Workstream und Artifact-/Overlay-Kompatibilitaet.
+
 ### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
 
 | Bereich | Aufgabe                                                                                                                                                                          | LF-Ref |
@@ -744,6 +787,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.43
-**Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7 (Refactorings + Diff-basierte Migrationen + SQLite-Sequence-Emulation), 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Version**: 3.44
+**Stand**: 2026-05-13
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker und Telemetry-Plan-Gates sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

@@ -203,6 +203,32 @@ Tables:
         SchemaCompareHelpers.defaultValueToString(null) shouldBe null
     }
 
+    test("neutralTypeToString renders enum array and geometry forms") {
+        SchemaCompareHelpers.neutralTypeToString(NeutralType.Enum(values = listOf("open", "closed"))) shouldBe
+            "enum(open,closed)"
+        SchemaCompareHelpers.neutralTypeToString(NeutralType.Enum(refType = "ticket_status")) shouldBe
+            "enum(ref:ticket_status)"
+        SchemaCompareHelpers.neutralTypeToString(NeutralType.Enum()) shouldBe "enum"
+        SchemaCompareHelpers.neutralTypeToString(NeutralType.Array("text")) shouldBe "array(text)"
+        SchemaCompareHelpers.neutralTypeToString(
+            NeutralType.Geometry(GeometryType.of("Point"), srid = 4326),
+        ) shouldBe "geometry(point,4326)"
+        SchemaCompareHelpers.neutralTypeToString(
+            NeutralType.Geometry(GeometryType.of("Polygon")),
+        ) shouldBe "geometry(polygon)"
+    }
+
+    test("generationToString renders identity options") {
+        SchemaCompareHelpers.generationToString(null) shouldBe null
+        SchemaCompareHelpers.generationToString(
+            ColumnGeneration.Identity(
+                mode = IdentityMode.ALWAYS,
+                sequenceName = "users_id_seq",
+                legacySerialSyntax = true,
+            ),
+        ) shouldBe "identity(mode=always,sequence=users_id_seq,legacy_serial_syntax=true)"
+    }
+
     // --- YAML ---
 
     test("yaml identical contains stable fields") {
@@ -425,6 +451,31 @@ Tables:
         val view = SchemaCompareHelpers.projectDiff(diff)
         view.customTypesAdded[0].kind shouldBe "composite"
         view.customTypesAdded[0].detail shouldBe "1 fields"
+    }
+
+    test("projectDiff handles removed enum custom type and changed views") {
+        val diff = SchemaDiff(
+            customTypesRemoved = listOf(NamedCustomType("ticket_status", CustomTypeDefinition(
+                kind = CustomTypeKind.ENUM,
+                values = listOf("open", "closed"),
+            ))),
+            viewsChanged = listOf(ViewDiff(
+                name = "active_tickets",
+                materialized = ValueChange(false, true),
+                refresh = ValueChange(null, "manual"),
+                query = ValueChange("select 1", "select 2"),
+                sourceDialect = ValueChange("postgresql", "mysql"),
+            )),
+        )
+
+        val view = SchemaCompareHelpers.projectDiff(diff)
+
+        view.customTypesRemoved[0].detail shouldBe "open, closed"
+        view.viewsChanged[0].name shouldBe "active_tickets"
+        view.viewsChanged[0].materialized!!.before shouldBe "false"
+        view.viewsChanged[0].refresh!!.after shouldBe "manual"
+        view.viewsChanged[0].queryChanged shouldBe true
+        view.viewsChanged[0].sourceDialect!!.after shouldBe "mysql"
     }
 
     test("projectDiff handles custom type changes with multiple change kinds") {
