@@ -269,6 +269,20 @@ JSONL ist absichtlich der erste Adapter, weil er:
    * `traceId` ist fuer externe Trace-Korrelation reserviert und darf keinen
      Resume-/Checkpoint-Vertrag steuern.
 
+   Sicherheitsvertrag fuer explizite `runId`/`operationId`-Werte:
+
+   * `--run-id` ist ein sicherheitsrelevanter Checkpoint-Identifier, weil der
+     Wert als `operationId` in Manifest- und Staging-Dateinamen eingeht.
+   * Der CLI-Wert muss vor dem Bau von Requests validiert werden:
+     `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`.
+   * Die reservierten Werte `.` und `..` sind ungueltig.
+   * Slash, Backslash, Pfadseparatoren, absolute Pfade, Whitespace-only-Werte
+     und leere Werte sind ungueltig.
+   * Die Checkpoint-Manager duerfen einen expliziten `runId` erst nach dieser
+     Validierung verwenden. Tests muessen belegen, dass Pfad-Traversal- und
+     absolute-Pfad-Versuche mit Exit `2` enden und keine Checkpoint-,
+     Staging- oder Telemetry-Dateien an unerwarteten Orten erzeugen.
+
 ### Phase B - Port- und Eventmodell
 
 Neuer Package-Vorschlag:
@@ -524,6 +538,20 @@ Output-Open-Mode:
   Lauf kann deshalb mehrere `run_started`-Events ueber dieselbe `run_id`
   enthalten, aber pro CLI-Aufruf genau ein terminales Run-Event.
 
+Adapter-Initialisierung:
+
+* JSONL-Adapter-Initialisierung und Datei-Open passieren im CLI-Wiring vor dem
+  Start des fachlichen Runners und vor Datenbank-/Import-/Export-Seiteneffekten.
+* Im `strict`-Modus fuehrt ein Initialisierungs-/Open-Fehler ohne gestarteten
+  Primaerlauf direkt zu Exit `7`; der Runner wird nicht ausgefuehrt.
+* Im `best-effort`-Modus wird ein Initialisierungs-/Open-Fehler genau einmal als
+  Warnung gemeldet. Danach wird der Telemetry-Port fuer diesen Aufruf auf No-op
+  degradiert, damit nachfolgende `publish`, `flush` und `close` keine weiteren
+  Fehler erzeugen.
+* Diese Regel ist getrennt vom nachgelagerten Flush-/Close-Handling: Open-Fehler
+  sind Vorlauf-Fehler, Flush-/Close-Fehler entstehen nach oder waehrend einem
+  bereits gestarteten Primaerlauf.
+
 Strict-/Close-Handling:
 
 * CLI- und Async-Wiring muessen den Primaerausgang zuerst festhalten.
@@ -587,10 +615,24 @@ Run-ID-/Operation-ID-Wiring:
   gegen die Manifest-`operationId`, bevor Events emittiert oder neue
   Checkpoints geschrieben werden.
 * Bei aktivierter JSONL-Telemetry persistieren die Checkpoint-Manager fuer
-  frische Export-/Import-Laeufe einen `telemetryOutputRefHash` im Manifest und
-  validieren ihn auf Resume, falls der Manifest-Wert vorhanden ist.
+  frische Export-/Import-Laeufe einen Top-Level-`telemetryOutputRefHash` im
+  Manifest und validieren ihn auf Resume, falls der Manifest-Wert vorhanden ist.
 * Progress- und Result-Objekte muessen dieselbe `operationId` tragen wie die
   Telemetry-Events desselben CLI-Aufrufs.
+
+Checkpoint-Manifest-Versionierung:
+
+* `telemetryOutputRefHash` wird als optionales Top-Level-Feld auf
+  `CheckpointManifest` eingefuehrt, nicht unter `operationSpecific`, weil die
+  Ausgabereferenz eine operationstypuebergreifende Resume-Invariante ist.
+* Die Manifest-Version wird von `2` auf `3` erhoeht. Das Feld bleibt optional,
+  damit Legacy-Manifeste mit `schemaVersion` 1 oder 2 weiterhin geladen werden
+  koennen.
+* `FileCheckpointStore` in `adapters:driven:streaming` muss das Feld schreiben
+  und lesen. Tests muessen beide Richtungen abdecken:
+  * neue v3-Manifeste mit `telemetryOutputRefHash`
+  * Legacy-v1-/v2-Manifeste ohne Feld
+  * Roundtrip ohne rohe lokale Telemetry-Pfade
 
 Konfiguration fuer Chunk-Events:
 
@@ -787,8 +829,18 @@ CLI-Tests:
 
 * `--telemetry none` bleibt Default.
 * `--telemetry jsonl --telemetry-output file` erzeugt Datei.
+* `--run-id` akzeptiert nur sichere Checkpoint-Identifier gemaess
+  `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`.
+* `--run-id` mit Slash, Backslash, absolutem Pfad, `.` oder `..` endet mit
+  Exit `2` und erzeugt keine Checkpoint-, Staging- oder Telemetry-Artefakte an
+  unerwarteten Orten.
 * Neuer JSONL-Lauf mit bereits vorhandener Ausgabedatei endet im `strict`-Modus
   ohne Primaerfehler mit Exit `7` und ueberschreibt die Datei nicht.
+* Neuer JSONL-Lauf mit bereits vorhandener Ausgabedatei startet im
+  `strict`-Modus den fachlichen Runner nicht.
+* Neuer JSONL-Lauf mit bereits vorhandener Ausgabedatei degradiert im
+  `best-effort`-Modus auf No-op-Telemetry, warnt genau einmal und fuehrt den
+  Primaerlauf weiter.
 * Neuer JSONL-Lauf mit fehlendem oder nicht schreibbarem Parent-Verzeichnis
   warnt im `best-effort`-Modus und fuehrt den Primaerlauf weiter.
 * Neuer JSONL-Lauf mit fehlendem oder nicht schreibbarem Parent-Verzeichnis
@@ -834,7 +886,11 @@ hexagon/application
   ggf. gemeinsame Runner-Kontextobjekte
 
 hexagon/ports-write
-  CheckpointManifest / Checkpoint-Serialisierung fuer telemetryOutputRefHash
+  CheckpointManifest mit optionalem Top-Level-telemetryOutputRefHash
+
+adapters/driven/streaming
+  FileCheckpointStore YAML-Serialisierung fuer telemetryOutputRefHash
+  Manifest-Version- und Legacy-Roundtrip-Tests
 
 adapters/driven
   observability-jsonl/
