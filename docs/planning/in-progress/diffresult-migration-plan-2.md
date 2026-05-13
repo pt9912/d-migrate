@@ -1300,6 +1300,10 @@ Akzeptanz:
 > `requiredFeatures`, unbekannte `semanticExtensions` und reservierte
 > producer-Metadaten fuer Ausfuehrungs-/Risiko-/Rollback-/Preflight- oder
 > Secret-Semantik. Secret-nahe producer-Metadaten werden ebenfalls blockiert.
+> Die Reversibility-Summary wird gegen die Operationen validiert: stale
+> Operation-IDs, fehlende `MANUAL_REQUIRED`-/`NOT_REVERSIBLE`-Eintraege und
+> `fullyReversible=true` fuer unvollstaendige Rollbacks blockieren den
+> Produktvertrag.
 - Nachweis, dass keine Connection-Strings, Passwoerter oder Secrets landen.
 
 ### F.3 Partial Rollbacks
@@ -1452,7 +1456,7 @@ DoD:
   Constraints; echte CHECK-/EXCLUDE-Diffs blockieren weiter.)
 - [ ] Fuer F.0 und F.2 bis F.5 existieren Golden-File-, Kompatibilitaets- und
   Blocker-Tests.
-- [ ] Kein Produktvertrag stellt ein unvollstaendiges Rollback als vollstaendig
+- [x] Kein Produktvertrag stellt ein unvollstaendiges Rollback als vollstaendig
   dar.
 
 ---

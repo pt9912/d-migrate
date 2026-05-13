@@ -35,6 +35,8 @@ object MigrationPlanArtifactDiagnostics {
     const val UNKNOWN_SEMANTIC_EXTENSION: String = "PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION"
     const val RESERVED_PRODUCER_METADATA: String = "PLAN_ARTIFACT_RESERVED_PRODUCER_METADATA"
     const val SECRET_BEARING_PRODUCER_METADATA: String = "PLAN_ARTIFACT_SECRET_BEARING_PRODUCER_METADATA"
+    const val REVERSIBILITY_SUMMARY_MISMATCH: String = "PLAN_ARTIFACT_REVERSIBILITY_SUMMARY_MISMATCH"
+    const val UNKNOWN_REVERSIBILITY_OPERATION: String = "PLAN_ARTIFACT_UNKNOWN_REVERSIBILITY_OPERATION"
 }
 
 object MigrationPlanArtifactValidator {
@@ -108,10 +110,89 @@ object MigrationPlanArtifactValidator {
             )
         }
 
+        validateReversibilitySummary(artifact, ::block)
+
         return MigrationPlanArtifactValidationResult(
             artifactHash = reportHash,
             diagnostics = diagnostics,
         )
+    }
+
+    private fun validateReversibilitySummary(
+        artifact: MigrationPlanArtifact,
+        block: (String, String) -> Unit,
+    ) {
+        val operationIds = artifact.operations.map { it.id }.toSet()
+        validateSummaryOperationIds(artifact.reversibilitySummary, operationIds, block)
+
+        val manualRequired = artifact.operations.filter { it.reversibility == REVERSIBILITY_MANUAL_REQUIRED }
+        val notReversible = artifact.operations.filter { it.reversibility == REVERSIBILITY_NOT_REVERSIBLE }
+        if (artifact.reversibilitySummary.fullyReversible && (manualRequired.isNotEmpty() || notReversible.isNotEmpty())) {
+            block(
+                MigrationPlanArtifactDiagnostics.REVERSIBILITY_SUMMARY_MISMATCH,
+                "fullyReversible cannot be true while operations require manual or impossible rollback",
+            )
+        }
+
+        validateSummaryCoversOperations(
+            expectedOperationIds = manualRequired.map { it.id }.toSet(),
+            reportedOperationIds = artifact.reversibilitySummary.manualRequiredOperationIds.toSet(),
+            reversibility = REVERSIBILITY_MANUAL_REQUIRED,
+            block = block,
+        )
+        validateSummaryCoversOperations(
+            expectedOperationIds = notReversible.map { it.id }.toSet(),
+            reportedOperationIds = artifact.reversibilitySummary.notReversibleOperationIds.toSet(),
+            reversibility = REVERSIBILITY_NOT_REVERSIBLE,
+            block = block,
+        )
+
+        val summaryListsIncompleteRollback = artifact.reversibilitySummary.manualRequiredOperationIds.isNotEmpty() ||
+            artifact.reversibilitySummary.notReversibleOperationIds.isNotEmpty()
+        if (artifact.reversibilitySummary.fullyReversible && summaryListsIncompleteRollback) {
+            block(
+                MigrationPlanArtifactDiagnostics.REVERSIBILITY_SUMMARY_MISMATCH,
+                "fullyReversible cannot be true while reversibilitySummary lists incomplete rollback operations",
+            )
+        }
+    }
+
+    private fun validateSummaryOperationIds(
+        summary: MigrationPlanReversibilitySummary,
+        operationIds: Set<String>,
+        block: (String, String) -> Unit,
+    ) {
+        val staleOperationId = (summary.manualRequiredOperationIds + summary.notReversibleOperationIds)
+            .sorted()
+            .firstOrNull { it !in operationIds }
+        if (staleOperationId != null) {
+            block(
+                MigrationPlanArtifactDiagnostics.UNKNOWN_REVERSIBILITY_OPERATION,
+                "reversibilitySummary references unknown operation '$staleOperationId'",
+            )
+        }
+    }
+
+    private fun validateSummaryCoversOperations(
+        expectedOperationIds: Set<String>,
+        reportedOperationIds: Set<String>,
+        reversibility: String,
+        block: (String, String) -> Unit,
+    ) {
+        val missingOperationId = (expectedOperationIds - reportedOperationIds).sorted().firstOrNull()
+        if (missingOperationId != null) {
+            block(
+                MigrationPlanArtifactDiagnostics.REVERSIBILITY_SUMMARY_MISMATCH,
+                "reversibilitySummary omits $reversibility operation '$missingOperationId'",
+            )
+        }
+        val unexpectedOperationId = (reportedOperationIds - expectedOperationIds).sorted().firstOrNull()
+        if (unexpectedOperationId != null) {
+            block(
+                MigrationPlanArtifactDiagnostics.REVERSIBILITY_SUMMARY_MISMATCH,
+                "reversibilitySummary lists operation '$unexpectedOperationId' as $reversibility",
+            )
+        }
     }
 
     private fun requireNonBlank(
@@ -155,4 +236,7 @@ object MigrationPlanArtifactValidator {
         "secret",
         "token",
     )
+
+    private const val REVERSIBILITY_MANUAL_REQUIRED: String = "MANUAL_REQUIRED"
+    private const val REVERSIBILITY_NOT_REVERSIBLE: String = "NOT_REVERSIBLE"
 }
