@@ -22,7 +22,7 @@ Architektur.
 
 Ziele:
 
-- Migrationen, Exporte, Importe, Transfers und Profiling-Laeufe nachvollziehbar machen
+- Migrationen, Exporte, Importe und Transfers nachvollziehbar machen
 - Run-, Step-, Table-, Chunk- und Checkpoint-Ereignisse fachlich modellieren
 - CLI-, MCP- und spaetere Async-Job-Pfade ueber gemeinsame Correlation-IDs verbinden
 - einen ersten JSONL-Adapter als einfache, testbare Referenzimplementierung liefern
@@ -67,8 +67,8 @@ Was fehlt:
   - `data export`
   - `data import`
   - `data transfer`
-  - perspektivisch `schema reverse`
-  - perspektivisch `data profile`
+- Modell vorbereiten fuer spaetere Integration in `schema reverse` und
+  `data profile`, ohne diese Runner in diesem Milestone produktiv anzubinden
 - Run-ID-/Operation-ID-/Job-ID-Korrelation
 - Tests fuer Event-Emission, JSONL-Ausgabe und No-op-Verhalten
 - Dokumentation in CLI-Spec, Architektur und User Guide
@@ -84,6 +84,8 @@ Was fehlt:
 - automatische Data-Lineage-Visualisierung
 - Rohdaten-Sampling oder Dateninhalt in Events
 - Secrets, JDBC-URLs oder SQL-Rohdaten in Telemetry-Events
+- produktive Telemetry-Emission fuer `schema reverse`, `schema compare` oder
+  `data profile`
 
 ---
 
@@ -248,6 +250,11 @@ JSONL ist absichtlich der erste Adapter, weil er:
      dieselbe Laufreferenz verwenden.
    * `--run-id <id>` setzt fuer neue CLI-Laeufe sowohl `runId` als auch
      `operationId`.
+   * Diese ID wird nicht nur im Telemetry-Kontext gesetzt, sondern bis in die
+     vorhandenen Request-/Resume-/Checkpoint-Pfade durchgereicht:
+     `DataExportRequest`, `DataImportRequest`, `DataTransferRequest`, die
+     jeweiligen Checkpoint-Manager und die Result-/Progress-Objekte duerfen fuer
+     denselben CLI-Lauf keine zweite UUID erzeugen.
    * Bei `--resume` gewinnt die `operationId` aus dem Checkpoint-Manifest.
      Weicht ein explizites `--run-id` davon ab, endet der Aufruf mit Exit `2`;
      stille Doppel-IDs sind nicht erlaubt.
@@ -380,13 +387,15 @@ data class StepFinished(...)
 data class TableStarted(...)
 data class TableFinished(...)
 data class ChunkProcessed(...)
+data class ChunkSummary(...)
 data class CheckpointSaved(...)
 ```
 
-`SchemaDriftDetected` bleibt fuer spaetere Schema-/Compare-Pfade vorgemerkt,
-ist aber kein verbindlicher Eventtyp dieses Milestones, solange
-`schema reverse`, `schema compare` oder `data profile` nicht produktiv an den
-Telemetry-Port angeschlossen werden.
+`ChunkSummary` ist der verbindliche Summary-Event fuer
+`--telemetry-chunk-events summary`. `SchemaDriftDetected` bleibt fuer spaetere
+Schema-/Compare-Pfade vorgemerkt, ist aber kein verbindlicher Eventtyp dieses
+Milestones, solange `schema reverse`, `schema compare` oder `data profile`
+nicht produktiv an den Telemetry-Port angeschlossen werden.
 
 Terminal-Event-Regeln:
 
@@ -440,6 +449,48 @@ Der JSONL-Adapter selbst ist strikt und wirft
 Das CLI-Wiring entscheidet ueber den Decorator, ob diese Fehler nur als Warnung
 behandelt oder als Exit `7` sichtbar werden.
 
+JSONL-Wire-Format:
+
+* Jedes Event wird als flaches JSON-Objekt mit deterministischer Feldreihenfolge
+  geschrieben.
+* Pflichtfelder stehen zuerst in dieser Reihenfolge:
+  `type`, `timestamp`, `run_id`, `operation_id`, `command`.
+* Optionale Korrelationsfelder folgen in dieser Reihenfolge und werden bei
+  `null` ausgelassen: `job_id`, `parent_run_id`, `trace_id`.
+* Endpoint-Felder werden als `source` und `target` jeweils als Objekt
+  serialisiert; auch dort werden `null`-Felder ausgelassen.
+* Event-spezifische Felder folgen nach dem Kontext, z.B. `table`,
+  `chunk_index`, `rows_read`, `rows_written`, `rows_failed`, `bytes_written`,
+  `duration_ms`, `status`, `exit_code`, `error_class`.
+* `attributes` wird nur geschrieben, wenn es nicht leer ist.
+* `timestamp` ist ein UTC-ISO-8601-String aus `Instant.toString()`.
+* `type` ist lower snake case, z.B. `run_started`.
+* Enum-Werte wie `status` bleiben upper snake case, z.B. `SUCCESS`.
+* JSON-Nullwerte werden nicht serialisiert; fehlende Felder bedeuten
+  "nicht zutreffend" oder "nicht vorhanden".
+
+Beispielausgabe:
+
+```json
+{"type":"run_started","timestamp":"2026-05-13T10:15:30Z","run_id":"...","operation_id":"...","command":"data transfer"}
+{"type":"table_started","timestamp":"2026-05-13T10:15:31Z","run_id":"...","operation_id":"...","command":"data transfer","table":"customers"}
+{"type":"chunk_summary","timestamp":"2026-05-13T10:15:32Z","run_id":"...","operation_id":"...","command":"data transfer","table":"customers","chunk_count":1,"rows_read":10000,"rows_written":10000,"duration_ms":812}
+{"type":"table_finished","timestamp":"2026-05-13T10:15:33Z","run_id":"...","operation_id":"...","command":"data transfer","table":"customers","status":"SUCCESS","rows_read":10000,"rows_written":10000,"chunk_count":1,"duration_ms":920}
+{"type":"run_finished","timestamp":"2026-05-13T10:15:49Z","run_id":"...","operation_id":"...","command":"data transfer","status":"SUCCESS","duration_ms":18441}
+```
+
+Output-Open-Mode:
+
+* Fuer neue Laeufe erzeugt der JSONL-Adapter die Ausgabedatei neu und bricht mit
+  `MigrationTelemetryWriteException` ab, wenn die Datei bereits existiert. Wer
+  eine bestehende Datei behalten will, muss einen neuen Pfad waehlen.
+* Fuer Resume-Laeufe wird dieselbe Ausgabedatei im Append-Modus geoeffnet, wenn
+  sie existiert. Fehlt sie, wird sie neu erzeugt.
+* Resume-Append darf keine vorhandenen Zeilen kuerzen oder ueberschreiben.
+* Terminale Events bleiben pro Prozessaufruf eindeutig. Ein wiederaufgenommener
+  Lauf kann deshalb mehrere `run_started`-Events ueber dieselbe `run_id`
+  enthalten, aber pro CLI-Aufruf genau ein terminales Run-Event.
+
 Strict-/Close-Handling:
 
 * CLI- und Async-Wiring muessen den Primaerausgang zuerst festhalten.
@@ -449,16 +500,6 @@ Strict-/Close-Handling:
 * Wenn der Primaerausgang bereits Fehler oder Cancellation ist, bleibt dieser
   Exit-Code fuehrend; Telemetry-Fehler werden nur diagnostiziert.
 
-Beispielausgabe:
-
-```json
-{"type":"run_started","run_id":"...","command":"data transfer","timestamp":"..."}
-{"type":"table_started","run_id":"...","table":"customers","timestamp":"..."}
-{"type":"chunk_processed","run_id":"...","table":"customers","chunk_index":1,"rows_read":10000,"rows_written":10000,"duration_ms":812}
-{"type":"table_finished","run_id":"...","table":"customers","status":"SUCCESS","rows_read":10000,"rows_written":10000,"duration_ms":920}
-{"type":"run_finished","run_id":"...","status":"SUCCESS","duration_ms":18441}
-```
-
 ### Phase D - Application-Wiring
 
 Betroffene Runner:
@@ -467,8 +508,11 @@ Betroffene Runner:
 * `DataImportRunner`
 * `DataTransferRunner`
 * `TransferExecutor`
-* spaeter `SchemaReverseRunner`
-* spaeter `DataProfileRunner`
+
+Nicht betroffen in diesem Milestone:
+
+* `SchemaReverseRunner`
+* `DataProfileRunner`
 
 Regeln:
 
@@ -486,6 +530,31 @@ Regeln:
    erhalten.
 6. Chunk-Events muessen begrenzbar sein, damit grosse Migrationen keine
    Event-Flut erzeugen.
+7. `MigrationTelemetryWriteException` beziehungsweise der strict
+   Guard-Fehler darf nicht von bestehenden Catch-all-Grenzen als fachlicher
+   Export-/Import-/Transfer-Fehler gemappt werden. Alle betroffenen
+   Catch-all-Bloecke muessen `OperationCancelledException` und
+   `MigrationTelemetryWriteException` explizit durchreichen oder die
+   Telemetry-Emission so kapseln, dass der Runner den Primaerausgang und den
+   Telemetry-Ausgang getrennt bewerten kann.
+8. Im `best-effort`-Modus darf der Decorator keine
+   `MigrationTelemetryWriteException` aus `publish`, `flush` oder `close`
+   nach aussen reichen. Im `strict`-Modus muss der Fehler bis zur zentralen
+   Exit-Code-Entscheidung sichtbar bleiben.
+
+Run-ID-/Operation-ID-Wiring:
+
+* `DataExportRequest`, `DataImportRequest` und `DataTransferRequest` erhalten
+  ein optionales `runId`/`operationId`-Eingabefeld aus dem CLI-Wiring.
+* Bei neuen Export-/Import-Laeufen verwenden `ExportCheckpointManager` und
+  `ImportCheckpointManager` diese ID statt intern eine neue UUID zu erzeugen.
+* Bei Transfer-Laeufen ohne Checkpoint-Unterbau erzeugt das CLI-Wiring eine
+  Operation-ID und reicht sie an Runner und Telemetry-Kontext weiter.
+* Bei `--resume` validieren die Checkpoint-Manager ein explizites `--run-id`
+  gegen die Manifest-`operationId`, bevor Events emittiert oder neue
+  Checkpoints geschrieben werden.
+* Progress- und Result-Objekte muessen dieselbe `operationId` tragen wie die
+  Telemetry-Events desselben CLI-Aufrufs.
 
 Konfiguration fuer Chunk-Events:
 
@@ -503,9 +572,10 @@ Semantik:
 
 * `none`: keine Chunk-Events; Run-, Table- und Checkpoint-Events bleiben
   erhalten.
-* `summary`: keine Events pro einzelnem Chunk. Stattdessen werden pro Tabelle
-  aggregierte Chunk-Zaehler und Dauerwerte in `TableFinished` und optional in
-  einem `ChunkSummary`-Event ausgegeben.
+* `summary`: keine Events pro einzelnem Chunk. Stattdessen wird pro Tabelle ein
+  `ChunkSummary`-Event mit aggregierten Chunk-Zaehlern und Dauerwerten
+  ausgegeben; `TableFinished` enthaelt zusaetzlich die wichtigsten
+  Tabellenaggregate fuer einfache Auswertung.
 * `all`: jedes bestaetigte Chunk erzeugt ein `ChunkProcessed`-Event.
 
 Zusaetzliche Transfer-Aenderung:
@@ -528,6 +598,20 @@ Neue globale Optionen:
 --run-id <id>
 --trace-id <id>
 ```
+
+Geltungsbereich:
+
+* Die Optionen werden am Root-Command definiert, damit CLI, MCP- und spaetere
+  Async-Pfade denselben Vertrag dokumentieren koennen.
+* Produktiv konsumiert werden sie in diesem Milestone nur von `data export`,
+  `data import` und `data transfer`.
+* Wird `--telemetry` mit einem Wert ungleich `none` fuer einen noch nicht
+  angebundenen Command verwendet, endet der Aufruf mit Exit `2` und einer
+  klaren Meldung, dass Telemetry fuer diesen Command noch nicht unterstuetzt
+  ist. Stilles Ignorieren ist nicht erlaubt.
+* `--run-id` und `--trace-id` duerfen bei nicht angebundenen Commands nur ohne
+  aktivierte Telemetry akzeptiert werden und haben dort in diesem Milestone
+  keine Wirkung.
 
 Beispiele:
 
@@ -559,6 +643,10 @@ Exit-Code-Regeln:
 * Telemetry-Schreibfehler im `strict`-Modus fuehren zu Exit `7`
   (`LOCAL_ERROR`), wenn kein spezifischer Primaerfehler bereits den Exit-Code
   bestimmt, weil es sich um lokalen Datei-/I/O-Fehler handelt.
+* Schreibfehler aus `strict` duerfen nicht als Export-/Import-/Transfer-Exit
+  `5` gemeldet werden. Bestehende Catch-all-Grenzen muessen diese Fehler
+  erkennbar durchreichen oder erst nach der zentralen Telemetry-Exit-Entscheidung
+  behandeln.
 * Ungueltige Telemetry-Konfiguration ist Exit `2`.
 * Bei `--resume` muss ein explizites `--run-id` entweder fehlen oder exakt der
   `operationId` des geladenen Checkpoint-Manifests entsprechen. Abweichung ist
@@ -602,16 +690,23 @@ Unit-Tests:
 * Attribut-Allowlist verhindert freie oder sensitive Keys.
 * `best-effort` verschluckt kontrolliert Schreibfehler.
 * `strict` meldet Schreibfehler sauber.
+* JSONL-Adapter oeffnet neue Dateien fail-if-exists und Resume-Dateien im
+  Append-Modus.
 
 Runner-Tests:
 
-* `data export` emittiert Run-/Table-/Chunk-/Finish-Events.
-* `data import` emittiert Run-/Table-/Finish-/Failure-Events.
+* `data export` emittiert Run-/Table-/ChunkSummary-/Finish-Events im
+  Default-Modus `summary` und `ChunkProcessed` im Modus `all`.
+* `data import` emittiert Run-/Table-/ChunkSummary-/Finish-/Failure-Events im
+  Default-Modus `summary` und `ChunkProcessed` im Modus `all`.
 * `data transfer` emittiert Source/Target-Kontext.
 * Fehlerpfade emittieren `RunFailed`.
 * Cancellation-Pfade emittieren `RunCancelled` mit Exit-Code `130`.
 * Telemetry-Flush-/Close-Fehler ueberschreiben keinen primaeren Fehler- oder
   Cancellation-Exit-Code.
+* `strict`-Publish-Fehler innerhalb von Export-, Import- oder Transfer-
+  Ausfuehrung werden nicht von Catch-all-Grenzen in Exit `5` umgemappt,
+  sondern fuehren ohne Primaerfehler zu Exit `7`.
 
 CLI-Tests:
 
@@ -620,6 +715,9 @@ CLI-Tests:
 * `--run-id` erscheint in allen Events.
 * `--run-id` auf einem neuen CLI-Lauf setzt dieselbe ID wie `operationId`.
 * `--resume --run-id <abweichend>` endet mit Exit `2`.
+* Resume mit passendem `--run-id` haengt an eine vorhandene Telemetry-Datei an,
+  ohne alte Zeilen zu ueberschreiben.
+* Aktivierte Telemetry fuer nicht angebundene Commands endet mit Exit `2`.
 * ungueltige Kombinationen enden mit Exit `2`.
 
 Integration:
@@ -642,6 +740,9 @@ hexagon/application
   DataExportRunner
   DataImportRunner
   DataTransferRunner
+  ExportCheckpointManager
+  ImportCheckpointManager
+  TransferExecutor
   ggf. gemeinsame Runner-Kontextobjekte
 
 adapters/driven
@@ -682,6 +783,8 @@ CHANGELOG.md
 * `--run-id` erlaubt reproduzierbare Korrelation ueber CI/CD-Logs hinweg.
 * Im CLI-Pfad gibt es keine divergierenden `runId`-/`operationId`-Werte.
 * JSONL-Ausgabe ist deterministisch genug fuer Tests und CI-Auswertung.
+* JSONL-Dateien werden bei neuen Laeufen nicht versehentlich ueberschrieben;
+  Resume-Laeufe haengen an vorhandene Telemetry-Dateien an.
 * No-op-, Erfolgs- und Fehlerpfade sind getestet.
 * Cancellation wird als `RunCancelled` mit Exit `130` sichtbar und erzeugt keine
   falschen Abschlussereignisse.
@@ -691,6 +794,9 @@ CHANGELOG.md
 * Coverage-Gates werden nicht abgesenkt.
 * Dokumentation beschreibt klar, dass DataKitchen/OpenTelemetry Adapter spaetere
   optionale Erweiterungen sind.
+* Dokumentation beschreibt klar, dass `schema reverse`, `schema compare` und
+  `data profile` erst in Folgephasen produktiv an Telemetry angeschlossen
+  werden.
 
 ---
 
@@ -817,6 +923,8 @@ Entscheidung:
 * Erster produktiver Adapter ist JSONL.
 * DataKitchen ist nicht Teil dieses Milestones.
 * OpenTelemetry ist nicht Teil dieses Milestones.
+* Produktive Telemetry-Emission fuer `schema reverse`, `schema compare` und
+  `data profile` ist nicht Teil dieses Milestones.
 * CLI-Default bleibt `--telemetry none`.
 * Events enthalten keine Secrets und keine Nutzdaten.
 * CLI-`runId` und bestehende `operationId` sind fuer neue Laeufe identisch;
