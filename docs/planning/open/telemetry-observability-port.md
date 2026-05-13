@@ -399,8 +399,16 @@ nicht produktiv an den Telemetry-Port angeschlossen werden.
 
 Terminal-Event-Regeln:
 
-* Jeder gestartete Lauf endet mit genau einem terminalen Run-Event:
-  `RunFinished`, `RunFailed` oder `RunCancelled`.
+* Jeder gestartete CLI-Aufruf beziehungsweise Attempt endet mit genau einem
+  terminalen Run-Event: `RunFinished`, `RunFailed` oder `RunCancelled`.
+* Die Eindeutigkeit gilt pro Prozessaufruf, nicht global pro `runId`. Ein
+  Resume-Lauf verwendet dieselbe `runId`/`operationId` wie das
+  Checkpoint-Manifest und darf deshalb mehrere Attempt-Sequenzen mit derselben
+  `runId` in einer JSONL-Datei erzeugen.
+* Fuer diesen Milestone wird kein separates `attemptId` eingefuehrt. Adapter und
+  Tests duerfen terminale Events deshalb nicht global nach `runId` deduplizieren,
+  sondern muessen die append-only Reihenfolge der JSONL-Datei als Attempt-Historie
+  behandeln.
 * Cancellation wird nicht als generischer Fehler modelliert. Sie erzeugt
   `RunCancelled` mit Exit-Code `130` und Status `CANCELLED`.
 * Bei Abbruch duerfen keine nachgelagerten Fake-Completion-Events fuer Tabellen
@@ -455,6 +463,11 @@ JSONL-Wire-Format:
   geschrieben.
 * Pflichtfelder stehen zuerst in dieser Reihenfolge:
   `type`, `timestamp`, `run_id`, `operation_id`, `command`.
+* Der JSONL-Adapter ist in diesem Milestone nur fuer produktiv angebundene
+  CLI-Events bestimmt. Diese Events muessen immer ein nicht-leeres
+  `operation_id` tragen. Events ohne `operationId` sind fuer JSONL ungueltig und
+  fuehren im strikten Adapter zu `MigrationTelemetryWriteException`; sie werden
+  nicht stillschweigend mit fehlendem `operation_id` serialisiert.
 * Optionale Korrelationsfelder folgen in dieser Reihenfolge und werden bei
   `null` ausgelassen: `job_id`, `parent_run_id`, `trace_id`.
 * Endpoint-Felder werden als `source` und `target` jeweils als Objekt
@@ -599,6 +612,29 @@ Neue globale Optionen:
 --trace-id <id>
 ```
 
+Optionsvalidierung:
+
+* `--telemetry none` ist der Default und darf ohne `--telemetry-output`
+  verwendet werden.
+* `--telemetry jsonl` erfordert `--telemetry-output <path>`. Fehlt der Pfad,
+  endet der Aufruf mit Exit `2`.
+* `--telemetry-output`, `--telemetry-fail-mode`,
+  `--telemetry-chunk-events`, `--run-id` und `--trace-id` duerfen syntaktisch am
+  Root-Command stehen. Wirkung haben sie in diesem Milestone nur bei aktivierter
+  Telemetry fuer angebundene Commands.
+* `--telemetry-output` mit `--telemetry none` ist eine ungueltige Kombination und
+  endet mit Exit `2`, damit nicht versehentlich ein erwartetes Audit-Artefakt
+  ausbleibt.
+* `--telemetry-fail-mode` und `--telemetry-chunk-events` ohne aktivierte
+  Telemetry werden akzeptiert, haben aber keine Wirkung. Dadurch koennen
+  Pipeline-Defaults gesetzt werden, ohne `--telemetry none`-Laeufe zu brechen.
+* Parent-Verzeichnisse fuer `--telemetry-output` werden nicht implizit angelegt.
+  Fehlt das Parent-Verzeichnis oder ist es nicht schreibbar, ist das ein
+  Telemetry-Schreibfehler: `best-effort` warnt, `strict` fuehrt ohne
+  Primaerfehler zu Exit `7`.
+* Neue JSONL-Laeufe verwenden fail-if-exists fuer die Ausgabedatei. Resume-Laeufe
+  verwenden Append gemaess Output-Open-Mode in Phase C.
+
 Geltungsbereich:
 
 * Die Optionen werden am Root-Command definiert, damit CLI, MCP- und spaetere
@@ -701,7 +737,13 @@ Runner-Tests:
   Default-Modus `summary` und `ChunkProcessed` im Modus `all`.
 * `data transfer` emittiert Source/Target-Kontext.
 * Fehlerpfade emittieren `RunFailed`.
-* Cancellation-Pfade emittieren `RunCancelled` mit Exit-Code `130`.
+* Cancellation-Pfade emittieren `RunCancelled` mit Exit-Code `130` fuer die
+  Runner, die in diesem Milestone bereits einen `CancellationToken`-Pfad besitzen
+  (`data import` und `data transfer`).
+* `data export` erhaelt in diesem Milestone keine neue produktive
+  Cancellation-Schnittstelle. Export-Telemetry muss vorhandene Export-Fehler als
+  `RunFailed` abbilden; `RunCancelled` fuer Export bleibt einem Folge-Milestone
+  vorbehalten, falls der Export-Runner einen `CancellationToken` bekommt.
 * Telemetry-Flush-/Close-Fehler ueberschreiben keinen primaeren Fehler- oder
   Cancellation-Exit-Code.
 * `strict`-Publish-Fehler innerhalb von Export-, Import- oder Transfer-
@@ -786,8 +828,9 @@ CHANGELOG.md
 * JSONL-Dateien werden bei neuen Laeufen nicht versehentlich ueberschrieben;
   Resume-Laeufe haengen an vorhandene Telemetry-Dateien an.
 * No-op-, Erfolgs- und Fehlerpfade sind getestet.
-* Cancellation wird als `RunCancelled` mit Exit `130` sichtbar und erzeugt keine
-  falschen Abschlussereignisse.
+* Cancellation wird fuer die in diesem Milestone cancellable Runner als
+  `RunCancelled` mit Exit `130` sichtbar und erzeugt keine falschen
+  Abschlussereignisse.
 * Telemetry-Flush-/Close-Fehler koennen Primaerfehler oder Cancellation nicht
   maskieren.
 * Die bestehende Progress-Ausgabe regressiert nicht.
