@@ -43,10 +43,69 @@ data class OperationRisk(
     val dataLossPossible: Boolean = false,
     val requiresTableRewrite: Boolean = false,
     val requiresManualConfirmation: Boolean = false,
+    val dataTransformation: DataTransformationContract = DataTransformationContract.NONE,
     val notes: List<DiffDiagnostic> = emptyList(),
 ) {
     companion object {
         /** Convenience: a fully safe operation with no flags raised. */
         val SAFE: OperationRisk = OperationRisk()
     }
+}
+
+/**
+ * F.1 contract for data-changing logic beyond schema DDL.
+ *
+ * The default is deliberately [DataTransformationMode.NONE]. A future
+ * automatic backfill or data rewrite must carry an explicit, versioned model
+ * per direction; otherwise callers must keep the operation manual.
+ */
+data class DataTransformationContract(
+    val mode: DataTransformationMode,
+    val modelVersion: String? = null,
+    val modelId: String? = null,
+    val description: String? = null,
+) {
+    init {
+        if (mode == DataTransformationMode.AUTOMATIC) {
+            require(!modelVersion.isNullOrBlank()) {
+                "Automatic data transformations require a modelVersion"
+            }
+            require(!modelId.isNullOrBlank()) {
+                "Automatic data transformations require a modelId"
+            }
+        }
+        if (mode == DataTransformationMode.NONE) {
+            require(modelVersion == null && modelId == null && description == null) {
+                "NONE data transformations cannot carry transformation metadata"
+            }
+        }
+    }
+
+    companion object {
+        val NONE: DataTransformationContract = DataTransformationContract(DataTransformationMode.NONE)
+
+        fun manualRequired(description: String): DataTransformationContract =
+            DataTransformationContract(
+                mode = DataTransformationMode.MANUAL_REQUIRED,
+                description = description,
+            )
+
+        fun automatic(
+            modelVersion: String,
+            modelId: String,
+            description: String? = null,
+        ): DataTransformationContract =
+            DataTransformationContract(
+                mode = DataTransformationMode.AUTOMATIC,
+                modelVersion = modelVersion,
+                modelId = modelId,
+                description = description,
+            )
+    }
+}
+
+enum class DataTransformationMode {
+    NONE,
+    MANUAL_REQUIRED,
+    AUTOMATIC,
 }

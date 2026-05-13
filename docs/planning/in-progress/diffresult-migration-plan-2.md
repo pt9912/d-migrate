@@ -1213,6 +1213,13 @@ Nicht akzeptabel:
 - Destruktive Operationen als reversibel markieren, nur weil ein Down-DDL
   strukturell moeglich ist.
 
+> Status-Update (2026-05-13): F.1 hat einen ersten Core-Vertrag:
+> `OperationRisk` traegt richtungsspezifisch ein
+> `DataTransformationContract`, dessen Default `NONE` ist. Automatische
+> Transformationen muessen `modelVersion` und `modelId` angeben; fehlt ein
+> solches Modell, bleibt der Vertrag `MANUAL_REQUIRED`. Damit wird kein
+> DML-Backfill aus Schema-Namen, Defaults oder Down-DDL abgeleitet.
+
 ### F.2 Versionierte Plan-Artefakte
 
 Nicht im ersten 0.9.7-Plan abgedeckt:
@@ -1405,7 +1412,7 @@ DoD:
 
 - [x] Der F.0-Overlay-Grundvertrag ist fuer alle Overlay-basierten Workstreams
   definiert, gehasht, fingerprint-gebunden und secret-scrubbed.
-- [ ] Automatische Daten-Transformationen haben ein explizites Up-/Down-Modell
+- [x] Automatische Daten-Transformationen haben ein explizites Up-/Down-Modell
   oder bleiben `MANUAL_REQUIRED`.
 - [ ] Versioniertes Plan-Artefakt hat kanonische Serialisierung,
   `formatVersion`, Hash und Secret-Scrubbing.
