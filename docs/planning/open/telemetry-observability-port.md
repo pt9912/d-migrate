@@ -97,8 +97,11 @@ oder Kafka.
 Verbindlich:
 
 ```kotlin
-interface MigrationTelemetryPort {
+interface MigrationTelemetryPort : AutoCloseable {
     fun publish(event: MigrationTelemetryEvent)
+    fun flush()
+
+    override fun close() = flush()
 }
 ```
 
@@ -111,6 +114,22 @@ interface MetricsLogger
 ```
 
 Adapter duerfen vendor-spezifisch sein. Der Port nicht.
+
+Der Port hat einen expliziten Schreib- und Lifecycle-Vertrag:
+
+* `publish(...)` darf bei technischen Schreibfehlern eine
+  `MigrationTelemetryWriteException` werfen.
+* `flush()` wird am kontrollierten Laufende aufgerufen und darf ebenfalls eine
+  `MigrationTelemetryWriteException` werfen.
+* `close()` delegiert auf `flush()`, damit Adapter im CLI- und Async-Pfad
+  einheitlich in `finally`-Bloecken geschlossen werden koennen.
+* Der rohe Port kennt keinen CLI-Fail-Mode. `best-effort` und `strict` werden
+  im Wiring ueber einen Guard/Decorator umgesetzt:
+  * `best-effort` faengt Schreib-/Flush-Fehler ab, gibt hoechstens eine
+    deduplizierte Warnung aus und laesst den Primaerlauf weiterlaufen.
+  * `strict` laesst Schreib-/Flush-Fehler bis zum Runner/CLI-Wiring
+    propagieren; wenn kein spezifischer Primaerfehler bereits den Exit-Code
+    bestimmt, wird daraus Exit `7` (`LOCAL_ERROR`).
 
 ### 4.2 Eventmodell statt Logger
 
@@ -128,7 +147,6 @@ Beispiele:
 * `TableFinished`
 * `ChunkProcessed`
 * `CheckpointSaved`
-* `SchemaDriftDetected`
 
 Nicht Ziel:
 
@@ -229,8 +247,11 @@ hexagon/ports-common/src/main/kotlin/dev/dmigrate/observability/
 Port:
 
 ```kotlin
-interface MigrationTelemetryPort {
+interface MigrationTelemetryPort : AutoCloseable {
     fun publish(event: MigrationTelemetryEvent)
+    fun flush()
+
+    override fun close() = flush()
 }
 ```
 
@@ -315,8 +336,12 @@ data class TableStarted(...)
 data class TableFinished(...)
 data class ChunkProcessed(...)
 data class CheckpointSaved(...)
-data class SchemaDriftDetected(...)
 ```
+
+`SchemaDriftDetected` bleibt fuer spaetere Schema-/Compare-Pfade vorgemerkt,
+ist aber kein verbindlicher Eventtyp dieses Milestones, solange
+`schema reverse`, `schema compare` oder `data profile` nicht produktiv an den
+Telemetry-Port angeschlossen werden.
 
 ### Phase C - Default- und JSONL-Adapter
 
@@ -356,6 +381,11 @@ Aufgaben:
    * `best-effort`
    * `strict`
 
+Der JSONL-Adapter selbst ist strikt und wirft
+`MigrationTelemetryWriteException` bei nicht behebbaren Datei-/I/O-Fehlern.
+Das CLI-Wiring entscheidet ueber den Decorator, ob diese Fehler nur als Warnung
+behandelt oder als Exit `7` sichtbar werden.
+
 Beispielausgabe:
 
 ```json
@@ -381,10 +411,17 @@ Regeln:
 
 1. Runner bekommen `MigrationTelemetryPort` injiziert.
 2. Default ist No-op.
-3. Events entstehen im Application-Layer, nicht im CLI-Rendering.
-4. Treiber duerfen nur dann Events erzeugen, wenn sie dafuer explizit einen Port
+3. Telemetry wird im Application-/Orchestration-Pfad verdrahtet, nicht im
+   CLI-Rendering.
+4. Die bestehende `ProgressReporter`-Flaeche bleibt unveraendert fuer
+   menschliche stderr-Ausgabe. Export/Import duerfen ihre vorhandenen
+   `ProgressEvent`s im Application-Layer in Telemetry-Events uebersetzen oder
+   einen separaten typed Callback-Kanal erhalten; in beiden Varianten darf
+   `--no-progress` nur Progress-Ausgabe unterdruecken, niemals aktivierte
+   Telemetry.
+5. Treiber duerfen nur dann Events erzeugen, wenn sie dafuer explizit einen Port
    erhalten.
-5. Chunk-Events muessen begrenzbar sein, damit grosse Migrationen keine
+6. Chunk-Events muessen begrenzbar sein, damit grosse Migrationen keine
    Event-Flut erzeugen.
 
 Konfiguration fuer Chunk-Events:
@@ -398,6 +435,15 @@ Default:
 ```text
 summary
 ```
+
+Semantik:
+
+* `none`: keine Chunk-Events; Run-, Table- und Checkpoint-Events bleiben
+  erhalten.
+* `summary`: keine Events pro einzelnem Chunk. Stattdessen werden pro Tabelle
+  aggregierte Chunk-Zaehler und Dauerwerte in `TableFinished` und optional in
+  einem `ChunkSummary`-Event ausgegeben.
+* `all`: jedes bestaetigte Chunk erzeugt ein `ChunkProcessed`-Event.
 
 Zusaetzliche Transfer-Aenderung:
 
@@ -439,7 +485,8 @@ d-migrate \
   --telemetry-output ./audit/release-2026-05-13-001.jsonl \
   data import \
   --target prod \
-  --source ./export.jsonl
+  --source ./export.json \
+  --format json
 ```
 
 Exit-Code-Regeln:
@@ -447,7 +494,8 @@ Exit-Code-Regeln:
 * Telemetry-Schreibfehler im `best-effort`-Modus erzeugen Warnung, aber keinen
   Migration-Fail.
 * Telemetry-Schreibfehler im `strict`-Modus fuehren zu Exit `7`
-  (`LOCAL_ERROR`), weil es sich um lokalen Datei-/I/O-Fehler handelt.
+  (`LOCAL_ERROR`), wenn kein spezifischer Primaerfehler bereits den Exit-Code
+  bestimmt, weil es sich um lokalen Datei-/I/O-Fehler handelt.
 * Ungueltige Telemetry-Konfiguration ist Exit `2`.
 
 ### Phase F - MCP- und Async-Job-Korrelation
