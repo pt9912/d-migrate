@@ -13,6 +13,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.ExtensionInstallPolicy
+import dev.dmigrate.driver.ExtensionInstallPrivilegeStatus
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.DialectExecutionHints
@@ -146,8 +147,7 @@ internal class PostgresDiffRenderContext(
             }
             ExtensionAvailabilityStatus.MISSING -> {
                 if (options.extensionInstallPolicy == ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING) {
-                    planExtensionInstall(op, extension, detail, status)
-                    return true
+                    return planExtensionInstall(op, extension, detail, status)
                 }
                 skip(
                     op,
@@ -160,8 +160,7 @@ internal class PostgresDiffRenderContext(
             }
             ExtensionAvailabilityStatus.UNKNOWN -> {
                 if (options.extensionInstallPolicy == ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING) {
-                    planExtensionInstall(op, extension, detail, status)
-                    return true
+                    return planExtensionInstall(op, extension, detail, status)
                 }
                 skip(
                     op,
@@ -180,7 +179,18 @@ internal class PostgresDiffRenderContext(
         extension: String,
         detail: String,
         status: ExtensionAvailabilityStatus,
-    ) {
+    ): Boolean {
+        if (options.extensionInstallPrivilegeStatus == ExtensionInstallPrivilegeStatus.MISSING) {
+            skip(
+                op,
+                "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail, " +
+                    "but CREATE EXTENSION privileges are declared MISSING.",
+                code = "EXTENSION_INSTALL_PRIVILEGE_MISSING",
+            )
+            addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+
         val sqlText = createExtensionSql(extension)
         extensionDependencies[extension.lowercase()]?.installStatement = sqlText
         if (plannedExtensionInstalls.add(extension.lowercase())) {
@@ -200,6 +210,16 @@ internal class PostgresDiffRenderContext(
             message = "Operation ${op.id} requires PostgreSQL extension '$extension' for $detail; " +
                 "target availability is $status and extension installation was explicitly allowed.",
         )
+        if (options.extensionInstallPrivilegeStatus == ExtensionInstallPrivilegeStatus.UNVERIFIED) {
+            addDiagnostic(
+                code = "EXTENSION_INSTALL_PRIVILEGE_UNVERIFIED",
+                operationId = op.id,
+                message = "Operation ${op.id} plans CREATE EXTENSION for '$extension', " +
+                    "but CREATE EXTENSION privileges were not verified before render.",
+                severity = DiffDiagnostic.Severity.WARNING,
+            )
+        }
+        return true
     }
 
     private fun createExtensionSql(extension: String): String =

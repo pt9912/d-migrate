@@ -91,6 +91,14 @@ data class DdlGenerationOptions(
      * install prerequisite when availability is MISSING or UNKNOWN.
      */
     val extensionInstallPolicy: ExtensionInstallPolicy = ExtensionInstallPolicy.NEVER,
+    /**
+     * Plan-2 §C.1: privilege declaration for renderer-owned extension
+     * installation. `UNVERIFIED` preserves the first install-policy slice:
+     * renderers may plan the install but must keep the side-effect visible.
+     * `MISSING` is an explicit pre-render blocker with a distinct diagnostic.
+     */
+    val extensionInstallPrivilegeStatus: ExtensionInstallPrivilegeStatus =
+        ExtensionInstallPrivilegeStatus.UNVERIFIED,
 )
 
 /**

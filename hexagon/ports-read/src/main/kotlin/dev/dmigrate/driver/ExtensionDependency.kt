@@ -23,6 +23,12 @@ enum class ExtensionInstallPolicy {
     ALLOW_CREATE_IF_MISSING,
 }
 
+enum class ExtensionInstallPrivilegeStatus {
+    VERIFIED,
+    UNVERIFIED,
+    MISSING,
+}
+
 /**
  * Renderer-produced summary of an extension dependency discovered
  * while translating a migration plan.

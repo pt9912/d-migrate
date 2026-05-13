@@ -15,6 +15,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExtensionAvailabilityDeclaration
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionInstallPolicy
+import dev.dmigrate.driver.ExtensionInstallPrivilegeStatus
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -124,8 +125,35 @@ class PostgresDiffSpatialTest : FunSpec({
         )
         r.diagnostics.single { it.code == "EXTENSION_INSTALL_PLANNED" }
             .message shouldContain "explicitly allowed"
+        r.diagnostics.single { it.code == "EXTENSION_INSTALL_PRIVILEGE_UNVERIFIED" }
+            .message shouldContain "privileges were not verified"
         r.extensionDependencies.single().installStatement shouldBe
             "CREATE EXTENSION IF NOT EXISTS \"postgis\";"
+    }
+
+    test("§C.1: PostgreSQL extension install blocks when CREATE EXTENSION privilege is missing") {
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "places",
+                    columnsAdded = mapOf("shape" to ColumnDefinition(NeutralType.Geometry())),
+                ),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            options = DdlGenerationOptions(
+                extensionInstallPolicy = ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING,
+                extensionInstallPrivilegeStatus = ExtensionInstallPrivilegeStatus.MISSING,
+            ),
+        )
+
+        r.statements.shouldBeEmpty()
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.single { it.code == "EXTENSION_INSTALL_PRIVILEGE_MISSING" }
+            .message shouldContain "CREATE EXTENSION privileges are declared MISSING"
+        r.extensionDependencies.single().installStatement shouldBe null
+        r.extensionDependencies.single().status shouldBe ExtensionAvailabilityStatus.UNKNOWN
     }
 
     test("§C.2: PostgreSQL GIST index on geometry column renders with verified PostGIS") {

@@ -708,6 +708,15 @@ Zu entscheiden:
 >
 > Offen bleiben Privilegien-Diagnostics und die Reverse-Unterscheidung
 > "Extension vorhanden" vs. "Objekt nutzt Extension".
+>
+> Status-Update (2026-05-13): Privilegien-Diagnostics haben einen ersten
+> expliziten Renderer-Vertrag. `DdlGenerationOptions` kann
+> `extensionInstallPrivilegeStatus = MISSING` deklarieren; PostgreSQL blockiert
+> dann `CREATE EXTENSION` trotz `ALLOW_CREATE_IF_MISSING` vor dem Rendern mit
+> `EXTENSION_INSTALL_PRIVILEGE_MISSING`. Unverifizierte Rechte behalten das
+> bisherige Install-Policy-Verhalten, werden aber mit
+> `EXTENSION_INSTALL_PRIVILEGE_UNVERIFIED` sichtbar. Offen bleibt die
+> Reverse-Unterscheidung "Extension vorhanden" vs. "Objekt nutzt Extension".
 
 ### C.2 Spatial-Migrationen
 
