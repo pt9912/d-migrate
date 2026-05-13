@@ -102,6 +102,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             rendererFor = MigrateRendererRegistry::forDialect,
             executor = JdbcMigrationExecutor::execute,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
+            sqliteCastPreflightPlanner = SqliteCastPreflightProbeRunner::planNotRun,
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,

@@ -105,6 +105,12 @@ internal class SqliteRebuildRenderer(
             val declaration = byKey[binding.bindingKey]
             when {
                 ctx.options.executionMode == ExecutionMode.EXECUTE && declaration == null -> {
+                    ctx.recordSqliteCastPreflight(
+                        binding.toDeclaration(
+                            status = SqliteCastPreflightStatus.NOT_RUN_POLICY,
+                            problem = "Execute requires a fresh SQLite cast preflight declaration.",
+                        ),
+                    )
                     ctx.addDiagnostic(
                         DiffDiagnostic(
                             code = "SQLITE_CAST_PREFLIGHT_MISSING",
@@ -248,6 +254,7 @@ internal class SqliteRebuildRenderer(
 
     private fun SqliteCastPreflightBinding.toDeclaration(
         status: SqliteCastPreflightStatus,
+        problem: String? = null,
     ): SqliteCastPreflightDeclaration =
         SqliteCastPreflightDeclaration(
             operationId = operationId,
@@ -258,6 +265,7 @@ internal class SqliteRebuildRenderer(
             targetType = targetTypeText,
             status = status,
             sqlHash = sqlHash,
+            problem = problem,
         )
 
     private fun emitBlockerDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {

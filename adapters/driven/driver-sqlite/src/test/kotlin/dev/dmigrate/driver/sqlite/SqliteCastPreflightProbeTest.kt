@@ -129,6 +129,22 @@ class SqliteCastPreflightProbeTest : FunSpec({
         rendered.isBlocked shouldBe true
         rendered.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         rendered.diagnostics.any { it.code == "SQLITE_CAST_PREFLIGHT_MISSING" } shouldBe true
+        rendered.sqliteCastPreflights.single().status shouldBe SqliteCastPreflightStatus.NOT_RUN_POLICY
+        rendered.sqliteCastPreflights.single().problem shouldBe
+            "Execute requires a fresh SQLite cast preflight declaration."
+    }
+
+    test("B.2 planner emits deterministic not-run declarations before live probing") {
+        val declarations = SqliteCastPreflightPlanner.plan(
+            plan(),
+            SqliteCastPreflightStatus.NOT_RUN_POLICY,
+            problem = "preflight probe failed",
+        )
+
+        declarations shouldHaveSize 1
+        declarations.single().status shouldBe SqliteCastPreflightStatus.NOT_RUN_POLICY
+        declarations.single().problem shouldBe "preflight probe failed"
+        declarations.single().sqlHash.length shouldBe 64
     }
 
     test("B.2 file target is deterministic and reports NOT_RUN_FILE_TARGET") {

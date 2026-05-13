@@ -285,12 +285,12 @@ internal object SchemaMigrateReportRenderer {
         if (needsYamlQuoting(s)) "\"${s.replace("\\", "\\\\").replace("\"", "\\\"")}\"" else s
 
     private fun needsYamlQuoting(s: String): Boolean {
-        if (s.contains(':') || s.contains('\n')) return true
+        if (s.contains(':') || s.contains('\n') || s.contains('#')) return true
         return s.startsWith(' ') || s.startsWith('\"')
     }
 
-    private fun yamlOptional(s: String?): String = if (s == null) "null" else s
+    private fun yamlOptional(s: String?): String = if (s == null) "null" else yamlString(s)
 
     private fun yamlList(elements: List<String>): String =
-        elements.joinToString(prefix = "[", postfix = "]", separator = ", ")
+        elements.joinToString(prefix = "[", postfix = "]", separator = ", ") { yamlString(it) }
 }

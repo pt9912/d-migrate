@@ -116,6 +116,48 @@ class MigrationDdlResultTest : FunSpec({
         )
     }
 
+    test("G.1 dialect execution hints expose conservative defaults and explicit contracts") {
+        DialectExecutionHints.UNKNOWN shouldBe DialectExecutionHints()
+        TransactionScope.entries.map { it.name } shouldBe listOf(
+            "RUNNER_OWNED",
+            "STREAM_OWNED",
+            "NO_TRANSACTION",
+        )
+        TransactionBehavior.entries.map { it.name } shouldBe listOf(
+            "FULLY_TRANSACTIONAL",
+            "IMPLICIT_COMMIT",
+            "NOT_TRANSACTIONAL",
+            "UNKNOWN",
+        )
+        LockBehavior.entries.map { it.name } shouldBe listOf(
+            "NONE",
+            "ROW",
+            "METADATA",
+            "TABLE_SHARED",
+            "TABLE_EXCLUSIVE",
+            "UNKNOWN",
+        )
+
+        val hints = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.IMPLICIT_COMMIT,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = true,
+            sideEffectsPossible = true,
+            requiresExclusiveAccess = true,
+        )
+        val statement = stmt("op-a").copy(
+            transactionScope = TransactionScope.NO_TRANSACTION,
+            hints = hints,
+        )
+
+        statement.transactionScope shouldBe TransactionScope.NO_TRANSACTION
+        statement.hints.transactionBehavior shouldBe TransactionBehavior.IMPLICIT_COMMIT
+        statement.hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        statement.hints.implicitCommitPossible shouldBe true
+        statement.hints.sideEffectsPossible shouldBe true
+        statement.hints.requiresExclusiveAccess shouldBe true
+    }
+
     test("manualActions must be a subset of operationsRendered") {
         shouldThrow<IllegalArgumentException> {
             MigrationDdlResult(

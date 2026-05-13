@@ -1,9 +1,16 @@
 package dev.dmigrate.cli.commands
 
+import com.google.gson.JsonParser
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
+import org.snakeyaml.engine.v2.api.Load
+import org.snakeyaml.engine.v2.api.LoadSettings
 
 class SchemaMigrateReportRendererTest : FunSpec({
+
+    fun parseYaml(out: String): Map<*, *> =
+        Load(LoadSettings.builder().build()).loadFromString(out) as Map<*, *>
 
     fun report(
         statements: List<SchemaMigrateStatementView>? = null,
@@ -100,6 +107,12 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"sqlHash\":\"${"b".repeat(64)}\""
         out shouldContain "\"failingRows\":2"
         out shouldContain "\"sampleRowIds\":[\"7\",\"9\"]"
+
+        val root = JsonParser.parseString(out).asJsonObject
+        val preflight = root.getAsJsonArray("sqliteCastPreflights").single().asJsonObject
+        preflight["operationId"].asString shouldBe "op-cast"
+        preflight["status"].asString shouldBe "FAILED"
+        preflight.getAsJsonArray("sampleRowIds").map { it.asString } shouldBe listOf("7", "9")
     }
 
     test("JSON renderer emits statements when --plan-only is off") {
@@ -250,6 +263,36 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "totalRows: null"
     }
 
+    test("YAML renderer quotes and parses SQLite cast preflight free strings") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(
+                sqliteCastPreflights = listOf(
+                    SchemaMigrateSqliteCastPreflightView(
+                        operationId = "op-cast",
+                        dialect = "sqlite",
+                        table = "users",
+                        column = "age",
+                        sourceType = "TEXT",
+                        targetType = "INTEGER",
+                        status = "FAILED",
+                        sqlHash = "e".repeat(64),
+                        totalRows = 12,
+                        failingRows = 2,
+                        sampleRowIds = listOf("row:7", "#9"),
+                        problem = "bad: value #1",
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+
+        val root = parseYaml(out)
+        val preflights = root["sqliteCastPreflights"] as List<*>
+        val preflight = preflights.single() as Map<*, *>
+        preflight["problem"] shouldBe "bad: value #1"
+        preflight["sampleRowIds"] shouldBe listOf("row:7", "#9")
+    }
+
     test("YAML renderer quotes strings containing colons") {
         val r = report().copy(target = "db:postgres://localhost:5432")
         val out = SchemaMigrateReportRenderer.render(r, "yaml")
@@ -312,7 +355,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "execution:\n  started: true"
         out shouldContain "executionError: \"boom: failed\""
         out shouldContain "recoverability: ROLLBACK_ATTEMPTED"
-        out shouldContain "statementGroups:\n    - statementGroupId: op-1#1"
+        out shouldContain "statementGroups:\n    - statementGroupId: \"op-1#1\""
         out shouldContain "transactionBoundary: BEFORE"
     }
 

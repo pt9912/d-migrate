@@ -45,8 +45,8 @@
 #     docker build --target coverage-json -t d-migrate:coverage-json .
 #     docker run --rm d-migrate:coverage-json > coverage.json
 #
-#   Verify the configured Kover threshold (fails the Docker build if the
-#   minimum is not met):
+#   Verify the configured Kover threshold from a fresh test run (fails the
+#   Docker build if the minimum is not met):
 #     docker build --target coverage-verify -t d-migrate:coverage-verify .
 # ---------------------------------------------------------------------------
 
@@ -265,10 +265,12 @@ RUN chmod +x /usr/local/bin/yq /usr/local/bin/jq && \
     jq -f /src/scripts/kover-report-to-json.jq > /src/build/reports/kover/report.json
 
 # ---- Stage 4: coverage-verify ----------------------------------------------
-# Optional hard gate for CI-style coverage enforcement.
-FROM coverage-build AS coverage-verify
+# Optional hard gate for CI-style coverage enforcement. Keep this on the same
+# fresh test-run path as `make ci-build`; running verify after a prior report
+# generation stage can leave Kover consuming a different artifact set.
+FROM compile AS coverage-verify
 
-ARG COVERAGE_VERIFY_TASKS="koverVerify"
+ARG COVERAGE_VERIFY_TASKS="test koverVerify --no-build-cache"
 
 RUN gradle --no-daemon ${COVERAGE_VERIFY_TASKS}
 

@@ -76,6 +76,7 @@ dependencies {
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
     // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
+    testImplementation("com.google.code.gson:gson:2.14.0")
 
     // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
     // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli

@@ -45,25 +45,24 @@ kover {
                 // keine in-process-Postgres-Alternative, die JSONB +
                 // partielle Indizes (siehe V1__server_state_initial.sql) versteht.
                 classes(
-                    "dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner",
-                    "dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner\$Companion",
+                    "dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner*",
                     // LF-012 / LN-011 / LN-017 / LN-027: Postgres-only JDBC-Logik (JSONB,
                     // SELECT FOR UPDATE, INSERT…ON CONFLICT…RETURNING) —
                     // gedeckt durch JdbcIdempotencyStoreContractTest unter
                     // -PintegrationTests, kein in-process-Postgres-Aequivalent.
-                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore",
-                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$EntryRow",
-                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$InitRow",
-                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore\$Companion",
+                    "dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore*",
                     // LF-012 / LN-011 / LN-017 / LN-027: JdbcJobStore — Postgres-only (JSONB,
                     // SELECT FOR UPDATE, ON CONFLICT). Gedeckt durch
                     // JdbcJobStoreContractTest unter -PintegrationTests.
-                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore",
+                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore*",
                     // LF-012 / LN-011 / LN-017 / LN-027: JdbcJobStartTransaction — Cross-Store-
                     // TX-Komposition. Gedeckt durch
                     // JdbcJobStartTransactionContractTest unter
                     // -PintegrationTests.
-                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction",
+                    "dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction*",
+                    "dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*",
+                    "dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*",
+                    "dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*",
                 )
                 // LF-012 / LN-011 / LN-017 / LN-027: Quota-Stack (JdbcQuotaStore +
                 // JdbcQuotaReservationOwnerStore + JdbcOwnerAwareQuotaService

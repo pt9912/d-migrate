@@ -5,6 +5,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.SqliteCastPreflightDeclaration
+import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
@@ -77,6 +79,17 @@ class SchemaMigrateRunnerArtefactProtectionTest : FunSpec({
         ),
         primaryBlockedReason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
     )
+
+    fun fakeSqliteCastPreflight(operationId: String, status: SqliteCastPreflightStatus) =
+        SqliteCastPreflightDeclaration(
+            operationId = operationId,
+            table = "orders",
+            column = "amount",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            status = status,
+            sqlHash = "f".repeat(64),
+        )
 
     fun schemaWithTable(name: String) = SchemaDefinition(
         name = "App",
@@ -288,6 +301,52 @@ class SchemaMigrateRunnerArtefactProtectionTest : FunSpec({
         Files.readString(rollbackPath) shouldBe rollbackOriginal
         (capture["wrote:$outputPath"] ?: 0) shouldBe 0
         (capture["wrote:$rollbackPath"] ?: 0) shouldBe 0
+    }
+
+    test("B.2 rollback rendering keeps down-side SQLite cast preflights in report") {
+        val reportPath = tmpDir.resolve("b2-down-cast-preflight-report.json")
+        var report: SchemaMigrateReport? = null
+        val runner = SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "file:src", schema = schemaWithTable("orders"), validation = ValidationResult())
+            },
+            dbLoader = null,
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { dialect ->
+                object : DiffDdlGenerator {
+                    override val dialect: DatabaseDialect = dialect
+                    override fun generateUp(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered().copy(
+                            sqliteCastPreflights = listOf(
+                                fakeSqliteCastPreflight("op-up", SqliteCastPreflightStatus.NOT_RUN_FILE_TARGET),
+                            ),
+                        )
+
+                    override fun generateDown(diff: dev.dmigrate.core.diff.migration.DiffResult, options: DdlGenerationOptions) =
+                        fakeRendered().copy(
+                            sqliteCastPreflights = listOf(
+                                fakeSqliteCastPreflight("op-down", SqliteCastPreflightStatus.NOT_RUN_FILE_TARGET),
+                            ),
+                        )
+                }
+            },
+            renderReport = { r, _ ->
+                report = r
+                "{}"
+            },
+            printError = { _, _ -> },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "file:${tmpDir.resolve("ignored-target.yaml")}",
+            dialect = DatabaseDialect.SQLITE,
+            planOnly = true,
+            generateRollback = true,
+            report = reportPath,
+        )
+
+        runner.execute(request) shouldBe 0
+        report!!.sqliteCastPreflights.map { it.operationId } shouldBe listOf("op-up", "op-down")
     }
 
     test("F.6.a — validation failure (invalid source schema) leaves pre-existing --output AND --rollback-output untouched") {

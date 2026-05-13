@@ -12,16 +12,23 @@ import java.nio.file.Path
 typealias SqliteCastPreflightProbeFn =
     (CompareOperand.Database, Path?, DiffResult) -> List<SqliteCastPreflightDeclaration>
 
+typealias SqliteCastPreflightPlannerFn =
+    (DiffResult) -> List<SqliteCastPreflightDeclaration>
+
 object SqliteCastPreflightStage {
 
     sealed interface Outcome {
         data class Succeeded(val declarations: List<SqliteCastPreflightDeclaration>) : Outcome
-        data class Failed(val message: String) : Outcome
+        data class Failed(
+            val message: String,
+            val declarations: List<SqliteCastPreflightDeclaration>,
+        ) : Outcome
         data object NotRun : Outcome
     }
 
     fun run(
         probe: SqliteCastPreflightProbeFn?,
+        planner: SqliteCastPreflightPlannerFn?,
         request: SchemaMigrateRequest,
         target: CompareOperand,
         dialect: DatabaseDialect,
@@ -34,11 +41,22 @@ object SqliteCastPreflightStage {
         return try {
             Outcome.Succeeded(probe(dbTarget, request.cliConfigPath, plan))
         } catch (e: Exception) {
-            Outcome.Failed(e.message ?: e::class.simpleName.orEmpty())
+            val message = e.message ?: e::class.simpleName.orEmpty()
+            Outcome.Failed(
+                message = message,
+                declarations = planner?.invoke(plan)
+                    ?.map { declaration ->
+                        declaration.copy(problem = "SQLite cast preflight failed before render/execute: $message")
+                    }
+                    .orEmpty(),
+            )
         }
     }
 
-    fun buildFailureResult(message: String): MigrationDdlResult {
+    fun buildFailureResult(
+        message: String,
+        declarations: List<SqliteCastPreflightDeclaration> = emptyList(),
+    ): MigrationDdlResult {
         val diagnostic = DiffDiagnostic(
             code = "SQLITE_CAST_PREFLIGHT_RUN_FAILED",
             message = "SQLite cast preflight failed before render/execute: $message",
@@ -55,6 +73,7 @@ object SqliteCastPreflightStage {
             ),
             primaryBlockedReason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
             diagnostics = listOf(diagnostic),
+            sqliteCastPreflights = declarations,
         )
     }
 }

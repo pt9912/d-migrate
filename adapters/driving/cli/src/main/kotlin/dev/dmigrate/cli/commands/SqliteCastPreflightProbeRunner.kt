@@ -3,8 +3,10 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
+import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.driver.sqlite.SqliteCastPreflightPlanner
 import dev.dmigrate.driver.sqlite.SqliteCastPreflightProbe
 import java.nio.file.Path
 
@@ -14,6 +16,9 @@ import java.nio.file.Path
  * from the same target database the execute path will mutate.
  */
 internal object SqliteCastPreflightProbeRunner {
+
+    fun planNotRun(plan: DiffResult): List<SqliteCastPreflightDeclaration> =
+        SqliteCastPreflightPlanner.plan(plan, SqliteCastPreflightStatus.NOT_RUN_POLICY)
 
     fun probe(
         target: CompareOperand.Database,

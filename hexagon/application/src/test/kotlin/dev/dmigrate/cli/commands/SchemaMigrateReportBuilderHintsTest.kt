@@ -199,6 +199,30 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         )
     }
 
+    test("SQLite cast preflight run failures keep planned declarations machine-readable") {
+        val declaration = SqliteCastPreflightDeclaration(
+            operationId = "op-cast",
+            table = "users",
+            column = "age",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            status = SqliteCastPreflightStatus.NOT_RUN_POLICY,
+            sqlHash = "e".repeat(64),
+            problem = "SQLite cast preflight failed before render/execute: boom",
+        )
+        val rendered = SqliteCastPreflightStage.buildFailureResult(
+            message = "boom",
+            declarations = listOf(declaration),
+        )
+        val report = buildReport(rendered = rendered)
+
+        report.status shouldBe "blocked"
+        report.sqliteCastPreflights.single().operationId shouldBe "op-cast"
+        report.sqliteCastPreflights.single().status shouldBe "NOT_RUN_POLICY"
+        report.sqliteCastPreflights.single().problem shouldBe
+            "SQLite cast preflight failed before render/execute: boom"
+    }
+
     test("materialized view operations surface the refresh staleness contract") {
         val op = DiffOperation.ReplaceView(
             id = "view-1",

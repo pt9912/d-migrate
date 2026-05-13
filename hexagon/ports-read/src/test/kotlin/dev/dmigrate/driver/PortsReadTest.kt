@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.SchemaDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -303,5 +304,61 @@ class PortsReadTest : FunSpec({
         rendered shouldContain "SELECT 1;"
         // hint line should NOT appear
         ("Hint" in rendered) shouldBe false
+    }
+
+    test("extension dependency declarations carry policy and availability state") {
+        ExtensionAvailabilityStatus.entries.map { it.name } shouldBe listOf(
+            "VERIFIED_PRESENT",
+            "MISSING",
+            "UNKNOWN",
+        )
+        ExtensionInstallPolicy.entries.map { it.name } shouldBe listOf("NEVER", "ALLOW_CREATE_IF_MISSING")
+        ExtensionInstallPrivilegeStatus.entries.map { it.name } shouldBe listOf("VERIFIED", "UNVERIFIED", "MISSING")
+
+        val availability = ExtensionAvailabilityDeclaration(
+            dialect = "postgresql",
+            extension = "postgis",
+            status = ExtensionAvailabilityStatus.MISSING,
+        )
+        val dependency = ExtensionDependencyReport(
+            dialect = availability.dialect,
+            extension = availability.extension,
+            status = availability.status,
+            operationIds = setOf("op-1"),
+            installStatement = "CREATE EXTENSION postgis",
+        )
+
+        dependency.status shouldBe ExtensionAvailabilityStatus.MISSING
+        dependency.operationIds shouldBe setOf("op-1")
+        dependency.installStatement shouldBe "CREATE EXTENSION postgis"
+    }
+
+    test("schema read envelopes carry options, notes, skipped objects and source ref") {
+        val schema = SchemaDefinition(name = "Shop", version = "1")
+        val note = SchemaReadNote(
+            severity = SchemaReadSeverity.WARNING,
+            code = "R001",
+            objectName = "orders",
+            message = "best effort",
+            hint = "inspect manually",
+        )
+        val skipped = SkippedObject("trigger", "orders_bi", "unsupported", "E055")
+        val result = SchemaReadResult(schema = schema, notes = listOf(note), skippedObjects = listOf(skipped))
+        val input = SchemaReadReportInput(ReverseSourceRef(ReverseSourceKind.URL, "jdbc:sqlite:file.db"), result)
+        val options = SchemaReadOptions(
+            includeViews = false,
+            includeProcedures = false,
+            includeFunctions = true,
+            includeTriggers = false,
+        )
+
+        input.result.schema shouldBe schema
+        input.result.notes.single().hint shouldBe "inspect manually"
+        input.result.skippedObjects.single().code shouldBe "E055"
+        input.source.kind shouldBe ReverseSourceKind.URL
+        options.includeViews shouldBe false
+        options.includeProcedures shouldBe false
+        options.includeFunctions shouldBe true
+        options.includeTriggers shouldBe false
     }
 })

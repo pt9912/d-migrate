@@ -52,3 +52,25 @@ object SqliteCastPreflightProbe {
     private fun quote(name: String): String =
         "\"" + name.replace("\"", "\"\"") + "\""
 }
+
+object SqliteCastPreflightPlanner {
+
+    fun plan(
+        diff: DiffResult,
+        status: SqliteCastPreflightStatus,
+        problem: String? = null,
+    ): List<SqliteCastPreflightDeclaration> =
+        SqliteCastPreflightSql.bindingsFor(diff).map { binding ->
+            SqliteCastPreflightDeclaration(
+                operationId = binding.operationId,
+                dialect = binding.dialect,
+                table = binding.table,
+                column = binding.column,
+                sourceType = binding.sourceTypeText,
+                targetType = binding.targetTypeText,
+                status = status,
+                sqlHash = binding.sqlHash,
+                problem = problem,
+            )
+        }
+}

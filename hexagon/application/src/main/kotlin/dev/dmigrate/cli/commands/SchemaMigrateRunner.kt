@@ -92,6 +92,7 @@ class SchemaMigrateRunner(
      * keeps application tests and non-SQLite paths independent from
      * the SQLite driver adapter.
      */
+    private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn? = null,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
@@ -212,6 +213,7 @@ class SchemaMigrateRunner(
         } else {
             SqliteCastPreflightStage.run(
                 sqliteCastPreflightProbe,
+                sqliteCastPreflightPlanner,
                 request,
                 targetOp,
                 effectiveDialect,
@@ -255,7 +257,10 @@ class SchemaMigrateRunner(
             // Synthetic blocked result — Plan-2 §B.2 demands a hard
             // block before render/execute if the live-data cast
             // preflight itself cannot complete.
-            SqliteCastPreflightStage.buildFailureResult(castPreflightOutcome.message)
+            SqliteCastPreflightStage.buildFailureResult(
+                castPreflightOutcome.message,
+                castPreflightOutcome.declarations,
+            )
         } else {
             val rendered = renderer.generateUp(plan, renderOptions)
             if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
@@ -493,13 +498,16 @@ class SchemaMigrateRunner(
      * propagate into `combined.blockers` so the runner exits 8.
      */
     private fun mergeDownIntoUp(up: MigrationDdlResult, down: MigrationDdlResult): MigrationDdlResult {
-        if (down.blockers.isEmpty()) return up
+        if (down.blockers.isEmpty()) {
+            return up.copy(sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights)
+        }
         val merged = up.blockers + down.blockers
         val primary = up.primaryBlockedReason ?: down.primaryBlockedReason
         return up.copy(
             blockers = merged,
             primaryBlockedReason = primary,
             diagnostics = up.diagnostics + down.diagnostics,
+            sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights,
         )
     }
 
