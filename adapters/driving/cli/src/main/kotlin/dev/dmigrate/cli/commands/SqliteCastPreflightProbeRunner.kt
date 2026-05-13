@@ -17,8 +17,12 @@ import java.nio.file.Path
  */
 internal object SqliteCastPreflightProbeRunner {
 
-    fun planNotRun(plan: DiffResult): List<SqliteCastPreflightDeclaration> =
-        SqliteCastPreflightPlanner.plan(plan, SqliteCastPreflightStatus.NOT_RUN_POLICY)
+    fun planNotRun(
+        plan: DiffResult,
+        status: SqliteCastPreflightStatus,
+        problem: String?,
+    ): List<SqliteCastPreflightDeclaration> =
+        SqliteCastPreflightPlanner.plan(plan, status, problem)
 
     fun probe(
         target: CompareOperand.Database,

@@ -208,6 +208,17 @@ class SchemaMigrateRunner(
         } else {
             SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, effectiveDialect)
         }
+        val castPreflightPlan = if (overlayPreflight.hasBlockers) {
+            MigrationPreflightPlan.EMPTY
+        } else {
+            MigrationPreflightPlanner.plan(
+                sqliteCastPreflightPlanner,
+                request,
+                targetOp,
+                effectiveDialect,
+                plan,
+            )
+        }
         val castPreflightOutcome = if (overlayPreflight.hasBlockers) {
             SqliteCastPreflightStage.Outcome.NotRun
         } else {
@@ -218,6 +229,7 @@ class SchemaMigrateRunner(
                 targetOp,
                 effectiveDialect,
                 plan,
+                castPreflightPlan,
             )
         }
         // Phase H.3b: when running with --execute, the SQL stream is
@@ -233,8 +245,10 @@ class SchemaMigrateRunner(
                 dev.dmigrate.driver.ExecutionMode.STANDALONE
             },
             liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
-            sqliteCastPreflights =
-                (castPreflightOutcome as? SqliteCastPreflightStage.Outcome.Succeeded)?.declarations.orEmpty(),
+            sqliteCastPreflights = when (castPreflightOutcome) {
+                is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
+                else -> castPreflightPlan.sqliteCastPreflights
+            },
             catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
                 SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
             } else {

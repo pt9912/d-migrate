@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
+import dev.dmigrate.driver.SqliteCastPreflightStatus
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -13,7 +14,36 @@ typealias SqliteCastPreflightProbeFn =
     (CompareOperand.Database, Path?, DiffResult) -> List<SqliteCastPreflightDeclaration>
 
 typealias SqliteCastPreflightPlannerFn =
-    (DiffResult) -> List<SqliteCastPreflightDeclaration>
+    (DiffResult, SqliteCastPreflightStatus, String?) -> List<SqliteCastPreflightDeclaration>
+
+data class MigrationPreflightPlan(
+    val sqliteCastPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
+) {
+    companion object {
+        val EMPTY: MigrationPreflightPlan = MigrationPreflightPlan()
+    }
+}
+
+object MigrationPreflightPlanner {
+
+    fun plan(
+        sqliteCastPlanner: SqliteCastPreflightPlannerFn?,
+        request: SchemaMigrateRequest,
+        target: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+    ): MigrationPreflightPlan {
+        if (dialect != DatabaseDialect.SQLITE) return MigrationPreflightPlan.EMPTY
+        val planner = sqliteCastPlanner ?: return MigrationPreflightPlan.EMPTY
+        val status = when {
+            request.execute && target is CompareOperand.Database -> SqliteCastPreflightStatus.NOT_RUN_POLICY
+            else -> SqliteCastPreflightStatus.NOT_RUN_FILE_TARGET
+        }
+        return MigrationPreflightPlan(
+            sqliteCastPreflights = planner(plan, status, null),
+        )
+    }
+}
 
 object SqliteCastPreflightStage {
 
@@ -33,6 +63,7 @@ object SqliteCastPreflightStage {
         target: CompareOperand,
         dialect: DatabaseDialect,
         plan: DiffResult,
+        preflightPlan: MigrationPreflightPlan = MigrationPreflightPlanner.plan(planner, request, target, dialect, plan),
     ): Outcome {
         if (dialect != DatabaseDialect.SQLITE) return Outcome.NotRun
         if (!request.execute) return Outcome.NotRun
@@ -44,11 +75,9 @@ object SqliteCastPreflightStage {
             val message = e.message ?: e::class.simpleName.orEmpty()
             Outcome.Failed(
                 message = message,
-                declarations = planner?.invoke(plan)
-                    ?.map { declaration ->
-                        declaration.copy(problem = "SQLite cast preflight failed before render/execute: $message")
-                    }
-                    .orEmpty(),
+                declarations = preflightPlan.sqliteCastPreflights.map { declaration ->
+                    declaration.copy(problem = "SQLite cast preflight failed before render/execute: $message")
+                },
             )
         }
     }

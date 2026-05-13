@@ -651,7 +651,7 @@ DoD:
   blockierend als manuell/nicht reversibel markiert.
 - [ ] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
 - [x] SQLite-Live-Preflight-Status ist im Report maschinenlesbar.
-- [ ] `MigrationPreflightPlanner` oder ein aequivalenter Pre-Render-Baustein
+- [x] `MigrationPreflightPlanner` oder ein aequivalenter Pre-Render-Baustein
   erzeugt die Preflight-Deklarationen; der Runner erfindet keine Preflight-SQL.
 - [ ] Datei-zu-Datei-Planung berichtet fehlende Live-Pruefung ohne
   optimistischen Pass.
@@ -666,6 +666,12 @@ DoD:
 > Renderer liefert diese Reportdaten fuer `PASSED`, `FAILED`,
 > `NOT_RUN_FILE_TARGET` und `NOT_RUN_POLICY`; JSON/YAML-Renderer und
 > Builder-Tests pinnen das maschinenlesbare Format.
+>
+> Status-Update (2026-05-13): Ein `MigrationPreflightPlanner`-Baustein
+> deklariert SQLite-Cast-Preflights vor Probe/Render als `NOT_RUN_POLICY`
+> fuer DB-Execute bzw. `NOT_RUN_FILE_TARGET` fuer Datei-/Plan-Pfade. Der
+> Runner konsumiert diese Deklarationen; die SQLite-spezifische SQL-Bindung
+> bleibt im SQLite-Adapter.
 
 ---
 
