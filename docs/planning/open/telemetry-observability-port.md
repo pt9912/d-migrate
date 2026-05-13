@@ -121,8 +121,10 @@ Der Port hat einen expliziten Schreib- und Lifecycle-Vertrag:
   `MigrationTelemetryWriteException` werfen.
 * `flush()` wird am kontrollierten Laufende aufgerufen und darf ebenfalls eine
   `MigrationTelemetryWriteException` werfen.
-* `close()` delegiert auf `flush()`, damit Adapter im CLI- und Async-Pfad
-  einheitlich in `finally`-Bloecken geschlossen werden koennen.
+* `close()` delegiert auf `flush()`, ist aber nicht der alleinige
+  Fehlerbehandlungsmechanismus. Runner-/CLI-Wiring muss Telemetry-Close/Flush
+  so aufrufen, dass ein bereits vorhandener Primaerfehler oder
+  `OperationCancelledException` nicht maskiert wird.
 * Der rohe Port kennt keinen CLI-Fail-Mode. `best-effort` und `strict` werden
   im Wiring ueber einen Guard/Decorator umgesetzt:
   * `best-effort` faengt Schreib-/Flush-Fehler ab, gibt hoechstens eine
@@ -130,6 +132,10 @@ Der Port hat einen expliziten Schreib- und Lifecycle-Vertrag:
   * `strict` laesst Schreib-/Flush-Fehler bis zum Runner/CLI-Wiring
     propagieren; wenn kein spezifischer Primaerfehler bereits den Exit-Code
     bestimmt, wird daraus Exit `7` (`LOCAL_ERROR`).
+  * Falls der Primaerlauf bereits mit Fehler oder Cancellation beendet wurde,
+    darf ein nachgelagerter Telemetry-Flush-/Close-Fehler den Primaer-Exit-Code
+    nicht ueberschreiben. Er wird in diesem Fall nur als suppressed/sekundaere
+    Diagnose behandelt.
 
 ### 4.2 Eventmodell statt Logger
 
@@ -171,10 +177,14 @@ Erlaubt:
 * Fehlerklasse
 * Exit-Code
 * anonymisierte oder konfigurierte Umgebung
+* Datenbank- oder Dateireferenz nur dann, wenn sie explizit freigegeben,
+  gekuerzt oder gehasht wurde
 
 Nicht erlaubt:
 
 * komplette JDBC-URL mit Credentials
+* SQLite-Dateipfade oder absolute lokale Pfade als Datenbankname
+* produktive Datenbanknamen ohne explizite Freigabe oder Hashing
 * Row Payloads
 * konkrete Kundendaten
 * rohe Filterausdruecke, falls sie sensible Werte enthalten koennen
@@ -231,6 +241,21 @@ JSONL ist absichtlich der erste Adapter, weil er:
    * `traceId`
    * `parentRunId`
 
+   Verbindliche Invariante fuer diesen Milestone:
+
+   * Im CLI-Pfad ist `runId` standardmaessig identisch zur bestehenden
+     `operationId`, damit Progress, Checkpoint/Resume, Result und Telemetry
+     dieselbe Laufreferenz verwenden.
+   * `--run-id <id>` setzt fuer neue CLI-Laeufe sowohl `runId` als auch
+     `operationId`.
+   * Bei `--resume` gewinnt die `operationId` aus dem Checkpoint-Manifest.
+     Weicht ein explizites `--run-id` davon ab, endet der Aufruf mit Exit `2`;
+     stille Doppel-IDs sind nicht erlaubt.
+   * `jobId` bleibt eine zusaetzliche MCP-/Async-Korrelation und ersetzt
+     `runId`/`operationId` nicht.
+   * `traceId` ist fuer externe Trace-Korrelation reserviert und darf keinen
+     Resume-/Checkpoint-Vertrag steuern.
+
 ### Phase B - Port- und Eventmodell
 
 Neuer Package-Vorschlag:
@@ -280,6 +305,12 @@ data class MigrationTelemetryContext(
 )
 ```
 
+Fuer CLI-Laeufe gilt: `operationId` ist nicht optional, sobald ein Runner
+tatsaechlich Events emittiert. `runId` und `operationId` sind dann im
+Normalfall gleich. `operationId = null` ist nur fuer spaetere nicht-resumable
+oder Legacy-Callsites zulaessig, solange sie keine Checkpoint-/Resume-Semantik
+besitzen.
+
 Attribute:
 
 ```kotlin
@@ -312,6 +343,19 @@ data class TelemetryEndpoint(
 )
 ```
 
+Endpoint-Sicherheitsregel:
+
+* `name` ist der bevorzugte Wert und meint einen benannten Connection-Alias
+  oder eine explizit konfigurierte Kurzreferenz.
+* `database` darf nicht blind aus `ConnectionConfig.database` uebernommen
+  werden, weil dieser Wert SQLite-Dateipfade oder produktive Datenbanknamen
+  enthalten kann.
+* Wenn eine Datenbankreferenz fuer Korrelation noetig ist, wird sie ueber einen
+  zentralen Endpoint-Sanitizer erzeugt: entweder explizit allowlistiert,
+  gekuerzt oder stabil gehasht.
+* `schema` darf nur technische Schema-Namen enthalten, keine Pfade,
+  SQL-Fragmente oder Filterwerte.
+
 Status:
 
 ```kotlin
@@ -330,6 +374,7 @@ Eventtypen:
 data class RunStarted(...)
 data class RunFinished(...)
 data class RunFailed(...)
+data class RunCancelled(...)
 data class StepStarted(...)
 data class StepFinished(...)
 data class TableStarted(...)
@@ -342,6 +387,15 @@ data class CheckpointSaved(...)
 ist aber kein verbindlicher Eventtyp dieses Milestones, solange
 `schema reverse`, `schema compare` oder `data profile` nicht produktiv an den
 Telemetry-Port angeschlossen werden.
+
+Terminal-Event-Regeln:
+
+* Jeder gestartete Lauf endet mit genau einem terminalen Run-Event:
+  `RunFinished`, `RunFailed` oder `RunCancelled`.
+* Cancellation wird nicht als generischer Fehler modelliert. Sie erzeugt
+  `RunCancelled` mit Exit-Code `130` und Status `CANCELLED`.
+* Bei Abbruch duerfen keine nachgelagerten Fake-Completion-Events fuer Tabellen
+  oder Chunks erzeugt werden.
 
 ### Phase C - Default- und JSONL-Adapter
 
@@ -385,6 +439,15 @@ Der JSONL-Adapter selbst ist strikt und wirft
 `MigrationTelemetryWriteException` bei nicht behebbaren Datei-/I/O-Fehlern.
 Das CLI-Wiring entscheidet ueber den Decorator, ob diese Fehler nur als Warnung
 behandelt oder als Exit `7` sichtbar werden.
+
+Strict-/Close-Handling:
+
+* CLI- und Async-Wiring muessen den Primaerausgang zuerst festhalten.
+* Telemetry-Flush/Close laeuft danach kontrolliert.
+* Nur wenn der Primaerausgang erfolgreich oder noch unbestimmt ist, darf ein
+  `strict`-Telemetry-Fehler den Exit-Code auf `7` setzen.
+* Wenn der Primaerausgang bereits Fehler oder Cancellation ist, bleibt dieser
+  Exit-Code fuehrend; Telemetry-Fehler werden nur diagnostiziert.
 
 Beispielausgabe:
 
@@ -497,6 +560,11 @@ Exit-Code-Regeln:
   (`LOCAL_ERROR`), wenn kein spezifischer Primaerfehler bereits den Exit-Code
   bestimmt, weil es sich um lokalen Datei-/I/O-Fehler handelt.
 * Ungueltige Telemetry-Konfiguration ist Exit `2`.
+* Bei `--resume` muss ein explizites `--run-id` entweder fehlen oder exakt der
+  `operationId` des geladenen Checkpoint-Manifests entsprechen. Abweichung ist
+  Exit `2`, damit Telemetry und Resume nicht unterschiedliche Lauf-IDs tragen.
+* Cancellation bleibt Exit `130`; Telemetry-Flush-/Close-Fehler duerfen diesen
+  Exit-Code nicht ueberschreiben.
 
 ### Phase F - MCP- und Async-Job-Korrelation
 
@@ -541,12 +609,17 @@ Runner-Tests:
 * `data import` emittiert Run-/Table-/Finish-/Failure-Events.
 * `data transfer` emittiert Source/Target-Kontext.
 * Fehlerpfade emittieren `RunFailed`.
+* Cancellation-Pfade emittieren `RunCancelled` mit Exit-Code `130`.
+* Telemetry-Flush-/Close-Fehler ueberschreiben keinen primaeren Fehler- oder
+  Cancellation-Exit-Code.
 
 CLI-Tests:
 
 * `--telemetry none` bleibt Default.
 * `--telemetry jsonl --telemetry-output file` erzeugt Datei.
 * `--run-id` erscheint in allen Events.
+* `--run-id` auf einem neuen CLI-Lauf setzt dieselbe ID wie `operationId`.
+* `--resume --run-id <abweichend>` endet mit Exit `2`.
 * ungueltige Kombinationen enden mit Exit `2`.
 
 Integration:
@@ -607,8 +680,13 @@ CHANGELOG.md
 * Freie Telemetry-Attribute sind allowlistiert, laengenbegrenzt und defensiv
   gescrubbt.
 * `--run-id` erlaubt reproduzierbare Korrelation ueber CI/CD-Logs hinweg.
+* Im CLI-Pfad gibt es keine divergierenden `runId`-/`operationId`-Werte.
 * JSONL-Ausgabe ist deterministisch genug fuer Tests und CI-Auswertung.
 * No-op-, Erfolgs- und Fehlerpfade sind getestet.
+* Cancellation wird als `RunCancelled` mit Exit `130` sichtbar und erzeugt keine
+  falschen Abschlussereignisse.
+* Telemetry-Flush-/Close-Fehler koennen Primaerfehler oder Cancellation nicht
+  maskieren.
 * Die bestehende Progress-Ausgabe regressiert nicht.
 * Coverage-Gates werden nicht abgesenkt.
 * Dokumentation beschreibt klar, dass DataKitchen/OpenTelemetry Adapter spaetere
@@ -713,6 +791,9 @@ Entscheidung:
 
 * keine JDBC-URLs im Eventmodell
 * Connection-Namen statt URLs
+* keine ungepruefte Uebernahme von `ConnectionConfig.database`, weil dieser
+  Wert SQLite-Dateipfade oder produktive Datenbanknamen enthalten kann
+* Datenbank-/Dateireferenzen nur allowlistiert, gekuerzt oder gehasht
 * Attribute nur ueber Allowlist und defensive Redaction
 * Tests fuer Credential-Redaction
 * Doku in `docs/user/quality.md`
@@ -738,6 +819,11 @@ Entscheidung:
 * OpenTelemetry ist nicht Teil dieses Milestones.
 * CLI-Default bleibt `--telemetry none`.
 * Events enthalten keine Secrets und keine Nutzdaten.
+* CLI-`runId` und bestehende `operationId` sind fuer neue Laeufe identisch;
+  Resume-Laeufe uebernehmen die Manifest-`operationId`.
+* Cancellation ist ein eigener Terminalzustand und bleibt Exit `130`.
 * Optionale Attribute sind allowlistiert; Idempotency-Keys werden hoechstens
   gehasht aufgenommen.
+* Endpoint-Daten werden nie ungeprueft aus Connection-URLs oder
+  `ConnectionConfig.database` serialisiert.
 * Progress-Ausgabe und Telemetry bleiben getrennte Schnittstellen.
