@@ -250,6 +250,7 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         r.isBlocked shouldBe true
         r.blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED } shouldBe true
         r.statements.shouldBeEmpty()
+        r.diagnostics.map { it.code }.shouldContain("PG_USING_OVERLAY_MISSING")
     }
 
     test("AlterColumnType: explicit using-expression overlay renders USING clause") {

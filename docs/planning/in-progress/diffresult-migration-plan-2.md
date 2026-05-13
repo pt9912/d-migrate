@@ -647,15 +647,15 @@ Akzeptanz:
 DoD:
 
 - [x] PostgreSQL-`USING`-Expression-Quelle ist festgelegt und validiert.
-- [ ] Up- und Down-Expressions werden getrennt gespeichert oder Down wird
+- [x] Up- und Down-Expressions werden getrennt gespeichert oder Down wird
   blockierend als manuell/nicht reversibel markiert.
-- [ ] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
+- [x] Generische Cast-Heuristiken ohne Nutzerentscheidung bleiben verboten.
 - [x] SQLite-Live-Preflight-Status ist im Report maschinenlesbar.
 - [x] `MigrationPreflightPlanner` oder ein aequivalenter Pre-Render-Baustein
   erzeugt die Preflight-Deklarationen; der Runner erfindet keine Preflight-SQL.
-- [ ] Datei-zu-Datei-Planung berichtet fehlende Live-Pruefung ohne
+- [x] Datei-zu-Datei-Planung berichtet fehlende Live-Pruefung ohne
   optimistischen Pass.
-- [ ] Positive und blockierende Tests existieren fuer PostgreSQL `USING` und
+- [x] Positive und blockierende Tests existieren fuer PostgreSQL `USING` und
   SQLite Live-Casts.
 
 > Status-Update (2026-05-13): SQLite-Cast-Preflight-Ergebnisse werden jetzt
@@ -678,6 +678,17 @@ DoD:
 > `reviewed-user`, `migration-overlay`). Schema-Kommentare oder sonstige
 > Ad-hoc-Quellen blockieren vor Render mit
 > `PG_USING_OVERLAY_INVALID_EXPRESSION_SOURCE`.
+>
+> Status-Update (2026-05-13): PostgreSQL-`USING`-Overlays rendern Down nur
+> aus explizitem `downUsingExpression`; fehlt dieser Ausdruck, bleibt Down
+> blockierend. Ein eigener Test pinnt, dass Down die getrennt gespeicherte
+> Expression nutzt.
+>
+> Status-Update (2026-05-13): Die vorhandenen B-Tests decken die restlichen
+> Cast-Vertraege ab: PostgreSQL blockiert ohne Nutzer-Overlay mit
+> `PG_USING_OVERLAY_MISSING`, SQLite berichtet Datei-/Plan-Pfade als
+> `NOT_RUN_FILE_TARGET`, und positive sowie blockierende Live-Cast-Pfade sind
+> gegen eine echte SQLite-DB gepinnt.
 
 ---
 
