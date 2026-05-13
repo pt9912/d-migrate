@@ -61,6 +61,9 @@ class RollbackArtefactBuilderTest : FunSpec({
         // operationIds are sorted alphabetically: ["op-a","op-z"]
         out shouldContain "\"operationIds\":[\"op-a\",\"op-z\"]"
         out shouldContain "\"formatVersion\":\"v2\""
+        out shouldContain "\"partialRollback\":false"
+        out shouldContain "\"rollbackComplete\":true"
+        out shouldContain "\"skippedOperationIds\":[]"
         out shouldContain "\"statementIndex\":["
         out shouldContain "\"transactionScope\":\"RUNNER_OWNED\""
         // Top-level keys are sorted: artifactHash, artifactHashAlgorithm, createdByVersion, currentFingerprint, …
@@ -150,6 +153,27 @@ class RollbackArtefactBuilderTest : FunSpec({
         out shouldContain "\"recovery\":true"
         out shouldContain "\"postUpVerified\":true"
         out shouldContain "\"allowedPostUpFingerprints\":[\"fp-observed\"]"
+    }
+
+    test("partial rollback artefact is explicitly marked and lists skipped operations") {
+        val out = RollbackArtefactBuilder.build(
+            RollbackArtefactBuilder.Input(
+                dialect = DatabaseDialect.POSTGRESQL,
+                currentFingerprint = "fp-c",
+                desiredFingerprint = "fp-d",
+                postUpFingerprint = "fp-d",
+                operationIds = setOf("op-rendered"),
+                risk = risk().copy(operationIds = setOf("op-rendered")),
+                downStatements = listOf(stmt("DROP TABLE x;").copy(operationIds = setOf("op-rendered"))),
+                createdByVersion = "v0",
+                partialRollback = true,
+                skippedOperationIds = setOf("op-manual", "op-not-reversible"),
+            ),
+        )
+
+        out shouldContain "\"partialRollback\":true"
+        out shouldContain "\"rollbackComplete\":false"
+        out shouldContain "\"skippedOperationIds\":[\"op-manual\",\"op-not-reversible\"]"
     }
 
     test("identical inputs produce byte-identical output (deterministic)") {

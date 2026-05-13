@@ -65,9 +65,13 @@ internal object RollbackArtefactBuilder {
         val recovery: Boolean = false,
         val postUpVerified: Boolean = false,
         val allowedPostUpFingerprints: List<String>? = null,
+        val partialRollback: Boolean = false,
+        val skippedOperationIds: Set<String> = emptySet(),
+        val emitPartialRollbackFields: Boolean = true,
     )
 
     fun build(input: Input): String {
+        validateCompleteness(input, legacy = false)
         val body = canonicalBody(input.downStatements)
         val headerWithoutHash = headerJson(input, body.statementIndex, artifactHash = null)
         val artifactHash = sha256Hex(headerWithoutHash + body.sqlBody)
@@ -81,6 +85,7 @@ internal object RollbackArtefactBuilder {
     }
 
     fun buildLegacyV1(input: Input): String {
+        validateCompleteness(input, legacy = true)
         val body = legacyCanonicalBody(input.downStatements)
         val headerWithoutHash = headerJsonV1(input, artifactHash = null)
         val artifactHash = sha256Hex(headerWithoutHash + body)
@@ -159,10 +164,19 @@ internal object RollbackArtefactBuilder {
         fields += "format" to jsonString(FORMAT)
         fields += "formatVersion" to jsonString(FORMAT_VERSION)
         fields += "operationIds" to jsonArray(input.operationIds.sorted().map { jsonString(it) })
+        if (input.emitPartialRollbackFields) {
+            fields += "partialRollback" to input.partialRollback.toString()
+        }
         fields += "postUpFingerprint" to jsonString(input.postUpFingerprint)
         fields += "postUpVerified" to input.postUpVerified.toString()
         fields += "recovery" to input.recovery.toString()
+        if (input.emitPartialRollbackFields) {
+            fields += "rollbackComplete" to (!input.partialRollback).toString()
+        }
         fields += "risk" to riskJson(input.risk)
+        if (input.emitPartialRollbackFields) {
+            fields += "skippedOperationIds" to jsonArray(input.skippedOperationIds.sorted().map { jsonString(it) })
+        }
         fields += "statementIndex" to statementIndexJson(statementIndex)
         // Fields are emitted in sorted key order — re-sort defensively.
         val sorted = fields.sortedBy { it.first }
@@ -204,6 +218,21 @@ internal object RollbackArtefactBuilder {
                 append(jsonString(k)).append(':').append(v)
             }
             append('}')
+        }
+    }
+
+    private fun validateCompleteness(input: Input, legacy: Boolean) {
+        require(input.partialRollback || input.skippedOperationIds.isEmpty()) {
+            "skippedOperationIds require partialRollback=true"
+        }
+        require(!input.partialRollback || input.skippedOperationIds.isNotEmpty()) {
+            "partial rollback artefacts must list skippedOperationIds"
+        }
+        require(!legacy || (!input.partialRollback && input.skippedOperationIds.isEmpty())) {
+            "rollback-sql v1 cannot represent partial rollback artefacts"
+        }
+        require(input.emitPartialRollbackFields || (!input.partialRollback && input.skippedOperationIds.isEmpty())) {
+            "partial rollback fields can only be omitted for complete rollback artefacts"
         }
     }
 

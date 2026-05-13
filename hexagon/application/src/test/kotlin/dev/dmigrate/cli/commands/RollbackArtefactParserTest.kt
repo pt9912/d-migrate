@@ -47,6 +47,8 @@ class RollbackArtefactParserTest : FunSpec({
         sql: String = "DROP TABLE x;",
         recovery: Boolean = false,
         allowed: List<String>? = null,
+        partialRollback: Boolean = false,
+        skippedOperationIds: Set<String> = emptySet(),
     ): String = RollbackArtefactBuilder.build(
         RollbackArtefactBuilder.Input(
             dialect = dialect,
@@ -65,6 +67,8 @@ class RollbackArtefactParserTest : FunSpec({
             recovery = recovery,
             postUpVerified = false,
             allowedPostUpFingerprints = allowed,
+            partialRollback = partialRollback,
+            skippedOperationIds = skippedOperationIds,
         ),
     )
 
@@ -96,6 +100,9 @@ class RollbackArtefactParserTest : FunSpec({
         r.parsed.dialect shouldBe "POSTGRESQL"
         r.parsed.currentFingerprint shouldBe "fp-current"
         r.parsed.operationIds shouldBe listOf("op-1")
+        r.parsed.rollbackComplete shouldBe true
+        r.parsed.partialRollback shouldBe false
+        r.parsed.skippedOperationIds shouldBe emptyList()
     }
 
     test("v2 statementIndex reconstructs statements with embedded blank lines") {
@@ -141,6 +148,57 @@ class RollbackArtefactParserTest : FunSpec({
         r.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
         r.parsed.recovery shouldBe true
         r.parsed.allowedPostUpFingerprints shouldBe listOf("fp-x", "fp-y")
+    }
+
+    test("F.3 partial rollback metadata round-trips with skipped operation IDs") {
+        val text = makeArtefact(
+            partialRollback = true,
+            skippedOperationIds = setOf("op-manual", "op-not-reversible"),
+        )
+        val r = RollbackArtefactParser.parse(text)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
+        r.parsed.rollbackComplete shouldBe false
+        r.parsed.partialRollback shouldBe true
+        r.parsed.skippedOperationIds shouldBe listOf("op-manual", "op-not-reversible")
+    }
+
+    test("F.3 partial rollback cannot be marked complete") {
+        val text = makeArtefact(
+            partialRollback = true,
+            skippedOperationIds = setOf("op-manual"),
+        )
+        val tampered = text.replace("\"rollbackComplete\":false", "\"rollbackComplete\":true")
+        val r = RollbackArtefactParser.parse(tampered)
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Failure>()
+        r.code shouldBe "PARTIAL_ROLLBACK_MARKED_COMPLETE"
+    }
+
+    test("F.3 older v2 artefact without partial fields remains complete") {
+        val text = RollbackArtefactBuilder.build(
+            RollbackArtefactBuilder.Input(
+                dialect = DatabaseDialect.POSTGRESQL,
+                currentFingerprint = "fp-current",
+                desiredFingerprint = "fp-desired",
+                postUpFingerprint = "fp-desired",
+                operationIds = setOf("op-1"),
+                risk = RollbackArtefactBuilder.Risk(
+                    destructive = false,
+                    dataLossPossible = false,
+                    requiresManualConfirmation = false,
+                    operationIds = setOf("op-1"),
+                ),
+                downStatements = listOf(stmt("DROP TABLE x;")),
+                createdByVersion = "test/0.0.0",
+                emitPartialRollbackFields = false,
+            ),
+        )
+
+        val r = RollbackArtefactParser.parse(text)
+
+        r.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
+        r.parsed.rollbackComplete shouldBe true
+        r.parsed.partialRollback shouldBe false
+        r.parsed.skippedOperationIds shouldBe emptyList()
     }
 
     test("missing begin delimiter is MISSING_BEGIN_DELIMITER") {

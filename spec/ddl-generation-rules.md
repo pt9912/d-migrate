@@ -892,10 +892,14 @@ Diff-basierte Rollback-Artefakte aus `schema migrate --generate-rollback`
 werden als ausführbarer SQL-Body plus `d-migrate rollback-sql v2`-
 Metadatenblock geschrieben. Der Body bleibt das einzige ausführbare SQL. Der
 Header enthält `statementIndex[]` mit UTF-8-Byte-Ranges, Statement-Hashes,
-Operation-IDs, Phase, Risiko und `transactionScope`. `schema rollback
---execute` rekonstruiert Statements aus diesen validierten Body-Ranges; ein
-Split anhand leerer Zeilen ist für v2 verboten. `rollback-sql v1` wird nur als
-Legacy-Lesepfad unterstützt.
+Operation-IDs, Phase, Risiko und `transactionScope`. Zusätzlich bindet der
+Header `rollbackComplete`, `partialRollback` und `skippedOperationIds[]`.
+Partielle Rollback-Artefakte müssen `partialRollback=true`,
+`rollbackComplete=false` und mindestens eine ausgelassene Operation
+maschinenlesbar ausweisen. `schema rollback --execute` rekonstruiert
+Statements aus diesen validierten Body-Ranges; ein Split anhand leerer Zeilen
+ist für v2 verboten. `rollback-sql v1` wird nur als Legacy-Lesepfad
+unterstützt.
 
 ---
 

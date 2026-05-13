@@ -703,6 +703,7 @@ d-migrate schema rollback --source <down.sql> --target <db> \
 | `--target` | Ja | Operand | Ziel-Datenbank (`db:<url-or-alias>`) |
 | `--execute` | Nein | Boolean | Down-SQL gegen `--target` ausführen; gegenseitig exklusiv mit `--dry-run` |
 | `--allow-destructive` | Nein | Boolean | Destruktive Down-Operationen erlauben |
+| `--allow-partial-rollback` | Nein | Boolean | Bewusst partielle Rollback-Artefakte ausführen |
 | `--dry-run` | Nein | Boolean | Validierung/Preview, keine Ausführung |
 
 Vor jeder Ausführung prüft der Runner strikt den im Artefakt eingebetteten
@@ -712,21 +713,24 @@ Eine Abweichung führt vor jedem DB-Zugriff zu Exit `7` (Artefakt ungültig).
 
 Neue Rollback-Artefakte verwenden `rollback-sql v2` mit
 `formatVersion=v2`. Der Kommentar-Metadatenblock enthält zusätzlich
-`statementIndex[]`; jeder Eintrag beschreibt genau einen ausführbaren Body-
-Slice mit `index`, `operationIds`, `phase`, `transactionScope`, Risiko-
-Feldern, `startInclusive`, `endExclusive` und `sha256`. Ranges beziehen sich
-auf UTF-8-Bytes des LF-normalisierten SQL-Bodys nach dem End-Delimiter.
-`schema rollback --execute` führt bei v2 ausschließlich die validierten
-Body-Slices aus und darf Statements nicht per Leerzeilen-Split rekonstruieren.
-Alte `rollback-sql v1`-Artefakte bleiben lesbar als Legacy-Pfad.
+`statementIndex[]`, `rollbackComplete`, `partialRollback` und
+`skippedOperationIds[]`; jeder `statementIndex`-Eintrag beschreibt genau einen
+ausführbaren Body-Slice mit `index`, `operationIds`, `phase`,
+`transactionScope`, Risiko-Feldern, `startInclusive`, `endExclusive` und
+`sha256`. Ranges beziehen sich auf UTF-8-Bytes des LF-normalisierten
+SQL-Bodys nach dem End-Delimiter. `schema rollback --execute` führt bei v2
+ausschließlich die validierten Body-Slices aus und darf Statements nicht per
+Leerzeilen-Split rekonstruieren. Alte `rollback-sql v1`-Artefakte bleiben
+lesbar als Legacy-Pfad.
 
 Bei `--execute`:
 
 1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.
 2. Dialekt der Ziel-Connection mit dem im Block gespeicherten Dialekt vergleichen → Exit `8` (`TARGET_DIALECT_MISMATCH`) bei Abweichung.
 3. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
-4. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
-5. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
+4. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
+5. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
+6. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
 
 Exit-Codes:
 

@@ -145,6 +145,7 @@ internal object RollbackArtefactParser {
                 )
             }
         }
+        val partialContract = decodePartialRollback(formatVersion, obj)
         @Suppress("UNCHECKED_CAST")
         return ParsedRollbackArtefact(
             format = format,
@@ -162,8 +163,60 @@ internal object RollbackArtefactParser {
             recovery = recovery,
             postUpVerified = obj.requireBool("postUpVerified"),
             allowedPostUpFingerprints = (allowed as? List<String>),
+            rollbackComplete = partialContract.rollbackComplete,
+            partialRollback = partialContract.partialRollback,
+            skippedOperationIds = partialContract.skippedOperationIds,
+            partialRollbackContractPresent = partialContract.present,
             statementIndex = decodeStatementIndex(formatVersion, obj["statementIndex"], sqlBody),
             sqlBody = sqlBody,
+        )
+    }
+
+    private fun decodePartialRollback(
+        formatVersion: String,
+        obj: Map<String, Any?>,
+    ): PartialRollbackContract {
+        val hasPartialContract = PARTIAL_ROLLBACK_FIELDS.any { it in obj }
+        if (formatVersion == RollbackArtefactBuilder.FORMAT_VERSION_V1 || !hasPartialContract) {
+            return PartialRollbackContract(
+                rollbackComplete = true,
+                partialRollback = false,
+                skippedOperationIds = emptyList(),
+                present = false,
+            )
+        }
+        val partialRollback = obj.requireBool("partialRollback")
+        val rollbackComplete = obj.requireBool("rollbackComplete")
+        val skippedOperationIds = obj.requireStringList("skippedOperationIds")
+        if (partialRollback && rollbackComplete) {
+            throw ParseException(
+                "PARTIAL_ROLLBACK_MARKED_COMPLETE",
+                "partialRollback=true requires rollbackComplete=false",
+            )
+        }
+        if (partialRollback && skippedOperationIds.isEmpty()) {
+            throw ParseException(
+                "PARTIAL_ROLLBACK_SKIPPED_OPERATIONS_MISSING",
+                "partial rollback artefacts must list skippedOperationIds",
+            )
+        }
+        if (!partialRollback && !rollbackComplete) {
+            throw ParseException(
+                "ROLLBACK_COMPLETENESS_MISMATCH",
+                "rollbackComplete=false requires partialRollback=true",
+            )
+        }
+        if (!partialRollback && skippedOperationIds.isNotEmpty()) {
+            throw ParseException(
+                "SKIPPED_OPERATIONS_WITH_COMPLETE_ROLLBACK",
+                "skippedOperationIds require partialRollback=true",
+            )
+        }
+        return PartialRollbackContract(
+            rollbackComplete = rollbackComplete,
+            partialRollback = partialRollback,
+            skippedOperationIds = skippedOperationIds,
+            present = true,
         )
     }
 
@@ -262,6 +315,9 @@ internal object RollbackArtefactParser {
             recovery = parsed.recovery,
             postUpVerified = parsed.postUpVerified,
             allowedPostUpFingerprints = parsed.allowedPostUpFingerprints,
+            partialRollback = parsed.partialRollback,
+            skippedOperationIds = parsed.skippedOperationIds.toSet(),
+            emitPartialRollbackFields = parsed.partialRollbackContractPresent,
         )
         val rebuilt = if (parsed.formatVersion == RollbackArtefactBuilder.FORMAT_VERSION) {
             RollbackArtefactBuilder.build(input)
@@ -443,6 +499,19 @@ internal object RollbackArtefactParser {
         val delimiters: Delimiters,
         val beginIdx: Int,
     )
+
+    private data class PartialRollbackContract(
+        val rollbackComplete: Boolean,
+        val partialRollback: Boolean,
+        val skippedOperationIds: List<String>,
+        val present: Boolean,
+    )
+
+    private val PARTIAL_ROLLBACK_FIELDS: Set<String> = setOf(
+        "partialRollback",
+        "rollbackComplete",
+        "skippedOperationIds",
+    )
 }
 
 // ── DTOs ────────────────────────────────────────────────────────────
@@ -463,6 +532,10 @@ internal data class ParsedRollbackArtefact(
     val recovery: Boolean,
     val postUpVerified: Boolean,
     val allowedPostUpFingerprints: List<String>?,
+    val rollbackComplete: Boolean,
+    val partialRollback: Boolean,
+    val skippedOperationIds: List<String>,
+    val partialRollbackContractPresent: Boolean,
     val statementIndex: List<ParsedStatementIndexEntry>,
     val sqlBody: String,
 )

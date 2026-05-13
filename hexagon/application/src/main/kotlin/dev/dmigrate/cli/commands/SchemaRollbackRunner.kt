@@ -22,6 +22,8 @@ import java.nio.file.Path
  *      one of `allowedPostUpFingerprints` for recovery artefacts)
  *      (`TARGET_STATE_MISMATCH` → Exit 8).
  *    - Reject destructive Down without `--allow-destructive` (Exit 8).
+ *    - Reject partial rollback artefacts without
+ *      `--allow-partial-rollback` before the first statement (Exit 8).
  *    - Run the SQL body via the injected executor; Exit 5 on
  *      execution error.
  *
@@ -59,6 +61,13 @@ class SchemaRollbackRunner(
         val parsed = readAndParseArtefact(request) ?: return 7
 
         if (!request.execute) return 0
+        if (parsed.partialRollback && !request.allowPartialRollback) {
+            userFacingPrintError(
+                "Partial rollback artefact skips operations; pass --allow-partial-rollback to proceed.",
+                request.source.toString(),
+            )
+            return 8
+        }
         cancellationToken.throwIfCancellationRequested()
         return executeRollback(request, parsed, targetOp, cancellationToken)
     }
@@ -281,6 +290,7 @@ data class SchemaRollbackRequest(
     val target: String,
     val execute: Boolean = false,
     val allowDestructive: Boolean = false,
+    val allowPartialRollback: Boolean = false,
     val dryRun: Boolean = false,
     val cliConfigPath: Path? = null,
 )

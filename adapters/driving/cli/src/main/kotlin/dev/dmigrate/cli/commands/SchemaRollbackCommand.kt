@@ -29,6 +29,10 @@ class SchemaRollbackCommand : CliktCommand(name = "rollback") {
         .required()
     val execute by option("--execute", help = "Execute Down-SQL against --target").flag()
     val allowDestructive by option("--allow-destructive", help = "Permit destructive Down operations").flag()
+    val allowPartialRollback by option(
+        "--allow-partial-rollback",
+        help = "Permit execution of an explicitly partial rollback artefact",
+    ).flag()
     val dryRun by option("--dry-run", help = "Validate / preview only").flag()
 
     override fun run() {
@@ -42,6 +46,7 @@ class SchemaRollbackCommand : CliktCommand(name = "rollback") {
             target = target,
             execute = execute,
             allowDestructive = allowDestructive,
+            allowPartialRollback = allowPartialRollback,
             dryRun = dryRun,
             cliConfigPath = root?.config,
         )

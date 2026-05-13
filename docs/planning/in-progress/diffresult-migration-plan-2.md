@@ -1327,6 +1327,14 @@ Nicht akzeptabel:
 - Partial-Down-SQL mit normalem `rollbackComplete=true`.
 - ausgelassene Operationen nur als Freitext-Warnung.
 
+> Status-Update (2026-05-13): F.3 hat einen ersten `rollback-sql v2`-
+> Vertragsslice. Der Header bindet `rollbackComplete`, `partialRollback` und
+> `skippedOperationIds[]` in den Artefakt-Hash ein. Partial-Artefakte muessen
+> `rollbackComplete=false` setzen und mindestens eine ausgelassene Operation
+> maschinenlesbar listen. `schema rollback --execute` blockiert partial
+> Artefakte vor DB-Load/erstem Statement, solange `--allow-partial-rollback`
+> nicht gesetzt ist.
+
 ### F.4 Rename-Mappings
 
 Nicht im ersten 0.9.7-Plan abgedeckt:
@@ -1426,7 +1434,7 @@ DoD:
   oder bleiben `MANUAL_REQUIRED`.
 - [x] Versioniertes Plan-Artefakt hat kanonische Serialisierung,
   `formatVersion`, Hash und Secret-Scrubbing.
-- [ ] Partial-Rollback-Artefakte sind maschinenlesbar als partial markiert und
+- [x] Partial-Rollback-Artefakte sind maschinenlesbar als partial markiert und
   listen ausgelassene Operationen.
 - [ ] Rename-Mappings sind fingerprint-gebunden und gegen Mehrdeutigkeit
   validiert.
