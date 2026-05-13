@@ -51,7 +51,7 @@ class MigrationOverlayJsonCodec {
             entries = parseEntries(root.requiredArray("entries", "$")),
             createdAt = root.requiredText("createdAt", "$"),
             createdByVersion = root.requiredText("createdByVersion", "$"),
-            overlayHash = root.requiredText("overlayHash", "$"),
+            overlayHash = root.optionalText("overlayHash", "$"),
             producerMetadata = parseProducerMetadata(root.get("producerMetadata")),
         )
     }
@@ -169,6 +169,14 @@ class MigrationOverlayJsonCodec {
     private fun JsonNode.requiredText(field: String, path: String): String {
         val value = get(field)
             ?: decode(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$path.$field", "Required field is missing")
+        if (!value.isTextual) {
+            decode(MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH, "$path.$field", "Expected string")
+        }
+        return value.asText()
+    }
+
+    private fun JsonNode.optionalText(field: String, path: String): String? {
+        val value = get(field) ?: return null
         if (!value.isTextual) {
             decode(MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH, "$path.$field", "Expected string")
         }

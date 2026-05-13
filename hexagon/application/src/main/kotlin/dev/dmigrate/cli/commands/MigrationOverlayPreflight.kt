@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostic
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
@@ -21,12 +22,18 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  */
 internal object MigrationOverlayPreflight {
 
-    fun validate(plan: DiffResult, dialect: DatabaseDialect): MigrationOverlayPreflightResult {
-        if (plan.migrationOverlays.isEmpty()) return MigrationOverlayPreflightResult(emptyList(), emptyList())
+    fun validate(
+        plan: DiffResult,
+        dialect: DatabaseDialect,
+        loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+    ): MigrationOverlayPreflightResult {
+        if (plan.migrationOverlays.isEmpty() && loadFailures.isEmpty()) {
+            return MigrationOverlayPreflightResult(emptyList(), emptyList())
+        }
 
         val sourceFingerprint = plan.current.fingerprint.orEmpty()
         val targetFingerprint = plan.desired.fingerprint.orEmpty()
-        val reports = plan.migrationOverlays.flatMap { document ->
+        val validationReports = plan.migrationOverlays.flatMap { document ->
             val result = MigrationOverlayValidator.validate(
                 overlay = document.overlay,
                 context = MigrationOverlayValidationContext(
@@ -38,6 +45,16 @@ internal object MigrationOverlayPreflight {
             )
             MigrationOverlayReport.fromValidation(result)
         }
+        val loadFailureReports = loadFailures.map { failure ->
+            MigrationOverlayReportItem(
+                source = failure.source,
+                entryId = null,
+                overlayHash = UNAVAILABLE_OVERLAY_HASH,
+                diagnosticCode = failure.diagnosticCode,
+                severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
+            )
+        }
+        val reports = validationReports + loadFailureReports
         val diagnostics = reports.map { item ->
             DiffDiagnostic(
                 code = item.diagnosticCode,
@@ -74,6 +91,8 @@ internal object MigrationOverlayPreflight {
         MigrationOverlayDiagnostic.Severity.WARNING -> DiffDiagnostic.Severity.WARNING
         MigrationOverlayDiagnostic.Severity.BLOCKER -> DiffDiagnostic.Severity.BLOCKER
     }
+
+    private const val UNAVAILABLE_OVERLAY_HASH = "<unavailable>"
 }
 
 internal data class MigrationOverlayPreflightResult(
@@ -83,3 +102,8 @@ internal data class MigrationOverlayPreflightResult(
     val hasBlockers: Boolean
         get() = diagnostics.any { it.severity == DiffDiagnostic.Severity.BLOCKER }
 }
+
+data class MigrationOverlayLoadFailure(
+    val source: String,
+    val diagnosticCode: String = MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+)

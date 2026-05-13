@@ -15,6 +15,7 @@ import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.DatabaseDialect
@@ -24,6 +25,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.LogScrubber
 import dev.dmigrate.format.SchemaFileResolver
+import dev.dmigrate.format.overlay.MigrationOverlayJsonDecodeException
 import dev.dmigrate.format.overlay.MigrationOverlayJsonCodec
 import dev.dmigrate.text.icu.IcuUnicodeTextService
 import kotlin.io.path.inputStream
@@ -65,6 +67,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         val ctx = root?.cliContext() ?: CliContext()
         val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
         val validator = SchemaValidator()
+        val loadedMigrationOverlays = loadMigrationOverlays(migrationOverlays)
 
         val request = SchemaMigrateRequest(
             source = source,
@@ -81,7 +84,8 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             execute = execute,
             dryRun = dryRun,
             cliConfigPath = root?.config,
-            migrationOverlays = loadMigrationOverlays(migrationOverlays),
+            migrationOverlays = loadedMigrationOverlays.documents,
+            migrationOverlayLoadFailures = loadedMigrationOverlays.failures,
         )
 
         val runner = SchemaMigrateRunner(
@@ -134,15 +138,35 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         }
     }
 
-    private fun loadMigrationOverlays(paths: List<java.nio.file.Path>): List<MigrationOverlayDocument> {
+    private fun loadMigrationOverlays(paths: List<java.nio.file.Path>): LoadedMigrationOverlays {
         val codec = MigrationOverlayJsonCodec()
-        return paths.map { path ->
-            path.inputStream().use { input ->
-                MigrationOverlayDocument(
+        val documents = mutableListOf<MigrationOverlayDocument>()
+        val failures = mutableListOf<MigrationOverlayLoadFailure>()
+        paths.forEach { path ->
+            try {
+                path.inputStream().use { input ->
+                    documents += MigrationOverlayDocument(
+                        source = path.toString(),
+                        overlay = codec.read(input),
+                    )
+                }
+            } catch (e: MigrationOverlayJsonDecodeException) {
+                failures += MigrationOverlayLoadFailure(
                     source = path.toString(),
-                    overlay = codec.read(input),
+                    diagnosticCode = e.code,
+                )
+            } catch (_: Exception) {
+                failures += MigrationOverlayLoadFailure(
+                    source = path.toString(),
+                    diagnosticCode = MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
                 )
             }
         }
+        return LoadedMigrationOverlays(documents, failures)
     }
+
+    private data class LoadedMigrationOverlays(
+        val documents: List<MigrationOverlayDocument>,
+        val failures: List<MigrationOverlayLoadFailure>,
+    )
 }

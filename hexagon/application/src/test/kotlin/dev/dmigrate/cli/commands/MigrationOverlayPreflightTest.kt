@@ -47,6 +47,25 @@ class MigrationOverlayPreflightTest : FunSpec({
         failure.statements shouldBe emptyList()
     }
 
+    test("overlay load failures block through the F0 preflight report") {
+        val result = MigrationOverlayPreflight.validate(
+            planWithoutOverlays(),
+            DatabaseDialect.POSTGRESQL,
+            loadFailures = listOf(
+                MigrationOverlayLoadFailure(
+                    source = "overlays/bad.json",
+                    diagnosticCode = "OVERLAY_UNKNOWN_ENTRY_KIND",
+                ),
+            ),
+        )
+
+        result.hasBlockers shouldBe true
+        result.reportItems.single().source shouldBe "overlays/bad.json"
+        result.reportItems.single().entryId shouldBe null
+        result.reportItems.single().overlayHash shouldBe "<unavailable>"
+        result.reportItems.single().diagnosticCode shouldBe "OVERLAY_UNKNOWN_ENTRY_KIND"
+    }
+
     test("overlay diagnostics expose source entry hash and code without secret expression values") {
         val secret = "prod_secret_cast_expression"
         val overlay = usingOverlay(
@@ -71,6 +90,14 @@ private fun planWith(overlay: MigrationOverlay, source: String): DiffResult =
         schemaDiff = SchemaDiff(),
         operations = emptyList(),
         migrationOverlays = listOf(MigrationOverlayDocument(source = source, overlay = overlay)),
+    )
+
+private fun planWithoutOverlays(): DiffResult =
+    DiffResult(
+        current = DiffEndpoint(schemaName = "App", fingerprint = "src-fp"),
+        desired = DiffEndpoint(schemaName = "App", fingerprint = "dst-fp"),
+        schemaDiff = SchemaDiff(),
+        operations = emptyList(),
     )
 
 private fun renameOverlay(): MigrationOverlay =

@@ -194,7 +194,11 @@ class SchemaMigrateRunner(
         val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
             .copy(migrationOverlays = request.migrationOverlays)
         cancellationToken.throwIfCancellationRequested()
-        val overlayPreflight = MigrationOverlayPreflight.validate(plan, effectiveDialect)
+        val overlayPreflight = MigrationOverlayPreflight.validate(
+            plan,
+            effectiveDialect,
+            request.migrationOverlayLoadFailures,
+        )
         // Plan-2 §A.2: probe `sqlite_master` before render for the
         // SQLite + --execute path so the temp-name resolution sees
         // ad-hoc live objects. Other paths skip the probe.
@@ -1033,6 +1037,7 @@ data class SchemaMigrateRequest(
     val dryRun: Boolean = false,
     val cliConfigPath: Path? = null,
     val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+    val migrationOverlayLoadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
 )
 
 data class SchemaMigrateReport(

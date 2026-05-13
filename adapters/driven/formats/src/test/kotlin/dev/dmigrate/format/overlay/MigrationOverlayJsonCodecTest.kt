@@ -24,6 +24,13 @@ class MigrationOverlayJsonCodecTest : FunSpec({
         codec.read(encoded.byteInputStream()) shouldBe overlay
     }
 
+    test("reads unsigned overlays so validation can report missing hash") {
+        val encoded = MigrationOverlayCanonicalJson.encode(signedOverlay())
+            .replace(Regex(",\n  \"overlayHash\": \"[^\"]+\""), "")
+
+        codec.read(encoded.byteInputStream()).overlayHash shouldBe null
+    }
+
     test("writes canonical migration overlay JSON") {
         val overlay = signedOverlay()
         val out = ByteArrayOutputStream()
