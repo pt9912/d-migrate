@@ -70,4 +70,37 @@ class SchemaMigrateCommandOverlayTest : FunSpec({
         renderedReport shouldContain "\"overlayHash\":\"<unavailable>\""
         renderedReport shouldContain "\"diagnosticCode\":\"OVERLAY_UNKNOWN_ENTRY_KIND\""
     }
+
+    test("schema migrate reports malformed overlay JSON through the preflight report") {
+        val dir = Files.createTempDirectory("dmigrate-overlay-cli")
+        val overlay = dir.resolve("malformed-overlay.json")
+        val report = dir.resolve("report.json")
+        overlay.writeText("""{"formatVersion":"migration-overlay.v1","entries":[""")
+
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(
+                listOf(
+                    "schema",
+                    "migrate",
+                    "--source",
+                    resourcePath("valid-schema.yaml").toString(),
+                    "--target",
+                    resourcePath("valid-schema.yaml").toString(),
+                    "--dialect",
+                    "postgresql",
+                    "--plan-only",
+                    "--report",
+                    report.toString(),
+                    "--migration-overlay",
+                    overlay.toString(),
+                ),
+            )
+        }
+
+        ex.statusCode shouldBe 8
+        val renderedReport = Files.readString(report)
+        renderedReport shouldContain "\"overlays\":"
+        renderedReport shouldContain "\"overlayHash\":\"<unavailable>\""
+        renderedReport shouldContain "\"diagnosticCode\":\"OVERLAY_FIELD_TYPE_MISMATCH\""
+    }
 })
