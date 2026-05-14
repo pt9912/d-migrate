@@ -28,17 +28,18 @@ Heute meldet die Rename-Pipeline ueber bestehende Reasons:
   reversibel ist)
 
 Dieser Slice fuehrt `RENAME_MAPPING_INVALID` als eigenen Enum-Wert
-ein, damit Reports, Tooling-Clients und Plan-Artefakt-Konsumenten
-Rename-spezifische Blocker maschinenlesbar von anderen
-Manual-Action-Faellen unterscheiden koennen.
+ein, damit CLI-/Report-JSON und Tooling-Clients Rename-spezifische
+Blocker maschinenlesbar von anderen Manual-Action-Faellen unterscheiden
+koennen. `migration-plan.v1` traegt heute keine `MigrationBlockedReason`;
+dieser Slice aendert daher den Plan-Artefakt-Vertrag nicht.
 
 ## 2. Motivation
 
 Der heutige Sammel-Reason `MANUAL_ACTION_REQUIRED` macht es schwer,
 Rename-Probleme automatisch von z.B. USING-Expression-Problemen oder
 Spatial-Index-Problemen zu unterscheiden. Das ist insbesondere fuer
-CLI-/Report-/Artefakt-Konsumenten relevant, die Rename-Overlay-Fehler dem
-Operator gezielt als Overlay-Edit-Vorschlag praesentieren wollen.
+CLI-/Report-Konsumenten relevant, die Rename-Overlay-Fehler dem Operator
+gezielt als Overlay-Edit-Vorschlag praesentieren wollen.
 
 `TRANSACTION_SCOPE_UNSUPPORTED` ist die Blaupause: erst spaeter
 hinzugefuegt, einheitlich gerollt durch Enum, JSON-Codec, Renderer
@@ -83,18 +84,17 @@ In Scope:
   unterscheidbaren Exit-8-`primaryBlockedReason` fuer Rename-Overlay-
   Fehler. Die Spec bleibt die oeffentliche CLI-/Report-Quelle; der
   Plan allein reicht fuer den neuen Report-Wert nicht.
-- Backward-Compat gilt nur fuer serialisierte Artefakt-/Report-Reader,
-  die Reasons als String lesen. Der aktuelle Runtime-Typ
-  `MigrationBlockedReason` ist ein geschlossenes Kotlin-Enum; unbekannte
-  Werte koennen dort nicht "pass-through" bleiben. Der Slice muss daher
-  entweder:
-  - die betroffenen Artefakt-/Report-Codecs auf ein tolerant gelesenes
-    String-DTO vor dem Enum-Mapping fuehren, oder
+- Backward-Compat gilt nur fuer serialisierte Report-Reader, die Reasons
+  als String lesen. Der aktuelle Runtime-Typ `MigrationBlockedReason` ist
+  ein geschlossenes Kotlin-Enum; unbekannte Werte koennen dort nicht
+  "pass-through" bleiben. Der Slice muss daher entweder:
+  - die betroffenen Report-Codecs auf ein tolerant gelesenes String-DTO
+    vor dem Enum-Mapping fuehren, oder
   - die Compat-Aussage auf alte bekannte Werte (`MANUAL_ACTION_REQUIRED`)
     beschraenken und unbekannte neue Werte fuer alte Runtime-Binaries als
     nicht unterstuetzt dokumentieren.
 - MCP-Layer bleibt aus diesem Slice heraus. `MigrationBlockedReason` ist
-  der CLI-/Report-/Artefakt-Reason, waehrend MCP-`dmigrateCode` heute
+  der CLI-/Report-Reason, waehrend MCP-`dmigrateCode` heute
   JSON-RPC-Fehlerfamilien wie `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`
   und `RESOURCE_NOT_FOUND` beschreibt. Ein spaeteres MCP-Migrationstool
   darf den neuen Reason als Reportfeld durchreichen, aber dieser Slice
@@ -103,10 +103,11 @@ In Scope:
   - Enum-Roundtrip-Test (Name, Ordinal-Stabilitaet)
   - Preflight-/Report-Tests: alle Rename-Overlay-Blocker-Pfade
     emittieren den neuen Reason
-  - Plan-/Report-Artefakt-Compatibility-Test: Plaene mit alten
-    `MANUAL_ACTION_REQUIRED`-Reasons fuer Rename werden weiterhin
-    gelesen und bleiben semantisch blockiert; die Compat-Schicht darf
-    einen blockierten Rename-Plan nicht ausfuehrbar machen. Falls ein
+  - CLI-/Report-JSON-Compatibility-Test: bestehende Report-Goldens oder
+    Fixtures mit alten `MANUAL_ACTION_REQUIRED`-Reasons fuer Rename-
+    Blocker bleiben semantisch als blockiert dokumentiert. Der
+    `migration-plan.v1`-Artefaktvertrag bleibt unveraendert, weil er
+    aktuell keine `MigrationBlockedReason` serialisiert. Falls ein
     Reader unbekannte Reasons tolerieren soll, muss das ueber einen
     expliziten String-Zwischentyp getestet werden; das geschlossene
     Runtime-Enum allein reicht dafuer nicht.
@@ -223,11 +224,11 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 - [ ] `spec/cli-spec.md` §6.1 nennt Rename-Overlay-Blocker als
       Exit-8-Fall und dokumentiert den neuen
       `primaryBlockedReason = RENAME_MAPPING_INVALID`.
-- [ ] Plan-/Report-Artefakt-Compatibility-Test: ein Artefakt v1 mit
+- [ ] CLI-/Report-JSON-Compatibility-Test: ein bestehender Report mit
       altem `MANUAL_ACTION_REQUIRED`-Reason fuer einen Rename-Blocker
-      bleibt lesbar und weiterhin blockiert (nur die Klassifikation hat
-      sich geaendert, nicht die Semantik). Die Compat-Logik darf daraus
-      keinen ausfuehrbaren Plan machen.
+      bleibt semantisch als blockiert dokumentiert (nur die Klassifikation
+      hat sich geaendert, nicht die Semantik). `migration-plan.v1` wird in
+      diesem Slice nicht geaendert, weil es keine Blocker-Reasons traegt.
 - [ ] Falls unbekannte future Reasons toleriert werden sollen, existiert
       ein eigener toleranter String-Reader-Test. Ohne diesen Test wird
       keine Pass-Through-Compat fuer unbekannte Enum-Werte behauptet.
@@ -248,25 +249,29 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 
 ## 7. Risiken
 
-### 7.1 Backward-Compatibility fuer Plan-Artefakte
+### 7.1 Backward-Compatibility fuer Reports
 
-Bestehende Plan-/Report-Artefakte koennen Rename-Blocker mit
-`MANUAL_ACTION_REQUIRED` enthalten. Der neue Slice darf diese Artefakte
-NICHT invalidieren — alte bekannte Reasons bleiben gueltig und werden
-semantisch als Rename-Blocker verstanden, wenn der Diagnostic-Code ein
-`OVERLAY_RENAME_MAPPING_*`-Code ist.
+Bestehende CLI-/Report-JSON-Ausgaben koennen Rename-Blocker mit
+`MANUAL_ACTION_REQUIRED` enthalten. Der neue Slice darf diese Reports
+semantisch nicht umdeuten — alte bekannte Reasons bleiben als historische
+Klassifikation dokumentiert und werden als Rename-Blocker verstanden, wenn
+der Diagnostic-Code ein `OVERLAY_RENAME_MAPPING_*`-Code ist.
+
+`migration-plan.v1` ist davon nicht betroffen: Das aktuelle Plan-Artefakt
+serialisiert Operations, Diagnostics und Reversibility, aber keine
+`MigrationBlockedReason`. Ein Plan-Artefakt-Format mit Blocker-Reasons
+braucht einen eigenen F.2-/Artefakt-Slice.
 
 Unbekannte future Reasons sind ein separater Vertrag. Da
 `MigrationBlockedReason` heute ein geschlossenes Enum ist, kann ein
 alter Runtime-Reader sie nicht automatisch pass-through erhalten.
 
-**Mitigation**: Artefakt-/Report-Validator akzeptiert beide bekannten
-Werte (`MANUAL_ACTION_REQUIRED` UND `RENAME_MAPPING_INVALID`) fuer
-denselben Diagnostic-Code, mit einer Info-Diagnose dass die
-Klassifikation verfeinert wurde. Future-Reason-Toleranz wird nur
-versprochen, wenn der Reader explizit ueber einen String-Zwischentyp
-implementiert und getestet ist. Ein Folge-Slice koennte Plaene auf den
-neuen Wert umnormalisieren.
+**Mitigation**: Report-Goldens und Report-Consumer-Dokumentation akzeptieren
+beide bekannten Werte (`MANUAL_ACTION_REQUIRED` UND
+`RENAME_MAPPING_INVALID`) fuer denselben Diagnostic-Code. Future-Reason-
+Toleranz wird nur versprochen, wenn der Reader explizit ueber einen
+String-Zwischentyp implementiert und getestet ist. Ein Folge-Slice koennte
+historische Reports beim Einlesen auf den neuen Wert umnormalisieren.
 
 ### 7.2 MCP-Begriffsverwechslung
 

@@ -65,10 +65,12 @@ In Scope:
   Faelle (z.B. `Index` mit Spaltennamen oder `View` mit Body-Referenz)
   als zusaetzliche Folge-Operationen im Plan, deterministisch nach dem
   Rename sortiert.
-- Reportausgabe: `renameProjection`-Block pro `RenameTable`/`RenameColumn`
-  mit den drei Listen plus den IDs der erzeugten Folge-Operationen. Die
-  Daten werden nicht aus freiem Text rekonstruiert, sondern als eigenes
-  Planmodell im `DiffResult` getragen.
+- Reportausgabe: `renameProjection`-Block pro Rename-Candidate, nicht nur
+  pro final emittierter `RenameTable`/`RenameColumn`. Der Block traegt die
+  drei Listen, die ID der finalen Rename-Operation falls eine Faltung
+  stattfindet, die IDs der erzeugten Folge-Operationen und bei Fallback die
+  IDs der Drop+Add-Operationen. Die Daten werden nicht aus freiem Text
+  rekonstruiert, sondern als eigenes Planmodell im `DiffResult` getragen.
 - Rollback-Vertrag fuer Mischfaelle: Automatisches Down ist nur zulaessig,
   wenn der inverse Rename plus die inversen synthetischen Delta- und
   Re-Projection-Operationen vollstaendig aus dem Planmodell rekonstruierbar
@@ -196,7 +198,9 @@ internal data class RenameProjection(
 )
 
 internal data class RenameProjectionReport(
-    val operationId: String,
+    val candidateId: String,
+    val renameOperationId: String?,      // null when the candidate fell back to Drop+Add
+    val fallbackOperationIds: List<String>,
     val automatic: List<DependencyRef>,
     val explicit: List<ExplicitProjectionRef>,
     val blockers: List<RenameProjectionBlocker>,
@@ -270,8 +274,11 @@ muessen:
   FK-Namen in bestimmten Faellen automatisch, dokumentiert aber auch
   Konflikte, in denen `RENAME TABLE` fehlschlaegt. Datei-zu-Datei kann
   diesen Live-Konflikt nur konservativ abschaetzen; unsichere Faelle
-  klassifizieren als `NO_PROJECTION_AVAILABLE` oder erzeugen einen
-  Preflight-Hinweis fuer Execute.
+  klassifizieren als `NO_PROJECTION_AVAILABLE` und fallen auf Drop+Add
+  zurueck. Ein Execute-Preflight darf nur eine vor `plan()` mit
+  `LIVE_TARGET` belegte Capability bestaetigen oder bei Drift blockieren;
+  er darf keinen unsicheren Datei-/Schema-only-Fall nachtraeglich als
+  Rename freischalten.
 - SQLite-Tabellen-/Spalten-Rename ist nur fuer die gepinnte
   Mindestversion und `legacy_alter_table = OFF` automatisch. Ist der
   Runtime-Modus unbekannt oder legacy aktiv, blockiert die Policy
@@ -423,6 +430,15 @@ emptyList()`. `SchemaMigrateReportBuilder` liest ausschliesslich dieses
 Feld fuer die Reportausgabe; es darf keine `renameProjection`-Daten aus
 Diagnostics, Operation-IDs oder Renderer-Nebenwirkungen ableiten.
 
+Der Report ist an den Candidate gebunden. Bei erfolgreicher Faltung zeigt
+`renameOperationId` auf die finale `Rename*`-Operation und
+`fallbackOperationIds` ist leer. Bei `NO_PROJECTION_AVAILABLE` oder einem
+anderen Projector-Blocker, der verlustfrei auf Drop+Add zurueckfaellt, bleibt
+`renameOperationId = null`; `fallbackOperationIds` enthaelt dann die
+tatsaechlich geplanten Drop+Add-Operationen. Damit bleibt auch ein
+abgelehnter Rename maschinenlesbar sichtbar, ohne auf eine nicht existierende
+finale Rename-Operation zu verweisen.
+
 Damit bleibt der Datenfluss eindeutig:
 
 ```
@@ -439,7 +455,9 @@ Der Migrate-Report erhaelt einen optionalen
 {
   "renameProjections": [
     {
-      "operationId": "rename-table-users",
+      "candidateId": "rename-table-users",
+      "renameOperationId": "rename-table-users",
+      "fallbackOperationIds": [],
       "automatic": [
         {"kind": "FK", "path": ["orders", "fk_orders_user"], "rationale": "..."}
       ],
@@ -517,6 +535,11 @@ die Engine uebernimmt und welche d-migrate explizit re-rendert.
       runtime-abhaengige Auto-Projection.
 - [ ] `renameProjections`-Reportbeispiel pinnt JSON-Struktur und
       Feldreihenfolge.
+- [ ] `renameProjections` deckt sowohl erfolgreiche Faltungen als auch
+      Drop+Add-Fallbacks ab: Fallback-Eintraege tragen `candidateId`,
+      `renameOperationId = null`, konkrete `fallbackOperationIds` und die
+      Projector-Blocker, ohne eine nicht existierende Rename-Operation zu
+      referenzieren.
 - [ ] `DiffResult` traegt `renameProjections` als strukturiertes
       Planfeld; `SchemaMigrateReportBuilder` liest diesen Carrier und
       rekonstruiert die Reportdaten nicht aus Diagnostics oder

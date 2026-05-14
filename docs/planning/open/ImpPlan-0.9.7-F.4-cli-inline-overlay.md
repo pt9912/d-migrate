@@ -84,6 +84,13 @@ In Scope:
   keinen autorisierten Plan gibt. Die fachlich gueltige Provenance ist in
   diesem Fall ausschliesslich der Pre-Plan-Finding mit beiden
   `source`/`entryId`-Paaren.
+- Blocker-Reason: Solange der separate
+  `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`-Slice noch nicht
+  umgesetzt ist, melden Cross-Document-Rename-Blocker weiter
+  `MANUAL_ACTION_REQUIRED` plus konkrete `OVERLAY_RENAME_MAPPING_*`-
+  Diagnostic. Sobald der Enum-Slice gelandet ist, nutzt derselbe Pfad
+  `RENAME_MAPPING_INVALID` als `primaryBlockedReason`; dieser CLI-Slice
+  darf den neuen Reason nicht stillschweigend vorziehen.
 - Tests: CLI-Parsing, Inline-Overlay-Konstruktion, End-to-End-Smoke
   fuer Tabellen-/Spalten-Rename via Flag.
 
@@ -316,6 +323,10 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine
       vorab geplanten Rename-Operationen und `operationsSkipped` bleibt
       leer.
+- [ ] Cross-Document-Rename-Blocker nutzen `MANUAL_ACTION_REQUIRED`, solange
+      der `RENAME_MAPPING_INVALID`-Enum-Slice offen ist; nach dessen
+      Umsetzung pinnt ein Test `primaryBlockedReason =
+      RENAME_MAPPING_INVALID`.
 - [ ] Ein exakt doppeltes Rename-Mapping in zwei verschiedenen Quellen
       (`objectType + fromName + toName`) blockiert mit
       `OVERLAY_RENAME_MAPPING_DUPLICATE` und zeigt beide betroffenen

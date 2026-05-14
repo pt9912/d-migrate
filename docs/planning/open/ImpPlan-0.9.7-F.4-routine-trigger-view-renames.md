@@ -3,9 +3,10 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (vierter Slice — Renames jenseits von Tabellen/Spalten)
 > **Status**: open (geplant, noch nicht gestartet)
-> **Vorbedingung**: F.4 Rendering-Slice ✅, **Workstream G abgeschlossen
+> **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
->                  Serialisierung, Execution-Status)** ⚠️ HARTE Vorbedingung
+>                  Serialisierung, Execution-Status), **E.1/E.2
+>                  Routine-/Trigger-Renderbarkeit** ⚠️ HARTE Vorbedingung
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
 >             §9 E.1/E.2/E.3 (Routine-/Trigger-Vorvertraege), §10 F.4
 >             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`
@@ -138,15 +139,17 @@ Aus Scope:
 
 | Vorbedingung | Status | Kommentar |
 | ------------ | ------ | --------- |
-| Workstream G abgeschlossen (Body-Speichervertrag, Statement-Serialisierung) | OFFEN | Plan-2 §9 Akzeptanz-Block |
+| Workstream G abgeschlossen (`transactionScope`, strukturierte Statement-Serialisierung, Execution-Status) | ✅ | Plan-2 §4/G.1-G.3 implementiert; neue v2-Rollback-Artefakte nutzen strukturierte Statement-Ranges |
 | Routine- und Trigger-Diff-Renderbarkeit (E.1/E.2) | OFFEN | Plan-2 §9 |
 | Sequence-Renderbarkeit (E.3) | TEILWEISE | PG-Slice ✅, MySQL/SQLite offen |
 | F.2 Plan-Artefakt-Vertrag | ✅ erste Scheibe | unveraendert nutzbar |
 
-Dieser Slice startet erst, wenn die `OFFEN`-Zellen in den Spalten
-"Workstream G" und "E.1/E.2" gruen sind. Ohne diese Voraussetzungen
-sind Rename-Down-Pfade fuer Routinen/Trigger nicht reversibel und
-der Plan blockiert mit `ROLLBACK_NOT_POSSIBLE`.
+Dieser Slice startet erst, wenn die `OFFEN`-Zellen fuer E.1/E.2 gruen sind.
+Workstream G ist keine offene Blockade mehr, bleibt aber eine harte
+Voraussetzung, die bei Slice-Start im Code-/Planstand nachgewiesen werden
+muss. Ohne Routine-/Trigger-Renderbarkeit sind Rename-Down-Pfade fuer
+Routinen/Trigger nicht reversibel und der Plan blockiert mit
+`ROLLBACK_NOT_POSSIBLE`.
 
 ## 5. Architektur
 
@@ -509,8 +512,8 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
 ## 7. Definition of Done
 
 - [ ] Alle Akzeptanzkriterien aus §6 erfuellt.
-- [ ] Vorbedingungen aus §4 sind nachweisbar gruen (Workstream G,
-      E.1/E.2 abgeschlossen).
+- [ ] Vorbedingungen aus §4 sind nachweisbar gruen: Workstream G bleibt
+      implementiert, E.1/E.2 sind abgeschlossen.
 - [ ] `make docker-test` gruen, Output in `/tmp/build.log`.
 - [ ] Coverage je betroffenem Modul ≥ 90%.
 - [ ] Plan-Datei nach `docs/planning/done/` verschoben.
