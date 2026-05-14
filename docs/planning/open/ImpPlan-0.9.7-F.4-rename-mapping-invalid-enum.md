@@ -23,9 +23,13 @@ Plan-2 §10 F.4 spezifiziert:
 Heute meldet die Rename-Pipeline ueber bestehende Reasons:
 
 - `MANUAL_ACTION_REQUIRED` (z.B. stale Fingerprint, mehrdeutige
-  Mappings, Strukturmismatch)
+  Mappings oder andere harte Rename-Overlay-Blocker)
 - `ROLLBACK_NOT_POSSIBLE` (wenn Rename-Down strukturell nicht
   reversibel ist)
+
+Strukturmismatch selbst ist im heutigen Rendering-Slice kein harter
+Blocker: `RENAME_OVERLAY_STRUCTURAL_MISMATCH` bleibt eine Warning und
+der Plan faellt auf Drop+Add zurueck.
 
 Dieser Slice fuehrt `RENAME_MAPPING_INVALID` als eigenen Enum-Wert
 ein, damit CLI-/Report-JSON und Tooling-Clients Rename-spezifische

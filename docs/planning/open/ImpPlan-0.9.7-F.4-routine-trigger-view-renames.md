@@ -6,7 +6,10 @@
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
 >                  Serialisierung, Execution-Status), **E.1/E.2
->                  Routine-/Trigger-Renderbarkeit** ⚠️ HARTE Vorbedingung
+>                  Routine-/Trigger-Renderbarkeit** ⚠️ HARTE Vorbedingung,
+>                  zentraler Pre-Plan-Overlay-Gate aus dem
+>                  `RENAME_MAPPING_INVALID`-Slice oder in diesem Slice
+>                  mitgeliefert
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
 >             §9 E.1/E.2/E.3 (Routine-/Trigger-Vorvertraege), §10 F.4
 >             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`
@@ -85,7 +88,11 @@ In Scope (nach Abschluss der Vorbedingungen):
   `DiffObjectType.MATERIALIZED_VIEW` existiert. Fuer `trigger`,
   `function` und `procedure` validiert der Validator zusaetzlich die
   kanonische Key-Grammatik und die unveraenderte Tabellen-/Signatur-
-  Identitaet.
+  Identitaet. Ein `objectType = view`-Mapping ist damit syntaktisch
+  gueltig; ob die konkrete `ViewDefinition.materialized = true` ist,
+  kann der dokument-/fingerprint-basierte Pre-Plan-Gate ohne
+  Schema-Kontext nicht entscheiden und wird erst in der schema-bewussten
+  Mapper-/Planner-Phase blockiert.
 - Erweiterung `OperationMapper`: konsumiert
   `RenameMappingOverlayEntry`-Eintraege mit `objectType` in
   `{view, trigger, function, procedure, sequence}` und faltet
@@ -93,8 +100,10 @@ In Scope (nach Abschluss der Vorbedingungen):
   `objectType = materialized_view` bleibt bis zu einem echten
   `DiffObjectType.MATERIALIZED_VIEW` ungueltig und wird vom Validator
   blockiert; ein `objectType = view`-Mapping auf eine
-  `ViewDefinition.materialized = true` blockiert ebenfalls, bis D.3b
-  explizit freigeschaltet ist.
+  `ViewDefinition.materialized = true` blockiert in der Mapper-/Planner-
+  Phase mit `OBJECT_RENAME_UNSUPPORTED`, bis D.3b explizit freigeschaltet
+  ist. Diese Pruefung darf nicht im schemafreien Validator behauptet
+  werden.
 - Per-Dialekt-Renderer fuer jeden neuen Subtyp:
   - PostgreSQL: native `ALTER … RENAME TO …`-Syntax pro Objektklasse
     (`ALTER VIEW`, `ALTER TRIGGER … ON …
@@ -310,13 +319,13 @@ internal data class ObjectRenamePlanningContext(
 )
 
 internal data class ObjectRenameCapabilities(
-    val source: CapabilitySource = CapabilitySource.FILE_ONLY,
+    val source: RenameCapabilitySource = RenameCapabilitySource.FILE_ONLY,
     val mysqlServerFamily: String? = null,
     val mysqlVersion: String? = null,
     val sqliteVersion: String? = null,
 )
 
-internal enum class CapabilitySource {
+internal enum class RenameCapabilitySource {
     FILE_ONLY,
     LIVE_TARGET,
     TEST_PINNED,
@@ -374,6 +383,15 @@ vor dem ersten `plan()` ausfuehren; nachgelagerte Preflights bestaetigen oder
 blockieren den Plan, planen aber keinen Rename-Fallback mehr um. So bleibt
 die Native/Fallback/Blocked-Klassifikation reproduzierbar und testbar, ohne
 `hexagon:core` von `dev.dmigrate.driver.DatabaseDialect` abhaengig zu machen.
+
+`RenameCapabilitySource` ist hier als gemeinsamer core-lokaler Rename-
+Capability-Carrier gemeint, nicht als zweiter konkurrierender Enum-Typ:
+Wenn der Dependency-Projection-Slice bereits einen gleichwertigen
+`RenameCapabilitySource` eingefuehrt hat, wird dieser Typ wiederverwendet.
+Falls dieser Slice zuerst landet, fuehrt er den gemeinsamen Typ so ein,
+dass der Dependency-Projection-Slice ihn ohne semantischen Drift nutzen
+kann. Alternativ muessen die Typen eindeutig benannt werden; zwei
+gleichnamige Enums im selben Core-Package sind nicht zulaessig.
 
 Der Context ist absichtlich getrennt vom
 `RenameProjectionCapabilities`-Input des Dependency-Projection-Slices. Falls
@@ -522,8 +540,11 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       Whitelist. Dieser Slice erweitert die zuvor gueltige Whitelist
       `{table, column}` bewusst um `view`, `trigger`, `function`,
       `procedure` und `sequence`; `materialized_view` bleibt blockiert.
-- [ ] `RenameView` blockiert `ViewDefinition.materialized = true` mit
-      dem bestehenden Materialized-View-Guard; kein Renderer darf
+- [ ] `RenameView` blockiert `ViewDefinition.materialized = true` in der
+      schema-bewussten Mapper-/Planner-Phase mit
+      `OBJECT_RENAME_UNSUPPORTED`; der schemafreie Pre-Plan-Gate blockiert
+      nur `objectType = materialized_view`, nicht ein syntaktisch gueltiges
+      `objectType = view` ohne Schema-Kontext. Kein Renderer darf
       `ALTER MATERIALIZED VIEW` oder einen Drop+Create-Fallback fuer
       Materialized Views aus diesem Slice emittieren.
 - [ ] Trigger-/Routine-Rename-Overlays nutzen kanonische
@@ -570,6 +591,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       F.4-Report-/Artefaktvertrag modelliert. Tests pinnen, dass ein
       Tabellen-/Spalten-Rename und ein neuer Objekt-Rename nicht in zwei
       voneinander unabhaengigen Provenance-Abschnitten landen.
+- [ ] `spec/cli-spec.md` §6.1 dokumentiert den gemeinsamen F.4-
+      Reportabschnitt fuer Rename-Projection/-Provenance, inklusive
+      Drop+Create-Fallbacks mit Rename-Provenance. Plan- und Report-
+      Goldens allein reichen nicht als oeffentlicher CLI-Vertrag.
 - [ ] Alle nativen `Rename*`-Subtypes tragen `overlayEntryId` neben
       `overlaySource` und `overlayHash`; Report/Plan-Artefakt nutzt diese
       Felder direkt und rekonstruiert Entry-Provenance nicht aus

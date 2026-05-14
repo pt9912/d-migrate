@@ -123,10 +123,12 @@ Aus Scope:
 - USING-Expressions inline: zu komplex (Multi-Line-Expressions,
   Quoting-Hoelle); bleibt File-Overlay.
 - Plan-Artefakt-Einbettung inline gebauter Overlays: das Plan-
-  Artefakt referenziert Overlay-Source-Labels textuell. Inline-
-  Overlays landen mit `source = "cli-inline"` und stabilen `entryId`s
-  im Artefakt; eine spaetere Iteration kann den ganzen Overlay-Body
-  einbetten.
+  Artefakt darf Inline-Overlays in diesem Slice nicht nur als
+  `source = "cli-inline"` plus `entryId`s referenzieren, weil der
+  urspruengliche Flag-Aufruf sonst nicht reproduzierbar ist. Der
+  synthetische Overlay-Body bleibt auf Runner/Report beschraenkt. Eine
+  spaetere Iteration kann den ganzen Overlay-Body mit
+  `requiredFeatures`/`semanticExtensions`-Gate einbetten.
 - Interaktive Eingabe (`--prompt-for-renames`): bewusst kein TTY-
   Pfad, weil das Plan-Artefakt-Reproduzierbarkeit bricht (Plan-2 §10
   F.3 "keine TTY-Rueckfrage").
@@ -435,10 +437,13 @@ unqualifiziert mappen will, nimmt das File-Overlay.
 
 ### 6.3 Plan-Artefakt-Reproduzierbarkeit
 
-Inline-Overlay landet im Plan-Artefakt mit
-`source = "cli-inline"` — das ist nicht reproduzierbar ohne den
-Original-Flag-Aufruf. Operator-Hinweis: fuer langlebige Plaene
-File-Overlay nutzen. Der Slice dokumentiert das in der Flag-Hilfe.
+Inline-Overlay landet in diesem Slice nicht als blosses
+`source = "cli-inline"`-Referenzfeld im oeffentlichen Plan-Artefakt.
+Ein solcher Verweis waere ohne den Original-Flag-Aufruf nicht
+reproduzierbar. Operator-Hinweis: fuer langlebige Plaene File-Overlay
+nutzen. Der Slice dokumentiert das in der Flag-Hilfe und im CLI-Report;
+Plan-Artefakt-Einbettung braucht einen spaeteren Body-Einbettungs- und
+Compat-Gate-Slice.
 
 ## 7. Out-of-Scope-Verweis
 

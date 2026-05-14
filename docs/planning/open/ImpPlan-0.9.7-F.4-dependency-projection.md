@@ -3,7 +3,10 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (dritter Slice — Dependency-Projection für Renames)
 > **Status**: open (geplant, noch nicht gestartet)
-> **Vorbedingung**: F.4 Overlay-Vertragsslice ✅, F.4 Rendering-Slice ✅
+> **Vorbedingung**: F.4 Overlay-Vertragsslice ✅, F.4 Rendering-Slice ✅,
+>                  zentraler Pre-Plan-Overlay-Gate aus dem
+>                  `RENAME_MAPPING_INVALID`-Slice oder in diesem Slice
+>                  mitgeliefert
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md` §10 F.4
 >             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`
 
@@ -75,7 +78,9 @@ In Scope:
   serialisiert wird, ist es versionierte Semantik und braucht denselben
   JSON-/Validator-/Golden-/Compat-Gate wie andere F.2-Artefaktfelder.
   Ohne diesen Gate bleibt `renameProjections` auf den Migrate-Report und den
-  internen `DiffResult` beschraenkt.
+  internen `DiffResult` beschraenkt. Da der Migrate-Report selbst
+  oeffentlicher CLI-Vertrag ist, wird `spec/cli-spec.md` §6.1 im selben
+  Slice um den optionalen `renameProjections`-Abschnitt erweitert.
 - Entry-Provenance wird ueberall explizit transportiert: Candidate,
   `RenameTable`/`RenameColumn`, `RenameProjectionReport` und spaetere
   Plan-/Report-Felder tragen `overlayEntryId` neben `overlaySource` und
@@ -238,14 +243,14 @@ internal data class ExplicitProjectionRef(
 )
 
 internal data class RenameProjectionCapabilities(
-    val source: CapabilitySource,          // FILE_ONLY, LIVE_TARGET, TEST_PINNED
+    val source: RenameCapabilitySource,    // FILE_ONLY, LIVE_TARGET, TEST_PINNED
     val sqliteVersion: String? = null,
     val sqliteLegacyAlterTable: Boolean? = null,
     val mysqlServerFamily: String? = null, // mysql, mariadb, unknown
     val mysqlVersion: String? = null,
 )
 
-internal enum class CapabilitySource {
+internal enum class RenameCapabilitySource {
     FILE_ONLY,
     LIVE_TARGET,
     TEST_PINNED,
@@ -263,6 +268,12 @@ internal data class RenameProjectionBlocker(
     val message: String,
 )
 ```
+
+`RenameCapabilitySource` ist der gemeinsame core-lokale Capability-
+Carrier fuer alle F.4-Rename-Entscheidungen. Der View-/Trigger-/Routine-
+Rename-Slice nutzt denselben Typ oder fuehrt ihn zuerst ein; zwei
+gleichnamige, semantisch fast gleiche Capability-Enums duerfen nicht in
+`hexagon:core` entstehen.
 
 Die String-Felder in `RenameProjectionCapabilities` sind nur der
 Transportvertrag an der Application-/Core-Grenze. Die Policy darf keine
@@ -329,21 +340,23 @@ muessen:
 eine `RenameProjectionCapabilities`-Instanz. Der Application-Layer fuellt
 sie wie folgt:
 
-- Datei-zu-Datei: `source = FILE_ONLY`; Versionen/PRAGMAs bleiben `null`.
-  Policies muessen daraus konservative Entscheidungen ableiten.
+- Datei-zu-Datei: `source = RenameCapabilitySource.FILE_ONLY`;
+  Versionen/PRAGMAs bleiben `null`. Policies muessen daraus konservative
+  Entscheidungen ableiten.
 - DB-Target ohne Execute: nur Informationen verwenden, die der bestehende
   Loader/Reader bereits verlustfrei liefert. Keine zusaetzliche Live-
   Mutation oder Sniffing-Queries in diesem Slice.
 - Execute-Pfad: Wenn eine runtime-abhaengige `AUTOMATIC_BY_ENGINE`-
   Entscheidung genutzt werden soll, muss der Runner die noetigen
   read-only Capability-Probes **vor** dem ersten `plan()` ausfuehren und
-  `source = LIVE_TARGET` an den Planner geben. Nach dem Planen duerfen
-  Preflights nur noch die bereits im Plan verwendeten Capabilities
+  `source = RenameCapabilitySource.LIVE_TARGET` an den Planner geben. Nach
+  dem Planen duerfen Preflights nur noch die bereits im Plan verwendeten Capabilities
   validieren und bei Drift/Unsicherheit blockieren. Kein Re-Planning
   nach Overlay-Preflight, SQLite-Probe oder Cast-Preflight in diesem
   Slice.
-- Tests: `TEST_PINNED` erlaubt gezielte Matrix-Pfade ohne einen echten
-  Server, muss aber als Test-only Input sichtbar bleiben.
+- Tests: `RenameCapabilitySource.TEST_PINNED` erlaubt gezielte Matrix-
+  Pfade ohne einen echten Server, muss aber als Test-only Input sichtbar
+  bleiben.
 
 Ohne diese Capabilities darf keine Policy-Zelle aus §3.3 als
 `AUTOMATIC_BY_ENGINE` gelten, wenn sie von Version, PRAGMA oder Server-
@@ -621,6 +634,9 @@ einzige oeffentliche Carrier fuer `renameProjections`.
       runtime-abhaengige Auto-Projection.
 - [ ] `renameProjections`-Reportbeispiel pinnt JSON-Struktur und
       Feldreihenfolge.
+- [ ] `spec/cli-spec.md` §6.1 dokumentiert den optionalen
+      `renameProjections`-Abschnitt des Migrate-Reports inklusive
+      Fallback-Fall (`renameOperationId = null`) und Entry-Provenance.
 - [ ] `renameProjections` deckt sowohl erfolgreiche Faltungen als auch
       Drop+Add-Fallbacks ab: Fallback-Eintraege tragen `candidateId`,
       `renameOperationId = null`, konkrete `fallbackOperationIds` und die
