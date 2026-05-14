@@ -46,7 +46,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -55,6 +55,7 @@ help:
 		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links in docs/' \
+		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
@@ -106,6 +107,9 @@ integration:
 docs-check:
 	./scripts/verify-doc-refs.sh
 
+solid-suppression-gate:
+	./scripts/solid-suppression-gate.sh
+
 gates: docker-check docker-coverage-gate docs-check
 
 ci: ci-build docs-check
@@ -149,7 +153,7 @@ docker-test:
 	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
 	  -t $(DOCKER_TAG) .
 
-docker-detekt:
+docker-detekt: solid-suppression-gate
 	$(DOCKER) build --target detekt -t $(IMAGE):detekt .
 
 docker-coverage:
@@ -215,7 +219,7 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
-docker-gates: docker-build docker-coverage-gate docker-smoke
+docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke
 
 docker-full-gates: docker-gates integration
 
