@@ -127,6 +127,12 @@ Aus Scope:
   Verweis waere ohne den Original-Flag-Aufruf nicht reproduzierbar und ist
   deshalb verboten. Der synthetische Overlay-Body bleibt auf Runner/Report
   beschraenkt und wird nicht in oeffentliche Plan-Artefakte serialisiert.
+  Das gilt auch dann, wenn der interne `DiffResult` waehrend desselben
+  CLI-Laufs ein `MigrationOverlayDocument(source = "cli-inline", ...)`
+  als Planner-/Renderer-Input traegt: Ein oeffentlicher
+  `migration-plan.v1`-Serializer muss Inline-Overlay-Dokumente entweder
+  ausdruecklich auslassen oder den Artefakt-Export blockieren, bis ein
+  versionierter Body-Einbettungs-Gate existiert.
   Eine spaetere Iteration kann den ganzen Overlay-Body mit
   `requiredFeatures`/`semanticExtensions`-Gate einbetten; bis dahin gilt fuer
   langlebige/reproduzierbare Plaene: File-Overlay nutzen.
@@ -225,6 +231,12 @@ geladenen File-Overlays zu einer lokalen Overlay-Liste kombiniert und
 an `DiffPlanner.plan(..., migrationOverlays = ...)` uebergeben. Die
 nachgelagerten Schritte (Preflight, Mapper) sehen nur die
 zusammengefuehrte Liste und bleiben fachlich unveraendert.
+Diese lokale Liste ist ein Runtime-Carrier fuer den aktuellen CLI-Lauf.
+Falls ein spaeterer Codepfad `DiffResult.migrationOverlays` in ein
+oeffentliches `migration-plan.v1`-Artefakt projiziert, muss er
+`source = "cli-inline"`-Dokumente herausfiltern oder den Export mit einem
+klaren Reproduzierbarkeitsblocker abbrechen. Der Inline-Slice darf nicht
+darauf vertrauen, dass `DiffResult`-Felder automatisch "intern" bleiben.
 
 `ParseFailed` -> `userFacingPrintError` + Exit 2 (CLI-Validation-
 Fehler, kein I/O).
@@ -351,6 +363,11 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
 - [ ] Inline-Overlay laeuft durch denselben `MigrationOverlayValidator`
       wie File-Overlays (Fingerprint-, Hash-, Dialekt-Check). Der
       Validator sieht keinen Unterschied.
+- [ ] Inline-Overlay-Dokumente werden nur als Runtime-Input in
+      `DiffPlanner.plan(... migrationOverlays = ...)` genutzt. Tests oder
+      Artefakt-Gates pinnen, dass ein oeffentlicher
+      `migration-plan.v1`-Export sie nicht als
+      `source = "cli-inline"`-Referenz ohne Body serialisiert.
 - [ ] `createdAt` des synthetischen Overlays ist der stabile String-
       Sentinel `"cli-inline"`; kein Core-/JSON-Typwechsel auf `Instant`,
       und kein wall-clock-Wert im kanonischen Inline-Overlay-Hash.

@@ -278,7 +278,11 @@ rendert. Der bestehende neutrale Identitaetsvertrag nutzt dafuer
 `ObjectKeyCodec.routineKey(name, parameters)`; dieser Slice darf die
 Signatur nicht nur im Test ableiten, sondern muss sie im
 `DiffOperation`-Payload oder in einer eindeutig referenzierbaren
-Identity mitschleppen.
+Identity mitschleppen. Als Payload-Typ wird der bestehende
+`ParameterDefinition`-Vertrag verwendet, weil
+`ObjectKeyCodec.routineKey(...)` bereits diesen Typ konsumiert und daraus
+den kanonischen `direction:type`-Key bildet. Der Slice fuehrt keinen
+zweiten, fast gleichen Routine-Signaturtyp ein.
 
 ```kotlin
 data class RenameFunction(
@@ -286,7 +290,7 @@ data class RenameFunction(
     override val objectRef: DiffObjectRef, // [toCanonicalRoutineKey], e.g. ObjectKeyCodec.routineKey(toName, params)
     val fromName: String,
     val toName: String,
-    val signature: List<RoutineParameterKey>,
+    val signature: List<ParameterDefinition>,
     val bodyHash: String?,
     val overlaySource: String,
     val overlayEntryId: String,
@@ -319,8 +323,9 @@ sichtbare Name:
 `ALTER FUNCTION/PROCEDURE <fromName>(<signature>) RENAME TO <toName>`.
 Renderer duerfen deshalb weder den kanonischen Ziel-Key noch `toName` fuer
 die linke Seite des `ALTER ... RENAME` verwenden. Die Signatur speichert
-den neutralen `direction:type`-Key fuer Eindeutigkeit. PostgreSQL-Rendering
-muss daraus die vom Dialekt benoetigte Identitaet ableiten und
+die neutralen Parameterdefinitionen; der kanonische `direction:type`-Key
+wird ausschliesslich ueber `ObjectKeyCodec.routineKey(...)` gebildet.
+PostgreSQL-Rendering muss daraus die vom Dialekt benoetigte Identitaet ableiten und
 dokumentieren, ob OUT-Parameter in der Argumentliste ignoriert oder als
 Teil der uebergebenen Signatur behandelt werden. Diese Entscheidung wird
 mit Overload-Tests fuer IN, OUT und INOUT gepinnt.
@@ -333,7 +338,7 @@ internal interface ObjectRenamePolicy {
     // hexagon:core must remain dependency-free.
     val dialect: ObjectRenameDialect
 
-    fun classify(rename: ObjectRenameCandidate): RenameSupport
+    fun classify(rename: ObjectRenameCandidate, context: ObjectRenamePlanningContext): RenameSupport
 }
 
 internal data class ObjectRenamePlanningContext(
@@ -375,14 +380,9 @@ internal data class ObjectRenameCandidate(
     val toName: String,
     val materializedView: Boolean = false,
     val triggerTableName: String? = null,
-    val routineSignature: List<RoutineParameterKey> = emptyList(),
+    val routineSignature: List<ParameterDefinition> = emptyList(),
     val sourceBodyHash: String? = null,
     val targetBodyHash: String? = null,
-)
-
-internal data class RoutineParameterKey(
-    val direction: String?,
-    val type: String,
 )
 ```
 
@@ -395,6 +395,11 @@ Funktionen/Prozeduren ueber Name plus Argumenttypen identifiziert.
 aber mit `renameProvenance = ...`-Metadatum, sodass Report und spaetere
 Plan-Artefakte das nutzerseitig erwartete Rename als Vertrag erkennen
 koennen.
+
+Die Policy erhaelt den `ObjectRenamePlanningContext` bei jeder
+Klassifikation. Die `dialect`-Property ist nur ein stabiler Discriminator
+fuer Registrierung und Tests; runtime-abhaengige Entscheidungen muessen
+aus den uebergebenen Capabilities stammen.
 
 `DiffPlanner.plan(...)` erhaelt dafuer zusaetzlich zu den Overlays einen
 `ObjectRenamePlanningContext`. Der Application-/CLI-Layer mappt
@@ -566,6 +571,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
 - [ ] `ObjectRenamePolicy` ist je Dialekt implementiert und pinnt die
       Native/Fallback/Blocked-Klassifikation gegen die Dialekt-Doku,
       ohne `hexagon:core` von `DatabaseDialect` abhaengig zu machen.
+- [ ] `ObjectRenamePolicy.classify(...)` konsumiert den
+      `ObjectRenamePlanningContext`; runtime-abhaengige Entscheidungen
+      duerfen nicht allein aus der registrierten Policy-`dialect`-Property
+      abgeleitet werden.
 - [ ] `DiffPlanner.plan(...)` bzw. die Mapper-Grenze konsumiert einen
       core-lokalen `ObjectRenamePlanningContext`; der Application-/CLI-Layer
       mappt `DatabaseDialect` auf `ObjectRenameDialect` und befuellt
@@ -603,8 +612,9 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       unterschiedlicher Signatur duerfen nicht ohne eindeutige Signatur
       gefaltet werden.
 - [ ] `RenameFunction`/`RenameProcedure` tragen die Routine-Signatur im
-      Operation-Payload und `objectRef.path[0]` ist der kanonische
-      Ziel-Key `ObjectKeyCodec.routineKey(toName, parameters)`; der
+      Operation-Payload als `List<ParameterDefinition>` und
+      `objectRef.path[0]` ist der kanonische Ziel-Key
+      `ObjectKeyCodec.routineKey(toName, parameters)`; der
       PostgreSQL-Renderer rendert die linke Seite aus `fromName` plus der
       dialektspezifisch aus `signature` abgeleiteten Argumentliste und
       die rechte Seite aus `toName`; er rendert nicht aus dem blossen
