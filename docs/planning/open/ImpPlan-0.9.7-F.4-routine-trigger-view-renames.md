@@ -157,6 +157,17 @@ In Scope (nach Abschluss der Vorbedingungen):
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
   Muster wie die Tabellen-Rename-Tests.
+- Body-Drift ist ein eigener harter Vertrag fuer Views, Trigger,
+  Functions und Procedures: Eine native `Rename*`-Operation darf nur
+  entstehen, wenn Quelle und Ziel denselben Body-Vertrag erfuellen
+  (gleicher kanonischer Body-Hash bzw. beide Bodies nach E.1/E.2
+  verlustfrei bekannt und unveraendert). Weicht der Body ab, ist das
+  kein reiner Rename. Dialekte mit sicherem Drop+Create-Vertrag fallen
+  auf `DROP_CREATE_FALLBACK` mit `RenameProvenance` zurueck; fehlt alter
+  oder neuer Body, blockiert der Kandidat mit `OBJECT_RENAME_UNSUPPORTED`
+  statt ein natives `ALTER ... RENAME` zu planen. Der `bodyHash` in
+  `RenameTrigger`/`RenameFunction`/`RenameProcedure` dient genau dieser
+  Drift-Pruefung und darf nicht nur Report-Metadatum sein.
 - Konsolidierung mit dem Tabellen-/Spalten-Rename-Vertrag: Die
   Provenance-Regel aus diesem Slice gilt nicht nur fuer die neuen
   Objektklassen. Bestehende `RenameTable`/`RenameColumn`-Operationen und
@@ -544,6 +555,14 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       strukturkonsistente Paare zu Rename — analog zum
       Tabellen/Spalten-Pfad inkl. `RENAME_OVERLAY_STRUCTURAL_MISMATCH`-
       Warning fuer Mischfaelle.
+- [ ] Body-Drift ist fuer View-/Trigger-/Routine-Renames gepinnt:
+      unveraenderter kanonischer Body erlaubt natives Rename bzw. die
+      dialektspezifische Rename-Policy; abweichender Body fuehrt nicht zu
+      einem nativen `Rename*`, sondern zu Drop+Create-Fallback mit
+      `RenameProvenance`, sofern beide Bodies renderbar bekannt sind;
+      unbekannter alter oder neuer Body blockiert mit
+      `OBJECT_RENAME_UNSUPPORTED`. Tests decken mindestens eine Function
+      oder Procedure und einen Trigger/View-Fall ab.
 - [ ] `ObjectRenamePolicy` ist je Dialekt implementiert und pinnt die
       Native/Fallback/Blocked-Klassifikation gegen die Dialekt-Doku,
       ohne `hexagon:core` von `DatabaseDialect` abhaengig zu machen.

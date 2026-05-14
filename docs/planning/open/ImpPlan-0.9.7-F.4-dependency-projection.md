@@ -90,9 +90,14 @@ In Scope:
 - Rollback-Vertrag fuer Mischfaelle: Automatisches Down ist nur zulaessig,
   wenn der inverse Rename plus die inversen synthetischen Delta- und
   Re-Projection-Operationen vollstaendig aus dem Planmodell rekonstruierbar
-  sind. Andernfalls blockiert `--generate-rollback` mit
-  `ROLLBACK_NOT_POSSIBLE`; ein reines "Rename up, inverse Rename down"
-  waere fuer Mischfaelle fachlich unvollstaendig.
+  sind. Dafuer muss `renameProjections` entweder als versioniertes/gated
+  Semantikfeld im `migration-plan.v1`-Artefakt gespeichert werden oder der
+  Runner muss fuer persisted Plan-Artefakte den automatischen Down-Pfad fuer
+  Rename-Mischfaelle blockieren. Ein Report-only Carrier reicht fuer
+  reproduzierbares Rollback nicht, weil `schema rollback` den urspruenglichen
+  Planner-Kontext nicht mehr sicher kennt. Andernfalls blockiert
+  `--generate-rollback` mit `ROLLBACK_NOT_POSSIBLE`; ein reines "Rename up,
+  inverse Rename down" waere fuer Mischfaelle fachlich unvollstaendig.
 - Tests pro Dialekt mit mindestens einem
   `AUTOMATIC_BY_ENGINE`-, einem `EXPLICIT_REPROJECTION`- und einem
   `NO_PROJECTION_AVAILABLE`-Pfad.
@@ -573,7 +578,13 @@ muessen `migration-plan.v1`-Codec, Validator, Golden-Files und Compat-Tests
 entweder ein bekanntes versioniertes Feld pinnen oder ein
 `requiredFeatures`/`semanticExtensions`-Gate setzen. Falls das nicht geleistet
 wird, bleibt die Artefaktserialisierung unveraendert und der Report ist der
-einzige oeffentliche Carrier fuer `renameProjections`.
+einzige oeffentliche Carrier fuer `renameProjections`. In genau diesem
+Report-only-Modus darf der Slice aber keinen automatischen Rollback-Vertrag fuer
+persistierte Rename-Mischfall-Plaene versprechen: `--generate-rollback` muss
+solche Plaene mit `ROLLBACK_NOT_POSSIBLE` blockieren oder die Artefakt-Gate-
+Arbeit im selben Slice nachziehen. Tests muessen beide erlaubten Pfade
+explizit pinnen, damit ein lokaler Report nicht versehentlich als
+rollback-relevantes Planmodell behandelt wird.
 
 ## 4. Akzeptanzkriterien
 
@@ -619,6 +630,12 @@ einzige oeffentliche Carrier fuer `renameProjections`.
       inversen Down-Plan, Rename plus `EXPLICIT_REPROJECTION` erzeugt alle
       noetigen inversen Folge-Operationen, und nicht rekonstruierbare
       alte Bodies/Dependencies blockieren mit `ROLLBACK_NOT_POSSIBLE`.
+      Diese positiven Rollback-Pfade sind nur zulaessig, wenn die dafuer
+      noetigen `renameProjections`/Projection-Details im Plan-Artefakt
+      versioniert oder per Feature-Gate gespeichert sind; bleibt
+      `renameProjections` Report-only, blockiert `--generate-rollback` fuer
+      persistierte Rename-Mischfall-Plaene ebenfalls mit
+      `ROLLBACK_NOT_POSSIBLE`.
 - [ ] ID-Disambiguierung und Dependency-Referenzen sind gemeinsam
       stabil: Tests decken mindestens einen ID-Kollisionsfall ab und
       pruefen, dass Folge-Operationen auf die finale Rename-ID zeigen.
@@ -673,8 +690,9 @@ einzige oeffentliche Carrier fuer `renameProjections`.
       behandelt der Slice das Feld als versionierte Semantik: JSON-Codec,
       Validator, Golden-Files und Compat-Tests pinnen entweder ein bekanntes
       Feld oder ein `requiredFeatures`/`semanticExtensions`-Gate. Ohne diesen
-      Artefakt-Gate bleibt `migration-plan.v1` unveraendert und nur der
-      Migrate-Report enthaelt den neuen Abschnitt.
+      Artefakt-Gate bleibt `migration-plan.v1` unveraendert, nur der
+      Migrate-Report enthaelt den neuen Abschnitt, und automatische Rollbacks
+      fuer persistierte Rename-Mischfall-Plaene bleiben blockiert.
 - [ ] Default-Expression-Tests decken das aktuelle Modell-Limit ab:
       `DefaultValue.FunctionCall` in der betroffenen Rename-Umgebung
       blockiert konservativ, solange kein explizites Dependency-Feld

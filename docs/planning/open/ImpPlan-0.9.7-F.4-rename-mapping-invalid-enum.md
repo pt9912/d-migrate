@@ -229,6 +229,16 @@ internal fun MigrationOverlayPreflight.validateBeforePlan(
 ): MigrationOverlayPreflightResult
 ```
 
+Der Result-/Diagnostic-Carrier muss fuer die Reason-Klassifikation
+strukturierte Overlay-Kontextdaten behalten. Mindestens erforderlich sind:
+`overlayKind`, `entryKind`, `renameObjectType`, `source`, `entryId` und
+`overlayHash` pro Finding bzw. Report-Item. Der Classifier darf nicht aus
+freien Fehlermeldungen ableiten, ob ein `OVERLAY_UNKNOWN_ENTRY_KIND` aus einem
+`rename-mapping.objectType` oder aus einem generischen unbekannten Entry stammt.
+Falls der bestehende `MigrationOverlayReportItem` dafuer nicht reicht, fuehrt
+dieser Slice einen internen `MigrationOverlayFinding`-Carrier ein und projiziert
+ihn erst fuer die CLI-Ausgabe auf das bisherige Report-Item-Shape.
+
 Der Runner befuellt `expectedSourceFingerprint` mit dem Fingerprint des
 aktuellen Zielzustands und `expectedTargetFingerprint` mit dem Fingerprint des
 gewuenschten Quell-/Soll-Schemas, also mit denselben Werten, die der spaetere
@@ -260,7 +270,12 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
   in `RENAME_MAPPING_INVALID`, wenn sie aus einem `rename-mapping`-Eintrag
   mit nicht freigeschaltetem `objectType` stammen. Generische unbekannte
   Entry-Kinds in anderen Overlay-Arten bleiben bei
-  `MANUAL_ACTION_REQUIRED`, solange kein eigener Reason existiert.
+  `MANUAL_ACTION_REQUIRED`, solange kein eigener Reason existiert. Diese
+  Unterscheidung muss ueber die strukturierten Finding-Felder aus dem
+  Pre-Plan-Gate laufen; Message-Parsing oder Entry-ID-Konventionen sind nicht
+  zulaessig. Alternativ darf der Slice einen eigenen Diagnostic-Code fuer
+  nicht freigeschaltete `rename-mapping.objectType`-Werte einfuehren und genau
+  diesen Code klassifizieren.
 - Blocker-Diagnostics mit Code `RENAME_DEPENDENCY_UNPROJECTABLE` landen
   in `MigrationBlocker(reason = MANUAL_ACTION_REQUIRED)`. Der normale
   Drop+Add-Fallback-Fall ist aber nur eine Warning und erzeugt keinen
@@ -314,6 +329,13 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       `trigger`, `function`, `procedure`, `sequence` und
       `materialized_view`, bis der spaetere Objekt-Rename-Slice diese Werte
       bewusst freischaltet.
+- [ ] Reason-Klassifikation basiert auf strukturiertem Overlay-Kontext oder
+      einem eigenen Whitelist-Diagnostic-Code: Ein Test zeigt, dass
+      `OVERLAY_UNKNOWN_ENTRY_KIND` fuer nicht freigeschaltete
+      `rename-mapping.objectType`-Werte `RENAME_MAPPING_INVALID` erzeugt,
+      waehrend ein generisch unbekannter Entry-Kind in einem anderen Overlay-
+      Kontext bei `MANUAL_ACTION_REQUIRED` bleibt. Der Test darf nicht von
+      freiem Message-Text oder Entry-ID-Namensmustern abhaengen.
 - [ ] Cross-Document-Uniqueness ist Teil derselben zentralen Pre-Plan-
       Validierung und wird vom CLI-Inline-Slice nur konsumiert, nicht
       dupliziert.
