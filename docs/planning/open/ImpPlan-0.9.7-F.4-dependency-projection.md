@@ -121,8 +121,11 @@ Aus Scope:
   eigener Sequence-Ownership-Vertrag `ownedBy` oder ein aequivalentes
   Modellfeld eingefuehrt hat.
 - `RENAME_MAPPING_INVALID` als eigener `MigrationBlockedReason`-Enum-
-  Wert (Plan-2 §10 Carve-out): bleibt offen, bis die existierenden
-  Blocker-Reasons nicht mehr reichen.
+  Wert (Plan-2 §10 Carve-out): Dieser Slice fuehrt den Enum-Wert nicht
+  selbst ein. Wenn `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`
+  bereits gelandet ist, konsumiert dieser Slice den zentralen Classifier und
+  dessen Reason-Wert; andernfalls mappt er weiter auf die bestehenden
+  Blocker-Reasons und transportiert die rename-spezifischen Diagnostic-Codes.
 
 ## 3. Architektur
 
@@ -771,8 +774,12 @@ pinnt. Bis dahin klassifiziert die Policy erkannte Ownership-Faelle als
 
 Plan-2 §10 sieht diesen Reason-Wert vor. Heute mappen wir auf
 `MANUAL_ACTION_REQUIRED`/`ROLLBACK_NOT_POSSIBLE`. Dieser Slice fuegt
-den Enum-Wert NICHT hinzu — das wird ein eigener kleiner Vertragsslice,
-sobald Renderer den feineren Reason konsumieren koennen.
+den Enum-Wert NICHT hinzu — das bleibt Aufgabe von
+`ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`. Wenn dieser separate
+Vertragsslice vorab landet, nutzt der Dependency-Projection-Slice den
+zentralen Classifier und den neuen Reason; wenn nicht, bleibt die
+Uebergangsklassifikation bei den bestehenden Reasons und nur der
+Diagnostic-Code ist rename-spezifisch.
 
 ## 7. Test-Strategie
 

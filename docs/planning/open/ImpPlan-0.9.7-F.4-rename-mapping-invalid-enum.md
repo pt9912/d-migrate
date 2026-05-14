@@ -273,9 +273,10 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
   `MANUAL_ACTION_REQUIRED`, solange kein eigener Reason existiert. Diese
   Unterscheidung muss ueber die strukturierten Finding-Felder aus dem
   Pre-Plan-Gate laufen; Message-Parsing oder Entry-ID-Konventionen sind nicht
-  zulaessig. Alternativ darf der Slice einen eigenen Diagnostic-Code fuer
-  nicht freigeschaltete `rename-mapping.objectType`-Werte einfuehren und genau
-  diesen Code klassifizieren.
+  zulaessig. Dieser Slice fuehrt keinen neuen Diagnostic-Code fuer nicht
+  freigeschaltete `rename-mapping.objectType`-Werte ein; er verfeinert nur die
+  Reason-Klassifikation des bestehenden `OVERLAY_UNKNOWN_ENTRY_KIND` anhand
+  strukturierter Overlay-Kontextfelder.
 - Blocker-Diagnostics mit Code `RENAME_DEPENDENCY_UNPROJECTABLE` landen
   in `MigrationBlocker(reason = MANUAL_ACTION_REQUIRED)`. Der normale
   Drop+Add-Fallback-Fall ist aber nur eine Warning und erzeugt keinen
@@ -329,8 +330,8 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       `trigger`, `function`, `procedure`, `sequence` und
       `materialized_view`, bis der spaetere Objekt-Rename-Slice diese Werte
       bewusst freischaltet.
-- [ ] Reason-Klassifikation basiert auf strukturiertem Overlay-Kontext oder
-      einem eigenen Whitelist-Diagnostic-Code: Ein Test zeigt, dass
+- [ ] Reason-Klassifikation basiert auf strukturiertem Overlay-Kontext:
+      Ein Test zeigt, dass
       `OVERLAY_UNKNOWN_ENTRY_KIND` fuer nicht freigeschaltete
       `rename-mapping.objectType`-Werte `RENAME_MAPPING_INVALID` erzeugt,
       waehrend ein generisch unbekannter Entry-Kind in einem anderen Overlay-

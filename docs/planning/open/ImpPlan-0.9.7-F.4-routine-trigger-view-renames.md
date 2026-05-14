@@ -135,11 +135,16 @@ In Scope (nach Abschluss der Vorbedingungen):
 - Plan-Artefakt-/Report-Vertrag fuer `RenameProvenance`: Weil
   `renameProvenance` keine dekorative Producer-Metadata ist, sondern
   Ausfuehrungs-, Rollback- und Provenance-Semantik traegt, muss dieser
-  Slice `migration-plan.v1` entweder um ein explizites versioniertes Feld
-  plus Golden-/Compat-Tests erweitern oder das Feld ueber
-  `requiredFeatures`/`semanticExtensions` gate-en. Ein Consumer darf eine
-  Drop+Create-Fallback-Operation mit unbekannter Rename-Provenance nicht
-  als normales Drop+Create ohne Operator-Vertrag interpretieren.
+  Slice den oeffentlichen Artefakt-Carrier eindeutig machen:
+  `migration-plan.v1` nutzt als public Semantikfeld den gemeinsamen
+  `renameProjections`/`RenameProjectionReport`-Carrier. Operation-level
+  `renameProvenance` bleibt internes Planungs-/Mapping-Metadatum und darf
+  nur dann in ein oeffentliches Artefakt serialisiert werden, wenn es dort
+  als abgeleitetes, versioniertes Feld mit demselben
+  `requiredFeatures`/`semanticExtensions`-Gate wie `renameProjections`
+  abgesichert ist. Ein Consumer darf eine Drop+Create-Fallback-Operation
+  niemals als normales Drop+Create ohne den zugehoerigen
+  `renameProjections`-Eintrag interpretieren.
   Reportseitig ist `renameProvenance` kein zweiter F.4-Carrier neben
   `renameProjections`: Falls der Dependency-Projection-Slice
   `DiffResult.renameProjections` bereits eingefuehrt hat, erweitert dieser
@@ -151,8 +156,9 @@ In Scope (nach Abschluss der Vorbedingungen):
   `RenameProjectionReport(candidateId, objectType, fromPath, toPath,
   overlaySource, overlayEntryId, overlayHash, renameOperationId,
   fallbackOperationIds, automatic, explicit, blockers, fallbackReason)`.
-  `RenameProvenance` ist nur internes Operation-Metadatum fuer Drop+Create-
-  Fallbacks und wird fuer Report/Artefakt in diesen Carrier projiziert; es
+  `RenameProvenance` ist primaer internes Operation-Metadatum fuer Drop+Create-
+  Fallbacks und wird fuer Report und das oeffentliche Artefakt in diesen
+  Carrier projiziert; es
   darf keinen separaten `renameProvenance`-Reportabschnitt geben.
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
@@ -168,6 +174,10 @@ In Scope (nach Abschluss der Vorbedingungen):
   statt ein natives `ALTER ... RENAME` zu planen. Der `bodyHash` in
   `RenameTrigger`/`RenameFunction`/`RenameProcedure` dient genau dieser
   Drift-Pruefung und darf nicht nur Report-Metadatum sein.
+  Ein Fallback mit unbekanntem altem Body wird in diesem Slice nicht als
+  nicht-rollbackbarer Up-Plan zugelassen: Der Plan blockiert vor Render mit
+  `OBJECT_RENAME_UNSUPPORTED`, weil der Drop+Create-Vertrag den alten Body
+  fuer Down und fuer den Provenance-Report braucht.
 - Konsolidierung mit dem Tabellen-/Spalten-Rename-Vertrag: Die
   Provenance-Regel aus diesem Slice gilt nicht nur fuer die neuen
   Objektklassen. Bestehende `RenameTable`/`RenameColumn`-Operationen und
@@ -202,8 +212,12 @@ Dieser Slice startet erst, wenn die `OFFEN`-Zellen fuer E.1/E.2 gruen sind.
 Workstream G ist keine offene Blockade mehr, bleibt aber eine harte
 Voraussetzung, die bei Slice-Start im Code-/Planstand nachgewiesen werden
 muss. Ohne Routine-/Trigger-Renderbarkeit sind Rename-Down-Pfade fuer
-Routinen/Trigger nicht reversibel und der Plan blockiert mit
-`ROLLBACK_NOT_POSSIBLE`.
+Routinen/Trigger nicht planbar: Der Slice darf dann nicht starten. Falls ein
+Mapper-/Planner-Pfad trotzdem auf eine noch nicht renderbare Objektklasse
+trifft, blockiert er mit `OBJECT_RENAME_UNSUPPORTED` bzw. der Renderer meldet
+fuer einen bereits geplanten, aber vom Dialekt nicht renderbaren Subtyp
+`DIALECT_UNSUPPORTED_OPERATION`; das ist kein Rollback-only-
+`ROLLBACK_NOT_POSSIBLE`-Fall.
 
 ## 5. Architektur
 
@@ -514,14 +528,17 @@ Rename-Projection/-Provenance. Es darf nicht gleichzeitig
 semantisch gleichwertiger `renameProvenance`-Reportabschnitt fuer
 View-/Trigger-/Routine-Fallbacks existieren.
 
-Artefakt-Gate: `RenameProvenance` muss im Plan-Artefakt als
-versioniertes Semantikfeld behandelt werden. Der Slice aktualisiert den
+Artefakt-Gate: Der oeffentliche Plan-Artefakt-Vertrag behandelt
+`renameProjections` als versionierte Semantik. Der Slice aktualisiert den
 F.2-Artefaktvertrag, den JSON-Codec/Validator und Golden-Files so, dass
 alte Consumer die neue Semantik entweder bewusst blockieren
 (`requiredFeatures`/`semanticExtensions`) oder sie als bekanntes Feld
-korrekt lesen. Ein unbekanntes optionales Feld reicht hier nicht, weil
-sonst ein Drop+Create-Fallback ohne Rename-Vertrag ausgefuehrt werden
-koennte.
+korrekt lesen. `RenameProvenance` darf operation-level nur als interne
+Ableitung oder als separat gegatetes Zusatzfeld auftauchen; der fuer
+Consumer verbindliche Rename-Fallback-Vertrag ist der
+`RenameProjectionReport`-Eintrag. Ein unbekanntes optionales Feld reicht
+hier nicht, weil sonst ein Drop+Create-Fallback ohne Rename-Vertrag
+ausgefuehrt werden koennte.
 
 Fuer `RenameSequence` fuegt der Slice eine Projektionsregel hinzu: Alle
 `CreateTable`, `AddColumn` und `AlterColumnDefault`-Operationen, deren
@@ -534,6 +551,16 @@ den Zielnamen projiziert werden kann, blockiert der Rename mit
 `DependencyAnalyzer` muss deshalb neben `CreateSequence` auch
 `RenameSequence` als Sequenz-Provider fuer `SequenceNextVal`-Defaults
 kennen.
+
+Diese Reprojection darf nicht von der heutigen Mapper-Reihenfolge abhaengen,
+in der Tabellen-/Spaltenoperationen vor Sequenzoperationen entstehen. Der
+Slice fuehrt deshalb entweder einen gemeinsamen Object-Rename-Projector ein,
+der alle Rename-Candidates zuerst sammelt und danach die finale Operationenliste
+inklusive Default-Rewrites erzeugt, oder einen expliziten Post-Map-Rewrite
+zwischen Mapper und `DependencyAnalyzer`. In beiden Varianten gilt: keine
+`CreateTable`-, `AddColumn`- oder `AlterColumnDefault`-Operation darf mit dem
+alten Sequenznamen in die finale `DiffResult.operations`-Liste gelangen, wenn
+ein autorisiertes `RenameSequence` fuer dieselbe Sequenz geplant wird.
 
 ### 5.3 Renderer-Integration
 
@@ -619,21 +646,22 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       dialektspezifisch aus `signature` abgeleiteten Argumentliste und
       die rechte Seite aus `toName`; er rendert nicht aus dem blossen
       Namen oder dem kanonischen Ziel-Key.
-- [ ] `RenameProvenance` ist als optionales Metadatum auf allen
-      Drop+Create-Fallback-Operationen modelliert und wird im Report nur ueber
-      den gemeinsamen F.4-Provenance-Carrier ausgegeben. Eine Ausgabe in
-      `migration-plan.v1` erfolgt in diesem Slice nur zusammen mit dem
-      Artefakt-Gate aus dem naechsten Akzeptanzkriterium; ohne dieses Gate
-      bleibt `RenameProvenance` aus oeffentlichen Plan-Artefakten heraus.
+- [ ] `RenameProvenance` ist als optionales internes Metadatum auf allen
+      Drop+Create-Fallback-Operationen modelliert und wird im Report sowie im
+      oeffentlichen Plan-Artefakt nur ueber den gemeinsamen
+      F.4-Provenance-Carrier `renameProjections` ausgegeben. Eine zusaetzliche
+      operation-level-Ausgabe in `migration-plan.v1` ist nur als separat
+      gegatetes, abgeleitetes Zusatzfeld erlaubt; ohne dieses Gate bleibt
+      `RenameProvenance` aus oeffentlichen Plan-Artefakten heraus.
       Es enthaelt `candidateId`, `fromPath`, `toPath` und `overlayEntryId`,
       damit mehrere Rename-Mappings im selben Overlay eindeutig auf den
       autorisierenden Entry zurueckgefuehrt werden koennen.
-- [ ] `migration-plan.v1` behandelt `RenameProvenance` als versionierte
+- [ ] `migration-plan.v1` behandelt `renameProjections` als versionierte
       Semantik: JSON-Codec, Validator, Golden-Files und Compat-Tests
       pinnen entweder ein bekanntes Feld oder ein
       `requiredFeatures`/`semanticExtensions`-Gate. Alte Consumer duerfen
-      die Provenance nicht ignorieren und den Fallback als normales
-      Drop+Create ausfuehren.
+      die Projection-/Provenance-Semantik nicht ignorieren und den Fallback
+      als normales Drop+Create ausfuehren.
 - [ ] `RenameProvenance` und `renameProjections` sind als ein gemeinsamer
       F.4-Report-/Artefaktvertrag modelliert: Operationen duerfen optional
       `RenameProvenance` tragen, aber Report und Artefakt nutzen genau den
@@ -668,6 +696,11 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       auf den Zielnamen und setzt eine Dependency auf die finale
       `RenameSequence`-ID; unverlustig nicht reprojizierbare Defaults
       blockieren mit `OBJECT_RENAME_UNSUPPORTED`.
+- [ ] Die Sequence-Default-Reprojection ist unabhaengig von der heutigen
+      Mapper-Reihenfolge implementiert: Tests zeigen, dass Tabellen-/
+      Spaltenoperationen, die vor dem Sequenz-Candidate gemappt werden,
+      nach dem Projector/Post-Map-Rewrite trotzdem den Ziel-Sequenznamen
+      und die Dependency auf die finale `RenameSequence`-ID tragen.
 - [ ] Die Sequence-Rename-Policy ist pro Dialekt gepinnt: PostgreSQL nutzt
       natives `ALTER SEQUENCE ... RENAME`, MySQL/MariaDB wird nur bei
       nachgewiesenem E.3-Sequence-Rendervertrag freigeschaltet und
@@ -679,8 +712,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
 - [ ] Pro Dialekt mindestens je ein Positivtest fuer View-Rename und
       einen weiteren Subtyp (Trigger oder Sequence).
 - [ ] Down-Pfad ist getestet: inverser Rename fuer alle nativ
-      unterstuetzten Faelle; Drop+Create-Fallback gibt
-      `ROLLBACK_NOT_POSSIBLE` wenn der alte Body unbekannt ist.
+      unterstuetzten Faelle; Drop+Create-Fallback ist nur zulaessig,
+      wenn der alte Body bekannt und renderbar ist. Fehlt der alte oder
+      neue Body, blockiert bereits die Planung mit `OBJECT_RENAME_UNSUPPORTED`
+      statt einen Up-Plan mit spaeterem `ROLLBACK_NOT_POSSIBLE` zu erzeugen.
 - [ ] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
       bekommen einen Status-Update mit Datum des Slice-Abschlusses.
 

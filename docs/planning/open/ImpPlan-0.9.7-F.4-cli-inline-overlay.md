@@ -76,9 +76,12 @@ In Scope:
   sonst unsichtbar bleiben. Diese Accepted-Zeilen sind reine Report-
   Provenance und duerfen nicht als `DiffDiagnostic` mit Failure-Text
   in den Preflight-Blockerpfad gelangen.
-- Diagnostics: doppelte Flag-Eintraege fuer dasselbe `<from>` blocken
-  vor `plan()` mit Exit 2. Doppelte Rename-Quellen ueber File- und
-  Inline-Overlays hinweg blocken ebenfalls **vor dem ersten
+- Diagnostics: doppelte Flag-Eintraege innerhalb desselben CLI-Aufrufs fuer
+  dasselbe `<from>` blocken als reine CLI-Parse-/Shortcut-Fehler vor
+  Overlay-Construction mit Exit 2. Sobald die synthetischen Inline-Overlays
+  gebaut sind, gelten sie als normale Overlay-Quelle: doppelte Rename-Quellen
+  ueber File- und Inline-Overlays hinweg oder ueber mehrere Overlay-Dokumente
+  blocken **vor dem ersten
   `DiffPlanner.plan(...)`** ueber eine neue Cross-Document-Uniqueness-
   Pruefung auf der zusammengefuehrten Overlay-Liste. Diese Pruefung ist
   keine CLI-Sonderlogik: Der CLI-Slice nutzt den zentralen Pre-Plan-
@@ -354,7 +357,10 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
 - [ ] `schema migrate --rename-column users.old_name:users.new_name`
       rendert einen Spalten-Rename ohne externe Overlay-Datei.
 - [ ] Beide Flags sind wiederholbar (mehrere Mappings pro Aufruf).
-- [ ] Doppelte `from`-Eintraege blockieren mit Exit 2 vor `plan()`.
+- [ ] Doppelte `from`-Eintraege innerhalb der Inline-Flags desselben
+      CLI-Aufrufs blockieren mit Exit 2 vor Overlay-Construction und
+      vor `plan()`. Cross-Document-Duplikate nach Overlay-Construction
+      bleiben Exit-8-Pre-Plan-Blocker.
 - [ ] Fehlerhafte Flag-Syntax (kein `:`, abweichendes Tabellen-Prefix,
       leere Bezeichner, SQL-Quoting-Syntax im Shortcut) blockiert mit
       Exit 2 und konkretem Operator-Hinweis. Die Tests zeigen, dass diese
@@ -388,10 +394,14 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       keinen CLI-lokalen Fallback, der invalide Inline-Renames nach `plan()`
       entdeckt oder umklassifiziert.
 - [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/Render/
-      Execute mit Exit 8. Der Report zeigt die betroffenen
-      `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine
-      vorab geplanten Rename-Operationen und `operationsSkipped` bleibt
-      leer.
+      Execute mit Exit 8. Das umfasst File-vs-File-, File-vs-Inline- und
+      andere echte Mehrdokument-Konflikte, nicht aber reine Inline-Flag-
+      Parse-Duplikate, die bereits mit Exit 2 enden. Der Inline-Builder
+      erzeugt pro CLI-Aufruf genau ein synthetisches Overlay-Dokument; Tests
+      fuer Mehrdokument-Konflikte nutzen daher File-vs-File oder
+      File-vs-Inline. Der Report zeigt die betroffenen
+      `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine vorab
+      geplanten Rename-Operationen und `operationsSkipped` bleibt leer.
 - [ ] Fuer Pre-Plan-Blocker existiert ein eigener Report-Builder, der
       keinen `DiffResult` benoetigt. Ein Test pinnt, dass
       Cross-Document-Konflikte mit leerem `operations[]`, leeren
