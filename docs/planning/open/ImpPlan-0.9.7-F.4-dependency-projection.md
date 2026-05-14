@@ -115,9 +115,15 @@ RenameDependencyProjector.project(candidates, current, desired, dialect)
    ↓  (ersetzt Candidates durch Rename+Folge-Ops oder durch Fallback-Ops)
 OperationMapper.finalizeIds(...)
    ↓
+splitReplaceViewsForColumnConflicts(...)
+   ↓
 DependencyAnalyzer.attach
    ↓
 TopologicalSorter.sort
+   ↓
+DiffPlanner final safety diagnostics
+   - detectViewColumnDepsBlockers(...)
+   - detectIncompleteViewProjections(...)
    ↓
 DiffResult
 ```
@@ -131,6 +137,19 @@ Drop+Add-Alternative mehr hat. Der Mapper liefert deshalb ein
 Zwischenmodell mit Candidate, synthetischen Delta-Operationen und
 Fallback-Operationen; erst der Projector entscheidet, welche Variante in
 den Plan gelangt.
+
+Bestehende Planner-Safety-Pässe bleiben Teil der finalen Pipeline und
+laufen auf der vom Projector erzeugten Operationenliste, nicht auf der
+vorherigen Mapper-Rohform. Insbesondere muessen
+`splitReplaceViewsForColumnConflicts(...)`,
+`detectViewColumnDepsBlockers(...)` und
+`detectIncompleteViewProjections(...)` auch synthetische
+Post-Rename-Column-Deltas sehen. Der View-Split laeuft wie heute vor der
+Dependency-Analyse; die finalen View-Blocker-Diagnostics laufen auf der
+sortierten finalen Operationenliste. Ein Spalten-Rename plus
+`AlterColumnType` darf daher weiterhin den G.3-View-Split bzw. die
+F.6.b/G.2-View-Blocker ausloesen; der Projector ist keine Abkuerzung um
+diese Schutzmechanismen.
 
 Wichtig fuer die ID-Stabilitaet: Der Candidate traegt bereits die
 finale Rename-ID, die auch im Erfolgsfall in `DiffOperation.Rename*`
@@ -461,6 +480,11 @@ die Engine uebernimmt und welche d-migrate explizit re-rendert.
 - [ ] `EXPLICIT_REPROJECTION`-Faelle erzeugen deterministisch geordnete
       Folge-Operationen mit `dependencies = setOf(rename.id)`; die
       bestehende Topo-Sort haengt sie sauber nach dem Rename ein.
+- [ ] Bestehende Planner-Safety-Pässe laufen nach der Projection auf der
+      finalen Operationenliste: Tests decken mindestens einen
+      Spalten-Rename + synthetisches `AlterColumnType` ab, der wegen
+      View-Column-Dependencies denselben G.3/F.6.b/G.2-Schutz ausloest
+      wie ein normal gemappter Column-Alter.
 - [ ] `--generate-rollback` ist fuer Rename-Mischfaelle gepinnt:
       Rename plus synthetische Delta-Operationen erzeugt einen vollstaendigen
       inversen Down-Plan, Rename plus `EXPLICIT_REPROJECTION` erzeugt alle

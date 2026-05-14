@@ -110,6 +110,14 @@ In Scope (nach Abschluss der Vorbedingungen):
   Drop+Create-aequivalent ausweicht. Letzteres ist semantisch
   identisch zur heutigen Drop+Add-Fallback-Logik, aber maschinenlesbar
   als Rename gekennzeichnet — fuer Report und spaetere Plan-Artefakte.
+- Plan-Artefakt-/Report-Vertrag fuer `RenameProvenance`: Weil
+  `renameProvenance` keine dekorative Producer-Metadata ist, sondern
+  Ausfuehrungs-, Rollback- und Provenance-Semantik traegt, muss dieser
+  Slice `migration-plan.v1` entweder um ein explizites versioniertes Feld
+  plus Golden-/Compat-Tests erweitern oder das Feld ueber
+  `requiredFeatures`/`semanticExtensions` gate-en. Ein Consumer darf eine
+  Drop+Create-Fallback-Operation mit unbekannter Rename-Provenance nicht
+  als normales Drop+Create ohne Operator-Vertrag interpretieren.
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
   Muster wie die Tabellen-Rename-Tests.
@@ -375,6 +383,15 @@ autorisierende Entry-Zeile nicht eindeutig identifiziert. Reports und
 Plan-Artefakte duerfen Entry-Provenance daher nicht aus Operation-IDs
 oder Mapping-Reihenfolge rekonstruieren.
 
+Artefakt-Gate: `RenameProvenance` muss im Plan-Artefakt als
+versioniertes Semantikfeld behandelt werden. Der Slice aktualisiert den
+F.2-Artefaktvertrag, den JSON-Codec/Validator und Golden-Files so, dass
+alte Consumer die neue Semantik entweder bewusst blockieren
+(`requiredFeatures`/`semanticExtensions`) oder sie als bekanntes Feld
+korrekt lesen. Ein unbekanntes optionales Feld reicht hier nicht, weil
+sonst ein Drop+Create-Fallback ohne Rename-Vertrag ausgefuehrt werden
+koennte.
+
 Fuer `RenameSequence` fuegt der Slice eine Projektionsregel hinzu: Alle
 `CreateTable`, `AddColumn` und `AlterColumnDefault`-Operationen, deren
 `DefaultValue.SequenceNextVal` auf die umbenannte Sequenz zeigt, muessen
@@ -453,6 +470,12 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       `overlayEntryId`, damit mehrere Rename-Mappings im selben Overlay
       eindeutig auf den autorisierenden Entry zurueckgefuehrt werden
       koennen.
+- [ ] `migration-plan.v1` behandelt `RenameProvenance` als versionierte
+      Semantik: JSON-Codec, Validator, Golden-Files und Compat-Tests
+      pinnen entweder ein bekanntes Feld oder ein
+      `requiredFeatures`/`semanticExtensions`-Gate. Alte Consumer duerfen
+      die Provenance nicht ignorieren und den Fallback als normales
+      Drop+Create ausfuehren.
 - [ ] Alle nativen `Rename*`-Subtypes tragen `overlayEntryId` neben
       `overlaySource` und `overlayHash`; Report/Plan-Artefakt nutzt diese
       Felder direkt und rekonstruiert Entry-Provenance nicht aus

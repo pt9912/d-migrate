@@ -105,9 +105,11 @@ In Scope:
     emittieren den neuen Reason
   - Plan-/Report-Artefakt-Compatibility-Test: Plaene mit alten
     `MANUAL_ACTION_REQUIRED`-Reasons fuer Rename werden weiterhin
-    gelesen. Falls ein Reader unbekannte Reasons tolerieren soll, muss
-    das ueber einen expliziten String-Zwischentyp getestet werden; das
-    geschlossene Runtime-Enum allein reicht dafuer nicht.
+    gelesen und bleiben semantisch blockiert; die Compat-Schicht darf
+    einen blockierten Rename-Plan nicht ausfuehrbar machen. Falls ein
+    Reader unbekannte Reasons tolerieren soll, muss das ueber einen
+    expliziten String-Zwischentyp getestet werden; das geschlossene
+    Runtime-Enum allein reicht dafuer nicht.
   - Kein MCP-`dmigrateCode`-Snapshot in diesem Slice; falls spaetere
     Migrationstools `MigrationBlockedReason` in Tool-Schemas exponieren,
     bekommen sie einen eigenen Schema-Slice.
@@ -223,8 +225,9 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       `primaryBlockedReason = RENAME_MAPPING_INVALID`.
 - [ ] Plan-/Report-Artefakt-Compatibility-Test: ein Artefakt v1 mit
       altem `MANUAL_ACTION_REQUIRED`-Reason fuer einen Rename-Blocker
-      bleibt lesbar und ausfuehrbar (nur die Klassifikation hat sich
-      geaendert, nicht die Semantik).
+      bleibt lesbar und weiterhin blockiert (nur die Klassifikation hat
+      sich geaendert, nicht die Semantik). Die Compat-Logik darf daraus
+      keinen ausfuehrbaren Plan machen.
 - [ ] Falls unbekannte future Reasons toleriert werden sollen, existiert
       ein eigener toleranter String-Reader-Test. Ohne diesen Test wird
       keine Pass-Through-Compat fuer unbekannte Enum-Werte behauptet.

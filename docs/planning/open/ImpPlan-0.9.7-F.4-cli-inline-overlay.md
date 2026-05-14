@@ -73,15 +73,16 @@ In Scope:
   in den Preflight-Blockerpfad gelangen.
 - Diagnostics: doppelte Flag-Eintraege fuer dasselbe `<from>` blocken
   vor `plan()` mit Exit 2. Doppelte Rename-Quellen ueber File- und
-  Inline-Overlays hinweg blocken im Overlay-Preflight ueber eine
-  neue Cross-Document-Uniqueness-Pruefung; die heutige
+  Inline-Overlays hinweg blocken ebenfalls **vor dem ersten
+  `DiffPlanner.plan(...)`** ueber eine neue Cross-Document-Uniqueness-
+  Pruefung auf der zusammengefuehrten Overlay-Liste; die heutige
   `MigrationOverlayValidator.validate(...)`-Pruefung pro Dokument reicht
-  dafuer nicht. Cross-Document-Blocker duerfen keine gerenderte oder
-  ausfuehrbare Planung zulassen: Der Runner beendet nach dem Preflight
-  mit Exit 8, `operationsSkipped` enthaelt alle bis dahin geplanten
-  Operationen, und Reports interpretieren diese Operationen nicht als
-  autorisierte Rename-Provenance. Die fachlich gueltige Provenance ist in
-  diesem Fall ausschliesslich der Preflight-Finding mit beiden
+  dafuer nicht. Cross-Document-Blocker duerfen keine gerenderte,
+  ausfuehrbare oder bereits mit Rename-Provenance geplante Operationenliste
+  zulassen: Der Runner beendet mit Exit 8 und einem synthetischen
+  Pre-Plan-Blocker-Result; `operationsSkipped` bleibt leer, weil es noch
+  keinen autorisierten Plan gibt. Die fachlich gueltige Provenance ist in
+  diesem Fall ausschliesslich der Pre-Plan-Finding mit beiden
   `source`/`entryId`-Paaren.
 - Tests: CLI-Parsing, Inline-Overlay-Konstruktion, End-to-End-Smoke
   fuer Tabellen-/Spalten-Rename via Flag.
@@ -194,6 +195,16 @@ zusammengefuehrte Liste und bleiben fachlich unveraendert.
 `ParseFailed` → `userFacingPrintError` + Exit 2 (CLI-Validation-
 Fehler, kein I/O).
 
+Vor dem ersten `plan()` fuehrt der Runner eine globale
+`MigrationOverlayPreflight.validateCombinedRenameUniqueness(...)`-
+Pruefung auf der zusammengefuehrten File+Inline-Liste aus. Diese Pruefung
+nutzt dieselben dokumentlokalen Key-Regeln wie der Validator, erweitert
+sie aber ueber Dokumentgrenzen hinweg und liefert bei Blockern ein
+synthetisches `MigrationDdlResult` ohne `plan.operations`. Der Planner
+darf bei Cross-Document-Konflikten nicht laufen, weil
+`OperationMapper` sonst bereits Rename-Operationen mit einer
+moeglicherweise falschen oder deduplizierten Overlay-Provenance erzeugt.
+
 Der Builder schreibt `MigrationOverlay.createdAt` als stabilen Sentinel
 `"cli-inline"`. Das Feld bleibt ein `String` und nutzt denselben DTO-/JSON-
 Vertrag wie File-Overlays, ist fuer Inline-Overlays aber absichtlich nicht
@@ -241,11 +252,11 @@ konkreten Diagnostic-Codes behalten.
 
 ### 3.5 Cross-Document-Uniqueness
 
-Heute validiert `MigrationOverlayPreflight.validate(...)` jedes
-`MigrationOverlayDocument` einzeln; `MigrationOverlayValidator` sieht
+Heute validiert `MigrationOverlayValidator.validate(...)` jedes
+`MigrationOverlayDocument` einzeln; der dokumentlokale Validator sieht
 daher keine Konflikte zwischen zwei Dateien oder zwischen Datei und
-`cli-inline`. Dieser Slice fuegt im Preflight nach der Einzelvalidierung
-eine zusammenfassende Rename-Pruefung ueber alle akzeptierten
+`cli-inline`. Dieser Slice fuegt im Runner vor `DiffPlanner.plan(...)`
+eine zusammenfassende Rename-Pruefung ueber alle syntaktisch ladbaren
 `RenameMappingOverlayEntry`-Eintraege hinzu:
 
 - gleicher `objectType + fromName` mit unterschiedlichem `toName`
@@ -261,12 +272,10 @@ eine zusammenfassende Rename-Pruefung ueber alle akzeptierten
 - `source`/`entryId` zeigen auf den konkreten File- oder Inline-Eintrag.
 
 Damit bleibt die Dokumentvalidierung lokal, aber der Runner blockt die
-fachlich relevante Gesamt-Overlay-Menge, bevor ein Rename gerendert wird.
-Der Planner darf vor diesem Preflight bereits eine Operationenliste mit
-kollidierenden Overlay-Eintraegen aufgebaut haben; diese Liste ist bei
-Cross-Document-Blockern nur noch fuer `operationsSkipped` und technische
-Fehlerkontext-Ausgabe nutzbar. Sie darf nicht als Nachweis gelten, dass
-ein bestimmtes Rename-Mapping akzeptiert oder ausgefuehrt wurde.
+fachlich relevante Gesamt-Overlay-Menge, bevor ein Rename geplant oder
+gerendert wird. Bei Cross-Document-Blockern existiert daher keine
+Operationenliste, die als Nachweis gelten koennte, dass ein bestimmtes
+Rename-Mapping akzeptiert oder ausgefuehrt wurde.
 
 ## 4. Akzeptanzkriterien
 
@@ -300,13 +309,13 @@ ein bestimmtes Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       Runner nur einmal plant.
 - [ ] Inline und File-Overlay duerfen kombiniert werden — beide
       Listen werden konkateniert; eine explizite Cross-Document-
-      Uniqueness-Pruefung im Preflight blockt Konflikte ueber alle
-      Quellen hinweg.
-- [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Render/Execute
-      mit Exit 8. Der Report zeigt die betroffenen `source`/`entryId`-
-      Paare aus dem Preflight-Finding; eventuell vorab geplante Rename-
-      Operationen erscheinen nur als skipped und werden nicht als
-      akzeptierte Overlay-Provenance interpretiert.
+      Uniqueness-Pruefung blockt Konflikte ueber alle Quellen hinweg vor
+      dem ersten `DiffPlanner.plan(...)`.
+- [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/Render/
+      Execute mit Exit 8. Der Report zeigt die betroffenen
+      `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine
+      vorab geplanten Rename-Operationen und `operationsSkipped` bleibt
+      leer.
 - [ ] Ein exakt doppeltes Rename-Mapping in zwei verschiedenen Quellen
       (`objectType + fromName + toName`) blockiert mit
       `OVERLAY_RENAME_MAPPING_DUPLICATE` und zeigt beide betroffenen
