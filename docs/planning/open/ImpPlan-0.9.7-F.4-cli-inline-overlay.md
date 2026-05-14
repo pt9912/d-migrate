@@ -101,11 +101,10 @@ In Scope:
   dieser Slice frueher landet, gehoert der Builder als allgemeiner
   `SchemaMigratePrePlanReportBuilder` in denselben zentralen Application-
   Pfad und nicht in CLI-Inline-spezifische Logik. Der Builder schreibt
-  Source/Target,
-  Dialekt, `status = "blocked"`, `exitCode = 8`, leere `operations`,
-  leere `statements`, leere `operationsSkipped` und die
-  Cross-Document-Findings in `blockers`/`diagnostics`/`overlays`
-  schreibt. So bleibt der Report-Vertrag vollstaendig, ohne einen
+  Source/Target, Dialekt, `status = "blocked"`, `exitCode = 8`,
+  `operations = []`, `statements = null`, leere `operationsSkipped` und
+  die Cross-Document-Findings in `blockers`/`diagnostics`/`overlays`.
+  So bleibt der Report-Vertrag vollstaendig, ohne einen
   Dummy-Plan zu erzeugen oder einen invaliden Rename bereits zu planen.
 - Blocker-Reason: Dieser CLI-Slice definiert den Reason-Wert nicht selbst.
   Cross-Document-Rename-Blocker laufen durch denselben zentralen

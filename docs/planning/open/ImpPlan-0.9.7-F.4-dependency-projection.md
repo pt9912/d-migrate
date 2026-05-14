@@ -228,12 +228,18 @@ internal data class RenameProjection(
 
 internal data class RenameProjectionReport(
     val candidateId: String,
+    val objectType: String,             // "table", "column"; shared F.4 carrier may add "view", ...
+    val fromPath: List<String>,
+    val toPath: List<String>,
+    val overlaySource: String,
     val overlayEntryId: String,
+    val overlayHash: String?,
     val renameOperationId: String?,      // null when the candidate fell back to Drop+Add
     val fallbackOperationIds: List<String>,
     val automatic: List<DependencyRef>,
     val explicit: List<ExplicitProjectionRef>,
     val blockers: List<RenameProjectionBlocker>,
+    val fallbackReason: String? = null,  // set for Drop+Add / Drop+Create fallback reports
 )
 
 internal data class ExplicitProjectionRef(
@@ -264,7 +270,7 @@ internal data class DependencyRef(
 
 internal data class RenameProjectionBlocker(
     val code: String,        // e.g. RENAME_DEPENDENCY_UNPROJECTABLE
-    val operationId: String, // the rename operation that triggered
+    val candidateId: String, // stable even when no final Rename* operation exists
     val message: String,
 )
 ```
@@ -495,6 +501,17 @@ tatsaechlich geplanten Drop+Add-Operationen. Damit bleibt auch ein
 abgelehnter Rename maschinenlesbar sichtbar, ohne auf eine nicht existierende
 finale Rename-Operation zu verweisen.
 
+`RenameProjectionReport` ist der gemeinsame F.4-Report-Carrier, nicht nur ein
+Dependency-spezifisches Zusatzfeld. Native Tabellen-/Spalten-Renames,
+Mischfall-Projections und spaetere View-/Trigger-/Routine-/Sequence-Renames
+verwenden dieselbe DTO-Form: `objectType`, `fromPath`, `toPath` und die
+Overlay-Provenance identifizieren den autorisierten Candidate;
+`renameOperationId` ist nur fuer nativ geplante `Rename*`-Operationen gesetzt;
+`fallbackOperationIds` und `fallbackReason` beschreiben Drop+Add- bzw.
+Drop+Create-Fallbacks. Objekt-Rename-Slices duerfen
+`DiffOperation.renameProvenance` als internes Operation-Metadatum nutzen,
+muessen es fuer Report und Artefakt aber in genau diesen Carrier mappen.
+
 `overlayEntryId` ist Pflicht im Report und im Operation-Payload. Reports
 rekonstruieren Entry-Provenance nicht aus Operation-ID-Konventionen,
 Mapping-Reihenfolge oder `overlayHash`, weil mehrere Eintraege denselben
@@ -524,9 +541,15 @@ Der Migrate-Report erhaelt einen optionalen
   "renameProjections": [
     {
       "candidateId": "rename-table-users",
+      "objectType": "table",
+      "fromPath": ["users_old"],
+      "toPath": ["users"],
+      "overlaySource": "rename-overlay.json",
       "overlayEntryId": "rename-table-users",
+      "overlayHash": "sha256:...",
       "renameOperationId": "rename-table-users",
       "fallbackOperationIds": [],
+      "fallbackReason": null,
       "automatic": [
         {"kind": "FK", "path": ["orders", "fk_orders_user"], "rationale": "..."}
       ],

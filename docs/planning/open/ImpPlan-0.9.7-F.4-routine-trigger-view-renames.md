@@ -112,11 +112,16 @@ In Scope (nach Abschluss der Vorbedingungen):
   - MySQL: View-Rename via `RENAME TABLE` (Views liegen im selben
     Namespace wie Tabellen); Trigger-Rename nur via Drop+Create
     (MySQL hat kein `ALTER TRIGGER … RENAME`); Routinen nur via
-    Drop+Create.
+    Drop+Create. Sequence-Rename ist fuer MySQL/MariaDB nur freigeschaltet,
+    wenn der jeweilige E.3-Sequence-Vertrag native bzw. emulierte Sequences
+    als renderbar markiert und die Policy die Serverfamilie vor `plan()`
+    kennt; bis dahin klassifiziert MySQL `RenameSequence` als `BLOCKED`.
   - SQLite: kein natives View-Rename. `ALTER TABLE ... RENAME` ist
     auf Tabellen beschraenkt und darf Views nicht alterieren; View-
     Rename laeuft daher nur ueber Drop+Create, sofern der alte und neue
     View-Body bekannt sind. Trigger-Rename nur via Drop+Create.
+    Sequence-Rename ist `BLOCKED`, solange SQLite-Sequences nicht als
+    eigene renderbare Objektklasse im E.3-Vertrag modelliert sind.
 - Pro Dialekt eine `ObjectRenamePolicy`, die explizit pinnt, ob ein
   natives Rename verfuegbar ist oder ob der Mapper auf ein
   Drop+Create-aequivalent ausweicht. Letzteres ist semantisch
@@ -142,6 +147,13 @@ In Scope (nach Abschluss der Vorbedingungen):
   referenziert ihn eindeutig aus `RenameProvenance`. Falls er frueher
   landet, fuehrt er den gemeinsamen Carrier so ein, dass der
   Dependency-Projection-Slice ihn weiterverwenden kann.
+  Konkret gilt die DTO-Form aus dem Dependency-Projection-Plan:
+  `RenameProjectionReport(candidateId, objectType, fromPath, toPath,
+  overlaySource, overlayEntryId, overlayHash, renameOperationId,
+  fallbackOperationIds, automatic, explicit, blockers, fallbackReason)`.
+  `RenameProvenance` ist nur internes Operation-Metadatum fuer Drop+Create-
+  Fallbacks und wird fuer Report/Artefakt in diesen Carrier projiziert; es
+  darf keinen separaten `renameProvenance`-Reportabschnitt geben.
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
   Muster wie die Tabellen-Rename-Tests.
@@ -446,9 +458,10 @@ gehoert eine kleine Operation-Modellerweiterung zu diesem Slice:
 
 ```kotlin
 data class RenameProvenance(
+    val candidateId: String,
     val objectType: DiffObjectType,
-    val fromName: String,
-    val toName: String,
+    val fromPath: List<String>,
+    val toPath: List<String>,
     val overlaySource: String,
     val overlayEntryId: String,
     val overlayHash: String?,
@@ -461,6 +474,11 @@ emittiert werden koennen, erhalten optional
 `renameProvenance: RenameProvenance? = null`. Native `Rename*`-
 Subtypes tragen die Provenance weiterhin direkt ueber `fromName`,
 `toName`, `overlaySource`, `overlayEntryId` und `overlayHash`.
+Der Report-Builder darf `RenameProvenance` nicht direkt serialisieren,
+sondern erzeugt daraus einen `RenameProjectionReport` mit
+`renameOperationId = null`, den tatsaechlichen Drop+Create-Operation-IDs in
+`fallbackOperationIds` und leerem `automatic`/`explicit`, sofern keine
+Dependency-Projection beteiligt ist.
 `overlayEntryId` ist Pflicht, weil ein einzelnes Overlay mehrere
 Rename-Mappings enthalten kann und `overlaySource + overlayHash` die
 autorisierende Entry-Zeile nicht eindeutig identifiziert. Reports und
@@ -577,10 +595,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       den gemeinsamen F.4-Provenance-Carrier ausgegeben. Eine Ausgabe in
       `migration-plan.v1` erfolgt in diesem Slice nur zusammen mit dem
       Artefakt-Gate aus dem naechsten Akzeptanzkriterium; ohne dieses Gate
-      bleibt `RenameProvenance` aus oeffentlichen Plan-Artefakten heraus. Es enthaelt
-      `overlayEntryId`, damit mehrere Rename-Mappings im selben Overlay
-      eindeutig auf den autorisierenden Entry zurueckgefuehrt werden
-      koennen.
+      bleibt `RenameProvenance` aus oeffentlichen Plan-Artefakten heraus.
+      Es enthaelt `candidateId`, `fromPath`, `toPath` und `overlayEntryId`,
+      damit mehrere Rename-Mappings im selben Overlay eindeutig auf den
+      autorisierenden Entry zurueckgefuehrt werden koennen.
 - [ ] `migration-plan.v1` behandelt `RenameProvenance` als versionierte
       Semantik: JSON-Codec, Validator, Golden-Files und Compat-Tests
       pinnen entweder ein bekanntes Feld oder ein
@@ -588,9 +606,11 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       die Provenance nicht ignorieren und den Fallback als normales
       Drop+Create ausfuehren.
 - [ ] `RenameProvenance` und `renameProjections` sind als ein gemeinsamer
-      F.4-Report-/Artefaktvertrag modelliert. Tests pinnen, dass ein
-      Tabellen-/Spalten-Rename und ein neuer Objekt-Rename nicht in zwei
-      voneinander unabhaengigen Provenance-Abschnitten landen.
+      F.4-Report-/Artefaktvertrag modelliert: Operationen duerfen optional
+      `RenameProvenance` tragen, aber Report und Artefakt nutzen genau den
+      `RenameProjectionReport`-Carrier. Tests pinnen, dass ein Tabellen-/
+      Spalten-Rename, ein nativer Objekt-Rename und ein Drop+Create-Fallback
+      nicht in zwei voneinander unabhaengigen Provenance-Abschnitten landen.
 - [ ] `spec/cli-spec.md` §6.1 dokumentiert den gemeinsamen F.4-
       Reportabschnitt fuer Rename-Projection/-Provenance, inklusive
       Drop+Create-Fallbacks mit Rename-Provenance. Plan- und Report-
@@ -619,6 +639,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       auf den Zielnamen und setzt eine Dependency auf die finale
       `RenameSequence`-ID; unverlustig nicht reprojizierbare Defaults
       blockieren mit `OBJECT_RENAME_UNSUPPORTED`.
+- [ ] Die Sequence-Rename-Policy ist pro Dialekt gepinnt: PostgreSQL nutzt
+      natives `ALTER SEQUENCE ... RENAME`, MySQL/MariaDB wird nur bei
+      nachgewiesenem E.3-Sequence-Rendervertrag freigeschaltet und
+      SQLite bleibt bis zu einem eigenen Sequence-Objektvertrag `BLOCKED`.
 - [ ] Tests decken `RenameSequence old_seq -> new_seq` mit einer
       betroffenen Spalten-Default-Referenz ab und pruefen, dass weder
       Up- noch Down-Plan SQL mit dem alten Sequenznamen in Defaults
@@ -661,8 +685,12 @@ Rename anzunehmen.
 
 PostgreSQL erlaubt `ALTER FUNCTION fn(int) RENAME TO gn`, aber nur
 fuer dieselbe Signatur. Eine Aenderung der Signatur ist effektiv ein
-neues Objekt. Der Mapper darf Rename nur emittieren, wenn die
-Signatur identisch ist; sonst greift der bestehende Drop+Create-Pfad.
+neues Objekt. Ein explizites Rename-Mapping mit abweichender Signatur
+ist deshalb invalid und blockiert vor der Faltung mit
+`OBJECT_RENAME_UNSUPPORTED` bzw. im Pre-Plan-Key-Check, wenn die
+Abweichung bereits aus den Overlay-Keys sichtbar ist. Der normale
+Drop+Create-Pfad bleibt nur fuer Diff-Paare ohne autorisierendes
+Rename-Mapping zustaendig.
 
 ### 8.3 Materialized-View-Rename bleibt blockiert
 
