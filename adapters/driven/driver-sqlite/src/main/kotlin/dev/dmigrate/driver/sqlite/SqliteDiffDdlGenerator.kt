@@ -201,8 +201,10 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         when (op) {
             is DiffOperation.CreateTable -> SqliteDiffSimpleOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> SqliteDiffSimpleOps.renderDropTable(op, ctx)
+            is DiffOperation.RenameTable -> SqliteDiffSimpleOps.renderRenameTable(op, ctx)
             is DiffOperation.AddColumn -> SqliteDiffSimpleOps.renderAddColumn(op, ctx)
             is DiffOperation.DropColumn -> SqliteDiffSimpleOps.renderDropColumn(op, ctx)
+            is DiffOperation.RenameColumn -> SqliteDiffSimpleOps.renderRenameColumn(op, ctx)
             is DiffOperation.AddIndex -> SqliteDiffSimpleOps.renderAddIndex(op, ctx)
             is DiffOperation.DropIndex -> SqliteDiffSimpleOps.renderDropIndex(op, ctx)
             is DiffOperation.CreateView -> SqliteDiffSimpleOps.renderCreateView(op, ctx)

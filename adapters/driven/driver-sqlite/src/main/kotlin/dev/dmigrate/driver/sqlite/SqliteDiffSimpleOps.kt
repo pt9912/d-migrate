@@ -120,6 +120,41 @@ internal object SqliteDiffSimpleOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
     }
 
+    /**
+     * Plan-2 §F.4 second slice. SQLite ≥ 3.0 supports
+     * `ALTER TABLE … RENAME TO …`; the runner enforces the version
+     * policy elsewhere.
+     */
+    fun renderRenameTable(op: DiffOperation.RenameTable, ctx: SqliteDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == SqliteRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};")
+    }
+
+    /**
+     * Plan-2 §F.4 second slice. `ALTER TABLE … RENAME COLUMN …`
+     * has been a first-class SQLite operation since 3.25.0. SQLite
+     * automatically rewrites references in views and trigger bodies
+     * starting from 3.26.0 (`PRAGMA legacy_alter_table = 0` in 3.25);
+     * the renderer relies on the modern default behaviour.
+     */
+    fun renderRenameColumn(op: DiffOperation.RenameColumn, ctx: SqliteDiffRenderContext) {
+        val table = op.objectRef.path[0]
+        val (oldCol, newCol) = if (ctx.direction == SqliteRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} RENAME COLUMN ${ctx.sql.quote(oldCol)} " +
+                "TO ${ctx.sql.quote(newCol)};",
+        )
+    }
+
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: SqliteDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == SqliteRenderDirection.DOWN) {

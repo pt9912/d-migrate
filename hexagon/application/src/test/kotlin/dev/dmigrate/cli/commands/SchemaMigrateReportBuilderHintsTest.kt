@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffEndpoint
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffObjectRef
 import dev.dmigrate.core.diff.migration.DiffObjectType
 import dev.dmigrate.core.diff.migration.DiffOperation
@@ -53,6 +54,7 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
     fun buildReport(
         rendered: MigrationDdlResult,
         operations: List<DiffOperation> = emptyList(),
+        planDiagnostics: List<DiffDiagnostic> = emptyList(),
     ): SchemaMigrateReport {
         val schema = SchemaDefinition(name = "App", version = "1")
         val operand = ResolvedSchemaOperand(
@@ -65,6 +67,7 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
             desired = DiffEndpoint(schemaName = "App"),
             schemaDiff = SchemaDiff(),
             operations = operations,
+            diagnostics = planDiagnostics,
         )
         val request = SchemaMigrateRequest(source = operand.reference, target = operand.reference)
         return SchemaMigrateReportBuilder.build(
@@ -221,6 +224,47 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         report.sqliteCastPreflights.single().status shouldBe "NOT_RUN_POLICY"
         report.sqliteCastPreflights.single().problem shouldBe
             "SQLite cast preflight failed before render/execute: boom"
+    }
+
+    test("plan-level WARNING diagnostics surface in the merged report diagnostics") {
+        val warning = DiffDiagnostic(
+            code = "RENAME_OVERLAY_STRUCTURAL_MISMATCH",
+            message = "Rename mapping ovl.json entry=e1 for table 'users_old' -> 'users' was ignored.",
+            severity = DiffDiagnostic.Severity.WARNING,
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = emptySet(),
+            ),
+            planDiagnostics = listOf(warning),
+        )
+
+        val matching = report.diagnostics.filter { it.code == "RENAME_OVERLAY_STRUCTURAL_MISMATCH" }
+        matching.size shouldBe 1
+        matching.single().severity shouldBe "WARNING"
+        matching.single().message shouldBe warning.message
+    }
+
+    test("merge does not duplicate diagnostics already present in renderer output") {
+        val shared = DiffDiagnostic(
+            code = "CODE_X",
+            message = "shared",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "op-1",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = emptySet(),
+                diagnostics = listOf(shared),
+            ),
+            planDiagnostics = listOf(shared),
+        )
+
+        report.diagnostics.count { it.code == "CODE_X" } shouldBe 1
     }
 
     test("materialized view operations surface the refresh staleness contract") {

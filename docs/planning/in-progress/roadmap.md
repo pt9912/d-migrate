@@ -477,6 +477,13 @@ Zusätzlich erledigt seit dem 2026-05-08-Stand:
   Reversibilitaets-Summaries, CHECK-/EXCLUDE-Blocker und Overlay-
   Secret-Diagnostik sind stabilisiert; echte CHECK-/EXCLUDE-Aenderungen
   bleiben bewusst blockierend.
+- **F.4 Rendering**: `RenameTable`/`RenameColumn` als eigene
+  `DiffOperation`-Subtypes; OperationMapper konsumiert
+  `RenameMappingOverlayEntry`-Listen und faltet strukturkonsistente
+  Drop+Add-Paare zu Rename-Operationen; PostgreSQL/MySQL/SQLite-Renderer
+  emittieren `ALTER TABLE … RENAME TO/COLUMN …` fuer Up und Down.
+  Strukturmismatch faellt mit `RENAME_OVERLAY_STRUCTURAL_MISMATCH`
+  warning auf den Drop+Add-Pfad zurueck.
 - **Telemetry/Observability-Plan**: Adaptervertrag, Gates und Port-Grenzen
   sind dokumentiert; produktives Metrics-/Tracing-Wiring ist kein 0.9.7-Scope.
 
@@ -491,9 +498,12 @@ Aktuell offene 0.9.7-Restpunkte:
 - **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
   Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
-- **F.0-F.4 Rest**: automatische Daten-Transformationen,
-  versionierte Plan-Artefakte, Partial-Rollback-Artefakte sowie
-  Rename-Mappings mit Fingerprints.
+- **F.0-F.3 Rest**: automatische Daten-Transformationen,
+  versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
+- **F.4 Rest**: Dependency-Re-Projection nach Rename
+  (FK-Targets, View-/Trigger-/Index-/Default-Bindungen), so dass
+  Mischfaelle nicht mehr ueber `RENAME_OVERLAY_STRUCTURAL_MISMATCH`
+  auf Drop+Add zurueckfallen muessen.
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
   Vertrag und Daten-Preflight.
 - **Coverage/QA**: MySQL-`AlterColumnNullability` Round-Trip-Smoke oder
@@ -787,6 +797,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.44
-**Stand**: 2026-05-13
+**Version**: 3.45
+**Stand**: 2026-05-14
 **Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker und Telemetry-Plan-Gates sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

@@ -59,14 +59,7 @@ internal object SchemaMigrateReportBuilder {
                     diagnosticCodes = blocker.diagnostics.map { d -> d.code },
                 )
             },
-            diagnostics = rendered.diagnostics.map { diag ->
-                SchemaMigrateDiagnosticView(
-                    code = diag.code,
-                    severity = diag.severity.name,
-                    message = diag.message,
-                    operationId = diag.operationId,
-                )
-            },
+            diagnostics = mergeDiagnostics(plan, rendered),
             materializedViews = buildMaterializedViewContracts(plan, dialect),
             overlays = overlayReportItems.map { item ->
                 SchemaMigrateOverlayView(
@@ -260,4 +253,32 @@ internal object SchemaMigrateReportBuilder {
         .distinct()
         .sorted()
         .toList()
+
+    /**
+     * Planner-emitted diagnostics (e.g. F.4 rename
+     * `RENAME_OVERLAY_STRUCTURAL_MISMATCH` warnings) sit on
+     * [DiffResult.diagnostics]; the renderer only copies BLOCKERs
+     * into [MigrationDdlResult.diagnostics] so the planner blocker
+     * surfaces as a renderer blocker, but WARNING/INFO entries would
+     * be lost otherwise. The report merges both sources, deduping by
+     * `(code, operationId, message)` so a diagnostic that the
+     * renderer chose to forward (e.g. a re-issued blocker) is not
+     * shown twice.
+     */
+    private fun mergeDiagnostics(plan: DiffResult, rendered: MigrationDdlResult): List<SchemaMigrateDiagnosticView> {
+        val combined = LinkedHashMap<Triple<String, String?, String>, SchemaMigrateDiagnosticView>()
+        for (d in rendered.diagnostics + plan.diagnostics) {
+            val key = Triple(d.code, d.operationId, d.message)
+            combined.putIfAbsent(
+                key,
+                SchemaMigrateDiagnosticView(
+                    code = d.code,
+                    severity = d.severity.name,
+                    message = d.message,
+                    operationId = d.operationId,
+                ),
+            )
+        }
+        return combined.values.toList()
+    }
 }

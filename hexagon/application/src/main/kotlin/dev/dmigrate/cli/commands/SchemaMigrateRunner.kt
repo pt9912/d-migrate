@@ -192,8 +192,12 @@ class SchemaMigrateRunner(
 
         // 6. Pipeline: compare → plan → render UP
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
-        val plan = planner.plan(targetNormalized.schema, sourceNormalized.schema, diff)
-            .copy(migrationOverlays = request.migrationOverlays)
+        val plan = planner.plan(
+            current = targetNormalized.schema,
+            desired = sourceNormalized.schema,
+            schemaDiff = diff,
+            migrationOverlays = request.migrationOverlays,
+        )
         cancellationToken.throwIfCancellationRequested()
         val overlayPreflight = MigrationOverlayPreflight.validate(
             plan,

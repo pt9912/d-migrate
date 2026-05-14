@@ -93,6 +93,31 @@ sealed interface DiffOperation {
         override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
+    /**
+     * Plan-2 §F.4 second slice: collapses a matching `DropTable` +
+     * `CreateTable` pair into a native rename when an active
+     * `RenameMappingOverlayEntry` binds the two names and the source
+     * and target tables are structurally identical (compared via
+     * [CanonicalPayload]). [overlayHash] pins the overlay that
+     * authorised the rename so reports / artefacts can correlate
+     * back to the operator decision.
+     */
+    data class RenameTable(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val overlaySource: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.TABLES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
     // ── Columns ─────────────────────────────────────────────────────
 
     data class AddColumn(
@@ -166,6 +191,30 @@ sealed interface DiffOperation {
         override val objectRef: DiffObjectRef,
         val before: DefaultValue?,
         val after: DefaultValue?,
+        override val phase: DiffPhase = DiffPhase.COLUMNS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * Plan-2 §F.4 second slice: collapses a `(DropColumn, AddColumn)`
+     * pair within the same `tablesChanged` entry into a native column
+     * rename when an active `RenameMappingOverlayEntry` binds the
+     * names and the [ColumnDefinition]s are structurally identical
+     * (compared via [CanonicalPayload]). `objectRef.path` is
+     * `[tableName, toName]`.
+     */
+    data class RenameColumn(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val overlaySource: String,
+        val overlayHash: String?,
         override val phase: DiffPhase = DiffPhase.COLUMNS,
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,

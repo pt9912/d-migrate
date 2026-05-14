@@ -136,6 +136,42 @@ internal object MysqlDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP PRIMARY KEY;")
     }
 
+    /**
+     * Plan-2 §F.4 second slice. Renders MySQL's `ALTER TABLE … RENAME TO …`
+     * (since MySQL 8.0 the modern syntax is preferred over `RENAME TABLE`,
+     * which would also work but loses the symmetric ALTER context).
+     */
+    fun renderRenameTable(op: DiffOperation.RenameTable, ctx: MysqlDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};")
+    }
+
+    /**
+     * Plan-2 §F.4 second slice. Renders `ALTER TABLE … RENAME COLUMN …`
+     * (MySQL 8.0.3+). Older MySQL releases require `CHANGE COLUMN` with
+     * the full column type — the mapper currently emits no `RenameColumn`
+     * for those targets because the dialect renderer surface for MySQL
+     * defaults to the modern syntax (matching the rest of the diff
+     * generator).
+     */
+    fun renderRenameColumn(op: DiffOperation.RenameColumn, ctx: MysqlDiffRenderContext) {
+        val table = op.objectRef.path[0]
+        val (oldCol, newCol) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} RENAME COLUMN ${ctx.sql.quote(oldCol)} " +
+                "TO ${ctx.sql.quote(newCol)};",
+        )
+    }
+
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
         columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
 

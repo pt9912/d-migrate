@@ -1,10 +1,12 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
 > Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2,
-> D.1-D.3b, die konservative F.5-Erstscheibe und ein PostgreSQL-E.3-
-> Sequence-Slice sind implementiert. C.1 hat zusaetzlich eine explizite
-> PostgreSQL-Extension-Install-Policy (siehe Status-Bloecke in §4, §5, §7,
-> §8, §9 und §10); weitere B/C/E/F-Slices bleiben offen.
+> D.1-D.3b, die konservative F.5-Erstscheibe, ein PostgreSQL-E.3-
+> Sequence-Slice und die zweite F.4-Scheibe (Rename-Rendering fuer
+> PostgreSQL/MySQL/SQLite, Plan-2 §10 F.4) sind implementiert. C.1 hat
+> zusaetzlich eine explizite PostgreSQL-Extension-Install-Policy (siehe
+> Status-Bloecke in §4, §5, §7, §8, §9 und §10); weitere B/C/E/F-Slices
+> bleiben offen.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -1401,6 +1403,27 @@ Akzeptanz:
 > Mappings mit eigenem Diagnostic-Code und blockiert mehrdeutige Quellen/Ziele,
 > Case-Folding-Konflikte und Kettenrenames im selben Slice. Rendering von
 > `RenameTable`/`RenameColumn` bleibt ein Folgeslice.
+>
+> Status-Update (2026-05-14): F.4 zweite Scheibe (Rendering) implementiert.
+> Plan: `../done/ImpPlan-0.9.7-F.4-rendering.md`.
+> `DiffOperation.RenameTable`/`RenameColumn` sind Teil der Sealed-Hierarchie.
+> Der `OperationMapper` konsumiert `RenameMappingOverlayEntry`-Listen ueber
+> einen optionalen `migrationOverlays`-Parameter am `DiffPlanner.plan(...)`,
+> faltet strukturkonsistente `(DropTable, CreateTable)`- und per-Tabelle
+> `(DropColumn, AddColumn)`-Paare zu Rename-Operationen und propagiert
+> `overlaySource`/`overlayHash`. Strukturmismatch erzeugt
+> `RENAME_OVERLAY_STRUCTURAL_MISMATCH` als Warning und faellt auf den
+> bestehenden Drop+Add-Pfad zurueck. PostgreSQL-, MySQL- und SQLite-
+> Renderer rendern Up- und Down-Pfad als
+> `ALTER TABLE … RENAME TO …` bzw. `ALTER TABLE … RENAME COLUMN … TO …`
+> mit dialektspezifischem Identifier-Quoting; Reversibility ist
+> `AUTOMATIC`. Tests: ein gemeinsamer Mapper-Test
+> (`RenameOverlayMapperTest`) fuer Tabellen-/Spalten-Faltung,
+> Strukturmismatch-Fallback und unqualifizierte Spalten-Mappings; je ein
+> Renderer-Test pro Dialekt fuer Up- und Down-SQL. Carve-out: Mischfaelle
+> mit FK-/View-/Index-/Default-Re-Projection auf alte Namen bleiben
+> Folgeslice — der Strukturmismatch-Warning haelt heute den
+> Drop+Add-Fallback offen.
 
 ### F.5 CHECK-/EXCLUDE-Constraint-Diffbarkeit
 

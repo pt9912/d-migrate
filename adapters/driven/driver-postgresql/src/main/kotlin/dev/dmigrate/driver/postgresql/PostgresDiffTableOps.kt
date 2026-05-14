@@ -135,6 +135,41 @@ internal object PostgresDiffTableOps {
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD PRIMARY KEY ($cols);")
     }
 
+    /**
+     * Plan-2 §F.4 second slice. Renders `ALTER TABLE … RENAME TO …`
+     * in the configured direction. The mapper guarantees that a
+     * `RenameTable` is only emitted when source and target tables are
+     * structurally identical, so the rename is fully reversible.
+     */
+    fun renderRenameTable(op: DiffOperation.RenameTable, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};")
+    }
+
+    /**
+     * Plan-2 §F.4 second slice. Renders
+     * `ALTER TABLE … RENAME COLUMN … TO …` in the configured direction.
+     * `objectRef.path` is `[tableName, toName]` so `path[0]` carries
+     * the (rename-stable) table identifier.
+     */
+    fun renderRenameColumn(op: DiffOperation.RenameColumn, ctx: PostgresDiffRenderContext) {
+        val table = op.objectRef.path[0]
+        val (oldCol, newCol) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            "ALTER TABLE ${ctx.sql.quote(table)} RENAME COLUMN ${ctx.sql.quote(oldCol)} " +
+                "TO ${ctx.sql.quote(newCol)};",
+        )
+    }
+
     fun renderDropPrimaryKey(op: DiffOperation.DropPrimaryKey, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.rootName
         if (ctx.direction == PostgresRenderDirection.DOWN) {

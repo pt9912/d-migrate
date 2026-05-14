@@ -59,6 +59,7 @@ object MigrationOverlayDiagnostics {
     const val RENAME_MAPPING_AMBIGUOUS: String = "OVERLAY_RENAME_MAPPING_AMBIGUOUS"
     const val RENAME_MAPPING_CASE_CONFLICT: String = "OVERLAY_RENAME_MAPPING_CASE_CONFLICT"
     const val RENAME_MAPPING_CHAIN_UNSUPPORTED: String = "OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED"
+    const val RENAME_MAPPING_DUPLICATE: String = "OVERLAY_RENAME_MAPPING_DUPLICATE"
 }
 
 object MigrationOverlayValidator {
@@ -256,8 +257,35 @@ object MigrationOverlayValidator {
                 )
             }
         }
+        validateRenameDuplicates(entries, block)
         validateRenameUniqueness(entries, block)
         validateRenameChains(entries, block)
+    }
+
+    /**
+     * Two entries with identical `(objectType, fromName, toName)` —
+     * after case folding — describe the same rename. The mapper would
+     * happily emit one [DiffOperation.RenameTable]/[RenameColumn] per
+     * entry, which violates the F.4 plan ("genau ein … Rename-Op").
+     * Block in the overlay layer so the duplication is rejected
+     * before render.
+     */
+    private fun validateRenameDuplicates(
+        entries: List<RenameMappingOverlayEntry>,
+        block: (String, String, String?) -> Unit,
+    ) {
+        val groups = entries.groupBy { Triple(it.objectType.caseFold(), it.fromName.caseFold(), it.toName.caseFold()) }
+        for ((_, group) in groups) {
+            if (group.size < 2) continue
+            for (entry in group) {
+                block(
+                    MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
+                    "Rename mapping '${entry.fromName}' -> '${entry.toName}' is duplicated " +
+                        "(${group.size} entries describe the same rename).",
+                    entry.id,
+                )
+            }
+        }
     }
 
     private fun validateRenameUniqueness(

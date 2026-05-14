@@ -70,8 +70,10 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         when (op) {
             is DiffOperation.CreateTable -> MysqlDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> MysqlDiffTableOps.renderDropTable(op, ctx)
+            is DiffOperation.RenameTable -> MysqlDiffTableOps.renderRenameTable(op, ctx)
             is DiffOperation.AddColumn -> MysqlDiffTableOps.renderAddColumn(op, ctx)
             is DiffOperation.DropColumn -> MysqlDiffTableOps.renderDropColumn(op, ctx)
+            is DiffOperation.RenameColumn -> MysqlDiffTableOps.renderRenameColumn(op, ctx)
             is DiffOperation.AlterColumnType -> MysqlDiffTableOps.renderAlterColumnType(op, ctx)
             is DiffOperation.AlterColumnNullability -> MysqlDiffTableOps.renderAlterColumnNullability(op, ctx)
             is DiffOperation.AlterColumnDefault -> MysqlDiffTableOps.renderAlterColumnDefault(op, ctx)

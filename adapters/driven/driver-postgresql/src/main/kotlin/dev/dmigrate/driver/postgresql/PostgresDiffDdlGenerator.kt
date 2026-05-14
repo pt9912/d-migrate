@@ -82,8 +82,10 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         when (op) {
             is DiffOperation.CreateTable -> PostgresDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> PostgresDiffTableOps.renderDropTable(op, ctx)
+            is DiffOperation.RenameTable -> PostgresDiffTableOps.renderRenameTable(op, ctx)
             is DiffOperation.AddColumn -> PostgresDiffTableOps.renderAddColumn(op, ctx)
             is DiffOperation.DropColumn -> PostgresDiffTableOps.renderDropColumn(op, ctx)
+            is DiffOperation.RenameColumn -> PostgresDiffTableOps.renderRenameColumn(op, ctx)
             is DiffOperation.AlterColumnType -> PostgresDiffTableOps.renderAlterColumnType(op, ctx)
             is DiffOperation.AlterColumnNullability -> PostgresDiffTableOps.renderAlterColumnNullability(op, ctx)
             is DiffOperation.AlterColumnDefault -> PostgresDiffTableOps.renderAlterColumnDefault(op, ctx)

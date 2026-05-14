@@ -171,6 +171,19 @@ class MigrationOverlayContractTest : FunSpec({
         chainResult.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_CHAIN_UNSUPPORTED)
     }
 
+    test("F.4 rename overlay rejects exact duplicates with a dedicated diagnostic") {
+        val overlay = unsignedRenameOverlay(
+            entries = listOf(
+                renameEntry(id = "rename-a", fromName = "users_old", toName = "users"),
+                renameEntry(id = "rename-b", fromName = "USERS_OLD", toName = "users"),
+            ),
+        ).withComputedHash()
+
+        val result = MigrationOverlayValidator.validate(overlay, validationContext(), "overlays/dup.json")
+
+        result.diagnostics.map { it.code }.shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE)
+    }
+
     test("entry type mismatches and reserved optional execution metadata are blockers") {
         val overlay = unsignedUsingOverlay(
             entries = listOf(renameEntry()),

@@ -13,21 +13,23 @@ import dev.dmigrate.core.model.DefaultValue
  * Edge rules implemented in the first slice:
  *
  * - `CreateTable` with FK column / FK constraint → depends on the
- *   referenced table's `CreateTable`.
+ *   referenced table's `CreateTable` **or** `RenameTable` (when an
+ *   F.4 rename brings the target name into existence in the same
+ *   plan).
  * - `AddColumn` with FK reference → depends on the referenced
- *   table's `CreateTable`.
+ *   table's `CreateTable` / `RenameTable`.
  * - `AddConstraint` (FOREIGN_KEY) → depends on the referenced
- *   table's `CreateTable`.
+ *   table's `CreateTable` / `RenameTable`.
  * - `DropTable` → depends on the `DropConstraint` of every FK
  *   pointing at the dropped table (drop dependents first).
  * - `CreateTable` / `AddColumn` / `AlterColumnDefault` with
  *   `SequenceNextVal` → depends on the referenced `CreateSequence`.
- * - `CreateView` → depends on the `CreateTable`s declared in
- *   `view.dependencies.tables` **and** the `CreateView`s declared in
- *   `view.dependencies.views` (chained views need create-before-create
- *   ordering; matters especially when Phase G.3 splits a `ReplaceView`
- *   into `DropView` + `CreateView` and the chained sibling does the
- *   same around a shared column-altering op).
+ * - `CreateView` → depends on the `CreateTable` / `RenameTable` for
+ *   every table listed in `view.dependencies.tables` **and** the
+ *   `CreateView`s listed in `view.dependencies.views` (chained views
+ *   need create-before-create ordering; matters especially when Phase
+ *   G.3 splits a `ReplaceView` into `DropView` + `CreateView` and the
+ *   chained sibling does the same around a shared column-altering op).
  *
  * Out of scope for this slice (carved out for Phase D — see Plan
  * §6.1 and the integration-test plan §6.4):
@@ -50,8 +52,19 @@ import dev.dmigrate.core.model.DefaultValue
 internal object DependencyAnalyzer {
 
     fun attach(ops: List<DiffOperation>): List<DiffOperation> {
-        val createTableByName = ops.filterIsInstance<DiffOperation.CreateTable>()
-            .associateBy { it.objectRef.rootName }
+        // F.4 second-slice extension: a RenameTable makes the renamed
+        // table available under its new name, so FK targets on the new
+        // name must wait for the rename to complete. Both CreateTable
+        // and RenameTable contribute to the lookup map; the planner-
+        // assigned op-id is enough for the dependency edge.
+        val tableSourceIdByName: Map<String, String> = buildMap {
+            for (op in ops.filterIsInstance<DiffOperation.CreateTable>()) {
+                put(op.objectRef.rootName, op.id)
+            }
+            for (op in ops.filterIsInstance<DiffOperation.RenameTable>()) {
+                put(op.toName, op.id)
+            }
+        }
         val createSequenceByName = ops.filterIsInstance<DiffOperation.CreateSequence>()
             .associateBy { it.objectRef.rootName }
         val createViewByName = ops.filterIsInstance<DiffOperation.CreateView>()
@@ -72,7 +85,7 @@ internal object DependencyAnalyzer {
         return ops.map { op ->
             val computed = computeDeps(
                 op,
-                createTableByName,
+                tableSourceIdByName,
                 createSequenceByName,
                 createViewByName,
                 dropConstraintsByRefTable,
@@ -85,32 +98,32 @@ internal object DependencyAnalyzer {
 
     private fun computeDeps(
         op: DiffOperation,
-        createTableByName: Map<String, DiffOperation.CreateTable>,
+        tableSourceIdByName: Map<String, String>,
         createSequenceByName: Map<String, DiffOperation.CreateSequence>,
         createViewByName: Map<String, DiffOperation.CreateView>,
         dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
         dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> = when (op) {
-        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, createTableByName, createSequenceByName)
-        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, createTableByName, createSequenceByName)
+        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, tableSourceIdByName, createSequenceByName)
+        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, tableSourceIdByName, createSequenceByName)
         is DiffOperation.AlterColumnDefault -> dependenciesForAlterColumnDefault(op, createSequenceByName)
-        is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, createTableByName)
+        is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, tableSourceIdByName)
         is DiffOperation.DropTable -> dependenciesForDropTable(op, dropConstraintsByRefTable, dropViewsByRefTable)
-        is DiffOperation.CreateView -> dependenciesForCreateView(op, createTableByName, createViewByName)
+        is DiffOperation.CreateView -> dependenciesForCreateView(op, tableSourceIdByName, createViewByName)
         else -> emptySet()
     }
 
     private fun dependenciesForCreateTable(
         op: DiffOperation.CreateTable,
-        createTableByName: Map<String, DiffOperation.CreateTable>,
+        tableSourceIdByName: Map<String, String>,
         createSequenceByName: Map<String, DiffOperation.CreateSequence>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         op.table.columns.values
             .mapNotNull { it.references?.table }
-            .mapNotNull { createTableByName[it] }
-            .filter { it.id != op.id }
-            .forEach { deps += it.id }
+            .mapNotNull { tableSourceIdByName[it] }
+            .filter { it != op.id }
+            .forEach { deps += it }
         op.table.columns.values
             .mapNotNull { sequenceName(it.default) }
             .mapNotNull { createSequenceByName[it] }
@@ -119,21 +132,21 @@ internal object DependencyAnalyzer {
         op.table.constraints
             .filter { it.type == ConstraintType.FOREIGN_KEY }
             .mapNotNull { it.references?.table }
-            .mapNotNull { createTableByName[it] }
-            .filter { it.id != op.id }
-            .forEach { deps += it.id }
+            .mapNotNull { tableSourceIdByName[it] }
+            .filter { it != op.id }
+            .forEach { deps += it }
         return deps
     }
 
     private fun dependenciesForAddColumn(
         op: DiffOperation.AddColumn,
-        createTableByName: Map<String, DiffOperation.CreateTable>,
+        tableSourceIdByName: Map<String, String>,
         createSequenceByName: Map<String, DiffOperation.CreateSequence>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         val ref = op.column.references
-        val target = ref?.let { createTableByName[it.table] }
-        if (target != null && target.id != op.id) deps += target.id
+        val targetId = ref?.let { tableSourceIdByName[it.table] }
+        if (targetId != null && targetId != op.id) deps += targetId
         sequenceName(op.column.default)
             ?.let(createSequenceByName::get)
             ?.takeIf { it.id != op.id }
@@ -156,13 +169,13 @@ internal object DependencyAnalyzer {
 
     private fun dependenciesForAddConstraint(
         op: DiffOperation.AddConstraint,
-        createTableByName: Map<String, DiffOperation.CreateTable>,
+        tableSourceIdByName: Map<String, String>,
     ): Set<String> {
         if (op.constraint.type != ConstraintType.FOREIGN_KEY) return emptySet()
         val ref = op.constraint.references ?: return emptySet()
-        val target = createTableByName[ref.table] ?: return emptySet()
-        if (target.id == op.id) return emptySet()
-        return setOf(target.id)
+        val targetId = tableSourceIdByName[ref.table] ?: return emptySet()
+        if (targetId == op.id) return emptySet()
+        return setOf(targetId)
     }
 
     private fun dependenciesForDropTable(
@@ -193,12 +206,12 @@ internal object DependencyAnalyzer {
      */
     private fun dependenciesForCreateView(
         op: DiffOperation.CreateView,
-        createTableByName: Map<String, DiffOperation.CreateTable>,
+        tableSourceIdByName: Map<String, String>,
         createViewByName: Map<String, DiffOperation.CreateView>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         op.view.dependencies?.tables?.forEach { tableName ->
-            createTableByName[tableName]?.let { if (it.id != op.id) deps += it.id }
+            tableSourceIdByName[tableName]?.let { if (it != op.id) deps += it }
         }
         op.view.dependencies?.views?.forEach { viewName ->
             createViewByName[viewName]?.let { if (it.id != op.id) deps += it.id }

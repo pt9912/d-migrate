@@ -3,6 +3,7 @@ package dev.dmigrate.core.diff.migration
 import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -35,17 +36,34 @@ internal object OperationMapper {
         current: SchemaDefinition,
         desired: SchemaDefinition,
         blockedTables: Set<String>,
-    ): List<DiffOperation> {
+        migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+    ): MapperResult {
+        val renameIndex = RenameOverlayIndex.build(migrationOverlays)
+        val diagnostics = mutableListOf<DiffDiagnostic>()
+        diagnostics += renameIndex.issues
         val ops = mutableListOf<DiffOperation>()
         mapCustomTypes(diff, current, desired, ops)
-        mapTables(diff, blockedTables, ops)
+        mapTables(diff, current, desired, blockedTables, renameIndex, diagnostics, ops)
         mapViews(diff, current, desired, ops)
         mapSequences(diff, current, desired, ops)
         mapFunctions(diff, current, desired, ops)
         mapProcedures(diff, current, desired, ops)
         mapTriggers(diff, current, desired, ops)
-        return disambiguateIds(ops)
+        return MapperResult(
+            operations = disambiguateIds(ops),
+            diagnostics = diagnostics,
+        )
     }
+
+    /**
+     * Result wrapper so the planner can collect [diagnostics] generated
+     * by the mapper (e.g. F.4 `RENAME_OVERLAY_STRUCTURAL_MISMATCH`)
+     * alongside the operations.
+     */
+    internal data class MapperResult(
+        val operations: List<DiffOperation>,
+        val diagnostics: List<DiffDiagnostic>,
+    )
 
     /**
      * Apply [OperationIdFactory.disambiguate] so that any pair of
@@ -107,11 +125,19 @@ internal object OperationMapper {
 
     private fun mapTables(
         diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
         blockedTables: Set<String>,
+        renameIndex: RenameOverlayIndex,
+        diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ) {
+        val (renamedAdds, renamedRemoves) = mapRenameTables(
+            diff, current, desired, blockedTables, renameIndex, diagnostics, ops,
+        )
         for (added in diff.tablesAdded) {
             if (added.name in blockedTables) continue
+            if (added.name in renamedAdds) continue
             val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(added.name))
             ops += DiffOperation.CreateTable(
                 id = OperationIdFactory.makeId("CreateTable", ref, CanonicalPayload.table(added.definition)),
@@ -121,6 +147,7 @@ internal object OperationMapper {
         }
         for (removed in diff.tablesRemoved) {
             if (removed.name in blockedTables) continue
+            if (removed.name in renamedRemoves) continue
             val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(removed.name))
             ops += DiffOperation.DropTable(
                 id = OperationIdFactory.makeId("DropTable", ref, CanonicalPayload.table(removed.definition)),
@@ -130,15 +157,54 @@ internal object OperationMapper {
         }
         for (changed in diff.tablesChanged) {
             if (changed.name in blockedTables) continue
-            mapTableColumns(changed, ops)
+            mapTableColumns(changed, renameIndex, diagnostics, ops)
             mapTableConstraints(changed, ops)
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
         }
     }
 
-    private fun mapTableColumns(table: TableDiff, ops: MutableList<DiffOperation>) {
+    /**
+     * Plan-2 §F.4 second slice: collapse a `(DropTable, CreateTable)`
+     * pair into [DiffOperation.RenameTable] when an active
+     * [RenameMappingOverlayEntry] binds the names AND both tables are
+     * structurally identical (compared via [CanonicalPayload]). Returns
+     * the names removed from the regular drop/create path.
+     *
+     * Structural mismatch is a non-blocking warning — the regular
+     * Drop+Add fallback still renders. The operator can either adjust
+     * the schemas (e.g. align columns first) or remove the rename
+     * mapping from the overlay.
+     */
+    @Suppress("LongParameterList")
+    private fun mapRenameTables(
+        diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        blockedTables: Set<String>,
+        renameIndex: RenameOverlayIndex,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ): Pair<Set<String>, Set<String>> =
+        RenameOverlayMapper.foldRenameTables(
+            diff = diff,
+            current = current,
+            desired = desired,
+            blockedTables = blockedTables,
+            renameIndex = renameIndex,
+            diagnostics = diagnostics,
+            ops = ops,
+        )
+
+    private fun mapTableColumns(
+        table: TableDiff,
+        renameIndex: RenameOverlayIndex,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ) {
+        val (renamedAddedCols, renamedRemovedCols) = mapRenameColumns(table, renameIndex, diagnostics, ops)
         for ((name, def) in table.columnsAdded) {
+            if (name in renamedAddedCols) continue
             val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, name))
             ops += DiffOperation.AddColumn(
                 id = OperationIdFactory.makeId("AddColumn", ref, CanonicalPayload.column(def)),
@@ -147,6 +213,7 @@ internal object OperationMapper {
             )
         }
         for ((name, def) in table.columnsRemoved) {
+            if (name in renamedRemovedCols) continue
             val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, name))
             ops += DiffOperation.DropColumn(
                 id = OperationIdFactory.makeId("DropColumn", ref, CanonicalPayload.column(def)),
@@ -156,6 +223,27 @@ internal object OperationMapper {
         }
         for (cd in table.columnsChanged) mapColumnChange(table.name, cd, ops)
     }
+
+    /**
+     * Per-table column-rename detection. Mirrors [mapRenameTables] but
+     * scoped to the [TableDiff]'s `columnsAdded`/`columnsRemoved`
+     * maps. The rename mapping's `objectType` is treated as `column`
+     * if the `fromName` references `<tableName>.<columnName>` OR the
+     * mapping carries no qualifier and a unique drop/add candidate is
+     * available for the column name.
+     */
+    private fun mapRenameColumns(
+        table: TableDiff,
+        renameIndex: RenameOverlayIndex,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ): Pair<Set<String>, Set<String>> =
+        RenameOverlayMapper.foldRenameColumns(
+            table = table,
+            renameIndex = renameIndex,
+            diagnostics = diagnostics,
+            ops = ops,
+        )
 
     private fun mapColumnChange(tableName: String, cd: ColumnDiff, ops: MutableList<DiffOperation>) {
         val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(tableName, cd.name))

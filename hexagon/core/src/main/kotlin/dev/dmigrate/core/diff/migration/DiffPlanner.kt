@@ -2,6 +2,7 @@ package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ConstraintDiffContract
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.SchemaDefinition
@@ -62,6 +63,7 @@ class DiffPlanner {
         current: SchemaDefinition,
         desired: SchemaDefinition,
         schemaDiff: SchemaDiff,
+        migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val blockedTables = detectConstraintNotDiffableTables(current, desired)
@@ -77,8 +79,9 @@ class DiffPlanner {
             )
         }
 
-        val rawOps = OperationMapper.map(schemaDiff, current, desired, blockedTables)
-        val splitOps = splitReplaceViewsForColumnConflicts(rawOps)
+        val mapperResult = OperationMapper.map(schemaDiff, current, desired, blockedTables, migrationOverlays)
+        diagnostics += mapperResult.diagnostics
+        val splitOps = splitReplaceViewsForColumnConflicts(mapperResult.operations)
         val opsWithDeps = DependencyAnalyzer.attach(splitOps)
         val sortResult = TopologicalSorter.sort(opsWithDeps)
 
@@ -106,7 +109,7 @@ class DiffPlanner {
             diagnostics = diagnostics,
             currentSchema = current,
             desiredSchema = desired,
-            migrationOverlays = emptyList(),
+            migrationOverlays = migrationOverlays,
         )
     }
 
