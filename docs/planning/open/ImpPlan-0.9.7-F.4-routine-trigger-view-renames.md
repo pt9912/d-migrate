@@ -77,9 +77,11 @@ In Scope (nach Abschluss der Vorbedingungen):
   Trigger auf verschiedenen Tabellen eindeutig selektierbar, ohne den
   `migration-overlay.v1`-Top-Level-Shape zu aendern.
 - `MigrationOverlayValidator` erhaelt fuer `rename-mapping` eine
-  explizite `objectType`-Whitelist. Nach diesem Slice sind nur
-  `{table, column, view, trigger, function, procedure, sequence}`
-  gueltig; `materialized_view` bleibt ein BLOCKER, bis ein eigener
+  explizite `objectType`-Whitelist bzw. erweitert die im
+  `RENAME_MAPPING_INVALID`-Slice eingefuehrte zentrale Whitelist. Vor
+  diesem Slice sind nur `{table, column}` gueltig; nach diesem Slice sind
+  `{table, column, view, trigger, function, procedure, sequence}` gueltig.
+  `materialized_view` bleibt ein BLOCKER, bis ein eigener
   `DiffObjectType.MATERIALIZED_VIEW` existiert. Fuer `trigger`,
   `function` und `procedure` validiert der Validator zusaetzlich die
   kanonische Key-Grammatik und die unveraenderte Tabellen-/Signatur-
@@ -124,6 +126,13 @@ In Scope (nach Abschluss der Vorbedingungen):
   `requiredFeatures`/`semanticExtensions` gate-en. Ein Consumer darf eine
   Drop+Create-Fallback-Operation mit unbekannter Rename-Provenance nicht
   als normales Drop+Create ohne Operator-Vertrag interpretieren.
+  Reportseitig ist `renameProvenance` kein zweiter F.4-Carrier neben
+  `renameProjections`: Falls der Dependency-Projection-Slice
+  `DiffResult.renameProjections` bereits eingefuehrt hat, erweitert dieser
+  Slice denselben Carrier um Objekt-Renames und Drop+Create-Fallbacks oder
+  referenziert ihn eindeutig aus `RenameProvenance`. Falls er frueher
+  landet, fuehrt er den gemeinsamen Carrier so ein, dass der
+  Dependency-Projection-Slice ihn weiterverwenden kann.
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
   Muster wie die Tabellen-Rename-Tests.
@@ -373,6 +382,11 @@ gemeinsamen core-lokalen Carrier teilen; der Vertrag bleibt aber: alle
 dialekt- und runtime-abhaengigen Rename-Entscheidungen muessen vor dem Mapper
 im Planungsinput stehen.
 
+Auch die Overlay-Freischaltung fuer neue `objectType`-Werte passiert vor dem
+Mapper im zentralen Pre-Plan-Gate. Der Mapper darf unbekannte oder noch nicht
+freigeschaltete Objektklassen nicht still ueberspringen; solche Eintraege
+muessen vor `plan()` als `RENAME_MAPPING_INVALID` blockieren.
+
 `BLOCKED` ist ein Mapper-/Planner-Ergebnis, kein Renderer-Ergebnis. Der
 Mapper emittiert fuer diesen Kandidaten keinen `Rename*`-Subtyp und keinen
 `renameProvenance`-Fallback, sondern eine BLOCKER-Diagnostic
@@ -442,6 +456,12 @@ tragen, wird das in demselben Vertrag nachgezogen, bevor
 nicht fuer neue Objektklassen genaue Entry-Provenance besitzen, aber fuer
 Tabellen-/Spalten-Renames nur auf den Dokument-Hash zeigen.
 
+Der Report-Vertrag nutzt dabei den gemeinsamen F.4-Carrier fuer
+Rename-Projection/-Provenance. Es darf nicht gleichzeitig
+`renameProjections` fuer Tabellen-/Spalten-Mischfaelle und ein separater,
+semantisch gleichwertiger `renameProvenance`-Reportabschnitt fuer
+View-/Trigger-/Routine-Fallbacks existieren.
+
 Artefakt-Gate: `RenameProvenance` muss im Plan-Artefakt als
 versioniertes Semantikfeld behandelt werden. Der Slice aktualisiert den
 F.2-Artefaktvertrag, den JSON-Codec/Validator und Golden-Files so, dass
@@ -498,8 +518,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       oder Post-Plan-Preflight-Zustand die Policy-Entscheidung nicht
       nachtraeglich veraendert.
 - [ ] `MigrationOverlayValidator` blockiert unbekannte
-      `rename-mapping.objectType`-Werte, insbesondere
-      `materialized_view`, und testet die neue Whitelist.
+      `rename-mapping.objectType`-Werte vor `plan()` ueber die zentrale
+      Whitelist. Dieser Slice erweitert die zuvor gueltige Whitelist
+      `{table, column}` bewusst um `view`, `trigger`, `function`,
+      `procedure` und `sequence`; `materialized_view` bleibt blockiert.
 - [ ] `RenameView` blockiert `ViewDefinition.materialized = true` mit
       dem bestehenden Materialized-View-Guard; kein Renderer darf
       `ALTER MATERIALIZED VIEW` oder einen Drop+Create-Fallback fuer
@@ -541,6 +563,10 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       `requiredFeatures`/`semanticExtensions`-Gate. Alte Consumer duerfen
       die Provenance nicht ignorieren und den Fallback als normales
       Drop+Create ausfuehren.
+- [ ] `RenameProvenance` und `renameProjections` sind als ein gemeinsamer
+      F.4-Report-/Artefaktvertrag modelliert. Tests pinnen, dass ein
+      Tabellen-/Spalten-Rename und ein neuer Objekt-Rename nicht in zwei
+      voneinander unabhaengigen Provenance-Abschnitten landen.
 - [ ] Alle nativen `Rename*`-Subtypes tragen `overlayEntryId` neben
       `overlaySource` und `overlayHash`; Report/Plan-Artefakt nutzt diese
       Felder direkt und rekonstruiert Entry-Provenance nicht aus

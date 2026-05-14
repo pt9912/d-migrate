@@ -280,7 +280,7 @@ nicht durch Stringsortierung falsch freigeschaltet wird.
 | FK auf Tabellen-Rename   | AUTOMATIC_BY_ENGINE        | AUTOMATIC_BY_ENGINE, wenn kein Constraint-Namenskonflikt erkennbar ist | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | FK auf Spalten-Rename    | AUTOMATIC_BY_ENGINE        | AUTOMATIC_BY_ENGINE, wenn Engine-Preconditions erfuellt sind | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | View-Body-Referenzen     | AUTOMATIC_BY_ENGINE (mit nachweisbarer `pg_depend`-Projektion) | EXPLICIT_REPROJECTION (View muss DROP/CREATE) | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
-| Trigger-Body-Referenzen  | AUTOMATIC_BY_ENGINE, wenn Modell/Adapter die Dependency zeigt | EXPLICIT_REPROJECTION | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
+| Trigger-Body-Referenzen  | NO_PROJECTION_AVAILABLE, solange Trigger-Bodies opake Strings sind | EXPLICIT_REPROJECTION nur als Drop/Create aus Soll-Body, kein Body-Rewrite | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | Index-Definition         | AUTOMATIC_BY_ENGINE (Spalten- und Tabellen-IDs sind oid-basiert) | AUTOMATIC_BY_ENGINE | AUTOMATIC_BY_ENGINE |
 | Default-Expression mit Spaltenname | NO_PROJECTION_AVAILABLE (Function-Body opaque) | NO_PROJECTION_AVAILABLE | NO_PROJECTION_AVAILABLE |
 | Sequence-Ownership `OWNED BY` | OUT_OF_SCOPE_UNTIL_OWNED_BY_MODEL | n/a | n/a |
@@ -308,10 +308,13 @@ muessen:
   Mindestversion und `legacy_alter_table = OFF` automatisch. Ist der
   Runtime-Modus unbekannt oder legacy aktiv, blockiert die Policy
   Trigger-/View-/FK-Projektion statt sie als automatisch anzunehmen.
-- PostgreSQL-View-/Trigger-Abhaengigkeiten duerfen nur dann als
-  automatisch gelten, wenn die Abhaengigkeit im Modell ausreichend
-  nachweisbar ist. Opaque Function-/Default-Ausdruecke bleiben
-  blockierend.
+- PostgreSQL-View-Abhaengigkeiten duerfen nur dann als automatisch gelten,
+  wenn die Abhaengigkeit im Modell ausreichend nachweisbar ist. Trigger-,
+  Routine- und Function-Bodies bleiben dagegen `NO_PROJECTION_AVAILABLE`,
+  solange sie im neutralen Modell opake Strings sind: PostgreSQL kann zwar
+  Objekt-Identitaeten katalogseitig nachziehen, aber ein textueller Body mit
+  hart codierten Namen ist ohne Parser-/Body-Vertrag nicht beweisbar sicher.
+  Opaque Function-/Default-Ausdruecke bleiben ebenfalls blockierend.
 
 ### 3.3a Capability-Beschaffung und Plan-Zeitpunkt
 
@@ -478,6 +481,13 @@ RenameDependencyProjector
    -> DiffResult.renameProjections
    -> SchemaMigrateReport.renameProjections
 ```
+
+`renameProjections` ist der gemeinsame F.4-Carrier fuer Rename-Projection
+und Rename-Provenance. Falls der View-/Trigger-/Routine-Rename-Slice spaeter
+Drop+Create-Fallbacks mit `RenameProvenance` modelliert, muss er denselben
+Carrier erweitern oder auf ihn referenzieren; er darf keinen zweiten
+Report-/Artefaktabschnitt einfuehren, der dieselbe Operator-Entscheidung
+parallel beschreibt.
 
 Der Migrate-Report erhaelt einen optionalen
 `renameProjections`-Abschnitt:

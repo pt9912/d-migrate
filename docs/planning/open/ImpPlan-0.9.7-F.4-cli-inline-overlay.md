@@ -75,7 +75,12 @@ In Scope:
   vor `plan()` mit Exit 2. Doppelte Rename-Quellen ueber File- und
   Inline-Overlays hinweg blocken ebenfalls **vor dem ersten
   `DiffPlanner.plan(...)`** ueber eine neue Cross-Document-Uniqueness-
-  Pruefung auf der zusammengefuehrten Overlay-Liste; die heutige
+  Pruefung auf der zusammengefuehrten Overlay-Liste. Diese Pruefung ist
+  keine CLI-Sonderlogik: Der CLI-Slice nutzt den zentralen Pre-Plan-
+  Overlay-Gate aus
+  `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md` bzw. fuehrt bei
+  umgekehrter Implementierungsreihenfolge genau diese gemeinsame API ohne
+  CLI-lokale Reason-Literale ein. Die heutige
   `MigrationOverlayValidator.validate(...)`-Pruefung pro Dokument reicht
   dafuer nicht. Cross-Document-Blocker duerfen keine gerenderte,
   ausfuehrbare oder bereits mit Rename-Provenance geplante Operationenliste
@@ -87,7 +92,11 @@ In Scope:
 - Eigener Pre-Plan-Report-Pfad: Weil bei Cross-Document-Blockern kein
   `DiffResult` existiert, darf der Report nicht ueber
   `SchemaMigrateReportBuilder.build(plan = ...)` laufen. Der Runner nutzt
-  einen kleinen `SchemaMigratePrePlanReportBuilder`, der Source/Target,
+  den gemeinsamen Pre-Plan-Report-Pfad aus dem Rename-Reason-Slice; falls
+  dieser Slice frueher landet, gehoert der Builder als allgemeiner
+  `SchemaMigratePrePlanReportBuilder` in denselben zentralen Application-
+  Pfad und nicht in CLI-Inline-spezifische Logik. Der Builder schreibt
+  Source/Target,
   Dialekt, `status = "blocked"`, `exitCode = 8`, leere `operations`,
   leere `statements`, leere `operationsSkipped` und die
   Cross-Document-Findings in `blockers`/`diagnostics`/`overlays`
@@ -209,16 +218,16 @@ an `DiffPlanner.plan(..., migrationOverlays = ...)` uebergeben. Die
 nachgelagerten Schritte (Preflight, Mapper) sehen nur die
 zusammengefuehrte Liste und bleiben fachlich unveraendert.
 
-`ParseFailed` → `userFacingPrintError` + Exit 2 (CLI-Validation-
+`ParseFailed` -> `userFacingPrintError` + Exit 2 (CLI-Validation-
 Fehler, kein I/O).
 
-Vor dem ersten `plan()` fuehrt der Runner eine globale
-`MigrationOverlayPreflight.validateCombinedRenameUniqueness(...)`-
-Pruefung auf der zusammengefuehrten File+Inline-Liste aus. Diese Pruefung
-nutzt dieselben dokumentlokalen Key-Regeln wie der Validator, erweitert
-sie aber ueber Dokumentgrenzen hinweg und liefert bei Blockern ein
-synthetisches `PrePlanMigrationBlockerResult` ohne `DiffResult`,
-`MigrationDdlResult` und ohne `plan.operations`. Der Planner
+Vor dem ersten `plan()` fuehrt der Runner
+`MigrationOverlayPreflight.validateBeforePlan(...)` auf der
+zusammengefuehrten File+Inline-Liste aus. Dieser zentrale Pre-Plan-Gate
+fuer alle Overlay-Quellen nutzt dieselben dokumentlokalen Key-Regeln wie der
+Validator, erweitert sie aber ueber Dokumentgrenzen hinweg und liefert bei
+Blockern ein synthetisches `PrePlanMigrationBlockerResult` ohne
+`DiffResult`, `MigrationDdlResult` und ohne `plan.operations`. Der Planner
 darf bei Cross-Document-Konflikten nicht laufen, weil
 `OperationMapper` sonst bereits Rename-Operationen mit einer
 moeglicherweise falschen oder deduplizierten Overlay-Provenance erzeugt.
@@ -346,7 +355,8 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
 - [ ] Inline und File-Overlay duerfen kombiniert werden — beide
       Listen werden konkateniert; eine explizite Cross-Document-
       Uniqueness-Pruefung blockt Konflikte ueber alle Quellen hinweg vor
-      dem ersten `DiffPlanner.plan(...)`.
+      dem ersten `DiffPlanner.plan(...)`. Diese Pruefung kommt aus dem
+      zentralen Pre-Plan-Overlay-Gate und ist nicht im CLI-Slice dupliziert.
 - [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/Render/
       Execute mit Exit 8. Der Report zeigt die betroffenen
       `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine

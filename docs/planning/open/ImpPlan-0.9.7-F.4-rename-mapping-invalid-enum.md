@@ -68,6 +68,22 @@ In Scope:
   bestehende `validate(plan, ...)`-Pfad wird entweder zu einem duennen
   Adapter auf diese API oder bleibt nur fuer planabhaengige Post-Plan-
   Findings zustaendig.
+- Aktuelle `rename-mapping.objectType`-Whitelist im zentralen Pre-Plan-
+  Gate: Solange nur der F.4-Rendering-Slice umgesetzt ist, sind
+  ausschliesslich `{table, column}` gueltig. Alle anderen Werte, inklusive
+  zukuenftiger Objektklassen wie `view`, `trigger`, `function`,
+  `procedure`, `sequence` und `materialized_view`, blockieren vor `plan()`
+  mit dem bestehenden Code `OVERLAY_UNKNOWN_ENTRY_KIND` oder einem bereits
+  versionierten Whitelist-Code und werden unter
+  `RENAME_MAPPING_INVALID` klassifiziert. Der spaetere
+  View-/Trigger-/Routine-Rename-Slice erweitert diese Whitelist explizit;
+  bis dahin darf der Mapper unbekannte `objectType`s nicht still
+  ignorieren.
+- Cross-Document-Uniqueness gehoert ebenfalls zu diesem zentralen Pre-Plan-
+  Gate. Der CLI-Inline-Slice darf dieselbe API aufrufen und synthetische
+  Inline-Overlays in die Dokumentliste einspeisen, aber keine zweite
+  Implementierung der Rename-Uniqueness- oder Reason-Klassifikation
+  einfuehren.
 - Preflight-/Report-Aenderungen: alle Rename-Overlay-spezifischen
   Blocker melden ab jetzt diesen neuen Reason statt
   `MANUAL_ACTION_REQUIRED`. Rename-Warnings werden in derselben Tabelle
@@ -195,6 +211,7 @@ internal data class MigrationOverlayPrePlanContext(
     val expectedDialect: String,
     val documents: List<MigrationOverlayDocument>,
     val loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+    val supportedRenameObjectTypes: Set<String> = setOf("table", "column"),
 )
 
 internal fun MigrationOverlayPreflight.validateBeforePlan(
@@ -229,6 +246,11 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 - Blocker-Diagnostics mit Code `OVERLAY_RENAME_MAPPING_*` oder
   `OBJECT_RENAME_UNSUPPORTED` landen in einem
   `MigrationBlocker(reason = RENAME_MAPPING_INVALID)`.
+- Blocker-Diagnostics mit Code `OVERLAY_UNKNOWN_ENTRY_KIND` landen ebenfalls
+  in `RENAME_MAPPING_INVALID`, wenn sie aus einem `rename-mapping`-Eintrag
+  mit nicht freigeschaltetem `objectType` stammen. Generische unbekannte
+  Entry-Kinds in anderen Overlay-Arten bleiben bei
+  `MANUAL_ACTION_REQUIRED`, solange kein eigener Reason existiert.
 - Blocker-Diagnostics mit Code `RENAME_DEPENDENCY_UNPROJECTABLE` landen
   in `MigrationBlocker(reason = MANUAL_ACTION_REQUIRED)`. Der normale
   Drop+Add-Fallback-Fall ist aber nur eine Warning und erzeugt keinen
@@ -257,6 +279,7 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 | `OVERLAY_RENAME_MAPPING_CASE_CONFLICT` | MANUAL_ACTION_REQUIRED | RENAME_MAPPING_INVALID |
 | `OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED` | MANUAL_ACTION_REQUIRED | RENAME_MAPPING_INVALID |
 | `OVERLAY_RENAME_MAPPING_DUPLICATE` | MANUAL_ACTION_REQUIRED | RENAME_MAPPING_INVALID |
+| `OVERLAY_UNKNOWN_ENTRY_KIND` fuer nicht freigeschalteten `rename-mapping.objectType` | MANUAL_ACTION_REQUIRED | RENAME_MAPPING_INVALID |
 | `OBJECT_RENAME_UNSUPPORTED` | MANUAL_ACTION_REQUIRED | RENAME_MAPPING_INVALID |
 | `RENAME_DEPENDENCY_UNPROJECTABLE` als WARNING mit Drop+Add-Fallback | (kein Blocker) | (kein Reason) |
 | `RENAME_DEPENDENCY_UNPROJECTABLE` als BLOCKER ohne verlustfreien Fallback | MANUAL_ACTION_REQUIRED | MANUAL_ACTION_REQUIRED |
@@ -275,6 +298,15 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       Load-Failures explizit entgegennimmt. Er liest keine Werte aus einem
       `DiffResult` und kann deshalb vor dem ersten `DiffPlanner.plan(...)`
       laufen.
+- [ ] Der Pre-Plan-Gate blockiert `rename-mapping.objectType`-Werte ausserhalb
+      der aktuell freigeschalteten Whitelist `{table, column}` vor `plan()`
+      mit `RENAME_MAPPING_INVALID`. Tests pinnen mindestens `view`,
+      `trigger`, `function`, `procedure`, `sequence` und
+      `materialized_view`, bis der spaetere Objekt-Rename-Slice diese Werte
+      bewusst freischaltet.
+- [ ] Cross-Document-Uniqueness ist Teil derselben zentralen Pre-Plan-
+      Validierung und wird vom CLI-Inline-Slice nur konsumiert, nicht
+      dupliziert.
 - [ ] Der bestehende `MigrationOverlayPreflight.validate(plan, ...)`-Pfad ist
       entweder ein Adapter auf die neue API oder klar auf Post-Plan-Findings
       beschraenkt; harte `OVERLAY_RENAME_MAPPING_*`-Blocker duerfen dort nicht
