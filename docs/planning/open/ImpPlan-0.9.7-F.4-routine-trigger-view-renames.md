@@ -552,8 +552,11 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       die rechte Seite aus `toName`; er rendert nicht aus dem blossen
       Namen oder dem kanonischen Ziel-Key.
 - [ ] `RenameProvenance` ist als optionales Metadatum auf allen
-      Drop+Create-Fallback-Operationen modelliert und wird in Report /
-      spaeteren Plan-Artefakten ausgegeben. Es enthaelt
+      Drop+Create-Fallback-Operationen modelliert und wird im Report nur ueber
+      den gemeinsamen F.4-Provenance-Carrier ausgegeben. Eine Ausgabe in
+      `migration-plan.v1` erfolgt in diesem Slice nur zusammen mit dem
+      Artefakt-Gate aus dem naechsten Akzeptanzkriterium; ohne dieses Gate
+      bleibt `RenameProvenance` aus oeffentlichen Plan-Artefakten heraus. Es enthaelt
       `overlayEntryId`, damit mehrere Rename-Mappings im selben Overlay
       eindeutig auf den autorisierenden Entry zurueckgefuehrt werden
       koennen.

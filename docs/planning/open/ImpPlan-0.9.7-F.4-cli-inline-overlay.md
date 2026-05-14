@@ -38,6 +38,11 @@ In Scope:
   und `spec/cli-spec.md` §6.1 muessen Inline-Rename-Flags als
   bewusst nicht-artefaktstabilen Operator-Shortcut erlauben. Ohne diese
   Aenderung bleibt der Slice blockiert.
+- Reihenfolge bleibt identisch zu den anderen F.4-Folgeslices: synthetische
+  Inline-Overlays werden vor dem ersten `DiffPlanner.plan(...)` gebaut und
+  anschliessend zusammen mit File-Overlays durch den zentralen Pre-Plan-
+  Overlay-Gate validiert. Der CLI-Slice fuehrt keinen zweiten Rename-
+  Validierungs- oder Reason-Klassifikationspfad ein.
 - Neue CLI-Flags auf `schema migrate`:
   - `--rename-table <from>:<to>` (wiederholbar)
   - `--rename-column <table>.<from>:<table>.<to>` (wiederholbar)
@@ -357,6 +362,11 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       Uniqueness-Pruefung blockt Konflikte ueber alle Quellen hinweg vor
       dem ersten `DiffPlanner.plan(...)`. Diese Pruefung kommt aus dem
       zentralen Pre-Plan-Overlay-Gate und ist nicht im CLI-Slice dupliziert.
+- [ ] Der CLI-Slice delegiert sowohl Rename-Reason-Klassifikation als auch
+      Cross-Document-Provenance an denselben zentralen Pre-Plan-Gate, den
+      RENAME_MAPPING_INVALID- und Dependency-Projection-Slices nutzen. Es gibt
+      keinen CLI-lokalen Fallback, der invalide Inline-Renames nach `plan()`
+      entdeckt oder umklassifiziert.
 - [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/Render/
       Execute mit Exit 8. Der Report zeigt die betroffenen
       `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine

@@ -84,6 +84,12 @@ In Scope:
   Inline-Overlays in die Dokumentliste einspeisen, aber keine zweite
   Implementierung der Rename-Uniqueness- oder Reason-Klassifikation
   einfuehren.
+- Der Dependency-Projection-Slice konsumiert ebenfalls nur Overlays, die
+  diesen Pre-Plan-Gate bestanden haben. Runtime- oder Dependency-
+  Capabilities duerfen nachgelagert geprueft werden, aber harte
+  `OVERLAY_RENAME_MAPPING_*`-Fehler und Cross-Document-Provenance-Konflikte
+  duerfen nicht erst entdeckt werden, nachdem `OperationMapper` ein Rename-
+  Mapping konsumiert hat.
 - Preflight-/Report-Aenderungen: alle Rename-Overlay-spezifischen
   Blocker melden ab jetzt diesen neuen Reason statt
   `MANUAL_ACTION_REQUIRED`. Rename-Warnings werden in derselben Tabelle
@@ -307,6 +313,11 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 - [ ] Cross-Document-Uniqueness ist Teil derselben zentralen Pre-Plan-
       Validierung und wird vom CLI-Inline-Slice nur konsumiert, nicht
       dupliziert.
+- [ ] Der Dependency-Projection-Slice konsumiert keine ungeprueften
+      Rename-Overlays: harte `OVERLAY_RENAME_MAPPING_*`- und
+      Cross-Document-Konflikte entstehen vor `plan()`, waehrend spaetere
+      Dependency-Projektionsdiagnosen nur auf bereits autorisierten
+      Rename-Candidates laufen.
 - [ ] Der bestehende `MigrationOverlayPreflight.validate(plan, ...)`-Pfad ist
       entweder ein Adapter auf die neue API oder klar auf Post-Plan-Findings
       beschraenkt; harte `OVERLAY_RENAME_MAPPING_*`-Blocker duerfen dort nicht

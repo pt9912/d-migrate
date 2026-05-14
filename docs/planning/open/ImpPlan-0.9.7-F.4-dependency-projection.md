@@ -279,7 +279,7 @@ nicht durch Stringsortierung falsch freigeschaltet wird.
 | ------------------------ | -------------------------- | --------------------------- | ------------------- |
 | FK auf Tabellen-Rename   | AUTOMATIC_BY_ENGINE        | AUTOMATIC_BY_ENGINE, wenn kein Constraint-Namenskonflikt erkennbar ist | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | FK auf Spalten-Rename    | AUTOMATIC_BY_ENGINE        | AUTOMATIC_BY_ENGINE, wenn Engine-Preconditions erfuellt sind | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
-| View-Body-Referenzen     | AUTOMATIC_BY_ENGINE (mit nachweisbarer `pg_depend`-Projektion) | EXPLICIT_REPROJECTION (View muss DROP/CREATE) | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
+| View-Body-Referenzen     | AUTOMATIC_BY_ENGINE nur mit verifizierter Modell-Provenance; sonst NO_PROJECTION_AVAILABLE oder EXPLICIT_REPROJECTION | EXPLICIT_REPROJECTION (View muss DROP/CREATE) | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | Trigger-Body-Referenzen  | NO_PROJECTION_AVAILABLE, solange Trigger-Bodies opake Strings sind | EXPLICIT_REPROJECTION nur als Drop/Create aus Soll-Body, kein Body-Rewrite | AUTOMATIC_BY_ENGINE nur bei gepinnter Version + `legacy_alter_table=OFF` |
 | Index-Definition         | AUTOMATIC_BY_ENGINE (Spalten- und Tabellen-IDs sind oid-basiert) | AUTOMATIC_BY_ENGINE | AUTOMATIC_BY_ENGINE |
 | Default-Expression mit Spaltenname | NO_PROJECTION_AVAILABLE (Function-Body opaque) | NO_PROJECTION_AVAILABLE | NO_PROJECTION_AVAILABLE |
@@ -309,7 +309,14 @@ muessen:
   Runtime-Modus unbekannt oder legacy aktiv, blockiert die Policy
   Trigger-/View-/FK-Projektion statt sie als automatisch anzunehmen.
 - PostgreSQL-View-Abhaengigkeiten duerfen nur dann als automatisch gelten,
-  wenn die Abhaengigkeit im Modell ausreichend nachweisbar ist. Trigger-,
+  wenn die Abhaengigkeit im Modell ausreichend nachweisbar ist und eine
+  vertrauenswuerdige Provenance hat (z.B. ein Reader, der katalogseitige
+  Dependencies verlustfrei in `ViewDefinition.dependencies` transportiert).
+  Dieser Slice fuehrt keine zusaetzliche Live-`pg_depend`-Pruefung im Planner
+  aus. Datei-/Schema-only Inputs ohne verifizierte Dependency-Provenance und
+  Views mit opakem Query-Body gelten daher nicht automatisch sicher; die Policy
+  klassifiziert sie konservativ als `NO_PROJECTION_AVAILABLE` oder nutzt nur
+  einen expliziten Drop/Create-Reprojection-Pfad aus dem Soll-Body. Trigger-,
   Routine- und Function-Bodies bleiben dagegen `NO_PROJECTION_AVAILABLE`,
   solange sie im neutralen Modell opake Strings sind: PostgreSQL kann zwar
   Objekt-Identitaeten katalogseitig nachziehen, aber ein textueller Body mit
@@ -344,11 +351,18 @@ Variante abhaengt.
 
 Konkrete Runner-Aenderung: `SchemaMigrateRunner.execute` berechnet nach
 Operand-Load, Normalisierung, Validierung, Dialekt-Aufloesung und
-Comparator-Lauf eine `RenameProjectionCapabilities`-Instanz und uebergibt
-sie beim ersten und einzigen `DiffPlanner.plan(...)`-Aufruf. Bestehende
-Pre-Render-Stages (`MigrationOverlayPreflight`, SQLite live catalog probe,
-SQLite cast preflight) bleiben nachgelagert; sie duerfen den Plan nicht
-mehr fachlich umklassifizieren.
+Comparator-Lauf zuerst die erwarteten Fingerprints und fuehrt den zentralen
+planunabhaengigen Overlay-Gate aus. Dieser Gate prueft File-/Inline-Overlays
+inklusive dokumentlokaler und Cross-Document-Rename-Mapping-Blocker **vor**
+dem ersten `DiffPlanner.plan(...)`; bei Blockern entsteht ein Pre-Plan-
+Blocker-Result ohne Operationenliste. Erst danach berechnet der Runner eine
+`RenameProjectionCapabilities`-Instanz und uebergibt sie beim ersten und
+einzigen `DiffPlanner.plan(...)`-Aufruf. Read-only Capability-Probes, die fuer
+runtime-abhaengige Rename-Projection-Entscheidungen benoetigt werden
+(z.B. SQLite-Version/`legacy_alter_table`), laufen ebenfalls vor diesem
+Plan-Aufruf. Nachgelagerte Pre-Render-Stages wie SQLite-Cast-Preflights
+duerfen nur noch den geplanten Vertrag validieren oder blockieren; sie duerfen
+den Plan nicht fachlich umklassifizieren.
 
 ### 3.4 Mischfall-Delta-Synthese
 
@@ -542,6 +556,15 @@ einzige oeffentliche Carrier fuer `renameProjections`.
       vor dem einzigen `DiffPlanner.plan(...)`-Aufruf erhoben. Nachgelagerte
       Preflights validieren oder blockieren nur; sie planen keinen Rename
       nachtraeglich um.
+- [ ] Der zentrale planunabhaengige Overlay-Gate laeuft vor dem einzigen
+      `DiffPlanner.plan(...)`-Aufruf. Rename-Mapping-Blocker aus File-/Inline-
+      Overlays erzeugen ein Pre-Plan-Blocker-Result ohne Operationenliste;
+      der Projector sieht nur Overlays, die diesen Gate bestanden haben.
+- [ ] PostgreSQL-View-Dependencies werden nur dann als
+      `AUTOMATIC_BY_ENGINE` klassifiziert, wenn `ViewDefinition.dependencies`
+      aus einer vertrauenswuerdigen Modell-Provenance stammt. Datei-/Schema-only
+      Views ohne solche Provenance oder mit nur opakem Query-Body fallen auf
+      `NO_PROJECTION_AVAILABLE` bzw. explizite Drop/Create-Reprojection zurueck.
 - [ ] Rename-Mischfaelle verlieren keine fachlichen Deltas: Tests decken
       mindestens Tabellen-Rename + Zusatzspalte, Tabellen-Rename +
       Index-/Constraint-Änderung und Spalten-Rename + Typ-/Default-
