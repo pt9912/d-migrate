@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostic
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
@@ -22,24 +23,33 @@ import dev.dmigrate.driver.migration.MigrationDdlResult
  */
 internal object MigrationOverlayPreflight {
 
-    fun validate(
-        plan: DiffResult,
-        dialect: DatabaseDialect,
+    /**
+     * Plan-2 §F.4 dependency-projection T1: validate overlays
+     * **before** the first `DiffPlanner.plan(...)` so a Rename-
+     * mapping blocker can surface as a pre-plan failure without
+     * forcing the planner to walk a doomed schema diff. Fingerprints
+     * are computed up-front by the runner; the dialect arrives as a
+     * lowercase string so this helper stays decoupled from the
+     * application-side `DatabaseDialect` enum mapping.
+     */
+    @Suppress("LongParameterList")
+    fun validateBeforePlan(
+        documents: List<MigrationOverlayDocument>,
+        sourceFingerprint: String,
+        targetFingerprint: String,
+        dialect: String,
         loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
     ): MigrationOverlayPreflightResult {
-        if (plan.migrationOverlays.isEmpty() && loadFailures.isEmpty()) {
+        if (documents.isEmpty() && loadFailures.isEmpty()) {
             return MigrationOverlayPreflightResult(emptyList(), emptyList())
         }
-
-        val sourceFingerprint = plan.current.fingerprint.orEmpty()
-        val targetFingerprint = plan.desired.fingerprint.orEmpty()
-        val validationReports = plan.migrationOverlays.flatMap { document ->
+        val validationReports = documents.flatMap { document ->
             val result = MigrationOverlayValidator.validate(
                 overlay = document.overlay,
                 context = MigrationOverlayValidationContext(
                     expectedSourceFingerprint = sourceFingerprint,
                     expectedTargetFingerprint = targetFingerprint,
-                    expectedDialect = dialect.name.lowercase(),
+                    expectedDialect = dialect,
                 ),
                 source = document.source,
             )
@@ -66,6 +76,25 @@ internal object MigrationOverlayPreflight {
         }
         return MigrationOverlayPreflightResult(reports, diagnostics)
     }
+
+    /**
+     * Backward-compatible wrapper around [validateBeforePlan] for the
+     * pre-T1 call site that already had a [DiffResult] in hand. New
+     * call sites should compute fingerprints up-front and call
+     * [validateBeforePlan] directly so the gate runs before
+     * `DiffPlanner.plan(...)`.
+     */
+    fun validate(
+        plan: DiffResult,
+        dialect: DatabaseDialect,
+        loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+    ): MigrationOverlayPreflightResult = validateBeforePlan(
+        documents = plan.migrationOverlays,
+        sourceFingerprint = plan.current.fingerprint.orEmpty(),
+        targetFingerprint = plan.desired.fingerprint.orEmpty(),
+        dialect = dialect.name.lowercase(),
+        loadFailures = loadFailures,
+    )
 
     fun buildFailureResult(plan: DiffResult, result: MigrationOverlayPreflightResult): MigrationDdlResult {
         val blockerDiagnostics = result.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }

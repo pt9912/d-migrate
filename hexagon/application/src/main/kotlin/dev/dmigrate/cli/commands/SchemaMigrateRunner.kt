@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.core.diff.migration.DiffEndpoint
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
@@ -190,20 +191,66 @@ class SchemaMigrateRunner(
 
         cancellationToken.throwIfCancellationRequested()
 
-        // 6. Pipeline: compare → plan → render UP
+        // 6. Pipeline: compare → pre-plan overlay gate → plan → render UP
         val diff = comparator(targetNormalized.schema, sourceNormalized.schema)
-        val plan = planner.plan(
-            current = targetNormalized.schema,
-            desired = sourceNormalized.schema,
-            schemaDiff = diff,
-            migrationOverlays = request.migrationOverlays,
-        )
         cancellationToken.throwIfCancellationRequested()
-        val overlayPreflight = MigrationOverlayPreflight.validate(
-            plan,
-            effectiveDialect,
-            request.migrationOverlayLoadFailures,
+
+        // Plan-2 §F.4 dependency-projection T1: validate overlays
+        // BEFORE plan() so a Rename-mapping blocker can surface as a
+        // pre-plan failure without forcing the planner to walk a
+        // doomed schema diff. Fingerprints are computed up-front via
+        // the same `MigrationFingerprint` that the planner uses, so
+        // the validation result is identical to the post-plan gate
+        // when nothing blocks.
+        //
+        // Naming note: in the migrate pipeline the IS-state is
+        // `target` (the live DB the user wants to mutate) and the
+        // SOLL-state is `source` (the schema file). The overlay
+        // validator's `expectedSourceFingerprint` / `expectedTargetFingerprint`
+        // mean "current" and "desired" — so the IS-state goes into
+        // `sourceFingerprint` and the SOLL-state into `targetFingerprint`.
+        val currentFingerprint = fingerprint(targetNormalized.schema)
+        val desiredFingerprint = fingerprint(sourceNormalized.schema)
+        val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
+            documents = request.migrationOverlays,
+            sourceFingerprint = currentFingerprint,
+            targetFingerprint = desiredFingerprint,
+            dialect = effectiveDialect.name.lowercase(),
+            loadFailures = request.migrationOverlayLoadFailures,
         )
+        val capabilities = RenameProjectionCapabilitiesFactory.capabilitiesFor(request, effectiveDialect)
+        val plan = if (overlayPreflight.hasBlockers) {
+            // Pre-plan blocker: skip the planner entirely. Build a
+            // minimal DiffResult with the fingerprints already known
+            // so downstream report code still has the endpoint
+            // metadata it needs.
+            DiffResult(
+                current = DiffEndpoint(
+                    schemaName = targetNormalized.schema.name,
+                    schemaVersion = targetNormalized.schema.version,
+                    fingerprint = currentFingerprint,
+                ),
+                desired = DiffEndpoint(
+                    schemaName = sourceNormalized.schema.name,
+                    schemaVersion = sourceNormalized.schema.version,
+                    fingerprint = desiredFingerprint,
+                ),
+                schemaDiff = diff,
+                operations = emptyList(),
+                diagnostics = overlayPreflight.diagnostics,
+                currentSchema = targetNormalized.schema,
+                desiredSchema = sourceNormalized.schema,
+                migrationOverlays = request.migrationOverlays,
+            )
+        } else {
+            planner.plan(
+                current = targetNormalized.schema,
+                desired = sourceNormalized.schema,
+                schemaDiff = diff,
+                migrationOverlays = request.migrationOverlays,
+                capabilities = capabilities,
+            )
+        }
         // Plan-2 §A.2: probe `sqlite_master` before render for the
         // SQLite + --execute path so the temp-name resolution sees
         // ad-hoc live objects. Other paths skip the probe.

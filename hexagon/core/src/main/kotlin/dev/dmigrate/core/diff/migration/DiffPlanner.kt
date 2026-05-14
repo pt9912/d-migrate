@@ -57,13 +57,15 @@ import dev.dmigrate.core.model.ViewDefinition
  * with `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`. See Plan §G.2 /
  * §10 L2096-L2099.
  */
-class DiffPlanner {
+open class DiffPlanner {
 
-    fun plan(
+    open fun plan(
         current: SchemaDefinition,
         desired: SchemaDefinition,
         schemaDiff: SchemaDiff,
         migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+        @Suppress("UNUSED_PARAMETER")
+        capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.FILE_ONLY,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val blockedTables = detectConstraintNotDiffableTables(current, desired)

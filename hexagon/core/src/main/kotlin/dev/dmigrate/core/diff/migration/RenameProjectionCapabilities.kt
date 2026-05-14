@@ -1,0 +1,121 @@
+package dev.dmigrate.core.diff.migration
+
+import java.util.Locale
+
+/**
+ * Core-local discriminator for [RenameDependencyPolicy] decisions.
+ * `hexagon:core` cannot depend on `hexagon:ports-read`'s
+ * `DatabaseDialect`, so the application layer maps its dialect to
+ * this enum at the `DiffPlanner.plan(...)` call site.
+ */
+enum class RenameProjectionDialect {
+    POSTGRESQL,
+    MYSQL,
+    SQLITE,
+}
+
+/**
+ * Where the engine-capability information was sourced from. Policies
+ * use this to decide whether they may rely on runtime-dependent
+ * `AUTOMATIC_BY_ENGINE` classifications (e.g. SQLite
+ * `legacy_alter_table` or MySQL server-family).
+ *
+ * - [FILE_ONLY]: file-to-file migration or DB-target without an
+ *   explicit capability probe. Policies must classify version-/
+ *   PRAGMA-dependent decisions conservatively.
+ * - [LIVE_TARGET]: the runner probed the live target before
+ *   `plan(...)` and the resulting capability values reflect the
+ *   actual engine state.
+ * - [TEST_PINNED]: deterministic test input. Should never appear in
+ *   production traffic; tests use it to drive matrix coverage
+ *   without an actual server.
+ */
+enum class RenameCapabilitySource {
+    FILE_ONLY,
+    LIVE_TARGET,
+    TEST_PINNED,
+}
+
+/**
+ * Runtime engine capabilities consumed by [RenameDependencyPolicy].
+ * Plan-time only: the application layer fills this once before
+ * `DiffPlanner.plan(...)`; the planner never re-derives values
+ * after the fact (Plan-2 §F.4 dependency-projection §3.3a).
+ *
+ * String fields are the transport contract at the application/core
+ * boundary. Policies parse them via [RenameProjectionVersionParser]
+ * into a small structured type before comparing — lexicographic
+ * comparison on raw strings would mis-order `3.9` vs `3.26`.
+ */
+data class RenameProjectionCapabilities(
+    val source: RenameCapabilitySource = RenameCapabilitySource.FILE_ONLY,
+    val sqliteVersion: String? = null,
+    val sqliteLegacyAlterTable: Boolean? = null,
+    val mysqlServerFamily: String? = null, // "mysql", "mariadb", or unknown
+    val mysqlVersion: String? = null,
+) {
+    companion object {
+        /** Conservative default: no live information, all version-/PRAGMA-gated paths must block. */
+        val FILE_ONLY: RenameProjectionCapabilities =
+            RenameProjectionCapabilities(source = RenameCapabilitySource.FILE_ONLY)
+    }
+}
+
+/**
+ * Parsed major/minor/patch tuple plus an optional pre-release suffix
+ * (e.g. MariaDB's `-MariaDB`). Returned by
+ * [RenameProjectionVersionParser]. Implements [Comparable] so
+ * policies can write `parsed >= MIN_SQLITE_3_26` without doing
+ * string comparisons.
+ *
+ * `null` parts are treated as `0` for ordering; the suffix is
+ * compared lexicographically only when the numeric prefix is equal.
+ */
+data class ParsedRenameVersion(
+    val major: Int,
+    val minor: Int = 0,
+    val patch: Int = 0,
+    val suffix: String = "",
+) : Comparable<ParsedRenameVersion> {
+
+    override fun compareTo(other: ParsedRenameVersion): Int {
+        val byMajor = major.compareTo(other.major)
+        if (byMajor != 0) return byMajor
+        val byMinor = minor.compareTo(other.minor)
+        if (byMinor != 0) return byMinor
+        val byPatch = patch.compareTo(other.patch)
+        if (byPatch != 0) return byPatch
+        return suffix.compareTo(other.suffix)
+    }
+}
+
+/**
+ * Conservative version parser for SQLite and MySQL/MariaDB version
+ * strings. Returns `null` for any input that does not start with at
+ * least one numeric component — policies must treat that as an
+ * unknown capability and block runtime-dependent paths.
+ *
+ * Accepted shapes (examples):
+ *
+ * - `3.9` → `3.9.0`
+ * - `3.26.0`
+ * - `8.0.30` (MySQL)
+ * - `10.11.5-MariaDB` (suffix preserved)
+ *
+ * Anything else (empty string, `abc`, `v1`, `1.x`) returns `null`.
+ */
+object RenameProjectionVersionParser {
+
+    private val NUMERIC_VERSION = Regex("""^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:[-+](.*))?$""")
+
+    fun parse(value: String?): ParsedRenameVersion? {
+        if (value.isNullOrBlank()) return null
+        val match = NUMERIC_VERSION.matchEntire(value.trim()) ?: return null
+        val groups = match.groupValues
+        val major = groups[1].toIntOrNull() ?: return null
+        val minor = groups[2].ifBlank { "0" }.toIntOrNull() ?: return null
+        val patch = groups[3].ifBlank { "0" }.toIntOrNull() ?: return null
+        val suffix = groups[4].lowercase(Locale.ROOT)
+        return ParsedRenameVersion(major = major, minor = minor, patch = patch, suffix = suffix)
+    }
+}
