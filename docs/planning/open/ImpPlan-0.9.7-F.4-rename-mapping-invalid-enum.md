@@ -59,6 +59,15 @@ In Scope:
   Cross-Document-Uniqueness) vor den ersten `DiffPlanner.plan(...)`-Aufruf
   oder fuehrt einen gleichwertigen Pre-Plan-Gate ein. Erst wenn dieser Gate
   keine BLOCKER liefert, darf der Planner die Rename-Overlays konsumieren.
+- API-Vertrag fuer diesen Pre-Plan-Gate: Die Validierung darf nicht mehr
+  implizit `DiffResult.current/desired.fingerprint` lesen. Der Runner
+  berechnet die erwarteten Fingerprints vorab aus den normalisierten
+  Operanden und uebergibt sie zusammen mit Dialekt, geladenen Overlay-
+  Dokumenten und Load-Failures an einen planunabhaengigen Entry-Point
+  (z.B. `MigrationOverlayPreflight.validateBeforePlan(...)`). Der
+  bestehende `validate(plan, ...)`-Pfad wird entweder zu einem duennen
+  Adapter auf diese API oder bleibt nur fuer planabhaengige Post-Plan-
+  Findings zustaendig.
 - Preflight-/Report-Aenderungen: alle Rename-Overlay-spezifischen
   Blocker melden ab jetzt diesen neuen Reason statt
   `MANUAL_ACTION_REQUIRED`. Rename-Warnings werden in derselben Tabelle
@@ -176,6 +185,31 @@ Overlay-Pruefung in zwei Gates:
    Operationen brauchen. Dieses Gate darf keine invaliden Rename-Mappings
    mehr entdecken, die schon im Pre-Plan-Gate haetten blockieren muessen.
 
+Der neue Pre-Plan-Entry-Point hat einen expliziten Kontext, nicht ein
+halb gebautes `DiffResult`:
+
+```kotlin
+internal data class MigrationOverlayPrePlanContext(
+    val expectedSourceFingerprint: String,
+    val expectedTargetFingerprint: String,
+    val expectedDialect: String,
+    val documents: List<MigrationOverlayDocument>,
+    val loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+)
+
+internal fun MigrationOverlayPreflight.validateBeforePlan(
+    context: MigrationOverlayPrePlanContext,
+): MigrationOverlayPreflightResult
+```
+
+Der Runner befuellt `expectedSourceFingerprint` mit dem Fingerprint des
+aktuellen Zielzustands und `expectedTargetFingerprint` mit dem Fingerprint des
+gewuenschten Quell-/Soll-Schemas, also mit denselben Werten, die der spaetere
+`DiffPlanner` in `plan.current.fingerprint` und `plan.desired.fingerprint`
+schreibt. Ein Test pinnt diese Gleichheit und zaehlt den Planner-Aufruf:
+bei Pre-Plan-Blockern wird `plan()` nicht aufgerufen, bei validen Overlays
+genau einmal.
+
 Im `MigrationOverlayPreflight.validate` bzw. den daraus extrahierten Gate-
 Funktionen wird die Diagnostic-Severity fuer
 `OVERLAY_RENAME_MAPPING_*`-Codes mit dem neuen Reason verknuepft. Der
@@ -236,6 +270,15 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       bestehenden `OVERLAY_RENAME_MAPPING_*`-Blocker-Codes:
       `STALE_FINGERPRINT`, `AMBIGUOUS`, `CASE_CONFLICT`,
       `CHAIN_UNSUPPORTED` und `DUPLICATE`.
+- [ ] Es gibt einen planunabhaengigen Pre-Plan-Validation-Entry-Point, der
+      erwartete Source-/Target-Fingerprints, Dialekt, Overlay-Dokumente und
+      Load-Failures explizit entgegennimmt. Er liest keine Werte aus einem
+      `DiffResult` und kann deshalb vor dem ersten `DiffPlanner.plan(...)`
+      laufen.
+- [ ] Der bestehende `MigrationOverlayPreflight.validate(plan, ...)`-Pfad ist
+      entweder ein Adapter auf die neue API oder klar auf Post-Plan-Findings
+      beschraenkt; harte `OVERLAY_RENAME_MAPPING_*`-Blocker duerfen dort nicht
+      erstmals entdeckt werden.
 - [ ] Rename-Overlay-Blocker werden vor dem ersten
       `DiffPlanner.plan(...)` erkannt. Tests pinnen, dass stale,
       ambiguous, duplicate, case-conflicting und chain-renames keinen

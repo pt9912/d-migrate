@@ -93,13 +93,14 @@ In Scope:
   Cross-Document-Findings in `blockers`/`diagnostics`/`overlays`
   schreibt. So bleibt der Report-Vertrag vollstaendig, ohne einen
   Dummy-Plan zu erzeugen oder einen invaliden Rename bereits zu planen.
-- Blocker-Reason: Solange der separate
-  `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`-Slice noch nicht
-  umgesetzt ist, melden Cross-Document-Rename-Blocker weiter
-  `MANUAL_ACTION_REQUIRED` plus konkrete `OVERLAY_RENAME_MAPPING_*`-
-  Diagnostic. Sobald der Enum-Slice gelandet ist, nutzt derselbe Pfad
-  `RENAME_MAPPING_INVALID` als `primaryBlockedReason`; dieser CLI-Slice
-  darf den neuen Reason nicht stillschweigend vorziehen.
+- Blocker-Reason: Dieser CLI-Slice definiert den Reason-Wert nicht selbst.
+  Cross-Document-Rename-Blocker laufen durch denselben zentralen
+  Overlay-Blocker-Reason-Classifier wie File-Overlays. Ist der separate
+  `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`-Slice noch offen,
+  liefert dieser Classifier weiter `MANUAL_ACTION_REQUIRED`; ist er
+  umgesetzt, liefert er `RENAME_MAPPING_INVALID`. Der CLI-Slice darf keinen
+  eigenen Literal-Reason hart verdrahten und keine abweichende
+  Uebergangslogik einfuehren.
 - Tests: CLI-Parsing, Inline-Overlay-Konstruktion, End-to-End-Smoke
   fuer Tabellen-/Spalten-Rename via Flag.
 
@@ -232,8 +233,9 @@ geladenen Operand-Metadaten; er verlangt keinen `DiffResult` und setzt:
 - `statements = null`
 - `summary.operationsTotal = 0`
 - `summary.operationsSkipped = 0`
-- `summary.primaryBlockedReason = MANUAL_ACTION_REQUIRED` bzw. nach dem
-  Enum-Slice `RENAME_MAPPING_INVALID`
+- `summary.primaryBlockedReason` aus dem zentralen
+  Overlay-Blocker-Reason-Classifier; der Pre-Plan-Report-Builder enthaelt
+  keinen CLI-lokalen Sonderfall fuer Rename-Reasons
 - `overlays[]` mit allen betroffenen `source`/`entryId`-Paaren
 
 Damit gibt es fuer Cross-Document-Konflikte keine kuenstliche
@@ -355,10 +357,12 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       Cross-Document-Konflikte mit leerem `operations[]`, leeren
       `operationsSkipped`, `statements = null` und konkreten
       `overlays[]`/`diagnostics[]` reportet werden.
-- [ ] Cross-Document-Rename-Blocker nutzen `MANUAL_ACTION_REQUIRED`, solange
-      der `RENAME_MAPPING_INVALID`-Enum-Slice offen ist; nach dessen
-      Umsetzung pinnt ein Test `primaryBlockedReason =
-      RENAME_MAPPING_INVALID`.
+- [ ] Cross-Document-Rename-Blocker nutzen denselben zentralen
+      Overlay-Blocker-Reason-Classifier wie File-Overlay-Blocker. CLI-Tests
+      pruefen die Delegation und die konkrete Diagnostic-Provenance; der
+      `RENAME_MAPPING_INVALID`-Enum-Slice besitzt die Tests, die den
+      Literalwechsel von `MANUAL_ACTION_REQUIRED` auf
+      `RENAME_MAPPING_INVALID` pinnen.
 - [ ] Ein exakt doppeltes Rename-Mapping in zwei verschiedenen Quellen
       (`objectType + fromName + toName`) blockiert mit
       `OVERLAY_RENAME_MAPPING_DUPLICATE` und zeigt beide betroffenen

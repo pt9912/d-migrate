@@ -71,6 +71,11 @@ In Scope:
   stattfindet, die IDs der erzeugten Folge-Operationen und bei Fallback die
   IDs der Drop+Add-Operationen. Die Daten werden nicht aus freiem Text
   rekonstruiert, sondern als eigenes Planmodell im `DiffResult` getragen.
+  Sobald dieses Planmodell in ein oeffentliches `migration-plan.v1`-Artefakt
+  serialisiert wird, ist es versionierte Semantik und braucht denselben
+  JSON-/Validator-/Golden-/Compat-Gate wie andere F.2-Artefaktfelder.
+  Ohne diesen Gate bleibt `renameProjections` auf den Migrate-Report und den
+  internen `DiffResult` beschraenkt.
 - Entry-Provenance wird ueberall explizit transportiert: Candidate,
   `RenameTable`/`RenameColumn`, `RenameProjectionReport` und spaetere
   Plan-/Report-Felder tragen `overlayEntryId` neben `overlaySource` und
@@ -500,6 +505,16 @@ Der Migrate-Report erhaelt einen optionalen
 Damit kann der Operator vor dem Execute pruefen, welche Dependencies
 die Engine uebernimmt und welche d-migrate explizit re-rendert.
 
+Artefakt-Gate: Dieser Slice darf `renameProjections` nicht stillschweigend in
+`migration-plan.v1` schreiben, wenn alte Consumer das Feld ignorieren koennen
+und dadurch einen Rename-Mischfall ohne Projection-Vertrag ausfuehren
+wuerden. Falls das Feld im selben Slice in Plan-Artefakte aufgenommen wird,
+muessen `migration-plan.v1`-Codec, Validator, Golden-Files und Compat-Tests
+entweder ein bekanntes versioniertes Feld pinnen oder ein
+`requiredFeatures`/`semanticExtensions`-Gate setzen. Falls das nicht geleistet
+wird, bleibt die Artefaktserialisierung unveraendert und der Report ist der
+einzige oeffentliche Carrier fuer `renameProjections`.
+
 ## 4. Akzeptanzkriterien
 
 - [ ] `RenameDependencyProjector` ist in `hexagon:core` implementiert
@@ -582,6 +597,12 @@ die Engine uebernimmt und welche d-migrate explizit re-rendert.
       Planfeld; `SchemaMigrateReportBuilder` liest diesen Carrier und
       rekonstruiert die Reportdaten nicht aus Diagnostics oder
       Operation-ID-Konventionen.
+- [ ] Wenn `renameProjections` in `migration-plan.v1` serialisiert wird,
+      behandelt der Slice das Feld als versionierte Semantik: JSON-Codec,
+      Validator, Golden-Files und Compat-Tests pinnen entweder ein bekanntes
+      Feld oder ein `requiredFeatures`/`semanticExtensions`-Gate. Ohne diesen
+      Artefakt-Gate bleibt `migration-plan.v1` unveraendert und nur der
+      Migrate-Report enthaelt den neuen Abschnitt.
 - [ ] Default-Expression-Tests decken das aktuelle Modell-Limit ab:
       `DefaultValue.FunctionCall` in der betroffenen Rename-Umgebung
       blockiert konservativ, solange kein explizites Dependency-Feld

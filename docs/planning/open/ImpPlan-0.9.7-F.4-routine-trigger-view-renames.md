@@ -111,6 +111,11 @@ In Scope (nach Abschluss der Vorbedingungen):
   Drop+Create-aequivalent ausweicht. Letzteres ist semantisch
   identisch zur heutigen Drop+Add-Fallback-Logik, aber maschinenlesbar
   als Rename gekennzeichnet — fuer Report und spaetere Plan-Artefakte.
+  Der Dialekt ist dabei ein expliziter Planungsinput: `DiffPlanner.plan(...)`
+  erhaelt einen core-lokalen `ObjectRenamePlanningContext`, den der
+  Application-/CLI-Layer aus `DatabaseDialect` und vorab bekannten Engine-
+  Capabilities befuellt. Der Mapper darf keine Dialektentscheidung aus einem
+  globalen Renderer oder aus spaeteren Render-Preflights ableiten.
 - Plan-Artefakt-/Report-Vertrag fuer `RenameProvenance`: Weil
   `renameProvenance` keine dekorative Producer-Metadata ist, sondern
   Ausfuehrungs-, Rollback- und Provenance-Semantik traegt, muss dieser
@@ -290,6 +295,24 @@ internal interface ObjectRenamePolicy {
     fun classify(rename: ObjectRenameCandidate): RenameSupport
 }
 
+internal data class ObjectRenamePlanningContext(
+    val dialect: ObjectRenameDialect,
+    val capabilities: ObjectRenameCapabilities = ObjectRenameCapabilities(),
+)
+
+internal data class ObjectRenameCapabilities(
+    val source: CapabilitySource = CapabilitySource.FILE_ONLY,
+    val mysqlServerFamily: String? = null,
+    val mysqlVersion: String? = null,
+    val sqliteVersion: String? = null,
+)
+
+internal enum class CapabilitySource {
+    FILE_ONLY,
+    LIVE_TARGET,
+    TEST_PINNED,
+}
+
 internal enum class ObjectRenameDialect {
     POSTGRESQL,
     MYSQL,
@@ -331,6 +354,24 @@ Funktionen/Prozeduren ueber Name plus Argumenttypen identifiziert.
 aber mit `renameProvenance = ...`-Metadatum, sodass Report und spaetere
 Plan-Artefakte das nutzerseitig erwartete Rename als Vertrag erkennen
 koennen.
+
+`DiffPlanner.plan(...)` erhaelt dafuer zusaetzlich zu den Overlays einen
+`ObjectRenamePlanningContext`. Der Application-/CLI-Layer mappt
+`DatabaseDialect.POSTGRESQL/MYSQL/SQLITE` auf `ObjectRenameDialect` und
+befuellt `ObjectRenameCapabilities` nur mit Informationen, die vor dem ersten
+Plan-Aufruf verlustfrei bekannt sind. Datei-zu-Datei nutzt `FILE_ONLY` und
+konservative Defaults. Execute-Pfade duerfen read-only Capability-Probes nur
+vor dem ersten `plan()` ausfuehren; nachgelagerte Preflights bestaetigen oder
+blockieren den Plan, planen aber keinen Rename-Fallback mehr um. So bleibt
+die Native/Fallback/Blocked-Klassifikation reproduzierbar und testbar, ohne
+`hexagon:core` von `dev.dmigrate.driver.DatabaseDialect` abhaengig zu machen.
+
+Der Context ist absichtlich getrennt vom
+`RenameProjectionCapabilities`-Input des Dependency-Projection-Slices. Falls
+beide Slices im selben Implementierungsfenster landen, duerfen sie einen
+gemeinsamen core-lokalen Carrier teilen; der Vertrag bleibt aber: alle
+dialekt- und runtime-abhaengigen Rename-Entscheidungen muessen vor dem Mapper
+im Planungsinput stehen.
 
 `BLOCKED` ist ein Mapper-/Planner-Ergebnis, kein Renderer-Ergebnis. Der
 Mapper emittiert fuer diesen Kandidaten keinen `Rename*`-Subtyp und keinen
@@ -450,6 +491,12 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
 - [ ] `ObjectRenamePolicy` ist je Dialekt implementiert und pinnt die
       Native/Fallback/Blocked-Klassifikation gegen die Dialekt-Doku,
       ohne `hexagon:core` von `DatabaseDialect` abhaengig zu machen.
+- [ ] `DiffPlanner.plan(...)` bzw. die Mapper-Grenze konsumiert einen
+      core-lokalen `ObjectRenamePlanningContext`; der Application-/CLI-Layer
+      mappt `DatabaseDialect` auf `ObjectRenameDialect` und befuellt
+      Capabilities vor dem ersten Plan-Aufruf. Tests pinnen, dass Renderer-
+      oder Post-Plan-Preflight-Zustand die Policy-Entscheidung nicht
+      nachtraeglich veraendert.
 - [ ] `MigrationOverlayValidator` blockiert unbekannte
       `rename-mapping.objectType`-Werte, insbesondere
       `materialized_view`, und testet die neue Whitelist.
