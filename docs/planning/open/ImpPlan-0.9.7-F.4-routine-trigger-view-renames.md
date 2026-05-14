@@ -122,6 +122,14 @@ In Scope (nach Abschluss der Vorbedingungen):
 - Tests pro Dialekt fuer mindestens View-Rename und einen weiteren
   Subtyp (Trigger oder Sequence) — der Rest folgt dem gleichen
   Muster wie die Tabellen-Rename-Tests.
+- Konsolidierung mit dem Tabellen-/Spalten-Rename-Vertrag: Die
+  Provenance-Regel aus diesem Slice gilt nicht nur fuer die neuen
+  Objektklassen. Bestehende `RenameTable`/`RenameColumn`-Operationen und
+  der Dependency-Projection-Slice muessen ebenfalls `overlayEntryId`
+  transportieren, damit Reports und Plan-Artefakte jeden Rename auf den
+  konkreten Overlay-Eintrag zurueckfuehren koennen. Dieser Slice darf keine
+  zweite, schwaechere Provenance-Semantik fuer Views/Trigger/Routinen
+  einfuehren.
 
 Aus Scope:
 
@@ -386,6 +394,13 @@ autorisierende Entry-Zeile nicht eindeutig identifiziert. Reports und
 Plan-Artefakte duerfen Entry-Provenance daher nicht aus Operation-IDs
 oder Mapping-Reihenfolge rekonstruieren.
 
+Diese Pflicht gilt F.4-weit: Falls `RenameTable`/`RenameColumn` aus dem
+Rendering- oder Dependency-Projection-Pfad noch kein `overlayEntryId`
+tragen, wird das in demselben Vertrag nachgezogen, bevor
+`RenameProvenance` im Plan-Artefakt oeffentlich wird. Ein Artefakt darf
+nicht fuer neue Objektklassen genaue Entry-Provenance besitzen, aber fuer
+Tabellen-/Spalten-Renames nur auf den Dokument-Hash zeigen.
+
 Artefakt-Gate: `RenameProvenance` muss im Plan-Artefakt als
 versioniertes Semantikfeld behandelt werden. Der Slice aktualisiert den
 F.2-Artefaktvertrag, den JSON-Codec/Validator und Golden-Files so, dass
@@ -483,6 +498,12 @@ Plan/Report/ID-Stabilitaet und darf nicht als bestehender Objektname in
       `overlaySource` und `overlayHash`; Report/Plan-Artefakt nutzt diese
       Felder direkt und rekonstruiert Entry-Provenance nicht aus
       Operation-ID-Konventionen.
+- [ ] Der gemeinsame F.4-Provenance-Vertrag ist einheitlich: bestehende
+      `RenameTable`/`RenameColumn`, neue Objekt-Renames und
+      Drop+Create-Fallbacks mit `renameProvenance` tragen alle
+      `overlayEntryId`. Ein Test nutzt ein Overlay mit mehreren Rename-
+      Mappings und prueft fuer mindestens einen Tabellen-Rename und einen
+      neuen Objekt-Rename die konkrete Entry-Zuordnung.
 - [ ] Native Rename-Renderer verwenden `fromName` fuer die bestehende
       Objektidentitaet und `toName` fuer den Zielnamen; Tests pinnen, dass
       kein Renderer versehentlich den kanonischen Ziel-Key aus

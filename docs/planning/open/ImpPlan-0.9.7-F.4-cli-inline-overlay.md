@@ -84,6 +84,15 @@ In Scope:
   keinen autorisierten Plan gibt. Die fachlich gueltige Provenance ist in
   diesem Fall ausschliesslich der Pre-Plan-Finding mit beiden
   `source`/`entryId`-Paaren.
+- Eigener Pre-Plan-Report-Pfad: Weil bei Cross-Document-Blockern kein
+  `DiffResult` existiert, darf der Report nicht ueber
+  `SchemaMigrateReportBuilder.build(plan = ...)` laufen. Der Runner nutzt
+  einen kleinen `SchemaMigratePrePlanReportBuilder`, der Source/Target,
+  Dialekt, `status = "blocked"`, `exitCode = 8`, leere `operations`,
+  leere `statements`, leere `operationsSkipped` und die
+  Cross-Document-Findings in `blockers`/`diagnostics`/`overlays`
+  schreibt. So bleibt der Report-Vertrag vollstaendig, ohne einen
+  Dummy-Plan zu erzeugen oder einen invaliden Rename bereits zu planen.
 - Blocker-Reason: Solange der separate
   `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`-Slice noch nicht
   umgesetzt ist, melden Cross-Document-Rename-Blocker weiter
@@ -207,10 +216,28 @@ Vor dem ersten `plan()` fuehrt der Runner eine globale
 Pruefung auf der zusammengefuehrten File+Inline-Liste aus. Diese Pruefung
 nutzt dieselben dokumentlokalen Key-Regeln wie der Validator, erweitert
 sie aber ueber Dokumentgrenzen hinweg und liefert bei Blockern ein
-synthetisches `MigrationDdlResult` ohne `plan.operations`. Der Planner
+synthetisches `PrePlanMigrationBlockerResult` ohne `DiffResult`,
+`MigrationDdlResult` und ohne `plan.operations`. Der Planner
 darf bei Cross-Document-Konflikten nicht laufen, weil
 `OperationMapper` sonst bereits Rename-Operationen mit einer
 moeglicherweise falschen oder deduplizierten Overlay-Provenance erzeugt.
+
+Der Runner behandelt diesen Pre-Plan-Blocker als eigenen Outcome-Zweig:
+Er schreibt, falls `--report` gesetzt ist oder der normale Report-stdout-
+Fallback greift, einen Report ueber `SchemaMigratePrePlanReportBuilder`.
+Dieser Builder liest ausschliesslich den Pre-Plan-Blocker und die bereits
+geladenen Operand-Metadaten; er verlangt keinen `DiffResult` und setzt:
+
+- `operations = []`
+- `statements = null`
+- `summary.operationsTotal = 0`
+- `summary.operationsSkipped = 0`
+- `summary.primaryBlockedReason = MANUAL_ACTION_REQUIRED` bzw. nach dem
+  Enum-Slice `RENAME_MAPPING_INVALID`
+- `overlays[]` mit allen betroffenen `source`/`entryId`-Paaren
+
+Damit gibt es fuer Cross-Document-Konflikte keine kuenstliche
+Operationenliste und keine nachtraeglich interpretierte Rename-Provenance.
 
 Der Builder schreibt `MigrationOverlay.createdAt` als stabilen Sentinel
 `"cli-inline"`. Das Feld bleibt ein `String` und nutzt denselben DTO-/JSON-
@@ -323,6 +350,11 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
       `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine
       vorab geplanten Rename-Operationen und `operationsSkipped` bleibt
       leer.
+- [ ] Fuer Pre-Plan-Blocker existiert ein eigener Report-Builder, der
+      keinen `DiffResult` benoetigt. Ein Test pinnt, dass
+      Cross-Document-Konflikte mit leerem `operations[]`, leeren
+      `operationsSkipped`, `statements = null` und konkreten
+      `overlays[]`/`diagnostics[]` reportet werden.
 - [ ] Cross-Document-Rename-Blocker nutzen `MANUAL_ACTION_REQUIRED`, solange
       der `RENAME_MAPPING_INVALID`-Enum-Slice offen ist; nach dessen
       Umsetzung pinnt ein Test `primaryBlockedReason =

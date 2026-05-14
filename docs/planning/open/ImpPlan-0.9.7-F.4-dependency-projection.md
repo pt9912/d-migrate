@@ -71,6 +71,12 @@ In Scope:
   stattfindet, die IDs der erzeugten Folge-Operationen und bei Fallback die
   IDs der Drop+Add-Operationen. Die Daten werden nicht aus freiem Text
   rekonstruiert, sondern als eigenes Planmodell im `DiffResult` getragen.
+- Entry-Provenance wird ueberall explizit transportiert: Candidate,
+  `RenameTable`/`RenameColumn`, `RenameProjectionReport` und spaetere
+  Plan-/Report-Felder tragen `overlayEntryId` neben `overlaySource` und
+  `overlayHash`. Ein Overlay-Dokument kann mehrere Rename-Mappings
+  enthalten; `overlaySource + overlayHash` reicht daher nicht, um den
+  autorisierenden Eintrag maschinenlesbar zu bestimmen.
 - Rollback-Vertrag fuer Mischfaelle: Automatisches Down ist nur zulaessig,
   wenn der inverse Rename plus die inversen synthetischen Delta- und
   Re-Projection-Operationen vollstaendig aus dem Planmodell rekonstruierbar
@@ -118,6 +124,7 @@ RenameDependencyProjector.project(candidates, current, desired, dialect)
 OperationMapper.finalizeIds(...)
    ↓
 splitReplaceViewsForColumnConflicts(...)
+   ↓  (liefert ggf. oldOpId -> replacementOpIds und remappt Reports)
    ↓
 DependencyAnalyzer.attach
    ↓
@@ -162,6 +169,18 @@ nach dem Projector ausfuehrt, muss dieser Schritt eine
 Operationenliste remappen. Ohne eine dieser beiden Garantien koennen
 Folge-Operationen auf veraltete Rename-IDs zeigen.
 
+Dasselbe gilt fuer Planner-Rewrites nach dem Projector. Insbesondere
+`splitReplaceViewsForColumnConflicts(...)` darf keine Report-Referenzen
+auf Operationen hinterlassen, die es aus der finalen Operationenliste
+entfernt. Wenn eine explizite View-Reprojection zunaechst als
+`ReplaceView` erzeugt wird und der Split daraus `DropView`/`CreateView`
+macht, muss der Split ein strukturiertes `oldOperationId ->
+replacementOperationIds`-Mapping liefern und `RenameProjectionReport.explicit`
+sowie alle Dependency-Referenzen vor `DiffResult` atomar remappen. Alternativ
+emittiert der Projector fuer solche Faelle direkt finale Drop/Create-
+Reprojection-Ops. Ein `renameProjection`-Report darf niemals auf eine
+Operation-ID zeigen, die in `DiffResult.operations` nicht existiert.
+
 ### 3.2 RenameDependencyPolicy
 
 ```kotlin
@@ -199,6 +218,7 @@ internal data class RenameProjection(
 
 internal data class RenameProjectionReport(
     val candidateId: String,
+    val overlayEntryId: String,
     val renameOperationId: String?,      // null when the candidate fell back to Drop+Add
     val fallbackOperationIds: List<String>,
     val automatic: List<DependencyRef>,
@@ -388,6 +408,7 @@ internal data class RenameTableCandidate(
     val fromName: String,
     val toName: String,
     val overlaySource: String,
+    val overlayEntryId: String,
     val overlayHash: String?,
     val structurallyEqual: Boolean,
 )
@@ -439,6 +460,11 @@ tatsaechlich geplanten Drop+Add-Operationen. Damit bleibt auch ein
 abgelehnter Rename maschinenlesbar sichtbar, ohne auf eine nicht existierende
 finale Rename-Operation zu verweisen.
 
+`overlayEntryId` ist Pflicht im Report und im Operation-Payload. Reports
+rekonstruieren Entry-Provenance nicht aus Operation-ID-Konventionen,
+Mapping-Reihenfolge oder `overlayHash`, weil mehrere Eintraege denselben
+Overlay-Hash teilen.
+
 Damit bleibt der Datenfluss eindeutig:
 
 ```
@@ -456,6 +482,7 @@ Der Migrate-Report erhaelt einen optionalen
   "renameProjections": [
     {
       "candidateId": "rename-table-users",
+      "overlayEntryId": "rename-table-users",
       "renameOperationId": "rename-table-users",
       "fallbackOperationIds": [],
       "automatic": [
@@ -511,6 +538,17 @@ die Engine uebernimmt und welche d-migrate explizit re-rendert.
 - [ ] ID-Disambiguierung und Dependency-Referenzen sind gemeinsam
       stabil: Tests decken mindestens einen ID-Kollisionsfall ab und
       pruefen, dass Folge-Operationen auf die finale Rename-ID zeigen.
+- [ ] Planner-Rewrites nach dem Projector remappen Report- und
+      Dependency-Referenzen atomar: Ein Test deckt eine explizite
+      View-Reprojection ab, die durch `splitReplaceViewsForColumnConflicts`
+      in `DropView`/`CreateView` aufgespalten wird, und prueft, dass
+      `renameProjections.explicit[].operationId` nur finale
+      `DiffResult.operations`-IDs referenziert.
+- [ ] `overlayEntryId` wird fuer erfolgreiche Faltungen und Drop+Add-
+      Fallbacks in Candidate, `RenameTable`/`RenameColumn` und
+      `renameProjections` transportiert. Tests decken ein Overlay mit
+      mehreren Rename-Mappings ab und pruefen, dass der Report den
+      konkreten Entry nicht aus `overlaySource + overlayHash` ableitet.
 - [ ] `NO_PROJECTION_AVAILABLE`-Faelle blockieren die Rename-Faltung und
       diagnostizieren `RENAME_DEPENDENCY_UNPROJECTABLE` mit konkretem
       `path`-Verweis. Wenn die `fallbackOperations` vollstaendig sind,

@@ -51,6 +51,14 @@ In Scope:
 
 - Neuer Enum-Wert `MigrationBlockedReason.RENAME_MAPPING_INVALID` in
   `hexagon:ports-read`.
+- Planungsreihenfolge fuer Rename-Overlay-Blocker: Rename-spezifische
+  Overlay-Fehler duerfen den Planner nicht erst nachtraeglich blockieren,
+  wenn das invalide Overlay bereits von `OperationMapper` konsumiert wurde.
+  Der Slice zieht deshalb die planunabhaengige Overlay-Validierung
+  (Hash/Fingerprint/Dialekt, dokumentlokale Rename-Mapping-Fehler und
+  Cross-Document-Uniqueness) vor den ersten `DiffPlanner.plan(...)`-Aufruf
+  oder fuehrt einen gleichwertigen Pre-Plan-Gate ein. Erst wenn dieser Gate
+  keine BLOCKER liefert, darf der Planner die Rename-Overlays konsumieren.
 - Preflight-/Report-Aenderungen: alle Rename-Overlay-spezifischen
   Blocker melden ab jetzt diesen neuen Reason statt
   `MANUAL_ACTION_REQUIRED`. Rename-Warnings werden in derselben Tabelle
@@ -153,12 +161,28 @@ Diagnostics weiterhin als `WARNING` mit Code
 Mismatch-Logik bleibt unveraendert, weil sie auf Drop+Add zurueckfaellt
 und kein Hard-Blocker ist.
 
-Im `MigrationOverlayPreflight.validate` wird die Diagnostic-Severity
-fuer `OVERLAY_RENAME_MAPPING_*`-Codes mit dem neuen Reason verknuepft.
-Der Preflight-Layer emittiert heute `MANUAL_ACTION_REQUIRED` als
-Sammel-Reason fuer alle Overlay-Probleme; ab jetzt unterscheidet er
-zwischen USING-bezogenen und Rename-bezogenen Codes und vergibt den
-passenden Reason.
+Die bisherige Runner-Reihenfolge `compare -> plan -> overlay preflight`
+ist fuer harte Rename-Overlay-Fehler nicht ausreichend, weil der Planner
+die Overlays bereits konsumiert. Dieser Slice trennt daher die
+Overlay-Pruefung in zwei Gates:
+
+1. **Pre-Plan-Gate** nach Load/Normalisierung/Dialekt-Aufloesung und vor
+   `DiffPlanner.plan(...)`: prueft alle planunabhaengigen
+   Overlay-Vertraege, insbesondere Hash, Fingerprints, Dialekt,
+   dokumentlokale `OVERLAY_RENAME_MAPPING_*`-Fehler und
+   Cross-Document-Uniqueness. BLOCKER aus diesem Gate erzeugen ein
+   synthetisches Pre-Plan-Blocker-Result ohne Operationenliste.
+2. **Post-Plan-Gate** fuer planabhaengige Findings, die tatsaechlich
+   Operationen brauchen. Dieses Gate darf keine invaliden Rename-Mappings
+   mehr entdecken, die schon im Pre-Plan-Gate haetten blockieren muessen.
+
+Im `MigrationOverlayPreflight.validate` bzw. den daraus extrahierten Gate-
+Funktionen wird die Diagnostic-Severity fuer
+`OVERLAY_RENAME_MAPPING_*`-Codes mit dem neuen Reason verknuepft. Der
+Preflight-Layer emittiert heute `MANUAL_ACTION_REQUIRED` als Sammel-
+Reason fuer alle Overlay-Probleme; ab jetzt unterscheidet er zwischen
+USING-bezogenen und Rename-bezogenen Codes und vergibt den passenden
+Reason.
 
 Mapper-/Planner-Diagnostics werden nach derselben Reason-Tabelle
 klassifiziert, sobald sie als `BLOCKER` in ein `MigrationDdlResult`
@@ -186,6 +210,9 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
   zusaetzlich `OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT` meldet. Die
   Rename-spezifische Diagnose ist der maschinenlesbare Trigger fuer
   den neuen Reason.
+- Pre-Plan-Blocker nutzen denselben Gruppierungsvertrag, aber
+  `operationIds = emptySet()`, weil noch kein autorisierter Plan existiert.
+  Der Reportpfad muss diese Resultate ohne Dummy-`DiffResult` serialisieren.
 
 ### 4.3 Code-Tabelle
 
@@ -209,6 +236,11 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
       bestehenden `OVERLAY_RENAME_MAPPING_*`-Blocker-Codes:
       `STALE_FINGERPRINT`, `AMBIGUOUS`, `CASE_CONFLICT`,
       `CHAIN_UNSUPPORTED` und `DUPLICATE`.
+- [ ] Rename-Overlay-Blocker werden vor dem ersten
+      `DiffPlanner.plan(...)` erkannt. Tests pinnen, dass stale,
+      ambiguous, duplicate, case-conflicting und chain-renames keinen
+      Planner-Aufruf ausloesen und keine `RenameTable`/`RenameColumn`-
+      Operationen im Report erscheinen.
 - [ ] Mapper-/Planner-Blocker mit `OBJECT_RENAME_UNSUPPORTED` emittieren
       ebenfalls `RENAME_MAPPING_INVALID`; `RENAME_DEPENDENCY_UNPROJECTABLE`
       bleibt bei Drop+Add-Fallback eine Warning ohne Reason und wird nur
