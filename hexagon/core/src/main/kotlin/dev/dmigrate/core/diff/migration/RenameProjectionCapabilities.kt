@@ -97,12 +97,21 @@ data class ParsedRenameVersion(
  *
  * Accepted shapes (examples):
  *
- * - `3.9` → `3.9.0`
+ * - `3.9` → `3.9.0` (missing components default to 0)
  * - `3.26.0`
  * - `8.0.30` (MySQL)
- * - `10.11.5-MariaDB` (suffix preserved)
+ * - `10.11.5-MariaDB` → suffix `mariadb` (preserved, lowercased)
+ * - `8.4.0+build.123` → suffix `build.123` (build metadata after `+`)
  *
- * Anything else (empty string, `abc`, `v1`, `1.x`) returns `null`.
+ * Suffix separator is restricted to `-` or `+` — exactly the
+ * separators the target engines (SQLite / MySQL / MariaDB) use in
+ * their `SELECT version()` / `PRAGMA compile_options` output. A `.`
+ * after the patch component is treated as a malformed input
+ * (returns `null`) so we do not accidentally accept four-segment
+ * version strings (`3.9.0.0`) or trailing-dot inputs (`3.`).
+ *
+ * Returns `null` for: empty string, blank string, `abc`, `v1`,
+ * `1.x`, `3.9.0.0`, `3.`.
  */
 object RenameProjectionVersionParser {
 

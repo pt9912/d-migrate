@@ -85,6 +85,41 @@ class MigrationOverlayPreflightTest : FunSpec({
         result.reportItems.single().diagnosticCode shouldBe "OVERLAY_UNKNOWN_ENTRY_KIND"
     }
 
+    test("validateBeforePlan accepts a mixed-case dialect string thanks to Locale.ROOT") {
+        // Caller didn't lowercase the dialect; the helper must do it
+        // internally so a Turkish-locale JVM cannot turn `POSTGRESQL`
+        // into `postgresqı` and trigger a spurious DIALECT_MISMATCH.
+        val overlay = renameOverlay().withComputedHash()
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(MigrationOverlayDocument(source = "overlays/rename.json", overlay = overlay)),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "POSTGRESQL",
+        )
+
+        result.hasBlockers shouldBe false
+    }
+
+    test("validateBeforePlan surfaces load failures even when the document list is empty") {
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = emptyList(),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+            loadFailures = listOf(
+                MigrationOverlayLoadFailure(
+                    source = "overlays/missing.json",
+                    diagnosticCode = "OVERLAY_FIELD_TYPE_MISMATCH",
+                ),
+            ),
+        )
+
+        result.hasBlockers shouldBe true
+        result.reportItems.single().source shouldBe "overlays/missing.json"
+        result.reportItems.single().diagnosticCode shouldBe "OVERLAY_FIELD_TYPE_MISMATCH"
+        result.reportItems.single().overlayHash shouldBe "<unavailable>"
+    }
+
     test("overlay diagnostics expose source entry hash and code without secret expression values") {
         val secret = "prod_secret_cast_expression"
         val overlay = usingOverlay(

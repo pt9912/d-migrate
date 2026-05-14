@@ -55,4 +55,17 @@ class RenameProjectionVersionParserTest : FunSpec({
         RenameProjectionVersionParser.parse("v1").shouldBeNull()
         RenameProjectionVersionParser.parse("1.x").shouldBeNull()
     }
+
+    test("trailing dot and four-segment versions are rejected (not real engine strings)") {
+        // A dot after the patch component is not a recognised suffix
+        // separator — the parser refuses rather than guessing.
+        RenameProjectionVersionParser.parse("3.").shouldBeNull()
+        RenameProjectionVersionParser.parse("3.9.0.0").shouldBeNull()
+        RenameProjectionVersionParser.parse("1.0.0.RELEASE").shouldBeNull()
+    }
+
+    test("build-metadata suffix after + is preserved (semver-style)") {
+        val parsed = RenameProjectionVersionParser.parse("8.4.0+build.123")!!
+        parsed shouldBe ParsedRenameVersion(8, 4, 0, suffix = "build.123")
+    }
 })

@@ -3,7 +3,6 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
-import dev.dmigrate.core.diff.migration.DiffEndpoint
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
@@ -215,32 +214,19 @@ class SchemaMigrateRunner(
             documents = request.migrationOverlays,
             sourceFingerprint = currentFingerprint,
             targetFingerprint = desiredFingerprint,
-            dialect = effectiveDialect.name.lowercase(),
+            dialect = effectiveDialect.name,
             loadFailures = request.migrationOverlayLoadFailures,
         )
         val capabilities = RenameProjectionCapabilitiesFactory.capabilitiesFor(request, effectiveDialect)
         val plan = if (overlayPreflight.hasBlockers) {
-            // Pre-plan blocker: skip the planner entirely. Build a
-            // minimal DiffResult with the fingerprints already known
-            // so downstream report code still has the endpoint
-            // metadata it needs.
-            DiffResult(
-                current = DiffEndpoint(
-                    schemaName = targetNormalized.schema.name,
-                    schemaVersion = targetNormalized.schema.version,
-                    fingerprint = currentFingerprint,
-                ),
-                desired = DiffEndpoint(
-                    schemaName = sourceNormalized.schema.name,
-                    schemaVersion = sourceNormalized.schema.version,
-                    fingerprint = desiredFingerprint,
-                ),
+            DiffResult.preplanBlocker(
+                current = targetNormalized.schema,
+                desired = sourceNormalized.schema,
                 schemaDiff = diff,
-                operations = emptyList(),
                 diagnostics = overlayPreflight.diagnostics,
-                currentSchema = targetNormalized.schema,
-                desiredSchema = sourceNormalized.schema,
                 migrationOverlays = request.migrationOverlays,
+                currentFingerprint = currentFingerprint,
+                desiredFingerprint = desiredFingerprint,
             )
         } else {
             planner.plan(

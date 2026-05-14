@@ -69,6 +69,49 @@ data class DiffResult(
             it.reversibility == Reversibility.AUTOMATIC ||
                 it.reversibility == Reversibility.AUTOMATIC_WITH_DATA_RISK
         }
+
+    companion object {
+        /**
+         * Plan-2 §F.4 dependency-projection T1: build a blocker-shaped
+         * [DiffResult] when the pre-plan overlay gate trips and the
+         * runner does NOT call [DiffPlanner.plan]. The endpoint
+         * fingerprints are passed through so downstream report code
+         * still has the metadata it needs; the operations list is
+         * empty by contract and the [diagnostics] carry the blocker
+         * reasons.
+         *
+         * Keeping this factory next to [DiffPlanner]'s endpoint
+         * construction prevents drift when the [DiffResult] shape
+         * gains new fields (e.g. T6's `renameProjections`).
+         */
+        @Suppress("LongParameterList")
+        fun preplanBlocker(
+            current: SchemaDefinition,
+            desired: SchemaDefinition,
+            schemaDiff: SchemaDiff,
+            diagnostics: List<DiffDiagnostic>,
+            migrationOverlays: List<MigrationOverlayDocument>,
+            currentFingerprint: String,
+            desiredFingerprint: String,
+        ): DiffResult = DiffResult(
+            current = DiffEndpoint(
+                schemaName = current.name,
+                schemaVersion = current.version,
+                fingerprint = currentFingerprint,
+            ),
+            desired = DiffEndpoint(
+                schemaName = desired.name,
+                schemaVersion = desired.version,
+                fingerprint = desiredFingerprint,
+            ),
+            schemaDiff = schemaDiff,
+            operations = emptyList(),
+            diagnostics = diagnostics,
+            currentSchema = current,
+            desiredSchema = desired,
+            migrationOverlays = migrationOverlays,
+        )
+    }
 }
 
 /**

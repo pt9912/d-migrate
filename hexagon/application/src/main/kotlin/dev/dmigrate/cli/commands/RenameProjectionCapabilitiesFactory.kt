@@ -21,14 +21,16 @@ internal object RenameProjectionCapabilitiesFactory {
 
     /**
      * T1: conservative default for every migrate request. Live capability
-     * probes (T-?) will set `source = LIVE_TARGET` plus the relevant
-     * version / PRAGMA fields before `DiffPlanner.plan(...)`. Until then,
-     * every caller — including `--execute` — runs with `FILE_ONLY` so
-     * policies cannot mistakenly assert runtime-dependent
+     * probes (later tranche) will set `source = LIVE_TARGET` plus the
+     * relevant version / PRAGMA fields before `DiffPlanner.plan(...)`.
+     * Until then, every caller — including `--execute` — runs with
+     * `FILE_ONLY` so policies cannot mistakenly assert runtime-dependent
      * `AUTOMATIC_BY_ENGINE` paths.
      */
     fun capabilitiesFor(
-        @Suppress("UNUSED_PARAMETER") request: SchemaMigrateRequest,
-        @Suppress("UNUSED_PARAMETER") dialect: DatabaseDialect,
+        @Suppress("UNUSED_PARAMETER") // TODO(F.4 next tranche): drive live-probe selection by request.execute / DB target.
+        request: SchemaMigrateRequest,
+        @Suppress("UNUSED_PARAMETER") // TODO(F.4 next tranche): pick probe strategy per dialect.
+        dialect: DatabaseDialect,
     ): RenameProjectionCapabilities = RenameProjectionCapabilities(source = RenameCapabilitySource.FILE_ONLY)
 }

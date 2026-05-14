@@ -13,6 +13,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import java.util.Locale
 
 /**
  * F.0 pre-render gate for versioned migration overlays. The actual
@@ -27,10 +28,22 @@ internal object MigrationOverlayPreflight {
      * Plan-2 §F.4 dependency-projection T1: validate overlays
      * **before** the first `DiffPlanner.plan(...)` so a Rename-
      * mapping blocker can surface as a pre-plan failure without
-     * forcing the planner to walk a doomed schema diff. Fingerprints
-     * are computed up-front by the runner; the dialect arrives as a
-     * lowercase string so this helper stays decoupled from the
-     * application-side `DatabaseDialect` enum mapping.
+     * forcing the planner to walk a doomed schema diff.
+     *
+     * Naming inversion: in the migrate pipeline the IS-state lives
+     * under `target` (the live DB to mutate) and the SOLL-state lives
+     * under `source` (the schema file). The overlay validator's
+     * "current"/"desired" semantics align with the IS/SOLL split, so
+     * [sourceFingerprint] must carry the IS-state fingerprint and
+     * [targetFingerprint] the SOLL-state fingerprint regardless of
+     * how the caller labels its variables. Fingerprints are computed
+     * up-front by the runner.
+     *
+     * [dialect] is the engine identifier the overlay must match.
+     * Comparison is locale-insensitive: the helper normalises both
+     * the incoming value and the overlay's `dialect` field via
+     * [Locale.ROOT] before equality so a Turkish JVM cannot turn
+     * `"POSTGRESQL"` into `"postgresqı"`.
      */
     @Suppress("LongParameterList")
     fun validateBeforePlan(
@@ -43,13 +56,14 @@ internal object MigrationOverlayPreflight {
         if (documents.isEmpty() && loadFailures.isEmpty()) {
             return MigrationOverlayPreflightResult(emptyList(), emptyList())
         }
+        val normalisedDialect = dialect.lowercase(Locale.ROOT)
         val validationReports = documents.flatMap { document ->
             val result = MigrationOverlayValidator.validate(
                 overlay = document.overlay,
                 context = MigrationOverlayValidationContext(
                     expectedSourceFingerprint = sourceFingerprint,
                     expectedTargetFingerprint = targetFingerprint,
-                    expectedDialect = dialect,
+                    expectedDialect = normalisedDialect,
                 ),
                 source = document.source,
             )
@@ -92,7 +106,7 @@ internal object MigrationOverlayPreflight {
         documents = plan.migrationOverlays,
         sourceFingerprint = plan.current.fingerprint.orEmpty(),
         targetFingerprint = plan.desired.fingerprint.orEmpty(),
-        dialect = dialect.name.lowercase(),
+        dialect = dialect.name,
         loadFailures = loadFailures,
     )
 

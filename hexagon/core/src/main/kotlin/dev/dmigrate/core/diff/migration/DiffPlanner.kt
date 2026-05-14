@@ -57,14 +57,32 @@ import dev.dmigrate.core.model.ViewDefinition
  * with `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`. See Plan §G.2 /
  * §10 L2096-L2099.
  */
+/**
+ * Diff-to-plan orchestrator. `open` purely so tests can subclass
+ * it as a spy (see `SchemaMigratePrePlanOverlayGateTest`); the
+ * extension surface is **not** part of the public contract and may
+ * be replaced by a function-typed runner parameter in a later
+ * refactor. Production code should treat `DiffPlanner` as final and
+ * inject it as a concrete dependency.
+ */
 open class DiffPlanner {
 
+    /**
+     * Plan a migration. See class-level KDoc for the pipeline
+     * ordering.
+     *
+     * @param capabilities consumed by `RenameDependencyPolicy` in the
+     *   upcoming F.4 dependency-projection T3. T1 threads the
+     *   parameter through unchanged so the runner can already pass
+     *   it without breaking the pre-T3 call sites; the parameter
+     *   suppression goes away once T3 wires the projector.
+     */
     open fun plan(
         current: SchemaDefinition,
         desired: SchemaDefinition,
         schemaDiff: SchemaDiff,
         migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
-        @Suppress("UNUSED_PARAMETER")
+        @Suppress("UNUSED_PARAMETER") // TODO(F.4 T3): consume in projector pipeline.
         capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.FILE_ONLY,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
