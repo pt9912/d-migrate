@@ -683,9 +683,11 @@ Report-Felder für Rename-Projection (F.4):
     View-Reprojection: `kind = VIEW_DROP` / `VIEW_CREATE`, `path` mit
     View-Name, `operationId` auf die emittierte `DropView` / `CreateView`).
   - `blockers[]`: Projector-Blocker mit `code`, `candidateId`, `path`,
-    `message`, `severity`. Bei `severity = WARNING` ist der Fallback
-    vollständig renderbar; bei `severity = BLOCKER` ist auch der Fallback
-    nicht ausführbar (Exit `8`).
+    `message`, `severity`. Heutige Policies emittieren ausschließlich
+    `severity = WARNING` (Drop+Add-Fallback ist immer renderbar). Eine
+    spätere Tranche kann `severity = BLOCKER` für Fälle einführen, in
+    denen auch der Fallback nicht renderbar ist; der Migrate-Lauf
+    endet dann mit Exit `8`.
 - Report-Consumer rekonstruieren `renameProjections`-Einträge nicht aus
   `diagnostics`, Operation-IDs oder Renderer-Nebenwirkungen. Das Feld ist
   der einzige verbindliche Carrier.

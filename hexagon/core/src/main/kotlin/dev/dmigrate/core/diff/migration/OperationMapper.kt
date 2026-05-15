@@ -109,10 +109,60 @@ internal object OperationMapper {
                 renameProjections = prepared.renameProjections,
             )
         }
+        val (finalOps, idRewrites) = disambiguateOpsWithRewrites(prepared.operations)
+        // T6: if disambiguation renamed any op, the
+        // `renameProjections` entries that pin `renameOperationId` /
+        // `fallbackOperationIds` / `explicit[].operationId` must
+        // follow the rename atomically. Otherwise the report would
+        // reference operation ids that no longer exist in the final
+        // plan.
+        val finalProjections = if (idRewrites.isEmpty()) {
+            prepared.renameProjections
+        } else {
+            prepared.renameProjections.map { it.remapIds(idRewrites) }
+        }
         return MapperResult(
-            operations = disambiguateOps(prepared.operations),
+            operations = finalOps,
             diagnostics = prepared.diagnostics,
-            renameProjections = prepared.renameProjections,
+            renameProjections = finalProjections,
+        )
+    }
+
+    /**
+     * Apply the disambiguation rewrite map to every op-id reference
+     * the report carries. The rewrite map is keyed by the
+     * pre-disambig id — naive `rewrites[id] ?: id`. F.4 makes this
+     * safe by construction: per-candidate op ids
+     * (`OperationIdFactory.makeId("RenameTable", …)`, fallback
+     * Drop/Create, explicit View Drop/Create) are derived from the
+     * candidate's unique from/to/overlay-hash triple, so two
+     * different candidates produce different ids. The remap therefore
+     * only rewrites references that genuinely belong to the renamed
+     * op.
+     */
+    private fun RenameProjectionReport.remapIds(rewrites: Map<String, String>): RenameProjectionReport {
+        if (rewrites.isEmpty()) return this
+        val renameId = renameOperationId?.let { rewrites[it] ?: it }
+        val fallbackIds = if (fallbackOperationIds.isEmpty()) {
+            fallbackOperationIds
+        } else {
+            fallbackOperationIds.map { rewrites[it] ?: it }
+        }
+        val explicitRefs = if (explicit.isEmpty()) {
+            explicit
+        } else {
+            explicit.map { ref -> rewrites[ref.operationId]?.let { ref.copy(operationId = it) } ?: ref }
+        }
+        if (renameId == renameOperationId &&
+            fallbackIds == fallbackOperationIds &&
+            explicitRefs == explicit
+        ) {
+            return this
+        }
+        return copy(
+            renameOperationId = renameId,
+            fallbackOperationIds = fallbackIds,
+            explicit = explicitRefs,
         )
     }
 
@@ -141,8 +191,10 @@ internal object OperationMapper {
         val renameProjections: List<RenameProjectionReport> = emptyList(),
     )
 
-    private fun disambiguateOps(ops: List<DiffOperation>): List<DiffOperation> {
-        if (ops.isEmpty()) return ops
+    private fun disambiguateOpsWithRewrites(
+        ops: List<DiffOperation>,
+    ): Pair<List<DiffOperation>, Map<String, String>> {
+        if (ops.isEmpty()) return ops to emptyMap()
         // `OperationIdFactory.disambiguate` assigns suffixes
         // monotonically (first occurrence keeps the base id, second
         // gets `#2`, …). The rewrite map below is therefore
@@ -160,13 +212,13 @@ internal object OperationMapper {
                 op.withId(newId)
             }
         }
-        if (idRewrites.isEmpty()) return withRenamedIds
+        if (idRewrites.isEmpty()) return withRenamedIds to emptyMap()
         // F.4 dependency-projection T4: when disambiguation renames an
         // operation, any synthetic delta op that pinned that ID via
         // `dependencies = setOf(candidateId)` must follow the rename
         // atomically. Walk every op once and rewrite each
         // `dependencies` entry that hit the rewrite map.
-        return withRenamedIds.map { op ->
+        val withRemappedDeps = withRenamedIds.map { op ->
             if (op.dependencies.isEmpty()) {
                 op
             } else {
@@ -174,6 +226,7 @@ internal object OperationMapper {
                 if (remapped == op.dependencies) op else op.withDependencies(remapped)
             }
         }
+        return withRemappedDeps to idRewrites
     }
 
     private fun mapCustomTypes(

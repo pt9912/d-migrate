@@ -191,6 +191,83 @@ class RenameProjectionReportTest : FunSpec({
         byEntryId["orders-entry"]?.fromPath shouldBe listOf("orders_old")
     }
 
+    test("no rename overlay → DiffResult.renameProjections stays empty") {
+        // Empty-overlay sanity: a planner run without rename mappings
+        // emits no projection reports. Pinning this prevents a future
+        // tranche from accidentally emitting empty / placeholder
+        // entries.
+        val current = emptySchema().copy(tables = mapOf("users" to simpleTable()))
+        val desired = emptySchema().copy(tables = mapOf("users" to simpleTable()))
+        val diff = SchemaDiff()
+        val plan = planner.plan(current = current, desired = desired, schemaDiff = diff)
+        plan.renameProjections shouldBe emptyList()
+    }
+
+    test("policy-blocker fallback: report carries the blocker list + non-null fallbackReason") {
+        // T3/T5 path: the projector blocks on a `DefaultValue.FunctionCall`
+        // referencing the renamed column's old name. The candidate
+        // falls back to drop+add; the report MUST carry the policy
+        // blocker plus the renderable fallback ids.
+        val sharedCols = mapOf(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+        )
+        val beforeCol = ColumnDefinition(type = NeutralType.Text(maxLength = 100))
+        val afterCol = ColumnDefinition(type = NeutralType.Text(maxLength = 100))
+        val before = TableDefinition(
+            columns = sharedCols + mapOf(
+                "old_name" to beforeCol,
+                "fingerprint" to ColumnDefinition(
+                    type = NeutralType.Text(maxLength = 64),
+                    default = dev.dmigrate.core.model.DefaultValue.FunctionCall("md5(old_name)"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = TableDefinition(
+            columns = sharedCols + mapOf(
+                "new_name" to afterCol,
+                "fingerprint" to ColumnDefinition(
+                    type = NeutralType.Text(maxLength = 64),
+                    default = dev.dmigrate.core.model.DefaultValue.FunctionCall("md5(old_name)"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val current = emptySchema().copy(tables = mapOf("users" to before))
+        val desired = emptySchema().copy(tables = mapOf("users" to after))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                dev.dmigrate.core.diff.TableDiff(
+                    name = "users",
+                    columnsAdded = mapOf("new_name" to afterCol),
+                    columnsRemoved = mapOf("old_name" to beforeCol),
+                ),
+            ),
+        )
+        val overlay = renameOverlayDoc(
+            listOf(
+                RenameMappingOverlayEntry(
+                    id = "rename-column-name",
+                    objectType = "column",
+                    fromName = "users.old_name",
+                    toName = "users.new_name",
+                ),
+            ),
+        )
+
+        val plan = planner.plan(current = current, desired = desired, schemaDiff = diff,
+            migrationOverlays = listOf(overlay))
+
+        plan.operations.filterIsInstance<DiffOperation.RenameColumn>().size shouldBe 0
+        val report = plan.renameProjections.single()
+        report.renameOperationId.shouldBeNull()
+        report.fallbackOperationIds shouldHaveSize 2
+        report.blockers.shouldNotBeNull()
+        report.blockers shouldHaveSize 1
+        report.blockers.single().code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
+        report.fallbackReason.shouldNotBeNull()
+    }
+
     test("RenameTable / RenameColumn ops carry overlayEntryId — entry provenance survives folding") {
         val current = emptySchema().copy(tables = mapOf("users_old" to simpleTable()))
         val desired = emptySchema().copy(tables = mapOf("users" to simpleTable()))

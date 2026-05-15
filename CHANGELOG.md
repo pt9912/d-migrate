@@ -20,9 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per candidate, success or drop+add fallback) — see
   `spec/cli-spec.md` §6.1. Plan-2 §10 F.4 has the status update.
   **Artefakt-Gate decision:** `renameProjections` is report-only;
-  it is NOT serialised into `migration-plan.v1`. `--generate-rollback`
-  blocks with `ROLLBACK_NOT_POSSIBLE` when a persisted Mischfall-
-  Plan would need the projection contract to be reversible.
+  it is NOT serialised into `migration-plan.v1`. Today's rollback
+  artefact is Down-SQL — the renderers produce natural inverses for
+  every synthesised intra-object delta (`AlterColumn*`, `AddColumn`,
+  `AddIndex`, …) and for the explicit view reprojection
+  (`DropView` + `CreateView` reverse to `DropView` + `CreateView` of
+  the previous body), so `--generate-rollback` works without a
+  versioned plan artefact. Adding a `ROLLBACK_NOT_POSSIBLE` gate for
+  persisted Mischfall-Plaene stays a future tranche — once
+  `migration-plan.v1` gains the `renameProjections` field, the gate
+  fires for plans that lack it.
 - **`adapters:driven:text-icu` module** with `IcuUnicodeTextService`
   — production ICU4J implementation behind the new
   `dev.dmigrate.text.UnicodeTextService` port in

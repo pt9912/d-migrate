@@ -119,5 +119,93 @@ class OperationMapperFinalizeIdsTest : FunSpec({
         val result = OperationMapper.finalizeIds(empty)
         result.operations shouldBe emptyList()
         result.diagnostics shouldBe emptyList()
+        result.renameProjections shouldBe emptyList()
+    }
+
+    test("T6: renameProjections IDs follow disambiguation when an op the report references is renamed") {
+        // Realistic scenario for the remap: a fallback-mode report
+        // pins a `fallbackOperationIds` entry on a DropTable id that
+        // the regular mapper later disambiguates because of an
+        // unrelated DropTable collision. Rename op ids themselves are
+        // uniqueness-guaranteed by overlay-entry dedup, so this test
+        // exercises the path that matters in practice — non-rename op
+        // ids in the report being chased by the rewrite map.
+        val droppedColliding = DiffOperation.DropTable(
+            id = "drop-table-collision",
+            objectRef = DiffObjectRef(DiffObjectType.TABLE, listOf("a")),
+            table = dev.dmigrate.core.model.TableDefinition(
+                columns = mapOf("id" to dev.dmigrate.core.model.ColumnDefinition(type = NeutralType.Text())),
+            ),
+        )
+        val createdColliding = DiffOperation.DropTable(
+            id = "drop-table-collision",
+            objectRef = DiffObjectRef(DiffObjectType.TABLE, listOf("b")),
+            table = dev.dmigrate.core.model.TableDefinition(
+                columns = mapOf("id" to dev.dmigrate.core.model.ColumnDefinition(type = NeutralType.Text())),
+            ),
+        )
+        val report = RenameProjectionReport(
+            candidateId = "rename-X",
+            objectType = "table",
+            fromPath = listOf("b_old"),
+            toPath = listOf("b"),
+            overlaySource = "ovl",
+            overlayEntryId = "rename-b-entry",
+            overlayHash = null,
+            // Fallback report points at the SECOND DropTable id —
+            // which will get the `#2` suffix.
+            renameOperationId = null,
+            fallbackOperationIds = listOf("drop-table-collision"),
+            fallbackReason = "drop+create",
+        )
+
+        val prepared = OperationMapper.PreparedMapping(
+            operations = listOf(droppedColliding, createdColliding),
+            diagnostics = emptyList(),
+            renameProjections = listOf(report),
+        )
+        val result = OperationMapper.finalizeIds(prepared)
+
+        result.operations.map { it.id } shouldContainExactly listOf(
+            "drop-table-collision",
+            "drop-table-collision#2",
+        )
+        // The fallback id gets rewritten — naive rewrite-map semantics
+        // (one mapping per old id). Operationally OK for the F.4
+        // pipeline because rename / fallback / explicit ids cannot
+        // collide ACROSS reports (each candidate's ids are
+        // deterministic from its unique from/to/overlay-hash payload).
+        result.renameProjections.single().fallbackOperationIds shouldContain "drop-table-collision#2"
+    }
+
+    test("T6: renameProjections come through unchanged when no ids collide") {
+        val rename = DiffOperation.RenameTable(
+            id = "rename-users_old-users",
+            objectRef = DiffObjectRef(DiffObjectType.TABLE, listOf("users")),
+            fromName = "users_old",
+            toName = "users",
+            overlaySource = "ovl",
+            overlayEntryId = "users-entry",
+            overlayHash = null,
+        )
+        val report = RenameProjectionReport(
+            candidateId = rename.id,
+            objectType = "table",
+            fromPath = listOf("users_old"),
+            toPath = listOf("users"),
+            overlaySource = "ovl",
+            overlayEntryId = "users-entry",
+            overlayHash = null,
+            renameOperationId = rename.id,
+        )
+        val prepared = OperationMapper.PreparedMapping(
+            operations = listOf(rename),
+            diagnostics = emptyList(),
+            renameProjections = listOf(report),
+        )
+        val result = OperationMapper.finalizeIds(prepared)
+
+        result.operations.single().id shouldBe rename.id
+        result.renameProjections.single().renameOperationId shouldBe rename.id
     }
 })

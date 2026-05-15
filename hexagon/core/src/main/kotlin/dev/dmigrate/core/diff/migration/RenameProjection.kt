@@ -1,5 +1,15 @@
 package dev.dmigrate.core.diff.migration
 
+// API stability note: the public types in this file
+// ([DependencyRef], [ExplicitProjectionRef], [RenameProjectionBlocker],
+// [RenameProjectionReport], [RENAME_DEPENDENCY_UNPROJECTABLE]) form
+// the F.4 report contract because [DiffResult.renameProjections]
+// surfaces them. Application-layer renderers map them to
+// `SchemaMigrateRenameProjectionView` (and friends), shielding
+// downstream consumers from core-side churn — but additive / breaking
+// changes to the types below are still SemVer-relevant. Internal call
+// sites that don't need stability use the application-layer view DTOs.
+
 /**
  * F.4 dependency-projection T3/T5 policy output. The projector
  * consults a [RenameDependencyPolicy] per candidate and receives one
@@ -158,7 +168,12 @@ internal data class RenameColumnProjection(
 data class RenameProjectionReport(
     val candidateId: String,
     val objectType: String,
+    /**
+     * Pre-rename path. For a table rename this is the single-element
+     * `[fromName]`; for a column rename it is `[tableName, fromColumn]`.
+     */
     val fromPath: List<String>,
+    /** Same shape as [fromPath] but pinned at the post-rename name(s). */
     val toPath: List<String>,
     val overlaySource: String,
     val overlayEntryId: String,

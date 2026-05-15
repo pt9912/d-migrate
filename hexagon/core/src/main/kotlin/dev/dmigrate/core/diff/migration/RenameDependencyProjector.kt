@@ -108,19 +108,23 @@ internal class RenameDependencyProjector(
         fallbackOperationIds = emptyList(),
         fallbackReason = null,
         automatic = projection.automatic,
-        explicit = projection.explicit
-            .filter { it is DiffOperation.CreateView || it is DiffOperation.DropView }
-            .map { op ->
-                ExplicitProjectionRef(
-                    kind = when (op) {
-                        is DiffOperation.CreateView -> "VIEW_CREATE"
-                        is DiffOperation.DropView -> "VIEW_DROP"
-                        else -> "EXPLICIT"
-                    },
-                    path = op.objectRef.path,
-                    operationId = op.id,
-                )
-            },
+        // T5 emits `DropView` + `CreateView` today, but other kinds
+        // (trigger drop+create, etc.) will land in later tranches —
+        // surface them with a generic kind rather than silently
+        // dropping. A `kind = "EXPLICIT"` entry tells report
+        // consumers "the projector emitted an explicit follow-up,
+        // dialect-specific kind not yet classified".
+        explicit = projection.explicit.map { op ->
+            ExplicitProjectionRef(
+                kind = when (op) {
+                    is DiffOperation.CreateView -> "VIEW_CREATE"
+                    is DiffOperation.DropView -> "VIEW_DROP"
+                    else -> "EXPLICIT"
+                },
+                path = op.objectRef.path,
+                operationId = op.id,
+            )
+        },
         blockers = emptyList(),
     )
 
