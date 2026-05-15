@@ -48,6 +48,15 @@ enum class RenameCapabilitySource {
  * comparison on raw strings would mis-order `3.9` vs `3.26`.
  */
 data class RenameProjectionCapabilities(
+    /**
+     * Dialect this capability bundle targets. The policy registry uses
+     * [dialect] to select the matching [RenameDependencyPolicy]; an
+     * incomplete capability bundle (e.g. missing
+     * [sqliteLegacyAlterTable]) still resolves to the right dialect
+     * policy, which then classifies the runtime-gated paths as
+     * unknown / blocked.
+     */
+    val dialect: RenameProjectionDialect,
     val source: RenameCapabilitySource = RenameCapabilitySource.FILE_ONLY,
     val sqliteVersion: String? = null,
     val sqliteLegacyAlterTable: Boolean? = null,
@@ -55,9 +64,26 @@ data class RenameProjectionCapabilities(
     val mysqlVersion: String? = null,
 ) {
     companion object {
-        /** Conservative default: no live information, all version-/PRAGMA-gated paths must block. */
+        /**
+         * Conservative default for a dialect-less call site (currently
+         * tests). PostgreSQL is the most permissive policy in the F.4
+         * matrix; production paths set [dialect] explicitly via the
+         * application-layer factory.
+         */
         val FILE_ONLY: RenameProjectionCapabilities =
-            RenameProjectionCapabilities(source = RenameCapabilitySource.FILE_ONLY)
+            RenameProjectionCapabilities(
+                dialect = RenameProjectionDialect.POSTGRESQL,
+                source = RenameCapabilitySource.FILE_ONLY,
+            )
+
+        /**
+         * Builder for tests and the application factory: starts from
+         * FILE_ONLY and pins the dialect. Avoids spreading
+         * `RenameProjectionCapabilities(dialect = …)` constructor
+         * calls throughout the codebase.
+         */
+        fun fileOnly(dialect: RenameProjectionDialect): RenameProjectionCapabilities =
+            RenameProjectionCapabilities(dialect = dialect, source = RenameCapabilitySource.FILE_ONLY)
     }
 }
 

@@ -30,7 +30,9 @@ internal object RenameProjectionCapabilitiesFactory {
     fun capabilitiesFor(
         @Suppress("UNUSED_PARAMETER") // TODO(F.4 next tranche): drive live-probe selection by request.execute / DB target.
         request: SchemaMigrateRequest,
-        @Suppress("UNUSED_PARAMETER") // TODO(F.4 next tranche): pick probe strategy per dialect.
         dialect: DatabaseDialect,
-    ): RenameProjectionCapabilities = RenameProjectionCapabilities(source = RenameCapabilitySource.FILE_ONLY)
+    ): RenameProjectionCapabilities = RenameProjectionCapabilities(
+        dialect = dialectFor(dialect),
+        source = RenameCapabilitySource.FILE_ONLY,
+    )
 }

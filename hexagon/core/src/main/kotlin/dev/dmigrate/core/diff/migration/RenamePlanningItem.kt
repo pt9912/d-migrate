@@ -1,11 +1,10 @@
 package dev.dmigrate.core.diff.migration
 
 /**
- * F.4 dependency-projection T2 carrier between the mapper and the
- * [RenamePassThroughProjector]. Each item describes one
- * overlay-bound rename candidate plus the operations that would
- * otherwise be produced by the regular drop+add path if the rename is
- * not folded.
+ * F.4 dependency-projection T2/T3 carrier between the mapper and the
+ * [RenameDependencyProjector]. Each item describes one overlay-bound
+ * rename candidate plus the operations that would otherwise be
+ * produced by the regular drop+add path if the rename is not folded.
  *
  * Today the projector either emits a `Rename*` op (when the candidate
  * is structurally compatible AND no stale dependency points at the old

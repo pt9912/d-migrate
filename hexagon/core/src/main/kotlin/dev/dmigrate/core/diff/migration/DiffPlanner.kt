@@ -82,7 +82,6 @@ open class DiffPlanner {
         desired: SchemaDefinition,
         schemaDiff: SchemaDiff,
         migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
-        @Suppress("UNUSED_PARAMETER") // TODO(F.4 T3): consume in projector pipeline.
         capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.FILE_ONLY,
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
@@ -99,7 +98,9 @@ open class DiffPlanner {
             )
         }
 
-        val mapperResult = OperationMapper.map(schemaDiff, current, desired, blockedTables, migrationOverlays)
+        val mapperResult = OperationMapper.map(
+            schemaDiff, current, desired, blockedTables, migrationOverlays, capabilities,
+        )
         diagnostics += mapperResult.diagnostics
         val splitOps = splitReplaceViewsForColumnConflicts(mapperResult.operations)
         val opsWithDeps = DependencyAnalyzer.attach(splitOps)

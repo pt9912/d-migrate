@@ -30,16 +30,15 @@ internal object RenameOverlayMapper {
     const val DEPENDENCY_PROJECTION_REQUIRED: String = "RENAME_OVERLAY_DEPENDENCY_PROJECTION_REQUIRED"
 
     /**
-     * F.4 dependency-projection T2 pipeline:
+     * F.4 dependency-projection T3 pipeline:
      * `prepareTableItems(...)` builds candidates without touching the
-     * operations list. [RenamePassThroughProjector.projectTables] folds
-     * the items into the same `RenameTable` operations / structural-
-     * mismatch / stale-reference diagnostics that the pre-T2 inline
-     * fold produced.
-     *
-     * [foldRenameTables] keeps its pre-T2 signature so callers
-     * (currently [OperationMapper.mapTables]) stay untouched while the
-     * pipeline shape evolves.
+     * operations list. [RenameDependencyProjector.projectTables]
+     * consults the dialect-specific
+     * [RenameDependencyPolicy] (resolved from
+     * [RenameProjectionCapabilities.dialect]) and folds the items into
+     * `RenameTable` operations, structural-mismatch warnings, stale-
+     * reference warnings, or `RENAME_DEPENDENCY_UNPROJECTABLE`
+     * diagnostics — whichever the policy + mapper signals demand.
      *
      * Return contract (preserved from pre-T2 for the existing
      * [OperationMapper.mapTables] consumer): the **first** set carries
@@ -50,15 +49,15 @@ internal object RenameOverlayMapper {
      */
     fun foldRenameTables(
         diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
+        ctx: RenameMappingContext,
         blockedTables: Set<String>,
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ): Pair<Set<String>, Set<String>> {
-        val items = prepareTableItems(diff, current, desired, blockedTables, renameIndex)
-        val projection = RenamePassThroughProjector.projectTables(items)
+        val items = prepareTableItems(diff, ctx.current, ctx.desired, blockedTables, renameIndex)
+        val projection = RenameDependencyProjector(ctx.capabilities)
+            .projectTables(items, diff, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
         return projection.absorbedToNames to projection.absorbedFromNames
@@ -74,11 +73,13 @@ internal object RenameOverlayMapper {
     fun foldRenameColumns(
         table: TableDiff,
         renameIndex: RenameOverlayIndex,
+        ctx: RenameMappingContext,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ): Pair<Set<String>, Set<String>> {
         val items = prepareColumnItems(table, renameIndex)
-        val projection = RenamePassThroughProjector.projectColumns(items)
+        val projection = RenameDependencyProjector(ctx.capabilities)
+            .projectColumns(items, table, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
         return projection.absorbedToColumns to projection.absorbedFromColumns

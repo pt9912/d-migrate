@@ -48,8 +48,12 @@ Das macht Trino für Read/Analyse attraktiv, gleichzeitig limitiert:
   - `schema reverse`
   - `schema compare`
   - `data export`
-  - `data profile` (nur mit aktivem Profiling-Modul)
+  - `data profile` (nur mit aktivem Profiling-Modul, **Source-only**)
   - `data transfer` **nur Source**
+
+Default-Regel für Phase 1: Target-Nutzung ist standardmäßig gesperrt. Nur explizit als
+Ausnahme in der Capability-Matrix markierte Zielpfade sind erlaubt (aktuell: `schema compare`
+als read-only Diff-Pfad).
 
 ### 3.2 Nicht in Scope (aktuell)
 
@@ -86,6 +90,10 @@ Optionale Erweiterungen:
 
 ### 5.2 URL-Modell
 
+Diese Sektion ist die verbindliche Sequenz: Parse → Decode/Normalize → Guards → Forwarding → Entscheidung.
+
+#### 5.2.1 URL-Form und Pflichtsegmentierung
+
 Kanonische Form:
 
 ```text
@@ -112,7 +120,10 @@ Interpretation:
   Capability-Fehler zu behandeln. Die erlaubten Properties in Phase 1 sind:
   - `ssl` (`true|false`, default: `true`)
   - `httpScheme` (`http|https`, default: `https`)
-  - `requestTimeoutMs` (positive Ganzzahl, ms)
+  - `requestTimeoutMs` (positive Ganzzahl, ms; Bereich `1..2_147_483_647`)
+    - Muss als Ganzzahl parsebar sein.
+    - `0`, negative, nicht-numerische Werte oder Überläufe außerhalb des Bereichs
+      werden hart mit `action_required` abgewehrt.
   - `session.<name>` (Session-Property-Forwarding; Name muss in der aktivierten
     Allowlist enthalten sein und dort nach Trino-Phase-1-Schema verarbeitet werden)
   - `accessToken`
@@ -120,12 +131,15 @@ Interpretation:
   - `trustStorePassword`
   - `keystorePath`
   - `keystorePassword`
-  - Sicherheitsklassifikation nach Parsing (Phase 1):
+- Sicherheitsklassifikation nach Parsing (Phase 1):
   - Nicht-sensitive Parser-Properties: `ssl`, `httpScheme`, `requestTimeoutMs`,
-    `trustStorePath`, `keystorePath`, `session.<name>`.
-  - Sensitive Secrets: `user:password` (Authority), `accessToken`,
-    `trustStorePassword`, `keystorePassword`.
-  - Für alle sensiblen Secret-Parameter gilt zusätzlich:
+    `trustStorePath`, `keystorePath`.
+  - Sensitive, nicht allowlist-gesteuerte Parameter: `user:password` (Authority),
+    `accessToken`, `trustStorePassword`, `keystorePassword`.
+  - `session.<name>` gilt als sensitive, aber **separat behandelt**:
+    Erlaubnis erfolgt ausschließlich über die `session`-Allowlist, unabhängig vom Runtime-Profil.
+    Werte sind immer maskierungspflichtig.
+  - Für alle sensiblen Parameter und `session.<name>`-Werte gilt zusätzlich:
     - Das Vorhandensein des Secret-Schlüssels ist explizit.
     - Der Secret-Wert darf nach Decodierung/Trim nicht leer sein; leere Werte führen zu
       hartem `action_required` (auch in `non_production`).
@@ -141,16 +155,18 @@ Interpretation:
   - Legacy-Geheimniswerte (`user:password`, `accessToken`, `trustStorePassword`,
     `keystorePassword`) sind in `non_production` nur mit aktivierter
     Legacy-Geheimnis-Ausnahme erlaubt (siehe Sicherheitskontext).
-- URL-Kodierung und Dekodierungsreihenfolge:
+#### 5.2.2 Decodierung, Normalisierung und Duplicate-Regeln
+
+- URL-Kodierung und Decodierungs-Guards:
   - `user`, `password`, `catalog`, `schema` und Query-Parameter (`key`/`value`) sind
     URL-kodiert zu interpretieren.
   - Vor der Validierung wird eine RFC-konforme Percent-Decodierung (UTF-8) durchgeführt.
     Ungültige Encodings führen zu `action_required`.
   - Decodierungsreihenfolge:
-  - Erst wird aus dem rohen URL-String strukturiert geparst (`scheme://`, Authority,
-    Pfad, Query-Teil).
-  - Anschließend werden `user`, `password`, `catalog`, `schema` sowie jedes erkannte
-    Query-Property (`key`/`value`) nach der Initial-Pfadeinordnung percent-dekodiert.
+    - Erst wird aus dem rohen URL-String strukturiert geparst (`scheme://`, Authority,
+      Pfad, Query-Teil).
+    - Anschließend werden `user`, `password`, `catalog`, `schema` sowie jedes erkannte
+      Query-Property (`key`/`value`) nach der Initial-Pfadeinordnung percent-dekodiert.
   - Nach der Decodierung werden Query-Properties normalisiert:
     - Alle Property-Keys und -Values werden zunächst getrimmt.
     - `session.<name>` wird zusätzlich wie in Abschnitt *Session-Forwarding-Liste* normalisiert
@@ -168,61 +184,49 @@ Interpretation:
   - `catalog` und `schema` dürfen nach Dekodierung keinen `/` mehr enthalten; ein
     solcher Befund führt zu `action_required` (Vermeidung segmentierter Ambiguitäten).
 - Weitere Pfadsegmente sind in Phase 1 ungültig.
-- Doppelte Query-Properties (inklusive doppelter `session.<name>`-Einträge) sind in
-  Phase 1 unzulässig und führen zu `action_required`.
-- Der Duplikatsvergleich erfolgt nach vollständiger Percent-Decodierung der Keys/Values.
-  - Kodierungsvarianten derselben Bedeutung gelten als identischer Key (z. B. unterschiedliche
-    Encodings desselben `session.<name>`-Schlüssels).
-- Ausführungskontext (für Sicherheitsregeln):
-  - `DM_TRINO_RUNTIME_PROFILE` (Umgebungsvariable) oder `--trino-runtime-profile=<production|non_production>`
-    bestimmen, ob produktive Regeln gelten.
-  - Präzedenz: CLI-Flag > Umgebungsvariable > Default `production`.
+- Kodierungsvarianten derselben Bedeutung gelten als identischer Key (z. B. unterschiedliche
+  Encodings desselben `session.<name>`-Schlüssels).
+#### 5.2.3 Runtime- und Transport-Guards
+
+- Ausführungskontext:
+  - Profilelöse-Reihenfolge: `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` >
+    `production`.
   - Unterstützte Werte sind ausschließlich `production` und `non_production`.
-  - Alle anderen Angaben (`DM_TRINO_RUNTIME_PROFILE` oder CLI-Flag) führen zu
-    `action_required`.
-  - In `production` ist die sichere Transportpolicy hart: `httpScheme=http` und/oder `ssl=false`
-    sind nicht zulässig.
-  - `non_production` erlaubt unsichere Transportoptionen nur bei aktivierter
-    Entwickler-Ausnahme (siehe Sicherheitsregel).
-  - Transportauflösung (Phase 1):
-    1. Gültige Werte nach Decodierung:
-       - `ssl`: `true|false` (default: `true`)
-       - `httpScheme`: `http|https` (default: `https`)
-    2. Wenn `ssl` gesetzt ist:
-       - `ssl=true` ist nur zulässig mit `httpScheme`-Wert leer oder `https`.
-       - `ssl=false` ist nur zulässig mit `httpScheme`-Wert leer oder `http`.
-    3. Wenn `ssl` nicht gesetzt ist, definiert `httpScheme` die Sicherheit:
-       - `https` -> TLS
-       - `http` -> non-TLS
-    4. Widersprüchliche Kombinationen sind harte Fehler (`action_required`), unabhängig
-       vom Runtime-Profil:
-       - `ssl=true` + `httpScheme=http`
-       - `ssl=false` + `httpScheme=https`
-    5. Die resultierende Transportwahl (`https`/`http`) wird anschließend mit den
-       Produktions-/Nicht-Produktions-Guards geprüft.
-  - Legacy-Geheimnis-Ausnahme für `non_production`:
-  - `--allow-legacy-trino-secrets` (CLI-Flag) oder
-      `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true` (Env-Variable, exakt).
-    - Präzedenz: CLI-Flag > Umgebungsvariable.
-    - Werte ungleich `true` (inkl. leerer String) werden als inaktiv gewertet.
-    - Nur gültig für Sensitive-Parameter und URL-Embedded Secrets in `non_production`.
-- Sicherheitsregel:
-  - Effektiver Runtime-Profilwert wird aufgelöst als:
-    `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` > `production`.
-  - `insecure_transport` wird nur aktiv, wenn **alle** Bedingungen erfüllt sind:
-    - Effektiver Runtime-Profilwert ist `non_production`,
-    - `--allow-insecure-trino-transport` ist gesetzt (CLI-Flag explizit),
-    - `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`.
-    - `DM_TRINO_ALLOW_INSECURE_TRANSPORT` ist ausschließlich auf `true` aktiv.
-      Jede andere Wertangabe (`false`, leer, andere Schreibweise, andere Tokens) führt bei
-      angeforderter unsicherer Transportkonfiguration zu hartem `action_required`.
-  - `httpScheme=http` oder `ssl=false` ist nur bei aktivem `insecure_transport` erlaubt.
-    Ohne diese Freigabe erfolgt `action_required`.
-  - Bei teilweiser oder fehlender Freigabe erfolgt `action_required` inkl. Diagnose der
-    fehlenden Signaturbestandteile (`--trino-runtime-profile`, `--allow-insecure-trino-transport`,
-    `DM_TRINO_ALLOW_INSECURE_TRANSPORT`).
-  - Die Ausführung wird bei aktivem `insecure_transport` als `insecure_transport=true` markiert.
+  - Alle anderen Angaben führen zu `action_required`.
+- Transport-Guards:
+  1. Erlaubte Werte nach Decodierung:
+     - `ssl`: `true|false`
+     - `httpScheme`: `http|https`
+  2. Presence-Tracking:
+     - `sslProvided`: `ssl` explizit im Query gesetzt
+     - `httpSchemeProvided`: `httpScheme` explizit im Query gesetzt
+  3. Inkompatible Kombinationen sind harte Fehler (`action_required`):
+     - `ssl=true` + `httpScheme=http`
+     - `ssl=false` + `httpScheme=https`
+  4. Effektive Transportauflösung:
+     - Kein Parameter gesetzt: `ssl=true`, `httpScheme=https`.
+     - Nur `ssl` gesetzt:
+       - `ssl=true` → `https`
+       - `ssl=false` → `http`
+     - Nur `httpScheme` gesetzt:
+       - `https` → `ssl=true`
+       - `http` → `ssl=false`
+     - Beide gesetzt und kompatibel: direkte Konsistenzprüfung aus Schritt 3.
+  5. Transportpolicy:
+     - `production`: `httpScheme=http` und `ssl=false` sind immer hart blockiert.
+     - `non_production`: unsicherer Transport nur mit aktivem `insecure_transport`.
+- `insecure_transport` ist aktiv nur wenn alle Bedingungen erfüllt sind:
+  - effektives Profil ist `non_production`,
+  - `--allow-insecure-trino-transport` ist gesetzt (CLI-Flag explizit),
+  - `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`.
+- `DM_TRINO_ALLOW_INSECURE_TRANSPORT` ist nur als exakter String `true` wirksam.
+  - Alle anderen Werte bleiben inaktiv und führen bei sicherheitskritischer Transportanforderung
+    zu `action_required` inkl. fehlender Signaturbestandteile
+    (`--trino-runtime-profile`, `--allow-insecure-trino-transport`, `DM_TRINO_ALLOW_INSECURE_TRANSPORT`).
+- Die Ausführung wird bei aktivem `insecure_transport` als `insecure_transport=true` markiert.
 - Format ist absichtlich ohne `db:`-Prefix.
+
+#### 5.2.4 Session-Forwarding-Liste und Versionierung
 
 Konfiguration der Session-Forwarding-Liste:
 
@@ -257,19 +261,58 @@ Konfiguration der Session-Forwarding-Liste:
   - Bei aktivem CLI-Override gilt die Versionslogik nur für `DM_TRINO_SESSION_ALLOWLIST_V`;
     ungültige Werte sind dann nicht blockierend, da die CLI-Quelle die Env-Quelle übersteuert.
   - Bei aktivem CLI-Override wird ein ungültiger `DM_TRINO_SESSION_ALLOWLIST_V` dokumentiert
-    (Warnung), und die gesamte Env-Quelle inkl. Versionsmarker gilt als nicht aktiv.
+    (Warnung), und die gesamte Env-Quelle inkl. Versionsmarker ist vollständig deaktiviert
+    (d. h. Werte aus `DM_TRINO_SESSION_ALLOWLIST` werden unabhängig vom Inhalt ignoriert).
   - CLI-Allowlist wird immer mit der v1-Schema-Logik geparst; ein separater
     Versionsschalter ist für CLI nicht vorgesehen.
   - Für `v1` gilt ausschließlich das oben definierte normalisierte CSV-Format.
 
-Credential-Modell (Phase 1):
+#### 5.2.5 Entscheidungs-Matrix für Guard-Flows (Phase 1)
+
+Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
+
+1. Runtime-Profil-Auflösung
+- `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` > Default `production`.
+- Jeder ungültige Profilwert (inkl. unbekannte Tokens) führt sofort zu `action_required`.
+
+2. Transport-Guards
+- Inkompatible Kombinationen (`ssl=true` + `httpScheme=http`, `ssl=false` + `httpScheme=https`) werden
+  sofort hart mit `action_required` abgelehnt.
+- Transportauflösung erfolgt deterministisch aus den normalisierten Query-Properties.
+- `production`: `httpScheme=http` und `ssl=false` sind immer hart blockiert.
+- `non_production`: unsicherer Transport ist nur aktiv bei:
+  - `--allow-insecure-trino-transport` gesetzt
+  - `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`
+  - effektivem Profil `non_production`
+- `DM_TRINO_ALLOW_INSECURE_TRANSPORT` darf nur als String `true` wirksam werden; alle
+  anderen Werte aktivieren die Ausnahme nicht und führen bei gefordertem unsicherem Transport
+  zu `action_required`.
+
+3. Secrets-Guards
+- `production`: harte Blockade für `user:password`, `accessToken`, `trustStorePassword`,
+  `keystorePassword` ohne Ausnahme.
+- `non_production`: diese Werte nur mit aktiver Legacy-Geheimnis-Ausnahme erlaubt
+  (`--allow-legacy-trino-secrets` oder `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`).
+- `session.<name>` bleibt in beiden Profilen ausschließlich allowlist-gesteuert.
+
+4. Session-Forwarding-Quelle
+- Präzedenz: explizit gesetztes CLI-Flag > Umgebungsvariable > leerer Default.
+- Bei aktivem CLI-Override wird die Env-Quelle (inkl. `DM_TRINO_SESSION_ALLOWLIST_V`) vollständig
+  ignoriert; ungültige Env-Versionen werden nur gewarnt, aber nicht blockiert.
+
+5. Fehlerverhalten
+- Alle obigen Verstoßfälle sind reproduzierbar als `action_required` (ohne Retry-/Transient-Pfade).
+
+#### 5.2.6 Credential-Modell (Phase 1)
 
 - Basisform: `trino://user[:password]@host:port/catalog/schema`.
 - Optional/empfohlen: Passwort via Umgebungsvariable (z. B. `DM_TRINO_PASSWORD`) oder
   späterer Credential-Provider.
 - `userinfo`-Parsing (Phase 1):
-- Grammatik nach Decodierung: `userinfo = user [ ":" password ]`
-- `user` muss vorhanden und nicht leer sein.
+  - Grammatik nach Decodierung: `userinfo = user [ ":" password ]`
+- `user` ist Phase 1 verpflichtend und muss vorhanden und nicht leer sein.
+  `accessToken` ergänzt in dieser Phase ein zusätzliches Auth-Zusatzfeld; es ersetzt
+  **nicht** die Pflicht zur URL-`userinfo` und kann nur mit vorhandenem `user` genutzt werden.
 - Wenn `:` vorhanden ist, muss `password` nach Decodierung/Trim existieren und darf nicht
   leer sein.
 - Bei vorhandenem `:` gilt `password` als URL-embedded Secret.
@@ -296,8 +339,12 @@ Credential-Modell (Phase 1):
 #### 5.3 Security, Secrets und Maskierung
 
 - Security-Matrix (Phase 1):
-  - `production`: URL-Embedding und Sensitive-Parameter in URL/Query sind hart blockiert.
-  - `non_production`: Sensitive-Parameter möglich als Übergangsfälle.
+  - `production`: URL-Embedding und folgende Sensitive-Parameter sind hart blockiert:
+    `user:password`, `accessToken`, `trustStorePassword`, `keystorePassword`.
+  - `production`: `session.<name>` bleibt nur via Allowlist erlaubt und wird maskiert.
+  - `production`: ohne explizite, per 5.2.4 als Quelle bestimmte Allowlist gibt es keine
+    Session-Weitergabe (Default = leer).
+  - `non_production`: Sensitive Nicht-Session-Parameter möglich als Übergangsfälle.
     - Erlaubt ist ausschließlich, wenn das effektive Runtime-Profil `non_production`
       aufgelöst wurde **und** die Legacy-Geheimnis-Ausnahme aktiv ist.
     - Legacy-Geheimnis-Ausnahme ist:
@@ -307,13 +354,15 @@ Credential-Modell (Phase 1):
         die Ausnahme nicht.
       - Präzedenz: CLI-Flag > Umgebungsvariable.
     - In allen Legacy-Secret-Fällen ist ein klarer, maskierter Warnhinweis erforderlich.
-    - `session.<name>` bleibt in beiden Profilen erlaubt, sofern die Allowlist-Regel
-      greift; Werte werden als Secret behandelt und maskiert.
+  - `session.<name>` bleibt in beiden Profilen erlaubt, sofern die Allowlist-Regel
+    greift; Werte werden als Secret behandelt und maskiert.
+    Die Allowlist-Entscheidung hat Vorrang vor Laufzeit- oder Profil-Gates.
   - Schwere Secret-Parameter:
     - `user:password`
     - `accessToken`
     - `trustStorePassword`
     - `keystorePassword`
+    - `session.<name>`-Werte (maskierungspflichtig)
   - Nicht-sensible Konfigurationsfelder:
     - `trustStorePath`
     - `keystorePath`
@@ -328,8 +377,8 @@ Credential-Modell (Phase 1):
   - `accessToken`, `trustStorePassword`, `keystorePassword` sind als Übergangs-Optionen
     nur mit aktiver Legacy-Geheimnis-Ausnahme nutzbar; in `production` weiterhin hart
     blockiert.
-  - `session.<name>` ist erlaubt, kann aber Secret-Werte tragen und ist wie Secret zu
-    behandeln.
+  - `session.<name>` ist erlaubt, wenn es im Rahmen der aktuellen Allowlist-Konfiguration
+    akzeptiert ist; die Werte können Secret-artig sein und sind immer maskierungspflichtig.
 - Geheimnisse dürfen nicht in Logs, Debug-Ausgaben, Cache-Keys oder Telemetrie mit
   Klartext enthalten sein.
 - Jede Ausgabe mit potenziellen Secret-Feldern (Passwort, Token, Secret-Properties) ist
@@ -382,6 +431,8 @@ Hinweis zu Phase-1-Allowlist:
   - In `non_production` gilt dieselbe Blockade, außer bei exakt aktivierter
     Entwickler-Ausnahme (Dreifach-Signatur, siehe oben).
 - Ungültige Angaben zu `DM_TRINO_RUNTIME_PROFILE` oder `--trino-runtime-profile` -> `action_required`.
+- `requestTimeoutMs` ist hart validiert:
+  - ungültig / nicht parsebar / außerhalb `1..2_147_483_647` -> `action_required`.
 - Nicht unterstützte URL-Properties -> sofortiger Abbruch via `action_required`.
 - Doppelte Query-Properties -> sofortiger Abbruch via `action_required`.
 - Trino ist in Phase 1 ein **write-freier** Adapter; alle write-Pfade sind für
@@ -431,12 +482,15 @@ Interpretation:
 
 ### 5.6 Capability-Governance für Trino
 
+Standard-Verhalten ist in allen Phasen: Sink- oder Write-Pfade sind ohne explizite
+Connector-Freigabe deaktiviert; die Tabelle bildet die einzige Ausnahmeliste ab.
+
 | Befehl | Source | Target | Phase |
 | --- | --- | --- | --- |
 | `schema reverse` | ✅ | ❌ | 1 |
 | `schema compare` | ✅ | ✅ *(read-only Diff-Pfad)* | 1 |
 | `data export` | ✅ | ❌ | 1 |
-| `data profile` | ✅ | ❌ *(nur mit Profiling-Modul)* | 1 |
+| `data profile` | ✅ *(nur mit Profiling-Modul)* | ❌ | 1 |
 | `data transfer` | ✅ | ❌ | 1 |
 | `schema generate` | ❌ | ⚠️ (explizit freigegeben) | 3 |
 | `data import` | ❌ | ❌ | 4+ |
@@ -447,6 +501,9 @@ Regel:
 - `schema compare --target trino://...` bleibt erlaubt, weil semantisch read-only.
 - Write-/Generate-Funktionen erfordern immer einen expliziten Capability-Review je
   Connector.
+
+- `data profile` ist in Phase 1 Source-only; Zielseite mit Trino (`--target trino://...`) ist
+  nicht erlaubt.
 
 ## 6) Umsetzungsphasen
 
@@ -471,9 +528,12 @@ Validierungsregeln:
 
 - `schema reverse --source trino://... --output ...` ist lauffähig.
 - `data transfer --target trino://...` startet nicht.
+- `data profile --target trino://...` startet nicht (Source-only-Regel).
 - `data profile --source trino://...` ist nur mit aktivem Profiling-Modul möglich.
 - `data profile --source trino://...` ohne Modul endet mit `action_required` + Hinweis.
 - Nicht erlaubte Query-Properties liefern reproduzierbar `action_required`.
+- Doppelte Query-Properties liefern reproduzierbar `action_required` (auch bei unterschiedlich
+  kodierten Doppelungen).
 - `schema compare --target trino://...` dokumentiert `metadata_coverage` pro
   Objektklasse.
 
@@ -490,9 +550,23 @@ Validierungsregeln:
   - Secret-Maskierung in Logs, Fehlermeldungen und Hilfetexten ist verifiziert.
 - Compare:
   - `schema compare --target trino://...` liefert `metadata_coverage`.
-- Transport-/URL-Randfälle:
-  - `ssl=true` + `httpScheme=http` und `ssl=false` + `httpScheme=https` liefern
+  - Transport-/URL-Randfälle:
+    - `ssl=true` + `httpScheme=http` und `ssl=false` + `httpScheme=https` liefern
+      `action_required`.
+  - Kombinierte Security-Guards:
+    - `--trino-runtime-profile=broken --allow-insecure-trino-transport DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`
+      führt zu `action_required`.
+    - `--trino-runtime-profile=production --allow-insecure-trino-transport DM_TRINO_ALLOW_INSECURE_TRANSPORT=true` mit
+      `trino://analyst@localhost:8080/iceberg/default?httpScheme=http`
+      führt trotz Flags zu `action_required`.
+  - Doppelte Query-Properties nach vollständiger Percent-Dekodierung führen reproduzierbar zu
     `action_required`.
+  - Ungültige Percent-Dekodierung in `user`, `password`, `catalog`, `schema` oder
+    Query-Keys/Values führt reproduzierbar zu `action_required`.
+    - `--allow-insecure-trino-transport` ohne `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`
+      bei `httpScheme=http` oder `ssl=false` führt zu `action_required`.
+    - `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true` ohne `--allow-insecure-trino-transport` bei unsicherer
+      Transportausprägung führt zu `action_required`.
   - `--trino-session-allowlist` nutzt die Env-Quelle, wenn das Flag nicht explizit gesetzt ist.
   - `trino://user:@host:8080/cat/schema` ist ein explizit leeres URL-embedded Passwort und
     als `action_required` definiert.
@@ -633,6 +707,10 @@ Hinweise:
   `metadata_coverage`-/Grenzwarnungen und Dokumentationen konsistent zur
   Objektklasse.
 - URL-Properties außerhalb der Allowlist liefern reproduzierbar `action_required`.
+- Query-Property-Duplikate (nach vollständiger Percent-Dekodierung) liefern reproduzierbar
+  `action_required`.
+- Ungültige Percent-Dekodierung in URL-Teilen oder Query-Werten führt reproduzierbar
+  `action_required`.
 - `metadata_coverage=missing` oder unzulässig niedrige Qualität bricht den
   Vergleich standardmäßig mit `action_required`; mit `--allow-metadata-gaps`
   wird der Vergleich kontrolliert mit dokumentierter Risikoannahme fortgeführt.
@@ -655,15 +733,24 @@ Voraussetzung für Phase 1, Tranche 2.
 - [ ] URL-Parsing ist deterministisch für `catalog`/`schema` (inkl. fehlendes/ungültiges Schema).
 - [ ] Trino-URL erlaubt nur die Phase-1-Property-Liste; nicht erlaubte Properties
   (`foo=bar`) brechen reproduzierbar mit `action_required` ab.
+- [ ] `requestTimeoutMs` wird als positive Ganzzahl strikt validiert; nicht parsebare,
+  nicht-positive oder leere Werte führen zu `action_required`.
 - [ ] Transport-Konflikte werden hart blockiert:
   - `ssl=true` + `httpScheme=http`
   - `ssl=false` + `httpScheme=https`
 - [ ] `--trino-session-allowlist` ist als Tri-State implementiert und folgt der Präzedenzregel
   (explizites CLI-Set > Env > leerer Default).
+- [ ] `DM_TRINO_SESSION_ALLOWLIST_V` ist bei aktivierter Env-Quelle versioniert:
+  - Bei invaliden Env-Versionen wird `action_required` erzeugt.
+  - Bei aktivem CLI-Override wird eine ungültige Env-Version nicht blockierend als Warnung
+    dokumentiert und vollständig vom Env-Source-Parsing entkoppelt.
+- [ ] `--trino-session-allowlist=""` wird als explizit gesetzter CLI-Override mit leerer
+  Allowlist ausgewertet (ohne Env-Fallback).
 - [ ] Leeres URL-embedded Passwort (`trino://user:@host:...`) wird in allen Profilen
   reproduzierbar mit `action_required` abgelehnt.
 - [ ] `data transfer --target trino://...` bricht in Tranche 1 mit klarer
   Guard-Fehlermeldung ab (rein Source-only).
+- [ ] `data profile --target trino://...` ist in Tranche 1 als Source-only klar abgelehnt.
 - [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
 - [ ] Ungültige Runtime-Profile (`DM_TRINO_RUNTIME_PROFILE` / `--trino-runtime-profile`) führen
   in allen Pfaden zu `action_required`.
@@ -671,7 +758,7 @@ Voraussetzung für Phase 1, Tranche 2.
   `keystorePassword` als Secret-Properties hart blockiert (`action_required`), unabhängig vom
   aktiven Modul.
 - [ ] Leere Werte bei explizit gesetzten Secret-Parametern (`accessToken`, `trustStorePassword`,
-  `keystorePassword`, `user:password`) führen in allen Profilen deterministisch zu
+  `keystorePassword`, `user:password`, `session.<name>-Werte`) führen in allen Profilen deterministisch zu
   `action_required`.
 - [ ] Legacy-Geheimnis-Ausnahme (`--allow-legacy-trino-secrets` oder
   `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`) ist in Phase 1 nur in `non_production`
@@ -695,6 +782,10 @@ Voraussetzung für Phase 1, Tranche 2.
 - [ ] `DM_TRINO_ALLOW_INSECURE_TRANSPORT` wird streng als String `true` validiert.
   Nicht-`true`-Werte sind bei Anfrage unsicherer Transportoptionen deterministisch mit
   `action_required` belegt.
+- [ ] Doppelte Query-Properties werden nach vollständiger Percent-Dekodierung erkannt
+  und mit `action_required` abgelehnt.
+- [ ] Fehlerhafte Percent-Dekodierung in URL-Komponenten und Query-Werten liefert deterministisch
+  `action_required`.
 - [ ] Mindest-Dokumentation ergänzt: `spec/cli-spec.md`,
   `spec/connection-config-spec.md`.
 
