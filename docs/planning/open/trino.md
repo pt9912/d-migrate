@@ -149,8 +149,8 @@ Credential-Modell (Phase 1):
 
 ### 5.5 Compare-Metadaten-Qualitätsmodell
 
-`schema compare --target trino://...` verwendet ein dreistufiges
-Metadaten-Abdeckungmodell:
+`schema compare` mit Trino als `--source` oder `--target` verwendet ein
+dreistufiges Metadaten-Abdeckungmodell:
 
 - `full`: Objekt ist vollständig lesbar und vergleichbar
 - `partial`: Objekt ist lesbar, aber unvollständig
@@ -161,8 +161,9 @@ Interpretation:
 - `partial`: Vergleich erlaubt mit klarer Warnung (`metadata_coverage=partial`) pro
   Objektklasse.
 - `missing`: Vergleich für die betroffene Klasse blockiert mit
-  `action_required`, außer bei expliziter Freigabe über
-  `--allow-metadata-gaps` (mit dokumentierter Risikoannahme).
+  `action_required`. Nur bei explizit gesetztem `--allow-metadata-gaps`
+  kann der Vergleich fortgesetzt werden; die betroffene Klasse wird weiterhin
+  mit `metadata_coverage=missing` und dokumentierter Risikoannahme gemeldet.
 
 ### 5.6 Capability-Governance für Trino
 
@@ -352,9 +353,13 @@ Hinweise:
 - `schema generate --target trino://...` bleibt bis Phase 3 deaktiviert.
 - `schema compare --source file... --target trino://...` listet
   Connector-Grenzen explizit (OID/Constraints/Indexes/Procedures).
+- `schema compare --source trino://... --target file...` liefert dieselben
+  `metadata_coverage`-/Grenzwarnungen und Dokumentationen konsistent zur
+  Objektklasse.
 - URL-Properties außerhalb der Allowlist liefern reproduzierbar `action_required`.
 - `metadata_coverage=missing` oder unzulässig niedrige Qualität bricht den
-  Vergleich (ohne stilles Ignorieren).
+  Vergleich standardmäßig mit `action_required`; mit `--allow-metadata-gaps`
+  wird der Vergleich kontrolliert mit dokumentierter Risikoannahme fortgeführt.
 - Secrets werden in allen Ausgaben maskiert und nicht persistiert/geloggt.
 
 ## 12) Empfehlung
@@ -364,31 +369,57 @@ Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 
 ## Definition of Done
 
-### DoD — Phase 1 (MVP)
+### DoD — Phase 1, Tranche 1 (Basiskontrakt, URL-Parsing, Security)
+
+Ziel: `trino://...` ist vollständig verifiziert und sicher genug, um Trino-Infrastruktur zu bauen.
+Voraussetzung für Phase 1, Tranche 2.
 
 - [ ] `DatabaseDialect.TRINO` vorhanden.
 - [ ] Alias `trino` in Dialektauflösung und URL-Parsing verankert.
+- [ ] URL-Parsing ist deterministisch für `catalog`/`schema` (inkl. fehlendes/ungültiges Schema).
+- [ ] Trino-URL erlaubt nur die Phase-1-Property-Liste; nicht erlaubte Properties
+  (`foo=bar`) brechen reproduzierbar mit `action_required` ab.
+- [ ] `data transfer --target trino://...` bricht noch ohne Profiling/Implementierung
+  mit klarer Guard-Fehlermeldung ab.
+- [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
+- [ ] Geheimnisse werden in Hilfetexten/Fehlern/Cachepfaden deterministisch maskiert.
+- [ ] Mindest-Dokumentation ergänzt: `spec/cli-spec.md`,
+  `spec/connection-config-spec.md`.
+
+### DoD — Phase 1, Tranche 2 (Read-Infrastruktur)
+
+Ziel: Kernread-Funktionalität ist produktiv startfähig.
+Voraussetzung: Tranche 1 vollständig abgeschlossen.
+
 - [ ] `adapters:driven:driver-trino` in `settings.gradle.kts` aufgenommen.
 - [ ] Trino-Connection-Factory/JDBC-Pool lauffähig.
 - [ ] `TrinoSchemaReader`, `TrinoTableLister`, `TrinoDataReader` implementiert.
-- [ ] `schema reverse --source trino://...` lauffähig.
-- [ ] `schema compare --source file... --target trino://...` lauffähig.
+- [ ] `schema reverse --source trino://...` ist lauffähig.
+- [ ] `data export --source trino://...` ist lauffähig.
+- [ ] `data transfer` erkennt Source-only in der Trino-Runtime (kein erfolgreicher
+  Zielausführungsweg Richtung `trino://...`).
+
+### DoD — Phase 1, Tranche 3 (Vergleich, Profiling, Guard-Robustheit)
+
+Ziel: Qualitätsregeln und Fehlermeldungen sind für Produktivbetrieb stabil.
+Voraussetzung: Tranche 2 vollständig abgeschlossen.
+
+- [ ] `schema compare --source file... --target trino://...` ist lauffähig.
 - [ ] `schema compare --source file... --target trino://...` veröffentlicht
   `metadata_coverage` nach Objektklasse.
-- [ ] `data export --source trino...` lauffähig.
-- [ ] `data profile --source trino...` lauffähig (mit Profiling-Modul).
+- [ ] `schema compare` nutzt bei `metadata_coverage=missing` standardmäßig
+  `action_required`; mit dokumentierter Risikoannahme optional via
+  `--allow-metadata-gaps`.
+- [ ] `schema compare --source trino://... --target file...` liefert dieselben
+  Coverage-/Warnungs- und Dokumentationsregeln konsistent.
+- [ ] `data profile --source trino://...` ist lauffähig (mit Profiling-Modul).
 - [ ] `data profile --source trino://...` ohne Modul liefert `action_required` und
-  Anleitung.
-- [ ] `data transfer --source trino... --target trino://...` blockiert mit
-  `action_required`.
-- [ ] Source-only-Regel für Trino technisch und dokumentiert durchgesetzt.
-- [ ] Trino-Metadaten-Lücken/Unbekannte als Warnungen ausgegeben.
-- [ ] `data transfer --target trino...` liefert klare Fehlerklasse `action_required`.
-- [ ] Nicht erlaubte Query-Properties (`foo=bar`) führen reproduzierbar zu
-  `action_required`.
-- [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
-- [ ] Kein DDL-/Import-/Transfer-Write-Pfad für TRINO aktiv.
-- [ ] Mindest-Doku ergänzt: `spec/cli-spec.md`, `spec/connection-config-spec.md`.
+  klare Anleitung.
+- [ ] Source-only-Regel für Trino ist technisch und dokumentiert durchgesetzt.
+- [ ] `data transfer --target trino://...` liefert klare Fehlerklasse `action_required`.
+- [ ] Keine generische Transferschreib-Route in Richtung Trino aktiv.
+- [ ] `schema generate` und `data import` sind für TRINO in Phase 1 deaktiviert.
+- [ ] Trino-Metadaten-Lücken/Unbekannte werden explizit als Warnungen (nicht als stiller Fallback) ausgegeben.
 
 ### DoD — Phase 2
 
