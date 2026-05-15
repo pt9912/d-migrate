@@ -177,7 +177,6 @@ internal class TestdataExecuteHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, planResolution)
     }
 
-    @Suppress("LongParameterList")
     private fun performAfterPolicy(
         parsed: TestdataExecuteParsedArgs,
         principal: PrincipalContext,
@@ -264,7 +263,6 @@ internal class TestdataExecuteHandler(
         val targetDialect: String,
     )
 
-    @Suppress("LongParameterList")
     private fun decidePolicyOrFail(
         parsed: TestdataExecuteParsedArgs,
         envelope: AiToolEnvelope,
@@ -468,7 +466,6 @@ internal class TestdataExecuteHandler(
         data class Failure(val result: AiToolWorkResult) : ProviderInvocation
     }
 
-    @Suppress("LongParameterList")
     private fun publishTestdataArtifact(
         parsed: TestdataExecuteParsedArgs,
         principal: PrincipalContext,
@@ -653,7 +650,6 @@ internal class TestdataExecuteHandler(
         )
     }
 
-    @Suppress("LongParameterList")
     private fun buildSuccessJson(
         resultRef: String,
         artifactId: String,

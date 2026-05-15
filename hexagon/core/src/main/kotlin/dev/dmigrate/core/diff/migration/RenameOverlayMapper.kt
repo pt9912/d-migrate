@@ -147,44 +147,55 @@ internal object RenameOverlayMapper {
      * names, index names). Per-attribute deltas for changed columns
      * are included via [describeColumnDifferences].
      */
-    @Suppress("CyclomaticComplexMethod")
     private fun describeTableDifferences(
         before: TableDefinition,
         after: TableDefinition,
-    ): List<String> {
-        val out = mutableListOf<String>()
+    ): List<String> = buildList {
+        addAll(describeColumnSetDifferences(before, after))
+        if (before.primaryKey != after.primaryKey) {
+            add("primary key ${before.primaryKey} -> ${after.primaryKey}")
+        }
+        addAll(describeConstraintDifferences(before, after))
+        addAll(describeIndexDifferences(before, after))
+    }
+
+    private fun describeColumnSetDifferences(
+        before: TableDefinition,
+        after: TableDefinition,
+    ): List<String> = buildList {
         val beforeCols = before.columns.keys.toSet()
         val afterCols = after.columns.keys.toSet()
         (beforeCols - afterCols).takeIf { it.isNotEmpty() }?.let {
-            out += "removed columns ${it.sorted()}"
+            add("removed columns ${it.sorted()}")
         }
         (afterCols - beforeCols).takeIf { it.isNotEmpty() }?.let {
-            out += "added columns ${it.sorted()}"
+            add("added columns ${it.sorted()}")
         }
         for (name in (beforeCols intersect afterCols).sorted()) {
             val colDiffs = describeColumnDifferences(before.columns.getValue(name), after.columns.getValue(name))
-            if (colDiffs.isNotEmpty()) out += "column '$name': ${colDiffs.joinToString(", ")}"
+            if (colDiffs.isNotEmpty()) add("column '$name': ${colDiffs.joinToString(", ")}")
         }
-        if (before.primaryKey != after.primaryKey) {
-            out += "primary key ${before.primaryKey} -> ${after.primaryKey}"
-        }
+    }
+
+    private fun describeConstraintDifferences(
+        before: TableDefinition,
+        after: TableDefinition,
+    ): List<String> = buildList {
         val beforeConstraints = before.constraints.associateBy { it.name }
         val afterConstraints = after.constraints.associateBy { it.name }
         (beforeConstraints.keys - afterConstraints.keys).takeIf { it.isNotEmpty() }?.let {
-            out += "removed constraints ${it.sorted()}"
+            add("removed constraints ${it.sorted()}")
         }
         (afterConstraints.keys - beforeConstraints.keys).takeIf { it.isNotEmpty() }?.let {
-            out += "added constraints ${it.sorted()}"
+            add("added constraints ${it.sorted()}")
         }
         for (name in (beforeConstraints.keys intersect afterConstraints.keys).sorted()) {
             if (CanonicalPayload.constraint(beforeConstraints.getValue(name)) !=
                 CanonicalPayload.constraint(afterConstraints.getValue(name))
             ) {
-                out += "constraint '$name' definition changed"
+                add("constraint '$name' definition changed")
             }
         }
-        describeIndexDifferences(before, after).let { out += it }
-        return out
     }
 
     /**
@@ -472,7 +483,6 @@ internal data class RenameOverlayIndex(
             )
         }
 
-        @Suppress("LongParameterList")
         private fun indexColumnEntry(
             doc: MigrationOverlayDocument,
             entry: RenameMappingOverlayEntry,

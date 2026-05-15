@@ -176,7 +176,6 @@ internal object OperationMapper {
      * the schemas (e.g. align columns first) or remove the rename
      * mapping from the overlay.
      */
-    @Suppress("LongParameterList")
     private fun mapRenameTables(
         diff: SchemaDiff,
         current: SchemaDefinition,

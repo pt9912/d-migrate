@@ -249,7 +249,7 @@ internal class ProcedureTransformExecuteHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, planResolution)
     }
 
-    @Suppress("ReturnCount", "LongParameterList")
+    @Suppress("ReturnCount")
     private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -563,7 +563,6 @@ internal class ProcedureTransformExecuteHandler(
 
     // ---- Publish ------------------------------------------------------
 
-    @Suppress("LongParameterList")
     private fun publishExecuteArtifact(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -727,7 +726,6 @@ internal class ProcedureTransformExecuteHandler(
         )
     }
 
-    @Suppress("LongParameterList")
     private fun buildSuccessJson(
         resultRef: String,
         artifactId: String,

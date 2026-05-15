@@ -70,49 +70,62 @@ data class McpServerConfig(
  * §12.15 explicitly says stdio ignores `authMode`, so stdio callers
  * use [validateForStdio] which skips the auth-mode block.
  */
-@Suppress("CyclomaticComplexMethod")
 fun McpServerConfig.validate(): List<String> {
     val errors = sharedErrors().toMutableList()
-
     val bindIsLoopback = bindIsLoopback()
 
-    when (authMode) {
-        AuthMode.DISABLED -> {
-            if (!bindIsLoopback) {
-                errors += "authMode=DISABLED requires loopback bind address (got '$bindAddress')"
-            }
-            if (publicBaseUrl != null) {
-                errors += "authMode=DISABLED forbids publicBaseUrl"
-            }
-        }
-        AuthMode.JWT_JWKS -> {
-            if (issuer == null) errors += "authMode=JWT_JWKS requires issuer"
-            if (audience == null) errors += "authMode=JWT_JWKS requires audience"
-            if (jwksUrl == null) errors += "authMode=JWT_JWKS requires jwksUrl"
-        }
-        AuthMode.JWT_INTROSPECTION -> {
-            if (issuer == null) errors += "authMode=JWT_INTROSPECTION requires issuer"
-            if (audience == null) errors += "authMode=JWT_INTROSPECTION requires audience"
-            if (introspectionUrl == null) errors += "authMode=JWT_INTROSPECTION requires introspectionUrl"
-            if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
-                errors += "introspectionClientId and introspectionClientSecret must both be set or both be null"
-            }
-            // LN-025 / LN-028: production HTTP deployments (non-loopback bind)
-            // MUST authenticate the introspection POST per RFC 6749 §2.3.1.
-            // Loopback dev setups can keep both creds null.
-            if (!bindIsLoopback &&
-                introspectionClientId == null &&
-                introspectionClientSecret == null
-            ) {
-                errors += "authMode=JWT_INTROSPECTION on non-loopback bind '$bindAddress' " +
-                    "requires introspectionClientId and introspectionClientSecret " +
-                    "(RFC 6749 §2.3.1 client authentication)"
-            }
-        }
-    }
+    errors += authModeErrors(bindIsLoopback)
+    errors += bindAndOriginErrors(bindIsLoopback)
 
+    return errors
+}
+
+private fun McpServerConfig.authModeErrors(bindIsLoopback: Boolean): List<String> = when (authMode) {
+    AuthMode.DISABLED -> disabledAuthErrors(bindIsLoopback)
+    AuthMode.JWT_JWKS -> jwksAuthErrors()
+    AuthMode.JWT_INTROSPECTION -> introspectionAuthErrors(bindIsLoopback)
+}
+
+private fun McpServerConfig.disabledAuthErrors(bindIsLoopback: Boolean): List<String> = buildList {
+    if (!bindIsLoopback) {
+        add("authMode=DISABLED requires loopback bind address (got '$bindAddress')")
+    }
+    if (publicBaseUrl != null) {
+        add("authMode=DISABLED forbids publicBaseUrl")
+    }
+}
+
+private fun McpServerConfig.jwksAuthErrors(): List<String> = buildList {
+    if (issuer == null) add("authMode=JWT_JWKS requires issuer")
+    if (audience == null) add("authMode=JWT_JWKS requires audience")
+    if (jwksUrl == null) add("authMode=JWT_JWKS requires jwksUrl")
+}
+
+private fun McpServerConfig.introspectionAuthErrors(bindIsLoopback: Boolean): List<String> = buildList {
+    if (issuer == null) add("authMode=JWT_INTROSPECTION requires issuer")
+    if (audience == null) add("authMode=JWT_INTROSPECTION requires audience")
+    if (introspectionUrl == null) add("authMode=JWT_INTROSPECTION requires introspectionUrl")
+    if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
+        add("introspectionClientId and introspectionClientSecret must both be set or both be null")
+    }
+    // LN-025 / LN-028: production HTTP deployments (non-loopback bind)
+    // MUST authenticate the introspection POST per RFC 6749 §2.3.1.
+    // Loopback dev setups can keep both creds null.
+    if (!bindIsLoopback &&
+        introspectionClientId == null &&
+        introspectionClientSecret == null
+    ) {
+        add(
+            "authMode=JWT_INTROSPECTION on non-loopback bind '$bindAddress' " +
+                "requires introspectionClientId and introspectionClientSecret " +
+                "(RFC 6749 §2.3.1 client authentication)",
+        )
+    }
+}
+
+private fun McpServerConfig.bindAndOriginErrors(bindIsLoopback: Boolean): List<String> = buildList {
     if (!bindIsLoopback && allowedOrigins == McpServerConfig.DEFAULT_LOOPBACK_ORIGINS) {
-        errors += "non-loopback bind '$bindAddress' requires explicit allowedOrigins"
+        add("non-loopback bind '$bindAddress' requires explicit allowedOrigins")
     }
     // §4.4 + §5.2: non-loopback HTTP MUST advertise a canonical
     // HTTPS URI in Protected Resource Metadata. Falling back to the
@@ -122,11 +135,11 @@ fun McpServerConfig.validate(): List<String> {
     // set when the bind address is non-loopback so the canonical
     // URI is build-time stable.
     if (!bindIsLoopback && publicBaseUrl == null) {
-        errors += "non-loopback bind '$bindAddress' requires publicBaseUrl " +
-            "(canonical HTTPS URI per §4.4)"
+        add(
+            "non-loopback bind '$bindAddress' requires publicBaseUrl " +
+                "(canonical HTTPS URI per §4.4)",
+        )
     }
-
-    return errors
 }
 
 /**

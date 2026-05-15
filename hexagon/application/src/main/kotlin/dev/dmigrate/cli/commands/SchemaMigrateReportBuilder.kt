@@ -25,7 +25,6 @@ import dev.dmigrate.driver.migration.TransactionBehavior
  */
 internal object SchemaMigrateReportBuilder {
 
-    @Suppress("LongParameterList")
     fun build(
         request: SchemaMigrateRequest,
         source: ResolvedSchemaOperand,

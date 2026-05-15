@@ -84,7 +84,6 @@ data class DiffResult(
          * construction prevents drift when the [DiffResult] shape
          * gains new fields (e.g. T6's `renameProjections`).
          */
-        @Suppress("LongParameterList")
         fun preplanBlocker(
             current: SchemaDefinition,
             desired: SchemaDefinition,

@@ -191,13 +191,21 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             dev.dmigrate.driver.ExecutionMode.EXECUTE -> SqliteRebuildEmissionMode.EXECUTE
         }
 
-    @Suppress("CyclomaticComplexMethod")
     private fun renderSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         if (ctx.direction == SqliteRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
             ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
+        if (renderInlineSimpleOp(op, ctx)) return
+        if (isDeferredToRebuild(op)) {
+            ctx.deferToRebuild(op)
+            return
+        }
+        markUnsupported(op, ctx)
+    }
+
+    private fun renderInlineSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateTable -> SqliteDiffSimpleOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> SqliteDiffSimpleOps.renderDropTable(op, ctx)
@@ -210,37 +218,24 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> SqliteDiffSimpleOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> SqliteDiffSimpleOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> SqliteDiffSimpleOps.renderDropView(op, ctx)
-
-            // Rebuild-required ops should have been classified into a rebuild bucket by
-            // SqliteRebuildPlanner.classify. If they show up here they're on a table whose
-            // current/desired schema couldn't be located — handled in renderRebuildBucket.
-            is DiffOperation.AlterColumnType,
-            is DiffOperation.AlterColumnNullability,
-            is DiffOperation.AlterColumnDefault,
-            is DiffOperation.AddPrimaryKey,
-            is DiffOperation.DropPrimaryKey,
-            is DiffOperation.AddConstraint,
-            is DiffOperation.DropConstraint,
-            -> ctx.deferToRebuild(op)
-
-            // Out of first matrix entirely
-            is DiffOperation.CreateCustomType,
-            is DiffOperation.AlterCustomType,
-            is DiffOperation.DropCustomType,
-            is DiffOperation.CreateSequence,
-            is DiffOperation.AlterSequence,
-            is DiffOperation.DropSequence,
-            is DiffOperation.CreateFunction,
-            is DiffOperation.ReplaceFunction,
-            is DiffOperation.DropFunction,
-            is DiffOperation.CreateProcedure,
-            is DiffOperation.ReplaceProcedure,
-            is DiffOperation.DropProcedure,
-            is DiffOperation.CreateTrigger,
-            is DiffOperation.ReplaceTrigger,
-            is DiffOperation.DropTrigger,
-            -> markUnsupported(op, ctx)
+            else -> return false
         }
+        return true
+    }
+
+    // Rebuild-required ops should have been classified into a rebuild bucket by
+    // SqliteRebuildPlanner.classify. If they show up here they're on a table whose
+    // current/desired schema couldn't be located — handled in renderRebuildBucket.
+    private fun isDeferredToRebuild(op: DiffOperation): Boolean = when (op) {
+        is DiffOperation.AlterColumnType,
+        is DiffOperation.AlterColumnNullability,
+        is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AddPrimaryKey,
+        is DiffOperation.DropPrimaryKey,
+        is DiffOperation.AddConstraint,
+        is DiffOperation.DropConstraint,
+        -> true
+        else -> false
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: SqliteDiffRenderContext) {

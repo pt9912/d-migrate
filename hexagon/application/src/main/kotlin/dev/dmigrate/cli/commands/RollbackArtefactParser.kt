@@ -441,31 +441,33 @@ internal object RollbackArtefactParser {
             }
         }
 
-        @Suppress("ComplexMethod")
         private fun parseString(s: ParseState): String {
             s.expect('"')
             val sb = StringBuilder()
             while (true) {
                 val c = s.take()
-                if (c == '"') return sb.toString()
-                if (c == '\\') {
-                    when (val esc = s.take()) {
-                        '"' -> sb.append('"')
-                        '\\' -> sb.append('\\')
-                        'n' -> sb.append('\n')
-                        'r' -> sb.append('\r')
-                        't' -> sb.append('\t')
-                        '/' -> sb.append('/')
-                        'u' -> {
-                            val hex = s.text.substring(s.pos, s.pos + 4)
-                            s.pos += 4
-                            sb.append(hex.toInt(16).toChar())
-                        }
-                        else -> throw ParseException("INVALID_ESCAPE", "unknown escape `\\$esc`")
-                    }
-                } else {
-                    sb.append(c)
+                when {
+                    c == '"' -> return sb.toString()
+                    c == '\\' -> appendEscaped(s, sb)
+                    else -> sb.append(c)
                 }
+            }
+        }
+
+        private fun appendEscaped(s: ParseState, sb: StringBuilder) {
+            when (val esc = s.take()) {
+                '"' -> sb.append('"')
+                '\\' -> sb.append('\\')
+                'n' -> sb.append('\n')
+                'r' -> sb.append('\r')
+                't' -> sb.append('\t')
+                '/' -> sb.append('/')
+                'u' -> {
+                    val hex = s.text.substring(s.pos, s.pos + 4)
+                    s.pos += 4
+                    sb.append(hex.toInt(16).toChar())
+                }
+                else -> throw ParseException("INVALID_ESCAPE", "unknown escape `\\$esc`")
             }
         }
 

@@ -302,7 +302,7 @@ internal class ProcedureTransformPlanHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, sourceRefs)
     }
 
-    @Suppress("ReturnCount", "LongParameterList")
+    @Suppress("ReturnCount")
     private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,

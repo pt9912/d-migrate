@@ -60,13 +60,18 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         return ctx.toResult(diff)
     }
 
-    @Suppress("CyclomaticComplexMethod")
     private fun renderOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         if (ctx.direction == MysqlRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
             ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
+        if (renderTableOp(op, ctx)) return
+        if (renderOtherOp(op, ctx)) return
+        markUnsupported(op, ctx)
+    }
+
+    private fun renderTableOp(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateTable -> MysqlDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> MysqlDiffTableOps.renderDropTable(op, ctx)
@@ -79,6 +84,13 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MysqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MysqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MysqlDiffTableOps.renderDropPrimaryKey(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun renderOtherOp(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
+        when (op) {
             is DiffOperation.AddConstraint -> MysqlDiffOtherOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> MysqlDiffOtherOps.renderDropConstraint(op, ctx)
             is DiffOperation.AddIndex -> MysqlDiffOtherOps.renderAddIndex(op, ctx)
@@ -88,21 +100,9 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> MysqlDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> MysqlDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> MysqlDiffOtherOps.renderDropView(op, ctx)
-            is DiffOperation.AlterCustomType,
-            is DiffOperation.CreateSequence,
-            is DiffOperation.AlterSequence,
-            is DiffOperation.DropSequence,
-            is DiffOperation.CreateFunction,
-            is DiffOperation.ReplaceFunction,
-            is DiffOperation.DropFunction,
-            is DiffOperation.CreateProcedure,
-            is DiffOperation.ReplaceProcedure,
-            is DiffOperation.DropProcedure,
-            is DiffOperation.CreateTrigger,
-            is DiffOperation.ReplaceTrigger,
-            is DiffOperation.DropTrigger,
-            -> markUnsupported(op, ctx)
+            else -> return false
         }
+        return true
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: MysqlDiffRenderContext) {

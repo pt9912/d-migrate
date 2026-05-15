@@ -39,7 +39,6 @@ internal data class ChunkContext(
     val deserializer: ValueDeserializer,
 )
 
-@Suppress("LongParameterList")
 internal fun importChunks(
     reader: DataChunkReader,
     session: TableImportSession,

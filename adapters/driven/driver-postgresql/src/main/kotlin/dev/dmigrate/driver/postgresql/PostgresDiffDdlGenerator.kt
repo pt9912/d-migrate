@@ -72,13 +72,19 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         return ctx.toResult(diff)
     }
 
-    @Suppress("CyclomaticComplexMethod")
     private fun renderOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         if (ctx.direction == PostgresRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
             ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
+        if (renderTableOp(op, ctx)) return
+        if (renderOtherOp(op, ctx)) return
+        if (renderSequenceOp(op, ctx)) return
+        markUnsupported(op, ctx)
+    }
+
+    private fun renderTableOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
         when (op) {
             is DiffOperation.CreateTable -> PostgresDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> PostgresDiffTableOps.renderDropTable(op, ctx)
@@ -91,6 +97,13 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> PostgresDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> PostgresDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> PostgresDiffTableOps.renderDropPrimaryKey(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun renderOtherOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
+        when (op) {
             is DiffOperation.AddConstraint -> PostgresDiffOtherOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> PostgresDiffOtherOps.renderDropConstraint(op, ctx)
             is DiffOperation.AddIndex -> PostgresDiffOtherOps.renderAddIndex(op, ctx)
@@ -100,21 +113,19 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> PostgresDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> PostgresDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> PostgresDiffOtherOps.renderDropView(op, ctx)
+            else -> return false
+        }
+        return true
+    }
+
+    private fun renderSequenceOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
+        when (op) {
             is DiffOperation.CreateSequence -> PostgresDiffSequenceOps.renderCreateSequence(op, ctx)
             is DiffOperation.AlterSequence -> PostgresDiffSequenceOps.renderAlterSequence(op, ctx)
             is DiffOperation.DropSequence -> PostgresDiffSequenceOps.renderDropSequence(op, ctx)
-            is DiffOperation.AlterCustomType,
-            is DiffOperation.CreateFunction,
-            is DiffOperation.ReplaceFunction,
-            is DiffOperation.DropFunction,
-            is DiffOperation.CreateProcedure,
-            is DiffOperation.ReplaceProcedure,
-            is DiffOperation.DropProcedure,
-            is DiffOperation.CreateTrigger,
-            is DiffOperation.ReplaceTrigger,
-            is DiffOperation.DropTrigger,
-            -> markUnsupported(op, ctx)
+            else -> return false
         }
+        return true
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: PostgresDiffRenderContext) {

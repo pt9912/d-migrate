@@ -45,7 +45,6 @@ internal object MigrationOverlayPreflight {
      * [Locale.ROOT] before equality so a Turkish JVM cannot turn
      * `"POSTGRESQL"` into `"postgresqı"`.
      */
-    @Suppress("LongParameterList")
     fun validateBeforePlan(
         documents: List<MigrationOverlayDocument>,
         sourceFingerprint: String,

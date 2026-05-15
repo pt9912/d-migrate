@@ -229,7 +229,7 @@ internal class TestdataPlanHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, sourceRefs)
     }
 
-    @Suppress("ReturnCount", "LongParameterList")
+    @Suppress("ReturnCount")
     private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -507,7 +507,6 @@ internal class TestdataPlanHandler(
 
     // ---- Publish ------------------------------------------------------
 
-    @Suppress("LongParameterList")
     private fun publishTestdataPlanArtifact(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -666,7 +665,6 @@ internal class TestdataPlanHandler(
         )
     }
 
-    @Suppress("LongParameterList")
     private fun buildSuccessJson(
         resultRef: String,
         artifactId: String,
