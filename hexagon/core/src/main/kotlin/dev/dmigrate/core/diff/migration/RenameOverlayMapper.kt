@@ -29,6 +29,18 @@ internal object RenameOverlayMapper {
     const val STRUCTURAL_MISMATCH: String = "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
     const val DEPENDENCY_PROJECTION_REQUIRED: String = "RENAME_OVERLAY_DEPENDENCY_PROJECTION_REQUIRED"
 
+    /**
+     * F.4 dependency-projection T2 pipeline:
+     * `prepareTableItems(...)` builds candidates without touching the
+     * operations list. [RenamePassThroughProjector.projectTables] folds
+     * the items into the same `RenameTable` operations / structural-
+     * mismatch / stale-reference diagnostics that the pre-T2 inline
+     * fold produced.
+     *
+     * [foldRenameTables] keeps its pre-T2 signature so callers
+     * (currently [OperationMapper.mapTables]) stay untouched while the
+     * pipeline shape evolves.
+     */
     fun foldRenameTables(
         diff: SchemaDiff,
         current: SchemaDefinition,
@@ -38,11 +50,54 @@ internal object RenameOverlayMapper {
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ): Pair<Set<String>, Set<String>> {
-        if (renameIndex.isEmpty()) return emptySet<String>() to emptySet()
+        val items = prepareTableItems(diff, current, desired, blockedTables, renameIndex)
+        val projection = RenamePassThroughProjector.projectTables(items)
+        ops += projection.operations
+        diagnostics += projection.diagnostics
+        // Pre-T2 contract returned `(absorbedAdds, absorbedRemoves)` — i.e.
+        // the `to`-side first, the `from`-side second. Preserve that order
+        // so the mapper's regular drop/add loop continues to skip the
+        // right names.
+        return projection.absorbedToNames to projection.absorbedFromNames
+    }
+
+    fun foldRenameColumns(
+        table: TableDiff,
+        renameIndex: RenameOverlayIndex,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ): Pair<Set<String>, Set<String>> {
+        val items = prepareColumnItems(table, renameIndex)
+        val projection = RenamePassThroughProjector.projectColumns(items)
+        ops += projection.operations
+        diagnostics += projection.diagnostics
+        return projection.absorbedToColumns to projection.absorbedFromColumns
+    }
+
+    /**
+     * Builds [RenameTablePlanningItem]s for every overlay table mapping
+     * whose `from` is in `tablesRemoved` AND `to` is in `tablesAdded`.
+     * Mappings that touch a `CONSTRAINT_NOT_DIFFABLE`-blocked table are
+     * skipped entirely (the planner already surfaces a top-level
+     * blocker for those tables).
+     *
+     * For T2 the items carry empty [RenamePlanningItem.fallbackOperations]
+     * and [RenamePlanningItem.postRenameDeltaOperations] lists: the
+     * regular drop/create path in [OperationMapper.mapTables] still
+     * emits Drop+Add for non-absorbed names, and the post-rename delta
+     * synthesis is the T4 slice.
+     */
+    fun prepareTableItems(
+        diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        blockedTables: Set<String>,
+        renameIndex: RenameOverlayIndex,
+    ): List<RenameTablePlanningItem> {
+        if (renameIndex.isEmpty()) return emptyList()
         val addedByName = diff.tablesAdded.associateBy { it.name }
         val removedByName = diff.tablesRemoved.associateBy { it.name }
-        val absorbedAdds = mutableSetOf<String>()
-        val absorbedRemoves = mutableSetOf<String>()
+        val items = mutableListOf<RenameTablePlanningItem>()
         for (mapping in renameIndex.tableMappings()) {
             val from = mapping.fromName
             val to = mapping.toName
@@ -57,80 +112,97 @@ internal object RenameOverlayMapper {
             // operator-friendly summary; fall back to a generic note if
             // the canonical strings differ but the summary localised
             // nothing (defensive against future definition fields).
-            if (CanonicalPayload.table(before) != CanonicalPayload.table(after)) {
-                val differences = describeTableDifferences(before, after)
+            val structurallyEqual = CanonicalPayload.table(before) == CanonicalPayload.table(after)
+            val structuralDifferences = if (structurallyEqual) {
+                emptyList()
+            } else {
+                describeTableDifferences(before, after)
                     .ifEmpty { listOf("structural difference detected") }
-                diagnostics += structuralMismatchTable(mapping, from, to, differences)
-                continue
             }
-            val staleRef = staleReferenceToOldName(diff, from)
-            if (staleRef != null) {
-                diagnostics += staleReferenceBlocker(mapping, from, to, staleRef)
-                continue
-            }
-            ops += buildRenameTableOp(mapping, from, to)
-            absorbedAdds += to
-            absorbedRemoves += from
+            // Skip the stale-reference probe when the candidate is
+            // already going to fall back: the warning would otherwise
+            // override the structural-mismatch diagnostic the projector
+            // is about to emit.
+            val staleRef = if (structurallyEqual) staleReferenceToOldName(diff, from) else null
+            items += RenameTablePlanningItem(
+                candidate = RenameTableCandidate(
+                    id = renameTableOperationId(mapping, from, to),
+                    fromName = from,
+                    toName = to,
+                    overlaySource = mapping.source,
+                    overlayEntryId = mapping.entryId,
+                    overlayHash = mapping.overlayHash,
+                    structurallyEqual = structurallyEqual,
+                    structuralDifferences = structuralDifferences,
+                    staleReferenceObject = staleRef,
+                ),
+            )
         }
-        return absorbedAdds to absorbedRemoves
+        return items
     }
 
-    fun foldRenameColumns(
+    /**
+     * Builds [RenameColumnPlanningItem]s for every overlay column
+     * mapping whose `from` is in `columnsRemoved` AND `to` is in
+     * `columnsAdded` for the given [table]. Same per-T2 carve-out for
+     * empty fallback / post-rename delta lists as
+     * [prepareTableItems].
+     */
+    fun prepareColumnItems(
         table: TableDiff,
         renameIndex: RenameOverlayIndex,
-        diagnostics: MutableList<DiffDiagnostic>,
-        ops: MutableList<DiffOperation>,
-    ): Pair<Set<String>, Set<String>> {
-        if (renameIndex.isEmpty()) return emptySet<String>() to emptySet()
-        val absorbedAdds = mutableSetOf<String>()
-        val absorbedRemoves = mutableSetOf<String>()
+    ): List<RenameColumnPlanningItem> {
+        if (renameIndex.isEmpty()) return emptyList()
+        val items = mutableListOf<RenameColumnPlanningItem>()
         for (mapping in renameIndex.columnMappings(table.name)) {
             val removed = table.columnsRemoved[mapping.fromColumn] ?: continue
             val added = table.columnsAdded[mapping.toColumn] ?: continue
-            // Equality via CanonicalPayload.column; describe* is only the
-            // operator hint.
-            if (CanonicalPayload.column(removed) != CanonicalPayload.column(added)) {
-                val differences = describeColumnDifferences(removed, added)
+            val structurallyEqual = CanonicalPayload.column(removed) == CanonicalPayload.column(added)
+            val structuralDifferences = if (structurallyEqual) {
+                emptyList()
+            } else {
+                describeColumnDifferences(removed, added)
                     .ifEmpty { listOf("structural difference detected") }
-                diagnostics += structuralMismatchColumn(mapping, differences)
-                continue
             }
-            val referencingObject = referencingObjectFor(table, mapping.fromColumn, mapping.toColumn)
-            if (referencingObject != null) {
-                diagnostics += dependencyProjectionBlockerColumn(table, mapping, referencingObject)
-                continue
+            val referencingObject = if (structurallyEqual) {
+                referencingObjectFor(table, mapping.fromColumn, mapping.toColumn)
+            } else {
+                null
             }
-            ops += buildRenameColumnOp(table, mapping)
-            absorbedAdds += mapping.toColumn
-            absorbedRemoves += mapping.fromColumn
+            items += RenameColumnPlanningItem(
+                candidate = RenameColumnCandidate(
+                    id = renameColumnOperationId(table, mapping),
+                    tableName = table.name,
+                    fromColumn = mapping.fromColumn,
+                    toColumn = mapping.toColumn,
+                    overlaySource = mapping.source,
+                    overlayEntryId = mapping.entryId,
+                    overlayHash = mapping.overlayHash,
+                    structurallyEqual = structurallyEqual,
+                    structuralDifferences = structuralDifferences,
+                    referencingObject = referencingObject,
+                ),
+            )
         }
-        return absorbedAdds to absorbedRemoves
+        return items
     }
 
-    private fun structuralMismatchTable(
-        mapping: TableRenameMapping,
-        from: String,
-        to: String,
-        differences: List<String>,
-    ): DiffDiagnostic = DiffDiagnostic(
+    internal fun structuralMismatchTableDiagnostic(candidate: RenameTableCandidate): DiffDiagnostic = DiffDiagnostic(
         code = STRUCTURAL_MISMATCH,
-        message = "Rename mapping ${mapping.source} entry=${mapping.entryId} for table " +
-            "'$from' -> '$to' was ignored: source and target tables differ structurally " +
-            "(${differences.joinToString("; ")}). The migration falls back to drop+create. " +
+        message = "Rename mapping ${candidate.overlaySource} entry=${candidate.overlayEntryId} for table " +
+            "'${candidate.fromName}' -> '${candidate.toName}' was ignored: source and target tables differ structurally " +
+            "(${candidate.structuralDifferences.joinToString("; ")}). The migration falls back to drop+create. " +
             "Align the schemas (or remove the mapping) to enable a native " +
             "ALTER TABLE ... RENAME TO.",
         severity = DiffDiagnostic.Severity.WARNING,
     )
 
-    private fun structuralMismatchColumn(
-        mapping: ColumnRenameMapping,
-        differences: List<String>,
-    ): DiffDiagnostic = DiffDiagnostic(
+    internal fun structuralMismatchColumnDiagnostic(candidate: RenameColumnCandidate): DiffDiagnostic = DiffDiagnostic(
         code = STRUCTURAL_MISMATCH,
-        message = "Rename mapping ${mapping.source} entry=${mapping.entryId} for column " +
-            "'${mapping.tableName}.${mapping.fromColumn}' -> '${mapping.tableName}." +
-            "${mapping.toColumn}' was ignored: source and target columns differ structurally " +
-            "(${differences.joinToString("; ")}). The migration falls back to drop+add. " +
+        message = "Rename mapping ${candidate.overlaySource} entry=${candidate.overlayEntryId} for column " +
+            "'${candidate.tableName}.${candidate.fromColumn}' -> '${candidate.tableName}." +
+            "${candidate.toColumn}' was ignored: source and target columns differ structurally " +
+            "(${candidate.structuralDifferences.joinToString("; ")}). The migration falls back to drop+add. " +
             "Align the column definitions (or remove the mapping) to enable a native " +
             "ALTER TABLE ... RENAME COLUMN.",
         severity = DiffDiagnostic.Severity.WARNING,
@@ -252,68 +324,73 @@ internal object RenameOverlayMapper {
         return out
     }
 
-    private fun staleReferenceBlocker(
-        mapping: TableRenameMapping,
-        from: String,
-        to: String,
-        staleRef: String,
-    ): DiffDiagnostic = DiffDiagnostic(
-        code = DEPENDENCY_PROJECTION_REQUIRED,
-        message = "Rename mapping ${mapping.source} entry=${mapping.entryId} for table " +
-            "'$from' -> '$to' was ignored: another table's diff ($staleRef) still " +
-            "references the old name '$from' after the rename. Forward references to the " +
-            "new name '$to' are sorted by the dependency analyzer (CreateTable / RenameTable " +
-            "produce an FK-target edge); stale references to the old name require manual " +
-            "re-projection and remain out of scope for this slice.",
-        severity = DiffDiagnostic.Severity.WARNING,
-    )
-
-    private fun dependencyProjectionBlockerColumn(
-        table: TableDiff,
-        mapping: ColumnRenameMapping,
-        referencingObject: String,
-    ): DiffDiagnostic = DiffDiagnostic(
-        code = DEPENDENCY_PROJECTION_REQUIRED,
-        message = "Rename mapping ${mapping.source} entry=${mapping.entryId} for column " +
-            "'${table.name}.${mapping.fromColumn}' -> '${table.name}.${mapping.toColumn}' " +
-            "was ignored: $referencingObject changes in the same table diff and would " +
-            "need to be re-projected to the new column name. Dependency projection is " +
-            "out of scope for this slice; the migration falls back to drop+add.",
-        severity = DiffDiagnostic.Severity.WARNING,
-    )
-
-    private fun buildRenameTableOp(
-        mapping: TableRenameMapping,
-        from: String,
-        to: String,
-    ): DiffOperation.RenameTable {
-        val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(to))
-        return DiffOperation.RenameTable(
-            id = OperationIdFactory.makeId(
-                "RenameTable", ref,
-                "from=$from->to=$to::overlay=${mapping.overlayHash ?: "<unhashed>"}",
-            ),
-            objectRef = ref,
-            fromName = from,
-            toName = to,
-            overlaySource = mapping.source,
-            overlayHash = mapping.overlayHash,
+    internal fun staleReferenceTableDiagnostic(candidate: RenameTableCandidate): DiffDiagnostic {
+        val staleRef = candidate.staleReferenceObject
+            ?: error("staleReferenceTableDiagnostic invoked for a candidate without a stale reference")
+        return DiffDiagnostic(
+            code = DEPENDENCY_PROJECTION_REQUIRED,
+            message = "Rename mapping ${candidate.overlaySource} entry=${candidate.overlayEntryId} for table " +
+                "'${candidate.fromName}' -> '${candidate.toName}' was ignored: another table's diff " +
+                "($staleRef) still references the old name '${candidate.fromName}' after the rename. " +
+                "Forward references to the new name '${candidate.toName}' are sorted by the dependency " +
+                "analyzer (CreateTable / RenameTable produce an FK-target edge); stale references to the " +
+                "old name require manual re-projection and remain out of scope for this slice.",
+            severity = DiffDiagnostic.Severity.WARNING,
         )
     }
 
-    private fun buildRenameColumnOp(table: TableDiff, mapping: ColumnRenameMapping): DiffOperation.RenameColumn {
-        val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, mapping.toColumn))
-        return DiffOperation.RenameColumn(
-            id = OperationIdFactory.makeId(
-                "RenameColumn", ref,
-                "from=${mapping.fromColumn}->to=${mapping.toColumn}" +
-                    "::overlay=${mapping.overlayHash ?: "<unhashed>"}",
-            ),
+    internal fun dependencyProjectionColumnDiagnostic(candidate: RenameColumnCandidate): DiffDiagnostic {
+        val referencingObject = candidate.referencingObject
+            ?: error("dependencyProjectionColumnDiagnostic invoked for a candidate without a referencing object")
+        return DiffDiagnostic(
+            code = DEPENDENCY_PROJECTION_REQUIRED,
+            message = "Rename mapping ${candidate.overlaySource} entry=${candidate.overlayEntryId} for column " +
+                "'${candidate.tableName}.${candidate.fromColumn}' -> '${candidate.tableName}." +
+                "${candidate.toColumn}' was ignored: $referencingObject changes in the same table diff and " +
+                "would need to be re-projected to the new column name. Dependency projection is out of " +
+                "scope for this slice; the migration falls back to drop+add.",
+            severity = DiffDiagnostic.Severity.WARNING,
+        )
+    }
+
+    internal fun buildRenameTableOperation(candidate: RenameTableCandidate): DiffOperation.RenameTable {
+        val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(candidate.toName))
+        return DiffOperation.RenameTable(
+            id = candidate.id,
             objectRef = ref,
-            fromName = mapping.fromColumn,
-            toName = mapping.toColumn,
-            overlaySource = mapping.source,
-            overlayHash = mapping.overlayHash,
+            fromName = candidate.fromName,
+            toName = candidate.toName,
+            overlaySource = candidate.overlaySource,
+            overlayHash = candidate.overlayHash,
+        )
+    }
+
+    internal fun buildRenameColumnOperation(candidate: RenameColumnCandidate): DiffOperation.RenameColumn {
+        val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(candidate.tableName, candidate.toColumn))
+        return DiffOperation.RenameColumn(
+            id = candidate.id,
+            objectRef = ref,
+            fromName = candidate.fromColumn,
+            toName = candidate.toColumn,
+            overlaySource = candidate.overlaySource,
+            overlayHash = candidate.overlayHash,
+        )
+    }
+
+    private fun renameTableOperationId(mapping: TableRenameMapping, from: String, to: String): String {
+        val ref = DiffObjectRef(DiffObjectType.TABLE, listOf(to))
+        return OperationIdFactory.makeId(
+            "RenameTable", ref,
+            "from=$from->to=$to::overlay=${mapping.overlayHash ?: "<unhashed>"}",
+        )
+    }
+
+    private fun renameColumnOperationId(table: TableDiff, mapping: ColumnRenameMapping): String {
+        val ref = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, mapping.toColumn))
+        return OperationIdFactory.makeId(
+            "RenameColumn", ref,
+            "from=${mapping.fromColumn}->to=${mapping.toColumn}" +
+                "::overlay=${mapping.overlayHash ?: "<unhashed>"}",
         )
     }
 

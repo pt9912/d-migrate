@@ -37,7 +37,22 @@ internal object OperationMapper {
         desired: SchemaDefinition,
         blockedTables: Set<String>,
         migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
-    ): MapperResult {
+    ): MapperResult = finalizeIds(prepare(diff, current, desired, blockedTables, migrationOverlays))
+
+    /**
+     * F.4 dependency-projection T2: phase 1 of the two-phase mapping
+     * pipeline. Walks the [SchemaDiff] and produces the raw operations
+     * + diagnostics. The result is fed to [finalizeIds] which applies
+     * ID disambiguation and (in later slices) remaps dependency
+     * references when a candidate's final ID changes.
+     */
+    internal fun prepare(
+        diff: SchemaDiff,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+        blockedTables: Set<String>,
+        migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+    ): PreparedMapping {
         val renameIndex = RenameOverlayIndex.build(migrationOverlays)
         val diagnostics = mutableListOf<DiffDiagnostic>()
         diagnostics += renameIndex.issues
@@ -49,11 +64,36 @@ internal object OperationMapper {
         mapFunctions(diff, current, desired, ops)
         mapProcedures(diff, current, desired, ops)
         mapTriggers(diff, current, desired, ops)
-        return MapperResult(
-            operations = disambiguateIds(ops),
-            diagnostics = diagnostics,
-        )
+        return PreparedMapping(operations = ops, diagnostics = diagnostics)
     }
+
+    /**
+     * F.4 dependency-projection T2: phase 2 of the two-phase mapping
+     * pipeline. Applies [OperationIdFactory.disambiguate] so any pair
+     * of operations that produced the same base ID gets a stable `#N`
+     * suffix in declaration order. Today's mappers do not collide for
+     * non-degenerate inputs, but the planner contract is that IDs are
+     * unique.
+     *
+     * Later slices (T4 / T5) will also remap operations that carry a
+     * `dependencies = setOf(candidate.id)` reference when the candidate
+     * itself was renamed by the suffix step.
+     */
+    internal fun finalizeIds(prepared: PreparedMapping): MapperResult = MapperResult(
+        operations = disambiguateOps(prepared.operations),
+        diagnostics = prepared.diagnostics,
+    )
+
+    /**
+     * Intermediate state handed between [prepare] and [finalizeIds].
+     * Carries the raw operations list + the collected diagnostics so
+     * later slices can attach a candidate-ID map without changing the
+     * public [MapperResult] shape.
+     */
+    internal data class PreparedMapping(
+        val operations: List<DiffOperation>,
+        val diagnostics: List<DiffDiagnostic>,
+    )
 
     /**
      * Result wrapper so the planner can collect [diagnostics] generated
@@ -65,15 +105,7 @@ internal object OperationMapper {
         val diagnostics: List<DiffDiagnostic>,
     )
 
-    /**
-     * Apply [OperationIdFactory.disambiguate] so that any pair of
-     * operations that — by accident or by edge case — produced the
-     * same base ID receive a stable `#N` suffix in declaration order.
-     * Today's mappers should not collide for non-degenerate inputs,
-     * but the planner contract is that IDs are unique, and it's
-     * cheap to enforce.
-     */
-    private fun disambiguateIds(ops: List<DiffOperation>): List<DiffOperation> {
+    private fun disambiguateOps(ops: List<DiffOperation>): List<DiffOperation> {
         if (ops.isEmpty()) return ops
         val pairs = ops.mapIndexed { idx, op -> op.id to idx }
         val resolved = OperationIdFactory.disambiguate(pairs)
