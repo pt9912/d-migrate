@@ -122,9 +122,29 @@ internal object OperationMapper {
         if (ops.isEmpty()) return ops
         val pairs = ops.mapIndexed { idx, op -> op.id to idx }
         val resolved = OperationIdFactory.disambiguate(pairs)
-        return ops.mapIndexed { idx, op ->
+        val idRewrites = mutableMapOf<String, String>()
+        val withRenamedIds = ops.mapIndexed { idx, op ->
             val newId = resolved[idx]
-            if (newId == op.id) op else op.withId(newId)
+            if (newId == op.id) {
+                op
+            } else {
+                idRewrites[op.id] = newId
+                op.withId(newId)
+            }
+        }
+        if (idRewrites.isEmpty()) return withRenamedIds
+        // F.4 dependency-projection T4: when disambiguation renames an
+        // operation, any synthetic delta op that pinned that ID via
+        // `dependencies = setOf(candidateId)` must follow the rename
+        // atomically. Walk every op once and rewrite each
+        // `dependencies` entry that hit the rewrite map.
+        return withRenamedIds.map { op ->
+            if (op.dependencies.isEmpty()) {
+                op
+            } else {
+                val remapped = op.dependencies.mapTo(mutableSetOf()) { idRewrites[it] ?: it }
+                if (remapped == op.dependencies) op else op.withDependencies(remapped)
+            }
         }
     }
 

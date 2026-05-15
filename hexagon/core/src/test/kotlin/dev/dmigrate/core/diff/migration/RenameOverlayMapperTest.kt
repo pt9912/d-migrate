@@ -17,6 +17,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
@@ -97,7 +98,7 @@ class RenameOverlayMapperTest : FunSpec({
         renames.single().overlayHash?.length shouldBe 64
     }
 
-    test("table rename overlay with structurally different source emits warning and keeps Drop+Add") {
+    test("T4: table rename with extra column folds to Rename + synthetic AddColumn") {
         val before = simpleTable()
         val after = simpleTable().copy(
             columns = simpleTable().columns + mapOf(
@@ -118,11 +119,21 @@ class RenameOverlayMapperTest : FunSpec({
             migrationOverlays = listOf(renameOverlay("table", "users_old", "users")),
         )
 
-        plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 0
-        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 1
-        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 1
-        val mismatchDiagnostic = plan.diagnostics.single { it.code == "RENAME_OVERLAY_STRUCTURAL_MISMATCH" }
-        mismatchDiagnostic.message shouldContainStr "added columns [joined_at]"
+        // The rename folds — no Drop+Add residue.
+        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 0
+        val rename = plan.operations.filterIsInstance<DiffOperation.RenameTable>().single()
+        rename.fromName shouldBe "users_old"
+        rename.toName shouldBe "users"
+
+        // The synthetic AddColumn targets the new table name and
+        // depends on the rename — the topo sorter places it strictly
+        // after the rename.
+        val addColumn = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+        addColumn.objectRef.path shouldBe listOf("users", "joined_at")
+        addColumn.dependencies shouldContain rename.id
+
+        plan.diagnostics.map { it.code } shouldNotContain "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
     }
 
     test("column rename overlay collapses per-table Drop+Add into RenameColumn") {
@@ -173,7 +184,7 @@ class RenameOverlayMapperTest : FunSpec({
         renames.single().objectRef.path shouldBe listOf("users", "new_name")
     }
 
-    test("column rename overlay with type drift emits warning and keeps Drop+Add") {
+    test("T4: column rename with type drift folds to Rename + synthetic AlterColumnType") {
         val before = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
@@ -211,11 +222,18 @@ class RenameOverlayMapperTest : FunSpec({
             migrationOverlays = listOf(renameOverlay("column", "users.old_name", "users.new_name")),
         )
 
-        plan.operations.filterIsInstance<DiffOperation.RenameColumn>().size shouldBe 0
-        plan.operations.filterIsInstance<DiffOperation.AddColumn>().size shouldBe 1
-        plan.operations.filterIsInstance<DiffOperation.DropColumn>().size shouldBe 1
-        val mismatchDiagnostic = plan.diagnostics.single { it.code == "RENAME_OVERLAY_STRUCTURAL_MISMATCH" }
-        mismatchDiagnostic.message shouldContainStr "type"
+        plan.operations.filterIsInstance<DiffOperation.AddColumn>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.DropColumn>().size shouldBe 0
+        val rename = plan.operations.filterIsInstance<DiffOperation.RenameColumn>().single()
+        rename.fromName shouldBe "old_name"
+        rename.toName shouldBe "new_name"
+
+        // The synthetic AlterColumnType targets `users.new_name` (the
+        // new column name) and pins the rename id as its dependency.
+        val alterType = plan.operations.filterIsInstance<DiffOperation.AlterColumnType>().single()
+        alterType.objectRef.path shouldBe listOf("users", "new_name")
+        alterType.dependencies shouldContain rename.id
+        plan.diagnostics.map { it.code } shouldNotContain "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
     }
 
     test("unqualified column rename mapping fans out across matching tables") {
@@ -350,7 +368,7 @@ class RenameOverlayMapperTest : FunSpec({
         plan.diagnostics.map { it.code } shouldContain "RENAME_OVERLAY_MIXED_COLUMN_QUALIFICATION"
     }
 
-    test("table rename is rejected when a same-named index changes its column set") {
+    test("T4: table rename folds same-named index column-set change into Drop+Add deltas") {
         val before = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
@@ -393,14 +411,19 @@ class RenameOverlayMapperTest : FunSpec({
             migrationOverlays = listOf(renameOverlay("table", "users_old", "users")),
         )
 
-        plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 0
-        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 1
-        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 1
-        val mismatch = plan.diagnostics.single { it.code == "RENAME_OVERLAY_STRUCTURAL_MISMATCH" }
-        mismatch.message shouldContainStr "index 'idx_users_email' definition changed"
+        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 0
+        val rename = plan.operations.filterIsInstance<DiffOperation.RenameTable>().single()
+        val dropIndex = plan.operations.filterIsInstance<DiffOperation.DropIndex>().single()
+        val addIndex = plan.operations.filterIsInstance<DiffOperation.AddIndex>().single()
+        dropIndex.objectRef.path shouldBe listOf("users", "idx_users_email")
+        addIndex.objectRef.path shouldBe listOf("users", "idx_users_email")
+        dropIndex.dependencies shouldContain rename.id
+        addIndex.dependencies shouldContain rename.id
+        plan.diagnostics.map { it.code } shouldNotContain "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
     }
 
-    test("table rename is rejected when an anonymous index swaps its columns") {
+    test("T4: table rename folds anonymous-index column swap into Drop+Add deltas") {
         val before = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
@@ -443,14 +466,12 @@ class RenameOverlayMapperTest : FunSpec({
             migrationOverlays = listOf(renameOverlay("table", "users_old", "users")),
         )
 
-        plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 0
-        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 1
-        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 1
-        val mismatch = plan.diagnostics.single { it.code == "RENAME_OVERLAY_STRUCTURAL_MISMATCH" }
-        // Anonymous indices keyed by their canonical payload — both sides
-        // surface separately in the message.
-        mismatch.message shouldContainStr "removed indices"
-        mismatch.message shouldContainStr "added indices"
+        plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 0
+        val rename = plan.operations.filterIsInstance<DiffOperation.RenameTable>().single()
+        plan.operations.filterIsInstance<DiffOperation.DropIndex>().single().dependencies shouldContain rename.id
+        plan.operations.filterIsInstance<DiffOperation.AddIndex>().single().dependencies shouldContain rename.id
+        plan.diagnostics.map { it.code } shouldNotContain "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
     }
 
     test("duplicate rename mappings collapse into a single RenameTable op") {
@@ -492,4 +513,9 @@ class RenameOverlayMapperTest : FunSpec({
         plan.operations.filterIsInstance<DiffOperation.CreateTable>().size shouldBe 1
         plan.operations.filterIsInstance<DiffOperation.DropTable>().size shouldBe 1
     }
+
+    // T4 mixed-rename delta-synthesis tests live in
+    // RenameOverlayMapperT4Test — splitting them keeps this class
+    // under the LargeClass budget.
 })
+

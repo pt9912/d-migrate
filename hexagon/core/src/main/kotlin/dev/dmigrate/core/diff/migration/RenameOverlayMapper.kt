@@ -92,11 +92,16 @@ internal object RenameOverlayMapper {
      * skipped entirely (the planner already surfaces a top-level
      * blocker for those tables).
      *
-     * For T2 the items carry empty [RenamePlanningItem.fallbackOperations]
-     * and [RenamePlanningItem.postRenameDeltaOperations] lists: the
-     * regular drop/create path in [OperationMapper.mapTables] still
-     * emits Drop+Add for non-absorbed names, and the post-rename delta
-     * synthesis is the T4 slice.
+     * T4 (mixed-case intra-object delta synthesis): when source and
+     * target tables differ structurally but the drift is fully
+     * intra-object (column add/drop/alter, index drift, constraint
+     * drift, PK reshape), the candidate carries the rename PLUS
+     * synthetic delta operations on
+     * [RenamePlanningItem.postRenameDeltaOperations] — each anchored
+     * to the rename via `dependencies = setOf(candidate.id)`. Drift
+     * that the synthesiser cannot cover (table metadata, T5 cross-
+     * object dependencies) is reported via [structuralDifferences];
+     * the projector then falls back to drop+create.
      */
     fun prepareTableItems(
         diff: SchemaDiff,
@@ -117,18 +122,32 @@ internal object RenameOverlayMapper {
             val added = addedByName[to] ?: continue
             val before = current.tables[from] ?: removed.definition
             val after = desired.tables[to] ?: added.definition
-            // Equality is governed by CanonicalPayload (covers columns,
-            // PK, constraints, *and* every index field — see
-            // CanonicalPayload.table). The describe* helper is only an
-            // operator-friendly summary; fall back to a generic note if
-            // the canonical strings differ but the summary localised
-            // nothing (defensive against future definition fields).
-            val structurallyEqual = CanonicalPayload.table(before) == CanonicalPayload.table(after)
+            val candidateId = renameTableOperationId(mapping, from, to)
+            // CanonicalPayload covers columns, PK, constraints AND
+            // every index field. If both sides are byte-identical we
+            // skip synthesis entirely.
+            val byteIdentical = CanonicalPayload.table(before) == CanonicalPayload.table(after)
+            val synthesis = if (byteIdentical) {
+                RenameIntraObjectDeltaSynthesizer.SynthesisResult.EMPTY
+            } else {
+                RenameIntraObjectDeltaSynthesizer.synthesizeForTableRename(
+                    candidateId = candidateId,
+                    targetTableName = to,
+                    before = before,
+                    after = after,
+                )
+            }
+            // Drift that the synthesiser cannot project (today: table
+            // metadata) keeps the candidate structurally-unequal so the
+            // projector falls back to drop+create.
+            val structurallyEqual = synthesis.isComplete
             val structuralDifferences = if (structurallyEqual) {
                 emptyList()
             } else {
-                describeTableDifferences(before, after)
-                    .ifEmpty { listOf("structural difference detected") }
+                synthesis.residualDifferences.ifEmpty {
+                    describeTableDifferences(before, after)
+                        .ifEmpty { listOf("structural difference detected") }
+                }
             }
             // Skip the stale-reference probe when the candidate is
             // already going to fall back: the warning would otherwise
@@ -137,7 +156,7 @@ internal object RenameOverlayMapper {
             val staleRef = if (structurallyEqual) staleReferenceToOldName(diff, from) else null
             items += RenameTablePlanningItem(
                 candidate = RenameTableCandidate(
-                    id = renameTableOperationId(mapping, from, to),
+                    id = candidateId,
                     fromName = from,
                     toName = to,
                     overlaySource = mapping.source,
@@ -147,6 +166,7 @@ internal object RenameOverlayMapper {
                     structuralDifferences = structuralDifferences,
                     staleReferenceObject = staleRef,
                 ),
+                postRenameDeltaOperations = if (structurallyEqual) synthesis.operations else emptyList(),
             )
         }
         return items
@@ -155,9 +175,16 @@ internal object RenameOverlayMapper {
     /**
      * Builds [RenameColumnPlanningItem]s for every overlay column
      * mapping whose `from` is in `columnsRemoved` AND `to` is in
-     * `columnsAdded` for the given [table]. Same per-T2 carve-out for
-     * empty fallback / post-rename delta lists as
-     * [prepareTableItems].
+     * `columnsAdded` for the given [table]. T4 adds intra-column
+     * delta synthesis: when the renamed column has type / nullability
+     * / default drift, the item carries `AlterColumn*` operations on
+     * [RenamePlanningItem.postRenameDeltaOperations] anchored to the
+     * rename via `dependencies = setOf(candidate.id)`. Drift in
+     * `unique` / `references` / `generation` (absorbed into table-
+     * level UNIQUE / FK constraints) and any same-table PK / index /
+     * constraint touching the column stays blocked — those are
+     * cross-object T5 territory and the projector falls back to
+     * drop+add.
      */
     fun prepareColumnItems(
         table: TableDiff,
@@ -168,12 +195,27 @@ internal object RenameOverlayMapper {
         for (mapping in renameIndex.columnMappings(table.name)) {
             val removed = table.columnsRemoved[mapping.fromColumn] ?: continue
             val added = table.columnsAdded[mapping.toColumn] ?: continue
-            val structurallyEqual = CanonicalPayload.column(removed) == CanonicalPayload.column(added)
+            val candidateId = renameColumnOperationId(table, mapping)
+            val byteIdentical = CanonicalPayload.column(removed) == CanonicalPayload.column(added)
+            val synthesis = if (byteIdentical) {
+                RenameIntraObjectDeltaSynthesizer.SynthesisResult.EMPTY
+            } else {
+                RenameIntraObjectDeltaSynthesizer.synthesizeForColumnRename(
+                    candidateId = candidateId,
+                    tableName = table.name,
+                    toColumn = mapping.toColumn,
+                    before = removed,
+                    after = added,
+                )
+            }
+            val structurallyEqual = synthesis.isComplete
             val structuralDifferences = if (structurallyEqual) {
                 emptyList()
             } else {
-                describeColumnDifferences(removed, added)
-                    .ifEmpty { listOf("structural difference detected") }
+                synthesis.residualDifferences.ifEmpty {
+                    describeColumnDifferences(removed, added)
+                        .ifEmpty { listOf("structural difference detected") }
+                }
             }
             val referencingObject = if (structurallyEqual) {
                 referencingObjectFor(table, mapping.fromColumn, mapping.toColumn)
@@ -182,7 +224,7 @@ internal object RenameOverlayMapper {
             }
             items += RenameColumnPlanningItem(
                 candidate = RenameColumnCandidate(
-                    id = renameColumnOperationId(table, mapping),
+                    id = candidateId,
                     tableName = table.name,
                     fromColumn = mapping.fromColumn,
                     toColumn = mapping.toColumn,
@@ -193,6 +235,7 @@ internal object RenameOverlayMapper {
                     structuralDifferences = structuralDifferences,
                     referencingObject = referencingObject,
                 ),
+                postRenameDeltaOperations = if (structurallyEqual) synthesis.operations else emptyList(),
             )
         }
         return items

@@ -93,7 +93,7 @@ class PostgresDiffRenameTest : FunSpec({
         down.statements.single().sql shouldContain "ALTER TABLE \"users\" RENAME TO \"users_old\";"
     }
 
-    test("structural mismatch falls back to drop+create with warning, no RENAME rendered") {
+    test("T4: extra column folds to RENAME TO + synthetic ALTER TABLE … ADD COLUMN") {
         val before = table
         val after = table.copy(
             columns = table.columns + mapOf(
@@ -110,10 +110,10 @@ class PostgresDiffRenameTest : FunSpec({
             migrationOverlays = listOf(renameOverlay("table", "users_old", "users")),
         )
         val up = gen.generateUp(plan, DdlGenerationOptions())
-        up.statements.none { "RENAME TO" in it.sql } shouldBe true
-        up.statements.any { "CREATE TABLE \"users\"" in it.sql } shouldBe true
-        up.statements.any { "DROP TABLE \"users_old\"" in it.sql } shouldBe true
-        plan.diagnostics.map { it.code } shouldContainCollection "RENAME_OVERLAY_STRUCTURAL_MISMATCH"
+        up.statements.any { "RENAME TO" in it.sql } shouldBe true
+        up.statements.any { "ADD COLUMN" in it.sql && "\"joined_at\"" in it.sql } shouldBe true
+        up.statements.none { "CREATE TABLE \"users\"" in it.sql } shouldBe true
+        up.statements.none { "DROP TABLE \"users_old\"" in it.sql } shouldBe true
     }
 
     test("column rename Up renders ALTER TABLE … RENAME COLUMN … TO …") {
