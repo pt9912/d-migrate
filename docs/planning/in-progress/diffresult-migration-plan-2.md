@@ -1359,9 +1359,14 @@ Entscheidung:
 
 - Rename-Mappings kommen aus einem versionierten Migrations-Overlay, der den
   Grundvertrag aus F.0 erfuellt; nach Workstream F.2 koennen sie in ein
-  Plan-Artefakt eingebettet werden. CLI-Flags duerfen hoechstens auf eine
-  Overlay-Datei zeigen. Schema-Metadaten sind keine Quelle, weil Renames eine
-  Beziehung zwischen zwei Zustaenden beschreiben.
+  Plan-Artefakt eingebettet werden. CLI-Flags duerfen entweder auf eine
+  Overlay-Datei zeigen ODER ueber den expliziten Inline-Shortcut
+  (`--rename-table`, `--rename-column`) einen synthetischen Inline-Overlay
+  mit `source = "cli-inline"` erzeugen. Der Inline-Shortcut ist bewusst NICHT
+  artefaktstabil: die synthetischen Overlay-Dokumente bleiben Runtime-Carrier
+  fuer den aktuellen CLI-Lauf und werden nicht in oeffentliche
+  `migration-plan.v1`-Artefakte serialisiert. Schema-Metadaten sind keine
+  Quelle, weil Renames eine Beziehung zwischen zwei Zustaenden beschreiben.
 - Jedes Mapping bindet `sourceFingerprint`, `targetFingerprint`, Dialekt,
   Objektart, alte Referenz, neue Referenz und optional erwartete Struktur-
   Fingerprints. Stale Fingerprints blockieren mit dem neuen geplanten
@@ -1403,6 +1408,19 @@ Akzeptanz:
 > Mappings mit eigenem Diagnostic-Code und blockiert mehrdeutige Quellen/Ziele,
 > Case-Folding-Konflikte und Kettenrenames im selben Slice. Rendering von
 > `RenameTable`/`RenameColumn` bleibt ein Folgeslice.
+>
+> Status-Update (2026-05-15): F.4 cli-inline-overlay abgeschlossen
+> (Slice gem. `ImpPlan-0.9.7-F.4-cli-inline-overlay.md`). Contract-
+> Gate dieser Sektion wurde so angepasst, dass `--rename-table` und
+> `--rename-column` einen synthetischen `cli-inline`-Overlay
+> erzeugen duerfen. Der CLI-Shortcut ist bewusst nicht artefakt-
+> stabil; Inline-Overlay-Dokumente sind reine Runtime-Carrier und
+> werden nicht in `migration-plan.v1` serialisiert. Cross-Document-
+> Uniqueness laeuft im selben Pre-Plan-Gate wie alle Rename-
+> Overlay-Validierungen, ein eigener Inline-Pfad existiert nicht.
+> Validator/Report-Factory tragen jetzt strukturierte Provenance:
+> `OVERLAY_ACCEPTED` INFO-Zeilen, validator-eigene Message-Texte
+> und `MigrationOverlayLoadFailure.message` als optionales Feld.
 >
 > Status-Update (2026-05-15): F.4 rename-mapping-invalid-enum
 > abgeschlossen (Slice gem. `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`).

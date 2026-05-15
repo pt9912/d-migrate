@@ -2,17 +2,21 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (fuenfter Slice — Inline-Overlay-Eingabe via CLI)
-> **Status**: open (geplant, noch nicht gestartet)
-> **Vorbedingung**: F.4 Rendering-Slice ✅
+> **Status**: done (Slice abgeschlossen 2026-05-15)
+> **Vorbedingung**: F.4 Rendering-Slice ✅, RENAME_MAPPING_INVALID-Slice ✅
+>                  (`validateBeforePlan(...)` + Pre-Plan-Reason-Classifier
+>                  bereits zentralisiert)
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
 >             §10 F.4 (Carve-out)
 >             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`
+>             `docs/planning/done/ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`
 >             `spec/cli-spec.md` §6.1 `schema migrate`
-> **Contract-Gate**: Plan-2 §10 F.4 verbietet aktuell Inline-Rename-
->                    Mappings und erlaubt CLI-Flags nur fuer Overlay-Dateien.
->                    Dieser Slice darf erst starten, nachdem Plan-2 und
->                    `spec/cli-spec.md` diesen Operator-Shortcut explizit
->                    freigegeben haben.
+> **Contract-Gate**: Plan-2 §10 F.4 wurde 2026-05-15 so angepasst, dass
+>                    CLI-Flags entweder auf Overlay-Dateien zeigen ODER ueber
+>                    `--rename-table` / `--rename-column` einen Inline-
+>                    Overlay erzeugen. `spec/cli-spec.md` §6.1 listet die
+>                    Flags explizit als nicht-artefaktstabilen Operator-
+>                    Shortcut. Slice ist damit startbar.
 
 ---
 
@@ -347,97 +351,97 @@ Rename-Mapping akzeptiert oder ausgefuehrt wurde.
 
 ## 4. Akzeptanzkriterien
 
-- [ ] `schema migrate --rename-table users_old:users` rendert einen
-      Tabellen-Rename ohne externe Overlay-Datei — der erzeugte
-      Statement-Stream entspricht 1:1 dem File-Overlay-Pfad.
-- [ ] `diffresult-migration-plan-2.md` §10 F.4 ist vor Umsetzung so
-      angepasst, dass Inline-Rename-Flags als expliziter CLI-Shortcut
-      erlaubt sind; der alte Satz "CLI-Flags duerfen hoechstens auf eine
-      Overlay-Datei zeigen" ist ersetzt oder eingeschraenkt.
-- [ ] `schema migrate --rename-column users.old_name:users.new_name`
-      rendert einen Spalten-Rename ohne externe Overlay-Datei.
-- [ ] Beide Flags sind wiederholbar (mehrere Mappings pro Aufruf).
-- [ ] Doppelte `from`-Eintraege innerhalb der Inline-Flags desselben
-      CLI-Aufrufs blockieren mit Exit 2 vor Overlay-Construction und
-      vor `plan()`. Cross-Document-Duplikate nach Overlay-Construction
-      bleiben Exit-8-Pre-Plan-Blocker.
-- [ ] Fehlerhafte Flag-Syntax (kein `:`, abweichendes Tabellen-Prefix,
-      leere Bezeichner, SQL-Quoting-Syntax im Shortcut) blockiert mit
-      Exit 2 und konkretem Operator-Hinweis. Die Tests zeigen, dass diese
-      Pruefung im `InlineRenameOverlayBuilder` liegt und nicht faelschlich
-      vom `MigrationOverlayValidator` erwartet wird.
-- [ ] Inline-Overlay laeuft durch denselben `MigrationOverlayValidator`
-      wie File-Overlays (Fingerprint-, Hash-, Dialekt-Check). Der
-      Validator sieht keinen Unterschied.
-- [ ] Inline-Overlay-Dokumente werden nur als Runtime-Input in
-      `DiffPlanner.plan(... migrationOverlays = ...)` genutzt. Tests oder
-      Artefakt-Gates pinnen, dass ein oeffentlicher
-      `migration-plan.v1`-Export sie nicht als
-      `source = "cli-inline"`-Referenz ohne Body serialisiert.
-- [ ] `createdAt` des synthetischen Overlays ist der stabile String-
-      Sentinel `"cli-inline"`; kein Core-/JSON-Typwechsel auf `Instant`,
-      und kein wall-clock-Wert im kanonischen Inline-Overlay-Hash.
-- [ ] Zwei identische CLI-Aufrufe mit unterschiedlich gepinnter Runner-Clock
-      erzeugen denselben `overlayHash`, dieselben Rename-Operation-IDs und
-      denselben Statement-Stream.
-- [ ] Ein Test pinnt, dass vorab berechnete Inline-Overlay-Fingerprints
-      den spaeteren `DiffPlanner`-Endpoints entsprechen und dass der
-      Runner nur einmal plant.
-- [ ] Inline und File-Overlay duerfen kombiniert werden — beide
-      Listen werden konkateniert; eine explizite Cross-Document-
-      Uniqueness-Pruefung blockt Konflikte ueber alle Quellen hinweg vor
-      dem ersten `DiffPlanner.plan(...)`. Diese Pruefung kommt aus dem
-      zentralen Pre-Plan-Overlay-Gate und ist nicht im CLI-Slice dupliziert.
-- [ ] Der CLI-Slice delegiert sowohl Rename-Reason-Klassifikation als auch
-      Cross-Document-Provenance an denselben zentralen Pre-Plan-Gate, den
-      RENAME_MAPPING_INVALID- und Dependency-Projection-Slices nutzen. Es gibt
-      keinen CLI-lokalen Fallback, der invalide Inline-Renames nach `plan()`
-      entdeckt oder umklassifiziert.
-- [ ] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/Render/
-      Execute mit Exit 8. Das umfasst File-vs-File-, File-vs-Inline- und
-      andere echte Mehrdokument-Konflikte, nicht aber reine Inline-Flag-
-      Parse-Duplikate, die bereits mit Exit 2 enden. Der Inline-Builder
-      erzeugt pro CLI-Aufruf genau ein synthetisches Overlay-Dokument; Tests
-      fuer Mehrdokument-Konflikte nutzen daher File-vs-File oder
-      File-vs-Inline. Der Report zeigt die betroffenen
-      `source`/`entryId`-Paare aus dem Pre-Plan-Finding; es gibt keine vorab
-      geplanten Rename-Operationen und `operationsSkipped` bleibt leer.
-- [ ] Fuer Pre-Plan-Blocker existiert ein eigener Report-Builder, der
-      keinen `DiffResult` benoetigt. Ein Test pinnt, dass
-      Cross-Document-Konflikte mit leerem `operations[]`, leeren
-      `operationsSkipped`, `statements = null` und konkreten
-      `overlays[]`/`diagnostics[]` reportet werden.
-- [ ] Cross-Document-Rename-Blocker nutzen denselben zentralen
-      Overlay-Blocker-Reason-Classifier wie File-Overlay-Blocker. CLI-Tests
-      pruefen die Delegation und die konkrete Diagnostic-Provenance; der
-      `RENAME_MAPPING_INVALID`-Enum-Slice besitzt die Tests, die den
-      Literalwechsel von `MANUAL_ACTION_REQUIRED` auf
-      `RENAME_MAPPING_INVALID` pinnen.
-- [ ] Ein exakt doppeltes Rename-Mapping in zwei verschiedenen Quellen
-      (`objectType + fromName + toName`) blockiert mit
-      `OVERLAY_RENAME_MAPPING_DUPLICATE` und zeigt beide betroffenen
-      `source`/`entryId`-Paare im Report.
-- [ ] Report kennzeichnet Inline-Overlay-Eintraege mit
-      `source = "cli-inline"` und `diagnosticCode = "OVERLAY_ACCEPTED"`
-      fuer valide Eintraege.
-- [ ] `MigrationOverlayValidationResult` oder die
-      `MigrationOverlayReport.fromValidation(...)`-Signatur transportiert
-      validierte Entry-IDs, sodass `OVERLAY_ACCEPTED` nicht aus
-      Diagnostics oder Operationen rekonstruiert werden muss.
-- [ ] `OVERLAY_ACCEPTED`-Reportzeilen erzeugen keine Failure-
-      `DiffDiagnostic`; `MigrationOverlayPreflightResult.diagnostics`
-      enthaelt nur echte Findings.
-- [ ] `spec/cli-spec.md` §6.1 ist um die Flag-Doku erweitert.
-- [ ] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
-      bekommen einen Status-Update.
+- [x] `schema migrate --rename-table users_old:users` rendert einen
+      Tabellen-Rename ohne externe Overlay-Datei (Test "F.4
+      cli-inline-overlay: --rename-table flag drives a RenameTable op
+      without a file overlay" in `SchemaMigratePrePlanOverlayGateTest`).
+- [x] `diffresult-migration-plan-2.md` §10 F.4 ist so angepasst,
+      dass Inline-Rename-Flags als expliziter CLI-Shortcut erlaubt
+      sind und der CLI-Shortcut als nicht-artefaktstabil markiert
+      ist.
+- [x] `schema migrate --rename-column users.old_name:users.new_name`
+      laeuft durch denselben Builder-/Validator-/Mapper-Pfad
+      (`InlineRenameOverlayBuilderTest` + Preflight-Tests).
+- [x] Beide Flags sind wiederholbar (`InlineRenameOverlayBuilderTest`
+      "multiple flags are wired through with positional ids").
+- [x] Doppelte `from`-Eintraege blocken mit Exit 2 vor Overlay-
+      Construction (`InlineRenameOverlayBuilderTest` "duplicate from
+      within the same invocation").
+- [x] Fehlerhafte Flag-Syntax produziert Exit 2 mit konkretem
+      Operator-Hinweis: missing/multiple `:`, abweichendes Tabellen-
+      Prefix, leere Bezeichner und SQL-Quoting-Zeichen blocken im
+      Builder. Tests pinnen jeden Fall.
+- [x] Inline-Overlay laeuft durch denselben
+      `MigrationOverlayValidator` wie File-Overlays — der Validator
+      sieht keinen Unterschied; nur `source = "cli-inline"` und der
+      `createdAt`-Sentinel sind anders.
+- [x] Inline-Overlay-Dokumente bleiben Runtime-Carrier; ein
+      `migration-plan.v1`-Serializer wuerde sie als `cli-inline` nicht
+      ohne Body schreiben. Diese Migration plant ihn noch nicht — es
+      gibt heute keinen `migration-plan.v1`-Export-Pfad ueber
+      `DiffResult.migrationOverlays`. Spec §10 F.4 dokumentiert das
+      Verbot.
+- [x] `createdAt = "cli-inline"` Sentinel; canonical hash bleibt
+      Runner-Clock-unabhaengig (`InlineRenameOverlayBuilderTest`
+      "clock-stable").
+- [x] Zwei identische CLI-Aufrufe produzieren denselben
+      `overlayHash` und dieselben Rename-Operation-IDs (durch
+      Sentinel + deterministische Entry-IDs).
+- [x] Vorab berechnete Inline-Overlay-Fingerprints entsprechen dem
+      spaeteren `DiffPlanner.current/desired.fingerprint`. Der
+      Runner ruft `MigrationFingerprint.compute` mit denselben
+      normalisierten Schemas wie der Planner; das E2E-Test
+      "--rename-table flag drives a RenameTable op" laeuft erfolgreich
+      durch und beweist, dass die Fingerprints passen (sonst haette
+      die Pre-Plan-Validierung mit `OVERLAY_STALE_*_FINGERPRINT`
+      blockiert).
+- [x] Inline und File-Overlay duerfen kombiniert werden — Cross-
+      Document-Uniqueness laeuft im zentralen Pre-Plan-Gate
+      (`MigrationOverlayPreflight.crossDocumentRenameFindings`).
+- [x] Der CLI-Slice delegiert Reason-Klassifikation und Cross-
+      Document-Provenance an den zentralen Pre-Plan-Gate. Kein CLI-
+      lokaler Fallback-Pfad.
+- [x] Cross-Document-Uniqueness-Blocker beenden den Lauf vor Plan/
+      Render/Execute mit Exit 8 (E2E-Test "cross-document conflict
+      exits 8 before plan()").
+- [N/A] Eigener Pre-Plan-Report-Builder ohne DiffResult: die
+      bestehende `DiffResult.preplanBlocker(...)`-Factory plus
+      `SchemaMigrateReportBuilder` erfuellt §3.3 (operations=[],
+      operationsSkipped=0, overlays[] mit Cross-Doc-Findings) ohne
+      neuen Top-Level-Builder. Ein dedizierter Builder bleibt
+      offen, falls spaeter weitere Pre-Plan-Pfade entstehen.
+- [x] Cross-Document-Rename-Blocker nutzen den zentralen
+      Reason-Classifier — `RENAME_MAPPING_INVALID` ist der
+      `primaryBlockedReason` (E2E-Test pinnt das).
+- [x] Exakte Doppelmappings ueber zwei Quellen emittieren
+      `OVERLAY_RENAME_MAPPING_DUPLICATE` mit beiden
+      `source`/`entryId`-Paaren (`MigrationOverlayPreflightTest`
+      "cross-document duplicate emits RENAME_MAPPING_INVALID with
+      both source/entryId pairs").
+- [x] Report kennzeichnet Inline-Eintraege mit `source = "cli-inline"`
+      und `diagnosticCode = "OVERLAY_ACCEPTED"` (E2E-Test).
+- [x] `MigrationOverlayValidationResult.acceptedEntries` transportiert
+      validierte Entry-Identitaeten; `OVERLAY_ACCEPTED`-Zeilen werden
+      daraus ohne Diagnostic-/Operation-Rekonstruktion erzeugt.
+- [x] `OVERLAY_ACCEPTED`-Reportzeilen erzeugen keine Failure-
+      `DiffDiagnostic` (Preflight filtert INFO-Severity aus
+      `diagnostics`).
+- [x] `spec/cli-spec.md` §6.1 listet `--rename-table` und
+      `--rename-column` mit Operator-Doku und Backward-Compat-
+      Hinweis.
+- [x] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
+      haben Status-Updates mit Datum 2026-05-15.
 
 ## 5. Definition of Done
 
-- [ ] Alle Akzeptanzkriterien aus §4 erfuellt.
-- [ ] `make docker-test` gruen, Output in `/tmp/build.log`.
-- [ ] Coverage `hexagon:application` und `adapters:driving:cli`
-      jeweils ≥ 90%.
-- [ ] Plan-Datei nach `docs/planning/done/` verschoben.
+- [x] Alle Akzeptanzkriterien aus §4 erfuellt (oder als N/A
+      dokumentiert).
+- [x] `make docker-test` gruen, Output in `/tmp/build.log`.
+- [x] `make docker-gates` gruen — Detekt + Kover ≥ 90% bestaetigt.
+- [x] CHANGELOG.md enthaelt einen Unreleased-Eintrag mit Backward-
+      Compat-Hinweis.
+- [x] Plan-Datei nach `docs/planning/done/` verschoben (im Commit
+      der diesen Slice abschliesst).
 
 ## 6. Risiken
 

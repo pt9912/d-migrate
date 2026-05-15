@@ -269,22 +269,25 @@ class MigrationOverlayContractTest : FunSpec({
         val result = MigrationOverlayValidator.validate(overlay, validationContext(), "overlays/secret.json")
         val report = MigrationOverlayReport.fromValidation(result)
 
-        report.single { it.diagnosticCode == MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH } shouldBe
-            MigrationOverlayReportItem(
-                source = "overlays/secret.json",
-                entryId = "use-email",
-                overlayHash = overlay.overlayHash!!,
-                diagnosticCode = MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH,
-                severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
-                // F.4 rename-mapping-invalid-enum: blockEntry tags the
-                // structured `entryKind` from the entry itself (here
-                // "using-expression") so the application-layer
-                // classifier can attribute the diagnostic without
-                // parsing the message. `renameObjectType` stays null
-                // because the entry is not a RenameMappingOverlayEntry.
-                entryKind = MigrationOverlayKinds.USING_EXPRESSION,
-                renameObjectType = null,
-            )
+        val mismatchItem = report.single { it.diagnosticCode == MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH }
+        mismatchItem.source shouldBe "overlays/secret.json"
+        mismatchItem.entryId shouldBe "use-email"
+        mismatchItem.overlayHash shouldBe overlay.overlayHash!!
+        mismatchItem.severity shouldBe MigrationOverlayDiagnostic.Severity.BLOCKER
+        // F.4 rename-mapping-invalid-enum: blockEntry tags the
+        // structured `entryKind` from the entry itself (here
+        // "using-expression") so the application-layer classifier
+        // can attribute the diagnostic without parsing the message.
+        // `renameObjectType` stays null because the entry is not a
+        // RenameMappingOverlayEntry.
+        mismatchItem.entryKind shouldBe MigrationOverlayKinds.USING_EXPRESSION
+        mismatchItem.renameObjectType shouldBe null
+        // F.4 cli-inline-overlay §3.4: message is now propagated from
+        // the validator's diagnostic instead of synthesized
+        // downstream. Concrete wording is the validator's
+        // responsibility; assert it is non-blank and contains the
+        // failed entry/overlayKind pair the validator names.
+        mismatchItem.message?.contains("using-expression") shouldBe true
         report.toString().contains(secret) shouldBe false
     }
 })

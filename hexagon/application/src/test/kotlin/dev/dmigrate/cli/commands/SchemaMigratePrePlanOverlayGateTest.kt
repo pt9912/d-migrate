@@ -23,9 +23,10 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.inspectors.forAll
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldNotBeEmpty
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldContain as stringShouldContain
 import java.nio.file.Files
 
 /**
@@ -158,7 +159,7 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
 
         exit shouldBe 8
         plannerCallCount[0] shouldBe 0
-        capture["stdout"] shouldContain "OVERLAY_STALE_SOURCE_FINGERPRINT"
+        capture["stdout"] stringShouldContain "OVERLAY_STALE_SOURCE_FINGERPRINT"
     }
 
     test("clean overlay path still calls the planner exactly once") {
@@ -231,6 +232,97 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
             "OVERLAY_STALE_SOURCE_FINGERPRINT",
             "OVERLAY_STALE_TARGET_FINGERPRINT",
         )
+    }
+
+    test("F.4 cli-inline-overlay: --rename-table flag drives a RenameTable op without a file overlay") {
+        // End-to-end pin: the operator runs `schema migrate
+        // --rename-table orders_v2:orders` and the runner builds an
+        // inline overlay that folds the resulting Drop+Create pair
+        // (current=orders_v2 → desired=orders) into a single
+        // RenameTable op. No file overlay needed.
+        val plannerCallCount = intArrayOf(0)
+        val capturedReports = mutableListOf<SchemaMigrateReport>()
+        val (runner, _) = runnerWith(plannerCallCount, capturedReports = capturedReports)
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+            renameTableFlags = listOf("orders_v2:orders"),
+        )
+
+        runner.execute(request) shouldBe 0
+        plannerCallCount[0] shouldBe 1
+        val report = capturedReports.single()
+        // Rename was synthesised — operations carry one RenameTable.
+        report.operations.map { it.kind } shouldContain "RenameTable"
+        // Provenance: the inline overlay surfaces as
+        // `cli-inline` in `overlays[]` with OVERLAY_ACCEPTED INFO.
+        val inlineProvenance = report.overlays.single { it.source == "cli-inline" }
+        inlineProvenance.diagnosticCode shouldBe "OVERLAY_ACCEPTED"
+        inlineProvenance.entryId shouldBe "rename-table-0"
+    }
+
+    test("F.4 cli-inline-overlay: malformed --rename-table exits 2 without touching DiffPlanner or DB") {
+        val plannerCallCount = intArrayOf(0)
+        val executorCallCount = intArrayOf(0)
+        val (runner, capture) = runnerWith(plannerCallCount, executorCallCount)
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+            renameTableFlags = listOf("not_a_valid_flag_value"),
+        )
+
+        runner.execute(request) shouldBe 2
+        plannerCallCount[0] shouldBe 0
+        executorCallCount[0] shouldBe 0
+        capture.keys.any { it.startsWith("error:") } shouldBe true
+    }
+
+    test("F.4 cli-inline-overlay: cross-document conflict (file + inline rename-table) exits 8 before plan()") {
+        val plannerCallCount = intArrayOf(0)
+        val capturedReports = mutableListOf<SchemaMigrateReport>()
+        val (runner, _) = runnerWith(plannerCallCount, capturedReports = capturedReports)
+        // File overlay that's compatible with the schema fixtures
+        // (current=orders_v2 → desired=orders) and the inline
+        // `--rename-table` flag describes the same rename — the
+        // cross-doc gate must flag the duplication.
+        val currentFingerprint = dev.dmigrate.core.diff.migration.MigrationFingerprint.compute(schemaWithTable("orders_v2"))
+        val desiredFingerprint = dev.dmigrate.core.diff.migration.MigrationFingerprint.compute(schemaWithTable("orders"))
+        val fileOverlay = MigrationOverlay(
+            overlayKind = MigrationOverlayKinds.RENAME_MAPPING,
+            sourceFingerprint = currentFingerprint,
+            targetFingerprint = desiredFingerprint,
+            dialect = "postgresql",
+            entries = listOf(
+                RenameMappingOverlayEntry(
+                    id = "file-rename",
+                    objectType = "table",
+                    fromName = "orders_v2",
+                    toName = "orders",
+                ),
+            ),
+            createdAt = "2026-05-14T08:00:00Z",
+            createdByVersion = "d-migrate-test",
+        ).withComputedHash()
+
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+            migrationOverlays = listOf(MigrationOverlayDocument(source = "ovl/file.json", overlay = fileOverlay)),
+            renameTableFlags = listOf("orders_v2:orders"),
+        )
+
+        runner.execute(request) shouldBe 8
+        plannerCallCount[0] shouldBe 0
+        val report = capturedReports.single()
+        // Both sources are listed in the report.
+        report.overlays.map { it.source }.toSet() shouldBe setOf("ovl/file.json", "cli-inline")
+        report.summary.primaryBlockedReason shouldBe MigrationBlockedReason.RENAME_MAPPING_INVALID.name
     }
 
     test("--execute with a pre-plan blocker exits 8 WITHOUT touching the live DB") {

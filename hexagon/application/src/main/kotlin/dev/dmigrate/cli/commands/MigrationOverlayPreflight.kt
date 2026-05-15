@@ -10,6 +10,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidationContext
+import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
@@ -71,6 +72,7 @@ internal object MigrationOverlayPreflight {
             )
             MigrationOverlayReport.fromValidation(result)
         }
+        val crossDocFindings = crossDocumentRenameFindings(documents)
         val loadFailureReports = loadFailures.map { failure ->
             MigrationOverlayReportItem(
                 source = failure.source,
@@ -78,19 +80,140 @@ internal object MigrationOverlayPreflight {
                 overlayHash = MigrationOverlayReport.UNAVAILABLE_OVERLAY_HASH,
                 diagnosticCode = failure.diagnosticCode,
                 severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
+                message = failure.message ?: "Migration overlay '${failure.source}' could not be loaded: ${failure.diagnosticCode}",
             )
         }
-        val reports = validationReports + loadFailureReports
-        val diagnostics = reports.map { item ->
-            DiffDiagnostic(
-                code = item.diagnosticCode,
-                message = "Migration overlay source=${item.source} entry=${item.entryId ?: "<document>"} " +
-                    "hash=${item.overlayHash} failed F.0 contract validation.",
-                severity = item.severity.toDiffSeverity(),
-                operationId = null,
-            )
-        }
+        val reports = validationReports + crossDocFindings + loadFailureReports
+        // F.4 cli-inline-overlay §3.4: Provenance (reportItems) and
+        // Failure-Diagnostics are deliberately separated. INFO-level
+        // OVERLAY_ACCEPTED rows MUST NOT become DiffDiagnostic
+        // failure entries, and the Diagnostic message uses the
+        // validator's own text rather than a synthesised "failed
+        // F.0 contract validation" string.
+        val diagnostics = reports
+            .filter { it.severity != MigrationOverlayDiagnostic.Severity.INFO }
+            .map { item ->
+                DiffDiagnostic(
+                    code = item.diagnosticCode,
+                    message = item.message ?: defaultFindingMessage(item),
+                    severity = item.severity.toDiffSeverity(),
+                    operationId = null,
+                )
+            }
         return MigrationOverlayPreflightResult(reports, diagnostics)
+    }
+
+    private fun defaultFindingMessage(item: MigrationOverlayReportItem): String =
+        "Migration overlay source=${item.source} entry=${item.entryId ?: "<document>"} " +
+            "hash=${item.overlayHash} reports ${item.diagnosticCode}"
+
+    /**
+     * F.4 cli-inline-overlay §3.5: collect rename mappings across
+     * all overlay documents (file-overlays + the synthetic
+     * `cli-inline` overlay) and emit BLOCKER report items for
+     * conflicts that span >=2 distinct `source` documents. The
+     * single-document validator already catches in-document
+     * duplicates / ambiguity / case / chain — this helper layers
+     * cross-document detection on top.
+     *
+     * Codes mirror the in-doc validator so the reason-classifier
+     * already maps both to [MigrationBlockedReason.RENAME_MAPPING_INVALID].
+     * Each conflicting entry produces its own report item so the
+     * downstream report shows every `source`/`entryId` pair the
+     * operator must resolve.
+     */
+    private fun crossDocumentRenameFindings(
+        documents: List<MigrationOverlayDocument>,
+    ): List<MigrationOverlayReportItem> {
+        if (documents.size < 2) return emptyList()
+        val refs = documents.flatMap { doc ->
+            doc.overlay.entries
+                .filterIsInstance<RenameMappingOverlayEntry>()
+                .filter { it.id.isNotBlank() && it.objectType.isNotBlank() }
+                .map { entry -> RenameRef(doc.source, doc.overlay.overlayHash, entry) }
+        }
+        if (refs.size < 2) return emptyList()
+
+        val findings = linkedMapOf<Pair<String, String>, MigrationOverlayReportItem>()
+
+        fun addFinding(ref: RenameRef, code: String, message: String) {
+            // De-duplicate per (source, entryId, code) so the same
+            // ref shown by two conflict categories surfaces once.
+            findings.putIfAbsent(ref.dedupKey(code), renameCrossDocItem(ref, code, message))
+        }
+
+        val byTriple = refs.groupBy {
+            Triple(it.fold(it.entry.objectType), it.fold(it.entry.fromName), it.fold(it.entry.toName))
+        }
+        for (group in byTriple.values) {
+            val distinctSources = group.map { it.source }.distinct().size
+            if (distinctSources >= 2) {
+                group.forEach { ref ->
+                    addFinding(
+                        ref,
+                        MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
+                        "Rename mapping '${ref.entry.fromName}' -> '${ref.entry.toName}' is duplicated " +
+                            "across overlay documents (${distinctSources} sources).",
+                    )
+                }
+            }
+        }
+
+        val bySource = refs.groupBy { it.fold(it.entry.objectType) to it.fold(it.entry.fromName) }
+        for (group in bySource.values) {
+            val sources = group.map { it.source }.distinct()
+            val targets = group.map { it.fold(it.entry.toName) }.distinct()
+            if (sources.size >= 2 && targets.size > 1) {
+                group.forEach { ref ->
+                    addFinding(
+                        ref,
+                        MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
+                        "Rename mapping source '${ref.entry.fromName}' is ambiguous across overlay documents.",
+                    )
+                }
+            }
+        }
+
+        val byTarget = refs.groupBy { it.fold(it.entry.objectType) to it.fold(it.entry.toName) }
+        for (group in byTarget.values) {
+            val sources = group.map { it.source }.distinct()
+            val froms = group.map { it.fold(it.entry.fromName) }.distinct()
+            if (sources.size >= 2 && froms.size > 1) {
+                group.forEach { ref ->
+                    addFinding(
+                        ref,
+                        MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
+                        "Rename mapping target '${ref.entry.toName}' is ambiguous across overlay documents.",
+                    )
+                }
+            }
+        }
+
+        return findings.values.toList()
+    }
+
+    private fun renameCrossDocItem(
+        ref: RenameRef,
+        code: String,
+        message: String,
+    ): MigrationOverlayReportItem = MigrationOverlayReportItem(
+        source = ref.source,
+        entryId = ref.entry.id,
+        overlayHash = ref.overlayHash ?: MigrationOverlayReport.UNAVAILABLE_OVERLAY_HASH,
+        diagnosticCode = code,
+        severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
+        entryKind = ref.entry.kind,
+        renameObjectType = ref.entry.objectType,
+        message = message,
+    )
+
+    private data class RenameRef(
+        val source: String,
+        val overlayHash: String?,
+        val entry: RenameMappingOverlayEntry,
+    ) {
+        fun fold(value: String): String = value.lowercase(Locale.ROOT)
+        fun dedupKey(code: String): Pair<String, String> = "$source ${entry.id}" to code
     }
 
     /**
@@ -247,4 +370,6 @@ internal data class MigrationOverlayPreflightResult(
 data class MigrationOverlayLoadFailure(
     val source: String,
     val diagnosticCode: String = MigrationOverlayDiagnostics.FIELD_TYPE_MISMATCH,
+    /** Optional fact-bearing message — falls back to a synthesised default. */
+    val message: String? = null,
 )

@@ -17,6 +17,14 @@ data class MigrationOverlayReportItem(
     val severity: MigrationOverlayDiagnostic.Severity,
     val entryKind: String? = null,
     val renameObjectType: String? = null,
+    /**
+     * F.4 cli-inline-overlay slice §3.4: the validator's own
+     * fact-bearing message text (or `null` for entries we accept
+     * as provenance). The preflight uses this instead of a
+     * synthesised "failed F.0 contract validation" string so
+     * downstream Diagnostics carry the actual finding.
+     */
+    val message: String? = null,
 )
 
 object MigrationOverlayReport {
@@ -29,8 +37,16 @@ object MigrationOverlayReport {
      */
     const val UNAVAILABLE_OVERLAY_HASH: String = "<unavailable>"
 
-    fun fromValidation(result: MigrationOverlayValidationResult): List<MigrationOverlayReportItem> =
-        result.diagnostics.map { diagnostic ->
+    /**
+     * Builds the per-document report rows: one row per validator
+     * diagnostic (BLOCKER/WARNING/INFO that the validator emits),
+     * plus one INFO-`OVERLAY_ACCEPTED` provenance row per entry that
+     * passed without a BLOCKER finding ([MigrationOverlayValidationResult.acceptedEntries]).
+     * The accepted rows are pure provenance and MUST NOT become
+     * Failure-`DiffDiagnostic`s downstream.
+     */
+    fun fromValidation(result: MigrationOverlayValidationResult): List<MigrationOverlayReportItem> {
+        val diagnosticItems = result.diagnostics.map { diagnostic ->
             MigrationOverlayReportItem(
                 source = result.source,
                 entryId = diagnostic.entryId,
@@ -39,6 +55,21 @@ object MigrationOverlayReport {
                 severity = diagnostic.severity,
                 entryKind = diagnostic.entryKind,
                 renameObjectType = diagnostic.renameObjectType,
+                message = diagnostic.message,
             )
         }
+        val acceptedItems = result.acceptedEntries.map { entry ->
+            MigrationOverlayReportItem(
+                source = result.source,
+                entryId = entry.id,
+                overlayHash = result.overlayHash,
+                diagnosticCode = MigrationOverlayDiagnostics.OVERLAY_ACCEPTED,
+                severity = MigrationOverlayDiagnostic.Severity.INFO,
+                entryKind = entry.kind,
+                renameObjectType = (entry as? RenameMappingOverlayEntry)?.objectType,
+                message = null,
+            )
+        }
+        return diagnosticItems + acceptedItems
+    }
 }

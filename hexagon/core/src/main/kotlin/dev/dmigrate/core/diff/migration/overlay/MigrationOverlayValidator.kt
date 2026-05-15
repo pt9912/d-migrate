@@ -28,6 +28,16 @@ data class MigrationOverlayValidationResult(
     val source: String,
     val overlayHash: String,
     val diagnostics: List<MigrationOverlayDiagnostic>,
+    /**
+     * F.4 cli-inline-overlay slice §3.4: entries that passed
+     * per-entry validation without a BLOCKER finding referencing
+     * their `entryId`. The report layer turns each into an
+     * `OVERLAY_ACCEPTED` INFO provenance row so successful inline-
+     * overlay entries are visible in the migrate report. Entries
+     * with a blank id and entries the validator could not even
+     * type-match are excluded.
+     */
+    val acceptedEntries: List<MigrationOverlayEntry> = emptyList(),
 ) {
     val hasBlockers: Boolean
         get() = diagnostics.any { it.severity == MigrationOverlayDiagnostic.Severity.BLOCKER }
@@ -93,6 +103,15 @@ object MigrationOverlayDiagnostics {
     const val RENAME_MAPPING_CASE_CONFLICT: String = "OVERLAY_RENAME_MAPPING_CASE_CONFLICT"
     const val RENAME_MAPPING_CHAIN_UNSUPPORTED: String = "OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED"
     const val RENAME_MAPPING_DUPLICATE: String = "OVERLAY_RENAME_MAPPING_DUPLICATE"
+
+    /**
+     * F.4 cli-inline-overlay slice §3.4 INFO-severity provenance
+     * row: an overlay entry passed every per-entry contract check
+     * without producing a BLOCKER finding. Used purely so report
+     * consumers can attribute valid `cli-inline` entries back to
+     * their flag slot; never appears in `MigrationOverlayPreflightResult.diagnostics`.
+     */
+    const val OVERLAY_ACCEPTED: String = "OVERLAY_ACCEPTED"
 }
 
 object MigrationOverlayValidator {
@@ -218,10 +237,18 @@ object MigrationOverlayValidator {
             )
         }
 
+        val blockedEntryIds = diagnostics
+            .asSequence()
+            .filter { it.severity == MigrationOverlayDiagnostic.Severity.BLOCKER }
+            .mapNotNull { it.entryId?.takeIf(String::isNotBlank) }
+            .toSet()
+        val accepted = overlay.entries.filter { it.id.isNotBlank() && it.id !in blockedEntryIds }
+
         return MigrationOverlayValidationResult(
             source = source,
             overlayHash = reportHash,
             diagnostics = diagnostics,
+            acceptedEntries = accepted,
         )
     }
 

@@ -24,7 +24,7 @@ import io.kotest.matchers.shouldBe
 
 class MigrationOverlayPreflightTest : FunSpec({
 
-    test("valid rename overlay satisfies F0 preflight without requiring a feature consumer") {
+    test("valid rename overlay satisfies F0 preflight and surfaces OVERLAY_ACCEPTED provenance") {
         val plan = planWith(
             overlay = renameOverlay().withComputedHash(),
             source = "overlays/rename.json",
@@ -33,7 +33,14 @@ class MigrationOverlayPreflightTest : FunSpec({
         val result = MigrationOverlayPreflight.validate(plan, DatabaseDialect.POSTGRESQL)
 
         result.hasBlockers shouldBe false
-        result.reportItems shouldBe emptyList()
+        // F.4 cli-inline-overlay §3.4: a valid entry emits an
+        // INFO-severity OVERLAY_ACCEPTED provenance row so report
+        // consumers can attribute it back to source/entryId.
+        result.reportItems.single().diagnosticCode shouldBe MigrationOverlayDiagnostics.OVERLAY_ACCEPTED
+        result.reportItems.single().severity shouldBe MigrationOverlayDiagnostic.Severity.INFO
+        result.reportItems.single().entryId shouldBe "rename-users"
+        // Provenance rows must not become Failure-Diagnostics.
+        result.diagnostics shouldBe emptyList()
     }
 
     test("unsigned rename overlay blocks before render") {
@@ -62,9 +69,16 @@ class MigrationOverlayPreflightTest : FunSpec({
         val failure = MigrationOverlayPreflight.buildFailureResult(plan, result)
 
         result.hasBlockers shouldBe true
-        result.reportItems.single().source shouldBe "overlays/using.json"
-        result.reportItems.single().entryId shouldBe null
-        result.reportItems.single().diagnosticCode shouldBe "OVERLAY_HASH_MISSING"
+        // F.4 cli-inline-overlay §3.4: HASH_MISSING is a doc-level
+        // BLOCKER (no entryId); the using-expression entry itself
+        // passes per-entry validation and gets an OVERLAY_ACCEPTED
+        // INFO provenance row.
+        val blocker = result.reportItems.single {
+            it.diagnosticCode == MigrationOverlayDiagnostics.HASH_MISSING
+        }
+        blocker.source shouldBe "overlays/using.json"
+        blocker.entryId shouldBe null
+        result.reportItems.any { it.diagnosticCode == MigrationOverlayDiagnostics.OVERLAY_ACCEPTED } shouldBe true
         failure.isBlocked shouldBe true
         failure.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         failure.statements shouldBe emptyList()
@@ -424,6 +438,133 @@ class MigrationOverlayPreflightTest : FunSpec({
         pre.hasBlockers shouldBe true
         pre.reportItems.single { it.diagnosticCode == MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND }
             .renameObjectType shouldBe "view"
+    }
+
+    test("F.4 cli-inline-overlay: cross-document duplicate emits RENAME_MAPPING_INVALID with both source/entryId pairs") {
+        // File overlay + inline overlay both describe the exact same
+        // rename — the per-doc validator wouldn't catch this because
+        // each doc looks individually valid. The cross-doc gate must
+        // block before plan().
+        val fileOverlay = renameOverlay().copy(
+            entries = listOf(
+                RenameMappingOverlayEntry(
+                    id = "file-entry",
+                    objectType = "table",
+                    fromName = "app_user",
+                    toName = "users",
+                ),
+            ),
+        ).withComputedHash()
+        val inlineOverlay = renameOverlay().copy(
+            entries = listOf(
+                RenameMappingOverlayEntry(
+                    id = "rename-table-0",
+                    objectType = "table",
+                    fromName = "app_user",
+                    toName = "users",
+                ),
+            ),
+        ).withComputedHash()
+
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(
+                MigrationOverlayDocument(source = "overlays/file.json", overlay = fileOverlay),
+                MigrationOverlayDocument(source = "cli-inline", overlay = inlineOverlay),
+            ),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+        )
+
+        result.hasBlockers shouldBe true
+        val dups = result.reportItems.filter {
+            it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE
+        }
+        // One item per side of the conflict.
+        dups.map { it.source }.toSet() shouldBe setOf("overlays/file.json", "cli-inline")
+        dups.map { it.entryId }.toSet() shouldBe setOf("file-entry", "rename-table-0")
+        // Classifier folds these into the new reason.
+        val failure = MigrationOverlayPreflight.buildFailureResult(planWithoutOverlays(), result)
+        failure.primaryBlockedReason shouldBe MigrationBlockedReason.RENAME_MAPPING_INVALID
+    }
+
+    test("F.4 cli-inline-overlay: cross-document ambiguous source emits RENAME_MAPPING_INVALID") {
+        // Two overlays claim the same source name but disagree on
+        // the target — RENAME_MAPPING_AMBIGUOUS across docs.
+        val fileOverlay = renameOverlay().copy(
+            entries = listOf(
+                RenameMappingOverlayEntry(
+                    id = "file-entry", objectType = "table",
+                    fromName = "app_user", toName = "users",
+                ),
+            ),
+        ).withComputedHash()
+        val inlineOverlay = renameOverlay().copy(
+            entries = listOf(
+                RenameMappingOverlayEntry(
+                    id = "rename-table-0", objectType = "table",
+                    fromName = "app_user", toName = "members",
+                ),
+            ),
+        ).withComputedHash()
+
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(
+                MigrationOverlayDocument(source = "overlays/file.json", overlay = fileOverlay),
+                MigrationOverlayDocument(source = "cli-inline", overlay = inlineOverlay),
+            ),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+        )
+        val ambiguous = result.reportItems.filter {
+            it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS
+        }
+        ambiguous.map { it.source }.toSet() shouldBe setOf("overlays/file.json", "cli-inline")
+        val failure = MigrationOverlayPreflight.buildFailureResult(planWithoutOverlays(), result)
+        failure.primaryBlockedReason shouldBe MigrationBlockedReason.RENAME_MAPPING_INVALID
+    }
+
+    test("F.4 cli-inline-overlay: same rename across docs WITH same target produces no AMBIGUOUS, only DUPLICATE") {
+        // Defensive: an exact duplicate should NOT also fire as
+        // ambiguous (operator would see two findings for one fault).
+        val fileOverlay = renameOverlay().withComputedHash()
+        val inlineOverlay = renameOverlay().withComputedHash()
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(
+                MigrationOverlayDocument(source = "overlays/file.json", overlay = fileOverlay),
+                MigrationOverlayDocument(source = "cli-inline", overlay = inlineOverlay),
+            ),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+        )
+        val crossDoc = result.reportItems.filter {
+            it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE ||
+                it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS
+        }
+        crossDoc.map { it.diagnosticCode }.toSet() shouldBe setOf(
+            MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
+        )
+    }
+
+    test("F.4 cli-inline-overlay: single document with rename mapping does NOT produce cross-doc findings") {
+        // Smoke: cross-doc gate must only fire when >=2 distinct
+        // sources are present.
+        val overlay = renameOverlay().withComputedHash()
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(MigrationOverlayDocument(source = "overlays/single.json", overlay = overlay)),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+        )
+        result.reportItems.none {
+            it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE ||
+                it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS
+        } shouldBe true
+        // Pin §3.4: valid entry surfaces as INFO OVERLAY_ACCEPTED.
+        result.reportItems.single { it.diagnosticCode == MigrationOverlayDiagnostics.OVERLAY_ACCEPTED }
+            .source shouldBe "overlays/single.json"
     }
 
     test("overlay diagnostics expose source entry hash and code without secret expression values") {

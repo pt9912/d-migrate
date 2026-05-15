@@ -506,8 +506,11 @@ Aktuell offene 0.9.7-Restpunkte:
   auf Drop+Add zurueckfallen muessen. *(2026-05-15: Dependency-
   Projection T1–T6 fertig; rename-mapping-invalid-enum mit neuem
   `MigrationBlockedReason.RENAME_MAPPING_INVALID` und
-  `{table, column}`-Pre-Plan-Whitelist fertig. CLI-Inline-Overlay
-  und View-/Trigger-/Routine-Rename bleiben offen.)*
+  `{table, column}`-Pre-Plan-Whitelist fertig; cli-inline-overlay
+  mit `--rename-table` / `--rename-column` + Cross-Document-
+  Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance fertig.
+  View-/Trigger-/Routine-Rename bleibt offen, harte Vorbedingung
+  E.1/E.2.)*
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
   Vertrag und Daten-Preflight.
 - **Coverage/QA**: MySQL-`AlterColumnNullability` Round-Trip-Smoke oder

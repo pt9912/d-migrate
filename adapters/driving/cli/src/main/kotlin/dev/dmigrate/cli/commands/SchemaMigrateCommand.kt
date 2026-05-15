@@ -58,6 +58,17 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         "--migration-overlay",
         help = "Versioned migration overlay JSON file (repeatable)",
     ).path(mustExist = true, canBeDir = false, mustBeReadable = true).multiple()
+    val renameTableFlags by option(
+        "--rename-table",
+        help = "Inline rename mapping <from>:<to> (repeatable). Equivalent to a single-entry " +
+            "migration-overlay rename-mapping; not artefact-stable, use --migration-overlay for " +
+            "long-lived plans.",
+    ).multiple()
+    val renameColumnFlags by option(
+        "--rename-column",
+        help = "Inline column rename mapping <table>.<from>:<table>.<to> (repeatable). Both sides " +
+            "must use the same table prefix; use --migration-overlay for cross-table renames.",
+    ).multiple()
     val generateRollback by option("--generate-rollback", help = "Render Down-SQL alongside Up").flag()
     val execute by option("--execute", help = "Execute Up-SQL against --target (DB only)").flag()
     val dryRun by option("--dry-run", help = "Plan/SQL only, do not execute").flag()
@@ -86,6 +97,8 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             cliConfigPath = root?.config,
             migrationOverlays = loadedMigrationOverlays.documents,
             migrationOverlayLoadFailures = loadedMigrationOverlays.failures,
+            renameTableFlags = renameTableFlags,
+            renameColumnFlags = renameColumnFlags,
         )
 
         val runner = SchemaMigrateRunner(

@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **F.4 cli-inline-overlay** — `schema migrate` accepts two new
+  repeatable flags for inline rename mappings:
+  - `--rename-table <from>:<to>`
+  - `--rename-column <table>.<from>:<table>.<to>`
+  The CLI builds a synthetic `migration-overlay.v1` document with
+  `source = "cli-inline"` and a stable sentinel
+  `createdAt = "cli-inline"` so two identical invocations produce a
+  bit-identical `overlayHash` (and therefore identical
+  `Rename*` operation ids and statement stream) regardless of
+  wall-clock. The synthetic document runs through the exact same
+  validator/preflight/mapper pipeline as a file-loaded overlay.
+  Cross-document conflicts (file vs inline or file vs file) block
+  before `DiffPlanner.plan(...)` via a new Pre-Plan cross-document
+  uniqueness gate in `MigrationOverlayPreflight.validateBeforePlan`,
+  emitting `OVERLAY_RENAME_MAPPING_DUPLICATE` /
+  `OVERLAY_RENAME_MAPPING_AMBIGUOUS` with every conflicting
+  `source`/`entryId` pair; the reason-classifier folds them into
+  `RENAME_MAPPING_INVALID`. Parse-time CLI errors (bad syntax,
+  duplicate `from` within the same invocation,
+  mismatched table prefix, forbidden SQL-quoting chars) exit 2
+  before any DB / I/O happens. Inline overlays are deliberately NOT
+  artefact-stable — they're a runtime-only operator shortcut and
+  must NOT be serialised into a public `migration-plan.v1` artefact;
+  use `--migration-overlay` with a file for long-lived plans.
+  `MigrationOverlayDiagnostic` carries the validator's own
+  fact-bearing message text downstream (no more synthesised "failed
+  F.0 contract validation"), and `OVERLAY_ACCEPTED` INFO provenance
+  rows surface in `overlays[]` for entries that pass without
+  blockers so report consumers can attribute each rename back to its
+  flag slot or file entry. `spec/cli-spec.md` §6.1 lists the new
+  flags; Plan-2 §10 F.4 carve-out updated.
 - **F.4 rename-mapping-invalid-enum** — new
   `MigrationBlockedReason.RENAME_MAPPING_INVALID` (last enum value;
   existing ordinals unchanged). The application-layer

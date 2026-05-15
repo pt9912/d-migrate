@@ -130,7 +130,36 @@ class SchemaMigrateRunner(
         }
         cancellationToken.throwIfCancellationRequested()
 
-        val (plan, overlayPreflight) = computePlanAndOverlay(request, prepared)
+        // F.4 cli-inline-overlay slice §3.3: build the synthetic
+        // `cli-inline` overlay BEFORE plan() so it joins the normal
+        // file-overlay pipeline. Parse-time errors (bad syntax,
+        // duplicate `from` within the same invocation) exit 2 with
+        // a CLI-validation message and never touch DB/I/O.
+        val currentFingerprint = fingerprint(prepared.targetNormalized.schema)
+        val desiredFingerprint = fingerprint(prepared.sourceNormalized.schema)
+        val inlineResult = InlineRenameOverlayBuilder.build(
+            renameTableFlags = request.renameTableFlags,
+            renameColumnFlags = request.renameColumnFlags,
+            sourceFingerprint = currentFingerprint,
+            targetFingerprint = desiredFingerprint,
+            dialect = prepared.effectiveDialect.name.lowercase(java.util.Locale.ROOT),
+            version = createdByVersion,
+        )
+        val mergedOverlays = when (inlineResult) {
+            is InlineRenameOverlayResult.Built -> request.migrationOverlays + inlineResult.document
+            is InlineRenameOverlayResult.Empty -> request.migrationOverlays
+            is InlineRenameOverlayResult.ParseFailed -> {
+                inlineResult.errors.forEach { userFacingPrintError(it, "--rename-table/--rename-column") }
+                return 2
+            }
+        }
+
+        val (plan, overlayPreflight) = computePlanAndOverlay(
+            request, prepared,
+            mergedOverlays = mergedOverlays,
+            currentFingerprint = currentFingerprint,
+            desiredFingerprint = desiredFingerprint,
+        )
         val render = renderPipeline.run(
             request = request,
             targetOp = prepared.targetOp,
@@ -188,12 +217,13 @@ class SchemaMigrateRunner(
     private fun computePlanAndOverlay(
         request: SchemaMigrateRequest,
         prep: SchemaMigratePrepared,
+        mergedOverlays: List<MigrationOverlayDocument>,
+        currentFingerprint: String,
+        desiredFingerprint: String,
     ): Pair<DiffResult, MigrationOverlayPreflightResult> {
         val diff = comparator(prep.targetNormalized.schema, prep.sourceNormalized.schema)
-        val currentFingerprint = fingerprint(prep.targetNormalized.schema)
-        val desiredFingerprint = fingerprint(prep.sourceNormalized.schema)
         val overlayPreflight = MigrationOverlayPreflight.validateBeforePlan(
-            documents = request.migrationOverlays,
+            documents = mergedOverlays,
             sourceFingerprint = currentFingerprint,
             targetFingerprint = desiredFingerprint,
             dialect = prep.effectiveDialect.name,
@@ -206,7 +236,7 @@ class SchemaMigrateRunner(
                 desired = prep.sourceNormalized.schema,
                 schemaDiff = diff,
                 diagnostics = overlayPreflight.diagnostics,
-                migrationOverlays = request.migrationOverlays,
+                migrationOverlays = mergedOverlays,
                 currentFingerprint = currentFingerprint,
                 desiredFingerprint = desiredFingerprint,
             )
@@ -215,7 +245,7 @@ class SchemaMigrateRunner(
                 current = prep.targetNormalized.schema,
                 desired = prep.sourceNormalized.schema,
                 schemaDiff = diff,
-                migrationOverlays = request.migrationOverlays,
+                migrationOverlays = mergedOverlays,
                 capabilities = capabilities,
             )
         }
@@ -362,6 +392,19 @@ data class SchemaMigrateRequest(
     val cliConfigPath: Path? = null,
     val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
     val migrationOverlayLoadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+    /**
+     * F.4 cli-inline-overlay slice: operator-supplied
+     * `--rename-table <from>:<to>` flag values, repeatable.
+     * Converted by the runner into a synthetic `cli-inline` overlay
+     * before the first `DiffPlanner.plan(...)` call.
+     */
+    val renameTableFlags: List<String> = emptyList(),
+    /**
+     * F.4 cli-inline-overlay slice: operator-supplied
+     * `--rename-column <table>.<from>:<table>.<to>` flag values,
+     * repeatable. Both sides must share the same `<table>` prefix.
+     */
+    val renameColumnFlags: List<String> = emptyList(),
 )
 
 data class SchemaMigrateReport(
