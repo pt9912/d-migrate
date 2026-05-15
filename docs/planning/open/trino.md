@@ -101,8 +101,8 @@ Interpretation:
 
 - `catalog` ist das erste Pfadsegment.
 - `schema` ist das zweite Pfadsegment.
-- Bei fehlendem `schema` verwendet die Engine das Trino-Session-Default des
-  Connectors.
+- Kanonisch ist die URL inklusive `schema`; bei fehlendem `schema` nutzt die Engine den
+  Trino-Session-Default des Connectors.
   - Ist kein Default vorhanden oder wird ein Schema zwingend benötigt, bricht der
     Lauf vorab mit `action_required` und klarer Anleitung ab.
 - Query-Parameter sind bis auf explizit freigegebene Properties als harte
@@ -122,8 +122,11 @@ Interpretation:
 Credential-Modell (Phase 1):
 
 - Basisform: `trino://user:password@host:port/catalog/schema`.
-- Optional/empfohlen: Passwort via Umgebungsvariable (z. B. `TRINO_PASSWORD`),
-  bis ein Credential-Provider formal eingeführt ist.
+- Optional/empfohlen: Passwort via Umgebungsvariable (z. B. `TRINO_PASSWORD`) oder
+  späterer Credential-Provider.
+- URL-Embedded `user:password` ist in Phase 1 nur als Übergang für bestehende
+  Setups erlaubt.
+- Bei gleichzeitiger Übergabe gilt `TRINO_PASSWORD` als Vorrang.
 - Kein generischer Connector-Parameter-Bypass; nur explizit erlaubte Properties.
 
 #### 5.3 Security, Secrets und Maskierung
@@ -132,10 +135,17 @@ Credential-Modell (Phase 1):
   Übergangslösung vorgesehen.
 - In neuen Setups muss ein Umgebungs-Secret (`TRINO_PASSWORD`) oder späterer
   Credential-Provider genutzt werden.
-- Geheimnisse dürfen nicht in Logs, Debug-Ausgaben, Cache-Keys oder Telemetrie
-  mit Klartext enthalten sein.
-- Jede Ausgabe mit potenziellen Secret-Feldern (Passwort, Token) ist
+- In Phase 1 gilt ergänzend:
+  - `accessToken`, `trustStorePassword`, `keystorePassword` sind erlaubt, aber ebenfalls
+    Übergangs-Optionen.
+  - `session.<name>` ist erlaubt, kann aber Secret-Werte tragen und ist wie Secret zu
+    behandeln.
+- Geheimnisse dürfen nicht in Logs, Debug-Ausgaben, Cache-Keys oder Telemetrie mit
+  Klartext enthalten sein.
+- Jede Ausgabe mit potenziellen Secret-Feldern (Passwort, Token, Secret-Properties) ist
   deterministisch zu maskieren (`***`).
+- Cache-Keys, Hilfetexte und Verbindungs-IDs müssen aus normalisierten URLs mit
+  maskierten Secret-Werten gebildet werden.
 
 ### 5.4 Fehler- und Signalisationsregeln
 
@@ -379,8 +389,8 @@ Voraussetzung für Phase 1, Tranche 2.
 - [ ] URL-Parsing ist deterministisch für `catalog`/`schema` (inkl. fehlendes/ungültiges Schema).
 - [ ] Trino-URL erlaubt nur die Phase-1-Property-Liste; nicht erlaubte Properties
   (`foo=bar`) brechen reproduzierbar mit `action_required` ab.
-- [ ] `data transfer --target trino://...` bricht noch ohne Profiling/Implementierung
-  mit klarer Guard-Fehlermeldung ab.
+- [ ] `data transfer --target trino://...` bricht in Tranche 1 mit klarer
+  Guard-Fehlermeldung ab (rein Source-only).
 - [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
 - [ ] Geheimnisse werden in Hilfetexten/Fehlern/Cachepfaden deterministisch maskiert.
 - [ ] Mindest-Dokumentation ergänzt: `spec/cli-spec.md`,
