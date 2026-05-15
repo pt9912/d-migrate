@@ -113,7 +113,13 @@ internal object RenameViewReprojector {
         val absorbed = mutableSetOf<String>()
         for ((viewName, currentView) in current.views) {
             val deps = currentView.dependencies?.tables ?: continue
-            if (candidate.fromName !in deps && candidate.toName !in deps) continue
+            // Match `fromName` only. The current schema is pre-rename
+            // by definition — a view declaring a dep on `toName` here
+            // is either a stale forward reference or catalog noise and
+            // would drag unrelated views into reprojection. T6/T7 may
+            // revisit this if a legitimate forward-rename case
+            // emerges.
+            if (candidate.fromName !in deps) continue
             val desiredView = desired.views[viewName]
             if (desiredView == null || desiredView.query.isNullOrBlank()) {
                 blockers += RenameProjectionBlocker(

@@ -466,6 +466,14 @@ internal object OperationMapper {
                 view = removed.definition,
             )
         }
+        // viewsAdded / viewsRemoved are NOT filtered against
+        // [absorbedViews]: the reprojector iterates `current.views`
+        // only, so a brand-new view (viewsAdded) is never absorbed;
+        // a view dropped from desired (viewsRemoved) hits the
+        // reprojector's "missing in desired" blocker path so the
+        // candidate falls back to drop+create with no absorption.
+        // Only the `viewsChanged` path can collide with an absorbed
+        // reprojection, and that's what the skip below guards against.
         for (changed in diff.viewsChanged) {
             // T5: a view whose underlying renamed table forced an
             // explicit DropView+CreateView pair from the rename

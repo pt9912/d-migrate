@@ -1,7 +1,10 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.NamedTable
+import dev.dmigrate.core.diff.NamedView
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.ValueChange
+import dev.dmigrate.core.diff.ViewDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlay
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
@@ -90,9 +93,9 @@ class RenameOverlayMapperT5Test : FunSpec({
             tablesAdded = listOf(NamedTable("users", simpleTable())),
             tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
             viewsChanged = listOf(
-                dev.dmigrate.core.diff.ViewDiff(
+                ViewDiff(
                     name = "email_view",
-                    query = dev.dmigrate.core.diff.ValueChange(
+                    query = ValueChange(
                         "SELECT id, email FROM users_old",
                         "SELECT id, email FROM users",
                     ),
@@ -117,10 +120,6 @@ class RenameOverlayMapperT5Test : FunSpec({
 
         // The regular mapper MUST NOT emit a duplicate ReplaceView
         // for the absorbed view.
-        plan.operations.filterIsInstance<DiffOperation.ReplaceView>().shouldNotContain(
-            plan.operations.filterIsInstance<DiffOperation.ReplaceView>()
-                .firstOrNull { it.objectRef.path == listOf("email_view") },
-        )
         plan.operations.filterIsInstance<DiffOperation.ReplaceView>()
             .none { it.objectRef.path == listOf("email_view") } shouldBe true
 
@@ -159,9 +158,9 @@ class RenameOverlayMapperT5Test : FunSpec({
             tablesAdded = listOf(NamedTable("orders", simpleTable())),
             tablesRemoved = listOf(NamedTable("orders_old", simpleTable())),
             viewsChanged = listOf(
-                dev.dmigrate.core.diff.ViewDiff(
+                ViewDiff(
                     name = "order_view",
-                    query = dev.dmigrate.core.diff.ValueChange(
+                    query = ValueChange(
                         "SELECT id FROM orders_old",
                         "SELECT id FROM orders",
                     ),
@@ -193,7 +192,7 @@ class RenameOverlayMapperT5Test : FunSpec({
         val diff = SchemaDiff(
             tablesAdded = listOf(NamedTable("users", simpleTable())),
             tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
-            viewsRemoved = listOf(dev.dmigrate.core.diff.NamedView("legacy_view", currentView)),
+            viewsRemoved = listOf(NamedView("legacy_view", currentView)),
         )
 
         val plan = planner.plan(current = current, desired = desired, schemaDiff = diff,
@@ -231,9 +230,9 @@ class RenameOverlayMapperT5Test : FunSpec({
             tablesAdded = listOf(NamedTable("users", simpleTable())),
             tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
             viewsChanged = listOf(
-                dev.dmigrate.core.diff.ViewDiff(
+                ViewDiff(
                     name = "email_view",
-                    query = dev.dmigrate.core.diff.ValueChange(
+                    query = ValueChange(
                         "SELECT id, email FROM users_old",
                         "SELECT id, email FROM users",
                     ),
@@ -280,6 +279,132 @@ class RenameOverlayMapperT5Test : FunSpec({
         plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 1
         plan.operations.filterIsInstance<DiffOperation.DropView>().size shouldBe 0
         plan.operations.filterIsInstance<DiffOperation.CreateView>().size shouldBe 0
+    }
+
+    test("probe matches `fromName` only — a current view declaring deps on `toName` is NOT reprojected") {
+        // Defensive: a pre-rename current schema declaring a
+        // dependency on the POST-rename name is either stale
+        // provenance or catalog noise. The reprojector must not pick
+        // it up; otherwise unrelated views get dragged into the
+        // rename's Drop+Create pipeline.
+        val currentView = ViewDefinition(
+            query = "SELECT id FROM users",
+            // Note: deps on the NEW name in the CURRENT schema —
+            // suspicious provenance.
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val current = emptySchema().copy(
+            tables = mapOf("users_old" to simpleTable()),
+            views = mapOf("forward_view" to currentView),
+        )
+        val desired = emptySchema().copy(
+            tables = mapOf("users" to simpleTable()),
+            views = mapOf("forward_view" to currentView),
+        )
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("users", simpleTable())),
+            tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
+        )
+
+        val plan = planner.plan(current = current, desired = desired, schemaDiff = diff,
+            migrationOverlays = listOf(renameOverlay("table", "users_old", "users")))
+
+        plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 1
+        // No view-side reprojection — forward_view stays untouched.
+        plan.operations.filterIsInstance<DiffOperation.DropView>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.CreateView>().size shouldBe 0
+    }
+
+    test("triggers stay NO_PROJECTION_AVAILABLE — opaque body, no reprojection") {
+        // Plan §3.7 / §4.5 carve-out: trigger bodies are opaque
+        // strings in the neutral model, so even a trigger declaring a
+        // table-level dep on the renamed table is not reprojected by
+        // T5. The carve-out is load-bearing — without this test, a
+        // future implementation that adds trigger reprojection would
+        // silently slip past CI.
+        val trigger = dev.dmigrate.core.model.TriggerDefinition(
+            table = "users_old",
+            event = dev.dmigrate.core.model.TriggerEvent.INSERT,
+            timing = dev.dmigrate.core.model.TriggerTiming.AFTER,
+            body = "BEGIN INSERT INTO audit VALUES (NEW.id); END",
+            dependencies = DependencyInfo(tables = listOf("users_old")),
+        )
+        val current = emptySchema().copy(
+            tables = mapOf("users_old" to simpleTable()),
+            triggers = mapOf("audit_trigger" to trigger),
+        )
+        val desired = emptySchema().copy(
+            tables = mapOf("users" to simpleTable()),
+            triggers = mapOf("audit_trigger" to trigger.copy(table = "users")),
+        )
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("users", simpleTable())),
+            tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
+            triggersChanged = listOf(
+                dev.dmigrate.core.diff.TriggerDiff(
+                    name = "audit_trigger",
+                    table = ValueChange("users_old", "users"),
+                ),
+            ),
+        )
+
+        val plan = planner.plan(current = current, desired = desired, schemaDiff = diff,
+            migrationOverlays = listOf(renameOverlay("table", "users_old", "users")))
+
+        // T5 does not synthesise trigger reprojection — the regular
+        // mapper's `mapTriggers` handles `triggersChanged` via
+        // `ReplaceTrigger`. The rename still folds.
+        plan.operations.filterIsInstance<DiffOperation.RenameTable>().size shouldBe 1
+        // No view-side DropView/CreateView (no view in this scenario).
+        plan.operations.filterIsInstance<DiffOperation.DropView>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.CreateView>().size shouldBe 0
+    }
+
+    test("G.3 no-op: projector emits DropView+CreateView (not ReplaceView), so splitReplaceViewsForColumnConflicts has nothing to split") {
+        // Plan §4.5 point 3 demands a test that pins the
+        // splitReplaceViewsForColumnConflicts interaction. T5's
+        // projector emits `DropView` + `CreateView` directly, so the
+        // splitter (which inspects only `ReplaceView`) is a no-op for
+        // these ops. Pinning this invariant means a future tranche
+        // that switches the projector to `ReplaceView` cannot land
+        // without also handling the split.
+        val currentView = ViewDefinition(
+            query = "SELECT id FROM users_old",
+            dependencies = DependencyInfo(tables = listOf("users_old")),
+        )
+        val desiredView = ViewDefinition(
+            query = "SELECT id FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val current = emptySchema().copy(
+            tables = mapOf("users_old" to simpleTable()),
+            views = mapOf("email_view" to currentView),
+        )
+        val desired = emptySchema().copy(
+            tables = mapOf("users" to simpleTable()),
+            views = mapOf("email_view" to desiredView),
+        )
+        val diff = SchemaDiff(
+            tablesAdded = listOf(NamedTable("users", simpleTable())),
+            tablesRemoved = listOf(NamedTable("users_old", simpleTable())),
+            viewsChanged = listOf(
+                ViewDiff(
+                    name = "email_view",
+                    query = ValueChange("SELECT id FROM users_old", "SELECT id FROM users"),
+                ),
+            ),
+        )
+
+        val plan = planner.plan(current = current, desired = desired, schemaDiff = diff,
+            migrationOverlays = listOf(renameOverlay("table", "users_old", "users")))
+
+        // The projector's explicit ops are Drop+Create — NOT ReplaceView.
+        plan.operations.filterIsInstance<DiffOperation.ReplaceView>().size shouldBe 0
+        plan.operations.filterIsInstance<DiffOperation.DropView>().size shouldBe 1
+        plan.operations.filterIsInstance<DiffOperation.CreateView>().size shouldBe 1
+        // No `::g3-split` synthetic id artifact — the splitter did not
+        // run on the projector's ops.
+        plan.operations.none { it.id.contains("::g3-split") } shouldBe true
     }
 
     test("RenameViewReprojector unit: emits ordered Drop→Create with proper dependency chain") {

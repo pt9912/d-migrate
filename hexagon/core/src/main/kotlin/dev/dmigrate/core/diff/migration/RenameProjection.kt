@@ -15,9 +15,11 @@ package dev.dmigrate.core.diff.migration
  *   to the rename via `dependencies = setOf(candidate.id)` plus the
  *   internal Drop→Create chain.
  * - [absorbedViews] — view names whose reprojection was emitted by
- *   the projector and which the regular `mapViews` path MUST skip in
- *   `viewsChanged`. Otherwise a duplicate `ReplaceView` would land in
- *   the plan alongside the projector's `DropView`/`CreateView`.
+ *   the projector. The regular `mapViews` path MUST skip these in
+ *   `viewsChanged`; `viewsAdded` / `viewsRemoved` are not filtered
+ *   because the reprojector only iterates `current.views` and the
+ *   missing-from-`desired` case is reported as a blocker (which
+ *   means the candidate falls back to drop+create, no absorption).
  * - [blockers] — dependencies the policy cannot project to the new
  *   name. When non-empty, the projector falls back to Drop+Add and
  *   emits one `RENAME_DEPENDENCY_UNPROJECTABLE` diagnostic per
