@@ -67,6 +67,91 @@ internal interface RenameDependencyPolicy {
 }
 
 /**
+ * F.4 T5 view-reprojection helper: produces the explicit `DropView` +
+ * `CreateView` pair plus blockers for any view whose
+ * `dependencies.tables` declares a table-level dependency on the
+ * renamed table.
+ *
+ * Today's model treats the view `query` as an opaque string —
+ * d-migrate cannot rewrite the body to use the new table name.
+ * Per Plan-2 §F.4 §3.7 the contract is that the operator supplies
+ * the **desired** schema with the view body already pointing at the
+ * new name; the projector then emits `DropView(current view)` +
+ * `CreateView(desired view)` so PG / MySQL / SQLite re-bind the
+ * view body to the post-rename catalog.
+ *
+ * Blocker case: when the desired schema does not carry the view at
+ * all, or its `query` is null, the projector cannot reconstruct the
+ * view post-rename. The probe emits a `RENAME_DEPENDENCY_UNPROJECTABLE`
+ * blocker; the projector then falls back to drop+create on the table
+ * (`RenameProjection.isAutomatic = false`).
+ *
+ * The returned [absorbedViews] set tells the regular `mapViews`
+ * path which `viewsChanged` entries to skip, preventing a duplicate
+ * `ReplaceView` alongside the projector's `DropView`/`CreateView`.
+ */
+internal data class ViewReprojection(
+    val operations: List<DiffOperation>,
+    val blockers: List<RenameProjectionBlocker>,
+    val absorbedViews: Set<String>,
+) {
+    companion object {
+        val EMPTY: ViewReprojection = ViewReprojection(emptyList(), emptyList(), emptySet())
+    }
+}
+
+internal object RenameViewReprojector {
+
+    fun reprojectViewsForTableRename(
+        candidate: RenameTableCandidate,
+        current: SchemaDefinition,
+        desired: SchemaDefinition,
+    ): ViewReprojection {
+        if (current.views.isEmpty()) return ViewReprojection.EMPTY
+        val ops = mutableListOf<DiffOperation>()
+        val blockers = mutableListOf<RenameProjectionBlocker>()
+        val absorbed = mutableSetOf<String>()
+        for ((viewName, currentView) in current.views) {
+            val deps = currentView.dependencies?.tables ?: continue
+            if (candidate.fromName !in deps && candidate.toName !in deps) continue
+            val desiredView = desired.views[viewName]
+            if (desiredView == null || desiredView.query.isNullOrBlank()) {
+                blockers += RenameProjectionBlocker(
+                    code = RENAME_DEPENDENCY_UNPROJECTABLE,
+                    candidateId = candidate.id,
+                    path = listOf(viewName),
+                    message = "View '$viewName' declares a dependency on the renamed table " +
+                        "'${candidate.fromName}' -> '${candidate.toName}', but the desired schema does " +
+                        "not carry the view${if (desiredView == null) "" else " body (`query` is empty)"}. " +
+                        "d-migrate cannot reproject the view without the post-rename body — supply the " +
+                        "view in the desired schema with a body referencing the new table name, or " +
+                        "remove the rename mapping.",
+                )
+                continue
+            }
+            val dropRef = DiffObjectRef(DiffObjectType.VIEW, listOf(viewName))
+            val drop = DiffOperation.DropView(
+                id = OperationIdFactory.makeId("DropView", dropRef, CanonicalPayload.view(currentView)),
+                objectRef = dropRef,
+                view = currentView,
+                dependencies = setOf(candidate.id),
+            )
+            val createRef = DiffObjectRef(DiffObjectType.VIEW, listOf(viewName))
+            val create = DiffOperation.CreateView(
+                id = OperationIdFactory.makeId("CreateView", createRef, CanonicalPayload.view(desiredView)),
+                objectRef = createRef,
+                view = desiredView,
+                dependencies = setOf(candidate.id, drop.id),
+            )
+            ops += drop
+            ops += create
+            absorbed += viewName
+        }
+        return ViewReprojection(ops, blockers, absorbed)
+    }
+}
+
+/**
  * Shared rename-dependency probes: pure functions over the
  * schema model that the per-dialect policies compose. Kept dialect-
  * agnostic so the dialect implementations only carry the matrix
@@ -155,9 +240,18 @@ internal object PostgresRenameDependencyPolicy : RenameDependencyPolicy {
         // index / PK reprojection runs natively after `ALTER TABLE …
         // RENAME TO`. Column-default expressions don't reference table
         // names, so no FunctionCall probe is needed for table renames.
-        // T4/T5 will populate the AUTOMATIC bucket with the actual FK /
-        // view-dep refs once the schema model carries them.
-        return RenameProjection.EMPTY
+        // T5: views referencing the renamed table need an explicit
+        // Drop+Create from the desired body. PostgreSQL's pg_depend
+        // would catch identity changes for OID-tracked deps, but the
+        // view body is plain SQL text in the neutral model — d-migrate
+        // cannot rewrite it, so the safe path is to drop and recreate
+        // from the desired schema's body.
+        val views = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
+        return RenameProjection(
+            explicit = views.operations,
+            absorbedViews = views.absorbedViews,
+            blockers = views.blockers,
+        )
     }
 
     override fun classifyColumnRename(
@@ -202,12 +296,21 @@ internal object MysqlRenameDependencyPolicy : RenameDependencyPolicy {
         desired: SchemaDefinition,
         capabilities: RenameProjectionCapabilities,
     ): RenameProjection {
-        // T3: same as PostgreSQL — column-default expressions don't
-        // reference table names, so no blocker fires for table
-        // renames. The LIVE_TARGET vs FILE_ONLY gate the matrix
-        // describes for FK constraint-name conflicts lands once the
-        // policy enumerates FK refs from other tables (T4/T5).
-        return RenameProjection.EMPTY
+        // T3: column-default expressions don't reference table names,
+        // so no blocker fires from a FunctionCall probe.
+        // T5: views referencing the renamed table need an explicit
+        // Drop+Create from the desired body. MySQL never rewrites
+        // view bodies through `RENAME TABLE`, so the safest path is
+        // to drop and recreate from the desired schema's body.
+        // The LIVE_TARGET vs FILE_ONLY gate the matrix describes for
+        // FK constraint-name conflicts lands once the policy
+        // enumerates FK refs from other tables (T4/T5 follow-up).
+        val views = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
+        return RenameProjection(
+            explicit = views.operations,
+            absorbedViews = views.absorbedViews,
+            blockers = views.blockers,
+        )
     }
 
     override fun classifyColumnRename(

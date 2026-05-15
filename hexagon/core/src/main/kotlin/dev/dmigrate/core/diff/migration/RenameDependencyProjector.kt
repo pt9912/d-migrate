@@ -48,6 +48,7 @@ internal class RenameDependencyProjector(
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val absorbedFrom = mutableSetOf<String>()
         val absorbedTo = mutableSetOf<String>()
+        val absorbedViews = mutableSetOf<String>()
         for (item in items) {
             val candidate = item.candidate
             when {
@@ -62,15 +63,17 @@ internal class RenameDependencyProjector(
                     if (projection.isAutomatic) {
                         ops += RenameOverlayMapper.buildRenameTableOperation(candidate)
                         ops += item.postRenameDeltaOperations
+                        ops += projection.explicit
                         absorbedFrom += candidate.fromName
                         absorbedTo += candidate.toName
+                        absorbedViews += projection.absorbedViews
                     } else {
                         diagnostics += projection.blockers.map { it.toDiagnostic() }
                     }
                 }
             }
         }
-        return RenameTableProjection(ops, diagnostics, absorbedFrom, absorbedTo)
+        return RenameTableProjection(ops, diagnostics, absorbedFrom, absorbedTo, absorbedViews)
     }
 
     fun projectColumns(
@@ -98,6 +101,12 @@ internal class RenameDependencyProjector(
                     if (projection.isAutomatic) {
                         ops += RenameOverlayMapper.buildRenameColumnOperation(candidate)
                         ops += item.postRenameDeltaOperations
+                        // T5 carve-out: column-rename view-reprojection
+                        // is not yet implemented (`explicit` should be
+                        // empty for column candidates). Append
+                        // defensively so a future tranche that
+                        // populates it does not silently drop ops.
+                        ops += projection.explicit
                         absorbedFrom += candidate.fromColumn
                         absorbedTo += candidate.toColumn
                     } else {

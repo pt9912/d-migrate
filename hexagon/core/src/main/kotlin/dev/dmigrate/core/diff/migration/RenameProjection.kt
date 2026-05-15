@@ -1,25 +1,35 @@
 package dev.dmigrate.core.diff.migration
 
 /**
- * F.4 dependency-projection T3 policy output. The projector consults a
- * [RenameDependencyPolicy] per candidate and receives one of these
- * structured outcomes:
+ * F.4 dependency-projection T3/T5 policy output. The projector
+ * consults a [RenameDependencyPolicy] per candidate and receives one
+ * of these structured outcomes:
  *
  * - [automatic] — dependencies the engine handles natively (e.g.
  *   PostgreSQL OID-based foreign keys after `ALTER TABLE … RENAME TO`).
  *   These are surfaced in the report carrier but do not produce
  *   additional operations.
+ * - [explicit] — explicit follow-up operations the projector emits
+ *   alongside the rename. T5: views referencing the renamed table get
+ *   a `DropView` + `CreateView` pair from the desired body, anchored
+ *   to the rename via `dependencies = setOf(candidate.id)` plus the
+ *   internal Drop→Create chain.
+ * - [absorbedViews] — view names whose reprojection was emitted by
+ *   the projector and which the regular `mapViews` path MUST skip in
+ *   `viewsChanged`. Otherwise a duplicate `ReplaceView` would land in
+ *   the plan alongside the projector's `DropView`/`CreateView`.
  * - [blockers] — dependencies the policy cannot project to the new
  *   name. When non-empty, the projector falls back to Drop+Add and
  *   emits one `RENAME_DEPENDENCY_UNPROJECTABLE` diagnostic per
- *   blocker. T5 will introduce a third bucket (`explicit`) for
- *   inter-object follow-up operations.
+ *   blocker.
  *
  * [isAutomatic] is the projector's primary decision predicate: emit
- * the rename when true, fall back when false.
+ * the rename + explicit ops when true, fall back when false.
  */
 internal data class RenameProjection(
     val automatic: List<DependencyRef> = emptyList(),
+    val explicit: List<DiffOperation> = emptyList(),
+    val absorbedViews: Set<String> = emptySet(),
     val blockers: List<RenameProjectionBlocker> = emptyList(),
 ) {
     val isAutomatic: Boolean get() = blockers.isEmpty()
@@ -92,6 +102,14 @@ internal data class RenameTableProjection(
     val diagnostics: List<DiffDiagnostic>,
     val absorbedFromNames: Set<String>,
     val absorbedToNames: Set<String>,
+    /**
+     * T5: view names whose reprojection (`DropView` + `CreateView`)
+     * the projector already emitted. The mapper MUST skip these
+     * entries in `viewsChanged` so the resulting plan does not
+     * contain a duplicate `ReplaceView` alongside the projector's
+     * explicit ops.
+     */
+    val absorbedViews: Set<String> = emptySet(),
 )
 
 /**

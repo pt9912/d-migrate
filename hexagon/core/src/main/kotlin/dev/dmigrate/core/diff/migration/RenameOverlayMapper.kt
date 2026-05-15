@@ -41,11 +41,12 @@ internal object RenameOverlayMapper {
      * diagnostics — whichever the policy + mapper signals demand.
      *
      * Return contract (preserved from pre-T2 for the existing
-     * [OperationMapper.mapTables] consumer): the **first** set carries
-     * the absorbed `to`-side names (i.e. those skipped from the regular
-     * `tablesAdded` drop/create path) and the **second** set carries
-     * the absorbed `from`-side names. The mapper destructures as
-     * `(renamedAdds, renamedRemoves)`.
+     * [OperationMapper.mapTables] consumer): [TableFoldResult.absorbedToNames]
+     * are skipped from `tablesAdded`, [TableFoldResult.absorbedFromNames]
+     * are skipped from `tablesRemoved`, and [TableFoldResult.absorbedViews]
+     * are skipped from `viewsChanged` so the mapper does not emit a
+     * duplicate `ReplaceView` alongside the projector's `DropView`/
+     * `CreateView` pair (T5 explicit view-reprojection).
      */
     fun foldRenameTables(
         diff: SchemaDiff,
@@ -54,14 +55,29 @@ internal object RenameOverlayMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
-    ): Pair<Set<String>, Set<String>> {
+    ): TableFoldResult {
         val items = prepareTableItems(diff, ctx.current, ctx.desired, blockedTables, renameIndex)
         val projection = RenameDependencyProjector(ctx.capabilities)
             .projectTables(items, diff, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
-        return projection.absorbedToNames to projection.absorbedFromNames
+        return TableFoldResult(
+            absorbedToNames = projection.absorbedToNames,
+            absorbedFromNames = projection.absorbedFromNames,
+            absorbedViews = projection.absorbedViews,
+        )
     }
+
+    /**
+     * Result of [foldRenameTables]. Carries the three sets the
+     * [OperationMapper.mapTables] loop needs to skip in `tablesAdded`,
+     * `tablesRemoved`, and `viewsChanged` respectively.
+     */
+    data class TableFoldResult(
+        val absorbedToNames: Set<String>,
+        val absorbedFromNames: Set<String>,
+        val absorbedViews: Set<String>,
+    )
 
     /**
      * Per-table column-rename fold. Same return-contract shape as

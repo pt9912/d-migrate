@@ -66,8 +66,14 @@ internal object OperationMapper {
         val ops = mutableListOf<DiffOperation>()
         val ctx = RenameMappingContext(current, desired, capabilities)
         mapCustomTypes(diff, current, desired, ops)
-        mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops)
-        mapViews(diff, current, desired, ops)
+        // T5: mapTables now reports the view names whose
+        // reprojection (`DropView` + `CreateView`) the projector
+        // emitted from inside the rename pipeline. The subsequent
+        // mapViews skips them in `viewsChanged` so the plan does not
+        // carry a duplicate `ReplaceView` alongside the projector's
+        // explicit Drop+Create.
+        val absorbedViews = mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops)
+        mapViews(diff, current, desired, absorbedViews, ops)
         mapSequences(diff, current, desired, ops)
         mapFunctions(diff, current, desired, ops)
         mapProcedures(diff, current, desired, ops)
@@ -200,10 +206,10 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
-    ) {
-        val (renamedAdds, renamedRemoves) = mapRenameTables(
-            diff, ctx, blockedTables, renameIndex, diagnostics, ops,
-        )
+    ): Set<String> {
+        val fold = mapRenameTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops)
+        val renamedAdds = fold.absorbedToNames
+        val renamedRemoves = fold.absorbedFromNames
         for (added in diff.tablesAdded) {
             if (added.name in blockedTables) continue
             if (added.name in renamedAdds) continue
@@ -231,6 +237,7 @@ internal object OperationMapper {
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
         }
+        return fold.absorbedViews
     }
 
     /**
@@ -239,7 +246,8 @@ internal object OperationMapper {
      * [RenameDependencyPolicy] (resolved from
      * [RenameProjectionCapabilities.dialect]) before folding
      * `(DropTable, CreateTable)` pairs into [DiffOperation.RenameTable].
-     * Returns the names absorbed from the regular drop/create path.
+     * Returns the names absorbed from the regular drop/create path and
+     * the view names absorbed via T5 explicit reprojection.
      */
     private fun mapRenameTables(
         diff: SchemaDiff,
@@ -248,7 +256,7 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
-    ): Pair<Set<String>, Set<String>> =
+    ): RenameOverlayMapper.TableFoldResult =
         RenameOverlayMapper.foldRenameTables(
             diff = diff,
             ctx = ctx,
@@ -439,6 +447,7 @@ internal object OperationMapper {
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+        absorbedViews: Set<String>,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.viewsAdded) {
@@ -458,6 +467,11 @@ internal object OperationMapper {
             )
         }
         for (changed in diff.viewsChanged) {
+            // T5: a view whose underlying renamed table forced an
+            // explicit DropView+CreateView pair from the rename
+            // projector lives in [absorbedViews]; do not emit a
+            // duplicate `ReplaceView` here.
+            if (changed.name in absorbedViews) continue
             val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(changed.name))
             val before = current.views[changed.name] ?: continue
             val after = desired.views[changed.name] ?: continue
