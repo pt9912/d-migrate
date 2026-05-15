@@ -60,7 +60,12 @@ internal object InlineRenameOverlayBuilder {
                     fromName = parsed.from,
                     toName = parsed.to,
                 )
-                is ParsedRename.Err -> errors += "--rename-table[$index]: ${parsed.message}"
+                // The entryId carries the per-flag-list index for
+                // provenance; user-facing messages reference the
+                // raw flag value because the per-list index is
+                // misleading when table and column flags are mixed
+                // on the command line.
+                is ParsedRename.Err -> errors += "--rename-table '$raw': ${parsed.message}"
             }
         }
 
@@ -72,7 +77,7 @@ internal object InlineRenameOverlayBuilder {
                     fromName = parsed.from,
                     toName = parsed.to,
                 )
-                is ParsedRename.Err -> errors += "--rename-column[$index]: ${parsed.message}"
+                is ParsedRename.Err -> errors += "--rename-column '$raw': ${parsed.message}"
             }
         }
 
@@ -97,7 +102,14 @@ internal object InlineRenameOverlayBuilder {
             dialect = dialect,
             entries = entries,
             createdAt = INLINE_CREATED_AT_SENTINEL,
-            createdByVersion = "d-migrate ($version) cli-inline",
+            // The runner's `createdByVersion` is already a
+            // human-readable build identifier (e.g. "d-migrate
+            // (0.9.7-SNAPSHOT)"); appending the literal "cli-inline"
+            // marks the overlay's origin without re-wrapping the
+            // version string. `source = "cli-inline"` already
+            // distinguishes the overlay, this is just secondary
+            // provenance inside the hashed body.
+            createdByVersion = "$version cli-inline",
         ).withComputedHash()
 
         return InlineRenameOverlayResult.Built(

@@ -126,19 +126,24 @@ internal object MigrationOverlayPreflight {
         documents: List<MigrationOverlayDocument>,
     ): List<MigrationOverlayReportItem> {
         if (documents.size < 2) return emptyList()
-        val refs = documents.flatMap { doc ->
+        val refs = documents.flatMapIndexed { docIndex, doc ->
             doc.overlay.entries
                 .filterIsInstance<RenameMappingOverlayEntry>()
                 .filter { it.id.isNotBlank() && it.objectType.isNotBlank() }
-                .map { entry -> RenameRef(doc.source, doc.overlay.overlayHash, entry) }
+                .map { entry -> RenameRef(docIndex, doc.source, doc.overlay.overlayHash, entry) }
         }
         if (refs.size < 2) return emptyList()
 
-        val findings = linkedMapOf<Pair<String, String>, MigrationOverlayReportItem>()
+        val findings = linkedMapOf<Pair<Int, String>, MigrationOverlayReportItem>()
 
         fun addFinding(ref: RenameRef, code: String, message: String) {
-            // De-duplicate per (source, entryId, code) so the same
+            // De-duplicate per (docIndex, entryId, code) so the same
             // ref shown by two conflict categories surfaces once.
+            // Keying on docIndex (rather than the source string)
+            // means two MigrationOverlayDocument instances that
+            // happen to share a source path — for example, the
+            // operator passing the same `--migration-overlay foo.json`
+            // twice — still count as two distinct documents.
             findings.putIfAbsent(ref.dedupKey(code), renameCrossDocItem(ref, code, message))
         }
 
@@ -146,14 +151,14 @@ internal object MigrationOverlayPreflight {
             Triple(it.fold(it.entry.objectType), it.fold(it.entry.fromName), it.fold(it.entry.toName))
         }
         for (group in byTriple.values) {
-            val distinctSources = group.map { it.source }.distinct().size
-            if (distinctSources >= 2) {
+            val distinctDocs = group.map { it.docIndex }.distinct().size
+            if (distinctDocs >= 2) {
                 group.forEach { ref ->
                     addFinding(
                         ref,
                         MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
                         "Rename mapping '${ref.entry.fromName}' -> '${ref.entry.toName}' is duplicated " +
-                            "across overlay documents (${distinctSources} sources).",
+                            "across overlay documents ($distinctDocs documents).",
                     )
                 }
             }
@@ -161,9 +166,9 @@ internal object MigrationOverlayPreflight {
 
         val bySource = refs.groupBy { it.fold(it.entry.objectType) to it.fold(it.entry.fromName) }
         for (group in bySource.values) {
-            val sources = group.map { it.source }.distinct()
-            val targets = group.map { it.fold(it.entry.toName) }.distinct()
-            if (sources.size >= 2 && targets.size > 1) {
+            val distinctDocs = group.map { it.docIndex }.distinct().size
+            val distinctTargets = group.map { it.fold(it.entry.toName) }.distinct().size
+            if (distinctDocs >= 2 && distinctTargets > 1) {
                 group.forEach { ref ->
                     addFinding(
                         ref,
@@ -176,9 +181,9 @@ internal object MigrationOverlayPreflight {
 
         val byTarget = refs.groupBy { it.fold(it.entry.objectType) to it.fold(it.entry.toName) }
         for (group in byTarget.values) {
-            val sources = group.map { it.source }.distinct()
-            val froms = group.map { it.fold(it.entry.fromName) }.distinct()
-            if (sources.size >= 2 && froms.size > 1) {
+            val distinctDocs = group.map { it.docIndex }.distinct().size
+            val distinctFroms = group.map { it.fold(it.entry.fromName) }.distinct().size
+            if (distinctDocs >= 2 && distinctFroms > 1) {
                 group.forEach { ref ->
                     addFinding(
                         ref,
@@ -208,12 +213,13 @@ internal object MigrationOverlayPreflight {
     )
 
     private data class RenameRef(
+        val docIndex: Int,
         val source: String,
         val overlayHash: String?,
         val entry: RenameMappingOverlayEntry,
     ) {
         fun fold(value: String): String = value.lowercase(Locale.ROOT)
-        fun dedupKey(code: String): Pair<String, String> = "$source ${entry.id}" to code
+        fun dedupKey(code: String): Pair<Int, String> = docIndex to (entry.id + "|" + code)
     }
 
     /**

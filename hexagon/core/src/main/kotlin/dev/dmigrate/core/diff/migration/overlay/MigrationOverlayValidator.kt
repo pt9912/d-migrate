@@ -237,12 +237,21 @@ object MigrationOverlayValidator {
             )
         }
 
-        val blockedEntryIds = diagnostics
-            .asSequence()
-            .filter { it.severity == MigrationOverlayDiagnostic.Severity.BLOCKER }
-            .mapNotNull { it.entryId?.takeIf(String::isNotBlank) }
-            .toSet()
-        val accepted = overlay.entries.filter { it.id.isNotBlank() && it.id !in blockedEntryIds }
+        // F.4 cli-inline-overlay review fix: suppress OVERLAY_ACCEPTED
+        // provenance whenever the document itself is rejected.
+        // Otherwise an operator reading the report sees an
+        // "ACCEPTED" row next to a doc-level HASH_MISSING /
+        // STALE_*_FINGERPRINT / DIALECT_MISMATCH BLOCKER for the
+        // same source and might think the entry will still be
+        // applied — it won't, because the whole document gates out.
+        // The provenance is only meaningful when no BLOCKER (entry-
+        // scoped OR doc-level) is present.
+        val anyBlocker = diagnostics.any { it.severity == MigrationOverlayDiagnostic.Severity.BLOCKER }
+        val accepted = if (anyBlocker) {
+            emptyList()
+        } else {
+            overlay.entries.filter { it.id.isNotBlank() }
+        }
 
         return MigrationOverlayValidationResult(
             source = source,

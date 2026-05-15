@@ -135,8 +135,16 @@ class SchemaMigrateRunner(
         // file-overlay pipeline. Parse-time errors (bad syntax,
         // duplicate `from` within the same invocation) exit 2 with
         // a CLI-validation message and never touch DB/I/O.
-        val currentFingerprint = fingerprint(prepared.targetNormalized.schema)
-        val desiredFingerprint = fingerprint(prepared.sourceNormalized.schema)
+        // Use MigrationFingerprint.compute directly here — the
+        // constructor-injected `fingerprint` lambda exists for the
+        // ExecutionStage post-Up check (which a test may override),
+        // but the pre-plan-overlay path MUST mirror what
+        // DiffPlanner.endpoint() writes to plan.current.fingerprint
+        // so a mock-fingerprint test cannot accidentally make the
+        // overlay validate against one hash and the plan against
+        // another.
+        val currentFingerprint = MigrationFingerprint.compute(prepared.targetNormalized.schema)
+        val desiredFingerprint = MigrationFingerprint.compute(prepared.sourceNormalized.schema)
         val inlineResult = InlineRenameOverlayBuilder.build(
             renameTableFlags = request.renameTableFlags,
             renameColumnFlags = request.renameColumnFlags,

@@ -69,16 +69,15 @@ class MigrationOverlayPreflightTest : FunSpec({
         val failure = MigrationOverlayPreflight.buildFailureResult(plan, result)
 
         result.hasBlockers shouldBe true
-        // F.4 cli-inline-overlay §3.4: HASH_MISSING is a doc-level
-        // BLOCKER (no entryId); the using-expression entry itself
-        // passes per-entry validation and gets an OVERLAY_ACCEPTED
-        // INFO provenance row.
-        val blocker = result.reportItems.single {
-            it.diagnosticCode == MigrationOverlayDiagnostics.HASH_MISSING
-        }
-        blocker.source shouldBe "overlays/using.json"
-        blocker.entryId shouldBe null
-        result.reportItems.any { it.diagnosticCode == MigrationOverlayDiagnostics.OVERLAY_ACCEPTED } shouldBe true
+        // F.4 cli-inline-overlay review fix: when the document is
+        // rejected at doc-level, no OVERLAY_ACCEPTED INFO row is
+        // emitted for its entries — they would not be applied
+        // anyway, and the provenance row would read as misleading
+        // success next to the HASH_MISSING blocker.
+        val items = result.reportItems
+        items.single().diagnosticCode shouldBe MigrationOverlayDiagnostics.HASH_MISSING
+        items.single().entryId shouldBe null
+        items.any { it.diagnosticCode == MigrationOverlayDiagnostics.OVERLAY_ACCEPTED } shouldBe false
         failure.isBlocked shouldBe true
         failure.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         failure.statements shouldBe emptyList()
@@ -546,6 +545,28 @@ class MigrationOverlayPreflightTest : FunSpec({
         crossDoc.map { it.diagnosticCode }.toSet() shouldBe setOf(
             MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
         )
+    }
+
+    test("F.4 cli-inline-overlay review fix: same source path passed twice still fires DUPLICATE") {
+        // Two distinct MigrationOverlayDocument instances with the
+        // same source string (e.g. operator passes
+        // `--migration-overlay foo.json --migration-overlay foo.json`)
+        // are still two distinct documents and must trigger a
+        // cross-doc DUPLICATE finding. The gate keys on docIndex
+        // (list position) instead of source string to catch this.
+        val overlay = renameOverlay().withComputedHash()
+        val result = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(
+                MigrationOverlayDocument(source = "overlays/file.json", overlay = overlay),
+                MigrationOverlayDocument(source = "overlays/file.json", overlay = overlay),
+            ),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+        )
+        result.reportItems.filter {
+            it.diagnosticCode == MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE
+        }.size shouldBe 2
     }
 
     test("F.4 cli-inline-overlay: single document with rename mapping does NOT produce cross-doc findings") {
