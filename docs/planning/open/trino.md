@@ -191,6 +191,8 @@ Interpretation:
 - Ausführungskontext:
   - Profilelöse-Reihenfolge: `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` >
     `production`.
+  - Implizit bedeutet das: Ohne gesetzte Quelle fällt das Profil in `production` zurück und
+    Production-Guards greifen ohne zusätzliche Konfiguration automatisch.
   - Unterstützte Werte sind ausschließlich `production` und `non_production`.
   - Alle anderen Angaben führen zu `action_required`.
 - Transport-Guards:
@@ -274,6 +276,7 @@ Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
 1. Runtime-Profil-Auflösung
 - `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` > Default `production`.
 - Jeder ungültige Profilwert (inkl. unbekannte Tokens) führt sofort zu `action_required`.
+- Fehlt die Profilangabe vollständig, wird deterministisch `production` wirksam.
 
 2. Transport-Guards
 - Inkompatible Kombinationen (`ssl=true` + `httpScheme=http`, `ssl=false` + `httpScheme=https`) werden
@@ -619,10 +622,23 @@ d-migrate schema compare \
   --source file:lakehouse.yaml \
   --target trino://analyst@localhost:8080/postgresql/public
 
+# Trino verwendet implizit den Production-Modus, wenn kein Runtime-Profil gesetzt ist.
+d-migrate schema reverse \
+  --source trino://analyst@localhost:8080/iceberg/default \
+  --output lakehouse.yaml
+
 d-migrate data export \
   --source trino://analyst@localhost:8080/iceberg/default \
   --tables orders,customers \
   --format csv
+
+# Unsicherer Transport nur explizit in non_production mit zusätzlicher Signatur aktiv.
+d-migrate schema reverse \
+  --trino-runtime-profile=non_production \
+  --allow-insecure-trino-transport \
+  DM_TRINO_ALLOW_INSECURE_TRANSPORT=true \
+  --source trino://analyst@localhost:8080/iceberg/default?httpScheme=http \
+  --output lakehouse.yaml
 
 # mit aktivem driver-trino-profiling
 d-migrate data profile \
@@ -696,6 +712,7 @@ Hinweise:
 - `TRINO`-Dialekt und `trino://...` sind parsebar und dokumentiert.
 - `schema reverse` gegen mindestens einen Trino-Katalog/Schema erfolgreich nutzbar.
 - `schema compare` gegen `trino://...` mit klarer Diff-/Limit-/`metadata_coverage`-Dokumentation.
+- `schema reverse` ohne gesetztes Profil nutzt implizit `production` als effektives Runtime-Profil.
 - `data export` aus Trino stabil nutzbar.
 - `data profile` liefert belastbare Kernkennzahlen (mit Profiling-Modul in Phase 1).
 - `data transfer` ist Phase 1 Source-only.
