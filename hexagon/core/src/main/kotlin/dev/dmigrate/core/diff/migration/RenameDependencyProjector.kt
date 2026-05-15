@@ -49,14 +49,25 @@ internal class RenameDependencyProjector(
         val absorbedFrom = mutableSetOf<String>()
         val absorbedTo = mutableSetOf<String>()
         val absorbedViews = mutableSetOf<String>()
+        val reports = mutableListOf<RenameProjectionReport>()
         for (item in items) {
             val candidate = item.candidate
             when {
                 !candidate.renamable -> {
                     diagnostics += RenameOverlayMapper.structuralMismatchTableDiagnostic(candidate)
+                    reports += tableFallbackReport(
+                        candidate = candidate,
+                        fallbackReason = "structural mismatch — drop+create",
+                        blockers = emptyList(),
+                    )
                 }
                 candidate.staleReferenceObject != null -> {
                     diagnostics += RenameOverlayMapper.staleReferenceTableDiagnostic(candidate)
+                    reports += tableFallbackReport(
+                        candidate = candidate,
+                        fallbackReason = "stale cross-table reference — drop+create",
+                        blockers = emptyList(),
+                    )
                 }
                 else -> {
                     val projection = policy.classifyTableRename(candidate, diff, current, desired, capabilities)
@@ -67,14 +78,69 @@ internal class RenameDependencyProjector(
                         absorbedFrom += candidate.fromName
                         absorbedTo += candidate.toName
                         absorbedViews += projection.absorbedViews
+                        reports += tableSuccessReport(candidate, projection)
                     } else {
                         diagnostics += projection.blockers.map { it.toDiagnostic() }
+                        reports += tableFallbackReport(
+                            candidate = candidate,
+                            fallbackReason = "policy blockers — drop+create",
+                            blockers = projection.blockers,
+                        )
                     }
                 }
             }
         }
-        return RenameTableProjection(ops, diagnostics, absorbedFrom, absorbedTo, absorbedViews)
+        return RenameTableProjection(ops, diagnostics, absorbedFrom, absorbedTo, absorbedViews, reports)
     }
+
+    private fun tableSuccessReport(
+        candidate: RenameTableCandidate,
+        projection: RenameProjection,
+    ): RenameProjectionReport = RenameProjectionReport(
+        candidateId = candidate.id,
+        objectType = "table",
+        fromPath = listOf(candidate.fromName),
+        toPath = listOf(candidate.toName),
+        overlaySource = candidate.overlaySource,
+        overlayEntryId = candidate.overlayEntryId,
+        overlayHash = candidate.overlayHash,
+        renameOperationId = candidate.id,
+        fallbackOperationIds = emptyList(),
+        fallbackReason = null,
+        automatic = projection.automatic,
+        explicit = projection.explicit
+            .filter { it is DiffOperation.CreateView || it is DiffOperation.DropView }
+            .map { op ->
+                ExplicitProjectionRef(
+                    kind = when (op) {
+                        is DiffOperation.CreateView -> "VIEW_CREATE"
+                        is DiffOperation.DropView -> "VIEW_DROP"
+                        else -> "EXPLICIT"
+                    },
+                    path = op.objectRef.path,
+                    operationId = op.id,
+                )
+            },
+        blockers = emptyList(),
+    )
+
+    private fun tableFallbackReport(
+        candidate: RenameTableCandidate,
+        fallbackReason: String,
+        blockers: List<RenameProjectionBlocker>,
+    ): RenameProjectionReport = RenameProjectionReport(
+        candidateId = candidate.id,
+        objectType = "table",
+        fromPath = listOf(candidate.fromName),
+        toPath = listOf(candidate.toName),
+        overlaySource = candidate.overlaySource,
+        overlayEntryId = candidate.overlayEntryId,
+        overlayHash = candidate.overlayHash,
+        renameOperationId = null,
+        fallbackOperationIds = candidate.fallbackOperationIds,
+        fallbackReason = fallbackReason,
+        blockers = blockers,
+    )
 
     fun projectColumns(
         items: List<RenameColumnPlanningItem>,
@@ -87,14 +153,19 @@ internal class RenameDependencyProjector(
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val absorbedFrom = mutableSetOf<String>()
         val absorbedTo = mutableSetOf<String>()
+        val reports = mutableListOf<RenameProjectionReport>()
         for (item in items) {
             val candidate = item.candidate
             when {
                 !candidate.renamable -> {
                     diagnostics += RenameOverlayMapper.structuralMismatchColumnDiagnostic(candidate)
+                    reports += columnFallbackReport(candidate, "structural mismatch — drop+add", emptyList())
                 }
                 candidate.referencingObject != null -> {
                     diagnostics += RenameOverlayMapper.dependencyProjectionColumnDiagnostic(candidate)
+                    reports += columnFallbackReport(
+                        candidate, "same-table reference object touches column — drop+add", emptyList(),
+                    )
                 }
                 else -> {
                     val projection = policy.classifyColumnRename(candidate, table, current, desired, capabilities)
@@ -109,14 +180,55 @@ internal class RenameDependencyProjector(
                         ops += projection.explicit
                         absorbedFrom += candidate.fromColumn
                         absorbedTo += candidate.toColumn
+                        reports += columnSuccessReport(candidate, projection)
                     } else {
                         diagnostics += projection.blockers.map { it.toDiagnostic() }
+                        reports += columnFallbackReport(
+                            candidate, "policy blockers — drop+add", projection.blockers,
+                        )
                     }
                 }
             }
         }
-        return RenameColumnProjection(ops, diagnostics, absorbedFrom, absorbedTo)
+        return RenameColumnProjection(ops, diagnostics, absorbedFrom, absorbedTo, reports)
     }
+
+    private fun columnSuccessReport(
+        candidate: RenameColumnCandidate,
+        projection: RenameProjection,
+    ): RenameProjectionReport = RenameProjectionReport(
+        candidateId = candidate.id,
+        objectType = "column",
+        fromPath = listOf(candidate.tableName, candidate.fromColumn),
+        toPath = listOf(candidate.tableName, candidate.toColumn),
+        overlaySource = candidate.overlaySource,
+        overlayEntryId = candidate.overlayEntryId,
+        overlayHash = candidate.overlayHash,
+        renameOperationId = candidate.id,
+        fallbackOperationIds = emptyList(),
+        fallbackReason = null,
+        automatic = projection.automatic,
+        explicit = emptyList(),
+        blockers = emptyList(),
+    )
+
+    private fun columnFallbackReport(
+        candidate: RenameColumnCandidate,
+        fallbackReason: String,
+        blockers: List<RenameProjectionBlocker>,
+    ): RenameProjectionReport = RenameProjectionReport(
+        candidateId = candidate.id,
+        objectType = "column",
+        fromPath = listOf(candidate.tableName, candidate.fromColumn),
+        toPath = listOf(candidate.tableName, candidate.toColumn),
+        overlaySource = candidate.overlaySource,
+        overlayEntryId = candidate.overlayEntryId,
+        overlayHash = candidate.overlayHash,
+        renameOperationId = null,
+        fallbackOperationIds = candidate.fallbackOperationIds,
+        fallbackReason = fallbackReason,
+        blockers = blockers,
+    )
 
     private fun RenameProjectionBlocker.toDiagnostic(): DiffDiagnostic = DiffDiagnostic(
         code = code,

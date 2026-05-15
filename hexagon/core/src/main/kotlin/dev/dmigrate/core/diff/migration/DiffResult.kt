@@ -58,6 +58,15 @@ data class DiffResult(
     val currentSchema: SchemaDefinition? = null,
     val desiredSchema: SchemaDefinition? = null,
     val migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
+    /**
+     * Plan-2 §F.4 dependency-projection T6: structured carrier for
+     * the rename-projection report. One entry per overlay-bound
+     * rename candidate (successful fold OR drop+add fallback);
+     * [dev.dmigrate.cli.commands.SchemaMigrateReportBuilder] reads
+     * this list directly and never reconstructs report data from
+     * [diagnostics], operation ids, or renderer side effects.
+     */
+    val renameProjections: List<RenameProjectionReport> = emptyList(),
 ) {
     /** True iff at least one diagnostic is a [DiffDiagnostic.Severity.BLOCKER]. */
     val hasBlockers: Boolean

@@ -378,8 +378,60 @@ data class SchemaMigrateReport(
     val materializedViews: List<SchemaMigrateMaterializedViewContractView> = emptyList(),
     val overlays: List<SchemaMigrateOverlayView> = emptyList(),
     val sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
+    /**
+     * F.4 T6: one entry per overlay-bound rename candidate that the
+     * planner saw. Successful folds carry [SchemaMigrateRenameProjectionView.renameOperationId];
+     * drop+add fallbacks set it to `null` and populate
+     * [SchemaMigrateRenameProjectionView.fallbackOperationIds]
+     * with the regular mapper-emitted op ids. The list is the only
+     * public carrier for rename-projection metadata; report
+     * consumers MUST NOT reconstruct entries from `diagnostics` or
+     * operation ids.
+     */
+    val renameProjections: List<SchemaMigrateRenameProjectionView> = emptyList(),
     val summary: SchemaMigrateSummary,
     val execution: SchemaMigrateExecutionView? = null,
+)
+
+/**
+ * F.4 T6 migrate-report view of a [RenameProjectionReport]. Public
+ * application-layer DTO so JSON / YAML renderers can produce stable
+ * field order independent of the internal core types.
+ */
+data class SchemaMigrateRenameProjectionView(
+    val candidateId: String,
+    val objectType: String,
+    val fromPath: List<String>,
+    val toPath: List<String>,
+    val overlaySource: String,
+    val overlayEntryId: String,
+    val overlayHash: String?,
+    val renameOperationId: String?,
+    val fallbackOperationIds: List<String> = emptyList(),
+    val fallbackReason: String? = null,
+    val automatic: List<SchemaMigrateDependencyRefView> = emptyList(),
+    val explicit: List<SchemaMigrateExplicitProjectionView> = emptyList(),
+    val blockers: List<SchemaMigrateRenameBlockerView> = emptyList(),
+)
+
+data class SchemaMigrateDependencyRefView(
+    val kind: String,
+    val path: List<String>,
+    val rationale: String,
+)
+
+data class SchemaMigrateExplicitProjectionView(
+    val kind: String,
+    val path: List<String>,
+    val operationId: String,
+)
+
+data class SchemaMigrateRenameBlockerView(
+    val code: String,
+    val candidateId: String,
+    val path: List<String>,
+    val message: String,
+    val severity: String,
 )
 
 data class SchemaMigrateExecutionView(

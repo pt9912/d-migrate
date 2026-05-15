@@ -84,6 +84,16 @@ internal data class RenameTableCandidate(
      * dialect-aware policy decision.
      */
     val staleReferenceObject: String?,
+    /**
+     * T6 report support: deterministic ids of the `DropTable` +
+     * `CreateTable` operations the regular mapper path will emit when
+     * the projector falls back to drop+create. Pre-computed in
+     * `prepareTableItems` so `renameProjections` fallback entries can
+     * reference them without waiting for the mapper to finish.
+     * Defaults to empty for test fixtures that construct candidates
+     * directly.
+     */
+    val fallbackOperationIds: List<String> = emptyList(),
 )
 
 /**
@@ -114,6 +124,8 @@ internal data class RenameColumnCandidate(
      * silently re-pointed at the new name (T5 cross-object territory).
      */
     val referencingObject: String?,
+    /** Same role as [RenameTableCandidate.fallbackOperationIds]. */
+    val fallbackOperationIds: List<String> = emptyList(),
 )
 
 internal data class RenameTablePlanningItem(

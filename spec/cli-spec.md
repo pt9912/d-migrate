@@ -661,6 +661,35 @@ Report-Felder für `--execute`:
   dem ersten Statement mit `primaryBlockedReason=TRANSACTION_SCOPE_UNSUPPORTED`
   und Exit `8`.
 
+Report-Felder für Rename-Projection (F.4):
+
+- `renameProjections[]` enthält pro Overlay-Eintrag genau einen Eintrag,
+  unabhängig davon, ob die Faltung erfolgreich war oder auf Drop+Add
+  zurückfiel. Jeder Eintrag trägt:
+  - `candidateId`, `objectType` (`table` / `column`), `fromPath`, `toPath`
+  - Overlay-Provenance: `overlaySource`, `overlayEntryId`, optional `overlayHash`.
+    `overlayEntryId` ist die stabile Schlüsselgrundlage: mehrere Einträge
+    teilen denselben `overlayHash`, nur `overlayEntryId` identifiziert den
+    autorisierenden Eintrag.
+  - `renameOperationId`: bei erfolgreicher Faltung die ID der emittierten
+    `RenameTable`/`RenameColumn`-Operation. Bei Drop+Add-Fallback `null`.
+  - `fallbackOperationIds`: bei Fallback die deterministischen IDs der
+    regulär emittierten `DropTable`+`CreateTable` (resp.
+    `DropColumn`+`AddColumn`). Leer bei erfolgreicher Faltung.
+  - `fallbackReason`: kurze, menschenlesbare Begründung bei Fallback.
+  - `automatic[]`: vom Engine ohne Folge-Operation projizierte
+    Dependencies — `kind` (`FK`, `INDEX`, ...), `path`, `rationale`.
+  - `explicit[]`: vom Projector emittierte Folge-Operationen (T5
+    View-Reprojection: `kind = VIEW_DROP` / `VIEW_CREATE`, `path` mit
+    View-Name, `operationId` auf die emittierte `DropView` / `CreateView`).
+  - `blockers[]`: Projector-Blocker mit `code`, `candidateId`, `path`,
+    `message`, `severity`. Bei `severity = WARNING` ist der Fallback
+    vollständig renderbar; bei `severity = BLOCKER` ist auch der Fallback
+    nicht ausführbar (Exit `8`).
+- Report-Consumer rekonstruieren `renameProjections`-Einträge nicht aus
+  `diagnostics`, Operation-IDs oder Renderer-Nebenwirkungen. Das Feld ist
+  der einzige verbindliche Carrier.
+
 Exit-Codes:
 
 | Exit | Bedeutung |

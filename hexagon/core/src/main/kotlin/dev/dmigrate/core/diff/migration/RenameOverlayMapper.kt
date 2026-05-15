@@ -55,12 +55,14 @@ internal object RenameOverlayMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        reports: MutableList<RenameProjectionReport>,
     ): TableFoldResult {
         val items = prepareTableItems(diff, ctx.current, ctx.desired, blockedTables, renameIndex)
         val projection = RenameDependencyProjector(ctx.capabilities)
             .projectTables(items, diff, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
+        reports += projection.reports
         return TableFoldResult(
             absorbedToNames = projection.absorbedToNames,
             absorbedFromNames = projection.absorbedFromNames,
@@ -71,7 +73,8 @@ internal object RenameOverlayMapper {
     /**
      * Result of [foldRenameTables]. Carries the three sets the
      * [OperationMapper.mapTables] loop needs to skip in `tablesAdded`,
-     * `tablesRemoved`, and `viewsChanged` respectively.
+     * `tablesRemoved`, and `viewsChanged` respectively. T6 report
+     * carriers are appended directly to the caller's mutable list.
      */
     data class TableFoldResult(
         val absorbedToNames: Set<String>,
@@ -92,12 +95,14 @@ internal object RenameOverlayMapper {
         ctx: RenameMappingContext,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        reports: MutableList<RenameProjectionReport>,
     ): Pair<Set<String>, Set<String>> {
         val items = prepareColumnItems(table, renameIndex)
         val projection = RenameDependencyProjector(ctx.capabilities)
             .projectColumns(items, table, ctx.current, ctx.desired)
         ops += projection.operations
         diagnostics += projection.diagnostics
+        reports += projection.reports
         return projection.absorbedToColumns to projection.absorbedFromColumns
     }
 
@@ -172,6 +177,18 @@ internal object RenameOverlayMapper {
             // stale-reference warning on top would shadow that
             // diagnostic without changing the outcome.
             val staleRef = if (renamable) staleReferenceToOldName(diff, from) else null
+            // Pre-compute the ids of the regular drop+create ops the
+            // mapper will emit when the projector falls back to
+            // drop+create. The ids are deterministic (same canonical
+            // payload, same id) so the projector can reference them
+            // in `renameProjections` reports without waiting for the
+            // mapper to actually emit them.
+            val dropRef = DiffObjectRef(DiffObjectType.TABLE, listOf(from))
+            val createRef = DiffObjectRef(DiffObjectType.TABLE, listOf(to))
+            val fallbackIds = listOf(
+                OperationIdFactory.makeId("DropTable", dropRef, CanonicalPayload.table(removed.definition)),
+                OperationIdFactory.makeId("CreateTable", createRef, CanonicalPayload.table(added.definition)),
+            )
             items += RenameTablePlanningItem(
                 candidate = RenameTableCandidate(
                     id = candidateId,
@@ -183,6 +200,7 @@ internal object RenameOverlayMapper {
                     renamable = renamable,
                     structuralDifferences = structuralDifferences,
                     staleReferenceObject = staleRef,
+                    fallbackOperationIds = fallbackIds,
                 ),
                 postRenameDeltaOperations = if (renamable) synthesis.operations else emptyList(),
             )
@@ -240,6 +258,12 @@ internal object RenameOverlayMapper {
             } else {
                 null
             }
+            val fromRef = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, mapping.fromColumn))
+            val toRef = DiffObjectRef(DiffObjectType.COLUMN, listOf(table.name, mapping.toColumn))
+            val fallbackIds = listOf(
+                OperationIdFactory.makeId("DropColumn", fromRef, CanonicalPayload.column(removed)),
+                OperationIdFactory.makeId("AddColumn", toRef, CanonicalPayload.column(added)),
+            )
             items += RenameColumnPlanningItem(
                 candidate = RenameColumnCandidate(
                     id = candidateId,
@@ -252,6 +276,7 @@ internal object RenameOverlayMapper {
                     renamable = renamable,
                     structuralDifferences = structuralDifferences,
                     referencingObject = referencingObject,
+                    fallbackOperationIds = fallbackIds,
                 ),
                 postRenameDeltaOperations = if (renamable) synthesis.operations else emptyList(),
             )
@@ -433,6 +458,7 @@ internal object RenameOverlayMapper {
             fromName = candidate.fromName,
             toName = candidate.toName,
             overlaySource = candidate.overlaySource,
+            overlayEntryId = candidate.overlayEntryId,
             overlayHash = candidate.overlayHash,
         )
     }
@@ -445,6 +471,7 @@ internal object RenameOverlayMapper {
             fromName = candidate.fromColumn,
             toName = candidate.toColumn,
             overlaySource = candidate.overlaySource,
+            overlayEntryId = candidate.overlayEntryId,
             overlayHash = candidate.overlayHash,
         )
     }

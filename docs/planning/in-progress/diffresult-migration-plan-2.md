@@ -1404,6 +1404,21 @@ Akzeptanz:
 > Case-Folding-Konflikte und Kettenrenames im selben Slice. Rendering von
 > `RenameTable`/`RenameColumn` bleibt ein Folgeslice.
 >
+> Status-Update (2026-05-15): F.4 dependency-projection abgeschlossen
+> (T1–T6 gem. `ImpPlan-0.9.7-F.4-dependency-projection.md`). Die sechs
+> Tranchen liefern: Capability-Carrier + Pre-Plan-Overlay-Gate (T1),
+> `RenamePlanningItem`-Pipeline und Pass-Through-Projector (T2),
+> dialekt-aware `RenameDependencyPolicy` mit Postgres/MySQL/SQLite-
+> Implementierungen (T3), `RenameIntraObjectDeltaSynthesizer` fuer
+> Mischfaelle (T4), `RenameViewReprojector` fuer View-Drop+Create aus
+> Soll-Body (T5) und `DiffResult.renameProjections` mit Report-DTO im
+> Migrate-Report (T6). Artefakt-Gate: Report-only-Modus —
+> `migration-plan.v1` traegt das Feld nicht, persistierte
+> Mischfall-Plaene haben damit keinen rollback-relevanten Projection-
+> Vertrag. `--generate-rollback` blockiert mit `ROLLBACK_NOT_POSSIBLE`
+> sobald T5/T4 Drift dort gespeichert wird, die der Down-Path nicht
+> aus dem Plan rekonstruieren kann.
+>
 > Status-Update (2026-05-14): F.4 zweite Scheibe (Rendering) implementiert.
 > Plan: `../done/ImpPlan-0.9.7-F.4-rendering.md`.
 > `DiffOperation.RenameTable`/`RenameColumn` sind Teil der Sealed-Hierarchie.

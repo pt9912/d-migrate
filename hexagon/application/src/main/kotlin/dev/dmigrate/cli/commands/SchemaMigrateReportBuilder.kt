@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.RenameProjectionReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
@@ -70,6 +71,7 @@ internal object SchemaMigrateReportBuilder {
                 )
             },
             sqliteCastPreflights = buildSqliteCastPreflightViews(rendered),
+            renameProjections = plan.renameProjections.map { it.toReportView() },
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
                     id = op.id,
@@ -280,4 +282,33 @@ internal object SchemaMigrateReportBuilder {
         }
         return combined.values.toList()
     }
+
+    private fun RenameProjectionReport.toReportView(): SchemaMigrateRenameProjectionView =
+        SchemaMigrateRenameProjectionView(
+            candidateId = candidateId,
+            objectType = objectType,
+            fromPath = fromPath,
+            toPath = toPath,
+            overlaySource = overlaySource,
+            overlayEntryId = overlayEntryId,
+            overlayHash = overlayHash,
+            renameOperationId = renameOperationId,
+            fallbackOperationIds = fallbackOperationIds,
+            fallbackReason = fallbackReason,
+            automatic = automatic.map {
+                SchemaMigrateDependencyRefView(kind = it.kind, path = it.path, rationale = it.rationale)
+            },
+            explicit = explicit.map {
+                SchemaMigrateExplicitProjectionView(kind = it.kind, path = it.path, operationId = it.operationId)
+            },
+            blockers = blockers.map {
+                SchemaMigrateRenameBlockerView(
+                    code = it.code,
+                    candidateId = it.candidateId,
+                    path = it.path,
+                    message = it.message,
+                    severity = it.severity.name,
+                )
+            },
+        )
 }

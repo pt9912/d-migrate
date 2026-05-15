@@ -93,6 +93,7 @@ class OperationMapperFinalizeIdsTest : FunSpec({
             fromName = "users_old",
             toName = "users",
             overlaySource = "ovl",
+            overlayEntryId = "entry",
             overlayHash = null,
         )
         val addColumn = DiffOperation.AddColumn(

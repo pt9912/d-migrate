@@ -108,6 +108,14 @@ sealed interface DiffOperation {
         val fromName: String,
         val toName: String,
         val overlaySource: String,
+        /**
+         * T6 entry-provenance: stable identifier of the overlay entry
+         * that authorised this rename. Multiple entries can share the
+         * same `overlayHash`, so the report carrier identifies the
+         * authorising entry by `(overlaySource, overlayEntryId)` —
+         * not by hash alone.
+         */
+        val overlayEntryId: String,
         val overlayHash: String?,
         override val phase: DiffPhase = DiffPhase.TABLES,
         override val dependencies: Set<String> = emptySet(),
@@ -214,6 +222,8 @@ sealed interface DiffOperation {
         val fromName: String,
         val toName: String,
         val overlaySource: String,
+        /** T6 entry-provenance: see [RenameTable.overlayEntryId]. */
+        val overlayEntryId: String,
         val overlayHash: String?,
         override val phase: DiffPhase = DiffPhase.COLUMNS,
         override val dependencies: Set<String> = emptySet(),

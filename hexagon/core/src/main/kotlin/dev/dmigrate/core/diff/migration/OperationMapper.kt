@@ -64,6 +64,7 @@ internal object OperationMapper {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         diagnostics += renameIndex.issues
         val ops = mutableListOf<DiffOperation>()
+        val renameProjections = mutableListOf<RenameProjectionReport>()
         val ctx = RenameMappingContext(current, desired, capabilities)
         mapCustomTypes(diff, current, desired, ops)
         // T5: mapTables now reports the view names whose
@@ -72,13 +73,20 @@ internal object OperationMapper {
         // mapViews skips them in `viewsChanged` so the plan does not
         // carry a duplicate `ReplaceView` alongside the projector's
         // explicit Drop+Create.
-        val absorbedViews = mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops)
+        // T6: mapTables also collects structured per-candidate
+        // [RenameProjectionReport] entries so DiffPlanner can attach
+        // them to `DiffResult.renameProjections`.
+        val absorbedViews = mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops, renameProjections)
         mapViews(diff, current, desired, absorbedViews, ops)
         mapSequences(diff, current, desired, ops)
         mapFunctions(diff, current, desired, ops)
         mapProcedures(diff, current, desired, ops)
         mapTriggers(diff, current, desired, ops)
-        return PreparedMapping(operations = ops, diagnostics = diagnostics)
+        return PreparedMapping(
+            operations = ops,
+            diagnostics = diagnostics,
+            renameProjections = renameProjections,
+        )
     }
 
     /**
@@ -95,11 +103,16 @@ internal object OperationMapper {
      */
     internal fun finalizeIds(prepared: PreparedMapping): MapperResult {
         if (prepared.operations.isEmpty()) {
-            return MapperResult(operations = emptyList(), diagnostics = prepared.diagnostics)
+            return MapperResult(
+                operations = emptyList(),
+                diagnostics = prepared.diagnostics,
+                renameProjections = prepared.renameProjections,
+            )
         }
         return MapperResult(
             operations = disambiguateOps(prepared.operations),
             diagnostics = prepared.diagnostics,
+            renameProjections = prepared.renameProjections,
         )
     }
 
@@ -112,16 +125,20 @@ internal object OperationMapper {
     internal data class PreparedMapping(
         val operations: List<DiffOperation>,
         val diagnostics: List<DiffDiagnostic>,
+        val renameProjections: List<RenameProjectionReport> = emptyList(),
     )
 
     /**
      * Result wrapper so the planner can collect [diagnostics] generated
      * by the mapper (e.g. F.4 `RENAME_OVERLAY_STRUCTURAL_MISMATCH`)
-     * alongside the operations.
+     * alongside the operations. T6 adds the per-candidate
+     * [renameProjections] report list so `DiffPlanner.plan` can
+     * attach it to `DiffResult.renameProjections`.
      */
     internal data class MapperResult(
         val operations: List<DiffOperation>,
         val diagnostics: List<DiffDiagnostic>,
+        val renameProjections: List<RenameProjectionReport> = emptyList(),
     )
 
     private fun disambiguateOps(ops: List<DiffOperation>): List<DiffOperation> {
@@ -206,8 +223,9 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        renameProjections: MutableList<RenameProjectionReport>,
     ): Set<String> {
-        val fold = mapRenameTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops)
+        val fold = mapRenameTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops, renameProjections)
         val renamedAdds = fold.absorbedToNames
         val renamedRemoves = fold.absorbedFromNames
         for (added in diff.tablesAdded) {
@@ -232,7 +250,7 @@ internal object OperationMapper {
         }
         for (changed in diff.tablesChanged) {
             if (changed.name in blockedTables) continue
-            mapTableColumns(changed, ctx, renameIndex, diagnostics, ops)
+            mapTableColumns(changed, ctx, renameIndex, diagnostics, ops, renameProjections)
             mapTableConstraints(changed, ops)
             mapTableIndices(changed, ops)
             mapTablePrimaryKey(changed, ops)
@@ -256,6 +274,7 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        renameProjections: MutableList<RenameProjectionReport>,
     ): RenameOverlayMapper.TableFoldResult =
         RenameOverlayMapper.foldRenameTables(
             diff = diff,
@@ -264,6 +283,7 @@ internal object OperationMapper {
             renameIndex = renameIndex,
             diagnostics = diagnostics,
             ops = ops,
+            reports = renameProjections,
         )
 
     private fun mapTableColumns(
@@ -272,9 +292,10 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        renameProjections: MutableList<RenameProjectionReport>,
     ) {
         val (renamedAddedCols, renamedRemovedCols) = mapRenameColumns(
-            table, ctx, renameIndex, diagnostics, ops,
+            table, ctx, renameIndex, diagnostics, ops, renameProjections,
         )
         for ((name, def) in table.columnsAdded) {
             if (name in renamedAddedCols) continue
@@ -308,6 +329,7 @@ internal object OperationMapper {
         renameIndex: RenameOverlayIndex,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
+        renameProjections: MutableList<RenameProjectionReport>,
     ): Pair<Set<String>, Set<String>> =
         RenameOverlayMapper.foldRenameColumns(
             table = table,
@@ -315,6 +337,7 @@ internal object OperationMapper {
             ctx = ctx,
             diagnostics = diagnostics,
             ops = ops,
+            reports = renameProjections,
         )
 
     private fun mapColumnChange(tableName: String, cd: ColumnDiff, ops: MutableList<DiffOperation>) {

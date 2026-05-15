@@ -138,6 +138,7 @@ open class DiffPlanner {
             currentSchema = current,
             desiredSchema = desired,
             migrationOverlays = migrationOverlays,
+            renameProjections = mapperResult.renameProjections,
         )
     }
 

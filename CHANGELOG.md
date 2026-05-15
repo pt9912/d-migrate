@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **F.4 dependency-projection (T1–T6)** — overlay-bound rename
+  candidates now fold to native `RenameTable` / `RenameColumn`
+  operations plus synthesised intra-object delta operations
+  (`AlterColumn*`, `AddColumn`, `AddIndex`, …) AND explicit
+  view-reprojection (`DropView` + `CreateView` from desired body).
+  Per-dialect `RenameDependencyPolicy` (Postgres / MySQL / SQLite)
+  gates engine-automatic vs explicit vs blocked dependencies.
+  Migrate report gains a `renameProjections[]` section (one entry
+  per candidate, success or drop+add fallback) — see
+  `spec/cli-spec.md` §6.1. Plan-2 §10 F.4 has the status update.
+  **Artefakt-Gate decision:** `renameProjections` is report-only;
+  it is NOT serialised into `migration-plan.v1`. `--generate-rollback`
+  blocks with `ROLLBACK_NOT_POSSIBLE` when a persisted Mischfall-
+  Plan would need the projection contract to be reversible.
 - **`adapters:driven:text-icu` module** with `IcuUnicodeTextService`
   — production ICU4J implementation behind the new
   `dev.dmigrate.text.UnicodeTextService` port in

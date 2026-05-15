@@ -54,7 +54,7 @@ internal data class RenameProjection(
  * [rationale] is the policy's documented reason (e.g. "PostgreSQL OID-
  * based dependency model").
  */
-internal data class DependencyRef(
+data class DependencyRef(
     val kind: String,
     val path: List<String>,
     val rationale: String,
@@ -73,7 +73,7 @@ internal data class DependencyRef(
  * skipped) rename operation. [path] mirrors [DependencyRef.path] for
  * the offending dependency.
  */
-internal data class RenameProjectionBlocker(
+data class RenameProjectionBlocker(
     val code: String,
     val candidateId: String,
     val path: List<String>,
@@ -91,7 +91,7 @@ internal data class RenameProjectionBlocker(
  * target so MySQL FK reprojection becomes safe), or accepts the
  * Drop+Add fallback.
  */
-internal const val RENAME_DEPENDENCY_UNPROJECTABLE: String = "RENAME_DEPENDENCY_UNPROJECTABLE"
+const val RENAME_DEPENDENCY_UNPROJECTABLE: String = "RENAME_DEPENDENCY_UNPROJECTABLE"
 
 /**
  * Outcome of folding a batch of [RenameTablePlanningItem]s. The
@@ -112,6 +112,8 @@ internal data class RenameTableProjection(
      * explicit ops.
      */
     val absorbedViews: Set<String> = emptySet(),
+    /** T6 structured per-candidate report carriers. */
+    val reports: List<RenameProjectionReport> = emptyList(),
 )
 
 /**
@@ -124,4 +126,59 @@ internal data class RenameColumnProjection(
     val diagnostics: List<DiffDiagnostic>,
     val absorbedFromColumns: Set<String>,
     val absorbedToColumns: Set<String>,
+    val reports: List<RenameProjectionReport> = emptyList(),
+)
+
+/**
+ * F.4 dependency-projection T6 report carrier. Each entry corresponds
+ * to one overlay-bound rename candidate — successful or fallback —
+ * and is the single source of truth the
+ * [dev.dmigrate.cli.commands.SchemaMigrateReportBuilder] reads when
+ * rendering the migrate report's `renameProjections` section.
+ *
+ * Per Plan-2 §F.4 §3.6:
+ *
+ * - Successful fold: [renameOperationId] points at the emitted
+ *   `Rename*` op; [fallbackOperationIds] is empty; [blockers] is
+ *   empty. [automatic] / [explicit] document which dependencies the
+ *   engine handles natively vs which d-migrate re-renders via
+ *   explicit follow-up operations (T5 view reprojection).
+ * - Drop+Add fallback: [renameOperationId] is `null`;
+ *   [fallbackOperationIds] carries the regular `DropTable` /
+ *   `CreateTable` (resp. `DropColumn` / `AddColumn`) ids the mapper
+ *   emitted for this candidate; [blockers] lists the projector
+ *   reasons; [fallbackReason] is a short human-readable summary.
+ *
+ * [overlayEntryId] is the stable identifier of the overlay entry
+ * that authorised the rename. Reports MUST NOT reconstruct entry
+ * provenance from `(overlaySource, overlayHash)` because multiple
+ * entries can share the same hash; the entry id is the only safe
+ * key.
+ */
+data class RenameProjectionReport(
+    val candidateId: String,
+    val objectType: String,
+    val fromPath: List<String>,
+    val toPath: List<String>,
+    val overlaySource: String,
+    val overlayEntryId: String,
+    val overlayHash: String?,
+    val renameOperationId: String?,
+    val fallbackOperationIds: List<String> = emptyList(),
+    val fallbackReason: String? = null,
+    val automatic: List<DependencyRef> = emptyList(),
+    val explicit: List<ExplicitProjectionRef> = emptyList(),
+    val blockers: List<RenameProjectionBlocker> = emptyList(),
+)
+
+/**
+ * Reference to one of the projector's T5 explicit follow-up
+ * operations (today: view drop+create). [operationId] points at the
+ * emitted op in the final plan so the report can be correlated with
+ * the operation list.
+ */
+data class ExplicitProjectionRef(
+    val kind: String,
+    val path: List<String>,
+    val operationId: String,
 )
