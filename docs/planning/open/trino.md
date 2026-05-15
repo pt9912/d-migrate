@@ -47,7 +47,7 @@ Das macht Trino für Read/Analyse attraktiv, gleichzeitig limitiert:
   - `schema reverse`
   - `schema compare`
   - `data export`
-  - `data profile`
+  - `data profile` (nur mit aktivem Profiling-Modul)
   - `data transfer` **nur Source**
 
 ### 3.2 Nicht in Scope (aktuell)
@@ -72,7 +72,8 @@ adapters:driven:driver-trino
 
 Optionale Erweiterungen:
 
-- `adapters:driven:driver-trino-profiling`
+- `adapters:driven:driver-trino-profiling` (Feature-Flag in Phase 1 optional,
+  in Phase 2 standardmäßig aktiv)
 - `test:integration-trino` (später)
 
 ## 5) Kontrakt: Dialekt und Connection-URL
@@ -105,7 +106,16 @@ Interpretation:
   - Ist kein Default vorhanden oder wird ein Schema zwingend benötigt, bricht der
     Lauf vorab mit `action_required` und klarer Anleitung ab.
 - Query-Parameter sind bis auf explizit freigegebene Properties als harte
-  Capability-Fehler zu behandeln.
+  Capability-Fehler zu behandeln. Die erlaubten Properties in Phase 1 sind:
+  - `ssl` (`true|false`, default: `false`)
+  - `httpScheme` (`http|https`, default: `http`)
+  - `requestTimeoutMs` (positive Ganzzahl, ms)
+  - `session.<name>` (Session-Property-Forwarding)
+  - `accessToken`
+  - `trustStorePath`
+  - `trustStorePassword`
+  - `keystorePath`
+  - `keystorePassword`
 - Weitere Pfadsegmente sind in Phase 1 ungültig.
 - Format ist absichtlich ohne `db:`-Prefix.
 
@@ -116,7 +126,18 @@ Credential-Modell (Phase 1):
   bis ein Credential-Provider formal eingeführt ist.
 - Kein generischer Connector-Parameter-Bypass; nur explizit erlaubte Properties.
 
-### 5.3 Fehler- und Signalisationsregeln
+#### 5.3 Security, Secrets und Maskierung
+
+- In produktiven Setups ist URL-Embedding (z. B. `user:password`) nur als
+  Übergangslösung vorgesehen.
+- In neuen Setups muss ein Umgebungs-Secret (`TRINO_PASSWORD`) oder späterer
+  Credential-Provider genutzt werden.
+- Geheimnisse dürfen nicht in Logs, Debug-Ausgaben, Cache-Keys oder Telemetrie
+  mit Klartext enthalten sein.
+- Jede Ausgabe mit potenziellen Secret-Feldern (Passwort, Token) ist
+  deterministisch zu maskieren (`***`).
+
+### 5.4 Fehler- und Signalisationsregeln
 
 - fehlendes oder unklar formatiertes `catalog` -> deterministische Fehlermeldung mit
   Beispiel-URL.
@@ -126,7 +147,24 @@ Credential-Modell (Phase 1):
 - Capability- oder Guard-Fehler sind dauerhaft reproduzierbar und damit als
   dauerhafte Signale zu behandeln (keine transienten Retry-Pfade).
 
-### 5.4 Capability-Governance für Trino
+### 5.5 Compare-Metadaten-Qualitätsmodell
+
+`schema compare --target trino://...` verwendet ein dreistufiges
+Metadaten-Abdeckungmodell:
+
+- `full`: Objekt ist vollständig lesbar und vergleichbar
+- `partial`: Objekt ist lesbar, aber unvollständig
+- `missing`: Objektklasse ist nicht zuverlässig lesbar
+
+Interpretation:
+
+- `partial`: Vergleich erlaubt mit klarer Warnung (`metadata_coverage=partial`) pro
+  Objektklasse.
+- `missing`: Vergleich für die betroffene Klasse blockiert mit
+  `action_required`, außer bei expliziter Freigabe über
+  `--allow-metadata-gaps` (mit dokumentierter Risikoannahme).
+
+### 5.6 Capability-Governance für Trino
 
 | Befehl | Source | Target | Phase |
 | --- | --- | --- | --- |
@@ -161,7 +199,7 @@ Regel:
    - `schema reverse`
    - `schema compare`
    - `data export`
-   - `data profile`
+   - `data profile` (nur mit aktivem `driver-trino-profiling`)
    - `data transfer` mit Source-only-Guard
 
 Validierungsregeln:
@@ -169,6 +207,24 @@ Validierungsregeln:
 - `schema reverse --source trino://... --output ...` ist lauffähig.
 - `data transfer --target trino://...` startet nicht.
 - `data profile --source trino://...` ist nur mit aktivem Profiling-Modul möglich.
+- `data profile --source trino://...` ohne Modul endet mit `action_required` + Hinweis.
+- Nicht erlaubte Query-Properties liefern reproduzierbar `action_required`.
+- `schema compare --target trino://...` dokumentiert `metadata_coverage` pro
+  Objektklasse.
+
+### 6.1 Phase-1-Abnahmekriterien
+
+- URL-Parsing:
+  - `catalog`- und `schema`-Auflösung sind deterministisch.
+  - Fehlende Felder oder ungültige Pfadsegmente liefern `action_required`.
+  - Nicht erlaubte Query-Properties liefern `action_required`.
+- Capabilities:
+  - Source-only-Verhalten für `data transfer` ist technisch erzwungen.
+  - `data import` ist in Phase 1 deaktiviert.
+- Security:
+  - Secret-Maskierung in Logs, Fehlermeldungen und Hilfetexten ist verifiziert.
+- Compare:
+  - `schema compare --target trino://...` liefert `metadata_coverage`.
 
 ### Phase 2 — Profiling- und Diagnosehärtung
 
@@ -288,14 +344,18 @@ Hinweise:
 
 - `TRINO`-Dialekt und `trino://...` sind parsebar und dokumentiert.
 - `schema reverse` gegen mindestens einen Trino-Katalog/Schema erfolgreich nutzbar.
-- `schema compare` gegen `trino://...` mit klarer Diff-/Limit-Dokumentation.
+- `schema compare` gegen `trino://...` mit klarer Diff-/Limit-/`metadata_coverage`-Dokumentation.
 - `data export` aus Trino stabil nutzbar.
-- `data profile` liefert belastbare Kernkennzahlen.
+- `data profile` liefert belastbare Kernkennzahlen (mit Profiling-Modul in Phase 1).
 - `data transfer` ist Phase 1 Source-only.
 - `data transfer --target trino://...` blockiert reproduzierbar mit `action_required`.
 - `schema generate --target trino://...` bleibt bis Phase 3 deaktiviert.
 - `schema compare --source file... --target trino://...` listet
   Connector-Grenzen explizit (OID/Constraints/Indexes/Procedures).
+- URL-Properties außerhalb der Allowlist liefern reproduzierbar `action_required`.
+- `metadata_coverage=missing` oder unzulässig niedrige Qualität bricht den
+  Vergleich (ohne stilles Ignorieren).
+- Secrets werden in allen Ausgaben maskiert und nicht persistiert/geloggt.
 
 ## 12) Empfehlung
 
@@ -313,13 +373,20 @@ Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 - [ ] `TrinoSchemaReader`, `TrinoTableLister`, `TrinoDataReader` implementiert.
 - [ ] `schema reverse --source trino://...` lauffähig.
 - [ ] `schema compare --source file... --target trino://...` lauffähig.
+- [ ] `schema compare --source file... --target trino://...` veröffentlicht
+  `metadata_coverage` nach Objektklasse.
 - [ ] `data export --source trino...` lauffähig.
 - [ ] `data profile --source trino...` lauffähig (mit Profiling-Modul).
+- [ ] `data profile --source trino://...` ohne Modul liefert `action_required` und
+  Anleitung.
 - [ ] `data transfer --source trino... --target trino://...` blockiert mit
   `action_required`.
 - [ ] Source-only-Regel für Trino technisch und dokumentiert durchgesetzt.
 - [ ] Trino-Metadaten-Lücken/Unbekannte als Warnungen ausgegeben.
 - [ ] `data transfer --target trino...` liefert klare Fehlerklasse `action_required`.
+- [ ] Nicht erlaubte Query-Properties (`foo=bar`) führen reproduzierbar zu
+  `action_required`.
+- [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
 - [ ] Kein DDL-/Import-/Transfer-Write-Pfad für TRINO aktiv.
 - [ ] Mindest-Doku ergänzt: `spec/cli-spec.md`, `spec/connection-config-spec.md`.
 
