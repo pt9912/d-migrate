@@ -55,7 +55,6 @@ internal class SchemaMigratePreparation(
     private val atomicWriter: (Path, String) -> Unit,
 ) {
 
-    @Suppress("ReturnCount")
     fun prepare(request: SchemaMigrateRequest): SchemaMigratePreparationResult {
         validateRequest(request)?.let { return SchemaMigratePreparationResult.ExitEarly(it) }
 
@@ -144,7 +143,6 @@ internal class SchemaMigratePreparation(
         null
     }
 
-    @Suppress("ReturnCount")
     private fun validateRequest(request: SchemaMigrateRequest): Int? {
         if (request.dryRun && request.execute) {
             printError("--dry-run and --execute are mutually exclusive.", request.source)
@@ -256,7 +254,6 @@ internal class SchemaMigratePreparation(
         }
     }
 
-    @Suppress("ReturnCount")
     private fun resolveDialect(request: SchemaMigrateRequest, target: ResolvedSchemaOperand): DatabaseDialect? {
         val targetDialect = target.dialect
         val requested = request.dialect

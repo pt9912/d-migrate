@@ -78,13 +78,65 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
-        if (renderTableOp(op, ctx)) return
-        if (renderOtherOp(op, ctx)) return
-        if (renderSequenceOp(op, ctx)) return
-        markUnsupported(op, ctx)
+        when (categorize(op)) {
+            OpCategory.TABLE -> renderTableOp(op, ctx)
+            OpCategory.OTHER -> renderOtherOp(op, ctx)
+            OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
+            OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
+        }
     }
 
-    private fun renderTableOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
+    /**
+     * Compile-time exhaustiveness guard: every [DiffOperation] subtype
+     * must be triaged here. When a new subtype is added to the sealed
+     * hierarchy, this `when` will fail to compile until the new case
+     * is categorised — preventing it from silently falling into
+     * `markUnsupported`.
+     */
+    private fun categorize(op: DiffOperation): OpCategory = when (op) {
+        is DiffOperation.CreateTable,
+        is DiffOperation.DropTable,
+        is DiffOperation.RenameTable,
+        is DiffOperation.AddColumn,
+        is DiffOperation.DropColumn,
+        is DiffOperation.RenameColumn,
+        is DiffOperation.AlterColumnType,
+        is DiffOperation.AlterColumnNullability,
+        is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AddPrimaryKey,
+        is DiffOperation.DropPrimaryKey,
+        -> OpCategory.TABLE
+
+        is DiffOperation.AddConstraint,
+        is DiffOperation.DropConstraint,
+        is DiffOperation.AddIndex,
+        is DiffOperation.DropIndex,
+        is DiffOperation.CreateCustomType,
+        is DiffOperation.DropCustomType,
+        is DiffOperation.CreateView,
+        is DiffOperation.ReplaceView,
+        is DiffOperation.DropView,
+        -> OpCategory.OTHER
+
+        is DiffOperation.CreateSequence,
+        is DiffOperation.AlterSequence,
+        is DiffOperation.DropSequence,
+        -> OpCategory.SEQUENCE
+
+        is DiffOperation.AlterCustomType,
+        is DiffOperation.CreateFunction,
+        is DiffOperation.ReplaceFunction,
+        is DiffOperation.DropFunction,
+        is DiffOperation.CreateProcedure,
+        is DiffOperation.ReplaceProcedure,
+        is DiffOperation.DropProcedure,
+        is DiffOperation.CreateTrigger,
+        is DiffOperation.ReplaceTrigger,
+        is DiffOperation.DropTrigger,
+        -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderTableOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         when (op) {
             is DiffOperation.CreateTable -> PostgresDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> PostgresDiffTableOps.renderDropTable(op, ctx)
@@ -97,12 +149,11 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> PostgresDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> PostgresDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> PostgresDiffTableOps.renderDropPrimaryKey(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised TABLE but renderTableOp does not handle it")
         }
-        return true
     }
 
-    private fun renderOtherOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
+    private fun renderOtherOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         when (op) {
             is DiffOperation.AddConstraint -> PostgresDiffOtherOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> PostgresDiffOtherOps.renderDropConstraint(op, ctx)
@@ -113,23 +164,23 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> PostgresDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> PostgresDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> PostgresDiffOtherOps.renderDropView(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised OTHER but renderOtherOp does not handle it")
         }
-        return true
     }
 
-    private fun renderSequenceOp(op: DiffOperation, ctx: PostgresDiffRenderContext): Boolean {
+    private fun renderSequenceOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         when (op) {
             is DiffOperation.CreateSequence -> PostgresDiffSequenceOps.renderCreateSequence(op, ctx)
             is DiffOperation.AlterSequence -> PostgresDiffSequenceOps.renderAlterSequence(op, ctx)
             is DiffOperation.DropSequence -> PostgresDiffSequenceOps.renderDropSequence(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it")
         }
-        return true
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first PostgreSQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
+
+    private enum class OpCategory { TABLE, OTHER, SEQUENCE, UNSUPPORTED }
 }

@@ -197,15 +197,64 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
-        if (renderInlineSimpleOp(op, ctx)) return
-        if (isDeferredToRebuild(op)) {
-            ctx.deferToRebuild(op)
-            return
+        when (categorize(op)) {
+            OpCategory.SIMPLE -> renderInlineSimpleOp(op, ctx)
+            OpCategory.REBUILD -> ctx.deferToRebuild(op)
+            OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
-        markUnsupported(op, ctx)
     }
 
-    private fun renderInlineSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext): Boolean {
+    /**
+     * Compile-time exhaustiveness guard: every [DiffOperation] subtype
+     * must be triaged here. When a new subtype is added to the sealed
+     * hierarchy, this `when` will fail to compile until the new case
+     * is categorised. `REBUILD` covers operations that
+     * [SqliteRebuildPlanner.classify] should have absorbed into a
+     * rebuild bucket — they only reach the simple-op renderer when the
+     * planner could not locate the table's current/desired schema.
+     */
+    private fun categorize(op: DiffOperation): OpCategory = when (op) {
+        is DiffOperation.CreateTable,
+        is DiffOperation.DropTable,
+        is DiffOperation.RenameTable,
+        is DiffOperation.AddColumn,
+        is DiffOperation.DropColumn,
+        is DiffOperation.RenameColumn,
+        is DiffOperation.AddIndex,
+        is DiffOperation.DropIndex,
+        is DiffOperation.CreateView,
+        is DiffOperation.ReplaceView,
+        is DiffOperation.DropView,
+        -> OpCategory.SIMPLE
+
+        is DiffOperation.AlterColumnType,
+        is DiffOperation.AlterColumnNullability,
+        is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AddPrimaryKey,
+        is DiffOperation.DropPrimaryKey,
+        is DiffOperation.AddConstraint,
+        is DiffOperation.DropConstraint,
+        -> OpCategory.REBUILD
+
+        is DiffOperation.CreateCustomType,
+        is DiffOperation.AlterCustomType,
+        is DiffOperation.DropCustomType,
+        is DiffOperation.CreateSequence,
+        is DiffOperation.AlterSequence,
+        is DiffOperation.DropSequence,
+        is DiffOperation.CreateFunction,
+        is DiffOperation.ReplaceFunction,
+        is DiffOperation.DropFunction,
+        is DiffOperation.CreateProcedure,
+        is DiffOperation.ReplaceProcedure,
+        is DiffOperation.DropProcedure,
+        is DiffOperation.CreateTrigger,
+        is DiffOperation.ReplaceTrigger,
+        is DiffOperation.DropTrigger,
+        -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderInlineSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         when (op) {
             is DiffOperation.CreateTable -> SqliteDiffSimpleOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> SqliteDiffSimpleOps.renderDropTable(op, ctx)
@@ -218,28 +267,14 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> SqliteDiffSimpleOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> SqliteDiffSimpleOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> SqliteDiffSimpleOps.renderDropView(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised SIMPLE but renderInlineSimpleOp does not handle it")
         }
-        return true
-    }
-
-    // Rebuild-required ops should have been classified into a rebuild bucket by
-    // SqliteRebuildPlanner.classify. If they show up here they're on a table whose
-    // current/desired schema couldn't be located — handled in renderRebuildBucket.
-    private fun isDeferredToRebuild(op: DiffOperation): Boolean = when (op) {
-        is DiffOperation.AlterColumnType,
-        is DiffOperation.AlterColumnNullability,
-        is DiffOperation.AlterColumnDefault,
-        is DiffOperation.AddPrimaryKey,
-        is DiffOperation.DropPrimaryKey,
-        is DiffOperation.AddConstraint,
-        is DiffOperation.DropConstraint,
-        -> true
-        else -> false
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first SQLite matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
+
+    private enum class OpCategory { SIMPLE, REBUILD, UNSUPPORTED }
 }

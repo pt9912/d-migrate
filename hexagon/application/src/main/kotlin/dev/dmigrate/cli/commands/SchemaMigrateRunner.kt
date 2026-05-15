@@ -119,7 +119,6 @@ class SchemaMigrateRunner(
 
     private val rollbackComposer = SchemaMigrateRollbackComposer(createdByVersion)
 
-    @Suppress("ReturnCount")
     fun execute(
         request: SchemaMigrateRequest,
         cancellationToken: CancellationToken = CancellationToken.none(),
@@ -232,7 +231,6 @@ class SchemaMigrateRunner(
      * `null` when no rollback was requested or possible). Each terminal
      * branch routes through [SchemaMigrateArtefactSink.emitReportAndExit].
      */
-    @Suppress("ReturnCount")
     private fun finalize(
         request: SchemaMigrateRequest,
         rendered: MigrationDdlResult,
@@ -292,25 +290,26 @@ class SchemaMigrateRunner(
         // F.5.f: if the atomic write of --rollback-output fails AFTER a successful
         // Up + clean post-compare, fall back to a marked recovery artefact at the
         // .recovery.<ts>.rollback.sql path pinned to the observed Post-Up-FP.
-        val rollbackFinalized = finalizeRollbackArtefact(
-            request, rollbackArtefact, postCompareOutcome, recoveryContext,
-        ) ?: return artefactSink.emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 7)
-        return artefactSink.emitReportAndExit(
-            request, report, rollbackFinalized = rollbackFinalized.value, baseExit = report.exitCode,
-        )
+        return when (finalizeRollbackArtefact(request, rollbackArtefact, postCompareOutcome, recoveryContext)) {
+            RollbackFinalizeOutcome.Skipped ->
+                artefactSink.emitReportAndExit(request, report, rollbackFinalized = null, baseExit = report.exitCode)
+            RollbackFinalizeOutcome.Written ->
+                artefactSink.emitReportAndExit(request, report, rollbackFinalized = true, baseExit = report.exitCode)
+            RollbackFinalizeOutcome.WriteFailed ->
+                artefactSink.emitReportAndExit(request, report, rollbackFinalized = false, baseExit = 7)
+        }
     }
 
-    @Suppress("ReturnCount")
     private fun finalizeRollbackArtefact(
         request: SchemaMigrateRequest,
         rollbackArtefact: String?,
         postCompareOutcome: PostCompareOutcome?,
         recoveryContext: RecoveryContext?,
-    ): RollbackFinalization? {
-        if (rollbackArtefact == null) return RollbackFinalization(null)
-        val output = request.rollbackOutput ?: return RollbackFinalization(null)
+    ): RollbackFinalizeOutcome {
+        if (rollbackArtefact == null) return RollbackFinalizeOutcome.Skipped
+        val output = request.rollbackOutput ?: return RollbackFinalizeOutcome.Skipped
         if (artefactSink.writeRollbackArtefact(output, rollbackArtefact)) {
-            return RollbackFinalization(true)
+            return RollbackFinalizeOutcome.Written
         }
         val observedFp = (postCompareOutcome as? PostCompareOutcome.Clean)?.observedFingerprint
         artefactSink.tryWriteRecoveryArtefact(
@@ -319,10 +318,24 @@ class SchemaMigrateRunner(
             allowedFingerprint = observedFp,
             postUpVerified = true,
         )
-        return null
+        return RollbackFinalizeOutcome.WriteFailed
     }
 
-    private data class RollbackFinalization(val value: Boolean?)
+    /**
+     * Tri-state result of the rollback-artefact write attempt — matches
+     * the [RecoveryWriteOutcome] enum style. [Skipped] means
+     * `--generate-rollback` was off or `--rollback-output` was unset
+     * (so the runner's `rollbackFinalized` report field stays `null`);
+     * [Written] is the atomic-write success path; [WriteFailed] fires
+     * when the atomic write threw and the recovery artefact (if any)
+     * has already been written by the sink — the runner then elevates
+     * the exit code to `7` per Plan §F.5.h.
+     */
+    private sealed interface RollbackFinalizeOutcome {
+        data object Skipped : RollbackFinalizeOutcome
+        data object Written : RollbackFinalizeOutcome
+        data object WriteFailed : RollbackFinalizeOutcome
+    }
 }
 
 // ── Request / Report DTOs ───────────────────────────────────────────

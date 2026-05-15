@@ -38,9 +38,13 @@ internal class SchemaMigrateRollbackComposer(
     ): String? {
         if (!request.generateRollback || renderedDown == null) return null
         if (combined.isBlocked) return null
+        // Execute is "ok" when either there was no execute attempt, or the
+        // execute completed without error AND the post-compare was a
+        // [PostCompareOutcome.Clean] (or absent). Drift / IntrospectionFailed
+        // outcomes block the normal rollback artefact per Plan §F.5.g.
         val executeOk = executionTrace == null ||
-            (executionTrace.executionError == null && postCompareOutcome !is PostCompareOutcome.Drift &&
-                postCompareOutcome !is PostCompareOutcome.IntrospectionFailed)
+            (executionTrace.executionError == null &&
+                (postCompareOutcome == null || postCompareOutcome is PostCompareOutcome.Clean))
         if (!executeOk) return null
         val (postUpFp, postUpVerified) = when (postCompareOutcome) {
             is PostCompareOutcome.Clean -> postCompareOutcome.observedFingerprint to true

@@ -66,12 +66,63 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
-        if (renderTableOp(op, ctx)) return
-        if (renderOtherOp(op, ctx)) return
-        markUnsupported(op, ctx)
+        when (categorize(op)) {
+            OpCategory.TABLE -> renderTableOp(op, ctx)
+            OpCategory.OTHER -> renderOtherOp(op, ctx)
+            OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
+        }
     }
 
-    private fun renderTableOp(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
+    /**
+     * Compile-time exhaustiveness guard: every [DiffOperation] subtype
+     * must be triaged here. When a new subtype is added to the sealed
+     * hierarchy, this `when` will fail to compile until the new case
+     * is categorised — preventing it from silently falling into
+     * `markUnsupported` because [renderTableOp] / [renderOtherOp]
+     * happened to not list it.
+     */
+    private fun categorize(op: DiffOperation): OpCategory = when (op) {
+        is DiffOperation.CreateTable,
+        is DiffOperation.DropTable,
+        is DiffOperation.RenameTable,
+        is DiffOperation.AddColumn,
+        is DiffOperation.DropColumn,
+        is DiffOperation.RenameColumn,
+        is DiffOperation.AlterColumnType,
+        is DiffOperation.AlterColumnNullability,
+        is DiffOperation.AlterColumnDefault,
+        is DiffOperation.AddPrimaryKey,
+        is DiffOperation.DropPrimaryKey,
+        -> OpCategory.TABLE
+
+        is DiffOperation.AddConstraint,
+        is DiffOperation.DropConstraint,
+        is DiffOperation.AddIndex,
+        is DiffOperation.DropIndex,
+        is DiffOperation.CreateCustomType,
+        is DiffOperation.DropCustomType,
+        is DiffOperation.CreateView,
+        is DiffOperation.ReplaceView,
+        is DiffOperation.DropView,
+        -> OpCategory.OTHER
+
+        is DiffOperation.AlterCustomType,
+        is DiffOperation.CreateSequence,
+        is DiffOperation.AlterSequence,
+        is DiffOperation.DropSequence,
+        is DiffOperation.CreateFunction,
+        is DiffOperation.ReplaceFunction,
+        is DiffOperation.DropFunction,
+        is DiffOperation.CreateProcedure,
+        is DiffOperation.ReplaceProcedure,
+        is DiffOperation.DropProcedure,
+        is DiffOperation.CreateTrigger,
+        is DiffOperation.ReplaceTrigger,
+        is DiffOperation.DropTrigger,
+        -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderTableOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         when (op) {
             is DiffOperation.CreateTable -> MysqlDiffTableOps.renderCreateTable(op, ctx)
             is DiffOperation.DropTable -> MysqlDiffTableOps.renderDropTable(op, ctx)
@@ -84,12 +135,11 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterColumnDefault -> MysqlDiffTableOps.renderAlterColumnDefault(op, ctx)
             is DiffOperation.AddPrimaryKey -> MysqlDiffTableOps.renderAddPrimaryKey(op, ctx)
             is DiffOperation.DropPrimaryKey -> MysqlDiffTableOps.renderDropPrimaryKey(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised TABLE but renderTableOp does not handle it")
         }
-        return true
     }
 
-    private fun renderOtherOp(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
+    private fun renderOtherOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         when (op) {
             is DiffOperation.AddConstraint -> MysqlDiffOtherOps.renderAddConstraint(op, ctx)
             is DiffOperation.DropConstraint -> MysqlDiffOtherOps.renderDropConstraint(op, ctx)
@@ -100,13 +150,14 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> MysqlDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> MysqlDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> MysqlDiffOtherOps.renderDropView(op, ctx)
-            else -> return false
+            else -> error("Op ${op::class.simpleName} is categorised OTHER but renderOtherOp does not handle it")
         }
-        return true
     }
 
     private fun markUnsupported(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first MySQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
+
+    private enum class OpCategory { TABLE, OTHER, UNSUPPORTED }
 }

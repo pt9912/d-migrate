@@ -79,10 +79,15 @@ internal object OperationMapper {
      * `dependencies = setOf(candidate.id)` reference when the candidate
      * itself was renamed by the suffix step.
      */
-    internal fun finalizeIds(prepared: PreparedMapping): MapperResult = MapperResult(
-        operations = disambiguateOps(prepared.operations),
-        diagnostics = prepared.diagnostics,
-    )
+    internal fun finalizeIds(prepared: PreparedMapping): MapperResult {
+        if (prepared.operations.isEmpty()) {
+            return MapperResult(operations = emptyList(), diagnostics = prepared.diagnostics)
+        }
+        return MapperResult(
+            operations = disambiguateOps(prepared.operations),
+            diagnostics = prepared.diagnostics,
+        )
+    }
 
     /**
      * Intermediate state handed between [prepare] and [finalizeIds].

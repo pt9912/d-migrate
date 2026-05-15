@@ -40,6 +40,13 @@ internal object RenameOverlayMapper {
      * [foldRenameTables] keeps its pre-T2 signature so callers
      * (currently [OperationMapper.mapTables]) stay untouched while the
      * pipeline shape evolves.
+     *
+     * Return contract (preserved from pre-T2 for the existing
+     * [OperationMapper.mapTables] consumer): the **first** set carries
+     * the absorbed `to`-side names (i.e. those skipped from the regular
+     * `tablesAdded` drop/create path) and the **second** set carries
+     * the absorbed `from`-side names. The mapper destructures as
+     * `(renamedAdds, renamedRemoves)`.
      */
     fun foldRenameTables(
         diff: SchemaDiff,
@@ -54,13 +61,16 @@ internal object RenameOverlayMapper {
         val projection = RenamePassThroughProjector.projectTables(items)
         ops += projection.operations
         diagnostics += projection.diagnostics
-        // Pre-T2 contract returned `(absorbedAdds, absorbedRemoves)` — i.e.
-        // the `to`-side first, the `from`-side second. Preserve that order
-        // so the mapper's regular drop/add loop continues to skip the
-        // right names.
         return projection.absorbedToNames to projection.absorbedFromNames
     }
 
+    /**
+     * Per-table column-rename fold. Same return-contract shape as
+     * [foldRenameTables]: the **first** set carries absorbed `to`-side
+     * column names and the **second** set carries absorbed `from`-side
+     * column names so the destructuring at the
+     * [OperationMapper.mapTableColumns] call site stays correct.
+     */
     fun foldRenameColumns(
         table: TableDiff,
         renameIndex: RenameOverlayIndex,
