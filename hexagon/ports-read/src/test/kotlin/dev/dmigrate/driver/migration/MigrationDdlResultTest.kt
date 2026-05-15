@@ -116,6 +116,40 @@ class MigrationDdlResultTest : FunSpec({
         )
     }
 
+    test("F.4 rename-mapping-invalid-enum: RENAME_MAPPING_INVALID is the last enum value and ordinals stay stable") {
+        // ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum §4.1: new value
+        // appended at the end of MigrationBlockedReason so existing
+        // ordinals (used by report fixtures and tooling clients that
+        // serialise via `ordinal()` or `entries.indexOf`) stay
+        // unchanged. The list is asserted in full so accidentally
+        // inserting a new value in the middle fails loudly.
+        MigrationBlockedReason.entries.map { it.name } shouldBe listOf(
+            "DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION",
+            "ROLLBACK_NOT_POSSIBLE",
+            "MANUAL_ACTION_REQUIRED",
+            "TARGET_STATE_MISMATCH",
+            "TARGET_DIALECT_MISMATCH",
+            "DIALECT_UNSUPPORTED_OPERATION",
+            "TRANSACTION_SCOPE_UNSUPPORTED",
+            "RENAME_MAPPING_INVALID",
+        )
+        MigrationBlockedReason.RENAME_MAPPING_INVALID.ordinal shouldBe
+            MigrationBlockedReason.entries.size - 1
+    }
+
+    test("F.4 rename-mapping-invalid-enum: blocker carries new reason without breaking invariants") {
+        // Smoke test that the new reason flows through MigrationDdlResult's
+        // primaryBlockedReason invariant (must appear in blockers).
+        val result = MigrationDdlResult(
+            statements = emptyList(),
+            operationsRendered = emptySet(),
+            blockers = listOf(MigrationBlocker(MigrationBlockedReason.RENAME_MAPPING_INVALID)),
+            primaryBlockedReason = MigrationBlockedReason.RENAME_MAPPING_INVALID,
+        )
+        result.isBlocked shouldBe true
+        result.primaryBlockedReason shouldBe MigrationBlockedReason.RENAME_MAPPING_INVALID
+    }
+
     test("G.1 dialect execution hints expose conservative defaults and explicit contracts") {
         DialectExecutionHints.UNKNOWN shouldBe DialectExecutionHints()
         TransactionScope.entries.map { it.name } shouldBe listOf(

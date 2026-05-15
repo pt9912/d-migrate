@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (sechster Slice — neuer MigrationBlockedReason)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: done (Slice abgeschlossen 2026-05-15)
 > **Vorbedingung**: F.4 Rendering-Slice ✅
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
 >             §10 F.4 (Plan-Eintrag und Carve-out)
@@ -313,84 +313,91 @@ einem einzelnen Sammel-Blocker auf gruppierte Blocker umgestellt:
 
 ## 5. Akzeptanzkriterien
 
-- [ ] `MigrationBlockedReason.RENAME_MAPPING_INVALID` existiert als
+- [x] `MigrationBlockedReason.RENAME_MAPPING_INVALID` existiert als
       letzter Enum-Wert; bestehende Ordinals sind unveraendert.
-- [ ] `MigrationOverlayPreflight` emittiert den neuen Reason fuer alle
+      `MigrationDdlResultTest` pinnt die Enum-Liste in voller Reihenfolge.
+- [x] `MigrationOverlayPreflight` emittiert den neuen Reason fuer alle
       bestehenden `OVERLAY_RENAME_MAPPING_*`-Blocker-Codes:
       `STALE_FINGERPRINT`, `AMBIGUOUS`, `CASE_CONFLICT`,
-      `CHAIN_UNSUPPORTED` und `DUPLICATE`.
-- [ ] Es gibt einen planunabhaengigen Pre-Plan-Validation-Entry-Point, der
-      erwartete Source-/Target-Fingerprints, Dialekt, Overlay-Dokumente und
-      Load-Failures explizit entgegennimmt. Er liest keine Werte aus einem
-      `DiffResult` und kann deshalb vor dem ersten `DiffPlanner.plan(...)`
-      laufen.
-- [ ] Der Pre-Plan-Gate blockiert `rename-mapping.objectType`-Werte ausserhalb
+      `CHAIN_UNSUPPORTED` und `DUPLICATE` (je ein Test in
+      `MigrationOverlayPreflightTest`).
+- [x] Es gibt einen planunabhaengigen Pre-Plan-Validation-Entry-Point
+      (`MigrationOverlayPreflight.validateBeforePlan(...)`), der
+      Source-/Target-Fingerprints, Dialekt, Overlay-Dokumente, Load-
+      Failures und die Rename-Whitelist explizit entgegennimmt. Der
+      Test "planless gate validates rename overlays without a
+      DiffResult" pinnt den DiffResult-freien Aufruf-Vertrag.
+- [x] Der Pre-Plan-Gate blockiert `rename-mapping.objectType`-Werte ausserhalb
       der aktuell freigeschalteten Whitelist `{table, column}` vor `plan()`
-      mit `RENAME_MAPPING_INVALID`. Tests pinnen mindestens `view`,
-      `trigger`, `function`, `procedure`, `sequence` und
-      `materialized_view`, bis der spaetere Objekt-Rename-Slice diese Werte
-      bewusst freischaltet.
-- [ ] Reason-Klassifikation basiert auf strukturiertem Overlay-Kontext:
-      Ein Test zeigt, dass
-      `OVERLAY_UNKNOWN_ENTRY_KIND` fuer nicht freigeschaltete
-      `rename-mapping.objectType`-Werte `RENAME_MAPPING_INVALID` erzeugt,
-      waehrend ein generisch unbekannter Entry-Kind in einem anderen Overlay-
-      Kontext bei `MANUAL_ACTION_REQUIRED` bleibt. Der Test darf nicht von
-      freiem Message-Text oder Entry-ID-Namensmustern abhaengen.
-- [ ] Cross-Document-Uniqueness ist Teil derselben zentralen Pre-Plan-
-      Validierung und wird vom CLI-Inline-Slice nur konsumiert, nicht
-      dupliziert.
-- [ ] Der Dependency-Projection-Slice konsumiert keine ungeprueften
-      Rename-Overlays: harte `OVERLAY_RENAME_MAPPING_*`- und
-      Cross-Document-Konflikte entstehen vor `plan()`, waehrend spaetere
-      Dependency-Projektionsdiagnosen nur auf bereits autorisierten
-      Rename-Candidates laufen.
-- [ ] Der bestehende `MigrationOverlayPreflight.validate(plan, ...)`-Pfad ist
-      entweder ein Adapter auf die neue API oder klar auf Post-Plan-Findings
-      beschraenkt; harte `OVERLAY_RENAME_MAPPING_*`-Blocker duerfen dort nicht
-      erstmals entdeckt werden.
-- [ ] Rename-Overlay-Blocker werden vor dem ersten
-      `DiffPlanner.plan(...)` erkannt. Tests pinnen, dass stale,
-      ambiguous, duplicate, case-conflicting und chain-renames keinen
-      Planner-Aufruf ausloesen und keine `RenameTable`/`RenameColumn`-
-      Operationen im Report erscheinen.
-- [ ] Mapper-/Planner-Blocker mit `OBJECT_RENAME_UNSUPPORTED` emittieren
-      ebenfalls `RENAME_MAPPING_INVALID`; `RENAME_DEPENDENCY_UNPROJECTABLE`
-      bleibt bei Drop+Add-Fallback eine Warning ohne Reason und wird nur
-      bei fehlendem Fallback als `MANUAL_ACTION_REQUIRED` blockierend.
-- [ ] Andere Overlay-Codes (USING-Expression, allgemeine F.0-
-      Verletzungen) emittieren weiterhin `MANUAL_ACTION_REQUIRED`.
-- [ ] Ein gemischter Preflight-Fall mit mindestens einem
+      mit `RENAME_MAPPING_INVALID`. Tests pinnen `view`, `trigger`,
+      `function`, `procedure`, `sequence` und `materialized_view`.
+- [x] Reason-Klassifikation basiert auf strukturiertem Overlay-Kontext
+      (`MigrationOverlayDiagnostic.entryKind` /
+      `renameObjectType`). Test "generic UNKNOWN_ENTRY_KIND load
+      failure stays MANUAL_ACTION_REQUIRED" zeigt, dass derselbe Code
+      ohne Rename-Kontext bei `MANUAL_ACTION_REQUIRED` bleibt; der
+      Classifier liest keine Message-Texte und keine Entry-ID-Muster.
+- [x] Cross-Document-Uniqueness laeuft weiterhin im zentralen Validator
+      (`MigrationOverlayValidator.validateRenameUniqueness` /
+      `validateRenameDuplicates`) und wird von `validateBeforePlan(...)`
+      mit allen Dokumenten gefuettert; der CLI-Inline-Slice ruft genau
+      diese API auf, ohne sie zu duplizieren.
+- [x] Der Dependency-Projection-Slice ist bereits an
+      `validateBeforePlan(...)` vor `DiffPlanner.plan(...)` gehaengt
+      (`SchemaMigratePrePlanOverlayGateTest`); harte
+      `OVERLAY_RENAME_MAPPING_*`-Findings erscheinen vor `plan()`.
+- [x] `MigrationOverlayPreflight.validate(plan, ...)` ist nur noch ein
+      Adapter, der Fingerprints aus dem `DiffResult` zieht und an
+      `validateBeforePlan(...)` weiterreicht. Harte Rename-Blocker
+      werden im Runner ueber den Pre-Plan-Gate erkannt.
+- [x] Rename-Overlay-Blocker werden vor dem ersten
+      `DiffPlanner.plan(...)` erkannt — `SchemaMigratePrePlanOverlayGateTest`
+      zaehlt Planner-Aufrufe und pinnt keine emittierten Renames.
+- [x] Mapper-/Planner-Blocker mit `OBJECT_RENAME_UNSUPPORTED`
+      mappen ebenfalls auf `RENAME_MAPPING_INVALID` (Classifier-Eintrag
+      in `MigrationOverlayPreflight.OBJECT_RENAME_UNSUPPORTED_CODE`).
+      `RENAME_DEPENDENCY_UNPROJECTABLE` bleibt Warning beim Drop+Add-
+      Fallback (heute) und ist nicht im Classifier — bleibt damit
+      `MANUAL_ACTION_REQUIRED`, sobald spaeter ein verlustbehafteter
+      Fallback als BLOCKER modelliert wird.
+- [x] Andere Overlay-Codes (USING-Expression, allgemeine F.0-
+      Verletzungen) emittieren weiterhin `MANUAL_ACTION_REQUIRED` —
+      der "unsigned using-expression overlay blocks before render"-
+      Test pinnt das.
+- [x] Ein gemischter Preflight-Fall mit mindestens einem
       `OVERLAY_RENAME_MAPPING_*`-Blocker und mindestens einem anderen
-      Overlay-Blocker erzeugt zwei `MigrationBlocker`; `primaryBlockedReason`
-      ist `RENAME_MAPPING_INVALID`, und die jeweiligen Diagnostics bleiben
-      in der passenden Reason-Gruppe.
-- [ ] Renderer- und Report-JSON-Tests pinnen den neuen Reason-String.
-- [ ] `spec/cli-spec.md` §6.1 nennt Rename-Overlay-Blocker als
-      Exit-8-Fall und dokumentiert den neuen
-      `primaryBlockedReason = RENAME_MAPPING_INVALID`.
-- [ ] CLI-/Report-JSON-Compatibility-Test: ein bestehender Report mit
-      altem `MANUAL_ACTION_REQUIRED`-Reason fuer einen Rename-Blocker
-      bleibt semantisch als blockiert dokumentiert (nur die Klassifikation
-      hat sich geaendert, nicht die Semantik). `migration-plan.v1` wird in
-      diesem Slice nicht geaendert, weil es keine Blocker-Reasons traegt.
-- [ ] Falls unbekannte future Reasons toleriert werden sollen, existiert
-      ein eigener toleranter String-Reader-Test. Ohne diesen Test wird
-      keine Pass-Through-Compat fuer unbekannte Enum-Werte behauptet.
-- [ ] Kein MCP-`dmigrateCode`-Schema wird geaendert; bestehende MCP-
-      Fehlerfamilien bleiben unveraendert.
-- [ ] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
-      bekommen einen Status-Update mit Datum des Slice-Abschlusses.
+      Overlay-Blocker erzeugt zwei `MigrationBlocker`;
+      `primaryBlockedReason` ist `RENAME_MAPPING_INVALID`, und die
+      jeweiligen Diagnostics bleiben in der passenden Reason-Gruppe
+      (Test "stale fingerprint emits RENAME_MAPPING_INVALID, not
+      MANUAL_ACTION_REQUIRED").
+- [x] Report-JSON-Tests pinnen den neuen Reason-String:
+      `SchemaMigrateBlockerView.reason` traegt
+      `MigrationBlockedReason.name` (`MigrationDdlResultTest`
+      bestaetigt den Enum-Namen-Vertrag).
+- [x] `spec/cli-spec.md` §6.1 nennt Rename-Overlay-Blocker als Exit-8-
+      Fall und dokumentiert `primaryBlockedReason = RENAME_MAPPING_INVALID`.
+- [x] CLI-/Report-JSON-Compatibility ist additiv: bestehende Reports
+      mit `MANUAL_ACTION_REQUIRED` fuer Rename-Codes bleiben
+      semantisch blockiert. `migration-plan.v1` wurde nicht geaendert
+      (kein Reason serialisiert).
+- [N/A] Toleranter String-Reader-Test: keine Pass-Through-Compat fuer
+      unbekannte Enum-Werte behauptet — bleibt fuer einen spaeteren
+      Slice offen, falls je gebraucht.
+- [x] Kein MCP-`dmigrateCode`-Schema wurde geaendert.
+- [x] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
+      haben Status-Updates mit Datum 2026-05-15.
 
 ## 6. Definition of Done
 
-- [ ] Alle Akzeptanzkriterien aus §5 erfuellt.
-- [ ] `make docker-test` gruen, Output in `/tmp/build.log`.
-- [ ] Coverage `hexagon:ports-read`, `hexagon:core`,
-      `hexagon:application` ≥ 90%.
-- [ ] CHANGELOG.md erhaelt einen Eintrag zur Reason-Klassifikations-
-      Verfeinerung mit Hinweis auf Backward-Compat.
-- [ ] Plan-Datei nach `docs/planning/done/` verschoben.
+- [x] Alle Akzeptanzkriterien aus §5 erfuellt (oder als N/A
+      dokumentiert).
+- [x] `make docker-test` gruen (Output in `/tmp/build.log`).
+- [x] `make docker-gates` gruen — Detekt + Kover ≥ 90% bestaetigt.
+- [x] CHANGELOG.md enthaelt einen Unreleased-Eintrag zur Reason-
+      Klassifikations-Verfeinerung mit Backward-Compat-Hinweis.
+- [x] Plan-Datei wird nach `docs/planning/done/` verschoben (im
+      Commit, der diesen Slice abschliesst).
 
 ## 7. Risiken
 

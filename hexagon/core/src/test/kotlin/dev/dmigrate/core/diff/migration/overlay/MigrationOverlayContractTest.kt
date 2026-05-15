@@ -276,6 +276,14 @@ class MigrationOverlayContractTest : FunSpec({
                 overlayHash = overlay.overlayHash!!,
                 diagnosticCode = MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH,
                 severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
+                // F.4 rename-mapping-invalid-enum: blockEntry tags the
+                // structured `entryKind` from the entry itself (here
+                // "using-expression") so the application-layer
+                // classifier can attribute the diagnostic without
+                // parsing the message. `renameObjectType` stays null
+                // because the entry is not a RenameMappingOverlayEntry.
+                entryKind = MigrationOverlayKinds.USING_EXPRESSION,
+                renameObjectType = null,
             )
         report.toString().contains(secret) shouldBe false
     }

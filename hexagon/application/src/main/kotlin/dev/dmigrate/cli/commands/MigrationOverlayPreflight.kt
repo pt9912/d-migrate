@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostic
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayValidator
@@ -51,6 +52,7 @@ internal object MigrationOverlayPreflight {
         targetFingerprint: String,
         dialect: String,
         loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+        supportedRenameObjectTypes: Set<String> = DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES,
     ): MigrationOverlayPreflightResult {
         if (documents.isEmpty() && loadFailures.isEmpty()) {
             return MigrationOverlayPreflightResult(emptyList(), emptyList())
@@ -63,6 +65,7 @@ internal object MigrationOverlayPreflight {
                     expectedSourceFingerprint = sourceFingerprint,
                     expectedTargetFingerprint = targetFingerprint,
                     expectedDialect = normalisedDialect,
+                    supportedRenameObjectTypes = supportedRenameObjectTypes,
                 ),
                 source = document.source,
             )
@@ -72,7 +75,7 @@ internal object MigrationOverlayPreflight {
             MigrationOverlayReportItem(
                 source = failure.source,
                 entryId = null,
-                overlayHash = UNAVAILABLE_OVERLAY_HASH,
+                overlayHash = MigrationOverlayReport.UNAVAILABLE_OVERLAY_HASH,
                 diagnosticCode = failure.diagnosticCode,
                 severity = MigrationOverlayDiagnostic.Severity.BLOCKER,
             )
@@ -91,6 +94,17 @@ internal object MigrationOverlayPreflight {
     }
 
     /**
+     * F.4 rename-mapping-invalid-enum slice: until the
+     * View-/Trigger-/Routine-Rename slice ships, only
+     * `{table, column}` are accepted. The Pre-Plan-Gate blocks every
+     * other `rename-mapping.objectType` value with
+     * `OVERLAY_UNKNOWN_ENTRY_KIND` and the application-layer
+     * reason-classifier groups those findings under
+     * [MigrationBlockedReason.RENAME_MAPPING_INVALID].
+     */
+    val DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES: Set<String> = setOf("table", "column")
+
+    /**
      * Backward-compatible wrapper around [validateBeforePlan] for the
      * pre-T1 call site that already had a [DiffResult] in hand. New
      * call sites should compute fingerprints up-front and call
@@ -101,40 +115,125 @@ internal object MigrationOverlayPreflight {
         plan: DiffResult,
         dialect: DatabaseDialect,
         loadFailures: List<MigrationOverlayLoadFailure> = emptyList(),
+        supportedRenameObjectTypes: Set<String> = DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES,
     ): MigrationOverlayPreflightResult = validateBeforePlan(
         documents = plan.migrationOverlays,
         sourceFingerprint = plan.current.fingerprint.orEmpty(),
         targetFingerprint = plan.desired.fingerprint.orEmpty(),
         dialect = dialect.name,
         loadFailures = loadFailures,
+        supportedRenameObjectTypes = supportedRenameObjectTypes,
     )
 
     fun buildFailureResult(plan: DiffResult, result: MigrationOverlayPreflightResult): MigrationDdlResult {
-        val blockerDiagnostics = result.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val skipped = plan.operations.map { it.id }.toSet()
+        val groups = classifyBlockers(result)
+        val blockers = buildList {
+            groups[MigrationBlockedReason.RENAME_MAPPING_INVALID]?.let { diags ->
+                add(MigrationBlocker(MigrationBlockedReason.RENAME_MAPPING_INVALID, skipped, diags))
+            }
+            groups[MigrationBlockedReason.MANUAL_ACTION_REQUIRED]?.let { diags ->
+                add(MigrationBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, skipped, diags))
+            }
+        }
+        val primary = when {
+            blockers.any { it.reason == MigrationBlockedReason.RENAME_MAPPING_INVALID } ->
+                MigrationBlockedReason.RENAME_MAPPING_INVALID
+            blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED } ->
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+            else -> null
+        }
         return MigrationDdlResult(
             statements = emptyList(),
             operationsRendered = emptySet(),
             operationsSkipped = skipped,
-            blockers = listOf(
-                MigrationBlocker(
-                    reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
-                    operationIds = skipped,
-                    diagnostics = blockerDiagnostics,
-                ),
-            ),
-            primaryBlockedReason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+            blockers = blockers,
+            primaryBlockedReason = primary,
             diagnostics = result.diagnostics,
         )
     }
+
+    /**
+     * F.4 rename-mapping-invalid-enum slice §4.2/§4.3: group BLOCKER
+     * findings by [MigrationBlockedReason] using the structured
+     * [MigrationOverlayReportItem.entryKind] /
+     * [MigrationOverlayReportItem.renameObjectType] tags rather than
+     * parsing free-form text or entry-ID conventions. Diagnostics that
+     * the validator emitted without a report item (none today, but the
+     * shape allows it) keep their natural ordering inside the
+     * `MANUAL_ACTION_REQUIRED` bucket.
+     *
+     * Pairing rule: report items and diagnostics are built 1:1 in
+     * [validateBeforePlan], so `reportItems[i]` describes
+     * `diagnostics[i]`. Length mismatches would be a defect rather
+     * than something to silently work around — we map by index and
+     * fall back to the report-item count.
+     */
+    private fun classifyBlockers(
+        result: MigrationOverlayPreflightResult,
+    ): Map<MigrationBlockedReason, List<DiffDiagnostic>> {
+        val grouped = linkedMapOf<MigrationBlockedReason, MutableList<DiffDiagnostic>>()
+        val items = result.reportItems
+        result.diagnostics.forEachIndexed { index, diagnostic ->
+            if (diagnostic.severity != DiffDiagnostic.Severity.BLOCKER) return@forEachIndexed
+            val item = items.getOrNull(index)
+            val reason = classifyDiagnostic(diagnostic.code, item)
+            grouped.getOrPut(reason) { mutableListOf() } += diagnostic
+        }
+        return grouped
+    }
+
+    /**
+     * Reason-classification table for one BLOCKER finding. See
+     * `docs/planning/done/ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`
+     * §4.3. Any rename-mapping-bound `OVERLAY_RENAME_MAPPING_*` or
+     * rename-mapping-bound `OVERLAY_UNKNOWN_ENTRY_KIND` (objectType
+     * outside the current whitelist) maps to
+     * `RENAME_MAPPING_INVALID`; everything else stays at
+     * `MANUAL_ACTION_REQUIRED`. Generic `OVERLAY_UNKNOWN_ENTRY_KIND`
+     * findings without rename-mapping context fall through to
+     * `MANUAL_ACTION_REQUIRED` so the slice does not accidentally
+     * widen the new reason past its documented scope.
+     */
+    private fun classifyDiagnostic(
+        code: String,
+        item: MigrationOverlayReportItem?,
+    ): MigrationBlockedReason {
+        if (code in RENAME_MAPPING_CODES) return MigrationBlockedReason.RENAME_MAPPING_INVALID
+        if (code == OBJECT_RENAME_UNSUPPORTED_CODE) return MigrationBlockedReason.RENAME_MAPPING_INVALID
+        if (code == MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND &&
+            item?.entryKind == MigrationOverlayKinds.RENAME_MAPPING &&
+            !item.renameObjectType.isNullOrBlank()
+        ) {
+            return MigrationBlockedReason.RENAME_MAPPING_INVALID
+        }
+        return MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+    }
+
+    private val RENAME_MAPPING_CODES: Set<String> = setOf(
+        MigrationOverlayDiagnostics.RENAME_MAPPING_STALE_FINGERPRINT,
+        MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
+        MigrationOverlayDiagnostics.RENAME_MAPPING_CASE_CONFLICT,
+        MigrationOverlayDiagnostics.RENAME_MAPPING_CHAIN_UNSUPPORTED,
+        MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
+    )
+
+    /**
+     * Forward-looking renderer diagnostic the Routine-/Trigger-/View-
+     * Rename slice will emit when an object class is rejected by the
+     * dialect. Pinned as a string constant here (not as a typed
+     * reference) because the renderer code that will produce it has
+     * not landed yet. Listing it in the classifier table now keeps
+     * the slice spec §4.3 contract honest without forcing today's
+     * code to depend on a renderer that does not exist yet.
+     */
+    private const val OBJECT_RENAME_UNSUPPORTED_CODE: String = "OBJECT_RENAME_UNSUPPORTED"
 
     private fun MigrationOverlayDiagnostic.Severity.toDiffSeverity(): DiffDiagnostic.Severity = when (this) {
         MigrationOverlayDiagnostic.Severity.INFO -> DiffDiagnostic.Severity.INFO
         MigrationOverlayDiagnostic.Severity.WARNING -> DiffDiagnostic.Severity.WARNING
         MigrationOverlayDiagnostic.Severity.BLOCKER -> DiffDiagnostic.Severity.BLOCKER
     }
-
-    private const val UNAVAILABLE_OVERLAY_HASH = "<unavailable>"
 }
 
 internal data class MigrationOverlayPreflightResult(

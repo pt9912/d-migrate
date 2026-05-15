@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **F.4 rename-mapping-invalid-enum** — new
+  `MigrationBlockedReason.RENAME_MAPPING_INVALID` (last enum value;
+  existing ordinals unchanged). The application-layer
+  reason-classifier in
+  `MigrationOverlayPreflight.buildFailureResult(...)` now groups
+  blocker findings by reason using **structured** overlay context
+  (`MigrationOverlayDiagnostic.entryKind` /
+  `renameObjectType`) — no free-form message or entry-ID parsing.
+  All five `OVERLAY_RENAME_MAPPING_*` blocker codes plus
+  `OVERLAY_UNKNOWN_ENTRY_KIND` tagged with a rename-mapping
+  `objectType` outside the current `{table, column}` whitelist
+  surface as `RENAME_MAPPING_INVALID`; mixed preflights with a
+  rename-bound and a generic overlay blocker emit two
+  `MigrationBlocker`s with `primaryBlockedReason =
+  RENAME_MAPPING_INVALID`. `MigrationOverlayValidationContext`
+  gains `supportedRenameObjectTypes` (default `{"table","column"}`);
+  `MigrationOverlayPreflight.validateBeforePlan(...)` exposes the
+  same set as a parameter so the later View-/Trigger-/Routine-Rename
+  slice can widen the whitelist additively.
+  **Backward-Compat**: bestehende Reports mit
+  `MANUAL_ACTION_REQUIRED` fuer Rename-Codes bleiben semantisch
+  blockiert; nur die Klassifikation hat sich verfeinert.
+  `migration-plan.v1` traegt keine `MigrationBlockedReason` und ist
+  daher unveraendert. `spec/cli-spec.md` §6.1 dokumentiert den
+  neuen Exit-8-Fall.
 - **F.4 dependency-projection (T1–T6)** — overlay-bound rename
   candidates now fold to native `RenameTable` / `RenameColumn`
   operations plus synthesised intra-object delta operations

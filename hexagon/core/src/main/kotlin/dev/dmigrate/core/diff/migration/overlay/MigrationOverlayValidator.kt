@@ -12,6 +12,16 @@ data class MigrationOverlayValidationContext(
         MigrationOverlayKinds.RENAME_MAPPING,
     ),
     val supportedRequiredFeatures: Set<String> = emptySet(),
+    /**
+     * F.4 rename-mapping-invalid-enum slice: the set of `objectType`
+     * values the current build accepts on a `rename-mapping` entry.
+     * Until the View-/Trigger-/Routine-Rename slice ships, only
+     * `{table, column}` are valid. Any other `objectType` blocks
+     * pre-plan with [MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND]
+     * (tagged with the offending `renameObjectType`) so the operator
+     * has to edit the overlay rather than silently skip a stale entry.
+     */
+    val supportedRenameObjectTypes: Set<String> = setOf("table", "column"),
 )
 
 data class MigrationOverlayValidationResult(
@@ -23,12 +33,35 @@ data class MigrationOverlayValidationResult(
         get() = diagnostics.any { it.severity == MigrationOverlayDiagnostic.Severity.BLOCKER }
 }
 
+/**
+ * Structured overlay finding. Beyond [code] / [message] / [severity]
+ * / [entryId] / [overlayHash], the diagnostic carries optional
+ * provenance fields so the F.4 reason-classifier
+ * ([dev.dmigrate.cli.commands.MigrationOverlayPreflight.buildFailureResult])
+ * can decide between `RENAME_MAPPING_INVALID` and
+ * `MANUAL_ACTION_REQUIRED` without parsing free-form messages or
+ * entry-ID naming patterns.
+ *
+ * - [entryKind] is the [MigrationOverlayEntry.kind] (e.g.
+ *   `"rename-mapping"`, `"using-expression"`) for entry-scoped findings;
+ *   `null` for document-level findings such as
+ *   `OVERLAY_STALE_SOURCE_FINGERPRINT` or `OVERLAY_HASH_MISMATCH`.
+ * - [renameObjectType] is the offending `objectType` value when an
+ *   `OVERLAY_UNKNOWN_ENTRY_KIND` (or other rename-mapping-bound
+ *   blocker) originates from a `rename-mapping` entry; `null` for
+ *   other entry kinds and for document-level findings. This is the
+ *   sole structured tag the classifier reads to attribute an
+ *   `OVERLAY_UNKNOWN_ENTRY_KIND` to a rename-mapping objectType
+ *   outside the current `{table, column}` whitelist.
+ */
 data class MigrationOverlayDiagnostic(
     val code: String,
     val message: String,
     val severity: Severity = Severity.BLOCKER,
     val entryId: String? = null,
     val overlayHash: String,
+    val entryKind: String? = null,
+    val renameObjectType: String? = null,
 ) {
     enum class Severity {
         INFO,
@@ -73,12 +106,30 @@ object MigrationOverlayValidator {
         val reportHash = overlay.overlayHash ?: actualHash
         val diagnostics = mutableListOf<MigrationOverlayDiagnostic>()
 
-        fun block(code: String, message: String, entryId: String? = null) {
+        fun block(
+            code: String,
+            message: String,
+            entryId: String? = null,
+            entryKind: String? = null,
+            renameObjectType: String? = null,
+        ) {
             diagnostics += MigrationOverlayDiagnostic(
                 code = code,
                 message = message,
                 entryId = entryId,
+                entryKind = entryKind,
+                renameObjectType = renameObjectType,
                 overlayHash = reportHash,
+            )
+        }
+
+        fun blockEntry(code: String, message: String, entry: MigrationOverlayEntry) {
+            block(
+                code = code,
+                message = message,
+                entryId = entry.id,
+                entryKind = entry.kind,
+                renameObjectType = (entry as? RenameMappingOverlayEntry)?.objectType,
             )
         }
 
@@ -97,11 +148,12 @@ object MigrationOverlayValidator {
             block(MigrationOverlayDiagnostics.UNKNOWN_OVERLAY_KIND, "Unsupported overlayKind '${overlay.overlayKind}'")
         }
 
-        requireNonBlank("sourceFingerprint", overlay.sourceFingerprint, ::block)
-        requireNonBlank("targetFingerprint", overlay.targetFingerprint, ::block)
-        requireNonBlank("dialect", overlay.dialect, ::block)
-        requireNonBlank("createdAt", overlay.createdAt, ::block)
-        requireNonBlank("createdByVersion", overlay.createdByVersion, ::block)
+        val blockDocument: (String, String) -> Unit = { c, m -> block(c, m) }
+        requireNonBlank("sourceFingerprint", overlay.sourceFingerprint, blockDocument)
+        requireNonBlank("targetFingerprint", overlay.targetFingerprint, blockDocument)
+        requireNonBlank("dialect", overlay.dialect, blockDocument)
+        requireNonBlank("createdAt", overlay.createdAt, blockDocument)
+        requireNonBlank("createdByVersion", overlay.createdByVersion, blockDocument)
 
         if (overlay.sourceFingerprint != context.expectedSourceFingerprint) {
             block(
@@ -127,26 +179,26 @@ object MigrationOverlayValidator {
 
         for (entry in overlay.entries) {
             if (entry.id.isBlank()) {
-                block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "entry id is required", entryId = entry.id)
+                blockEntry(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "entry id is required", entry)
             }
-            validateEntryRequiredFields(entry, ::block)
+            validateEntryRequiredFields(entry, context, ::blockEntry)
             if (entry.kind != overlay.overlayKind) {
-                block(
+                blockEntry(
                     MigrationOverlayDiagnostics.ENTRY_KIND_MISMATCH,
                     "Entry kind '${entry.kind}' is not valid for overlayKind '${overlay.overlayKind}'",
-                    entryId = entry.id,
+                    entry,
                 )
             }
             val unknownFeatures = entry.requiredFeatures - context.supportedRequiredFeatures
             if (unknownFeatures.isNotEmpty()) {
-                block(
+                blockEntry(
                     MigrationOverlayDiagnostics.UNKNOWN_REQUIRED_FEATURE,
                     "Entry requires unsupported feature '${unknownFeatures.sorted().first()}'",
-                    entryId = entry.id,
+                    entry,
                 )
             }
         }
-        validateRenameMappings(overlay, context, ::block)
+        validateRenameMappings(overlay, context, ::blockEntry)
 
         for (key in overlay.producerMetadata.keys) {
             if (key.isReservedExecutionField()) {
@@ -176,20 +228,21 @@ object MigrationOverlayValidator {
     private fun requireNonBlank(
         fieldName: String,
         value: String,
-        block: (String, String, String?) -> Unit,
+        block: (String, String) -> Unit,
     ) {
         if (value.isBlank()) {
-            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required", null)
+            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required")
         }
     }
 
     private fun validateEntryRequiredFields(
         entry: MigrationOverlayEntry,
-        block: (String, String, String?) -> Unit,
+        context: MigrationOverlayValidationContext,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
     ) {
         fun requireEntryNonBlank(fieldName: String, value: String) {
             if (value.isBlank()) {
-                block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required", entry.id)
+                block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "$fieldName is required", entry)
             }
         }
 
@@ -205,14 +258,14 @@ object MigrationOverlayValidator {
                     block(
                         MigrationOverlayDiagnostics.SECRET_BEARING_FIELD,
                         "upUsingExpression is marked secret and cannot be embedded in migration overlays",
-                        entry.id,
+                        entry,
                     )
                 }
                 if (entry.downUsingExpression?.secret == true) {
                     block(
                         MigrationOverlayDiagnostics.SECRET_BEARING_FIELD,
                         "downUsingExpression is marked secret and cannot be embedded in migration overlays",
-                        entry.id,
+                        entry,
                     )
                 }
                 requireEntryNonBlank("expressionSource", entry.expressionSource)
@@ -220,7 +273,7 @@ object MigrationOverlayValidator {
                     block(
                         MigrationOverlayDiagnostics.USER_REVIEW_REQUIRED,
                         "reviewedByUser must be true for using-expression entries",
-                        entry.id,
+                        entry,
                     )
                 }
             }
@@ -231,18 +284,33 @@ object MigrationOverlayValidator {
                 requireEntryNonBlank("toName", entry.toName)
                 entry.fromStructureFingerprint?.let { requireEntryNonBlank("fromStructureFingerprint", it) }
                 entry.toStructureFingerprint?.let { requireEntryNonBlank("toStructureFingerprint", it) }
+                if (entry.objectType.isNotBlank() &&
+                    context.supportedRenameObjectTypes.none { it.caseFold() == entry.objectType.caseFold() }
+                ) {
+                    // Case-fold both sides because the rest of the rename validator
+                    // (sourceKey/targetKey/groupBy) already case-folds; treating the
+                    // whitelist asymmetrically would surprise operators who type
+                    // `TABLE` instead of `table`. The diagnostic message keeps the
+                    // operator-supplied value so they see what they wrote.
+                    block(
+                        MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND,
+                        "Rename mapping objectType '${entry.objectType}' is not supported in this build " +
+                            "(supported: ${context.supportedRenameObjectTypes.sorted().joinToString(", ")}).",
+                        entry,
+                    )
+                }
             }
         }
 
         if (entry.requiredFeatures.any { it.isBlank() }) {
-            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "requiredFeatures entries must be non-blank", entry.id)
+            block(MigrationOverlayDiagnostics.REQUIRED_FIELD_MISSING, "requiredFeatures entries must be non-blank", entry)
         }
     }
 
     private fun validateRenameMappings(
         overlay: MigrationOverlay,
         context: MigrationOverlayValidationContext,
-        block: (String, String, String?) -> Unit,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
     ) {
         val entries = overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()
         if (entries.isEmpty()) return
@@ -253,7 +321,7 @@ object MigrationOverlayValidator {
                 block(
                     MigrationOverlayDiagnostics.RENAME_MAPPING_STALE_FINGERPRINT,
                     "Rename mapping is stale for the current source/target fingerprints",
-                    entry.id,
+                    entry,
                 )
             }
         }
@@ -272,7 +340,7 @@ object MigrationOverlayValidator {
      */
     private fun validateRenameDuplicates(
         entries: List<RenameMappingOverlayEntry>,
-        block: (String, String, String?) -> Unit,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
     ) {
         val groups = entries.groupBy { Triple(it.objectType.caseFold(), it.fromName.caseFold(), it.toName.caseFold()) }
         for ((_, group) in groups) {
@@ -282,7 +350,7 @@ object MigrationOverlayValidator {
                     MigrationOverlayDiagnostics.RENAME_MAPPING_DUPLICATE,
                     "Rename mapping '${entry.fromName}' -> '${entry.toName}' is duplicated " +
                         "(${group.size} entries describe the same rename).",
-                    entry.id,
+                    entry,
                 )
             }
         }
@@ -290,7 +358,7 @@ object MigrationOverlayValidator {
 
     private fun validateRenameUniqueness(
         entries: List<RenameMappingOverlayEntry>,
-        block: (String, String, String?) -> Unit,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
     ) {
         val sources = entries.groupBy { it.sourceKey() }
         val targets = entries.groupBy { it.targetKey() }
@@ -304,14 +372,14 @@ object MigrationOverlayValidator {
             block(
                 MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
                 "Rename mapping source '${entry.fromName}' is ambiguous",
-                entry.id,
+                entry,
             )
         }
         targetConflict?.forEach { entry ->
             block(
                 MigrationOverlayDiagnostics.RENAME_MAPPING_AMBIGUOUS,
                 "Rename mapping target '${entry.toName}' is ambiguous",
-                entry.id,
+                entry,
             )
         }
         val caseConflict = (sources.values + targets.values).firstOrNull { group ->
@@ -321,21 +389,21 @@ object MigrationOverlayValidator {
             block(
                 MigrationOverlayDiagnostics.RENAME_MAPPING_CASE_CONFLICT,
                 "Rename mapping '${entry.fromName}' -> '${entry.toName}' conflicts after case folding",
-                entry.id,
+                entry,
             )
         }
     }
 
     private fun validateRenameChains(
         entries: List<RenameMappingOverlayEntry>,
-        block: (String, String, String?) -> Unit,
+        block: (String, String, MigrationOverlayEntry) -> Unit,
     ) {
         val sources = entries.map { it.sourceKey() }.toSet()
         entries.filter { it.targetKey() in sources }.forEach { entry ->
             block(
                 MigrationOverlayDiagnostics.RENAME_MAPPING_CHAIN_UNSUPPORTED,
                 "Rename mapping '${entry.fromName}' -> '${entry.toName}' forms an unsupported chain",
-                entry.id,
+                entry,
             )
         }
     }

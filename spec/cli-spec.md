@@ -712,6 +712,20 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
 - gerenderter Execute-Stream mischt nicht gemeinsam ausfuehrbare
   `transactionScope`-Werte (`TRANSACTION_SCOPE_UNSUPPORTED`)
+- Rename-Overlay strukturell ungueltig (`primaryBlockedReason =
+  RENAME_MAPPING_INVALID`): stale Fingerprint
+  (`OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT`), mehrdeutige
+  Source-/Target-Namen (`OVERLAY_RENAME_MAPPING_AMBIGUOUS`),
+  Case-Konflikt (`OVERLAY_RENAME_MAPPING_CASE_CONFLICT`), Chain-Rename
+  im selben Slice (`OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED`),
+  doppelter Eintrag (`OVERLAY_RENAME_MAPPING_DUPLICATE`) oder
+  unfreigeschalteter `rename-mapping.objectType` ausserhalb der
+  aktuellen Whitelist `{table, column}`
+  (`OVERLAY_UNKNOWN_ENTRY_KIND`, getaggt mit Rename-Kontext). Der
+  Reason ist additiv: bestehende Reports mit
+  `MANUAL_ACTION_REQUIRED` fuer dieselben Codes bleiben semantisch
+  als blockiert dokumentiert. Generische Overlay-Probleme ohne
+  Rename-Bezug behalten `MANUAL_ACTION_REQUIRED`.
 
 Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 

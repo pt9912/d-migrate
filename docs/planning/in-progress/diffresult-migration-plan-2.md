@@ -1404,6 +1404,22 @@ Akzeptanz:
 > Case-Folding-Konflikte und Kettenrenames im selben Slice. Rendering von
 > `RenameTable`/`RenameColumn` bleibt ein Folgeslice.
 >
+> Status-Update (2026-05-15): F.4 rename-mapping-invalid-enum
+> abgeschlossen (Slice gem. `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`).
+> `MigrationBlockedReason.RENAME_MAPPING_INVALID` ist als letzter
+> Enum-Wert eingefuegt (Ordinals der bestehenden Werte unveraendert).
+> `MigrationOverlayDiagnostic` traegt jetzt strukturierte Provenance-
+> Felder (`entryKind`, `renameObjectType`), die der Application-Layer-
+> Reason-Classifier in `MigrationOverlayPreflight.buildFailureResult(...)`
+> liest, um Rename-spezifische Blocker (`OVERLAY_RENAME_MAPPING_*` +
+> `OVERLAY_UNKNOWN_ENTRY_KIND` mit Rename-Kontext) von generischen
+> Overlay-Blockern zu trennen. Pre-Plan-Gate erzwingt
+> `{table, column}` als Whitelist fuer `rename-mapping.objectType`,
+> mit additivem Parameter `supportedRenameObjectTypes` fuer den
+> spaeteren Objekt-Rename-Slice. `spec/cli-spec.md` §6.1 listet den
+> neuen Exit-8-Fall. `migration-plan.v1` unveraendert (kein
+> Reason-Feld dort serialisiert).
+>
 > Status-Update (2026-05-15): F.4 dependency-projection abgeschlossen
 > (T1–T6 gem. `ImpPlan-0.9.7-F.4-dependency-projection.md`). Die sechs
 > Tranchen liefern: Capability-Carrier + Pre-Plan-Overlay-Gate (T1),

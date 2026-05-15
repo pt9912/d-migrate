@@ -17,9 +17,12 @@ import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
+import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.inspectors.forAll
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.collections.shouldContainAll
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -189,7 +192,25 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
         val report = capturedReports.single()
         report.operations.shouldBeEmpty()
         report.summary.operationsSkipped shouldBe 0
-        report.blockers.single().operationIds.shouldBeEmpty()
+        // F.4 rename-mapping-invalid-enum: the stale rename overlay
+        // emits both an `OVERLAY_STALE_SOURCE_FINGERPRINT` (generic
+        // doc-level) and an `OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT`
+        // (rename-bound) blocker, so the result lists TWO blockers
+        // (one MANUAL_ACTION_REQUIRED, one RENAME_MAPPING_INVALID).
+        // Both must carry an empty operationIds list because the
+        // pre-plan gate runs before DiffPlanner.plan(...) — no
+        // operations have been authorised yet.
+        report.blockers.shouldNotBeEmpty()
+        report.blockers.forAll { it.operationIds.shouldBeEmpty() }
+        // End-to-end pin: primaryBlockedReason actually surfaces as
+        // the new reason string in the report JSON, not just at the
+        // unit-test level. The view exposes it as a name-string so
+        // tooling clients can read it without an enum dependency.
+        report.summary.primaryBlockedReason shouldBe MigrationBlockedReason.RENAME_MAPPING_INVALID.name
+        report.blockers.map { it.reason }.toSet() shouldBe setOf(
+            MigrationBlockedReason.RENAME_MAPPING_INVALID.name,
+            MigrationBlockedReason.MANUAL_ACTION_REQUIRED.name,
+        )
     }
 
     test("pre-plan blocker surfaces both stale-fingerprint diagnostics") {

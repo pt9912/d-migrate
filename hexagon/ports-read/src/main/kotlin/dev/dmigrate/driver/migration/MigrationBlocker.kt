@@ -36,6 +36,22 @@ enum class MigrationBlockedReason {
      * that the runner cannot execute as one safe unit.
      */
     TRANSACTION_SCOPE_UNSUPPORTED,
+
+    /**
+     * F.4 rename-overlay-specific blocker: the operator's rename
+     * mapping is structurally invalid (stale fingerprint, ambiguous
+     * source/target, case conflict, chain rename in the same slice,
+     * duplicate entry, unsupported `objectType` outside the current
+     * whitelist, or `OBJECT_RENAME_UNSUPPORTED` from a renderer).
+     * The operator must edit the rename-mapping overlay to resolve
+     * the conflict; this is NOT a generic "manual action" case where
+     * the schema itself needs operator decisions, so reports
+     * distinguish it from [MANUAL_ACTION_REQUIRED] for tooling
+     * convenience. New value appended at the end of the enum —
+     * existing ordinals stay unchanged so report fixtures that
+     * compare by string see only an additive change.
+     */
+    RENAME_MAPPING_INVALID,
 }
 
 /**
