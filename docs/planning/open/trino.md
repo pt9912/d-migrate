@@ -125,6 +125,10 @@ Interpretation:
     `trustStorePath`, `keystorePath`, `session.<name>`.
   - Sensitive Secrets: `user:password` (Authority), `accessToken`,
     `trustStorePassword`, `keystorePassword`.
+  - Für alle sensiblen Secret-Parameter gilt zusätzlich:
+    - Das Vorhandensein des Secret-Schlüssels ist explizit.
+    - Der Secret-Wert darf nach Decodierung/Trim nicht leer sein; leere Werte führen zu
+      hartem `action_required` (auch in `non_production`).
   - Syntaktisch erlaubt bedeutet nicht automatisch nutzbar:
     - `accessToken`
     - `trustStorePassword`
@@ -240,7 +244,10 @@ Konfiguration der Session-Forwarding-Liste:
 - Normalisierung:
   - Whitespace wird getrimmt, leere Tokens verworfen, Kleinbuchstaben erzwungen.
   - Reihenfolge wird deterministisch sortiert und Duplikate dedupliziert.
-  - Jeder Eintrag muss das Muster `^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$` erfüllen.
+  - Jeder Eintrag muss das Muster `^[a-z](?:[a-z0-9_-]*[a-z0-9_])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)*$` erfüllen.
+  - Das Muster verbietet leere Segmente (z. B. `token.`, `a..b`).
+  - Der Regex wird bei Bedarf über eine neue `DM_TRINO_SESSION_ALLOWLIST_V`-Version erweitert;
+    aktuelle Schreibweise bleibt deterministisch (kleinbuchstabig, Punkt-/Unterstrich-/Bindestrich-Zulässig).
   - Dotted Session-Keys sind erlaubt (z. B. `hive.s3_staging_directory`), sofern das Muster passt.
 - Versionierung:
   - `DM_TRINO_SESSION_ALLOWLIST_V` ist optionaler Versionsmarker.
@@ -261,16 +268,16 @@ Credential-Modell (Phase 1):
 - Optional/empfohlen: Passwort via Umgebungsvariable (z. B. `DM_TRINO_PASSWORD`) oder
   späterer Credential-Provider.
 - `userinfo`-Parsing (Phase 1):
-  - Grammatik nach Decodierung: `userinfo = user [ ":" password ]`
-  - `user` muss vorhanden und nicht leer sein.
-  - Bei vorhandenem `:` gilt `password` als URL-embedded Secret.
-    - Leeres Passwort (`user:` oder Äquivalent nach Decodierung) bleibt ein expliziter
-      Secret-Wert und ist strikt zu behandeln.
-    - URL-embedded Secret (inkl. leer) ist in `production` hart blockiert.
-    - In `non_production` ist URL-embedded Secret nur mit aktivierter
-      Legacy-Geheimnis-Ausnahme erlaubt.
-    - Leeres URL-embedded Passwort (`user:`) ist auch in `non_production` nicht zulässig
-      (`action_required`).
+- Grammatik nach Decodierung: `userinfo = user [ ":" password ]`
+- `user` muss vorhanden und nicht leer sein.
+- Wenn `:` vorhanden ist, muss `password` nach Decodierung/Trim existieren und darf nicht
+  leer sein.
+- Bei vorhandenem `:` gilt `password` als URL-embedded Secret.
+  - Leeres Passwort (`user:` oder Äquivalent nach Decodierung) wird in allen Profilen
+    deterministisch mit `action_required` abgelehnt.
+  - URL-embedded Secret ist in `production` hart blockiert.
+  - In `non_production` ist URL-embedded Secret nur mit aktivierter
+    Legacy-Geheimnis-Ausnahme erlaubt.
   - Nur wenn kein `:` vorhanden ist (`user` ohne Passwort), darf `DM_TRINO_PASSWORD` als
     Fallback für das Passwort genutzt werden. Ist `DM_TRINO_PASSWORD` nicht gesetzt oder leer,
     ist dies ein deterministischer Guard-Fehler (`action_required`) in allen Profilen.
@@ -369,6 +376,8 @@ Hinweis zu Phase-1-Allowlist:
 - Sensitive URL-/Query-Parameter (`user:password`, `accessToken`, `trustStorePassword`,
   `keystorePassword`) in `non_production` ohne aktive Legacy-Geheimnis-Ausnahme
   -> `action_required` mit klarer Diagnose der aktivierenden Flags.
+  - Sensitive Parameter mit explizit gesetztem, aber leerem Wert führen ebenfalls zu
+    `action_required` in allen Profilen.
   - In `production` ist dies immer hart blockiert.
   - In `non_production` gilt dieselbe Blockade, außer bei exakt aktivierter
     Entwickler-Ausnahme (Dreifach-Signatur, siehe oben).
@@ -661,6 +670,9 @@ Voraussetzung für Phase 1, Tranche 2.
 - [ ] In `production` sind `user:password`-URLs sowie `accessToken`, `trustStorePassword`,
   `keystorePassword` als Secret-Properties hart blockiert (`action_required`), unabhängig vom
   aktiven Modul.
+- [ ] Leere Werte bei explizit gesetzten Secret-Parametern (`accessToken`, `trustStorePassword`,
+  `keystorePassword`, `user:password`) führen in allen Profilen deterministisch zu
+  `action_required`.
 - [ ] Legacy-Geheimnis-Ausnahme (`--allow-legacy-trino-secrets` oder
   `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`) ist in Phase 1 nur in `non_production`
   verfügbar und erforderlich, damit Sensitive URL-/Query-Parameter in diesen Modus gelangen.
