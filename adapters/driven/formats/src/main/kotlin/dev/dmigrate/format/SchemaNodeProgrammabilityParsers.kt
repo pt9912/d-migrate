@@ -12,6 +12,10 @@ internal fun parseProcedures(node: JsonNode?): Map<String, ProcedureDefinition> 
             body = childNode.optionalText("body"),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
+            security = childNode.optionalText("security")?.toRoutineSecurity(),
+            definer = childNode.optionalText("definer"),
+            searchPath = childNode["search_path"]?.toStringListOrNull(),
+            sqlMode = childNode.optionalText("sql_mode"),
         )
     }
 
@@ -26,8 +30,18 @@ internal fun parseFunctions(node: JsonNode?): Map<String, FunctionDefinition> =
             body = childNode.optionalText("body"),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
+            security = childNode.optionalText("security")?.toRoutineSecurity(),
+            definer = childNode.optionalText("definer"),
+            searchPath = childNode["search_path"]?.toStringListOrNull(),
+            sqlMode = childNode.optionalText("sql_mode"),
         )
     }
+
+private fun JsonNode.toStringListOrNull(): List<String>? =
+    if (isArray) map { it.asText() } else null
+
+private fun String.toRoutineSecurity(): RoutineSecurity =
+    RoutineSecurity.valueOf(uppercase())
 
 private fun parseParameters(node: JsonNode?): List<ParameterDefinition> {
     if (node == null || !node.isArray) return emptyList()

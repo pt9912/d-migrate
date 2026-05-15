@@ -1,0 +1,16 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+functions:
+  compute_total:
+    parameters:
+      - name: amount
+        type: numeric
+    returns:
+      type: numeric
+    language: plpgsql
+    body: |
+      BEGIN
+        RETURN amount * 1.19;
+      END

@@ -587,14 +587,6 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
         drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
     }
 
-    test("Out-of-matrix operations (Function) become DIALECT_UNSUPPORTED_OPERATION") {
-        val function = dev.dmigrate.core.model.FunctionDefinition(body = "BEGIN RETURN 1; END")
-        val r = planAndUp(SchemaDiff(functionsAdded = listOf(dev.dmigrate.core.diff.NamedFunction("f", function))))
-        r.isBlocked shouldBe true
-        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
-        r.operationsSkipped.size shouldBe 1
-    }
-
     test("Planner blockers (CONSTRAINT_NOT_DIFFABLE) cascade into DIALECT_UNSUPPORTED_OPERATION") {
         val tableWithCheck = TableDefinition(
             columns = mapOf("age" to ColumnDefinition(NeutralType.Integer)),

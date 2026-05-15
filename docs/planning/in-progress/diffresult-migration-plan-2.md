@@ -1026,6 +1026,24 @@ Entscheidung:
   duerfen Delimiter nur als Anzeigeformat ausserhalb des kanonischen Artefakts
   ergaenzen.
 
+> Status-Update (2026-05-15): E.1 Slice A landed (PostgreSQL
+> Functions Up + Down, plan in `../in-progress/ImpPlan-0.9.7-E.1-routine-migration.md`).
+> `FunctionDefinition`/`ProcedureDefinition` tragen jetzt
+> `security`/`definer`/`searchPath`/`sqlMode`; Body-Identitaet laeuft
+> ueber `RoutineBodyNormalizer` (LF + Trim + Trailing-Semicolon) plus
+> SHA-256. PostgreSQL-Renderer emittiert
+> `CREATE [OR REPLACE] FUNCTION` mit Dollar-Quoting, Parameter-Liste,
+> Return-Type, Language, optional `SECURITY` und `SET search_path`.
+> `--generate-rollback` blockiert Down fuer `ReplaceFunction` mit
+> `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`, sobald der Vorbody fehlt;
+> bei bekanntem Vorbody rendert Down `CREATE OR REPLACE FUNCTION` mit
+> dem alten Body. Reports surfacen Bodies nur via
+> `RoutineBodyScrubber.preview(...)`
+> (`hash` + `length` + `scrubbedPreview` + `scrubbingApplied`). Slice
+> B (PostgreSQL Procedures), Slice C (MySQL Routinen ohne
+> DELIMITER), Slice D (Dependency-Sortierung) und Slice E
+> (Down-Body-Recovery) bleiben offen.
+
 ### E.2 Trigger-Migration
 
 Nicht in der ersten Matrix:

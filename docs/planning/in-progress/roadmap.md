@@ -505,6 +505,10 @@ Aktuell offene 0.9.7-Restpunkte:
 - **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
   Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
+  *(2026-05-15: E.1 Slice A landed — PostgreSQL Functions Up+Down via
+  `RoutineBodyNormalizer`/`Scrubber`. Slices B (PG Procedures), C (MySQL),
+  D (Dependency-Sort) und E (Down-Body-Recovery) bleiben offen;
+  Plan in `ImpPlan-0.9.7-E.1-routine-migration.md`.)*
 - **F.0-F.3 Rest**: automatische Daten-Transformationen,
   versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
 - **F.4 Rest**: Dependency-Re-Projection nach Rename

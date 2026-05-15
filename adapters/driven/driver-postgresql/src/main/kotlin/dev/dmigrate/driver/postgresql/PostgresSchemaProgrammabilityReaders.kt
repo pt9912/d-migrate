@@ -41,6 +41,24 @@ internal fun readPostgresViews(
     return result
 }
 
+// E.1 Routine-Migration Slice A carve-out:
+// `security` / `definer` / `searchPath` / `sqlMode` are NOT yet
+// populated from the live database. Sourcing them requires reading
+// `pg_proc.prosecdef`, `pg_proc.proowner` (joined to `pg_authid`)
+// and `pg_proc.proconfig` (joined to `pg_db_role_setting`) which is
+// non-trivial because of permission scoping and out-of-information-
+// schema queries. Until Slice E lands the reverse path leaves the
+// fields null, with two consequences:
+//   1. File-to-DB diffs against a schema file that declares
+//      `security: definer` always emit `ReplaceFunction`; this is
+//      logged as the documented caveat in the slice plan §3.
+//   2. The fingerprint computed from a reverse-read schema differs
+//      from the fingerprint computed from the same schema authored
+//      in a file with explicit identity attributes — by design,
+//      since the file is more specific.
+// A later slice will widen `listFunctions`/`listProcedures` to
+// project these attributes.
+
 internal fun readPostgresFunctions(
     session: JdbcOperations,
     schema: String,
@@ -62,6 +80,11 @@ internal fun readPostgresFunctions(
             body = row["routine_definition"] as? String,
             deterministic = (row["is_deterministic"] as? String) == "YES",
             sourceDialect = "postgresql",
+            // Reverse-read carve-out (see file-level comment).
+            security = null,
+            definer = null,
+            searchPath = null,
+            sqlMode = null,
         )
     }
     return result
@@ -83,6 +106,11 @@ internal fun readPostgresProcedures(
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
             sourceDialect = "postgresql",
+            // Reverse-read carve-out (see file-level comment).
+            security = null,
+            definer = null,
+            searchPath = null,
+            sqlMode = null,
         )
     }
     return result

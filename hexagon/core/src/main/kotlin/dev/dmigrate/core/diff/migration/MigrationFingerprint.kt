@@ -194,6 +194,16 @@ object MigrationFingerprint {
                 .append(SEP).append("returns=").append(fn.returns?.type ?: "")
                 .append(SEP).append("body=").append(fn.body ?: "")
                 .append(SEP).append("source_dialect=").append(fn.sourceDialect ?: "")
+                // E.1 Slice A: include the routine identity attrs in
+                // the fingerprint so two schemas that differ only in
+                // security/definer/searchPath/sqlMode produce
+                // different hashes. Without this, skip-if-unchanged
+                // caches would conclude "no change" while the
+                // comparator emits ReplaceFunction.
+                .append(SEP).append("security=").append(fn.security?.name ?: "")
+                .append(SEP).append("definer=").append(fn.definer ?: "")
+                .append(SEP).append("search_path=").append(fn.searchPath?.joinToString(",") ?: "")
+                .append(SEP).append("sql_mode=").append(fn.sqlMode ?: "")
                 .append('\n')
         }
     }
@@ -205,6 +215,10 @@ object MigrationFingerprint {
                 .append(SEP).append("language=").append(proc.language ?: "")
                 .append(SEP).append("body=").append(proc.body ?: "")
                 .append(SEP).append("source_dialect=").append(proc.sourceDialect ?: "")
+                .append(SEP).append("security=").append(proc.security?.name ?: "")
+                .append(SEP).append("definer=").append(proc.definer ?: "")
+                .append(SEP).append("search_path=").append(proc.searchPath?.joinToString(",") ?: "")
+                .append(SEP).append("sql_mode=").append(proc.sqlMode ?: "")
                 .append('\n')
         }
     }

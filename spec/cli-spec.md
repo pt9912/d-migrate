@@ -597,7 +597,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--dialect` | Bedingt | Dialekt | Pflicht bei Datei-zu-Datei-Modus; aus Connection ableitbar bei DB-Target |
 | `--output` | Nein | Pfad | Up-SQL-Ausgabe; ohne Flag bei renderbarem Dry-Run nach `stdout` |
 | `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht bei `--generate-rollback` ohne `--plan-only` |
-| `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen |
+| `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen. Bei Routine-Replace (`ReplaceFunction`/`ReplaceProcedure`) blockt der Renderer mit `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` und `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE`, wenn der alte Routine-Body nicht vollstaendig bekannt ist. Bei Datei-zu-DB darf der Reverse-Pfad alte Bodies aus der Live-DB lesen; bei Datei-zu-Datei muss der Operator den Vorbody im Schema-File mitliefern oder ohne `--generate-rollback` migrieren. Verwandte Render-Blocker ohne `--generate-rollback`-Bezug: `ROUTINE_BODY_UNKNOWN` (Up-Body fehlt), `ROUTINE_REPLACE_UP_BODY_UNKNOWN` (Replace-Up-Body fehlt), `ROUTINE_BODY_DOLLAR_TAG_COLLISION` (Body enthaelt den Renderer-Dollar-Tag `$body$`) |
 | `--plan-only` | Nein | Boolean | Nur Plan-/Risiko-Report, kein SQL; in dieser Kombination ist `--rollback-output` unzulässig |
 | `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |

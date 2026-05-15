@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff
 
+import dev.dmigrate.core.diff.routine.RoutineBodyNormalizer
 import dev.dmigrate.core.model.*
 
 class SchemaComparator {
@@ -159,6 +160,17 @@ class SchemaComparator {
         left: FunctionDefinition,
         right: FunctionDefinition,
     ): FunctionDiff? {
+        // E.1 Slice A: body comparison runs through the normaliser
+        // so trivial whitespace / trailing-semicolon / line-ending
+        // changes do not trip a spurious ReplaceFunction. Identity
+        // additionally covers security / definer / searchPath /
+        // sqlMode — any divergence there triggers Replace even when
+        // bodies are byte-identical, because those attributes change
+        // privilege scope and resolution rules.
+        val leftBodyHash = RoutineBodyNormalizer.hash(left.body)
+        val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
+        val bodyChange = if (leftBodyHash == rightBodyHash) null
+            else ValueChange(left.body, right.body)
         val diff = FunctionDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
@@ -166,8 +178,12 @@ class SchemaComparator {
             returns = valueChangeOrNull(left.returns, right.returns),
             language = valueChangeOrNull(left.language, right.language),
             deterministic = valueChangeOrNull(left.deterministic, right.deterministic),
-            body = valueChangeOrNull(left.body, right.body),
+            body = bodyChange,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
+            security = valueChangeOrNull(left.security, right.security),
+            definer = valueChangeOrNull(left.definer, right.definer),
+            searchPath = valueChangeOrNull(left.searchPath, right.searchPath),
+            sqlMode = valueChangeOrNull(left.sqlMode, right.sqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }

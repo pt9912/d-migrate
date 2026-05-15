@@ -82,6 +82,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OTHER -> renderOtherOp(op, ctx)
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
+            OpCategory.FUNCTION -> renderFunctionOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -123,10 +124,12 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropSequence,
         -> OpCategory.SEQUENCE
 
-        is DiffOperation.AlterCustomType,
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
+        -> OpCategory.FUNCTION
+
+        is DiffOperation.AlterCustomType,
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
@@ -177,10 +180,19 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderFunctionOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateFunction -> PostgresDiffFunctionOps.renderCreateFunction(op, ctx)
+            is DiffOperation.ReplaceFunction -> PostgresDiffFunctionOps.renderReplaceFunction(op, ctx)
+            is DiffOperation.DropFunction -> PostgresDiffFunctionOps.renderDropFunction(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised FUNCTION but renderFunctionOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first PostgreSQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, SEQUENCE, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, SEQUENCE, FUNCTION, UNSUPPORTED }
 }

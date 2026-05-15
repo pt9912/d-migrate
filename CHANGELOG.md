@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice A** — PostgreSQL functions are now
+  diffable and renderable.
+  `FunctionDefinition` / `ProcedureDefinition` gain optional
+  `security` / `definer` / `searchPath` / `sqlMode` fields; the new
+  `RoutineSecurity` enum (`INVOKER`/`DEFINER`) is part of routine
+  identity. Body equality is decided through
+  `RoutineBodyNormalizer` (LF collapse, line-trailing whitespace
+  strip, single trailing semicolon removal) plus a SHA-256 hash —
+  cross-platform schema files no longer trip spurious
+  `ReplaceFunction` ops on CRLF / trailing-newline differences. The
+  PostgreSQL renderer (`PostgresDiffFunctionOps`) emits
+  `CREATE FUNCTION` / `CREATE OR REPLACE FUNCTION` / `DROP FUNCTION`
+  with dollar-quoted bodies (`$body$`), parameter lists, return
+  types, language, and optional `SECURITY` / `SET search_path`
+  clauses. `--generate-rollback` blocks `ReplaceFunction` Down with
+  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` + `ROLLBACK_NOT_POSSIBLE` when
+  the prior body is unknown (file-to-file with body omitted); when
+  the prior body is known (file-to-DB reverse read or schema file
+  with full before-body), Down renders `CREATE OR REPLACE FUNCTION`
+  reverting to the prior body. Procedure / trigger ops remain
+  blocked with `DIALECT_UNSUPPORTED_OPERATION` until Slice B / E.2.
+  Reports surface bodies through
+  `RoutineBodyScrubber.preview(...)` — a
+  `{hash, length, scrubbedPreview, scrubbingApplied}` shape that
+  masks password / token / api-key / JDBC-URL credentials before any
+  preview lands in a diagnostic or artefact. MySQL routine
+  rendering, dependency sorting between routines / views / triggers
+  / tables, and Slice E down-render improvements stay scheduled for
+  later slices in the same ImpPlan.
 - **F.4 cli-inline-overlay** — `schema migrate` accepts two new
   repeatable flags for inline rename mappings:
   - `--rename-table <from>:<to>`

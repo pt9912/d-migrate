@@ -22,6 +22,8 @@ internal fun buildProcedures(
             procedureNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) procedureNode.put("source_dialect", definition.sourceDialect)
+        writeRoutineIdentityAttributes(mapper, procedureNode, definition.security, definition.definer,
+            definition.searchPath, definition.sqlMode)
         node.set<ObjectNode>(name, procedureNode)
     }
     return node
@@ -48,9 +50,30 @@ internal fun buildFunctions(
             functionNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) functionNode.put("source_dialect", definition.sourceDialect)
+        writeRoutineIdentityAttributes(mapper, functionNode, definition.security, definition.definer,
+            definition.searchPath, definition.sqlMode)
         node.set<ObjectNode>(name, functionNode)
     }
     return node
+}
+
+/**
+ * E.1 Routine-Migration Slice A: persist the new routine identity
+ * attributes only when set, so existing schema files without these
+ * keys keep their byte-for-byte shape after a roundtrip.
+ */
+private fun writeRoutineIdentityAttributes(
+    mapper: ObjectMapper,
+    target: ObjectNode,
+    security: RoutineSecurity?,
+    definer: String?,
+    searchPath: List<String>?,
+    sqlMode: String?,
+) {
+    if (security != null) target.put("security", security.name.lowercase())
+    if (definer != null) target.put("definer", definer)
+    if (searchPath != null) target.set<ArrayNode>("search_path", stringArray(mapper, searchPath))
+    if (sqlMode != null) target.put("sql_mode", sqlMode)
 }
 
 private fun buildParameters(
