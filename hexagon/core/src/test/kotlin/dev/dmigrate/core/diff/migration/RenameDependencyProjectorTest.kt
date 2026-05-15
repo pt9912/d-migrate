@@ -61,7 +61,7 @@ class RenameDependencyProjectorTest : FunSpec({
         overlaySource = "ovl/rename.json",
         overlayEntryId = "entry-1",
         overlayHash = "sha256:abc",
-        structurallyEqual = true,
+        renamable = true,
         structuralDifferences = emptyList(),
         staleReferenceObject = null,
     )
@@ -78,7 +78,7 @@ class RenameDependencyProjectorTest : FunSpec({
         overlaySource = "ovl/rename.json",
         overlayEntryId = "entry-c",
         overlayHash = "sha256:def",
-        structurallyEqual = true,
+        renamable = true,
         structuralDifferences = emptyList(),
         referencingObject = null,
     )
@@ -132,7 +132,7 @@ class RenameDependencyProjectorTest : FunSpec({
             val schema = schemaWith("users" to simpleTable())
             val item = RenameTablePlanningItem(
                 candidate = tableCandidate().copy(
-                    structurallyEqual = false,
+                    renamable = false,
                     structuralDifferences = listOf("removed columns [legacy_id]"),
                 ),
             )
@@ -156,7 +156,7 @@ class RenameDependencyProjectorTest : FunSpec({
             val table = TableDiff(name = "users")
             val item = RenameColumnPlanningItem(
                 candidate = columnCandidate().copy(
-                    structurallyEqual = false,
+                    renamable = false,
                     structuralDifferences = listOf("type Text(200) -> Text(255)"),
                 ),
             )

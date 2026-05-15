@@ -58,20 +58,30 @@ internal data class RenameTableCandidate(
     val overlayEntryId: String,
     val overlayHash: String?,
     /**
-     * True when [CanonicalPayload.table] for source and target is
-     * identical. The pass-through projector only folds renames whose
-     * candidate is structurally equal; mixed cases fall back to
-     * drop+add until T4 synthesises the intra-object delta operations.
+     * True when the projector may emit a native `Rename*` operation
+     * for this candidate. This is satisfied by **either**:
+     *
+     * - `CanonicalPayload.table` for source and target is byte-
+     *   identical (T2 pass-through happy path), **or**
+     * - the source/target differ but
+     *   [RenameIntraObjectDeltaSynthesizer] covers every difference
+     *   via [RenamePlanningItem.postRenameDeltaOperations] (T4
+     *   mixed-case synthesis).
+     *
+     * `false` means the projector falls back to drop+create with a
+     * `RENAME_OVERLAY_STRUCTURAL_MISMATCH` warning — the synthesiser
+     * could not project at least one residual difference (today: table
+     * metadata drift, plus the T5 cross-object dependency cases).
      */
-    val structurallyEqual: Boolean,
+    val renamable: Boolean,
     /** Operator-friendly summary of the deltas surfaced when the candidate is rejected. */
     val structuralDifferences: List<String>,
     /**
      * Non-null when another table in the diff still references the old
      * name (e.g. an FK targeting `users_old` after `users_old -> users`).
-     * The pass-through projector treats this as a fallback trigger so
-     * the cross-table reference is not silently broken; the T3 slice
-     * lifts the check into a dialect-aware policy.
+     * The projector treats this as a fallback trigger so the cross-
+     * table reference is not silently broken; T5 lifts this into a
+     * dialect-aware policy decision.
      */
     val staleReferenceObject: String?,
 )
@@ -88,13 +98,20 @@ internal data class RenameColumnCandidate(
     val overlaySource: String,
     val overlayEntryId: String,
     val overlayHash: String?,
-    val structurallyEqual: Boolean,
+    /**
+     * Same semantics as [RenameTableCandidate.renamable]: true when
+     * the projector may emit a native `RenameColumn` (either source
+     * and target are byte-identical, or
+     * [RenameIntraObjectDeltaSynthesizer] covered every drift via
+     * `postRenameDeltaOperations`).
+     */
+    val renamable: Boolean,
     val structuralDifferences: List<String>,
     /**
      * Non-null when an index, constraint, or primary-key change in the
      * same table touches either the old or the new column name. The
-     * pass-through projector falls back to drop+add so the dependency
-     * is not silently re-pointed at the new name.
+     * projector falls back to drop+add so the dependency is not
+     * silently re-pointed at the new name (T5 cross-object territory).
      */
     val referencingObject: String?,
 )

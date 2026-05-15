@@ -13,8 +13,10 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.DependencyInfo
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
@@ -258,5 +260,68 @@ class RenameOverlayMapperT4Test : FunSpec({
         val renameIndex = plan.operations.indexOf(rename)
         (plan.operations.indexOf(addCol) > renameIndex) shouldBe true
         (plan.operations.indexOf(addIdx) > renameIndex) shouldBe true
+    }
+
+    test("synthetic AlterColumnType triggers the same view-column-dep safety pass as a regular alter") {
+        // Plan §4.4 point 3: a column rename whose synthesised
+        // AlterColumnType targets a column referenced by a view —
+        // with table-level dependency only, no column-level deps —
+        // MUST trigger `VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS` the
+        // same way a normally-mapped column-alter does. This pins
+        // that the safety pass runs on the projection output, not
+        // only on the pre-rename mapper output.
+        val sharedCols = mapOf(
+            "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+        )
+        val beforeCol = ColumnDefinition(type = NeutralType.Text(maxLength = 100))
+        val afterCol = ColumnDefinition(type = NeutralType.Text(maxLength = 500))
+        val beforeTable = TableDefinition(
+            columns = sharedCols + mapOf("old_email" to beforeCol),
+            primaryKey = listOf("id"),
+        )
+        val afterTable = TableDefinition(
+            columns = sharedCols + mapOf("new_email" to afterCol),
+            primaryKey = listOf("id"),
+        )
+        // The view declares a TABLE-level dependency on `users`
+        // without column-level info. Per `detectViewColumnDepsBlockers`
+        // any op altering a column of `users` blocks because the
+        // planner cannot prove the view does not reference that
+        // column.
+        val viewDef = ViewDefinition(
+            query = "SELECT 1 FROM users",
+            dependencies = DependencyInfo(tables = listOf("users")),
+        )
+        val current = emptySchema().copy(
+            tables = mapOf("users" to beforeTable),
+            views = mapOf("email_view" to viewDef),
+        )
+        val desired = emptySchema().copy(
+            tables = mapOf("users" to afterTable),
+            views = mapOf("email_view" to viewDef),
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "users",
+                    columnsAdded = mapOf("new_email" to afterCol),
+                    columnsRemoved = mapOf("old_email" to beforeCol),
+                ),
+            ),
+        )
+
+        val plan = planner.plan(
+            current = current,
+            desired = desired,
+            schemaDiff = diff,
+            migrationOverlays = listOf(renameOverlay("column", "users.old_email", "users.new_email")),
+        )
+
+        // The synthetic AlterColumnType must exist in the final plan…
+        plan.operations.filterIsInstance<DiffOperation.AlterColumnType>().size shouldBe 1
+        // …and the view-column-dep safety pass must flag it just like
+        // a normally-mapped column-alter would.
+        plan.diagnostics.map { it.code } shouldContain "VIEW_DEPENDS_ON_TABLE_LACKS_COLUMN_DEPS"
+        plan.hasBlockers shouldBe true
     }
 })

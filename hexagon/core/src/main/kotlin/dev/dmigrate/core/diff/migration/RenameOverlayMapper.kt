@@ -140,8 +140,8 @@ internal object RenameOverlayMapper {
             // Drift that the synthesiser cannot project (today: table
             // metadata) keeps the candidate structurally-unequal so the
             // projector falls back to drop+create.
-            val structurallyEqual = synthesis.isComplete
-            val structuralDifferences = if (structurallyEqual) {
+            val renamable = synthesis.isComplete
+            val structuralDifferences = if (renamable) {
                 emptyList()
             } else {
                 synthesis.residualDifferences.ifEmpty {
@@ -149,11 +149,13 @@ internal object RenameOverlayMapper {
                         .ifEmpty { listOf("structural difference detected") }
                 }
             }
-            // Skip the stale-reference probe when the candidate is
-            // already going to fall back: the warning would otherwise
-            // override the structural-mismatch diagnostic the projector
-            // is about to emit.
-            val staleRef = if (structurallyEqual) staleReferenceToOldName(diff, from) else null
+            // Only probe the cross-table FK references when the
+            // projector is about to emit a `RenameTable`. A
+            // non-renamable candidate is already going to drop+create
+            // and surface a structural-mismatch warning — adding a
+            // stale-reference warning on top would shadow that
+            // diagnostic without changing the outcome.
+            val staleRef = if (renamable) staleReferenceToOldName(diff, from) else null
             items += RenameTablePlanningItem(
                 candidate = RenameTableCandidate(
                     id = candidateId,
@@ -162,11 +164,11 @@ internal object RenameOverlayMapper {
                     overlaySource = mapping.source,
                     overlayEntryId = mapping.entryId,
                     overlayHash = mapping.overlayHash,
-                    structurallyEqual = structurallyEqual,
+                    renamable = renamable,
                     structuralDifferences = structuralDifferences,
                     staleReferenceObject = staleRef,
                 ),
-                postRenameDeltaOperations = if (structurallyEqual) synthesis.operations else emptyList(),
+                postRenameDeltaOperations = if (renamable) synthesis.operations else emptyList(),
             )
         }
         return items
@@ -208,8 +210,8 @@ internal object RenameOverlayMapper {
                     after = added,
                 )
             }
-            val structurallyEqual = synthesis.isComplete
-            val structuralDifferences = if (structurallyEqual) {
+            val renamable = synthesis.isComplete
+            val structuralDifferences = if (renamable) {
                 emptyList()
             } else {
                 synthesis.residualDifferences.ifEmpty {
@@ -217,7 +219,7 @@ internal object RenameOverlayMapper {
                         .ifEmpty { listOf("structural difference detected") }
                 }
             }
-            val referencingObject = if (structurallyEqual) {
+            val referencingObject = if (renamable) {
                 referencingObjectFor(table, mapping.fromColumn, mapping.toColumn)
             } else {
                 null
@@ -231,11 +233,11 @@ internal object RenameOverlayMapper {
                     overlaySource = mapping.source,
                     overlayEntryId = mapping.entryId,
                     overlayHash = mapping.overlayHash,
-                    structurallyEqual = structurallyEqual,
+                    renamable = renamable,
                     structuralDifferences = structuralDifferences,
                     referencingObject = referencingObject,
                 ),
-                postRenameDeltaOperations = if (structurallyEqual) synthesis.operations else emptyList(),
+                postRenameDeltaOperations = if (renamable) synthesis.operations else emptyList(),
             )
         }
         return items

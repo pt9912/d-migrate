@@ -51,7 +51,7 @@ internal class RenameDependencyProjector(
         for (item in items) {
             val candidate = item.candidate
             when {
-                !candidate.structurallyEqual -> {
+                !candidate.renamable -> {
                     diagnostics += RenameOverlayMapper.structuralMismatchTableDiagnostic(candidate)
                 }
                 candidate.staleReferenceObject != null -> {
@@ -87,7 +87,7 @@ internal class RenameDependencyProjector(
         for (item in items) {
             val candidate = item.candidate
             when {
-                !candidate.structurallyEqual -> {
+                !candidate.renamable -> {
                     diagnostics += RenameOverlayMapper.structuralMismatchColumnDiagnostic(candidate)
                 }
                 candidate.referencingObject != null -> {

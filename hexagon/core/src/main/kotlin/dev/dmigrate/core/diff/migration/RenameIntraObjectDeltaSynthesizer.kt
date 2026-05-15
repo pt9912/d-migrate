@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.TableComparator
+import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
@@ -42,7 +43,11 @@ import dev.dmigrate.core.model.TableDefinition
  *   renamed object, view bodies referring to the old name, …) — these
  *   are reflected via the existing `staleReferenceObject` /
  *   `referencingObject` mapper-pre-flagged signals, not by this
- *   synthesiser.
+ *   synthesiser. View-column-dependency protection
+ *   (`DiffPlanner.detectViewColumnDepsBlockers` / Plan §G.3 view
+ *   split) runs on the final flat operation list and treats a
+ *   synthesised `AlterColumn*` the same way it treats a regular one
+ *   — see `RenameOverlayMapperT4Test`'s G.3 safety test.
  *
  * The synthesised operations carry `dependencies = setOf(candidateId)`
  * so the planner's topological sorter runs them strictly after the
@@ -114,6 +119,12 @@ internal object RenameIntraObjectDeltaSynthesizer {
         val ops = mutableListOf<DiffOperation>()
         val residual = mutableListOf<String>()
 
+        // Emission order is type → nullability → default. No
+        // dialect renderer treats these three as an ordered tuple
+        // — each is its own statement, and the topo sorter only
+        // orders against `dependencies`. Keep the order stable so
+        // golden-file snapshots and dependency-rewrite paths stay
+        // deterministic.
         if (before.type != after.type) {
             ops += DiffOperation.AlterColumnType(
                 id = OperationIdFactory.makeId("AlterColumnType", ref, "${before.type}->${after.type}"),
@@ -164,7 +175,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
 
     private fun emitColumnOps(
         tableName: String,
-        diff: dev.dmigrate.core.diff.TableDiff,
+        diff: TableDiff,
         candidateId: String,
         ops: MutableList<DiffOperation>,
     ) {
@@ -220,7 +231,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
 
     private fun emitConstraintOps(
         tableName: String,
-        diff: dev.dmigrate.core.diff.TableDiff,
+        diff: TableDiff,
         candidateId: String,
         ops: MutableList<DiffOperation>,
     ) {
@@ -264,7 +275,7 @@ internal object RenameIntraObjectDeltaSynthesizer {
 
     private fun emitIndexOps(
         tableName: String,
-        diff: dev.dmigrate.core.diff.TableDiff,
+        diff: TableDiff,
         candidateId: String,
         ops: MutableList<DiffOperation>,
     ) {
@@ -306,10 +317,13 @@ internal object RenameIntraObjectDeltaSynthesizer {
 
     private fun emitPrimaryKeyOps(
         tableName: String,
-        diff: dev.dmigrate.core.diff.TableDiff,
+        diff: TableDiff,
         candidateId: String,
         ops: MutableList<DiffOperation>,
     ) {
+        // Mirrors `OperationMapper.mapTablePrimaryKey`: PK reshape
+        // (both sides non-empty) emits `DropPrimaryKey` + `AddPrimaryKey`
+        // — the two `isNotEmpty()` guards are independent on purpose.
         val pk = diff.primaryKey ?: return
         val ref = DiffObjectRef(DiffObjectType.PRIMARY_KEY, listOf(tableName))
         if (pk.before.isNotEmpty()) {

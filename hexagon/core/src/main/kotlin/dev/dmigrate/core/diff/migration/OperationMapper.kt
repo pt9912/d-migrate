@@ -120,6 +120,11 @@ internal object OperationMapper {
 
     private fun disambiguateOps(ops: List<DiffOperation>): List<DiffOperation> {
         if (ops.isEmpty()) return ops
+        // `OperationIdFactory.disambiguate` assigns suffixes
+        // monotonically (first occurrence keeps the base id, second
+        // gets `#2`, …). The rewrite map below is therefore
+        // single-target per source key — `idRewrites[id] ?: id` cannot
+        // collapse two distinct dependency references.
         val pairs = ops.mapIndexed { idx, op -> op.id to idx }
         val resolved = OperationIdFactory.disambiguate(pairs)
         val idRewrites = mutableMapOf<String, String>()
