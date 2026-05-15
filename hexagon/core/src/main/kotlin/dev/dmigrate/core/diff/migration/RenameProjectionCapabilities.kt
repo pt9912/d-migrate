@@ -65,22 +65,11 @@ data class RenameProjectionCapabilities(
 ) {
     companion object {
         /**
-         * Conservative default for a dialect-less call site (currently
-         * tests). PostgreSQL is the most permissive policy in the F.4
-         * matrix; production paths set [dialect] explicitly via the
-         * application-layer factory.
-         */
-        val FILE_ONLY: RenameProjectionCapabilities =
-            RenameProjectionCapabilities(
-                dialect = RenameProjectionDialect.POSTGRESQL,
-                source = RenameCapabilitySource.FILE_ONLY,
-            )
-
-        /**
-         * Builder for tests and the application factory: starts from
-         * FILE_ONLY and pins the dialect. Avoids spreading
-         * `RenameProjectionCapabilities(dialect = …)` constructor
-         * calls throughout the codebase.
+         * Conservative file-only capability bundle for the given
+         * dialect. Tests and the application factory pin dialect
+         * explicitly — there is no global `FILE_ONLY` constant
+         * because that would force a default dialect choice and
+         * silently bind every dialect-less caller to one policy.
          */
         fun fileOnly(dialect: RenameProjectionDialect): RenameProjectionCapabilities =
             RenameProjectionCapabilities(dialect = dialect, source = RenameCapabilitySource.FILE_ONLY)

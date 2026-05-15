@@ -23,10 +23,13 @@ import io.kotest.matchers.types.shouldBeInstanceOf
  * Acceptance per Plan-2 §F.4 §4.3:
  *
  * - Per dialect at least one AUTOMATIC path + one BLOCKED path.
- * - `DefaultValue.FunctionCall` in the rename environment blocks
- *   conservatively across all dialects.
- * - SQLite blocks unless capabilities are pinned with `>= 3.26` AND
- *   `legacy_alter_table == false` AND a non-FILE_ONLY source.
+ * - `DefaultValue.FunctionCall` defaults whose function-name string
+ *   references the renamed column's old name conservatively block
+ *   across all dialects.
+ * - SQLite column renames block unless capabilities are pinned with
+ *   `>= 3.26` AND `legacy_alter_table == false` AND a non-FILE_ONLY
+ *   source; SQLite table renames are not gated (engine updates the
+ *   catalog identity natively).
  */
 class RenameDependencyProjectorTest : FunSpec({
 
@@ -125,7 +128,7 @@ class RenameDependencyProjectorTest : FunSpec({
             projection.operations[1] shouldBe syntheticDelta
         }
 
-        test("structural mismatch emits RENAME_OVERLAY_STRUCTURAL_MISMATCH, not policy check") {
+        test("structural mismatch on table candidate emits RENAME_OVERLAY_STRUCTURAL_MISMATCH") {
             val schema = schemaWith("users" to simpleTable())
             val item = RenameTablePlanningItem(
                 candidate = tableCandidate().copy(
@@ -138,12 +141,41 @@ class RenameDependencyProjectorTest : FunSpec({
             projection.diagnostics.single().code shouldBe RenameOverlayMapper.STRUCTURAL_MISMATCH
         }
 
-        test("staleReferenceObject emits RENAME_OVERLAY_DEPENDENCY_PROJECTION_REQUIRED, not policy check") {
+        test("staleReferenceObject on table candidate emits RENAME_OVERLAY_DEPENDENCY_PROJECTION_REQUIRED") {
             val schema = schemaWith("users" to simpleTable())
             val item = RenameTablePlanningItem(
                 candidate = tableCandidate().copy(staleReferenceObject = "orders.fk_users"),
             )
             val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            projection.operations.shouldBeEmpty()
+            projection.diagnostics.single().code shouldBe RenameOverlayMapper.DEPENDENCY_PROJECTION_REQUIRED
+        }
+
+        test("structural mismatch on column candidate emits RENAME_OVERLAY_STRUCTURAL_MISMATCH") {
+            val schema = schemaWith("users" to simpleTable())
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(
+                candidate = columnCandidate().copy(
+                    structurallyEqual = false,
+                    structuralDifferences = listOf("type Text(200) -> Text(255)"),
+                ),
+            )
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
+            projection.operations.shouldBeEmpty()
+            projection.diagnostics.single().code shouldBe RenameOverlayMapper.STRUCTURAL_MISMATCH
+        }
+
+        test("referencingObject on column candidate emits RENAME_OVERLAY_DEPENDENCY_PROJECTION_REQUIRED") {
+            // Symmetric to the table-side staleReferenceObject case above:
+            // when the mapper pre-flags a same-table referencing object on
+            // the column candidate, the projector emits the existing
+            // mapper-pinned diagnostic without consulting the policy.
+            val schema = schemaWith("users" to simpleTable())
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(
+                candidate = columnCandidate().copy(referencingObject = "index ix_users_email"),
+            )
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
             projection.operations.shouldBeEmpty()
             projection.diagnostics.single().code shouldBe RenameOverlayMapper.DEPENDENCY_PROJECTION_REQUIRED
         }
@@ -155,8 +187,11 @@ class RenameDependencyProjectorTest : FunSpec({
         val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.POSTGRESQL)
         val projector = RenameDependencyProjector(capabilities)
 
-        test("AUTOMATIC: column rename in a table without function-call defaults folds the rename") {
-            val schema = schemaWith("users" to simpleTable())
+        test("AUTOMATIC: column rename in a table with no related FunctionCall defaults folds the rename") {
+            // A FunctionCall like `now()` does not reference the renamed
+            // column's old name, so the substring-match probe leaves it
+            // alone — the rename folds.
+            val schema = schemaWith("users" to simpleTable(extraDefault = DefaultValue.FunctionCall("now()")))
             val table = TableDiff(name = "users")
             val item = RenameColumnPlanningItem(candidate = columnCandidate())
             val projection = projector.projectColumns(listOf(item), table, schema, schema)
@@ -166,8 +201,12 @@ class RenameDependencyProjectorTest : FunSpec({
             projection.absorbedToColumns shouldContainExactly setOf("email")
         }
 
-        test("BLOCKED: column rename in a table that also has a FunctionCall default is rejected") {
-            val schema = schemaWith("users" to simpleTable(extraDefault = DefaultValue.FunctionCall("now()")))
+        test("BLOCKED: column rename when a FunctionCall default references the old column name") {
+            val schema = schemaWith(
+                "users" to simpleTable(
+                    extraDefault = DefaultValue.FunctionCall("compute_hash(email_addr)"),
+                ),
+            )
             val table = TableDiff(name = "users")
             val item = RenameColumnPlanningItem(candidate = columnCandidate())
             val projection = projector.projectColumns(listOf(item), table, schema, schema)
@@ -176,8 +215,20 @@ class RenameDependencyProjectorTest : FunSpec({
             val diag = projection.diagnostics.single()
             diag.code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
             diag.severity shouldBe DiffDiagnostic.Severity.WARNING
-            diag.message.shouldContain("DefaultValue.FunctionCall")
-            diag.message.shouldContain("now()")
+            diag.message.shouldContain("compute_hash(email_addr)")
+            diag.message.shouldContain("email_addr")
+        }
+
+        test("AUTOMATIC: table rename never runs the FunctionCall probe") {
+            // Defaults like now()/uuid() exist on columns and don't
+            // reference the table name. A table rename must not block
+            // on the table's column defaults.
+            val schema = schemaWith("users" to simpleTable(extraDefault = DefaultValue.FunctionCall("now()")))
+            val item = RenameTablePlanningItem(candidate = tableCandidate())
+            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+
+            projection.operations.single().shouldBeInstanceOf<DiffOperation.RenameTable>()
+            projection.diagnostics.shouldBeEmpty()
         }
     }
 
@@ -185,18 +236,20 @@ class RenameDependencyProjectorTest : FunSpec({
         val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL)
         val projector = RenameDependencyProjector(capabilities)
 
-        test("AUTOMATIC: table rename without function-call defaults folds the rename") {
-            val schema = schemaWith("users" to simpleTable())
+        test("AUTOMATIC: table rename folds without consulting column defaults") {
+            val schema = schemaWith("users" to simpleTable(extraDefault = DefaultValue.FunctionCall("uuid()")))
             val item = RenameTablePlanningItem(candidate = tableCandidate())
             val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
 
             projection.operations.single().shouldBeInstanceOf<DiffOperation.RenameTable>()
-            projection.absorbedToNames shouldContainExactly setOf("users")
+            projection.diagnostics.shouldBeEmpty()
         }
 
-        test("BLOCKED: column rename in a table with a FunctionCall default is rejected") {
+        test("BLOCKED: column rename when a FunctionCall default references the old column name") {
             val schema = schemaWith(
-                "users" to simpleTable(extraDefault = DefaultValue.FunctionCall("uuid()")),
+                "users" to simpleTable(
+                    extraDefault = DefaultValue.FunctionCall("substring_index(email_addr, '@', 1)"),
+                ),
             )
             val table = TableDiff(name = "users")
             val item = RenameColumnPlanningItem(candidate = columnCandidate())
@@ -208,20 +261,32 @@ class RenameDependencyProjectorTest : FunSpec({
     }
 
     context("SQLite policy") {
-        test("BLOCKED: FILE_ONLY without pinned capabilities blocks even simple renames") {
+        test("AUTOMATIC: table rename works without pinned capabilities (engine updates the catalog)") {
             val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.SQLITE)
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
             val item = RenameTablePlanningItem(candidate = tableCandidate())
             val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
 
+            projection.operations.single().shouldBeInstanceOf<DiffOperation.RenameTable>()
+            projection.diagnostics.shouldBeEmpty()
+        }
+
+        test("BLOCKED: column rename without pinned capabilities") {
+            val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.SQLITE)
+            val projector = RenameDependencyProjector(capabilities)
+            val schema = schemaWith("users" to simpleTable())
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
+
             projection.operations.shouldBeEmpty()
             val diag = projection.diagnostics.single()
             diag.code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
-            diag.message.shouldContain("SQLite rename-dependency projection requires pinned engine capabilities")
+            diag.message.shouldContain("SQLite column-rename propagation through views and triggers requires")
         }
 
-        test("AUTOMATIC: TEST_PINNED with version >= 3.26 and legacy_alter_table=false folds the rename") {
+        test("AUTOMATIC: column rename with TEST_PINNED + version >= 3.26 + legacy=false") {
             val capabilities = RenameProjectionCapabilities(
                 dialect = RenameProjectionDialect.SQLITE,
                 source = RenameCapabilitySource.TEST_PINNED,
@@ -230,13 +295,14 @@ class RenameDependencyProjectorTest : FunSpec({
             )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
-            projection.operations.single().shouldBeInstanceOf<DiffOperation.RenameTable>()
+            projection.operations.single().shouldBeInstanceOf<DiffOperation.RenameColumn>()
         }
 
-        test("BLOCKED: TEST_PINNED but legacy_alter_table=true blocks even on 3.30") {
+        test("BLOCKED: TEST_PINNED but legacy_alter_table=true still blocks the column rename") {
             val capabilities = RenameProjectionCapabilities(
                 dialect = RenameProjectionDialect.SQLITE,
                 source = RenameCapabilitySource.TEST_PINNED,
@@ -245,14 +311,15 @@ class RenameDependencyProjectorTest : FunSpec({
             )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
             projection.operations.shouldBeEmpty()
             projection.diagnostics.single().code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
         }
 
-        test("BLOCKED: TEST_PINNED with version < 3.26 blocks") {
+        test("BLOCKED: TEST_PINNED with version < 3.26 still blocks the column rename") {
             val capabilities = RenameProjectionCapabilities(
                 dialect = RenameProjectionDialect.SQLITE,
                 source = RenameCapabilitySource.TEST_PINNED,
@@ -261,13 +328,14 @@ class RenameDependencyProjectorTest : FunSpec({
             )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
             projection.operations.shouldBeEmpty()
         }
 
-        test("BLOCKED: unparsable version string is treated as unknown capability") {
+        test("BLOCKED: unparsable SQLite version is treated as unknown capability") {
             val capabilities = RenameProjectionCapabilities(
                 dialect = RenameProjectionDialect.SQLITE,
                 source = RenameCapabilitySource.TEST_PINNED,
@@ -276,51 +344,27 @@ class RenameDependencyProjectorTest : FunSpec({
             )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
             projection.operations.shouldBeEmpty()
         }
-    }
 
-    // ── Default-FunctionCall blocker — uniform across dialects ───────
-
-    context("DefaultValue.FunctionCall conservative-block applies to every policy") {
-        test("PostgreSQL blocks on FunctionCall default in the renamed table") {
-            val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.POSTGRESQL)
+        test("BLOCKED: pinned capabilities + FunctionCall referencing old name → BOTH blockers fire") {
+            val capabilities = RenameProjectionCapabilities(
+                dialect = RenameProjectionDialect.SQLITE,
+                source = RenameCapabilitySource.FILE_ONLY,
+                sqliteVersion = null,
+                sqliteLegacyAlterTable = null,
+            )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith(
-                "users" to simpleTable(extraDefault = DefaultValue.FunctionCall("now()")),
+                "users" to simpleTable(extraDefault = DefaultValue.FunctionCall("hex(email_addr)")),
             )
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
-
-            projection.operations.shouldBeEmpty()
-            val diag = projection.diagnostics.single()
-            diag.code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
-            diag.message.shouldContain("now()")
-        }
-
-        test("MySQL blocks on FunctionCall default in the renamed table") {
-            val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL)
-            val projector = RenameDependencyProjector(capabilities)
-            val schema = schemaWith(
-                "users" to simpleTable(extraDefault = DefaultValue.FunctionCall("uuid()")),
-            )
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
-
-            projection.diagnostics.single().code shouldBe RENAME_DEPENDENCY_UNPROJECTABLE
-        }
-
-        test("SQLite reports both the FunctionCall blocker AND the unknown-capability blocker") {
-            val capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.SQLITE)
-            val projector = RenameDependencyProjector(capabilities)
-            val schema = schemaWith(
-                "users" to simpleTable(extraDefault = DefaultValue.FunctionCall("hex(randomblob(8))")),
-            )
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
             projection.operations.shouldBeEmpty()
             projection.diagnostics.shouldHaveSize(2)
@@ -345,9 +389,7 @@ class RenameDependencyProjectorTest : FunSpec({
         }
     }
 
-    // ── Version parser regression pins (T3 specifically tests
-    //    SQLite-policy edge cases that depend on the parser; the
-    //    parser itself has its own RenameProjectionVersionParserTest) ──
+    // ── Version parser regression pins ───────────────────────────────
 
     context("SQLite capability gating parses versions structurally, not lexicographically") {
         test("3.9.0 is correctly ordered below 3.26.0 — would fail under string comparison") {
@@ -360,8 +402,9 @@ class RenameDependencyProjectorTest : FunSpec({
             )
             val projector = RenameDependencyProjector(capabilities)
             val schema = schemaWith("users" to simpleTable())
-            val item = RenameTablePlanningItem(candidate = tableCandidate())
-            val projection = projector.projectTables(listOf(item), SchemaDiff(), schema, schema)
+            val table = TableDiff(name = "users")
+            val item = RenameColumnPlanningItem(candidate = columnCandidate())
+            val projection = projector.projectColumns(listOf(item), table, schema, schema)
 
             projection.operations.shouldBeEmpty()
             projection.diagnostics.shouldHaveSize(1)

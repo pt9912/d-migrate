@@ -71,18 +71,25 @@ open class DiffPlanner {
      * Plan a migration. See class-level KDoc for the pipeline
      * ordering.
      *
-     * @param capabilities consumed by `RenameDependencyPolicy` in the
-     *   upcoming F.4 dependency-projection T3. T1 threads the
-     *   parameter through unchanged so the runner can already pass
-     *   it without breaking the pre-T3 call sites; the parameter
-     *   suppression goes away once T3 wires the projector.
+     * @param capabilities consumed by [RenameDependencyPolicy] to
+     *   classify rename candidates. The default
+     *   `fileOnly(POSTGRESQL)` exists for dialect-agnostic tests that
+     *   don't exercise the rename policy at all; production paths
+     *   (currently `SchemaMigrateRunner.execute`) build the
+     *   capability bundle from the resolved migrate dialect via
+     *   `RenameProjectionCapabilitiesFactory.capabilitiesFor`. A
+     *   future tranche may require this argument explicitly once T4
+     *   introduces dialect-specific behaviour the tests must opt
+     *   into.
      */
     open fun plan(
         current: SchemaDefinition,
         desired: SchemaDefinition,
         schemaDiff: SchemaDiff,
         migrationOverlays: List<MigrationOverlayDocument> = emptyList(),
-        capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.FILE_ONLY,
+        capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.fileOnly(
+            RenameProjectionDialect.POSTGRESQL,
+        ),
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val blockedTables = detectConstraintNotDiffableTables(current, desired)
