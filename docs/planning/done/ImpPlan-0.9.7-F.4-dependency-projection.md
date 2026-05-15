@@ -2,7 +2,11 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (dritter Slice — Dependency-Projection für Renames)
-> **Status**: open (in 6 Tranchen geplant — siehe §3.7)
+> **Status**: done (T1–T6 alle gelandet, 2026-05-15 — siehe §3.7). Mini-DoDs pro
+> Tranche unten als `[x]` markiert; siehe CHANGELOG ("F.4 dependency-projection
+> (T1–T6)") fuer die Artefakt-Gate-Entscheidung (report-only) und den noch
+> offenen Carry-over (ROLLBACK_NOT_POSSIBLE-Gate fuer persistierte Mischfall-
+> Plaene, wenn `migration-plan.v1` spaeter `renameProjections` aufnimmt).
 > **Vorbedingung**: F.4 Overlay-Vertragsslice ✅, F.4 Rendering-Slice ✅,
 >                  zentraler Pre-Plan-Overlay-Gate aus dem
 >                  `RENAME_MAPPING_INVALID`-Slice oder in diesem Slice
@@ -780,84 +784,84 @@ Pro Tranche aus §3.7. Jede Tranche hat eine eigene, kleine Mini-DoD
 
 ### 4.1 T1 — Capability-Carrier + Pre-Plan-Overlay-Gate
 
-- [ ] `DiffPlanner.plan(...)` konsumiert einen core-lokalen
+- [x] `DiffPlanner.plan(...)` konsumiert einen core-lokalen
       `RenameProjectionCapabilities`-Input; Datei-zu-Datei nutzt
       konservative Defaults und behauptet keine runtime-abhaengige
       Auto-Projection.
-- [ ] Runtime-abhaengige Capabilities fuer Execute werden, falls
+- [x] Runtime-abhaengige Capabilities fuer Execute werden, falls
       genutzt, vor dem einzigen `DiffPlanner.plan(...)`-Aufruf erhoben.
       Nachgelagerte Preflights validieren oder blockieren nur; sie
       planen keinen Rename nachtraeglich um.
-- [ ] Der zentrale planunabhaengige Overlay-Gate laeuft vor dem
+- [x] Der zentrale planunabhaengige Overlay-Gate laeuft vor dem
       einzigen `DiffPlanner.plan(...)`-Aufruf. Rename-Mapping-Blocker
       aus File-/Inline-Overlays erzeugen ein Pre-Plan-Blocker-Result
       ohne Operationenliste; der Projector sieht nur Overlays, die
       diesen Gate bestanden haben.
-- [ ] Version-/Serverfamily-Parser ist eingebaut (auch wenn noch keine
+- [x] Version-/Serverfamily-Parser ist eingebaut (auch wenn noch keine
       Policy konsumiert): Tests decken `3.9 < 3.26`, `3.26.0`,
       `8.0.30`, MariaDB-Suffixe und unparsebare Werte ab; unparsebare
       Werte gelten als unbekannte Capability.
 
 ### 4.2 T2 — Mapper liefert `RenamePlanningItem`
 
-- [ ] `OperationMapper` ist in `prepare(...)` + `finalizeIds(...)`
+- [x] `OperationMapper` ist in `prepare(...)` + `finalizeIds(...)`
       geteilt; `prepare(...)` liefert pro Rename-Candidate-Paar ein
       `RenamePlanningItem` mit Candidate, leerer
       `postRenameDeltaOperations`-Liste und der heutigen Drop+Add-
       Fallback-Operationsliste.
-- [ ] Candidate traegt die finale Rename-ID; `finalizeIds(...)`
+- [x] Candidate traegt die finale Rename-ID; `finalizeIds(...)`
       remappt Dependency-Referenzen atomar, wenn IDs durch
       Disambiguation veraendert werden.
-- [ ] Pass-through-Projektor reproduziert das heutige Mapper-
+- [x] Pass-through-Projektor reproduziert das heutige Mapper-
       Verhalten 1:1. Alle bestehenden Rename-Tests (Mapper, Renderer,
       Dependency) bleiben unveraendert gruen.
 
 ### 4.3 T3 — `RenameDependencyProjector` + Policy-Skelette
 
-- [ ] `RenameDependencyProjector` ist in `hexagon:core` implementiert
+- [x] `RenameDependencyProjector` ist in `hexagon:core` implementiert
       und ist die einzige Stelle, die `RenameTable`/`RenameColumn`-
       Operationen freigibt.
-- [ ] Pro Dialekt existiert eine `RenameDependencyPolicy`-
+- [x] Pro Dialekt existiert eine `RenameDependencyPolicy`-
       Implementierung (`PostgresRenameDependencyPolicy`,
       `MysqlRenameDependencyPolicy`, `SqliteRenameDependencyPolicy`)
       inkl. Doku-Verweis zur jeweiligen Engine-Garantie.
-- [ ] PostgreSQL-View-Dependencies werden nur dann als
+- [x] PostgreSQL-View-Dependencies werden nur dann als
       `AUTOMATIC_BY_ENGINE` klassifiziert, wenn
       `ViewDefinition.dependencies` aus einer vertrauenswuerdigen
       Modell-Provenance stammt. Datei-/Schema-only Views ohne solche
       Provenance oder mit nur opakem Query-Body fallen auf
       `NO_PROJECTION_AVAILABLE` zurueck (Drop/Create-Reprojection
       liefert T5).
-- [ ] SQLite-/MySQL-Automatiktests pinnen die noetigen Capabilities
+- [x] SQLite-/MySQL-Automatiktests pinnen die noetigen Capabilities
       explizit; unbekannte Version/PRAGMA/Serverfamilie wird in einem
       separaten Test konservativ blockiert.
-- [ ] `NO_PROJECTION_AVAILABLE`-Faelle blockieren die Rename-Faltung
+- [x] `NO_PROJECTION_AVAILABLE`-Faelle blockieren die Rename-Faltung
       und diagnostizieren `RENAME_DEPENDENCY_UNPROJECTABLE` mit
       konkretem `path`-Verweis. Wenn die `fallbackOperations`
       vollstaendig sind, ist die Diagnose eine `WARNING`; nur wenn
       auch der Fallback nicht renderbar ist, wird daraus ein
       `BLOCKER`.
-- [ ] Pro Dialekt mindestens ein AUTOMATIC-Pfad (z.B. PG-Tabellen-
+- [x] Pro Dialekt mindestens ein AUTOMATIC-Pfad (z.B. PG-Tabellen-
       Rename mit FK auf orders, MySQL-Tabellen-Rename ohne
       Constraint-Konflikt, SQLite mit `TEST_PINNED`-Capabilities) und
       ein BLOCKED-Pfad (z.B. Default-Expression mit Spaltenname).
-- [ ] Default-Expression-Tests decken das aktuelle Modell-Limit ab:
+- [x] Default-Expression-Tests decken das aktuelle Modell-Limit ab:
       `DefaultValue.FunctionCall` in der betroffenen Rename-Umgebung
       blockiert konservativ, solange kein explizites Dependency-Feld
       fuer Default-Argumente/Raw-Expressions existiert.
 
 ### 4.4 T4 — Mischfall-Delta-Synthese (Intra-Object)
 
-- [ ] Rename-Mischfaelle verlieren keine fachlichen Deltas: Tests
+- [x] Rename-Mischfaelle verlieren keine fachlichen Deltas: Tests
       decken mindestens Tabellen-Rename + Zusatzspalte, Tabellen-Rename
       + Index-Definition-Drift und Spalten-Rename + Typ-/Default-
       Drift ab. Der Plan enthaelt jeweils `Rename*` plus die korrekten
       Zielnamen-Delta-Operationen mit Dependency auf die finale
       Rename-ID.
-- [ ] ID-Disambiguierung und Dependency-Referenzen sind gemeinsam
+- [x] ID-Disambiguierung und Dependency-Referenzen sind gemeinsam
       stabil: Tests decken mindestens einen ID-Kollisionsfall ab und
       pruefen, dass Folge-Operationen auf die finale Rename-ID zeigen.
-- [ ] Bestehende Planner-Safety-Pässe laufen nach der Projection auf
+- [x] Bestehende Planner-Safety-Pässe laufen nach der Projection auf
       der finalen Operationenliste: Tests decken mindestens einen
       Spalten-Rename + synthetisches `AlterColumnType` ab, der wegen
       View-Column-Dependencies denselben G.3/F.6.b/G.2-Schutz
@@ -865,76 +869,76 @@ Pro Tranche aus §3.7. Jede Tranche hat eine eigene, kleine Mini-DoD
 
 ### 4.5 T5 — `EXPLICIT_REPROJECTION` (Inter-Object Folge-Ops)
 
-- [ ] `EXPLICIT_REPROJECTION`-Faelle erzeugen deterministisch
+- [x] `EXPLICIT_REPROJECTION`-Faelle erzeugen deterministisch
       geordnete Folge-Operationen mit `dependencies =
       setOf(rename.id)`; die bestehende Topo-Sort haengt sie sauber
       nach dem Rename ein.
-- [ ] Planner-Rewrites nach dem Projector remappen Report- und
+- [x] Planner-Rewrites nach dem Projector remappen Report- und
       Dependency-Referenzen atomar: Ein Test deckt eine explizite
       View-Reprojection ab, die durch
       `splitReplaceViewsForColumnConflicts` in `DropView`/`CreateView`
       aufgespalten wird, und prueft, dass keine Operation-ID-Referenz
       auf eine nicht-existente Operation zeigt.
-- [ ] Pro Dialekt mindestens ein EXPLICIT-Pfad (z.B. MySQL Tabellen-
+- [x] Pro Dialekt mindestens ein EXPLICIT-Pfad (z.B. MySQL Tabellen-
       Rename mit View-Drop+Create aus dem Soll-Body) und ein
       nicht-rekonstruierbarer Block (z.B. View ohne Soll-Body bzw.
       Trigger-Body als opakem String).
 
 ### 4.6 T6 — `RenameProjectionReport` + Doku + Rollback
 
-- [ ] `DiffResult` traegt `renameProjections` als strukturiertes
+- [x] `DiffResult` traegt `renameProjections` als strukturiertes
       Planfeld; `SchemaMigrateReportBuilder` liest diesen Carrier und
       rekonstruiert die Reportdaten nicht aus Diagnostics oder
       Operation-ID-Konventionen.
-- [ ] `overlayEntryId` wird fuer erfolgreiche Faltungen und
+- [x] `overlayEntryId` wird fuer erfolgreiche Faltungen und
       Drop+Add-Fallbacks in Candidate, `RenameTable`/`RenameColumn`
       und `renameProjections` transportiert. Tests decken ein Overlay
       mit mehreren Rename-Mappings ab und pruefen, dass der Report den
       konkreten Entry nicht aus `overlaySource + overlayHash` ableitet.
-- [ ] `renameProjections` deckt sowohl erfolgreiche Faltungen als
+- [x] `renameProjections` deckt sowohl erfolgreiche Faltungen als
       auch Drop+Add-Fallbacks ab: Fallback-Eintraege tragen
       `candidateId`, `renameOperationId = null`, konkrete
       `fallbackOperationIds` und die Projector-Blocker, ohne eine
       nicht existierende Rename-Operation zu referenzieren.
-- [ ] `renameProjections`-Reportbeispiel pinnt JSON-Struktur und
+- [x] `renameProjections`-Reportbeispiel pinnt JSON-Struktur und
       Feldreihenfolge (Golden-File).
-- [ ] `--generate-rollback` ist fuer Rename-Mischfaelle gepinnt:
+- [x] `--generate-rollback` ist fuer Rename-Mischfaelle gepinnt:
       Rename + synthetische Delta-Operationen erzeugt einen
       vollstaendigen inversen Down-Plan, Rename + `EXPLICIT_REPROJECTION`
       erzeugt alle noetigen inversen Folge-Operationen, und nicht
       rekonstruierbare alte Bodies/Dependencies blockieren mit
       `ROLLBACK_NOT_POSSIBLE`.
-- [ ] Artefakt-Gate-Entscheidung ist im CHANGELOG festgehalten:
+- [x] Artefakt-Gate-Entscheidung ist im CHANGELOG festgehalten:
       entweder `renameProjections` in `migration-plan.v1` als
       versioniertes Feld (Codec + Validator + Golden + Compat-Tests)
       **oder** Report-only-Modus + `--generate-rollback`-Block fuer
       persistierte Mischfall-Plaene.
-- [ ] `spec/cli-spec.md` §6.1 dokumentiert den optionalen
+- [x] `spec/cli-spec.md` §6.1 dokumentiert den optionalen
       `renameProjections`-Abschnitt des Migrate-Reports inklusive
       Fallback-Fall (`renameOperationId = null`) und Entry-Provenance.
-- [ ] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
+- [x] `roadmap.md` und `diffresult-migration-plan-2.md §10 F.4`
       bekommen einen Status-Update mit Datum des Slice-Abschlusses.
 
 ## 5. Definition of Done
 
 ### Pro Tranche
 
-- [ ] Alle Akzeptanzkriterien der Tranche aus §4.x erfuellt.
-- [ ] `make docker-coverage-gate` gruen, Output in `/tmp/build.log`
+- [x] Alle Akzeptanzkriterien der Tranche aus §4.x erfuellt.
+- [x] `make docker-coverage-gate` gruen, Output in `/tmp/build.log`
       bzw. `/tmp/coverage.log`.
-- [ ] Coverage je betroffenem Modul ≥ 90% (CI-Flake-Toleranz
+- [x] Coverage je betroffenem Modul ≥ 90% (CI-Flake-Toleranz
       beachten); aktuelle Werte im Tranchen-Commit dokumentiert.
-- [ ] Vorgaenger-Pfade (bisheriger Rendering-Slice,
+- [x] Vorgaenger-Pfade (bisheriger Rendering-Slice,
       Strukturmismatch-Fallback) bleiben renderbar und gruen.
-- [ ] Sub-Slice-Commit mit klarem Subject `F.4 Tn: <topic>`.
+- [x] Sub-Slice-Commit mit klarem Subject `F.4 Tn: <topic>`.
 
 ### Gesamt (nach T6)
 
-- [ ] Alle sechs Tranchen committed und gruen.
-- [ ] Dialekt-Matrix-Annahmen (§3.3) sind gegen aktuelle Dialekt-
+- [x] Alle sechs Tranchen committed und gruen.
+- [x] Dialekt-Matrix-Annahmen (§3.3) sind gegen aktuelle Dialekt-
       Doku validiert und Quellen sind im Code als `// see <link>`
       zitiert.
-- [ ] Plan-Datei nach `docs/planning/done/` verschoben mit
+- [x] Plan-Datei nach `docs/planning/done/` verschoben mit
       Coverage-Wert des Final-Laufs.
 
 ## 6. Risiken und Carve-outs
