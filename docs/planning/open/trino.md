@@ -41,6 +41,7 @@ Das spricht für Trino als Lese- und Analyseebene, aber gegenwärtig gegen:
 - `DatabaseDialect.TRINO` + URL-Alias `trino`
 - URL-Parsing `trino://user@host:port/catalog/schema` (Canonical-Form)
 - neues Adapter-Modul `adapters:driven:driver-trino`
+- klares Capability-Modell: Trino ist Phase 1 **Source-only**
 - read-only Pipeline-Unterstützung für:
   - `schema reverse`
   - `schema compare`
@@ -105,6 +106,8 @@ Interpretation:
 - Bei fehlendem `schema` nutzt die Engine das Trino-session-Default des Connectors.
   - Ist kein Default vorhanden oder benötigt der Aufruf zwingend ein Schema (z. B. bei qualifizierten Tabellenzugriffen), wird vor dem Lauf mit `action_required` und klarer Anleitung abgebrochen.
 - Query-Parameter werden als harte Fehlerklasse behandelt, solange sie nicht explizit in Phase 1 freigegeben sind.
+- `catalog` und `schema` werden strikt als erste beiden Pfadteile geparst; zusätzliche Pfadebenen sind nicht zulässig.
+- Das `trino://`-Schema ist bewusst diszipliniert: kein `db:`-Prefix in diesem Pfad.
 
 Credential-Modell (Phase 1):
 
@@ -120,6 +123,25 @@ Credential-Modell (Phase 1):
 - Trino ist in Phase 1 als Target-Only-disabled und Source-only modelliert.
   Der Command-Lauf bricht mit deterministischer `action_required`-Meldung früh ab,
   wenn ein nicht erlaubter Zielpfad genutzt wird.
+- Capabilities und Guard-Fehler werden nicht als transient angesehen; sie sind
+  dauerhaft reproduzierbar und müssen explizit bestätigt werden.
+
+### 5.4 Capability-Governance für Trino
+
+| Befehl | Source `trino://...` | Target `trino://...` | Verbleibende Umsetzung (Phase) |
+| ------ | -------------------- | -------------------- | ------------------------------ |
+| `schema reverse` | ✅ | ❌ | 1 |
+| `schema compare` | ✅ | ✅ (read-only Diff-Pfad) | 1 |
+| `data export` | ✅ | ❌ | 1 |
+| `data profile` | ✅ | ❌ | 1 (nur mit `driver-trino-profiling`) |
+| `data transfer` | ✅ | ❌ | 1 |
+| `schema generate` | ✅ | ⚠️ (explizit) | 3 |
+| `data import` | ❌ | ❌ | 4+ |
+
+Regel:
+- `Target-only`-Kommandos für Trino sind in Phase 1 strikt geblockt.
+- `schema compare --target` bleibt erlaubt, da es semantisch read-only bleibt.
+- Schreib- und Generierungs-Funktionen benötigen expliziten Capability-Review je Connector.
 
 ## 6) Umsetzungsphasen
 
@@ -139,6 +161,11 @@ Credential-Modell (Phase 1):
    - `data export`
    - `data profile`
    - `data transfer` mit Trino als Source (Capability-Guard gegen Target-Pfade)
+
+Validierungsregeln in Phase 1:
+- `schema reverse --source trino://... --output ...` muss fehlerfrei laufen.
+- `data transfer` mit Trino als Target darf nicht gestartet werden.
+- `data profile --source trino://...` darf nur starten, wenn Profiling-Modul aktiv ist.
 
 Keine Writes, keine `schema generate`-Freigabe in dieser Phase.
 
@@ -207,12 +234,19 @@ d-migrate data transfer \
   --source trino://analyst@localhost:8080/iceberg/default \
   --target postgresql://app@localhost:5432/app \
   --tables customers
+
+d-migrate data transfer \
+  --source postgresql://app@localhost:5432/app \
+  --target trino://analyst@localhost:8080/iceberg/default \
+  --tables customers
 ```
 
 Hinweise:
 
 - `schema reverse`/`compare` liefern die Trino-Sicht des Zielsystems.
 - `data transfer --target trino://...` ist in Phase 1 blockiert.
+- Zweiteres (`... --target trino://...`) endet deterministisch mit `action_required`
+  und dem Hinweis auf Source-only-Nutzung.
 - Nicht garantierte Objekte (Constraints/Index/Trigger/Procedures) werden klar
   als fehlende Sichtbarkeit markiert.
 
@@ -265,6 +299,9 @@ Hinweise:
 - `data transfer --target trino://...` ist blockiert und liefert eine
   reproduzierbare Fehlermeldung mit `action_required`.
 - `schema generate --target trino://...` bleibt bis Abschluss Phase 3 deaktiviert.
+- `schema compare --source file... --target trino://...` liefert klar
+  dokumentierte Grenzen bei Connector-Metadaten (fehlende OID/Constraint-/Index-
+  Informationen sind explizit aufgelistet).
 
 ## 12) Empfehlung
 
@@ -284,6 +321,8 @@ Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 - [ ] `schema compare --source file... --target trino://...` lauffähig.
 - [ ] `data export --source trino...` lauffähig.
 - [ ] `data profile --source trino...` lauffähig.
+- [ ] `data transfer --source trino... --target trino://...` wird mit `action_required`
+  vor Ausführung blockiert.
 - [ ] `data transfer` ist Source-only dokumentiert und technisch durchgesetzt.
 - [ ] Trino-Sicht-Lücken/Unbekannte werden als Warnungen ausgegeben.
 - [ ] `data transfer --target trino...` liefert klare Fehlerklasse (`action_required`).
