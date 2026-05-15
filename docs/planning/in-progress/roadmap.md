@@ -489,12 +489,19 @@ Zusätzlich erledigt seit dem 2026-05-08-Stand:
 
 Aktuell offene 0.9.7-Restpunkte:
 
-- **B**: Typkonvertierungen und Live-Daten-Preflights, inklusive
-  PostgreSQL-`USING`-Quellenvertrag, Up/Down-Trennung, SQLite-Live-Cast-
-  Preflight-Report und positive/blockierende Tests.
-- **C.1 Rest**: unterschiedliche Diagnostics fuer MISSING, UNKNOWN und
-  fehlende Privilegien; Reverse-Unterscheidung "Extension vorhanden" vs.
-  "Objekt nutzt Extension".
+- ~~**B**~~: erledigt 2026-05-13 — PostgreSQL-`USING`-Overlays
+  binden Up/Down getrennt, `PG_USING_OVERLAY_MISSING` blockiert ohne
+  Nutzer-Overlay und `expressionSource` ist auf eine Allowlist
+  beschraenkt. SQLite-Live-Cast-Preflight nutzt einen
+  `MigrationPreflightPlanner`, schreibt strukturierte
+  `sqliteCastPreflights` mit `PASSED`/`FAILED`/`NOT_RUN_FILE_TARGET`/
+  `NOT_RUN_POLICY` in den Report, positive und blockierende Tests
+  laufen gegen eine echte SQLite-DB.
+- ~~**C.1 Rest**~~: erledigt 2026-05-13 — Renderer-Diagnostics
+  trennen `EXTENSION_DEPENDENCY_MISSING` / `UNKNOWN` /
+  `EXTENSION_INSTALL_PRIVILEGE_MISSING` / `_UNVERIFIED` (PostgreSQL +
+  SQLite), und der PostgreSQL-Reverse-Pfad trennt Installationsbefund
+  (`R400`) vom Objektbefund (`R401`).
 - **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
   Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
