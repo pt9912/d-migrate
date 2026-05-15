@@ -1,75 +1,76 @@
-# Plan: Trino-Support in d-migrate (read-first Federation-Adapter)
+# Plan: Trino-Support in d-migrate (Read-first Federation-Adapter)
 
-> Dokumenttyp: Architektur- und Umsetzungsplan
->
-> Status: Entwurf (2026-05-15)
->
-> Referenzen: `spec/architecture.md`, `spec/cli-spec.md`,
-> `spec/connection-config-spec.md`, `docs/planning/roadmap.md`
+> Dokumenttyp: Architektur- und Umsetzungsplan  
+> Status: Entwurf (2026-05-15)  
+> Referenzen: `spec/architecture.md`, `spec/cli-spec.md`, `spec/connection-config-spec.md`, `docs/planning/roadmap.md`
 
----
+## Kurzfassung
+
+`d-migrate` erweitert seine Adapter-Landschaft um Trino als **read-first**
+Federation-Layer. Fokus ist die sichere Nutzung als Analyse- und
+Metadaten-Lesequelle – nicht als vollwertiger OLTP-Migrationspfad.
 
 ## 1) Zielbild
 
 `d-migrate` soll Trino als **zusätzlichen, read-first Adapter** unterstützen.
 
-Der Adapter dient primär für:
+Primäre Nutzung:
 
 - Reverse Engineering großer Kataloge/Schema
 - Schema-Vergleich gegen neutrale Zielartefakte
-- Export und Profiling über Analyselayer
+- Export und Profiling über den Analyse-Layer
 - Daten-Transfers mit Trino als Quelle
 
-Der Adapter ist kein Ersatz für native OLTP-Dialekte.
+Der Adapter ist **nicht** der primäre OLTP-Migrationspfad.
 
 ## 2) Ausgangslage
 
-`d-migrate` hat heute stabile native Treiber für PostgreSQL, MySQL und SQLite.
-Trino wird als verteilte Query Engine eingesetzt und bringt bereits in vielen
-Setups Sicht auf heterogene Quellen ohne direkte Treiber für alle Hintergründe.
+`d-migrate` besitzt heute native Treiber für PostgreSQL, MySQL und SQLite.
+Trino bringt bereits heute in vielen Setups Zugriff auf heterogene Quellen ohne
+direkten Treiberverbrauch aller Backends.
 
-Das spricht für Trino als Lese- und Analyseebene, aber gegenwärtig gegen:
+Das macht Trino für Read/Analyse attraktiv, gleichzeitig limitiert:
 
-- transaktionale DDL-/DML-Semantik
-- vollständige Constraint-/Trigger-/Procedure-Abdeckung
-- robuste Connector-übergreifende Write-Garantien
+- transaktionale DDL/DML-Semantik,
+- vollständige Constraint-/Trigger-/Procedure-Abdeckung,
+- Connector-übergreifend konsistente Write-Garantien.
 
 ## 3) Ziel- und Nicht-Ziele
 
-### 3.1 In Scope
+### 3.1 In Scope (Phase 1)
 
-- `DatabaseDialect.TRINO` + URL-Alias `trino`
-- URL-Parsing `trino://user@host:port/catalog/schema` (Canonical-Form)
-- neues Adapter-Modul `adapters:driven:driver-trino`
-- klares Capability-Modell: Trino ist Phase 1 **Source-only**
-- read-only Pipeline-Unterstützung für:
+- Dialekt: `DatabaseDialect.TRINO` + Alias `trino`.
+- URL-Parsing: `trino://user@host:port/catalog/schema` (kanonisch).
+- Neues Adapter-Modul: `adapters:driven:driver-trino`.
+- Eindeutiges Capability-Modell: **Phase 1 = Source-only**.
+- Read-only Pipelines:
   - `schema reverse`
   - `schema compare`
   - `data export`
   - `data profile`
-  - `data transfer` **nur als Source**
+  - `data transfer` **nur Source**
 
 ### 3.2 Nicht in Scope (aktuell)
 
-- Schreibpfade (`data import`, allgemeine DDL-Generierung) als Standardpfad
-- Transaktionsverhalten/UPSERT-Äquivalente im Trino-Pfad
-- vollständige Migration mit Constraint-, Trigger- und Procedure-Semantik
-- `presto` als Alias auf `TRINO`
-- `schema generate` in Phase 1 (erst in Phase 3 geplant)
+- Schreibpfade (`data import`, allgemeine DDL-Generierung) als Standardpfad.
+- Transaktions-/UPSERT-/MERGE-Semantik im Trino-Pfad.
+- Vollständige Migration mit Constraint-, Trigger- und Procedure-Semantik.
+- Alias `presto` → `TRINO`.
+- `schema generate` in Phase 1 (erscheint frühestens in Phase 3).
 
 ## 4) Architektureinbettung
 
-Der Adapter folgt dem vorhandenen Hexagon-Modell:
+Der Adapter nutzt das bestehende Hexagon-Modell:
 
 ```text
 adapters:driven:driver-trino
   ├─ ConnectionPool / JDBC Wiring
-  ├─ SchemaReader
-  ├─ TableLister
-  └─ DataReader
+  ├─ TrinoSchemaReader
+  ├─ TrinoTableLister
+  └─ TrinoDataReader
 ```
 
-Weitere optionale Erweiterungen:
+Optionale Erweiterungen:
 
 - `adapters:driven:driver-trino-profiling`
 - `test:integration-trino` (später)
@@ -78,139 +79,135 @@ Weitere optionale Erweiterungen:
 
 ### 5.1 Dialekt
 
-- Erweiterung von `DatabaseDialect` auf:
-  - `POSTGRESQL`, `MYSQL`, `SQLITE`, `TRINO`
-- Alias-Mapping:
-  - `trino -> TRINO`
+- Erweiterung `DatabaseDialect` um `TRINO`.
+- Alias-Mapping: `trino -> TRINO`.
 
 ### 5.2 URL-Modell
 
-Primäres Muster (canonical):
+Kanonische Form:
 
 ```text
-trino://user@localhost:8080/catalog/schema
+trino://user@host:port/catalog/schema
 ```
 
 Beispiele:
 
-```text
-trino://analyst@localhost:8080/hive/default
-trino://analyst@localhost:8080/iceberg/default
-trino://analyst@localhost:8080/postgresql/public
-```
+- `trino://analyst@localhost:8080/hive/default`
+- `trino://analyst@localhost:8080/iceberg/default`
+- `trino://analyst@localhost:8080/postgresql/public`
 
 Interpretation:
 
-- `catalog` ist der erste Pfadteil.
-- `schema` ist der zweite Pfadteil.
-- Bei fehlendem `schema` nutzt die Engine das Trino-session-Default des Connectors.
-  - Ist kein Default vorhanden oder benötigt der Aufruf zwingend ein Schema (z. B. bei qualifizierten Tabellenzugriffen), wird vor dem Lauf mit `action_required` und klarer Anleitung abgebrochen.
-- Query-Parameter werden als harte Fehlerklasse behandelt, solange sie nicht explizit in Phase 1 freigegeben sind.
-- `catalog` und `schema` werden strikt als erste beiden Pfadteile geparst; zusätzliche Pfadebenen sind nicht zulässig.
-- Das `trino://`-Schema ist bewusst diszipliniert: kein `db:`-Prefix in diesem Pfad.
+- `catalog` ist das erste Pfadsegment.
+- `schema` ist das zweite Pfadsegment.
+- Bei fehlendem `schema` verwendet die Engine das Trino-Session-Default des
+  Connectors.
+  - Ist kein Default vorhanden oder wird ein Schema zwingend benötigt, bricht der
+    Lauf vorab mit `action_required` und klarer Anleitung ab.
+- Query-Parameter sind bis auf explizit freigegebene Properties als harte
+  Capability-Fehler zu behandeln.
+- Weitere Pfadsegmente sind in Phase 1 ungültig.
+- Format ist absichtlich ohne `db:`-Prefix.
 
 Credential-Modell (Phase 1):
 
-- Erwartete Basisform: `trino://user:password@host:port/catalog/schema`
-- Optional/empfohlen: Trennung von Geheimnis über Umgebungsvariable (z. B. `TRINO_PASSWORD`) bis Credential-Provider formal eingeführt sind.
-- Kein generischer Connector-Parameter-Flattendurchlass; nur explicit erlaubte Properties sind zulässig.
+- Basisform: `trino://user:password@host:port/catalog/schema`.
+- Optional/empfohlen: Passwort via Umgebungsvariable (z. B. `TRINO_PASSWORD`),
+  bis ein Credential-Provider formal eingeführt ist.
+- Kein generischer Connector-Parameter-Bypass; nur explizit erlaubte Properties.
 
 ### 5.3 Fehler- und Signalisationsregeln
 
-- fehlendes/unklares `catalog` → klare Fehlermeldung inkl. Beispiel-URL
-- nicht unterstützte URL-Eigenschaften (Connector-spezifisch) werden früh und
-  explicit als Capability- oder Feature-Lücke gemeldet
-- Trino ist in Phase 1 als Target-Only-disabled und Source-only modelliert.
-  Der Command-Lauf bricht mit deterministischer `action_required`-Meldung früh ab,
-  wenn ein nicht erlaubter Zielpfad genutzt wird.
-- Capabilities und Guard-Fehler werden nicht als transient angesehen; sie sind
-  dauerhaft reproduzierbar und müssen explizit bestätigt werden.
+- fehlendes oder unklar formatiertes `catalog` -> deterministische Fehlermeldung mit
+  Beispiel-URL.
+- nicht unterstützte URL-Properties -> sofortiger Abbruch via `action_required`.
+- Trino ist in Phase 1 ein **Source-only** Adapter.
+  Nicht erlaubte Zielpfade brechen deterministisch mit `action_required` ab.
+- Capability- oder Guard-Fehler sind dauerhaft reproduzierbar und damit als
+  dauerhafte Signale zu behandeln (keine transienten Retry-Pfade).
 
 ### 5.4 Capability-Governance für Trino
 
-| Befehl | Source `trino://...` | Target `trino://...` | Verbleibende Umsetzung (Phase) |
-| ------ | -------------------- | -------------------- | ------------------------------ |
+| Befehl | Source | Target | Phase |
+| --- | --- | --- | --- |
 | `schema reverse` | ✅ | ❌ | 1 |
-| `schema compare` | ✅ | ✅ (read-only Diff-Pfad) | 1 |
+| `schema compare` | ✅ | ✅ *(read-only Diff-Pfad)* | 1 |
 | `data export` | ✅ | ❌ | 1 |
-| `data profile` | ✅ | ❌ | 1 (nur mit `driver-trino-profiling`) |
+| `data profile` | ✅ | ❌ *(nur mit Profiling-Modul)* | 1 |
 | `data transfer` | ✅ | ❌ | 1 |
-| `schema generate` | ✅ | ⚠️ (explizit) | 3 |
+| `schema generate` | ❌ | ⚠️ (explizit freigegeben) | 3 |
 | `data import` | ❌ | ❌ | 4+ |
 
 Regel:
-- `Target-only`-Kommandos für Trino sind in Phase 1 strikt geblockt.
-- `schema compare --target` bleibt erlaubt, da es semantisch read-only bleibt.
-- Schreib- und Generierungs-Funktionen benötigen expliziten Capability-Review je Connector.
+
+- `Target` für Trino ist in Phase 1 standardmäßig gesperrt.
+- `schema compare --target trino://...` bleibt erlaubt, weil semantisch read-only.
+- Write-/Generate-Funktionen erfordern immer einen expliziten Capability-Review je
+  Connector.
 
 ## 6) Umsetzungsphasen
 
 ### Phase 1 — Read-only MVP
 
-**Ziele:** stabiler Trino-Lesepfad ohne Write-Risiko.
+**Ziel:** sicherer Trino-Lesepfad ohne Schreib-Risiko.
 
-1. `TRINO`-Dialekt + URL-Alias einführen
-2. Trino-Adapter und JDBC-Anbindung bereitstellen
-   - Pooling/Connection
+1. Dialekt + URL-Alias implementieren.
+2. Adapter/JDBC hinzufügen:
+   - Connection/Pooling
    - `TrinoSchemaReader`
    - `TrinoTableLister`
    - `TrinoDataReader`
-3. CLI-Pfade aktivieren
+3. CLI-Coverage aktivieren:
    - `schema reverse`
    - `schema compare`
    - `data export`
    - `data profile`
-   - `data transfer` mit Trino als Source (Capability-Guard gegen Target-Pfade)
+   - `data transfer` mit Source-only-Guard
 
-Validierungsregeln in Phase 1:
-- `schema reverse --source trino://... --output ...` muss fehlerfrei laufen.
-- `data transfer` mit Trino als Target darf nicht gestartet werden.
-- `data profile --source trino://...` darf nur starten, wenn Profiling-Modul aktiv ist.
+Validierungsregeln:
 
-Keine Writes, keine `schema generate`-Freigabe in dieser Phase.
-
-`data profile` ist in Phase 1 nur möglich, wenn `driver-trino-profiling` ebenfalls
-in Phase 1 implementiert ist; andernfalls wird der Aufruf mit klarer Fehlermeldung
-früh blockiert.
+- `schema reverse --source trino://... --output ...` ist lauffähig.
+- `data transfer --target trino://...` startet nicht.
+- `data profile --source trino://...` ist nur mit aktivem Profiling-Modul möglich.
 
 ### Phase 2 — Profiling- und Diagnosehärtung
 
-- Ergänzende Profiling-Härtung und Connector-spezifische Diagnoseabdeckung
-- Trino-spezifische Diagnosehinweise und Warnings im Vergleich
-- Metadatenkonsistenz-Tests pro Connector (z. B. Hive vs Iceberg)
+- Stabile Profiling-Coverage und Diagnoseabdeckung.
+- Trino-spezifische Hinweise/Warnungen im Compare-Pfad.
+- Metadatenkonsistenz-Tests zwischen Connector-Typen (z. B. Hive vs. Iceberg).
 
 ### Phase 3 — Controlled `schema generate`
 
-- `schema generate --target trino://...` nur explizit und mit Profil-Optionen
-- harte Limitierungen durch `action_required`
-- Ziel: bewusster, nicht stiller Degradationspfad statt impliziter Abdeckung
+- `schema generate --target trino://...` nur explicit freigeschaltet.
+- harte Guard-Grenzen mit klarer `action_required`-Ausgabe.
 
 ### Phase 4 — Writes per Capability-Matrix
 
-- Schreib-Adapter nur, wenn Connector-Treiber die Fähigkeiten explizit liefern:
-  - `supportsInsert`
-  - `supportsCreateTable`
-  - `supportsCreateTableAs`
-  - `supportsMerge`
-  - `supportsDelete`
-  - `supportsUpdate`
-  - `supportsTransactions`
+Write-Pfade nur bei expliziter Fähigkeit je Connector:
+
+- `supportsInsert`
+- `supportsCreateTable`
+- `supportsCreateTableAs`
+- `supportsMerge`
+- `supportsDelete`
+- `supportsUpdate`
+- `supportsTransactions`
 
 ## 7) Funktions-Matrix mit Risiko-Niveau
 
 | Feature | Ziel-Fit | Begründung |
-| ------- | -------- | ---------- |
+| --- | --- | --- |
 | `schema reverse` | Hoch | starke Synergie mit Trino-Layer |
-| `schema compare` | Hoch | nützlich für Lakehouse-Vergleiche |
-| `data export` | Sehr hoch | skalierbare Leselast |
-| `data profile` | Sehr hoch | analytische Datentiefe |
-| `data transfer` (Source) | Hoch | zentrale Use-Case für zentrale SQL-Schicht |
-| `data transfer` (Target) | Gering | stark Connector-abhängig |
-| `schema generate` | Mittel | nur explizit + Warnungen |
-| `data import` | Niedrig | nicht für Phase 1 |
-| klassische OLTP-Migration | Sehr gering | Trino ist kein primärer Migrationsknoten |
+| `schema compare` | Hoch | hilfreich für Lakehouse-/Connector-Vergleiche |
+| `data export` | Sehr hoch | skalierbare Leseauslastung |
+| `data profile` | Sehr hoch | analytische Abdeckung |
+| `data transfer` *(Source)* | Hoch | zentrale SQL-/Analyse-Schicht |
+| `data transfer` *(Target)* | Gering | stark Connector-abhängig |
+| `schema generate` | Mittel | nur explizit + starke Guarding |
+| `data import` | Niedrig | kein Primärfall für Phase 1 |
+| klassische OLTP-Migration | Sehr gering | Trino kein Migrations-Primärknoten |
 
-## 8) CLI-Beispiele (operativer Scope)
+## 8) CLI-Beispiele
 
 ```bash
 d-migrate schema reverse \
@@ -235,6 +232,7 @@ d-migrate data transfer \
   --target postgresql://app@localhost:5432/app \
   --tables customers
 
+# Wird in Phase 1 geblockt
 d-migrate data transfer \
   --source postgresql://app@localhost:5432/app \
   --target trino://analyst@localhost:8080/iceberg/default \
@@ -245,67 +243,63 @@ Hinweise:
 
 - `schema reverse`/`compare` liefern die Trino-Sicht des Zielsystems.
 - `data transfer --target trino://...` ist in Phase 1 blockiert.
-- Zweiteres (`... --target trino://...`) endet deterministisch mit `action_required`
-  und dem Hinweis auf Source-only-Nutzung.
-- Nicht garantierte Objekte (Constraints/Index/Trigger/Procedures) werden klar
-  als fehlende Sichtbarkeit markiert.
+- Nicht unterstützte Objekte (Constraints/Indexes/Triggers/Procedures) werden
+  als fehlende Sichtbarkeit explizit gekennzeichnet.
 
 ## 9) Risiken und Gegenmaßnahmen
 
 ### 9.1 Metadaten-Lücken
 
-- Trino-Connectoren können bestimmte Metadaten nicht vollständig liefern.
-- Gegenmaßnahme: `action_required`/Warnungen, kein stilles Fallback.
+- Trino-Connectoren liefern teils unvollständige Metadaten.
+- Gegenmaßnahme: sichtbare `action_required`-/Warnmeldungen statt stillen Fallbacks.
 
 ### 9.2 Schreibsemantik
 
-- Trino-Write-Verhalten ist Connector-abhängig und nicht durchgehend kompatibel.
-- Gegenmaßnahme: keine generische Write-Freigabe; Writes erst per Capability-
-  Matrix pro Connector. In Phase 1 ist `TRINO` explizit auf Source-only gesetzt.
+- Connector-abhängige Schreibunterschiede sind nicht einheitlich.
+- Gegenmaßnahme: keine generische Write-Freigabe, erst Capability-basierte Freigabe.
 
 ### 9.3 Erwartungsmanagement
 
-- Gefahr: Trino als „voller DB-Ersatz“ verstanden.
-- Gegenmaßnahme: README/Specs/CLI-Hilfe präzise als read-first kennzeichnen.
+- Risiko: Trino als „voller DB-Ersatz“ missverstanden.
+- Gegenmaßnahme: klare, wiederholte Kommunikation in README/Specs/CLI-Hilfe.
 
 ### 9.4 Spezifikationsklarheit
 
-- Gefahr: divergierende URL-Konzepte zwischen Dokumenten, Doku und Implementierung.
-- Gegenmaßnahme: eine kanonische URI-Form mit klarer Fehlerstrategie und
-  verpflichtender Source/Target-Semantik (Capabilities).
+- Risiko: unterschiedliche URL-/Capability-Definitionen in Specs und Implementierung.
+- Gegenmaßnahme: ein verbindliches Modell (Canonical-URL, Source/Target-Regeln,
+  Guard-Fehlerklassen).
 
 ## 10) Betroffene Artefakte
 
 - `spec/architecture.md` (Adapterposition)
-- `spec/cli-spec.md` (Source/Target-Dialekt-Doku, Capabilities/Guarding für `data transfer`)
+- `spec/cli-spec.md` (Source-/Target-Dialekt- und Capability-Doku)
 - `spec/connection-config-spec.md` (URL-Form)
 - `settings.gradle.kts` (Modulverkabelung)
-- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DatabaseDialect.kt` (Alias/Enum)
-- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionUrlParser.kt` (URL-Parsing)
-- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DialectCapabilities.kt` (Read-only/Target-Guard)
+- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DatabaseDialect.kt`
+- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionUrlParser.kt`
+- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DialectCapabilities.kt`
 - `adapters:driven:driver-trino` (neu)
-- `adapters:driven:driver-trino-profiling` (falls `data profile` in Phase 1 aktiviert)
-- `hexagon`-Ports bei Bedarf (Capabilities bei Phase 4)
-- `docs/planning/roadmap.md` + ggf. User-Doku
+- `adapters:driven:driver-trino-profiling` (falls `data profile` in Phase 1)
+- `hexagon`-Ports bei späteren Phasen (Capability-Guards)
+- `docs/planning/roadmap.md`
+- ggf. User-Dokumentation
 
 ## 11) Akzeptanzkriterien (gesamt)
 
-- `TRINO`-Dialekt und `trino://...` sind im CLI parsebar und dokumentiert.
-- `schema reverse` gegen mindestens ein Trino-Katalog/Schema erfolgreich.
-- `schema compare` läuft gegen `trino://...` und gibt klare Diff-/Limit-Warnungen.
-- `data export` aus Trino ist stabil nutzbar.
-- `data profile` liefert belastbare Ergebnisse für mindestens die Kernprofile.
-- `data transfer` ist in Phase 1 Source-only, Target-Pfad ist klar deaktiviert.
-- `data transfer --target trino://...` ist blockiert und liefert eine
-  reproduzierbare Fehlermeldung mit `action_required`.
-- `schema generate --target trino://...` bleibt bis Abschluss Phase 3 deaktiviert.
-- `schema compare --source file... --target trino://...` liefert klar
-  dokumentierte Grenzen bei Connector-Metadaten (fehlende OID/Constraint-/Index-
-  Informationen sind explizit aufgelistet).
+- `TRINO`-Dialekt und `trino://...` sind parsebar und dokumentiert.
+- `schema reverse` gegen mindestens einen Trino-Katalog/Schema erfolgreich nutzbar.
+- `schema compare` gegen `trino://...` mit klarer Diff-/Limit-Dokumentation.
+- `data export` aus Trino stabil nutzbar.
+- `data profile` liefert belastbare Kernkennzahlen.
+- `data transfer` ist Phase 1 Source-only.
+- `data transfer --target trino://...` blockiert reproduzierbar mit `action_required`.
+- `schema generate --target trino://...` bleibt bis Phase 3 deaktiviert.
+- `schema compare --source file... --target trino://...` listet
+  Connector-Grenzen explizit (OID/Constraints/Indexes/Procedures).
 
 ## 12) Empfehlung
 
-Trino in dieser Ausprägung als **separaten Analytics/Federation-Adapter**.
+Trino soll als **eigener Read/Analytics-/Federation-Adapter** behandelt werden.
 Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 
 ## Definition of Done
@@ -317,33 +311,32 @@ Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 - [ ] `adapters:driven:driver-trino` in `settings.gradle.kts` aufgenommen.
 - [ ] Trino-Connection-Factory/JDBC-Pool lauffähig.
 - [ ] `TrinoSchemaReader`, `TrinoTableLister`, `TrinoDataReader` implementiert.
-- [ ] `schema reverse` gegen Trino lauffähig.
+- [ ] `schema reverse --source trino://...` lauffähig.
 - [ ] `schema compare --source file... --target trino://...` lauffähig.
 - [ ] `data export --source trino...` lauffähig.
-- [ ] `data profile --source trino...` lauffähig.
-- [ ] `data transfer --source trino... --target trino://...` wird mit `action_required`
-  vor Ausführung blockiert.
-- [ ] `data transfer` ist Source-only dokumentiert und technisch durchgesetzt.
-- [ ] Trino-Sicht-Lücken/Unbekannte werden als Warnungen ausgegeben.
-- [ ] `data transfer --target trino...` liefert klare Fehlerklasse (`action_required`).
-- [ ] `TRINO` als Target-Adapter für DDL/Import/Transfer nicht freigeschaltet.
+- [ ] `data profile --source trino...` lauffähig (mit Profiling-Modul).
+- [ ] `data transfer --source trino... --target trino://...` blockiert mit
+  `action_required`.
+- [ ] Source-only-Regel für Trino technisch und dokumentiert durchgesetzt.
+- [ ] Trino-Metadaten-Lücken/Unbekannte als Warnungen ausgegeben.
+- [ ] `data transfer --target trino...` liefert klare Fehlerklasse `action_required`.
+- [ ] Kein DDL-/Import-/Transfer-Write-Pfad für TRINO aktiv.
 - [ ] Mindest-Doku ergänzt: `spec/cli-spec.md`, `spec/connection-config-spec.md`.
 
 ### DoD — Phase 2
 
-- [ ] Profiling-spezifische Trino-Warn- und Coverage-Klassen dokumentiert.
-- [ ] Optionales Profiling-Modul `driver-trino-profiling` verfügbar oder klar begründet,
-  warum verzögert.
+- [ ] Trino-spezifische Profiling-Warn- und Coverage-Klassen dokumentiert.
+- [ ] Optionales Profiling-Modul `driver-trino-profiling` verfügbar oder klare
+  Begrenzung dokumentiert.
 
 ### DoD — Phase 3
 
-- [ ] `schema generate --target trino://...` ist nur als expliziter, begrenzter Pfad aktiv.
-- [ ] `action_required`-Ausgabe für nicht abbildbare Objekte verlässlich getestet.
+- [ ] `schema generate --target trino://...` ist nur explizit und begrenzt aktiv.
+- [ ] `action_required` für nicht abbildbare Objekte konsistent dokumentiert.
 
 ### DoD — Phase 4
 
-- [ ] `supports*` Capability-Kontrakt pro Connector definiert.
-- [ ] `adapters:driven:driver-trino` setzt write-/generate-/transfer-Guards nach Capability-Vertrag durch.
-- [ ] Trino-Writepfade bleiben deaktiviert, solange der Capability-Test sie nicht
-  erlaubt.
-- [ ] Kein Produktivbetrieb mit stiller Schreibsemantik.
+- [ ] `supports*`-Capability-Vertrag pro Connector definiert.
+- [ ] Trino setzt Write-/Generate-/Transfer-Guards nach Capability-Vertrag um.
+- [ ] Trino-Writepfade bleiben deaktiviert, solange Capability-Freigaben fehlen.
+- [ ] Kein Produktivbetrieb mit stiller oder impliziter Schreibsemantik.
