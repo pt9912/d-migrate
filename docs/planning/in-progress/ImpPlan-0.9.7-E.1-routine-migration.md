@@ -441,41 +441,106 @@ einzelne Reviews.
 - **C.1 — Capability- und Debug-Body-Infrastruktur**:
   - Neues Domänenobjekt `RoutineCapability` in `hexagon:core`
     (`dev.dmigrate.core.diff.routine`):
-    - `data class RoutineCapability(val function: RoutineKindCapability?, val procedure: RoutineKindCapability?)`
-    - `data class RoutineKindCapability(val enabled: Boolean, val minServerVersion: SemVer? = null)`
-    - Statisches Default für PostgreSQL (immer `enabled=true`, keine
-      `minServerVersion` — Slice A/B Verhalten als no-op-Konfig
-      formalisiert) und einen `Mysql`-Default, der gegen MySQL-8+
-      validiert.
-  - Statusobjekt `RoutineCapabilityResolution` mit Varianten
-    `Active`/`Disabled`/`InvalidConfig`. Renderer fragt nur dieses
-    Objekt, kennt die Konfig-Quelle nicht.
+    - `data class RoutineCapability(val function: RoutineKindCapability, val procedure: RoutineKindCapability)`
+    - `data class RoutineKindCapability(val enabled: Boolean, val minServerVersion: MysqlServerVersion? = null)`
+    - Beide Routineart-Felder sind **non-nullable**. Ein "fehlendes
+      Mapping" entsteht nicht, weil der Default je Dialekt zentral
+      in `RoutineCapabilityDefaults.forDialect(...)` ausgeliefert
+      wird. `InvalidConfig` (siehe Resolution) gibt es ausschliesslich,
+      wenn eine spätere konfigurierbare Quelle (CLI/YAML)
+      unparsable/inkonsistent ist; C.1 hat noch keine konfigurierbare
+      Quelle und produziert `InvalidConfig` daher nicht.
+    - Defaults in C.1:
+      - PostgreSQL: `function = enabled=true, minServerVersion=null`;
+        `procedure = enabled=true, minServerVersion=null`.
+      - MySQL: `function = enabled=true, minServerVersion=null`;
+        `procedure = enabled=true, minServerVersion=null`.
+        Bewusst **keine** harte 8.0-Schwelle als Default —
+        Versionsgates sind ein Opt-in für spätere Konfigurations-
+        slices. Damit ist C.2 ohne C.3 betrieblich nutzbar (siehe
+        DoD C.2).
+      - SQLite: kein Routinen-Pfad, Default leer bleibt unbenutzt.
+  - Statusobjekt `RoutineCapabilityResolution` mit den drei
+    Varianten `Active` / `Disabled` / `InvalidConfig`. Renderer
+    fragt nur dieses Objekt, kennt die Konfig-Quelle nicht.
+  - Wert-Typ `MysqlServerVersion` in
+    `dev.dmigrate.driver.mysql.MysqlServerVersion` (im
+    `driver-mysql`-Modul, nicht generisch in core, weil heute nur
+    MySQL eine Version-Schwelle hat):
+    - `data class MysqlServerVersion(val major: Int, val minor: Int, val patch: Int, val vendor: String? = null)`
+    - `Comparable<MysqlServerVersion>` für `minServerVersion`-
+      Vergleich.
+    - Parser `MysqlServerVersion.parse(raw: String): MysqlServerVersion?`
+      mit Pin-Tests für `8.0.36-log`, `5.7.44`, `10.11.6-MariaDB`,
+      `unknown` (→ null), Vendor-Suffix als Capture.
+    - `RoutineKindCapability.minServerVersion` ist vom Typ
+      `MysqlServerVersion?` — der Typ steht im Adapter-Modul, der
+      Vertrag in core hat eine Forward-Referenz, was per `expect`/
+      Vertragsabhängigkeit OK ist; alternativ ein leeres
+      `MinServerVersion`-Marker-Interface in core, das MySQL
+      implementiert. Implementierungsdetail; landet in C.1.
   - Neue Blocker-/Diagnosekennung `ROUTINE_CAPABILITY_CONFIG_INVALID`
-    und `ROUTINE_DOWN_BODY_UNKNOWN` (letztere ersetzt im neuen Code
-    `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`; Legacy-Code bleibt
-    rückwärtskompatibel benannt, nur neuer MySQL-Pfad nutzt den
-    generischen Namen).
+    (für `InvalidConfig`). Verhältnis zu §1
+    `ROUTINE_DOWN_BODY_UNKNOWN` / `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`:
+    - Per §1 Z. 74-77 ist `ROUTINE_DOWN_BODY_UNKNOWN` der
+      **kanonische** generische Code für alle Routine-Down-Pfade
+      ohne sicheren Vorbody.
+    - Slice A/B haben bei Landung der ersten Iteration noch
+      `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` emittiert (Legacy-Name);
+      ein eigener kleiner Aufräum-Slice (geplant als C.1-Anhang
+      oder eigenständiger Cleanup-Commit) migriert PostgreSQL-
+      Function- und -Procedure-Renderer auf den kanonischen
+      generischen Namen.
+    - Neue Slices (MySQL ab C.2) emittieren ausschliesslich
+      `ROUTINE_DOWN_BODY_UNKNOWN`. Es entsteht keine neue
+      Replace-spezifische Diagnosekennung.
   - CLI-Flag `--debug-body` auf `schema migrate`/`schema rollback`:
-    - Verdrahtung: Clikt-Option → `SchemaMigrateRequest.debugBody`
-      → Report-Writer-Default
-      (`RoutineBodyScrubber.preview(...)` vs roher Body)
-      → `DdlGenerationOptions.routineBodyDisplay` (`SCRUBBED_ONLY` |
-      `RAW_DEBUG`). Renderer-Execution-Plane bleibt unverändert
-      (Execution-Statements rendern immer den Roh-Body — Display vs
-      Execution sind zwei Welten).
-    - Default in jedem Pfad: `SCRUBBED_ONLY`.
-  - Capability-Konfiguration-Quelle:
-    - Heute hardcoded je Dialekt in `RoutineCapabilityDefaults`
-      (PostgreSQL / MySQL); kein YAML/CLI-Override in Slice C.
-    - Erweiterung auf konfigurierbare Quelle (CLI-Flag,
-      YAML-Eintrag) erst in einem späteren Slice — der Vertrag
-      `RoutineCapability` ist so geschnitten, dass dieser Schritt
-      keine API-Erweiterung am Renderer braucht.
-  - **DoD C.1**: `RoutineCapability` + `RoutineCapabilityResolution`
-    + `--debug-body`-CLI-Pfad existieren, sind getestet, aber **noch
-    nicht** vom MySQL-Renderer konsumiert. Function-/Procedure-
-    Renderer in PostgreSQL bleiben byte-identisch (Capability immer
-    `Active`).
+    - Verdrahtung (vollständige Kette):
+      Clikt-Option → `SchemaMigrateCommand`-Args
+      → `SchemaMigrateRequest.debugBody: Boolean` (neues Feld in
+      `hexagon:application` `SchemaMigrateRunner.kt`)
+      → `SchemaRollbackRequest.debugBody` analog
+      → `SchemaMigrateReportRenderer`/`ReportRenderOptions` mit
+      `bodyDisplay: RoutineBodyDisplay` (`SCRUBBED_ONLY` | `RAW_DEBUG`).
+    - `RoutineBodyDisplay` lebt **nicht** in `DdlGenerationOptions`,
+      weil DDL-Renderer immer den Roh-Body in der Execution-Plane
+      schreiben (sonst ist die Migration nicht ausführbar). Das
+      Flag steuert ausschliesslich die Report-/Display-Plane.
+    - Default in jedem Pfad: `SCRUBBED_ONLY`. Das `--debug-body`-Flag
+      kippt nur die Display-Plane auf `RAW_DEBUG`; alle Logging-
+      Hooks bleiben standardmäßig scrubbed.
+    - Test-Fixturen, die `SchemaMigrateRequest`/`SchemaRollbackRequest`
+      konstruieren (`SchemaMigrateCommandFunctionTest`,
+      `SchemaMigrateCommandProcedureTest`, der bestehende
+      `SchemaRollbackRunnerTest` etc.), müssen den neuen
+      Default-`debugBody=false`-Parameter mitführen — C.1 listet
+      das explizit als Touched-Test-Set.
+  - Capability-Konfiguration-Quelle in C.1:
+    - Hardcoded je Dialekt in `RoutineCapabilityDefaults`. Keine
+      YAML-/CLI-Override.
+    - Erweiterung auf konfigurierbare Quelle (CLI-Flag, YAML-Eintrag)
+      kommt in einem späteren Slice; der `RoutineCapability`-Vertrag
+      ist so geschnitten, dass dieser Schritt keine API-Erweiterung
+      am Renderer braucht — nur eine zusätzliche `resolve(...)`-
+      Quelle, die statt der Defaults greift.
+  - **DoD C.1**:
+    - `RoutineCapability` + `RoutineCapabilityResolution` +
+      `MysqlServerVersion` + Parser existieren in den oben
+      genannten Modulen.
+    - `--debug-body`-CLI-Pfad ist verdrahtet (Command → Request →
+      ReportRenderer) und getestet (Pin: ohne Flag ist Report
+      scrubbed-only; mit Flag erscheint Roh-Body in der
+      Display-Plane).
+    - `RoutineCapability`/`RoutineCapabilityResolution` werden in
+      C.1 **nicht** in Renderern konsumiert. Slice-A/B-PG-Renderer
+      werden in C.1 nicht angefasst — keine Capability-Plumbing
+      durch `PostgresDiffRenderContext`, keine neue Variable im
+      Function-/Procedure-Op-Pfad. C.2 wird `routineCapability`
+      neu in `DdlGenerationOptions` einführen UND gleichzeitig
+      die MySQL-Renderer dafür ausstatten; der PG-Pfad bleibt
+      auch dann unverändert (siehe DoD C.2).
+    - Slice-A/B-Renderer-Tests + Goldens bleiben byte-identisch
+      grün (kein PG-Render-Diff).
 
 - **C.2 — MySQL Function/Procedure Renderer Up + Down**:
   - Neuer `MysqlDiffRoutineOps` rendert
@@ -486,32 +551,58 @@ einzelne Reviews.
     (Comparator) und `RoutineBodyScrubber` (Reports).
   - `MysqlDiffDdlGenerator` lernt `OpCategory.ROUTINE` (Function +
     Procedure in einer Kategorie, da MySQL beide gleich behandelt).
+  - `DdlGenerationOptions` erhält in C.2 (nicht C.1):
+    - `routineCapability: RoutineCapability` — **kein**
+      `NOT_DECLARED`/4. Zustand; `buildRenderOptions` setzt diesen
+      immer per `RoutineCapabilityDefaults.forDialect(dialect)`,
+      sodass das Feld nie abwesend ist.
+    - `mysqlServerVersion: MysqlServerVersion?` — null bei
+      file-Operanden, gesetzt bei live-DB-Operanden über
+      `MysqlMetadataQueries.readServerVersion()`.
   - Capability-Gate: Renderer fragt
-    `ctx.options.routineCapability.resolveFor(...)` ab und entscheidet:
+    `ctx.options.routineCapability.resolveFor(kind, ctx.options.mysqlServerVersion)`
+    ab und entscheidet:
     - `Active` + Body bekannt → `CREATE OR REPLACE`.
-    - `Disabled` → bei `Dependency-Guard=SAFE` `DROP+CREATE`, sonst
-      `MANUAL_ACTION_REQUIRED`.
+    - `Disabled` → `MANUAL_ACTION_REQUIRED` (Guard ist in C.2 fest
+      `UNKNOWN`, siehe nächster Absatz; C.3 öffnet
+      `DROP+CREATE` über `Guard=SAFE`).
     - `InvalidConfig` → `MANUAL_ACTION_REQUIRED` +
-      `ROUTINE_CAPABILITY_CONFIG_INVALID`.
-  - Dependency-Guard in Slice C ist fest auf `UNKNOWN` verdrahtet
-    (Plan §3 erlaubt das; Slice D liefert die echte Berechnung).
-    Konsequenz: alle Disabled/Signatur-Mismatch-Fälle blocken in
-    Slice C mit `MANUAL_ACTION_REQUIRED`. Das ist absichtlich
+      `ROUTINE_CAPABILITY_CONFIG_INVALID`. In C.2 unerreichbar, weil
+      C.1 keine konfigurierbare Quelle hat — Pin-Test erzeugt
+      `InvalidConfig` per Test-Fake.
+  - Dependency-Guard in Slice C.2 ist fest auf `UNKNOWN` verdrahtet.
+    Plan §3 Schritt 5 ordnet `UNKNOWN` direkt auf
+    `MANUAL_ACTION_REQUIRED` zu — der Stub macht diese Mapping-
+    Klausel explizit. Konsequenz: alle `Disabled`/Signatur-Mismatch-
+    Fälle blocken in C.2 mit `MANUAL_ACTION_REQUIRED`. Das ist
     konservativ und im Test gepinnt.
-  - Server-Version: kommt aus dem MySQL-Adapter-Layer:
-    - File-zu-File (kein Live-DB): `RoutineCapability.minServerVersion`
-      wird nicht aufgelöst → Resolution = `Active` falls
-      `enabled=true` UND `minServerVersion=null`, sonst `Disabled`.
-    - File-zu-DB: Reader liefert
-      `MysqlServerInfo(version: SemVer)` als optionales Feld in
-      `DdlGenerationOptions.mysqlServerVersion`; `resolveFor` nutzt
-      es zur Version-Prüfung. Fehlt das Feld bei DB-Operanden, gilt
-      bewusst `Disabled` (sicher).
-  - **DoD C.2**: MySQL-Function- und -Procedure-Routinen rendern
-    Up + Down (mit known prior body), Scrubbing in Reports aktiv,
-    delimiterfrei. PG-Renderer unverändert. Trigger und alle
-    Disabled/Signatur-Mismatch-Pfade landen weiterhin in
-    `MANUAL_ACTION_REQUIRED` weil Guard=UNKNOWN.
+  - Server-Version-Auflösung in `resolveFor`:
+    - File-zu-File: `mysqlServerVersion = null`. Resolution =
+      `Active`, weil C.1-Default `minServerVersion = null` ist
+      (kein Versions-Vergleich nötig). Sobald ein späterer Slice
+      Konfig mit `minServerVersion` zulässt und die Version
+      gleichzeitig fehlt, wird das Mapping konfigurierbar; C.2
+      muss diesen Pfad nicht antizipieren.
+    - File-zu-DB: Reader liefert `MysqlServerVersion`;
+      `resolveFor` vergleicht und liefert `Active` bzw. `Disabled`.
+    - Damit ist C.2 alleine **kein funktionaler Regressionspunkt**
+      für MySQL-File-zu-File: Default-`minServerVersion = null`
+      heisst Resolution = `Active`, der Renderer erzeugt
+      `CREATE OR REPLACE`.
+  - **DoD C.2**:
+    - MySQL-Function- und -Procedure-Routinen rendern Up + Down
+      (mit known prior body), Scrubbing in Reports aktiv,
+      delimiterfrei.
+    - PG-Renderer in C.2 weiterhin **nicht angefasst** — der
+      Capability-Gate-Konsum existiert ausschliesslich in
+      `MysqlDiffRoutineOps`. Slice-A/B-Tests + Goldens bleiben
+      byte-identisch grün.
+    - Trigger und in C.2 unerreichbare `Disabled`/
+      Signatur-Mismatch-Pfade landen weiterhin in
+      `MANUAL_ACTION_REQUIRED` (Guard=UNKNOWN).
+    - `MysqlMetadataQueries.readServerVersion()` + Parser
+      `MysqlServerVersion.parse` sind in C.1 ausgeliefert; C.2 setzt
+      sie nur ein.
 
 - **C.3 — Dependency-Guard-Stub + DROP+CREATE-Fallback**:
   - Konservativer Dependency-Guard für Slice C: `DependencyGuard`
@@ -520,8 +611,8 @@ einzelne Reviews.
     konservativen** Heuristik: ohne Slice-D-Topologie gilt jede
     Routine-Operation als `UNSAFE`, sobald irgendein anderer
     Routine-/View-/Trigger-/Tabellen-Op im selben Plan steht; sonst
-    `SAFE`. Ein Diagnose-Hinweis `DEPENDENCY_GUARD_HEURISTIC` markiert
-    diese Stub-Bewertung im Report.
+    `SAFE`. Ein Diagnose-Hinweis `DEPENDENCY_GUARD_HEURISTIC`
+    markiert diese Stub-Bewertung im Report.
   - Renderer nutzt den Guard für den `Disabled`-Pfad:
     `SAFE` → `DROP+CREATE`, sonst `MANUAL_ACTION_REQUIRED`.
   - **DoD C.3**: `Disabled`-Capability-Fälle landen mit `SAFE`-Guard
@@ -531,54 +622,112 @@ einzelne Reviews.
 
 ##### Akzeptanzkriterien pro Sub-Slice
 
-- C.1: `RoutineCapability`-Tests pinnen die drei Resolution-Zweige;
-  `--debug-body`-CLI-Test pinnt, dass ohne Flag der Report weiterhin
-  scrubbed-only ist und mit Flag der Roh-Body landet; Default-Tests
-  für PostgreSQL- und MySQL-Defaults; CHANGELOG-Eintrag C.1.
-- C.2: `MysqlDiffRoutineOpsTest` für Up/Down Create/Replace/Drop
-  Function+Procedure inklusive `CREATE OR REPLACE`-Pfad, plus
-  Capability-Negativtests (`Disabled` → MANUAL,
-  `InvalidConfig` → ROUTINE_CAPABILITY_CONFIG_INVALID).
-  E2E `SchemaMigrateCommandMysqlRoutineTest` mit Fixture-Paar.
-  Scrubbing-Regression: ohne `--debug-body` taucht in der
-  Report-JSON kein Roh-Body-Token auf.
-- C.3: Guard-Stub-Test (SAFE bei isolierter Routine, UNSAFE sobald
-  weitere Routine-/Tabellen-Ops im Plan); Renderer-Test pinnt
-  `DROP+CREATE` nur unter `SAFE`. Diagnose-Test pinnt
-  `DEPENDENCY_GUARD_HEURISTIC`.
+- C.1:
+  - `RoutineCapability`-Tests pinnen die drei Resolution-Zweige
+    (per Test-Fake für `InvalidConfig`, weil C.1 keinen Konfig-
+    Loader hat).
+  - `MysqlServerVersionParserTest` pinnt mindestens fünf reale
+    Versionsstrings (`8.0.36-log`, `5.7.44`, `10.11.6-MariaDB`,
+    `8.4.0`, `unknown`) inklusive Vendor-Capture.
+  - `--debug-body`-CLI-Test pinnt: ohne Flag bleibt der Report
+    scrubbed-only; mit Flag landet Roh-Body **nur** in der
+    Display-Plane (Report-JSON), Execution-SQL-Output bleibt
+    unverändert.
+  - Default-Tests für PostgreSQL- und MySQL-Defaults pinnen die
+    in C.1 festgelegten Werte (alle `enabled=true, minServerVersion=null`).
+  - Slice-A/B-Golden-Output-Regression-Pin: PG-Renderer-Outputs
+    bleiben byte-identisch zur Slice-B-Baseline.
+  - CHANGELOG-Eintrag C.1.
+
+- C.2:
+  - `MysqlDiffRoutineOpsTest` für Up/Down Create/Replace/Drop
+    Function+Procedure inklusive `CREATE OR REPLACE`-Pfad.
+  - Capability-Negativtests via Test-Fake:
+    - `Disabled` → `MANUAL_ACTION_REQUIRED`.
+    - `InvalidConfig` → `MANUAL_ACTION_REQUIRED` +
+      `ROUTINE_CAPABILITY_CONFIG_INVALID`.
+  - File-zu-DB-Pin: `MysqlMetadataQueries.readServerVersion()`
+    wird über einen Fake-`JdbcOperations` exerziert und das
+    Ergebnis im Renderer-Pfad gepinnt.
+  - E2E `SchemaMigrateCommandMysqlRoutineTest` mit Fixture-Paar
+    (file-zu-file, `enabled=true, minServerVersion=null` Default
+    → `CREATE OR REPLACE`).
+  - Scrubbing-Regression: ohne `--debug-body` taucht in der
+    Report-JSON kein Roh-Body-Token auf.
+  - Slice-A/B-Golden-Output-Regression-Pin bleibt grün.
+
+- C.3:
+  - Guard-Stub-Test (`SAFE` bei isolierter Routine, `UNSAFE` sobald
+    weitere Routine-/Tabellen-Ops im Plan).
+  - Renderer-Test pinnt `DROP+CREATE` nur unter `SAFE`.
+  - Diagnose-Test pinnt `DEPENDENCY_GUARD_HEURISTIC` im Report.
 
 ##### Modulgrenzen / Wiring-Pfad
 
 ```
 hexagon:core
-  └── dev.dmigrate.core.diff.routine.RoutineCapability
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityResolution
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityDefaults
-  └── dev.dmigrate.core.diff.routine.DependencyGuard  (C.3)
-  └── dev.dmigrate.core.diff.routine.DependencyGuardEvaluator  (C.3)
+  └── dev.dmigrate.core.diff.routine.RoutineCapability        (C.1)
+  └── dev.dmigrate.core.diff.routine.RoutineKindCapability    (C.1)
+  └── dev.dmigrate.core.diff.routine.RoutineCapabilityResolution  (C.1)
+  └── dev.dmigrate.core.diff.routine.RoutineCapabilityDefaults    (C.1)
+  └── dev.dmigrate.core.diff.routine.DependencyGuard          (C.3)
+  └── dev.dmigrate.core.diff.routine.DependencyGuardEvaluator (C.3)
 
-hexagon:ports-read (DdlGenerationOptions)
-  └── + routineCapability: RoutineCapability  (default = NOT_DECLARED)
-  └── + mysqlServerVersion: SemVer?
-  └── + routineBodyDisplay: RoutineBodyDisplay  (SCRUBBED_ONLY|RAW_DEBUG)
+hexagon:ports-read
+  └── DdlGenerationOptions
+        + routineCapability: RoutineCapability                (C.2; in C.1 NICHT)
+        + mysqlServerVersion: MysqlServerVersion?             (C.2; in C.1 NICHT)
+       (kein routineBodyDisplay — gehört in den Report-Layer)
 
-adapters/driving/cli  (SchemaMigrateCommand + Runner)
-  └── --debug-body Clikt-Option → SchemaMigrateRequest.debugBody
-  └── SchemaMigrateRenderPipeline.buildRenderOptions baut
-      RoutineBodyDisplay + RoutineCapabilityDefaults.forDialect(dialect)
+hexagon:application
+  └── cli.commands.SchemaMigrateRunner.SchemaMigrateRequest
+        + debugBody: Boolean = false                          (C.1)
+  └── cli.commands.SchemaRollbackRunner.SchemaRollbackRequest
+        + debugBody: Boolean = false                          (C.1)
+  └── cli.commands.SchemaMigrateRenderPipeline.buildRenderOptions
+        (C.2) injects routineCapability via
+        RoutineCapabilityDefaults.forDialect(dialect) und
+        mysqlServerVersion aus dem MySQL-Reader, falls vorhanden.
+  └── ReportRenderOptions (oder gleichwertiger Hook)
+        + bodyDisplay: RoutineBodyDisplay = SCRUBBED_ONLY     (C.1)
+
+adapters/driving/cli
+  └── SchemaMigrateCommand: --debug-body Clikt-Option         (C.1)
+  └── SchemaRollbackCommand: --debug-body Clikt-Option        (C.1)
+  └── betroffene Test-Fixturen aktualisieren
+        SchemaMigrateCommandFunctionTest,
+        SchemaMigrateCommandProcedureTest,
+        SchemaRollbackRunnerTest …                            (C.1)
 
 adapters/driven/driver-mysql
-  └── MysqlDiffRoutineOps (C.2)
-  └── MysqlRoutineReader liest MysqlServerInfo (file-zu-DB)
-  └── MysqlDdlGenerator routet Routine-Ops in MysqlDiffRoutineOps
+  └── MysqlServerVersion (data class + parse)                 (C.1)
+  └── MysqlMetadataQueries.readServerVersion(JdbcOperations)  (C.1)
+  └── MysqlDiffRoutineOps                                     (C.2)
+  └── MysqlDiffDdlGenerator routet Routine-Ops in
+      MysqlDiffRoutineOps (Capability-Gate)                   (C.2)
+  └── MysqlRoutineReader bezieht in Live-DB-Pfad
+      readServerVersion() via MysqlMetadataQueries            (C.2)
 ```
 
 ##### Auswirkung auf bestehende Slice-A/B-Tests
 
-- Slice A/B-Tests bleiben byte-identisch grün, weil
-  PostgreSQL-Default-Capability ein `Active`-Resolution für alle
-  Routinearten erzeugt und der PG-Renderer den Capability-Gate
-  durchläuft, ohne den bisherigen Pfad zu ändern.
+- C.1 lässt die PG-Renderer und ihre Tests unverändert: keine
+  Capability-Plumbing durch `PostgresDiffRenderContext`, keine
+  Slice-A/B-Goldens berührt. Die Slice-A/B-Tests bleiben
+  byte-identisch grün, weil der PG-Render-Pfad in C.1 schlicht
+  nicht angefasst wird.
+- C.2 erweitert `DdlGenerationOptions` um `routineCapability` und
+  `mysqlServerVersion`; das ist ein additives Data-Class-Update
+  mit Defaults. PG-Renderer ignorieren die neuen Felder weiterhin.
+- Ein expliziter Golden-Output-Regression-Pin (Slice A + B) ist Teil
+  der C.1- und C.2-AC-Liste, damit eine versehentliche Drift sofort
+  gefangen wird.
+- PostgreSQL-Function-/-Procedure-Renderer migrieren in einem
+  späteren Cleanup-Slice (separat zu C.1/C.2/C.3) von
+  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` auf den kanonischen
+  generischen Code `ROUTINE_DOWN_BODY_UNKNOWN` (§1 Z. 74-77).
+  Bis dahin emittieren sie weiterhin den Replace-spezifischen
+  Legacy-Code; die zugehörigen Pins bleiben aktiv.
 - Reverse-Reader-Carve-out (Slice A) bleibt aktiv; Slice E öffnet
   den Body-Readback.
 
