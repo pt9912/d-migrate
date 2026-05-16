@@ -178,6 +178,18 @@ Aus Scope:
 - Plan-Artefakt-Einbettung von Routine-Bodies — braucht F.2-Body-
   Embedding-Gate; bis dahin blockieren persistierte Mischfaelle
   fuer Replace mit klarer Begruendung.
+- MySQL-Reverse-Read von Routine-Identity-Attributen
+  (`security`/`definer`/`sqlMode`) — Slice E schliesst diese
+  Lücke nur für PostgreSQL (über `pg_proc`). MySQL bleibt mit
+  Reader-Defaults `null`; ein späterer dialekt-spezifischer
+  Slice kann den `information_schema.routines`-Projection-Pfad
+  ergänzen, sobald ein konkretes Bedürfnis dafür existiert.
+- Validator-Regel "INVOKER + definer ist widersinnig" — heute
+  akzeptiert der File-Loader `security: invoker` + `definer: X`
+  ohne Fehler, und der Reverse-Read setzt `definer = null` für
+  INVOKER-Routinen, was eine spurious-Replace-Diagnose erzeugt.
+  Behebung gehört in einen späteren Validator-Slice; bis dahin
+  ist `definer` auf INVOKER-Routinen ein Schema-File-Smell.
 
 ### Body-Embedding-Gate (Status bis F.2)
 
@@ -797,8 +809,11 @@ adapters/driven/driver-postgresql                                  (C.1.b)
 - C.2 erweitert `DdlGenerationOptions` um `routineCapability` und
   `mysqlServerVersion`; das ist ein additives Data-Class-Update
   mit Defaults. PG-Renderer ignorieren die neuen Felder weiterhin.
-- Reverse-Reader-Carve-out (Slice A) bleibt aktiv; Slice E öffnet
-  den Body-Readback.
+- Reverse-Reader-Carve-out (Slice A) bleibt aktiv, bis Slice E
+  ihn schliesst — Slice E populiert `security` / `definer` /
+  `searchPath` aus `pg_proc` (der Body-Readback selbst lief schon
+  ab Slice A; Slice E ergänzt die Identity-Attribute, die für
+  einen sauberen `--generate-rollback`-Down-Pfad fehlten).
 
 ### Slice D — Dependency-Sortierung Routine ↔ Tabelle/View/Trigger/Sequence
 

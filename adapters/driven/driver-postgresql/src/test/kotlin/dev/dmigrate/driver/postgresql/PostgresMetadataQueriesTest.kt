@@ -607,4 +607,67 @@ class PostgresMetadataQueriesTest : FunSpec({
         } returns emptyList()
         PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public") shouldBe emptyMap()
     }
+
+    test("listRoutineIdentityAttributes parses search_path with quoted comma-bearing segment") {
+        // Slice E follow-up: PG `proconfig` quotes segments that
+        // contain commas. The parser must split on un-quoted
+        // commas only AND strip the surrounding double quotes so
+        // the file-authored form (`weird,schema`) round-trips.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 1L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("search_path=\"weird,schema\",public"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 1L)]?.searchPath shouldBe listOf("weird,schema", "public")
+    }
+
+    test("listRoutineIdentityAttributes collapses escaped double-quote inside a quoted segment") {
+        // PG escapes a literal `"` inside a quoted segment as `""`.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 2L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("search_path=\"a\"\"b\",c"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 2L)]?.searchPath shouldBe listOf("a\"b", "c")
+    }
+
+    test("listRoutineIdentityAttributes proconfig without search_path entry yields null search_path") {
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 3L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("log_min_messages=warning", "statement_timeout=1000"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 3L)]?.searchPath shouldBe null
+    }
+
+    test("listRoutineIdentityAttributes accepts a List<String> config payload") {
+        // Some test-fake JDBC drivers hand back text[] as a Kotlin
+        // List rather than an Array; toStringList must accept it.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 4L,
+                "security_definer" to false, "definer" to null,
+                "config" to listOf("search_path=public"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 4L)]?.searchPath shouldBe listOf("public")
+    }
 })

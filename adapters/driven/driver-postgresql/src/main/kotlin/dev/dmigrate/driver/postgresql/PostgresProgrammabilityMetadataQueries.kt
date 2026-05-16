@@ -284,17 +284,77 @@ internal object PostgresProgrammabilityMetadataQueries {
      * Extracts the `search_path` segment from a `proconfig` array
      * row. JDBC returns `text[]` as `java.sql.Array` (driver-
      * specific) or a `Array<String>` / `List<String>`; the parser
-     * accepts both via the `toStringList` helper.
+     * accepts both via the [toStringList] helper.
+     *
+     * PostgreSQL quotes a `proconfig` value with surrounding
+     * double quotes whenever it contains commas or other special
+     * characters — so a `search_path="weird,schema",public` value
+     * must be split on **un-quoted** commas only, and the
+     * resulting tokens must have their wrapping quotes stripped
+     * (and any escaped `""` collapsed back to `"`) so the
+     * comparator round-trips byte-identically against the
+     * file-authored form (`["weird,schema", "public"]`).
      */
     private fun parseSearchPath(config: Any?): List<String>? {
         val entries = toStringList(config) ?: return null
         for (entry in entries) {
             if (entry.startsWith("search_path=")) {
                 val value = entry.substringAfter("search_path=")
-                return value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+                return splitQuotedSegments(value).map { unquoteSearchPathSegment(it) }.filter { it.isNotEmpty() }
             }
         }
         return null
+    }
+
+    /**
+     * Splits a `search_path` value on commas while preserving
+     * comma sequences inside double-quoted segments. A PG
+     * `proconfig` value `"a,b",c` becomes `["\"a,b\"", "c"]`.
+     */
+    private fun splitQuotedSegments(value: String): List<String> {
+        val result = mutableListOf<String>()
+        val current = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < value.length) {
+            val ch = value[i]
+            when {
+                ch == '"' -> {
+                    current.append(ch)
+                    // Treat `""` inside a quoted segment as an
+                    // escaped quote, not as the end of the segment.
+                    val isEscapedQuote = inQuotes && i + 1 < value.length && value[i + 1] == '"'
+                    if (isEscapedQuote) {
+                        current.append('"')
+                        i++
+                    } else {
+                        inQuotes = !inQuotes
+                    }
+                }
+                ch == ',' && !inQuotes -> {
+                    result += current.toString()
+                    current.clear()
+                }
+                else -> current.append(ch)
+            }
+            i++
+        }
+        if (current.isNotEmpty()) result += current.toString()
+        return result
+    }
+
+    /**
+     * Strips a single layer of double quotes from a `search_path`
+     * segment and collapses `""` back to `"`. Leaves un-quoted
+     * segments untouched.
+     */
+    private fun unquoteSearchPathSegment(segment: String): String {
+        val trimmed = segment.trim()
+        return if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+            trimmed.substring(1, trimmed.length - 1).replace("\"\"", "\"")
+        } else {
+            trimmed
+        }
     }
 
     private fun toStringList(value: Any?): List<String>? = when (value) {
