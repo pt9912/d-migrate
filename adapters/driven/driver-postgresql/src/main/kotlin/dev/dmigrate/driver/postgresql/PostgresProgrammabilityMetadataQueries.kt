@@ -176,17 +176,25 @@ internal object PostgresProgrammabilityMetadataQueries {
      * referencing side (`classid = 'pg_proc'::regclass`);
      * `pg_class.oid` is the referenced relation
      * (`refclassid = 'pg_class'::regclass`), filtered by
-     * `relkind` to discriminate tables / views / sequences. Returns
-     * a per-routine-name bag of dependency names keyed by relkind.
+     * `relkind` to discriminate tables / views / sequences.
+     *
+     * The projection groups by `(proname, oid)` so two
+     * same-name overloads with distinct signatures get distinct
+     * dependency bags. The reader joins by the same
+     * `(name, specific_name)` pair to avoid the overload-
+     * collision bug where `fn(int)` and `fn(text)` would share
+     * the union of each other's deps.
      */
     fun listRoutineRelationDependencies(
         session: JdbcOperations,
         schemaName: String,
-    ): Map<String, RoutineRelationDependencies> {
+    ): Map<RoutineKey, RoutineRelationDependencies> {
         val rows = session.queryList(
             """
             SELECT DISTINCT
                    p.proname AS routine_name,
+                   p.oid::text || '_' || p.proname AS routine_key,
+                   p.oid AS routine_oid,
                    r.relname AS relation_name,
                    r.relkind AS relation_kind
             FROM pg_depend d
@@ -198,16 +206,18 @@ internal object PostgresProgrammabilityMetadataQueries {
               AND d.refclassid = 'pg_class'::regclass
               AND d.deptype IN ('n', 'a')
               AND r.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')
-            ORDER BY routine_name, relation_name
+            ORDER BY routine_name, routine_oid, relation_name
             """.trimIndent(), schemaName, schemaName,
         )
 
-        val grouped = linkedMapOf<String, MutableRoutineRelationDependencies>()
+        val grouped = linkedMapOf<RoutineKey, MutableRoutineRelationDependencies>()
         for (row in rows) {
             val routineName = row["routine_name"] as String
+            val routineOid = (row["routine_oid"] as Number).toLong()
             val relationName = row["relation_name"] as String
             val relationKind = row["relation_kind"] as String
-            val deps = grouped.getOrPut(routineName) { MutableRoutineRelationDependencies() }
+            val key = RoutineKey(name = routineName, oid = routineOid)
+            val deps = grouped.getOrPut(key) { MutableRoutineRelationDependencies() }
             when (relationKind) {
                 "v", "m" -> deps.views += relationName
                 "S" -> deps.sequences += relationName
@@ -219,27 +229,31 @@ internal object PostgresProgrammabilityMetadataQueries {
 
     /**
      * E.1 Routine-Migration Slice D.2: trigger ↔ function edges via
-     * `pg_trigger.tgfoid → pg_proc.oid`. Each row pairs a trigger
-     * with the procedural function it invokes; the reader writes
-     * the result into the trigger's `DependencyInfo.functions`.
+     * `pg_trigger.tgfoid → pg_proc.oid`. The projection is keyed by
+     * `(table, trigger_name)` because `pg_trigger.tgname` is only
+     * unique per relation — two triggers with the same name on
+     * different tables are legal and must not collapse into a
+     * single bag.
      */
     fun listTriggerFunctionDependencies(
         session: JdbcOperations,
         schemaName: String,
-    ): Map<String, List<String>> {
+    ): Map<TriggerKey, List<String>> {
         val rows = session.queryList(
             """
-            SELECT t.tgname AS trigger_name, p.proname AS function_name
+            SELECT c.relname AS table_name,
+                   t.tgname AS trigger_name,
+                   p.proname AS function_name
             FROM pg_trigger t
             JOIN pg_class c ON c.oid = t.tgrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = ?
             JOIN pg_proc p ON p.oid = t.tgfoid
             WHERE NOT t.tgisinternal
-            ORDER BY trigger_name, function_name
+            ORDER BY table_name, trigger_name, function_name
             """.trimIndent(), schemaName,
         )
         return rows.groupBy(
-            { it["trigger_name"] as String },
+            { TriggerKey(table = it["table_name"] as String, name = it["trigger_name"] as String) },
             { it["function_name"] as String },
         )
     }
@@ -250,6 +264,22 @@ internal data class ViewRelationDependencies(
     val views: List<String> = emptyList(),
     val columns: Map<String, List<String>> = emptyMap(),
 )
+
+/**
+ * E.1 Slice D.2 + follow-up: identifies a specific routine
+ * overload — the `oid` distinguishes same-name overloads with
+ * different parameter signatures so each overload gets its own
+ * `RoutineRelationDependencies` bag rather than sharing the
+ * union.
+ */
+internal data class RoutineKey(val name: String, val oid: Long)
+
+/**
+ * E.1 Slice D.2 + follow-up: `pg_trigger.tgname` is only unique
+ * per relation, so the trigger-function projection keys by the
+ * `(table, name)` pair.
+ */
+internal data class TriggerKey(val table: String, val name: String)
 
 /** E.1 Slice D.2: routine dependency projection from `pg_depend`. */
 internal data class RoutineRelationDependencies(

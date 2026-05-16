@@ -476,25 +476,49 @@ class PostgresMetadataQueriesTest : FunSpec({
 
     // ── listRoutineRelationDependencies (E.1 Slice D.2) ───────────
 
-    test("listRoutineRelationDependencies splits relation kinds into tables/views/sequences") {
+    test("listRoutineRelationDependencies splits relation kinds into tables/views/sequences per overload") {
         every {
             jdbc.queryList(
                 match { it.contains("pg_proc") && it.contains("pg_depend") && it.contains("relkind") },
                 any(), any(),
             )
         } returns listOf(
-            mapOf("routine_name" to "fn", "relation_name" to "orders", "relation_kind" to "r"),
-            mapOf("routine_name" to "fn", "relation_name" to "audit_view", "relation_kind" to "v"),
-            mapOf("routine_name" to "fn", "relation_name" to "audit_mat", "relation_kind" to "m"),
-            mapOf("routine_name" to "fn", "relation_name" to "order_seq", "relation_kind" to "S"),
-            mapOf("routine_name" to "other_fn", "relation_name" to "customers", "relation_kind" to "p"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "orders", "relation_kind" to "r"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "audit_view", "relation_kind" to "v"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "audit_mat", "relation_kind" to "m"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "order_seq", "relation_kind" to "S"),
+            mapOf("routine_name" to "other_fn", "routine_key" to "2002_other_fn", "routine_oid" to 2002L,
+                "relation_name" to "customers", "relation_kind" to "p"),
         )
         val result = PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies(jdbc, "public")
-        result["fn"]?.tables shouldBe listOf("orders")
-        result["fn"]?.views shouldBe listOf("audit_view", "audit_mat")
-        result["fn"]?.sequences shouldBe listOf("order_seq")
-        result["other_fn"]?.tables shouldBe listOf("customers")
-        result["other_fn"]?.sequences shouldBe emptyList<String>()
+        val fnDeps = result[RoutineKey(name = "fn", oid = 1001L)]
+        fnDeps?.tables shouldBe listOf("orders")
+        fnDeps?.views shouldBe listOf("audit_view", "audit_mat")
+        fnDeps?.sequences shouldBe listOf("order_seq")
+        val otherDeps = result[RoutineKey(name = "other_fn", oid = 2002L)]
+        otherDeps?.tables shouldBe listOf("customers")
+        otherDeps?.sequences shouldBe emptyList<String>()
+    }
+
+    test("listRoutineRelationDependencies keeps overloads with same name distinct") {
+        every {
+            jdbc.queryList(
+                match { it.contains("pg_proc") && it.contains("pg_depend") && it.contains("relkind") },
+                any(), any(),
+            )
+        } returns listOf(
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "orders", "relation_kind" to "r"),
+            mapOf("routine_name" to "fn", "routine_key" to "1002_fn", "routine_oid" to 1002L,
+                "relation_name" to "customers", "relation_kind" to "r"),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 1001L)]?.tables shouldBe listOf("orders")
+        result[RoutineKey(name = "fn", oid = 1002L)]?.tables shouldBe listOf("customers")
     }
 
     test("listRoutineRelationDependencies returns empty map when no deps") {
@@ -509,15 +533,15 @@ class PostgresMetadataQueriesTest : FunSpec({
 
     // ── listTriggerFunctionDependencies (E.1 Slice D.2) ───────────
 
-    test("listTriggerFunctionDependencies groups trigger function names by trigger") {
+    test("listTriggerFunctionDependencies groups by (table, trigger_name)") {
         every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns listOf(
-            mapOf("trigger_name" to "audit_orders_t", "function_name" to "audit_fn"),
-            mapOf("trigger_name" to "audit_orders_t", "function_name" to "notify_fn"),
-            mapOf("trigger_name" to "track_customers_t", "function_name" to "audit_fn"),
+            mapOf("table_name" to "orders", "trigger_name" to "audit_t", "function_name" to "audit_fn"),
+            mapOf("table_name" to "orders", "trigger_name" to "audit_t", "function_name" to "notify_fn"),
+            mapOf("table_name" to "customers", "trigger_name" to "audit_t", "function_name" to "audit_fn"),
         )
         val result = PostgresProgrammabilityMetadataQueries.listTriggerFunctionDependencies(jdbc, "public")
-        result["audit_orders_t"] shouldBe listOf("audit_fn", "notify_fn")
-        result["track_customers_t"] shouldBe listOf("audit_fn")
+        result[TriggerKey(table = "orders", name = "audit_t")] shouldBe listOf("audit_fn", "notify_fn")
+        result[TriggerKey(table = "customers", name = "audit_t")] shouldBe listOf("audit_fn")
     }
 
     test("listTriggerFunctionDependencies returns empty map when no trigger rows") {

@@ -679,4 +679,5 @@ class PostgresSchemaReaderTest : FunSpec({
         seq.cycle shouldBe true
         seq.cache.shouldBeNull()
     }
+
 })

@@ -956,10 +956,17 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     in die `DependencyInfo` der gelesenen Routine/Trigger.
   - **DoD D.2**: PG file-zu-DB E2E mit Routine, die `pg_depend`
     sauber liefert; Manifest-Kanten werden vom Reader überschrieben/
-    ergänzt. Bei fehlenden Privilegien auf `pg_depend` setzt der
-    Reader `routineProjectionStatus = INCOMPLETE_PRIVILEGE` —
-    Analyzer behandelt das wie "fehlende Manifest-Kante" und routet
-    in den `MANUAL_ACTION_REQUIRED`-Pfad.
+    ergänzt.
+  - **Privilege-Fallback (deferred)**: Plan-Vorgabe
+    `routineProjectionStatus = INCOMPLETE_PRIVILEGE` bei fehlenden
+    Privilegien auf `pg_depend` ist **in D.2 nicht implementiert**.
+    Die existing View-Dep-Queries propagieren Privileg-Fehler
+    ebenfalls unconditionally; ein einheitlicher Fallback-Hook
+    landet in einem separaten Slice. Der D.1-Analyzer fällt
+    bereits auf manifest-only-Edges zurück, wenn eine Routine
+    keine `DependencyInfo` trägt — ein `pg_depend`-Fehler heute
+    surfaced über den allgemeinen Schema-Reader-Fehlerpfad, nicht
+    als stiller Edge-Gap.
 
 - **D.3 — MySQL-Engine-Metadaten** (Datei-zu-DB MySQL):
   - Reader-Wiring (nicht: neue Queries) — die meisten benötigten

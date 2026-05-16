@@ -81,7 +81,7 @@ internal fun readPostgresFunctions(
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
             deterministic = (row["is_deterministic"] as? String) == "YES",
-            dependencies = routineDependencyInfo(relationDeps[name]),
+            dependencies = routineDependencyInfo(relationDeps, name, specificName),
             sourceDialect = "postgresql",
             // Reverse-read carve-out (see file-level comment).
             security = null,
@@ -110,7 +110,7 @@ internal fun readPostgresProcedures(
             parameters = parameterDefinitions,
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
-            dependencies = routineDependencyInfo(relationDeps[name]),
+            dependencies = routineDependencyInfo(relationDeps, name, specificName),
             sourceDialect = "postgresql",
             // Reverse-read carve-out (see file-level comment).
             security = null,
@@ -123,20 +123,35 @@ internal fun readPostgresProcedures(
 }
 
 /**
- * E.1 Routine-Migration Slice D.2: convert the `pg_depend`
- * projection from [PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies]
- * into the neutral [DependencyInfo] carrier consumed by the
- * second-phase `RoutineDependencyAnalyzer`. Returns `null` when
- * the routine has no outbound dependencies, so the YAML/JSON
- * codec keeps emitting nothing for that routine.
+ * E.1 Routine-Migration Slice D.2 follow-up: look up routine
+ * dependencies by overload-specific key. PostgreSQL's
+ * `information_schema.routines.specific_name` is conventionally
+ * `<proname>_<oid>`; we extract the trailing OID to disambiguate
+ * same-name overloads. Falls back to a name-only match when the
+ * OID suffix is missing (defensive — `pg_get_function_identity_arguments`
+ * could replace this in a future cleanup slice).
  */
-private fun routineDependencyInfo(projection: RoutineRelationDependencies?): DependencyInfo? {
-    if (projection == null) return null
-    if (projection.tables.isEmpty() && projection.views.isEmpty() && projection.sequences.isEmpty()) return null
+private fun routineDependencyInfo(
+    projection: Map<RoutineKey, RoutineRelationDependencies>,
+    name: String,
+    specificName: String,
+): DependencyInfo? {
+    val oid = specificName.substringAfterLast('_').toLongOrNull()
+    val deps = if (oid != null) {
+        projection[RoutineKey(name = name, oid = oid)]
+    } else {
+        // Name-only fallback when the specific_name format is
+        // unrecognised. With overloads this can return wrong
+        // edges, but the only realistic trigger is a non-PG
+        // dialect masquerading through this reader.
+        projection.entries.firstOrNull { it.key.name == name }?.value
+    }
+    if (deps == null) return null
+    if (deps.tables.isEmpty() && deps.views.isEmpty() && deps.sequences.isEmpty()) return null
     return DependencyInfo(
-        tables = projection.tables,
-        views = projection.views,
-        sequences = projection.sequences,
+        tables = deps.tables,
+        views = deps.views,
+        sequences = deps.sequences,
     )
 }
 
@@ -171,7 +186,7 @@ internal fun readPostgresTriggers(
         val name = row["trigger_name"] as String
         val table = row["event_object_table"] as String
         val key = ObjectKeyCodec.triggerKey(table, name)
-        val functionDeps = triggerFunctions[name].orEmpty()
+        val functionDeps = triggerFunctions[TriggerKey(table = table, name = name)].orEmpty()
         result[key] = TriggerDefinition(
             table = table,
             event = when ((row["event_manipulation"] as String).uppercase()) {
