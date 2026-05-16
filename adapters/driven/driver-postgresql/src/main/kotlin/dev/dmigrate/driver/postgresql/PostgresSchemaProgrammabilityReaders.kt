@@ -64,6 +64,8 @@ internal fun readPostgresFunctions(
     schema: String,
 ): Map<String, FunctionDefinition> {
     val rows = PostgresMetadataQueries.listFunctions(session, schema)
+    val relationDeps = PostgresProgrammabilityMetadataQueries
+        .listRoutineRelationDependencies(session, schema)
     val result = LinkedHashMap<String, FunctionDefinition>()
     for (row in rows) {
         val name = row["routine_name"] as String
@@ -79,6 +81,7 @@ internal fun readPostgresFunctions(
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
             deterministic = (row["is_deterministic"] as? String) == "YES",
+            dependencies = routineDependencyInfo(relationDeps[name]),
             sourceDialect = "postgresql",
             // Reverse-read carve-out (see file-level comment).
             security = null,
@@ -95,6 +98,8 @@ internal fun readPostgresProcedures(
     schema: String,
 ): Map<String, ProcedureDefinition> {
     val rows = PostgresMetadataQueries.listProcedures(session, schema)
+    val relationDeps = PostgresProgrammabilityMetadataQueries
+        .listRoutineRelationDependencies(session, schema)
     val result = LinkedHashMap<String, ProcedureDefinition>()
     for (row in rows) {
         val name = row["routine_name"] as String
@@ -105,6 +110,7 @@ internal fun readPostgresProcedures(
             parameters = parameterDefinitions,
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
+            dependencies = routineDependencyInfo(relationDeps[name]),
             sourceDialect = "postgresql",
             // Reverse-read carve-out (see file-level comment).
             security = null,
@@ -114,6 +120,24 @@ internal fun readPostgresProcedures(
         )
     }
     return result
+}
+
+/**
+ * E.1 Routine-Migration Slice D.2: convert the `pg_depend`
+ * projection from [PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies]
+ * into the neutral [DependencyInfo] carrier consumed by the
+ * second-phase `RoutineDependencyAnalyzer`. Returns `null` when
+ * the routine has no outbound dependencies, so the YAML/JSON
+ * codec keeps emitting nothing for that routine.
+ */
+private fun routineDependencyInfo(projection: RoutineRelationDependencies?): DependencyInfo? {
+    if (projection == null) return null
+    if (projection.tables.isEmpty() && projection.views.isEmpty() && projection.sequences.isEmpty()) return null
+    return DependencyInfo(
+        tables = projection.tables,
+        views = projection.views,
+        sequences = projection.sequences,
+    )
 }
 
 private fun readPostgresRoutineParameters(
@@ -140,11 +164,14 @@ internal fun readPostgresTriggers(
     schema: String,
 ): Map<String, TriggerDefinition> {
     val rows = PostgresMetadataQueries.listTriggers(session, schema)
+    val triggerFunctions = PostgresProgrammabilityMetadataQueries
+        .listTriggerFunctionDependencies(session, schema)
     val result = LinkedHashMap<String, TriggerDefinition>()
     for (row in rows) {
         val name = row["trigger_name"] as String
         val table = row["event_object_table"] as String
         val key = ObjectKeyCodec.triggerKey(table, name)
+        val functionDeps = triggerFunctions[name].orEmpty()
         result[key] = TriggerDefinition(
             table = table,
             event = when ((row["event_manipulation"] as String).uppercase()) {
@@ -165,6 +192,12 @@ internal fun readPostgresTriggers(
             },
             condition = row["action_condition"] as? String,
             body = row["action_statement"] as? String,
+            // E.1 Slice D.2: pg_trigger.tgfoid → pg_proc.oid edge
+            // lands in DependencyInfo.functions so the second-phase
+            // RoutineDependencyAnalyzer can chain DropTrigger →
+            // DropFunction correctly.
+            dependencies = if (functionDeps.isEmpty()) null
+                else DependencyInfo(functions = functionDeps),
             sourceDialect = "postgresql",
         )
     }

@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice D.2** — PostgreSQL reverse-read now
+  projects routine and trigger dependency edges from
+  `pg_depend` / `pg_trigger` directly into the neutral
+  `DependencyInfo` carrier consumed by
+  `RoutineDependencyAnalyzer` (Slice D.1). New queries in
+  `PostgresProgrammabilityMetadataQueries`:
+   * `listRoutineRelationDependencies` joins `pg_proc` → `pg_depend`
+     → `pg_class` and discriminates by `pg_class.relkind` to
+     populate `DependencyInfo.tables` / `views` / `sequences` for
+     functions and procedures. Materialized views land in
+     `views`; sequences (`relkind = 'S'`) populate the
+     Slice-D.1-introduced `sequences` list.
+   * `listTriggerFunctionDependencies` joins `pg_trigger.tgfoid`
+     → `pg_proc.oid` and populates `DependencyInfo.functions` on
+     the trigger, so a `DropTrigger` correctly precedes the
+     matching `DropFunction` in the reverse-topology sort.
+  `readPostgresFunctions` / `readPostgresProcedures` /
+  `readPostgresTriggers` consume the new queries and attach
+  `DependencyInfo` when projection rows exist. The existing
+  reverse-read carve-out for identity attributes
+  (security/definer/searchPath/sqlMode) is unaffected; D.2
+  ships only the dependency-edge data. MySQL adapter behaviour
+  is unchanged.
+
 - **E.1 Routine-Migration Slice D.1** — manifest-driven cross-
   object dependency edges for the file-to-file path. New
   `RoutineDependencyAnalyzer` (`hexagon:core/.../diff/migration/`,

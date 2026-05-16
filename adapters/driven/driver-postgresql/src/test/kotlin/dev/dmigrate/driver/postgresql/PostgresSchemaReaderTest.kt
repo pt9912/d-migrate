@@ -61,6 +61,8 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
+        // E.1 Slice D.2: trigger ↔ function edges via pg_trigger.tgfoid → pg_proc.oid.
+        every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns emptyList()
     }
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
