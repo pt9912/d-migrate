@@ -448,8 +448,8 @@ beschreiben C.1.a; C.1.b ist im Diagnose-Code-Abschnitt unten
 beschrieben.
 
 - **C.1.a — Capability- und Debug-Body-Infrastruktur**:
-  - Neues Domänenobjekt `RoutineCapability` in `hexagon:core`
-    (`dev.dmigrate.core.diff.routine`):
+  - Neues Domänenobjekt `RoutineCapability` in **`hexagon:ports-read`**
+    (`dev.dmigrate.driver`):
     - `data class RoutineCapability(val function: RoutineKindCapability, val procedure: RoutineKindCapability)`
     - `data class RoutineKindCapability(val enabled: Boolean, val minServerVersion: MysqlServerVersion? = null)`
     - Beide Routineart-Felder sind **non-nullable**. Ein "fehlendes
@@ -472,18 +472,23 @@ beschrieben.
   - Statusobjekt `RoutineCapabilityResolution` mit den drei
     Varianten `Active` / `Disabled` / `InvalidConfig`. Renderer
     fragt nur dieses Objekt, kennt die Konfig-Quelle nicht.
+  - **Begründung Modulwahl für alle Capability-/Display-/Guard-Typen**:
+    `hexagon:core` deklariert "ZERO external dependencies — only
+    Kotlin stdlib" (`hexagon/core/build.gradle.kts`). Es darf
+    weder `hexagon:ports-read` noch Adapter-Module importieren.
+    Routinen-Capability, BodyDisplay und Dependency-Guard sind
+    konzeptuell **Renderer-/Driver-Konfiguration**, nicht
+    Comparator-/SchemaDef-Logik: sie laufen über
+    `DdlGenerationOptions` zum Renderer und werden nicht von core-
+    internen Klassen wie `SchemaComparator` konsumiert. Deshalb
+    lebt der ganze Block in `hexagon:ports-read`, das bereits Heimat
+    von `DdlGenerationOptions` und `MysqlNamedSequenceMode` ist.
+    Adapter (`driver-mysql`, `driver-postgresql`) und Application-
+    Layer (`SchemaMigrateRenderPipeline`) dürfen ports-read
+    importieren; core bleibt unangetastet.
   - Wert-Typ `MysqlServerVersion` in
     `dev.dmigrate.driver.MysqlServerVersion` im Modul
-    `hexagon:ports-read`. **Begründung der Modulwahl**: heute lebt
-    bereits `MysqlNamedSequenceMode` als MySQL-spezifischer Wert-Typ
-    in `ports-read/DdlGenerationOptions.kt`; `ports-read` ist die
-    bestehende Konvention für dialekt-spezifische Werttypen, die
-    sowohl `hexagon:core` (via Vertrag) als auch
-    `adapters/driven/driver-mysql` (via Reader/Renderer) sehen
-    müssen, **ohne** Layering-Verletzung von core → driver-mysql.
-    `RoutineKindCapability.minServerVersion: MysqlServerVersion?`
-    referenziert den Typ aus core direkt — exakt analog zu
-    `DdlGenerationOptions.mysqlNamedSequenceMode`.
+    `hexagon:ports-read` (selber Slot wie `MysqlNamedSequenceMode`).
     - `data class MysqlServerVersion(val major: Int, val minor: Int, val patch: Int, val vendor: String? = null)`
     - `Comparable<MysqlServerVersion>` für `minServerVersion`-
       Vergleich.
@@ -537,12 +542,12 @@ beschrieben.
     - Default in jedem Pfad: `SCRUBBED_ONLY`. Das `--debug-body`-Flag
       kippt nur die Display-Plane auf `RAW_DEBUG`; alle Logging-
       Hooks bleiben standardmäßig scrubbed.
-    - Touched-Tests in C.1: alle Konstruktor-Aufrufe von
+    - Touched-Tests in C.1.a: alle Konstruktor-Aufrufe von
       `SchemaMigrateRequest` / `SchemaRollbackRequest`. Da
       `debugBody: Boolean = false` ein Default-Parameter mit
       Default-Wert ist, brechen Named-Arg- und Positional-Arg-Aufrufe
       ohne expliziten Wert **nicht** — nur Tests, die `debugBody=true`
-      pinnen wollen, müssen den Parameter explizit setzen. C.1-AC
+      pinnen wollen, müssen den Parameter explizit setzen. C.1.a-AC
       pflegt einen `grep`-Check, dass alle bestehenden Aufrufe weiter
       kompilieren.
   - Capability-Konfiguration-Quelle in C.1:
@@ -555,8 +560,8 @@ beschrieben.
       Quelle, die statt der Defaults greift.
   - **DoD C.1.a** (Hauptcommit, Capability-/Debug-Body-Infrastruktur):
     - `RoutineCapability` + `RoutineCapabilityResolution` +
-      `RoutineBodyDisplay` existieren in `hexagon:core`;
-      `MysqlServerVersion` + Parser existieren in `hexagon:ports-read`;
+      `RoutineBodyDisplay` + `MysqlServerVersion` (data class +
+      Parser) existieren in `hexagon:ports-read`;
       `MysqlMetadataQueries.readServerVersion` existiert in
       `driver-mysql`.
     - `--debug-body`-CLI-Pfad ist verdrahtet (Command → Request →
@@ -639,12 +644,12 @@ beschrieben.
       Signatur-Mismatch-Pfade landen weiterhin in
       `MANUAL_ACTION_REQUIRED` (Guard=UNKNOWN).
     - `MysqlMetadataQueries.readServerVersion()` + Parser
-      `MysqlServerVersion.parse` sind in C.1 ausgeliefert; C.2 setzt
+      `MysqlServerVersion.parse` sind in C.1.a ausgeliefert; C.2 setzt
       sie nur ein.
 
 - **C.3 — Dependency-Guard-Stub + DROP+CREATE-Fallback**:
   - Konservativer Dependency-Guard für Slice C: `DependencyGuard`
-    in `hexagon:core` als `enum { SAFE, UNSAFE, UNKNOWN }` plus
+    in `hexagon:ports-read` als `enum { SAFE, UNSAFE, UNKNOWN }` plus
     Berechner `DependencyGuardEvaluator` mit einer **explizit
     konservativen** Heuristik: ohne Slice-D-Topologie gilt jede
     Routine-Operation als `UNSAFE`, sobald irgendein anderer
@@ -718,22 +723,22 @@ beschrieben.
 
 ```
 hexagon:core
-  └── dev.dmigrate.core.diff.routine.RoutineCapability             (C.1.a)
-  └── dev.dmigrate.core.diff.routine.RoutineKindCapability         (C.1.a)
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityResolution   (C.1.a)
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityDefaults     (C.1.a)
-  └── dev.dmigrate.core.diff.routine.RoutineBodyDisplay            (C.1.a)
-  └── dev.dmigrate.core.diff.routine.DependencyGuard               (C.3)
-  └── dev.dmigrate.core.diff.routine.DependencyGuardEvaluator      (C.3)
+  (nichts neues — core bleibt unverändert, da es weder ports-read
+  noch Adapter importieren darf; alle Capability-/Display-/Guard-
+  Typen sind Renderer-Konfiguration und gehören nach ports-read.)
 
 hexagon:ports-read
+  └── dev.dmigrate.driver.RoutineCapability                        (C.1.a)
+  └── dev.dmigrate.driver.RoutineKindCapability                    (C.1.a)
+  └── dev.dmigrate.driver.RoutineCapabilityResolution              (C.1.a)
+  └── dev.dmigrate.driver.RoutineCapabilityDefaults                (C.1.a)
+  └── dev.dmigrate.driver.RoutineBodyDisplay (enum)                (C.1.a)
   └── dev.dmigrate.driver.MysqlServerVersion (data class + parse)  (C.1.a)
-       Begründung: ports-read ist bereits Heimat dialektspezifischer
-       Wert-Typen (MysqlNamedSequenceMode). RoutineKindCapability
-       in core kann den Typ ohne Layering-Verletzung referenzieren.
+  └── dev.dmigrate.driver.DependencyGuard (enum)                   (C.3)
+  └── dev.dmigrate.driver.DependencyGuardEvaluator                 (C.3)
   └── DdlGenerationOptions
-        + routineCapability: RoutineCapability                     (C.2; in C.1 NICHT)
-        + mysqlServerVersion: MysqlServerVersion?                  (C.2; in C.1 NICHT)
+        + routineCapability: RoutineCapability                     (C.2; in C.1.a NICHT)
+        + mysqlServerVersion: MysqlServerVersion?                  (C.2; in C.1.a NICHT)
        (kein routineBodyDisplay — gehört auf SchemaMigrateReport)
 
 hexagon:application
