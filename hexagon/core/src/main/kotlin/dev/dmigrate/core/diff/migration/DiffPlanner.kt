@@ -134,14 +134,23 @@ open class DiffPlanner {
             )
         }
         for (pair in routineResult.unsafePairs) {
+            // E.1 Slice D.1: WARNING (not BLOCKER) at the file-to-file
+            // layer. Plan §3 ultimately wants `MANUAL_ACTION_REQUIRED`
+            // here, but in D.1 the only edge source is the manifest;
+            // an operator who has not declared `dependencies.functions`
+            // between two unrelated routines would otherwise be locked
+            // out of every multi-routine plan. D.2 / D.3 add engine-
+            // metadata verification, which lets a later slice promote
+            // this back to BLOCKER once the analyzer can actually rule
+            // out hidden references via `pg_depend` / `information_schema`.
             diagnostics += DiffDiagnostic(
                 code = "UNSAFE_DEPENDENCY_PAIR",
                 message = "Routine pair '${pair.first.displayName}' ↔ '${pair.second.displayName}' " +
                     "co-exists in the plan without a manifest-declared dependency in either " +
                     "direction. Slice D.1 cannot prove the two routines are independent — declare " +
-                    "the relationship via `dependencies.functions` in the routine's schema entry " +
-                    "or run the migration as two separate plans.",
-                severity = DiffDiagnostic.Severity.BLOCKER,
+                    "the relationship via `dependencies.functions` in the routine's schema entry, " +
+                    "or wait for the engine-verified strict gate in Slice D.2 / D.3.",
+                severity = DiffDiagnostic.Severity.WARNING,
             )
         }
 

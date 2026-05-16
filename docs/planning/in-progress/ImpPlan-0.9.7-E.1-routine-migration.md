@@ -885,9 +885,12 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     Slice A/B Goldens).
   - `RoutineDependencyAnalyzer` (neu, `hexagon:core/.../diff/migration/`,
     `internal object`) baut die Routine-/Trigger-/View-Edges aus
-    `DependencyInfo`. Wird vom `DependencyAnalyzer.attach()` als
-    zweite Phase aufgerufen, sodass der bestehende FK-/View-Pfad
-    unverändert bleibt.
+    `DependencyInfo`. Wird vom `DiffPlanner.plan()` direkt nach
+    `DependencyAnalyzer.attach()` als zweite Phase aufgerufen
+    (Implementation-Detail im Vergleich zur ursprünglichen
+    Plan-Skizze "wird vom DependencyAnalyzer.attach() aufgerufen" —
+    funktional äquivalent, hält die existing Phase-Trennung
+    sichtbar im Planner-Code).
   - Edge-Regeln (siehe Contract oben):
     - `CreateView`/`ReplaceView` → depends on referenzierte
       `CreateTable`/`RenameTable` und referenzierte `CreateFunction`/
@@ -904,17 +907,30 @@ Renderer-Vertrag nach C.3 stabil bleibt.
       Procedure > View > Trigger für Create; reverse für Drop) +
       Lexikografie als Tie-Breaker.
   - Diagnose-Pfade:
-    - Zyklus → neuer Blocker-Code `ROUTINE_DEPENDENCY_CYCLE` mit
-      Liste der beteiligten `objectRef`-Paare. Bisher unbenutzt im
-      Code — wird in D.1 eingeführt.
-    - Unsicheres Paar (siehe Contract: Routine↔Routine,
-      Routine↔Tabelle/View/Sequence ohne Manifest-Kante) →
-      `MANUAL_ACTION_REQUIRED` mit `UNSAFE_DEPENDENCY_PAIR`-Code
-      und beteiligten `objectRef`s.
+    - Zyklus: der bestehende, klassen-agnostische
+      `DEPENDENCY_CYCLE`-Blocker (im `TopologicalSorter`-Pfad)
+      wird wiederverwendet. Die Plan-Vorgabe für einen separaten
+      `ROUTINE_DEPENDENCY_CYCLE` würde ein zweites Diagnose-Code-
+      Synonym für das gleiche Symptom schaffen — die Topologie-
+      Berechnung ist objektklassen-agnostisch und der Code
+      entsprechend.
+    - Unsicheres Paar (Routine↔Routine ohne Manifest-Kante in
+      irgendeiner Richtung) → `UNSAFE_DEPENDENCY_PAIR` als
+      **WARNING** in D.1 (nicht Blocker). Die Plan §3-Vorgabe
+      `MANUAL_ACTION_REQUIRED` (=Blocker) zieht erst, wenn
+      D.2/D.3 die Engine-Verifikation ergänzen — sonst wären
+      hand-geschriebene Multi-Routine-Pläne stets blockiert,
+      weil das Manifest keine "deterministically independent"-
+      Markierung kennt. Andere unsichere Paar-Klassen
+      (Routine↔Tabelle/View/Sequence) werden in D.1 nicht
+      flagged; sie kommen in D.2/D.3 mit Engine-Verifikation
+      hinzu.
   - **DoD D.1**: file-zu-file E2E mit allen fünf Objektklassen
     erzeugt die richtige Drop/Create-Reihenfolge. Manifest-fehlt-
-    Tests pinnen den `MANUAL_ACTION_REQUIRED`-Pfad. Zyklus-Test
-    pinnt `ROUTINE_DEPENDENCY_CYCLE`. Slice-A/B/C-Renderer-Tests
+    Tests pinnen den `UNSAFE_DEPENDENCY_PAIR`-WARNING-Pfad.
+    Zyklus-Test pinnt den klassen-agnostischen `DEPENDENCY_CYCLE`-
+    Blocker (Slice D.1 emittiert keinen separaten
+    Routine-spezifischen Code). Slice-A/B/C-Renderer-Tests
     bleiben byte-identisch (nur Sortierung kann sich ändern, was
     aber nur bei mehreren Routine-Ops im Plan überhaupt
     materialisiert — Slice A/B/C-Tests haben nie >1 Routine-Op).
@@ -1100,11 +1116,13 @@ adapters/driven/driver-mysql
 - [ ] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
   Sequenzen ab; Drop-Reihenfolge ist reverse-topologisch, Create-Reihenfolge
   topologisch.
-- [ ] Zyklus im Dependency-Graph blockiert mit
-  `ROUTINE_DEPENDENCY_CYCLE` und nennt die beteiligten Objekt-Paare.
-  Unsichere Paare (potenziell abhängige Routine-/View-/Trigger-
-  Verbindungen ohne Manifest-Edge und ohne Engine-Edge) blockieren
-  mit `MANUAL_ACTION_REQUIRED` und `UNSAFE_DEPENDENCY_PAIR`-Diagnose.
+- [ ] Zyklus im Dependency-Graph blockiert mit dem klassen-
+  agnostischen `DEPENDENCY_CYCLE`-Blocker und nennt die beteiligten
+  Operation-IDs. Unsichere Paare (potenziell abhängige
+  Routine-/View-/Trigger-Verbindungen ohne Manifest-Edge und ohne
+  Engine-Edge) emittieren `UNSAFE_DEPENDENCY_PAIR`: in D.1 als
+  WARNING (Manifest-only-Pfad), in D.2/D.3 als
+  `MANUAL_ACTION_REQUIRED`-Blocker (Engine-Verifikation aktiv).
   - [ ] Secret-Scrubbing maskiert Passwort-/Token-/Connection-String-
     Literale im Body, bevor er in Log-/Diagnostic-Plane (Logs, Runner-Trace,
     DB-Fehler-/SQL-Logs), Reports oder Test-Goldens gelangt.

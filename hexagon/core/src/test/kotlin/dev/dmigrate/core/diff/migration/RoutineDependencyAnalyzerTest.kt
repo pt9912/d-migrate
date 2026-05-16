@@ -215,4 +215,188 @@ class RoutineDependencyAnalyzerTest : FunSpec({
         val edges = result.operations.single { it.id == "create-fn" }.dependencies
         edges shouldBe setOf("preexisting-edge", "create-orders")
     }
+
+    // ── Coverage gaps caught in the D.1 post-commit review ──
+
+    test("CreateProcedure with dependencies.tables adds edge to CreateTable") {
+        val createTable = DiffOperation.CreateTable(
+            id = "create-orders",
+            objectRef = ref(DiffObjectType.TABLE, "orders"),
+            table = dev.dmigrate.core.model.TableDefinition(),
+        )
+        val createProc = DiffOperation.CreateProcedure(
+            id = "create-p",
+            objectRef = ref(DiffObjectType.PROCEDURE, "p"),
+            procedure = emptyProc.copy(dependencies = DependencyInfo(tables = listOf("orders"))),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createTable, createProc))
+        result.operations.single { it.id == "create-p" }.dependencies shouldBe setOf("create-orders")
+    }
+
+    test("ReplaceFunction picks up after-side dependencies") {
+        val createTable = DiffOperation.CreateTable(
+            id = "create-orders",
+            objectRef = ref(DiffObjectType.TABLE, "orders"),
+            table = dev.dmigrate.core.model.TableDefinition(),
+        )
+        val before = emptyFn.copy(dependencies = DependencyInfo(tables = listOf("legacy")))
+        val after = emptyFn.copy(dependencies = DependencyInfo(tables = listOf("orders")))
+        val replace = DiffOperation.ReplaceFunction(
+            id = "replace-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "f"),
+            before = before,
+            after = after,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createTable, replace))
+        result.operations.single { it.id == "replace-fn" }.dependencies shouldBe setOf("create-orders")
+    }
+
+    test("ReplaceView reads after-side dependencies") {
+        val createTable = DiffOperation.CreateTable(
+            id = "create-orders",
+            objectRef = ref(DiffObjectType.TABLE, "orders"),
+            table = dev.dmigrate.core.model.TableDefinition(),
+        )
+        val before = ViewDefinition(query = "SELECT 1", dependencies = DependencyInfo(tables = listOf("legacy")))
+        val after = ViewDefinition(query = "SELECT * FROM orders", dependencies = DependencyInfo(tables = listOf("orders")))
+        val replace = DiffOperation.ReplaceView(
+            id = "replace-v",
+            objectRef = ref(DiffObjectType.VIEW, "v"),
+            before = before,
+            after = after,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createTable, replace))
+        result.operations.single { it.id == "replace-v" }.dependencies shouldBe setOf("create-orders")
+    }
+
+    test("ReplaceTrigger picks up the new owning table and after-side function deps") {
+        val createTable = DiffOperation.CreateTable(
+            id = "create-orders",
+            objectRef = ref(DiffObjectType.TABLE, "orders"),
+            table = dev.dmigrate.core.model.TableDefinition(),
+        )
+        val createFn = DiffOperation.CreateFunction(
+            id = "create-audit",
+            objectRef = ref(DiffObjectType.FUNCTION, "audit_fn"),
+            function = emptyFn,
+        )
+        val before = trigger(table = "legacy")
+        val after = trigger(table = "orders").copy(
+            dependencies = DependencyInfo(functions = listOf("audit_fn")),
+        )
+        val replace = DiffOperation.ReplaceTrigger(
+            id = "replace-t",
+            objectRef = ref(DiffObjectType.TRIGGER, "audit_t"),
+            before = before,
+            after = after,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createTable, createFn, replace))
+        result.operations.single { it.id == "replace-t" }.dependencies shouldBe
+            setOf("create-orders", "create-audit")
+    }
+
+    test("CreateView with dependencies.functions adds edge to CreateFunction") {
+        val createFn = DiffOperation.CreateFunction(
+            id = "create-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "is_active"),
+            function = emptyFn,
+        )
+        val createView = DiffOperation.CreateView(
+            id = "create-v",
+            objectRef = ref(DiffObjectType.VIEW, "active_view"),
+            view = ViewDefinition(
+                query = "SELECT id FROM users WHERE is_active(id)",
+                dependencies = DependencyInfo(functions = listOf("is_active")),
+            ),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createFn, createView))
+        result.operations.single { it.id == "create-v" }.dependencies shouldBe setOf("create-fn")
+    }
+
+    test("CreateView with dependencies.sequences adds edge to CreateSequence") {
+        val createSeq = DiffOperation.CreateSequence(
+            id = "create-seq",
+            objectRef = ref(DiffObjectType.SEQUENCE, "row_seq"),
+            sequence = dev.dmigrate.core.model.SequenceDefinition(start = 1),
+        )
+        val createView = DiffOperation.CreateView(
+            id = "create-v",
+            objectRef = ref(DiffObjectType.VIEW, "v"),
+            view = ViewDefinition(
+                query = "SELECT nextval('row_seq')",
+                dependencies = DependencyInfo(sequences = listOf("row_seq")),
+            ),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(createSeq, createView))
+        result.operations.single { it.id == "create-v" }.dependencies shouldBe setOf("create-seq")
+    }
+
+    test("CreateView with dependencies.views adds edge to the referenced CreateView") {
+        val baseView = DiffOperation.CreateView(
+            id = "create-base",
+            objectRef = ref(DiffObjectType.VIEW, "base"),
+            view = ViewDefinition(query = "SELECT 1"),
+        )
+        val chainedView = DiffOperation.CreateView(
+            id = "create-chained",
+            objectRef = ref(DiffObjectType.VIEW, "chained"),
+            view = ViewDefinition(
+                query = "SELECT * FROM base",
+                dependencies = DependencyInfo(views = listOf("base")),
+            ),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(baseView, chainedView))
+        result.operations.single { it.id == "create-chained" }.dependencies shouldBe setOf("create-base")
+    }
+
+    test("DropProcedure depends on DropTrigger that referenced it (reverse-topo edge)") {
+        val dropTrigger = DiffOperation.DropTrigger(
+            id = "drop-t",
+            objectRef = ref(DiffObjectType.TRIGGER, "audit_t"),
+            trigger = trigger(table = "orders").copy(
+                dependencies = DependencyInfo(functions = listOf("audit_proc")),
+            ),
+        )
+        val dropProc = DiffOperation.DropProcedure(
+            id = "drop-p",
+            objectRef = ref(DiffObjectType.PROCEDURE, "audit_proc"),
+            procedure = emptyProc,
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(dropTrigger, dropProc))
+        result.operations.single { it.id == "drop-p" }.dependencies shouldBe setOf("drop-t")
+    }
+
+    test("DropSequence depends on the Drop that referenced it") {
+        val dropFn = DiffOperation.DropFunction(
+            id = "drop-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "next_id"),
+            function = emptyFn.copy(dependencies = DependencyInfo(sequences = listOf("row_seq"))),
+        )
+        val dropSeq = DiffOperation.DropSequence(
+            id = "drop-seq",
+            objectRef = ref(DiffObjectType.SEQUENCE, "row_seq"),
+            sequence = dev.dmigrate.core.model.SequenceDefinition(start = 1),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(dropFn, dropSeq))
+        result.operations.single { it.id == "drop-seq" }.dependencies shouldBe setOf("drop-fn")
+    }
+
+    test("RenameTable target name is a valid edge target for routine/view deps") {
+        val renameTable = DiffOperation.RenameTable(
+            id = "rename",
+            objectRef = ref(DiffObjectType.TABLE, "orders"),
+            fromName = "old_orders",
+            toName = "orders",
+            overlaySource = "test",
+            overlayEntryId = "rename-orders",
+            overlayHash = null,
+        )
+        val createFn = DiffOperation.CreateFunction(
+            id = "create-fn",
+            objectRef = ref(DiffObjectType.FUNCTION, "f"),
+            function = emptyFn.copy(dependencies = DependencyInfo(tables = listOf("orders"))),
+        )
+        val result = RoutineDependencyAnalyzer.attach(listOf(renameTable, createFn))
+        result.operations.single { it.id == "create-fn" }.dependencies shouldBe setOf("rename")
+    }
 })
