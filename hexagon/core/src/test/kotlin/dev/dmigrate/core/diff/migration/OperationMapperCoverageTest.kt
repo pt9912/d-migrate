@@ -25,7 +25,9 @@ import dev.dmigrate.core.model.IndexColumn
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
+import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
@@ -190,6 +192,32 @@ class OperationMapperCoverageTest : FunSpec({
         result.operations.filterIsInstance<DiffOperation.ReplaceFunction>().size shouldBe 0
     }
 
+    test("function signature change maps to DropFunction plus CreateFunction, not ReplaceFunction") {
+        val before = FunctionDefinition(
+            parameters = listOf(ParameterDefinition("x", "integer")),
+            returns = ReturnType("integer"),
+            language = "plpgsql",
+            body = "BEGIN RETURN x; END",
+        )
+        val after = before.copy(parameters = listOf(ParameterDefinition("x", "text")))
+        val current = emptySchema().copy(functions = mapOf("fn_x" to before))
+        val desired = emptySchema().copy(functions = mapOf("fn_x" to after))
+        val diff = SchemaDiff(
+            functionsChanged = listOf(
+                FunctionDiff(
+                    name = "fn_x",
+                    parameters = ValueChange(before.parameters, after.parameters),
+                ),
+            ),
+        )
+        val result = planner.plan(current, desired, diff)
+        val drop = result.operations.filterIsInstance<DiffOperation.DropFunction>().single()
+        val create = result.operations.filterIsInstance<DiffOperation.CreateFunction>().single()
+        result.operations.filterIsInstance<DiffOperation.ReplaceFunction>().size shouldBe 0
+        create.dependencies shouldBe setOf(drop.id)
+        (result.operations.indexOf(drop) < result.operations.indexOf(create)) shouldBe true
+    }
+
     test("procedures added / removed / changed all map") {
         val before = ProcedureDefinition()
         val after = ProcedureDefinition()
@@ -210,6 +238,24 @@ class OperationMapperCoverageTest : FunSpec({
         val diff = SchemaDiff(proceduresChanged = listOf(ProcedureDiff(name = "missing_sp")))
         val result = planner.plan(emptySchema(), emptySchema(), diff)
         result.operations.filterIsInstance<DiffOperation.ReplaceProcedure>().size shouldBe 0
+    }
+
+    test("procedure signature change maps to DropProcedure plus CreateProcedure, not ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            parameters = listOf(ParameterDefinition("x", "integer")),
+            language = "plpgsql",
+            body = "BEGIN END",
+        )
+        val after = before.copy(language = "sql")
+        val current = emptySchema().copy(procedures = mapOf("sp_x" to before))
+        val desired = emptySchema().copy(procedures = mapOf("sp_x" to after))
+        val diff = SchemaDiff(proceduresChanged = listOf(ProcedureDiff(name = "sp_x", language = ValueChange("plpgsql", "sql"))))
+        val result = planner.plan(current, desired, diff)
+        val drop = result.operations.filterIsInstance<DiffOperation.DropProcedure>().single()
+        val create = result.operations.filterIsInstance<DiffOperation.CreateProcedure>().single()
+        result.operations.filterIsInstance<DiffOperation.ReplaceProcedure>().size shouldBe 0
+        create.dependencies shouldBe setOf(drop.id)
+        (result.operations.indexOf(drop) < result.operations.indexOf(create)) shouldBe true
     }
 
     test("triggers added / removed / changed all map") {

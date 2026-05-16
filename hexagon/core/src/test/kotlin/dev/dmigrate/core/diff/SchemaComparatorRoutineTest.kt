@@ -1,7 +1,9 @@
 package dev.dmigrate.core.diff
 
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ProcedureDefinition
+import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.core.model.SchemaDefinition
 import io.kotest.core.spec.style.FunSpec
@@ -88,6 +90,17 @@ class SchemaComparatorRoutineTest : FunSpec({
         diff.functionsChanged.single().searchPath.shouldNotBeNull()
     }
 
+    test("semantically equivalent search_path forms do NOT trigger ReplaceFunction") {
+        val before = FunctionDefinition(
+            body = "BEGIN RETURN 1; END",
+            language = "plpgsql",
+            searchPath = listOf(" Public ", "\"\$user\"", "public"),
+        )
+        val after = before.copy(searchPath = listOf("public", "\$user"))
+        val diff = comparator.compare(schemaWith(mapOf("f" to before)), schemaWith(mapOf("f" to after)))
+        diff.functionsChanged.shouldBeEmpty()
+    }
+
     test("sql_mode change alone triggers ReplaceFunction (MySQL-style)") {
         val before = FunctionDefinition(
             body = "BEGIN RETURN 1; END",
@@ -98,6 +111,30 @@ class SchemaComparatorRoutineTest : FunSpec({
         val diff = comparator.compare(schemaWith(mapOf("f" to before)), schemaWith(mapOf("f" to after)))
         diff.functionsChanged.shouldHaveSize(1)
         diff.functionsChanged.single().sqlMode.shouldNotBeNull()
+    }
+
+    test("semantically equivalent sql_mode forms do NOT trigger ReplaceFunction") {
+        val before = FunctionDefinition(
+            body = "BEGIN RETURN 1; END",
+            language = "sql",
+            sqlMode = "pipes_as_concat,STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION",
+        )
+        val after = before.copy(sqlMode = " no_engine_substitution, PIPES_AS_CONCAT, strict_trans_tables ")
+        val diff = comparator.compare(schemaWith(mapOf("f" to before)), schemaWith(mapOf("f" to after)))
+        diff.functionsChanged.shouldBeEmpty()
+    }
+
+    test("signature change is detected separately from identity-only changes") {
+        val before = FunctionDefinition(
+            parameters = listOf(ParameterDefinition("x", "integer")),
+            returns = ReturnType("integer"),
+            body = "BEGIN RETURN x; END",
+            language = "plpgsql",
+        )
+        val after = before.copy(parameters = listOf(ParameterDefinition("x", "text")))
+        val diff = comparator.compare(schemaWith(mapOf("f" to before)), schemaWith(mapOf("f" to after)))
+        diff.functionsChanged.shouldHaveSize(1)
+        diff.functionsChanged.single().parameters.shouldNotBeNull()
     }
 
     // ── Slice B: procedure identity pins ──
@@ -155,6 +192,17 @@ class SchemaComparatorRoutineTest : FunSpec({
         diff.proceduresChanged.single().searchPath.shouldNotBeNull()
     }
 
+    test("Slice B: semantically equivalent procedure search_path forms do NOT trigger ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "plpgsql",
+            searchPath = listOf(" Public ", "\"\$user\"", "public"),
+        )
+        val after = before.copy(searchPath = listOf("public", "\$user"))
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldBeEmpty()
+    }
+
     test("Slice B: procedure sql_mode change alone triggers ReplaceProcedure (MySQL-style)") {
         val before = ProcedureDefinition(
             body = "BEGIN END",
@@ -165,5 +213,16 @@ class SchemaComparatorRoutineTest : FunSpec({
         val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
         diff.proceduresChanged.shouldHaveSize(1)
         diff.proceduresChanged.single().sqlMode.shouldNotBeNull()
+    }
+
+    test("Slice B: semantically equivalent procedure sql_mode forms do NOT trigger ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "sql",
+            sqlMode = "ANSI,NO_ENGINE_SUBSTITUTION,ansi",
+        )
+        val after = before.copy(sqlMode = " no_engine_substitution, ANSI ")
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldBeEmpty()
     }
 })

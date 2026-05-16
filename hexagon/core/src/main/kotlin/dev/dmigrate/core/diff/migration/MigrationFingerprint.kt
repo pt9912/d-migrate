@@ -1,5 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
+import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ColumnGeneration
 import dev.dmigrate.core.model.ConstraintDefinition
@@ -202,8 +203,10 @@ object MigrationFingerprint {
                 // comparator emits ReplaceFunction.
                 .append(SEP).append("security=").append(fn.security?.name ?: "")
                 .append(SEP).append("definer=").append(fn.definer ?: "")
-                .append(SEP).append("search_path=").append(fn.searchPath?.joinToString(",") ?: "")
-                .append(SEP).append("sql_mode=").append(fn.sqlMode ?: "")
+                .append(SEP).append("search_path=").append(
+                    RoutineIdentityNormalizer.normalizePostgresSearchPath(fn.searchPath)?.joinToString(",") ?: "",
+                )
+                .append(SEP).append("sql_mode=").append(RoutineIdentityNormalizer.normalizeMysqlSqlMode(fn.sqlMode) ?: "")
                 .append('\n')
         }
     }
@@ -217,8 +220,10 @@ object MigrationFingerprint {
                 .append(SEP).append("source_dialect=").append(proc.sourceDialect ?: "")
                 .append(SEP).append("security=").append(proc.security?.name ?: "")
                 .append(SEP).append("definer=").append(proc.definer ?: "")
-                .append(SEP).append("search_path=").append(proc.searchPath?.joinToString(",") ?: "")
-                .append(SEP).append("sql_mode=").append(proc.sqlMode ?: "")
+                .append(SEP).append("search_path=").append(
+                    RoutineIdentityNormalizer.normalizePostgresSearchPath(proc.searchPath)?.joinToString(",") ?: "",
+                )
+                .append(SEP).append("sql_mode=").append(RoutineIdentityNormalizer.normalizeMysqlSqlMode(proc.sqlMode) ?: "")
                 .append('\n')
         }
     }

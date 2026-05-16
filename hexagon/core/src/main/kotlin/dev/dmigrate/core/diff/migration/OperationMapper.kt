@@ -1,6 +1,8 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ColumnDiff
+import dev.dmigrate.core.diff.FunctionDiff
+import dev.dmigrate.core.diff.ProcedureDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
@@ -634,12 +636,28 @@ internal object OperationMapper {
             val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(changed.name))
             val before = current.functions[changed.name] ?: continue
             val after = desired.functions[changed.name] ?: continue
-            ops += DiffOperation.ReplaceFunction(
-                id = OperationIdFactory.makeId("ReplaceFunction", ref, changed.toString()),
-                objectRef = ref,
-                before = before,
-                after = after,
-            )
+            if (changed.hasSignatureChange()) {
+                val drop = DiffOperation.DropFunction(
+                    id = OperationIdFactory.makeId("DropFunction", ref, before.toString()),
+                    objectRef = ref,
+                    function = before,
+                )
+                val create = DiffOperation.CreateFunction(
+                    id = OperationIdFactory.makeId("CreateFunction", ref, after.toString()),
+                    objectRef = ref,
+                    function = after,
+                    dependencies = setOf(drop.id),
+                )
+                ops += drop
+                ops += create
+            } else {
+                ops += DiffOperation.ReplaceFunction(
+                    id = OperationIdFactory.makeId("ReplaceFunction", ref, changed.toString()),
+                    objectRef = ref,
+                    before = before,
+                    after = after,
+                )
+            }
         }
     }
 
@@ -669,14 +687,36 @@ internal object OperationMapper {
             val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(changed.name))
             val before = current.procedures[changed.name] ?: continue
             val after = desired.procedures[changed.name] ?: continue
-            ops += DiffOperation.ReplaceProcedure(
-                id = OperationIdFactory.makeId("ReplaceProcedure", ref, changed.toString()),
-                objectRef = ref,
-                before = before,
-                after = after,
-            )
+            if (changed.hasSignatureChange()) {
+                val drop = DiffOperation.DropProcedure(
+                    id = OperationIdFactory.makeId("DropProcedure", ref, before.toString()),
+                    objectRef = ref,
+                    procedure = before,
+                )
+                val create = DiffOperation.CreateProcedure(
+                    id = OperationIdFactory.makeId("CreateProcedure", ref, after.toString()),
+                    objectRef = ref,
+                    procedure = after,
+                    dependencies = setOf(drop.id),
+                )
+                ops += drop
+                ops += create
+            } else {
+                ops += DiffOperation.ReplaceProcedure(
+                    id = OperationIdFactory.makeId("ReplaceProcedure", ref, changed.toString()),
+                    objectRef = ref,
+                    before = before,
+                    after = after,
+                )
+            }
         }
     }
+
+    private fun FunctionDiff.hasSignatureChange(): Boolean =
+        parameters != null || returns != null || language != null
+
+    private fun ProcedureDiff.hasSignatureChange(): Boolean =
+        parameters != null || language != null
 
     private fun mapTriggers(
         diff: SchemaDiff,

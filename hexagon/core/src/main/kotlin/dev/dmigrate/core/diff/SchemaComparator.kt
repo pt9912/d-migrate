@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff
 
 import dev.dmigrate.core.diff.routine.RoutineBodyNormalizer
+import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.*
 
 class SchemaComparator {
@@ -171,6 +172,10 @@ class SchemaComparator {
         val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
         val bodyChange = if (leftBodyHash == rightBodyHash) null
             else ValueChange(left.body, right.body)
+        val leftSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(left.searchPath)
+        val rightSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(right.searchPath)
+        val leftSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(left.sqlMode)
+        val rightSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(right.sqlMode)
         val diff = FunctionDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
@@ -182,8 +187,8 @@ class SchemaComparator {
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
             security = valueChangeOrNull(left.security, right.security),
             definer = valueChangeOrNull(left.definer, right.definer),
-            searchPath = valueChangeOrNull(left.searchPath, right.searchPath),
-            sqlMode = valueChangeOrNull(left.sqlMode, right.sqlMode),
+            searchPath = valueChangeOrNull(leftSearchPath, rightSearchPath),
+            sqlMode = valueChangeOrNull(leftSqlMode, rightSqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }
@@ -204,6 +209,10 @@ class SchemaComparator {
         val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
         val bodyChange = if (leftBodyHash == rightBodyHash) null
             else ValueChange(left.body, right.body)
+        val leftSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(left.searchPath)
+        val rightSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(right.searchPath)
+        val leftSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(left.sqlMode)
+        val rightSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(right.sqlMode)
         val diff = ProcedureDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
@@ -213,8 +222,8 @@ class SchemaComparator {
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
             security = valueChangeOrNull(left.security, right.security),
             definer = valueChangeOrNull(left.definer, right.definer),
-            searchPath = valueChangeOrNull(left.searchPath, right.searchPath),
-            sqlMode = valueChangeOrNull(left.sqlMode, right.sqlMode),
+            searchPath = valueChangeOrNull(leftSearchPath, rightSearchPath),
+            sqlMode = valueChangeOrNull(leftSqlMode, rightSqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }
