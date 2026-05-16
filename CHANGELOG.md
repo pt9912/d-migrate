@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice C.1.a** — Capability + Debug-Body
+  infrastructure for the upcoming MySQL routine renderer (Slice C.2).
+  New types `RoutineCapability`, `RoutineKindCapability`,
+  `RoutineCapabilityResolution` (`Active`/`Disabled`/`InvalidConfig`),
+  `RoutineCapabilityDefaults`, `RoutineBodyDisplay` and
+  `MysqlServerVersion` (with parser for `8.0.36-log` / `5.7.44` /
+  `10.11.6-MariaDB` / `8.4.0`) live in `hexagon:ports-read`; the
+  layering choice keeps `hexagon:core`'s zero-dep contract intact.
+  `MysqlMetadataQueries.readServerVersion(JdbcOperations)` exposes
+  the live MySQL version. `SchemaMigrateRequest` and
+  `SchemaRollbackRequest` gain a `debugBody: Boolean = false` field;
+  `SchemaMigrateReport` gains `bodyDisplay: RoutineBodyDisplay =
+  SCRUBBED_ONLY`. `schema migrate --debug-body` and
+  `schema rollback --debug-body` flip the report's display plane to
+  `RAW_DEBUG` — Execution-Plane (SQL output) is unaffected and
+  always carries raw bodies. No renderer consumes the capability in
+  C.1.a; PostgreSQL Slice A/B output stays byte-identical. Slice
+  C.2 wires the MySQL renderer; Slice C.3 adds the
+  Dependency-Guard.
 - **E.1 Routine-Migration Slice B** — PostgreSQL procedures join
   functions in the diff/render pipeline. `ProcedureDiff` gains the
   same `security` / `definer` / `searchPath` / `sqlMode` value-change

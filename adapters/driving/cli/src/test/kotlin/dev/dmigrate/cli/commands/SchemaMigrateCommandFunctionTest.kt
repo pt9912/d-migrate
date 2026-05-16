@@ -64,6 +64,53 @@ class SchemaMigrateCommandFunctionTest : FunSpec({
         reportText.shouldContain("ReplaceFunction")
     }
 
+    test("--debug-body is off by default: report carries bodyDisplay = SCRUBBED_ONLY") {
+        val dir = Files.createTempDirectory("dmigrate-routine-e2e-debug-default")
+        val output = dir.resolve("up.sql")
+        val report = dir.resolve("report.json")
+        val source = resourcePath("fixtures/migrate/replace-function/desired.yaml")
+        val target = resourcePath("fixtures/migrate/replace-function/current.yaml")
+
+        cli().parse(
+            listOf(
+                "schema", "migrate",
+                "--source", source.toString(),
+                "--target", "file:$target",
+                "--dialect", "postgresql",
+                "--output", output.toString(),
+                "--report", report.toString(),
+                "--report-format", "json",
+            ),
+        )
+
+        val reportText = report.readText()
+        reportText.shouldContain("\"bodyDisplay\": \"SCRUBBED_ONLY\"")
+    }
+
+    test("--debug-body flips the report bodyDisplay to RAW_DEBUG (unsafe)") {
+        val dir = Files.createTempDirectory("dmigrate-routine-e2e-debug-on")
+        val output = dir.resolve("up.sql")
+        val report = dir.resolve("report.json")
+        val source = resourcePath("fixtures/migrate/replace-function/desired.yaml")
+        val target = resourcePath("fixtures/migrate/replace-function/current.yaml")
+
+        cli().parse(
+            listOf(
+                "schema", "migrate",
+                "--source", source.toString(),
+                "--target", "file:$target",
+                "--dialect", "postgresql",
+                "--output", output.toString(),
+                "--report", report.toString(),
+                "--report-format", "json",
+                "--debug-body",
+            ),
+        )
+
+        val reportText = report.readText()
+        reportText.shouldContain("\"bodyDisplay\": \"RAW_DEBUG\"")
+    }
+
     test("schema migrate exits 0 when source equals target (no-op)") {
         // Same file on both sides exercises the codec roundtrip:
         // load → compare. Identical schemas with security/searchPath

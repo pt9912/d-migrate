@@ -97,6 +97,7 @@ internal object SchemaMigrateReportBuilder {
                 )
             },
             summary = buildSummary(plan, rendered, renderedDown, catalogProbeMode),
+            bodyDisplay = request.bodyDisplay(),
             execution = if (rendered.executionStarted || rendered.executionError != null) {
                 SchemaMigrateExecutionView(
                     started = rendered.executionStarted,

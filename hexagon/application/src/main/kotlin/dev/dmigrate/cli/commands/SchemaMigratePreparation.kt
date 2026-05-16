@@ -240,6 +240,7 @@ internal class SchemaMigratePreparation(
             operations = emptyList(),
             statements = null,
             summary = SchemaMigrateSummary(),
+            bodyDisplay = request.bodyDisplay(),
         )
         request.report?.let { writeReport(it, report, request.reportFormat) }
         return 3

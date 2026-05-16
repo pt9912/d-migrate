@@ -28,6 +28,7 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "overlays", renderOverlays(report.overlays), indent = 1)
         appendField(sb, "sqliteCastPreflights", renderSqliteCastPreflights(report.sqliteCastPreflights), indent = 1)
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
+        appendField(sb, "bodyDisplay", jsonString(report.bodyDisplay.name), indent = 1)
         report.execution?.let { appendField(sb, "execution", renderExecution(it), indent = 1) }
         appendField(sb, "operations", renderOperations(report.operations), indent = 1)
         val stmts = report.statements
@@ -42,34 +43,8 @@ internal object SchemaMigrateReportRenderer {
 
     private fun renderYaml(report: SchemaMigrateReport): String {
         val sb = StringBuilder()
-        sb.append("status: ").append(yamlString(report.status)).append('\n')
-        sb.append("exitCode: ").append(report.exitCode).append('\n')
-        sb.append("source: ").append(yamlString(report.source)).append('\n')
-        sb.append("target: ").append(yamlString(report.target)).append('\n')
-        sb.append("dialect: ").append(report.dialect).append('\n')
-        sb.append("planOnly: ").append(report.planOnly).append('\n')
-        sb.append("summary:\n")
-        with(report.summary) {
-            sb.append("  operationsTotal: ").append(operationsTotal).append('\n')
-            sb.append("  operationsRendered: ").append(operationsRendered).append('\n')
-            sb.append("  operationsSkipped: ").append(operationsSkipped).append('\n')
-            sb.append("  statementsTotal: ").append(statementsTotal).append('\n')
-            sb.append("  destructiveCount: ").append(destructiveCount).append('\n')
-            sb.append("  manualActionCount: ").append(manualActionCount).append('\n')
-            sb.append("  nonReversibleCount: ").append(nonReversibleCount).append('\n')
-            sb.append("  primaryBlockedReason: ").append(yamlOptional(primaryBlockedReason)).append('\n')
-            sb.append("  downStatementsTotal: ").append(yamlOptional(downStatementsTotal?.toString())).append('\n')
-            sb.append("  downBlocked: ").append(downBlocked).append('\n')
-            sb.append("  planHasImplicitCommitDdl: ").append(planHasImplicitCommitDdl).append('\n')
-            sb.append("  planFullyRollbackable: ").append(planFullyRollbackable).append('\n')
-            sb.append("  planRequiresExclusiveAccess: ").append(planRequiresExclusiveAccess).append('\n')
-            sb.append("  catalogProbeMode: ").append(catalogProbeMode).append('\n')
-            sb.append("  spatialProfile: ").append(yamlOptional(spatialProfile)).append('\n')
-            sb.append("  requiredExtensions: ").append(yamlList(requiredExtensions)).append('\n')
-            sb.append("  verifiedExtensions: ").append(yamlList(verifiedExtensions)).append('\n')
-            sb.append("  missingExtensions: ").append(yamlList(missingExtensions)).append('\n')
-            sb.append("  extensionInstallStatements: ").append(yamlList(extensionInstallStatements)).append('\n')
-        }
+        appendYamlHeader(sb, report)
+        appendYamlSummary(sb, report.summary)
         sb.append("blockers:").append(if (report.blockers.isEmpty()) " []\n" else "\n")
         for (b in report.blockers) {
             sb.append("  - reason: ").append(b.reason).append('\n')
@@ -138,6 +113,41 @@ internal object SchemaMigrateReportRenderer {
             }
         }
         return sb.toString()
+    }
+
+    private fun appendYamlHeader(sb: StringBuilder, report: SchemaMigrateReport) {
+        sb.append("status: ").append(yamlString(report.status)).append('\n')
+        sb.append("exitCode: ").append(report.exitCode).append('\n')
+        sb.append("source: ").append(yamlString(report.source)).append('\n')
+        sb.append("target: ").append(yamlString(report.target)).append('\n')
+        sb.append("dialect: ").append(report.dialect).append('\n')
+        sb.append("planOnly: ").append(report.planOnly).append('\n')
+        sb.append("bodyDisplay: ").append(report.bodyDisplay.name).append('\n')
+    }
+
+    private fun appendYamlSummary(sb: StringBuilder, summary: SchemaMigrateSummary) {
+        sb.append("summary:\n")
+        with(summary) {
+            sb.append("  operationsTotal: ").append(operationsTotal).append('\n')
+            sb.append("  operationsRendered: ").append(operationsRendered).append('\n')
+            sb.append("  operationsSkipped: ").append(operationsSkipped).append('\n')
+            sb.append("  statementsTotal: ").append(statementsTotal).append('\n')
+            sb.append("  destructiveCount: ").append(destructiveCount).append('\n')
+            sb.append("  manualActionCount: ").append(manualActionCount).append('\n')
+            sb.append("  nonReversibleCount: ").append(nonReversibleCount).append('\n')
+            sb.append("  primaryBlockedReason: ").append(yamlOptional(primaryBlockedReason)).append('\n')
+            sb.append("  downStatementsTotal: ").append(yamlOptional(downStatementsTotal?.toString())).append('\n')
+            sb.append("  downBlocked: ").append(downBlocked).append('\n')
+            sb.append("  planHasImplicitCommitDdl: ").append(planHasImplicitCommitDdl).append('\n')
+            sb.append("  planFullyRollbackable: ").append(planFullyRollbackable).append('\n')
+            sb.append("  planRequiresExclusiveAccess: ").append(planRequiresExclusiveAccess).append('\n')
+            sb.append("  catalogProbeMode: ").append(catalogProbeMode).append('\n')
+            sb.append("  spatialProfile: ").append(yamlOptional(spatialProfile)).append('\n')
+            sb.append("  requiredExtensions: ").append(yamlList(requiredExtensions)).append('\n')
+            sb.append("  verifiedExtensions: ").append(yamlList(verifiedExtensions)).append('\n')
+            sb.append("  missingExtensions: ").append(yamlList(missingExtensions)).append('\n')
+            sb.append("  extensionInstallStatements: ").append(yamlList(extensionInstallStatements)).append('\n')
+        }
     }
 
     // ── JSON helpers ───────────────────────────────────────────────

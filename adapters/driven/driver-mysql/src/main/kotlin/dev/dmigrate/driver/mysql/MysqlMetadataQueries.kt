@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.IndexSortDirection
+import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.metadata.*
 
 /**
@@ -292,4 +293,18 @@ object MysqlMetadataQueries {
         schemaName: String,
     ): SupportTriggerScanResult =
         MysqlSequenceSupportMetadataQueries.listPotentialSupportTriggers(session, schemaName)
+
+    /**
+     * E.1 Routine-Migration Slice C.1.a: live MySQL/MariaDB server
+     * version probe. Slice C.2 consumes the result via
+     * `DdlGenerationOptions.mysqlServerVersion` so the renderer can
+     * resolve [dev.dmigrate.driver.RoutineKindCapability]'s
+     * `minServerVersion` against the live target. Returns null when
+     * the server returns an empty/non-parseable VERSION() value.
+     */
+    fun readServerVersion(session: JdbcOperations): MysqlServerVersion? {
+        val row = session.querySingle("SELECT VERSION() AS version") ?: return null
+        val raw = row["version"] as? String ?: return null
+        return MysqlServerVersion.parse(raw)
+    }
 }

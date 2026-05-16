@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -413,7 +414,24 @@ data class SchemaMigrateRequest(
      * repeatable. Both sides must share the same `<table>` prefix.
      */
     val renameColumnFlags: List<String> = emptyList(),
+    /**
+     * E.1 Routine-Migration Slice C.1.a: unsafe override for the
+     * Display-/Diagnostic-Plane. When `true`, routine bodies appear
+     * unmasked in the migration report; defaults to `false` so the
+     * scrubbed `{hash, length, scrubbedPreview, scrubbingApplied}`
+     * shape stays the default. The flag does NOT change Execution-
+     * Plane output — DDL statements always carry the raw body.
+     */
+    val debugBody: Boolean = false,
 )
+
+/**
+ * Maps the runner-level [SchemaMigrateRequest.debugBody] toggle to
+ * the report-level [RoutineBodyDisplay] value. Centralised here so
+ * every `SchemaMigrateReport` construction site sets it the same way.
+ */
+fun SchemaMigrateRequest.bodyDisplay(): RoutineBodyDisplay =
+    if (debugBody) RoutineBodyDisplay.RAW_DEBUG else RoutineBodyDisplay.SCRUBBED_ONLY
 
 data class SchemaMigrateReport(
     val status: String,
@@ -442,6 +460,14 @@ data class SchemaMigrateReport(
     val renameProjections: List<SchemaMigrateRenameProjectionView> = emptyList(),
     val summary: SchemaMigrateSummary,
     val execution: SchemaMigrateExecutionView? = null,
+    /**
+     * E.1 Routine-Migration Slice C.1.a: display-plane switch for
+     * routine bodies in this report. Set from `request.debugBody` —
+     * `RAW_DEBUG` lets the report renderer emit unmasked bodies,
+     * `SCRUBBED_ONLY` (default) keeps the standard scrubbed shape.
+     * Execution-Plane (the SQL statements) is unaffected.
+     */
+    val bodyDisplay: RoutineBodyDisplay = RoutineBodyDisplay.SCRUBBED_ONLY,
 )
 
 /**

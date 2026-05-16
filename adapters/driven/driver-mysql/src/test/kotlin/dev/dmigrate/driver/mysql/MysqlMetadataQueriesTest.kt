@@ -517,4 +517,27 @@ class MysqlMetadataQueriesTest : FunSpec({
         result.accessible shouldBe false
         result.triggers.shouldBeEmpty()
     }
+
+    // ── readServerVersion (E.1 Slice C.1.a) ────────────────────────
+
+    test("readServerVersion parses MySQL VERSION() result into MysqlServerVersion") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns
+            mapOf("version" to "8.0.36-log")
+        val v = MysqlMetadataQueries.readServerVersion(jdbc)
+        v?.major shouldBe 8
+        v?.minor shouldBe 0
+        v?.patch shouldBe 36
+        v?.vendor shouldBe "log"
+    }
+
+    test("readServerVersion returns null when VERSION() yields no row") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns null
+        MysqlMetadataQueries.readServerVersion(jdbc).shouldBeNull()
+    }
+
+    test("readServerVersion returns null on unparsable version string") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns
+            mapOf("version" to "unknown")
+        MysqlMetadataQueries.readServerVersion(jdbc).shouldBeNull()
+    }
 })

@@ -34,6 +34,11 @@ class SchemaRollbackCommand : CliktCommand(name = "rollback") {
         help = "Permit execution of an explicitly partial rollback artefact",
     ).flag()
     val dryRun by option("--dry-run", help = "Validate / preview only").flag()
+    val debugBody by option(
+        "--debug-body",
+        help = "UNSAFE: emit unmasked routine bodies in the report display plane. " +
+            "Default is scrubbed-only.",
+    ).flag()
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -49,6 +54,7 @@ class SchemaRollbackCommand : CliktCommand(name = "rollback") {
             allowPartialRollback = allowPartialRollback,
             dryRun = dryRun,
             cliConfigPath = root?.config,
+            debugBody = debugBody,
         )
         val runner = SchemaRollbackRunner(
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },

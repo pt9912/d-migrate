@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import com.google.gson.JsonParser
+import dev.dmigrate.driver.RoutineBodyDisplay
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -18,6 +19,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         blockers: List<SchemaMigrateBlockerView> = emptyList(),
         diagnostics: List<SchemaMigrateDiagnosticView> = emptyList(),
         sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
+        bodyDisplay: RoutineBodyDisplay = RoutineBodyDisplay.SCRUBBED_ONLY,
     ) = SchemaMigrateReport(
         status = "ok",
         exitCode = 0,
@@ -59,6 +61,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
             missingExtensions = listOf("postgis"),
         ),
         execution = execution,
+        bodyDisplay = bodyDisplay,
     )
 
     test("JSON renderer emits keys for all top-level fields") {
@@ -384,5 +387,28 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "refreshSteps: [BLOCKED_REFRESH_CONTRACT_REQUIRED]"
         out shouldContain "locking: UNKNOWN_REQUIRES_MANUAL_CONTRACT"
         out shouldContain "rollback: SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+    }
+
+    // ── bodyDisplay (E.1 Slice C.1.a) ───────────────────────────────
+
+    test("JSON renderer defaults bodyDisplay to SCRUBBED_ONLY") {
+        val out = SchemaMigrateReportRenderer.render(report(), "json")
+        out shouldContain "\"bodyDisplay\": \"SCRUBBED_ONLY\""
+    }
+
+    test("JSON renderer emits bodyDisplay = RAW_DEBUG when --debug-body was set on the request") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(bodyDisplay = RoutineBodyDisplay.RAW_DEBUG),
+            "json",
+        )
+        out shouldContain "\"bodyDisplay\": \"RAW_DEBUG\""
+    }
+
+    test("YAML renderer emits bodyDisplay") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(bodyDisplay = RoutineBodyDisplay.RAW_DEBUG),
+            "yaml",
+        )
+        out shouldContain "bodyDisplay: RAW_DEBUG"
     }
 })

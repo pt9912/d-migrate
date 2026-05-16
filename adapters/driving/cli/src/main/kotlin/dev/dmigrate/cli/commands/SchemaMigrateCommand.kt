@@ -72,6 +72,11 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
     val generateRollback by option("--generate-rollback", help = "Render Down-SQL alongside Up").flag()
     val execute by option("--execute", help = "Execute Up-SQL against --target (DB only)").flag()
     val dryRun by option("--dry-run", help = "Plan/SQL only, do not execute").flag()
+    val debugBody by option(
+        "--debug-body",
+        help = "UNSAFE: emit unmasked routine bodies in the report display plane. " +
+            "Execution-Plane (SQL output) is unchanged. Default is scrubbed-only.",
+    ).flag()
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -99,6 +104,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             migrationOverlayLoadFailures = loadedMigrationOverlays.failures,
             renameTableFlags = renameTableFlags,
             renameColumnFlags = renameColumnFlags,
+            debugBody = debugBody,
         )
 
         val runner = SchemaMigrateRunner(
