@@ -30,10 +30,15 @@ import dev.dmigrate.driver.resolve
  *    [dev.dmigrate.driver.RoutineCapability] (per the
  *    `routineCapability`/`mysqlServerVersion` fields on
  *    `DdlGenerationOptions`). `Active` ⇒ `CREATE OR REPLACE`,
- *    `Disabled`/`InvalidConfig` ⇒ `MANUAL_ACTION_REQUIRED`. The
- *    `DROP+CREATE` fallback is C.3 territory; in this slice the
- *    Dependency-Guard is fixed to UNKNOWN, so the renderer never
- *    reaches that branch.
+ *    `InvalidConfig` ⇒ `MANUAL_ACTION_REQUIRED`. `Disabled` routes
+ *    through the Slice C.3 dependency guard: `SAFE` ⇒ `DROP + CREATE`
+ *    (two statements; see the implicit-commit caveat below), any other
+ *    guard state ⇒ `MANUAL_ACTION_REQUIRED`. Every guard consultation
+ *    annotates the report with `DEPENDENCY_GUARD_HEURISTIC` so
+ *    operators see that the routing came from the stub bewertung;
+ *    a SAFE-guard-driven `DROP + CREATE` additionally emits the
+ *    `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` WARNING so the
+ *    operational risk is visible alongside the routing decision.
  * 3. **Diagnostic code**: emits the canonical
  *    `ROUTINE_DOWN_BODY_UNKNOWN` (plan §1) — MySQL never used the
  *    older Replace-specific spelling.
@@ -146,9 +151,15 @@ internal object MysqlDiffRoutineOps {
         val guard = evaluateGuard(op, ctx)
         annotateHeuristic(op, ctx, "Function", guard)
         if (guard == DependencyGuard.SAFE) {
-            // DROP the old name first, then CREATE the new definition.
-            // Both statements share the routine name, so MySQL applies
-            // them sequentially within the runner-owned transaction.
+            // MySQL DDL implicitly commits (see
+            // MYSQL_IMPLICIT_COMMIT_DDL_HINTS in
+            // MysqlDiffRenderContext): the DROP commits before the
+            // CREATE runs, so a CREATE failure leaves the routine
+            // gone. The dependency guard cannot detect that
+            // operational risk — emit a WARNING so the operator
+            // sees the trade-off alongside the heuristic
+            // annotation.
+            warnDropCreateNonAtomic(op, ctx, "Function")
             emitDropFunction(op, op.objectRef, ctx)
             emitCreateOrReplaceFunction(op, op.objectRef, target, ctx, orReplace = false)
         } else {
@@ -164,6 +175,7 @@ internal object MysqlDiffRoutineOps {
         val guard = evaluateGuard(op, ctx)
         annotateHeuristic(op, ctx, "Procedure", guard)
         if (guard == DependencyGuard.SAFE) {
+            warnDropCreateNonAtomic(op, ctx, "Procedure")
             emitDropProcedure(op, op.objectRef, ctx)
             emitCreateOrReplaceProcedure(op, op.objectRef, target, ctx, orReplace = false)
         } else {
@@ -192,6 +204,24 @@ internal object MysqlDiffRoutineOps {
                 "(SAFE iff the routine op is isolated in the plan). Result for this op: $guard. " +
                 "Slice D will replace the stub with a real topology evaluator.",
             code = "DEPENDENCY_GUARD_HEURISTIC",
+        )
+    }
+
+    private fun warnDropCreateNonAtomic(op: DiffOperation, ctx: MysqlDiffRenderContext, kind: String) {
+        // The Replace op itself carries risk.up = SAFE because the
+        // operator's intent is a body swap. The DROP + CREATE
+        // fallback turns that intent into two implicit-commit DDL
+        // statements; the existing destructive-guard pipeline
+        // therefore cannot flag the non-atomicity automatically.
+        // This WARNING makes the risk explicit at report time.
+        ctx.warning(
+            op,
+            "$kind '${op.objectRef.rootName}': capability is `Disabled` and the dependency guard is " +
+                "`SAFE`, so the renderer falls back to `DROP` + `CREATE`. MySQL DDL implicitly commits " +
+                "between the two statements — if the `CREATE` fails after the `DROP` has committed, " +
+                "the routine is gone with no automatic rollback. Run in a controlled window or wait " +
+                "for `CREATE OR REPLACE` capability (target server upgrade / capability config).",
+            code = "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC",
         )
     }
 

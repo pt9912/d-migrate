@@ -108,6 +108,22 @@ internal class MysqlDiffRenderContext(
         )
     }
 
+    /**
+     * E.1 Routine-Migration Slice C.3 follow-up: annotate an op
+     * with a WARNING-level diagnostic. Used to surface operational
+     * caveats that an operator must read but that do not block the
+     * render (e.g., MySQL routine `DROP + CREATE` is non-atomic
+     * across the implicit-commit boundary).
+     */
+    fun warning(op: DiffOperation, message: String, code: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = op.id,
+        )
+    }
+
     fun addBlocker(reason: MigrationBlockedReason, operationIds: Set<String>) {
         blockers += MigrationBlocker(reason = reason, operationIds = operationIds)
     }

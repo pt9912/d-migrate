@@ -237,8 +237,15 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         }
         // The stub bewertung is annotated as an INFO diagnostic so
         // operators see that the SAFE call came from a heuristic,
-        // not a topology proof.
+        // not a topology proof. The SAFE-driven DROP + CREATE pair
+        // is non-atomic across MySQL's implicit-commit boundary, so
+        // the renderer additionally emits a WARNING to make that
+        // operational risk visible.
         r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any {
+            it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" &&
+                it.severity == dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.WARNING
+        } shouldBe true
     }
 
     test("ReplaceProcedure with Disabled capability + isolated plan (SAFE guard) emits DROP + CREATE") {
@@ -255,6 +262,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         stmts.last().shouldContain("CREATE PROCEDURE `p`")
         stmts.last().shouldNotContain("OR REPLACE")
         r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
     test("ReplaceFunction with Disabled capability + co-resident op (UNSAFE guard) blocks") {
@@ -285,6 +293,9 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
         r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        // The non-atomicity warning is tied to the SAFE-guard path
+        // only; UNSAFE/UNKNOWN blocks do not emit it.
+        r.diagnostics.none { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
         // No CREATE FUNCTION emitted on the blocker path.
         r.statements.none { it.sql.contains("CREATE FUNCTION") } shouldBe true
     }
@@ -309,6 +320,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         r.isBlocked shouldBe false
         r.statements.shouldHaveSize(2)
         r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
     test("Replace with minServerVersion satisfied by live target -> CREATE OR REPLACE renders") {
@@ -355,6 +367,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         r.isBlocked shouldBe false
         r.statements.shouldHaveSize(2)
         r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
     // ── Edge cases caught by the C.2 post-commit review ───────────
