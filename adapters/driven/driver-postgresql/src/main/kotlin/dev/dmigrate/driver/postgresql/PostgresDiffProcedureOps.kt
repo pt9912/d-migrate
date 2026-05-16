@@ -16,8 +16,9 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * inverse), `DROP PROCEDURE` (Up + Down via inverse), and the
  * Up-only `ReplaceProcedure` path. Down-rendering for `ReplaceProcedure`
  * requires the prior body to be known on the operation; otherwise the
- * renderer blocks with `ROLLBACK_NOT_POSSIBLE` and the diagnostic
- * code `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`.
+ * renderer blocks with `ROLLBACK_NOT_POSSIBLE` and the canonical
+ * diagnostic code `ROUTINE_DOWN_BODY_UNKNOWN` (Slice C.1.b migrated
+ * this from the older `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`).
  *
  * Procedures differ from functions in two ways: (1) no `RETURNS`
  * clause and (2) PostgreSQL only supports procedures from 11+. The
@@ -42,7 +43,7 @@ internal object PostgresDiffProcedureOps {
             val isDown = ctx.direction == PostgresRenderDirection.DOWN
             val side = if (isDown) "Down" else "Up"
             val sideField = if (isDown) "before" else "after"
-            val code = if (isDown) "ROUTINE_REPLACE_DOWN_BODY_UNKNOWN" else "ROUTINE_REPLACE_UP_BODY_UNKNOWN"
+            val code = if (isDown) "ROUTINE_DOWN_BODY_UNKNOWN" else "ROUTINE_REPLACE_UP_BODY_UNKNOWN"
             val reason = if (isDown) {
                 MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
             } else {

@@ -99,7 +99,7 @@ class PostgresDiffFunctionOpsTest : FunSpec({
         statement.shouldContain("RETURN amount * 1.19") // before body
     }
 
-    test("ReplaceFunction Down without known prior body blocks with ROUTINE_REPLACE_DOWN_BODY_UNKNOWN") {
+    test("ReplaceFunction Down without known prior body blocks with ROUTINE_DOWN_BODY_UNKNOWN") {
         // The prior side carries an empty body (e.g. the operator
         // declared the function in the schema file without the
         // body). Down rendering can't reconstruct the old body, so
@@ -113,7 +113,7 @@ class PostgresDiffFunctionOpsTest : FunSpec({
         val r = gen.generateDown(plan, DdlGenerationOptions())
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
-        r.diagnostics.any { it.code == "ROUTINE_REPLACE_DOWN_BODY_UNKNOWN" } shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
         r.statements.shouldBeEmpty()
     }
 

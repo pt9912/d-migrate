@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **E.1 Routine-Migration Slice C.1.b** — PostgreSQL function and
+  procedure renderers emit the canonical `ROUTINE_DOWN_BODY_UNKNOWN`
+  diagnostic code instead of the older Replace-specific
+  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` when `--generate-rollback`
+  blocks because the prior routine body is unknown. The change is
+  diagnostic-only: blocker reason (`ROLLBACK_NOT_POSSIBLE`),
+  message text, and SQL output stay identical. Test pins in
+  `PostgresDiffFunctionOpsTest` / `PostgresDiffProcedureOpsTest`
+  and the `--generate-rollback` row in `spec/cli-spec.md` §6.1
+  follow. The Replace-Up variant `ROUTINE_REPLACE_UP_BODY_UNKNOWN`
+  stays as-is — a missing after-body on Replace is structurally
+  different from a missing rollback target. Plan §1 sees the
+  generic code as authoritative; MySQL slices (C.2+) will emit
+  only the generic code from the start.
+
 ### Added
 
 - **E.1 Routine-Migration Slice C.1.a** — Capability + Debug-Body

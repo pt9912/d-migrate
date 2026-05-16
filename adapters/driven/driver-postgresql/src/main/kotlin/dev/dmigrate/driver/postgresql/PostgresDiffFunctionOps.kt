@@ -15,10 +15,12 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * inverse), `DROP FUNCTION` (Up + Down via inverse), and the
  * Up-only `ReplaceFunction` path. Down-rendering for `ReplaceFunction`
  * requires the prior body to be known on the operation; otherwise the
- * renderer blocks with `ROLLBACK_NOT_POSSIBLE` and the diagnostic
- * code `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` so the operator gets a
- * specific reason rather than the generic
- * `DIALECT_UNSUPPORTED_OPERATION`.
+ * renderer blocks with `ROLLBACK_NOT_POSSIBLE` and the canonical
+ * diagnostic code `ROUTINE_DOWN_BODY_UNKNOWN` (plan §1) so the
+ * operator gets a specific reason rather than the generic
+ * `DIALECT_UNSUPPORTED_OPERATION`. The Slice C.1.b commit migrated
+ * the older Replace-specific `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`
+ * spelling onto the generic name.
  *
  * Body content is wrapped in dollar-quoted blocks. The renderer
  * intentionally uses a fixed `$body$` tag — operators who need a
@@ -42,14 +44,15 @@ internal object PostgresDiffFunctionOps {
             val isDown = ctx.direction == PostgresRenderDirection.DOWN
             val side = if (isDown) "Down" else "Up"
             val sideField = if (isDown) "before" else "after"
-            // The slice spec advertises this as a Down-only blocker
-            // ("ROUTINE_REPLACE_DOWN_BODY_UNKNOWN") because that is the
-            // only path that surfaces it under
-            // `--generate-rollback`. The Up path uses the same
-            // diagnostic-code stem with an explicit `_UP_` segment so
-            // an operator who searches the report sees the same
-            // family of issue.
-            val code = if (isDown) "ROUTINE_REPLACE_DOWN_BODY_UNKNOWN" else "ROUTINE_REPLACE_UP_BODY_UNKNOWN"
+            // Plan §1 mandates `ROUTINE_DOWN_BODY_UNKNOWN` as the
+            // canonical generic code for any routine Down path that
+            // lacks a safe prior body — Slice C.1.b migrated this
+            // emission from the older Replace-specific spelling
+            // `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`. The Up path keeps
+            // a Replace-specific `_UP_` code (a missing after-body on
+            // Replace is structurally different from a missing
+            // rollback target).
+            val code = if (isDown) "ROUTINE_DOWN_BODY_UNKNOWN" else "ROUTINE_REPLACE_UP_BODY_UNKNOWN"
             val reason = if (isDown) {
                 MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
             } else {

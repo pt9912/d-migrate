@@ -101,7 +101,7 @@ class PostgresDiffProcedureOpsTest : FunSpec({
         statement.shouldContain("CALL audit_log(id_in)") // before body
     }
 
-    test("ReplaceProcedure Down without known prior body blocks with ROUTINE_REPLACE_DOWN_BODY_UNKNOWN") {
+    test("ReplaceProcedure Down without known prior body blocks with ROUTINE_DOWN_BODY_UNKNOWN") {
         val before = sampleProcedure.copy(body = null)
         val after = sampleProcedure.copy(body = "BEGIN CALL audit_log_v2(id_in); END")
         val current = emptySchema().copy(procedures = mapOf("audit_call" to before))
@@ -110,7 +110,7 @@ class PostgresDiffProcedureOpsTest : FunSpec({
         val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
-        r.diagnostics.any { it.code == "ROUTINE_REPLACE_DOWN_BODY_UNKNOWN" } shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
         r.statements.shouldBeEmpty()
     }
 
