@@ -918,6 +918,14 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     bleiben byte-identisch (nur Sortierung kann sich ändern, was
     aber nur bei mehreren Routine-Ops im Plan überhaupt
     materialisiert — Slice A/B/C-Tests haben nie >1 Routine-Op).
+  - **Touched-Doku in D.1**: `DependencyAnalyzer.kt`-File-KDoc
+    (`hexagon:core/.../diff/migration/DependencyAnalyzer.kt:34-46`)
+    listet heute vier Carve-outs (Drop-side ordering, Replace-body
+    deps, Materialized-view refresh, Trigger ↔ Table/Function/View).
+    D.1 schließt drei davon (Drop-side, Replace-body, Trigger);
+    der MV-Refresh-Carve-out bleibt offen (Out-of-Scope unten).
+    Das KDoc ist im D.1-Commit zu aktualisieren — sonst verweist
+    die Doku auf nicht mehr existierende Carve-outs.
 
 - **D.2 — PostgreSQL-Engine-Metadaten** (Datei-zu-DB PG):
   - `PostgresProgrammabilityMetadataQueries` erweitern um:
@@ -938,10 +946,17 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     in den `MANUAL_ACTION_REQUIRED`-Pfad.
 
 - **D.3 — MySQL-Engine-Metadaten** (Datei-zu-DB MySQL):
-  - `MysqlMetadataQueries` erweitern:
-    - View ↔ Table: `VIEW_TABLE_USAGE` (existiert).
+  - Reader-Wiring (nicht: neue Queries) — die meisten benötigten
+    `information_schema`-Reads existieren schon in
+    `MysqlMetadataQueries`:
+    - View ↔ Table: `VIEW_TABLE_USAGE` (existiert, wird heute
+      schon konsumiert).
     - View ↔ Routine: `VIEW_ROUTINE_USAGE` (existiert).
-    - Trigger ↔ Table: aus `information_schema.TRIGGERS.event_object_table`.
+    - Trigger ↔ Table: `listTriggers` projiziert
+      `event_object_table` schon (kein neuer Query nötig); D.3
+      verdrahtet das Feld nur neu in
+      `MysqlSchemaReader → DependencyInfo.tables` für die
+      Trigger-Definition.
     - Routine ↔ Table/View/Sequence: nicht allgemeingültig
       ableitbar (Routine-Body ist opake Bytes für MySQL), bleibt
       manifest-/konfigurationsbasiert. Reader setzt
@@ -970,6 +985,16 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     Edge) jetzt UNSAFE liefert auch wenn der Plan andere Ops
     enthält, die NICHT von ihr abhängen — d.h. die Heuristik wird
     durch eine selektivere Bewertung ersetzt.
+  - **Touched-Tests in D.4**: `DependencyGuardEvaluatorTest.kt`
+    (C.3) pinned heute die Stub-Heuristik ("any co-resident op
+    == UNSAFE"). D.4 ersetzt den Evaluator-Body durch echte
+    Topologie — die Stub-Pins werden umgeschrieben zu
+    topologie-basierten Pins (isolierte vs. echt-abhängige vs.
+    independent-co-resident Ops). Plus angepasste MySQL-
+    Renderer-Tests, wo C.3 die Stub-Bewertung implizit annahm
+    (z.B. der `co-resident op (UNSAFE guard) blocks`-Test ändert
+    seine Erwartung, sobald die echte Topologie den Co-resident
+    als unabhängig erkennt).
 
 ##### Modulgrenzen / Wiring-Pfad
 
@@ -1075,6 +1100,11 @@ adapters/driven/driver-mysql
 - [ ] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
   Sequenzen ab; Drop-Reihenfolge ist reverse-topologisch, Create-Reihenfolge
   topologisch.
+- [ ] Zyklus im Dependency-Graph blockiert mit
+  `ROUTINE_DEPENDENCY_CYCLE` und nennt die beteiligten Objekt-Paare.
+  Unsichere Paare (potenziell abhängige Routine-/View-/Trigger-
+  Verbindungen ohne Manifest-Edge und ohne Engine-Edge) blockieren
+  mit `MANUAL_ACTION_REQUIRED` und `UNSAFE_DEPENDENCY_PAIR`-Diagnose.
   - [ ] Secret-Scrubbing maskiert Passwort-/Token-/Connection-String-
     Literale im Body, bevor er in Log-/Diagnostic-Plane (Logs, Runner-Trace,
     DB-Fehler-/SQL-Logs), Reports oder Test-Goldens gelangt.
