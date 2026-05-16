@@ -228,6 +228,87 @@ internal object PostgresProgrammabilityMetadataQueries {
     }
 
     /**
+     * E.1 Routine-Migration Slice E: routine identity attributes
+     * (security, definer, search_path) projected from `pg_proc`.
+     * Slice A landed `FunctionDefinition`/`ProcedureDefinition`
+     * with these fields but left the reverse reader at `null` as
+     * a documented carve-out — Slice E closes it.
+     *
+     * The query is keyed by `RoutineKey(name, oid)` so same-name
+     * overloads stay distinct (mirrors the D.2 follow-up pattern
+     * for `listRoutineRelationDependencies`).
+     *
+     * `proconfig` is a `text[]` of `key=value` strings; the parser
+     * extracts a `search_path=...` entry and splits it on commas.
+     * `pg_roles` (not `pg_authid`) is joined for the owner name
+     * because `pg_authid` requires superuser privileges in many
+     * managed-database environments — `pg_roles` exposes the same
+     * `rolname` minus the credential columns.
+     */
+    fun listRoutineIdentityAttributes(
+        session: JdbcOperations,
+        schemaName: String,
+    ): Map<RoutineKey, RoutineIdentityAttributes> {
+        val rows = session.queryList(
+            """
+            SELECT p.proname AS routine_name,
+                   p.oid AS routine_oid,
+                   p.prosecdef AS security_definer,
+                   r.rolname AS definer,
+                   p.proconfig AS config
+            FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace AND n.nspname = ?
+            LEFT JOIN pg_roles r ON r.oid = p.proowner
+            WHERE p.proname NOT LIKE 'pg_%'
+            ORDER BY routine_name, routine_oid
+            """.trimIndent(), schemaName,
+        )
+
+        val grouped = linkedMapOf<RoutineKey, RoutineIdentityAttributes>()
+        for (row in rows) {
+            val routineName = row["routine_name"] as String
+            val routineOid = (row["routine_oid"] as Number).toLong()
+            val securityDefiner = (row["security_definer"] as? Boolean) == true
+            val definer = row["definer"] as? String
+            val searchPath = parseSearchPath(row["config"])
+            grouped[RoutineKey(name = routineName, oid = routineOid)] = RoutineIdentityAttributes(
+                securityDefiner = securityDefiner,
+                definer = definer,
+                searchPath = searchPath,
+            )
+        }
+        return grouped
+    }
+
+    /**
+     * Extracts the `search_path` segment from a `proconfig` array
+     * row. JDBC returns `text[]` as `java.sql.Array` (driver-
+     * specific) or a `Array<String>` / `List<String>`; the parser
+     * accepts both via the `toStringList` helper.
+     */
+    private fun parseSearchPath(config: Any?): List<String>? {
+        val entries = toStringList(config) ?: return null
+        for (entry in entries) {
+            if (entry.startsWith("search_path=")) {
+                val value = entry.substringAfter("search_path=")
+                return value.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+            }
+        }
+        return null
+    }
+
+    private fun toStringList(value: Any?): List<String>? = when (value) {
+        null -> null
+        is List<*> -> value.filterIsInstance<String>()
+        is Array<*> -> value.filterIsInstance<String>()
+        is java.sql.Array -> {
+            val raw = value.array
+            if (raw is Array<*>) raw.filterIsInstance<String>() else null
+        }
+        else -> null
+    }
+
+    /**
      * E.1 Routine-Migration Slice D.2: trigger ↔ function edges via
      * `pg_trigger.tgfoid → pg_proc.oid`. The projection is keyed by
      * `(table, trigger_name)` because `pg_trigger.tgname` is only
@@ -286,6 +367,17 @@ internal data class RoutineRelationDependencies(
     val tables: List<String> = emptyList(),
     val views: List<String> = emptyList(),
     val sequences: List<String> = emptyList(),
+)
+
+/**
+ * E.1 Slice E: routine identity attribute projection from
+ * `pg_proc` — fills the Slice A carve-out where the reverse
+ * reader left `security` / `definer` / `searchPath` at null.
+ */
+internal data class RoutineIdentityAttributes(
+    val securityDefiner: Boolean,
+    val definer: String?,
+    val searchPath: List<String>?,
 )
 
 private class MutableRoutineRelationDependencies {

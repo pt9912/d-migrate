@@ -548,4 +548,63 @@ class PostgresMetadataQueriesTest : FunSpec({
         every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns emptyList()
         PostgresProgrammabilityMetadataQueries.listTriggerFunctionDependencies(jdbc, "public") shouldBe emptyMap()
     }
+
+    // ── listRoutineIdentityAttributes (E.1 Slice E) ───────────────
+
+    test("listRoutineIdentityAttributes projects security/definer/searchPath per overload") {
+        every {
+            jdbc.queryList(
+                match { it.contains("prosecdef") && it.contains("proconfig") && it.contains("pg_roles") },
+                any(),
+            )
+        } returns listOf(
+            mapOf(
+                "routine_name" to "compute_total", "routine_oid" to 1001L,
+                "security_definer" to true, "definer" to "svc_app",
+                "config" to arrayOf("search_path=public,audit", "log_min_messages=warning"),
+            ),
+            mapOf(
+                "routine_name" to "other_fn", "routine_oid" to 2002L,
+                "security_definer" to false, "definer" to "postgres",
+                "config" to null,
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        val secured = result[RoutineKey(name = "compute_total", oid = 1001L)]
+        secured?.securityDefiner shouldBe true
+        secured?.definer shouldBe "svc_app"
+        secured?.searchPath shouldBe listOf("public", "audit")
+        val other = result[RoutineKey(name = "other_fn", oid = 2002L)]
+        other?.securityDefiner shouldBe false
+        other?.searchPath shouldBe null
+    }
+
+    test("listRoutineIdentityAttributes handles a java.sql.Array config payload") {
+        // Some JDBC drivers hand back text[] as java.sql.Array
+        // rather than a Kotlin Array<String>; the parser must
+        // accept both.
+        val sqlArray = mockk<java.sql.Array>()
+        every { sqlArray.array } returns arrayOf("search_path=public")
+        every {
+            jdbc.queryList(
+                match { it.contains("prosecdef") && it.contains("proconfig") },
+                any(),
+            )
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 5L,
+                "security_definer" to false, "definer" to "app_role",
+                "config" to sqlArray,
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 5L)]?.searchPath shouldBe listOf("public")
+    }
+
+    test("listRoutineIdentityAttributes returns empty map when no rows") {
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns emptyList()
+        PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public") shouldBe emptyMap()
+    }
 })

@@ -41,23 +41,14 @@ internal fun readPostgresViews(
     return result
 }
 
-// E.1 Routine-Migration Slice A carve-out:
-// `security` / `definer` / `searchPath` / `sqlMode` are NOT yet
-// populated from the live database. Sourcing them requires reading
-// `pg_proc.prosecdef`, `pg_proc.proowner` (joined to `pg_authid`)
-// and `pg_proc.proconfig` (joined to `pg_db_role_setting`) which is
-// non-trivial because of permission scoping and out-of-information-
-// schema queries. Until Slice E lands the reverse path leaves the
-// fields null, with two consequences:
-//   1. File-to-DB diffs against a schema file that declares
-//      `security: definer` always emit `ReplaceFunction`; this is
-//      logged as the documented caveat in the slice plan §3.
-//   2. The fingerprint computed from a reverse-read schema differs
-//      from the fingerprint computed from the same schema authored
-//      in a file with explicit identity attributes — by design,
-//      since the file is more specific.
-// A later slice will widen `listFunctions`/`listProcedures` to
-// project these attributes.
+// E.1 Routine-Migration Slice E closed the Slice-A reverse-read
+// carve-out: `security` / `definer` / `searchPath` are now sourced
+// from `pg_proc.prosecdef`, `pg_proc.proowner` (joined via
+// `pg_roles`), and `pg_proc.proconfig`. `sqlMode` is MySQL-only;
+// the PG reader continues to leave it null. The carve-out's
+// fingerprint caveat (file with explicit identity attrs differs
+// from reverse-read schema with missing attrs) is now resolved
+// when the underlying pg_proc projection is complete.
 
 internal fun readPostgresFunctions(
     session: JdbcOperations,
@@ -66,6 +57,8 @@ internal fun readPostgresFunctions(
     val rows = PostgresMetadataQueries.listFunctions(session, schema)
     val relationDeps = PostgresProgrammabilityMetadataQueries
         .listRoutineRelationDependencies(session, schema)
+    val identityAttrs = PostgresProgrammabilityMetadataQueries
+        .listRoutineIdentityAttributes(session, schema)
     val result = LinkedHashMap<String, FunctionDefinition>()
     for (row in rows) {
         val name = row["routine_name"] as String
@@ -75,6 +68,7 @@ internal fun readPostgresFunctions(
         val returnType = (row["data_type"] as? String)?.takeIf { it != "void" }?.let {
             ReturnType(type = PostgresTypeMapping.mapParamType(row["type_udt_name"] as? String ?: it))
         }
+        val identity = routineIdentity(identityAttrs, name, specificName)
         result[key] = FunctionDefinition(
             parameters = parameterDefinitions,
             returns = returnType,
@@ -83,10 +77,10 @@ internal fun readPostgresFunctions(
             deterministic = (row["is_deterministic"] as? String) == "YES",
             dependencies = routineDependencyInfo(relationDeps, name, specificName),
             sourceDialect = "postgresql",
-            // Reverse-read carve-out (see file-level comment).
-            security = null,
-            definer = null,
-            searchPath = null,
+            // Slice E: identity attrs from pg_proc.
+            security = identity?.security,
+            definer = identity?.definer,
+            searchPath = identity?.searchPath,
             sqlMode = null,
         )
     }
@@ -100,26 +94,59 @@ internal fun readPostgresProcedures(
     val rows = PostgresMetadataQueries.listProcedures(session, schema)
     val relationDeps = PostgresProgrammabilityMetadataQueries
         .listRoutineRelationDependencies(session, schema)
+    val identityAttrs = PostgresProgrammabilityMetadataQueries
+        .listRoutineIdentityAttributes(session, schema)
     val result = LinkedHashMap<String, ProcedureDefinition>()
     for (row in rows) {
         val name = row["routine_name"] as String
         val specificName = row["specific_name"] as String
         val parameterDefinitions = readPostgresRoutineParameters(session, schema, specificName)
         val key = ObjectKeyCodec.routineKey(name, parameterDefinitions)
+        val identity = routineIdentity(identityAttrs, name, specificName)
         result[key] = ProcedureDefinition(
             parameters = parameterDefinitions,
             language = row["external_language"] as? String,
             body = row["routine_definition"] as? String,
             dependencies = routineDependencyInfo(relationDeps, name, specificName),
             sourceDialect = "postgresql",
-            // Reverse-read carve-out (see file-level comment).
-            security = null,
-            definer = null,
-            searchPath = null,
+            // Slice E: identity attrs from pg_proc.
+            security = identity?.security,
+            definer = identity?.definer,
+            searchPath = identity?.searchPath,
             sqlMode = null,
         )
     }
     return result
+}
+
+/**
+ * E.1 Routine-Migration Slice E: look up routine identity
+ * attributes by overload-specific key, mirroring the Slice D.2
+ * dependency lookup. Returns null when the projection has no
+ * matching row.
+ */
+private data class ResolvedRoutineIdentity(
+    val security: RoutineSecurity?,
+    val definer: String?,
+    val searchPath: List<String>?,
+)
+
+private fun routineIdentity(
+    projection: Map<RoutineKey, RoutineIdentityAttributes>,
+    name: String,
+    specificName: String,
+): ResolvedRoutineIdentity? {
+    val oid = specificName.substringAfterLast('_').toLongOrNull()
+    val attrs = if (oid != null) {
+        projection[RoutineKey(name = name, oid = oid)]
+    } else {
+        projection.entries.firstOrNull { it.key.name == name }?.value
+    } ?: return null
+    return ResolvedRoutineIdentity(
+        security = if (attrs.securityDefiner) RoutineSecurity.DEFINER else RoutineSecurity.INVOKER,
+        definer = attrs.definer.takeIf { attrs.securityDefiner },
+        searchPath = attrs.searchPath,
+    )
 }
 
 /**

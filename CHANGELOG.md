@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **E.1 Routine-Migration Slice E** — closes the Slice-A
+  reverse-read carve-out: the PostgreSQL schema reader now
+  populates `security` / `definer` / `searchPath` for routines
+  directly from `pg_proc`. New
+  `PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes`
+  projects `prosecdef`, `pg_roles.rolname` (joined via
+  `proowner`, using `pg_roles` instead of `pg_authid` so the
+  query works without superuser), and `proconfig` — the latter
+  is parsed to extract the `search_path` segment. The projection
+  is keyed by `RoutineKey(name, oid)` so same-name overloads
+  stay distinct. `readPostgresFunctions` / `readPostgresProcedures`
+  consume the projection and assemble the final identity. With
+  the carve-out closed, `--generate-rollback` Down-render for
+  PG routines now works against a live DB whose routines declare
+  `SECURITY DEFINER` + `SET search_path`: the prior body comes
+  from `routine_definition`, identity attrs from `pg_proc`, and
+  the diff no longer emits a spurious `ReplaceFunction` purely
+  because the reverse side was missing the identity attrs.
+  `sqlMode` stays null on the PG side — it's a MySQL-only
+  concept. The MySQL routine reader is unchanged (routine
+  bodies / identity are an MySQL-flavoured carve-out that a
+  later slice can revisit).
+
+  This is the final slice of E.1: workstreams A → B → C → D → E
+  are complete. MySQL routine rendering, dependency sorting
+  across all five object classes, and the engine-verified
+  down-body recovery now ship together.
+
 ### Changed
 
 - **E.1 Routine-Migration Slice D.4** — `DependencyGuardEvaluator`

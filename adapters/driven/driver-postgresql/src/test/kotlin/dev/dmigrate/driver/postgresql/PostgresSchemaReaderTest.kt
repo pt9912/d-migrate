@@ -63,6 +63,10 @@ class PostgresSchemaReaderTest : FunSpec({
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
         // E.1 Slice D.2: trigger ↔ function edges via pg_trigger.tgfoid → pg_proc.oid.
         every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns emptyList()
+        // E.1 Slice E: routine identity attributes from pg_proc.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns emptyList()
     }
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {

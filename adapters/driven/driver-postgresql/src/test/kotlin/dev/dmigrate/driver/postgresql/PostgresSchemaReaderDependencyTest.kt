@@ -53,6 +53,10 @@ class PostgresSchemaReaderDependencyTest : FunSpec({
         every {
             jdbc.queryList(match { it.contains("routine_name") && it.contains("routine_oid") && it.contains("pg_depend") }, any(), any())
         } returns emptyList()
+        // E.1 Slice E: identity-attribute projection from pg_proc.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns emptyList()
         every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns
             emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
@@ -130,5 +134,76 @@ class PostgresSchemaReaderDependencyTest : FunSpec({
         val trigger = result.schema.triggers.values.single()
         trigger.dependencies.shouldNotBeNull()
         trigger.dependencies!!.functions shouldBe listOf("audit_fn")
+    }
+
+    test("Slice E: read populates security / definer / searchPath from pg_proc") {
+        stubReaderDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "secured_fn",
+                "specific_name" to "secured_fn_1234",
+                "routine_type" to "FUNCTION",
+                "data_type" to "integer",
+                "type_udt_name" to "int4",
+                "external_language" to "plpgsql",
+                "routine_definition" to "BEGIN RETURN 1; END",
+                "is_deterministic" to "YES",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.parameters") }, any(), any()) } returns
+            emptyList()
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "secured_fn", "routine_oid" to 1234L,
+                "security_definer" to true, "definer" to "svc_app",
+                "config" to arrayOf("search_path=public,audit"),
+            ),
+        )
+
+        val reader = PostgresSchemaReader(jdbcFactory = { jdbc })
+        val result = reader.read(pool, SchemaReadOptions())
+        val fn = result.schema.functions.values.single()
+        fn.security shouldBe dev.dmigrate.core.model.RoutineSecurity.DEFINER
+        fn.definer shouldBe "svc_app"
+        fn.searchPath shouldBe listOf("public", "audit")
+    }
+
+    test("Slice E: INVOKER routine without search_path leaves definer / searchPath null") {
+        stubReaderDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "plain_fn",
+                "specific_name" to "plain_fn_5678",
+                "routine_type" to "FUNCTION",
+                "data_type" to "integer",
+                "type_udt_name" to "int4",
+                "external_language" to "plpgsql",
+                "routine_definition" to "BEGIN RETURN 1; END",
+                "is_deterministic" to "YES",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.parameters") }, any(), any()) } returns
+            emptyList()
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "plain_fn", "routine_oid" to 5678L,
+                "security_definer" to false, "definer" to "postgres",
+                "config" to null,
+            ),
+        )
+
+        val reader = PostgresSchemaReader(jdbcFactory = { jdbc })
+        val result = reader.read(pool, SchemaReadOptions())
+        val fn = result.schema.functions.values.single()
+        fn.security shouldBe dev.dmigrate.core.model.RoutineSecurity.INVOKER
+        // INVOKER routines suppress the definer field — the role
+        // that owns the routine is irrelevant when execution runs
+        // as the calling role.
+        fn.definer shouldBe null
+        fn.searchPath shouldBe null
     }
 })
