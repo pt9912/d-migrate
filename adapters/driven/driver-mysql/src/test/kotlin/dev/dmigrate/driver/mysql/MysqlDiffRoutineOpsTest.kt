@@ -19,6 +19,7 @@ import dev.dmigrate.driver.RoutineKindCapability
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -216,30 +217,82 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         ),
     )
 
-    test("ReplaceFunction with Disabled capability blocks with ROUTINE_CAPABILITY_DISABLED") {
+    test("ReplaceFunction with Disabled capability + isolated plan (SAFE guard) emits DROP + CREATE") {
+        // Slice C.3: when the routine is the only op in the plan,
+        // the stub dependency guard returns SAFE and the renderer
+        // falls back to DROP + CREATE instead of MANUAL_ACTION_REQUIRED.
         val before = sampleFunction
         val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
         val r = gen.generateUp(planner.plan(current, desired, diff), disabledCapability())
-        r.isBlocked shouldBe true
-        r.blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED } shouldBe true
-        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+        r.isBlocked shouldBe false
+        r.statements.map { it.sql }.let { stmts ->
+            stmts.shouldHaveSize(2)
+            stmts.first().shouldContain("DROP FUNCTION `compute_total`")
+            stmts.last().shouldContain("CREATE FUNCTION `compute_total`")
+            stmts.last().shouldNotContain("OR REPLACE")
+            stmts.last().shouldContain("RETURN amount * 1.2")
+        }
+        // The stub bewertung is annotated as an INFO diagnostic so
+        // operators see that the SAFE call came from a heuristic,
+        // not a topology proof.
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
     }
 
-    test("ReplaceProcedure with Disabled capability blocks with ROUTINE_CAPABILITY_DISABLED") {
+    test("ReplaceProcedure with Disabled capability + isolated plan (SAFE guard) emits DROP + CREATE") {
         val before = sampleProcedure
-        val after = sampleProcedure.copy(body = "BEGIN END")
+        val after = sampleProcedure.copy(body = "BEGIN CALL log(); END")
         val current = emptySchema().copy(procedures = mapOf("p" to before))
         val desired = emptySchema().copy(procedures = mapOf("p" to after))
         val diff = comparator.compare(current, desired)
         val r = gen.generateUp(planner.plan(current, desired, diff), disabledCapability())
-        r.isBlocked shouldBe true
-        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+        r.isBlocked shouldBe false
+        val stmts = r.statements.map { it.sql }
+        stmts.shouldHaveSize(2)
+        stmts.first().shouldContain("DROP PROCEDURE `p`")
+        stmts.last().shouldContain("CREATE PROCEDURE `p`")
+        stmts.last().shouldNotContain("OR REPLACE")
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
     }
 
-    test("Replace with minServerVersion declared and live version missing -> Disabled blocker") {
+    test("ReplaceFunction with Disabled capability + co-resident op (UNSAFE guard) blocks") {
+        // Slice C.3 stub treats any other op in the plan as a
+        // potential dependency. Here the plan contains a Replace
+        // and a CreateTable (added via a fresh table in `desired`),
+        // so the guard flips to UNSAFE and MANUAL_ACTION_REQUIRED
+        // surfaces with ROUTINE_CAPABILITY_DISABLED + the
+        // heuristic annotation.
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
+        val newTable = dev.dmigrate.core.model.TableDefinition(
+            columns = linkedMapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.Integer,
+                    required = true,
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(
+            functions = mapOf("compute_total" to after),
+            tables = mapOf("widgets" to newTable),
+        )
+        val diff = comparator.compare(current, desired)
+        val r = gen.generateUp(planner.plan(current, desired, diff), disabledCapability())
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        // No CREATE FUNCTION emitted on the blocker path.
+        r.statements.none { it.sql.contains("CREATE FUNCTION") } shouldBe true
+    }
+
+    test("Replace with minServerVersion declared and live version missing + SAFE guard -> DROP + CREATE") {
+        // Disabled-by-missing-version follows the same Disabled
+        // path as Disabled-by-flag, so SAFE guard still permits
+        // DROP + CREATE.
         val cap = RoutineCapability(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
             procedure = RoutineKindCapability(enabled = true),
@@ -253,8 +306,9 @@ class MysqlDiffRoutineOpsTest : FunSpec({
             planner.plan(current, desired, diff),
             DdlGenerationOptions(routineCapability = cap, mysqlServerVersion = null),
         )
-        r.isBlocked shouldBe true
-        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+        r.isBlocked shouldBe false
+        r.statements.shouldHaveSize(2)
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
     }
 
     test("Replace with minServerVersion satisfied by live target -> CREATE OR REPLACE renders") {
@@ -278,7 +332,10 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         r.statements.single().sql.shouldContain("CREATE OR REPLACE FUNCTION `compute_total`")
     }
 
-    test("Replace with minServerVersion unmet by live target -> Disabled blocker") {
+    test("Replace with minServerVersion unmet by live target + SAFE guard -> DROP + CREATE") {
+        // Disabled-by-version-floor follows the same Disabled path as
+        // Disabled-by-flag: with an isolated plan, the C.3 stub guard
+        // reports SAFE and the renderer falls back to DROP + CREATE.
         val cap = RoutineCapability(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
             procedure = RoutineKindCapability(enabled = true),
@@ -295,8 +352,9 @@ class MysqlDiffRoutineOpsTest : FunSpec({
                 mysqlServerVersion = MysqlServerVersion(5, 7, 44, vendor = "log"),
             ),
         )
-        r.isBlocked shouldBe true
-        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+        r.isBlocked shouldBe false
+        r.statements.shouldHaveSize(2)
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
     }
 
     // ── Edge cases caught by the C.2 post-commit review ───────────

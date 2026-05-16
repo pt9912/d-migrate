@@ -28,6 +28,14 @@ internal class MysqlDiffRenderContext(
     val options: DdlGenerationOptions,
     private val currentSchema: SchemaDefinition? = null,
     private val desiredSchema: SchemaDefinition? = null,
+    /**
+     * E.1 Routine-Migration Slice C.3: the full plan is now exposed
+     * to the renderer so [MysqlDiffRoutineOps] can ask
+     * [dev.dmigrate.driver.DependencyGuardEvaluator] whether a
+     * routine operation is isolated enough to allow a
+     * `DROP + CREATE` fallback when capability is `Disabled`.
+     */
+    val plan: DiffResult? = null,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()
@@ -80,6 +88,22 @@ internal class MysqlDiffRenderContext(
             code = code,
             message = message,
             severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = op.id,
+        )
+    }
+
+    /**
+     * E.1 Routine-Migration Slice C.3: annotate an op with an
+     * INFO-level diagnostic that does not skip the op or contribute
+     * to a blocker. Used to flag stub bewertungen like
+     * `DEPENDENCY_GUARD_HEURISTIC` so reports document that the
+     * renderer relied on a heuristic, not a topology proof.
+     */
+    fun info(op: DiffOperation, message: String, code: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.INFO,
             operationId = op.id,
         )
     }

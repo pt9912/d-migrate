@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice C.3** — Dependency-Guard stub +
+  `DROP + CREATE` fallback for the MySQL renderer. New
+  `DependencyGuard` enum (`SAFE`/`UNSAFE`/`UNKNOWN`) and
+  `DependencyGuardEvaluator` live in `hexagon:ports-read`. The
+  evaluator uses an explicitly conservative stub heuristic: a
+  routine operation is `SAFE` iff it is the only op in the plan;
+  any co-resident op flips the guard to `UNSAFE`. Slice D will
+  replace the body with a real topology evaluator; the public
+  contract stays stable. The MySQL routine renderer's
+  `Disabled`-capability path now consults the guard: `SAFE` emits
+  `DROP` + `CREATE` (two statements, no `OR REPLACE`); `UNSAFE`
+  or `UNKNOWN` keep the previous `ROUTINE_CAPABILITY_DISABLED` +
+  `MANUAL_ACTION_REQUIRED` blocker. Every guard consultation
+  emits a `DEPENDENCY_GUARD_HEURISTIC` INFO diagnostic so reports
+  show that the routing came from the stub, not a topology proof.
+  `MysqlDiffRenderContext` gains a `plan: DiffResult?` field so
+  the routine renderer can ask the evaluator without changing the
+  public renderer API.
+
 - **E.1 Routine-Migration Slice C.2** — MySQL function and
   procedure renderer joins PostgreSQL in the diff/render pipeline.
   New `MysqlDiffRoutineOps` covers `Create`/`Replace`/`Drop` of

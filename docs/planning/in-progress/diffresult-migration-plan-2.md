@@ -1061,9 +1061,17 @@ Entscheidung:
 > delimiterfreiem Artefakt, Capability-Gate (`Active`/`Disabled`/
 > `InvalidConfig`) und Server-Version-Floor. `SchemaReadResult`/
 > `ResolvedSchemaOperand` führen `mysqlServerVersion` als
-> Best-Effort-Probe. Slice C.3 (Dependency-Guard +
-> `DROP+CREATE`-Fallback), Slice D (Dependency-Sortierung) und
-> Slice E (Down-Body-Recovery) bleiben offen.
+> Best-Effort-Probe.
+>
+> Status-Update (2026-05-16): Slice C.3 landed — `DependencyGuard`
+> Stub-Heuristik (`SAFE`/`UNSAFE`/`UNKNOWN`) in `hexagon:ports-read`
+> (SAFE iff isolierte Op, sonst UNSAFE). MySQL-Renderer öffnet
+> `DROP + CREATE`-Fallback bei SAFE-Guard und behält
+> `MANUAL_ACTION_REQUIRED` bei UNSAFE/UNKNOWN. Jede Guard-
+> Konsultation emittiert `DEPENDENCY_GUARD_HEURISTIC` als INFO-
+> Diagnostic. Slice D wird den Stub durch eine echte Topologie-
+> Berechnung ersetzen, ohne den Renderer-Vertrag zu ändern. Slice E
+> (Down-Body-Recovery) bleibt offen.
 
 ### E.2 Trigger-Migration
 

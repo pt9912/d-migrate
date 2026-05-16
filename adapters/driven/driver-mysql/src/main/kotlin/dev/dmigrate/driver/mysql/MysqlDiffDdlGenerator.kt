@@ -54,6 +54,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             options = options,
             currentSchema = diff.currentSchema,
             desiredSchema = diff.desiredSchema,
+            plan = diff,
         )
         val ops = if (direction == MysqlRenderDirection.UP) diff.operations else diff.operations.reversed()
         for (op in ops) renderOp(op, ctx)

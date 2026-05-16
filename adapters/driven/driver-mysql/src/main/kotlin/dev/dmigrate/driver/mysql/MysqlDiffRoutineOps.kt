@@ -5,6 +5,8 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ParameterDirection
 import dev.dmigrate.core.model.RoutineSecurity
+import dev.dmigrate.driver.DependencyGuard
+import dev.dmigrate.driver.DependencyGuardEvaluator
 import dev.dmigrate.driver.RoutineCapabilityResolution
 import dev.dmigrate.driver.RoutineKind
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -55,7 +57,7 @@ internal object MysqlDiffRoutineOps {
             RoutineCapabilityResolution.Active -> emitCreateOrReplaceFunction(
                 op, op.objectRef, target, ctx, orReplace = true,
             )
-            RoutineCapabilityResolution.Disabled -> blockCapabilityDisabled(op, ctx, "Function")
+            RoutineCapabilityResolution.Disabled -> handleDisabledReplaceFunction(op, target, ctx)
             RoutineCapabilityResolution.InvalidConfig -> blockCapabilityInvalid(op, ctx, "Function")
         }
     }
@@ -88,7 +90,7 @@ internal object MysqlDiffRoutineOps {
             RoutineCapabilityResolution.Active -> emitCreateOrReplaceProcedure(
                 op, op.objectRef, target, ctx, orReplace = true,
             )
-            RoutineCapabilityResolution.Disabled -> blockCapabilityDisabled(op, ctx, "Procedure")
+            RoutineCapabilityResolution.Disabled -> handleDisabledReplaceProcedure(op, target, ctx)
             RoutineCapabilityResolution.InvalidConfig -> blockCapabilityInvalid(op, ctx, "Procedure")
         }
     }
@@ -128,17 +130,83 @@ internal object MysqlDiffRoutineOps {
         ctx.addBlocker(reason, operationIds = setOf(op.id))
     }
 
-    private fun blockCapabilityDisabled(op: DiffOperation, ctx: MysqlDiffRenderContext, kind: String) {
-        // Plan §3 step 3: `Disabled` on MySQL means CREATE OR REPLACE is
-        // off for this routine kind. `DROP + CREATE` is conditional on
-        // Dependency-Guard=SAFE, which Slice C.3 ships; until then,
-        // MANUAL_ACTION_REQUIRED with the explicit reason.
+    /**
+     * E.1 Routine-Migration Slice C.3: when capability is `Disabled`
+     * for the routine kind, fall back to `DROP + CREATE` if the
+     * stub dependency guard reports `SAFE`. Otherwise block with
+     * `MANUAL_ACTION_REQUIRED`. Every consultation tags the report
+     * with `DEPENDENCY_GUARD_HEURISTIC` so operators see that the
+     * Slice C.3 stub made the call.
+     */
+    private fun handleDisabledReplaceFunction(
+        op: DiffOperation.ReplaceFunction,
+        target: dev.dmigrate.core.model.FunctionDefinition,
+        ctx: MysqlDiffRenderContext,
+    ) {
+        val guard = evaluateGuard(op, ctx)
+        annotateHeuristic(op, ctx, "Function", guard)
+        if (guard == DependencyGuard.SAFE) {
+            // DROP the old name first, then CREATE the new definition.
+            // Both statements share the routine name, so MySQL applies
+            // them sequentially within the runner-owned transaction.
+            emitDropFunction(op, op.objectRef, ctx)
+            emitCreateOrReplaceFunction(op, op.objectRef, target, ctx, orReplace = false)
+        } else {
+            blockCapabilityDisabled(op, ctx, "Function", guard)
+        }
+    }
+
+    private fun handleDisabledReplaceProcedure(
+        op: DiffOperation.ReplaceProcedure,
+        target: dev.dmigrate.core.model.ProcedureDefinition,
+        ctx: MysqlDiffRenderContext,
+    ) {
+        val guard = evaluateGuard(op, ctx)
+        annotateHeuristic(op, ctx, "Procedure", guard)
+        if (guard == DependencyGuard.SAFE) {
+            emitDropProcedure(op, op.objectRef, ctx)
+            emitCreateOrReplaceProcedure(op, op.objectRef, target, ctx, orReplace = false)
+        } else {
+            blockCapabilityDisabled(op, ctx, "Procedure", guard)
+        }
+    }
+
+    private fun evaluateGuard(op: DiffOperation, ctx: MysqlDiffRenderContext): DependencyGuard {
+        // No plan means the renderer was invoked without diff context
+        // (only happens in tightly-scoped helper tests). Treat as
+        // UNKNOWN so the guard cannot accidentally green-light a
+        // DROP+CREATE that the caller didn't authorise.
+        val plan = ctx.plan ?: return DependencyGuard.UNKNOWN
+        return DependencyGuardEvaluator.evaluate(plan, op)
+    }
+
+    private fun annotateHeuristic(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        kind: String,
+        guard: DependencyGuard,
+    ) {
+        ctx.info(
+            op,
+            "$kind '${op.objectRef.rootName}': dependency-guard evaluation is currently a Slice C.3 stub " +
+                "(SAFE iff the routine op is isolated in the plan). Result for this op: $guard. " +
+                "Slice D will replace the stub with a real topology evaluator.",
+            code = "DEPENDENCY_GUARD_HEURISTIC",
+        )
+    }
+
+    private fun blockCapabilityDisabled(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        kind: String,
+        guard: DependencyGuard,
+    ) {
         ctx.skip(
             op,
             "$kind '${op.objectRef.rootName}': CREATE OR REPLACE is disabled by the routine capability " +
                 "(either explicitly or because the target server version does not meet the declared " +
-                "`minServerVersion` floor). The Dependency-Guard-aware DROP + CREATE fallback ships in " +
-                "Slice C.3; until then this operation requires manual handling.",
+                "`minServerVersion` floor). The Dependency-Guard-aware DROP + CREATE fallback is blocked " +
+                "because the guard reported $guard for this op — only SAFE permits the fallback.",
             code = "ROUTINE_CAPABILITY_DISABLED",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
