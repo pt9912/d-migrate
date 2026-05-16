@@ -31,12 +31,17 @@ import dev.dmigrate.driver.resolve
  *    `routineCapability`/`mysqlServerVersion` fields on
  *    `DdlGenerationOptions`). `Active` ⇒ `CREATE OR REPLACE`,
  *    `InvalidConfig` ⇒ `MANUAL_ACTION_REQUIRED`. `Disabled` routes
- *    through the Slice C.3 dependency guard: `SAFE` ⇒ `DROP + CREATE`
- *    (two statements; see the implicit-commit caveat below), any other
- *    guard state ⇒ `MANUAL_ACTION_REQUIRED`. Every guard consultation
- *    annotates the report with `DEPENDENCY_GUARD_HEURISTIC` so
- *    operators see that the routing came from the stub bewertung;
- *    a SAFE-guard-driven `DROP + CREATE` additionally emits the
+ *    through the dependency guard: `SAFE` ⇒ `DROP + CREATE` (two
+ *    statements; see the implicit-commit caveat below), any other
+ *    guard state ⇒ `MANUAL_ACTION_REQUIRED`. Slice D.4 swapped the
+ *    Slice-C.3 stub heuristic for a topology-driven evaluator that
+ *    reads the edge graph populated by Slice D.1
+ *    `RoutineDependencyAnalyzer` plus the engine-metadata readers
+ *    from Slice D.2 (PostgreSQL) and Slice D.3 (MySQL). Every guard
+ *    consultation annotates the report with
+ *    `DEPENDENCY_GUARD_TOPOLOGY` so operators see the bewertung came
+ *    from a real edge-graph check, not a stub. A SAFE-guard-driven
+ *    `DROP + CREATE` additionally emits the
  *    `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` WARNING so the
  *    operational risk is visible alongside the routing decision.
  * 3. **Diagnostic code**: emits the canonical
@@ -200,10 +205,10 @@ internal object MysqlDiffRoutineOps {
     ) {
         ctx.info(
             op,
-            "$kind '${op.objectRef.rootName}': dependency-guard evaluation is currently a Slice C.3 stub " +
-                "(SAFE iff the routine op is isolated in the plan). Result for this op: $guard. " +
-                "Slice D will replace the stub with a real topology evaluator.",
-            code = "DEPENDENCY_GUARD_HEURISTIC",
+            "$kind '${op.objectRef.rootName}': dependency-guard evaluation is topology-driven " +
+                "(Slice D.4 — uses the edge graph populated by RoutineDependencyAnalyzer plus the " +
+                "PG / MySQL engine-metadata readers). Result for this op: $guard.",
+            code = "DEPENDENCY_GUARD_TOPOLOGY",
         )
     }
 

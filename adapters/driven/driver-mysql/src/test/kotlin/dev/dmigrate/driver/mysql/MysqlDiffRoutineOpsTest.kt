@@ -20,6 +20,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.nulls.shouldNotBeNull
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
@@ -241,7 +242,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         // is non-atomic across MySQL's implicit-commit boundary, so
         // the renderer additionally emits a WARNING to make that
         // operational risk visible.
-        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
         r.diagnostics.any {
             it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" &&
                 it.severity == dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.WARNING
@@ -261,19 +262,17 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         stmts.first().shouldContain("DROP PROCEDURE `p`")
         stmts.last().shouldContain("CREATE PROCEDURE `p`")
         stmts.last().shouldNotContain("OR REPLACE")
-        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
         r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
-    test("ReplaceFunction with Disabled capability + co-resident op (UNSAFE guard) blocks") {
-        // Slice C.3 stub treats any other op in the plan as a
-        // potential dependency. Here the plan contains a Replace
-        // and a CreateTable (added via a fresh table in `desired`),
-        // so the guard flips to UNSAFE and MANUAL_ACTION_REQUIRED
-        // surfaces with ROUTINE_CAPABILITY_DISABLED + the
-        // heuristic annotation.
-        val before = sampleFunction
-        val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
+    test("ReplaceFunction with Disabled capability + true table-dependency (UNSAFE guard) blocks") {
+        // Slice D.4 swapped the C.3 stub heuristic for real topology.
+        // The C.3-era test relied on the stub flipping to UNSAFE
+        // whenever any co-resident op existed; D.4 instead checks
+        // declared edges. Here the routine truly depends on the
+        // co-resident table (via `dependencies.tables`), so the
+        // topology evaluator finds the edge and the renderer blocks.
         val newTable = dev.dmigrate.core.model.TableDefinition(
             columns = linkedMapOf(
                 "id" to dev.dmigrate.core.model.ColumnDefinition(
@@ -282,6 +281,11 @@ class MysqlDiffRoutineOpsTest : FunSpec({
                 ),
             ),
             primaryKey = listOf("id"),
+        )
+        val before = sampleFunction
+        val after = sampleFunction.copy(
+            body = "BEGIN RETURN amount * 1.2; END",
+            dependencies = dev.dmigrate.core.model.DependencyInfo(tables = listOf("widgets")),
         )
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(
@@ -292,12 +296,43 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val r = gen.generateUp(planner.plan(current, desired, diff), disabledCapability())
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
-        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
         // The non-atomicity warning is tied to the SAFE-guard path
         // only; UNSAFE/UNKNOWN blocks do not emit it.
         r.diagnostics.none { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
         // No CREATE FUNCTION emitted on the blocker path.
         r.statements.none { it.sql.contains("CREATE FUNCTION") } shouldBe true
+    }
+
+    test("D.4: Disabled capability + independent co-resident op stays SAFE (no stub heuristic)") {
+        // Same plan-shape as the UNSAFE test above, but the routine
+        // declares no dependency on the co-resident table. The
+        // C.3-era stub would have flipped this to UNSAFE; D.4's
+        // topology evaluator correctly recognises independence and
+        // falls back to DROP + CREATE.
+        val newTable = dev.dmigrate.core.model.TableDefinition(
+            columns = linkedMapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.Integer,
+                    required = true,
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(
+            functions = mapOf("compute_total" to after),
+            tables = mapOf("widgets" to newTable),
+        )
+        val diff = comparator.compare(current, desired)
+        val r = gen.generateUp(planner.plan(current, desired, diff), disabledCapability())
+        r.isBlocked shouldBe false
+        val createFn = r.statements.firstOrNull { it.sql.contains("CREATE FUNCTION") }
+        createFn.shouldNotBeNull()
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
+        r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
     test("Replace with minServerVersion declared and live version missing + SAFE guard -> DROP + CREATE") {
@@ -319,7 +354,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         )
         r.isBlocked shouldBe false
         r.statements.shouldHaveSize(2)
-        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
         r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
@@ -366,7 +401,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         )
         r.isBlocked shouldBe false
         r.statements.shouldHaveSize(2)
-        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_HEURISTIC" } shouldBe true
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
         r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 

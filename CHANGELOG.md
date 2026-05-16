@@ -7,6 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **E.1 Routine-Migration Slice D.4** — `DependencyGuardEvaluator`
+  body now drives the SAFE / UNSAFE decision from the real
+  dependency-edge graph populated by Slices D.1 / D.2 / D.3
+  instead of the Slice-C.3 "any co-resident op == UNSAFE"
+  stub heuristic. An op is `SAFE` when no other op in the plan
+  has a declared incoming or outgoing edge to it; any declared
+  edge in either direction flips it to `UNSAFE`. Cross-plan
+  edge ids (already dropped by the topological sorter as
+  unresolvable) are ignored. The public signature
+  `evaluate(plan, op)` is unchanged, so the MySQL renderer's
+  consult sites compile without edits.
+
+  The MySQL renderer's INFO-severity guard annotation switches
+  from `DEPENDENCY_GUARD_HEURISTIC` to
+  `DEPENDENCY_GUARD_TOPOLOGY` to reflect that the bewertung is
+  no longer a stub. `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`
+  stays active — implicit-commit atomicity is orthogonal to
+  the evaluator change.
+
+  Practical consequence: the Slice-C.3 test that pinned
+  "ReplaceFunction blocks when ANY co-resident op is in the
+  plan" no longer makes sense — the stub was the only reason
+  that path blocked. It is replaced by two D.4 tests:
+   * one constructs a true `dependencies.tables` edge from the
+     routine to a co-resident `CreateTable` and pins that the
+     evaluator finds the edge, returns UNSAFE, and the renderer
+     blocks with `ROUTINE_CAPABILITY_DISABLED`;
+   * the other keeps the same plan shape but removes the
+     declared edge, pins that the evaluator returns SAFE, and
+     the renderer falls back to `DROP + CREATE` with the
+     non-atomicity warning.
+
+  `DependencyGuardEvaluatorTest` is rewritten end-to-end:
+  isolated → SAFE, co-resident-without-edges → SAFE,
+  outgoing-edge → UNSAFE, incoming-edge → UNSAFE,
+  cross-plan-edge-id → ignored, mixed-routine-kind without
+  edges → SAFE. Plan-2 §9 E.1 status updated to mark D.4
+  landed.
+
 ### Added
 
 - **E.1 Routine-Migration Slice D.3** — MySQL trigger reader now

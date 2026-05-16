@@ -30,27 +30,36 @@ import dev.dmigrate.core.diff.migration.DiffResult
 enum class DependencyGuard { SAFE, UNSAFE, UNKNOWN }
 
 /**
- * E.1 Routine-Migration Slice C.3: evaluator with an explicitly
- * conservative stub heuristic. Real topology-based evaluation
- * arrives in Slice D and will replace the body of [evaluate]
- * without changing the public contract.
+ * E.1 Routine-Migration Slice D.4: topology-aware evaluator.
+ * Replaces the Slice C.3 stub heuristic ("any co-resident op
+ * means UNSAFE") with an edge-driven decision: an operation is
+ * [DependencyGuard.SAFE] when no other op in the plan declares a
+ * dependency on it (incoming edge) and the op itself declares no
+ * dependency on any other op (outgoing edge). Two unrelated ops
+ * that share a plan are now correctly recognised as independent.
  *
- * Slice C.3 stub: a routine operation is [DependencyGuard.SAFE]
- * iff the plan contains no other operation. The moment any other
- * op (routine, view, trigger, table, sequence, ...) co-exists in
- * the same run, the guard flips to [DependencyGuard.UNSAFE] —
- * the stub cannot tell whether the other op references the
- * routine in question.
+ * Edges come from the Slice D.1 [RoutineDependencyAnalyzer]
+ * second-phase pass, populated either from the schema manifest
+ * (file-to-file) or from engine-metadata reads in Slice D.2
+ * (PostgreSQL `pg_depend` / `pg_trigger`) and Slice D.3 (MySQL
+ * `information_schema.TRIGGERS`).
  *
- * Renderers must also surface the diagnostic
- * `DEPENDENCY_GUARD_HEURISTIC` whenever they consult this
- * evaluator so reports document that the guard is a stub bewertung,
- * not a topology proof.
+ * The renderer-facing contract is unchanged: `evaluate` returns
+ * the same three-state result, and the MySQL renderer consults it
+ * via the same call. Reports still tag the consultation with an
+ * INFO diagnostic, but the code is now `DEPENDENCY_GUARD_TOPOLOGY`
+ * — the bewertung is no longer a heuristic stub.
  */
 object DependencyGuardEvaluator {
 
     fun evaluate(plan: DiffResult, op: DiffOperation): DependencyGuard {
-        val others = plan.operations.filter { it.id != op.id }
-        return if (others.isEmpty()) DependencyGuard.SAFE else DependencyGuard.UNSAFE
+        val opIdsInPlan = plan.operations.mapTo(HashSet()) { it.id }
+        val incoming = plan.operations.any { other ->
+            other.id != op.id && op.id in other.dependencies
+        }
+        val outgoing = op.dependencies.any { depId ->
+            depId != op.id && depId in opIdsInPlan
+        }
+        return if (incoming || outgoing) DependencyGuard.UNSAFE else DependencyGuard.SAFE
     }
 }
