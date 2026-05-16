@@ -51,6 +51,14 @@ import dev.dmigrate.driver.resolve
 internal object MysqlDiffRoutineOps {
 
     fun renderCreateFunction(op: DiffOperation.CreateFunction, ctx: MysqlDiffRenderContext) {
+        // E.1 Slice F.5: Plan §2/§3 requires that ALL routine
+        // operations (Create*/Replace*/Drop*) block as
+        // MANUAL_ACTION_REQUIRED when the capability mapping for the
+        // routine kind is invalid, not just Replace.
+        if (resolveCapability(ctx, RoutineKind.FUNCTION) == RoutineCapabilityResolution.InvalidConfig) {
+            blockCapabilityInvalid(op, ctx, "Function")
+            return
+        }
         when (ctx.direction) {
             MysqlRenderDirection.UP -> emitCreateOrReplaceFunction(op, op.objectRef, op.function, ctx, orReplace = false)
             MysqlRenderDirection.DOWN -> emitDropFunction(op, op.objectRef, ctx)
@@ -73,6 +81,11 @@ internal object MysqlDiffRoutineOps {
     }
 
     fun renderDropFunction(op: DiffOperation.DropFunction, ctx: MysqlDiffRenderContext) {
+        // E.1 Slice F.5: InvalidConfig blocks ALL routine ops, see comment in renderCreateFunction.
+        if (resolveCapability(ctx, RoutineKind.FUNCTION) == RoutineCapabilityResolution.InvalidConfig) {
+            blockCapabilityInvalid(op, ctx, "Function")
+            return
+        }
         when (ctx.direction) {
             MysqlRenderDirection.UP -> emitDropFunction(op, op.objectRef, ctx)
             MysqlRenderDirection.DOWN -> emitCreateOrReplaceFunction(
@@ -82,6 +95,11 @@ internal object MysqlDiffRoutineOps {
     }
 
     fun renderCreateProcedure(op: DiffOperation.CreateProcedure, ctx: MysqlDiffRenderContext) {
+        // E.1 Slice F.5: InvalidConfig blocks ALL routine ops, see comment in renderCreateFunction.
+        if (resolveCapability(ctx, RoutineKind.PROCEDURE) == RoutineCapabilityResolution.InvalidConfig) {
+            blockCapabilityInvalid(op, ctx, "Procedure")
+            return
+        }
         when (ctx.direction) {
             MysqlRenderDirection.UP -> emitCreateOrReplaceProcedure(
                 op, op.objectRef, op.procedure, ctx, orReplace = false,
@@ -106,6 +124,11 @@ internal object MysqlDiffRoutineOps {
     }
 
     fun renderDropProcedure(op: DiffOperation.DropProcedure, ctx: MysqlDiffRenderContext) {
+        // E.1 Slice F.5: InvalidConfig blocks ALL routine ops, see comment in renderCreateFunction.
+        if (resolveCapability(ctx, RoutineKind.PROCEDURE) == RoutineCapabilityResolution.InvalidConfig) {
+            blockCapabilityInvalid(op, ctx, "Procedure")
+            return
+        }
         when (ctx.direction) {
             MysqlRenderDirection.UP -> emitDropProcedure(op, op.objectRef, ctx)
             MysqlRenderDirection.DOWN -> emitCreateOrReplaceProcedure(
@@ -141,12 +164,12 @@ internal object MysqlDiffRoutineOps {
     }
 
     /**
-     * E.1 Routine-Migration Slice C.3: when capability is `Disabled`
-     * for the routine kind, fall back to `DROP + CREATE` if the
-     * stub dependency guard reports `SAFE`. Otherwise block with
-     * `MANUAL_ACTION_REQUIRED`. Every consultation tags the report
-     * with `DEPENDENCY_GUARD_HEURISTIC` so operators see that the
-     * Slice C.3 stub made the call.
+     * E.1 Routine-Migration Slice C.3/D.4: when capability is
+     * `Disabled` for the routine kind, fall back to `DROP + CREATE`
+     * if the dependency guard reports `SAFE`. Otherwise block with
+     * `MANUAL_ACTION_REQUIRED`. D.4 replaced the original stub with
+     * topology-driven evaluation and annotates each consultation with
+     * `DEPENDENCY_GUARD_TOPOLOGY`.
      */
     private fun handleDisabledReplaceFunction(
         op: DiffOperation.ReplaceFunction,
@@ -296,6 +319,12 @@ internal object MysqlDiffRoutineOps {
         val sql = buildString {
             append("CREATE ")
             if (orReplace) append("OR REPLACE ")
+            // E.1 Slice F.6: MySQL syntax positions `DEFINER = user`
+            // BEFORE the routine keyword. The literal is passed through
+            // verbatim from the schema (e.g. `'alice'@'%'` or
+            // `CURRENT_USER`); the operator is responsible for the
+            // syntactic shape.
+            fn.definer?.let { append("DEFINER = ").append(it).append(' ') }
             append("FUNCTION ")
             append(ctx.sql.quote(ref.rootName))
             append('(')
@@ -347,6 +376,9 @@ internal object MysqlDiffRoutineOps {
         val sql = buildString {
             append("CREATE ")
             if (orReplace) append("OR REPLACE ")
+            // E.1 Slice F.6: see emitCreateOrReplaceFunction for the
+            // DEFINER positioning rationale.
+            proc.definer?.let { append("DEFINER = ").append(it).append(' ') }
             append("PROCEDURE ")
             append(ctx.sql.quote(ref.rootName))
             append('(')

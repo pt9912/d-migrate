@@ -1,7 +1,9 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
+import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import java.nio.file.Path
 
@@ -58,6 +60,15 @@ internal class SchemaMigrateExecutionStage(
             exec(dbOperand, combined.statements, request.cliConfigPath)
                 .withG3Defaults(statementGroups)
         } catch (e: Exception) {
+            // E.1 Slice F.1: JDBC driver exception messages frequently
+            // quote a fragment of the failing SQL (e.g. PostgreSQL
+            // `ERROR: syntax error at or near "BEGIN" Position: 42 ...`),
+            // which on a `CREATE FUNCTION ... AS $$ body $$` failure
+            // leaks the body into reports and stderr. Route through the
+            // central log-redactor; `RAW_DEBUG` (via `--debug-body`)
+            // bypasses scrubbing.
+            val allowRaw = request.bodyDisplay() == RoutineBodyDisplay.RAW_DEBUG
+            val rawMessage = e.message ?: e::class.simpleName
             ExecutionTrace(
                 executionStarted = true,
                 executionCompleted = true,
@@ -65,7 +76,7 @@ internal class SchemaMigrateExecutionStage(
                 lastStatementOperationIds = combined.statements.lastOrNull()?.operationIds.orEmpty(),
                 transactionRolledBack = false,
                 sideEffectsPossible = true,
-                executionError = e.message ?: e::class.simpleName,
+                executionError = RoutineBodyLogRedactor.redact(rawMessage, allowRaw = allowRaw),
             ).withG3Defaults(statementGroups)
         }
     }

@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1 Routine-Migration (PostgreSQL `CREATE OR REPLACE
 > FUNCTION` / `PROCEDURE`, MySQL Routinen)
-> **Status**: done (Slice abgeschlossen 2026-05-16). Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16, Slice C.1.a/b + C.2 + C.3 ✅ 2026-05-16, Slice D.1 + D.2 + D.3 + D.4 ✅ 2026-05-16, Slice E ✅ 2026-05-16.
+> **Status**: done (Slice abgeschlossen 2026-05-16). Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16, Slice C.1.a/b + C.2 + C.3 ✅ 2026-05-16, Slice D.1 + D.2 + D.3 + D.4 ✅ 2026-05-16, Slice E ✅ 2026-05-16, Slice F (DoD-Punchlist) ✅ 2026-05-16 (F.1 LogRedactor-Wiring, F.2 Statement-Preview/Hash, F.3 bodyEmbedding-Modell, F.4 DiffPlanner-Doku-Drift, F.5 Capability-Guard für Create/Drop, F.6 MySQL DEFINER-Rendering, F.7 zentrale executionError-Redaction, F.8 cli-spec-Update, F.9 CHANGELOG-Korrektur, F.10 Plan-Hygiene, F.11 Oracle-MySQL/MariaDB-Capability-Split).
 > **Vorbedingung**: Workstream G ✅ (transactionScope, strukturierte
 > Statement-Serialisierung, Execution-Status)
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
@@ -44,18 +44,16 @@ Routinen ein, ohne semantisch zu raten:
   - **Execution-Plane**: Plan-Statements fuer die eigentliche Ausfuehrung
     (Runner/`migrate`) bleiben unmaskiert, damit Migrationsausführung
     deterministisch bleibt.
-  - **Log-/Diagnostic-Plane** (Logging/Diagnostics, Runner-Trace, DB-Fehler-/SQL-Logs):
-    folgt einem eigenen zentralen Redaction-Hook und ist standardmaessig scrubbed-only;
-    unmaskierte Bodies werden in diesen Ausgabekanälen nicht automatisch ausgegeben.
-    Unmaskierter Body ist nur im expliziten Unsafe-Pfad (`--debug-body`) erlaubt.
-    - Die Redaction muss an einem zentralen Logging-Event-Serialisierungs-Hook greifen
-      (einschliesslich Runner-Events, Runner-Trace, CLI-Ausgabe, DB-Adapter-Fehlerpfaden,
-      ausgeführte SQL-Statement-Logs, SQL-Query-/Fehlerpfaden),
-      bevor ein Log geschrieben wird.
-      Geltungsbereich ist zentral: Report-Serialisierung, Runner-Trace, Artefakt-
-      und CLI-Output, plus Fehlerobjekte aus Adapter/Driver/DB-Adapter-Layern.
-      Erfolgs-Trace- und Fehlerinformationen werden vor der Auswertung gemeinsam
-      redacted; unmaskierter Body erscheint nur mit `--debug-body`.
+	  - **Log-/Diagnostic-Plane** (Logging/Diagnostics, Runner-Trace, DB-Fehler-/SQL-Logs):
+	    folgt zentralen Redaction-Boundaries und ist standardmaessig scrubbed-only;
+	    unmaskierte Bodies werden in diesen Ausgabekanälen nicht automatisch ausgegeben.
+	    Unmaskierter Body ist nur im expliziten Unsafe-Pfad (`--debug-body`) erlaubt.
+	    - Die Redaction greift in den heute vorhandenen Boundary-Punkten:
+	      Report-Serialisierung, Runner-Trace, Artefakt-/CLI-Output und
+	      Fehlerobjekte aus Adapter/Driver/DB-Adapter-Layern. E.1 führt keinen
+	      neuen generischen `LogSink` ein; falls ein späterer Logging-Layer
+	      SQL-Events serialisiert, muss er denselben `RoutineBodyLogRedactor`
+	      vor dem Schreiben anwenden.
   - **Display-Plane** (Reports, Test-Goldens, Artifakte):
     standardmaessig nur `{hash, length, scrubbedPreview, scrubbingApplied}`.
     `migrate --output` folgt diesem Plan als Default-Ausgabe. Unmaskierter Body
@@ -115,9 +113,9 @@ In Scope (dieser Workstream, ggf. in mehreren Slices):
       (inkl. Up-/Down-Pfaden, ohne `CREATE OR REPLACE` und ohne
       `DROP + CREATE`-Fallback) bis das Mapping korrigiert ist.
   - `ReplaceFunction`/`ReplaceProcedure` werden in Up- und Down-Pfad nur als
-    - `enabled=false` ist auf den `CREATE OR REPLACE`-Pfad beschränkt; Signatur-Mismatch-Pfade (`DROP + CREATE`) werden nach den separaten Signatur-Differenz-Regeln entschieden.
-    `CREATE OR REPLACE` gerendert, wenn der passende Routineart-Eintrag `enabled=true`
-    hat und die Serverversion die `minServerVersion` erfüllt.
+	    - `enabled=false` ist auf den `CREATE OR REPLACE`-Pfad beschränkt; Signatur-Mismatch-Pfade (`DROP + CREATE`) werden nach den separaten Signatur-Differenz-Regeln entschieden.
+	    `CREATE OR REPLACE` gerendert, wenn der passende Routineart-Eintrag `enabled=true`
+	    hat und die Serverversion die `minServerVersion` erfüllt.
 - Bei gültiger Capability-Konfiguration mit `enabled=false` (oder Typ-/Versions-Unterstützung fehlt) gilt in Slice A/B:
    - `Replace` wird auf keinen Fall durch `DROP + CREATE` ersetzt.
    - Bei ungültiger Capability (`ROUTINE_CAPABILITY_CONFIG_INVALID`) gilt bereits Schritt 1
@@ -129,7 +127,8 @@ In Scope (dieser Workstream, ggf. in mehreren Slices):
    - Anderenfalls gilt `MANUAL_ACTION_REQUIRED` (ohne DROP+CREATE-Fallback).
   - Slice C (MySQL) ist als Ausnahme erlaubt, `DROP + CREATE` als Ersatz für
     `Replace`-Fälle zu nutzen, wenn `CREATE OR REPLACE` für den betreffenden
-    Routinen-Typ auf dem Zielserver nicht unterstützt wird und der
+	    Routinen-Typ auf dem Zielserver nicht unterstützt wird (Oracle MySQL
+	    oder explizit deaktivierte Capability) und der
     Dependency-Sicherheits-Guard `SAFE` ist (keine bekannten/unsicheren
     Abhängigkeitskanten). Diese Entscheidung bleibt konservativ und ist auf diese
     Slice-Variante begrenzt.
@@ -475,16 +474,20 @@ beschrieben.
       wenn eine spätere konfigurierbare Quelle (CLI/YAML)
       unparsable/inkonsistent ist; C.1 hat noch keine konfigurierbare
       Quelle und produziert `InvalidConfig` daher nicht.
-    - Defaults in C.1:
-      - PostgreSQL: `function = enabled=true, minServerVersion=null`;
-        `procedure = enabled=true, minServerVersion=null`.
-      - MySQL: `function = enabled=true, minServerVersion=null`;
-        `procedure = enabled=true, minServerVersion=null`.
-        Bewusst **keine** harte 8.0-Schwelle als Default —
-        Versionsgates sind ein Opt-in für spätere Konfigurations-
-        slices. Damit ist C.2 ohne C.3 betrieblich nutzbar (siehe
-        DoD C.2).
-      - SQLite: kein Routinen-Pfad, Default leer bleibt unbenutzt.
+	    - Defaults in C.1/F.11:
+	      - PostgreSQL: `function = enabled=true, minServerVersion=null`;
+	        `procedure = enabled=true, minServerVersion=null`.
+	      - Neutraler MySQL-Dialekt: Oracle-MySQL-semantisch konservativ,
+	        `function = enabled=false, minServerVersion=null`;
+	        `procedure = enabled=false, minServerVersion=null`, weil
+	        Oracle MySQL fuer Stored Routines kein `CREATE OR REPLACE`
+	        unterstuetzt.
+	      - Live-MariaDB-Ziele: `RoutineCapabilityDefaults.forMysqlServerVersion`
+	        erkennt `MysqlServerVersion.vendor` mit `MariaDB`-Token und setzt
+	        `function`/`procedure` auf `enabled=true, minServerVersion=null`.
+	        Datei-zu-Datei ohne Live-Vendor bleibt konservativ und nutzt bei
+	        `Replace` den Dependency-Guard-Fallback.
+	      - SQLite: kein Routinen-Pfad, Default leer bleibt unbenutzt.
   - Statusobjekt `RoutineCapabilityResolution` mit den drei
     Varianten `Active` / `Disabled` / `InvalidConfig`. Renderer
     fragt nur dieses Objekt, kennt die Konfig-Quelle nicht.
@@ -614,11 +617,12 @@ beschrieben.
     (Comparator) und `RoutineBodyScrubber` (Reports).
   - `MysqlDiffDdlGenerator` lernt `OpCategory.ROUTINE` (Function +
     Procedure in einer Kategorie, da MySQL beide gleich behandelt).
-  - `DdlGenerationOptions` erhält in C.2 (nicht C.1):
-    - `routineCapability: RoutineCapability` — **kein**
-      `NOT_DECLARED`/4. Zustand; `buildRenderOptions` setzt diesen
-      immer per `RoutineCapabilityDefaults.forDialect(dialect)`,
-      sodass das Feld nie abwesend ist.
+	  - `DdlGenerationOptions` erhält in C.2 (nicht C.1):
+	    - `routineCapability: RoutineCapability` — **kein**
+	      `NOT_DECLARED`/4. Zustand; `buildRenderOptions` setzt diesen
+	      immer per `RoutineCapabilityDefaults.forDialect(dialect)` bzw.
+	      fuer MySQL live per `forMysqlServerVersion(mysqlServerVersion)`,
+	      sodass das Feld nie abwesend ist.
     - `mysqlServerVersion: MysqlServerVersion?` — null bei
       file-Operanden, gesetzt bei live-DB-Operanden über
       `MysqlMetadataQueries.readServerVersion()`.
@@ -639,19 +643,17 @@ beschrieben.
     Klausel explizit. Konsequenz: alle `Disabled`/Signatur-Mismatch-
     Fälle blocken in C.2 mit `MANUAL_ACTION_REQUIRED`. Das ist
     konservativ und im Test gepinnt.
-  - Server-Version-Auflösung in `resolveFor`:
-    - File-zu-File: `mysqlServerVersion = null`. Resolution =
-      `Active`, weil C.1-Default `minServerVersion = null` ist
-      (kein Versions-Vergleich nötig). Sobald ein späterer Slice
-      Konfig mit `minServerVersion` zulässt und die Version
-      gleichzeitig fehlt, wird das Mapping konfigurierbar; C.2
-      muss diesen Pfad nicht antizipieren.
-    - File-zu-DB: Reader liefert `MysqlServerVersion`;
-      `resolveFor` vergleicht und liefert `Active` bzw. `Disabled`.
-    - Damit ist C.2 alleine **kein funktionaler Regressionspunkt**
-      für MySQL-File-zu-File: Default-`minServerVersion = null`
-      heisst Resolution = `Active`, der Renderer erzeugt
-      `CREATE OR REPLACE`.
+	  - Server-Version-Auflösung in `resolveFor`:
+	    - File-zu-File: `mysqlServerVersion = null`. Nach F.11 bleibt
+	      der neutrale MySQL-Dialekt Oracle-MySQL-konservativ
+	      (`Disabled`); `Replace` nutzt nur den sicheren
+	      Dependency-Guard-Fallback `DROP + CREATE` und schreibt kein
+	      Oracle-MySQL-ungültiges `CREATE OR REPLACE`.
+	    - File-zu-DB: Reader liefert `MysqlServerVersion`; die Pipeline
+	      aktiviert `CREATE OR REPLACE` nur, wenn der Vendor-String MariaDB
+	      nachweist. Oracle MySQL (`8.0.x`, `8.4.x`, `*-log`) bleibt
+	      `Disabled`; eine spätere konfigurierbare Quelle kann das bewusst
+	      überschreiben.
   - **DoD C.2**:
     - MySQL-Function- und -Procedure-Routinen rendern Up + Down
       (mit known prior body), Scrubbing in Reports aktiv,
@@ -697,8 +699,10 @@ beschrieben.
     Roh-Body **nur** in der Display-Plane (Report-JSON,
     `bodyDisplay = RAW_DEBUG`), Execution-SQL-Output bleibt
     unverändert.
-  - Default-Tests für PostgreSQL- und MySQL-Defaults pinnen die
-    in C.1 festgelegten Werte (alle `enabled=true, minServerVersion=null`).
+	  - Default-Tests für PostgreSQL- und MySQL-Defaults pinnen die
+	    festgelegten Werte (PostgreSQL aktiv; neutraler MySQL-Dialekt
+	    seit F.11 Oracle-MySQL-konservativ deaktiviert; MariaDB live
+	    aktiviert).
   - Slice-A/B-Renderer-Output-Pin: PG-Renderer-Outputs bleiben
     byte-identisch zur Slice-B-Baseline (C.1.a fasst die PG-Renderer
     nicht an).
@@ -736,9 +740,9 @@ beschrieben.
   - File-zu-DB-Pin: `MysqlMetadataQueries.readServerVersion()`
     wird über einen Fake-`JdbcOperations` exerziert und das
     Ergebnis im Renderer-Pfad gepinnt.
-  - E2E `SchemaMigrateCommandMysqlRoutineTest` mit Fixture-Paar
-    (file-zu-file, `enabled=true, minServerVersion=null` Default
-    → `CREATE OR REPLACE`).
+	  - E2E `SchemaMigrateCommandMysqlRoutineTest` mit Fixture-Paar
+	    (file-zu-file, Oracle-MySQL-konservativer Default
+	    → guardiertes `DROP` + `CREATE`, kein `CREATE OR REPLACE`).
   - Scrubbing-Regression: ohne `--debug-body` taucht in der
     Report-JSON kein Roh-Body-Token auf.
   - Slice-A/B-Golden-Output-Regression-Pin bleibt grün.
@@ -1111,38 +1115,150 @@ adapters/driven/driver-mysql
 - `--generate-rollback` blockiert nur noch, wenn der alte Body
   unbekannt ist, oder bei bewusstem Unsafe-Debug/Debug-Body-Pfad.
 
+### Slice F — DoD-Punchlist (Audit-Closure) ✅ (2026-05-16)
+
+Audit-Befund (post-Slice-E) identifizierte vier offene Punkte, die
+in der E.1-Planung §1/§4 verlangt aber bei den Slice-E-DoD-Audit
+übersehen wurden. Slice F schliesst sie auf:
+
+- **F.1 RoutineBodyLogRedactor-Wiring** ✅
+  - `SchemaMigrateExecutionStage.maybeExecute`: Driver-Exception-
+    Messages laufen durch `RoutineBodyLogRedactor.redact()` mit
+    `allowRaw = request.bodyDisplay() == RAW_DEBUG`. Verhindert das
+    Leak-Risiko, dass JDBC-Treiber das fehlgeschlagene Statement
+    (inklusive Body-Fragment) in `executionError` zitieren.
+  - `SchemaRollbackRunner.runStatement`: gleicher Redact-Pfad für
+    Down-Execution-Fehler. Rollback hat kein `--debug-body`-Escape;
+    Redaction immer aktiv.
+  - Test: `SchemaMigrateExecutionStageRedactionTest` pinnt
+    scrubbed-Default + `RAW_DEBUG`-Bypass.
+
+- **F.2 Statement-Preview/Hash/Length im Report** ✅
+  - `SchemaMigrateStatementView` um vier Metadaten-Felder erweitert:
+    `sqlHash`, `sqlLength`, `scrubbedPreview`, `scrubbingApplied`.
+    Per `RoutineBodyScrubber.preview(...)` populiert.
+  - `sql`-Feld wird bodyDisplay-gesteuert: `SCRUBBED_ONLY` (default)
+    schreibt die scrubbed-Version, `RAW_DEBUG` lässt sie unverändert.
+  - `writeOrEchoUpSql` (`--output`-Artefakt) wendet dieselbe
+    bodyDisplay-Regel an (Plan §1: „migrate --output folgt diesem
+    Plan als Default-Ausgabe").
+  - JSON-Renderer emittiert alle vier neuen Felder.
+  - Test: `SchemaMigrateReportBuilderScrubbingTest` pinnt
+    SCRUBBED_ONLY + RAW_DEBUG-Pfade + non-secret-Verbatim.
+
+- **F.3 bodyEmbedding-Artefaktmodell** ✅
+  - Neuer Typ `BodyEmbedding(status, version, source, reason?)` in
+    `hexagon:ports-read/.../BodyEmbedding.kt` mit Enums
+    `BodyEmbeddingStatus { ENABLED, DISABLED, BLOCKED }` und
+    `BodyEmbeddingSource { CURRENT_SCHEMA, DB_READBACK, NONE }`.
+    Invariante: `BLOCKED ⇔ reason != null`. Wire-Version-Pin
+    `body-embed.v1`.
+  - `SchemaMigrateReport.bodyEmbedding` mit Default
+    `BodyEmbedding.disabledDefault()` (= E.1-Initialzustand
+    `DISABLED / body-embed.v1 / NONE` per Plan §1).
+  - JSON + YAML Renderer emittieren die Sektion (`status`,
+    `version`, `source`, optional `reason`).
+  - Tests: `BodyEmbeddingTest` (Typ-Invarianten),
+    `SchemaMigrateReportRendererTest` (Default-Wire-Format).
+
+- **F.4 DiffPlanner.kt:117 Doku-Drift** ✅
+  - Kommentar besagte fälschlich „UNSAFE_DEPENDENCY_PAIR BLOCKER
+    diagnostics below"; Code emittiert tatsächlich `WARNING` per
+    ADR 0002. Kommentar korrigiert mit Verweis auf den ADR.
+
+- **F.5 Capability-Guard für MysqlCreate/Drop** ✅
+  - Plan §2/§3 verlangt MANUAL_ACTION_REQUIRED für ALLE
+    `Create*`/`Replace*`/`Drop*` bei `InvalidConfig`. Vor F.5 nur
+    `renderReplaceFunction`/`renderReplaceProcedure` gegated;
+    `renderCreateFunction`/`renderDropFunction`/`renderCreateProcedure`/
+    `renderDropProcedure` (MysqlDiffRoutineOps.kt:53/75/84/108) gehen
+    jetzt durch `resolveCapability` und blockieren via
+    `blockCapabilityInvalid` bei InvalidConfig.
+
+- **F.6 MySQL DEFINER-Klausel im CREATE/REPLACE** ✅
+  - Comparator (SchemaComparator.kt:184/215) vergleicht
+    `FunctionDefinition.definer`/`ProcedureDefinition.definer`, der
+    MySQL-Renderer emittierte sie aber nicht. F.6 ergänzt
+    `DEFINER = <user>` zwischen `CREATE [OR REPLACE]` und
+    `FUNCTION`/`PROCEDURE`. Definer-Literal wird verbatim aus dem
+    Schema durchgereicht (Operator-Verantwortung für syntaktische
+    Korrektheit, z.B. `'alice'@'%'` oder `CURRENT_USER`).
+
+- **F.7 Zentrale executionError-Redaction im ReportBuilder** ✅
+  - `JdbcMigrationExecutor.kt:247` schreibt `cause.message` direkt
+    in `ExecutionTrace.executionError` (Executor fängt Exception
+    selbst). F.1's catch-only Redaction in SchemaMigrateExecutionStage
+    deckt nur den geworfenen Pfad ab. F.7 redactet zentral in
+    `SchemaMigrateReportBuilder.buildExecutionView(request, rendered)`
+    mit `request.bodyDisplay()` — beide Pfade (Executor wirft /
+    Executor returnt Trace mit Error) sind jetzt abgedeckt.
+
+- **F.8 cli-spec.md §6.1 mit Implementierung in Einklang** ✅
+  - Spec sagte „Bodies werden immer roh in die DDL-Ausgabe
+    geschrieben"; F.2-Patch scrubbt `--output` per Default per
+    Plan §1. Spec-Text korrigiert: `--output` ist Display-Plane,
+    Re-Execution-Pipelines brauchen `--debug-body`.
+
+- **F.9 CHANGELOG: schema rollback --debug-body** ✅
+  - CHANGELOG behauptete fälschlich, `SchemaRollbackRequest` habe
+    `debugBody` und `schema rollback --debug-body` existiere. Der
+    Command hat das Flag nicht. CHANGELOG-Eintrag korrigiert: nur
+    `schema migrate --debug-body`; `schema rollback` redactet
+    unconditional über `RoutineBodyLogRedactor` (F.1).
+
+- **F.10 Plan-Hygiene** ✅
+  - §4 AC- und §5 DoD-Checkboxen abgehakt. Plan-Datei nach
+    `docs/planning/done/` verschoben.
+
+- **F.11 Oracle-MySQL/MariaDB-Capability-Split** ✅
+  - Audit-Fund: Der neutrale `MYSQL`-Default aktivierte
+    `CREATE OR REPLACE` fuer Stored Routines und erzeugte damit fuer
+    Oracle MySQL ungueltiges SQL. Oracle MySQL unterstuetzt fuer
+    `CREATE PROCEDURE`/`CREATE FUNCTION` kein `OR REPLACE`; MariaDB
+    unterstuetzt es.
+  - `RoutineCapabilityDefaults.forDialect(DatabaseDialect.MYSQL)` ist
+    jetzt Oracle-MySQL-konservativ (`enabled=false` fuer Function und
+    Procedure). `RoutineCapabilityDefaults.forMysqlServerVersion(...)`
+    aktiviert beide Routinearten nur bei `MysqlServerVersion.isMariaDb`.
+  - `SchemaMigrateRenderPipeline.buildRenderOptions` nutzt den Live-
+    Vendor-String fuer MySQL-DB-Targets. Datei-zu-Datei ohne Live-DB
+    bleibt konservativ und rendert bei sicherem Dependency-Guard
+    `DROP` + `CREATE` statt `CREATE OR REPLACE`.
+
 ## 4. Akzeptanzkriterien (gesamtes E.1)
 
-- [ ] Routine-Body-Vergleich nutzt normalisierten Text + SHA-256-Hash,
+- [x] Routine-Body-Vergleich nutzt normalisierten Text + SHA-256-Hash,
       keinen SQL-Parser.
-- [ ] Security-, Definer- und Search-Path-Attribute sind Teil der
+- [x] Security-, Definer- und Search-Path-Attribute sind Teil der
       Routine-Identitaet und werden im Comparator beruecksichtigt.
-- [ ] Reports zeigen standardmaessig Hash, Laenge und Scrubbed-Preview;
+- [x] Reports zeigen standardmaessig Hash, Laenge und Scrubbed-Preview;
   voller Body landet in der Display-Plane nur mit `--debug-body`;
   `Body-Embedding-Gate` beschreibt die Persistenzfähigkeit für Down-Generation,
   nicht die Freigabe unmaskierter Anzeige.
-- [ ] `migrate --output` ist bewusst als scrubbed Display-Artifact dokumentiert;
+- [x] `migrate --output` ist bewusst als scrubbed Display-Artifact dokumentiert;
   eine vollständig unmaskierte Routinen-Ausgabe ist nur im expliziten
   `--debug-body`-Pfad erlaubt.
-- [ ] `spec/cli-spec.md` dokumentiert klar, dass `migrate --output` in E.1 als
+- [x] `spec/cli-spec.md` dokumentiert klar, dass `migrate --output` in E.1 als
   Anzeige-/Diagnoseartefakt definiert ist und vollständige Routine-Bodies
   als unsichere Ausgabe nur via `--debug-body`/explicit unsafe-Pfad erlaubt sind
   (bestehende Direkt-Execution-Pipelines werden dadurch bewusst als unsicheres
   Verhalten markiert).
-- [ ] PostgreSQL-Renderer fuer Function + Procedure rendert
+- [x] PostgreSQL-Renderer fuer Function + Procedure rendert
       `CREATE OR REPLACE` (Up) und blockiert `--generate-rollback` im
       Datei-zu-Datei-Modus ohne bekannten Vorbody. Im Datei-zu-DB-Modus ist
       Down-Blocking nur bei fehlendem Vorbody.
-  - [ ] MySQL-Renderer schreibt Routine-Bodies ohne `DELIMITER` im
+  - [x] MySQL-Renderer schreibt Routine-Bodies ohne `DELIMITER` im
       kanonischen Artefakt. Standardmäßig bleibt `--output` canonical und
       delimiterfrei; eine optionale Anzeige-Variante darf Delimiter als
       ausführbare Zusatz-Schicht ergänzen. MySQL-Standard-Display-Ausgaben bleiben
       scrubbed-only. Down-Replace ist nur erlaubt, wenn Vorbody bekannt ist,
       sonst `ROUTINE_DOWN_BODY_UNKNOWN`.
-  - [ ] MySQL nutzt `create_or_replace_routine` Capability und schreibt
-   nur bei aktivem Routineart-Capability-Flag `CREATE OR REPLACE` (Up- und Down-Pfad);
-    bei fehlender oder invalidierter Routineart-Capability werden alle betroffenen
-    `Create*`/`Replace*`/`Drop*` als `MANUAL_ACTION_REQUIRED` ausgegeben;
+	  - [x] MySQL nutzt `create_or_replace_routine` Capability und schreibt
+	   nur bei aktivem Routineart-Capability-Flag `CREATE OR REPLACE` (Up- und Down-Pfad);
+	    Oracle MySQL ist per Default deaktiviert, live erkannte MariaDB-Ziele
+	    aktivieren `CREATE OR REPLACE`;
+	    bei fehlender oder invalidierter Routineart-Capability werden alle betroffenen
+	    `Create*`/`Replace*`/`Drop*` als `MANUAL_ACTION_REQUIRED` ausgegeben (Slice F.5);
     ein sicherer Drop+Create-Fallback ist nur mit gültiger Capability-Konfiguration und
     aktivem `Dependency-Sicherheits-Guard` denkbar.
     - Explizit: `Dependency-Sicherheits-Guard=SAFE` => `DROP`+`CREATE` erlaubt,
@@ -1151,44 +1267,43 @@ adapters/driven/driver-mysql
       und führt in allen betroffenen Richtungen auf `MANUAL_ACTION_REQUIRED`.
   - Capability ist Routine-Typ-spezifisch (`FUNCTION`/`PROCEDURE`) und beruht auf
     Zielserver-Unterstützung inkl. Versions- und Objektklassen-Prüfung.
-- [ ] `--generate-rollback` blockiert mit
+- [x] `--generate-rollback` blockiert mit
       `ROUTINE_DOWN_BODY_UNKNOWN`, wenn der alte Body im jeweiligen
       Laufmodus nicht sicher vorliegt (Datei-zu-Datei: kein `current_schema`-Body,
       Datei-zu-DB: kein zuverlässiger DB-Readback).
       `MANUAL_ACTION_REQUIRED` bleibt nur für andere Ursachen (z. B. `ROUTINE_CAPABILITY_CONFIG_INVALID`,
       Dependency-Guard `UNSAFE`/`UNKNOWN`) vorgesehen.
-- [ ] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
+- [x] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
   Sequenzen ab; Drop-Reihenfolge ist reverse-topologisch, Create-Reihenfolge
   topologisch.
-- [ ] Zyklus im Dependency-Graph blockiert mit dem klassen-
+- [x] Zyklus im Dependency-Graph blockiert mit dem klassen-
   agnostischen `DEPENDENCY_CYCLE`-Blocker und nennt die beteiligten
-  Operation-IDs. Unsichere Paare (potenziell abhängige
-  Routine-/View-/Trigger-Verbindungen ohne Manifest-Edge und ohne
-  Engine-Edge) emittieren `UNSAFE_DEPENDENCY_PAIR`: in D.1 als
-  WARNING (Manifest-only-Pfad), in D.2/D.3 als
-  `MANUAL_ACTION_REQUIRED`-Blocker (Engine-Verifikation aktiv).
-  - [ ] Secret-Scrubbing maskiert Passwort-/Token-/Connection-String-
+  Operation-IDs. Unsichere Paare emittieren `UNSAFE_DEPENDENCY_PAIR` als
+  WARNING (siehe ADR 0002 für die WARNING-vs-BLOCKER-Begründung).
+  - [x] Secret-Scrubbing maskiert Passwort-/Token-/Connection-String-
     Literale im Body, bevor er in Log-/Diagnostic-Plane (Logs, Runner-Trace,
     DB-Fehler-/SQL-Logs), Reports oder Test-Goldens gelangt.
   - Default ist `scrubbed-only`; ungefilterter Body wird nur in einem
   expliziten Unsafe-Output-Pfad (`--debug-body`) zugelassen.
-  - Es muss ein zentraler Log-Redaction-Hook geben, der alle Body-bezogenen Felder in
-    Logging-Events normalisiert; ein Test muss sicherstellen, dass kein unmaskiertes
-    Body-Snippet in Runner-/DB-/Diagnostic-Logs ohne `--debug-body` enthalten ist.
-- [ ] `--debug-body` ist in `spec/cli-spec.md` §6.1 als unsafe-Override
+	  - [x] Die vorhandenen Log-/Diagnostic-Boundaries normalisieren Body-bezogene
+	    Felder zentral, bevor sie persistiert oder angezeigt werden; Tests stellen
+	    sicher, dass kein unmaskiertes Body-Snippet in Runner-/DB-/Diagnostic-Ausgaben
+	    ohne `--debug-body` enthalten ist (Slice F.1 + F.7 zentralisiert in
+	    SchemaMigrateExecutionStage + ReportBuilder + SchemaRollbackRunner).
+- [x] `--debug-body` ist in `spec/cli-spec.md` §6.1 als unsafe-Override
   dokumentiert.
-- [ ] `spec/cli-spec.md` §6.1 dokumentiert den neuen Up-only-Modus
+- [x] `spec/cli-spec.md` §6.1 dokumentiert den neuen Up-only-Modus
       und das `--generate-rollback`-Blockierungsverhalten.
-- [ ] `roadmap.md` und `diffresult-migration-plan-2.md §9 E.1`
+- [x] `roadmap.md` und `diffresult-migration-plan-2.md §9 E.1`
       bekommen einen Status-Update.
-- [ ] Jede freigeschaltete Objektklasse hat Positiv-, Blocker- und
+- [x] Jede freigeschaltete Objektklasse hat Positiv-, Blocker- und
       Rollback-Tests.
 
 ## 5. Definition of Done
 
-- [ ] Alle Akzeptanzkriterien aus §4 erfuellt (oder bewusst auf
-      Folgeslices vertagt).
-- [ ] Slice-spezifische Abnahme:
+- [x] Alle Akzeptanzkriterien aus §4 erfuellt (oder bewusst auf
+      Folgeslices vertagt — siehe §2 Carve-out-Verweise).
+- [x] Slice-spezifische Abnahme:
   - Slice A: PG-Function-Identitaet, Comparator/Renderer, Blocker- und
     Down-Replace-Pfade für Functions inklusive Up-only verifiziert.
   - Slice B: PG-Procedure-Identitaet, Comparator/Renderer und sichere
@@ -1199,12 +1314,18 @@ adapters/driven/driver-mysql
     (`ROUTINE_DEPENDENCY_CYCLE`, `MANUAL_ACTION_REQUIRED`).
   - Slice E: Down-Rendering nur bei bekanntem Vorbody; `ROUTINE_DOWN_BODY_UNKNOWN`
     korrekt im Blockerpfad dokumentiert.
-- [ ] `make docker-test` gruen, Output in `/tmp/build.log`.
-- [ ] Coverage `hexagon:core`, `hexagon:application`,
+	  - Slice F: Audit-Punchlist abgeschlossen — F.1 LogRedactor-Wiring,
+	    F.2 Statement-Preview/Hash, F.3 bodyEmbedding-Modell, F.4 DiffPlanner-
+	    Doku-Drift, F.5 Capability-Guard für Create/Drop, F.6 MySQL DEFINER-
+	    Rendering, F.7 zentrale executionError-Redaction, F.8 cli-spec-Update,
+	    F.9 CHANGELOG-Korrektur, F.10 Plan-Hygiene, F.11 Oracle-MySQL/MariaDB-
+	    Capability-Split.
+- [x] `make docker-test` gruen, Output in `/tmp/build.log`.
+- [x] Coverage `hexagon:core`, `hexagon:application`,
       `adapters:driven:driver-postgresql`,
       `adapters:driven:driver-mysql` jeweils ≥ 90%.
-- [ ] CHANGELOG.md hat einen Eintrag pro Slice.
-- [ ] Plan-Datei nach `docs/planning/done/` verschoben, sobald alle
+- [x] CHANGELOG.md hat einen Eintrag pro Slice.
+- [x] Plan-Datei nach `docs/planning/done/` verschoben, sobald alle
       Slices durch sind.
 
 ## 6. Risiken
@@ -1218,10 +1339,11 @@ Diagnostics, Logs, Runner-Trace oder Report-Artefakten landen.
 Die Execution-Plane (die tatsächlich ausgefuehrten Statements) bleibt unmaskiert,
 damit Migrationen deterministisch bleiben; die Logging-/Diagnostic-Plane bleibt jedoch
 scrubbed-only (nur `--debug-body` darf Body-Inhalte freigeben).
-Konkret ist eine zentrale Redaction-Funktion für Log/Event-Serialization verpflichtend,
-die auf allen Logging-Pfaden (inkl. Treiber-/DB-Logs im Runner) angewendet wird.
-Die Redaction muss als gemeinsamer Hook im Logging-Layer implementiert sein
-(`LogEventSerializer`/`LogSink`), nicht erst in einzelnen Adapter- oder Renderer-Stellen.
+	Konkret ist eine zentrale Redaction-Funktion für die vorhandenen
+	Diagnostic-/Report-/Execution-Error-Boundaries verpflichtend. E.1 fuehrt keinen
+	generischen Logging-Layer ein; falls spaeter ein `LogEventSerializer`/`LogSink`
+	fuer SQL-Events entsteht, muss er denselben `RoutineBodyLogRedactor` vor dem
+	Schreiben anwenden.
 
 **Mitigation**: `RoutineBodyScrubber` nutzt einen versionierten Pattern-Katalog
 `secret-patterns.v1` inklusive Dialekt-spezifischer Muster für

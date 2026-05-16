@@ -15,6 +15,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.RoutineCapability
+import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.RoutineKindCapability
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
@@ -52,6 +53,11 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         desired: SchemaDefinition = emptySchema(),
         options: DdlGenerationOptions = DdlGenerationOptions(),
     ) = gen.generateDown(planner.plan(current, desired, diff), options)
+
+    fun mariaDbOptions() = DdlGenerationOptions(
+        routineCapability = RoutineCapabilityDefaults.forMysqlServerVersion(MysqlServerVersion(10, 11, 6, "MariaDB")),
+        mysqlServerVersion = MysqlServerVersion(10, 11, 6, "MariaDB"),
+    )
 
     val sampleFunction = FunctionDefinition(
         parameters = listOf(ParameterDefinition(name = "amount", type = "DECIMAL(10,2)")),
@@ -95,11 +101,28 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateUp(planner.plan(current, desired, diff), mariaDbOptions())
         r.isBlocked shouldBe false
         val statement = r.statements.single().sql
         statement.shouldContain("CREATE OR REPLACE FUNCTION `compute_total`")
         statement.shouldContain("RETURN amount * 1.2")
+    }
+
+    test("ReplaceFunction default Oracle MySQL capability uses guarded DROP + CREATE") {
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = "BEGIN\n  RETURN amount * 1.2;\nEND")
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
+        val diff = comparator.compare(current, desired)
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        r.isBlocked shouldBe false
+        val statements = r.statements.map { it.sql }
+        statements.shouldHaveSize(2)
+        statements.first().shouldContain("DROP FUNCTION `compute_total`")
+        statements.last().shouldContain("CREATE FUNCTION `compute_total`")
+        statements.last().shouldNotContain("OR REPLACE")
+        r.diagnostics.any { it.code == "DEPENDENCY_GUARD_TOPOLOGY" } shouldBe true
+        r.diagnostics.any { it.code == "MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC" } shouldBe true
     }
 
     test("ReplaceFunction Down with known prior body emits CREATE OR REPLACE reverting to before") {
@@ -108,7 +131,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateDown(planner.plan(current, desired, diff), mariaDbOptions())
         r.isBlocked shouldBe false
         val statement = r.statements.single().sql
         statement.shouldContain("CREATE OR REPLACE FUNCTION `compute_total`")
@@ -177,7 +200,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(procedures = mapOf("audit_call" to before))
         val desired = emptySchema().copy(procedures = mapOf("audit_call" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateUp(planner.plan(current, desired, diff), mariaDbOptions())
         val statement = r.statements.single().sql
         statement.shouldContain("CREATE OR REPLACE PROCEDURE `audit_call`")
         statement.shouldContain("CALL audit_log_v2(id_in)")
@@ -459,5 +482,75 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val statement = r.statements.single().sql
         statement.shouldContain("CREATE PROCEDURE `audit_call`")
         statement.shouldNotContain("OR REPLACE")
+    }
+
+    // ── F.5: InvalidConfig guards for Create/Replace/Drop ─────────────
+    //
+    // The InvalidConfig resolution branch is unreachable from production
+    // code in C.1.a (no configurable Capability source yet); the
+    // configurable-source carve-out plan
+    // (`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`)
+    // adds it. F.5 wires `if (resolveCapability == InvalidConfig)
+    // blockCapabilityInvalid(...)` into renderCreateFunction,
+    // renderDropFunction, renderCreateProcedure, renderDropProcedure so
+    // ALL four entry points enforce MANUAL_ACTION_REQUIRED per Plan §2/§3
+    // — the renderer-side pin for InvalidConfig is exercised by the
+    // capability-configurable-source slice; here we pin the structural
+    // requirement via the existing Active/Disabled coverage above.
+    //
+    // Pre-F.5 only renderReplaceFunction and renderReplaceProcedure
+    // routed through the resolver; F.5 brings CREATE/DROP into the same
+    // contract.
+
+    // ── F.6: DEFINER clause is rendered when set ───────────────────────
+
+    test("F.6: CreateFunction with definer emits DEFINER = user@host before FUNCTION") {
+        val withDefiner = sampleFunction.copy(definer = "'alice'@'%'")
+        val r = planAndUp(
+            SchemaDiff(functionsAdded = listOf(NamedFunction("with_definer", withDefiner))),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldContain("DEFINER = 'alice'@'%' FUNCTION `with_definer`")
+    }
+
+    test("F.6: CreateProcedure with definer emits DEFINER = user@host before PROCEDURE") {
+        val withDefiner = sampleProcedure.copy(definer = "'bob'@'localhost'")
+        val r = planAndUp(
+            SchemaDiff(proceduresAdded = listOf(NamedProcedure("with_definer", withDefiner))),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldContain("DEFINER = 'bob'@'localhost' PROCEDURE `with_definer`")
+    }
+
+    test("F.6: ReplaceFunction with definer emits DEFINER between OR REPLACE and FUNCTION") {
+        val before = sampleFunction.copy(definer = "'alice'@'%'")
+        val after = sampleFunction.copy(
+            definer = "'bob'@'%'",
+            body = "BEGIN\n  RETURN amount * 1.20;\nEND",
+        )
+        val diff = comparator.compare(
+            emptySchema().copy(functions = mapOf("rotate_definer" to before)),
+            emptySchema().copy(functions = mapOf("rotate_definer" to after)),
+        )
+        val r = planAndUp(
+            diff,
+            current = emptySchema().copy(functions = mapOf("rotate_definer" to before)),
+            desired = emptySchema().copy(functions = mapOf("rotate_definer" to after)),
+            options = mariaDbOptions(),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldContain("CREATE OR REPLACE DEFINER = 'bob'@'%' FUNCTION `rotate_definer`")
+    }
+
+    test("F.6: CreateFunction without definer omits the DEFINER clause") {
+        val r = planAndUp(
+            SchemaDiff(functionsAdded = listOf(NamedFunction("no_definer", sampleFunction))),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldNotContain("DEFINER")
     }
 })

@@ -55,15 +55,22 @@ class RoutineCapabilityTest : FunSpec({
         cap.procedure shouldBe RoutineKindCapability(enabled = true, minServerVersion = null)
     }
 
-    test("Defaults for MySQL: function + procedure are both enabled with no min version") {
-        // The "no min version" default is deliberate — Slice C.2
-        // would otherwise produce MANUAL_ACTION_REQUIRED for every
-        // MySQL routine flow until C.3 ships the dependency guard.
-        // Operators who want a real floor will set it via a future
-        // configurable source.
+    test("Defaults for MySQL are conservative Oracle MySQL semantics") {
         val cap = RoutineCapabilityDefaults.forDialect(DatabaseDialect.MYSQL)
+        cap.function shouldBe RoutineKindCapability(enabled = false, minServerVersion = null)
+        cap.procedure shouldBe RoutineKindCapability(enabled = false, minServerVersion = null)
+    }
+
+    test("MariaDB live server version enables routine CREATE OR REPLACE") {
+        val cap = RoutineCapabilityDefaults.forMysqlServerVersion(MysqlServerVersion(10, 11, 6, "MariaDB"))
         cap.function shouldBe RoutineKindCapability(enabled = true, minServerVersion = null)
         cap.procedure shouldBe RoutineKindCapability(enabled = true, minServerVersion = null)
+    }
+
+    test("Oracle MySQL live server version keeps routine CREATE OR REPLACE disabled") {
+        val cap = RoutineCapabilityDefaults.forMysqlServerVersion(MysqlServerVersion(8, 4, 0, "log"))
+        cap.function shouldBe RoutineKindCapability(enabled = false, minServerVersion = null)
+        cap.procedure shouldBe RoutineKindCapability(enabled = false, minServerVersion = null)
     }
 
     test("Defaults for SQLite: function + procedure disabled (no routine path)") {

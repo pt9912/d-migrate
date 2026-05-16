@@ -411,4 +411,22 @@ class SchemaMigrateReportRendererTest : FunSpec({
         )
         out shouldContain "bodyDisplay: RAW_DEBUG"
     }
+
+    // ── bodyEmbedding (E.1 Slice F.3) ───────────────────────────────
+
+    test("JSON renderer defaults bodyEmbedding to DISABLED with version body-embed.v1") {
+        val out = SchemaMigrateReportRenderer.render(report(), "json")
+        out shouldContain "\"bodyEmbedding\":"
+        out shouldContain "\"status\":\"DISABLED\""
+        out shouldContain "\"version\":\"body-embed.v1\""
+        out shouldContain "\"source\":\"NONE\""
+    }
+
+    test("YAML renderer emits bodyEmbedding block with status / version / source") {
+        val out = SchemaMigrateReportRenderer.render(report(), "yaml")
+        out shouldContain "bodyEmbedding:"
+        out shouldContain "  status: DISABLED"
+        out shouldContain "  version: body-embed.v1"
+        out shouldContain "  source: NONE"
+    }
 })

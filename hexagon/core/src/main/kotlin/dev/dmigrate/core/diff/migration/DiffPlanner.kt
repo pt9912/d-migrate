@@ -114,7 +114,8 @@ open class DiffPlanner {
         // E.1 Slice D.1: second-phase analyzer for routine / view /
         // trigger / sequence cross-edges plus unsafe-routine-pair
         // detection. The unsafe-pair findings turn into
-        // `UNSAFE_DEPENDENCY_PAIR` BLOCKER diagnostics below.
+        // `UNSAFE_DEPENDENCY_PAIR` WARNING diagnostics below — see
+        // ADR 0002 for the WARNING-vs-BLOCKER rationale.
         val routineResult = RoutineDependencyAnalyzer.attach(opsWithFkDeps)
         val sortResult = TopologicalSorter.sort(routineResult.operations)
 

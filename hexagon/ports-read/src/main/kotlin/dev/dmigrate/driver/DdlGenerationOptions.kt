@@ -100,18 +100,17 @@ data class DdlGenerationOptions(
     val extensionInstallPrivilegeStatus: ExtensionInstallPrivilegeStatus =
         ExtensionInstallPrivilegeStatus.UNVERIFIED,
     /**
-     * E.1 Routine-Migration Slice C.2: per-dialect routine capability
-     * threaded from `SchemaMigrateRenderPipeline.buildRenderOptions`
-     * via [RoutineCapabilityDefaults.forDialect]. Renderers consult
-     * this to decide between `CREATE OR REPLACE`, `DROP+CREATE`, and
-     * `MANUAL_ACTION_REQUIRED`. The PostgreSQL renderer ignores the
-     * field today (Slice A/B emit `CREATE OR REPLACE` unconditionally,
-     * see DoD C.1.a/C.2); MySQL (this slice) is the first consumer.
+     * E.1 Routine-Migration Slice C.2/F.11: per-dialect routine
+     * capability threaded from
+     * `SchemaMigrateRenderPipeline.buildRenderOptions`. Renderers
+     * consult this to decide between `CREATE OR REPLACE`,
+     * `DROP+CREATE`, and `MANUAL_ACTION_REQUIRED`. PostgreSQL ignores
+     * the field today. MySQL consumes it and defaults conservatively to
+     * Oracle MySQL semantics (no stored-routine `CREATE OR REPLACE`);
+     * live MariaDB targets are enabled by
+     * [RoutineCapabilityDefaults.forMysqlServerVersion].
      */
-    val routineCapability: RoutineCapability = RoutineCapability(
-        function = RoutineKindCapability(enabled = true),
-        procedure = RoutineKindCapability(enabled = true),
-    ),
+    val routineCapability: RoutineCapability = RoutineCapabilityDefaults.forDialect(DatabaseDialect.MYSQL),
     /**
      * E.1 Routine-Migration Slice C.2: live MySQL/MariaDB server
      * version from the DB target's [SchemaReadResult], or `null` for

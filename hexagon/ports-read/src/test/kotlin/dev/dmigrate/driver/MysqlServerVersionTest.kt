@@ -25,6 +25,12 @@ class MysqlServerVersionTest : FunSpec({
             MysqlServerVersion(major = 10, minor = 11, patch = 6, vendor = "MariaDB")
     }
 
+    test("detects MariaDB vendor token") {
+        MysqlServerVersion.parse("10.11.6-MariaDB")!!.isMariaDb shouldBe true
+        MysqlServerVersion.parse("8.4.0")!!.isMariaDb shouldBe false
+        MysqlServerVersion.parse("8.0.36-log")!!.isMariaDb shouldBe false
+    }
+
     test("parses MySQL 8.4 LTS clean triple") {
         MysqlServerVersion.parse("8.4.0") shouldBe
             MysqlServerVersion(major = 8, minor = 4, patch = 0, vendor = null)

@@ -18,7 +18,8 @@ import kotlin.io.path.readText
  * report-writer) and produces a delimiterfreies Up-SQL artefact.
  * The fixture pair changes the function body AND adds SQL SECURITY
  * DEFINER, so the test covers body-hash divergence, identity-attr
- * persistence, and the `OR REPLACE` Up render together.
+ * persistence, and the conservative Oracle-MySQL default route
+ * (`DROP` + `CREATE`, no `OR REPLACE`) together.
  */
 class SchemaMigrateCommandMysqlRoutineTest : FunSpec({
 
@@ -27,7 +28,7 @@ class SchemaMigrateCommandMysqlRoutineTest : FunSpec({
     fun resourcePath(name: String): Path =
         Path.of(SchemaMigrateCommandMysqlRoutineTest::class.java.getResource("/$name")!!.toURI())
 
-    test("schema migrate renders CREATE OR REPLACE FUNCTION for a MySQL body change") {
+    test("schema migrate renders guarded DROP + CREATE for a MySQL body change") {
         val dir = Files.createTempDirectory("dmigrate-mysql-routine-e2e")
         val output = dir.resolve("up.sql")
         val report = dir.resolve("report.json")
@@ -47,7 +48,9 @@ class SchemaMigrateCommandMysqlRoutineTest : FunSpec({
         )
 
         val upSql = output.readText()
-        upSql.shouldContain("CREATE OR REPLACE FUNCTION `compute_total`")
+        upSql.shouldContain("DROP FUNCTION `compute_total`")
+        upSql.shouldContain("CREATE FUNCTION `compute_total`")
+        upSql.shouldNotContain("CREATE OR REPLACE FUNCTION `compute_total`")
         upSql.shouldContain("(amount DECIMAL(10,2))")
         upSql.shouldContain("RETURNS DECIMAL(10,2)")
         upSql.shouldContain("LANGUAGE SQL")

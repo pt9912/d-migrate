@@ -39,6 +39,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **E.1 Routine-Migration Slice F.11** — MySQL-family routine
+  capability is now vendor-aware. The neutral `MYSQL` dialect
+  defaults to Oracle MySQL semantics, where stored routines do not
+  support `CREATE OR REPLACE`; file-to-file MySQL routine replaces
+  therefore use the existing dependency-guarded `DROP` + `CREATE`
+  fallback instead of emitting invalid Oracle MySQL SQL. Live
+  MariaDB targets are detected through `MysqlServerVersion.vendor`
+  (`SELECT VERSION()` values such as `10.11.6-MariaDB`) and keep
+  `CREATE OR REPLACE` enabled. `DdlGenerationOptions` defaults to
+  the conservative Oracle MySQL capability so direct renderer calls
+  are safe unless tests or future config explicitly opt into the
+  MariaDB capability.
+
 - **E.1 Routine-Migration Slice D.4** — `DependencyGuardEvaluator`
   body now drives the SAFE / UNSAFE decision from the real
   dependency-edge graph populated by Slices D.1 / D.2 / D.3
@@ -171,7 +184,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the routine renderer can ask the evaluator without changing the
   public renderer API.
 
-- **E.1 Routine-Migration Slice C.2** — MySQL function and
+- **E.1 Routine-Migration Slice C.2** — MySQL-family function and
   procedure renderer joins PostgreSQL in the diff/render pipeline.
   New `MysqlDiffRoutineOps` covers `Create`/`Replace`/`Drop` of
   `FUNCTION` and `PROCEDURE` in both Up and Down direction. The
@@ -180,15 +193,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   display variants may add a `DELIMITER` wrapper in a later slice.
   `MysqlDiffDdlGenerator` gains an `OpCategory.ROUTINE` dispatch.
   Capability-gated `CREATE OR REPLACE`: the renderer consults
-  `DdlGenerationOptions.routineCapability` (defaulted per dialect
-  via `RoutineCapabilityDefaults`) and the live
-  `mysqlServerVersion` from `MysqlSchemaReader`. `Active` ⇒
-  `CREATE OR REPLACE`; `Disabled` (capability off or
-  `minServerVersion` floor unmet) ⇒ `ROUTINE_CAPABILITY_DISABLED`
-  + `MANUAL_ACTION_REQUIRED`; `InvalidConfig` ⇒
+  `DdlGenerationOptions.routineCapability` and the live
+  `mysqlServerVersion` from `MysqlSchemaReader`. Post-F.11,
+  Oracle MySQL defaults to `Disabled`, while live MariaDB targets
+  resolve to `Active`. `Active` ⇒ `CREATE OR REPLACE`; `Disabled`
+  (Oracle MySQL, capability off, or `minServerVersion` floor unmet)
+  routes through the dependency guard and either emits `DROP` +
+  `CREATE` or blocks; `InvalidConfig` ⇒
   `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED`.
-  The Dependency-Guard-aware `DROP + CREATE` fallback for
-  `Disabled` ships in Slice C.3. Down-render blocks with
+  Down-render blocks with
   `ROUTINE_DOWN_BODY_UNKNOWN` when the prior body is missing.
   `SchemaReadResult` carries a new `mysqlServerVersion` field
   populated by `MysqlSchemaReader` via
@@ -227,16 +240,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `10.11.6-MariaDB` / `8.4.0`) live in `hexagon:ports-read`; the
   layering choice keeps `hexagon:core`'s zero-dep contract intact.
   `MysqlMetadataQueries.readServerVersion(JdbcOperations)` exposes
-  the live MySQL version. `SchemaMigrateRequest` and
-  `SchemaRollbackRequest` gain a `debugBody: Boolean = false` field;
-  `SchemaMigrateReport` gains `bodyDisplay: RoutineBodyDisplay =
-  SCRUBBED_ONLY`. `schema migrate --debug-body` and
-  `schema rollback --debug-body` flip the report's display plane to
-  `RAW_DEBUG` — Execution-Plane (SQL output) is unaffected and
-  always carries raw bodies. No renderer consumes the capability in
-  C.1.a; PostgreSQL Slice A/B output stays byte-identical. Slice
-  C.2 wires the MySQL renderer; Slice C.3 adds the
-  Dependency-Guard.
+  the live MySQL version. `SchemaMigrateRequest` gains a
+  `debugBody: Boolean = false` field; `SchemaMigrateReport` gains
+  `bodyDisplay: RoutineBodyDisplay = SCRUBBED_ONLY`. `schema migrate
+  --debug-body` flips the report's display plane to `RAW_DEBUG`.
+  `schema rollback` does NOT carry a `--debug-body` flag — the
+  rollback runner always redacts its `executionError` output via
+  `RoutineBodyLogRedactor` (see Slice F.1). Execution-Plane (the
+  in-memory statements that the `--execute` path runs against the DB)
+  is unaffected and always carries raw bodies. No renderer consumes
+  the capability in C.1.a; PostgreSQL Slice A/B output stays
+  byte-identical. Slice C.2 wires the MySQL renderer; Slice C.3 adds
+  the Dependency-Guard.
 - **E.1 Routine-Migration Slice B** — PostgreSQL procedures join
   functions in the diff/render pipeline. `ProcedureDiff` gains the
   same `security` / `definer` / `searchPath` / `sqlMode` value-change

@@ -514,11 +514,15 @@ Aktuell offene 0.9.7-Restpunkte:
   delimiterfreiem Artefakt + Capability-Gate über `routineCapability`
   + `mysqlServerVersion`), Slice C.3 (Dependency-Guard-Stub +
   `DROP + CREATE`-Fallback), Slice D.1-D.4 (Manifest- und
-  Engine-Edges + topology-getriebene Dependency-Sortierung
-  über alle fünf Objektklassen) und Slice E (PG-Reverse-Read
-  populiert `security`/`definer`/`searchPath` aus `pg_proc`).
-  E.1 Workstream komplett; Plan wandert nach
-  `docs/planning/done/`.)*
+	  Engine-Edges + topology-getriebene Dependency-Sortierung
+	  über alle fünf Objektklassen) und Slice E (PG-Reverse-Read
+	  populiert `security`/`definer`/`searchPath` aus `pg_proc`).
+	  Slice F.11 korrigiert den MySQL-Familien-Default:
+	  Oracle MySQL bleibt ohne `CREATE OR REPLACE` fuer Stored Routines,
+	  live erkannte MariaDB-Ziele aktivieren diesen Pfad ueber den
+	  Vendor-String.
+	  E.1 Workstream komplett; Plan wandert nach
+	  `docs/planning/done/`.)*
 - **F.0-F.3 Rest**: automatische Daten-Transformationen,
   versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
 - **F.4 Rest**: Dependency-Re-Projection nach Rename

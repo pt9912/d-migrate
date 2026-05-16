@@ -607,7 +607,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--rename-table` | Nein | `<from>:<to>`, wiederholbar | Inline-Shortcut fuer Tabellen-Rename; CLI baut daraus ein synthetisches `rename-mapping`-Overlay mit `source = "cli-inline"`. Bewusst NICHT artefaktstabil — Inline-Overlays werden nicht in `migration-plan.v1` serialisiert. Fuer langlebige Plaene `--migration-overlay` mit Datei nutzen |
 | `--rename-column` | Nein | `<table>.<from>:<table>.<to>`, wiederholbar | Inline-Shortcut fuer Spalten-Rename; gleiche Bedingungen wie `--rename-table`. Tabellen-Prefix muss beidseitig identisch sein, sonst Exit 2 |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
-| `--debug-body` | Nein | Boolean | **UNSAFE-Override** für die Display-/Diagnostic-Plane: Routine-Bodies erscheinen unmaskiert im Report (Default ist `bodyDisplay = SCRUBBED_ONLY` über `RoutineBodyScrubber.preview(...)`). Execution-Plane (gerenderte SQL-Statements) bleibt unverändert; Bodies werden immer roh in die DDL-Ausgabe geschrieben, weil sie für die Ausführung gebraucht werden. Logging-/Runner-Trace- und DB-Adapter-Pfade greifen den `RoutineBodyLogRedactor`-Hook, der den Flag berücksichtigt — ohne `--debug-body` wird kein unmaskierter Body in Diagnostic-Logs sichtbar. Nutzung nur in kontrollierter Debug-Session sinnvoll. |
+| `--debug-body` | Nein | Boolean | **UNSAFE-Override** für die Display-/Diagnostic-Plane: Routine-Bodies erscheinen unmaskiert im Report und im `--output`-Artefakt (Default ist `bodyDisplay = SCRUBBED_ONLY` über `RoutineBodyScrubber.preview(...)`; das Artefakt enthält dann gescrubbten Body-Text, und der Report die `{sqlHash, sqlLength, scrubbedPreview, scrubbingApplied}`-Metadaten plus gescrubbtem `sql`-Feld). Execution-Plane (die Statements, die der `--execute`-Pfad gegen die DB schickt) bleibt unverändert mit Rohbody; das Display-Artefakt `--output` ist explizit eine Anzeige-/Diagnoseausgabe und folgt der Display-Plane-Regel. Für Pipelines, die das `--output`-Artefakt zur Re-Execution brauchen, MUSS `--debug-body` gesetzt werden. Logging-/Runner-Trace- und DB-Adapter-Pfade greifen den `RoutineBodyLogRedactor`-Hook, der den Flag berücksichtigt — ohne `--debug-body` wird kein unmaskierter Body in Diagnostic-Logs sichtbar. Nutzung nur in kontrollierter Debug-Session sinnvoll. |
 
 Begriffe (vollständig in `spec/design.md`):
 
@@ -629,6 +629,11 @@ Ausgabevertrag:
 - **Down-SQL**: Nur über `--rollback-output`. Wird nie nach `stdout` geschrieben und nie als zweiter Block in das Up-SQL-Artefakt eingebettet.
 - **Report**: Mit `--report` in Datei, ohne bei `--plan-only` nach `stdout`. `--execute` ohne `--report` ist Exit `2` (auditpflichtig).
 - **Atomare Finalisierung**: Up-SQL, Down-SQL und Reports werden in eine temporäre Datei im Zielverzeichnis geschrieben und erst nach erfolgreichem Planning, Rendering und Blocker-Check atomar verschoben. Bei Render- oder Ausführungsfehlern bleiben bestehende Zielpfade unverändert.
+
+Routine-Rendering:
+
+- PostgreSQL rendert Routine-Replace fuer Functions und Procedures ueber `CREATE OR REPLACE`, sofern der jeweilige Body bekannt und der Dollar-Tag konfliktfrei ist.
+- MySQL-Familie unterscheidet Oracle MySQL und MariaDB. Der neutrale Datei-zu-Datei-Dialekt `mysql` verwendet Oracle-MySQL-Semantik: Stored-Routine-Replace darf kein `CREATE OR REPLACE` erzeugen und nutzt nur bei sicherem Dependency-Guard `DROP` + `CREATE`, sonst `MANUAL_ACTION_REQUIRED`. Bei Datei-zu-DB aktiviert ein live erkannter MariaDB-Vendor-String `CREATE OR REPLACE` fuer Functions/Procedures.
 
 Report-Felder für Materialized Views:
 

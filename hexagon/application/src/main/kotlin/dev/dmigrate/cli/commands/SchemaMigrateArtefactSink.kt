@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.routine.RoutineBodyScrubber
+import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import java.nio.file.Files
 import java.nio.file.Path
@@ -35,7 +37,16 @@ internal class SchemaMigrateArtefactSink(
      * the proper exit code.
      */
     fun writeOrEchoUpSql(request: SchemaMigrateRequest, rendered: MigrationDdlResult): Int? {
-        val body = rendered.statements.joinToString("\n\n") { it.sql }
+        // E.1 Slice F.2: `migrate --output` is a display-/diagnostic
+        // artefact per Plan §1; default-scrub the body so credential-
+        // shaped literals don't land in shared output files. Operators
+        // who need the raw body for re-execution must set `--debug-body`
+        // (RAW_DEBUG).
+        val sqlForDisplay = when (request.bodyDisplay()) {
+            RoutineBodyDisplay.RAW_DEBUG -> rendered.statements.map { it.sql }
+            RoutineBodyDisplay.SCRUBBED_ONLY -> rendered.statements.map { RoutineBodyScrubber.scrub(it.sql).text }
+        }
+        val body = sqlForDisplay.joinToString("\n\n")
         val upSql = renderSqlArtefactHeader(body) + body
         if (request.output == null) {
             stdout(upSql)

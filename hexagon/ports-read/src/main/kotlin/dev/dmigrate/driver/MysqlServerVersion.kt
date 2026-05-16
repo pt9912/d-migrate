@@ -20,6 +20,9 @@ data class MysqlServerVersion(
     val vendor: String? = null,
 ) : Comparable<MysqlServerVersion> {
 
+    val isMariaDb: Boolean
+        get() = vendor?.contains("MariaDB", ignoreCase = true) == true
+
     override fun compareTo(other: MysqlServerVersion): Int {
         major.compareTo(other.major).let { if (it != 0) return it }
         minor.compareTo(other.minor).let { if (it != 0) return it }

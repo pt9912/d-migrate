@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.SqliteLiveCatalog
@@ -469,6 +470,13 @@ data class SchemaMigrateReport(
      * Execution-Plane (the SQL statements) is unaffected.
      */
     val bodyDisplay: RoutineBodyDisplay = RoutineBodyDisplay.SCRUBBED_ONLY,
+    /**
+     * E.1 Routine-Migration Slice F.3: artefact-/persistence-flag for
+     * the routine body. Defaults to [BodyEmbedding.disabledDefault]
+     * per Plan §1 initial-state requirement. Independent of the
+     * Display-Plane scrubbing decision recorded in [bodyDisplay].
+     */
+    val bodyEmbedding: BodyEmbedding = BodyEmbedding.disabledDefault(),
 )
 
 /**
@@ -563,11 +571,32 @@ data class SchemaMigrateOperationView(
     val skipped: Boolean,
 )
 
+/**
+ * Display-plane representation of a single rendered DDL statement.
+ *
+ * E.1 Slice F.2: the `sql` field's content is governed by the
+ * report-level [RoutineBodyDisplay]:
+ *
+ * - `SCRUBBED_ONLY` (default): the scrubbed body — credential-shaped
+ *   literals are masked via [dev.dmigrate.core.diff.routine.RoutineBodyScrubber].
+ *   Non-secret SQL is returned verbatim.
+ * - `RAW_DEBUG` (via `--debug-body`): unmasked body.
+ *
+ * The four metadata fields ([sqlHash], [sqlLength], [scrubbedPreview],
+ * [scrubbingApplied]) are populated unconditionally so display
+ * consumers can reference the statement even when `sql` is scrubbed.
+ * Their defaults make the DTO backward-compatible for callers that
+ * construct it without these fields.
+ */
 data class SchemaMigrateStatementView(
     val sql: String,
     val operationIds: List<String>,
     val phase: String,
     val destructive: Boolean,
+    val sqlHash: String = "",
+    val sqlLength: Int = 0,
+    val scrubbedPreview: String = "",
+    val scrubbingApplied: Boolean = false,
 )
 
 data class SchemaMigrateBlockerView(

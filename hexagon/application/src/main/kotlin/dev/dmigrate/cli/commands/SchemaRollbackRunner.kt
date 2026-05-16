@@ -2,6 +2,7 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.MigrationFingerprint
+import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.migration.MigrationDdlStatement
 import dev.dmigrate.driver.migration.TransactionScope
@@ -204,14 +205,24 @@ class SchemaRollbackRunner(
         val trace = try {
             exec(targetOp, statements, request.cliConfigPath)
         } catch (e: Exception) {
+            // E.1 Slice F.1: JDBC driver error messages routinely quote
+            // statement fragments; for routine Down-SQL that risks
+            // leaking the routine body to stderr. Rollback has no
+            // `--debug-body` escape, so always redact.
+            val rawMessage = e.message ?: e::class.simpleName
+            val redacted = RoutineBodyLogRedactor.redact(rawMessage)
             userFacingPrintError(
-                "Down execution failed: ${e.message ?: e::class.simpleName}",
+                "Down execution failed: $redacted",
                 request.target,
             )
             return 5
         }
         return if (trace.executionError != null) {
-            userFacingPrintError("Down execution error: ${trace.executionError}", request.target)
+            // Defensive: the injected executor may not redact, so
+            // re-route the trace message through the central redactor
+            // before printing.
+            val redacted = RoutineBodyLogRedactor.redact(trace.executionError)
+            userFacingPrintError("Down execution error: $redacted", request.target)
             5
         } else {
             0

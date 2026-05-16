@@ -4,9 +4,12 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.RenameProjectionReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
+import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
+import dev.dmigrate.core.diff.routine.RoutineBodyScrubber
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
+import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.TransactionBehavior
@@ -88,49 +91,84 @@ internal object SchemaMigrateReportBuilder {
                     skipped = op.id in rendered.operationsSkipped,
                 )
             },
-            statements = if (request.planOnly) null else rendered.statements.map { s ->
-                SchemaMigrateStatementView(
-                    sql = s.sql,
-                    operationIds = s.operationIds.toList(),
-                    phase = s.phase.name,
-                    destructive = s.risk.destructive,
-                )
-            },
+            statements = buildStatementViews(request, rendered),
             summary = buildSummary(plan, rendered, renderedDown, catalogProbeMode),
             bodyDisplay = request.bodyDisplay(),
-            execution = if (rendered.executionStarted || rendered.executionError != null) {
-                SchemaMigrateExecutionView(
-                    started = rendered.executionStarted,
-                    completed = rendered.executionCompleted,
-                    statementsAttempted = rendered.statementsAttempted,
-                    lastStatementOperationIds = rendered.lastStatementOperationIds.toList(),
-                    transactionRolledBack = rendered.transactionRolledBack,
-                    sideEffectsPossible = rendered.sideEffectsPossible,
-                    executionError = rendered.executionError,
-                    statementGroups = rendered.executionStatementGroups.map { group ->
-                        SchemaMigrateStatementGroupView(
-                            statementGroupId = group.statementGroupId,
-                            operationIds = group.operationIds.toList(),
-                            statementStartInclusive = group.statementStartInclusive,
-                            statementEndExclusive = group.statementEndExclusive,
-                            transactionScope = group.transactionScope.name,
-                            transactionBoundary = group.transactionBoundary.name,
-                        )
-                    },
-                    recoverability = rendered.recoverability?.name,
-                    // Up-DDL was applied to the DB iff the executor was
-                    // started AND the runner-managed transaction wasn't
-                    // rolled back. A clean rollback after a failed Up
-                    // means no side effect — `upExecuted = false`.
-                    upExecuted = rendered.executionStarted && !rendered.transactionRolledBack,
-                    // `rollbackFinalized` is only known AFTER the
-                    // artefact write attempt — populated by `finalize`
-                    // via report.copy(...) before the report is written.
-                    rollbackFinalized = null,
+            execution = buildExecutionView(request, rendered),
+        )
+    }
+
+    private fun buildStatementViews(
+        request: SchemaMigrateRequest,
+        rendered: MigrationDdlResult,
+    ): List<SchemaMigrateStatementView>? {
+        if (request.planOnly) return null
+        val bodyDisplay = request.bodyDisplay()
+        return rendered.statements.map { s ->
+            // E.1 Slice F.2: every statement carries scrub metadata
+            // (hash, length, scrubbedPreview, scrubbingApplied). The
+            // `sql` field is the scrubbed body by default; only
+            // `--debug-body` (RAW_DEBUG) emits the raw text.
+            val preview = RoutineBodyScrubber.preview(s.sql)
+            val sqlForDisplay = when (bodyDisplay) {
+                RoutineBodyDisplay.RAW_DEBUG -> s.sql
+                RoutineBodyDisplay.SCRUBBED_ONLY -> RoutineBodyScrubber.scrub(s.sql).text
+            }
+            SchemaMigrateStatementView(
+                sql = sqlForDisplay,
+                operationIds = s.operationIds.toList(),
+                phase = s.phase.name,
+                destructive = s.risk.destructive,
+                sqlHash = preview.hash.orEmpty(),
+                sqlLength = preview.length,
+                scrubbedPreview = preview.preview,
+                scrubbingApplied = preview.scrubbingApplied,
+            )
+        }
+    }
+
+    private fun buildExecutionView(
+        request: SchemaMigrateRequest,
+        rendered: MigrationDdlResult,
+    ): SchemaMigrateExecutionView? {
+        if (!rendered.executionStarted && rendered.executionError == null) return null
+        // E.1 Slice F.7: executors that catch their own JDBC exceptions
+        // (e.g. JdbcMigrationExecutor.kt:247) put `cause.message` into
+        // `ExecutionTrace.executionError` directly. Driver messages
+        // often quote a fragment of the failing SQL (incl. routine
+        // bodies). Redact centrally here so all executor wiring is
+        // covered — F.1's catch-only redaction stays as defense in
+        // depth for executors that DO throw.
+        val allowRaw = request.bodyDisplay() == RoutineBodyDisplay.RAW_DEBUG
+        val redactedError = RoutineBodyLogRedactor.redact(rendered.executionError, allowRaw = allowRaw)
+        return SchemaMigrateExecutionView(
+            started = rendered.executionStarted,
+            completed = rendered.executionCompleted,
+            statementsAttempted = rendered.statementsAttempted,
+            lastStatementOperationIds = rendered.lastStatementOperationIds.toList(),
+            transactionRolledBack = rendered.transactionRolledBack,
+            sideEffectsPossible = rendered.sideEffectsPossible,
+            executionError = redactedError,
+            statementGroups = rendered.executionStatementGroups.map { group ->
+                SchemaMigrateStatementGroupView(
+                    statementGroupId = group.statementGroupId,
+                    operationIds = group.operationIds.toList(),
+                    statementStartInclusive = group.statementStartInclusive,
+                    statementEndExclusive = group.statementEndExclusive,
+                    transactionScope = group.transactionScope.name,
+                    transactionBoundary = group.transactionBoundary.name,
                 )
-            } else {
-                null
             },
+            recoverability = rendered.recoverability?.name,
+            // Up-DDL was applied to the DB iff the executor was
+            // started AND the runner-managed transaction wasn't
+            // rolled back. A clean rollback after a failed Up means
+            // no side effect — `upExecuted = false`.
+            upExecuted = rendered.executionStarted && !rendered.transactionRolledBack,
+            // `rollbackFinalized` is only known AFTER the artefact
+            // write attempt — populated by `finalize` via
+            // report.copy(...) before the report is written.
+            rollbackFinalized = null,
         )
     }
 

@@ -1027,15 +1027,16 @@ Entscheidung:
   ergaenzen.
 
 > Status-Update (2026-05-15): E.1 Slice A landed (PostgreSQL
-> Functions Up + Down, plan in `../in-progress/ImpPlan-0.9.7-E.1-routine-migration.md`).
+> Functions Up + Down, plan in `../done/ImpPlan-0.9.7-E.1-routine-migration.md`).
 > `FunctionDefinition`/`ProcedureDefinition` tragen jetzt
 > `security`/`definer`/`searchPath`/`sqlMode`; Body-Identitaet laeuft
 > ueber `RoutineBodyNormalizer` (LF + Trim + Trailing-Semicolon) plus
 > SHA-256. PostgreSQL-Renderer emittiert
 > `CREATE [OR REPLACE] FUNCTION` mit Dollar-Quoting, Parameter-Liste,
 > Return-Type, Language, optional `SECURITY` und `SET search_path`.
-> `--generate-rollback` blockiert Down fuer `ReplaceFunction` mit
-> `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`, sobald der Vorbody fehlt;
+> `--generate-rollback` blockierte Down fuer `ReplaceFunction` zuerst mit
+> `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`; seit Slice C.1.b ist der
+> kanonische Code `ROUTINE_DOWN_BODY_UNKNOWN`, sobald der Vorbody fehlt;
 > bei bekanntem Vorbody rendert Down `CREATE OR REPLACE FUNCTION` mit
 > dem alten Body. Reports surfacen Bodies nur via
 > `RoutineBodyScrubber.preview(...)`
@@ -1048,8 +1049,9 @@ Entscheidung:
 > `CREATE [OR REPLACE] PROCEDURE` und `DROP PROCEDURE` analog zum
 > Function-Renderer (ohne `RETURNS`), inkl. `SECURITY`/`SET
 > search_path`-Klauseln, dollar-quotedem Body, derselben Dollar-Tag-
-> Kollisionsbarriere und derselben Down-Blocker-Logik
-> (`ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`).
+> Kollisionsbarriere und derselben Down-Blocker-Logik. Der anfaengliche
+> Legacy-Code `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` wurde in Slice C.1.b
+> auf `ROUTINE_DOWN_BODY_UNKNOWN` migriert.
 >
 > Status-Update (2026-05-16): Slice C.1.a/b + Slice C.2 landed —
 > Capability- und Debug-Body-Infrastruktur (`RoutineCapability`,
@@ -1062,6 +1064,13 @@ Entscheidung:
 > `InvalidConfig`) und Server-Version-Floor. `SchemaReadResult`/
 > `ResolvedSchemaOperand` führen `mysqlServerVersion` als
 > Best-Effort-Probe.
+>
+> Status-Update (2026-05-16): E.1 Slice F.11 korrigiert den MySQL-
+> Familien-Default. Der neutrale `MYSQL`-Dialekt verwendet Oracle-MySQL-
+> Semantik (`CREATE OR REPLACE` fuer Stored Routines deaktiviert);
+> live erkannte MariaDB-Ziele aktivieren `CREATE OR REPLACE` ueber den
+> `MysqlServerVersion.vendor`-Token. File-to-file-MySQL bleibt konservativ
+> und nutzt bei sicherem Dependency-Guard `DROP` + `CREATE`.
 >
 > Status-Update (2026-05-16): Slice C.3 landed — `DependencyGuard`
 > Stub-Heuristik (`SAFE`/`UNSAFE`/`UNKNOWN`) in `hexagon:ports-read`

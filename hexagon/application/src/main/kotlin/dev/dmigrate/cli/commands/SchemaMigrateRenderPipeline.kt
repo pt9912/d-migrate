@@ -176,7 +176,11 @@ internal class SchemaMigrateRenderPipeline(
         } else {
             ExtensionInstallPolicy.NEVER
         },
-        routineCapability = RoutineCapabilityDefaults.forDialect(dialect),
+        routineCapability = if (dialect == DatabaseDialect.MYSQL) {
+            RoutineCapabilityDefaults.forMysqlServerVersion(mysqlServerVersion)
+        } else {
+            RoutineCapabilityDefaults.forDialect(dialect)
+        },
         mysqlServerVersion = mysqlServerVersion,
     )
 

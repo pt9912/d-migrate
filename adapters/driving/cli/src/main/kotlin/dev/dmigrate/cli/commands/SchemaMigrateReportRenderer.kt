@@ -29,6 +29,7 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "sqliteCastPreflights", renderSqliteCastPreflights(report.sqliteCastPreflights), indent = 1)
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
         appendField(sb, "bodyDisplay", jsonString(report.bodyDisplay.name), indent = 1)
+        appendField(sb, "bodyEmbedding", renderBodyEmbedding(report.bodyEmbedding), indent = 1)
         report.execution?.let { appendField(sb, "execution", renderExecution(it), indent = 1) }
         appendField(sb, "operations", renderOperations(report.operations), indent = 1)
         val stmts = report.statements
@@ -123,6 +124,11 @@ internal object SchemaMigrateReportRenderer {
         sb.append("dialect: ").append(report.dialect).append('\n')
         sb.append("planOnly: ").append(report.planOnly).append('\n')
         sb.append("bodyDisplay: ").append(report.bodyDisplay.name).append('\n')
+        sb.append("bodyEmbedding:\n")
+        sb.append("  status: ").append(report.bodyEmbedding.status.name).append('\n')
+        sb.append("  version: ").append(yamlString(report.bodyEmbedding.version)).append('\n')
+        sb.append("  source: ").append(report.bodyEmbedding.source.name).append('\n')
+        report.bodyEmbedding.reason?.let { sb.append("  reason: ").append(yamlString(it)).append('\n') }
     }
 
     private fun appendYamlSummary(sb: StringBuilder, summary: SchemaMigrateSummary) {
@@ -266,8 +272,19 @@ internal object SchemaMigrateReportRenderer {
     private fun renderStatements(stmts: List<SchemaMigrateStatementView>): String =
         stmts.joinToString(prefix = "[", postfix = "]", separator = ",") { s ->
             "{\"sql\":${jsonString(s.sql)},\"operationIds\":${jsonStringArray(s.operationIds)}," +
-                "\"phase\":${jsonString(s.phase)},\"destructive\":${s.destructive}}"
+                "\"phase\":${jsonString(s.phase)},\"destructive\":${s.destructive}," +
+                "\"sqlHash\":${jsonString(s.sqlHash)},\"sqlLength\":${s.sqlLength}," +
+                "\"scrubbedPreview\":${jsonString(s.scrubbedPreview)}," +
+                "\"scrubbingApplied\":${s.scrubbingApplied}}"
         }
+
+    private fun renderBodyEmbedding(be: dev.dmigrate.driver.BodyEmbedding): String = buildString {
+        append("{\"status\":").append(jsonString(be.status.name))
+        append(",\"version\":").append(jsonString(be.version))
+        append(",\"source\":").append(jsonString(be.source.name))
+        append(",\"reason\":").append(jsonOptString(be.reason))
+        append("}")
+    }
 
     private fun jsonStringArray(elements: List<String>): String =
         elements.joinToString(prefix = "[", postfix = "]", separator = ",") { jsonString(it) }
