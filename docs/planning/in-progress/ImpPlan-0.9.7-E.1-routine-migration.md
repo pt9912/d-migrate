@@ -436,9 +436,18 @@ Der Slice-C-Contract oben ist gross; die folgenden Implementierungs-
 Entscheidungen halten den Cut deterministisch und klein genug für
 einzelne Reviews.
 
-##### Cut in drei Sub-Slices
+##### Cut in vier Sub-Slices
 
-- **C.1 — Capability- und Debug-Body-Infrastruktur**:
+Slice C wird in vier Commits ausgeliefert: **C.1.a** (Capability-/
+Debug-Body-Infrastruktur, PG-Renderer unverändert), **C.1.b**
+(Goldens-/Pin-Update-Commit, migriert die zwei PG-Renderer-Stellen
+und ihre Pins auf `ROUTINE_DOWN_BODY_UNKNOWN`), **C.2** (MySQL-
+Routine-Renderer), **C.3** (Dependency-Guard-Stub +
+`DROP+CREATE`-Fallback). Die folgenden Detail-Blöcke
+beschreiben C.1.a; C.1.b ist im Diagnose-Code-Abschnitt unten
+beschrieben.
+
+- **C.1.a — Capability- und Debug-Body-Infrastruktur**:
   - Neues Domänenobjekt `RoutineCapability` in `hexagon:core`
     (`dev.dmigrate.core.diff.routine`):
     - `data class RoutineCapability(val function: RoutineKindCapability, val procedure: RoutineKindCapability)`
@@ -464,21 +473,23 @@ einzelne Reviews.
     Varianten `Active` / `Disabled` / `InvalidConfig`. Renderer
     fragt nur dieses Objekt, kennt die Konfig-Quelle nicht.
   - Wert-Typ `MysqlServerVersion` in
-    `dev.dmigrate.driver.mysql.MysqlServerVersion` (im
-    `driver-mysql`-Modul, nicht generisch in core, weil heute nur
-    MySQL eine Version-Schwelle hat):
+    `dev.dmigrate.driver.MysqlServerVersion` im Modul
+    `hexagon:ports-read`. **Begründung der Modulwahl**: heute lebt
+    bereits `MysqlNamedSequenceMode` als MySQL-spezifischer Wert-Typ
+    in `ports-read/DdlGenerationOptions.kt`; `ports-read` ist die
+    bestehende Konvention für dialekt-spezifische Werttypen, die
+    sowohl `hexagon:core` (via Vertrag) als auch
+    `adapters/driven/driver-mysql` (via Reader/Renderer) sehen
+    müssen, **ohne** Layering-Verletzung von core → driver-mysql.
+    `RoutineKindCapability.minServerVersion: MysqlServerVersion?`
+    referenziert den Typ aus core direkt — exakt analog zu
+    `DdlGenerationOptions.mysqlNamedSequenceMode`.
     - `data class MysqlServerVersion(val major: Int, val minor: Int, val patch: Int, val vendor: String? = null)`
     - `Comparable<MysqlServerVersion>` für `minServerVersion`-
       Vergleich.
     - Parser `MysqlServerVersion.parse(raw: String): MysqlServerVersion?`
       mit Pin-Tests für `8.0.36-log`, `5.7.44`, `10.11.6-MariaDB`,
-      `unknown` (→ null), Vendor-Suffix als Capture.
-    - `RoutineKindCapability.minServerVersion` ist vom Typ
-      `MysqlServerVersion?` — der Typ steht im Adapter-Modul, der
-      Vertrag in core hat eine Forward-Referenz, was per `expect`/
-      Vertragsabhängigkeit OK ist; alternativ ein leeres
-      `MinServerVersion`-Marker-Interface in core, das MySQL
-      implementiert. Implementierungsdetail; landet in C.1.
+      `8.4.0`, `unknown` (→ null), Vendor-Suffix als Capture.
   - Neue Blocker-/Diagnosekennung `ROUTINE_CAPABILITY_CONFIG_INVALID`
     (für `InvalidConfig`). Verhältnis zu §1
     `ROUTINE_DOWN_BODY_UNKNOWN` / `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`:
@@ -486,35 +497,54 @@ einzelne Reviews.
       **kanonische** generische Code für alle Routine-Down-Pfade
       ohne sicheren Vorbody.
     - Slice A/B haben bei Landung der ersten Iteration noch
-      `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` emittiert (Legacy-Name);
-      ein eigener kleiner Aufräum-Slice (geplant als C.1-Anhang
-      oder eigenständiger Cleanup-Commit) migriert PostgreSQL-
-      Function- und -Procedure-Renderer auf den kanonischen
-      generischen Namen.
+      `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` emittiert (Legacy-Name).
+      Die Migration auf den kanonischen generischen Code passiert
+      in **Sub-Slice C.1.b** (eigenständiger Commit innerhalb des
+      C.1-Slots, **nicht** vermischt mit der Capability-/
+      Debug-Body-Infrastruktur): er ist explizit ein **Goldens-
+      /Pin-Update-Slice**, ersetzt die `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`-
+      Emissionen in `PostgresDiffFunctionOps.kt:52` und
+      `PostgresDiffProcedureOps.kt:45` und passt die Pin-Assertions
+      in `PostgresDiffFunctionOpsTest.kt:102,116` sowie
+      `PostgresDiffProcedureOpsTest.kt:104,113` an. C.1.b liefert
+      damit keine Logikänderung, nur eine Diagnose-Kennungs-
+      Migration.
     - Neue Slices (MySQL ab C.2) emittieren ausschliesslich
       `ROUTINE_DOWN_BODY_UNKNOWN`. Es entsteht keine neue
       Replace-spezifische Diagnosekennung.
   - CLI-Flag `--debug-body` auf `schema migrate`/`schema rollback`:
     - Verdrahtung (vollständige Kette):
       Clikt-Option → `SchemaMigrateCommand`-Args
-      → `SchemaMigrateRequest.debugBody: Boolean` (neues Feld in
-      `hexagon:application` `SchemaMigrateRunner.kt`)
-      → `SchemaRollbackRequest.debugBody` analog
-      → `SchemaMigrateReportRenderer`/`ReportRenderOptions` mit
-      `bodyDisplay: RoutineBodyDisplay` (`SCRUBBED_ONLY` | `RAW_DEBUG`).
-    - `RoutineBodyDisplay` lebt **nicht** in `DdlGenerationOptions`,
-      weil DDL-Renderer immer den Roh-Body in der Execution-Plane
-      schreiben (sonst ist die Migration nicht ausführbar). Das
-      Flag steuert ausschliesslich die Report-/Display-Plane.
+      → `SchemaMigrateRequest.debugBody: Boolean = false` (neues
+      Feld in `hexagon:application` `SchemaMigrateRunner.kt`)
+      → `SchemaRollbackRequest.debugBody: Boolean = false` analog
+      → `SchemaMigrateReport.bodyDisplay: RoutineBodyDisplay`
+      (`SCRUBBED_ONLY` | `RAW_DEBUG`) als Output-Shaping-Feld direkt
+      auf dem Report-Datentyp.
+    - **Begründung Modulwahl `bodyDisplay`**: kein neuer Optionen-
+      Carrier-Typ und keine Lambda-Signatur-Änderung an
+      `renderReport: (SchemaMigrateReport, format: String) -> String`
+      (`SchemaMigrateRunner.kt:72`, `SchemaMigrateCommand.kt:121`).
+      `SchemaMigrateReport` trägt heute bereits display-only Felder
+      (`summary`, `diagnostics`); `bodyDisplay` ist konzeptionell
+      genauso eine output-shaping-Eigenschaft, nicht eine
+      Renderer-Konfiguration.
+    - `RoutineBodyDisplay` lebt damit **nicht** in
+      `DdlGenerationOptions` (DDL-Renderer schreiben Execution-Plane
+      immer roh) und **nicht** in einem neuen
+      `ReportRenderOptions`-Carrier (vermeidet eine API-Erweiterung
+      an `renderReport`).
     - Default in jedem Pfad: `SCRUBBED_ONLY`. Das `--debug-body`-Flag
       kippt nur die Display-Plane auf `RAW_DEBUG`; alle Logging-
       Hooks bleiben standardmäßig scrubbed.
-    - Test-Fixturen, die `SchemaMigrateRequest`/`SchemaRollbackRequest`
-      konstruieren (`SchemaMigrateCommandFunctionTest`,
-      `SchemaMigrateCommandProcedureTest`, der bestehende
-      `SchemaRollbackRunnerTest` etc.), müssen den neuen
-      Default-`debugBody=false`-Parameter mitführen — C.1 listet
-      das explizit als Touched-Test-Set.
+    - Touched-Tests in C.1: alle Konstruktor-Aufrufe von
+      `SchemaMigrateRequest` / `SchemaRollbackRequest`. Da
+      `debugBody: Boolean = false` ein Default-Parameter mit
+      Default-Wert ist, brechen Named-Arg- und Positional-Arg-Aufrufe
+      ohne expliziten Wert **nicht** — nur Tests, die `debugBody=true`
+      pinnen wollen, müssen den Parameter explizit setzen. C.1-AC
+      pflegt einen `grep`-Check, dass alle bestehenden Aufrufe weiter
+      kompilieren.
   - Capability-Konfiguration-Quelle in C.1:
     - Hardcoded je Dialekt in `RoutineCapabilityDefaults`. Keine
       YAML-/CLI-Override.
@@ -523,24 +553,32 @@ einzelne Reviews.
       ist so geschnitten, dass dieser Schritt keine API-Erweiterung
       am Renderer braucht — nur eine zusätzliche `resolve(...)`-
       Quelle, die statt der Defaults greift.
-  - **DoD C.1**:
+  - **DoD C.1.a** (Hauptcommit, Capability-/Debug-Body-Infrastruktur):
     - `RoutineCapability` + `RoutineCapabilityResolution` +
-      `MysqlServerVersion` + Parser existieren in den oben
-      genannten Modulen.
+      `RoutineBodyDisplay` existieren in `hexagon:core`;
+      `MysqlServerVersion` + Parser existieren in `hexagon:ports-read`;
+      `MysqlMetadataQueries.readServerVersion` existiert in
+      `driver-mysql`.
     - `--debug-body`-CLI-Pfad ist verdrahtet (Command → Request →
-      ReportRenderer) und getestet (Pin: ohne Flag ist Report
-      scrubbed-only; mit Flag erscheint Roh-Body in der
-      Display-Plane).
+      `SchemaMigrateReport.bodyDisplay` → `SchemaMigrateReportRenderer`)
+      und getestet (Pin: ohne Flag ist Report scrubbed-only; mit
+      Flag erscheint Roh-Body in der Display-Plane).
     - `RoutineCapability`/`RoutineCapabilityResolution` werden in
-      C.1 **nicht** in Renderern konsumiert. Slice-A/B-PG-Renderer
-      werden in C.1 nicht angefasst — keine Capability-Plumbing
-      durch `PostgresDiffRenderContext`, keine neue Variable im
-      Function-/Procedure-Op-Pfad. C.2 wird `routineCapability`
-      neu in `DdlGenerationOptions` einführen UND gleichzeitig
-      die MySQL-Renderer dafür ausstatten; der PG-Pfad bleibt
-      auch dann unverändert (siehe DoD C.2).
-    - Slice-A/B-Renderer-Tests + Goldens bleiben byte-identisch
-      grün (kein PG-Render-Diff).
+      C.1.a **nicht** in Renderern konsumiert. PG-Renderer
+      (Slice A/B) werden in C.1.a nicht angefasst — keine
+      Capability-Plumbing durch `PostgresDiffRenderContext`, keine
+      neue Variable im Function-/Procedure-Op-Pfad. C.2 wird
+      `routineCapability` neu in `DdlGenerationOptions` einführen
+      UND gleichzeitig die MySQL-Renderer dafür ausstatten; der
+      PG-Pfad bleibt auch dann unverändert (siehe DoD C.2).
+    - Slice-A/B-Renderer-Tests + Outputs bleiben byte-identisch grün
+      (kein PG-Render-Diff in C.1.a).
+  - **DoD C.1.b** (Goldens-/Pin-Update-Commit):
+    - PG-Function- und -Procedure-Renderer emittieren
+      `ROUTINE_DOWN_BODY_UNKNOWN` statt `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`.
+    - Zugehörige Test-Pins in `PostgresDiffFunctionOpsTest.kt` und
+      `PostgresDiffProcedureOpsTest.kt` folgen auf den neuen Code.
+    - Alle übrigen Slice-A/B-Assertions bleiben unverändert grün.
 
 - **C.2 — MySQL Function/Procedure Renderer Up + Down**:
   - Neuer `MysqlDiffRoutineOps` rendert
@@ -622,7 +660,7 @@ einzelne Reviews.
 
 ##### Akzeptanzkriterien pro Sub-Slice
 
-- C.1:
+- **C.1.a — Capability + Debug-Body-Infrastruktur** (Hauptcommit):
   - `RoutineCapability`-Tests pinnen die drei Resolution-Zweige
     (per Test-Fake für `InvalidConfig`, weil C.1 keinen Konfig-
     Loader hat).
@@ -630,14 +668,28 @@ einzelne Reviews.
     Versionsstrings (`8.0.36-log`, `5.7.44`, `10.11.6-MariaDB`,
     `8.4.0`, `unknown`) inklusive Vendor-Capture.
   - `--debug-body`-CLI-Test pinnt: ohne Flag bleibt der Report
-    scrubbed-only; mit Flag landet Roh-Body **nur** in der
-    Display-Plane (Report-JSON), Execution-SQL-Output bleibt
+    scrubbed-only (`bodyDisplay = SCRUBBED_ONLY`); mit Flag landet
+    Roh-Body **nur** in der Display-Plane (Report-JSON,
+    `bodyDisplay = RAW_DEBUG`), Execution-SQL-Output bleibt
     unverändert.
   - Default-Tests für PostgreSQL- und MySQL-Defaults pinnen die
     in C.1 festgelegten Werte (alle `enabled=true, minServerVersion=null`).
-  - Slice-A/B-Golden-Output-Regression-Pin: PG-Renderer-Outputs
-    bleiben byte-identisch zur Slice-B-Baseline.
-  - CHANGELOG-Eintrag C.1.
+  - Slice-A/B-Renderer-Output-Pin: PG-Renderer-Outputs bleiben
+    byte-identisch zur Slice-B-Baseline (C.1.a fasst die PG-Renderer
+    nicht an).
+  - CHANGELOG-Eintrag C.1.a.
+
+- **C.1.b — Diagnose-Code-Migration in PG-Renderern** (Goldens-Update):
+  - Eigenständiger Folge-Commit zu C.1.a, **bewusst getrennt**, weil
+    er Slice-A/B-Renderer-Goldens absichtlich verändert (von
+    `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` auf `ROUTINE_DOWN_BODY_UNKNOWN`).
+  - Renderer-Diff betrifft genau zwei Code-Stellen
+    (`PostgresDiffFunctionOps.kt:52`, `PostgresDiffProcedureOps.kt:45`)
+    und zwei Test-Pin-Sätze (`PostgresDiffFunctionOpsTest.kt:102,116`,
+    `PostgresDiffProcedureOpsTest.kt:104,113`).
+  - AC: betroffene Test-Pins emittieren den neuen Code, alle anderen
+    Slice-A/B-Assertions bleiben unverändert.
+  - CHANGELOG-Eintrag C.1.b.
 
 - C.2:
   - `MysqlDiffRoutineOpsTest` für Up/Down Create/Replace/Drop
@@ -666,68 +718,77 @@ einzelne Reviews.
 
 ```
 hexagon:core
-  └── dev.dmigrate.core.diff.routine.RoutineCapability        (C.1)
-  └── dev.dmigrate.core.diff.routine.RoutineKindCapability    (C.1)
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityResolution  (C.1)
-  └── dev.dmigrate.core.diff.routine.RoutineCapabilityDefaults    (C.1)
-  └── dev.dmigrate.core.diff.routine.DependencyGuard          (C.3)
-  └── dev.dmigrate.core.diff.routine.DependencyGuardEvaluator (C.3)
+  └── dev.dmigrate.core.diff.routine.RoutineCapability             (C.1.a)
+  └── dev.dmigrate.core.diff.routine.RoutineKindCapability         (C.1.a)
+  └── dev.dmigrate.core.diff.routine.RoutineCapabilityResolution   (C.1.a)
+  └── dev.dmigrate.core.diff.routine.RoutineCapabilityDefaults     (C.1.a)
+  └── dev.dmigrate.core.diff.routine.RoutineBodyDisplay            (C.1.a)
+  └── dev.dmigrate.core.diff.routine.DependencyGuard               (C.3)
+  └── dev.dmigrate.core.diff.routine.DependencyGuardEvaluator      (C.3)
 
 hexagon:ports-read
+  └── dev.dmigrate.driver.MysqlServerVersion (data class + parse)  (C.1.a)
+       Begründung: ports-read ist bereits Heimat dialektspezifischer
+       Wert-Typen (MysqlNamedSequenceMode). RoutineKindCapability
+       in core kann den Typ ohne Layering-Verletzung referenzieren.
   └── DdlGenerationOptions
-        + routineCapability: RoutineCapability                (C.2; in C.1 NICHT)
-        + mysqlServerVersion: MysqlServerVersion?             (C.2; in C.1 NICHT)
-       (kein routineBodyDisplay — gehört in den Report-Layer)
+        + routineCapability: RoutineCapability                     (C.2; in C.1 NICHT)
+        + mysqlServerVersion: MysqlServerVersion?                  (C.2; in C.1 NICHT)
+       (kein routineBodyDisplay — gehört auf SchemaMigrateReport)
 
 hexagon:application
   └── cli.commands.SchemaMigrateRunner.SchemaMigrateRequest
-        + debugBody: Boolean = false                          (C.1)
+        + debugBody: Boolean = false                               (C.1.a)
   └── cli.commands.SchemaRollbackRunner.SchemaRollbackRequest
-        + debugBody: Boolean = false                          (C.1)
+        + debugBody: Boolean = false                               (C.1.a)
+  └── cli.commands.SchemaMigrateReport
+        + bodyDisplay: RoutineBodyDisplay = SCRUBBED_ONLY          (C.1.a)
   └── cli.commands.SchemaMigrateRenderPipeline.buildRenderOptions
         (C.2) injects routineCapability via
         RoutineCapabilityDefaults.forDialect(dialect) und
         mysqlServerVersion aus dem MySQL-Reader, falls vorhanden.
-  └── ReportRenderOptions (oder gleichwertiger Hook)
-        + bodyDisplay: RoutineBodyDisplay = SCRUBBED_ONLY     (C.1)
 
 adapters/driving/cli
-  └── SchemaMigrateCommand: --debug-body Clikt-Option         (C.1)
-  └── SchemaRollbackCommand: --debug-body Clikt-Option        (C.1)
-  └── betroffene Test-Fixturen aktualisieren
-        SchemaMigrateCommandFunctionTest,
-        SchemaMigrateCommandProcedureTest,
-        SchemaRollbackRunnerTest …                            (C.1)
+  └── SchemaMigrateCommand: --debug-body Clikt-Option              (C.1.a)
+  └── SchemaRollbackCommand: --debug-body Clikt-Option             (C.1.a)
+  └── SchemaMigrateReportRenderer respektiert
+      report.bodyDisplay für scrubbed vs raw Body-Felder           (C.1.a)
+  └── Test-Fixturen mit explizitem debugBody=true
+      (neu in C.1.a) — bestehende Tests bleiben unverändert,
+      weil debugBody den Default-Wert false hat.
 
 adapters/driven/driver-mysql
-  └── MysqlServerVersion (data class + parse)                 (C.1)
-  └── MysqlMetadataQueries.readServerVersion(JdbcOperations)  (C.1)
-  └── MysqlDiffRoutineOps                                     (C.2)
+  └── MysqlMetadataQueries.readServerVersion(JdbcOperations):
+      MysqlServerVersion? — SELECT VERSION()                       (C.1.a)
+  └── MysqlDiffRoutineOps                                          (C.2)
   └── MysqlDiffDdlGenerator routet Routine-Ops in
-      MysqlDiffRoutineOps (Capability-Gate)                   (C.2)
+      MysqlDiffRoutineOps (Capability-Gate)                        (C.2)
   └── MysqlRoutineReader bezieht in Live-DB-Pfad
-      readServerVersion() via MysqlMetadataQueries            (C.2)
+      readServerVersion() via MysqlMetadataQueries                 (C.2)
+
+adapters/driven/driver-postgresql                                  (C.1.b)
+  └── PostgresDiffFunctionOps.kt: ROUTINE_REPLACE_DOWN_BODY_UNKNOWN
+      → ROUTINE_DOWN_BODY_UNKNOWN                                  (Goldens-Update)
+  └── PostgresDiffProcedureOps.kt: dito
+  └── PostgresDiffFunctionOpsTest.kt / PostgresDiffProcedureOpsTest.kt:
+      betroffene Pins folgen mit
 ```
 
 ##### Auswirkung auf bestehende Slice-A/B-Tests
 
-- C.1 lässt die PG-Renderer und ihre Tests unverändert: keine
+- C.1.a lässt die PG-Renderer und ihre Tests unverändert: keine
   Capability-Plumbing durch `PostgresDiffRenderContext`, keine
   Slice-A/B-Goldens berührt. Die Slice-A/B-Tests bleiben
-  byte-identisch grün, weil der PG-Render-Pfad in C.1 schlicht
+  byte-identisch grün, weil der PG-Render-Pfad in C.1.a schlicht
   nicht angefasst wird.
+- C.1.b ist **bewusst** eine Goldens-Drift: die zwei Renderer-
+  Emissionen und die zwei zugehörigen Test-Pin-Sätze migrieren auf
+  `ROUTINE_DOWN_BODY_UNKNOWN`. Das ist die ausdrücklich erwartete
+  Drift; AC C.1.b pinnt sie. Alle anderen Slice-A/B-Assertions
+  bleiben unverändert.
 - C.2 erweitert `DdlGenerationOptions` um `routineCapability` und
   `mysqlServerVersion`; das ist ein additives Data-Class-Update
   mit Defaults. PG-Renderer ignorieren die neuen Felder weiterhin.
-- Ein expliziter Golden-Output-Regression-Pin (Slice A + B) ist Teil
-  der C.1- und C.2-AC-Liste, damit eine versehentliche Drift sofort
-  gefangen wird.
-- PostgreSQL-Function-/-Procedure-Renderer migrieren in einem
-  späteren Cleanup-Slice (separat zu C.1/C.2/C.3) von
-  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` auf den kanonischen
-  generischen Code `ROUTINE_DOWN_BODY_UNKNOWN` (§1 Z. 74-77).
-  Bis dahin emittieren sie weiterhin den Replace-spezifischen
-  Legacy-Code; die zugehörigen Pins bleiben aktiv.
 - Reverse-Reader-Carve-out (Slice A) bleibt aktiv; Slice E öffnet
   den Body-Readback.
 
