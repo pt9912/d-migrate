@@ -1049,9 +1049,21 @@ Entscheidung:
 > Function-Renderer (ohne `RETURNS`), inkl. `SECURITY`/`SET
 > search_path`-Klauseln, dollar-quotedem Body, derselben Dollar-Tag-
 > Kollisionsbarriere und derselben Down-Blocker-Logik
-> (`ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`). Slice C (MySQL Routinen ohne
-> DELIMITER), Slice D (Dependency-Sortierung) und Slice E
-> (Down-Body-Recovery) bleiben offen.
+> (`ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`).
+>
+> Status-Update (2026-05-16): Slice C.1.a/b + Slice C.2 landed —
+> Capability- und Debug-Body-Infrastruktur (`RoutineCapability`,
+> `RoutineCapabilityDefaults`, `RoutineBodyDisplay`,
+> `MysqlServerVersion`) in `hexagon:ports-read`, dann Migration der
+> PG-Function-/Procedure-Renderer auf den kanonischen
+> `ROUTINE_DOWN_BODY_UNKNOWN`-Code, dann der MySQL-Renderer
+> (`MysqlDiffRoutineOps`) für Function und Procedure Up+Down mit
+> delimiterfreiem Artefakt, Capability-Gate (`Active`/`Disabled`/
+> `InvalidConfig`) und Server-Version-Floor. `SchemaReadResult`/
+> `ResolvedSchemaOperand` führen `mysqlServerVersion` als
+> Best-Effort-Probe. Slice C.3 (Dependency-Guard +
+> `DROP+CREATE`-Fallback), Slice D (Dependency-Sortierung) und
+> Slice E (Down-Body-Recovery) bleiben offen.
 
 ### E.2 Trigger-Migration
 

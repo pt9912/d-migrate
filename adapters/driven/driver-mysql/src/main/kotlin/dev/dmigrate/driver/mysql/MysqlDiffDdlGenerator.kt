@@ -69,6 +69,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         when (categorize(op)) {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OTHER -> renderOtherOp(op, ctx)
+            OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -106,16 +107,18 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropView,
         -> OpCategory.OTHER
 
-        is DiffOperation.AlterCustomType,
-        is DiffOperation.CreateSequence,
-        is DiffOperation.AlterSequence,
-        is DiffOperation.DropSequence,
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
+        -> OpCategory.ROUTINE
+
+        is DiffOperation.AlterCustomType,
+        is DiffOperation.CreateSequence,
+        is DiffOperation.AlterSequence,
+        is DiffOperation.DropSequence,
         is DiffOperation.CreateTrigger,
         is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger,
@@ -154,10 +157,22 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderRoutineOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateFunction -> MysqlDiffRoutineOps.renderCreateFunction(op, ctx)
+            is DiffOperation.ReplaceFunction -> MysqlDiffRoutineOps.renderReplaceFunction(op, ctx)
+            is DiffOperation.DropFunction -> MysqlDiffRoutineOps.renderDropFunction(op, ctx)
+            is DiffOperation.CreateProcedure -> MysqlDiffRoutineOps.renderCreateProcedure(op, ctx)
+            is DiffOperation.ReplaceProcedure -> MysqlDiffRoutineOps.renderReplaceProcedure(op, ctx)
+            is DiffOperation.DropProcedure -> MysqlDiffRoutineOps.renderDropProcedure(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised ROUTINE but renderRoutineOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first MySQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, ROUTINE, UNSUPPORTED }
 }

@@ -177,6 +177,7 @@ class SchemaMigrateRunner(
             plan = plan,
             overlayPreflight = overlayPreflight,
             cancellationToken = cancellationToken,
+            mysqlServerVersion = prepared.targetNormalized.mysqlServerVersion,
         )
 
         val executionTrace = executionStage.maybeExecute(

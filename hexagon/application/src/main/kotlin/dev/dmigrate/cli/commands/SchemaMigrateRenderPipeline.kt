@@ -7,6 +7,8 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.ExtensionInstallPolicy
+import dev.dmigrate.driver.MysqlServerVersion
+import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
@@ -61,6 +63,7 @@ internal class SchemaMigrateRenderPipeline(
         plan: DiffResult,
         overlayPreflight: MigrationOverlayPreflightResult,
         cancellationToken: CancellationToken,
+        mysqlServerVersion: MysqlServerVersion? = null,
     ): SchemaMigrateRenderResult {
         val probeOutcome = runProbe(request, targetOp, dialect, overlayPreflight)
         val castPreflightPlan = runCastPreflightPlan(request, targetOp, dialect, plan, overlayPreflight)
@@ -72,7 +75,9 @@ internal class SchemaMigrateRenderPipeline(
             castPreflightPlan,
             overlayPreflight,
         )
-        val renderOptions = buildRenderOptions(request, dialect, probeOutcome, castPreflightOutcome, castPreflightPlan)
+        val renderOptions = buildRenderOptions(
+            request, dialect, probeOutcome, castPreflightOutcome, castPreflightPlan, mysqlServerVersion,
+        )
         val renderedUp = renderUp(plan, overlayPreflight, renderer, renderOptions, probeOutcome, castPreflightOutcome)
         val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
 
@@ -152,6 +157,7 @@ internal class SchemaMigrateRenderPipeline(
         probeOutcome: SqliteProbeStage.Outcome,
         castPreflightOutcome: SqliteCastPreflightStage.Outcome,
         castPreflightPlan: MigrationPreflightPlan,
+        mysqlServerVersion: MysqlServerVersion?,
     ): DdlGenerationOptions = DdlGenerationOptions(
         spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
         executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
@@ -170,6 +176,8 @@ internal class SchemaMigrateRenderPipeline(
         } else {
             ExtensionInstallPolicy.NEVER
         },
+        routineCapability = RoutineCapabilityDefaults.forDialect(dialect),
+        mysqlServerVersion = mysqlServerVersion,
     )
 
     private fun renderUp(

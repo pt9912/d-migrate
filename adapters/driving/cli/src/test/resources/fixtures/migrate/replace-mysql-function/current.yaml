@@ -1,0 +1,17 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+functions:
+  compute_total:
+    parameters:
+      - name: amount
+        type: DECIMAL(10,2)
+    returns:
+      type: DECIMAL(10,2)
+    language: sql
+    deterministic: true
+    body: |
+      BEGIN
+        RETURN amount * 1.19;
+      END

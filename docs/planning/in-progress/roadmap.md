@@ -506,11 +506,16 @@ Aktuell offene 0.9.7-Restpunkte:
   Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
   *(2026-05-15: E.1 Slice A landed — PostgreSQL Functions Up+Down via
-  `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: Slice B landed —
-  PostgreSQL Procedures Up+Down über `PostgresDiffProcedureOps` mit
-  derselben Identity- und Blocker-Logik wie Slice A.
-  Slices C (MySQL), D (Dependency-Sort) und E (Down-Body-Recovery)
-  bleiben offen; Plan in `ImpPlan-0.9.7-E.1-routine-migration.md`.)*
+  `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: Slice B + Slice C.1.a/b
+  + Slice C.2 landed — PostgreSQL Procedures Up+Down, dann
+  Capability-/Debug-Body-Infrastruktur in `hexagon:ports-read` plus
+  Migration auf den kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-Code,
+  dann MySQL Function- und Procedure-Renderer mit delimiterfreiem
+  Artefakt und Capability-Gate über `routineCapability` +
+  `mysqlServerVersion`. Slice C.3 (Dependency-Guard +
+  `DROP+CREATE`-Fallback), Slice D (Dependency-Sortierung) und
+  Slice E (Down-Body-Recovery) bleiben offen; Plan in
+  `ImpPlan-0.9.7-E.1-routine-migration.md`.)*
 - **F.0-F.3 Rest**: automatische Daten-Transformationen,
   versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
 - **F.4 Rest**: Dependency-Re-Projection nach Rename

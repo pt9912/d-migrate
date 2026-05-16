@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1 Routine-Migration (PostgreSQL `CREATE OR REPLACE
 > FUNCTION` / `PROCEDURE`, MySQL Routinen)
-> **Status**: in-progress (Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16 — Slices C/D/E offen)
+> **Status**: in-progress (Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16, Slice C.1.a/b + C.2 ✅ 2026-05-16 — Slices C.3 / D / E offen)
 > **Vorbedingung**: Workstream G ✅ (transactionScope, strukturierte
 > Statement-Serialisierung, Execution-Status)
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`

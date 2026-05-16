@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **E.1 Routine-Migration Slice C.2** — MySQL function and
+  procedure renderer joins PostgreSQL in the diff/render pipeline.
+  New `MysqlDiffRoutineOps` covers `Create`/`Replace`/`Drop` of
+  `FUNCTION` and `PROCEDURE` in both Up and Down direction. The
+  body is emitted verbatim — no `DELIMITER` wrapper — so the
+  canonical plan artefact remains a single structured statement;
+  display variants may add a `DELIMITER` wrapper in a later slice.
+  `MysqlDiffDdlGenerator` gains an `OpCategory.ROUTINE` dispatch.
+  Capability-gated `CREATE OR REPLACE`: the renderer consults
+  `DdlGenerationOptions.routineCapability` (defaulted per dialect
+  via `RoutineCapabilityDefaults`) and the live
+  `mysqlServerVersion` from `MysqlSchemaReader`. `Active` ⇒
+  `CREATE OR REPLACE`; `Disabled` (capability off or
+  `minServerVersion` floor unmet) ⇒ `ROUTINE_CAPABILITY_DISABLED`
+  + `MANUAL_ACTION_REQUIRED`; `InvalidConfig` ⇒
+  `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED`.
+  The Dependency-Guard-aware `DROP + CREATE` fallback for
+  `Disabled` ships in Slice C.3. Down-render blocks with
+  `ROUTINE_DOWN_BODY_UNKNOWN` when the prior body is missing.
+  `SchemaReadResult` carries a new `mysqlServerVersion` field
+  populated by `MysqlSchemaReader` via
+  `MysqlMetadataQueries.readServerVersion()`; the probe is best-
+  effort (a privilege error on `VERSION()` falls back to null
+  instead of failing the read). `ResolvedSchemaOperand` and the
+  render pipeline thread the version through to
+  `DdlGenerationOptions`. PostgreSQL renderers and tests stay
+  byte-identical.
+
 ### Changed
 
 - **E.1 Routine-Migration Slice C.1.b** — PostgreSQL function and

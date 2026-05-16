@@ -64,7 +64,22 @@ class MysqlSchemaReader(
                 sequences = d2Result.sequences,
             )
 
-            return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)
+            // E.1 Slice C.2: best-effort server-version probe.
+            // `VERSION()` is a public scalar on standard MySQL/MariaDB
+            // installs, but a restricted introspection role or proxy
+            // may reject it; if so, fall back to `null` so the
+            // routine renderer treats it as "unknown live version"
+            // rather than failing the entire schema read.
+            val serverVersion = runCatching {
+                MysqlMetadataQueries.readServerVersion(session)
+            }.getOrNull()
+
+            return SchemaReadResult(
+                schema = schemaDef,
+                notes = notes,
+                skippedObjects = skipped,
+                mysqlServerVersion = serverVersion,
+            )
         }
     }
 

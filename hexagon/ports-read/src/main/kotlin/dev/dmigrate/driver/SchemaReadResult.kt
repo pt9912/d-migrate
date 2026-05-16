@@ -17,4 +17,13 @@ data class SchemaReadResult(
     val schema: SchemaDefinition,
     val notes: List<SchemaReadNote> = emptyList(),
     val skippedObjects: List<SkippedObject> = emptyList(),
+    /**
+     * E.1 Routine-Migration Slice C.2: live MySQL/MariaDB server
+     * version, populated by [SchemaReader] implementations that have
+     * access to the connection (today only `MysqlSchemaReader`).
+     * Used by `DdlGenerationOptions.mysqlServerVersion` so the
+     * MySQL routine renderer can resolve `minServerVersion` gates.
+     * Always `null` for non-MySQL dialects and file-only paths.
+     */
+    val mysqlServerVersion: MysqlServerVersion? = null,
 )
