@@ -201,6 +201,12 @@ private fun buildDependencies(
     if (dependencies.functions.isNotEmpty()) {
         node.set<ArrayNode>("functions", stringArray(mapper, dependencies.functions))
     }
+    // E.1 Slice D.1: `sequences` is only emitted when non-empty so
+    // Slice-A/B-era schema files (which never declared the field)
+    // keep their byte-identical YAML roundtrip.
+    if (dependencies.sequences.isNotEmpty()) {
+        node.set<ArrayNode>("sequences", stringArray(mapper, dependencies.sequences))
+    }
     // Phase G.2: only serialise `projection_complete` when it diverges
     // from the default `true`. MySQL-introspected views with stille
     // Unvollstaendigkeit (empty VIEW_TABLE_USAGE) get `false` written,

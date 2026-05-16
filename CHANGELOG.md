@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice D.1** — manifest-driven cross-
+  object dependency edges for the file-to-file path. New
+  `RoutineDependencyAnalyzer` (`hexagon:core/.../diff/migration/`,
+  `internal object`) runs as a second pass after the existing
+  `DependencyAnalyzer`. It adds Create/Replace-side edges from
+  routines / views / triggers onto their referenced tables /
+  views / functions / procedures / sequences (via each
+  definition's `DependencyInfo`), plus reverse-topology Drop
+  edges so a `DropView` runs before the matching `DropTable`,
+  a `DropTrigger` before the `DropFunction` it referenced, etc.
+  Triggers also pick up an unconditional edge onto their owning
+  table via `trigger.table`. `DependencyInfo` gains a
+  `sequences: List<String>` field; the codec only emits the
+  YAML key when non-empty so older schema-file goldens stay
+  byte-identical. `DiffPlanner` integrates the analyzer between
+  the FK pass and the topological sorter. Two routines that
+  co-exist in a plan without a manifest edge in either direction
+  now surface as `UNSAFE_DEPENDENCY_PAIR` BLOCKER diagnostics —
+  the operator must declare the relationship via
+  `dependencies.functions` or split the migration. The existing
+  generic `DEPENDENCY_CYCLE` code stays as the cycle marker; the
+  plan's earlier `ROUTINE_DEPENDENCY_CYCLE` proposal collapses
+  into it because the cycle detector is class-agnostic anyway.
+  `DependencyAnalyzer` file KDoc updated: the Phase-D carve-outs
+  for Drop-side ordering, Replace-body deps, and Trigger
+  ordering are now closed; materialized-view refresh remains
+  out of scope. PostgreSQL and MySQL renderers stay
+  byte-identical (no Slice A/B/C test churn).
+
 - **E.1 Routine-Migration Slice C.3** — Dependency-Guard stub +
   `DROP + CREATE` fallback for the MySQL renderer. New
   `DependencyGuard` enum (`SAFE`/`UNSAFE`/`UNKNOWN`) and

@@ -6,6 +6,19 @@ data class DependencyInfo(
     val columns: Map<String, List<String>> = emptyMap(),
     val functions: List<String> = emptyList(),
     /**
+     * E.1 Routine-Migration Slice D.1: sequences that this object's
+     * body references (e.g. via `nextval('seq')` in a routine or
+     * default expression in a view). Used by
+     * `RoutineDependencyAnalyzer` to attach Create-/Drop-Sequence
+     * edges so the dependency graph spans all five object classes
+     * (tables, views, routines, triggers, sequences).
+     *
+     * Slice A/B/C wrote no values here; the codec only emits the
+     * `sequences:` YAML key when this list is non-empty so older
+     * schema-file goldens stay byte-identical.
+     */
+    val sequences: List<String> = emptyList(),
+    /**
      * Whether the adapter that produced this dependency projection
      * could read every dependency source it relies on. Defaults to
      * `true` for hand-written schema files and adapters with single-

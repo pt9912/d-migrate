@@ -129,6 +129,7 @@ private fun parseDependencies(node: JsonNode?): DependencyInfo? {
         views = node["views"]?.toStringList() ?: emptyList(),
         columns = columns,
         functions = node["functions"]?.toStringList() ?: emptyList(),
+        sequences = node["sequences"]?.toStringList() ?: emptyList(),
         // Phase G.2: `projection_complete` is omitted when `true`
         // (the default) so hand-written schema files stay terse. An
         // explicit `false` survives a dump→load roundtrip and keeps

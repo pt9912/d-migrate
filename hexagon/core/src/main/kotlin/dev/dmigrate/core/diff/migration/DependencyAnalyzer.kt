@@ -10,7 +10,7 @@ import dev.dmigrate.core.model.DefaultValue
  * upstream concern (schema-level FK loops would already fail
  * validation before this layer).
  *
- * Edge rules implemented in the first slice:
+ * Edge rules implemented here (FK / sequence-default / view-table):
  *
  * - `CreateTable` with FK column / FK constraint → depends on the
  *   referenced table's `CreateTable` **or** `RenameTable` (when an
@@ -31,18 +31,19 @@ import dev.dmigrate.core.model.DefaultValue
  *   G.3 splits a `ReplaceView` into `DropView` + `CreateView` and the
  *   chained sibling does the same around a shared column-altering op).
  *
- * Out of scope for this slice (carved out for Phase D — see Plan
- * §6.1 and the integration-test plan §6.4):
+ * E.1 Routine-Migration Slice D.1: cross-object edges for routines,
+ * triggers, and the Drop side are added in a second-phase pass via
+ * [RoutineDependencyAnalyzer]. The pass runs after the FK / view
+ * pass and additively extends each op's dependencies. The
+ * `attach(...)` result also surfaces "unsafe routine pairs" (two
+ * routines in the same plan with no manifest edge in either
+ * direction) so the planner can emit `UNSAFE_DEPENDENCY_PAIR`
+ * diagnostics.
  *
- * - Drop-side `DropView` / `DropFunction` ordering (the inverse-sort
- *   in Phase D handles it via the planner's reverse traversal).
- * - `Replace*` body dependencies — `ReplaceFunction`, `ReplaceProcedure`,
- *   `ReplaceTrigger`, `ReplaceView` could in principle reference
- *   newly-created tables/views; today's renderer relies on dialect-
- *   level forward-reference tolerance (`CREATE OR REPLACE …`).
- * - Materialized view refresh ordering.
- * - Trigger → table / function / view ordering (declared via
- *   `trigger.dependencies` later).
+ * Out of scope (carved out for future slices):
+ *
+ * - Materialized view refresh ordering — owned by a separate F.x
+ *   workstream.
  *
  * Schema-qualified FK references (`other_schema.users`) are not yet
  * supported — `ConstraintReferenceDefinition.table` is a plain name

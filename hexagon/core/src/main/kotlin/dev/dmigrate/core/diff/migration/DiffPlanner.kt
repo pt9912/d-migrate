@@ -110,8 +110,13 @@ open class DiffPlanner {
         )
         diagnostics += mapperResult.diagnostics
         val splitOps = splitReplaceViewsForColumnConflicts(mapperResult.operations)
-        val opsWithDeps = DependencyAnalyzer.attach(splitOps)
-        val sortResult = TopologicalSorter.sort(opsWithDeps)
+        val opsWithFkDeps = DependencyAnalyzer.attach(splitOps)
+        // E.1 Slice D.1: second-phase analyzer for routine / view /
+        // trigger / sequence cross-edges plus unsafe-routine-pair
+        // detection. The unsafe-pair findings turn into
+        // `UNSAFE_DEPENDENCY_PAIR` BLOCKER diagnostics below.
+        val routineResult = RoutineDependencyAnalyzer.attach(opsWithFkDeps)
+        val sortResult = TopologicalSorter.sort(routineResult.operations)
 
         diagnostics += detectFkToBlockedTables(sortResult.sorted, blockedTables)
         diagnostics += detectViewColumnDepsBlockers(sortResult.sorted, current, desired)
@@ -125,6 +130,17 @@ open class DiffPlanner {
                     "deterministic phase / type / name order so the rest of the plan remains " +
                     "renderable, but the cycle members must not be executed without manual " +
                     "review.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+            )
+        }
+        for (pair in routineResult.unsafePairs) {
+            diagnostics += DiffDiagnostic(
+                code = "UNSAFE_DEPENDENCY_PAIR",
+                message = "Routine pair '${pair.first.displayName}' ↔ '${pair.second.displayName}' " +
+                    "co-exists in the plan without a manifest-declared dependency in either " +
+                    "direction. Slice D.1 cannot prove the two routines are independent — declare " +
+                    "the relationship via `dependencies.functions` in the routine's schema entry " +
+                    "or run the migration as two separate plans.",
                 severity = DiffDiagnostic.Severity.BLOCKER,
             )
         }
