@@ -174,6 +174,22 @@ internal object MysqlDiffRoutineOps {
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
         }
+        val returnType = fn.returns?.type
+        if (returnType == null) {
+            // MySQL requires every function to declare a return type. A
+            // schema-file Function without `returns` (or a reverse-read
+            // path that lost the return type) cannot render — block
+            // explicitly instead of crashing the renderer.
+            ctx.skip(
+                op,
+                "Function '${ref.rootName}': MySQL function rendering requires a return type. " +
+                    "The source/desired definition has none — set `returns:` in the schema file or " +
+                    "drop the function to remove it.",
+                code = "ROUTINE_RETURN_TYPE_UNKNOWN",
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
         val sql = buildString {
             append("CREATE ")
             if (orReplace) append("OR REPLACE ")
@@ -182,7 +198,7 @@ internal object MysqlDiffRoutineOps {
             append('(')
             append(renderParameters(fn.parameters))
             append(')')
-            append("\n  RETURNS ").append(renderReturnType(fn))
+            append("\n  RETURNS ").append(returnType)
             renderFunctionCharacteristics(this, fn)
             append('\n')
             append(body)
@@ -267,12 +283,6 @@ internal object MysqlDiffRoutineOps {
             }
             "$prefix${p.name} ${p.type}"
         }
-
-    private fun renderReturnType(fn: dev.dmigrate.core.model.FunctionDefinition): String =
-        fn.returns?.type ?: error(
-            "Function '${'$'}{fn}': MySQL function rendering requires a return type. " +
-                "Plan §3 routes function definitions without a return type to MANUAL_ACTION_REQUIRED upstream.",
-        )
 
     private fun RoutineSecurity.toMysqlKeyword(): String = when (this) {
         RoutineSecurity.INVOKER -> "INVOKER"

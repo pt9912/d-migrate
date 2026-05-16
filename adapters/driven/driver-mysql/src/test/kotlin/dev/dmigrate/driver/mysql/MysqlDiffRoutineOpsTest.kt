@@ -277,4 +277,81 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         r.isBlocked shouldBe false
         r.statements.single().sql.shouldContain("CREATE OR REPLACE FUNCTION `compute_total`")
     }
+
+    test("Replace with minServerVersion unmet by live target -> Disabled blocker") {
+        val cap = RoutineCapability(
+            function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
+            procedure = RoutineKindCapability(enabled = true),
+        )
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
+        val diff = comparator.compare(current, desired)
+        val r = gen.generateUp(
+            planner.plan(current, desired, diff),
+            DdlGenerationOptions(
+                routineCapability = cap,
+                mysqlServerVersion = MysqlServerVersion(5, 7, 44, vendor = "log"),
+            ),
+        )
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_CAPABILITY_DISABLED" } shouldBe true
+    }
+
+    // ── Edge cases caught by the C.2 post-commit review ───────────
+
+    test("CreateProcedure without body blocks with ROUTINE_BODY_UNKNOWN") {
+        val noBody = sampleProcedure.copy(body = null)
+        val r = planAndUp(SchemaDiff(proceduresAdded = listOf(NamedProcedure("audit_call", noBody))))
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_BODY_UNKNOWN" } shouldBe true
+    }
+
+    test("CreateFunction without RETURNS blocks with ROUTINE_RETURN_TYPE_UNKNOWN (no renderer crash)") {
+        // Reverse-read paths or hand-edited schema files may produce a
+        // Function with a body but no `returns:`. MySQL cannot render
+        // such a routine — block explicitly instead of crashing.
+        val noReturn = sampleFunction.copy(returns = null)
+        val r = planAndUp(SchemaDiff(functionsAdded = listOf(NamedFunction("compute_total", noReturn))))
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_RETURN_TYPE_UNKNOWN" } shouldBe true
+    }
+
+    test("ReplaceFunction Up without after-body blocks with ROUTINE_REPLACE_UP_BODY_UNKNOWN") {
+        // Operator declares a Function in the schema file without a
+        // body on the after side (e.g. forgot to copy the body in).
+        // The Up path's body-null guard reports a distinct code from
+        // the Down path so reports stay traceable.
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = null)
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
+        val diff = comparator.compare(current, desired)
+        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "ROUTINE_REPLACE_UP_BODY_UNKNOWN" } shouldBe true
+    }
+
+    test("DropProcedure (Up) emits DROP PROCEDURE without parameter signature") {
+        val r = planAndUp(
+            SchemaDiff(proceduresRemoved = listOf(NamedProcedure("audit_call", sampleProcedure))),
+            current = emptySchema().copy(procedures = mapOf("audit_call" to sampleProcedure)),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldContain("DROP PROCEDURE `audit_call`")
+        statement.shouldNotContain("(INT") // MySQL DROP carries no signature
+    }
+
+    test("DropProcedure Down re-creates the procedure with the stored definition") {
+        val r = planAndDown(
+            SchemaDiff(proceduresRemoved = listOf(NamedProcedure("audit_call", sampleProcedure))),
+            current = emptySchema().copy(procedures = mapOf("audit_call" to sampleProcedure)),
+        )
+        r.isBlocked shouldBe false
+        val statement = r.statements.single().sql
+        statement.shouldContain("CREATE PROCEDURE `audit_call`")
+        statement.shouldNotContain("OR REPLACE")
+    }
 })
