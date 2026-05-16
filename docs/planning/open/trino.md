@@ -250,7 +250,9 @@ Konfiguration der Session-Forwarding-Liste:
 - Normalisierung:
   - Whitespace wird getrimmt, leere Tokens verworfen, Kleinbuchstaben erzwungen.
   - Reihenfolge wird deterministisch sortiert und Duplikate dedupliziert.
-  - Jeder Eintrag muss das Muster `^[a-z](?:[a-z0-9_-]*[a-z0-9_])?(?:\\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)*$` erfüllen.
+  - Jeder Eintrag muss das Muster `^&#91;a-z&#93;(?:&#91;a-z0-9_-&#93;*&#91;a-z0-9_&#93;)?(?:\\.&#91;a-z0-9&#93;(?:&#91;a-z0-9_-&#93;*&#91;a-z0-9_&#93;)?)*$`
+    erfüllen. Die HTML-Entities vermeiden, dass der Docs-Link-Checker
+    Regex-Gruppen irrtümlich als Markdown-Link interpretiert.
   - Das Muster verbietet leere Segmente (z. B. `token.`, `a..b`).
   - Der Regex wird bei Bedarf über eine neue `DM_TRINO_SESSION_ALLOWLIST_V`-Version erweitert;
     aktuelle Schreibweise bleibt deterministisch (kleinbuchstabig, Punkt-/Unterstrich-/Bindestrich-Zulässig).

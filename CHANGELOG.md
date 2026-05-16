@@ -199,8 +199,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolve to `Active`. `Active` ⇒ `CREATE OR REPLACE`; `Disabled`
   (Oracle MySQL, capability off, or `minServerVersion` floor unmet)
   routes through the dependency guard and either emits `DROP` +
-  `CREATE` or blocks; `InvalidConfig` ⇒
-  `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED`.
+  `CREATE` or blocks; the reserved defensive `InvalidConfig` branch
+  yields `ROUTINE_CAPABILITY_CONFIG_INVALID` +
+  `MANUAL_ACTION_REQUIRED` once a configurable capability source can
+  make that state reachable.
   Down-render blocks with
   `ROUTINE_DOWN_BODY_UNKNOWN` when the prior body is missing.
   `SchemaReadResult` carries a new `mysqlServerVersion` field

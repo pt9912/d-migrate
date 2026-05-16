@@ -105,13 +105,11 @@ In Scope (dieser Workstream, ggf. in mehreren Slices):
     Konkret: `create_or_replace_routine` ist als Mapping je Routineart zu verstehen:
     - `FUNCTION`: `{ enabled: bool, minServerVersion?: string }`
     - `PROCEDURE`: `{ enabled: bool, minServerVersion?: string }`
-    - Fehlende oder invalides Mapping für eine Routineart (fehlender Eintrag,
-      nicht-objektförmig, nicht parsebare Versionsangabe) gilt als Konfigurationsfehler:
-      `enabled=false` für diese Routineart, zusätzliches Diagnosekriterium
-      `ROUTINE_CAPABILITY_CONFIG_INVALID`, und alle betroffenen Routine-Operationen
-      (`Create*`, `Replace*`, `Drop*`) landen in `MANUAL_ACTION_REQUIRED`
-      (inkl. Up-/Down-Pfaden, ohne `CREATE OR REPLACE` und ohne
-      `DROP + CREATE`-Fallback) bis das Mapping korrigiert ist.
+    - Fehlende oder invalide Mappings für eine Routineart (fehlender Eintrag,
+      nicht-objektförmig, nicht parsebare Versionsangabe) sind für eine spätere
+      konfigurierbare Capability-Quelle reserviert. E.1 liefert nur die
+      hardcodierten Defaults; deshalb ist `ROUTINE_CAPABILITY_CONFIG_INVALID`
+      in E.1 defensive Renderer-Infrastruktur und produktiv nicht erreichbar.
   - `ReplaceFunction`/`ReplaceProcedure` werden in Up- und Down-Pfad nur als
 	    - `enabled=false` ist auf den `CREATE OR REPLACE`-Pfad beschränkt; Signatur-Mismatch-Pfade (`DROP + CREATE`) werden nach den separaten Signatur-Differenz-Regeln entschieden.
 	    `CREATE OR REPLACE` gerendert, wenn der passende Routineart-Eintrag `enabled=true`
@@ -1257,14 +1255,18 @@ in der E.1-Planung §1/§4 verlangt aber bei den Slice-E-DoD-Audit
 	   nur bei aktivem Routineart-Capability-Flag `CREATE OR REPLACE` (Up- und Down-Pfad);
 	    Oracle MySQL ist per Default deaktiviert, live erkannte MariaDB-Ziele
 	    aktivieren `CREATE OR REPLACE`;
-	    bei fehlender oder invalidierter Routineart-Capability werden alle betroffenen
-	    `Create*`/`Replace*`/`Drop*` als `MANUAL_ACTION_REQUIRED` ausgegeben (Slice F.5);
+	    bei invalidierter Routineart-Capability werden alle betroffenen
+	    `Create*`/`Replace*`/`Drop*` als `MANUAL_ACTION_REQUIRED` ausgegeben
+	    (defensive Infrastruktur; produktiv erst mit konfigurierbarer Capability-Quelle);
     ein sicherer Drop+Create-Fallback ist nur mit gültiger Capability-Konfiguration und
     aktivem `Dependency-Sicherheits-Guard` denkbar.
     - Explizit: `Dependency-Sicherheits-Guard=SAFE` => `DROP`+`CREATE` erlaubt,
       `UNSAFE` oder `UNKNOWN` => `MANUAL_ACTION_REQUIRED`.
-    - Fehlende/invalides Capability-Mapping erzwingt `ROUTINE_CAPABILITY_CONFIG_INVALID`
+    - Der reservierte InvalidConfig-Pfad erzwingt `ROUTINE_CAPABILITY_CONFIG_INVALID`
       und führt in allen betroffenen Richtungen auf `MANUAL_ACTION_REQUIRED`.
+      In E.1 ist dieser Pfad mangels konfigurierbarer Capability-Quelle nur
+      defensive Infrastruktur; die produktive Quelle ist im Folgeplan
+      `open/ImpPlan-0.9.7-routine-capability-configurable-source.md` beschrieben.
   - Capability ist Routine-Typ-spezifisch (`FUNCTION`/`PROCEDURE`) und beruht auf
     Zielserver-Unterstützung inkl. Versions- und Objektklassen-Prüfung.
 - [x] `--generate-rollback` blockiert mit
