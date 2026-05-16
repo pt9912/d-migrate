@@ -871,7 +871,7 @@ adapters/driven/driver-postgresql                                  (C.1.b)
   Reihenfolge; eine Tabelle oder Sequenz, die eine Routine nutzt, blockiert nicht mehr
   beim Drop, wenn die tatsächliche Kanten-Graphenaufloesung korrekt ist.
   - Bei Zyklus oder unsortierbaren Dependency-Edges ist ein expliziter
-  Fehlerpfad erforderlich (`ROUTINE_DEPENDENCY_CYCLE` oder
+  Fehlerpfad erforderlich (`DEPENDENCY_CYCLE` oder
   `MANUAL_ACTION_REQUIRED` mit Objektliste).
 
 #### Slice D — Implementation Cut (Sub-Slices + Wiring)
@@ -1313,7 +1313,7 @@ in der E.1-Planung §1/§4 verlangt aber bei den Slice-E-DoD-Audit
   - Slice C: MySQL-Routine-Renderer, Capability-gesteuertes Replace-Verhalten,
     delimiterfreies Artefakt und Scrubbing vollständig abgedeckt.
   - Slice D: Dependency-Kantensortierung inkl. Fehlerpfade
-    (`ROUTINE_DEPENDENCY_CYCLE`, `MANUAL_ACTION_REQUIRED`).
+    (`DEPENDENCY_CYCLE`, `MANUAL_ACTION_REQUIRED`).
   - Slice E: Down-Rendering nur bei bekanntem Vorbody; `ROUTINE_DOWN_BODY_UNKNOWN`
     korrekt im Blockerpfad dokumentiert.
 	  - Slice F: Audit-Punchlist abgeschlossen — F.1 LogRedactor-Wiring,
