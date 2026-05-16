@@ -293,10 +293,4 @@ data class SchemaRollbackRequest(
     val allowPartialRollback: Boolean = false,
     val dryRun: Boolean = false,
     val cliConfigPath: Path? = null,
-    /**
-     * E.1 Routine-Migration Slice C.1.a: same unsafe display-plane
-     * override as on `SchemaMigrateRequest.debugBody`. Default false
-     * keeps scrubbed-only output across reports.
-     */
-    val debugBody: Boolean = false,
 )

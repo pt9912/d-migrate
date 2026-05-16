@@ -517,15 +517,20 @@ beschrieben.
     - Neue Slices (MySQL ab C.2) emittieren ausschliesslich
       `ROUTINE_DOWN_BODY_UNKNOWN`. Es entsteht keine neue
       Replace-spezifische Diagnosekennung.
-  - CLI-Flag `--debug-body` auf `schema migrate`/`schema rollback`:
+  - CLI-Flag `--debug-body` auf `schema migrate`:
     - Verdrahtung (vollständige Kette):
       Clikt-Option → `SchemaMigrateCommand`-Args
       → `SchemaMigrateRequest.debugBody: Boolean = false` (neues
       Feld in `hexagon:application` `SchemaMigrateRunner.kt`)
-      → `SchemaRollbackRequest.debugBody: Boolean = false` analog
       → `SchemaMigrateReport.bodyDisplay: RoutineBodyDisplay`
       (`SCRUBBED_ONLY` | `RAW_DEBUG`) als Output-Shaping-Feld direkt
       auf dem Report-Datentyp.
+    - `schema rollback` bleibt in C.1.a ohne `--debug-body`-Flag,
+      weil der Rollback-Pfad heute keinen JSON-/YAML-Report
+      rendert (und damit keinen Consumer für `bodyDisplay` hätte).
+      Sobald ein späterer Slice einen Rollback-Report einführt,
+      kann das Flag ohne Vertrags-Bruch nachgezogen werden — der
+      Capability-Vertrag bleibt unverändert.
     - **Begründung Modulwahl `bodyDisplay`**: kein neuer Optionen-
       Carrier-Typ und keine Lambda-Signatur-Änderung an
       `renderReport: (SchemaMigrateReport, format: String) -> String`
@@ -543,13 +548,12 @@ beschrieben.
       kippt nur die Display-Plane auf `RAW_DEBUG`; alle Logging-
       Hooks bleiben standardmäßig scrubbed.
     - Touched-Tests in C.1.a: alle Konstruktor-Aufrufe von
-      `SchemaMigrateRequest` / `SchemaRollbackRequest`. Da
-      `debugBody: Boolean = false` ein Default-Parameter mit
-      Default-Wert ist, brechen Named-Arg- und Positional-Arg-Aufrufe
-      ohne expliziten Wert **nicht** — nur Tests, die `debugBody=true`
-      pinnen wollen, müssen den Parameter explizit setzen. C.1.a-AC
-      pflegt einen `grep`-Check, dass alle bestehenden Aufrufe weiter
-      kompilieren.
+      `SchemaMigrateRequest`. Da `debugBody: Boolean = false` ein
+      Default-Parameter mit Default-Wert ist, brechen Named-Arg-
+      und Positional-Arg-Aufrufe ohne expliziten Wert **nicht** —
+      nur Tests, die `debugBody=true` pinnen wollen, müssen den
+      Parameter explizit setzen. C.1.a-AC pflegt einen `grep`-Check,
+      dass alle bestehenden Aufrufe weiter kompilieren.
   - Capability-Konfiguration-Quelle in C.1:
     - Hardcoded je Dialekt in `RoutineCapabilityDefaults`. Keine
       YAML-/CLI-Override.
@@ -744,8 +748,6 @@ hexagon:ports-read
 hexagon:application
   └── cli.commands.SchemaMigrateRunner.SchemaMigrateRequest
         + debugBody: Boolean = false                               (C.1.a)
-  └── cli.commands.SchemaRollbackRunner.SchemaRollbackRequest
-        + debugBody: Boolean = false                               (C.1.a)
   └── cli.commands.SchemaMigrateReport
         + bodyDisplay: RoutineBodyDisplay = SCRUBBED_ONLY          (C.1.a)
   └── cli.commands.SchemaMigrateRenderPipeline.buildRenderOptions
@@ -755,7 +757,8 @@ hexagon:application
 
 adapters/driving/cli
   └── SchemaMigrateCommand: --debug-body Clikt-Option              (C.1.a)
-  └── SchemaRollbackCommand: --debug-body Clikt-Option             (C.1.a)
+  └── (SchemaRollbackCommand bleibt ohne --debug-body bis ein
+       späterer Slice einen Rollback-Report einführt.)
   └── SchemaMigrateReportRenderer respektiert
       report.bodyDisplay für scrubbed vs raw Body-Felder           (C.1.a)
   └── Test-Fixturen mit explizitem debugBody=true

@@ -8,7 +8,10 @@ import dev.dmigrate.driver.metadata.*
  * Shared JDBC metadata queries for MySQL.
  *
  * Operates on an already-borrowed connection via [JdbcOperations].
- * Uses `information_schema` with `lower_case_table_names`-aware lookups.
+ * Most queries hit `information_schema` with
+ * `lower_case_table_names`-aware lookups; a few server-state probes
+ * (e.g. [readServerVersion]) use built-in scalars when
+ * `information_schema` offers no advantage.
  */
 object MysqlMetadataQueries {
 
@@ -296,11 +299,17 @@ object MysqlMetadataQueries {
 
     /**
      * E.1 Routine-Migration Slice C.1.a: live MySQL/MariaDB server
-     * version probe. Slice C.2 consumes the result via
-     * `DdlGenerationOptions.mysqlServerVersion` so the renderer can
-     * resolve [dev.dmigrate.driver.RoutineKindCapability]'s
-     * `minServerVersion` against the live target. Returns null when
-     * the server returns an empty/non-parseable VERSION() value.
+     * version probe via the built-in `VERSION()` scalar (not
+     * `information_schema` — deliberate, the alternative
+     * `information_schema.GLOBAL_VARIABLES` requires extra privileges
+     * on some MySQL/MariaDB configurations and offers no advantage
+     * for a single read).
+     *
+     * A later C.2 slice will plumb the result onto the renderer side
+     * so [dev.dmigrate.driver.RoutineKindCapability]'s
+     * `minServerVersion` can be resolved against the live target.
+     * Returns null when the server returns no row, a null `version`
+     * value, or an unparseable string.
      */
     fun readServerVersion(session: JdbcOperations): MysqlServerVersion? {
         val row = session.querySingle("SELECT VERSION() AS version") ?: return null
