@@ -108,9 +108,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-identical. `DiffPlanner` integrates the analyzer between
   the FK pass and the topological sorter. Two routines that
   co-exist in a plan without a manifest edge in either direction
-  now surface as `UNSAFE_DEPENDENCY_PAIR` BLOCKER diagnostics —
-  the operator must declare the relationship via
-  `dependencies.functions` or split the migration. The existing
+  surface as `UNSAFE_DEPENDENCY_PAIR` WARNING diagnostics (the
+  D.1 follow-up downgraded from BLOCKER so file-only multi-
+  routine plans aren't locked out by default; the D.4 topology
+  evaluator handles the actual routing decision — see the
+  Slice D.4 entry). The existing
   generic `DEPENDENCY_CYCLE` code stays as the cycle marker; the
   plan's earlier `ROUTINE_DEPENDENCY_CYCLE` proposal collapses
   into it because the cycle detector is class-agnostic anyway.

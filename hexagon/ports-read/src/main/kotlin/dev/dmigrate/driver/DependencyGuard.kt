@@ -4,24 +4,27 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 
 /**
- * E.1 Routine-Migration Slice C.3: rendering-time guard that
- * decides whether a `Disabled`-capability routine operation may
- * fall back to `DROP + CREATE` or must surface as
+ * E.1 Routine-Migration Slice C.3 + D.4: rendering-time guard
+ * that decides whether a `Disabled`-capability routine operation
+ * may fall back to `DROP + CREATE` or must surface as
  * `MANUAL_ACTION_REQUIRED`.
  *
- * The contract is intentionally three-state:
+ * The contract is three-state:
  *
- * - [SAFE]: no concurrent dependent ops in the plan; a routine that
- *   is dropped and re-created cannot leave a dangling reference
- *   behind because nothing else in this run depends on it.
- * - [UNSAFE]: the plan contains at least one other operation. The
- *   stub heuristic in [DependencyGuardEvaluator] cannot resolve the
- *   real dependency graph, so it treats *any* co-resident operation
- *   as a potential dependency.
- * - [UNKNOWN]: reserved for future evaluators that cannot decide
- *   one way or the other (e.g. partial metadata projection). The
- *   Slice C.3 stub never returns this — Slice D will widen the
- *   evaluator and may produce it.
+ * - [SAFE]: the [DependencyGuardEvaluator] could not find an
+ *   incoming or outgoing dependency edge between this op and any
+ *   other op in the plan. Edges come from
+ *   [dev.dmigrate.core.diff.migration.RoutineDependencyAnalyzer]
+ *   (manifest plus engine-metadata reads from Slices D.2 / D.3).
+ * - [UNSAFE]: at least one edge points to or from this op. A
+ *   `DROP + CREATE` fallback would risk leaving a dangling
+ *   reference, so the renderer blocks with
+ *   `MANUAL_ACTION_REQUIRED` instead.
+ * - [UNKNOWN]: the evaluator could not decide — for example
+ *   because the renderer was invoked without a plan context
+ *   (rare; happens in tightly-scoped helper tests). Treated as
+ *   `UNSAFE` for the routing decision so the conservative path
+ *   wins.
  *
  * Per Plan §3 step 5, only [SAFE] permits the automatic
  * `DROP + CREATE` fallback; [UNSAFE] / [UNKNOWN] always block with

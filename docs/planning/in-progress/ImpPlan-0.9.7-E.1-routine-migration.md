@@ -994,8 +994,14 @@ Renderer-Vertrag nach C.3 stabil bleibt.
     statt "isoliert == SAFE" prüft er, ob laut topologischer
     Sortierung aus D.1/D.2/D.3 keine andere Op im Plan eine
     eingehende Kante zur `op` hat oder eine ausgehende von `op`
-    weg. Wenn ja → UNSAFE; wenn der Analyzer wegen unsicherer Paare
-    blockiert → UNKNOWN; sonst SAFE.
+    weg. Wenn ja → UNSAFE; sonst SAFE.
+  - `UNKNOWN` bleibt im Vertrag, wird aber vom Evaluator selbst
+    nicht produziert: Unsafe-Paare aus D.1 sind WARNING-Diagnostics
+    und blockieren den Plan nicht — sie würden also nie zu
+    `UNKNOWN` hier führen. Der Renderer-Pfad in
+    `MysqlDiffRoutineOps.evaluateGuard` liefert `UNKNOWN` weiterhin
+    als Fallback, wenn der Renderer ohne Plan-Kontext aufgerufen
+    wird (heute nur in eng begrenzten Helfer-Tests).
   - Renderer (`MysqlDiffRoutineOps`) bleibt unverändert. Die
     `DEPENDENCY_GUARD_HEURISTIC`-Diagnose wird umbenannt /
     deklassifiziert: nicht mehr "Stub", sondern "Topologie-

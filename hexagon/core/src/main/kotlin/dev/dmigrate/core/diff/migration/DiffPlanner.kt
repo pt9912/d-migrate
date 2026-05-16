@@ -134,22 +134,28 @@ open class DiffPlanner {
             )
         }
         for (pair in routineResult.unsafePairs) {
-            // E.1 Slice D.1: WARNING (not BLOCKER) at the file-to-file
-            // layer. Plan §3 ultimately wants `MANUAL_ACTION_REQUIRED`
-            // here, but in D.1 the only edge source is the manifest;
-            // an operator who has not declared `dependencies.functions`
-            // between two unrelated routines would otherwise be locked
-            // out of every multi-routine plan. D.2 / D.3 add engine-
-            // metadata verification, which lets a later slice promote
-            // this back to BLOCKER once the analyzer can actually rule
-            // out hidden references via `pg_depend` / `information_schema`.
+            // E.1 Slice D.4: kept as a WARNING-severity safety net.
+            // The D.4 DependencyGuardEvaluator runs an
+            // edge-driven topology check, so an actual hidden
+            // dependency would have to be missing from BOTH the
+            // manifest AND the engine-metadata projection (D.2 /
+            // D.3) to escape. The WARNING covers that residual
+            // risk: it nudges the operator to declare the
+            // relationship explicitly via `dependencies.functions`
+            // when the file-only path lacks engine verification.
+            // Promotion to BLOCKER would lock every file-to-file
+            // multi-routine plan out by default, so the safer
+            // policy is to keep the diagnostic informational and
+            // rely on the topology evaluator for the actual
+            // routing decision.
             diagnostics += DiffDiagnostic(
                 code = "UNSAFE_DEPENDENCY_PAIR",
                 message = "Routine pair '${pair.first.displayName}' ↔ '${pair.second.displayName}' " +
                     "co-exists in the plan without a manifest-declared dependency in either " +
-                    "direction. Slice D.1 cannot prove the two routines are independent — declare " +
-                    "the relationship via `dependencies.functions` in the routine's schema entry, " +
-                    "or wait for the engine-verified strict gate in Slice D.2 / D.3.",
+                    "direction. The D.4 topology evaluator currently treats them as independent " +
+                    "because no edge is visible — if that is wrong, declare the relationship via " +
+                    "`dependencies.functions` in the routine's schema entry so the analyzer can " +
+                    "sequence the operations correctly.",
                 severity = DiffDiagnostic.Severity.WARNING,
             )
         }
