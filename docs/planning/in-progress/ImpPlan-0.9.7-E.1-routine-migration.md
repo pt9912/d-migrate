@@ -841,6 +841,182 @@ adapters/driven/driver-postgresql                                  (C.1.b)
   Fehlerpfad erforderlich (`ROUTINE_DEPENDENCY_CYCLE` oder
   `MANUAL_ACTION_REQUIRED` mit Objektliste).
 
+#### Slice D — Implementation Cut (Sub-Slices + Wiring)
+
+Der Slice-D-Contract oben fordert echte Topologie-Berechnung über
+fünf Objektklassen mit drei Kantenquellen (Manifest, PG-Engine,
+MySQL-Engine). Der Cut zerlegt das in vier Sub-Slices, deren
+Renderer-Vertrag nach C.3 stabil bleibt.
+
+##### Stand vor Slice D (existing infrastructure)
+
+- `DependencyInfo` (`hexagon:core/.../core/model/DependencyInfo.kt`)
+  modelliert heute pro Objekt `tables`/`views`/`functions`/`columns`
+  + `projectionComplete` + `*ProjectionStatus`-Enums. Wird von
+  `FunctionDefinition`/`ProcedureDefinition`/`TriggerDefinition`/
+  `ViewDefinition` getragen. **Sequenzen sind aktuell nicht
+  modelliert** — Slice D ergänzt sie.
+- `DependencyAnalyzer` (`hexagon:core/.../diff/migration/`,
+  `internal object`) erzeugt heute FK-/Sequence-/View-Edges für
+  Tabellen-Operationen. Routine/Trigger-Edges sind explizit als
+  Phase-D-Carve-out markiert (siehe File-KDoc Z. 33-46) — Slice D
+  füllt diese Lücke.
+- `PostgresProgrammabilityMetadataQueries` liest schon
+  `pg_depend`/`pg_rewrite` für View↔Table/Function-Edges;
+  `PostgresSchemaSync` liest `pg_trigger`. Slice D erweitert den
+  Reader-Pfad um Routine↔Table/View/Sequence-Edges.
+- MySQL kennt `VIEW_TABLE_USAGE`/`VIEW_ROUTINE_USAGE` (über
+  `MysqlMetadataQueries` schon konsumiert). Routine-Body-Edges
+  bleiben manifest-/konfig-basiert (Plan-Vorgabe).
+- `DependencyGuardEvaluator` (Slice C.3) ist ein Stub mit der
+  konservativen "isoliert iff plan.size == 1"-Heuristik. Renderer
+  ruft `DependencyGuardEvaluator.evaluate(plan, op)` — die public
+  API bleibt in Slice D unverändert; nur der Body wird durch
+  echte Topologie ersetzt.
+
+##### Cut in vier Sub-Slices
+
+- **D.1 — Schema-Manifest-Kanten + Dependency-Sort-Stufe**
+  (Datei-zu-Datei):
+  - `DependencyInfo` erweitern um `sequences: List<String>` für
+    Routine-/View-/Trigger-Bodies, die per `nextval(seq)` / Sequence-
+    Referenz auf eine Sequenz zeigen. Codec (`SchemaNodeProgrammability*`)
+    serialisiert das Feld nur, wenn nicht leer (Backwards-Kompat
+    Slice A/B Goldens).
+  - `RoutineDependencyAnalyzer` (neu, `hexagon:core/.../diff/migration/`,
+    `internal object`) baut die Routine-/Trigger-/View-Edges aus
+    `DependencyInfo`. Wird vom `DependencyAnalyzer.attach()` als
+    zweite Phase aufgerufen, sodass der bestehende FK-/View-Pfad
+    unverändert bleibt.
+  - Edge-Regeln (siehe Contract oben):
+    - `CreateView`/`ReplaceView` → depends on referenzierte
+      `CreateTable`/`RenameTable` und referenzierte `CreateFunction`/
+      `CreateProcedure`/`CreateSequence` im selben Plan.
+    - `CreateFunction`/`CreateProcedure`/`ReplaceFunction`/
+      `ReplaceProcedure` → depends on referenzierte Tabellen/Views/
+      Sequenzen (manifest-basiert).
+    - `CreateTrigger`/`ReplaceTrigger` → depends on Tabelle + ggf.
+      referenzierte Routinen (manifest-basiert).
+    - Drop-Edges (reverse): `DropTable`/`DropView`/`DropFunction`/
+      `DropProcedure`/`DropSequence` → depends on jeden anderen Drop,
+      der laut Manifest noch eine Referenz auf diese Quelle hält.
+    - Fehlende Kanten → Typ-Priorität (Sequence > Table > Function >
+      Procedure > View > Trigger für Create; reverse für Drop) +
+      Lexikografie als Tie-Breaker.
+  - Diagnose-Pfade:
+    - Zyklus → neuer Blocker-Code `ROUTINE_DEPENDENCY_CYCLE` mit
+      Liste der beteiligten `objectRef`-Paare. Bisher unbenutzt im
+      Code — wird in D.1 eingeführt.
+    - Unsicheres Paar (siehe Contract: Routine↔Routine,
+      Routine↔Tabelle/View/Sequence ohne Manifest-Kante) →
+      `MANUAL_ACTION_REQUIRED` mit `UNSAFE_DEPENDENCY_PAIR`-Code
+      und beteiligten `objectRef`s.
+  - **DoD D.1**: file-zu-file E2E mit allen fünf Objektklassen
+    erzeugt die richtige Drop/Create-Reihenfolge. Manifest-fehlt-
+    Tests pinnen den `MANUAL_ACTION_REQUIRED`-Pfad. Zyklus-Test
+    pinnt `ROUTINE_DEPENDENCY_CYCLE`. Slice-A/B/C-Renderer-Tests
+    bleiben byte-identisch (nur Sortierung kann sich ändern, was
+    aber nur bei mehreren Routine-Ops im Plan überhaupt
+    materialisiert — Slice A/B/C-Tests haben nie >1 Routine-Op).
+
+- **D.2 — PostgreSQL-Engine-Metadaten** (Datei-zu-DB PG):
+  - `PostgresProgrammabilityMetadataQueries` erweitern um:
+    - Routine ↔ Table/View/Sequence: `pg_depend`-Join auf
+      `pg_proc` (für Funktionen/Procedures) bzw. `pg_class` (für
+      Sequenzen). Liefert die Edges, die der PG-Schema-Reader in
+      `DependencyInfo.tables`/`views`/`sequences` der jeweiligen
+      Routine schreibt.
+    - Trigger ↔ Function: `pg_trigger.tgfoid` → `pg_proc.oid` für
+      die referenzierte Trigger-Function.
+  - `PostgresSchemaReader` (existiert) propagiert die neuen Edges
+    in die `DependencyInfo` der gelesenen Routine/Trigger.
+  - **DoD D.2**: PG file-zu-DB E2E mit Routine, die `pg_depend`
+    sauber liefert; Manifest-Kanten werden vom Reader überschrieben/
+    ergänzt. Bei fehlenden Privilegien auf `pg_depend` setzt der
+    Reader `routineProjectionStatus = INCOMPLETE_PRIVILEGE` —
+    Analyzer behandelt das wie "fehlende Manifest-Kante" und routet
+    in den `MANUAL_ACTION_REQUIRED`-Pfad.
+
+- **D.3 — MySQL-Engine-Metadaten** (Datei-zu-DB MySQL):
+  - `MysqlMetadataQueries` erweitern:
+    - View ↔ Table: `VIEW_TABLE_USAGE` (existiert).
+    - View ↔ Routine: `VIEW_ROUTINE_USAGE` (existiert).
+    - Trigger ↔ Table: aus `information_schema.TRIGGERS.event_object_table`.
+    - Routine ↔ Table/View/Sequence: nicht allgemeingültig
+      ableitbar (Routine-Body ist opake Bytes für MySQL), bleibt
+      manifest-/konfigurationsbasiert. Reader setzt
+      `routineProjectionStatus = UNKNOWN` für diese Edges, damit
+      der Analyzer weiß, dass er auf Manifest fallback.
+  - **DoD D.3**: MySQL file-zu-DB E2E mit View und Trigger, deren
+    Edges aus den Engine-Tabellen kommen; Routine-Edges aus dem
+    Manifest gespeist.
+
+- **D.4 — DependencyGuardEvaluator durch echte Topologie ersetzen**:
+  - `DependencyGuardEvaluator.evaluate(plan, op)`-Body wird ersetzt:
+    statt "isoliert == SAFE" prüft er, ob laut topologischer
+    Sortierung aus D.1/D.2/D.3 keine andere Op im Plan eine
+    eingehende Kante zur `op` hat oder eine ausgehende von `op`
+    weg. Wenn ja → UNSAFE; wenn der Analyzer wegen unsicherer Paare
+    blockiert → UNKNOWN; sonst SAFE.
+  - Renderer (`MysqlDiffRoutineOps`) bleibt unverändert. Die
+    `DEPENDENCY_GUARD_HEURISTIC`-Diagnose wird umbenannt /
+    deklassifiziert: nicht mehr "Stub", sondern "Topologie-
+    Bewertung" — neuer Code `DEPENDENCY_GUARD_TOPOLOGY` (oder
+    Diagnose-Severity bleibt INFO, Code-String wechselt).
+  - `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` (C.3 Follow-up) bleibt
+    aktiv — die Atomarität ändert sich durch D.4 nicht.
+  - **DoD D.4**: Alle C.3-Tests grün; ein neuer Test pinnt, dass
+    eine Replace-Operation mit echtem Dependent (Table↔Routine-
+    Edge) jetzt UNSAFE liefert auch wenn der Plan andere Ops
+    enthält, die NICHT von ihr abhängen — d.h. die Heuristik wird
+    durch eine selektivere Bewertung ersetzt.
+
+##### Modulgrenzen / Wiring-Pfad
+
+```
+hexagon:core
+  └── model.DependencyInfo                                         (D.1: + sequences-Feld)
+  └── diff.migration.RoutineDependencyAnalyzer                     (D.1)
+  └── diff.migration.DependencyAnalyzer (existing)
+        + Routine-/Trigger-/View-Edges via RoutineDependencyAnalyzer
+
+hexagon:ports-read
+  └── DependencyGuardEvaluator (existing, body neu in D.4)
+
+adapters/driven/driver-postgresql
+  └── PostgresProgrammabilityMetadataQueries (existing, + Routine
+      ↔ Table/View/Sequence + Trigger ↔ Function)                  (D.2)
+  └── PostgresSchemaReader propagiert neue Edges in DependencyInfo (D.2)
+
+adapters/driven/driver-mysql
+  └── MysqlMetadataQueries (existing, + TRIGGERS lookup)           (D.3)
+  └── MysqlSchemaReader propagiert View/Trigger-Edges              (D.3)
+      Routine-Edges bleiben manifest-basiert
+```
+
+##### Out of Scope (verschoben auf Slice E / spätere Iteration)
+
+- Routine-Body-Parsing für MySQL: explizit ausgeschlossen — wenn
+  der Operator Routine→Tabelle-Edges in MySQL braucht, muss er
+  sie im Manifest hinterlegen.
+- Cross-schema-Edges (eingeschränkt heute schon — `dependsOn`
+  nutzt unqualifizierte Namen).
+- Materialized-View-Refresh-Ordering (eigenes F.x-Workstream).
+
+##### Auswirkung auf bestehende Slices
+
+- Slice A/B-Tests: byte-identisch grün. Pläne mit nur einer
+  Routine-Op haben keine zu sortierenden Edges.
+- Slice C.1.b: byte-identisch grün (Diagnose-Code-Migration ist
+  abgeschlossen, D.4 ändert nur den HEURISTIC-Code).
+- Slice C.2: byte-identisch grün; der Capability-Gate-Pfad ist
+  unabhängig vom Guard.
+- Slice C.3 + Follow-up: die SAFE-Pfade können sich verhalten
+  ändern, wenn der Analyzer in D.4 eine andere Bewertung liefert
+  als die Stub-Heuristik. C.3-Tests konstruieren isolierte oder
+  klar dependent-Plans — Erwartung: D.4 hält dieselben Outcomes
+  ein. Falls nicht, ist es ein bewusstes Testupdate-Slice in D.4.
+
 ### Slice E — Down-Rendering wenn Vorbody bekannt
 
 - Wenn die Current-Schema-Side den alten Routine-Body traegt
