@@ -1068,10 +1068,22 @@ Entscheidung:
 > (SAFE iff isolierte Op, sonst UNSAFE). MySQL-Renderer öffnet
 > `DROP + CREATE`-Fallback bei SAFE-Guard und behält
 > `MANUAL_ACTION_REQUIRED` bei UNSAFE/UNKNOWN. Jede Guard-
-> Konsultation emittiert `DEPENDENCY_GUARD_HEURISTIC` als INFO-
-> Diagnostic. Slice D wird den Stub durch eine echte Topologie-
-> Berechnung ersetzen, ohne den Renderer-Vertrag zu ändern. Slice E
-> (Down-Body-Recovery) bleibt offen.
+> Konsultation emittiert ursprünglich `DEPENDENCY_GUARD_HEURISTIC`
+> als INFO-Diagnostic.
+>
+> Status-Update (2026-05-16, später am Tag): Slice D.1 + D.2 + D.3 +
+> D.4 + Slice E gelandet — Workstream E.1 komplett.
+> Cross-Object-Dependency-Edges aus dem Schema-Manifest
+> (`RoutineDependencyAnalyzer`, hexagon:core), PG-Engine-Metadaten
+> (`pg_depend` / `pg_trigger`-Reader-Wiring), MySQL-Trigger-Reader-
+> Wiring, topology-getriebener `DependencyGuardEvaluator` (ersetzt
+> den C.3-Stub; Diagnose-Code `DEPENDENCY_GUARD_HEURISTIC` →
+> `DEPENDENCY_GUARD_TOPOLOGY`) und PG-Reverse-Read der
+> Routine-Identity-Attribute (`security`/`definer`/`searchPath`
+> aus `pg_proc`). Slice-E-Carve-out für MySQL-Identity-Reverse-Read
+> dokumentiert in `docs/planning/open/`. ADR-0001 / ADR-0002 in
+> `docs/adr/` dokumentieren die WARNING-Severity-Entscheidungen.
+> Plan wandert nach `docs/planning/done/`.
 
 ### E.2 Trigger-Migration
 

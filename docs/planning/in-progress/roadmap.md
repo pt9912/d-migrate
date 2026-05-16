@@ -506,17 +506,19 @@ Aktuell offene 0.9.7-Restpunkte:
   Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
   *(2026-05-15: E.1 Slice A landed — PostgreSQL Functions Up+Down via
-  `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: Slice B + Slice C.1.a/b
-  + Slice C.2 + Slice C.3 landed — PostgreSQL Procedures Up+Down, dann
-  Capability-/Debug-Body-Infrastruktur in `hexagon:ports-read` plus
-  Migration auf den kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-Code,
-  dann MySQL Function- und Procedure-Renderer mit delimiterfreiem
-  Artefakt und Capability-Gate über `routineCapability` +
-  `mysqlServerVersion`, schliesslich der konservative Dependency-Guard-
-  Stub (`SAFE`/`UNSAFE`/`UNKNOWN`) mit `DROP + CREATE`-Fallback und
-  `DEPENDENCY_GUARD_HEURISTIC`-Diagnose. Slice D (Dependency-
-  Sortierung) und Slice E (Down-Body-Recovery) bleiben offen; Plan in
-  `ImpPlan-0.9.7-E.1-routine-migration.md`.)*
+  `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: alle restlichen
+  E.1-Slices gelandet — Slice B (PG Procedures), Slice C.1.a/b
+  (Capability- und Debug-Body-Infrastruktur in `hexagon:ports-read`
+  plus Migration auf den kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-
+  Code), Slice C.2 (MySQL Function/Procedure Renderer mit
+  delimiterfreiem Artefakt + Capability-Gate über `routineCapability`
+  + `mysqlServerVersion`), Slice C.3 (Dependency-Guard-Stub +
+  `DROP + CREATE`-Fallback), Slice D.1-D.4 (Manifest- und
+  Engine-Edges + topology-getriebene Dependency-Sortierung
+  über alle fünf Objektklassen) und Slice E (PG-Reverse-Read
+  populiert `security`/`definer`/`searchPath` aus `pg_proc`).
+  E.1 Workstream komplett; Plan wandert nach
+  `docs/planning/done/`.)*
 - **F.0-F.3 Rest**: automatische Daten-Transformationen,
   versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
 - **F.4 Rest**: Dependency-Re-Projection nach Rename

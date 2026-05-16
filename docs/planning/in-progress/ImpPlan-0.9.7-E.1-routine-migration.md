@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1 Routine-Migration (PostgreSQL `CREATE OR REPLACE
 > FUNCTION` / `PROCEDURE`, MySQL Routinen)
-> **Status**: complete (Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16, Slice C.1.a/b + C.2 + C.3 ✅ 2026-05-16, Slice D.1 + D.2 + D.3 + D.4 ✅ 2026-05-16, Slice E ✅ 2026-05-16). Plan ready to move to docs/planning/done/.
+> **Status**: done (Slice abgeschlossen 2026-05-16). Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16, Slice C.1.a/b + C.2 + C.3 ✅ 2026-05-16, Slice D.1 + D.2 + D.3 + D.4 ✅ 2026-05-16, Slice E ✅ 2026-05-16.
 > **Vorbedingung**: Workstream G ✅ (transactionScope, strukturierte
 > Statement-Serialisierung, Execution-Status)
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
@@ -181,9 +181,13 @@ Aus Scope:
 - MySQL-Reverse-Read von Routine-Identity-Attributen
   (`security`/`definer`/`sqlMode`) — Slice E schliesst diese
   Lücke nur für PostgreSQL (über `pg_proc`). MySQL bleibt mit
-  Reader-Defaults `null`; ein späterer dialekt-spezifischer
-  Slice kann den `information_schema.routines`-Projection-Pfad
-  ergänzen, sobald ein konkretes Bedürfnis dafür existiert.
+  Reader-Defaults `null`; Folge-Plan
+  [`open/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`](../open/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md).
+- Konfigurierbare Capability-Quelle (CLI / YAML) — Defaults sind
+  in C.1.a hardcoded je Dialekt, eine operator-überschreibbare
+  Quelle (mit `InvalidConfig`-Pfad) gehört in einen späteren
+  Slice; Folge-Plan
+  [`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`](../open/ImpPlan-0.9.7-routine-capability-configurable-source.md).
 - Validator-Regel "INVOKER + definer ist widersinnig" — heute
   akzeptiert der File-Loader `security: invoker` + `definer: X`
   ohne Fehler, und der Reverse-Read setzt `definer = null` für
@@ -254,7 +258,7 @@ Präzisierung der Auto-Plan-Regelung (vor F.2):
    - `Dependency-Sicherheits-Guard=UNSAFE` oder `UNKNOWN` blockiert in allen Slices
      die automatischen `DROP + CREATE`-Fallbacks.
 
-### Slice A — PostgreSQL Functions (MVP, dieser Slice)
+### Slice A — PostgreSQL Functions (MVP, dieser Slice) ✅ (2026-05-15)
 
 Vertikaler erster Schritt: ein Dialekt, eine Routinen-Klasse mit Up- und bekanntem Vorbody-Down-Pfad.
 
@@ -388,7 +392,7 @@ Geliefert:
   `PostgresDiffProcedureOpsTest` (Create/Replace/Drop Up+Down
   inkl. Blocker), `SchemaMigrateCommandProcedureTest` (E2E).
 
-### Slice C — MySQL Routines
+### Slice C — MySQL Routines ✅ (2026-05-16)
 
 - MySQL-Renderer fuer `CreateFunction`/`CreateProcedure`,
   `ReplaceFunction`/`ReplaceProcedure` und
@@ -718,7 +722,17 @@ beschrieben.
   - Capability-Negativtests via Test-Fake:
     - `Disabled` → `MANUAL_ACTION_REQUIRED`.
     - `InvalidConfig` → `MANUAL_ACTION_REQUIRED` +
-      `ROUTINE_CAPABILITY_CONFIG_INVALID`.
+      `ROUTINE_CAPABILITY_CONFIG_INVALID`. **Stand 2026-05-16**:
+      `resolve(RoutineKindCapability, MysqlServerVersion?)` ist
+      deterministisch und produziert in der C.1.a-Codebasis nie
+      `InvalidConfig` — der Renderer-Branch
+      (`MysqlDiffRoutineOps.blockCapabilityInvalid`) ist defensive
+      Infrastruktur. `RoutineCapabilityTest` pinnt die
+      `InvalidConfig`-Resolution direkt; der Renderer-Pfad-Test
+      kommt mit dem Folge-Slice
+      [`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`](../open/ImpPlan-0.9.7-routine-capability-configurable-source.md),
+      sobald eine konfigurierbare Capability-Quelle existiert,
+      die unparsable / inkonsistent sein kann.
   - File-zu-DB-Pin: `MysqlMetadataQueries.readServerVersion()`
     wird über einen Fake-`JdbcOperations` exerziert und das
     Ergebnis im Renderer-Pfad gepinnt.
@@ -733,7 +747,9 @@ beschrieben.
   - Guard-Stub-Test (`SAFE` bei isolierter Routine, `UNSAFE` sobald
     weitere Routine-/Tabellen-Ops im Plan).
   - Renderer-Test pinnt `DROP+CREATE` nur unter `SAFE`.
-  - Diagnose-Test pinnt `DEPENDENCY_GUARD_HEURISTIC` im Report.
+  - Diagnose-Test pinnt `DEPENDENCY_GUARD_HEURISTIC` im Report
+    (in Slice D.4 umbenannt auf `DEPENDENCY_GUARD_TOPOLOGY` —
+    siehe Slice-D.4-Block unten).
 
 ##### Modulgrenzen / Wiring-Pfad
 
@@ -815,7 +831,7 @@ adapters/driven/driver-postgresql                                  (C.1.b)
   ab Slice A; Slice E ergänzt die Identity-Attribute, die für
   einen sauberen `--generate-rollback`-Down-Pfad fehlten).
 
-### Slice D — Dependency-Sortierung Routine ↔ Tabelle/View/Trigger/Sequence
+### Slice D — Dependency-Sortierung Routine ↔ Tabelle/View/Trigger/Sequence ✅ (2026-05-16)
 
 - `OperationMapper`/`OperationOrderer` bekommt einen
   Dependency-Sort-Schritt, der Routinen, Views, Trigger, Tabellen und Sequenzen
@@ -1086,7 +1102,7 @@ adapters/driven/driver-mysql
   klar dependent-Plans — Erwartung: D.4 hält dieselben Outcomes
   ein. Falls nicht, ist es ein bewusstes Testupdate-Slice in D.4.
 
-### Slice E — Down-Rendering wenn Vorbody bekannt
+### Slice E — Down-Rendering wenn Vorbody bekannt ✅ (2026-05-16)
 
 - Wenn die Current-Schema-Side den alten Routine-Body traegt
   (Datei-zu-Datei) oder die Live-DB ihn liefert (Datei-zu-DB), darf
