@@ -1,0 +1,18 @@
+schema_format: "1.0"
+name: "TestApp"
+version: "1.0.0"
+
+procedures:
+  audit_call:
+    parameters:
+      - name: id_in
+        type: integer
+    language: plpgsql
+    security: definer
+    search_path:
+      - public
+      - audit
+    body: |
+      BEGIN
+        CALL audit_log_v2(id_in);
+      END

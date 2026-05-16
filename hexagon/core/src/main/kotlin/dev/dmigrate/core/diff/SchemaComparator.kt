@@ -193,13 +193,28 @@ class SchemaComparator {
         left: ProcedureDefinition,
         right: ProcedureDefinition,
     ): ProcedureDiff? {
+        // E.1 Slice B: same identity contract as Slice A's function
+        // comparator — body equality runs through the normaliser so
+        // trivial whitespace / trailing-semicolon / line-ending
+        // changes do not trip a spurious ReplaceProcedure. Identity
+        // additionally covers security / definer / searchPath /
+        // sqlMode; any divergence there triggers Replace even when
+        // bodies are byte-identical.
+        val leftBodyHash = RoutineBodyNormalizer.hash(left.body)
+        val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
+        val bodyChange = if (leftBodyHash == rightBodyHash) null
+            else ValueChange(left.body, right.body)
         val diff = ProcedureDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
                 else ValueChange(left.parameters, right.parameters),
             language = valueChangeOrNull(left.language, right.language),
-            body = valueChangeOrNull(left.body, right.body),
+            body = bodyChange,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
+            security = valueChangeOrNull(left.security, right.security),
+            definer = valueChangeOrNull(left.definer, right.definer),
+            searchPath = valueChangeOrNull(left.searchPath, right.searchPath),
+            sqlMode = valueChangeOrNull(left.sqlMode, right.sqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }

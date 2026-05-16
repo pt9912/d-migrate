@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice B** — PostgreSQL procedures join
+  functions in the diff/render pipeline. `ProcedureDiff` gains the
+  same `security` / `definer` / `searchPath` / `sqlMode` value-change
+  fields that Slice A added to `FunctionDiff`; the comparator now
+  hash-compares procedure bodies through `RoutineBodyNormalizer` so
+  cosmetic CRLF / trailing-semicolon / line-ending changes no longer
+  trigger a spurious `ReplaceProcedure`. A new
+  `PostgresDiffProcedureOps` renderer emits `CREATE PROCEDURE` /
+  `CREATE OR REPLACE PROCEDURE` / `DROP PROCEDURE` with dollar-quoted
+  bodies, parameter lists, optional `LANGUAGE` / `SECURITY` /
+  `SET search_path` clauses, and PostgreSQL's signature contract for
+  DROP (OUT params dropped, INOUT prefixed). `--generate-rollback`
+  blocks `ReplaceProcedure` Down with
+  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` + `ROLLBACK_NOT_POSSIBLE` when
+  the prior body is unknown; with a known prior body it renders
+  `CREATE OR REPLACE PROCEDURE` reverting to the before-body.
+  `ROUTINE_BODY_DOLLAR_TAG_COLLISION` guards against bodies that
+  contain the renderer's `$body$` tag. Trigger ops remain blocked
+  with `DIALECT_UNSUPPORTED_OPERATION` until Slice E.2; MySQL routine
+  rendering and routine dependency sorting stay scheduled for Slice
+  C/D in the same ImpPlan.
 - **E.1 Routine-Migration Slice A** — PostgreSQL functions are now
   diffable and renderable.
   `FunctionDefinition` / `ProcedureDefinition` gain optional

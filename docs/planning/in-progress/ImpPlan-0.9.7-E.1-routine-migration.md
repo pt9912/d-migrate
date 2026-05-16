@@ -3,7 +3,7 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1 Routine-Migration (PostgreSQL `CREATE OR REPLACE
 > FUNCTION` / `PROCEDURE`, MySQL Routinen)
-> **Status**: in-progress (Slice A ✅ landed 2026-05-15 — Slices B/C/D/E offen)
+> **Status**: in-progress (Slice A ✅ 2026-05-15, Slice B ✅ 2026-05-16 — Slices C/D/E offen)
 > **Vorbedingung**: Workstream G ✅ (transactionScope, strukturierte
 > Statement-Serialisierung, Execution-Status)
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
@@ -349,12 +349,32 @@ Vertikaler erster Schritt: ein Dialekt, eine Routinen-Klasse mit Up- und bekannt
   geaendertem Function-Body rendert `CREATE OR REPLACE FUNCTION`
   ohne Routine-Drop+Create.
 
-### Slice B — PostgreSQL Procedures
+### Slice B — PostgreSQL Procedures ✅ (2026-05-16)
 
 Wie Slice A, aber fuer `ProcedureDefinition` und `Create/Replace/Drop
   Procedure` (mit prozedur-spezifischer Signatur ohne `return type`).
   Reuse von `RoutineBodyNormalizer` und
   `RoutineBodyScrubber`.
+
+Geliefert:
+
+- `ProcedureDiff` um `security`/`definer`/`searchPath`/`sqlMode`-
+  ValueChange-Felder erweitert; `SchemaComparator.compareProcedure`
+  vergleicht Body via `RoutineBodyNormalizer.hash`.
+- `PostgresDiffProcedureOps` rendert `CREATE [OR REPLACE] PROCEDURE`
+  und `DROP PROCEDURE` mit denselben Body-Quoting-,
+  Dollar-Tag-Kollisions- und Down-Blocker-Pfaden wie der
+  Function-Renderer; `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` /
+  `ROUTINE_REPLACE_UP_BODY_UNKNOWN` /
+  `ROUTINE_BODY_DOLLAR_TAG_COLLISION` werden geteilt.
+- `PostgresDiffDdlGenerator` kategorisiert Procedure-Ops in eine
+  eigene `OpCategory.PROCEDURE` und delegiert an die neuen Ops; die
+  Boundary-Test-Pinnung wandert auf Trigger.
+- Codec, Fingerprint und Reverse-Reader-Carve-out wurden bereits in
+  Slice A geliefert, gelten weiterhin auch für Procedures.
+- Tests: `SchemaComparatorRoutineTest` (Procedure-Identity-Pins),
+  `PostgresDiffProcedureOpsTest` (Create/Replace/Drop Up+Down
+  inkl. Blocker), `SchemaMigrateCommandProcedureTest` (E2E).
 
 ### Slice C — MySQL Routines
 

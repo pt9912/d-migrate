@@ -1,6 +1,7 @@
 package dev.dmigrate.core.diff
 
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.core.model.SchemaDefinition
 import io.kotest.core.spec.style.FunSpec
@@ -25,6 +26,12 @@ class SchemaComparatorRoutineTest : FunSpec({
         name = "Test",
         version = "1.0",
         functions = functions,
+    )
+
+    fun schemaWithProcs(procedures: Map<String, ProcedureDefinition>) = SchemaDefinition(
+        name = "Test",
+        version = "1.0",
+        procedures = procedures,
     )
 
     test("cosmetic body changes (CRLF, trailing semicolon, whitespace) do NOT trigger ReplaceFunction") {
@@ -91,5 +98,72 @@ class SchemaComparatorRoutineTest : FunSpec({
         val diff = comparator.compare(schemaWith(mapOf("f" to before)), schemaWith(mapOf("f" to after)))
         diff.functionsChanged.shouldHaveSize(1)
         diff.functionsChanged.single().sqlMode.shouldNotBeNull()
+    }
+
+    // ── Slice B: procedure identity pins ──
+
+    test("Slice B: cosmetic procedure body changes do NOT trigger ReplaceProcedure") {
+        val before = ProcedureDefinition(body = "BEGIN\n  CALL log('x');\nEND", language = "plpgsql")
+        val after = ProcedureDefinition(body = "BEGIN\r\n  CALL log('x');\r\nEND;  \n", language = "plpgsql")
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldBeEmpty()
+    }
+
+    test("Slice B: real procedure body change triggers ReplaceProcedure") {
+        val before = ProcedureDefinition(body = "BEGIN CALL log('x'); END", language = "plpgsql")
+        val after = ProcedureDefinition(body = "BEGIN CALL log('y'); END", language = "plpgsql")
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldHaveSize(1)
+        diff.proceduresChanged.single().body.shouldNotBeNull()
+    }
+
+    test("Slice B: procedure security flip alone triggers ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "plpgsql",
+            security = RoutineSecurity.INVOKER,
+        )
+        val after = before.copy(security = RoutineSecurity.DEFINER)
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldHaveSize(1)
+        diff.proceduresChanged.single().security.shouldNotBeNull()
+        diff.proceduresChanged.single().body shouldBe null
+    }
+
+    test("Slice B: procedure definer change alone triggers ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "plpgsql",
+            security = RoutineSecurity.DEFINER,
+            definer = "svc_app",
+        )
+        val after = before.copy(definer = "svc_app_v2")
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldHaveSize(1)
+        diff.proceduresChanged.single().definer.shouldNotBeNull()
+    }
+
+    test("Slice B: procedure search_path change alone triggers ReplaceProcedure") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "plpgsql",
+            searchPath = listOf("public"),
+        )
+        val after = before.copy(searchPath = listOf("public", "audit"))
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldHaveSize(1)
+        diff.proceduresChanged.single().searchPath.shouldNotBeNull()
+    }
+
+    test("Slice B: procedure sql_mode change alone triggers ReplaceProcedure (MySQL-style)") {
+        val before = ProcedureDefinition(
+            body = "BEGIN END",
+            language = "plpgsql",
+            sqlMode = "STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION",
+        )
+        val after = before.copy(sqlMode = "STRICT_TRANS_TABLES")
+        val diff = comparator.compare(schemaWithProcs(mapOf("p" to before)), schemaWithProcs(mapOf("p" to after)))
+        diff.proceduresChanged.shouldHaveSize(1)
+        diff.proceduresChanged.single().sqlMode.shouldNotBeNull()
     }
 })

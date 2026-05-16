@@ -83,6 +83,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.OTHER -> renderOtherOp(op, ctx)
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.FUNCTION -> renderFunctionOp(op, ctx)
+            OpCategory.PROCEDURE -> renderProcedureOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -129,10 +130,12 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropFunction,
         -> OpCategory.FUNCTION
 
-        is DiffOperation.AlterCustomType,
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
+        -> OpCategory.PROCEDURE
+
+        is DiffOperation.AlterCustomType,
         is DiffOperation.CreateTrigger,
         is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger,
@@ -189,10 +192,19 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderProcedureOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateProcedure -> PostgresDiffProcedureOps.renderCreateProcedure(op, ctx)
+            is DiffOperation.ReplaceProcedure -> PostgresDiffProcedureOps.renderReplaceProcedure(op, ctx)
+            is DiffOperation.DropProcedure -> PostgresDiffProcedureOps.renderDropProcedure(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised PROCEDURE but renderProcedureOp does not handle it")
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first PostgreSQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, SEQUENCE, FUNCTION, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, SEQUENCE, FUNCTION, PROCEDURE, UNSUPPORTED }
 }

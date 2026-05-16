@@ -1039,8 +1039,17 @@ Entscheidung:
 > bei bekanntem Vorbody rendert Down `CREATE OR REPLACE FUNCTION` mit
 > dem alten Body. Reports surfacen Bodies nur via
 > `RoutineBodyScrubber.preview(...)`
-> (`hash` + `length` + `scrubbedPreview` + `scrubbingApplied`). Slice
-> B (PostgreSQL Procedures), Slice C (MySQL Routinen ohne
+> (`hash` + `length` + `scrubbedPreview` + `scrubbingApplied`).
+>
+> Status-Update (2026-05-16): Slice B landed (PostgreSQL Procedures).
+> `ProcedureDiff` traegt jetzt dieselben Identity-Attribute-Change-
+> Felder wie Slice A; der Procedure-Comparator hash-vergleicht Bodies
+> via `RoutineBodyNormalizer`. `PostgresDiffProcedureOps` rendert
+> `CREATE [OR REPLACE] PROCEDURE` und `DROP PROCEDURE` analog zum
+> Function-Renderer (ohne `RETURNS`), inkl. `SECURITY`/`SET
+> search_path`-Klauseln, dollar-quotedem Body, derselben Dollar-Tag-
+> Kollisionsbarriere und derselben Down-Blocker-Logik
+> (`ROUTINE_REPLACE_DOWN_BODY_UNKNOWN`). Slice C (MySQL Routinen ohne
 > DELIMITER), Slice D (Dependency-Sortierung) und Slice E
 > (Down-Body-Recovery) bleiben offen.
 
