@@ -197,6 +197,13 @@ internal class MysqlRoutineReader {
                     else -> TriggerForEach.ROW
                 },
                 body = row["action_statement"] as? String,
+                // E.1 Slice D.3: surface the owning-table edge via
+                // DependencyInfo so the second-phase
+                // RoutineDependencyAnalyzer can chain DropTrigger →
+                // DropTable correctly. The same edge is also used
+                // unconditionally on the Create side via
+                // trigger.table; both call paths agree.
+                dependencies = DependencyInfo(tables = listOf(table)),
                 sourceDialect = "mysql",
             )
         }

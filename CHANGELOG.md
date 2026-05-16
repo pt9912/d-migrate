@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **E.1 Routine-Migration Slice D.3** — MySQL trigger reader now
+  surfaces the owning-table edge into `DependencyInfo` so the
+  Slice-D.1 `RoutineDependencyAnalyzer` can build the
+  `DropTrigger → DropTable` reverse-topology edge for MySQL
+  schemas. `MysqlRoutineReader.readTriggers` sets
+  `dependencies = DependencyInfo(tables = listOf(table))` from
+  `information_schema.triggers.event_object_table` — the same
+  value already used for `TriggerDefinition.table`. No new queries
+  were added: the trigger ↔ table edge is read from the existing
+  `listTriggers` projection. View ↔ table / view ↔ routine edges
+  were already projected via `VIEW_TABLE_USAGE` /
+  `VIEW_ROUTINE_USAGE`. Routine ↔ table / view / sequence edges
+  stay manifest-based by design — routine bodies are opaque to
+  MySQL's information schema, so the operator must declare them
+  in `dependencies.functions` / `dependencies.tables` /
+  `dependencies.sequences` on the routine's schema entry.
+
 - **E.1 Routine-Migration Slice D.2** — PostgreSQL reverse-read now
   projects routine and trigger dependency edges from
   `pg_depend` / `pg_trigger` directly into the neutral

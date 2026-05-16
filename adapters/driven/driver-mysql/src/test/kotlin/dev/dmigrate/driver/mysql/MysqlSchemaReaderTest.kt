@@ -320,6 +320,10 @@ class MysqlSchemaReaderTest : FunSpec({
         trigger.event shouldBe TriggerEvent.UPDATE
         trigger.timing shouldBe TriggerTiming.BEFORE
         trigger.sourceDialect shouldBe "mysql"
+        // E.1 Slice D.3: the trigger's owning table is surfaced as
+        // a DependencyInfo edge so the RoutineDependencyAnalyzer
+        // can build DropTrigger → DropTable reverse-topology edges.
+        trigger.dependencies?.tables shouldBe listOf("users")
     }
 
     test("read table with bigint auto_increment maps identity generation") {
