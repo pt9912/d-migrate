@@ -83,9 +83,11 @@ class MaterializedViewDependencyDetectorTest : FunSpec({
         plan.materializedViewDependencyBlockers.shouldBeEmpty()
         plan.diagnostics.filter { it.code == "BLOCKED_DEPENDENCY_UNRESOLVED" }.shouldBeEmpty()
         // The topological sort places DropMaterializedView BEFORE DropTable.
+        // Plain-ordering check (not strict adjacency) to keep the test
+        // robust against future ops slipping between them.
         val dropTable = plan.operations.filterIsInstance<DiffOperation.DropTable>().single()
         val dropMv = plan.operations.filterIsInstance<DiffOperation.DropMaterializedView>().single()
-        plan.operations.indexOf(dropMv) shouldBe (plan.operations.indexOf(dropTable) - 1)
+        (plan.operations.indexOf(dropMv) < plan.operations.indexOf(dropTable)) shouldBe true
         dropTable.dependencies.contains(dropMv.id) shouldBe true
     }
 
@@ -174,8 +176,44 @@ class MaterializedViewDependencyDetectorTest : FunSpec({
         val createMv = plan.operations.filterIsInstance<DiffOperation.CreateMaterializedView>().single()
         createMv.dependencies.contains(replaceFn.id) shouldBe true
         // Sanity: topological order also places the routine replace
-        // before the MV create.
-        plan.operations.indexOf(replaceFn) shouldBe (plan.operations.indexOf(createMv) - 1)
+        // before the MV create. Use a plain ordering check (not strict
+        // adjacency) so the test stays robust if a future change
+        // interleaves another op between them.
+        (plan.operations.indexOf(replaceFn) < plan.operations.indexOf(createMv)) shouldBe true
+    }
+
+    test("Drop+Replace symmetry: DropMV that referenced fn_x runs before ReplaceFunction fn_x") {
+        // Plan-2 §8 D.3b Sub-Slice C review fix: when both `DropMV mv_x`
+        // (with `mv_x.dependencies.functions = [fn_x]`) AND
+        // `ReplaceFunction fn_x` are in the same plan, the reverse-
+        // topology edge attaches `DropMV.id` to `ReplaceFunction.dependencies`
+        // so the Drop runs first regardless of the phase tie-breaker.
+        val fnBefore = dev.dmigrate.core.model.FunctionDefinition(language = "sql", body = "RETURN 1")
+        val fnAfter = fnBefore.copy(body = "RETURN 2")
+        val mv = ViewDefinition(
+            query = "SELECT fn_x() AS v",
+            materialized = true,
+            dependencies = DependencyInfo(functions = listOf("fn_x")),
+        )
+        val current = emptySchema().copy(
+            functions = mapOf("fn_x" to fnBefore),
+            views = mapOf("mv_x" to mv),
+        )
+        val desired = emptySchema().copy(functions = mapOf("fn_x" to fnAfter))
+        val plan = planner.plan(
+            current,
+            desired,
+            dev.dmigrate.core.diff.SchemaDiff(
+                viewsRemoved = listOf(NamedView("mv_x", mv)),
+                functionsChanged = listOf(dev.dmigrate.core.diff.FunctionDiff(name = "fn_x")),
+            ),
+        )
+
+        val replaceFn = plan.operations.filterIsInstance<DiffOperation.ReplaceFunction>().single()
+        val dropMv = plan.operations.filterIsInstance<DiffOperation.DropMaterializedView>().single()
+        replaceFn.dependencies.contains(dropMv.id) shouldBe true
+        // Ordering: dropMv runs before replaceFn.
+        (plan.operations.indexOf(dropMv) < plan.operations.indexOf(replaceFn)) shouldBe true
     }
 
     test("Cross-MV: drop MV-B without dropping MV-A (which depends on MV-B) blocks") {
@@ -200,11 +238,13 @@ class MaterializedViewDependencyDetectorTest : FunSpec({
         blocker.droppingOperationId shouldBe dropMvB.id
     }
 
-    test("Replace of a table with a depended-on MV without MV-Replace blocks (Plan §5 Sub-Slice C)") {
-        // Pin the explicit `Replace einer Tabelle mit abhängiger MV
-        // ohne MV-Replace` test case from the plan: a table-column
-        // change forces an MV Replace, otherwise the report contract
-        // surfaces `BLOCKED_DEPENDENCY_UNRESOLVED`.
+    test("AlterColumnType on a depended-on table without MV-Replace blocks (Sub-Slice C review extension)") {
+        // Plan-2 §8 D.3b Sub-Slice C review fix: column-level mutations
+        // on a depended-on table can silently invalidate the MV body
+        // at `REFRESH` time. The detector now treats `AlterColumnType` /
+        // `AlterColumnNullability` / `AlterColumnDefault` / `DropColumn`
+        // on a column whose parent table is in the MV's
+        // `dependencies.tables` as an orphan trigger.
         val beforeUsers = TableDefinition(
             columns = mapOf(
                 "id" to ColumnDefinition(NeutralType.Identifier()),
@@ -217,7 +257,10 @@ class MaterializedViewDependencyDetectorTest : FunSpec({
         val mv = ViewDefinition(
             query = "SELECT id, name FROM users",
             materialized = true,
-            dependencies = DependencyInfo(tables = listOf("users")),
+            dependencies = DependencyInfo(
+                tables = listOf("users"),
+                columns = mapOf("users" to listOf("name")),
+            ),
         )
         val current = emptySchema().copy(
             tables = mapOf("users" to beforeUsers),
@@ -245,17 +288,11 @@ class MaterializedViewDependencyDetectorTest : FunSpec({
             ),
         )
 
-        // The table change emits `AlterColumnType` rather than a full
-        // ReplaceTable, but plan §5's wording covers any "Drop/Replace
-        // einer Tabelle/View/Routine, auf die eine MV ... zeigt".
-        // AlterColumnType doesn't drop the table, so the detector's
-        // current scope (drops + replaces, not column-level alters)
-        // intentionally does NOT block here — the operator can decide
-        // case-by-case whether the MV body is still compatible. This
-        // test pins that decision by asserting the detector stays
-        // silent for column-only changes (no orphan path). The strict
-        // "table-replace orphans MV" trigger is exercised below.
-        plan.materializedViewDependencyBlockers.shouldBeEmpty()
+        val blocker = plan.materializedViewDependencyBlockers.single()
+        blocker.materializedViewName shouldBe "mv_users"
+        blocker.droppingKind shouldBe "TABLE"
+        blocker.droppingPath shouldBe listOf("users", "name")
+        plan.diagnostics.any { it.code == "BLOCKED_DEPENDENCY_UNRESOLVED" } shouldBe true
     }
 
     test("MV not in either schema produces no blocker") {

@@ -211,7 +211,17 @@ Wird `ViewDefinition.refresh` gesetzt, bleibt der Pfad deterministisch
       Tabelle/View/Routine mit abhängiger MV ohne expliziten
       MV-Planungsschritt im selben Plan blockiert mit
       `BLOCKED_DEPENDENCY_UNRESOLVED`. `RoutineDependencyAnalyzer`
-      verdrahtet die Topo-Sortierung (MV-Drop läuft vor Tabellen-Drop).
+      verdrahtet die Topo-Sortierung (MV-Drop läuft vor Tabellen-Drop)
+      symmetrisch in beide Richtungen: `Create*`/`Replace*` warten auf
+      ihre Abhängigkeiten, `Replace*` wartet zusätzlich auf jeden
+      Drop, der vor dem Replace abgehandelt sein muss.
+      **Scope-Erweiterung (Review-Follow-up)**: Column-Level-Mutationen
+      auf einer depended-on Tabelle (`AlterColumnType`,
+      `AlterColumnNullability`, `AlterColumnDefault`, `DropColumn`)
+      werden als Trigger für `BLOCKED_DEPENDENCY_UNRESOLVED` mit
+      `droppingKind=TABLE` und `droppingPath=[<table>, <column>]`
+      behandelt — sonst könnte eine MV beim nächsten `REFRESH` still
+      scheitern.
 - [x] `spec/cli-spec.md` beschreibt das MV-Rendering-Verhalten pro
       Dialekt + die neuen `materializedViews[]`-Statuswerte inklusive
       `dependencyBlockers`-Subfield.

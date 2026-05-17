@@ -95,12 +95,28 @@ internal object MaterializedViewDependencyDetector {
                 is DiffOperation.ReplaceFunction -> op.objectRef.rootName to "FUNCTION"
                 is DiffOperation.DropProcedure -> op.objectRef.rootName to "PROCEDURE"
                 is DiffOperation.ReplaceProcedure -> op.objectRef.rootName to "PROCEDURE"
+                // Plan-2 §8 D.3b Sub-Slice C review fix: column-level
+                // mutations on a table that an MV depends on can
+                // silently invalidate the MV's body (the operator
+                // would only see the failure at the next `REFRESH
+                // MATERIALIZED VIEW`). Treat column-altering ops as
+                // a TABLE-level dependency change for the orphan check.
+                // `objectRef.path[0]` is the parent-table name for
+                // column ops (`COLUMN` ref-arity is 2).
+                is DiffOperation.DropColumn -> op.objectRef.path[0] to "TABLE"
+                is DiffOperation.AlterColumnType -> op.objectRef.path[0] to "TABLE"
+                is DiffOperation.AlterColumnNullability -> op.objectRef.path[0] to "TABLE"
+                is DiffOperation.AlterColumnDefault -> op.objectRef.path[0] to "TABLE"
                 else -> continue
             }
             // First-write-wins: a single op per `(name, kind)` is enough
             // for the orphan-detection question; ID disambiguation may
             // produce two ops for the same name but the structural
-            // outcome (the MV gets orphaned) is identical.
+            // outcome (the MV gets orphaned) is identical. For TABLE
+            // changes with both a DropTable AND column alters in the
+            // same plan, the DropTable wins (earlier iteration order
+            // tends to put structural ops first; either way the MV is
+            // orphaned).
             out.putIfAbsent(depKey(name, kind), op to kind)
         }
         return out

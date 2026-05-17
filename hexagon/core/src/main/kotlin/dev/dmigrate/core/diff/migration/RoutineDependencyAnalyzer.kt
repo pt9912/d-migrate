@@ -181,16 +181,29 @@ internal object RoutineDependencyAnalyzer {
 
     private fun computeEdges(op: DiffOperation, idx: Indexes): Set<String> = when (op) {
         is DiffOperation.CreateView -> viewCreateEdges(op.view.dependencies, op.id, idx)
-        is DiffOperation.ReplaceView -> viewCreateEdges(op.after.dependencies, op.id, idx)
+        // Plan-2 §8 D.3b Sub-Slice C review fix: `Replace*` carries both
+        // a create-side edge set (the post-replace state needs its
+        // referenced objects in place) AND the reverse-topology edges
+        // that the matching `Drop*` would have (a co-resident `Drop*`
+        // that depended on this name must run BEFORE the replace
+        // happens, so it observes the pre-replace state). This makes
+        // the topology symmetric with `Create*` (forward edges) +
+        // `Drop*` (reverse edges) and removes the phase-tie-breaker
+        // dependency for the `DropMV → ReplaceFunction` case.
+        is DiffOperation.ReplaceView -> viewCreateEdges(op.after.dependencies, op.id, idx) +
+            idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         // Plan-2 §8 D.3b Sub-Slice C: MV Create/Replace edges mirror the
         // regular View case — the new MV needs every referenced
         // table/view/routine/sequence created first.
         is DiffOperation.CreateMaterializedView -> viewCreateEdges(op.view.dependencies, op.id, idx)
-        is DiffOperation.ReplaceMaterializedView -> viewCreateEdges(op.after.dependencies, op.id, idx)
+        is DiffOperation.ReplaceMaterializedView -> viewCreateEdges(op.after.dependencies, op.id, idx) +
+            idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.CreateFunction -> routineCreateEdges(op.function.dependencies, op.id, idx)
-        is DiffOperation.ReplaceFunction -> routineCreateEdges(op.after.dependencies, op.id, idx)
+        is DiffOperation.ReplaceFunction -> routineCreateEdges(op.after.dependencies, op.id, idx) +
+            idx.dropFunctionDependentsByFunction[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.CreateProcedure -> routineCreateEdges(op.procedure.dependencies, op.id, idx)
-        is DiffOperation.ReplaceProcedure -> routineCreateEdges(op.after.dependencies, op.id, idx)
+        is DiffOperation.ReplaceProcedure -> routineCreateEdges(op.after.dependencies, op.id, idx) +
+            idx.dropProcedureDependentsByProcedure[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.CreateTrigger -> triggerCreateEdges(op.trigger, op.id, idx)
         is DiffOperation.ReplaceTrigger -> triggerCreateEdges(op.after, op.id, idx)
         is DiffOperation.DropFunction -> idx.dropFunctionDependentsByFunction[op.objectRef.rootName].orEmpty().toSet()
