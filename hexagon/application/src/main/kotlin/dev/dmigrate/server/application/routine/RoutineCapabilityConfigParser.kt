@@ -48,15 +48,32 @@ object RoutineCapabilityConfigParser {
         val cli = parseCli(cliFlagValues)
         val yaml = parseYaml(yamlSection)
         EffectiveRoutineCapability.Valid(
-            function = cli[RoutineKind.FUNCTION] ?: yaml[RoutineKind.FUNCTION] ?: defaults.function,
-            procedure = cli[RoutineKind.PROCEDURE] ?: yaml[RoutineKind.PROCEDURE] ?: defaults.procedure,
+            function = mergeForKind(cli[RoutineKind.FUNCTION], yaml[RoutineKind.FUNCTION], defaults.function),
+            procedure = mergeForKind(cli[RoutineKind.PROCEDURE], yaml[RoutineKind.PROCEDURE], defaults.procedure),
         )
     } catch (e: ConfigInvalid) {
         EffectiveRoutineCapability.Invalid(e.reason)
     }
 
-    private fun parseCli(values: List<String>): Map<RoutineKind, RoutineKindCapability> {
-        val out = LinkedHashMap<RoutineKind, RoutineKindCapability>()
+    /**
+     * Plan §1: "Default für nicht gesetzte Felder". Each field of a
+     * routine-kind capability resolves independently — CLI value if
+     * present, else YAML value if present, else the dialect/server-
+     * version default. A CLI block like `function:minServerVersion=8.0.0`
+     * is therefore valid: `enabled` falls through to YAML or the
+     * default, only `minServerVersion` is overridden.
+     */
+    private fun mergeForKind(
+        cli: KindCapabilityAccumulator?,
+        yaml: KindCapabilityAccumulator?,
+        default: RoutineKindCapability,
+    ): RoutineKindCapability = RoutineKindCapability(
+        enabled = cli?.enabled ?: yaml?.enabled ?: default.enabled,
+        minServerVersion = cli?.minServerVersion ?: yaml?.minServerVersion ?: default.minServerVersion,
+    )
+
+    private fun parseCli(values: List<String>): Map<RoutineKind, KindCapabilityAccumulator> {
+        val out = LinkedHashMap<RoutineKind, KindCapabilityAccumulator>()
         for (raw in values) {
             val idx = raw.indexOf(':')
             if (idx <= 0 || idx == raw.length - 1) {
@@ -75,7 +92,7 @@ object RoutineCapabilityConfigParser {
         return out
     }
 
-    private fun parseCliPairs(kindKey: String, pairs: String): RoutineKindCapability {
+    private fun parseCliPairs(kindKey: String, pairs: String): KindCapabilityAccumulator {
         val entries = pairs.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         if (entries.isEmpty()) {
             invalid("--routine-capability for kind=$kindKey has no key=value pairs")
@@ -84,9 +101,7 @@ object RoutineCapabilityConfigParser {
         for (entry in entries) {
             applyCliPair(kindKey, entry, acc)
         }
-        return acc.build {
-            invalid("--routine-capability for kind=$kindKey is missing required key 'enabled'")
-        }
+        return acc
     }
 
     private fun applyCliPair(kindKey: String, entry: String, into: KindCapabilityAccumulator) {
@@ -114,9 +129,9 @@ object RoutineCapabilityConfigParser {
         }
     }
 
-    private fun parseYaml(section: Map<String, Any?>?): Map<RoutineKind, RoutineKindCapability> {
+    private fun parseYaml(section: Map<String, Any?>?): Map<RoutineKind, KindCapabilityAccumulator> {
         if (section.isNullOrEmpty()) return emptyMap()
-        val out = LinkedHashMap<RoutineKind, RoutineKindCapability>()
+        val out = LinkedHashMap<RoutineKind, KindCapabilityAccumulator>()
         for ((key, value) in section) {
             val kind = parseKindKey(key, source = "YAML 'routineCapability'")
             val map = value as? Map<*, *>
@@ -129,14 +144,12 @@ object RoutineCapabilityConfigParser {
         return out
     }
 
-    private fun parseYamlKind(kindKey: String, map: Map<*, *>): RoutineKindCapability {
+    private fun parseYamlKind(kindKey: String, map: Map<*, *>): KindCapabilityAccumulator {
         val acc = KindCapabilityAccumulator()
         for ((rawKey, rawVal) in map) {
             applyYamlPair(kindKey, rawKey, rawVal, acc)
         }
-        return acc.build {
-            invalid("YAML 'routineCapability.$kindKey' is missing required key '$KEY_ENABLED'")
-        }
+        return acc
     }
 
     private fun applyYamlPair(kindKey: String, rawKey: Any?, rawVal: Any?, into: KindCapabilityAccumulator) {
@@ -191,19 +204,16 @@ object RoutineCapabilityConfigParser {
     private class ConfigInvalid(val reason: String) : RuntimeException(reason)
 
     /**
-     * Per-kind value accumulator shared by the CLI and YAML pair
-     * walkers. `enabled` is the only required field; `minServerVersion`
-     * stays `null` when the operator omits it. [build] runs the
-     * missing-`enabled` invariant when both walkers have finished, so
-     * the partial-state check lives in one place instead of two.
+     * Per-kind partial state shared by the CLI and YAML pair walkers.
+     * Both fields stay `null` until the operator sets them; the
+     * top-level [mergeForKind] then fills each null slot from the
+     * next precedence layer (CLI → YAML → defaults). Neither field is
+     * mandatory inside a single source — a CLI block like
+     * `function:minServerVersion=8.0.0` legitimately leaves `enabled`
+     * `null` and lets YAML or the default supply it.
      */
     private class KindCapabilityAccumulator {
         var enabled: Boolean? = null
         var minServerVersion: MysqlServerVersion? = null
-
-        inline fun build(onMissingEnabled: () -> Nothing): RoutineKindCapability {
-            val enabledValue = enabled ?: onMissingEnabled()
-            return RoutineKindCapability(enabled = enabledValue, minServerVersion = minServerVersion)
-        }
     }
 }

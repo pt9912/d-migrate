@@ -72,15 +72,6 @@ class RoutineCapabilityConfigParserTest : FunSpec({
         result.reason.shouldContain("invalid --routine-capability syntax")
     }
 
-    test("CLI: kind block without 'enabled' is rejected (symmetric to YAML missing-enabled)") {
-        // Pins parseCliPairs's "missing required key 'enabled'" branch
-        // for the CLI source so it lives at parity with the YAML
-        // missing-enabled rejection.
-        val result = parse(cli = listOf("function:minServerVersion=8.0.0"))
-        result.shouldBeInstanceOf<EffectiveRoutineCapability.Invalid>()
-        result.reason.shouldContain("missing required key 'enabled'")
-    }
-
     test("YAML: minServerVersion as a YAML float (8.0 -> Double) is rejected") {
         // Plan §8 risk note: SnakeYAML coerces unquoted `8.0` to Double;
         // operator must quote as "8.0.0" so the parser reaches the
@@ -161,6 +152,57 @@ class RoutineCapabilityConfigParserTest : FunSpec({
         result shouldBe EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
             procedure = RoutineKindCapability(enabled = false),
+        )
+    }
+
+    test("CLI with only minServerVersion field-merges enabled from defaults (plan §1)") {
+        // Plan §1: "Default für nicht gesetzte Felder". Operator writes
+        // only the version; the parser leaves `enabled` to the YAML
+        // layer below or, absent that, to the dialect default.
+        val mariaDbDefaults = EffectiveRoutineCapability.Valid(
+            function = RoutineKindCapability(enabled = true),
+            procedure = RoutineKindCapability(enabled = true),
+        )
+        val result = parse(
+            cli = listOf("function:minServerVersion=8.0.0"),
+            defaults = mariaDbDefaults,
+        )
+        result shouldBe EffectiveRoutineCapability.Valid(
+            function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
+            procedure = RoutineKindCapability(enabled = true),
+        )
+    }
+
+    test("CLI with only minServerVersion overrides YAML minServerVersion but keeps YAML enabled") {
+        // Field-wise CLI > YAML > defaults: CLI sets only
+        // minServerVersion, so YAML's enabled stays in effect.
+        val result = parse(
+            cli = listOf("function:minServerVersion=10.11.6"),
+            yaml = mapOf(
+                "function" to mapOf("enabled" to true, "minServerVersion" to "8.0.0"),
+            ),
+        )
+        result shouldBe EffectiveRoutineCapability.Valid(
+            function = RoutineKindCapability(
+                enabled = true,
+                minServerVersion = MysqlServerVersion(10, 11, 6),
+            ),
+            procedure = defaultsValid.procedure,
+        )
+    }
+
+    test("YAML block with only minServerVersion field-merges enabled from defaults") {
+        val mariaDbDefaults = EffectiveRoutineCapability.Valid(
+            function = RoutineKindCapability(enabled = true),
+            procedure = RoutineKindCapability(enabled = true),
+        )
+        val result = parse(
+            yaml = mapOf("function" to mapOf("minServerVersion" to "8.0.0")),
+            defaults = mariaDbDefaults,
+        )
+        result shouldBe EffectiveRoutineCapability.Valid(
+            function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
+            procedure = RoutineKindCapability(enabled = true),
         )
     }
 })
