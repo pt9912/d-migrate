@@ -658,16 +658,44 @@ Routine-Rendering:
 Report-Felder für Materialized Views:
 
 - `operations[].objectType` ist `MATERIALIZED_VIEW`, wenn die zugrunde
-  liegende View-Operation `materialized: true` trägt.
+  liegende View-Operation `materialized: true` trägt oder eine der neuen
+  `CreateMaterializedView` / `DropMaterializedView`-Ops vorliegt.
 - `materializedViews[]` enthält pro betroffener Operation
   `operationId`, `action`, `path`, `dialect`, `status`,
-  `stalenessAfterUp`, `refreshSteps`, `locking` und `rollback`.
-- Solange kein ausführbarer Refresh-/Staleness-Vertrag existiert, bleibt
-  `status=BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`,
-  `stalenessAfterUp=UNKNOWN_BLOCKED` und
-  `refreshSteps=[BLOCKED_REFRESH_CONTRACT_REQUIRED]`. Der Report beschreibt
-  damit das nötige manuelle Vorgehen; der Renderer darf Materialized Views
-  nicht als normale Views ausgeben.
+  `stalenessAfterUp`, `refreshSteps`, `locking`, `rollback` und das
+  optionale `primaryBlockedReason` (`null` bei `status=READY`).
+- Plan-2 §8 D.3b Sub-Slice A — PostgreSQL Create/Drop sind diff-basiert
+  renderbar; das Vertrags-Mapping läuft wie folgt:
+
+  | Op + Renderer-Ausgang | `status` | `stalenessAfterUp` | `refreshSteps` | `locking` | `rollback` |
+  |---|---|---|---|---|---|
+  | PG `CreateMaterializedView` rendert | `READY` | `FRESH_AFTER_INITIAL_REFRESH` | `[INITIAL_REFRESH_VIA_CREATE]` | `ACCESS_EXCLUSIVE` | `DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED` |
+  | PG `DropMaterializedView` rendert, `query` bekannt | `READY` | `NOT_APPLICABLE_DROP` | `[]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
+  | MySQL/SQLite Create/Drop | `BLOCKED_DIALECT_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_DIALECT_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Refresh-Contract verlangt `CONCURRENTLY` | `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `schema refresh materialized-view`-Intent | `BLOCKED_SCHEMA_REFRESH_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_SCHEMA_REFRESH_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `ViewDefinition.refresh` ist gesetzt | `BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED` | `UNKNOWN_BLOCKED` | `[BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Live-Reverse-Read-Metadaten fehlen | `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Create ohne `query` (Planner-Blocker) | `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Drop ohne `query` (Planner-Blocker) | `BLOCKED_DOWN_QUERY_UNKNOWN` | `UNKNOWN_BLOCKED` | `[BLOCKED_DOWN_QUERY_UNKNOWN]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `View`↔`MaterializedView`-Konversion | `BLOCKED_CONVERSION_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONVERSION_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+
+  Die Präzedenz folgt §5 des Implementierungsplans: Dialect-Block schlägt
+  Concurrent-Refresh, das wiederum Schema-Refresh, View-Definition-Refresh,
+  Metadata-Unsupported und Conversion schlägt; Diff-Metadata- und Down-Query-
+  Blocker rangieren am unteren Ende der Priorität. `primaryBlockedReason`
+  folgt den Codes aus §6.4.1 (`MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`,
+  `MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED`,
+  `VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED`,
+  `MATERIALIZED_VIEW_METADATA_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`).
+- Legacy-Fallback: Eine `ReplaceView`-Operation mit `materialized=true` auf
+  einer der beiden Seiten landet weiterhin auf dem konservativen
+  `status=BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`. Der dedizierte
+  `ReplaceMaterializedView`-Pfad folgt in Sub-Slice B.
 
 Report-Felder für `--execute`:
 

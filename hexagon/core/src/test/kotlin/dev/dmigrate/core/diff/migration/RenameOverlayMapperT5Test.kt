@@ -448,4 +448,54 @@ class RenameOverlayMapperT5Test : FunSpec({
         // the topo sorter places Drop→Create deterministically.
         create.dependencies shouldBe setOf(candidate.id, drop.id)
     }
+
+    test("MV reprojection: a materialized view dependent on a renamed table emits MV ops, not legacy CreateView") {
+        // Plan-2 §8 D.3b Sub-Slice A regression pin: previously the
+        // projector unconditionally emitted CreateView/DropView, which
+        // would then hit the D.3a defense-in-depth guard
+        // (`MATERIALIZED_VIEW_DIFF_UNSUPPORTED`) instead of the new
+        // dedicated MV render path. With Sub-Slice A wired through the
+        // reprojector, the absorbed view comes out as MV ops directly.
+        val candidate = RenameTableCandidate(
+            id = "rename-orders",
+            fromName = "orders_old",
+            toName = "orders",
+            overlaySource = "test",
+            overlayEntryId = "entry-mv",
+            overlayHash = null,
+            renamable = true,
+            structuralDifferences = emptyList(),
+            staleReferenceObject = null,
+        )
+        val currentView = ViewDefinition(
+            query = "SELECT id FROM orders_old",
+            materialized = true,
+            dependencies = DependencyInfo(tables = listOf("orders_old")),
+        )
+        val desiredView = ViewDefinition(
+            query = "SELECT id FROM orders",
+            materialized = true,
+            dependencies = DependencyInfo(tables = listOf("orders")),
+        )
+        val current = SchemaDefinition(name = "S", version = "1",
+            tables = mapOf("orders_old" to simpleTable()),
+            views = mapOf("mv_orders" to currentView))
+        val desired = SchemaDefinition(name = "S", version = "1",
+            tables = mapOf("orders" to simpleTable()),
+            views = mapOf("mv_orders" to desiredView))
+
+        val outcome = RenameViewReprojector.reprojectViewsForTableRename(candidate, current, desired)
+
+        outcome.absorbedViews shouldBe setOf("mv_orders")
+        outcome.blockers.size shouldBe 0
+        outcome.operations.size shouldBe 2
+        val drop = outcome.operations[0]
+        val create = outcome.operations[1]
+        (drop is DiffOperation.DropMaterializedView) shouldBe true
+        (create is DiffOperation.CreateMaterializedView) shouldBe true
+        drop.objectRef.type shouldBe DiffObjectType.MATERIALIZED_VIEW
+        create.objectRef.type shouldBe DiffObjectType.MATERIALIZED_VIEW
+        drop.dependencies shouldBe setOf(candidate.id)
+        create.dependencies shouldBe setOf(candidate.id, drop.id)
+    }
 })

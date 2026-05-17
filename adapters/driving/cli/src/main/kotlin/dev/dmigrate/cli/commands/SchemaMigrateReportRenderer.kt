@@ -66,6 +66,9 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    path: ").append(yamlList(mv.path)).append('\n')
             sb.append("    dialect: ").append(mv.dialect).append('\n')
             sb.append("    status: ").append(mv.status).append('\n')
+            mv.primaryBlockedReason?.let {
+                sb.append("    primaryBlockedReason: ").append(it).append('\n')
+            }
             sb.append("    stalenessAfterUp: ").append(mv.stalenessAfterUp).append('\n')
             sb.append("    refreshSteps: ").append(yamlList(mv.refreshSteps)).append('\n')
             sb.append("    locking: ").append(mv.locking).append('\n')
@@ -180,9 +183,10 @@ internal object SchemaMigrateReportRenderer {
 
     private fun renderMaterializedViews(views: List<SchemaMigrateMaterializedViewContractView>): String =
         views.joinToString(prefix = "[", postfix = "]", separator = ",") { v ->
+            val primary = v.primaryBlockedReason?.let { ",\"primaryBlockedReason\":${jsonString(it)}" } ?: ""
             "{\"operationId\":${jsonString(v.operationId)},\"action\":${jsonString(v.action)}," +
                 "\"path\":${jsonStringArray(v.path)},\"dialect\":${jsonString(v.dialect)}," +
-                "\"status\":${jsonString(v.status)}," +
+                "\"status\":${jsonString(v.status)}$primary," +
                 "\"stalenessAfterUp\":${jsonString(v.stalenessAfterUp)}," +
                 "\"refreshSteps\":${jsonStringArray(v.refreshSteps)}," +
                 "\"locking\":${jsonString(v.locking)},\"rollback\":${jsonString(v.rollback)}}"

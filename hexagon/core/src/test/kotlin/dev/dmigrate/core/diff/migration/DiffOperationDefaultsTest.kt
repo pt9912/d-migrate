@@ -153,6 +153,7 @@ class DiffOperationDefaultsTest : FunSpec({
         val customTypeRef = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf("status_t"))
         val sequenceRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("seq_x"))
         val viewRef = DiffObjectRef(DiffObjectType.VIEW, listOf("v_x"))
+        val materializedViewRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("mv_x"))
         val functionRef = DiffObjectRef(DiffObjectType.FUNCTION, listOf("fn_x"))
         val procedureRef = DiffObjectRef(DiffObjectType.PROCEDURE, listOf("sp_x"))
         val triggerRef = DiffObjectRef(DiffObjectType.TRIGGER, listOf("trg_x"))
@@ -197,6 +198,8 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.CreateView("c-v", viewRef, view),
             DiffOperation.ReplaceView("r-v", viewRef, view, view),
             DiffOperation.DropView("d-v", viewRef, view),
+            DiffOperation.CreateMaterializedView("c-mv", materializedViewRef, view),
+            DiffOperation.DropMaterializedView("d-mv", materializedViewRef, view),
             DiffOperation.CreateFunction("c-f", functionRef, function),
             DiffOperation.ReplaceFunction("r-f", functionRef, function, function),
             DiffOperation.DropFunction("d-f", functionRef, function),
@@ -207,7 +210,7 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.ReplaceTrigger("r-trg", triggerRef, trigger, trigger),
             DiffOperation.DropTrigger("d-trg", triggerRef, trigger),
         )
-        ops shouldHaveSize 31
+        ops shouldHaveSize 33
 
         // Phase pinning (Plan §4.4):
         ops.filterIsInstance<DiffOperation.CreateTable>().single().phase shouldBe DiffPhase.TABLES
@@ -218,6 +221,8 @@ class DiffOperationDefaultsTest : FunSpec({
         ops.filterIsInstance<DiffOperation.CreateCustomType>().single().phase shouldBe DiffPhase.TYPES
         ops.filterIsInstance<DiffOperation.CreateSequence>().single().phase shouldBe DiffPhase.SEQUENCES
         ops.filterIsInstance<DiffOperation.CreateView>().single().phase shouldBe DiffPhase.VIEWS
+        ops.filterIsInstance<DiffOperation.CreateMaterializedView>().single().phase shouldBe DiffPhase.VIEWS
+        ops.filterIsInstance<DiffOperation.DropMaterializedView>().single().phase shouldBe DiffPhase.VIEWS
         ops.filterIsInstance<DiffOperation.CreateFunction>().single().phase shouldBe DiffPhase.ROUTINES
         ops.filterIsInstance<DiffOperation.CreateProcedure>().single().phase shouldBe DiffPhase.ROUTINES
         ops.filterIsInstance<DiffOperation.CreateTrigger>().single().phase shouldBe DiffPhase.TRIGGERS
@@ -247,11 +252,13 @@ class DiffOperationDefaultsTest : FunSpec({
             withNewId::class shouldBe op::class
         }
 
-        // Catalog-size guard: the §4.3 catalog has 31 subtypes today.
-        // Adding a 32nd subtype must be paired with a smoke-test
-        // entry in `ops`; the count makes the omission impossible to
-        // miss without pulling in kotlin-reflect for `sealedSubclasses`.
+        // Catalog-size guard: the §4.3 catalog has 33 subtypes today
+        // (Plan-2 §8 D.3b Sub-Slice A added CreateMaterializedView and
+        // DropMaterializedView; Sub-Slice B will add ReplaceMaterializedView).
+        // Adding a new subtype must be paired with a smoke-test entry in
+        // `ops`; the count makes the omission impossible to miss without
+        // pulling in kotlin-reflect for `sealedSubclasses`.
         val distinctClasses = ops.map { it::class }.toSet()
-        distinctClasses.size shouldBe 31
+        distinctClasses.size shouldBe 33
     }
 })

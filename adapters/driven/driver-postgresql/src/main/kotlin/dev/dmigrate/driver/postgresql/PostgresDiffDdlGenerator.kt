@@ -84,6 +84,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.FUNCTION -> renderFunctionOp(op, ctx)
             OpCategory.PROCEDURE -> renderProcedureOp(op, ctx)
+            OpCategory.MATERIALIZED_VIEW -> renderMaterializedViewOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -134,6 +135,10 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
         -> OpCategory.PROCEDURE
+
+        is DiffOperation.CreateMaterializedView,
+        is DiffOperation.DropMaterializedView,
+        -> OpCategory.MATERIALIZED_VIEW
 
         is DiffOperation.AlterCustomType,
         is DiffOperation.CreateTrigger,
@@ -201,10 +206,31 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderMaterializedViewOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateMaterializedView ->
+                PostgresDiffMaterializedViewOps.renderCreateMaterializedView(op, ctx)
+            is DiffOperation.DropMaterializedView ->
+                PostgresDiffMaterializedViewOps.renderDropMaterializedView(op, ctx)
+            else -> error(
+                "Op ${op::class.simpleName} is categorised MATERIALIZED_VIEW but " +
+                    "renderMaterializedViewOp does not handle it",
+            )
+        }
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first PostgreSQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, SEQUENCE, FUNCTION, PROCEDURE, UNSUPPORTED }
+    private enum class OpCategory {
+        TABLE,
+        OTHER,
+        SEQUENCE,
+        FUNCTION,
+        PROCEDURE,
+        MATERIALIZED_VIEW,
+        UNSUPPORTED,
+    }
 }

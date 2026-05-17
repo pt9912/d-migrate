@@ -1,11 +1,13 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.RenameProjectionReport
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayReportItem
 import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.core.diff.routine.RoutineBodyScrubber
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ExtensionAvailabilityStatus
 import dev.dmigrate.driver.ExtensionDependencyReport
@@ -63,7 +65,7 @@ internal object SchemaMigrateReportBuilder {
                 )
             },
             diagnostics = mergeDiagnostics(plan, rendered),
-            materializedViews = buildMaterializedViewContracts(plan, dialect),
+            materializedViews = buildMaterializedViewContracts(plan, rendered, dialect),
             overlays = overlayReportItems.map { item ->
                 SchemaMigrateOverlayView(
                     source = item.source,
@@ -79,6 +81,11 @@ internal object SchemaMigrateReportBuilder {
                 SchemaMigrateOperationView(
                     id = op.id,
                     kind = op::class.simpleName ?: "Unknown",
+                    // D.3b Sub-Slice A: native MV ops carry the new
+                    // `MATERIALIZED_VIEW` DiffObjectType; legacy
+                    // CreateView/ReplaceView/DropView with materialized=true
+                    // still surface under that label too so consumers
+                    // can rely on the object-type discriminator.
                     objectType = if (op.materializedViewDefinition() != null) {
                         "MATERIALIZED_VIEW"
                     } else {
@@ -194,24 +201,199 @@ internal object SchemaMigrateReportBuilder {
 
     private fun buildMaterializedViewContracts(
         plan: DiffResult,
+        rendered: MigrationDdlResult,
         dialect: DatabaseDialect,
-    ): List<SchemaMigrateMaterializedViewContractView> =
-        plan.operations.mapNotNull { op ->
+    ): List<SchemaMigrateMaterializedViewContractView> {
+        // Severity filter is intentionally relaxed for MV codes: the
+        // mapper emits `BLOCKED_DOWN_QUERY_UNKNOWN` at `WARNING` severity
+        // for a `DropMaterializedView` without a recoverable body — Up
+        // is safe (BLOCKER would be promoted by the renderer into an
+        // `isBlocked=true` plan), only the rollback contract is affected.
+        // The decision precedence below dispatches on the code string,
+        // so non-MV diagnostics of any severity flow through harmlessly.
+        val planCodesByOpId: Map<String?, Set<String>> = plan.diagnostics
+            .groupBy { it.operationId }
+            .mapValues { entry -> entry.value.mapTo(mutableSetOf()) { it.code } }
+        val renderCodesByOpId: Map<String?, Set<String>> = rendered.diagnostics
+            .filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
+            .groupBy { it.operationId }
+            .mapValues { entry -> entry.value.mapTo(mutableSetOf()) { it.code } }
+        return plan.operations.mapNotNull { op ->
             op.materializedViewDefinition() ?: return@mapNotNull null
+            val decision = decideMaterializedViewContract(
+                op = op,
+                rendered = rendered,
+                planCodes = planCodesByOpId[op.id].orEmpty(),
+                renderCodes = renderCodesByOpId[op.id].orEmpty(),
+            )
             SchemaMigrateMaterializedViewContractView(
                 operationId = op.id,
                 action = op.materializedViewAction(),
                 path = op.objectRef.path,
                 dialect = dialect.name,
+                status = decision.status,
+                stalenessAfterUp = decision.stalenessAfterUp,
+                refreshSteps = decision.refreshSteps,
+                locking = decision.locking,
+                rollback = op.materializedViewRollbackContract(decision.status),
+                primaryBlockedReason = decision.primaryBlockedReason,
+            )
+        }
+    }
+
+    /**
+     * Plan-2 §8 D.3b Sub-Slice A precedence per §5 Cross-Slice OOS-Contract:
+     *
+     * 1. `BLOCKED_DIALECT_UNSUPPORTED` (highest — the MV cannot exist on the target).
+     * 2. `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED` (explicit refresh-contract input requested CONCURRENTLY).
+     * 3. `BLOCKED_SCHEMA_REFRESH_UNSUPPORTED` (`schema refresh materialized-view` intent).
+     * 4. `BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED` (`ViewDefinition.refresh` is set but D.3b has no semantic evaluation for it).
+     * 5. `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` (live-DB reverse-read metadata missing).
+     * 6. `BLOCKED_CONVERSION_UNSUPPORTED` (View↔MaterializedView flip).
+     * 7. `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` (missing/inconsistent query metadata in the diff).
+     * 8. `BLOCKED_DOWN_QUERY_UNKNOWN` (Drop without recoverable body).
+     *
+     * If none of the above trigger, the op is treated as renderable on
+     * PostgreSQL and the contract maps to `READY` with the action-specific
+     * staleness/locking values from §6.4.
+     */
+    private fun decideMaterializedViewContract(
+        op: DiffOperation,
+        rendered: MigrationDdlResult,
+        planCodes: Set<String>,
+        renderCodes: Set<String>,
+    ): MaterializedViewContractDecision {
+        if ("MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" in renderCodes) {
+            return blockedDecision(
+                status = "BLOCKED_DIALECT_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+            )
+        }
+        if ("BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED" in planCodes) {
+            return blockedDecision(
+                status = "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED",
+            )
+        }
+        if ("BLOCKED_SCHEMA_REFRESH_UNSUPPORTED" in planCodes) {
+            return blockedDecision(
+                status = "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED",
+            )
+        }
+        if ("BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED" in planCodes) {
+            return blockedDecision(
+                status = "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED",
+                primary = "VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED",
+            )
+        }
+        if ("BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED" in planCodes ||
+            "MATERIALIZED_VIEW_METADATA_UNSUPPORTED" in renderCodes
+        ) {
+            return blockedDecision(
+                status = "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+            )
+        }
+        if ("BLOCKED_CONVERSION_UNSUPPORTED" in planCodes) {
+            return blockedDecision(
+                status = "BLOCKED_CONVERSION_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED",
+            )
+        }
+        if ("BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" in planCodes ||
+            "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" in renderCodes
+        ) {
+            return blockedDecision(
+                status = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            )
+        }
+        if ("BLOCKED_DOWN_QUERY_UNKNOWN" in planCodes ||
+            "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN" in renderCodes
+        ) {
+            return blockedDecision(
+                status = "BLOCKED_DOWN_QUERY_UNKNOWN",
+                primary = "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN",
+            )
+        }
+        return readyDecisionFor(op, rendered)
+    }
+
+    private fun blockedDecision(
+        status: String,
+        primary: String,
+    ): MaterializedViewContractDecision = MaterializedViewContractDecision(
+        status = status,
+        stalenessAfterUp = "UNKNOWN_BLOCKED",
+        refreshSteps = listOf(status),
+        locking = "UNKNOWN_BLOCKED",
+        primaryBlockedReason = primary,
+    )
+
+    private fun readyDecisionFor(
+        op: DiffOperation,
+        rendered: MigrationDdlResult,
+    ): MaterializedViewContractDecision {
+        // Legacy bridge for Slice A: the dedicated ReplaceMaterializedView
+        // op lands in Sub-Slice B. Until then, a `ReplaceView` with a
+        // materialized flag falls through here without a planner diagnostic.
+        // It is still blocked by the D.3a guard inside the renderer; keep
+        // the conservative placeholder so the report does not claim READY.
+        if (op is DiffOperation.ReplaceView) {
+            return MaterializedViewContractDecision(
                 status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
                 stalenessAfterUp = "UNKNOWN_BLOCKED",
                 refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
                 locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
-                rollback = op.materializedViewRollbackContract(),
+                primaryBlockedReason = null,
             )
         }
+        val wasSkipped = op.id in rendered.operationsSkipped
+        if (wasSkipped) {
+            // Defense-in-depth: the renderer skipped without emitting any
+            // of the codes mapped above. Keep the conservative bridge
+            // status so downstream consumers do not see a misleading READY.
+            return MaterializedViewContractDecision(
+                status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
+                stalenessAfterUp = "UNKNOWN_BLOCKED",
+                refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
+                locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                primaryBlockedReason = null,
+            )
+        }
+        return when (op) {
+            is DiffOperation.CreateMaterializedView, is DiffOperation.CreateView ->
+                MaterializedViewContractDecision(
+                    status = "READY",
+                    stalenessAfterUp = "FRESH_AFTER_INITIAL_REFRESH",
+                    refreshSteps = listOf("INITIAL_REFRESH_VIA_CREATE"),
+                    locking = "ACCESS_EXCLUSIVE",
+                    primaryBlockedReason = null,
+                )
+            is DiffOperation.DropMaterializedView, is DiffOperation.DropView ->
+                MaterializedViewContractDecision(
+                    status = "READY",
+                    stalenessAfterUp = "NOT_APPLICABLE_DROP",
+                    refreshSteps = emptyList(),
+                    locking = "ACCESS_EXCLUSIVE",
+                    primaryBlockedReason = null,
+                )
+            else -> error("decideMaterializedViewContract reached for unexpected op type ${op::class.simpleName}")
+        }
+    }
 
-    private fun DiffOperation.materializedViewDefinition() = when (this) {
+    private data class MaterializedViewContractDecision(
+        val status: String,
+        val stalenessAfterUp: String,
+        val refreshSteps: List<String>,
+        val locking: String,
+        val primaryBlockedReason: String?,
+    )
+
+    private fun DiffOperation.materializedViewDefinition(): ViewDefinition? = when (this) {
+        is DiffOperation.CreateMaterializedView -> view
+        is DiffOperation.DropMaterializedView -> view
         is DiffOperation.CreateView -> view.takeIf { it.materialized }
         is DiffOperation.ReplaceView -> after.takeIf { before.materialized || after.materialized }
         is DiffOperation.DropView -> view.takeIf { it.materialized }
@@ -219,25 +401,35 @@ internal object SchemaMigrateReportBuilder {
     }
 
     private fun DiffOperation.materializedViewAction(): String = when (this) {
+        is DiffOperation.CreateMaterializedView -> "CREATE"
+        is DiffOperation.DropMaterializedView -> "DROP"
         is DiffOperation.CreateView -> "CREATE"
         is DiffOperation.ReplaceView -> "REPLACE"
         is DiffOperation.DropView -> "DROP"
         else -> "UNKNOWN"
     }
 
-    private fun DiffOperation.materializedViewRollbackContract(): String = when (this) {
-        is DiffOperation.CreateView -> "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED"
-        is DiffOperation.ReplaceView -> if (before.query == null) {
-            "MANUAL_RECONSTRUCTION_REQUIRED"
-        } else {
-            "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+    /**
+     * Rollback-contract value per §6.4. Blocked statuses short-circuit
+     * to `ROLLBACK_NOT_POSSIBLE` so the report does not claim a query
+     * body is recoverable when the operation itself can't run.
+     */
+    private fun DiffOperation.materializedViewRollbackContract(status: String): String {
+        if (status != "READY") return "ROLLBACK_NOT_POSSIBLE"
+        return when (this) {
+            is DiffOperation.CreateMaterializedView, is DiffOperation.CreateView ->
+                "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED"
+            is DiffOperation.DropMaterializedView ->
+                if (view.query == null) "MANUAL_RECONSTRUCTION_REQUIRED"
+                else "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+            is DiffOperation.ReplaceView ->
+                if (before.query == null) "MANUAL_RECONSTRUCTION_REQUIRED"
+                else "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+            is DiffOperation.DropView ->
+                if (view.query == null) "MANUAL_RECONSTRUCTION_REQUIRED"
+                else "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+            else -> "MANUAL_RECONSTRUCTION_REQUIRED"
         }
-        is DiffOperation.DropView -> if (view.query == null) {
-            "MANUAL_RECONSTRUCTION_REQUIRED"
-        } else {
-            "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
-        }
-        else -> "MANUAL_RECONSTRUCTION_REQUIRED"
     }
 
     private fun buildSummary(

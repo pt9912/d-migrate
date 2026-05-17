@@ -61,18 +61,19 @@ von D.3b passt.
   DropMaterializedView}`). Diese ergänzen — nicht ersetzen — die
   bestehenden `CreateView`/`ReplaceView`/`DropView`-Klassen, die
   weiterhin für nicht-materialisierte Views verwendet werden.
-- **`DiffPlanner`-Routing**: View-Operationen mit
-  `materialized` in genau einem Diff-Zustand explizit gesetzt auf `true`
-  werden zu den neuen MV-Op-Klassen umgeleitet, bevor sie den Renderer
-  erreichen.
+- **`DiffPlanner`-Routing**: View-Operationen mit `materialized=true`
+  auf der vorhandenen Seite werden zu den neuen MV-Op-Klassen umgeleitet,
+  bevor sie den Renderer erreichen.
   Bei echter `materialized`-Werte-Umwandlung (`false`↔`true`) wird
   immer `BLOCKED_CONVERSION_UNSUPPORTED` vor der Erstellung konkreter
   MV-Ops gesetzt.
-  Ist auf genau einer Seite `materialized=true` und auf der anderen Seite
-  `null` oder unklar (`null`-Asymmetrie), blockt der Planer mit
-  `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`.
-  `materialized = null` auf beiden Seiten wird als `false` (nicht
-  materialisiert) interpretiert und fällt in den regulären View-Pfad.
+  Hinweis zum Modell: `ViewDefinition.materialized` ist `Boolean = false`
+  (nicht nullable). Die ursprünglich beschriebene
+  „`null`-Asymmetrie" existiert daher als Routing-Zweig nicht; sie ist
+  ein zukünftiges Future-Proofing-Szenario für den Fall, dass das Feld
+  jemals auf `Boolean?` umgestellt wird. `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
+  ist in D.3b ausschließlich für fehlende bzw. nicht rekonstruierbare
+  `query`-Metadaten bei einem MV-`Create`/`Replace`/`Drop`-Down zuständig.
 - Der bisherige D.3a-Guard im Renderer bleibt als Defense-in-Depth.
 - **PostgreSQL-Renderer**: vollständige Pipeline
   - `CreateMaterializedView` → `CREATE MATERIALIZED VIEW <name> AS <query>;`
@@ -153,16 +154,16 @@ Wird `ViewDefinition.refresh` gesetzt, bleibt der Pfad deterministisch
       `ReplaceMaterializedView`, `DropMaterializedView` als eigene
       Op-Klassen; der `objectType` liefert `MATERIALIZED_VIEW` (statt
       `VIEW`) zur Renderer-Dispatch-Entscheidung.
-- [ ] `DiffPlanner` emittiert die neuen Op-Klassen statt
-      `CreateView`/`ReplaceView`/`DropView`, wenn `materialized=true` in einem
-      Diff-Zustand eindeutig vorliegt; bei inkonsistentem oder fehlendem
-      Materialization-Metadaten-Set nutzt er den passenden OOS-Blocker.
+- [ ] `DiffPlanner` (bzw. `OperationMapper.mapViews`) emittiert die neuen
+      Op-Klassen statt `CreateView`/`ReplaceView`/`DropView`, wenn auf der
+      vorhandenen Diff-Seite `materialized=true` gilt; echte
+      `materialized`-Werte-Umwandlungen blockieren stattdessen.
 - [ ] `DiffPlanner` validiert bei `CreateMaterializedView`/`ReplaceMaterializedView`,
       dass das benötigte `query` (`after.query` bzw. `before.query`) vorhanden ist;
       bei fehlender Query wird `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
-      verwendet statt eines Laufzeitfehlers, außer bei echter
-      `materialized`-Werte-Umwandlung (die immer `BLOCKED_CONVERSION_UNSUPPORTED`
-      verwenden).
+      verwendet statt eines Laufzeitfehlers. Bei echter
+      `materialized`-Werte-Umwandlung wird statt dessen immer
+      `BLOCKED_CONVERSION_UNSUPPORTED` gesetzt.
 - [ ] `DiffPlanner` blockiert echte `View`↔`Materialized View`-Konversionen
       explizit mit `BLOCKED_CONVERSION_UNSUPPORTED`
       (`primaryBlockedReason=MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`) und
@@ -479,8 +480,11 @@ Tabellen-/View-/Routinen-Drops/Replace und MV-Drops/Replaces.
   - `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` für fehlende
     Reverse-Read-Metadaten (Live-DB-/Runtime-Metadaten) bei fehlender
     `MaterializedViewMetadataQueries`-Integration.
-  - `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` bei unklarer oder
-    asymmetrischer `materialized`-Deklaration im Diff.
+  - `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` bei fehlender
+    bzw. nicht rekonstruierbarer `query`-Metadata im MV-Diff
+    (`ViewDefinition.materialized` ist heute `Boolean = false`; eine echte
+    null-Asymmetrie kann erst auftreten, wenn das Feld auf `Boolean?`
+    umgestellt wird — dann greift derselbe Blocker).
 
 ## 6. Konkrete Spezifikation
 
@@ -523,33 +527,23 @@ Renderer pro Op-Klasse dispatchen, ohne das `materialized`-Flag in
 ### 6.2 DiffPlanner-Routing
 
 ```kotlin
-// hexagon:core/diff/migration/DiffPlanner.kt (sinngemäß)
-private fun planView(name: String, diff: ViewDiff) {
-    val beforeMaterialized = diff.before?.materialized
-    val afterMaterialized = diff.after?.materialized
-    val beforeQuery = diff.before?.query
-    val afterQuery = diff.after?.query
-    val beforeExists = diff.before != null
-    val afterExists = diff.after != null
-    val hasBothObjects = beforeExists && afterExists
-    // `materialized = null` bedeutet im D.3b-Pfad „nicht explizit materialized“
-    // und wird wie ein normaler View-Flow behandelt.
-    val hasMaterializedHint = (beforeMaterialized == true) || (afterMaterialized == true)
+// hexagon:core/diff/migration/OperationMapper.mapViews (sinngemäß)
+//
+// ViewDefinition.materialized ist aktuell `Boolean = false` (nicht nullable).
+// Die Routing-Tabelle reduziert sich daher auf die echten Bool-Pfade.
+private fun routeView(name: String, before: ViewDefinition?, after: ViewDefinition?) {
+    val beforeMaterialized = before?.materialized == true
+    val afterMaterialized = after?.materialized == true
+    val hasMaterializedHint = beforeMaterialized || afterMaterialized
     when {
-        hasBothObjects && beforeMaterialized != null && afterMaterialized != null && beforeMaterialized != afterMaterialized ->
-            planMaterializationConversionUnsupported(name, diff)
-        hasMaterializedHint && afterExists && !beforeExists && (afterQuery == null) ->
-            planMaterializedViewDiffMetadataMissingUnsupported(name, diff)
-        hasMaterializedHint && beforeExists && afterExists && (beforeQuery == null || afterQuery == null) ->
-            planMaterializedViewDiffMetadataMissingUnsupported(name, diff)
-        hasMaterializedHint && beforeExists && afterExists && (beforeMaterialized == null || afterMaterialized == null) ->
-            planMaterializedViewDiffMetadataMissingUnsupported(name, diff)
-        hasMaterializedHint && beforeExists && beforeMaterialized == null ->
-            planMaterializedViewDiffMetadataMissingUnsupported(name, diff)
-        hasMaterializedHint && afterExists && afterMaterialized == null ->
-            planMaterializedViewDiffMetadataMissingUnsupported(name, diff)
-        hasMaterializedHint -> planMaterializedView(name, diff)
-        else -> planRegularView(name, diff)
+        before != null && after != null && beforeMaterialized != afterMaterialized ->
+            planMaterializationConversionUnsupported(name, before, after)
+        hasMaterializedHint && before == null && after != null && after.query == null ->
+            planMaterializedViewDiffMetadataMissingUnsupported(name, after)
+        hasMaterializedHint && before != null && after != null && (before.query == null || after.query == null) ->
+            planMaterializedViewDiffMetadataMissingUnsupported(name, after)
+        hasMaterializedHint -> planMaterializedView(name, before, after)
+        else -> planRegularView(name, before, after)
     }
 }
 ```
@@ -560,14 +554,16 @@ explizit blockierend (`BLOCKED_CONVERSION_UNSUPPORTED`,
 siehe §2 „Aus Scope"). Es gibt keinen separaten Slice für diese
 Migrationsklasse im Rahmen von D.3b.
 
-`planMaterializedViewDiffMetadataMissingUnsupported` blockiert Fälle, in denen die
-`materialized`-Semantik bei MV-relevanten Objekten nicht eindeutig aus dem
-Diff ableitbar ist (z. B. `materialized=true` auf einer Seite und
-`null` auf der anderen, oder nur eine Seite mit `materialized = null`
-bekannt) und damit auch ein fehlender `query`-Body für einen Create/Replace
-des MV-Diffs. Der Report liefert dafür deterministisch
+`planMaterializedViewDiffMetadataMissingUnsupported` blockiert Fälle, in denen
+ein MV-Diff einen fehlenden bzw. nicht rekonstruierbaren `query`-Body für
+Create/Replace/Drop-Down besitzt. Der Report liefert dafür deterministisch
 `status=BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` mit
 `primaryBlockedReason = MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`.
+
+Sollte `ViewDefinition.materialized` in einem späteren Schnitt auf
+`Boolean?` umgestellt werden, fallen asymmetrische Null-Konstellationen
+ebenfalls unter denselben Blocker — der Routing-Code wird dafür defensiv
+formuliert (auch wenn die Zweige aktuell unerreichbar sind).
 
 ### 6.3 PostgreSQL-Renderer-Output
 

@@ -119,6 +119,12 @@ internal class RenameDependencyProjector(
                 kind = when (op) {
                     is DiffOperation.CreateView -> "VIEW_CREATE"
                     is DiffOperation.DropView -> "VIEW_DROP"
+                    // Plan-2 §8 D.3b Sub-Slice A: surface MV reprojection
+                    // explicitly so report consumers can distinguish a
+                    // materialized-view drop+create from a regular view
+                    // drop+create.
+                    is DiffOperation.CreateMaterializedView -> "MATERIALIZED_VIEW_CREATE"
+                    is DiffOperation.DropMaterializedView -> "MATERIALIZED_VIEW_DROP"
                     else -> "EXPLICIT"
                 },
                 path = op.objectRef.path,

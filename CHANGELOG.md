@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice A** — dedicated
+  `DiffOperation.CreateMaterializedView` / `DropMaterializedView`
+  classes plus a new `DiffObjectType.MATERIALIZED_VIEW` enum value.
+  PostgreSQL renders `CREATE MATERIALIZED VIEW <name> AS <query>` and
+  `DROP MATERIALIZED VIEW <name>` (Down inverses each other; Drop-Down
+  requires the original `query` body, otherwise it blocks with
+  `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`). MySQL and SQLite emit a
+  dialect-specific `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT` blocker
+  instead of the previous generic D.3a diagnostic. The
+  `materializedViews[]` report carrier now lists concrete `status` /
+  `stalenessAfterUp` / `refreshSteps` / `locking` / `rollback` values
+  (`READY` + `FRESH_AFTER_INITIAL_REFRESH` for Create, `READY` +
+  `NOT_APPLICABLE_DROP` for Drop on PostgreSQL; `BLOCKED_*` codes plus
+  the new `primaryBlockedReason` field elsewhere). Operator-visible
+  `View↔MaterializedView` conversions are now deterministically blocked
+  with `BLOCKED_CONVERSION_UNSUPPORTED`.
+
+  **Internal API change**: `DiffOperation` is a sealed interface;
+  embedders / extension code that pattern-matches against it must
+  triage the two new subclasses or the Kotlin compiler will reject the
+  `when` as non-exhaustive. The non-MV renderer default is a block with
+  `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`. `Replace`-style
+  materialized-view changes still fall through to the legacy
+  `ReplaceView` path with the existing D.3a guard
+  (`MATERIALIZED_VIEW_DIFF_UNSUPPORTED`); the dedicated
+  `ReplaceMaterializedView` op lands in Sub-Slice B.
+
 - **0.9.7 Routine-Capability-Configurable-Source** — operator override
   for the per-routine-kind capability of stored Functions/Procedures.
   Adds the repeatable `--routine-capability=<kind>:<key>=<value>[,...]`

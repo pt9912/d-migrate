@@ -71,6 +71,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OTHER -> renderOtherOp(op, ctx)
             OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
+            OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -115,6 +116,10 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
         -> OpCategory.ROUTINE
+
+        is DiffOperation.CreateMaterializedView,
+        is DiffOperation.DropMaterializedView,
+        -> OpCategory.MATERIALIZED_VIEW
 
         is DiffOperation.AlterCustomType,
         is DiffOperation.CreateSequence,
@@ -170,10 +175,28 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    /**
+     * Plan-2 §8 D.3b Sub-Slice A: MySQL has no native materialized-view
+     * support and §2 explicitly rules out an emulation strategy. The
+     * dispatcher therefore blocks any [DiffOperation.CreateMaterializedView]
+     * / [DiffOperation.DropMaterializedView] with a dialect-specific
+     * diagnostic and an operation blocker.
+     */
+    private fun blockMaterializedView(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        val name = op.objectRef.rootName
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets materialized view '$name'. MySQL does not natively support " +
+                "materialized views; D.3b explicitly carves out an emulation strategy.",
+            code = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first MySQL matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, ROUTINE, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, ROUTINE, MATERIALIZED_VIEW, UNSUPPORTED }
 }

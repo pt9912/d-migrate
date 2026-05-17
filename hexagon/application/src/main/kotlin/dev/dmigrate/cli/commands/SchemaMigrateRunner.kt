@@ -643,6 +643,24 @@ data class SchemaMigrateMaterializedViewContractView(
     val refreshSteps: List<String>,
     val locking: String,
     val rollback: String,
+    /**
+     * Plan-2 §8 D.3b Sub-Slice A: deterministic OOS reason that
+     * accompanies a non-`READY` [status]. `null` for `READY` rows.
+     * Enumerated values follow §6.4.1 — Sub-Slice A surfaces:
+     *
+     * - `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`
+     * - `MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED`
+     * - `MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED`
+     * - `VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED`
+     * - `MATERIALIZED_VIEW_METADATA_UNSUPPORTED`
+     * - `MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`
+     * - `MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
+     * - `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`
+     *
+     * Sub-Slices B/C add `MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN`
+     * and `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`.
+     */
+    val primaryBlockedReason: String? = null,
 )
 
 data class SchemaMigrateOverlayView(

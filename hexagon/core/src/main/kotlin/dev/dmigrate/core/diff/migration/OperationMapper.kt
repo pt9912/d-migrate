@@ -1,8 +1,6 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ColumnDiff
-import dev.dmigrate.core.diff.FunctionDiff
-import dev.dmigrate.core.diff.ProcedureDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
@@ -68,7 +66,7 @@ internal object OperationMapper {
         val ops = mutableListOf<DiffOperation>()
         val renameProjections = mutableListOf<RenameProjectionReport>()
         val ctx = RenameMappingContext(current, desired, capabilities)
-        mapCustomTypes(diff, current, desired, ops)
+        OperationMapperSchemaObjects.mapCustomTypes(diff, current, desired, ops)
         // T5: mapTables now reports the view names whose
         // reprojection (`DropView` + `CreateView`) the projector
         // emitted from inside the rename pipeline. The subsequent
@@ -79,11 +77,11 @@ internal object OperationMapper {
         // [RenameProjectionReport] entries so DiffPlanner can attach
         // them to `DiffResult.renameProjections`.
         val absorbedViews = mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops, renameProjections)
-        mapViews(diff, current, desired, absorbedViews, ops)
-        mapSequences(diff, current, desired, ops)
-        mapFunctions(diff, current, desired, ops)
-        mapProcedures(diff, current, desired, ops)
-        mapTriggers(diff, current, desired, ops)
+        mapViews(diff, current, desired, absorbedViews, diagnostics, ops)
+        OperationMapperSchemaObjects.mapSequences(diff, current, desired, ops)
+        OperationMapperRoutines.mapFunctions(diff, current, desired, ops)
+        OperationMapperRoutines.mapProcedures(diff, current, desired, ops)
+        OperationMapperRoutines.mapTriggers(diff, current, desired, ops)
         return PreparedMapping(
             operations = ops,
             diagnostics = diagnostics,
@@ -229,46 +227,6 @@ internal object OperationMapper {
             }
         }
         return withRemappedDeps to idRewrites
-    }
-
-    private fun mapCustomTypes(
-        diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
-        ops: MutableList<DiffOperation>,
-    ) {
-        for (added in diff.customTypesAdded) {
-            val ref = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf(added.name))
-            ops += DiffOperation.CreateCustomType(
-                id = OperationIdFactory.makeId("CreateCustomType", ref, CanonicalPayload.customType(added.definition)),
-                objectRef = ref,
-                customType = added.definition,
-            )
-        }
-        for (removed in diff.customTypesRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf(removed.name))
-            ops += DiffOperation.DropCustomType(
-                id = OperationIdFactory.makeId("DropCustomType", ref, CanonicalPayload.customType(removed.definition)),
-                objectRef = ref,
-                customType = removed.definition,
-            )
-        }
-        for (changed in diff.customTypesChanged) {
-            val ref = DiffObjectRef(DiffObjectType.CUSTOM_TYPE, listOf(changed.name))
-            val before = current.customTypes[changed.name] ?: continue
-            val after = desired.customTypes[changed.name] ?: continue
-            ops += DiffOperation.AlterCustomType(
-                id = OperationIdFactory.makeId(
-                    "AlterCustomType",
-                    ref,
-                    "before=" + CanonicalPayload.customType(before) +
-                        "->after=" + CanonicalPayload.customType(after),
-                ),
-                objectRef = ref,
-                before = before,
-                after = after,
-            )
-        }
     }
 
     private fun mapTables(
@@ -526,23 +484,32 @@ internal object OperationMapper {
         current: SchemaDefinition,
         desired: SchemaDefinition,
         absorbedViews: Set<String>,
+        diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.viewsAdded) {
-            val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(added.name))
-            ops += DiffOperation.CreateView(
-                id = OperationIdFactory.makeId("CreateView", ref, CanonicalPayload.view(added.definition)),
-                objectRef = ref,
-                view = added.definition,
-            )
+            if (added.definition.materialized) {
+                OperationMapperMaterializedView.emitCreate(added, diagnostics, ops)
+            } else {
+                val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(added.name))
+                ops += DiffOperation.CreateView(
+                    id = OperationIdFactory.makeId("CreateView", ref, CanonicalPayload.view(added.definition)),
+                    objectRef = ref,
+                    view = added.definition,
+                )
+            }
         }
         for (removed in diff.viewsRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(removed.name))
-            ops += DiffOperation.DropView(
-                id = OperationIdFactory.makeId("DropView", ref, CanonicalPayload.view(removed.definition)),
-                objectRef = ref,
-                view = removed.definition,
-            )
+            if (removed.definition.materialized) {
+                OperationMapperMaterializedView.emitDrop(removed, diagnostics, ops)
+            } else {
+                val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(removed.name))
+                ops += DiffOperation.DropView(
+                    id = OperationIdFactory.makeId("DropView", ref, CanonicalPayload.view(removed.definition)),
+                    objectRef = ref,
+                    view = removed.definition,
+                )
+            }
         }
         // viewsAdded / viewsRemoved are NOT filtered against
         // [absorbedViews]: the reprojector iterates `current.views`
@@ -561,7 +528,7 @@ internal object OperationMapper {
             val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(changed.name))
             val before = current.views[changed.name] ?: continue
             val after = desired.views[changed.name] ?: continue
-            ops += DiffOperation.ReplaceView(
+            val op = DiffOperation.ReplaceView(
                 id = OperationIdFactory.makeId(
                     "ReplaceView",
                     ref,
@@ -572,184 +539,16 @@ internal object OperationMapper {
                 before = before,
                 after = after,
             )
-        }
-    }
-
-    private fun mapSequences(
-        diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
-        ops: MutableList<DiffOperation>,
-    ) {
-        for (added in diff.sequencesAdded) {
-            val ref = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(added.name))
-            ops += DiffOperation.CreateSequence(
-                id = OperationIdFactory.makeId("CreateSequence", ref, added.definition.toString()),
-                objectRef = ref,
-                sequence = added.definition,
-            )
-        }
-        for (removed in diff.sequencesRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(removed.name))
-            ops += DiffOperation.DropSequence(
-                id = OperationIdFactory.makeId("DropSequence", ref, removed.definition.toString()),
-                objectRef = ref,
-                sequence = removed.definition,
-            )
-        }
-        for (changed in diff.sequencesChanged) {
-            val ref = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(changed.name))
-            val before = current.sequences[changed.name] ?: continue
-            val after = desired.sequences[changed.name] ?: continue
-            ops += DiffOperation.AlterSequence(
-                id = OperationIdFactory.makeId("AlterSequence", ref, changed.toString()),
-                objectRef = ref,
-                before = before,
-                after = after,
-            )
-        }
-    }
-
-    private fun mapFunctions(
-        diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
-        ops: MutableList<DiffOperation>,
-    ) {
-        for (added in diff.functionsAdded) {
-            val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(added.name))
-            ops += DiffOperation.CreateFunction(
-                id = OperationIdFactory.makeId("CreateFunction", ref, added.definition.toString()),
-                objectRef = ref,
-                function = added.definition,
-            )
-        }
-        for (removed in diff.functionsRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(removed.name))
-            ops += DiffOperation.DropFunction(
-                id = OperationIdFactory.makeId("DropFunction", ref, removed.definition.toString()),
-                objectRef = ref,
-                function = removed.definition,
-            )
-        }
-        for (changed in diff.functionsChanged) {
-            val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(changed.name))
-            val before = current.functions[changed.name] ?: continue
-            val after = desired.functions[changed.name] ?: continue
-            if (changed.hasSignatureChange()) {
-                val drop = DiffOperation.DropFunction(
-                    id = OperationIdFactory.makeId("DropFunction", ref, before.toString()),
-                    objectRef = ref,
-                    function = before,
-                )
-                val create = DiffOperation.CreateFunction(
-                    id = OperationIdFactory.makeId("CreateFunction", ref, after.toString()),
-                    objectRef = ref,
-                    function = after,
-                    dependencies = setOf(drop.id),
-                )
-                ops += drop
-                ops += create
-            } else {
-                ops += DiffOperation.ReplaceFunction(
-                    id = OperationIdFactory.makeId("ReplaceFunction", ref, changed.toString()),
-                    objectRef = ref,
+            ops += op
+            if (before.materialized != after.materialized) {
+                OperationMapperMaterializedView.emitConversionDiagnostic(
+                    name = changed.name,
                     before = before,
                     after = after,
+                    replaceOpId = op.id,
+                    diagnostics = diagnostics,
                 )
             }
-        }
-    }
-
-    private fun mapProcedures(
-        diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
-        ops: MutableList<DiffOperation>,
-    ) {
-        for (added in diff.proceduresAdded) {
-            val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(added.name))
-            ops += DiffOperation.CreateProcedure(
-                id = OperationIdFactory.makeId("CreateProcedure", ref, added.definition.toString()),
-                objectRef = ref,
-                procedure = added.definition,
-            )
-        }
-        for (removed in diff.proceduresRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(removed.name))
-            ops += DiffOperation.DropProcedure(
-                id = OperationIdFactory.makeId("DropProcedure", ref, removed.definition.toString()),
-                objectRef = ref,
-                procedure = removed.definition,
-            )
-        }
-        for (changed in diff.proceduresChanged) {
-            val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(changed.name))
-            val before = current.procedures[changed.name] ?: continue
-            val after = desired.procedures[changed.name] ?: continue
-            if (changed.hasSignatureChange()) {
-                val drop = DiffOperation.DropProcedure(
-                    id = OperationIdFactory.makeId("DropProcedure", ref, before.toString()),
-                    objectRef = ref,
-                    procedure = before,
-                )
-                val create = DiffOperation.CreateProcedure(
-                    id = OperationIdFactory.makeId("CreateProcedure", ref, after.toString()),
-                    objectRef = ref,
-                    procedure = after,
-                    dependencies = setOf(drop.id),
-                )
-                ops += drop
-                ops += create
-            } else {
-                ops += DiffOperation.ReplaceProcedure(
-                    id = OperationIdFactory.makeId("ReplaceProcedure", ref, changed.toString()),
-                    objectRef = ref,
-                    before = before,
-                    after = after,
-                )
-            }
-        }
-    }
-
-    private fun FunctionDiff.hasSignatureChange(): Boolean =
-        parameters != null || returns != null || language != null
-
-    private fun ProcedureDiff.hasSignatureChange(): Boolean =
-        parameters != null || language != null
-
-    private fun mapTriggers(
-        diff: SchemaDiff,
-        current: SchemaDefinition,
-        desired: SchemaDefinition,
-        ops: MutableList<DiffOperation>,
-    ) {
-        for (added in diff.triggersAdded) {
-            val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(added.name))
-            ops += DiffOperation.CreateTrigger(
-                id = OperationIdFactory.makeId("CreateTrigger", ref, added.definition.toString()),
-                objectRef = ref,
-                trigger = added.definition,
-            )
-        }
-        for (removed in diff.triggersRemoved) {
-            val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(removed.name))
-            ops += DiffOperation.DropTrigger(
-                id = OperationIdFactory.makeId("DropTrigger", ref, removed.definition.toString()),
-                objectRef = ref,
-                trigger = removed.definition,
-            )
-        }
-        for (changed in diff.triggersChanged) {
-            val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(changed.name))
-            val before = current.triggers[changed.name] ?: continue
-            val after = desired.triggers[changed.name] ?: continue
-            ops += DiffOperation.ReplaceTrigger(
-                id = OperationIdFactory.makeId("ReplaceTrigger", ref, changed.toString()),
-                objectRef = ref,
-                before = before,
-                after = after,
-            )
         }
     }
 

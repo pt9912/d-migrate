@@ -135,20 +135,53 @@ internal object RenameViewReprojector {
                 )
                 continue
             }
-            val dropRef = DiffObjectRef(DiffObjectType.VIEW, listOf(viewName))
-            val drop = DiffOperation.DropView(
-                id = OperationIdFactory.makeId("DropView", dropRef, CanonicalPayload.view(currentView)),
-                objectRef = dropRef,
-                view = currentView,
-                dependencies = setOf(candidate.id),
-            )
-            val createRef = DiffObjectRef(DiffObjectType.VIEW, listOf(viewName))
-            val create = DiffOperation.CreateView(
-                id = OperationIdFactory.makeId("CreateView", createRef, CanonicalPayload.view(desiredView)),
-                objectRef = createRef,
-                view = desiredView,
-                dependencies = setOf(candidate.id, drop.id),
-            )
+            // Plan-2 §8 D.3b Sub-Slice A: a reprojected materialized view
+            // must use the dedicated MV op classes, otherwise the
+            // emitted `CreateView(materialized=true)` would silently fall
+            // back to the D.3a guard instead of the new MV render path.
+            // The materialized flag is keyed off the current view (the
+            // one being dropped); a flip between current/desired would
+            // be a `View↔MaterializedView` conversion which the operator
+            // must drop+create explicitly (and which `OperationMapper`
+            // surfaces via `BLOCKED_CONVERSION_UNSUPPORTED`). Here both
+            // sides are by construction the same view in two states of
+            // its underlying-table rebind, so they share `materialized`.
+            val materialized = currentView.materialized || desiredView.materialized
+            val refType = if (materialized) DiffObjectType.MATERIALIZED_VIEW else DiffObjectType.VIEW
+            val dropOpName = if (materialized) "DropMaterializedView" else "DropView"
+            val createOpName = if (materialized) "CreateMaterializedView" else "CreateView"
+            val dropRef = DiffObjectRef(refType, listOf(viewName))
+            val drop: DiffOperation = if (materialized) {
+                DiffOperation.DropMaterializedView(
+                    id = OperationIdFactory.makeId(dropOpName, dropRef, CanonicalPayload.view(currentView)),
+                    objectRef = dropRef,
+                    view = currentView,
+                    dependencies = setOf(candidate.id),
+                )
+            } else {
+                DiffOperation.DropView(
+                    id = OperationIdFactory.makeId(dropOpName, dropRef, CanonicalPayload.view(currentView)),
+                    objectRef = dropRef,
+                    view = currentView,
+                    dependencies = setOf(candidate.id),
+                )
+            }
+            val createRef = DiffObjectRef(refType, listOf(viewName))
+            val create: DiffOperation = if (materialized) {
+                DiffOperation.CreateMaterializedView(
+                    id = OperationIdFactory.makeId(createOpName, createRef, CanonicalPayload.view(desiredView)),
+                    objectRef = createRef,
+                    view = desiredView,
+                    dependencies = setOf(candidate.id, drop.id),
+                )
+            } else {
+                DiffOperation.CreateView(
+                    id = OperationIdFactory.makeId(createOpName, createRef, CanonicalPayload.view(desiredView)),
+                    objectRef = createRef,
+                    view = desiredView,
+                    dependencies = setOf(candidate.id, drop.id),
+                )
+            }
             ops += drop
             ops += create
             absorbed += viewName

@@ -267,7 +267,11 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         report.diagnostics.count { it.code == "CODE_X" } shouldBe 1
     }
 
-    test("materialized view operations surface the refresh staleness contract") {
+    test("legacy ReplaceView+materialized still surfaces the refresh staleness placeholder (Sub-Slice B target)") {
+        // Plan-2 §8 D.3b Sub-Slice A: the dedicated ReplaceMaterializedView
+        // op arrives in Sub-Slice B. Until then the ReplaceView+materialized
+        // path keeps the conservative `BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`
+        // placeholder so consumers do not see a misleading READY status.
         val op = DiffOperation.ReplaceView(
             id = "view-1",
             objectRef = DiffObjectRef(DiffObjectType.VIEW, listOf("order_summary_mv")),
@@ -293,7 +297,357 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
             stalenessAfterUp = "UNKNOWN_BLOCKED",
             refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
             locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
-            rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
+            rollback = "ROLLBACK_NOT_POSSIBLE",
+            primaryBlockedReason = null,
         )
+    }
+
+    test("CreateMaterializedView rendered on PostgreSQL surfaces READY contract") {
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-create-1",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = setOf("mv-create-1"),
+            ),
+            operations = listOf(op),
+        )
+
+        report.materializedViews.single() shouldBe SchemaMigrateMaterializedViewContractView(
+            operationId = "mv-create-1",
+            action = "CREATE",
+            path = listOf("daily_sales"),
+            dialect = "POSTGRESQL",
+            status = "READY",
+            stalenessAfterUp = "FRESH_AFTER_INITIAL_REFRESH",
+            refreshSteps = listOf("INITIAL_REFRESH_VIA_CREATE"),
+            locking = "ACCESS_EXCLUSIVE",
+            rollback = "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED",
+            primaryBlockedReason = null,
+        )
+    }
+
+    test("DropMaterializedView rendered on PostgreSQL surfaces READY + SOURCE_QUERY_AVAILABLE rollback") {
+        val op = DiffOperation.DropMaterializedView(
+            id = "mv-drop-1",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = setOf("mv-drop-1"),
+            ),
+            operations = listOf(op),
+        )
+
+        report.materializedViews.single() shouldBe SchemaMigrateMaterializedViewContractView(
+            operationId = "mv-drop-1",
+            action = "DROP",
+            path = listOf("daily_sales"),
+            dialect = "POSTGRESQL",
+            status = "READY",
+            stalenessAfterUp = "NOT_APPLICABLE_DROP",
+            refreshSteps = emptyList(),
+            locking = "ACCESS_EXCLUSIVE",
+            rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
+            primaryBlockedReason = null,
+        )
+    }
+
+    test("CreateMaterializedView with planner missing-query blocker surfaces dedicated status") {
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-create-bad",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = null, materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            message = "no query",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-create-bad",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-create-bad"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+        contract.stalenessAfterUp shouldBe "UNKNOWN_BLOCKED"
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("DropMaterializedView without recoverable query surfaces BLOCKED_DOWN_QUERY_UNKNOWN") {
+        val op = DiffOperation.DropMaterializedView(
+            id = "mv-drop-bad",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = null, materialized = true),
+        )
+        // Severity stays at WARNING: a planner-level BLOCKER would be
+        // promoted by the renderer into a `DIALECT_UNSUPPORTED_OPERATION`
+        // MigrationBlocker, stopping the forward DROP DDL from executing.
+        // The report builder picks up the WARNING-coded code regardless.
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_DOWN_QUERY_UNKNOWN",
+            message = "no body",
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = "mv-drop-bad",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = setOf("mv-drop-bad"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_DOWN_QUERY_UNKNOWN"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN"
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("View↔MaterializedView conversion surfaces BLOCKED_CONVERSION_UNSUPPORTED + ROLLBACK_NOT_POSSIBLE") {
+        // The planner emits a ReplaceView placeholder for a materialized-flag
+        // flip plus a BLOCKED_CONVERSION_UNSUPPORTED diagnostic. The report
+        // builder turns that into the dedicated contract row so consumers can
+        // distinguish a real conversion from a same-type body change.
+        val op = DiffOperation.ReplaceView(
+            id = "view-conversion",
+            objectRef = DiffObjectRef(DiffObjectType.VIEW, listOf("daily_sales")),
+            before = ViewDefinition(query = "SELECT 1", materialized = false),
+            after = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_CONVERSION_UNSUPPORTED",
+            message = "materialized flag flipped",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "view-conversion",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("view-conversion"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_CONVERSION_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED"
+        contract.refreshSteps shouldBe listOf("BLOCKED_CONVERSION_UNSUPPORTED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED surfaces a context-driven OOS contract entry") {
+        // Plan §5 Cross-Slice OOS: REFRESH MATERIALIZED VIEW CONCURRENTLY
+        // is hard-OOS in D.3b. The trigger is a refresh-contract input
+        // outside `ViewDefinition.refresh`; this test pins that the
+        // ReportBuilder maps the code to the documented contract row.
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-concurrent",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
+            message = "CONCURRENTLY requested out of scope",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-concurrent",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-concurrent"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED"
+        contract.refreshSteps shouldBe listOf("BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("BLOCKED_SCHEMA_REFRESH_UNSUPPORTED surfaces a schema-refresh OOS contract entry") {
+        // Plan §2 Aus Scope: `schema refresh materialized-view` is hard-OOS
+        // in D.3b. When the orchestrator threads this intent through as a
+        // planner diagnostic, the report contract pins the deterministic
+        // OOS row so the subcommand surfaces a stable code.
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-schema-refresh",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED",
+            message = "schema refresh materialized-view out of scope",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-schema-refresh",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-schema-refresh"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_SCHEMA_REFRESH_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED"
+        contract.refreshSteps shouldBe listOf("BLOCKED_SCHEMA_REFRESH_UNSUPPORTED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED surfaces when ViewDefinition.refresh is set") {
+        // Plan §2 / §6.4.1: `ViewDefinition.refresh` has no semantic
+        // interpretation in D.3b. The mapper emits a WARNING-severity
+        // diagnostic so the contract reflects the gap without blocking
+        // the Up DDL render.
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-refresh-set",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true, refresh = "MANUAL"),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED",
+            message = "refresh field set",
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = "mv-refresh-set",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = setOf("mv-refresh-set"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED"
+        contract.primaryBlockedReason shouldBe "VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED"
+        contract.refreshSteps shouldBe listOf("BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED surfaces missing reverse-read metadata") {
+        // Plan §2 Aus Scope: live-DB reverse-read of the MV
+        // (pre-body, index existence, refreshed-at timestamp) is hard-OOS
+        // in D.3b because no `MaterializedViewMetadataQueries` adapter is
+        // wired yet. When the adapter surface reports the gap as a
+        // diagnostic, the report contract pins the deterministic code.
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-metadata",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED",
+            message = "live MV metadata adapter missing",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-metadata",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-metadata"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_METADATA_UNSUPPORTED"
+        contract.refreshSteps shouldBe listOf("BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("OOS-Precedence: dialect-block wins over a co-existing concurrent-refresh diagnostic") {
+        // §5 Cross-Slice OOS precedence rule 1: BLOCKED_DIALECT_UNSUPPORTED
+        // is the highest-priority status — concurrent-refresh and friends
+        // never surface for MySQL/SQLite because the op is already
+        // un-renderable on the target dialect.
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-mysql-concurrent",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val renderDiag = DiffDiagnostic(
+            code = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+            message = "MySQL",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-mysql-concurrent",
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED",
+            message = "CONCURRENTLY requested",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-mysql-concurrent",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-mysql-concurrent"),
+                diagnostics = listOf(renderDiag),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_DIALECT_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT"
+    }
+
+    test("dialect block (MySQL/SQLite) wins over planner-level diagnostics") {
+        val op = DiffOperation.CreateMaterializedView(
+            id = "mv-mysql",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("daily_sales")),
+            view = ViewDefinition(query = "SELECT 1", materialized = true),
+        )
+        val dialectDiag = DiffDiagnostic(
+            code = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+            message = "no MV on MySQL",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-mysql",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-mysql"),
+                diagnostics = listOf(dialectDiag),
+            ),
+            operations = listOf(op),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_DIALECT_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT"
+        contract.refreshSteps shouldBe listOf("BLOCKED_DIALECT_UNSUPPORTED")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
     }
 })

@@ -465,6 +465,40 @@ sealed interface DiffOperation {
         override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
+    // ── Materialized views (Plan-2 §8 D.3b Sub-Slice A) ─────────────
+
+    data class CreateMaterializedView(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val view: ViewDefinition,
+        override val phase: DiffPhase = DiffPhase.VIEWS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(
+            up = OperationRisk.SAFE,
+            down = OperationRisk(destructive = true),
+        ),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    data class DropMaterializedView(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val view: ViewDefinition,
+        override val phase: DiffPhase = DiffPhase.VIEWS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(
+            up = OperationRisk(destructive = true),
+            down = OperationRisk.SAFE,
+        ),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
     // ── Functions ───────────────────────────────────────────────────
 
     data class CreateFunction(

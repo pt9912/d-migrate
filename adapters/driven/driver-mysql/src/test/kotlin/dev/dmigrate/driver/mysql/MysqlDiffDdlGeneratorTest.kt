@@ -284,18 +284,25 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
             .statements.single().sql shouldContainStr "SELECT 1"
     }
 
-    test("materialized view operations are blocked before SQL render") {
+    test("materialized view ops block with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT on MySQL") {
+        // Plan-2 §8 D.3b Sub-Slice A: MySQL lacks native materialized
+        // view support. The new MV op classes still get planned, but
+        // the renderer dispatches them to a dialect-specific block
+        // path with a deterministic diagnostic code.
         val view = ViewDefinition(query = "SELECT 1", materialized = true)
         val create = planAndUp(SchemaDiff(viewsAdded = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
 
         create.statements.shouldBeEmpty()
         create.isBlocked shouldBe true
-        create.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        val diagnostic = create.diagnostics.single { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" }
-        diagnostic.message shouldContainStr "mv"
-        diagnostic.message shouldContainStr "mysql"
-        diagnostic.message shouldContainStr "materialized=true"
+        create.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        val createDiag = create.diagnostics.single { it.code == "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" }
+        createDiag.message shouldContainStr "mv"
+        createDiag.message shouldContainStr "MySQL"
 
+        // ReplaceView with both sides materialized=true still routes
+        // through the legacy ReplaceView path (Sub-Slice B introduces
+        // a dedicated ReplaceMaterializedView op). The existing D.3a
+        // guard inside MysqlDiffOtherOps fires for that case.
         val current = emptySchema().copy(views = mapOf("mv" to view))
         val desired = emptySchema().copy(views = mapOf("mv" to view.copy(query = "SELECT 2")))
         val replace = gen.generateUp(
@@ -313,7 +320,7 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
 
         val drop = planAndUp(SchemaDiff(viewsRemoved = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
         drop.statements.shouldBeEmpty()
-        drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+        drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" } shouldBe true
     }
 
     test("Out-of-matrix operations (Sequence) yield DIALECT_UNSUPPORTED_OPERATION") {

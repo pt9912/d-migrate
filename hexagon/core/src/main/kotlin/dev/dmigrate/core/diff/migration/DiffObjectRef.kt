@@ -14,6 +14,7 @@ enum class DiffObjectType {
     CUSTOM_TYPE,
     SEQUENCE,
     VIEW,
+    MATERIALIZED_VIEW,
     FUNCTION,
     PROCEDURE,
     TRIGGER,
@@ -52,6 +53,7 @@ data class DiffObjectRef(
             DiffObjectType.CUSTOM_TYPE,
             DiffObjectType.SEQUENCE,
             DiffObjectType.VIEW,
+            DiffObjectType.MATERIALIZED_VIEW,
             DiffObjectType.FUNCTION,
             DiffObjectType.PROCEDURE,
             DiffObjectType.TRIGGER -> 1

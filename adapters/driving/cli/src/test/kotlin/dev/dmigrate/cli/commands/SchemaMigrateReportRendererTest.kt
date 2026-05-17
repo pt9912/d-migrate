@@ -213,6 +213,63 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "\"rollback\":\"SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED\""
     }
 
+    test("JSON renderer emits primaryBlockedReason when set") {
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "mv-1",
+                        action = "CREATE",
+                        path = listOf("daily_sales"),
+                        dialect = "MYSQL",
+                        status = "BLOCKED_DIALECT_UNSUPPORTED",
+                        stalenessAfterUp = "UNKNOWN_BLOCKED",
+                        refreshSteps = listOf("BLOCKED_DIALECT_UNSUPPORTED"),
+                        locking = "UNKNOWN_BLOCKED",
+                        rollback = "ROLLBACK_NOT_POSSIBLE",
+                        primaryBlockedReason = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+                    ),
+                ),
+            ),
+            "json",
+        )
+
+        out shouldContain "\"status\":\"BLOCKED_DIALECT_UNSUPPORTED\""
+        out shouldContain "\"primaryBlockedReason\":\"MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT\""
+    }
+
+    test("JSON renderer omits MV primaryBlockedReason field when status is READY") {
+        // Negative test: the per-MV `primaryBlockedReason` JSON key must
+        // not appear inside the materialized-view object when the field
+        // is null. Use a precise object-literal-prefix check to avoid
+        // colliding with the (unrelated) summary-level
+        // `primaryBlockedReason`.
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "mv-1",
+                        action = "CREATE",
+                        path = listOf("daily_sales"),
+                        dialect = "POSTGRESQL",
+                        status = "READY",
+                        stalenessAfterUp = "FRESH_AFTER_INITIAL_REFRESH",
+                        refreshSteps = listOf("INITIAL_REFRESH_VIA_CREATE"),
+                        locking = "ACCESS_EXCLUSIVE",
+                        rollback = "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED",
+                        primaryBlockedReason = null,
+                    ),
+                ),
+            ),
+            "json",
+        )
+
+        // The MV object literal must go straight from `status` to
+        // `stalenessAfterUp` without a `primaryBlockedReason` key in
+        // between when the field is null.
+        out shouldContain "\"status\":\"READY\",\"stalenessAfterUp\":\"FRESH_AFTER_INITIAL_REFRESH\""
+    }
+
     test("JSON renderer escapes special characters") {
         val out = SchemaMigrateReportRenderer.render(
             report().copy(
@@ -387,6 +444,60 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "refreshSteps: [BLOCKED_REFRESH_CONTRACT_REQUIRED]"
         out shouldContain "locking: UNKNOWN_REQUIRES_MANUAL_CONTRACT"
         out shouldContain "rollback: SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
+    }
+
+    test("YAML renderer emits primaryBlockedReason when set") {
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "mv-1",
+                        action = "CREATE",
+                        path = listOf("daily_sales"),
+                        dialect = "SQLITE",
+                        status = "BLOCKED_DIALECT_UNSUPPORTED",
+                        stalenessAfterUp = "UNKNOWN_BLOCKED",
+                        refreshSteps = listOf("BLOCKED_DIALECT_UNSUPPORTED"),
+                        locking = "UNKNOWN_BLOCKED",
+                        rollback = "ROLLBACK_NOT_POSSIBLE",
+                        primaryBlockedReason = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+
+        out shouldContain "status: BLOCKED_DIALECT_UNSUPPORTED"
+        out shouldContain "primaryBlockedReason: MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT"
+    }
+
+    test("YAML renderer omits MV primaryBlockedReason line when status is READY") {
+        // The materialized-views list entries are indented with 4
+        // spaces; the summary's optional `primaryBlockedReason` uses 2
+        // spaces. The negative test pins that the 4-space-indented line
+        // is not emitted when the MV's primaryBlockedReason is null.
+        val out = SchemaMigrateReportRenderer.render(
+            report().copy(
+                materializedViews = listOf(
+                    SchemaMigrateMaterializedViewContractView(
+                        operationId = "mv-1",
+                        action = "CREATE",
+                        path = listOf("daily_sales"),
+                        dialect = "POSTGRESQL",
+                        status = "READY",
+                        stalenessAfterUp = "FRESH_AFTER_INITIAL_REFRESH",
+                        refreshSteps = listOf("INITIAL_REFRESH_VIA_CREATE"),
+                        locking = "ACCESS_EXCLUSIVE",
+                        rollback = "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED",
+                        primaryBlockedReason = null,
+                    ),
+                ),
+            ),
+            "yaml",
+        )
+
+        out shouldContain "status: READY"
+        (out.contains("    primaryBlockedReason:")) shouldBe false
     }
 
     // ── bodyDisplay (E.1 Slice C.1.a) ───────────────────────────────

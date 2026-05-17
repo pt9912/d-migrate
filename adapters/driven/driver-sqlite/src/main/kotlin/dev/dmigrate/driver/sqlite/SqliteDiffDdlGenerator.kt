@@ -200,6 +200,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         when (categorize(op)) {
             OpCategory.SIMPLE -> renderInlineSimpleOp(op, ctx)
             OpCategory.REBUILD -> ctx.deferToRebuild(op)
+            OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -236,6 +237,10 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropConstraint,
         -> OpCategory.REBUILD
 
+        is DiffOperation.CreateMaterializedView,
+        is DiffOperation.DropMaterializedView,
+        -> OpCategory.MATERIALIZED_VIEW
+
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
@@ -271,10 +276,28 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    /**
+     * Plan-2 §8 D.3b Sub-Slice A: SQLite has no native materialized-view
+     * support and §2 explicitly rules out an emulation strategy. The
+     * dispatcher blocks any [DiffOperation.CreateMaterializedView] /
+     * [DiffOperation.DropMaterializedView] with a dialect-specific
+     * diagnostic and an operation blocker.
+     */
+    private fun blockMaterializedView(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        val name = op.objectRef.rootName
+        ctx.skip(
+            op,
+            "Operation ${op.id} targets materialized view '$name'. SQLite does not natively support " +
+                "materialized views; D.3b explicitly carves out an emulation strategy.",
+            code = "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT",
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+    }
+
     private fun markUnsupported(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first SQLite matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { SIMPLE, REBUILD, UNSUPPORTED }
+    private enum class OpCategory { SIMPLE, REBUILD, MATERIALIZED_VIEW, UNSUPPORTED }
 }
