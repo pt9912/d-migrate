@@ -941,17 +941,23 @@ Akzeptanz fuer D.3a:
 
 #### D.3b Vollstaendiger Materialized-View-Vertrag
 
-> Status: konservativer Report-Vertrag implementiert (2026-05-12).
-> `schema migrate` weist Materialized-View-Operationen im Report als
-> `MATERIALIZED_VIEW` und zusaetzlich im Top-Level-Feld
-> `materializedViews` aus. Der Contract bleibt blockierend:
-> `status=BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`,
-> `stalenessAfterUp=UNKNOWN_BLOCKED`, ein expliziter
-> `BLOCKED_REFRESH_CONTRACT_REQUIRED`-Refresh-Schritt,
-> `locking=UNKNOWN_REQUIRES_MANUAL_CONTRACT` und
-> rollbackbezogene Rekonstruktions-/Refresh-Hinweise. D.3b macht
-> Materialized Views damit maschinenlesbar sichtbar, ohne sie automatisch zu
-> rendern oder `REFRESH MATERIALIZED VIEW CONCURRENTLY` zu erraten.
+> Status: ✅ vollstaendig implementiert (2026-05-17, Sub-Slices A/B/C).
+> Carve-out-Plan unter `docs/planning/done/ImpPlan-0.9.7-d.3b-materialized-views.md`.
+> PostgreSQL rendert `CreateMaterializedView` / `ReplaceMaterializedView`
+> (DROP+CREATE unter einer `operationId`) / `DropMaterializedView`
+> diff-basiert. MySQL und SQLite blocken native MV-Operationen mit
+> `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`. Der Report-Vertrag
+> liefert konkrete `status` / `stalenessAfterUp` / `refreshSteps` /
+> `locking` / `rollback` plus `primaryBlockedReason` und
+> `dependencyBlockers`. `MaterializedViewDependencyDetector` blockt
+> Drop/Replace/`AlterColumn*`/`DropColumn` einer depended-on
+> Tabelle/View/Routine mit `BLOCKED_DEPENDENCY_UNRESOLVED`, wenn die MV
+> nicht im selben Plan gedroppt oder ersetzt wird. Die alten
+> Platzhalter `BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT` /
+> `UNKNOWN_REQUIRES_MANUAL_CONTRACT` sind retired. Hart OOS bleiben
+> `REFRESH MATERIALIZED VIEW CONCURRENTLY`, MySQL/SQLite-Emulation,
+> Live-Metadata-Reverse-Read und View↔MV-Konversion (je eigene
+> `BLOCKED_*`-Codes).
 
 Erwarteter Vertrag:
 

@@ -466,8 +466,18 @@ Zusätzlich erledigt seit dem 2026-05-08-Stand:
 
 - **G**: KI-nahe MCP-Tools / Prompts / Provider-Quotas abgeschlossen.
 - **A**: Migrate-Spezifikation und Namensbereinigung abgeschlossen.
-- **D.1/D.2/D.3a/D.3b**: erste dialektspezifische DDL-Matrix fuer
+- **D.1/D.2/D.3a**: erste dialektspezifische DDL-Matrix fuer
   PostgreSQL, MySQL und SQLite-Simple/Rebuild ist umgesetzt.
+- **D.3b (Vollscheibe)**: Materialized-View-Migrationsvertrag
+  vollstaendig implementiert (Sub-Slices A/B/C, 2026-05-17). PG rendert
+  Create/Replace/Drop diff-basiert; MySQL/SQLite blocken mit
+  `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`. Report liefert
+  konkrete `status`/`stalenessAfterUp`/`refreshSteps`/`locking`/
+  `rollback`/`primaryBlockedReason` + `dependencyBlockers`-Subfield;
+  `MaterializedViewDependencyDetector` blockt Drop/Replace/Column-Alter
+  einer depended-on Tabelle ohne MV-Drop/Replace mit
+  `BLOCKED_DEPENDENCY_UNRESOLVED`. Carve-out-Plan unter
+  `docs/planning/done/ImpPlan-0.9.7-d.3b-materialized-views.md`.
 - **C.2**: Planner-/Dependency-Slice abgeschlossen.
 - **C.1 Install-Policy-Slice**: Extension-Install-Policy konservativ
   umgesetzt; MISSING/UNKNOWN/Privilege-Diagnostik bleibt offen.
@@ -829,6 +839,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.45
-**Stand**: 2026-05-14
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker und Telemetry-Plan-Gates sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Version**: 3.46
+**Stand**: 2026-05-17
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates **und D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)** sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
