@@ -4,9 +4,22 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
- * Plan-2 §8 D.3b Sub-Slice A: PostgreSQL renderer for the new
+ * Plan-2 §8 D.3b Sub-Slices A/B: PostgreSQL renderer for the
  * materialized-view diff operations
- * ([DiffOperation.CreateMaterializedView] / [DiffOperation.DropMaterializedView]).
+ * ([DiffOperation.CreateMaterializedView] /
+ * [DiffOperation.ReplaceMaterializedView] /
+ * [DiffOperation.DropMaterializedView]).
+ *
+ * All statements use [PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS]
+ * (`lockBehavior=TABLE_EXCLUSIVE`, `requiresExclusiveAccess=true`) rather
+ * than `POSTGRES_METADATA_HINTS`: a materialized view is more than a
+ * catalog entry — `CREATE MATERIALIZED VIEW … AS <query>` runs the
+ * initial refresh as part of the statement and takes an
+ * `AccessExclusiveLock` on the new relation (plus `AccessShareLock` on
+ * referenced relations during the SELECT); `DROP MATERIALIZED VIEW`
+ * exclusively locks the target before removing it. Plan §5 / §6.4
+ * specifies `locking=ACCESS_EXCLUSIVE` at the statement-hint level for
+ * both directions.
  *
  * The legacy [PostgresDiffOtherOps.renderCreateView] / `renderDropView`
  * D.3a guard (`MATERIALIZED_VIEW_DIFF_UNSUPPORTED`) stays active for
@@ -25,7 +38,7 @@ internal object PostgresDiffMaterializedViewOps {
             ctx.emit(
                 op,
                 "DROP MATERIALIZED VIEW ${ctx.sql.quote(name)};",
-                PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+                PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
             )
             return
         }
@@ -46,7 +59,7 @@ internal object PostgresDiffMaterializedViewOps {
         ctx.emit(
             op,
             "CREATE MATERIALIZED VIEW ${ctx.sql.quote(name)} AS ${query.trimEnd(';')};",
-            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+            PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
         )
     }
 
@@ -87,12 +100,12 @@ internal object PostgresDiffMaterializedViewOps {
         ctx.emit(
             op,
             "DROP MATERIALIZED VIEW ${ctx.sql.quote(name)};",
-            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+            PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
         )
         ctx.emit(
             op,
             "CREATE MATERIALIZED VIEW ${ctx.sql.quote(name)} AS ${sourceQuery.trimEnd(';')};",
-            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+            PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
         )
     }
 
@@ -117,14 +130,14 @@ internal object PostgresDiffMaterializedViewOps {
             ctx.emit(
                 op,
                 "CREATE MATERIALIZED VIEW ${ctx.sql.quote(name)} AS ${query.trimEnd(';')};",
-                PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+                PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
             )
             return
         }
         ctx.emit(
             op,
             "DROP MATERIALIZED VIEW ${ctx.sql.quote(name)};",
-            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+            PostgresDiffRenderContext.POSTGRES_TRANSACTIONAL_DDL_HINTS,
         )
     }
 }

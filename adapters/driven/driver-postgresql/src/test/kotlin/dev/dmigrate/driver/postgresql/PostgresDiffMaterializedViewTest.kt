@@ -10,6 +10,8 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.LockBehavior
+import dev.dmigrate.driver.migration.TransactionBehavior
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
@@ -157,10 +159,48 @@ class PostgresDiffMaterializedViewTest : FunSpec({
         up.statements.flatMap { it.operationIds }.distinct().size shouldBe 1
         // PG-DDL is transactional under the runner-owned transaction —
         // pinned via the FULLY_TRANSACTIONAL hint so readers do not see
-        // the intermediate dropped state between DROP and CREATE.
+        // the intermediate dropped state between DROP and CREATE. Plan §5
+        // also pins `locking=ACCESS_EXCLUSIVE` at the statement-hint
+        // level (TABLE_EXCLUSIVE + requiresExclusiveAccess) — MV
+        // statements are NOT catalog-only metadata writes, the initial
+        // refresh takes an exclusive lock on the target relation.
         up.statements.all {
-            it.hints.transactionBehavior == dev.dmigrate.driver.migration.TransactionBehavior.FULLY_TRANSACTIONAL
+            it.hints.transactionBehavior == TransactionBehavior.FULLY_TRANSACTIONAL
         } shouldBe true
+        up.statements.all { it.hints.lockBehavior == LockBehavior.TABLE_EXCLUSIVE } shouldBe true
+        up.statements.all { it.hints.requiresExclusiveAccess } shouldBe true
+    }
+
+    test("Materialized-view statements use TABLE_EXCLUSIVE locking hints for Create/Drop too") {
+        // The Create and Drop paths share the same lock-hint reasoning as
+        // Replace (Plan §5 / §6.4). Pinning here so a future refactor
+        // that swaps the hint pool back to POSTGRES_METADATA_HINTS fails
+        // loudly.
+        val createUp = planAndUp(
+            SchemaDiff(
+                viewsAdded = listOf(
+                    NamedView(
+                        "mv_x",
+                        ViewDefinition(query = "SELECT 1", materialized = true),
+                    ),
+                ),
+            ),
+        )
+        createUp.statements.single().hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        createUp.statements.single().hints.requiresExclusiveAccess shouldBe true
+
+        val dropUp = planAndUp(
+            SchemaDiff(
+                viewsRemoved = listOf(
+                    NamedView(
+                        "mv_x",
+                        ViewDefinition(query = "SELECT 1", materialized = true),
+                    ),
+                ),
+            ),
+        )
+        dropUp.statements.single().hints.lockBehavior shouldBe LockBehavior.TABLE_EXCLUSIVE
+        dropUp.statements.single().hints.requiresExclusiveAccess shouldBe true
     }
 
     test("ReplaceMaterializedView Down emits DROP + CREATE inverse using before.query") {
