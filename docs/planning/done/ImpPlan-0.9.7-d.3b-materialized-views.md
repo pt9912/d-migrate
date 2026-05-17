@@ -2,7 +2,10 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: D.3b-Carve-out (Plan-2 §8 D.3 / D.3b)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: ✅ done — Sub-Slices A/B/C implementiert und committed
+> (Slice A `2e7bc034`, Slice B `94b87252` + Hint-Fix `33c07962`,
+> Slice C `cbf730bd` + Review-Fixes `9cc7bc37`). Plan-Datei nach
+> `docs/planning/done/` verschoben (vorher: `docs/planning/open/`).
 > **Vorbedingung**: D.3a ✅ (Materialized-View-Guard), D.1 ✅ (PG-View-Signaturen),
 >                 D.2 ✅ (MySQL-View-Dependency-Projektion), Workstream G ✅
 >                 (struktureller Statement-Vertrag)
@@ -760,11 +763,17 @@ Migrationsnotiz im CHANGELOG:
   in PG kein In-Place-Befehl. Der Planer muss das als
   `BLOCKED_CONVERSION_UNSUPPORTED` erkennen und nicht still als
   ReplaceView ↔ ReplaceMaterializedView durchgehen lassen.
-- **Replace einer Tabelle, von der eine MV abhängt**: PG-Semantik
-  ist „Replace blockt, weil die MV den `SELECT`-Plan an die alte
-  Tabellenform gebunden hat". Sub-Slice C blockt für D.3b, weil ein
-  automatischer MV-Replace ohne expliziten Schema-Eintrag eine versteckte
-  SQL-Änderung wäre.
+- **Strukturelle Änderung an einer Tabelle, von der eine MV abhängt**:
+  PostgreSQL kennt kein „Replace einer Tabelle" — Tabellen werden
+  durch `AlterColumnType` / `AlterColumnNullability` /
+  `AlterColumnDefault` / `DropColumn` modifiziert. Eine MV, die auf
+  eine geänderte Spalte verweist, bricht erst beim nächsten
+  `REFRESH MATERIALIZED VIEW` (PG persistiert die Body-SQL, nicht den
+  ausgeführten Plan). Sub-Slice C blockt diese Konstellation per
+  `BLOCKED_DEPENDENCY_UNRESOLVED` mit `droppingKind=TABLE` und
+  `droppingPath=[<table>, <column>]` (Review-Follow-up `9cc7bc37`),
+  weil ein automatischer MV-Replace ohne expliziten Schema-Eintrag
+  eine versteckte SQL-Änderung wäre.
 - **DROP + CREATE in der Replace-Strategie ist nicht atomar in
   Bezug auf Lesezugriffe**: zwischen DROP und CREATE sieht jeder
   Reader keine MV. PG-DDL ist transaktional, also schützt
@@ -784,10 +793,17 @@ Migrationsnotiz im CHANGELOG:
   `view.query` aus dem Schema-File als Wahrheitsquelle. Wenn der
   Live-DB-Stand davon abweicht (z. B. weil jemand die MV manuell
   geändert hat), bemerkt der Diff das nicht. Ein eigener
-  `MaterializedViewMetadataQueries`-Adapter ist OOS für D.3b.
+  `MaterializedViewMetadataQueries`-Adapter ist OOS für D.3b. Eine
+  abhängige Spalten­änderung an einer Tabelle ist hingegen seit
+  Slice-C-Review (`9cc7bc37`) abgedeckt: `AlterColumn*`/`DropColumn`
+  auf einer in `dependencies.tables` gelisteten Tabelle blockt mit
+  `BLOCKED_DEPENDENCY_UNRESOLVED`.
 - **Kover-Coverage**: die neuen Op-Klassen erzeugen viele neue
-  `when`-Branches im Application-/Renderer-Code. Coverage-Pin
-  pro Branch.
+  `when`-Branches im Application-/Renderer-Code. Status nach
+  Implementierung: alle drei Slices erreichen den 90 %-Modul-Gate;
+  Slice C extrahierte zusätzlich `SchemaMigrateMaterializedViewContractBuilder`
+  und `MaterializedViewDependencyDetector` in eigene Dateien, damit
+  weder LargeClass noch TooManyFunctions getriggert werden.
 - **`ViewDefinition.refresh`**: das Feld existiert bereits
   (`String?`), wird aber bisher nicht gerendert. D.3b lässt das
   Feld bewusst unverwendet — die `refresh`-Bedeutung („Auto-
