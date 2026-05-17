@@ -238,6 +238,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.REBUILD
 
         is DiffOperation.CreateMaterializedView,
+        is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 

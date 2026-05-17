@@ -150,57 +150,59 @@ Wird `ViewDefinition.refresh` gesetzt, bleibt der Pfad deterministisch
 
 ## 3. Acceptance Criteria
 
-- [ ] `DiffOperation` hat `CreateMaterializedView`,
+- [x] `DiffOperation` hat `CreateMaterializedView`,
       `ReplaceMaterializedView`, `DropMaterializedView` als eigene
       Op-Klassen; der `objectType` liefert `MATERIALIZED_VIEW` (statt
       `VIEW`) zur Renderer-Dispatch-Entscheidung.
-- [ ] `DiffPlanner` (bzw. `OperationMapper.mapViews`) emittiert die neuen
+- [x] `DiffPlanner` (bzw. `OperationMapper.mapViews`) emittiert die neuen
       Op-Klassen statt `CreateView`/`ReplaceView`/`DropView`, wenn auf der
       vorhandenen Diff-Seite `materialized=true` gilt; echte
       `materialized`-Werte-Umwandlungen blockieren stattdessen.
-- [ ] `DiffPlanner` validiert bei `CreateMaterializedView`/`ReplaceMaterializedView`,
+- [x] `DiffPlanner` validiert bei `CreateMaterializedView`/`ReplaceMaterializedView`,
       dass das benötigte `query` (`after.query` bzw. `before.query`) vorhanden ist;
       bei fehlender Query wird `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
       verwendet statt eines Laufzeitfehlers. Bei echter
       `materialized`-Werte-Umwandlung wird statt dessen immer
       `BLOCKED_CONVERSION_UNSUPPORTED` gesetzt.
-- [ ] `DiffPlanner` blockiert echte `View`↔`Materialized View`-Konversionen
+- [x] `DiffPlanner` blockiert echte `View`↔`Materialized View`-Konversionen
       explizit mit `BLOCKED_CONVERSION_UNSUPPORTED`
       (`primaryBlockedReason=MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`) und
       liefert dafür keine MV-Op-Klasse.
-- [ ] PostgreSQL-Renderer emittiert für die drei neuen Op-Klassen
+- [x] PostgreSQL-Renderer emittiert für die drei neuen Op-Klassen
       `CREATE MATERIALIZED VIEW`, `DROP MATERIALIZED VIEW`, und
       `DROP + CREATE MATERIALIZED VIEW` für Replace.
-- [ ] PostgreSQL-Renderer-Down: `CreateMaterializedView`-Down →
+- [x] PostgreSQL-Renderer-Down: `CreateMaterializedView`-Down →
       `DROP MATERIALIZED VIEW`; `DropMaterializedView`-Down nur bei
       bekanntem `view.query`, sonst Block
       `BLOCKED_DOWN_QUERY_UNKNOWN`;
       `ReplaceMaterializedView`-Down nur bei bekanntem
       `before.query`, sonst Block
       `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN`.
-- [ ] MySQL- und SQLite-Renderer blockieren die drei MV-Op-Klassen
+- [x] MySQL- und SQLite-Renderer blockieren die drei MV-Op-Klassen
       mit `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT` und einer
       Begründung, die den Dialekt nennt.
-- [ ] `SchemaMigrateReportBuilder.buildMaterializedViewContracts`
+- [x] `SchemaMigrateReportBuilder.buildMaterializedViewContracts`
       schreibt konkrete Werte für `status`, `stalenessAfterUp`,
       `refreshSteps`, `locking` und `rollback` (siehe §6.4 für die
       Enumeration); kein Eintrag verbleibt mit
       `BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT` oder
       `UNKNOWN_REQUIRES_MANUAL_CONTRACT`, wenn die zugrunde liegende
       Op gerendert werden konnte.
-- [ ] `SchemaMigrateReportBuilder` ordnet harte D.3b-OOS-Entscheidungen
-      deterministisch zu:
-      - inklusive `primaryBlockedReason`-Zuordnung der OOS-Codes.
+- [x] `SchemaMigrateReportBuilder` ordnet harte Sub-Slice-A/B-OOS-
+      Entscheidungen deterministisch zu, inklusive
+      `primaryBlockedReason`-Zuordnung der OOS-Codes.
       `BLOCKED_DIALECT_UNSUPPORTED`,
       `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED`,
       `BLOCKED_SCHEMA_REFRESH_UNSUPPORTED`,
       `BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED`,
-      `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` und
-      `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` sowie
-      `BLOCKED_CONVERSION_UNSUPPORTED` sowie
-      `BLOCKED_DOWN_QUERY_UNKNOWN`,
+      `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED`,
+      `BLOCKED_CONVERSION_UNSUPPORTED`,
+      `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`,
       `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` und
-      `BLOCKED_DEPENDENCY_UNRESOLVED`.
+      `BLOCKED_DOWN_QUERY_UNKNOWN`.
+- [ ] `SchemaMigrateReportBuilder` ordnet `BLOCKED_DEPENDENCY_UNRESOLVED`
+      deterministisch zu (Sub-Slice C; ohne MV-Dependency-Graph noch
+      kein produktiver Triggerpfad).
 - [ ] `DependencyGuardEvaluator` integriert MV-Knoten in den
       Edge-Graph. Drop oder Replace einer Tabelle/View/Routine mit
       abhängiger MV ohne expliziten MV-Planungsschritt im selben Plan

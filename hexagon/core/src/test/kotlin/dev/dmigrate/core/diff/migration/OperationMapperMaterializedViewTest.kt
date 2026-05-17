@@ -114,6 +114,105 @@ class OperationMapperMaterializedViewTest : FunSpec({
         diagnostic.operationId shouldBe op.id
     }
 
+    test("viewsChanged on both-materialized routes to ReplaceMaterializedView (Sub-Slice B)") {
+        val before = ViewDefinition(query = "SELECT 1", materialized = true)
+        val after = ViewDefinition(query = "SELECT 2", materialized = true)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", "SELECT 2")))),
+        )
+
+        val replace = plan.operations.filterIsInstance<DiffOperation.ReplaceMaterializedView>().single()
+        replace.objectRef.type shouldBe DiffObjectType.MATERIALIZED_VIEW
+        replace.objectRef.rootName shouldBe "mv_x"
+        replace.before.query shouldBe "SELECT 1"
+        replace.after.query shouldBe "SELECT 2"
+        plan.operations.filterIsInstance<DiffOperation.ReplaceView>()
+            .none { it.objectRef.rootName == "mv_x" } shouldBe true
+        plan.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }.shouldBeEmpty()
+    }
+
+    test("viewsChanged on both-materialized with missing after.query emits BLOCKER DIFF_METADATA") {
+        val before = ViewDefinition(query = "SELECT 1", materialized = true)
+        val after = ViewDefinition(query = null, materialized = true)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", null)))),
+        )
+
+        val op = plan.operations.filterIsInstance<DiffOperation.ReplaceMaterializedView>().single()
+        val blocker = plan.diagnostics.single {
+            it.code == "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+        }
+        blocker.severity shouldBe DiffDiagnostic.Severity.BLOCKER
+        blocker.operationId shouldBe op.id
+    }
+
+    test("viewsChanged on both-materialized with missing before.query emits WARNING REPLACE_DOWN_BODY") {
+        val before = ViewDefinition(query = null, materialized = true)
+        val after = ViewDefinition(query = "SELECT 2", materialized = true)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(ViewDiff(name = "mv_x", query = ValueChange(null, "SELECT 2")))),
+        )
+
+        val op = plan.operations.filterIsInstance<DiffOperation.ReplaceMaterializedView>().single()
+        val diagnostic = plan.diagnostics.single { it.code == "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN" }
+        diagnostic.severity shouldBe DiffDiagnostic.Severity.WARNING
+        diagnostic.operationId shouldBe op.id
+    }
+
+    test("Replace where only before.refresh is set still surfaces BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED") {
+        // Regression pin: an operator removing the `refresh` field during a
+        // Replace (before.refresh = "MANUAL", after.refresh = null) must still
+        // surface the OOS gap. Without this asymmetric check the WARNING would
+        // be silently swallowed because the previous implementation only
+        // inspected `after.refresh`.
+        val before = ViewDefinition(query = "SELECT 1", materialized = true, refresh = "MANUAL")
+        val after = ViewDefinition(query = "SELECT 2", materialized = true, refresh = null)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(ViewDiff(name = "mv_x", refresh = ValueChange("MANUAL", null)))),
+        )
+
+        val op = plan.operations.filterIsInstance<DiffOperation.ReplaceMaterializedView>().single()
+        val diagnostic = plan.diagnostics.single { it.code == "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED" }
+        diagnostic.severity shouldBe DiffDiagnostic.Severity.WARNING
+        diagnostic.operationId shouldBe op.id
+        diagnostic.message shouldContain "MANUAL"
+    }
+
+    test("Replace where after.refresh is set takes precedence over before.refresh") {
+        // When both sides carry a `refresh` value, the diagnostic message
+        // should describe the operator's desired state (after), not the
+        // legacy state (before).
+        val before = ViewDefinition(query = "SELECT 1", materialized = true, refresh = "OLD")
+        val after = ViewDefinition(query = "SELECT 2", materialized = true, refresh = "NEW")
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(ViewDiff(name = "mv_x", refresh = ValueChange("OLD", "NEW")))),
+        )
+
+        val diagnostics = plan.diagnostics.filter { it.code == "BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED" }
+        diagnostics.size shouldBe 1
+        diagnostics.single().message shouldContain "NEW"
+    }
+
     test("viewsChanged with materialized flag flip emits BLOCKED_CONVERSION_UNSUPPORTED") {
         val before = ViewDefinition(query = "SELECT 1", materialized = false)
         val after = before.copy(materialized = true)

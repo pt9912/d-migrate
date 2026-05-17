@@ -133,24 +133,101 @@ class PostgresDiffMaterializedViewTest : FunSpec({
         down.diagnostics.any { it.code == "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN" } shouldBe true
     }
 
-    test("ReplaceView with both sides materialized remains blocked by D.3a guard (Slice B target)") {
+    test("ReplaceMaterializedView Up emits DROP + CREATE under one operation id") {
         val before = ViewDefinition(query = "SELECT 1", materialized = true)
         val after = before.copy(query = "SELECT 2")
         val current = emptySchema().copy(views = mapOf("mv_x" to before))
         val desired = emptySchema().copy(views = mapOf("mv_x" to after))
-        val replace = gen.generateUp(
-            planner.plan(
-                current,
-                desired,
-                SchemaDiff(viewsChanged = listOf(
-                    ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", "SELECT 2")),
-                )),
-            ),
-            DdlGenerationOptions(),
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(
+                ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", "SELECT 2")),
+            )),
         )
+        val up = gen.generateUp(plan, DdlGenerationOptions())
 
-        replace.statements.shouldBeEmpty()
-        replace.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+        up.isBlocked shouldBe false
+        up.statements.size shouldBe 2
+        up.statements[0].sql shouldContainStr "DROP MATERIALIZED VIEW \"mv_x\""
+        up.statements[1].sql shouldContainStr "CREATE MATERIALIZED VIEW \"mv_x\""
+        up.statements[1].sql shouldContainStr "SELECT 2"
+        // Plan §8: both statements MUST share the same operationId so
+        // executionStatementGroups treats them as one atomic unit.
+        up.statements.flatMap { it.operationIds }.distinct().size shouldBe 1
+        // PG-DDL is transactional under the runner-owned transaction —
+        // pinned via the FULLY_TRANSACTIONAL hint so readers do not see
+        // the intermediate dropped state between DROP and CREATE.
+        up.statements.all {
+            it.hints.transactionBehavior == dev.dmigrate.driver.migration.TransactionBehavior.FULLY_TRANSACTIONAL
+        } shouldBe true
+    }
+
+    test("ReplaceMaterializedView Down emits DROP + CREATE inverse using before.query") {
+        val before = ViewDefinition(query = "SELECT 1", materialized = true)
+        val after = before.copy(query = "SELECT 2")
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(
+                ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", "SELECT 2")),
+            )),
+        )
+        val down = gen.generateDown(plan, DdlGenerationOptions())
+
+        down.isBlocked shouldBe false
+        down.statements.size shouldBe 2
+        down.statements[0].sql shouldContainStr "DROP MATERIALIZED VIEW \"mv_x\""
+        down.statements[1].sql shouldContainStr "CREATE MATERIALIZED VIEW \"mv_x\""
+        down.statements[1].sql shouldContainStr "SELECT 1"
+    }
+
+    test("ReplaceMaterializedView Up without after.query is blocked by planner DIFF_METADATA") {
+        val before = ViewDefinition(query = "SELECT 1", materialized = true)
+        val after = ViewDefinition(query = null, materialized = true)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(
+                ViewDiff(name = "mv_x", query = ValueChange("SELECT 1", null)),
+            )),
+        )
+        plan.diagnostics.any {
+            it.code == "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" &&
+                it.severity == dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER
+        } shouldBe true
+
+        val up = gen.generateUp(plan, DdlGenerationOptions())
+        up.statements.shouldBeEmpty()
+        up.isBlocked shouldBe true
+        up.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED" } shouldBe true
+    }
+
+    test("ReplaceMaterializedView Down without before.query blocks with MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN") {
+        val before = ViewDefinition(query = null, materialized = true)
+        val after = ViewDefinition(query = "SELECT 2", materialized = true)
+        val current = emptySchema().copy(views = mapOf("mv_x" to before))
+        val desired = emptySchema().copy(views = mapOf("mv_x" to after))
+        val plan = planner.plan(
+            current,
+            desired,
+            SchemaDiff(viewsChanged = listOf(
+                ViewDiff(name = "mv_x", query = ValueChange(null, "SELECT 2")),
+            )),
+        )
+        // Up renders fine: after.query is present, only the Down direction
+        // needs before.query.
+        val up = gen.generateUp(plan, DdlGenerationOptions())
+        up.isBlocked shouldBe false
+        up.statements.size shouldBe 2
+
+        val down = gen.generateDown(plan, DdlGenerationOptions())
+        down.statements.shouldBeEmpty()
+        down.diagnostics.any { it.code == "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN" } shouldBe true
     }
 
     test("View↔MaterializedView conversion is blocked deterministically with BLOCKED_CONVERSION_UNSUPPORTED") {

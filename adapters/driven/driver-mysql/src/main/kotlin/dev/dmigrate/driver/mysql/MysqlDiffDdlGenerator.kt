@@ -118,6 +118,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.ROUTINE
 
         is DiffOperation.CreateMaterializedView,
+        is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 

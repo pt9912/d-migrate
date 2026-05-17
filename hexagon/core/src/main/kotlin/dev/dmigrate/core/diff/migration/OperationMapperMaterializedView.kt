@@ -117,6 +117,71 @@ internal object OperationMapperMaterializedView {
     }
 
     /**
+     * Plan-2 §8 D.3b Sub-Slice B: emit a [DiffOperation.ReplaceMaterializedView]
+     * for a body/columns change on a materialized view where both sides
+     * stay materialized. Severity rules:
+     *
+     * - `after.query == null` ⇒ the Up render cannot reconstruct the
+     *   MV, so the diff is BLOCKER-blocked with
+     *   `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`.
+     * - `after.query` is present but `before.query == null` ⇒ Up runs
+     *   fine, only the Down inverse needs `before.query`. Emitted as
+     *   `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` at `WARNING` severity so
+     *   `RenderContext.toResult` does not promote it into a
+     *   `DIALECT_UNSUPPORTED_OPERATION` blocker that would stop the
+     *   valid forward DDL.
+     */
+    fun emitReplace(
+        name: String,
+        before: ViewDefinition,
+        after: ViewDefinition,
+        diagnostics: MutableList<DiffDiagnostic>,
+        ops: MutableList<DiffOperation>,
+    ) {
+        val ref = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf(name))
+        val op = DiffOperation.ReplaceMaterializedView(
+            id = OperationIdFactory.makeId(
+                "ReplaceMaterializedView",
+                ref,
+                "before=" + CanonicalPayload.view(before) + "->after=" + CanonicalPayload.view(after),
+            ),
+            objectRef = ref,
+            before = before,
+            after = after,
+        )
+        ops += op
+        when {
+            after.query == null -> diagnostics += DiffDiagnostic(
+                code = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+                message = "Materialized view '$name' replace target lacks a query body; CREATE " +
+                    "MATERIALIZED VIEW cannot be rendered. Provide `query` in the desired schema.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+                operationId = op.id,
+            )
+            before.query == null -> diagnostics += DiffDiagnostic(
+                code = "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN",
+                message = "Materialized view '$name' has no recoverable original body; the Up DROP+" +
+                    "CREATE renders fine but the rollback would require manual reconstruction of " +
+                    "the prior body.",
+                severity = DiffDiagnostic.Severity.WARNING,
+                operationId = op.id,
+            )
+        }
+        // Plan-2 §2: `ViewDefinition.refresh` is unevaluated in D.3b
+        // regardless of which side carries it. Prefer the `after` side
+        // when set so the diagnostic message reflects the operator's
+        // desired state; fall back to `before` when only the previous
+        // schema had the field (e.g. operator removed `refresh` as
+        // part of the Replace).
+        when {
+            after.refresh != null ->
+                emitRefreshSemanticsBlockerIfSet(name, after, op.id, diagnostics)
+            before.refresh != null ->
+                emitRefreshSemanticsBlockerIfSet(name, before, op.id, diagnostics)
+        }
+    }
+
+    /**
      * Emit a `BLOCKED_CONVERSION_UNSUPPORTED` diagnostic for a
      * `View↔MaterializedView` materialized-flag flip. The legacy
      * [DiffOperation.ReplaceView] op stays in the plan so the report

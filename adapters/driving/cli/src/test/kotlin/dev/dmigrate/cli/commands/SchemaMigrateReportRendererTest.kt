@@ -186,7 +186,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "drop is destructive"
     }
 
-    test("JSON renderer emits materialized view refresh staleness contract") {
+    test("JSON renderer emits ReplaceMaterializedView READY contract (Sub-Slice B)") {
         val out = SchemaMigrateReportRenderer.render(
             report().copy(
                 materializedViews = listOf(
@@ -195,10 +195,10 @@ class SchemaMigrateReportRendererTest : FunSpec({
                         action = "REPLACE",
                         path = listOf("order_summary_mv"),
                         dialect = "POSTGRESQL",
-                        status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
-                        stalenessAfterUp = "UNKNOWN_BLOCKED",
-                        refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
-                        locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                        status = "READY",
+                        stalenessAfterUp = "FRESH_AFTER_REPLACE_REFRESH",
+                        refreshSteps = listOf("DROP_CREATE_INITIAL_REFRESH"),
+                        locking = "ACCESS_EXCLUSIVE",
                         rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
                     ),
                 ),
@@ -207,9 +207,9 @@ class SchemaMigrateReportRendererTest : FunSpec({
         )
 
         out shouldContain "\"materializedViews\": ["
-        out shouldContain "\"stalenessAfterUp\":\"UNKNOWN_BLOCKED\""
-        out shouldContain "\"refreshSteps\":[\"BLOCKED_REFRESH_CONTRACT_REQUIRED\"]"
-        out shouldContain "\"locking\":\"UNKNOWN_REQUIRES_MANUAL_CONTRACT\""
+        out shouldContain "\"stalenessAfterUp\":\"FRESH_AFTER_REPLACE_REFRESH\""
+        out shouldContain "\"refreshSteps\":[\"DROP_CREATE_INITIAL_REFRESH\"]"
+        out shouldContain "\"locking\":\"ACCESS_EXCLUSIVE\""
         out shouldContain "\"rollback\":\"SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED\""
     }
 
@@ -419,19 +419,19 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "transactionBoundary: BEFORE"
     }
 
-    test("YAML renderer emits materialized view contract") {
+    test("YAML renderer emits ReplaceMaterializedView READY contract (Sub-Slice B)") {
         val out = SchemaMigrateReportRenderer.render(
             report().copy(
                 materializedViews = listOf(
                     SchemaMigrateMaterializedViewContractView(
                         operationId = "view-1",
-                        action = "DROP",
+                        action = "REPLACE",
                         path = listOf("order_summary_mv"),
                         dialect = "POSTGRESQL",
-                        status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
-                        stalenessAfterUp = "UNKNOWN_BLOCKED",
-                        refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
-                        locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
+                        status = "READY",
+                        stalenessAfterUp = "FRESH_AFTER_REPLACE_REFRESH",
+                        refreshSteps = listOf("DROP_CREATE_INITIAL_REFRESH"),
+                        locking = "ACCESS_EXCLUSIVE",
                         rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
                     ),
                 ),
@@ -440,9 +440,10 @@ class SchemaMigrateReportRendererTest : FunSpec({
         )
 
         out shouldContain "materializedViews:\n  - operationId: view-1"
-        out shouldContain "stalenessAfterUp: UNKNOWN_BLOCKED"
-        out shouldContain "refreshSteps: [BLOCKED_REFRESH_CONTRACT_REQUIRED]"
-        out shouldContain "locking: UNKNOWN_REQUIRES_MANUAL_CONTRACT"
+        out shouldContain "status: READY"
+        out shouldContain "stalenessAfterUp: FRESH_AFTER_REPLACE_REFRESH"
+        out shouldContain "refreshSteps: [DROP_CREATE_INITIAL_REFRESH]"
+        out shouldContain "locking: ACCESS_EXCLUSIVE"
         out shouldContain "rollback: SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
     }
 

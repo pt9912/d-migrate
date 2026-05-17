@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice B** — dedicated
+  `DiffOperation.ReplaceMaterializedView` class closes out the
+  `OperationMapper.mapViews` routing: a body / columns change on a
+  view where both sides stay materialized now routes to the new op
+  instead of the legacy `ReplaceView` placeholder. PostgreSQL emits
+  the replace as two statements — `DROP MATERIALIZED VIEW <name>;`
+  followed by `CREATE MATERIALIZED VIEW <name> AS <after.query>;` —
+  sharing the same `operationId` so Workstream-G's
+  `executionStatementGroups` treats them as one atomic unit under
+  PG's transactional DDL. Down emits the symmetric inverse using
+  `before.query`; absent `before.query` blocks with the new
+  `MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN` code (Up still
+  renders fine — only the rollback contract is affected). MySQL and
+  SQLite block the replace via the existing
+  `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT` path. The
+  `materializedViews[]` report surfaces a `READY` row with
+  `stalenessAfterUp=FRESH_AFTER_REPLACE_REFRESH`,
+  `refreshSteps=[DROP_CREATE_INITIAL_REFRESH]` and
+  `locking=ACCESS_EXCLUSIVE` for renderable PG replaces; the legacy
+  `BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT` placeholder is now
+  fully retired.
+
+  **Internal API change**: `DiffOperation` gains one more sealed
+  subclass (`ReplaceMaterializedView`). Embedders / extension code
+  that pattern-matches against `DiffOperation` must triage it or the
+  Kotlin compiler rejects the `when` as non-exhaustive.
+
 - **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice A** — dedicated
   `DiffOperation.CreateMaterializedView` / `DropMaterializedView`
   classes plus a new `DiffObjectType.MATERIALIZED_VIEW` enum value.

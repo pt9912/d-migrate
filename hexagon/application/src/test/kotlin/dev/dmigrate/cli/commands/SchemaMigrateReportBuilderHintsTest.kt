@@ -267,39 +267,95 @@ class SchemaMigrateReportBuilderHintsTest : FunSpec({
         report.diagnostics.count { it.code == "CODE_X" } shouldBe 1
     }
 
-    test("legacy ReplaceView+materialized still surfaces the refresh staleness placeholder (Sub-Slice B target)") {
-        // Plan-2 §8 D.3b Sub-Slice A: the dedicated ReplaceMaterializedView
-        // op arrives in Sub-Slice B. Until then the ReplaceView+materialized
-        // path keeps the conservative `BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT`
-        // placeholder so consumers do not see a misleading READY status.
-        val op = DiffOperation.ReplaceView(
-            id = "view-1",
-            objectRef = DiffObjectRef(DiffObjectType.VIEW, listOf("order_summary_mv")),
+    test("ReplaceMaterializedView rendered on PostgreSQL surfaces READY + FRESH_AFTER_REPLACE_REFRESH") {
+        val op = DiffOperation.ReplaceMaterializedView(
+            id = "mv-replace-1",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("order_summary_mv")),
             before = ViewDefinition(query = "SELECT 1", materialized = true),
             after = ViewDefinition(query = "SELECT 2", materialized = true),
         )
         val report = buildReport(
             rendered = MigrationDdlResult(
                 statements = emptyList(),
-                operationsRendered = emptySet(),
-                operationsSkipped = setOf("view-1"),
+                operationsRendered = setOf("mv-replace-1"),
             ),
             operations = listOf(op),
         )
 
         report.operations.single().objectType shouldBe "MATERIALIZED_VIEW"
         report.materializedViews.single() shouldBe SchemaMigrateMaterializedViewContractView(
-            operationId = "view-1",
+            operationId = "mv-replace-1",
             action = "REPLACE",
             path = listOf("order_summary_mv"),
             dialect = "POSTGRESQL",
-            status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
-            stalenessAfterUp = "UNKNOWN_BLOCKED",
-            refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
-            locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
-            rollback = "ROLLBACK_NOT_POSSIBLE",
+            status = "READY",
+            stalenessAfterUp = "FRESH_AFTER_REPLACE_REFRESH",
+            refreshSteps = listOf("DROP_CREATE_INITIAL_REFRESH"),
+            locking = "ACCESS_EXCLUSIVE",
+            rollback = "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED",
             primaryBlockedReason = null,
         )
+    }
+
+    test("ReplaceMaterializedView without recoverable before.query → BLOCKED_REPLACE_DOWN_BODY_UNKNOWN") {
+        val op = DiffOperation.ReplaceMaterializedView(
+            id = "mv-replace-bad",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("order_summary_mv")),
+            before = ViewDefinition(query = null, materialized = true),
+            after = ViewDefinition(query = "SELECT 2", materialized = true),
+        )
+        // Severity stays WARNING: the Up DROP+CREATE renders fine — only
+        // the Down inverse needs `before.query`. A BLOCKER here would
+        // stop the forward DDL.
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN",
+            message = "no before.query",
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = "mv-replace-bad",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = setOf("mv-replace-bad"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN"
+        contract.refreshSteps shouldBe listOf("BLOCKED_REPLACE_DOWN_BODY_UNKNOWN")
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
+    }
+
+    test("ReplaceMaterializedView Up-blocking missing-after.query → BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED") {
+        val op = DiffOperation.ReplaceMaterializedView(
+            id = "mv-replace-noafter",
+            objectRef = DiffObjectRef(DiffObjectType.MATERIALIZED_VIEW, listOf("order_summary_mv")),
+            before = ViewDefinition(query = "SELECT 1", materialized = true),
+            after = ViewDefinition(query = null, materialized = true),
+        )
+        val planDiag = DiffDiagnostic(
+            code = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+            message = "no after.query",
+            severity = DiffDiagnostic.Severity.BLOCKER,
+            operationId = "mv-replace-noafter",
+        )
+        val report = buildReport(
+            rendered = MigrationDdlResult(
+                statements = emptyList(),
+                operationsRendered = emptySet(),
+                operationsSkipped = setOf("mv-replace-noafter"),
+            ),
+            operations = listOf(op),
+            planDiagnostics = listOf(planDiag),
+        )
+
+        val contract = report.materializedViews.single()
+        contract.status shouldBe "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+        contract.primaryBlockedReason shouldBe "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+        contract.rollback shouldBe "ROLLBACK_NOT_POSSIBLE"
     }
 
     test("CreateMaterializedView rendered on PostgreSQL surfaces READY contract") {

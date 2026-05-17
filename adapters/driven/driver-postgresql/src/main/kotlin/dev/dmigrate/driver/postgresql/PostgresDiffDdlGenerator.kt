@@ -137,6 +137,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.PROCEDURE
 
         is DiffOperation.CreateMaterializedView,
+        is DiffOperation.ReplaceMaterializedView,
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 
@@ -210,6 +211,8 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         when (op) {
             is DiffOperation.CreateMaterializedView ->
                 PostgresDiffMaterializedViewOps.renderCreateMaterializedView(op, ctx)
+            is DiffOperation.ReplaceMaterializedView ->
+                PostgresDiffMaterializedViewOps.renderReplaceMaterializedView(op, ctx)
             is DiffOperation.DropMaterializedView ->
                 PostgresDiffMaterializedViewOps.renderDropMaterializedView(op, ctx)
             else -> error(

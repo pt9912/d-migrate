@@ -50,6 +50,52 @@ internal object PostgresDiffMaterializedViewOps {
         )
     }
 
+    /**
+     * Plan-2 §8 D.3b Sub-Slice B: PostgreSQL emits the Replace as two
+     * statements — `DROP MATERIALIZED VIEW <name>;` then
+     * `CREATE MATERIALIZED VIEW <name> AS <query>;`. Both statements
+     * share the same [op.id] so Workstream-G's
+     * `executionStatementGroups` treats them as one atomic unit; PG's
+     * transactional DDL guarantees no reader observes the intermediate
+     * dropped state inside the runner-owned transaction.
+     */
+    fun renderReplaceMaterializedView(
+        op: DiffOperation.ReplaceMaterializedView,
+        ctx: PostgresDiffRenderContext,
+    ) {
+        val name = op.objectRef.rootName
+        val (sourceQuery, sourceLabel) = if (ctx.direction == PostgresRenderDirection.DOWN) {
+            op.before.query to "before.query"
+        } else {
+            op.after.query to "after.query"
+        }
+        if (sourceQuery.isNullOrBlank()) {
+            val code = if (ctx.direction == PostgresRenderDirection.DOWN) {
+                "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN"
+            } else {
+                "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED"
+            }
+            ctx.skip(
+                op,
+                "Operation ${op.id} cannot render ${ctx.direction.name} for REPLACE MATERIALIZED VIEW " +
+                    "'$name' because $sourceLabel is absent.",
+                code = code,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return
+        }
+        ctx.emit(
+            op,
+            "DROP MATERIALIZED VIEW ${ctx.sql.quote(name)};",
+            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+        )
+        ctx.emit(
+            op,
+            "CREATE MATERIALIZED VIEW ${ctx.sql.quote(name)} AS ${sourceQuery.trimEnd(';')};",
+            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+        )
+    }
+
     fun renderDropMaterializedView(
         op: DiffOperation.DropMaterializedView,
         ctx: PostgresDiffRenderContext,

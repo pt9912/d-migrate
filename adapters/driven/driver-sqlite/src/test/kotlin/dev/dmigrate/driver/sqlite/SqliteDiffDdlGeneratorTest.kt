@@ -302,10 +302,9 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         createDiag.message shouldContainStr "mv"
         createDiag.message shouldContainStr "SQLite"
 
-        // ReplaceView with both sides materialized=true still routes
-        // through the legacy ReplaceView path (Sub-Slice B introduces
-        // a dedicated ReplaceMaterializedView op). The existing D.3a
-        // guard fires for that case.
+        // Sub-Slice B: a body change on a materialized view routes through
+        // ReplaceMaterializedView, which the dispatcher catches via the
+        // dialect-block path with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT.
         val current = emptySchema().copy(views = mapOf("mv" to view))
         val desired = emptySchema().copy(views = mapOf("mv" to view.copy(query = "SELECT 2")))
         val replace = gen.generateUp(
@@ -319,7 +318,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
             DdlGenerationOptions(),
         )
         replace.statements.shouldBeEmpty()
-        replace.diagnostics.any { it.code == "MATERIALIZED_VIEW_DIFF_UNSUPPORTED" } shouldBe true
+        replace.diagnostics.any { it.code == "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" } shouldBe true
 
         val drop = planAndUp(SchemaDiff(viewsRemoved = listOf(dev.dmigrate.core.diff.NamedView("mv", view))))
         drop.statements.shouldBeEmpty()

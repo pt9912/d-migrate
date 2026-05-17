@@ -465,7 +465,7 @@ sealed interface DiffOperation {
         override fun withId(id: String): DiffOperation = copy(id = id)
     }
 
-    // ── Materialized views (Plan-2 §8 D.3b Sub-Slice A) ─────────────
+    // ── Materialized views (Plan-2 §8 D.3b Sub-Slices A/B) ──────────
 
     data class CreateMaterializedView(
         override val id: String,
@@ -476,6 +476,39 @@ sealed interface DiffOperation {
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
         override val risks: OperationRisks = OperationRisks(
             up = OperationRisk.SAFE,
+            down = OperationRisk(destructive = true),
+        ),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * Plan-2 §8 D.3b Sub-Slice B: body- or columns-diff on a
+     * materialized view. The renderer emits two statements (DROP +
+     * CREATE) sharing the same [id] so Workstream-G's
+     * `executionStatementGroups` treats them as one atomic unit.
+     *
+     * Body-availability rules (per §6.4.1):
+     *
+     * - Up needs [after].query to reconstruct the new MV — absent body
+     *   blocks with `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
+     *   (BLOCKER severity; the forward DDL genuinely cannot render).
+     * - Down needs [before].query to reconstruct the original MV —
+     *   absent body blocks with `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN`
+     *   (WARNING severity; the forward DDL still runs, only the
+     *   rollback contract is affected).
+     */
+    data class ReplaceMaterializedView(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val before: ViewDefinition,
+        val after: ViewDefinition,
+        override val phase: DiffPhase = DiffPhase.VIEWS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(
+            up = OperationRisk(destructive = true),
             down = OperationRisk(destructive = true),
         ),
     ) : DiffOperation {

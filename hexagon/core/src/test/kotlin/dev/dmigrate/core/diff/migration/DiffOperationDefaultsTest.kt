@@ -199,6 +199,7 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.ReplaceView("r-v", viewRef, view, view),
             DiffOperation.DropView("d-v", viewRef, view),
             DiffOperation.CreateMaterializedView("c-mv", materializedViewRef, view),
+            DiffOperation.ReplaceMaterializedView("r-mv", materializedViewRef, view, view),
             DiffOperation.DropMaterializedView("d-mv", materializedViewRef, view),
             DiffOperation.CreateFunction("c-f", functionRef, function),
             DiffOperation.ReplaceFunction("r-f", functionRef, function, function),
@@ -210,7 +211,7 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.ReplaceTrigger("r-trg", triggerRef, trigger, trigger),
             DiffOperation.DropTrigger("d-trg", triggerRef, trigger),
         )
-        ops shouldHaveSize 33
+        ops shouldHaveSize 34
 
         // Phase pinning (Plan §4.4):
         ops.filterIsInstance<DiffOperation.CreateTable>().single().phase shouldBe DiffPhase.TABLES
@@ -222,6 +223,7 @@ class DiffOperationDefaultsTest : FunSpec({
         ops.filterIsInstance<DiffOperation.CreateSequence>().single().phase shouldBe DiffPhase.SEQUENCES
         ops.filterIsInstance<DiffOperation.CreateView>().single().phase shouldBe DiffPhase.VIEWS
         ops.filterIsInstance<DiffOperation.CreateMaterializedView>().single().phase shouldBe DiffPhase.VIEWS
+        ops.filterIsInstance<DiffOperation.ReplaceMaterializedView>().single().phase shouldBe DiffPhase.VIEWS
         ops.filterIsInstance<DiffOperation.DropMaterializedView>().single().phase shouldBe DiffPhase.VIEWS
         ops.filterIsInstance<DiffOperation.CreateFunction>().single().phase shouldBe DiffPhase.ROUTINES
         ops.filterIsInstance<DiffOperation.CreateProcedure>().single().phase shouldBe DiffPhase.ROUTINES
@@ -252,13 +254,13 @@ class DiffOperationDefaultsTest : FunSpec({
             withNewId::class shouldBe op::class
         }
 
-        // Catalog-size guard: the §4.3 catalog has 33 subtypes today
-        // (Plan-2 §8 D.3b Sub-Slice A added CreateMaterializedView and
-        // DropMaterializedView; Sub-Slice B will add ReplaceMaterializedView).
-        // Adding a new subtype must be paired with a smoke-test entry in
-        // `ops`; the count makes the omission impossible to miss without
-        // pulling in kotlin-reflect for `sealedSubclasses`.
+        // Catalog-size guard: the §4.3 catalog has 34 subtypes today
+        // (Plan-2 §8 D.3b Sub-Slices A/B added CreateMaterializedView,
+        // ReplaceMaterializedView, DropMaterializedView). Adding a new
+        // subtype must be paired with a smoke-test entry in `ops`; the
+        // count makes the omission impossible to miss without pulling
+        // in kotlin-reflect for `sealedSubclasses`.
         val distinctClasses = ops.map { it::class }.toSet()
-        distinctClasses.size shouldBe 33
+        distinctClasses.size shouldBe 34
     }
 })

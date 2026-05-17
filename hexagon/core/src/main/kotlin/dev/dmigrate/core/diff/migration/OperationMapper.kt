@@ -525,9 +525,29 @@ internal object OperationMapper {
             // projector lives in [absorbedViews]; do not emit a
             // duplicate `ReplaceView` here.
             if (changed.name in absorbedViews) continue
-            val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(changed.name))
             val before = current.views[changed.name] ?: continue
             val after = desired.views[changed.name] ?: continue
+            val materializedFlip = before.materialized != after.materialized
+            // Plan-2 §8 D.3b Sub-Slice B: a materialized-view body /
+            // columns change (both sides remain materialized) routes to
+            // the dedicated `ReplaceMaterializedView` op (DROP+CREATE
+            // under one operation id, atomic under PG's transactional
+            // DDL). A `materialized` flag flip is instead a `View↔MV`
+            // conversion which D.3b blocks via
+            // `BLOCKED_CONVERSION_UNSUPPORTED` on a `ReplaceView`
+            // placeholder so the report builder has an operation id to
+            // attach the contract to.
+            if (!materializedFlip && before.materialized && after.materialized) {
+                OperationMapperMaterializedView.emitReplace(
+                    name = changed.name,
+                    before = before,
+                    after = after,
+                    diagnostics = diagnostics,
+                    ops = ops,
+                )
+                continue
+            }
+            val ref = DiffObjectRef(DiffObjectType.VIEW, listOf(changed.name))
             val op = DiffOperation.ReplaceView(
                 id = OperationIdFactory.makeId(
                     "ReplaceView",
@@ -540,7 +560,7 @@ internal object OperationMapper {
                 after = after,
             )
             ops += op
-            if (before.materialized != after.materialized) {
+            if (materializedFlip) {
                 OperationMapperMaterializedView.emitConversionDiagnostic(
                     name = changed.name,
                     before = before,
@@ -551,5 +571,4 @@ internal object OperationMapper {
             }
         }
     }
-
 }

@@ -242,7 +242,7 @@ internal object SchemaMigrateReportBuilder {
     }
 
     /**
-     * Plan-2 §8 D.3b Sub-Slice A precedence per §5 Cross-Slice OOS-Contract:
+     * Plan-2 §8 D.3b Sub-Slices A/B precedence per §5 Cross-Slice OOS-Contract:
      *
      * 1. `BLOCKED_DIALECT_UNSUPPORTED` (highest — the MV cannot exist on the target).
      * 2. `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED` (explicit refresh-contract input requested CONCURRENTLY).
@@ -251,7 +251,8 @@ internal object SchemaMigrateReportBuilder {
      * 5. `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` (live-DB reverse-read metadata missing).
      * 6. `BLOCKED_CONVERSION_UNSUPPORTED` (View↔MaterializedView flip).
      * 7. `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` (missing/inconsistent query metadata in the diff).
-     * 8. `BLOCKED_DOWN_QUERY_UNKNOWN` (Drop without recoverable body).
+     * 8. `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` (Replace without recoverable `before` body).
+     * 9. `BLOCKED_DOWN_QUERY_UNKNOWN` (Drop without recoverable body).
      *
      * If none of the above trigger, the op is treated as renderable on
      * PostgreSQL and the contract maps to `READY` with the action-specific
@@ -309,6 +310,14 @@ internal object SchemaMigrateReportBuilder {
                 primary = "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
             )
         }
+        if ("BLOCKED_REPLACE_DOWN_BODY_UNKNOWN" in planCodes ||
+            "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN" in renderCodes
+        ) {
+            return blockedDecision(
+                status = "BLOCKED_REPLACE_DOWN_BODY_UNKNOWN",
+                primary = "MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN",
+            )
+        }
         if ("BLOCKED_DOWN_QUERY_UNKNOWN" in planCodes ||
             "MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN" in renderCodes
         ) {
@@ -335,31 +344,19 @@ internal object SchemaMigrateReportBuilder {
         op: DiffOperation,
         rendered: MigrationDdlResult,
     ): MaterializedViewContractDecision {
-        // Legacy bridge for Slice A: the dedicated ReplaceMaterializedView
-        // op lands in Sub-Slice B. Until then, a `ReplaceView` with a
-        // materialized flag falls through here without a planner diagnostic.
-        // It is still blocked by the D.3a guard inside the renderer; keep
-        // the conservative placeholder so the report does not claim READY.
-        if (op is DiffOperation.ReplaceView) {
-            return MaterializedViewContractDecision(
-                status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
-                stalenessAfterUp = "UNKNOWN_BLOCKED",
-                refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
-                locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
-                primaryBlockedReason = null,
-            )
-        }
         val wasSkipped = op.id in rendered.operationsSkipped
         if (wasSkipped) {
-            // Defense-in-depth: the renderer skipped without emitting any
-            // of the codes mapped above. Keep the conservative bridge
-            // status so downstream consumers do not see a misleading READY.
-            return MaterializedViewContractDecision(
-                status = "BLOCKED_UNTIL_REFRESH_STALENESS_CONTRACT",
-                stalenessAfterUp = "UNKNOWN_BLOCKED",
-                refreshSteps = listOf("BLOCKED_REFRESH_CONTRACT_REQUIRED"),
-                locking = "UNKNOWN_REQUIRES_MANUAL_CONTRACT",
-                primaryBlockedReason = null,
+            // Defense-in-depth: the renderer skipped the op without
+            // emitting any of the codes the precedence table maps. This
+            // path is reached e.g. by the D.3a guard if a legacy
+            // `ReplaceView` with `materialized=true` slips through
+            // (Sub-Slice A would route a fresh diff via the new MV ops;
+            // a hand-constructed test fixture is the most common
+            // remaining trigger). Surface a generic OOS rather than
+            // claim READY.
+            return blockedDecision(
+                status = "BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
+                primary = "MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED",
             )
         }
         return when (op) {
@@ -368,6 +365,14 @@ internal object SchemaMigrateReportBuilder {
                     status = "READY",
                     stalenessAfterUp = "FRESH_AFTER_INITIAL_REFRESH",
                     refreshSteps = listOf("INITIAL_REFRESH_VIA_CREATE"),
+                    locking = "ACCESS_EXCLUSIVE",
+                    primaryBlockedReason = null,
+                )
+            is DiffOperation.ReplaceMaterializedView ->
+                MaterializedViewContractDecision(
+                    status = "READY",
+                    stalenessAfterUp = "FRESH_AFTER_REPLACE_REFRESH",
+                    refreshSteps = listOf("DROP_CREATE_INITIAL_REFRESH"),
                     locking = "ACCESS_EXCLUSIVE",
                     primaryBlockedReason = null,
                 )
@@ -393,6 +398,7 @@ internal object SchemaMigrateReportBuilder {
 
     private fun DiffOperation.materializedViewDefinition(): ViewDefinition? = when (this) {
         is DiffOperation.CreateMaterializedView -> view
+        is DiffOperation.ReplaceMaterializedView -> after
         is DiffOperation.DropMaterializedView -> view
         is DiffOperation.CreateView -> view.takeIf { it.materialized }
         is DiffOperation.ReplaceView -> after.takeIf { before.materialized || after.materialized }
@@ -402,6 +408,7 @@ internal object SchemaMigrateReportBuilder {
 
     private fun DiffOperation.materializedViewAction(): String = when (this) {
         is DiffOperation.CreateMaterializedView -> "CREATE"
+        is DiffOperation.ReplaceMaterializedView -> "REPLACE"
         is DiffOperation.DropMaterializedView -> "DROP"
         is DiffOperation.CreateView -> "CREATE"
         is DiffOperation.ReplaceView -> "REPLACE"
@@ -419,6 +426,9 @@ internal object SchemaMigrateReportBuilder {
         return when (this) {
             is DiffOperation.CreateMaterializedView, is DiffOperation.CreateView ->
                 "DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED"
+            is DiffOperation.ReplaceMaterializedView ->
+                if (before.query == null) "MANUAL_RECONSTRUCTION_REQUIRED"
+                else "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
             is DiffOperation.DropMaterializedView ->
                 if (view.query == null) "MANUAL_RECONSTRUCTION_REQUIRED"
                 else "SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED"
