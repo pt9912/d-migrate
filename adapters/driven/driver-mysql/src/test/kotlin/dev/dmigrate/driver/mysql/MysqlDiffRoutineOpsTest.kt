@@ -484,23 +484,62 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         statement.shouldNotContain("OR REPLACE")
     }
 
-    // ── F.5: InvalidConfig guards for Create/Replace/Drop ─────────────
+    // ── F.5 + 0.9.7 Sub-Slice C: InvalidConfig renderer pins ──────────
     //
-    // The InvalidConfig resolution branch is unreachable from production
-    // code in C.1.a (no configurable Capability source yet); the
-    // configurable-source carve-out plan
-    // (`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`)
-    // adds it. F.5 wires `if (resolveCapability == InvalidConfig)
-    // blockCapabilityInvalid(...)` into renderCreateFunction,
-    // renderDropFunction, renderCreateProcedure, renderDropProcedure so
-    // ALL four entry points enforce MANUAL_ACTION_REQUIRED per Plan §2/§3
-    // — the renderer-side pin for InvalidConfig is exercised by the
-    // capability-configurable-source slice; here we pin the structural
-    // requirement via the existing Active/Disabled coverage above.
-    //
-    // Pre-F.5 only renderReplaceFunction and renderReplaceProcedure
-    // routed through the resolver; F.5 brings CREATE/DROP into the same
-    // contract.
+    // F.5 wired `if (resolveCapability == InvalidConfig) blockCapabilityInvalid(...)`
+    // into renderCreateFunction, renderDropFunction, renderCreateProcedure,
+    // renderDropProcedure so ALL four entry points enforce
+    // MANUAL_ACTION_REQUIRED per Plan §2/§3. Pre-F.5 only the Replace
+    // entries routed through the resolver. The pins below cover the
+    // Sub-Slice C requirement that
+    // `routineCapability = EffectiveRoutineCapability.Invalid(reason)`
+    // emits `ROUTINE_CAPABILITY_CONFIG_INVALID` with the operator's
+    // reason string in the diagnostic body, with the operation marked
+    // as blocked / MANUAL_ACTION_REQUIRED.
+
+    fun invalidCapability(reason: String = "bad config: unparsable minServerVersion=not-a-version") =
+        DdlGenerationOptions(routineCapability = EffectiveRoutineCapability.Invalid(reason))
+
+    test("Sub-Slice C: ReplaceFunction with Invalid capability blocks with reason in diagnostic body") {
+        val before = sampleFunction
+        val after = sampleFunction.copy(body = "BEGIN RETURN amount * 1.2; END")
+        val current = emptySchema().copy(functions = mapOf("compute_total" to before))
+        val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
+        val diff = comparator.compare(current, desired)
+        val cap = invalidCapability("bad config: --routine-capability for kind=function has invalid 'enabled' value 'yes'")
+        val r = gen.generateUp(planner.plan(current, desired, diff), cap)
+        r.isBlocked shouldBe true
+        val diag = r.diagnostics.firstOrNull { it.code == "ROUTINE_CAPABILITY_CONFIG_INVALID" }
+        diag.shouldNotBeNull()
+        diag.message.shouldContain("Function 'compute_total'")
+        diag.message.shouldContain("invalid 'enabled' value 'yes'")
+        r.statements.none { it.sql.contains("CREATE") || it.sql.contains("DROP FUNCTION") } shouldBe true
+    }
+
+    test("Sub-Slice C: CreateProcedure with Invalid capability blocks with reason in diagnostic body") {
+        val r = planAndUp(
+            SchemaDiff(proceduresAdded = listOf(NamedProcedure("audit_call", sampleProcedure))),
+            options = invalidCapability("bad config: YAML 'routineCapability.procedure.enabled' must be a boolean"),
+        )
+        r.isBlocked shouldBe true
+        val diag = r.diagnostics.firstOrNull { it.code == "ROUTINE_CAPABILITY_CONFIG_INVALID" }
+        diag.shouldNotBeNull()
+        diag.message.shouldContain("Procedure 'audit_call'")
+        diag.message.shouldContain("must be a boolean")
+    }
+
+    test("Sub-Slice C: DropFunction with Invalid capability blocks with reason in diagnostic body") {
+        val current = emptySchema().copy(functions = mapOf("compute_total" to sampleFunction))
+        val desired = emptySchema()
+        val diff = comparator.compare(current, desired)
+        val cap = invalidCapability("bad config: duplicate --routine-capability for kind=function")
+        val r = gen.generateUp(planner.plan(current, desired, diff), cap)
+        r.isBlocked shouldBe true
+        val diag = r.diagnostics.firstOrNull { it.code == "ROUTINE_CAPABILITY_CONFIG_INVALID" }
+        diag.shouldNotBeNull()
+        diag.message.shouldContain("duplicate --routine-capability")
+        r.statements.none { it.sql.contains("DROP FUNCTION") } shouldBe true
+    }
 
     // ── F.6: DEFINER clause is rendered when set ───────────────────────
 

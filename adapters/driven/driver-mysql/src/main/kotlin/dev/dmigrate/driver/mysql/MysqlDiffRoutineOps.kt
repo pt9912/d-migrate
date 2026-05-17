@@ -278,11 +278,20 @@ internal object MysqlDiffRoutineOps {
     }
 
     private fun blockCapabilityInvalid(op: DiffOperation, ctx: MysqlDiffRenderContext, kind: String) {
+        // 0.9.7 routine-capability-configurable-source Sub-Slice C: when
+        // the operator-supplied capability source produced an Invalid
+        // envelope, surface its reason in the diagnostic body so the
+        // operator can correct the misconfigured input directly from
+        // the migration report instead of cross-referencing CLI logs.
+        val reasonSuffix = (ctx.options.routineCapability as? EffectiveRoutineCapability.Invalid)
+            ?.reason
+            ?.let { ": $it" }
+            ?: ""
         ctx.skip(
             op,
             "$kind '${op.objectRef.rootName}': routine capability configuration is invalid " +
-                "(unparsable or inconsistent). All affected Create/Replace/Drop operations require " +
-                "manual handling until the configuration is corrected.",
+                "(unparsable or inconsistent)$reasonSuffix. All affected Create/Replace/Drop operations " +
+                "require manual handling until the configuration is corrected.",
             code = "ROUTINE_CAPABILITY_CONFIG_INVALID",
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))

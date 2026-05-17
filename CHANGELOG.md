@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 Routine-Capability-Configurable-Source** — operator override
+  for the per-routine-kind capability of stored Functions/Procedures.
+  Adds the repeatable `--routine-capability=<kind>:<key>=<value>[,...]`
+  CLI flag and a `routineCapability:` section in `.d-migrate.yaml`.
+  Precedence per routine kind: CLI > YAML > dialect/server-version
+  defaults. Allowed kinds: `function`, `procedure`. Allowed keys:
+  `enabled` (`true`/`false`), `minServerVersion`
+  (`major.minor.patch`, MySQL/MariaDB only — must remain a quoted
+  string in YAML to avoid SnakeYAML's float coercion of `8.0`).
+  Structurally broken YAML raises `ConfigResolveException` before the
+  pipeline runs; semantically invalid input (unknown kind/key,
+  unparsable bool or version, duplicate per-kind CLI flag, float
+  `minServerVersion`) flows through as
+  `EffectiveRoutineCapability.Invalid(reason)`, which the MySQL
+  renderer surfaces as `ROUTINE_CAPABILITY_CONFIG_INVALID` +
+  `MANUAL_ACTION_REQUIRED` (Exit `8`) with the operator's reason
+  string appended to the diagnostic body. PostgreSQL ignores the
+  capability today; its `CREATE OR REPLACE` support is unconditional.
+
+  **Internal API change (no user-facing migration)**:
+  `DdlGenerationOptions.routineCapability` is now of type
+  `EffectiveRoutineCapability` (a sealed interface with `Valid` /
+  `Invalid` variants) instead of the previous `RoutineCapability`
+  data class. The previous data class is available as
+  `EffectiveRoutineCapability.Valid` with identical fields; affects
+  only embedders / extension code that constructed
+  `DdlGenerationOptions` directly (the CLI surface stays unchanged).
+
 - **E.1 Routine-Migration Slice E** — closes the Slice-A
   reverse-read carve-out: the PostgreSQL schema reader now
   populates `security` / `definer` / `searchPath` for routines
