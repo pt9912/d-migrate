@@ -2,13 +2,16 @@ package dev.dmigrate.driver
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.types.shouldBeInstanceOf
 
 /**
- * E.1 Routine-Migration Slice C.1.a pins for [RoutineCapability],
- * [RoutineKindCapability.resolve], [RoutineCapabilityDefaults], and
- * [RoutineBodyDisplay]. C.1.a does not consume capability in any
- * renderer — these tests pin only the contract.
+ * E.1 Routine-Migration Slice C.1.a + 0.9.7
+ * routine-capability-configurable-source Sub-Slice A pins for
+ * [RoutineKindCapability.resolve], [RoutineCapabilityDefaults],
+ * [EffectiveRoutineCapability], and [RoutineBodyDisplay]. The
+ * Sub-Slice A carve-out wrapped the earlier top-level
+ * `RoutineCapability` data class in the sealed
+ * [EffectiveRoutineCapability] envelope; defaults still return
+ * [EffectiveRoutineCapability.Valid].
  */
 class RoutineCapabilityTest : FunSpec({
 
@@ -40,13 +43,9 @@ class RoutineCapabilityTest : FunSpec({
         cap.resolve(MysqlServerVersion(5, 7, 44)) shouldBe RoutineCapabilityResolution.Disabled
     }
 
-    test("InvalidConfig is not reachable from production code in C.1.a but exists in the resolver enum") {
-        // C.1.a ships no configurable capability source — the
-        // resolver therefore never produces InvalidConfig in
-        // production. The variant exists for future configurable
-        // sources (CLI/YAML) and is constructible in tests.
-        val invalid: RoutineCapabilityResolution = RoutineCapabilityResolution.InvalidConfig
-        invalid.shouldBeInstanceOf<RoutineCapabilityResolution.InvalidConfig>()
+    test("EffectiveRoutineCapability.Invalid carries a reason for the renderer manifest") {
+        val invalid = EffectiveRoutineCapability.Invalid(reason = "unparsable minServerVersion=not-a-version")
+        invalid.reason shouldBe "unparsable minServerVersion=not-a-version"
     }
 
     test("Defaults for PostgreSQL: function + procedure are both enabled with no min version") {
@@ -79,8 +78,8 @@ class RoutineCapabilityTest : FunSpec({
         cap.procedure.enabled shouldBe false
     }
 
-    test("forKind dispatches to function vs procedure slot") {
-        val cap = RoutineCapability(
+    test("Valid.forKind dispatches to function vs procedure slot") {
+        val cap = EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = true),
             procedure = RoutineKindCapability(enabled = false),
         )

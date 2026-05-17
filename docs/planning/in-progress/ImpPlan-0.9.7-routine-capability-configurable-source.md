@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1-Carve-out (konfigurierbare Capability-Quelle)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: in-progress — Sub-Slice A (sealed `EffectiveRoutineCapability` + Parser-Kern) wird umgesetzt
 > **Vorbedingung**: E.1 ✅ (`docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`)
 > **Referenz**: E.1 §3 Slice C.1.a (Capability-Konfigurations-Quelle),
 >             §3 Slice C.2 (`InvalidConfig`-Negativtest)

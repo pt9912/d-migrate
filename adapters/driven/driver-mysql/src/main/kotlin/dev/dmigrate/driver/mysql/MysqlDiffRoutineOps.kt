@@ -7,6 +7,7 @@ import dev.dmigrate.core.model.ParameterDirection
 import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.driver.DependencyGuard
 import dev.dmigrate.driver.DependencyGuardEvaluator
+import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineCapabilityResolution
 import dev.dmigrate.driver.RoutineKind
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -27,10 +28,13 @@ import dev.dmigrate.driver.resolve
  *    wrapper in a later slice; the kanonische Output here stays
  *    single-statement.
  * 2. **Capability gating**: the renderer consults
- *    [dev.dmigrate.driver.RoutineCapability] (per the
+ *    [EffectiveRoutineCapability] (per the
  *    `routineCapability`/`mysqlServerVersion` fields on
  *    `DdlGenerationOptions`). `Active` ⇒ `CREATE OR REPLACE`,
- *    `InvalidConfig` ⇒ `MANUAL_ACTION_REQUIRED`. `Disabled` routes
+ *    `InvalidConfig` ⇒ `MANUAL_ACTION_REQUIRED` (sourced from the
+ *    sealed [EffectiveRoutineCapability.Invalid] envelope —
+ *    0.9.7-routine-capability-configurable-source Sub-Slice A made the
+ *    invalid path representable in the type system). `Disabled` routes
  *    through the dependency guard: `SAFE` ⇒ `DROP + CREATE` (two
  *    statements; see the implicit-commit caveat below), any other
  *    guard state ⇒ `MANUAL_ACTION_REQUIRED`. Slice D.4 swapped the
@@ -140,7 +144,10 @@ internal object MysqlDiffRoutineOps {
     // ── Capability helpers ────────────────────────────────────────
 
     private fun resolveCapability(ctx: MysqlDiffRenderContext, kind: RoutineKind): RoutineCapabilityResolution =
-        ctx.options.routineCapability.forKind(kind).resolve(ctx.options.mysqlServerVersion)
+        when (val cap = ctx.options.routineCapability) {
+            is EffectiveRoutineCapability.Invalid -> RoutineCapabilityResolution.InvalidConfig
+            is EffectiveRoutineCapability.Valid -> cap.forKind(kind).resolve(ctx.options.mysqlServerVersion)
+        }
 
     private fun blockMissingBody(op: DiffOperation, ctx: MysqlDiffRenderContext, opName: String) {
         val isDown = ctx.direction == MysqlRenderDirection.DOWN

@@ -13,8 +13,8 @@ import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.MysqlServerVersion
-import dev.dmigrate.driver.RoutineCapability
 import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.RoutineKindCapability
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -235,7 +235,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
     // ── Capability gates (Replace path only — Create/Drop ignore capability) ──
 
     fun disabledCapability() = DdlGenerationOptions(
-        routineCapability = RoutineCapability(
+        routineCapability = EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = false),
             procedure = RoutineKindCapability(enabled = false),
         ),
@@ -362,7 +362,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         // Disabled-by-missing-version follows the same Disabled
         // path as Disabled-by-flag, so SAFE guard still permits
         // DROP + CREATE.
-        val cap = RoutineCapability(
+        val cap = EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
             procedure = RoutineKindCapability(enabled = true),
         )
@@ -382,7 +382,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
     }
 
     test("Replace with minServerVersion satisfied by live target -> CREATE OR REPLACE renders") {
-        val cap = RoutineCapability(
+        val cap = EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(5, 7, 0)),
             procedure = RoutineKindCapability(enabled = true),
         )
@@ -406,7 +406,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         // Disabled-by-version-floor follows the same Disabled path as
         // Disabled-by-flag: with an isolated plan, the C.3 stub guard
         // reports SAFE and the renderer falls back to DROP + CREATE.
-        val cap = RoutineCapability(
+        val cap = EffectiveRoutineCapability.Valid(
             function = RoutineKindCapability(enabled = true, minServerVersion = MysqlServerVersion(8, 0, 0)),
             procedure = RoutineKindCapability(enabled = true),
         )
