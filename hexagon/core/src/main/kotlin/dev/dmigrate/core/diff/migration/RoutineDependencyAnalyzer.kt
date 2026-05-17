@@ -90,12 +90,35 @@ internal object RoutineDependencyAnalyzer {
         for (op in ops.filterIsInstance<DiffOperation.CreateTable>()) createTable[op.objectRef.rootName] = op.id
         for (op in ops.filterIsInstance<DiffOperation.RenameTable>()) createTable[op.toName] = op.id
 
-        val createView = ops.filterIsInstance<DiffOperation.CreateView>()
-            .associate { it.objectRef.rootName to it.id }
-        val createFunction = ops.filterIsInstance<DiffOperation.CreateFunction>()
-            .associate { it.objectRef.rootName to it.id }
-        val createProcedure = ops.filterIsInstance<DiffOperation.CreateProcedure>()
-            .associate { it.objectRef.rootName to it.id }
+        // Plan-2 §8 D.3b Sub-Slice C: materialized views share the view
+        // name-space — a view depending on `mv_orders` resolves the
+        // same way whether the target is a regular `CreateView` or
+        // `CreateMaterializedView`. Including both in `createViewId`
+        // lets `viewCreateEdges` / `routineCreateEdges` reuse the
+        // existing lookup unchanged. Replace ops also legitimately
+        // leave the name in place at the desired state, so depending
+        // ops (e.g. a `CreateMaterializedView` referencing a
+        // `ReplaceFunction fn_x`) must wait for them too — otherwise
+        // the topological sort falls back to phase-tie-breaker order,
+        // which is correct today but fragile.
+        val createView = (
+            ops.filterIsInstance<DiffOperation.CreateView>().associate { it.objectRef.rootName to it.id } +
+                ops.filterIsInstance<DiffOperation.ReplaceView>().associate { it.objectRef.rootName to it.id } +
+                ops.filterIsInstance<DiffOperation.CreateMaterializedView>()
+                    .associate { it.objectRef.rootName to it.id } +
+                ops.filterIsInstance<DiffOperation.ReplaceMaterializedView>()
+                    .associate { it.objectRef.rootName to it.id }
+            )
+        val createFunction = (
+            ops.filterIsInstance<DiffOperation.CreateFunction>().associate { it.objectRef.rootName to it.id } +
+                ops.filterIsInstance<DiffOperation.ReplaceFunction>()
+                    .associate { it.objectRef.rootName to it.id }
+            )
+        val createProcedure = (
+            ops.filterIsInstance<DiffOperation.CreateProcedure>().associate { it.objectRef.rootName to it.id } +
+                ops.filterIsInstance<DiffOperation.ReplaceProcedure>()
+                    .associate { it.objectRef.rootName to it.id }
+            )
         val createSequence = ops.filterIsInstance<DiffOperation.CreateSequence>()
             .associate { it.objectRef.rootName to it.id }
 
@@ -145,6 +168,12 @@ internal object RoutineDependencyAnalyzer {
         is DiffOperation.DropProcedure -> op.procedure.dependencies
         is DiffOperation.DropTrigger -> op.trigger.dependencies
         is DiffOperation.DropView -> op.view.dependencies
+        // Plan-2 §8 D.3b Sub-Slice C: an MV drop carries the same kind of
+        // outgoing dependencies as a view drop (its body referenced
+        // tables/views/routines). The reverse-topology edges flip
+        // `DropTable users` to wait for `DropMaterializedView mv_orders`
+        // when the MV's `dependencies.tables` listed `users`.
+        is DiffOperation.DropMaterializedView -> op.view.dependencies
         else -> null
     }
 
@@ -153,6 +182,11 @@ internal object RoutineDependencyAnalyzer {
     private fun computeEdges(op: DiffOperation, idx: Indexes): Set<String> = when (op) {
         is DiffOperation.CreateView -> viewCreateEdges(op.view.dependencies, op.id, idx)
         is DiffOperation.ReplaceView -> viewCreateEdges(op.after.dependencies, op.id, idx)
+        // Plan-2 §8 D.3b Sub-Slice C: MV Create/Replace edges mirror the
+        // regular View case — the new MV needs every referenced
+        // table/view/routine/sequence created first.
+        is DiffOperation.CreateMaterializedView -> viewCreateEdges(op.view.dependencies, op.id, idx)
+        is DiffOperation.ReplaceMaterializedView -> viewCreateEdges(op.after.dependencies, op.id, idx)
         is DiffOperation.CreateFunction -> routineCreateEdges(op.function.dependencies, op.id, idx)
         is DiffOperation.ReplaceFunction -> routineCreateEdges(op.after.dependencies, op.id, idx)
         is DiffOperation.CreateProcedure -> routineCreateEdges(op.procedure.dependencies, op.id, idx)
@@ -164,6 +198,11 @@ internal object RoutineDependencyAnalyzer {
             idx.dropProcedureDependentsByProcedure[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.DropTable -> idx.dropTableDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.DropView -> idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
+        // DropMV reads the same dropViewDependentsByTable index because
+        // the view name-space is shared. A DropMV-A waiting for DropMV-B
+        // (because MV-A's body referenced MV-B) wires correctly here.
+        is DiffOperation.DropMaterializedView ->
+            idx.dropViewDependentsByTable[op.objectRef.rootName].orEmpty().toSet()
         is DiffOperation.DropSequence ->
             idx.dropSequenceDependentsBySequence[op.objectRef.rootName].orEmpty().toSet()
         else -> emptySet()

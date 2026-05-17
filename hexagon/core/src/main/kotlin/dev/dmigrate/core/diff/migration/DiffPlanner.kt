@@ -122,6 +122,20 @@ open class DiffPlanner {
         diagnostics += detectFkToBlockedTables(sortResult.sorted, blockedTables)
         diagnostics += detectViewColumnDepsBlockers(sortResult.sorted, current, desired)
         diagnostics += detectIncompleteViewProjections(sortResult.sorted, current, desired)
+        val mvDependencyBlockers = MaterializedViewDependencyDetector.detect(
+            sortResult.sorted, current, desired,
+        )
+        for (blocker in mvDependencyBlockers) {
+            diagnostics += DiffDiagnostic(
+                code = "BLOCKED_DEPENDENCY_UNRESOLVED",
+                message = "Materialized view '${blocker.materializedViewName}' depends on " +
+                    "${blocker.droppingKind.lowercase()} '${blocker.droppingPath.joinToString(".")}'. " +
+                    "Operation ${blocker.droppingOperationId} would orphan the MV — D.3b requires the " +
+                    "MV to be dropped or replaced in the same plan, or the depended-on object to stay.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+                operationId = blocker.droppingOperationId,
+            )
+        }
         if (sortResult.cycleIds.isNotEmpty()) {
             diagnostics += DiffDiagnostic(
                 code = "DEPENDENCY_CYCLE",
@@ -171,6 +185,7 @@ open class DiffPlanner {
             desiredSchema = desired,
             migrationOverlays = migrationOverlays,
             renameProjections = mapperResult.renameProjections,
+            materializedViewDependencyBlockers = mvDependencyBlockers,
         )
     }
 

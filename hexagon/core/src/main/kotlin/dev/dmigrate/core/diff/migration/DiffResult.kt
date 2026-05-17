@@ -67,6 +67,14 @@ data class DiffResult(
      * [diagnostics], operation ids, or renderer side effects.
      */
     val renameProjections: List<RenameProjectionReport> = emptyList(),
+    /**
+     * Plan-2 §8 D.3b Sub-Slice C: one entry per `(materialized-view,
+     * dropping-op)` pair where the dropping/replacing operation would
+     * orphan an MV that depends on it. Used by the report builder to
+     * synthesise `materializedViews[]` entries for orphaned MVs that
+     * have no in-plan operation of their own.
+     */
+    val materializedViewDependencyBlockers: List<MaterializedViewDependencyBlocker> = emptyList(),
 ) {
     /** True iff at least one diagnostic is a [DiffDiagnostic.Severity.BLOCKER]. */
     val hasBlockers: Boolean

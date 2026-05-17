@@ -644,7 +644,7 @@ data class SchemaMigrateMaterializedViewContractView(
     val locking: String,
     val rollback: String,
     /**
-     * Plan-2 §8 D.3b Sub-Slices A/B: deterministic OOS reason that
+     * Plan-2 §8 D.3b Sub-Slices A/B/C: deterministic OOS reason that
      * accompanies a non-`READY` [status]. `null` for `READY` rows.
      * Enumerated values follow §6.4.1:
      *
@@ -657,10 +657,28 @@ data class SchemaMigrateMaterializedViewContractView(
      * - `MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`
      * - `MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN`
      * - `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`
-     *
-     * Sub-Slice C adds `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`.
+     * - `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`
      */
     val primaryBlockedReason: String? = null,
+    /**
+     * Plan-2 §8 D.3b Sub-Slice C: structured carrier listing every
+     * dropping/replacing operation that would orphan this MV. Empty
+     * for non-`BLOCKED_DEPENDENCY_UNRESOLVED` rows.
+     */
+    val dependencyBlockers: List<SchemaMigrateMaterializedViewDependencyBlockerView> = emptyList(),
+)
+
+/**
+ * Plan-2 §8 D.3b Sub-Slice C: one `(droppingOperationId, droppingPath,
+ * droppingKind)` entry per dependency that would orphan the
+ * accompanying materialized view. `droppingKind` is the structural
+ * label (`TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION`,
+ * `PROCEDURE`) the operator can match against the operations list.
+ */
+data class SchemaMigrateMaterializedViewDependencyBlockerView(
+    val droppingOperationId: String,
+    val droppingPath: List<String>,
+    val droppingKind: String,
 )
 
 data class SchemaMigrateOverlayView(

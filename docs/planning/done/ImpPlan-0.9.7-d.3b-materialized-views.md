@@ -200,16 +200,22 @@ Wird `ViewDefinition.refresh` gesetzt, bleibt der Pfad deterministisch
       `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`,
       `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` und
       `BLOCKED_DOWN_QUERY_UNKNOWN`.
-- [ ] `SchemaMigrateReportBuilder` ordnet `BLOCKED_DEPENDENCY_UNRESOLVED`
-      deterministisch zu (Sub-Slice C; ohne MV-Dependency-Graph noch
-      kein produktiver Triggerpfad).
-- [ ] `DependencyGuardEvaluator` integriert MV-Knoten in den
-      Edge-Graph. Drop oder Replace einer Tabelle/View/Routine mit
-      abhängiger MV ohne expliziten MV-Planungsschritt im selben Plan
-      blockiert mit `BLOCKED_DEPENDENCY_UNRESOLVED`.
-- [ ] `spec/cli-spec.md` beschreibt das MV-Rendering-Verhalten pro
-      Dialekt + die neuen `materializedViews[]`-Statuswerte.
-- [ ] CHANGELOG-Eintrag (Feature-Notiz für MV-Diff-Migration,
+- [x] `SchemaMigrateReportBuilder` ordnet `BLOCKED_DEPENDENCY_UNRESOLVED`
+      deterministisch zu (Sub-Slice C) — `primaryBlockedReason`
+      `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`; orphaned MVs werden
+      über den `materializedViewDependencyBlockers`-Carrier in
+      `DiffResult` als synthetische `materializedViews[]`-Einträge
+      (Action `ORPHAN`) surfaced.
+- [x] `MaterializedViewDependencyDetector` (im `DiffPlanner`-Pfad)
+      integriert MV-Knoten in den Edge-Graph. Drop oder Replace einer
+      Tabelle/View/Routine mit abhängiger MV ohne expliziten
+      MV-Planungsschritt im selben Plan blockiert mit
+      `BLOCKED_DEPENDENCY_UNRESOLVED`. `RoutineDependencyAnalyzer`
+      verdrahtet die Topo-Sortierung (MV-Drop läuft vor Tabellen-Drop).
+- [x] `spec/cli-spec.md` beschreibt das MV-Rendering-Verhalten pro
+      Dialekt + die neuen `materializedViews[]`-Statuswerte inklusive
+      `dependencyBlockers`-Subfield.
+- [x] CHANGELOG-Eintrag (Feature-Notiz für MV-Diff-Migration,
       Breaking-Change-Notiz für die neuen `DiffOperation`-Klassen).
 
 ## 4. Definition of Done

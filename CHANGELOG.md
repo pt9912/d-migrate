@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice C** — closes
+  the D.3b plan: a new `MaterializedViewDependencyDetector` walks
+  both schemas to find MVs whose `dependencies.tables/views/functions`
+  point at an object being dropped or replaced in the same plan
+  without a matching `Drop`/`Replace` for the MV itself. Each
+  `(materialized-view, dropping-op)` orphan-pair becomes a
+  `BLOCKED_DEPENDENCY_UNRESOLVED` planner blocker (BLOCKER severity)
+  on the dropping op AND a structured
+  `MaterializedViewDependencyBlocker` on `DiffResult`. Cross-MV
+  dependency (MV-A references MV-B) follows the same rule because
+  MVs share the view name-space. `RoutineDependencyAnalyzer`
+  recognises MV ops in its drop-side index and create-side edges, so
+  the topological sorter places `DropMaterializedView` before the
+  matching `DropTable` (PG-without-CASCADE order).
+
+  Report contract: `SchemaMigrateMaterializedViewContractView` gains
+  a `dependencyBlockers` list with `(droppingOperationId,
+  droppingPath, droppingKind)` per orphan. When the MV has no
+  in-plan operation (purely orphaned), the report builder synthesises
+  a contract row with `action=ORPHAN` and `operationId` set to the
+  first dropping op so the operator sees the orphan in
+  `materializedViews[]`. `primaryBlockedReason` becomes
+  `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`. The precedence table
+  appends the new code at position 10 (lowest priority — only fires
+  on otherwise-renderable PG paths). JSON and YAML report renderers
+  emit the new `dependencyBlockers` subfield.
+
+  No new `DiffOperation` subclasses in this slice; the wiring is
+  pure analyzer-and-planner work.
+
 - **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice B** — dedicated
   `DiffOperation.ReplaceMaterializedView` class closes out the
   `OperationMapper.mapViews` routing: a body / columns change on a

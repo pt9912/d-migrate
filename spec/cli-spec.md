@@ -680,6 +680,7 @@ Report-Felder für Materialized Views:
   | Create ohne `query` (Planner-Blocker) | `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
   | Drop ohne `query` (Planner-Blocker) | `BLOCKED_DOWN_QUERY_UNKNOWN` | `UNKNOWN_BLOCKED` | `[BLOCKED_DOWN_QUERY_UNKNOWN]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
   | Replace ohne `before.query` (Down-Body fehlt) | `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` | `UNKNOWN_BLOCKED` | `[BLOCKED_REPLACE_DOWN_BODY_UNKNOWN]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Drop/Replace einer Tabelle/View/Routine ohne MV-Drop/Replace (orphaning) | `BLOCKED_DEPENDENCY_UNRESOLVED` | `UNKNOWN_BLOCKED` | `[BLOCKED_DEPENDENCY_UNRESOLVED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
   | `View`↔`MaterializedView`-Konversion | `BLOCKED_CONVERSION_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONVERSION_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
 
   Die Präzedenz folgt §5 des Implementierungsplans: Dialect-Block schlägt
@@ -694,7 +695,16 @@ Report-Felder für Materialized Views:
   `MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`,
   `MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`,
   `MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN`,
-  `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`).
+  `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`,
+  `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`).
+- Bei `BLOCKED_DEPENDENCY_UNRESOLVED` enthält der `materializedViews[]`-
+  Eintrag zusätzlich ein `dependencyBlockers`-Subfield. Jeder Eintrag
+  listet `droppingOperationId`, `droppingPath` und `droppingKind`
+  (`TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION`, `PROCEDURE`). Wenn
+  die MV selbst keine Operation im Plan hat (rein verwaiste MV),
+  emittiert der Builder einen synthetischen Eintrag mit `action=ORPHAN`
+  und `operationId` der droppenden Operation, damit der Operator den
+  Orphan in der Report-Datei sieht.
 
 Report-Felder für `--execute`:
 

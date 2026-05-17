@@ -73,6 +73,14 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    refreshSteps: ").append(yamlList(mv.refreshSteps)).append('\n')
             sb.append("    locking: ").append(mv.locking).append('\n')
             sb.append("    rollback: ").append(mv.rollback).append('\n')
+            if (mv.dependencyBlockers.isNotEmpty()) {
+                sb.append("    dependencyBlockers:\n")
+                for (blocker in mv.dependencyBlockers) {
+                    sb.append("      - droppingOperationId: ").append(blocker.droppingOperationId).append('\n')
+                    sb.append("        droppingPath: ").append(yamlList(blocker.droppingPath)).append('\n')
+                    sb.append("        droppingKind: ").append(blocker.droppingKind).append('\n')
+                }
+            }
         }
         sb.append("overlays:").append(if (report.overlays.isEmpty()) " []\n" else "\n")
         for (overlay in report.overlays) {
@@ -184,12 +192,18 @@ internal object SchemaMigrateReportRenderer {
     private fun renderMaterializedViews(views: List<SchemaMigrateMaterializedViewContractView>): String =
         views.joinToString(prefix = "[", postfix = "]", separator = ",") { v ->
             val primary = v.primaryBlockedReason?.let { ",\"primaryBlockedReason\":${jsonString(it)}" } ?: ""
+            val deps = if (v.dependencyBlockers.isEmpty()) "" else ",\"dependencyBlockers\":" +
+                v.dependencyBlockers.joinToString(prefix = "[", postfix = "]", separator = ",") { b ->
+                    "{\"droppingOperationId\":${jsonString(b.droppingOperationId)}," +
+                        "\"droppingPath\":${jsonStringArray(b.droppingPath)}," +
+                        "\"droppingKind\":${jsonString(b.droppingKind)}}"
+                }
             "{\"operationId\":${jsonString(v.operationId)},\"action\":${jsonString(v.action)}," +
                 "\"path\":${jsonStringArray(v.path)},\"dialect\":${jsonString(v.dialect)}," +
                 "\"status\":${jsonString(v.status)}$primary," +
                 "\"stalenessAfterUp\":${jsonString(v.stalenessAfterUp)}," +
                 "\"refreshSteps\":${jsonStringArray(v.refreshSteps)}," +
-                "\"locking\":${jsonString(v.locking)},\"rollback\":${jsonString(v.rollback)}}"
+                "\"locking\":${jsonString(v.locking)},\"rollback\":${jsonString(v.rollback)}$deps}"
         }
 
     private fun renderOverlays(overlays: List<SchemaMigrateOverlayView>): String =
