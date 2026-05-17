@@ -608,7 +608,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--rename-column` | Nein | `<table>.<from>:<table>.<to>`, wiederholbar | Inline-Shortcut fuer Spalten-Rename; gleiche Bedingungen wie `--rename-table`. Tabellen-Prefix muss beidseitig identisch sein, sonst Exit 2 |
 | `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
 | `--debug-body` | Nein | Boolean | **UNSAFE-Override** für die Display-/Diagnostic-Plane: Routine-Bodies erscheinen unmaskiert im Report und im `--output`-Artefakt (Default ist `bodyDisplay = SCRUBBED_ONLY` über `RoutineBodyScrubber.preview(...)`; das Artefakt enthält dann gescrubbten Body-Text, und der Report die `{sqlHash, sqlLength, scrubbedPreview, scrubbingApplied}`-Metadaten plus gescrubbtem `sql`-Feld). Execution-Plane (die Statements, die der `--execute`-Pfad gegen die DB schickt) bleibt unverändert mit Rohbody; das Display-Artefakt `--output` ist explizit eine Anzeige-/Diagnoseausgabe und folgt der Display-Plane-Regel. Für Pipelines, die das `--output`-Artefakt zur Re-Execution brauchen, MUSS `--debug-body` gesetzt werden. Logging-/Runner-Trace- und DB-Adapter-Pfade greifen den `RoutineBodyLogRedactor`-Hook, der den Flag berücksichtigt — ohne `--debug-body` wird kein unmaskierter Body in Diagnostic-Logs sichtbar. Nutzung nur in kontrollierter Debug-Session sinnvoll. |
-| `--routine-capability` | Nein | `<kind>:<key>=<value>[,<key>=<value>...]`, wiederholbar | Operator-Override fuer die Per-Routine-Kind-Capability von Stored Functions/Procedures. Erlaubte `<kind>`: `function`, `procedure`. Erlaubte Keys: `enabled` (`true`/`false`), `minServerVersion` (`major.minor.patch`, nur MySQL/MariaDB). Praezedenz: CLI > `.d-migrate.yaml`-Sektion `routineCapability:` > Dialekt-/Server-Version-Defaults (Plan §6.3). Pro `<kind>` maximal eine `--routine-capability`-Angabe; doppelter Eintrag, unbekannter `<kind>`, unbekannter Key, unparsable `enabled` oder unparsable `minServerVersion` produzieren `EffectiveRoutineCapability.Invalid(reason)`, welches der MySQL-Renderer als `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED` (Exit `8`) ausweist; der Reason landet als Suffix in der Diagnostik-Message. Identische Wirkung haben semantisch invalide YAML-Eintraege (z. B. unquoted Float `minServerVersion: 8.0` — SnakeYAML coerciert zu `Double`, der Parser verlangt einen quoted String wie `"8.0.0"`). Strukturell invalide YAML (`routineCapability: true`) blockiert frueher mit `ConfigResolveException`. |
+| `--routine-capability` | Nein | `<kind>:<key>=<value>[,<key>=<value>...]`, wiederholbar | Operator-Override fuer die Per-Routine-Kind-Capability von Stored Functions/Procedures. Erlaubte `<kind>`: `function`, `procedure`; erlaubte Keys: `enabled`, `minServerVersion`. Praezedenz, YAML-Aequivalent und Fehler-Routing siehe Abschnitt **Routine-Rendering** unten. |
 
 Begriffe (vollständig in `spec/design.md`):
 
@@ -646,7 +646,14 @@ Routine-Rendering:
       enabled: false
   ```
 
-  Praezedenz pro Routine-Kind: CLI > YAML > Dialekt-/Server-Version-Defaults. Eine fehlende Top-Level-Sektion ist gleichwertig mit "keine Override" und faellt auf die Defaults zurueck. Strukturell oder semantisch invalide Eintraege landen entweder als `ConfigResolveException` vor dem Rendern (broken YAML, falsche Top-Level-Form) oder als `ROUTINE_CAPABILITY_CONFIG_INVALID` im Report (alles, was der Parser als `Invalid` einstuft).
+  CLI-Flag-Beispiel (entspricht dem YAML-Snippet, repeatable):
+
+  ```
+  --routine-capability=function:enabled=true,minServerVersion=8.0.0 \
+  --routine-capability=procedure:enabled=false
+  ```
+
+  Praezedenz pro Routine-Kind: CLI > YAML > Dialekt-/Server-Version-Defaults. Eine fehlende Top-Level-Sektion ist gleichwertig mit "keine Override" und faellt auf die Defaults zurueck. Pro `<kind>` ist maximal eine `--routine-capability`-Angabe erlaubt; doppelter Eintrag, unbekannter `<kind>`, unbekannter Key, unparsable `enabled` oder unparsable `minServerVersion` produzieren `EffectiveRoutineCapability.Invalid(reason)`, welches der MySQL-Renderer als `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED` (Exit `8`) ausweist; der Reason landet als Suffix in der Diagnostik-Message. Identische Wirkung haben semantisch invalide YAML-Eintraege (z. B. unquoted Float `minServerVersion: 8.0` — SnakeYAML coerciert zu `Double`, der Parser verlangt einen quoted String wie `"8.0.0"`). Strukturell invalide YAML (`routineCapability: true`) blockiert frueher mit `ConfigResolveException`.
 
 Report-Felder für Materialized Views:
 

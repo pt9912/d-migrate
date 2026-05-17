@@ -104,26 +104,26 @@ Typsystems wird statt erst im Renderer-`when`-Zweig zu landen.
 
 ## 3. Acceptance Criteria
 
-- [ ] CLI-Flag `--routine-capability` ist implementiert und
+- [x] CLI-Flag `--routine-capability` ist implementiert und
       repeatable.
-- [ ] YAML-Eintrag `routineCapability:` ist implementiert und
+- [x] YAML-Eintrag `routineCapability:` ist implementiert und
       via `EffectiveConfigPathResolver` geladen.
-- [ ] Präzedenzregel CLI > YAML > Defaults ist verdrahtet und durch
+- [x] Präzedenzregel CLI > YAML > Defaults ist verdrahtet und durch
       Test gepinnt.
-- [ ] `EffectiveRoutineCapability` ist sealed (`Valid` / `Invalid`)
+- [x] `EffectiveRoutineCapability` ist sealed (`Valid` / `Invalid`)
       und `DdlGenerationOptions.routineCapability` trägt diesen Typ.
-- [ ] `RoutineCapabilityConfigParserTest` pinnt zumindest fünf
+- [x] `RoutineCapabilityConfigParserTest` pinnt zumindest fünf
       Negativ-Eingaben (syntaktisch kaputt, unbekannter Schlüssel,
       unparsable Version, Konflikt CLI ↔ YAML für gleiche
       Routineart, doppelter Eintrag in derselben Quelle).
-- [ ] `MysqlDiffRoutineOpsTest` pinnt den
+- [x] `MysqlDiffRoutineOpsTest` pinnt den
       `ROUTINE_CAPABILITY_CONFIG_INVALID`-Pfad im Renderer mit
       `EffectiveRoutineCapability.Invalid(...)`.
-- [ ] `SchemaMigrateCommandTest` End-to-End: invalide YAML-
+- [x] `SchemaMigrateCommandTest` End-to-End: invalide YAML-
       Capability → `ROUTINE_CAPABILITY_CONFIG_INVALID` Manifest-Block.
-- [ ] CLI-Spec (`spec/cli-spec.md`) ist um das `--routine-capability`-
+- [x] CLI-Spec (`spec/cli-spec.md`) ist um das `--routine-capability`-
       Flag und den `.d-migrate.yaml`-Eintrag ergänzt.
-- [ ] CHANGELOG-Eintrag.
+- [x] CHANGELOG-Eintrag.
 
 ## 4. Definition of Done
 
