@@ -9,6 +9,7 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.BodyEmbedding
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.SqliteLiveCatalog
 import dev.dmigrate.driver.migration.ExecutionRecoverability
@@ -179,6 +180,7 @@ class SchemaMigrateRunner(
             overlayPreflight = overlayPreflight,
             cancellationToken = cancellationToken,
             mysqlServerVersion = prepared.targetNormalized.mysqlServerVersion,
+            routineCapabilityResolver = request.routineCapabilityResolver,
         )
 
         val executionTrace = executionStage.maybeExecute(
@@ -425,6 +427,25 @@ data class SchemaMigrateRequest(
      * Plane output — DDL statements always carry the raw body.
      */
     val debugBody: Boolean = false,
+    /**
+     * 0.9.7 routine-capability-configurable-source Sub-Slice B: optional
+     * resolver injected by the CLI adapter when the operator supplied
+     * `--routine-capability` flags or a `.d-migrate.yaml`
+     * `routineCapability:` section. Receives the dialect/server-version
+     * default and produces either an overridden
+     * [EffectiveRoutineCapability.Valid] envelope or an
+     * [EffectiveRoutineCapability.Invalid] when the operator input is
+     * structurally broken. `null` keeps the pure defaults path —
+     * file-to-file tests and the Sub-Slice-A migration tests use that.
+     *
+     * NOTE: function-typed `data class` field — Kotlin compares lambdas
+     * by referential identity, so two `SchemaMigrateRequest` instances
+     * that wrap equivalent resolver behaviour are still `!=`. Don't put
+     * `SchemaMigrateRequest` instances in `Set`/`Map`s or assert on
+     * `shouldBe` equality across copies; compare individual scalar
+     * fields instead.
+     */
+    val routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)? = null,
 )
 
 /**

@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.cli.config.RoutineCapabilityConfigResolver
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDiagnostics
@@ -77,6 +78,15 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         help = "UNSAFE: emit unmasked routine bodies in the report display plane. " +
             "Execution-Plane (SQL output) is unchanged. Default is scrubbed-only.",
     ).flag()
+    val routineCapabilityFlags by option(
+        "--routine-capability",
+        help = "Override per-routine-kind capability for stored functions/procedures (repeatable). " +
+            "Format: '<kind>:<key>=<value>[,<key>=<value>...]'. Kinds: function, procedure. " +
+            "Keys: enabled (true|false), minServerVersion (major.minor.patch, MySQL/MariaDB only). " +
+            "CLI takes precedence over the '.d-migrate.yaml' 'routineCapability:' section and over " +
+            "the dialect/server-version defaults. Structurally invalid values are surfaced as " +
+            "ROUTINE_CAPABILITY_CONFIG_INVALID in the migration report.",
+    ).multiple()
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -84,6 +94,10 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
         val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
         val validator = SchemaValidator()
         val loadedMigrationOverlays = loadMigrationOverlays(migrationOverlays)
+        val routineCapabilityResolver = RoutineCapabilityConfigResolver(
+            cliFlagValues = routineCapabilityFlags,
+            configPathFromCli = root?.config,
+        )
 
         val request = SchemaMigrateRequest(
             source = source,
@@ -105,6 +119,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             renameTableFlags = renameTableFlags,
             renameColumnFlags = renameColumnFlags,
             debugBody = debugBody,
+            routineCapabilityResolver = routineCapabilityResolver::resolve,
         )
 
         val runner = SchemaMigrateRunner(

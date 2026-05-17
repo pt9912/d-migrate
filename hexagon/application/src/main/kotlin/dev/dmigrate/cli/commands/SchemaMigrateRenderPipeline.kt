@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.MysqlServerVersion
@@ -64,6 +65,7 @@ internal class SchemaMigrateRenderPipeline(
         overlayPreflight: MigrationOverlayPreflightResult,
         cancellationToken: CancellationToken,
         mysqlServerVersion: MysqlServerVersion? = null,
+        routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)? = null,
     ): SchemaMigrateRenderResult {
         val probeOutcome = runProbe(request, targetOp, dialect, overlayPreflight)
         val castPreflightPlan = runCastPreflightPlan(request, targetOp, dialect, plan, overlayPreflight)
@@ -77,6 +79,7 @@ internal class SchemaMigrateRenderPipeline(
         )
         val renderOptions = buildRenderOptions(
             request, dialect, probeOutcome, castPreflightOutcome, castPreflightPlan, mysqlServerVersion,
+            routineCapabilityResolver,
         )
         val renderedUp = renderUp(plan, overlayPreflight, renderer, renderOptions, probeOutcome, castPreflightOutcome)
         val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
@@ -158,31 +161,37 @@ internal class SchemaMigrateRenderPipeline(
         castPreflightOutcome: SqliteCastPreflightStage.Outcome,
         castPreflightPlan: MigrationPreflightPlan,
         mysqlServerVersion: MysqlServerVersion?,
-    ): DdlGenerationOptions = DdlGenerationOptions(
-        spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
-        executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
-        liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
-        sqliteCastPreflights = when (castPreflightOutcome) {
-            is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
-            else -> castPreflightPlan.sqliteCastPreflights
-        },
-        catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
-            SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
-        } else {
-            SqliteCatalogProbeMode.SCHEMA_ONLY
-        },
-        extensionInstallPolicy = if (request.allowExtensionInstall) {
-            ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
-        } else {
-            ExtensionInstallPolicy.NEVER
-        },
-        routineCapability = if (dialect == DatabaseDialect.MYSQL) {
+        routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)?,
+    ): DdlGenerationOptions {
+        val defaultsForKindAndVersion = if (dialect == DatabaseDialect.MYSQL) {
             RoutineCapabilityDefaults.forMysqlServerVersion(mysqlServerVersion)
         } else {
             RoutineCapabilityDefaults.forDialect(dialect)
-        },
-        mysqlServerVersion = mysqlServerVersion,
-    )
+        }
+        val routineCapability: EffectiveRoutineCapability =
+            routineCapabilityResolver?.invoke(defaultsForKindAndVersion) ?: defaultsForKindAndVersion
+        return DdlGenerationOptions(
+            spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
+            executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
+            liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
+            sqliteCastPreflights = when (castPreflightOutcome) {
+                is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
+                else -> castPreflightPlan.sqliteCastPreflights
+            },
+            catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
+                SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
+            } else {
+                SqliteCatalogProbeMode.SCHEMA_ONLY
+            },
+            extensionInstallPolicy = if (request.allowExtensionInstall) {
+                ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
+            } else {
+                ExtensionInstallPolicy.NEVER
+            },
+            routineCapability = routineCapability,
+            mysqlServerVersion = mysqlServerVersion,
+        )
+    }
 
     private fun renderUp(
         plan: DiffResult,
