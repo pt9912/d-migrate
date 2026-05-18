@@ -2,17 +2,45 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (vierter Slice — Renames jenseits von Tabellen/Spalten)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: in-progress — Sub-Slice-Schnitt fixiert 2026-05-18.
+>            Sub-Slices A.1 (Foundation) / A.2 (Subtypes + Mapper +
+>            PG-Renderer) / B (MySQL) / C (SQLite) / D (Sequence-
+>            Default-Reprojection) / E (Plan-Artefakt-Vertrag) /
+>            F (Closing) offen.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
->                  Serialisierung, Execution-Status), **E.1/E.2
->                  Routine-/Trigger-Renderbarkeit** ⚠️ HARTE Vorbedingung,
->                  zentraler Pre-Plan-Overlay-Gate aus dem
->                  `RENAME_MAPPING_INVALID`-Slice oder in diesem Slice
->                  mitgeliefert
+>                  Serialisierung, Execution-Status), **E.1 Routine-
+>                  Renderbarkeit ✅** (2026-05-16), **E.2 Trigger-
+>                  Renderbarkeit ✅** (2026-05-18), zentraler Pre-Plan-
+>                  Overlay-Gate aus dem `RENAME_MAPPING_INVALID`-Slice ✅.
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md`
 >             §9 E.1/E.2/E.3 (Routine-/Trigger-Vorvertraege), §10 F.4
->             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`
+>             `docs/planning/done/ImpPlan-0.9.7-F.4-rendering.md`,
+>             `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`,
+>             `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md`
+
+> **Type-Reuse-Hinweis (Plan-Doc-Update 2026-05-18):** Mehrere
+> "neue" Typen aus §5.2 existieren bereits unter Namen, die der
+> Dependency-Projection-Slice eingefuehrt hat. Dieser Slice **nutzt
+> sie wieder** statt parallele Typen zu schaffen:
+>
+> | Plan-Doc-Name | Code-Realitaet | Aktion |
+> |---|---|---|
+> | `ObjectRenameDialect` | `RenameProjectionDialect` | wiederverwenden |
+> | `RenameCapabilitySource` | identisch benannt | wiederverwenden |
+> | `ObjectRenameCapabilities` | `RenameProjectionCapabilities` (gleiche Felder + `sqliteLegacyAlterTable`) | wiederverwenden, ggf. um trigger-/routine-spezifische Felder erweitern |
+> | `RenameProjectionReport`-DTO | identisch | wiederverwenden |
+> | `RenameTable`/`RenameColumn.overlayEntryId` | bereits Pflichtfeld | unveraendert |
+>
+> Echter Build-Out: `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED`
+> (heute nur als Diagnostic-Code-String existent, `MigrationOverlayPreflight`
+> mappt ihn auf `RENAME_MAPPING_INVALID`); 5 `Rename*`-`DiffOperation`-
+> Subtypes; `RenameSupport`-sealed-Interface; `ObjectRenamePolicy`-
+> Interface mit per-Dialekt-Impls; `ObjectRenameCandidate`-/
+> `RenameProvenance`-data-classes; Mapper-Faltung; per-Dialekt-Renderer;
+> `MigrationOverlayValidator` Whitelist-Erweiterung
+> (heute `{table, column}` → neu `{table, column, view, trigger,
+> function, procedure, sequence}`).
 
 ---
 
@@ -199,14 +227,108 @@ Aus Scope:
   Dependency-Projection (Folge-Operation des Tabellen-Renames), nicht
   Trigger-Rename.
 
+## 3a. Sub-Slice-Schnitt (fixiert 2026-05-18)
+
+Pro Sub-Slice ein eigener Commit; Plan-Doc-Header trackt den
+Slice-Status. Reihenfolge so gewaehlt, dass jedes spaetere Slice auf
+einem gruenen Foundation-Slice aufsetzt.
+
+### Sub-Slice A.1 — Foundation (dialektneutral)
+
+- `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` als echter Enum-
+  Wert (heute nur Diagnostic-String-Code in
+  `MigrationOverlayPreflight`). Bestehender String-Code-Pfad bleibt
+  aus Kompatibilitaetsgruenden erhalten und mappt weiter auf
+  `RENAME_MAPPING_INVALID`; der neue Enum-Wert wird von Mapper-/
+  Planner-Pfaden direkt verwendet.
+- `RenameSupport`-sealed-Interface (`NATIVE` / `DROP_CREATE_FALLBACK(rationale)`
+  / `BLOCKED(code, message)`).
+- `ObjectRenameCandidate`-data-class (objectType, fromName, toName,
+  materializedView, triggerTableName, routineSignature, sourceBodyHash,
+  targetBodyHash).
+- `RenameProvenance`-data-class (candidateId, objectType, fromPath,
+  toPath, overlaySource, overlayEntryId, overlayHash, fallbackReason).
+- `MigrationOverlayValidator.supportedRenameObjectTypes` erweitert
+  auf `{table, column, view, trigger, function, procedure, sequence}`;
+  `materialized_view` bleibt blockiert.
+- Tests fuer das Foundation-Modell. Keine Renderer-Aenderungen, kein
+  Mapper-Code.
+
+Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
+`RenameProjectionDialect`, `RenameCapabilitySource`,
+`RenameProjectionCapabilities`, `RenameProjectionReport`-DTO,
+`RenameTable.overlayEntryId`, `RenameColumn.overlayEntryId`.
+
+### Sub-Slice A.2 — Operation-Subtypes + Mapper + PG-Renderer
+
+- 5 neue `DiffOperation`-Subtypes: `RenameView`, `RenameTrigger`,
+  `RenameFunction`, `RenameProcedure`, `RenameSequence`. Felder pro
+  §5.1.
+- `ObjectRenamePolicy`-Interface + PG-Impl (alle 5 nativ;
+  `materialized_view` bleibt blockiert).
+- `OperationMapper`-Faltung: konsumiert
+  `RenameMappingOverlayEntry`-Eintraege mit den neuen `objectType`-
+  Werten und faltet Drop+Create-Paare zu `Rename*`.
+- PostgreSQL-Renderer fuer alle 5 neuen Subtypes (`ALTER VIEW`,
+  `ALTER TRIGGER ... ON ...`, `ALTER FUNCTION ...`,
+  `ALTER PROCEDURE ...`, `ALTER SEQUENCE ...`).
+- Body-Drift-Pin pro Subtype (View/Trigger/Function/Procedure).
+- Tests: per neuem Subtyp Positiv/Negativ; PG-spezifische Signatur-
+  Tests fuer ueberladene Routinen.
+
+### Sub-Slice B — MySQL Renderer + Policy
+
+- MySQL `ObjectRenamePolicy`: View `RENAME TABLE` (nativ, Views liegen
+  im selben Namespace wie Tabellen); Trigger Drop+Create-Fallback
+  (kein `ALTER TRIGGER ... RENAME`); Routinen Drop+Create-Fallback
+  (kein `CREATE OR REPLACE ROUTINE ... RENAME`); Sequence BLOCKED
+  bis E.3 MySQL-Sequence-Vertrag steht.
+- MySQL-Renderer fuer alle Subtypes (mit Drop+Create-Fallback und
+  `renameProvenance`-Markierung im Report).
+
+### Sub-Slice C — SQLite Renderer + Policy
+
+- SQLite `ObjectRenamePolicy`: View Drop+Create-Fallback (kein
+  natives View-Rename); Trigger Drop+Create-Fallback; Routinen
+  BLOCKED (SQLite hat keine Routinen-Modell); Sequence BLOCKED bis
+  E.3 SQLite-Sequence-Vertrag.
+- SQLite-Renderer mit Drop+Create-Fallback + Body-Drift-Vertrag.
+
+### Sub-Slice D — Sequence-Default-Reprojection
+
+- `RenameSequence` reprojiziert `DefaultValue.SequenceNextVal`-
+  Referenzen in `CreateTable`/`AddColumn`/`AlterColumnDefault` auf
+  den neuen Sequenznamen.
+- Cross-Op-Dependency-Sortierung: jede `*ColumnDefault`-Op mit
+  Sequenz-Default referenziert die finale `RenameSequence`-ID als
+  Dependency.
+- `DependencyAnalyzer` kennt `RenameSequence` als Sequenz-Provider.
+
+### Sub-Slice E — Plan-Artefakt-Vertrag-Erweiterung
+
+- `migration-plan.v1` behandelt `renameProjections` als versionierte
+  Semantik (heute optionales Producer-Metadatum). Codec/Validator/
+  Goldens entsprechend.
+- `requiredFeatures`/`semanticExtensions`-Gate fuer alte Consumer.
+
+### Sub-Slice F — Closing
+
+- Roadmap-Update.
+- cli-spec.md: Rename-Workflow + Overlay-Erweiterung dokumentieren.
+- CHANGELOG-Eintrag.
+- Plan-Doc nach `docs/planning/done/`.
+
 ## 4. Vorbedingungen
 
 | Vorbedingung | Status | Kommentar |
 | ------------ | ------ | --------- |
 | Workstream G abgeschlossen (`transactionScope`, strukturierte Statement-Serialisierung, Execution-Status) | ✅ | Plan-2 §4/G.1-G.3 implementiert; neue v2-Rollback-Artefakte nutzen strukturierte Statement-Ranges |
-| Routine- und Trigger-Diff-Renderbarkeit (E.1/E.2) | OFFEN | Plan-2 §9 |
-| Sequence-Renderbarkeit (E.3) | TEILWEISE | PG-Slice ✅, MySQL/SQLite offen |
-| F.2 Plan-Artefakt-Vertrag | ✅ erste Scheibe | unveraendert nutzbar |
+| Routine-Diff-Renderbarkeit (E.1) | ✅ 2026-05-16 | Plan-2 §9.E.1 done |
+| Trigger-Diff-Renderbarkeit (E.2) | ✅ 2026-05-18 | Plan-2 §9.E.2 done; `TriggerNameCollisionDetector` + Body-Vertrag verfuegbar |
+| Sequence-Renderbarkeit (E.3) | TEILWEISE | PG-Slice ✅, MySQL/SQLite offen — limitiert nur Sub-Slice D (Sequence-Default-Reprojection) und die Sequence-Rename-Policy in B/C |
+| F.0 Migrations-Overlay-Grundvertrag | ✅ | `migration-overlay.v1` mit `overlayHash` |
+| F.2 Plan-Artefakt-Vertrag | ✅ | `migration-plan.v1` mit `requiredFeatures`/`semanticExtensions`-Gate |
+| Dependency-Projection-Carriers (`RenameProjectionDialect`, `RenameProjectionCapabilities`, `RenameProjectionReport`) | ✅ | aus dem Dependency-Projection-Slice; werden wiederverwendet (siehe Type-Reuse-Hinweis im Header) |
 
 Dieser Slice startet erst, wenn die `OFFEN`-Zellen fuer E.1/E.2 gruen sind.
 Workstream G ist keine offene Blockade mehr, bleibt aber eine harte
