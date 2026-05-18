@@ -587,11 +587,19 @@ Aktuell offene 0.9.7-Restpunkte:
   `{table, column}`-Pre-Plan-Whitelist fertig; cli-inline-overlay
   mit `--rename-table` / `--rename-column` + Cross-Document-
   Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance fertig.
-  View-/Trigger-/Routine-Rename bleibt offen — die E.1/E.2-Vorbedingung
-  ist seit 2026-05-18 mit dem Abschluss von E.2 Trigger-Rendering
-  erfuellt; der Rename-Slice selbst
-  (`docs/planning/open/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`)
-  bleibt offen.)*
+  View-/Trigger-/Routine-/Sequence-Rename ist seit 2026-05-18 mit
+  E.1/E.2 freigeschaltet und in Arbeit: Plan-Doc
+  `docs/planning/in-progress/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.
+  Sub-Slice A.1 (Foundation: `OBJECT_RENAME_UNSUPPORTED`-Enum-Wert,
+  `RenameSupport`/`ObjectRenameCandidate`/`RenameProvenance`,
+  Overlay-Whitelist auf 7 ObjectTypes erweitert) ✅ 2026-05-18.
+  Sub-Slice A.2 Teil 1 (5 `Rename*`-`DiffOperation`-Subtypes,
+  `ObjectRenamePolicy`-Interface + 3 per-Dialekt-Impls in
+  `hexagon:core`, 3-Renderer-`categorize()`-Triage als UNSUPPORTED
+  bis Renderer landet) ✅ 2026-05-18. Offen: A.2 Teil 2
+  (Mapper-Faltung + PG-Renderer), B (MySQL-Renderer), C (SQLite-
+  Renderer), D (Sequence-Default-Reprojection), E (Plan-Artefakt-
+  Vertrag-Erweiterung), F (Closing).)*
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
   Vertrag und Daten-Preflight. *(2026-05-12: F.5-Erstscheibe
   implementiert — Comparator nutzt konservativen SQL-Textvergleich,

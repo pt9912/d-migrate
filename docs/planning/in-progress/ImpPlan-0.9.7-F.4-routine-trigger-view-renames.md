@@ -2,11 +2,21 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (vierter Slice — Renames jenseits von Tabellen/Spalten)
-> **Status**: in-progress — Sub-Slice-Schnitt fixiert 2026-05-18.
->            Sub-Slices A.1 (Foundation) / A.2 (Subtypes + Mapper +
->            PG-Renderer) / B (MySQL) / C (SQLite) / D (Sequence-
->            Default-Reprojection) / E (Plan-Artefakt-Vertrag) /
->            F (Closing) offen.
+> **Status**: in-progress.
+>            Sub-Slice A.1 (Foundation: `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED`,
+>            `RenameSupport`, `ObjectRenameCandidate`,
+>            `RenameProvenance`, Overlay-Whitelist) ✅ 2026-05-18.
+>            Sub-Slice A.2 in zwei Teile gesplittet:
+>            **A.2 Teil 1** (5 `Rename*`-Subtypes, `ObjectRenamePolicy`-
+>            Interface + 3 per-Dialekt-Impls, 3-Renderer-Categorize-
+>            Stubs als UNSUPPORTED) ✅ 2026-05-18.
+>            **A.2 Teil 2** (Mapper-Faltung im `RenameOverlayMapper` +
+>            PG-Renderer fuer alle 5 Subtypes + Body-Drift-Tests +
+>            End-to-End-Tests) offen.
+>            Sub-Slices B (MySQL Renderer) / C (SQLite Renderer) /
+>            D (Sequence-Default-Reprojection) /
+>            E (Plan-Artefakt-Vertrag-Erweiterung) /
+>            F (Roadmap + cli-spec + CHANGELOG Closing) offen.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
 >                  Serialisierung, Execution-Status), **E.1 Routine-
@@ -233,48 +243,76 @@ Pro Sub-Slice ein eigener Commit; Plan-Doc-Header trackt den
 Slice-Status. Reihenfolge so gewaehlt, dass jedes spaetere Slice auf
 einem gruenen Foundation-Slice aufsetzt.
 
-### Sub-Slice A.1 — Foundation (dialektneutral)
+### Sub-Slice A.1 — Foundation (dialektneutral) ✅ 2026-05-18
 
 - `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` als echter Enum-
-  Wert (heute nur Diagnostic-String-Code in
-  `MigrationOverlayPreflight`). Bestehender String-Code-Pfad bleibt
-  aus Kompatibilitaetsgruenden erhalten und mappt weiter auf
-  `RENAME_MAPPING_INVALID`; der neue Enum-Wert wird von Mapper-/
+  Wert (Ordinal 10, am Tail angehaengt — `RENAME_MAPPING_INVALID`-
+  Ordinal-7-Pin bleibt stabil). Bestehender String-Code-Pfad in
+  `MigrationOverlayPreflight` bleibt erhalten und mappt weiter auf
+  `RENAME_MAPPING_INVALID` fuer Renderer-emittierte Diagnostics auf
+  `RenameTable`/`RenameColumn`; der neue Enum-Wert wird von Mapper-/
   Planner-Pfaden direkt verwendet.
-- `RenameSupport`-sealed-Interface (`NATIVE` / `DROP_CREATE_FALLBACK(rationale)`
-  / `BLOCKED(code, message)`).
+- `RenameSupport`-sealed-Interface (`Native` /
+  `DropCreateFallback(rationale)` / `Blocked(code, message)`) in
+  `hexagon:core` (PascalCase per Repo-Stil).
 - `ObjectRenameCandidate`-data-class (objectType, fromName, toName,
   materializedView, triggerTableName, routineSignature, sourceBodyHash,
   targetBodyHash).
 - `RenameProvenance`-data-class (candidateId, objectType, fromPath,
   toPath, overlaySource, overlayEntryId, overlayHash, fallbackReason).
-- `MigrationOverlayValidator.supportedRenameObjectTypes` erweitert
-  auf `{table, column, view, trigger, function, procedure, sequence}`;
-  `materialized_view` bleibt blockiert.
-- Tests fuer das Foundation-Modell. Keine Renderer-Aenderungen, kein
-  Mapper-Code.
+- `MigrationOverlayValidator.supportedRenameObjectTypes` und
+  `MigrationOverlayPreflight.DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES`
+  beide auf `{table, column, view, trigger, function, procedure,
+  sequence}` erweitert; `materialized_view` bleibt blockiert.
+- Tests: `RenameSupportTest` + drei umformulierte
+  `MigrationOverlayPreflightTest`-Faelle (objectType-Whitelist,
+  planless-gate, parameter-narrowing/widening).
 
 Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
 `RenameProjectionDialect`, `RenameCapabilitySource`,
 `RenameProjectionCapabilities`, `RenameProjectionReport`-DTO,
 `RenameTable.overlayEntryId`, `RenameColumn.overlayEntryId`.
 
-### Sub-Slice A.2 — Operation-Subtypes + Mapper + PG-Renderer
+### Sub-Slice A.2 Teil 1 — Operation-Subtypes + Policy ✅ 2026-05-18
 
 - 5 neue `DiffOperation`-Subtypes: `RenameView`, `RenameTrigger`,
   `RenameFunction`, `RenameProcedure`, `RenameSequence`. Felder pro
-  §5.1.
-- `ObjectRenamePolicy`-Interface + PG-Impl (alle 5 nativ;
-  `materialized_view` bleibt blockiert).
-- `OperationMapper`-Faltung: konsumiert
+  §5.1. Alle tragen `overlaySource`/`overlayEntryId`/`overlayHash`;
+  Trigger zusaetzlich `tableName` + `bodyHash`; Function/Procedure
+  zusaetzlich `signature: List<ParameterDefinition>` + `bodyHash`;
+  Sequence rein deklarativ.
+- `ObjectRenamePolicy`-Interface in `hexagon:core` + drei
+  Implementierungen (`PostgresObjectRenamePolicy`,
+  `MysqlObjectRenamePolicy`, `SqliteObjectRenamePolicy`) gewrappt in
+  `ObjectRenamePolicyRegistry.forDialect(...)`. Policy-Klassifikation
+  pro `(Dialekt, Kind)` mit Body-Drift-Erkennung und
+  materialized-view-Carve-out.
+- Alle drei Dialekt-`categorize()`-`when`-Bloecke triagieren die
+  fuenf neuen Subtypes — heute als `OpCategory.UNSUPPORTED`.
+  Production-Plans treffen die UNSUPPORTED-Stelle nie, weil noch
+  kein Mapper sie emittiert; A.2 Teil 2 schaltet den PG-Pfad live.
+- `ObjectRenamePolicyTest` pinnt 18-Test-Matrix:
+  Native/DropCreateFallback/Blocked-Branches per (Dialekt, Kind),
+  materialized-view-Carve-out, Body-Drift-Detection, missing-body-
+  Klassifikation, routines-not-in-SQLite-Block, sequence-Carve-outs.
+
+### Sub-Slice A.2 Teil 2 — Mapper + PG-Renderer (offen)
+
+- `RenameOverlayMapper`-Erweiterung: konsumiert
   `RenameMappingOverlayEntry`-Eintraege mit den neuen `objectType`-
-  Werten und faltet Drop+Create-Paare zu `Rename*`.
+  Werten und faltet Drop+Create-Paare zu `Rename*`-Ops. Die
+  Mapper-Faltung konsultiert `ObjectRenamePolicyRegistry.forDialect`
+  vor dem Emit; `Blocked`-Klassifikation ersetzt das Drop+Create
+  durch einen `OBJECT_RENAME_UNSUPPORTED`-Blocker; `DropCreateFallback`
+  emittiert das Drop+Create mit `RenameProvenance`-Marker.
 - PostgreSQL-Renderer fuer alle 5 neuen Subtypes (`ALTER VIEW`,
   `ALTER TRIGGER ... ON ...`, `ALTER FUNCTION ...`,
-  `ALTER PROCEDURE ...`, `ALTER SEQUENCE ...`).
-- Body-Drift-Pin pro Subtype (View/Trigger/Function/Procedure).
-- Tests: per neuem Subtyp Positiv/Negativ; PG-spezifische Signatur-
-  Tests fuer ueberladene Routinen.
+  `ALTER PROCEDURE ...`, `ALTER SEQUENCE ...`). PG-categorize-
+  Eintraege wandern von `UNSUPPORTED` nach `OpCategory.OBJECT_RENAME`
+  (oder analog).
+- Tests: per neuem Subtyp Positiv/Negativ inkl. PG-spezifische
+  Signatur-Tests fuer ueberladene Routinen, Body-Drift-Pins,
+  Cross-Document-Uniqueness-Pin via Mapper.
 
 ### Sub-Slice B — MySQL Renderer + Policy
 
