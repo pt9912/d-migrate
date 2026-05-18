@@ -15,13 +15,35 @@ data class MigrationOverlayValidationContext(
     /**
      * F.4 rename-mapping-invalid-enum slice: the set of `objectType`
      * values the current build accepts on a `rename-mapping` entry.
-     * Until the View-/Trigger-/Routine-Rename slice ships, only
-     * `{table, column}` are valid. Any other `objectType` blocks
-     * pre-plan with [MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND]
-     * (tagged with the offending `renameObjectType`) so the operator
-     * has to edit the overlay rather than silently skip a stale entry.
+     * F.4 Sub-Slice A.1 (2026-05-18) widens the default from the
+     * original `{table, column}` to also accept the five
+     * View-/Trigger-/Routine-/Sequence-rename kinds; the Mapper-
+     * /Planner-phase `ObjectRenamePolicy` then decides whether the
+     * specific (dialect, kind, body-state) combination is `Native`,
+     * `DropCreateFallback`, or `Blocked`.
+     *
+     * `materialized_view` is intentionally **not** in the default
+     * whitelist: a separate D.3b materialized-view rename contract
+     * has to ship first. The schemafree pre-plan gate cannot tell
+     * regular vs. materialized views apart, so a syntactically valid
+     * `objectType = view` entry passes the validator here and the
+     * schema-aware Mapper/Planner blocks `ViewDefinition.materialized = true`
+     * cases with `OBJECT_RENAME_UNSUPPORTED`.
+     *
+     * Any `objectType` outside this set still blocks pre-plan with
+     * [MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND] (tagged with
+     * the offending `renameObjectType`) so the operator has to edit
+     * the overlay rather than silently skip a stale entry.
      */
-    val supportedRenameObjectTypes: Set<String> = setOf("table", "column"),
+    val supportedRenameObjectTypes: Set<String> = setOf(
+        "table",
+        "column",
+        "view",
+        "trigger",
+        "function",
+        "procedure",
+        "sequence",
+    ),
 )
 
 data class MigrationOverlayValidationResult(

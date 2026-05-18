@@ -70,6 +70,28 @@ enum class MigrationBlockedReason {
      * PL/pgSQL bodies are deliberately out of E.2 scope.
      */
     TRIGGER_BODY_NOT_FUNCTION_REFERENCE,
+
+    /**
+     * F.4 Sub-Slice A.1 blocker: the Mapper- or Planner-phase
+     * `ObjectRenamePolicy.classify(...)` returned `RenameSupport.Blocked`
+     * for a rename candidate (e.g. a dialect that has no rename path
+     * at all for the kind, or a body-drift / missing-body case where
+     * the Drop+Create-fallback contract cannot reconstruct the prior
+     * body). The diagnostic message carries the dialect, object kind
+     * and a specific rationale code.
+     *
+     * Distinct from [RENAME_MAPPING_INVALID]: the latter is the
+     * pre-plan overlay validator's "your overlay is structurally
+     * wrong" signal (also surfaced when the renderer emits the
+     * legacy `OBJECT_RENAME_UNSUPPORTED` diagnostic code on
+     * `RenameTable`/`RenameColumn`, which `MigrationOverlayPreflight`
+     * classifies as `RENAME_MAPPING_INVALID` for tooling
+     * convenience). This new enum value is used by F.4 Mapper-/
+     * Planner-paths directly on the new `Rename{View,Trigger,Function,
+     * Procedure,Sequence}` subtypes where the decision is a policy
+     * outcome, not an operator-fixable overlay shape.
+     */
+    OBJECT_RENAME_UNSUPPORTED,
 }
 
 /**

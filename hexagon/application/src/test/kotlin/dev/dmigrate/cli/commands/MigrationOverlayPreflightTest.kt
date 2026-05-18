@@ -270,16 +270,19 @@ class MigrationOverlayPreflightTest : FunSpec({
             .shouldContain(MigrationOverlayDiagnostics.RENAME_MAPPING_CASE_CONFLICT)
     }
 
-    test("F.4 rename-mapping-invalid-enum: objectType outside {table,column} whitelist blocks with RENAME_MAPPING_INVALID") {
-        // Pre-Plan-Gate enforces the current rename objectType
-        // whitelist. Every objectType the later
-        // View-/Trigger-/Routine-Rename slice will own
-        // (`view`, `trigger`, `function`, `procedure`, `sequence`,
-        // `materialized_view`) blocks the rename overlay today so a
-        // half-finished build cannot silently emit a Drop+Add for an
-        // object class it does not know how to rename.
+    test("F.4 rename-mapping-invalid-enum: objectType outside whitelist blocks with RENAME_MAPPING_INVALID") {
+        // F.4 Sub-Slice A.1 (2026-05-18) widened the default whitelist
+        // to accept `view`, `trigger`, `function`, `procedure` and
+        // `sequence` — those flow to the schema-aware Mapper/Planner
+        // which classifies (dialect, kind, body) via the new
+        // ObjectRenamePolicy. `materialized_view` stays out of the
+        // whitelist until D.3b ships a dedicated rename contract.
+        // Together with a completely unknown sentinel, this test pins
+        // that the pre-plan gate still rejects what the build genuinely
+        // cannot handle.
         val unsupportedObjectTypes = listOf(
-            "view", "trigger", "function", "procedure", "sequence", "materialized_view",
+            "materialized_view",
+            "fictional_object_kind",
         )
         unsupportedObjectTypes.forEach { objectType ->
             val overlay = renameOverlay().copy(
@@ -332,10 +335,12 @@ class MigrationOverlayPreflightTest : FunSpec({
     test("F.4 rename-mapping-invalid-enum: pre-plan API surfaces the whitelist via parameter") {
         // The planless entry point accepts the whitelist as an explicit
         // parameter so the caller — and tests like this — can pin the
-        // current set. Default is `{table, column}`; the test passes a
-        // custom expanded set and verifies the validator now accepts
-        // `view` without blocking. This is the contract the later
-        // View-Rename slice will rely on.
+        // current set. Since F.4 Sub-Slice A.1 the default already
+        // includes the five new rename kinds; this test shrinks the
+        // whitelist via the parameter and verifies the override is
+        // honoured (here: an artificially narrow `{table, column}`
+        // still works and blocks `view` even when the default would
+        // accept it).
         val overlay = renameOverlay().copy(
             entries = listOf(
                 RenameMappingOverlayEntry(
@@ -344,15 +349,25 @@ class MigrationOverlayPreflightTest : FunSpec({
                 ),
             ),
         ).withComputedHash()
-        val result = MigrationOverlayPreflight.validateBeforePlan(
+
+        val narrowed = MigrationOverlayPreflight.validateBeforePlan(
+            documents = listOf(MigrationOverlayDocument(source = "overlays/rename.json", overlay = overlay)),
+            sourceFingerprint = "src-fp",
+            targetFingerprint = "dst-fp",
+            dialect = "postgresql",
+            supportedRenameObjectTypes = setOf("table", "column"),
+        )
+        narrowed.hasBlockers shouldBe true
+        narrowed.reportItems.single().diagnosticCode shouldBe MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND
+
+        val widened = MigrationOverlayPreflight.validateBeforePlan(
             documents = listOf(MigrationOverlayDocument(source = "overlays/rename.json", overlay = overlay)),
             sourceFingerprint = "src-fp",
             targetFingerprint = "dst-fp",
             dialect = "postgresql",
             supportedRenameObjectTypes = setOf("table", "column", "view"),
         )
-
-        result.hasBlockers shouldBe false
+        widened.hasBlockers shouldBe false
     }
 
     test("F.4 rename-mapping-invalid-enum: synthetic OBJECT_RENAME_UNSUPPORTED blocker classifies as RENAME_MAPPING_INVALID") {
@@ -419,12 +434,15 @@ class MigrationOverlayPreflightTest : FunSpec({
         // can therefore run before DiffPlanner.plan(...). This test
         // pins that contract: only documents + fingerprints + dialect
         // + (optional) whitelist + load failures, and a usable
-        // hasBlockers signal.
+        // hasBlockers signal. F.4 Sub-Slice A.1 widened the default
+        // whitelist to accept `view` directly; we use
+        // `materialized_view` here because it stays outside the
+        // whitelist (D.3b rename contract not yet shipped).
         val overlay = renameOverlay().copy(
             entries = listOf(
                 RenameMappingOverlayEntry(
-                    id = "rename-a", objectType = "view",
-                    fromName = "v_old", toName = "v_new",
+                    id = "rename-a", objectType = "materialized_view",
+                    fromName = "mv_old", toName = "mv_new",
                 ),
             ),
         ).withComputedHash()
@@ -436,7 +454,7 @@ class MigrationOverlayPreflightTest : FunSpec({
         )
         pre.hasBlockers shouldBe true
         pre.reportItems.single { it.diagnosticCode == MigrationOverlayDiagnostics.UNKNOWN_ENTRY_KIND }
-            .renameObjectType shouldBe "view"
+            .renameObjectType shouldBe "materialized_view"
     }
 
     test("F.4 cli-inline-overlay: cross-document duplicate emits RENAME_MAPPING_INVALID with both source/entryId pairs") {

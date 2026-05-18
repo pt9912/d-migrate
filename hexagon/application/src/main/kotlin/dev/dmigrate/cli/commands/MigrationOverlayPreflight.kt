@@ -223,15 +223,29 @@ internal object MigrationOverlayPreflight {
     }
 
     /**
-     * F.4 rename-mapping-invalid-enum slice: until the
-     * View-/Trigger-/Routine-Rename slice ships, only
-     * `{table, column}` are accepted. The Pre-Plan-Gate blocks every
-     * other `rename-mapping.objectType` value with
-     * `OVERLAY_UNKNOWN_ENTRY_KIND` and the application-layer
-     * reason-classifier groups those findings under
+     * F.4 Sub-Slice A.1 (2026-05-18) widens the pre-plan whitelist to
+     * accept the five new rename kinds in addition to the legacy
+     * `{table, column}`. The schemafree pre-plan gate cannot tell
+     * regular vs. materialized views apart, so `view` is accepted
+     * here; the schema-aware Mapper/Planner blocks
+     * `ViewDefinition.materialized = true` with `OBJECT_RENAME_UNSUPPORTED`
+     * downstream. `materialized_view` stays out of the whitelist
+     * until a dedicated D.3b rename contract ships.
+     *
+     * Any `objectType` outside this set still blocks with
+     * `OVERLAY_UNKNOWN_ENTRY_KIND` and the application-layer reason-
+     * classifier groups those findings under
      * [MigrationBlockedReason.RENAME_MAPPING_INVALID].
      */
-    val DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES: Set<String> = setOf("table", "column")
+    val DEFAULT_SUPPORTED_RENAME_OBJECT_TYPES: Set<String> = setOf(
+        "table",
+        "column",
+        "view",
+        "trigger",
+        "function",
+        "procedure",
+        "sequence",
+    )
 
     /**
      * Backward-compatible wrapper around [validateBeforePlan] for the
