@@ -289,12 +289,19 @@ class MysqlTriggerDdlHelperTest : FunSpec({
         r.statements.shouldBeEmpty()
     }
 
-    test("Trigger statements flow through RoutineBodyScrubber on the report path") {
-        // The Display-Plane scrubber masks PASSWORD literals before any
-        // report serialisation. Trigger bodies inherit this protection
-        // — it lives in `MigrationDdlStatement.sql`, not in a routine-
-        // specific carrier. Pin that explicitly so a future refactor
-        // that skips the scrubber for trigger ops would fail loudly.
+    test("Trigger execution-plane keeps raw body; standalone scrubber call masks PASSWORD literals") {
+        // The renderer itself does NOT scrub — the Execution-Plane DDL
+        // (the statement the runner sends to the DB) must contain the
+        // raw body, otherwise the trigger logic would not work. The
+        // Display-Plane scrubber kicks in only when
+        // `SchemaMigrateReportBuilder` writes a report. This test pins
+        // both halves of the contract: the renderer's output stays
+        // raw, and the shared `RoutineBodyScrubber` recognises a
+        // PASSWORD literal inside a trigger statement when invoked by
+        // the report builder downstream. The Report-Builder
+        // integration itself lives in
+        // `SchemaMigrateReportBuilderTest` (hexagon-application) and
+        // is not duplicated here.
         val withSecret = sampleTrigger.copy(
             body = "CALL audit_with_password(NEW.id, PASSWORD 'hunter2');",
         )

@@ -151,9 +151,23 @@ internal object MysqlTriggerDdlHelper {
 
     /**
      * Reject MySQL-incompatible trigger modelling at render time:
-     * `WHEN`-conditions and statement-level triggers do not exist on
-     * MySQL. Both produce `DIALECT_UNSUPPORTED_OPERATION` so the
-     * report tells the operator which field is at fault.
+     * INSTEAD-OF timing, `WHEN`-conditions and statement-level
+     * triggers do not exist on MySQL. All three produce
+     * `DIALECT_UNSUPPORTED_OPERATION` so the report tells the
+     * operator which field is at fault.
+     *
+     * Check order is fixed and deterministic:
+     * 1. `INSTEAD_OF` → `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`
+     * 2. `condition != null` → `MYSQL_TRIGGER_CONDITION_UNSUPPORTED`
+     * 3. `forEach = STATEMENT` → `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`
+     * 4. empty body → `ROUTINE_BODY_UNKNOWN` + `MANUAL_ACTION_REQUIRED`
+     *
+     * A trigger that violates several invariants surfaces the
+     * earlier blocker in the chain (e.g. `INSTEAD OF` + `WHEN` fires
+     * `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, not the WHEN code).
+     * Order is intentional — INSTEAD-OF is the structural mismatch;
+     * once removed, the operator can address WHEN/STATEMENT/body
+     * issues in subsequent rounds.
      */
     private fun validateMysqlTrigger(
         op: DiffOperation,
@@ -224,11 +238,10 @@ internal object MysqlTriggerDdlHelper {
     private fun TriggerTiming.toSqlKeyword(): String = when (this) {
         TriggerTiming.BEFORE -> "BEFORE"
         TriggerTiming.AFTER -> "AFTER"
-        // INSTEAD OF is PG-only — MySQL has no INSTEAD-of trigger. The
-        // validator does not reject INSTEAD_OF because MySQL also has
-        // no `WHEN`/`STATEMENT` triggers and we already block those;
-        // for completeness we render the keyword if it ever leaks
-        // through and rely on the DB to reject it.
+        // Defence-in-depth fallback only — `validateMysqlTrigger`
+        // rejects `INSTEAD_OF` upstream with
+        // `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` before any
+        // `buildCreateSql` call, so this branch should be unreachable.
         TriggerTiming.INSTEAD_OF -> "INSTEAD OF"
     }
 

@@ -512,7 +512,7 @@ Zusätzlich erledigt seit dem 2026-05-08-Stand:
   Validierung in PG strikt (`[schema.]identifier(args)` als Funktions-
   referenz; sonst `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`); MySQL/
   SQLite akzeptieren inline SQL ohne Sanitisation und blocken nur
-  klare Dialekt-Konflikte (`MYSQL_TRIGGER_WHEN_UNSUPPORTED`,
+  klare Dialekt-Konflikte (`MYSQL_TRIGGER_CONDITION_UNSUPPORTED`,
   `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
   `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`,
   `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
@@ -543,29 +543,29 @@ Aktuell offene 0.9.7-Restpunkte:
 - **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
   Preserve-Policy, Routine-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
+
+  *(2026-05-15/16: E.1 Routine-Migration komplett — Slice A (PG
+  Functions Up+Down via `RoutineBodyNormalizer`/`Scrubber`), Slice B
+  (PG Procedures), Slice C.1.a/b (Capability- und Debug-Body-
+  Infrastruktur in `hexagon:ports-read` plus Migration auf den
+  kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-Code), Slice C.2 (MySQL
+  Function/Procedure Renderer mit delimiterfreiem Artefakt +
+  Capability-Gate ueber `routineCapability` + `mysqlServerVersion`),
+  Slice C.3 (Dependency-Guard-Stub + `DROP + CREATE`-Fallback),
+  Slice D.1-D.4 (Manifest- und Engine-Edges + topology-getriebene
+  Dependency-Sortierung ueber alle fuenf Objektklassen) und Slice E
+  (PG-Reverse-Read populiert `security`/`definer`/`searchPath` aus
+  `pg_proc`). Slice F.11 korrigiert den MySQL-Familien-Default:
+  Oracle MySQL bleibt ohne `CREATE OR REPLACE` fuer Stored Routines,
+  live erkannte MariaDB-Ziele aktivieren diesen Pfad ueber den
+  Vendor-String. E.1 Workstream komplett; Plan wandert nach
+  `docs/planning/done/`.)*
+
   *(2026-05-18: E.2 Trigger-Rendering komplett — Trigger-Bodies sind
   in allen drei Dialekten renderbar; Plan wandert nach
   `docs/planning/done/`. SQLite-Trigger-Reverse-Read aus
   `sqlite_master` ist bewusst out of E.2-Scope und bleibt ein
   Follow-up-Slice.)*
-  *(2026-05-15: E.1 Slice A landed — PostgreSQL Functions Up+Down via
-  `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: alle restlichen
-  E.1-Slices gelandet — Slice B (PG Procedures), Slice C.1.a/b
-  (Capability- und Debug-Body-Infrastruktur in `hexagon:ports-read`
-  plus Migration auf den kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-
-  Code), Slice C.2 (MySQL Function/Procedure Renderer mit
-  delimiterfreiem Artefakt + Capability-Gate über `routineCapability`
-  + `mysqlServerVersion`), Slice C.3 (Dependency-Guard-Stub +
-  `DROP + CREATE`-Fallback), Slice D.1-D.4 (Manifest- und
-	  Engine-Edges + topology-getriebene Dependency-Sortierung
-	  über alle fünf Objektklassen) und Slice E (PG-Reverse-Read
-	  populiert `security`/`definer`/`searchPath` aus `pg_proc`).
-	  Slice F.11 korrigiert den MySQL-Familien-Default:
-	  Oracle MySQL bleibt ohne `CREATE OR REPLACE` fuer Stored Routines,
-	  live erkannte MariaDB-Ziele aktivieren diesen Pfad ueber den
-	  Vendor-String.
-	  E.1 Workstream komplett; Plan wandert nach
-	  `docs/planning/done/`.)*
 - **F.0-F.3 Rest**: automatische Daten-Transformationen,
   versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
 - **F.4 Rest**: Dependency-Re-Projection nach Rename

@@ -659,13 +659,26 @@ Routine-Rendering:
 Trigger-Rendering (0.9.7 E.2):
 
 - PostgreSQL rendert `CreateTrigger`/`ReplaceTrigger`/`DropTrigger` als native `CREATE TRIGGER ... EXECUTE FUNCTION <ref>;` / `DROP TRIGGER <name> ON <table>;`. Der Body **muss** eine strikte `[schema.]identifier([arg, ...])`-Funktionsreferenz sein — inline PL/pgSQL blockt der Renderer mit `TRIGGER_BODY_NOT_FUNCTION_REFERENCE` (Exit `8`). Replace nutzt natives `CREATE OR REPLACE TRIGGER` ab PG-14, sonst Drop+Create-Fallback.
-- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` waere die einzige zulaessige Qualifikation und ist ein Folge-Slice). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld: `MYSQL_TRIGGER_WHEN_UNSUPPORTED` (MySQL kennt kein `WHEN`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only).
+- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` waere die einzige zulaessige Qualifikation und ist ein Folge-Slice). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
 - SQLite rendert `CREATE TRIGGER ... BEGIN <body> END;` mit impliziter `FOR EACH ROW`-Orientierung; `DROP TRIGGER <name>;` mit bare Triggername (SQLite-Trigger sind global). Replace ist immer Drop+Create. Pre-Flight-Blocker: `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `SQLITE_TRIGGER_BODY_NOT_RENDERABLE` (`sourceDialect` ungleich `sqlite`). Trigger auf einer Tabelle, die ueber `AlterColumnType` / `AlterColumnNullability` / `AlterConstraint` einen Rebuild ausloest, werden von `SqliteRebuildPlanner` in den Rebuild-Block absorbiert; der Standalone-Renderer rendert nur Trigger ohne Rebuild-Betroffenheit.
-- **Gap-Vertrag**: jede Drop+Create-Replace traegt `OperationRisk.hasGap = true` (gesetzt vom `OperationMapperRoutines.mapTriggers` ueber den `TriggerPlanningContext`) und emittiert einen `W_TRIGGER_REPLACE_GAP`-WARNING-Diagnostic im Report. Mit `--strict-gap-operations` hebt der Renderer-Pre-Emit-Guard die Operation auf `MANUAL_ACTION_REQUIRED` (Exit `8`) — keine Statements werden emittiert, kein Gap-Warning, statt dessen ein `OPERATION_HAS_GAP_STRICT_BLOCKED`-Diagnostic.
+- **Gap-Vertrag**: jede Drop+Create-Replace traegt
+  `OperationRisk.hasGap = true` und emittiert einen
+  `W_TRIGGER_REPLACE_GAP`-WARNING-Diagnostic im Report. Den Flag setzt
+  der Mapper anhand der dialekt- und (fuer PostgreSQL) server-version-
+  abhaengigen Capability, **bevor** der Renderer laeuft — damit ist
+  jeder Renderer-Pfad authoritativ via `op.risks.<direction>.hasGap`
+  und nicht via eigene Capability-Lookup. Mit `--strict-gap-operations`
+  hebt der Renderer-Pre-Emit-Guard die Operation auf
+  `MANUAL_ACTION_REQUIRED` (Exit `8`) — keine Statements werden
+  emittiert, kein Gap-Warning, statt dessen ein
+  `OPERATION_HAS_GAP_STRICT_BLOCKED`-Diagnostic. Architekturdetail in
+  `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`
+  (`TriggerPlanningContext`, `TriggerCapability`,
+  `TriggerPlanningContextFactory`).
 - **Identitaets-Kollision**: zwei Trigger mit gleichem Namen auf verschiedenen Tabellen blockt der `TriggerNameCollisionDetector` mit `TRIGGER_NAME_COLLISION` (Exit `8`). Der Reader-Pfad konsultiert den Detektor vor der Map-Materialisierung; YAML-Files-mit-doppeltem-Map-Key blocken ueber Jacksons `FAIL_ON_READING_DUP_TREE_KEY` bereits im Codec.
 - Body-Sanitisation findet im Renderer **nicht** statt. Display-/Report-Plane scrubbt Trigger-Bodies ueber den gemeinsamen `RoutineBodyScrubber` (E.1) — `PASSWORD '...'`-Literale und andere bekannte Patterns sind im Report maskiert, im `--output`-Artefakt scrubbed und im Live-`--execute`-Pfad raw.
 
-Carve-outs aus E.2: DEFINER-Rendering, `INSTEAD OF`-Trigger fuer SQLite (wo es View-bezogen waere), schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben Folge-Slices.
+Carve-outs aus E.2: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben Folge-Slices. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ebenfalls Folge-Slice.
 
 Report-Felder für Materialized Views:
 

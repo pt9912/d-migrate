@@ -169,6 +169,26 @@ class SqliteTriggerDdlHelperTest : FunSpec({
         r.statements.shouldBeEmpty()
     }
 
+    test("CreateTrigger with whitespace-only body blocks ROUTINE_BODY_UNKNOWN") {
+        // Edge case: a reader might emit a body that's structurally
+        // present but semantically empty (e.g. just newlines/spaces).
+        // The `body.isNullOrBlank()` predicate catches it the same way
+        // a null body would.
+        val blankBody = sampleTrigger.copy(body = "   \n  \t  ")
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", blankBody)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to blankBody)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.any { it.code == "ROUTINE_BODY_UNKNOWN" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
     test("CreateTrigger with multi-statement BEGIN/END body emits exactly one MigrationDdlStatement") {
         // Pin: the renderer wraps a multi-statement body in BEGIN..END
         // and emits a single MigrationDdlStatement. The JDBC executor

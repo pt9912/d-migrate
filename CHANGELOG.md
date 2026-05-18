@@ -204,6 +204,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **0.9.7 E.2 Trigger-Rendering — data-class extensions on
+  published types**: `OperationRisk` (hexagon:core) gains a new
+  `hasGap: Boolean = false` field; `MigrationBlockedReason`
+  (hexagon:ports-read) appends two enum values at the tail
+  (`TRIGGER_NAME_COLLISION`, `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`).
+  Source-compatible for callers that use named arguments; **callers
+  that use positional `OperationRisk(...)` constructors or
+  positional `.copy(...)` must migrate to named arguments** because
+  the `hasGap` field sits before the trailing
+  `notes: List<DiffDiagnostic>` field. Existing enum ordinals stay
+  stable per the documented append-at-end convention; the
+  `MigrationDdlResultTest` enum-order pin (`RENAME_MAPPING_INVALID`
+  ordinal = 7) was extended to assert the new entries at indices 8
+  and 9. The
+  `SqliteDiffSqlBuilders.createTriggerSql(...)` builder — shared
+  between the new standalone trigger renderer and the existing
+  Phase H.3a rebuild-pipeline trigger-recreation path — now
+  normalises a trailing `;` out of the body before wrapping in
+  `BEGIN..END;`. Rebuild-pipeline output stays bit-identical to the
+  standalone renderer; goldenness fixtures that asserted via
+  `startsWith("CREATE TRIGGER ...")` are not affected, but any
+  fixture that pinned an embedded trailing-`;` body will see one
+  less terminator.
+
 - **E.1 Routine-Migration Slice F.11** — MySQL-family routine
   capability is now vendor-aware. The neutral `MYSQL` dialect
   defaults to Oracle MySQL semantics, where stored routines do not
