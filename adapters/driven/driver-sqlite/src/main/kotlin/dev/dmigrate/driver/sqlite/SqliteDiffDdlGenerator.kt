@@ -260,6 +260,11 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
+        is DiffOperation.RenameView,
+        is DiffOperation.RenameTrigger,
+        is DiffOperation.RenameFunction,
+        is DiffOperation.RenameProcedure,
+        is DiffOperation.RenameSequence,
         -> OpCategory.UNSUPPORTED
     }
 

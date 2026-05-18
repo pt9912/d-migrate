@@ -148,6 +148,11 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.TRIGGER
 
         is DiffOperation.AlterCustomType,
+        is DiffOperation.RenameView,
+        is DiffOperation.RenameTrigger,
+        is DiffOperation.RenameFunction,
+        is DiffOperation.RenameProcedure,
+        is DiffOperation.RenameSequence,
         -> OpCategory.UNSUPPORTED
     }
 

@@ -675,4 +675,144 @@ sealed interface DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)
     }
+
+    // ── F.4 Sub-Slice A.2: object-level renames ─────────────────────
+
+    /**
+     * F.4 view rename. Only valid for regular views — the
+     * Mapper/Planner blocks the operation when the underlying
+     * `ViewDefinition.materialized = true` (a dedicated
+     * materialized-view rename contract is part of D.3b, not F.4).
+     */
+    data class RenameView(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val overlaySource: String,
+        val overlayEntryId: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.VIEWS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * F.4 trigger rename. PostgreSQL renders
+     * `ALTER TRIGGER <fromName> ON <tableName> RENAME TO <toName>` —
+     * the table context is part of the SQL template, the renderer
+     * does not derive it from `objectRef.path` because the canonical
+     * trigger key (`table::name`) lives there. [tableName] must be
+     * the same on both sides of the rename: cross-table moves are a
+     * different object, not a rename.
+     *
+     * [bodyHash] enables body-drift detection. The Mapper-/Planner-
+     * phase only emits a `RenameTrigger` when source and target body
+     * hashes are equal; an unequal pair falls back to Drop+Create
+     * (with `RenameProvenance`) or blocks with
+     * `OBJECT_RENAME_UNSUPPORTED` when the prior body is missing.
+     */
+    data class RenameTrigger(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val tableName: String,
+        val fromName: String,
+        val toName: String,
+        val bodyHash: String?,
+        val overlaySource: String,
+        val overlayEntryId: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.TRIGGERS,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * F.4 function rename. PostgreSQL renders
+     * `ALTER FUNCTION <fromName>(<signature>) RENAME TO <toName>` —
+     * the signature is part of the SQL identifier (overloaded
+     * routines coexist), so the renderer needs the
+     * [ParameterDefinition] list explicitly; `objectRef.path[0]`
+     * carries the canonical `ObjectKeyCodec.routineKey(toName,
+     * signature)` key for plan/report ID stability.
+     *
+     * Same-signature constraint: both sides of the rename must share
+     * the signature. A signature change is a different routine, not
+     * a rename.
+     */
+    data class RenameFunction(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val signature: List<dev.dmigrate.core.model.ParameterDefinition>,
+        val bodyHash: String?,
+        val overlaySource: String,
+        val overlayEntryId: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.ROUTINES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * F.4 procedure rename. Mirrors [RenameFunction] — procedures
+     * share the same canonical key and rendering shape on
+     * PostgreSQL, the only difference is the SQL keyword
+     * (`ALTER PROCEDURE` vs. `ALTER FUNCTION`).
+     */
+    data class RenameProcedure(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val signature: List<dev.dmigrate.core.model.ParameterDefinition>,
+        val bodyHash: String?,
+        val overlaySource: String,
+        val overlayEntryId: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.ROUTINES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
+
+    /**
+     * F.4 sequence rename. Declarative-only attributes (no body),
+     * so the operation does not carry a body-hash field. The
+     * sequence-default-reprojection rules in Sub-Slice D ensure that
+     * `SequenceNextVal`-defaults pointing at the renamed sequence
+     * are rewritten to the new name before the plan is finalised.
+     */
+    data class RenameSequence(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val fromName: String,
+        val toName: String,
+        val overlaySource: String,
+        val overlayEntryId: String,
+        val overlayHash: String?,
+        override val phase: DiffPhase = DiffPhase.SEQUENCES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
 }

@@ -132,6 +132,11 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
+        is DiffOperation.RenameView,
+        is DiffOperation.RenameTrigger,
+        is DiffOperation.RenameFunction,
+        is DiffOperation.RenameProcedure,
+        is DiffOperation.RenameSequence,
         -> OpCategory.UNSUPPORTED
     }
 
