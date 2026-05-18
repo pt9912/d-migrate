@@ -87,6 +87,13 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "the dialect/server-version defaults. Structurally invalid values are surfaced as " +
             "ROUTINE_CAPABILITY_CONFIG_INVALID in the migration report.",
     ).multiple()
+    val strictGapOperations by option(
+        "--strict-gap-operations",
+        help = "Block operations that render with a multi-statement visibility gap " +
+            "(e.g. ReplaceTrigger via Drop+Create on PostgreSQL < 14, or MySQL/SQLite where no " +
+            "native `CREATE OR REPLACE TRIGGER` exists). Default off — the lenient path emits the " +
+            "fallback statements and surfaces the gap as a W_TRIGGER_REPLACE_GAP warning.",
+    ).flag()
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -120,6 +127,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             renameColumnFlags = renameColumnFlags,
             debugBody = debugBody,
             routineCapabilityResolver = routineCapabilityResolver::resolve,
+            strictGapOperations = strictGapOperations,
         )
 
         val runner = SchemaMigrateRunner(

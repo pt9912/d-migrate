@@ -88,9 +88,12 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
                 schemaDiff: SchemaDiff,
                 migrationOverlays: List<MigrationOverlayDocument>,
                 capabilities: RenameProjectionCapabilities,
+                triggerPlanningContext: dev.dmigrate.core.diff.migration.TriggerPlanningContext,
             ): DiffResult {
                 plannerCallCount[0]++
-                return super.plan(current, desired, schemaDiff, migrationOverlays, capabilities)
+                return super.plan(
+                    current, desired, schemaDiff, migrationOverlays, capabilities, triggerPlanningContext,
+                )
             }
         }
         val runner = SchemaMigrateRunner(

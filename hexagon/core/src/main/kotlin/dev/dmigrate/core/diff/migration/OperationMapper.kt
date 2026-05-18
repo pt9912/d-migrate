@@ -38,8 +38,9 @@ internal object OperationMapper {
         blockedTables: Set<String>,
         migrationOverlays: List<MigrationOverlayDocument>,
         capabilities: RenameProjectionCapabilities,
+        triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ): MapperResult = finalizeIds(
-        prepare(diff, current, desired, blockedTables, migrationOverlays, capabilities),
+        prepare(diff, current, desired, blockedTables, migrationOverlays, capabilities, triggerPlanningContext),
     )
 
     /**
@@ -59,6 +60,7 @@ internal object OperationMapper {
         blockedTables: Set<String>,
         migrationOverlays: List<MigrationOverlayDocument>,
         capabilities: RenameProjectionCapabilities,
+        triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ): PreparedMapping {
         val renameIndex = RenameOverlayIndex.build(migrationOverlays)
         val diagnostics = mutableListOf<DiffDiagnostic>()
@@ -81,7 +83,7 @@ internal object OperationMapper {
         OperationMapperSchemaObjects.mapSequences(diff, current, desired, ops)
         OperationMapperRoutines.mapFunctions(diff, current, desired, ops)
         OperationMapperRoutines.mapProcedures(diff, current, desired, ops)
-        OperationMapperRoutines.mapTriggers(diff, current, desired, ops)
+        OperationMapperRoutines.mapTriggers(diff, current, desired, ops, triggerPlanningContext)
         return PreparedMapping(
             operations = ops,
             diagnostics = diagnostics,

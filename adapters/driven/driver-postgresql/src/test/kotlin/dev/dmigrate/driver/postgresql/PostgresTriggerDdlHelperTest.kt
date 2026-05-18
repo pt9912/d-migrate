@@ -5,6 +5,8 @@ import dev.dmigrate.core.diff.SchemaComparator
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.diff.migration.TriggerPlanningContext
+import dev.dmigrate.core.diff.migration.TriggerReplaceMode
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -13,10 +15,7 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
-import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
-import dev.dmigrate.driver.TriggerCapability
-import dev.dmigrate.driver.TriggerCapabilityDefaults
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -58,25 +57,22 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         body = "audit_orders()",
     )
 
-    val pg14Options = DdlGenerationOptions(
-        triggerCapability = TriggerCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL),
-        postgresMajorVersion = 14,
-    )
+    // Renderer-side options now carry only the strict-gap toggle; the
+    // native-vs-fallback decision is set by the Mapper via the
+    // TriggerPlanningContext passed to planner.plan(...).
+    val lenientOptions = DdlGenerationOptions()
 
-    val pg13Options = DdlGenerationOptions(
-        triggerCapability = TriggerCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL),
-        postgresMajorVersion = 13,
-    )
-
-    val fileOnlyOptions = DdlGenerationOptions(
-        triggerCapability = TriggerCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL),
-        postgresMajorVersion = null,
-    )
+    val nativeReplaceContext = TriggerPlanningContext(TriggerReplaceMode.NATIVE_REPLACE)
+    val fallbackContext = TriggerPlanningContext(TriggerReplaceMode.DROP_CREATE_FALLBACK)
 
     test("CreateTrigger Up emits `CREATE TRIGGER` with timing/event/table/EXECUTE FUNCTION") {
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", sampleTrigger)))
-        val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to sampleTrigger)), diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to sampleTrigger)),
+            diff,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe false
         val sql = r.statements.single().sql
         sql.shouldContain("CREATE TRIGGER \"audit_log\"")
@@ -91,7 +87,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         val withWhen = sampleTrigger.copy(condition = "NEW.amount > 100")
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", withWhen)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to withWhen)), diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val r = gen.generateUp(plan, lenientOptions)
         val sql = r.statements.single().sql
         sql.shouldContain("WHEN (NEW.amount > 100)")
     }
@@ -100,7 +96,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         val stmtTrigger = sampleTrigger.copy(forEach = TriggerForEach.STATEMENT)
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", stmtTrigger)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to stmtTrigger)), diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val r = gen.generateUp(plan, lenientOptions)
         r.statements.single().sql.shouldContain("FOR EACH STATEMENT")
     }
 
@@ -111,7 +107,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         )
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", instead)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to instead)), diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val r = gen.generateUp(plan, lenientOptions)
         r.statements.single().sql.shouldContain("INSTEAD OF UPDATE")
     }
 
@@ -120,7 +116,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         val desired = SchemaDefinition(name = "App", version = "1", tables = current.tables)
         val diff = SchemaComparator().compare(current, desired)
         val plan = planner.plan(current, desired, diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe false
         r.statements.single().sql shouldBe "DROP TRIGGER \"audit_log\" ON \"orders\";"
     }
@@ -128,19 +124,19 @@ class PostgresTriggerDdlHelperTest : FunSpec({
     test("CreateTrigger Down inverts to DROP TRIGGER ... ON <table>") {
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", sampleTrigger)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to sampleTrigger)), diff)
-        val r = gen.generateDown(plan, pg14Options)
+        val r = gen.generateDown(plan, lenientOptions)
         r.isBlocked shouldBe false
         r.statements.single().sql shouldBe "DROP TRIGGER \"audit_log\" ON \"orders\";"
     }
 
-    test("ReplaceTrigger Up on PG-14 emits native `CREATE OR REPLACE TRIGGER` without gap warning") {
+    test("ReplaceTrigger Up with NATIVE_REPLACE context emits CREATE OR REPLACE TRIGGER without gap warning") {
         val before = sampleTrigger
         val after = sampleTrigger.copy(body = "audit_orders_v2()")
         val current = schemaWith(mapOf("audit_log" to before))
         val desired = schemaWith(mapOf("audit_log" to after))
         val diff = SchemaComparator().compare(current, desired)
-        val plan = planner.plan(current, desired, diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = nativeReplaceContext)
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe false
         r.statements shouldHaveSize 1
         val sql = r.statements.single().sql
@@ -149,14 +145,14 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         r.diagnostics.none { it.code == "W_TRIGGER_REPLACE_GAP" } shouldBe true
     }
 
-    test("ReplaceTrigger Up on PG-13 falls back to Drop+Create with W_TRIGGER_REPLACE_GAP warning") {
+    test("ReplaceTrigger Up with DROP_CREATE_FALLBACK context emits Drop+Create plus W_TRIGGER_REPLACE_GAP warning") {
         val before = sampleTrigger
         val after = sampleTrigger.copy(body = "audit_orders_v2()")
         val current = schemaWith(mapOf("audit_log" to before))
         val desired = schemaWith(mapOf("audit_log" to after))
         val diff = SchemaComparator().compare(current, desired)
-        val plan = planner.plan(current, desired, diff)
-        val r = gen.generateUp(plan, pg13Options)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe false
         r.statements shouldHaveSize 2
         r.statements[0].sql shouldBe "DROP TRIGGER \"audit_log\" ON \"orders\";"
@@ -167,14 +163,14 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         gapWarning.severity shouldBe DiffDiagnostic.Severity.WARNING
     }
 
-    test("ReplaceTrigger Up on file-only target (no server version) falls back to Drop+Create") {
+    test("Default planning context (no explicit replaceMode) routes ReplaceTrigger to Drop+Create") {
         val before = sampleTrigger
         val after = sampleTrigger.copy(body = "audit_orders_v2()")
         val current = schemaWith(mapOf("audit_log" to before))
         val desired = schemaWith(mapOf("audit_log" to after))
         val diff = SchemaComparator().compare(current, desired)
-        val plan = planner.plan(current, desired, diff)
-        val r = gen.generateUp(plan, fileOnlyOptions)
+        val plan = planner.plan(current, desired, diff) // default context = DROP_CREATE_FALLBACK
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe false
         r.statements shouldHaveSize 2
         r.diagnostics.any { it.code == "W_TRIGGER_REPLACE_GAP" } shouldBe true
@@ -187,7 +183,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         val desired = schemaWith(mapOf("audit_log" to after))
         val diff = SchemaComparator().compare(current, desired)
         val plan = planner.plan(current, desired, diff)
-        val r = gen.generateDown(plan, pg14Options)
+        val r = gen.generateDown(plan, lenientOptions)
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
         r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
@@ -198,7 +194,7 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         val inline = sampleTrigger.copy(body = "BEGIN INSERT INTO log VALUES (NEW.id); END")
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", inline)))
         val plan = planner.plan(SchemaDefinition(name = "App", version = "1"), schemaWith(mapOf("audit_log" to inline)), diff)
-        val r = gen.generateUp(plan, pg14Options)
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.TRIGGER_BODY_NOT_FUNCTION_REFERENCE
         r.diagnostics.any { it.code == "TRIGGER_BODY_NOT_FUNCTION_REFERENCE" } shouldBe true
@@ -245,14 +241,14 @@ class PostgresTriggerDdlHelperTest : FunSpec({
         check(v is PostgresTriggerDdlHelper.FunctionReferenceValidation.Invalid)
     }
 
-    test("ReplaceTrigger PG-13 fallback aborts on invalid body before emitting DROP") {
+    test("ReplaceTrigger fallback path aborts on invalid body before emitting DROP") {
         val before = sampleTrigger
         val after = sampleTrigger.copy(body = "BEGIN INSERT INTO log VALUES (NEW.id); END")
         val current = schemaWith(mapOf("audit_log" to before))
         val desired = schemaWith(mapOf("audit_log" to after))
         val diff = SchemaComparator().compare(current, desired)
-        val plan = planner.plan(current, desired, diff)
-        val r = gen.generateUp(plan, pg13Options)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.TRIGGER_BODY_NOT_FUNCTION_REFERENCE
         r.statements.shouldBeEmpty()

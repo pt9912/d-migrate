@@ -6,9 +6,7 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
-import dev.dmigrate.driver.TriggerCapabilityResolution
 import dev.dmigrate.driver.migration.MigrationBlockedReason
-import dev.dmigrate.driver.resolve
 
 /**
  * E.2 Trigger-Migration Sub-Slice A.2 — PostgreSQL trigger rendering.
@@ -41,11 +39,13 @@ import dev.dmigrate.driver.resolve
  * is the canonical form on every server version that runs the
  * neutral-trigger contract.
  *
- * `ReplaceTrigger` consults [PostgresDiffRenderContext.options.triggerCapability]
- * via [TriggerCapabilityResolution]. `Active` renders the PG-14+
- * native `CREATE OR REPLACE TRIGGER`. `Disabled` falls back to two
- * statements (Drop then Create) and emits a `W_TRIGGER_REPLACE_GAP`
- * warning diagnostic.
+ * `ReplaceTrigger` reads `op.risks.<direction>.hasGap` to choose
+ * between the native PG-14+ `CREATE OR REPLACE TRIGGER` and the
+ * Drop+Create fallback. The Mapper is the single source of truth for
+ * that decision (E.2 Sub-Slice A.3) — it resolves the dialect
+ * capability via [TriggerPlanningContext][dev.dmigrate.core.diff.migration.TriggerPlanningContext]
+ * before any rendering, so renderer-internal capability lookups would
+ * just duplicate state.
  */
 internal object PostgresTriggerDdlHelper {
 
@@ -90,10 +90,15 @@ internal object PostgresTriggerDdlHelper {
             ctx.addBlocker(reason, operationIds = setOf(op.id))
             return
         }
-        val resolution = ctx.options.triggerCapability.resolve(ctx.options.postgresMajorVersion)
-        when (resolution) {
-            TriggerCapabilityResolution.Active -> emitCreate(op, target, ctx, orReplace = true)
-            TriggerCapabilityResolution.Disabled -> emitDropCreateReplaceFallback(op, target, ctx)
+        // A.3 contract: the Mapper has already classified this op via
+        // TriggerPlanningContext. hasGap = true means Drop+Create
+        // fallback; hasGap = false means native CREATE OR REPLACE.
+        val direction = if (ctx.direction == PostgresRenderDirection.UP) op.risks.up else op.risks.down
+        val useDropCreateFallback = direction?.hasGap == true
+        if (useDropCreateFallback) {
+            emitDropCreateReplaceFallback(op, target, ctx)
+        } else {
+            emitCreate(op, target, ctx, orReplace = true)
         }
     }
 
@@ -161,15 +166,21 @@ internal object PostgresTriggerDdlHelper {
         val createSql = buildCreateSql(op.objectRef.rootName, target, ctx, orReplace = false)
         ctx.emit(op, dropSql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
         ctx.emit(op, createSql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
-        ctx.addDiagnostic(
-            code = W_TRIGGER_REPLACE_GAP,
-            operationId = op.id,
-            message = "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because the " +
-                "PostgreSQL target does not advertise PG-14+; while the two statements run there is " +
-                "a short window in which the trigger does not fire. A strict execution mode should " +
-                "treat this as MANUAL_ACTION_REQUIRED.",
-            severity = DiffDiagnostic.Severity.WARNING,
-        )
+        // A.3 strict-mode guard: emit() short-circuits in strict mode
+        // and routes the op into `skipped`. The trailing gap warning
+        // only makes sense for the lenient path where statements were
+        // actually rendered.
+        if (!ctx.isSkipped(op)) {
+            ctx.addDiagnostic(
+                code = W_TRIGGER_REPLACE_GAP,
+                operationId = op.id,
+                message = "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because the " +
+                    "PostgreSQL target does not advertise PG-14+; while the two statements run there is " +
+                    "a short window in which the trigger does not fire. A strict execution mode should " +
+                    "treat this as MANUAL_ACTION_REQUIRED.",
+                severity = DiffDiagnostic.Severity.WARNING,
+            )
+        }
     }
 
     private fun buildCreateSql(

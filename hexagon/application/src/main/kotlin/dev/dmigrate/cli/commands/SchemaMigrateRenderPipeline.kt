@@ -190,6 +190,7 @@ internal class SchemaMigrateRenderPipeline(
             },
             routineCapability = routineCapability,
             mysqlServerVersion = mysqlServerVersion,
+            strictGapOperations = request.strictGapOperations,
         )
     }
 

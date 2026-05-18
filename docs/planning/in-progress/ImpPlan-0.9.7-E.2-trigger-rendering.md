@@ -3,10 +3,9 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Trigger-Migration (PostgreSQL/MySQL/SQLite Trigger-Rendering)
 > **Status**: in-progress — Sub-Slice A.1 (Foundation) ✅ 2026-05-18,
->            Sub-Slice A.2 (PG-Renderer) ✅ 2026-05-18 mit zwei
->            ausdruecklichen Carve-outs nach A.3.
->            Sub-Slice A.3 (hasGap-Wiring + Strict-Mode) offen — Detail-
->            Plan: `docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+>            Sub-Slice A.2 (PG-Renderer) ✅ 2026-05-18,
+>            Sub-Slice A.3 (hasGap-Wiring + Strict-Mode) ✅ 2026-05-18
+>            (Detail: `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`).
 >            Sub-Slices B (MySQL) / C (SQLite) / D (Closing) offen.
 > **Vorbedingung**: Workstream G ✅, E.1 Routine-Migration ✅ (Body-Vertrag,
 >                  Secret-Scrubbing, `RoutineBodyNormalizer`,
@@ -329,8 +328,8 @@ landen in einem gemeinsamen Sub-Slice A.3. Detail-Plan:
 
 ### Sub-Slice A.3 — `hasGap`-Wiring + Strict-Mode
 
-**Status:** offen, Detail-Plan in
-`docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+**Status:** ✅ 2026-05-18. Detail-Plan in
+`docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
 
 **Lieferumfang in Kuerze:**
 

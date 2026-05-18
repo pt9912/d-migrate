@@ -121,6 +121,7 @@ internal object OperationMapperRoutines {
         current: SchemaDefinition,
         desired: SchemaDefinition,
         ops: MutableList<DiffOperation>,
+        triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ) {
         for (added in diff.triggersAdded) {
             val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(added.name))
@@ -142,11 +143,29 @@ internal object OperationMapperRoutines {
             val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(changed.name))
             val before = current.triggers[changed.name] ?: continue
             val after = desired.triggers[changed.name] ?: continue
+            // E.2 Sub-Slice A.3: when the target dialect cannot render
+            // `CREATE OR REPLACE TRIGGER` natively, the renderer falls
+            // back to DROP + CREATE which leaves a short window in
+            // which the trigger does not fire. The Mapper marks both
+            // directions symmetrically — the Down inverse of a
+            // Drop+Create Up is itself a Drop+Create with the same
+            // gap — so strict-mode consumers see the gap regardless
+            // of render direction.
+            val hasGap = triggerPlanningContext.replaceMode == TriggerReplaceMode.DROP_CREATE_FALLBACK
+            val risks = if (hasGap) {
+                OperationRisks(
+                    up = OperationRisk(hasGap = true),
+                    down = OperationRisk(hasGap = true),
+                )
+            } else {
+                OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE)
+            }
             ops += DiffOperation.ReplaceTrigger(
                 id = OperationIdFactory.makeId("ReplaceTrigger", ref, changed.toString()),
                 objectRef = ref,
                 before = before,
                 after = after,
+                risks = risks,
             )
         }
     }

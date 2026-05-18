@@ -243,6 +243,7 @@ class SchemaMigrateRunner(
             loadFailures = request.migrationOverlayLoadFailures,
         )
         val capabilities = RenameProjectionCapabilitiesFactory.capabilitiesFor(request, prep.effectiveDialect)
+        val triggerPlanningContext = TriggerPlanningContextFactory.forDialect(prep.effectiveDialect)
         val plan = if (overlayPreflight.hasBlockers) {
             DiffResult.preplanBlocker(
                 current = prep.targetNormalized.schema,
@@ -260,6 +261,7 @@ class SchemaMigrateRunner(
                 schemaDiff = diff,
                 migrationOverlays = mergedOverlays,
                 capabilities = capabilities,
+                triggerPlanningContext = triggerPlanningContext,
             )
         }
         return plan to overlayPreflight
@@ -446,6 +448,15 @@ data class SchemaMigrateRequest(
      * fields instead.
      */
     val routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)? = null,
+    /**
+     * E.2 Trigger-Migration Sub-Slice A.3: when `true`, operations
+     * marked with `OperationRisk.hasGap` (today: `ReplaceTrigger` on
+     * dialects without `CREATE OR REPLACE TRIGGER`) are blocked with
+     * `MANUAL_ACTION_REQUIRED` instead of rendered as a multi-statement
+     * fallback. Wired from `--strict-gap-operations` on
+     * `schema migrate` / `schema rollback`.
+     */
+    val strictGapOperations: Boolean = false,
 )
 
 /**

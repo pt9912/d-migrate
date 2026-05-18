@@ -61,6 +61,27 @@ internal class PostgresDiffRenderContext(
         sqlText: String,
         hints: DialectExecutionHints = POSTGRES_TRANSACTIONAL_DDL_HINTS,
     ) {
+        // E.2 Sub-Slice A.3 strict-mode lift: when the active-direction
+        // risk has `hasGap = true` and the operator asked for strict
+        // gap handling, block before emitting any statement for this
+        // operation. The first call to emit() for a multi-statement
+        // op trips the guard and registers skip+blocker; subsequent
+        // calls for the same op short-circuit on the `isSkipped`
+        // check so no further statements leak through and no second
+        // blocker is recorded.
+        if (options.strictGapOperations && riskFor(op).hasGap) {
+            if (!isSkipped(op)) {
+                skip(
+                    op,
+                    "Operation ${op.id} renders with a visibility gap (`hasGap = true`) and " +
+                        "`--strict-gap-operations` is set. The operator must split the change into a " +
+                        "manual maintenance window or accept the gap by removing the strict flag.",
+                    code = "OPERATION_HAS_GAP_STRICT_BLOCKED",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            }
+            return
+        }
         // Plan-2 §A.1: PostgreSQL DDL is fully transactional. The
         // default `hints` cover the lock-heavy ALTER TABLE / DROP
         // TABLE / CREATE TABLE / DROP INDEX / constraint paths
@@ -109,6 +130,14 @@ internal class PostgresDiffRenderContext(
             operationId = op.id,
         )
     }
+
+    /**
+     * Whether [op] is already in the skipped set — used by multi-
+     * statement helpers (E.2 Sub-Slice A.3 ReplaceTrigger Drop+Create)
+     * to suppress trailing diagnostics when the strict-gap guard short-
+     * circuited the first `emit()` call.
+     */
+    fun isSkipped(op: DiffOperation): Boolean = op.id in skipped
 
     fun addBlocker(reason: MigrationBlockedReason, operationIds: Set<String>) {
         blockers += MigrationBlocker(reason = reason, operationIds = operationIds)

@@ -126,27 +126,22 @@ data class DdlGenerationOptions(
      */
     val mysqlServerVersion: MysqlServerVersion? = null,
     /**
-     * E.2 Trigger-Migration Sub-Slice A.2: per-dialect trigger
-     * capability. PostgreSQL's renderer consults this to decide between
-     * native `CREATE OR REPLACE TRIGGER` (PG-14+) and the Drop+Create
-     * fallback with the `W_TRIGGER_REPLACE_GAP` warning. MySQL and
-     * SQLite always resolve to `Disabled` (no native replace path
-     * exists). File-only targets pass [postgresMajorVersion] = null
-     * and resolve a PG floor to `Disabled`. The default mirrors
-     * [TriggerCapabilityDefaults.forDialect] for PostgreSQL because the
-     * default callers are file-to-file PG migrate runs; non-PG
-     * generators read the field but their renderers do not consult it.
+     * E.2 Trigger-Migration Sub-Slice A.3: when `true`, operations
+     * whose `OperationRisk.hasGap` is set are blocked with
+     * `MANUAL_ACTION_REQUIRED` instead of emitted as a multi-statement
+     * fallback. The default `false` preserves the lenient pre-A.3
+     * behaviour: gap-bearing operations still render (e.g.
+     * `ReplaceTrigger` as Drop+Create) and surface the visibility
+     * gap via the `W_TRIGGER_REPLACE_GAP` warning diagnostic.
+     *
+     * Wired from the CLI through `--strict-gap-operations` on
+     * `schema migrate`. The `hasGap` flag itself is set by the
+     * Mapper from a [TriggerPlanningContext][dev.dmigrate.core.diff.migration.TriggerPlanningContext]
+     * — see [TriggerCapability] / [TriggerCapabilityDefaults] for the
+     * dialect-level capability source and the
+     * `TriggerPlanningContextFactory` application-layer mapper.
      */
-    val triggerCapability: TriggerCapability =
-        TriggerCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL),
-    /**
-     * E.2 Trigger-Migration Sub-Slice A.2: live PostgreSQL major
-     * version from the DB target's `SchemaReadResult`, or `null` for
-     * file-only targets / non-PG dialects. Used together with
-     * [triggerCapability] to decide whether the
-     * `CREATE OR REPLACE TRIGGER` floor (PG-14) is satisfied.
-     */
-    val postgresMajorVersion: Int? = null,
+    val strictGapOperations: Boolean = false,
 )
 
 /**

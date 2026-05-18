@@ -90,6 +90,7 @@ open class DiffPlanner {
         capabilities: RenameProjectionCapabilities = RenameProjectionCapabilities.fileOnly(
             RenameProjectionDialect.POSTGRESQL,
         ),
+        triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
         val blockedTables = detectConstraintNotDiffableTables(current, desired)
@@ -106,7 +107,7 @@ open class DiffPlanner {
         }
 
         val mapperResult = OperationMapper.map(
-            schemaDiff, current, desired, blockedTables, migrationOverlays, capabilities,
+            schemaDiff, current, desired, blockedTables, migrationOverlays, capabilities, triggerPlanningContext,
         )
         diagnostics += mapperResult.diagnostics
         val splitOps = splitReplaceViewsForColumnConflicts(mapperResult.operations)

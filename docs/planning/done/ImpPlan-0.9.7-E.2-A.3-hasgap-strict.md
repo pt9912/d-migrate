@@ -2,7 +2,22 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Trigger-Migration — Sub-Slice A.3
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: done ✅ 2026-05-18. Implementierungs-Notiz: Der A.2-Renderer
+>            entschied initial selbst nativ-vs-Drop+Create und las
+>            `triggerCapability` / `postgresMajorVersion` aus
+>            `DdlGenerationOptions`. Damit waeren Mapper- und
+>            Renderer-Entscheidung getrennt klassifizierbar geworden;
+>            A.3 hat das aufgeloest, indem der Renderer jetzt strikt
+>            `op.risks.<direction>.hasGap` liest und die `triggerCapability`
+>            / `postgresMajorVersion`-Felder aus `DdlGenerationOptions`
+>            entfernt wurden. `TriggerCapability` + Defaults bleiben in
+>            `hexagon:ports-read` als Application-Layer-Konversion-
+>            Source; `TriggerPlanningContextFactory` mapped sie auf den
+>            core-lokalen `TriggerPlanningContext`. Das postgresMajorVersion-
+>            Argument bleibt heute `null` (kein PG-Reader liefert es
+>            bereits) — ein spaeterer Slice kann es ueber denselben
+>            `SchemaReadResult`-Pfad nachreichen wie
+>            `mysqlServerVersion`.
 > **Vorbedingung**: E.2 A.1 ✅ (`OperationRisk.hasGap`-Feld vorhanden;
 >                  `TriggerCapability` + `TriggerCapabilityDefaults`),
 >                  E.2 A.2 ✅ (PostgreSQL-Renderer emittiert
