@@ -34,6 +34,13 @@ data class OperationRisks(
  *   [destructive] ops only carry the data-loss flag for the Down
  *   direction; only when the runner is asked to actually execute the
  *   destructive direction does it need confirmation.
+ * - [hasGap]: the operation renders as two or more statements that
+ *   leave a short window in which the schema object is missing or
+ *   inconsistent — e.g. `ReplaceTrigger` via Drop+Create on a dialect
+ *   without native `CREATE OR REPLACE TRIGGER`. The strict execution
+ *   mode treats this as `MANUAL_ACTION_REQUIRED`; the default mode
+ *   surfaces it as a `W_*_GAP` warning. Renderers must not set this
+ *   flag for atomic operations that complete in a single statement.
  *
  * [notes] holds zero or more diagnostic messages the generator wants
  * to surface to operator-facing reports.
@@ -43,6 +50,7 @@ data class OperationRisk(
     val dataLossPossible: Boolean = false,
     val requiresTableRewrite: Boolean = false,
     val requiresManualConfirmation: Boolean = false,
+    val hasGap: Boolean = false,
     val dataTransformation: DataTransformationContract = DataTransformationContract.NONE,
     val notes: List<DiffDiagnostic> = emptyList(),
 ) {

@@ -52,6 +52,24 @@ enum class MigrationBlockedReason {
      * compare by string see only an additive change.
      */
     RENAME_MAPPING_INVALID,
+
+    /**
+     * E.2 Sub-Slice A.1 blocker: two trigger entries share a name but
+     * belong to different tables. The current
+     * `SchemaDefinition.triggers: Map<String, TriggerDefinition>` would
+     * lose this ambiguity at `.toMap()`, so the detector flags it
+     * before materialisation. Diagnostics list the colliding
+     * `(name, tableA, tableB)` tuples.
+     */
+    TRIGGER_NAME_COLLISION,
+
+    /**
+     * E.2 Sub-Slice A.2 blocker (PostgreSQL): `TriggerDefinition.body`
+     * is not the strict `[schema.]identifier([arg, ...])` function
+     * reference PostgreSQL's `EXECUTE FUNCTION` expects. Inline
+     * PL/pgSQL bodies are deliberately out of E.2 scope.
+     */
+    TRIGGER_BODY_NOT_FUNCTION_REFERENCE,
 }
 
 /**

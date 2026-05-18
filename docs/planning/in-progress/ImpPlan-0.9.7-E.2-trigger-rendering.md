@@ -2,7 +2,9 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Trigger-Migration (PostgreSQL/MySQL/SQLite Trigger-Rendering)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: in-progress — Sub-Slice A.1 (Foundation) ✅ 2026-05-18,
+>            Sub-Slices A.2 (PG) / B (MySQL) / C (SQLite) / D (Closing)
+>            offen.
 > **Vorbedingung**: Workstream G ✅, E.1 Routine-Migration ✅ (Body-Vertrag,
 >                  Secret-Scrubbing, `RoutineBodyNormalizer`,
 >                  `ROUTINE_DOWN_BODY_UNKNOWN`, Capability-Vertrag),
@@ -105,13 +107,13 @@ strukturierte Spaltenliste) ist nicht Teil von E.2 (siehe §3 Carve-out).
       gleichem `name` und verschiedener `definition.table`, blockt
       er hart mit `TRIGGER_NAME_COLLISION` und nennt die
       `(name, tableA, tableB)`-Tripel.
-    - **File-Pfad** (Datei-Soll-Zustand): der YAML-Schema-Parser
-      verifiziert vor dem `SchemaDefinition`-Bau den **YAML-Strict-
-      Mode** fuer den `triggers:`-Knoten, sodass doppelte Map-Keys
-      einen `SchemaParseError` mit `TRIGGER_NAME_COLLISION`-
-      Verweis ausloesen, statt still zu ueberschreiben. Der Slice
-      pinnt die SnakeYAML-Settings (z.B. `LoaderOptions` mit
-      `setAllowDuplicateKeys(false)`) explizit in den Tests.
+    - **File-Pfad** (Datei-Soll-Zustand): der `YamlSchemaCodec` nutzt
+      Jacksons `DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY`
+      (bereits in `YamlSchemaCodec.kt:17` aktiv), wodurch doppelte
+      Map-Keys im `triggers:`-Knoten einen
+      `JsonMappingException`/`DuplicateKeyException` ausloesen, statt
+      still zu ueberschreiben. Der Slice pinnt diese Konfiguration
+      explizit in einem Test mit doppeltem Trigger-Key.
   Strukturelle `Map<TriggerKey, TriggerDefinition>`-Migration mit
   `ObjectKeyCodec.triggerKey(table, name)` bleibt F.4-Vorbedingung;
   E.2 macht sie nicht. Damit ist E.2 nicht von der Map-Key-Schwaeche
@@ -174,11 +176,12 @@ Pro Sub-Slice ein eigener Commit; Plan-Header trackt den Slice-Status.
   `SchemaDefinition` weiter. (MySQL-Reader-Wiring bleibt fuer
   Slice B; Slice A liefert die generische Adapter-Infrastruktur und
   schaltet PG ein.)
-- File-Pfad: YAML-Schema-Parser blockt doppelte Trigger-Map-Keys ueber
-  YAML-Strict-Mode. Slice A pinnt die `SnakeYAML`-`LoaderOptions`
-  (`setAllowDuplicateKeys(false)`) explizit fuer die `triggers:`-
-  Sektion und ergaenzt einen Parser-Test mit doppeltem Trigger-Key,
-  der mit `SchemaParseError`/`TRIGGER_NAME_COLLISION` blockt.
+- File-Pfad: `YamlSchemaCodec` aktiviert bereits Jacksons
+  `DeserializationFeature.FAIL_ON_READING_DUP_TREE_KEY`
+  (`YamlSchemaCodec.kt:17`). Slice A pinnt das mit einem Test, der
+  ein YAML-Dokument mit doppeltem Trigger-Map-Key faehrt und einen
+  `JsonMappingException`/`DuplicateKeyException` aus dem Codec
+  erwartet, statt einer stillen Ueberschreibung.
 - `Map<TriggerKey, TriggerDefinition>`-Migration mit kanonischer
   `table::name`-Identitaet bleibt F.4-Vorbedingung; E.2 macht keine
   Modellaenderung an `SchemaDefinition.triggers`.
@@ -589,10 +592,11 @@ Integration-Test prueft das DDL-Endprodukt (kein separater
       und blockt mit `TRIGGER_NAME_COLLISION` bei gleichem Namen auf
       verschiedenen Tabellen. Reader-Adapter rufen den Detektor vor
       dem Map-Schritt; CLI-Layer pinnt das in einem Adapter-Test.
-- [ ] YAML-Schema-Parser blockt doppelte Trigger-Map-Keys ueber
-      `LoaderOptions.setAllowDuplicateKeys(false)`; ein Parser-Test
-      mit doppeltem Trigger-Key fuehrt zu `SchemaParseError` mit
-      `TRIGGER_NAME_COLLISION`-Verweis statt stillem Ueberschreiben.
+- [ ] `YamlSchemaCodec` ist explizit getestet: ein YAML-Dokument
+      mit doppeltem Trigger-Map-Key fuehrt zu einer
+      `JsonMappingException`/`DuplicateKeyException` aus dem Codec
+      (Jacksons `FAIL_ON_READING_DUP_TREE_KEY` greift), statt
+      stillem Ueberschreiben.
 - [ ] Detector-Tests decken positiv (zwei verschiedene Tabellen mit
       gleichem Triggernamen → Block) und negativ (gleicher Name auf
       gleicher Tabelle → keine Kollision; einzelner Trigger → kein

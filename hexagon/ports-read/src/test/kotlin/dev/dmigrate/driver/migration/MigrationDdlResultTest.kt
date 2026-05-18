@@ -116,12 +116,12 @@ class MigrationDdlResultTest : FunSpec({
         )
     }
 
-    test("F.4 rename-mapping-invalid-enum: RENAME_MAPPING_INVALID is the last enum value and ordinals stay stable") {
-        // ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum §4.1: new value
-        // appended at the end of MigrationBlockedReason so existing
-        // ordinals (used by report fixtures and tooling clients that
-        // serialise via `ordinal()` or `entries.indexOf`) stay
-        // unchanged. The list is asserted in full so accidentally
+    test("MigrationBlockedReason ordinals stay stable across slices (F.4 + E.2)") {
+        // F.4 rename-mapping-invalid-enum §4.1 and E.2 sub-slice A.1
+        // both append new values at the end of MigrationBlockedReason
+        // so existing ordinals (used by report fixtures and tooling
+        // clients that serialise via `ordinal()` or `entries.indexOf`)
+        // stay unchanged. The list is asserted in full so accidentally
         // inserting a new value in the middle fails loudly.
         MigrationBlockedReason.entries.map { it.name } shouldBe listOf(
             "DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION",
@@ -132,9 +132,12 @@ class MigrationDdlResultTest : FunSpec({
             "DIALECT_UNSUPPORTED_OPERATION",
             "TRANSACTION_SCOPE_UNSUPPORTED",
             "RENAME_MAPPING_INVALID",
+            "TRIGGER_NAME_COLLISION",
+            "TRIGGER_BODY_NOT_FUNCTION_REFERENCE",
         )
-        MigrationBlockedReason.RENAME_MAPPING_INVALID.ordinal shouldBe
-            MigrationBlockedReason.entries.size - 1
+        // F.4 ordinal pin: RENAME_MAPPING_INVALID stays at index 7
+        // even after E.2 appended additional values at the end.
+        MigrationBlockedReason.RENAME_MAPPING_INVALID.ordinal shouldBe 7
     }
 
     test("F.4 rename-mapping-invalid-enum: blocker carries new reason without breaking invariants") {
