@@ -71,6 +71,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.TABLE -> renderTableOp(op, ctx)
             OpCategory.OTHER -> renderOtherOp(op, ctx)
             OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
+            OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
@@ -122,13 +123,15 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 
+        is DiffOperation.CreateTrigger,
+        is DiffOperation.ReplaceTrigger,
+        is DiffOperation.DropTrigger,
+        -> OpCategory.TRIGGER
+
         is DiffOperation.AlterCustomType,
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
-        is DiffOperation.CreateTrigger,
-        is DiffOperation.ReplaceTrigger,
-        is DiffOperation.DropTrigger,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -161,6 +164,15 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.ReplaceView -> MysqlDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> MysqlDiffOtherOps.renderDropView(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised OTHER but renderOtherOp does not handle it")
+        }
+    }
+
+    private fun renderTriggerOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateTrigger -> MysqlTriggerDdlHelper.renderCreateTrigger(op, ctx)
+            is DiffOperation.ReplaceTrigger -> MysqlTriggerDdlHelper.renderReplaceTrigger(op, ctx)
+            is DiffOperation.DropTrigger -> MysqlTriggerDdlHelper.renderDropTrigger(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised TRIGGER but renderTriggerOp does not handle it")
         }
     }
 
@@ -199,5 +211,5 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, ROUTINE, MATERIALIZED_VIEW, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, ROUTINE, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }
 }

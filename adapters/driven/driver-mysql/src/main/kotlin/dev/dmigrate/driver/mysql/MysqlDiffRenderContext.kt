@@ -47,6 +47,24 @@ internal class MysqlDiffRenderContext(
     private val diagnostics = mutableListOf<DiffDiagnostic>()
 
     fun emit(op: DiffOperation, sqlText: String) {
+        // E.2 Sub-Slice A.3 strict-mode lift: mirrors the
+        // PostgresDiffRenderContext guard. When the active-direction
+        // risk has `hasGap = true` and `strictGapOperations` is set,
+        // block before emitting any statement for this op. Subsequent
+        // emit() calls for the same op short-circuit on `isSkipped`.
+        if (options.strictGapOperations && riskFor(op).hasGap) {
+            if (!isSkipped(op)) {
+                skip(
+                    op,
+                    "Operation ${op.id} renders with a visibility gap (`hasGap = true`) and " +
+                        "`--strict-gap-operations` is set. The operator must split the change into a " +
+                        "manual maintenance window or accept the gap by removing the strict flag.",
+                    code = "OPERATION_HAS_GAP_STRICT_BLOCKED",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            }
+            return
+        }
         // Plan-2 §G.1: MySQL DDL renders inside the runner-managed JDBC
         // transaction at the dispatch layer (TransactionScope.RUNNER_OWNED),
         // but Plan-2 §A.1 records the dialect-level caveat: every
@@ -91,6 +109,14 @@ internal class MysqlDiffRenderContext(
             operationId = op.id,
         )
     }
+
+    /**
+     * Whether [op] is already in the skipped set — used by multi-
+     * statement helpers (E.2 Sub-Slice B ReplaceTrigger Drop+Create)
+     * to suppress trailing diagnostics when the strict-gap guard
+     * short-circuited the first `emit()` call.
+     */
+    fun isSkipped(op: DiffOperation): Boolean = op.id in skipped
 
     /**
      * E.1 Routine-Migration Slice C.3: annotate an op with an
