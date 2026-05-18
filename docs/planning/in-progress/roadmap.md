@@ -566,8 +566,18 @@ Aktuell offene 0.9.7-Restpunkte:
   `docs/planning/done/`. SQLite-Trigger-Reverse-Read aus
   `sqlite_master` ist bewusst out of E.2-Scope und bleibt ein
   Follow-up-Slice.)*
-- **F.0-F.3 Rest**: automatische Daten-Transformationen,
-  versionierte Plan-Artefakte und Partial-Rollback-Artefakte.
+- **F.0-F.3**: erste Slices komplett — siehe
+  `diffresult-migration-plan-2.md` §F.0 (`migration-overlay.v1`
+  fingerprint-/dialect-gebunden mit `overlayHash`), §F.2
+  (`migration-plan.v1` mit `artifactHash`, `requiredFeatures`,
+  `semanticExtensions`) und §F.3 (`rollback-sql v2` Header mit
+  `rollbackComplete`/`partialRollback`/`skippedOperationIds[]` plus
+  `--allow-partial-rollback`-Gate). §F.1 hat den
+  `DataTransformationContract`-Vertrag als Default `NONE` mit
+  `MANUAL_REQUIRED`-Pflichtweg fuer destruktive Operationen; echte
+  `DataTransformationMode.AUTOMATIC`-Backfills bleiben Phase-1.x-
+  Material (eigener Workstream mit Storage-, Privacy- und
+  Retention-Regeln).
 - **F.4 Rest**: Dependency-Re-Projection nach Rename
   (FK-Targets, View-/Trigger-/Index-/Default-Bindungen), so dass
   Mischfaelle nicht mehr ueber `RENAME_OVERLAY_STRUCTURAL_MISMATCH`
@@ -583,10 +593,20 @@ Aktuell offene 0.9.7-Restpunkte:
   (`docs/planning/open/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`)
   bleibt offen.)*
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
-  Vertrag und Daten-Preflight.
-- **Coverage/QA**: MySQL-`AlterColumnNullability` Round-Trip-Smoke oder
-  dokumentierter Blocker, breitere Report-/Exit-Code-Erwartungen,
-  Rollback-Verhalten je Workstream und Artifact-/Overlay-Kompatibilitaet.
+  Vertrag und Daten-Preflight. *(2026-05-12: F.5-Erstscheibe
+  implementiert — Comparator nutzt konservativen SQL-Textvergleich,
+  unveraenderte CHECK-/EXCLUDE bloken Tabellenops nicht mehr;
+  Hinzufuegen/Aendern/Entfernen bleibt mit `CONSTRAINT_NOT_DIFFABLE`
+  blockierend, bis ein dialektspezifischer Render-/Enforcement-/
+  Preflight-Vertrag steht. Plan-2 §F.5.)*
+- **Coverage/QA**:
+  *(2026-05-13: MySQL-`AlterColumnNullability` als bewusster Blocker
+  umgesetzt — `MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE` plus
+  `DIALECT_UNSUPPORTED_OPERATION` ohne Statement-Emission;
+  Round-Trip-Smoke dokumentiert den Carve-out statt einen
+  Render-Pfad zu erzwingen.)* Verbleibend: breitere Report-/
+  Exit-Code-Erwartungen, Rollback-Verhalten je Workstream und
+  Artifact-/Overlay-Kompatibilitaet.
 
 ### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
 
