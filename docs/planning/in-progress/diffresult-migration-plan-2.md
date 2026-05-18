@@ -1102,6 +1102,14 @@ Entscheidung:
 
 ### E.2 Trigger-Migration
 
+> Status: done ✅ 2026-05-18. Vollscheibe Sub-Slices A.1 Foundation /
+> A.2 PostgreSQL / A.3 hasGap-Wiring + Strict-Mode / B MySQL / C
+> SQLite plus Review-Follow-up landed. `CreateTrigger`,
+> `ReplaceTrigger` und `DropTrigger` sind in allen drei Dialekten
+> renderbar. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md`
+> mit dem A.3-Detail-Plan
+> `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+
 Nicht in der ersten Matrix:
 
 - vollstaendige Trigger-Migration fuer PostgreSQL, MySQL und SQLite
@@ -1132,6 +1140,41 @@ Entscheidung:
 - SQLite-Trigger innerhalb eines Rebuilds bleiben Phase-H-gebunden: Der
   Rebuild-Plan muss Drop/Recreate, Temp-Namen und FK-Pragma-Vertrag kennen,
   bevor Trigger-Migration fuer SQLite freigeschaltet wird.
+
+E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
+
+- Das `TriggerDefinition`-Mindestmodell deckt heute `table`, `event`
+  (Singular), `timing`, `forEach`, `condition`, `body`, `dependencies`,
+  `sourceDialect` ab. `events` (Liste mit optionaler Spaltenliste),
+  `bodyHash`/`bodyTextAvailability` (deriveable aus `body != null`),
+  und `enabledState` bleiben Modell-Erweiterungen fuer Folge-Slices —
+  E.2 macht das neutrale Modell nicht breiter, sondern blockt
+  Dialektfeatures ausserhalb dieses Mindestmodells.
+- Replace ohne natives `CREATE OR REPLACE TRIGGER` (PG < 14, MySQL,
+  SQLite) rendert als Drop+Create-Fallback mit
+  `OperationRisk.hasGap = true` und `W_TRIGGER_REPLACE_GAP`-WARNING.
+  `--strict-gap-operations` an `schema migrate` hebt jede gap-tragende
+  Operation auf `MANUAL_ACTION_REQUIRED`.
+- Trigger-Identitaet-Kollision (gleicher Name auf verschiedenen
+  Tabellen) blockt der dialektneutrale `TriggerNameCollisionDetector`
+  ueber den Reader-Pre-Map-Pfad mit `TRIGGER_NAME_COLLISION`; der
+  File-Pfad nutzt Jacksons `FAIL_ON_READING_DUP_TREE_KEY`. Eine
+  echte `Map<TriggerKey, TriggerDefinition>`-Modellmigration bleibt
+  F.4 RenameTrigger vorbehalten.
+- SQLite-Rebuild-Interaktion zentralisiert im `SqliteRebuildPlanner`:
+  Trigger-Operationen auf rebuild-betroffenen Tabellen werden in den
+  Rebuild-Block absorbiert; der Standalone-Renderer bekommt eine
+  bereits gefilterte Op-Liste.
+- SQLite-Trigger-Reverse-Read aus `sqlite_master` ist bewusst out of
+  E.2-Scope. Datei-zu-Datei ist der primaere SQLite-Migrate-Pfad;
+  Live-DB-Live-DB-Trigger-Diff folgt als separater Slice.
+- MySQL DEFINER-Rendering, schemaqualifizierter `DROP TRIGGER` und
+  `INSTEAD OF` (PG-only) bleiben Carve-outs — Modell traegt heute
+  weder Definer- noch Schema-Felder; INSTEAD OF blockt der
+  MySQL-Renderer explizit.
+- Body-Sanitisation ist out of E.2-Scope. Der Renderer reicht den
+  Body opak durch; Schutzpfad ist der Reader + der
+  `RoutineBodyScrubber` (E.1) auf der Display-Plane.
 
 ### E.3 Sequence-Migrationen
 

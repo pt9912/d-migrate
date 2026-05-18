@@ -496,6 +496,34 @@ Zusätzlich erledigt seit dem 2026-05-08-Stand:
   warning auf den Drop+Add-Pfad zurueck.
 - **Telemetry/Observability-Plan**: Adaptervertrag, Gates und Port-Grenzen
   sind dokumentiert; produktives Metrics-/Tracing-Wiring ist kein 0.9.7-Scope.
+- **E.2 Trigger-Rendering**: Vollscheibe (Sub-Slices A.1 Foundation /
+  A.2 PostgreSQL / A.3 hasGap-Wiring + Strict-Mode / B MySQL / C
+  SQLite, 2026-05-18). Trigger-Operationen sind in allen drei
+  Dialekten renderbar: `CreateTrigger`/`ReplaceTrigger`/`DropTrigger`
+  verlassen die `OpCategory.UNSUPPORTED`-Fallschiene. PostgreSQL
+  rendert native `CREATE OR REPLACE TRIGGER` ab PG-14, sonst
+  Drop+Create; MySQL und SQLite immer Drop+Create. Der Mapper setzt
+  `OperationRisk.hasGap = true` ueber einen core-lokalen
+  `TriggerPlanningContext`, den `TriggerPlanningContextFactory`
+  (Application-Layer) aus `TriggerCapability` +
+  `postgresMajorVersion` ableitet — keine Renderer-interne
+  Capability-Resolution. `--strict-gap-operations` an `schema
+  migrate` lift Gap-Operationen auf `MANUAL_ACTION_REQUIRED`. Body-
+  Validierung in PG strikt (`[schema.]identifier(args)` als Funktions-
+  referenz; sonst `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`); MySQL/
+  SQLite akzeptieren inline SQL ohne Sanitisation und blocken nur
+  klare Dialekt-Konflikte (`MYSQL_TRIGGER_WHEN_UNSUPPORTED`,
+  `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
+  `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`,
+  `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
+  `SQLITE_TRIGGER_BODY_NOT_RENDERABLE`). Trigger-Namens-Kollisionen
+  blockt der dialektneutrale `TriggerNameCollisionDetector` (im
+  Reader-Pfad vor Map-Materialisierung; im File-Pfad ueber Jacksons
+  `FAIL_ON_READING_DUP_TREE_KEY`). SQLite-Rebuild-Pipeline absorbiert
+  Trigger auf rebuild-Tabellen via `SqliteRebuildPlanner.classify` —
+  keine doppelte Filter-Logik im Renderer. Plan und A.3-Detail-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md` und
+  `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
 
 Aktuell offene 0.9.7-Restpunkte:
 
@@ -513,8 +541,13 @@ Aktuell offene 0.9.7-Restpunkte:
   SQLite), und der PostgreSQL-Reverse-Pfad trennt Installationsbefund
   (`R400`) vom Objektbefund (`R401`).
 - **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
-  Preserve-Policy, Routine-/Trigger-Bodies, Secret-Scrubbing und
+  Preserve-Policy, Routine-Bodies, Secret-Scrubbing und
   Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
+  *(2026-05-18: E.2 Trigger-Rendering komplett — Trigger-Bodies sind
+  in allen drei Dialekten renderbar; Plan wandert nach
+  `docs/planning/done/`. SQLite-Trigger-Reverse-Read aus
+  `sqlite_master` ist bewusst out of E.2-Scope und bleibt ein
+  Follow-up-Slice.)*
   *(2026-05-15: E.1 Slice A landed — PostgreSQL Functions Up+Down via
   `RoutineBodyNormalizer`/`Scrubber`. 2026-05-16: alle restlichen
   E.1-Slices gelandet — Slice B (PG Procedures), Slice C.1.a/b
@@ -544,8 +577,11 @@ Aktuell offene 0.9.7-Restpunkte:
   `{table, column}`-Pre-Plan-Whitelist fertig; cli-inline-overlay
   mit `--rename-table` / `--rename-column` + Cross-Document-
   Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance fertig.
-  View-/Trigger-/Routine-Rename bleibt offen, harte Vorbedingung
-  E.1/E.2.)*
+  View-/Trigger-/Routine-Rename bleibt offen — die E.1/E.2-Vorbedingung
+  ist seit 2026-05-18 mit dem Abschluss von E.2 Trigger-Rendering
+  erfuellt; der Rename-Slice selbst
+  (`docs/planning/open/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`)
+  bleibt offen.)*
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
   Vertrag und Daten-Preflight.
 - **Coverage/QA**: MySQL-`AlterColumnNullability` Round-Trip-Smoke oder
@@ -841,4 +877,4 @@ Datenbanksystem.
 
 **Version**: 3.46
 **Stand**: 2026-05-17
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates **und D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)** sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).
+**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. 0.9.7 ist in Arbeit: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)** und **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)** sind umgesetzt; Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 E.2 Trigger-Rendering Vollscheibe** — `CreateTrigger`,
+  `ReplaceTrigger` and `DropTrigger` leave `OpCategory.UNSUPPORTED` in
+  all three dialects. PostgreSQL renders strict `CREATE TRIGGER ...
+  EXECUTE FUNCTION <ref>` with a `[schema.]identifier(args)` body
+  validator (inline PL/pgSQL blocks with
+  `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`); Replace uses native
+  `CREATE OR REPLACE TRIGGER` on PG-14+, Drop+Create otherwise. MySQL
+  renders inline-body triggers without a `DELIMITER` wrapper and a
+  bare-name DROP (the `<table>.<name>` form is a MySQL syntax error
+  that the renderer never produces); WHEN, statement-level and
+  INSTEAD-OF triggers block with dialect-specific
+  `MYSQL_TRIGGER_*_UNSUPPORTED` diagnostics. SQLite reuses the
+  existing rebuild-pipeline `createTriggerSql` builder for a
+  bit-identical `BEGIN ... END` output across standalone and
+  rebuild-absorbed paths; the rebuild planner is the authoritative
+  filter for trigger ops whose table is being rebuilt. Replace is
+  always Drop+Create on MySQL and SQLite.
+
+  Gap contract: every Drop+Create-Replace carries
+  `OperationRisk.hasGap = true` (set by the Mapper through a new
+  core-local `TriggerPlanningContext`) and emits a
+  `W_TRIGGER_REPLACE_GAP` warning on the report. The new
+  `--strict-gap-operations` flag on `schema migrate` lifts gap-bearing
+  operations to `MANUAL_ACTION_REQUIRED` (Exit 8); the strict path
+  emits zero statements and an `OPERATION_HAS_GAP_STRICT_BLOCKED`
+  blocker diagnostic.
+
+  Identity safety: a new `TriggerNameCollisionDetector` runs on the
+  raw `List<NamedTrigger>` before the trigger map is materialised, so
+  two triggers sharing a name across different tables surface as
+  `TRIGGER_NAME_COLLISION` instead of silently collapsing. The file
+  path relies on Jackson's existing `FAIL_ON_READING_DUP_TREE_KEY`
+  (already enabled in `YamlSchemaCodec`) for duplicate-map-key
+  detection.
+
+  New code carriers: `TriggerPlanningContext` + `TriggerReplaceMode`
+  (hexagon:core, dependency-free); `TriggerCapability` +
+  `TriggerCapabilityDefaults` + `resolve(postgresMajorVersion)`
+  (hexagon:ports-read); `TriggerPlanningContextFactory`
+  (application). `OperationRisk` gains a `hasGap: Boolean = false`
+  field consumed by the dialect-neutral strict-gap lift in each
+  render context. New `MigrationBlockedReason` codes appended at the
+  enum tail: `TRIGGER_NAME_COLLISION`,
+  `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`.
+
+  Carve-outs deferred to follow-up slices: DEFINER rendering for
+  MySQL, schema-qualified DROP, SQLite trigger reverse-read from
+  `sqlite_master`, and the `TriggerDefinition` model widening
+  (`events` plural with column lists, `enabledState`). The structural
+  `Map<TriggerKey, TriggerDefinition>` migration that would let the
+  model hold genuine `(name, table)` ambiguity remains an F.4
+  RenameTrigger precondition.
+
 - **0.9.7 Materialized-View-Migrationsvertrag Sub-Slice C** — closes
   the D.3b plan: a new `MaterializedViewDependencyDetector` walks
   both schemas to find MVs whose `dependencies.tables/views/functions`

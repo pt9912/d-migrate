@@ -2,11 +2,20 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Trigger-Migration (PostgreSQL/MySQL/SQLite Trigger-Rendering)
-> **Status**: in-progress — Sub-Slice A.1 (Foundation) ✅ 2026-05-18,
->            Sub-Slice A.2 (PG-Renderer) ✅ 2026-05-18,
->            Sub-Slice A.3 (hasGap-Wiring + Strict-Mode) ✅ 2026-05-18
->            (Detail: `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`).
->            Sub-Slices B (MySQL) / C (SQLite) / D (Closing) offen.
+> **Status**: done ✅ 2026-05-18. Vollscheibe gelandet:
+>            Sub-Slice A.1 (Foundation: `TriggerNameCollisionDetector`,
+>            `OperationRisk.hasGap`, neue MigrationBlockedReason-Codes,
+>            YAML-Strict-Pin),
+>            Sub-Slice A.2 (PostgreSQL-Renderer mit Body-as-Function-
+>            Reference-Validator),
+>            Sub-Slice A.3 (hasGap-Mapper-Wiring + `--strict-gap-operations`
+>            CLI; Detail: `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`),
+>            Sub-Slice B (MySQL-Renderer mit Bare-Name-DROP +
+>            inline-body),
+>            Sub-Slice C (SQLite-Renderer mit
+>            `SqliteRebuildPlanner.classify`-Absorption),
+>            Review-Follow-up (12 Findings adressiert),
+>            Sub-Slice D (Roadmap- und Spec-Update + Plan-Doc-Closing).
 > **Vorbedingung**: Workstream G ✅, E.1 Routine-Migration ✅ (Body-Vertrag,
 >                  Secret-Scrubbing, `RoutineBodyNormalizer`,
 >                  `ROUTINE_DOWN_BODY_UNKNOWN`, Capability-Vertrag),
@@ -520,19 +529,35 @@ PG/MySQL.
 
 ### Sub-Slice D — Roadmap- und Spec-Update
 
-**Lieferumfang:**
+**Status:** ✅ 2026-05-18.
 
-- `docs/planning/in-progress/roadmap.md` Footer: 0.9.7-Arbeitsstand
-  um „E.2 Trigger-Rendering abgeschlossen" ergaenzen.
+**Geliefert:**
+
+- `docs/planning/in-progress/roadmap.md`: 0.9.7-Arbeitsstand-Block
+  ergaenzt um "E.2 Trigger-Rendering" + "E Rest"-Punkt um
+  Trigger-Komponente bereinigt + F.4-Hinweis "E.1/E.2-Vorbedingung
+  erfuellt" + Footer-Status-Zeile erweitert.
 - `docs/planning/in-progress/diffresult-migration-plan-2.md` §9.E.2:
-  Status-Header auf `done` mit Datum, abgeschlossene Punkte abhaken.
-- `spec/cli-spec.md` §6.1 erwaehnt Trigger-Rendering als Teil des
-  Migrate-Matrix-Inhalts.
-- CHANGELOG-Eintrag analog E.1-Style: `0.9.7 E.2 trigger-rendering:
-  PostgreSQL/MySQL/SQLite Create/Replace/Drop Trigger`.
-- Plan-Doc nach `docs/planning/done/` verschieben.
+  Status-Header auf `done ✅ 2026-05-18` + E.2-Implementierungs-
+  Carve-outs-Block angefuegt (Modell-Mindestumfang, Identitaets-
+  Kollisions-Detektor, SQLite-Rebuild-Absorption, Body-Sanitisation-
+  Out-of-Scope etc.).
+- `spec/cli-spec.md`:
+    - Neue `schema migrate`-Option `--strict-gap-operations` in der
+      Options-Tabelle.
+    - Neuer Trigger-Rendering-Abschnitt nach Routine-Rendering, der
+      Templates pro Dialekt, Pre-Flight-Blocker, Gap-Vertrag,
+      Identitaets-Kollisions-Detektor und Body-Sanitisation-Boundary
+      dokumentiert.
+- `CHANGELOG.md`: "0.9.7 E.2 Trigger-Rendering Vollscheibe"-Eintrag
+  unter `[Unreleased] / Added` ergaenzt; deckt PG-/MySQL-/SQLite-
+  Render-Templates, Gap-Vertrag, `--strict-gap-operations`,
+  `TriggerNameCollisionDetector`, neue Code-Carriers und Carve-outs
+  ab.
+- Plan-Doc wandert nach `docs/planning/done/`.
 
-**Abgrenzung D:** keine Code-Aenderungen; reines Doku-Closing.
+**Abgrenzung D:** kein Renderer-Code, kein neuer Test — reines
+Doku-Closing.
 
 ## 4. Architektur
 
