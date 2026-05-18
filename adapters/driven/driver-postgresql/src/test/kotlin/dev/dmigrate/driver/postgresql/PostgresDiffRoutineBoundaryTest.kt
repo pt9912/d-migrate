@@ -14,11 +14,10 @@ import io.kotest.matchers.shouldBe
 
 /**
  * E.1 Routine-Migration boundary pin: functions (Slice A) and
- * procedures (Slice B) are renderable. Triggers stay blocked with
- * `DIALECT_UNSUPPORTED_OPERATION` until E.2 ships. The exhaustive
- * `categorize()` `when` in `PostgresDiffDdlGenerator` would catch
- * a missed case at compile-time, but pinning the runtime blocker
- * keeps the boundary explicit in tests.
+ * procedures (Slice B) are renderable. E.2 Sub-Slice A.2 hooked
+ * triggers into the same render pipeline; the boundary moved from
+ * `DIALECT_UNSUPPORTED_OPERATION` to body-form validation
+ * (`TRIGGER_BODY_NOT_FUNCTION_REFERENCE` for inline PL/pgSQL).
  */
 class PostgresDiffRoutineBoundaryTest : FunSpec({
 
@@ -27,7 +26,12 @@ class PostgresDiffRoutineBoundaryTest : FunSpec({
 
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
-    test("TriggerAdd stays DIALECT_UNSUPPORTED_OPERATION until E.2") {
+    test("TriggerAdd with inline body blocks with TRIGGER_BODY_NOT_FUNCTION_REFERENCE (E.2)") {
+        // Prior to E.2 the Postgres renderer treated CreateTrigger as
+        // DIALECT_UNSUPPORTED_OPERATION outright. E.2 wires triggers
+        // into the render pipeline but enforces PostgreSQL's strict
+        // `EXECUTE FUNCTION <ref>` body form — an inline `BEGIN END`
+        // body now blocks for the right reason.
         val trigger = TriggerDefinition(
             table = "orders",
             event = TriggerEvent.INSERT,
@@ -37,7 +41,7 @@ class PostgresDiffRoutineBoundaryTest : FunSpec({
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("trg", trigger)))
         val r = gen.generateUp(planner.plan(emptySchema(), emptySchema(), diff), DdlGenerationOptions())
         r.isBlocked shouldBe true
-        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.blockers.single().reason shouldBe MigrationBlockedReason.TRIGGER_BODY_NOT_FUNCTION_REFERENCE
         r.operationsSkipped.size shouldBe 1
     }
 })

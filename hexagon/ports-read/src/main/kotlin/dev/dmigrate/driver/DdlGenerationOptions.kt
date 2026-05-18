@@ -125,6 +125,28 @@ data class DdlGenerationOptions(
      * `minServerVersion` floor is satisfied.
      */
     val mysqlServerVersion: MysqlServerVersion? = null,
+    /**
+     * E.2 Trigger-Migration Sub-Slice A.2: per-dialect trigger
+     * capability. PostgreSQL's renderer consults this to decide between
+     * native `CREATE OR REPLACE TRIGGER` (PG-14+) and the Drop+Create
+     * fallback with the `W_TRIGGER_REPLACE_GAP` warning. MySQL and
+     * SQLite always resolve to `Disabled` (no native replace path
+     * exists). File-only targets pass [postgresMajorVersion] = null
+     * and resolve a PG floor to `Disabled`. The default mirrors
+     * [TriggerCapabilityDefaults.forDialect] for PostgreSQL because the
+     * default callers are file-to-file PG migrate runs; non-PG
+     * generators read the field but their renderers do not consult it.
+     */
+    val triggerCapability: TriggerCapability =
+        TriggerCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL),
+    /**
+     * E.2 Trigger-Migration Sub-Slice A.2: live PostgreSQL major
+     * version from the DB target's `SchemaReadResult`, or `null` for
+     * file-only targets / non-PG dialects. Used together with
+     * [triggerCapability] to decide whether the
+     * `CREATE OR REPLACE TRIGGER` floor (PG-14) is satisfied.
+     */
+    val postgresMajorVersion: Int? = null,
 )
 
 /**

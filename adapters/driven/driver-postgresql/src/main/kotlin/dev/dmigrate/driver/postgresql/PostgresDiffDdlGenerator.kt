@@ -85,6 +85,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.FUNCTION -> renderFunctionOp(op, ctx)
             OpCategory.PROCEDURE -> renderProcedureOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> renderMaterializedViewOp(op, ctx)
+            OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
     }
@@ -141,10 +142,12 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 
-        is DiffOperation.AlterCustomType,
         is DiffOperation.CreateTrigger,
         is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger,
+        -> OpCategory.TRIGGER
+
+        is DiffOperation.AlterCustomType,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -207,6 +210,15 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         }
     }
 
+    private fun renderTriggerOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateTrigger -> PostgresTriggerDdlHelper.renderCreateTrigger(op, ctx)
+            is DiffOperation.ReplaceTrigger -> PostgresTriggerDdlHelper.renderReplaceTrigger(op, ctx)
+            is DiffOperation.DropTrigger -> PostgresTriggerDdlHelper.renderDropTrigger(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised TRIGGER but renderTriggerOp does not handle it")
+        }
+    }
+
     private fun renderMaterializedViewOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         when (op) {
             is DiffOperation.CreateMaterializedView ->
@@ -234,6 +246,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         FUNCTION,
         PROCEDURE,
         MATERIALIZED_VIEW,
+        TRIGGER,
         UNSUPPORTED,
     }
 }
