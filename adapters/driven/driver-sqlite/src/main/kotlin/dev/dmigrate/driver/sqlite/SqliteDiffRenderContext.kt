@@ -45,6 +45,25 @@ internal class SqliteDiffRenderContext(
     private val sqliteCastPreflights = linkedMapOf<String, SqliteCastPreflightDeclaration>()
 
     fun emit(op: DiffOperation, sqlText: String) {
+        // E.2 Sub-Slice A.3 strict-mode lift: mirrors the
+        // PostgresDiffRenderContext / MysqlDiffRenderContext guard.
+        // When the active-direction risk has `hasGap = true` and the
+        // operator set `strictGapOperations`, block before emitting any
+        // statement for this op. Subsequent emit() calls for the same
+        // op short-circuit on `isSkipped`.
+        if (options.strictGapOperations && riskFor(op).hasGap) {
+            if (!isSkipped(op)) {
+                skip(
+                    op,
+                    "Operation ${op.id} renders with a visibility gap (`hasGap = true`) and " +
+                        "`--strict-gap-operations` is set. The operator must split the change into a " +
+                        "manual maintenance window or accept the gap by removing the strict flag.",
+                    code = "OPERATION_HAS_GAP_STRICT_BLOCKED",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            }
+            return
+        }
         // Plan-2 §A.1: direct SQLite DDL via this path is wrapped by
         // the runner's outer JDBC transaction; SQLite rolls back the
         // statement on failure. Lock footprint is the schema's
@@ -82,6 +101,14 @@ internal class SqliteDiffRenderContext(
             operationId = op.id,
         )
     }
+
+    /**
+     * Whether [op] is already in the skipped set — used by multi-
+     * statement helpers (E.2 Sub-Slice C ReplaceTrigger Drop+Create)
+     * to suppress trailing diagnostics when the strict-gap guard
+     * short-circuited the first `emit()` call.
+     */
+    fun isSkipped(op: DiffOperation): Boolean = op.id in skipped
 
     /**
      * Mark an operation as deferred to the future RebuildTable

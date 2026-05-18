@@ -200,6 +200,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         when (categorize(op)) {
             OpCategory.SIMPLE -> renderInlineSimpleOp(op, ctx)
             OpCategory.REBUILD -> ctx.deferToRebuild(op)
+            OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
         }
@@ -242,6 +243,11 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropMaterializedView,
         -> OpCategory.MATERIALIZED_VIEW
 
+        is DiffOperation.CreateTrigger,
+        is DiffOperation.ReplaceTrigger,
+        is DiffOperation.DropTrigger,
+        -> OpCategory.TRIGGER
+
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
@@ -254,10 +260,16 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
-        is DiffOperation.CreateTrigger,
-        is DiffOperation.ReplaceTrigger,
-        is DiffOperation.DropTrigger,
         -> OpCategory.UNSUPPORTED
+    }
+
+    private fun renderTriggerOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateTrigger -> SqliteTriggerDdlHelper.renderCreateTrigger(op, ctx)
+            is DiffOperation.ReplaceTrigger -> SqliteTriggerDdlHelper.renderReplaceTrigger(op, ctx)
+            is DiffOperation.DropTrigger -> SqliteTriggerDdlHelper.renderDropTrigger(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised TRIGGER but renderTriggerOp does not handle it")
+        }
     }
 
     private fun renderInlineSimpleOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
@@ -300,5 +312,5 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { SIMPLE, REBUILD, MATERIALIZED_VIEW, UNSUPPORTED }
+    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }
 }
