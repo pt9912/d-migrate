@@ -3,8 +3,11 @@
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Trigger-Migration (PostgreSQL/MySQL/SQLite Trigger-Rendering)
 > **Status**: in-progress — Sub-Slice A.1 (Foundation) ✅ 2026-05-18,
->            Sub-Slices A.2 (PG) / B (MySQL) / C (SQLite) / D (Closing)
->            offen.
+>            Sub-Slice A.2 (PG-Renderer) ✅ 2026-05-18 mit zwei
+>            ausdruecklichen Carve-outs nach A.3.
+>            Sub-Slice A.3 (hasGap-Wiring + Strict-Mode) offen — Detail-
+>            Plan: `docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+>            Sub-Slices B (MySQL) / C (SQLite) / D (Closing) offen.
 > **Vorbedingung**: Workstream G ✅, E.1 Routine-Migration ✅ (Body-Vertrag,
 >                  Secret-Scrubbing, `RoutineBodyNormalizer`,
 >                  `ROUTINE_DOWN_BODY_UNKNOWN`, Capability-Vertrag),
@@ -303,7 +306,68 @@ Pro Sub-Slice ein eigener Commit; Plan-Header trackt den Slice-Status.
 **Abgrenzung A:** keine MySQL/SQLite-Aenderungen. Foundation A.1 ist
 dialektneutral und wird in Slice B/C wiederverwendet.
 
+**Carve-outs nach A.2-Implementierung (2026-05-18):** zwei Punkte aus
+der A.1/A.2-Spec sind als Sub-Slice A.3 herausgezogen, weil sie ein
+End-to-End-Wiring vom Mapper bis zum CLI-Layer brauchen und sonst den
+PG-Renderer-Slice ueberlasten wuerden:
+
+1. **`OperationRisk.hasGap`-Setzen auf der Operation.** A.1 hat das
+   Feld eingefuehrt, A.2 nutzt es noch nicht — der Renderer surface
+   die Luecke nur als `W_TRIGGER_REPLACE_GAP`-WARNING-Diagnostic. Der
+   Mapper muss das Feld konsultieren der Capability und setzen, damit
+   downstream-Consumer den Risk maschinenlesbar auf der Operation
+   sehen.
+2. **`--strict`-CLI-Mode.** A.1 hat den Vertrag dokumentiert
+   (`hasGap → MANUAL_ACTION_REQUIRED`), aber kein Flag und keinen
+   Lift-Pfad. Der Slice braucht ein CLI-Flag, einen
+   `DdlGenerationOptions.strictMode`-Carrier und einen Lift-Pfad im
+   Renderer / im Result-Builder.
+
+Beide hangen zusammen (Source + Consumer fuer dasselbe Signal) und
+landen in einem gemeinsamen Sub-Slice A.3. Detail-Plan:
+`docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+
+### Sub-Slice A.3 — `hasGap`-Wiring + Strict-Mode
+
+**Status:** offen, Detail-Plan in
+`docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+
+**Lieferumfang in Kuerze:**
+
+- `OperationMapperRoutines.mapTriggers(...)` (oder ein dialekt-
+  bewusster Post-Map-Schritt) konsumiert die `TriggerCapability` aus
+  einem Planning-Context und setzt
+  `ReplaceTrigger.risks.up.hasGap = true` (und analog `down.hasGap`),
+  wenn die Capability `Disabled` resolved.
+- Neuer `DdlGenerationOptions.strictMode: Boolean = false` plus CLI-
+  Flag `--strict-gap-operations` (oder analog) an
+  `schema migrate` / `schema rollback`.
+- Renderer/Result-Builder konsultiert `strictMode`; wenn
+  `op.risks.<direction>.hasGap` und `strictMode` zusammenfallen,
+  blockt der Pfad mit `MANUAL_ACTION_REQUIRED` statt zu rendern.
+  Der `W_TRIGGER_REPLACE_GAP`-Warning bleibt im Default-Pfad als
+  Display-Diagnostic.
+- Tests pinnen das End-to-End-Verhalten: Default-Pfad emittiert
+  Drop+Create + Warning; `--strict`-Pfad blockt mit
+  `MANUAL_ACTION_REQUIRED`; das `hasGap`-Feld ist im Plan-Artefakt
+  serialisiert.
+
+**Vorbedingung A.3 → B:** Sub-Slice B (MySQL) konsumiert dieselbe
+Strict-Mode-Infrastruktur, weil MySQL `ReplaceTrigger` immer Drop+
+Create ist. Reihenfolge:
+1. A.3 (Wiring + CLI) landet vor B.
+2. B baut auf A.3 auf — MySQL-Renderer setzt `hasGap = true`
+   bedingungslos und nutzt denselben Strict-Lift.
+
+**Abgrenzung A.3:** keine renderer-spezifischen SQL-Templates;
+keine MySQL/SQLite-Renderer-Aenderungen. Reiner Risk-/CLI-/Result-
+Layer.
+
 ### Sub-Slice B — MySQL Trigger-Rendering
+
+**Vorbedingung:** Sub-Slice A.3 (`hasGap`-Wiring + Strict-Mode) ✅, weil
+MySQL `ReplaceTrigger` immer Drop+Create rendert und dasselbe
+Gap-/Strict-Vertragsmuster braucht.
 
 **Lieferumfang:**
 
