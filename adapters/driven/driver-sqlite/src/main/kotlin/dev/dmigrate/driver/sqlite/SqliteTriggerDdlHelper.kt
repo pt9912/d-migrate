@@ -1,6 +1,5 @@
 package dev.dmigrate.driver.sqlite
 
-import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerForEach
@@ -34,11 +33,36 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  *
  * - `forEach = STATEMENT` → `DIALECT_UNSUPPORTED_OPERATION`. SQLite
  *   only supports `FOR EACH ROW`.
- * - `INSTEAD OF` triggers are rendered as-is. SQLite accepts them
- *   only on views; if the underlying object is a table, the engine
- *   will reject the statement. The renderer does not pre-check that
- *   here because the neutral model does not yet expose
- *   view-vs-table cleanly for the trigger's target.
+ * - `sourceDialect != "sqlite"` → `SQLITE_TRIGGER_BODY_NOT_RENDERABLE`.
+ *   The bundled body grammar is dialect-specific and the renderer
+ *   refuses to translate across dialects.
+ * - Empty body → `ROUTINE_BODY_UNKNOWN` + `MANUAL_ACTION_REQUIRED`.
+ *
+ * `INSTEAD OF` triggers are rendered as-is. SQLite accepts them only
+ * on views; if the underlying object is a table the engine will
+ * reject the statement. The renderer does not pre-check that here
+ * because the neutral model does not yet expose view-vs-table
+ * cleanly for the trigger's target.
+ *
+ * **`DROP TRIGGER` carries a bare trigger name** — SQLite triggers
+ * are catalog-global. DROP is rendered without `IF EXISTS`; diff-
+ * driven DROP only fires when the planner saw the trigger in
+ * `current`, so a missing trigger at apply-time is real drift. An
+ * `--idempotent-drop`-style toggle is a future-slice carve-out.
+ *
+ * **Trailing-`;` in the body is handled by [SqliteDiffSqlBuilders.createTriggerSql]**
+ * — it strips one trailing `;` before wrapping the body in
+ * `BEGIN ... END;`, so a reader-supplied trailing semicolon does
+ * not produce `... NEW.id;\nEND;` (double terminator).
+ *
+ * **Body sanitisation is out of scope.** The renderer treats the
+ * inline body as opaque SQL and does not validate or scrub it —
+ * SQL rejection is the database engine's job. The reader pipeline
+ * (`SqliteSchemaReader` for live targets, the YAML schema codec for
+ * file targets) is the sole input-trust boundary; untrusted body
+ * content reaching the renderer is a pipeline bug. Operator-facing
+ * display reports go through `RoutineBodyScrubber` (E.1) on the way
+ * out.
  *
  * **SQLite-Rebuild interaction:** `SqliteRebuildPlanner.classify`
  * absorbs trigger ops whose table is in a rebuild bucket into the
@@ -113,7 +137,7 @@ internal object SqliteTriggerDdlHelper {
                 "Trigger '${op.objectRef.rootName}' cannot be rendered for SQLite. The neutral " +
                     "trigger payload either has no body or its `sourceDialect` does not match " +
                     "SQLite — the renderer refuses to translate body grammar across dialects.",
-                code = "SQLITE_TRIGGER_NOT_RENDERABLE",
+                code = "SQLITE_TRIGGER_BODY_NOT_RENDERABLE",
             )
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
@@ -138,7 +162,7 @@ internal object SqliteTriggerDdlHelper {
                 "ReplaceTrigger '${op.objectRef.rootName}': SQLite cannot render the target body " +
                     "(missing or non-SQLite sourceDialect). Drop+Create fallback aborted before any " +
                     "DDL is emitted.",
-                code = "SQLITE_TRIGGER_NOT_RENDERABLE",
+                code = "SQLITE_TRIGGER_BODY_NOT_RENDERABLE",
             )
             ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
             return
@@ -150,16 +174,13 @@ internal object SqliteTriggerDdlHelper {
         // and routes the op into `skipped`. The trailing gap warning
         // only makes sense for the lenient path.
         if (!ctx.isSkipped(op)) {
-            ctx.addDiagnostic(
-                DiffDiagnostic(
-                    code = W_TRIGGER_REPLACE_GAP,
-                    message = "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because " +
-                        "SQLite has no native `CREATE OR REPLACE TRIGGER`. While the two statements run " +
-                        "there is a short window in which the trigger does not fire. " +
-                        "`--strict-gap-operations` would lift this to MANUAL_ACTION_REQUIRED.",
-                    severity = DiffDiagnostic.Severity.WARNING,
-                    operationId = op.id,
-                ),
+            ctx.warning(
+                op,
+                "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because " +
+                    "SQLite has no native `CREATE OR REPLACE TRIGGER`. While the two statements run " +
+                    "there is a short window in which the trigger does not fire. " +
+                    "`--strict-gap-operations` would lift this to MANUAL_ACTION_REQUIRED.",
+                code = W_TRIGGER_REPLACE_GAP,
             )
         }
     }

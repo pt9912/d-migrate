@@ -153,6 +153,92 @@ class SqliteTriggerDdlHelperTest : FunSpec({
         r.statements.shouldBeEmpty()
     }
 
+    test("CreateTrigger without body blocks ROUTINE_BODY_UNKNOWN (non-Replace path)") {
+        val noBody = sampleTrigger.copy(body = null)
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", noBody)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to noBody)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.any { it.code == "ROUTINE_BODY_UNKNOWN" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("CreateTrigger with multi-statement BEGIN/END body emits exactly one MigrationDdlStatement") {
+        // Pin: the renderer wraps a multi-statement body in BEGIN..END
+        // and emits a single MigrationDdlStatement. The JDBC executor
+        // runs it as one Statement.execute(...); a future regression
+        // that pre-splits on `;` would break this test.
+        val multiStmt = sampleTrigger.copy(
+            body = "UPDATE orders SET created_at = strftime('%s','now') WHERE id = NEW.id; " +
+                "INSERT INTO audit_log(orders_id) VALUES (NEW.id);",
+        )
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", multiStmt)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to multiStmt)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements shouldHaveSize 1
+        val sql = r.statements.single().sql
+        sql.shouldContain("UPDATE orders")
+        sql.shouldContain("INSERT INTO audit_log")
+        // Trailing `;` from the body is deduplicated — the wrapper's
+        // `END;` is the single statement terminator.
+        sql.shouldContain(";\nEND;")
+    }
+
+    test("CreateTrigger with body that ends in `;` does not produce double terminator") {
+        // E.2 review follow-up: bodies with a trailing `;` must not
+        // collide with the BEGIN..END's `END;` terminator.
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", sampleTrigger)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to sampleTrigger)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        val sql = r.statements.single().sql
+        // The body literal ends in `;`. Deduplicate-then-terminate
+        // produces `... NEW.id;\nEND;` exactly once, not `... NEW.id;;`.
+        sql.shouldNotContain(";;")
+    }
+
+    test("ReplaceTrigger with cross-table move renders bare DROP + CREATE referencing after.table") {
+        val customersTable = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, required = true)),
+        )
+        val before = sampleTrigger.copy(table = "orders")
+        val after = sampleTrigger.copy(table = "customers")
+        val current = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("orders" to ordersTable(), "customers" to customersTable),
+            triggers = mapOf("audit_log" to before),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("orders" to ordersTable(), "customers" to customersTable),
+            triggers = mapOf("audit_log" to after),
+        )
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements shouldHaveSize 2
+        r.statements[0].sql shouldBe "DROP TRIGGER \"audit_log\";"
+        r.statements[1].sql.shouldContain("ON \"customers\"")
+        r.statements[1].sql.shouldNotContain("ON \"orders\"")
+    }
+
     test("CreateTrigger with FOR EACH STATEMENT blocks DIALECT_UNSUPPORTED_OPERATION") {
         val stmtLevel = sampleTrigger.copy(forEach = TriggerForEach.STATEMENT)
         val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", stmtLevel)))
@@ -181,7 +267,7 @@ class SqliteTriggerDdlHelperTest : FunSpec({
         val r = gen.generateUp(plan, lenientOptions)
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        r.diagnostics.any { it.code == "SQLITE_TRIGGER_NOT_RENDERABLE" } shouldBe true
+        r.diagnostics.any { it.code == "SQLITE_TRIGGER_BODY_NOT_RENDERABLE" } shouldBe true
         r.statements.shouldBeEmpty()
     }
 

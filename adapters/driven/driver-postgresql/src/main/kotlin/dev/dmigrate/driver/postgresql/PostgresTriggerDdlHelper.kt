@@ -1,6 +1,5 @@
 package dev.dmigrate.driver.postgresql
 
-import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
@@ -171,14 +170,13 @@ internal object PostgresTriggerDdlHelper {
         // only makes sense for the lenient path where statements were
         // actually rendered.
         if (!ctx.isSkipped(op)) {
-            ctx.addDiagnostic(
-                code = W_TRIGGER_REPLACE_GAP,
-                operationId = op.id,
-                message = "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because the " +
+            ctx.warning(
+                op,
+                "Trigger '${op.objectRef.rootName}' is replaced via DROP + CREATE because the " +
                     "PostgreSQL target does not advertise PG-14+; while the two statements run there is " +
                     "a short window in which the trigger does not fire. A strict execution mode should " +
                     "treat this as MANUAL_ACTION_REQUIRED.",
-                severity = DiffDiagnostic.Severity.WARNING,
+                code = W_TRIGGER_REPLACE_GAP,
             )
         }
     }

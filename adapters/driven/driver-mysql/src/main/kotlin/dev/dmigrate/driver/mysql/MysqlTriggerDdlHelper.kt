@@ -37,11 +37,26 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * The renderer rejects MySQL-incompatible modelling at render time:
  * - `condition != null` (MySQL has no `WHEN` clause on triggers).
  * - `forEach = STATEMENT` (MySQL knows only `FOR EACH ROW`).
+ * - `timing = INSTEAD_OF` (PostgreSQL-only; MySQL has no INSTEAD OF
+ *   triggers).
  *
- * `DROP TRIGGER` carries a bare trigger name — MySQL does **not**
+ * **`DROP TRIGGER` carries a bare trigger name** — MySQL does **not**
  * accept a `<table>.<name>` qualifier (that is a SQL syntax error
  * unique to MySQL; the `<schema>.<name>` form is the only allowed
- * qualifier and is reserved for a future schema-aware slice).
+ * qualifier and is reserved for a future schema-aware slice). DROP
+ * is rendered without `IF EXISTS`; diff-driven DROP only fires when
+ * the planner saw the trigger in `current`, so a missing trigger at
+ * apply-time is a real drift signal, not noise. An
+ * `--idempotent-drop`-style toggle is a future-slice carve-out.
+ *
+ * **Body sanitisation is out of scope.** The renderer treats the
+ * inline body as opaque SQL and does not validate or scrub it —
+ * SQL/control-construct rejection is the database engine's job. The
+ * reader pipeline (`MysqlRoutineReader` for live targets, the YAML
+ * schema codec for file targets) is the sole input-trust boundary;
+ * untrusted body content reaching the renderer is a pipeline bug.
+ * Operator-facing display reports go through `RoutineBodyScrubber`
+ * (E.1) on the way out — see `SchemaMigrateReportBuilder`.
  *
  * DEFINER rendering is out of scope: the neutral `TriggerDefinition`
  * model has no definer field. A future slice can thread definer
@@ -53,13 +68,13 @@ internal object MysqlTriggerDdlHelper {
     fun renderCreateTrigger(op: DiffOperation.CreateTrigger, ctx: MysqlDiffRenderContext) {
         when (ctx.direction) {
             MysqlRenderDirection.UP -> emitCreate(op, op.trigger, ctx)
-            MysqlRenderDirection.DOWN -> emitDrop(op, op.trigger, ctx)
+            MysqlRenderDirection.DOWN -> emitDrop(op, ctx)
         }
     }
 
     fun renderDropTrigger(op: DiffOperation.DropTrigger, ctx: MysqlDiffRenderContext) {
         when (ctx.direction) {
-            MysqlRenderDirection.UP -> emitDrop(op, op.trigger, ctx)
+            MysqlRenderDirection.UP -> emitDrop(op, ctx)
             MysqlRenderDirection.DOWN -> emitCreate(op, op.trigger, ctx)
         }
     }
@@ -101,18 +116,11 @@ internal object MysqlTriggerDdlHelper {
         ctx.emit(op, buildCreateSql(op.objectRef.rootName, trigger, ctx))
     }
 
-    private fun emitDrop(
-        op: DiffOperation,
-        trigger: TriggerDefinition,
-        ctx: MysqlDiffRenderContext,
-    ) {
-        // MySQL DROP TRIGGER takes a bare trigger name (optionally
-        // schema-qualified). `<table>.<name>` is a SQL error. The
-        // `trigger.table` field is informational at this point — used
-        // by the body validator and the renderer doc strings, but not
-        // part of the DROP statement.
-        @Suppress("UNUSED_VARIABLE")
-        val unused = trigger
+    private fun emitDrop(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        // MySQL DROP TRIGGER takes a bare trigger name. `<table>.<name>`
+        // is a SQL syntax error in MySQL; the only valid qualifier is
+        // `<schema>.<name>` and the neutral trigger model has no
+        // schema field today.
         ctx.emit(op, "DROP TRIGGER ${ctx.sql.quote(op.objectRef.rootName)};")
     }
 
@@ -122,19 +130,13 @@ internal object MysqlTriggerDdlHelper {
         ctx: MysqlDiffRenderContext,
     ) {
         if (!validateMysqlTrigger(op, target, ctx)) return
-        val before = if (ctx.direction == MysqlRenderDirection.UP) op.before else op.after
         val dropSql = "DROP TRIGGER ${ctx.sql.quote(op.objectRef.rootName)};"
         val createSql = buildCreateSql(op.objectRef.rootName, target, ctx)
         ctx.emit(op, dropSql)
         ctx.emit(op, createSql)
         // A.3 strict-mode guard: emit() short-circuits in strict mode
         // and routes the op into `skipped`. The trailing gap warning
-        // only makes sense for the lenient path. `before` is used by
-        // the original Plan-Doc rationale (visibility gap covers both
-        // the old and new trigger bodies) — referenced via `@Suppress`
-        // until a richer warning message threads it explicitly.
-        @Suppress("UNUSED_VARIABLE")
-        val unusedBefore = before
+        // only makes sense for the lenient path.
         if (!ctx.isSkipped(op)) {
             ctx.warning(
                 op,
@@ -158,6 +160,16 @@ internal object MysqlTriggerDdlHelper {
         trigger: TriggerDefinition,
         ctx: MysqlDiffRenderContext,
     ): Boolean {
+        if (trigger.timing == TriggerTiming.INSTEAD_OF) {
+            ctx.skip(
+                op,
+                "Trigger '${op.objectRef.rootName}' is declared `INSTEAD OF`. MySQL only supports " +
+                    "`BEFORE`/`AFTER` triggers; INSTEAD OF is PostgreSQL-only.",
+                code = "MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED",
+            )
+            ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+            return false
+        }
         if (!trigger.condition.isNullOrBlank()) {
             ctx.skip(
                 op,

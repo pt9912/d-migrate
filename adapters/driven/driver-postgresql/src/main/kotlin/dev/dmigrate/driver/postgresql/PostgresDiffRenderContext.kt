@@ -147,6 +147,15 @@ internal class PostgresDiffRenderContext(
         addDiagnostic(code, operationId, message, DiffDiagnostic.Severity.INFO)
     }
 
+    /**
+     * Annotate an op with a WARNING-level diagnostic. Mirrors
+     * `MysqlDiffRenderContext.warning(...)` so dialect helpers share
+     * one warning call site instead of three styles.
+     */
+    fun warning(op: DiffOperation, message: String, code: String) {
+        addDiagnostic(code = code, operationId = op.id, message = message, severity = DiffDiagnostic.Severity.WARNING)
+    }
+
     fun addDiagnostic(
         code: String,
         operationId: String,

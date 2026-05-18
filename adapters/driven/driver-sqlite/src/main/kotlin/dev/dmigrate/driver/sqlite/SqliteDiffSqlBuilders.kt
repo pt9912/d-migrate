@@ -102,14 +102,21 @@ internal class SqliteDiffSqlBuilders {
         val timing = trigger.timing.name
         val event = trigger.event.name
         val forEach = trigger.forEach.name
+        // E.2 review follow-up: deduplicate the trailing `;` — readers
+        // may or may not include it on the body, but the BEGIN..END
+        // wrapper always closes with `END;`. Without this normalisation
+        // a body ending in `;` produces `... NEW.id;\nEND;` (two
+        // terminators); both forms parse, but the deterministic form
+        // makes goldenness diffing reader-input-agnostic.
+        val normalisedBody = body.trimEnd().trimEnd(';').trimEnd()
         return buildString {
             append("CREATE TRIGGER ${quote(name)}\n")
             append("    $timing $event ON ${quote(trigger.table)}\n")
             append("    FOR EACH $forEach")
             if (trigger.condition != null) append("\n    WHEN ${trigger.condition}")
             append("\nBEGIN\n")
-            append(body)
-            append("\nEND;")
+            append(normalisedBody)
+            append(";\nEND;")
         }
     }
 

@@ -111,6 +111,20 @@ internal class SqliteDiffRenderContext(
     fun isSkipped(op: DiffOperation): Boolean = op.id in skipped
 
     /**
+     * Annotate an op with a WARNING-level diagnostic. Mirrors the
+     * `MysqlDiffRenderContext.warning(...)` convenience so dialect
+     * helpers can share the same call site.
+     */
+    fun warning(op: DiffOperation, message: String, code: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = op.id,
+        )
+    }
+
+    /**
      * Mark an operation as deferred to the future RebuildTable
      * pipeline (D.4.b). Does not emit DDL; surfaces a
      * `MANUAL_ACTION_REQUIRED` blocker referring to Plan §6.4.
