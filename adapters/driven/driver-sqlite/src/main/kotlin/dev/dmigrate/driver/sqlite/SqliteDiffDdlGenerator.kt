@@ -3,11 +3,14 @@ package dev.dmigrate.driver.sqlite
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
 /**
  * SQLite-flavoured renderer for the migration pipeline.
@@ -103,6 +106,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             }
             return
         }
+        if (blockExcludeConstraintsInRebuild(table, bucket, current, desired, ctx)) return
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             // Any NOT_REVERSIBLE op in the bucket (notably DropColumn — the
             // dropped data is gone) prevents the inverse-rebuild from
@@ -326,6 +330,61 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
     private fun markUnsupported(op: DiffOperation, ctx: SqliteDiffRenderContext) {
         ctx.skip(op, "Operation ${op::class.simpleName} is not in the first SQLite matrix.")
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+    }
+
+    /**
+     * F.5 Sub-Slice D: SQLite has no syntactic equivalent for an
+     * `EXCLUDE` constraint. A rebuild bucket that touches one — either
+     * by mutating it (Add/Drop EXCLUDE in the op list) or by carrying
+     * one through silently (EXCLUDE present in current or desired
+     * table, no op mentioning it) — would otherwise drop the
+     * constraint without notice because `constraintLine` returns null
+     * for EXCLUDE.
+     *
+     * The dispatcher blocks the entire bucket with
+     * `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` /
+     * `DIALECT_UNSUPPORTED_OPERATION` before invoking the rebuild
+     * renderer. Returns `true` when the bucket was blocked.
+     */
+    private fun blockExcludeConstraintsInRebuild(
+        table: String,
+        bucket: List<DiffOperation>,
+        current: TableDefinition,
+        desired: TableDefinition,
+        ctx: SqliteDiffRenderContext,
+    ): Boolean {
+        val opSources = bucket
+            .mapNotNull { op ->
+                when (op) {
+                    is DiffOperation.AddConstraint -> op.constraint.takeIf { it.type == ConstraintType.EXCLUDE }?.let { op to it }
+                    is DiffOperation.DropConstraint -> op.constraint.takeIf { it.type == ConstraintType.EXCLUDE }?.let { op to it }
+                    else -> null
+                }
+            }
+        val schemaExcludes = (current.constraints + desired.constraints)
+            .filter { it.type == ConstraintType.EXCLUDE }
+            .map { it.name }
+            .distinct()
+        if (opSources.isEmpty() && schemaExcludes.isEmpty()) return false
+
+        val message = buildString {
+            append("SQLite has no EXCLUDE constraint syntax (PostgreSQL-only feature); ")
+            append("the rebuild for `").append(table).append("` cannot preserve or apply it. ")
+            if (schemaExcludes.isNotEmpty()) {
+                append("Existing EXCLUDE constraint(s) on the table: ")
+                append(schemaExcludes.joinToString(", "))
+                append(". ")
+            }
+            append("Re-model the invariant via UNIQUE + CHECK, or move it into the application.")
+        }
+        for (op in bucket) {
+            ctx.skip(op, message, code = PlannerBlockerClassifier.EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE)
+        }
+        ctx.addBlocker(
+            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
+            operationIds = bucket.map { it.id }.toSet(),
+        )
+        return true
     }
 
     private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }

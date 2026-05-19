@@ -59,7 +59,25 @@ internal class SqliteDiffSqlBuilders {
             val refCols = ref.columns.joinToString(", ") { quote(it) }
             "CONSTRAINT ${quote(c.name)} FOREIGN KEY ($cols) REFERENCES ${quote(ref.table)}($refCols)"
         }
-        ConstraintType.CHECK, ConstraintType.EXCLUDE -> null
+        // F.5 Sub-Slice D (2026-05-19): SQLite has no in-place
+        // `ALTER TABLE ADD CONSTRAINT`, but a CHECK clause embedded in
+        // a CREATE TABLE is fully supported and evaluated at runtime.
+        // The rebuild pipeline runs `CREATE TABLE <temp>` with the
+        // target's constraint list inline; emitting the line here
+        // makes the rebuild carry the new/changed CHECK forward.
+        ConstraintType.CHECK -> {
+            val expression = c.expression?.takeIf { it.isNotBlank() } ?: return null
+            "CONSTRAINT ${quote(c.name)} CHECK ($expression)"
+        }
+        // EXCLUDE is a PostgreSQL-only feature; SQLite has no
+        // syntactic equivalent. The dispatcher (SqliteDiffDdlGenerator)
+        // blocks any constraint diff that touches EXCLUDE with
+        // `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` before the rebuild kicks
+        // in, so this branch should never be reached at runtime.
+        // Returning null keeps the builder honest and gives the
+        // rebuild renderer a defensive skip if a regression slips
+        // an EXCLUDE through.
+        ConstraintType.EXCLUDE -> null
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {

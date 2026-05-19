@@ -479,16 +479,37 @@ Default-Fallback `DIALECT_UNSUPPORTED_OPERATION` bleibt.
     CHECK-ADD-Up + Down-Pfade pinnen das Round-Trip;
     EXCLUDE-ADD blockt auf jeder Server-Version inkl. null.
 
-### Sub-Slice D — SQLite Renderer (Rebuild-Pipeline)
+### Sub-Slice D — SQLite Renderer (Rebuild-Pipeline) ✅ (2026-05-19)
 
-- `SqliteRebuildPlanner.classify` erweitert: CHECK-Aenderungen
-  triggern Tabellen-Rebuild (CHECK gehoert zur Tabellen-Schema-
-  Definition, ist nicht via ALTER TABLE aenderbar).
-- `SqliteRebuildRenderer` emittiert die rebuilt-Table mit neuer
-  CHECK-Liste.
-- EXCLUDE blockt mit `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`.
-- Tests: SQLite-CHECK-Add ueber Rebuild; CHECK-Drop ueber Rebuild;
-  CHECK-Replace ueber Rebuild.
+- `SqliteRebuildPlanner.classify` braucht keine Erweiterung:
+  `Add/DropConstraint` waren bereits sowohl Rebuild-Trigger als
+  auch durch den Rebuild absorbiert. CHECK-Diffs fliessen damit
+  automatisch durch die rebuild-Pipeline.
+- `SqliteDiffSqlBuilders.constraintLine` rendert CHECK inline als
+  `CONSTRAINT n CHECK (expr)` — der bestehende Rebuild-Renderer
+  iteriert `target.constraints` und nimmt das CHECK-Line so ohne
+  weitere Anpassung mit. EXCLUDE bleibt `null` (kein SQLite-
+  Pendant).
+- `SqliteDiffDdlGenerator.renderRebuildBucket` blockt eine
+  Rebuild-Bucket konservativ, wenn (a) ein `Add/DropConstraint`-Op
+  vom Typ `EXCLUDE` vorliegt ODER (b) die `current`- oder
+  `desired`-Tabelle bereits ein `EXCLUDE` traegt (sonst wuerde der
+  Rebuild es stillschweigend droppen). Code:
+  `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`, Reason:
+  `DIALECT_UNSUPPORTED_OPERATION`; keine SQL emittiert.
+- Tests (`SqliteDiffDdlGeneratorCheckExcludeTest`, eigene Datei wegen
+  Detekt-LargeClass) pinnen:
+  - CHECK-Add → CREATE temp enthaelt CHECK-Klausel inline.
+  - CHECK-Drop → CREATE temp ohne CHECK-Klausel.
+  - CHECK-Replace (gleicher Name, neue Expression) → nur die neue
+    Expression im CREATE temp.
+  - Column-Reshape auf Tabelle MIT CHECK → CHECK ueberlebt den
+    Rebuild.
+  - Down-Pfad (AddConstraint reversed) → CREATE temp ohne CHECK.
+  - EXCLUDE-Add / -Drop → keine SQL, Blocker
+    `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` + `DIALECT_UNSUPPORTED_OPERATION`.
+  - Schema-Level-EXCLUDE plus unrelated Column-Reshape → ebenfalls
+    geblockt, Diagnose nennt den EXCLUDE-Namen.
 
 ### Sub-Slice E — Daten-Preflight (Cross-Dialect)
 
