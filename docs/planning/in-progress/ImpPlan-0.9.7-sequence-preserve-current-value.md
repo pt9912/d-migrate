@@ -95,7 +95,7 @@ Roadmap §E Rest listet explizit:
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype:
-  `AlterSequenceCurrentValue(probeSequenceRef, applySequenceRef, currentValue, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?, revertAfterRename: Boolean = false)`
+  `AlterSequenceCurrentValue(pairId, probeSequenceRef, applySequenceRef, currentValue, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?, rollbackImpossible: Boolean = false, rollbackImpossibleReason: String? = null, revertAfterRename: Boolean = false)`
   (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
 - Erweiterung: Für Reversibility wird zusätzlich ein optionales
   `restoreIsCalled: Boolean?` vorgesehen.
@@ -220,6 +220,7 @@ data class SequencePreserveContext(
     val sequenceOp: DiffOperation, // AlterSequence | CreateSequence | RenameSequence
     val probeSequenceRef: SequenceObjectRef,
     val applySequenceRef: SequenceObjectRef,
+    val pairId: String,
 )
 
 val preserveSequenceOps = plan.operations
@@ -237,6 +238,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                 sequenceOp = op,
                 probeSequenceRef = op.objectRef,
                 applySequenceRef = op.objectRef,
+                pairId = "alter:${op.objectRef}",
             )
             is DiffOperation.CreateSequence -> {
                 if (!shouldProbeCreateSequence(op)) {
@@ -247,6 +249,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                         sequenceOp = op,
                         probeSequenceRef = op.sequenceRef,
                         applySequenceRef = op.sequenceRef,
+                        pairId = "create:${op.sequenceRef}",
                     )
                 }
             }
@@ -254,6 +257,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                 sequenceOp = op,
                 probeSequenceRef = op.fromRef,
                 applySequenceRef = op.toRef,
+                pairId = "rename:${op.fromRef}->${op.toRef}",
             )
             else -> throw IllegalArgumentException("unexpected sequence operation type")
         }
@@ -286,16 +290,17 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
         }
 
         fun isManagedDmgSequenceProbeResult(result: SequenceCurrentValueProbeResult.Read): Boolean {
-            // true, wenn Dialekt-spezifische Konventionen (managedBy/formatVersion) passen.
+            // Probe und Renderer müssen exakt dieselbe Resolverfunktion und dieselben
+            // Validierungsregeln gegen managedBy/formatVersion nutzen.
             return result.managedBy != null
                 && result.formatVersion != null
                 && result.managedBy in mysqlExpectedManagedBy
                 && result.formatVersion in mysqlExpectedFormatVersions
         }
 
-        fun markRollbackNotPossibleForDown(op: DiffOperation) {
-            // Implementation detail: Follow-up-Operation als nicht reversibel
-            // markieren (e.g. reversibility metadata on the emitted op).
+        fun buildRollbackImpossibleReason(reason: String): String {
+            // Follow-up-Operation als nicht reversibel markieren.
+            return reason
         }
 
 for (ctx in sequencesNeedingPreservation) {
@@ -336,18 +341,30 @@ for (ctx in sequencesNeedingPreservation) {
                 }
                 else -> null
             }
+            val restoreValueHint = determineRestoreValueHint(op)
             val restoreIsCalledHint = determineRestoreIsCalledHint(op)
-            if (ctx.probeSequenceRef.dialect == Dialect.POSTGRES && restoreIsCalledHint == null) {
-                markRollbackNotPossibleForDown(op)
+            val isRollbackPossible = restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRES || restoreIsCalledHint != null)
+            val rollbackNotPossible = if (isRollbackPossible) {
+                null
+            } else {
+                val reason = if (restoreValueHint == null) {
+                    "deterministic restore snapshot unavailable"
+                } else {
+                    "PG restore_is_called missing"
+                }
+                buildRollbackImpossibleReason(reason)
             }
             emitFollowupAlterSequenceCurrentValue(
                 op,
+                pairId = ctx.pairId,
                 probeSequenceRef = ctx.probeSequenceRef,
                 applySequenceRef = ctx.applySequenceRef,
                 currentValue = readResult.value,
                 isCalled = isCalled,
-                restoreValue = determineRestoreValueHint(op),
+                restoreValue = restoreValueHint,
                 restoreIsCalled = restoreIsCalledHint,
+                rollbackImpossible = !isRollbackPossible,
+                rollbackImpossibleReason = rollbackNotPossible,
                 revertAfterRename = op is DiffOperation.RenameSequence,
                 insertAfter = true,
             )
@@ -408,7 +425,7 @@ vergleichbarer Down-Emitter-Ordering-Block schreiben einen festen Reihenfolgen-C
 
 Implementierungs-Constraint:
 - Jede `AlterSequenceCurrentValue`-Down-Op mit `revertAfterRename = true` MUSS in der
-  Down-Emission nach der passenden `RenameSequence`-Down-Op mit derselben `probeSequenceRef`
+  Down-Emission nach der passenden `RenameSequence`-Down-Op mit derselben `pairId`
   ausgegeben werden.
 - Bei Gruppen-Bildung im Sortierer ist ein lokaler Ordering-Key verpflichtend:
   `(pairId, step)` mit `step = RenameDown (0)`, `AlterSequenceCurrentValue-Down (1)`.
@@ -421,9 +438,10 @@ konzeptionell ein explizit dokumentierter nicht unterstützter Down-Pfad.
 ### 5.3 Operation-Modell
 
 Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
-`probeSequenceRef`, `applySequenceRef`, `currentValue`, optionalem `isCalled`,
-optionalem `restoreValue`, optionalem `revertAfterRename`
-und optionalem `restoreIsCalled` (für PG muss Down zwingend einen
+`pairId`, `probeSequenceRef`, `applySequenceRef`, `currentValue`, optionalem `isCalled`,
+`restoreValue`, optionalem `restoreIsCalled`, optionalem `revertAfterRename`
+und Reversibility-Metadaten `rollbackImpossible`, optionaler `rollbackImpossibleReason`
+(`pairId` dient zur Rename-Down-Kopplung; für PG muss Down zwingend einen
 non-null `restoreIsCalled` liefern),
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 
@@ -496,8 +514,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] Bei `RenameSequence` mit `revertAfterRename = true` ist die Down-Reihenfolge
       durchgängig fest: Rename-Rückoperation (`RenameSequence` down) **vor** der
       `AlterSequenceCurrentValue`-Restore-Operation.
-      Eine Down-Assertion muss den Sortierindex des Rename-Downs deterministisch
-      vor dem zugehörigen Restore nachweisen.
+      Die Reihenfolge ist über denselben `pairId` nachweisbar und wird in der
+      Assertion deterministisch geprüft.
 - [ ] MySQL-Prüfung/Restore nutzt `mysqlExpectedFormatVersions` aus der
       Emulations-Definition (nicht einen einzelnen hartkodierten Wert im
       Renderer/Planner), und `format_version` wird über diese Menge evaluiert.
