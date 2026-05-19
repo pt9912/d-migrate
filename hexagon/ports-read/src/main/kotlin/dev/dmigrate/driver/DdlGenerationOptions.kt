@@ -66,6 +66,22 @@ data class DdlGenerationOptions(
      */
     val sqliteCastPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
     /**
+     * F.5 Sub-Slice E: declarations for live-data CHECK preflights.
+     * Populated by `schema migrate --execute` (after DiffPlanning,
+     * before rendering) by running read-only count probes
+     * (`SELECT count(*) FROM <table> WHERE NOT (<expression>)`)
+     * against the live DB target. The dialect renderers refuse to
+     * emit an `AddConstraint(CHECK)` when the matching declaration
+     * (matched by [CheckPreflightDeclaration.bindingKey]) reports
+     * status FAILED or PROBE_RUNTIME_ERROR.
+     *
+     * File-only / plan-only / non-CHECK paths leave this empty; the
+     * renderer renders natively and the report carries the
+     * `NOT_RUN_FILE_TARGET` declaration so the operator knows no
+     * live verification happened.
+     */
+    val checkPreflights: List<CheckPreflightDeclaration> = emptyList(),
+    /**
      * Plan-2 §A.2: which input fed the SQLite-rebuild temp-name
      * collision catalog. `SCHEMA_ONLY` (the default) covers
      * file-to-file, plan-only, non-SQLite, and SQLite-with-execute

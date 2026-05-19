@@ -513,19 +513,66 @@ Default-Fallback `DIALECT_UNSUPPORTED_OPERATION` bleibt.
 
 ### Sub-Slice E — Daten-Preflight (Cross-Dialect)
 
-- `CheckPreflightProbe`-Interface in `hexagon:ports-read`
+Geschnitten in zwei Stufen:
+
+#### E.1 + E.2 — Ports + dialektneutraler Planner ✅ (2026-05-19)
+
+- `CheckPreflightDeclaration` (Datenklasse mit
+  `operationId`/`dialect`/`table`/`constraintName`/`expression`/
+  `status`/`sqlHash`/`totalRows`/`failingRows`/`sampleRowIds`/`problem`)
+  plus `CheckPreflightStatus`-Enum
+  (`PASSED`/`FAILED`/`NOT_RUN_FILE_TARGET`/`NOT_RUN_POLICY`/
+  `PROBE_RUNTIME_ERROR`) in `hexagon:ports-read`. Binding-Key via
+  `` als Separator (kollidiert nicht mit SQL-Identifier-
+  Zeichen). Struktur spiegelt `SqliteCastPreflightDeclaration`.
+- `DdlGenerationOptions.checkPreflights: List<CheckPreflightDeclaration>`
+  als neues Feld (default `emptyList()`). Renderer der drei Dialekte
+  konsumieren es ab Sub-Slice E.4.
+- `CheckPreflightPlanner` (in `hexagon:core`,
+  `dev.dmigrate.core.diff.migration`) konvertiert jede
+  `AddConstraint(CHECK)`-Op eines `DiffResult` in eine
+  `PlannedCheckPreflight`-Vorlage; baut die Probe-SQL
+  (`SELECT count(*) FROM <table> WHERE NOT (<expression>)`) via
+  injizierten `identifierQuoter`, hashed sie deterministisch via
+  `sha256Hex`. Skips:
+  - `DropConstraint(CHECK)` — Drop verletzt nie bestehende Daten.
+  - `AddConstraint(UNIQUE/FOREIGN_KEY/EXCLUDE)` — andere Gates.
+  - Blank-Expression — Renderer routet sowieso auf
+    `DIALECT_UNSUPPORTED_OPERATION`.
+  - Application-Layer-Status-Mapping liegt bewusst beim
+    Pipeline-Wiring (Sub-Slice E.5), damit `hexagon:core` frei von
+    `ports-read` bleibt — `InitialStatus`-Enum hier ist auf
+    `NOT_RUN_FILE_TARGET` und `NOT_RUN_POLICY` reduziert.
+- Tests: `CheckPreflightDeclarationTest` (ports-read) pinnt
+  Binding-Key-Determinismus + Status-Range + Default-Wert auf
+  `DdlGenerationOptions`. `CheckPreflightPlannerTest` (core) pinnt
+  Op-Selektion (Skips fuer Drop/UNIQUE/FK/EXCLUDE/blank-Expression),
+  Probe-SQL-Format, Hash-Determinismus und
+  `initialStatus`-Durchreichung.
+
+#### E.3+ — Per-Dialekt-Probes + Renderer-Gates + Pipeline (offen)
+
+- `PostgresCheckPreflightProbe`, `MysqlCheckPreflightProbe`,
+  `SqliteCheckPreflightProbe` in den jeweiligen Driver-Adaptern
   (analog zu `SqliteCastPreflightProbe`).
-- Per-Dialekt-Implementierung (`PostgresCheckPreflightProbe`,
-  `MysqlCheckPreflightProbe`, `SqliteCheckPreflightProbe`).
-- `SchemaMigrateRunner` integriert den Preflight zwischen Render
-  und Execute (analog zu Cast-Preflight in der
-  `MigrationPreflightPlanner`-Pipeline).
-- Datei-zu-Datei: Preflight nicht erreichbar → Operation bleibt
-  `MANUAL_ACTION_REQUIRED`.
+- `PostgresDiffOtherOps.renderAddConstraint` /
+  `MysqlDiffOtherOps.renderAddConstraint` /
+  `SqliteDiffDdlGenerator.renderRebuildBucket` konsultieren
+  `options.checkPreflights` per Binding-Key und blocken bei
+  `FAILED` (Code `CHECK_PREFLIGHT_VIOLATIONS`,
+  Reason `MANUAL_ACTION_REQUIRED`) bzw. bei
+  `PROBE_RUNTIME_ERROR` (Code `CHECK_PREFLIGHT_RUNTIME_ERROR`,
+  Reason `MANUAL_ACTION_REQUIRED`). `NOT_RUN_*` lassen das Rendern
+  durchlaufen; der Report deklariert den Status.
+- `SchemaMigrateRenderPipeline.buildRenderOptions` + neue
+  `CheckPreflightStage`-Klasse parallel zu
+  `SqliteCastPreflightStage`. `MigrationPreflightPlanner` baut
+  eine `MigrationPreflightPlan`-Erweiterung; Report-Builder ergaenzt
+  einen `checkPreflights`-View. CLI-Wiring entsprechend.
 - Tests: PASSED-Pfad pro Dialekt; FAILED-Pfad pro Dialekt mit
   `CHECK_PREFLIGHT_VIOLATIONS` Blocker; `--execute`-Required-Pfad
-  pin; PLUS TECHNISCHER EXECUTION-FAILURE-Pfad mit
-  `CHECK_PREFLIGHT_RUNTIME_ERROR`.
+  pin; technischer Probe-Fehler-Pfad mit
+  `CHECK_PREFLIGHT_RUNTIME_ERROR` inkl. `problem`-Text im Report.
 
 ### Sub-Slice F — Reversibility + Replace-Vertrag
 
