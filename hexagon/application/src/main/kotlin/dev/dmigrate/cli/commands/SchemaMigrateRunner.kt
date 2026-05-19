@@ -204,6 +204,17 @@ class SchemaMigrateRunner(
             render.catalogProbeMode,
             overlayPreflight.reportItems,
         )
+        // F.4 Sub-Slice G.2: when `--plan-artefact` is set, emit the
+        // signed `migration-plan.v1` JSON alongside the regular
+        // report / SQL artefacts. The artefact captures the plan +
+        // rendered statements; a write failure routes through
+        // emitReportAndExit with exit 7 like other local I/O errors.
+        val planArtefactExit = maybeWritePlanArtefact(request, plan, withExecution, prepared.effectiveDialect)
+        if (planArtefactExit != null) {
+            return artefactSink.emitReportAndExit(
+                request, report, rollbackFinalized = null, baseExit = planArtefactExit,
+            )
+        }
         val rollbackArtefact = rollbackComposer.maybeBuildRollback(
             request, render.executableCombined, render.renderedDown,
             executionTrace, postCompareOutcome, plan, prepared.effectiveDialect,
@@ -345,6 +356,37 @@ class SchemaMigrateRunner(
         }
     }
 
+    /**
+     * F.4 Sub-Slice G.2 producer-side wiring. Returns `null` when the
+     * artefact path is not requested or the write succeeded; returns
+     * `7` when the artefact build / write failed so the caller can
+     * route through [SchemaMigrateArtefactSink.emitReportAndExit].
+     *
+     * The artefact reflects the plan + render state at this point in
+     * the pipeline; it does NOT capture execution outcomes (those
+     * land in the migrate report's `execution` view instead). Emitting
+     * the artefact before the rollback compose / finalize branches
+     * means it is available even on Exit 8 (blocker) or `--plan-only`
+     * paths — downstream tooling can read the plan contract without
+     * waiting for a successful Up-DDL execution.
+     */
+    private fun maybeWritePlanArtefact(
+        request: SchemaMigrateRequest,
+        plan: DiffResult,
+        rendered: MigrationDdlResult,
+        dialect: DatabaseDialect,
+    ): Int? {
+        val path = request.planArtefact ?: return null
+        val artifact = MigrationPlanArtifactBuilder.build(
+            plan = plan,
+            rendered = rendered,
+            dialect = dialect,
+            clock = clock,
+            dMigrateVersion = createdByVersion,
+        )
+        return artefactSink.writePlanArtefact(path, artifact)
+    }
+
     private fun finalizeRollbackArtefact(
         request: SchemaMigrateRequest,
         rollbackArtefact: String?,
@@ -397,6 +439,17 @@ data class SchemaMigrateRequest(
     val output: Path? = null,
     val report: Path? = null,
     val rollbackOutput: Path? = null,
+    /**
+     * F.4 Sub-Slice G.2 (2026-05-19): optional output path for the
+     * signed `migration-plan.v1` artifact. When set, the runner
+     * builds a [dev.dmigrate.core.diff.migration.artifact.MigrationPlanArtifact]
+     * via [MigrationPlanArtifactBuilder] and writes its canonical
+     * JSON form atomically to this path, alongside the regular
+     * report / up-SQL / rollback artefacts. The artifact contract is
+     * defined in `hexagon:core/diff/migration/artifact/`; this field
+     * only controls *whether* the runner emits the file at all.
+     */
+    val planArtefact: Path? = null,
     val reportFormat: String = "json",
     val planOnly: Boolean = false,
     val allowDestructive: Boolean = false,

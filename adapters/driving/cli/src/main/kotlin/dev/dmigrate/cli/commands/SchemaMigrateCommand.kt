@@ -47,6 +47,13 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
     val output by option("--output", help = "Up-SQL output file").path()
     val rollbackOutput by option("--rollback-output", help = "Down-SQL output file").path()
     val report by option("--report", help = "Report output file (required with --execute)").path()
+    val planArtefact by option(
+        "--plan-artefact",
+        help = "Signed migration-plan.v1 artefact output path (canonical JSON; emitted alongside " +
+            "--report). The artefact captures operations, diagnostics, reversibility, rendered " +
+            "statement hashes and the F.4 rename-projection contract under the rename-projections.v1 " +
+            "semantic-extension gate.",
+    ).path()
     val reportFormat by option("--report-format", help = "Report format")
         .choice("json", "yaml").default("json")
     val planOnly by option("--plan-only", help = "Only render the plan / report; no SQL output").flag()
@@ -113,6 +120,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             output = output,
             report = report,
             rollbackOutput = rollbackOutput,
+            planArtefact = planArtefact,
             reportFormat = reportFormat,
             planOnly = planOnly,
             allowDestructive = allowDestructive,

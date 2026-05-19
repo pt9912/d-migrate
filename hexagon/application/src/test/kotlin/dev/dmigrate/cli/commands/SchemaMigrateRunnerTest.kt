@@ -19,6 +19,7 @@ import dev.dmigrate.driver.migration.MigrationDdlStatement
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
@@ -440,6 +441,36 @@ class SchemaMigrateRunnerTest : FunSpec({
         )
         runner.execute(request) shouldBe 0
         capture["wrote:$reportPath"] shouldContain "\"status\":\"ok\""
+    }
+
+    test("--plan-artefact writes a signed migration-plan.v1 JSON to the requested path") {
+        val (runner, capture) = captureRunner()
+        val planPath = tmpDir.resolve("plan.json")
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+            planArtefact = planPath,
+        )
+        runner.execute(request) shouldBe 0
+        val artefactJson = capture["wrote:$planPath"]
+        artefactJson shouldNotBe null
+        // formatVersion gate
+        artefactJson!! shouldContain "\"formatVersion\": \"migration-plan.v1\""
+        // Dialect normalised to lowercase
+        artefactJson shouldContain "\"dialect\": \"postgresql\""
+        // Signed: artefactHash present and non-empty
+        artefactJson shouldContain "\"artifactHash\":"
+        // The CreateTable op from `schemaWithTable("orders")` shows up
+        // under `operations` with kind CreateTable.
+        artefactJson shouldContain "\"kind\": \"CreateTable\""
+        artefactJson shouldContain "\"objectType\": \"TABLE\""
+        // The rendered statement from `fakeRendered()` shows up under
+        // renderedStatements with a stable stmt-1 id and the canonical
+        // RUNNER_OWNED transaction-scope name.
+        artefactJson shouldContain "\"statementId\": \"stmt-1\""
+        artefactJson shouldContain "\"transactionScope\": \"RUNNER_OWNED\""
     }
 
     test("output path that collides with source/target is rejected exit 2") {

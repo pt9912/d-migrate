@@ -1231,19 +1231,32 @@ Akzeptanz fuer E:
 
 DoD:
 
-- [ ] Workstream G ist abgeschlossen, bevor Routine- oder Trigger-Bodies
-  gerendert werden.
-- [ ] Routine-, Trigger- und Sequence-Zustaende sind im neutralen Modell oder
+- [x] Workstream G ist abgeschlossen, bevor Routine- oder Trigger-Bodies
+  gerendert werden. *(G.1-G.3 ✅ 0.9.7; transactionScope-Carrier, strukturierte
+  Statement-Serialisierung, Execution-Status alle live.)*
+- [x] Routine-, Trigger- und Sequence-Zustaende sind im neutralen Modell oder
   in einem dialektspezifisch begrenzten Vertrag beschrieben.
-- [ ] Body-Vergleich und Body-Speicherung sind deterministisch und
-  secret-scrubbed.
-- [ ] Down-Erzeugung fuer Replace-Operationen erfordert vollstaendig bekannten
-  Altzustand.
-- [ ] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
-  Sequences ab.
-- [ ] SQLite-Rebuild-Interaktion fuer Trigger bleibt mit Phase H abgestimmt.
-- [ ] Jede freigeschaltete Objektklasse hat Positiv-, Blocker- und
-  Rollback-Tests.
+  *(`FunctionDefinition`/`ProcedureDefinition`/`TriggerDefinition`/`SequenceDefinition`
+  in `hexagon:core/model`; MySQL/SQLite-Sequence-Carve-out via
+  `ObjectRenamePolicy.Blocked` + E.3-Plan-Doc.)*
+- [x] Body-Vergleich und Body-Speicherung sind deterministisch und
+  secret-scrubbed. *(`RoutineBodyNormalizer.hash` + `RoutineBodyScrubber.preview`
+  ueber alle Routine-/Trigger-/View-Bodies; E.1 Slice F.2.)*
+- [x] Down-Erzeugung fuer Replace-Operationen erfordert vollstaendig bekannten
+  Altzustand. *(PG/MySQL Replace-Function/-Procedure/-Trigger blocken mit
+  `ROUTINE_DOWN_BODY_UNKNOWN` wenn der Altbody fehlt; Plan-2 §E.1 Slice C.1.b.)*
+- [x] Dependency-Sortierung deckt Tabellen, Views, Routinen, Trigger und
+  Sequences ab. *(E.1 Slice D.1-D.4 Manifest- + Engine-Edges; F.4 Sub-Slice D
+  `RenameSequence` als Sequence-Provider; SQLite-Rebuild-Pipeline absorbiert
+  Trigger via `SqliteRebuildPlanner.classify`.)*
+- [x] SQLite-Rebuild-Interaktion fuer Trigger bleibt mit Phase H abgestimmt.
+  *(E.2 Sub-Slice C reused `SqliteRebuildPlanner`'s trigger-on-rebuild-table
+  filter; Renderer hat keine eigene Filterlogik.)*
+- [x] Jede freigeschaltete Objektklasse hat Positiv-, Blocker- und
+  Rollback-Tests. *(Tabellen/Spalten/Views/Trigger ueber alle drei Dialekte;
+  Routinen PG/MySQL freigeschaltet, SQLite Blocker-Test; Sequences PG
+  freigeschaltet, MySQL/SQLite Blocker-Test. Status 2026-05-19 nach F.4
+  Vollscheibe.)*
 
 ---
 

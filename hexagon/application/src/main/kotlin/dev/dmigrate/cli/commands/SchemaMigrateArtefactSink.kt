@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.diff.migration.artifact.MigrationPlanArtifact
+import dev.dmigrate.core.diff.migration.artifact.MigrationPlanArtifactCanonicalJson
 import dev.dmigrate.core.diff.routine.RoutineBodyScrubber
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -148,6 +150,22 @@ internal class SchemaMigrateArtefactSink(
     } catch (e: Exception) {
         printError("Failed to write report: ${e.message}", path.toString())
         null
+    }
+
+    /**
+     * F.4 Sub-Slice G.2: atomically write the signed
+     * `migration-plan.v1` artifact's canonical JSON to [path].
+     * Returns `null` on success or `7` so the runner can route the
+     * failure through [emitReportAndExit] with the standard local-I/O
+     * exit code, matching [writeOrEchoUpSql] / [writeReport] semantics.
+     */
+    fun writePlanArtefact(path: Path, artifact: MigrationPlanArtifact): Int? = try {
+        ensureParentDirectories(path)
+        atomicWriter(path, MigrationPlanArtifactCanonicalJson.encode(artifact))
+        null
+    } catch (e: Exception) {
+        printError("Failed to write plan artefact: ${e.message}", path.toString())
+        7
     }
 
     /**
