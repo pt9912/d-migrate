@@ -61,8 +61,9 @@ Roadmap §E Rest listet explizit:
 ### 3.1 In-Scope
 
 - Neues optionales Feld `preserveCurrentValue: Boolean = false`
-  auf `SequenceDefinition` *(oder als separater Operator-Flag
-  am `schema migrate`-Kommando; Decision in Sub-Slice A)*.
+  auf `SequenceDefinition` als primäre Steuerung.
+- Kein neuer globaler CLI-Flag in dieser Tranche; `preserveCurrentValue`
+  wird vollständig über das Schema gesteuert.
 - Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read`
   mit dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
@@ -73,8 +74,7 @@ Roadmap §E Rest listet explizit:
     blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
     der SQLite-Plan landet.
 - Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?)`
-  *(oder Re-Use bestehender `AlterSequence` mit zusaetzlichem
-  `currentValue`-/`isCalled`-Feld; Decision in Sub-Slice A)*.
+  (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
 - Renderer-Pfade pro Dialekt:
   - **PG**: `SELECT setval('<sequence_name>', <value>, <is_called>)`
     als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
@@ -95,11 +95,8 @@ Roadmap §E Rest listet explizit:
     `MANUAL_ACTION_REQUIRED`.
 - F.5-Carve-out-Pattern wiederverwendet (Probe → Pipeline →
   Blocker-bei-Failure).
-- CLI-Surface: vermutlich kein neuer Flag — die
-  `preserveCurrentValue`-Eigenschaft sitzt auf
-  `SequenceDefinition` und wird vom Schema-File gesteuert.
-  Alternative: globaler `--preserve-sequence-values`-Flag
-  als opt-in fuer alle Sequenzen (Decision in Sub-Slice A).
+- Kein CLI-Override in dieser Tranche. Die Tranche arbeitet nur mit
+  `SequenceDefinition.preserveCurrentValue` (deterministische Steuerung).
 - Reversibility: `AlterSequenceCurrentValue` Down setzt den
   Wert auf den im Plan enthaltenen `restoreValue` zurück, sofern
   bekannt.
@@ -107,7 +104,10 @@ Roadmap §E Rest listet explizit:
   pre-existing Sequence-Snapshot oder konkurrierende `nextval`-Calls),
   resultiert Down in `ROLLBACK_NOT_POSSIBLE`.
   Diese `restoreValue` wird als `restoreValueHint` auf der Follow-up-Operation
-  geführt, sofern der Planner einen sinnvollen Ausgangswert bestimmen kann.
+  geführt. Der Planer setzt den Hint deterministisch, wenn der
+  Ausgangswert aus einem pre-existing target-snapshot ableitbar ist.
+  Bei neu angelegten Zielen bleibt der Hint `null` und Down wird als
+  `ROLLBACK_NOT_POSSIBLE` markiert.
 
 ### 3.2 Out-of-Scope
 
@@ -146,7 +146,7 @@ Roadmap §E Rest listet explizit:
 ```kotlin
 // hexagon:ports-read
 interface SequenceCurrentValueProbe {
-    fun probe(connection: JdbcOperations, sequenceName: String): SequenceCurrentValueProbeResult
+    fun probe(connection: JdbcOperations, sequenceName: String, dialect: Dialect): SequenceCurrentValueProbeResult
 }
 
 sealed class SequenceCurrentValueProbeResult {
@@ -169,8 +169,11 @@ val sequencesNeedingPreservation = plan.operations
     .filter { it.sequence.preserveCurrentValue }
 
 for (op in sequencesNeedingPreservation) {
-    val sequenceDbName = renderSequenceDbIdentifier(op.objectRef)
-    val result = probe.probe(connection, sequenceDbName)
+    val probeSequenceName = when (op.objectRef.dialect) {
+        Dialect.POSTGRES -> renderSequenceDbIdentifier(op.objectRef)
+        else -> op.sequence.name
+    }
+    val result = probe.probe(connection, probeSequenceName, op.objectRef.dialect)
     when (result) {
         is Read -> {
             val isCalled = when (op.objectRef.dialect) {
@@ -197,16 +200,15 @@ for (op in sequencesNeedingPreservation) {
 }
 ```
 
-// renderSequenceDbIdentifier liefert den schematisch-quotierten DB-Identifikator
-// (z. B. "public.my_seq"), nicht nur den rohen rootName.
+// renderSequenceDbIdentifier liefert nur für PG den schematisch-quotierten
+// DB-Identifikator (z. B. "public.my_seq"). Für MySQL/SQLite-Emulation wird der
+// unqualifizierte Sequenzname benötigt (z. B. "my_seq").
 
 ### 5.3 Operation-Modell
 
-Decision: re-use `AlterSequence` mit optionalem `currentValue`/
-`isCalled`-Feld oder neuer Subtyp `AlterSequenceCurrentValue`.
-Empfehlung: neuer Subtyp mit `currentValue`, optionalem `isCalled`
-und optionalem `restoreValue`, weil der Render-Pfad fundamental anders
-ist (Daten-Statement statt DDL).
+Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
+`currentValue`, optionalem `isCalled` und optionalem `restoreValue`,
+weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 
 ### 5.4 Dialekt-Render-Matrix
 
@@ -222,11 +224,11 @@ ist (Daten-Statement statt DDL).
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + Operation-Subtyp-Decision |
+| A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
 | B | PG-Probe + PG-Renderer fuer `setval` |
 | C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` |
 | D | Pipeline-Integration in `SchemaMigrateRunner` (probe → emit) |
-| E | Datei-zu-Datei-Blocker + CLI-Spec-Doku + Closing |
+| E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 
@@ -234,8 +236,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `SequenceDefinition.preserveCurrentValue` (oder
-      equivalent Flag) ist im Schema-Modell.
+- [ ] `SequenceDefinition.preserveCurrentValue` ist im Schema-Modell
+      definiert und ist die einzige Schaltstelle für diese Tranche.
 - [ ] PG-Probe liest `last_value`; PG-Renderer emittiert
       `SELECT setval('<seq>', <value>, <isCalled>)` mit korrekt
       propagiertem `isCalled`.
@@ -251,6 +253,9 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       Plan gespeicherten `restoreValue` und setzt damit den
       vor-Up-Wert wieder zurueck; fehlt der Wert, wird
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
+- [ ] `restoreValueHint` ist genau in den Fällen gesetzt, in denen ein
+      deterministischer Ausgangswert bekannt ist; für die übrigen Fälle
+      ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] Pro Dialekt mindestens je ein Positiv- und ein
       Blocker-Test.
 
@@ -263,7 +268,7 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] **Neue Diagnostics**: `SEQUENCE_PRESERVE_PROBE_FAILED`,
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`,
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`. Alle drei
-      mappen ueber `PlannerBlockerClassifier` (siehe §3.1) auf
+      mappen ueber `PlannerBlockerClassifier` auf
       `MANUAL_ACTION_REQUIRED` bzw.
       `DIALECT_UNSUPPORTED_OPERATION`.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
