@@ -77,11 +77,11 @@ Roadmap §E Rest listet explizit:
     Neu-Erzeugung ohne Vorzustand erzeugt keinen Preserve-Follow-up.
     Ohne deterministischen Vorzustand ist der Down-Pfad explizit als
     `ROLLBACK_NOT_POSSIBLE` zu markieren.
-- Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read`
-  mit dialect-spezifischer Implementierung:
+- Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read` mit
+  dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
-    WHERE name = <sequence_name>` (`next_value` ist der nächste von
+    WHERE name = <escaped_sequence_name>` (`next_value` ist der nächste von
     `nextval` gelieferte Wert). `managed_by` und `format_version` werden
     verwendet, um sicherzustellen, dass die Reihe aus der d-migrate-
     Sequence-Emulation stammt.
@@ -97,7 +97,7 @@ Roadmap §E Rest listet explizit:
     als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
     übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
-    WHERE name = <sequence_name>` (kein +1).
+    WHERE name = <escaped_sequence_name>` (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
   `SchemaMigrateRenderPipeline` (`CheckPreflight` + `MigrationPreflightPlanner`):
@@ -210,35 +210,53 @@ val preserveSequenceOps = plan.operations
     .filter { it is DiffOperation.AlterSequence || it is DiffOperation.CreateSequence || it is DiffOperation.RenameSequence }
     .filter { it.shouldPreserveCurrentValue() }
 
-val preserveSequenceCandidates = preserveSequenceOps
-    .filterIsInstance<DiffOperation.AlterSequence>()
-    .filter { it.shouldPreserveCurrentValue() }
-    .plus(preserveSequenceOps.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(it) && it.shouldPreserveCurrentValue() })
-    .plus(preserveSequenceOps.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
+    val preserveSequenceCandidates = preserveSequenceOps
+        .filterIsInstance<DiffOperation.AlterSequence>()
+        .filter { it.shouldPreserveCurrentValue() }
+        .plus(preserveSequenceOps.filterIsInstance<DiffOperation.CreateSequence>())
+        .plus(preserveSequenceOps.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
 
-if (plan.isFileToFileMode && preserveSequenceOps.isNotEmpty()) {
-    emitBlocker(
-        "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
-        "preserveCurrentValue requires execute mode with a reachable target database.",
-    )
-} else {
-    fun isManagedDmgSequenceProbeResult(result: SequenceCurrentValueProbeResult.Read): Boolean {
-        // true, wenn Dialekt-spezifische Konventionen (managedBy/formatVersion) passen.
-        return result.managedBy != null && result.formatVersion != null
-    }
+    if (plan.isFileToFileMode && preserveSequenceOps.isNotEmpty()) {
+        emitBlocker(
+            "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
+            "preserveCurrentValue requires execute mode with a reachable target database.",
+        )
+    } else {
+        val mysqlExpectedManagedBy = setOf("d-migrate")
+        val mysqlExpectedFormatVersion = 1
 
-    val sequencesNeedingPreservation = preserveSequenceCandidates.map { op ->
+        fun isManagedDmgSequenceProbeResult(result: SequenceCurrentValueProbeResult.Read): Boolean {
+            // true, wenn Dialekt-spezifische Konventionen (managedBy/formatVersion) passen.
+            return result.managedBy != null
+                && result.formatVersion != null
+                && result.managedBy in mysqlExpectedManagedBy
+                && result.formatVersion == mysqlExpectedFormatVersion
+        }
+
+        fun markRollbackNotPossibleForDown(op: DiffOperation) {
+            // Implementation detail: Follow-up-Operation als nicht reversibel
+            // markieren (e.g. reversibility metadata on the emitted op).
+        }
+
+    val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
         when (op) {
             is DiffOperation.AlterSequence -> SequencePreserveContext(
                 sequenceOp = op,
                 probeSequenceRef = op.objectRef,
                 applySequenceRef = op.objectRef,
             )
-            is DiffOperation.CreateSequence -> SequencePreserveContext(
-                sequenceOp = op,
-                probeSequenceRef = op.sequenceRef,
-                applySequenceRef = op.sequenceRef,
-            )
+            is DiffOperation.CreateSequence -> {
+                if (!shouldProbeCreateSequence(op)) {
+                    emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${op.sequenceRef}; create value remains declarative.")
+                    null
+                } else {
+                    SequencePreserveContext(
+                        sequenceOp = op,
+                        probeSequenceRef = op.sequenceRef,
+                        applySequenceRef = op.sequenceRef,
+                    )
+                }
+            }
             is DiffOperation.RenameSequence -> SequencePreserveContext(
                 sequenceOp = op,
                 probeSequenceRef = op.fromRef,
@@ -276,8 +294,7 @@ for (ctx in sequencesNeedingPreservation) {
             }
             val restoreIsCalledHint = determineRestoreIsCalledHint(op)
             if (ctx.probeSequenceRef.dialect == Dialect.POSTGRES && restoreIsCalledHint == null) {
-                // PG Down-Pfad ist deterministisch unmöglich: Operation ist mit Rollback-Hinweis
-                // (`ROLLBACK_NOT_POSSIBLE`) zu markieren.
+                markRollbackNotPossibleForDown(op)
             }
             emitFollowupAlterSequenceCurrentValue(
                 op,
