@@ -184,7 +184,7 @@ Aus Scope:
   in C.1.a hardcoded je Dialekt, eine operator-überschreibbare
   Quelle (mit `InvalidConfig`-Pfad) gehört in einen späteren
   Slice; Folge-Plan
-  [`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`](../open/ImpPlan-0.9.7-routine-capability-configurable-source.md).
+  [`done/ImpPlan-0.9.7-routine-capability-configurable-source.md`](./ImpPlan-0.9.7-routine-capability-configurable-source.md).
 - Validator-Regel "INVOKER + definer ist widersinnig" — heute
   akzeptiert der File-Loader `security: invoker` + `definer: X`
   ohne Fehler, und der Reverse-Read setzt `definer = null` für
@@ -732,7 +732,7 @@ beschrieben.
       Infrastruktur. `RoutineCapabilityTest` pinnt die
       `InvalidConfig`-Resolution direkt; der Renderer-Pfad-Test
       kommt mit dem Folge-Slice
-      [`open/ImpPlan-0.9.7-routine-capability-configurable-source.md`](../open/ImpPlan-0.9.7-routine-capability-configurable-source.md),
+      [`done/ImpPlan-0.9.7-routine-capability-configurable-source.md`](./ImpPlan-0.9.7-routine-capability-configurable-source.md),
       sobald eine konfigurierbare Capability-Quelle existiert,
       die unparsable / inkonsistent sein kann.
   - File-zu-DB-Pin: `MysqlMetadataQueries.readServerVersion()`
@@ -1266,7 +1266,7 @@ in der E.1-Planung §1/§4 verlangt aber bei den Slice-E-DoD-Audit
       und führt in allen betroffenen Richtungen auf `MANUAL_ACTION_REQUIRED`.
       In E.1 ist dieser Pfad mangels konfigurierbarer Capability-Quelle nur
       defensive Infrastruktur; die produktive Quelle ist im Folgeplan
-      `open/ImpPlan-0.9.7-routine-capability-configurable-source.md` beschrieben.
+      `done/ImpPlan-0.9.7-routine-capability-configurable-source.md` beschrieben.
   - Capability ist Routine-Typ-spezifisch (`FUNCTION`/`PROCEDURE`) und beruht auf
     Zielserver-Unterstützung inkl. Versions- und Objektklassen-Prüfung.
 - [x] `--generate-rollback` blockiert mit
