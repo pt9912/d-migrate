@@ -1,10 +1,10 @@
 package dev.dmigrate.core.diff.migration
 
 import dev.dmigrate.core.diff.ConstraintDiffContract
+import dev.dmigrate.core.diff.CrossTableCheckHeuristic
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.model.ConstraintType
-import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.ViewDefinition
@@ -93,15 +93,30 @@ open class DiffPlanner {
         triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ): DiffResult {
         val diagnostics = mutableListOf<DiffDiagnostic>()
-        val blockedTables = detectConstraintNotDiffableTables(current, desired)
+        // F.5 Sub-Slice A (2026-05-19): the planner-level block
+        // narrowed from "every CHECK/EXCLUDE diff" to "only CHECK
+        // expressions containing cross-table sub-query patterns".
+        // Other CHECK / EXCLUDE adds / drops / changes flow through
+        // the mapper and surface as `AddConstraint` /
+        // `DropConstraint` ops; the renderer (Sub-Slice B/C/D wires
+        // PG / MySQL / SQLite specifically) decides per dialect
+        // whether to emit DDL or block with
+        // `DIALECT_UNSUPPORTED_OPERATION`.
+        val blockedTables = detectCrossTableCheckTables(current, desired)
         if (blockedTables.isNotEmpty()) {
+            // String constant mirrored in
+            // `dev.dmigrate.driver.migration.PlannerBlockerClassifier.CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED_CODE`
+            // (hexagon:ports-read). Both must stay in sync; the
+            // module split prevents a direct reference.
             diagnostics += DiffDiagnostic(
-                code = "CONSTRAINT_NOT_DIFFABLE",
-                message = "Table(s) add, remove or change CHECK/EXCLUDE constraints which are only " +
-                    "comparable by conservative SQL text in Plan-2 §F.5: " +
-                    "${blockedTables.sorted().joinToString(", ")}. Migration cannot be planned " +
-                    "for these tables until the constraint change has a dialect-specific render " +
-                    "and validation contract.",
+                code = "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED",
+                message = "Table(s) declare CHECK expressions that look like cross-table sub-queries " +
+                    "(`SELECT` keyword inside the expression): " +
+                    "${blockedTables.sorted().joinToString(", ")}. F.5 Sub-Slice A uses a conservative " +
+                    "text heuristic to keep cross-table CHECK constraints off the renderer path; " +
+                    "rewrite the expression as a stand-alone predicate or remove the sub-query and " +
+                    "the migration can proceed. Semantic SQL parsing for CHECK expressions is a " +
+                    "separate workstream (see F.5 plan §9).",
                 severity = DiffDiagnostic.Severity.BLOCKER,
             )
         }
@@ -197,19 +212,37 @@ open class DiffPlanner {
             fingerprint = MigrationFingerprint.compute(schema),
         )
 
-    private fun detectConstraintNotDiffableTables(
+    /**
+     * F.5 Sub-Slice A: tables that carry a CHECK or EXCLUDE
+     * constraint whose expression triggers the
+     * [CrossTableCheckHeuristic] (any side — `current` or `desired`
+     * — counts). The planner blocks the entire table with
+     * `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED` so the operator
+     * sees a precise reason without the renderer attempting to emit
+     * DDL it cannot validate.
+     *
+     * Non-cross-table CHECK/EXCLUDE diffs are no longer blocked at
+     * the planner level (former `CONSTRAINT_NOT_DIFFABLE` blanket
+     * is gone). The mapper emits `AddConstraint`/`DropConstraint`
+     * ops for them; the per-dialect renderer (PG / MySQL / SQLite)
+     * decides whether to render or block via
+     * `DIALECT_UNSUPPORTED_OPERATION` until Sub-Slice B/C/D land.
+     */
+    private fun detectCrossTableCheckTables(
         current: SchemaDefinition,
         desired: SchemaDefinition,
-    ): Set<String> =
-        (current.tables.keys + desired.tables.keys).filterTo(mutableSetOf()) { tableName ->
-            rawSqlConstraints(current.tables[tableName]) != rawSqlConstraints(desired.tables[tableName])
+    ): Set<String> {
+        val out = mutableSetOf<String>()
+        for (tableName in (current.tables.keys + desired.tables.keys)) {
+            val anyCrossTable = sequenceOf(current.tables[tableName], desired.tables[tableName])
+                .filterNotNull()
+                .flatMap { it.constraints.asSequence() }
+                .filter(ConstraintDiffContract::isRawSqlConstraint)
+                .any { CrossTableCheckHeuristic.hasCrossTableReference(it.expression) }
+            if (anyCrossTable) out += tableName
         }
-
-    private fun rawSqlConstraints(table: TableDefinition?): Map<String, ConstraintDefinition> =
-        table?.constraints
-            ?.filter(ConstraintDiffContract::isRawSqlConstraint)
-            ?.associate { it.name to ConstraintDiffContract.comparable(it) }
-            .orEmpty()
+        return out
+    }
 
     private fun detectFkToBlockedTables(
         ops: List<DiffOperation>,

@@ -18,6 +18,7 @@ import dev.dmigrate.core.model.ViewDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
@@ -130,7 +131,12 @@ class DiffPlannerTest : FunSpec({
         addConstraint.dependencies shouldContain createUsers.id
     }
 
-    test("CHECK / EXCLUDE constraint diffs produce CONSTRAINT_NOT_DIFFABLE blocker") {
+    test("§F.5 Sub-Slice A: CHECK constraint diffs flow through the mapper without planner-level block") {
+        // Sub-Slice A removes the planner-level CONSTRAINT_NOT_DIFFABLE
+        // blanket for non-cross-table CHECK / EXCLUDE diffs. The
+        // DropTable for the table holding the CHECK is emitted; the
+        // CHECK itself rides as a DropConstraint op (renderer
+        // decides per dialect whether to render).
         val tableWithCheck = TableDefinition(
             columns = mapOf("age" to ColumnDefinition(NeutralType.Integer)),
             constraints = listOf(
@@ -143,11 +149,10 @@ class DiffPlannerTest : FunSpec({
             tablesRemoved = listOf(NamedTable("users", tableWithCheck)),
         )
         val result = planner.plan(current, desired, diff)
-        result.hasBlockers shouldBe true
-        result.diagnostics.single().code shouldBe "CONSTRAINT_NOT_DIFFABLE"
-        // Blocked tables don't generate a DropTable operation.
+        result.hasBlockers shouldBe false
+        result.diagnostics.map { it.code } shouldNotContain "CONSTRAINT_NOT_DIFFABLE"
         result.operations.filterIsInstance<DiffOperation.DropTable>()
-            .any { it.objectRef.rootName == "users" } shouldBe false
+            .any { it.objectRef.rootName == "users" } shouldBe true
     }
 
     test("DropTable depends on DropConstraint of FK pointing at the dropped table") {
@@ -344,10 +349,18 @@ class DiffPlannerTest : FunSpec({
     }
 
     test("FK on a non-blocked table referencing a blocked table emits FK_TO_BLOCKED_TABLE") {
-        val tableWithCheck = TableDefinition(
+        // §F.5 Sub-Slice A: the planner-level block now triggers only
+        // for cross-table CHECK heuristic hits. To still exercise the
+        // FK_TO_BLOCKED_TABLE diagnostic, the blocked side carries a
+        // CHECK with a SELECT-style subquery.
+        val tableWithCrossTableCheck = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Identifier())),
             constraints = listOf(
-                ConstraintDefinition(name = "chk_x", type = ConstraintType.CHECK, expression = "id > 0"),
+                ConstraintDefinition(
+                    name = "chk_x",
+                    type = ConstraintType.CHECK,
+                    expression = "id IN (SELECT user_id FROM allowed_users)",
+                ),
             ),
         )
         val orders = TableDefinition(
@@ -360,16 +373,14 @@ class DiffPlannerTest : FunSpec({
             ),
         )
         val current = schemaWith()
-        val desired = schemaWith(tables = mapOf("users" to tableWithCheck, "orders" to orders))
+        val desired = schemaWith(tables = mapOf("users" to tableWithCrossTableCheck, "orders" to orders))
         val diff = SchemaDiff(
-            tablesAdded = listOf(NamedTable("users", tableWithCheck), NamedTable("orders", orders)),
+            tablesAdded = listOf(NamedTable("users", tableWithCrossTableCheck), NamedTable("orders", orders)),
         )
         val result = planner.plan(current, desired, diff)
-        // Both diagnostics should be present.
         val codes = result.diagnostics.map { it.code }.toSet()
-        codes shouldContain "CONSTRAINT_NOT_DIFFABLE"
+        codes shouldContain "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED"
         codes shouldContain "FK_TO_BLOCKED_TABLE"
-        // The FK_TO_BLOCKED_TABLE diagnostic must reference the orders CreateTable's id.
         val createOrders = result.operations.filterIsInstance<DiffOperation.CreateTable>()
             .single { it.objectRef.rootName == "orders" }
         val fkDiag = result.diagnostics.single { it.code == "FK_TO_BLOCKED_TABLE" }

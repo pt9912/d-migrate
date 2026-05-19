@@ -58,8 +58,88 @@ object PlannerBlockerClassifier {
      */
     const val OBJECT_RENAME_UNSUPPORTED_CODE: String = "OBJECT_RENAME_UNSUPPORTED"
 
+    /**
+     * F.5 Sub-Slice A: planner-level cross-table-CHECK heuristic
+     * fires when an operator-supplied CHECK expression looks like
+     * it references another table (subquery markers, EXISTS / IN
+     * with SELECT). The slice deliberately does NOT parse the SQL
+     * semantically; the heuristic is conservative — false positives
+     * (operator writes `selection_count` as a column name) are
+     * acceptable, false negatives (operator writes a real
+     * cross-table CHECK that bypasses the heuristic) are not.
+     */
+    const val CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED_CODE: String =
+        "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED"
+
+    /**
+     * F.5 Sub-Slice C: MySQL CHECK constraints require server
+     * version ≥ 8.0.16 (or MariaDB ≥ 10.2.1) for actual enforcement.
+     * Earlier MySQL accepts the syntax but ignores semantics —
+     * a silent contract violation. The renderer blocks instead of
+     * emitting NOT-ENFORCED DDL.
+     */
+    const val MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16_CODE: String =
+        "MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16"
+
+    /**
+     * F.5 Sub-Slice C: MySQL CHECK rendering needs an enforcement
+     * decision based on `mysqlServerVersion`. When the version is
+     * not detectable (e.g. the runner couldn't probe), the renderer
+     * blocks rather than silently picking a default.
+     */
+    const val MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE: String =
+        "MYSQL_CHECK_ENFORCEMENT_UNKNOWN"
+
+    /**
+     * F.5 Sub-Slice B/D: EXCLUDE is a PostgreSQL-only constraint
+     * concept. MySQL and SQLite block any EXCLUDE op with this
+     * code; cross-dialect transfer surfaces it directly.
+     */
+    const val EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE: String =
+        "EXCLUDE_NOT_SUPPORTED_BY_DIALECT"
+
+    /**
+     * F.5 Sub-Slice B: PostgreSQL EXCLUDE constraints carry an
+     * operator class (`USING gist (col WITH &&)`). The first F.5
+     * tranche whitelists the standard range operators; custom
+     * operator classes block with this code until a dedicated slice
+     * adds the operator-class whitelist contract.
+     */
+    const val EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE: String =
+        "EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED"
+
+    /**
+     * F.5 Sub-Slice E: a new restrictive CHECK constraint may
+     * violate existing rows. The execute-mode preflight runs
+     * `SELECT count(*) FROM t WHERE NOT (expr)`; a non-zero count
+     * surfaces this code so the operator decides whether to clean
+     * up data first or accept the manual action.
+     */
+    const val CHECK_PREFLIGHT_VIOLATIONS_CODE: String =
+        "CHECK_PREFLIGHT_VIOLATIONS"
+
+    /**
+     * F.5 Sub-Slice E: the preflight probe itself can fail
+     * (network, privilege, malformed expression). The slice surfaces
+     * the technical failure separately from a data-violation result
+     * so the operator can distinguish "data violates" from "probe
+     * could not be executed".
+     */
+    const val CHECK_PREFLIGHT_RUNTIME_ERROR_CODE: String =
+        "CHECK_PREFLIGHT_RUNTIME_ERROR"
+
     fun classify(code: String): MigrationBlockedReason = when (code) {
-        OBJECT_RENAME_UNSUPPORTED_CODE -> MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
+        OBJECT_RENAME_UNSUPPORTED_CODE ->
+            MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
+        CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED_CODE,
+        MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16_CODE,
+        MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE,
+        EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE,
+        CHECK_PREFLIGHT_VIOLATIONS_CODE,
+        CHECK_PREFLIGHT_RUNTIME_ERROR_CODE ->
+            MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE ->
+            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         else -> MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 }

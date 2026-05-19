@@ -3,7 +3,6 @@ package dev.dmigrate.core.diff.migration
 import dev.dmigrate.core.diff.TableComparator
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.model.ColumnDefinition
-import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.TableDefinition
 
@@ -235,8 +234,11 @@ internal object RenameIntraObjectDeltaSynthesizer {
         candidateId: String,
         ops: MutableList<DiffOperation>,
     ) {
+        // F.5 Sub-Slice A (2026-05-19): CHECK + EXCLUDE constraints
+        // now ride alongside UNIQUE / FOREIGN_KEY through the
+        // intra-object delta synthesiser. The per-dialect renderer
+        // decides whether to render or block.
         for (c in diff.constraintsAdded) {
-            if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(tableName, c.name))
             ops += DiffOperation.AddConstraint(
                 id = OperationIdFactory.makeId("AddConstraint", ref, CanonicalPayload.constraint(c)),
@@ -246,7 +248,6 @@ internal object RenameIntraObjectDeltaSynthesizer {
             )
         }
         for (c in diff.constraintsRemoved) {
-            if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(tableName, c.name))
             ops += DiffOperation.DropConstraint(
                 id = OperationIdFactory.makeId("DropConstraint", ref, CanonicalPayload.constraint(c)),

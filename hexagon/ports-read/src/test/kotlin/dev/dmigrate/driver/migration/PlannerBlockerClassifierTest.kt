@@ -36,6 +36,26 @@ class PlannerBlockerClassifierTest : FunSpec({
             MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
+    test("F.5 CHECK / EXCLUDE planner-blocker codes classify to MANUAL_ACTION_REQUIRED / DIALECT_UNSUPPORTED_OPERATION") {
+        // Operator-fixable cases (rewrite expression, clean data,
+        // upgrade server version) → MANUAL_ACTION_REQUIRED.
+        listOf(
+            PlannerBlockerClassifier.CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED_CODE,
+            PlannerBlockerClassifier.MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16_CODE,
+            PlannerBlockerClassifier.MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE,
+            PlannerBlockerClassifier.EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE,
+            PlannerBlockerClassifier.CHECK_PREFLIGHT_VIOLATIONS_CODE,
+            PlannerBlockerClassifier.CHECK_PREFLIGHT_RUNTIME_ERROR_CODE,
+        ).forEach { code ->
+            PlannerBlockerClassifier.classify(code) shouldBe
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+        // Dialect-incapability case (EXCLUDE on MySQL / SQLite) →
+        // DIALECT_UNSUPPORTED_OPERATION.
+        PlannerBlockerClassifier.classify(PlannerBlockerClassifier.EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE) shouldBe
+            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
+
     test("classifier is exhaustive (every MigrationBlockedReason value is reachable)") {
         // We don't pin every value, but we pin that the function
         // never throws / never returns null for any input string —

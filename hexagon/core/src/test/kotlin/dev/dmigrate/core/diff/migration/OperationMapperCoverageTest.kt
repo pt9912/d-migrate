@@ -337,7 +337,10 @@ class OperationMapperCoverageTest : FunSpec({
         result.operations.filterIsInstance<DiffOperation.AddPrimaryKey>().size shouldBe 1
     }
 
-    test("CHECK / EXCLUDE constraint on tablesChanged is filtered out of ops") {
+    test("§F.5 Sub-Slice A: CHECK / EXCLUDE constraint on tablesChanged emits AddConstraint/DropConstraint ops") {
+        // §F.5 Vollscheibe Sub-Slice A: CHECK + EXCLUDE no longer
+        // skipped by the mapper. The renderer (Sub-Slice B/C/D)
+        // decides per dialect whether to emit DDL or block.
         val check = dev.dmigrate.core.model.ConstraintDefinition(
             name = "chk_age",
             type = dev.dmigrate.core.model.ConstraintType.CHECK,
@@ -357,11 +360,17 @@ class OperationMapperCoverageTest : FunSpec({
             ),
         )
         val result = planner.plan(emptySchema(), emptySchema(), diff)
-        result.operations.filterIsInstance<DiffOperation.AddConstraint>().size shouldBe 0
-        result.operations.filterIsInstance<DiffOperation.DropConstraint>().size shouldBe 0
+        result.operations.filterIsInstance<DiffOperation.AddConstraint>()
+            .any { it.constraint.name == "chk_age" } shouldBe true
+        result.operations.filterIsInstance<DiffOperation.DropConstraint>()
+            .any { it.constraint.name == "ex_x" } shouldBe true
     }
 
-    test("blocked table (CHECK in current) skips tablesAdded entry as well") {
+    test("§F.5 Sub-Slice A: regular (non-cross-table) CHECK in current does not block tablesAdded entry") {
+        // §F.5 Vollscheibe Sub-Slice A: planner-level block only
+        // fires for cross-table-CHECK heuristic hits, not for every
+        // CHECK diff. A table with a stand-alone CHECK now proceeds
+        // through the mapper.
         val tableWithCheck = TableDefinition(
             columns = mapOf("age" to ColumnDefinition(NeutralType.Integer)),
             constraints = listOf(
@@ -377,7 +386,7 @@ class OperationMapperCoverageTest : FunSpec({
         val desired = emptySchema().copy(tables = mapOf("users" to tableWithCheck))
         val result = planner.plan(current, desired, diff)
         result.operations.filterIsInstance<DiffOperation.CreateTable>()
-            .any { it.objectRef.rootName == "users" } shouldBe false
-        result.diagnostics.single().code shouldBe "CONSTRAINT_NOT_DIFFABLE"
+            .any { it.objectRef.rootName == "users" } shouldBe true
+        result.diagnostics.map { it.code }.contains("CONSTRAINT_NOT_DIFFABLE") shouldBe false
     }
 })

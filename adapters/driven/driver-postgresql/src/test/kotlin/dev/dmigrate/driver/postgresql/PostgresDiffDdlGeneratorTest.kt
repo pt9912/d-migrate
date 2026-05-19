@@ -553,28 +553,47 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
     // [PostgresDiffDdlGeneratorTest] under Detekt's `LargeClass`
     // threshold.
 
-    test("Planner blockers (CONSTRAINT_NOT_DIFFABLE) cascade into DIALECT_UNSUPPORTED_OPERATION") {
-        val tableWithCheck = TableDefinition(
+    test("§F.5 Sub-Slice A: cross-table CHECK planner-blocker cascades into MANUAL_ACTION_REQUIRED") {
+        // F.5 Vollscheibe Sub-Slice A: the planner-level block fires
+        // ONLY on cross-table-CHECK heuristic hits. The F.4 Renderer-
+        // Blocker-Bridge (2026-05-19) maps the new
+        // `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED` code through the
+        // `PlannerBlockerClassifier` to
+        // `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`.
+        val tableWithCrossTableCheck = TableDefinition(
             columns = mapOf("age" to ColumnDefinition(NeutralType.Integer)),
             constraints = listOf(
-                ConstraintDefinition(name = "chk_age", type = ConstraintType.CHECK, expression = "age >= 0"),
+                ConstraintDefinition(
+                    name = "chk_age",
+                    type = ConstraintType.CHECK,
+                    expression = "age >= 0 AND id IN (SELECT user_id FROM allowed_users)",
+                ),
             ),
         )
-        val current = emptySchema().copy(tables = mapOf("users" to tableWithCheck))
+        val current = emptySchema().copy(tables = mapOf("users" to tableWithCrossTableCheck))
         val desired = emptySchema()
-        val diff = SchemaDiff(tablesRemoved = listOf(NamedTable("users", tableWithCheck)))
+        val diff = SchemaDiff(tablesRemoved = listOf(NamedTable("users", tableWithCrossTableCheck)))
         val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
         r.isBlocked shouldBe true
-        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.blockers.single().diagnostics.any {
+            it.code == "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED"
+        } shouldBe true
     }
 
-    test("Both planner blockers AND renderer blockers coexist in result.blockers") {
-        // CONSTRAINT_NOT_DIFFABLE on `users` (planner) + AlterCustomType (renderer-side
-        // DIALECT_UNSUPPORTED). Both must surface so a CLI sees the full picture.
-        val tableWithCheck = TableDefinition(
+    test("§F.5 Sub-Slice A: cross-table planner blockers AND renderer blockers coexist") {
+        // Cross-table CHECK on `users` (planner-level
+        // CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED → MANUAL_ACTION_REQUIRED)
+        // + AlterCustomType (renderer-side DIALECT_UNSUPPORTED). Both
+        // must surface so a CLI sees the full picture.
+        val tableWithCrossTableCheck = TableDefinition(
             columns = mapOf("id" to ColumnDefinition(NeutralType.Integer)),
             constraints = listOf(
-                ConstraintDefinition(name = "chk_x", type = ConstraintType.CHECK, expression = "id > 0"),
+                ConstraintDefinition(
+                    name = "chk_x",
+                    type = ConstraintType.CHECK,
+                    expression = "id > 0 AND EXISTS (SELECT 1 FROM other_table WHERE id = users.id)",
+                ),
             ),
         )
         val customType = dev.dmigrate.core.model.CustomTypeDefinition(
@@ -582,14 +601,14 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
             values = listOf("a"),
         )
         val current = emptySchema().copy(
-            tables = mapOf("users" to tableWithCheck),
+            tables = mapOf("users" to tableWithCrossTableCheck),
             customTypes = mapOf("status_t" to customType),
         )
         val desired = emptySchema().copy(
             customTypes = mapOf("status_t" to customType.copy(values = listOf("a", "b"))),
         )
         val diff = SchemaDiff(
-            tablesRemoved = listOf(NamedTable("users", tableWithCheck)),
+            tablesRemoved = listOf(NamedTable("users", tableWithCrossTableCheck)),
             customTypesChanged = listOf(
                 dev.dmigrate.core.diff.CustomTypeDiff(
                     name = "status_t",
@@ -598,9 +617,9 @@ class PostgresDiffDdlGeneratorTest : FunSpec({
             ),
         )
         val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
-        // Planner-side cascade blocker present
-        r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION &&
-            it.diagnostics.any { d -> d.code == "CONSTRAINT_NOT_DIFFABLE" } } shouldBe true
+        // Planner-side cascade blocker present (MANUAL_ACTION_REQUIRED after F.4 G bridge)
+        r.blockers.any { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED &&
+            it.diagnostics.any { d -> d.code == "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED" } } shouldBe true
         // Renderer-side blocker (AlterCustomType is out-of-scope) also present
         val rendererBlocker = r.blockers.any { it.reason == MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION &&
             it.diagnostics.isEmpty() } || r.diagnostics.any { it.code == "POSTGRES_RENDER_SKIP" }

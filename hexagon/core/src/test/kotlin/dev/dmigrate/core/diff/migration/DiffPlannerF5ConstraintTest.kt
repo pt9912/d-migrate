@@ -12,8 +12,8 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.string.shouldContain as shouldContainString
 
 class DiffPlannerF5ConstraintTest : FunSpec({
     val planner = DiffPlanner()
@@ -59,7 +59,12 @@ class DiffPlannerF5ConstraintTest : FunSpec({
             .single().objectRef.path shouldBe listOf("users", "name")
     }
 
-    test("§F.5 added CHECK constraints still block with CONSTRAINT_NOT_DIFFABLE") {
+    test("§F.5 Sub-Slice A: added CHECK constraint flows through the mapper as AddConstraint op") {
+        // Sub-Slice A removes the planner-level CONSTRAINT_NOT_DIFFABLE
+        // blanket. The mapper emits AddConstraint(CHECK); the
+        // renderer (Sub-Slice B/C/D) decides per dialect whether to
+        // emit DDL or block with DIALECT_UNSUPPORTED_OPERATION. Until
+        // those land, the planner-level result is no longer a blocker.
         val table = tableWithCheck()
         val result = planner.plan(
             current = schema(),
@@ -67,13 +72,15 @@ class DiffPlannerF5ConstraintTest : FunSpec({
             schemaDiff = SchemaDiff(tablesAdded = listOf(NamedTable("users", table))),
         )
 
-        result.hasBlockers shouldBe true
-        result.diagnostics.map { it.code } shouldContain "CONSTRAINT_NOT_DIFFABLE"
+        result.hasBlockers shouldBe false
+        result.diagnostics.map { it.code } shouldNotContain "CONSTRAINT_NOT_DIFFABLE"
+        // CreateTable for "users" is emitted (the table is no longer
+        // in `blockedTables`).
         result.operations.filterIsInstance<DiffOperation.CreateTable>()
-            .any { it.objectRef.rootName == "users" } shouldBe false
+            .any { it.objectRef.rootName == "users" } shouldBe true
     }
 
-    test("§F.5 changed CHECK constraints block without emitting drop or add operations") {
+    test("§F.5 Sub-Slice A: changed CHECK constraint emits Drop+Add ops") {
         val beforeConstraint = ConstraintDefinition(
             name = "chk_age",
             type = ConstraintType.CHECK,
@@ -96,14 +103,18 @@ class DiffPlannerF5ConstraintTest : FunSpec({
             ),
         )
 
-        result.hasBlockers shouldBe true
-        result.diagnostics.single().code shouldBe "CONSTRAINT_NOT_DIFFABLE"
-        result.diagnostics.single().message shouldContainString "users"
-        result.operations.filterIsInstance<DiffOperation.DropConstraint>().size shouldBe 0
-        result.operations.filterIsInstance<DiffOperation.AddConstraint>().size shouldBe 0
+        result.hasBlockers shouldBe false
+        result.diagnostics.map { it.code } shouldNotContain "CONSTRAINT_NOT_DIFFABLE"
+        // Mapper emits Drop+Add (per the standard constraint-change
+        // pattern); the renderer (B/C/D) will decide whether to
+        // render or block these CHECK-typed ops.
+        result.operations.filterIsInstance<DiffOperation.DropConstraint>()
+            .any { it.constraint.name == "chk_age" } shouldBe true
+        result.operations.filterIsInstance<DiffOperation.AddConstraint>()
+            .any { it.constraint.name == "chk_age" } shouldBe true
     }
 
-    test("§F.5 changed EXCLUDE constraints block with the same conservative contract") {
+    test("§F.5 Sub-Slice A: changed EXCLUDE constraint emits Drop+Add ops") {
         val beforeConstraint = ConstraintDefinition(
             name = "exclude_room_overlap",
             type = ConstraintType.EXCLUDE,
@@ -129,8 +140,63 @@ class DiffPlannerF5ConstraintTest : FunSpec({
             ),
         )
 
+        result.hasBlockers shouldBe false
+        result.diagnostics.map { it.code } shouldNotContain "CONSTRAINT_NOT_DIFFABLE"
+        result.operations.filterIsInstance<DiffOperation.DropConstraint>()
+            .any { it.constraint.name == "exclude_room_overlap" } shouldBe true
+        result.operations.filterIsInstance<DiffOperation.AddConstraint>()
+            .any { it.constraint.name == "exclude_room_overlap" } shouldBe true
+    }
+
+    test("§F.5 Sub-Slice A: CHECK with subquery blocks with CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED") {
+        // Cross-table heuristic positive case — the expression
+        // contains a SELECT token at word boundary, so the planner
+        // blocks the entire table and skips it in the mapper.
+        val crossTableConstraint = ConstraintDefinition(
+            name = "chk_orders_count",
+            type = ConstraintType.CHECK,
+            expression = "(SELECT count(*) FROM other_table) > 0",
+        )
+        val table = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            constraints = listOf(crossTableConstraint),
+            primaryKey = listOf("id"),
+        )
+
+        val result = planner.plan(
+            current = schema(),
+            desired = schema(mapOf("users" to table)),
+            schemaDiff = SchemaDiff(tablesAdded = listOf(NamedTable("users", table))),
+        )
+
         result.hasBlockers shouldBe true
-        result.diagnostics.map { it.code } shouldContain "CONSTRAINT_NOT_DIFFABLE"
-        result.operations shouldBe emptyList<DiffOperation>()
+        result.diagnostics.map { it.code } shouldContain "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED"
+        // The table sits in `blockedTables`, so the mapper skips
+        // its CreateTable op.
+        result.operations.filterIsInstance<DiffOperation.CreateTable>()
+            .any { it.objectRef.rootName == "users" } shouldBe false
+    }
+
+    test("§F.5 Sub-Slice A: CHECK with SQL line comment containing 'SELECT' does NOT trigger heuristic") {
+        // SQL line comments are stripped before the heuristic runs.
+        val table = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(NeutralType.Integer, required = true)),
+            constraints = listOf(
+                ConstraintDefinition(
+                    name = "chk_age",
+                    type = ConstraintType.CHECK,
+                    expression = "age >= 0 -- avoid SELECT-style joins, see ADR-0007",
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+
+        val result = planner.plan(
+            current = schema(),
+            desired = schema(mapOf("users" to table)),
+            schemaDiff = SchemaDiff(tablesAdded = listOf(NamedTable("users", table))),
+        )
+
+        result.diagnostics.map { it.code } shouldNotContain "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED"
     }
 })

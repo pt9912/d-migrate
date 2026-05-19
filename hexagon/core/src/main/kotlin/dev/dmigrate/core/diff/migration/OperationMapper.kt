@@ -4,7 +4,6 @@ import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
-import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
 
@@ -407,8 +406,14 @@ internal object OperationMapper {
     }
 
     private fun mapTableConstraints(table: TableDiff, ops: MutableList<DiffOperation>) {
+        // F.5 Sub-Slice A (2026-05-19): CHECK + EXCLUDE constraints
+        // now flow through the mapper alongside UNIQUE / FOREIGN_KEY.
+        // The per-dialect renderer (Sub-Slice B/C/D) decides whether
+        // to emit DDL or block with `DIALECT_UNSUPPORTED_OPERATION`.
+        // The planner still blocks the table upstream if any CHECK
+        // expression looks like a cross-table sub-query (the
+        // `CrossTableCheckHeuristic` path).
         for (c in table.constraintsAdded) {
-            if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, c.name))
             ops += DiffOperation.AddConstraint(
                 id = OperationIdFactory.makeId("AddConstraint", ref, CanonicalPayload.constraint(c)),
@@ -417,7 +422,6 @@ internal object OperationMapper {
             )
         }
         for (c in table.constraintsRemoved) {
-            if (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) continue
             val ref = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, c.name))
             ops += DiffOperation.DropConstraint(
                 id = OperationIdFactory.makeId("DropConstraint", ref, CanonicalPayload.constraint(c)),
