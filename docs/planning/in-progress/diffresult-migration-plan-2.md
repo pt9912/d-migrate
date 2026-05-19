@@ -1722,8 +1722,114 @@ DoD:
 
 - [x] MySQL-`AlterColumnNullability` ist im Round-Trip-Smoke abgedeckt oder als
   bewusst blockierender Fall dokumentiert.
-- [ ] Jeder umgesetzte Workstream hat mindestens einen Positivpfad und einen
+- [x] Jeder umgesetzte Workstream hat mindestens einen Positivpfad und einen
   blockierenden Pfad.
+  *(Audit-Sweep 2026-05-19 nach G.3. Per Workstream je ein konkreter
+  Positiv- und ein konkreter Blocker-Test, kein GAP:)*
+  - **G.1** transactionScope: `MigrationStreamClassifierTest`
+    Positiv „any STREAM_OWNED statement makes the whole stream
+    stream-owned"; Blocker „§G.3 mixed transaction scopes are
+    unsupported before execute".
+  - **G.2** Rollback-SQL v2: `RollbackArtefactBuilderTest`
+    Positiv „canonical artefact starts with the begin delimiter
+    and ends with a single trailing newline"; `RollbackArtefactParserTest`
+    Blocker „tampered SQL body is detected".
+  - **G.3** Execution-Status: `MigrationExecutionStatusBuilderTest`
+    Positiv „§G.3 groups contiguous statements and suffixes
+    repeated operation groups"; `MigrationStreamClassifierTest`
+    Blocker „§G.3 NO_TRANSACTION requires an explicit execution
+    strategy".
+  - **A.1** Locking/Tx-Hints: `SchemaMigrateReportBuilderHintsTest`
+    Positiv „all-PostgreSQL plan aggregates to fully-rollbackable +
+    exclusive access + no implicit commit"; Blocker (Konsumenten-
+    Carve-out) „UNKNOWN hints (no renderer claim) clear
+    planFullyRollbackable".
+  - **A.2** SQLite-Catalog-Probe: `SchemaMigrateRunnerSqliteProbeTest`
+    Positiv „§A.2 — SQLite + --execute forwards probed catalog and
+    sets LIVE_SQLITE_MASTER mode"; Blocker „§A.2 — probe throws → Exit 8
+    with SQLITE_LIVE_CATALOG_PROBE_FAILED diagnostic".
+  - **B.1** PG `USING`: `PostgresUsingOverlayResolverTest`
+    Positiv „B.1 validates using-expression source before
+    rendering"; `PostgresDiffDdlGeneratorTest` Blocker
+    „AlterColumnType: Integer → Text needs USING overlay and is
+    blocked without it" (`PG_USING_OVERLAY_MISSING`).
+  - **B.2** SQLite Cast-Preflight: `SqliteCastPreflightProbeTest`
+    Positiv „B.2 positive: live SQLite cast preflight passes and
+    execute rendering is allowed"; Blocker „B.2 negative:
+    non-convertible live rows block execute rendering before CAST
+    SQL".
+  - **C.1** Extension-Policy: `PostgresDiffSpatialTest`
+    Positiv „§C.1: PostgreSQL can plan explicit PostGIS install
+    before dependent DDL"; Blocker „§C.1: PostgreSQL extension
+    install blocks when CREATE EXTENSION privilege is missing".
+  - **C.2** Spatial-Migrationen: `PostgresDiffSpatialTest`
+    Positiv „§C.2: PostgreSQL GIST index on geometry column renders
+    with verified PostGIS"; Blocker „§C.2: PostgreSQL non-GIST
+    index on geometry column blocks".
+  - **D.1** PG View Visible-Signature: `PostgresDiffDdlGeneratorTest`
+    Positiv „CreateView and DropView round-trip"; Blocker
+    „ReplaceView blocks without PostgreSQL visible signature
+    metadata" (`VIEW_SIGNATURE_UNKNOWN` /
+    `VIEW_SIGNATURE_INCOMPATIBLE`).
+  - **D.2** MySQL `VIEW_ROUTINE_USAGE`-Privilege: `DiffPlannerG2Test`
+    Positiv „ReplaceView for a view with projectionComplete=true
+    does NOT block"; Blocker „ReplaceView for a view with
+    projectionComplete=false blocks".
+  - **D.3b** Materialized Views: `PostgresDiffMaterializedViewTest`
+    Positiv „CreateMaterializedView renders CREATE MATERIALIZED
+    VIEW on PostgreSQL"; Blocker „ReplaceMaterializedView Up
+    without after.query is blocked by planner
+    DIFF_METADATA_UNSUPPORTED".
+  - **E.1** Routine-Migration: `PostgresDiffFunctionOpsTest`
+    Positiv „CreateFunction (Up) emits CREATE FUNCTION with
+    dollar-quoted body and parameter list"; Blocker „ReplaceFunction
+    Down without known prior body blocks with
+    ROUTINE_DOWN_BODY_UNKNOWN".
+  - **E.2** Trigger-Rendering: `PostgresTriggerDdlHelperTest`
+    Positiv „CreateTrigger Up emits CREATE TRIGGER with
+    timing/event/table/EXECUTE FUNCTION"; Blocker „Body that is
+    not a function reference blocks with
+    TRIGGER_BODY_NOT_FUNCTION_REFERENCE".
+  - **E.3** Sequence-Migration: `PostgresDiffDdlGeneratorTest`
+    Positiv „CreateSequence renders PostgreSQL sequence DDL and
+    down drops it"; `MysqlDiffDdlGeneratorTest` Blocker
+    „Out-of-matrix operations (Sequence) yield
+    DIALECT_UNSUPPORTED_OPERATION" + analog `SqliteDiffDdlGeneratorTest`
+    „Out-of-matrix Sequence is DIALECT_UNSUPPORTED".
+  - **F.0** Overlay-Grundvertrag: `MigrationOverlayContractTest`
+    Positiv „canonical overlay JSON is stable and overlayHash is
+    outside the signed payload"; Blocker „using and rename
+    overlays both block without a valid F0 hash contract".
+  - **F.1** DataTransformationContract: `DataTransformationContractTest`
+    Positiv „§F.1 risks default to no automatic data
+    transformation"; Blocker „§F.1 automatic data transformations
+    require an explicit model contract" + „§F.1 automatic
+    transformations reject missing model identity".
+  - **F.2** Plan-Artifact v1: `MigrationPlanArtifactContractTest`
+    Positiv „F.2 canonical plan artifact JSON is stable and
+    artifactHash is outside the signed payload"; Blocker „F.2
+    validation rejects unsigned stale-version feature and hash
+    mismatch blockers".
+  - **F.3** Partial Rollback v2: `SchemaRollbackRunnerPartialRollbackTest`
+    Positiv „F.3 partial rollback execute proceeds with explicit
+    allow flag"; Blocker „F.3 partial rollback execute blocks
+    without explicit allow flag before DB load".
+  - **F.4** Renames: `RenameOverlayMapperTest`
+    Positiv „table rename overlay collapses Drop+Create into
+    RenameTable with overlay metadata"; `RenameObjectMapperTest`
+    Blocker „materialized view rename blocks with
+    OBJECT_RENAME_UNSUPPORTED".
+  - **F.4 G** Artefact Producer: `SchemaMigrateRunnerTest`
+    Positiv „--plan-artefact writes a signed migration-plan.v1
+    JSON to the requested path"; `MigrationPlanArtifactBuilderTest`
+    Blocker „missing source/target fingerprint fails fast (operator
+    wiring bug)" + `MigrationPlanArtifactContractTest` Blocker
+    „F.4 E: validator blocks renameProjections without the
+    rename-projections.v1 extension".
+  - **F.5** Constraint-Policy: `DiffPlannerF5ConstraintTest`
+    Positiv „§F.5 unchanged CHECK constraints do not block
+    unrelated table changes"; Blocker „§F.5 added CHECK constraints
+    still block with CONSTRAINT_NOT_DIFFABLE".
 - [ ] Report- und Exit-Code-Erwartungen sind in Tests gepinnt.
 - [ ] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
   ausgeschlossen.
