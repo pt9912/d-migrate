@@ -21,9 +21,9 @@ Die heutige Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
 in `done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
 `open/`) deckt nur die **deklarativen Attribute** ab —
 `start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`.
-Den **aktuellen Wert** (`last_value` in PG, naechster Wert aus
-`dmg_sequences.next_value` in MySQL-Emulation) migriert keine
-Pipeline. Effekt:
+Den **aktuellen Wert** (`last_value` in PG, `next_value` in
+MySQL-Emulation als *nächster von `nextval()`-Rückgabewert*) migriert
+keine Pipeline. Effekt:
 
 - Operator migriert eine bestehende Tabelle mit `id` aus einer
   PG-Sequenz nach DB-Target. Die Sequenz wird mit
@@ -67,23 +67,27 @@ Roadmap §E Rest listet explizit:
   mit dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value FROM dmg_sequences
-    WHERE name = <sequence_name>`
+    WHERE name = <sequence_name>` (`next_value` ist der nächste von
+    `nextval` gelieferte Wert).
   - **SQLite**: TBD pro `sqlite-sequence-emulation-plan.md`;
     blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
     der SQLite-Plan landet.
-- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value)`
+- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?)`
   *(oder Re-Use bestehender `AlterSequence` mit zusaetzlichem
-  `currentValue`-Feld; Decision in Sub-Slice A)*.
+  `currentValue`-/`isCalled`-Feld; Decision in Sub-Slice A)*.
 - Renderer-Pfade pro Dialekt:
-  - **PG**: `SELECT setval('<sequence_name>', <value>, true)` als
-    DDL-Equivalent (vorhandenes Setval-Pattern).
+  - **PG**: `SELECT setval('<sequence_name>', <value>, <is_called>)`
+    als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
+    übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
-    WHERE name = <sequence_name>`.
+    WHERE name = <sequence_name>` (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration in `SchemaMigrateRunner`:
   - Wenn `preserveCurrentValue = true` UND DB-Target verfuegbar:
     Probe vor Render; emittiere `AlterSequenceCurrentValue` mit
-    dem geprobten Wert.
+    dem geprobten Wert, inklusive `isCalled` (falls vom Dialekt
+    geliefert) sowie optionalem `restoreValue`, sofern diese Planerzeit
+    bestimmen kann.
   - Datei-zu-Datei-Modus: `preserveCurrentValue = true` blockt
     mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
     `MANUAL_ACTION_REQUIRED`.
@@ -95,10 +99,11 @@ Roadmap §E Rest listet explizit:
   Alternative: globaler `--preserve-sequence-values`-Flag
   als opt-in fuer alle Sequenzen (Decision in Sub-Slice A).
 - Reversibility: `AlterSequenceCurrentValue` Down setzt den
-  Wert auf den vor-Up-Wert zurueck, sofern dieser bekannt ist.
-  Wenn nicht bekannt → `ROLLBACK_NOT_POSSIBLE` (Operator hat
-  zwischen Up und Down `nextval` aufgerufen und der
-  Original-Stand ist verloren).
+  Wert auf den im Plan enthaltenen `restoreValue` zurück, sofern
+  bekannt.
+  Wenn kein stabiler Restore-Wert vorliegt (z. B. fehlender
+  pre-existing Sequence-Snapshot oder konkurrierende `nextval`-Calls),
+  resultiert Down in `ROLLBACK_NOT_POSSIBLE`.
 
 ### 3.2 Out-of-Scope
 
@@ -141,7 +146,7 @@ interface SequenceCurrentValueProbe {
 }
 
 sealed class SequenceCurrentValueProbeResult {
-    data class Read(val value: Long, val isCalled: Boolean) : SequenceCurrentValueProbeResult()
+    data class Read(val value: Long, val isCalled: Boolean? = null) : SequenceCurrentValueProbeResult()
     data class Failed(val code: String, val message: String) : SequenceCurrentValueProbeResult()
     data object NotApplicable : SequenceCurrentValueProbeResult() // SQLite without sequence support
 }
@@ -160,7 +165,11 @@ val sequencesNeedingPreservation = plan.operations
 for (op in sequencesNeedingPreservation) {
     val result = probe.probe(connection, op.objectRef.rootName)
     when (result) {
-        is Read -> emitFollowupAlterSequenceCurrentValue(op, result.value)
+        is Read -> emitFollowupAlterSequenceCurrentValue(
+            op,
+            value = result.value,
+            isCalled = result.isCalled,
+        )
         is Failed -> emitBlocker(result.code, result.message)
         NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
     }
@@ -169,17 +178,18 @@ for (op in sequencesNeedingPreservation) {
 
 ### 5.3 Operation-Modell
 
-Decision: re-use `AlterSequence` mit optionalem `currentValue`-
-Feld oder neuer Subtyp `AlterSequenceCurrentValue`. Empfehlung:
-neuer Subtyp, weil der Render-Pfad fundamental anders ist
-(Daten-Statement statt DDL).
+Decision: re-use `AlterSequence` mit optionalem `currentValue`/
+`isCalled`-Feld oder neuer Subtyp `AlterSequenceCurrentValue`.
+Empfehlung: neuer Subtyp mit `currentValue`, optionalem `isCalled`
+und optionalem `restoreValue`, weil der Render-Pfad fundamental anders
+ist (Daten-Statement statt DDL).
 
 ### 5.4 Dialekt-Render-Matrix
 
 | Dialekt | Render |
 |---|---|
-| PG | `SELECT setval('<seq>', <value>, true);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value+1> WHERE name = '<seq>';` |
+| PG | `SELECT setval('<seq>', <value>, :isCalled);` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = '<seq>';` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
 ---
@@ -203,7 +213,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] `SequenceDefinition.preserveCurrentValue` (oder
       equivalent Flag) ist im Schema-Modell.
 - [ ] PG-Probe liest `last_value`; PG-Renderer emittiert
-      `SELECT setval('<seq>', <value>, true)`.
+      `SELECT setval('<seq>', <value>, <isCalled>)` mit korrekt
+      propagiertem `isCalled`.
 - [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
 - [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true`
@@ -212,8 +223,10 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `SEQUENCE_PRESERVE_PROBE_FAILED`.
 - [ ] SQLite blockt mit
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
-- [ ] Reversibility: `AlterSequenceCurrentValue` Down setzt den
-      vor-Up-Wert wieder zurueck, falls bekannt.
+- [ ] Reversibility: `AlterSequenceCurrentValue` Down nutzt den im
+      Plan gespeicherten `restoreValue` und setzt damit den
+      vor-Up-Wert wieder zurueck; fehlt der Wert, wird
+      `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
 - [ ] Pro Dialekt mindestens je ein Positiv- und ein
       Blocker-Test.
 
@@ -230,7 +243,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `MANUAL_ACTION_REQUIRED` bzw.
       `DIALECT_UNSUPPORTED_OPERATION`.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
-      inverse Probe.
+      `setval`/`UPDATE` auf den gespeicherten `restoreValue`, sonst
+      expliziter `ROLLBACK_NOT_POSSIBLE`.
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
       (blocker).
