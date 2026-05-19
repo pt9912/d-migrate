@@ -461,164 +461,28 @@ Muster. Details:
 
 0.9.7 ist weiterhin in Arbeit; die Zeilen A-E oben beschreiben abgeschlossene
 Migrate-Basis-Slices, nicht den vollstaendigen Milestone-Abschluss.
+Die Tabelle fasst die seit dem 2026-05-08-Stand zusaetzlich erledigten Punkte
+und die weiterhin offenen Restpunkte zusammen.
 
-Zusätzlich erledigt seit dem 2026-05-08-Stand:
-
-- **G**: KI-nahe MCP-Tools / Prompts / Provider-Quotas abgeschlossen.
-- **A**: Migrate-Spezifikation und Namensbereinigung abgeschlossen.
-- **D.1/D.2/D.3a**: erste dialektspezifische DDL-Matrix fuer
-  PostgreSQL, MySQL und SQLite-Simple/Rebuild ist umgesetzt.
-- **D.3b (Vollscheibe)**: Materialized-View-Migrationsvertrag
-  vollstaendig implementiert (Sub-Slices A/B/C, 2026-05-17). PG rendert
-  Create/Replace/Drop diff-basiert; MySQL/SQLite blocken mit
-  `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`. Report liefert
-  konkrete `status`/`stalenessAfterUp`/`refreshSteps`/`locking`/
-  `rollback`/`primaryBlockedReason` + `dependencyBlockers`-Subfield;
-  `MaterializedViewDependencyDetector` blockt Drop/Replace/Column-Alter
-  einer depended-on Tabelle ohne MV-Drop/Replace mit
-  `BLOCKED_DEPENDENCY_UNRESOLVED`. Carve-out-Plan unter
-  `docs/planning/done/ImpPlan-0.9.7-d.3b-materialized-views.md`.
-- **C.2**: Planner-/Dependency-Slice abgeschlossen.
-- **C.1 Install-Policy-Slice**: Extension-Install-Policy konservativ
-  umgesetzt; MISSING/UNKNOWN/Privilege-Diagnostik bleibt offen.
-- **E.3 PostgreSQL-Sequences**: erster Sequence-Slice ist umgesetzt;
-  Preserve-/aktueller-Wert-Policy und Cross-Dialect-Sequencing bleiben offen.
-- **F.0/F.5 Vorarbeiten**: versionierte Plan-/Overlay-Vertraege,
-  Reversibilitaets-Summaries, CHECK-/EXCLUDE-Blocker und Overlay-
-  Secret-Diagnostik sind stabilisiert; echte CHECK-/EXCLUDE-Aenderungen
-  bleiben bewusst blockierend.
-- **F.4 Rendering**: `RenameTable`/`RenameColumn` als eigene
-  `DiffOperation`-Subtypes; OperationMapper konsumiert
-  `RenameMappingOverlayEntry`-Listen und faltet strukturkonsistente
-  Drop+Add-Paare zu Rename-Operationen; PostgreSQL/MySQL/SQLite-Renderer
-  emittieren `ALTER TABLE … RENAME TO/COLUMN …` fuer Up und Down.
-  Strukturmismatch faellt mit `RENAME_OVERLAY_STRUCTURAL_MISMATCH`
-  warning auf den Drop+Add-Pfad zurueck.
-- **Telemetry/Observability-Plan**: Adaptervertrag, Gates und Port-Grenzen
-  sind dokumentiert; produktives Metrics-/Tracing-Wiring ist kein 0.9.7-Scope.
-- **E.2 Trigger-Rendering**: Vollscheibe (Sub-Slices A.1 Foundation /
-  A.2 PostgreSQL / A.3 hasGap-Wiring + Strict-Mode / B MySQL / C
-  SQLite, 2026-05-18). Trigger-Operationen sind in allen drei
-  Dialekten renderbar: `CreateTrigger`/`ReplaceTrigger`/`DropTrigger`
-  verlassen die `OpCategory.UNSUPPORTED`-Fallschiene. PostgreSQL
-  rendert native `CREATE OR REPLACE TRIGGER` ab PG-14, sonst
-  Drop+Create; MySQL und SQLite immer Drop+Create. Der Mapper setzt
-  `OperationRisk.hasGap = true` ueber einen core-lokalen
-  `TriggerPlanningContext`, den `TriggerPlanningContextFactory`
-  (Application-Layer) aus `TriggerCapability` +
-  `postgresMajorVersion` ableitet — keine Renderer-interne
-  Capability-Resolution. `--strict-gap-operations` an `schema
-  migrate` lift Gap-Operationen auf `MANUAL_ACTION_REQUIRED`. Body-
-  Validierung in PG strikt (`[schema.]identifier(args)` als Funktions-
-  referenz; sonst `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`); MySQL/
-  SQLite akzeptieren inline SQL ohne Sanitisation und blocken nur
-  klare Dialekt-Konflikte (`MYSQL_TRIGGER_CONDITION_UNSUPPORTED`,
-  `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
-  `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`,
-  `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED`,
-  `SQLITE_TRIGGER_BODY_NOT_RENDERABLE`). Trigger-Namens-Kollisionen
-  blockt der dialektneutrale `TriggerNameCollisionDetector` (im
-  Reader-Pfad vor Map-Materialisierung; im File-Pfad ueber Jacksons
-  `FAIL_ON_READING_DUP_TREE_KEY`). SQLite-Rebuild-Pipeline absorbiert
-  Trigger auf rebuild-Tabellen via `SqliteRebuildPlanner.classify` —
-  keine doppelte Filter-Logik im Renderer. Plan und A.3-Detail-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md` und
-  `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
-
-Aktuell offene 0.9.7-Restpunkte:
-
-- ~~**B**~~: erledigt 2026-05-13 — PostgreSQL-`USING`-Overlays
-  binden Up/Down getrennt, `PG_USING_OVERLAY_MISSING` blockiert ohne
-  Nutzer-Overlay und `expressionSource` ist auf eine Allowlist
-  beschraenkt. SQLite-Live-Cast-Preflight nutzt einen
-  `MigrationPreflightPlanner`, schreibt strukturierte
-  `sqliteCastPreflights` mit `PASSED`/`FAILED`/`NOT_RUN_FILE_TARGET`/
-  `NOT_RUN_POLICY` in den Report, positive und blockierende Tests
-  laufen gegen eine echte SQLite-DB.
-- ~~**C.1 Rest**~~: erledigt 2026-05-13 — Renderer-Diagnostics
-  trennen `EXTENSION_DEPENDENCY_MISSING` / `UNKNOWN` /
-  `EXTENSION_INSTALL_PRIVILEGE_MISSING` / `_UNVERIFIED` (PostgreSQL +
-  SQLite), und der PostgreSQL-Reverse-Pfad trennt Installationsbefund
-  (`R400`) vom Objektbefund (`R401`).
-- **E Rest**: MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert /
-  Preserve-Policy, Routine-Bodies, Secret-Scrubbing und
-  Dependency-Sortierung ueber Tabellen, Views, Routinen, Trigger und Sequences.
-
-  *(2026-05-15/16: E.1 Routine-Migration komplett — Slice A (PG
-  Functions Up+Down via `RoutineBodyNormalizer`/`Scrubber`), Slice B
-  (PG Procedures), Slice C.1.a/b (Capability- und Debug-Body-
-  Infrastruktur in `hexagon:ports-read` plus Migration auf den
-  kanonischen `ROUTINE_DOWN_BODY_UNKNOWN`-Code), Slice C.2 (MySQL
-  Function/Procedure Renderer mit delimiterfreiem Artefakt +
-  Capability-Gate ueber `routineCapability` + `mysqlServerVersion`),
-  Slice C.3 (Dependency-Guard-Stub + `DROP + CREATE`-Fallback),
-  Slice D.1-D.4 (Manifest- und Engine-Edges + topology-getriebene
-  Dependency-Sortierung ueber alle fuenf Objektklassen) und Slice E
-  (PG-Reverse-Read populiert `security`/`definer`/`searchPath` aus
-  `pg_proc`). Slice F.11 korrigiert den MySQL-Familien-Default:
-  Oracle MySQL bleibt ohne `CREATE OR REPLACE` fuer Stored Routines,
-  live erkannte MariaDB-Ziele aktivieren diesen Pfad ueber den
-  Vendor-String. E.1 Workstream komplett; Plan wandert nach
-  `docs/planning/done/`.)*
-
-  *(2026-05-18: E.2 Trigger-Rendering komplett — Trigger-Bodies sind
-  in allen drei Dialekten renderbar; Plan wandert nach
-  `docs/planning/done/`. SQLite-Trigger-Reverse-Read aus
-  `sqlite_master` ist bewusst out of E.2-Scope und bleibt ein
-  Follow-up-Slice.)*
-- **F.0-F.3**: erste Slices komplett — siehe
-  `diffresult-migration-plan-2.md` §F.0 (`migration-overlay.v1`
-  fingerprint-/dialect-gebunden mit `overlayHash`), §F.2
-  (`migration-plan.v1` mit `artifactHash`, `requiredFeatures`,
-  `semanticExtensions`) und §F.3 (`rollback-sql v2` Header mit
-  `rollbackComplete`/`partialRollback`/`skippedOperationIds[]` plus
-  `--allow-partial-rollback`-Gate). §F.1 hat den
-  `DataTransformationContract`-Vertrag als Default `NONE` mit
-  `MANUAL_REQUIRED`-Pflichtweg fuer destruktive Operationen; echte
-  `DataTransformationMode.AUTOMATIC`-Backfills bleiben Phase-1.x-
-  Material (eigener Workstream mit Storage-, Privacy- und
-  Retention-Regeln).
-- **F.4 Rest**: ✅ erledigt 2026-05-19 — Dependency-Re-Projection
-  nach Rename (FK-Targets, View-/Trigger-/Index-/Default-Bindungen)
-  ist vollstaendig, plus View-/Trigger-/Routine-/Sequence-Rename
-  ueber alle drei Dialekte. *(2026-05-15: Dependency-Projection
-  T1–T6 fertig; rename-mapping-invalid-enum mit neuem
-  `MigrationBlockedReason.RENAME_MAPPING_INVALID` fertig;
-  cli-inline-overlay mit `--rename-table` / `--rename-column` +
-  Cross-Document-Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance
-  fertig.)*
-  *(2026-05-18/19: F.4 routine-trigger-view-renames komplett.
-  Sub-Slice A.1 Foundation (Enum + Carrier-Typen + Whitelist auf
-  7 ObjectTypes); A.2 Teil 1 (5 `Rename*`-Subtypes +
-  `ObjectRenamePolicy` per Dialekt); A.2 Teil 2 (dialektneutraler
-  `RenameObjectMapper`-Fold + PG-Renderer fuer alle 5 Subtypes —
-  `ALTER VIEW`, `ALTER TRIGGER … ON …`, `ALTER FUNCTION
-  …(types)`, `ALTER PROCEDURE …(types)`, `ALTER SEQUENCE`); B
-  (MySQL `RENAME TABLE` fuer View; Trigger/Routinen
-  Drop+Create-Fallback mit `RenameProvenance`-Marker; Sequence
-  blockiert); C (SQLite: View/Trigger Drop+Create-Fallback mit
-  Marker; Routinen/Sequence blockiert); D (`SequenceDefaultReprojector`
-  schreibt `SequenceNextVal`-Defaults in `CreateTable`/`AddColumn`/
-  `AlterColumnDefault` auf den Zielnamen um; `DependencyAnalyzer`
-  erkennt `RenameSequence` als Sequence-Provider); E
-  (`migration-plan.v1` versionierte `renameProjections` hinter
-  `rename-projections.v1`-Semantic-Extension-Gate). Plan-Doc
-  `docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.)*
-- **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
-  Vertrag und Daten-Preflight. *(2026-05-12: F.5-Erstscheibe
-  implementiert — Comparator nutzt konservativen SQL-Textvergleich,
-  unveraenderte CHECK-/EXCLUDE bloken Tabellenops nicht mehr;
-  Hinzufuegen/Aendern/Entfernen bleibt mit `CONSTRAINT_NOT_DIFFABLE`
-  blockierend, bis ein dialektspezifischer Render-/Enforcement-/
-  Preflight-Vertrag steht. Plan-2 §F.5.)*
-- **Coverage/QA**:
-  *(2026-05-13: MySQL-`AlterColumnNullability` als bewusster Blocker
-  umgesetzt — `MYSQL_NULLABILITY_REQUIRES_COLUMN_TYPE` plus
-  `DIALECT_UNSUPPORTED_OPERATION` ohne Statement-Emission;
-  Round-Trip-Smoke dokumentiert den Carve-out statt einen
-  Render-Pfad zu erzwingen.)* Verbleibend: breitere Report-/
-  Exit-Code-Erwartungen, Rollback-Verhalten je Workstream und
-  Artifact-/Overlay-Kompatibilitaet.
+| Workstream | Kurzbeschreibung | Status |
+| ---------- | ---------------- | ------ |
+| G | KI-nahe MCP-Tools / Prompts / Provider-Quotas | ✅ erledigt seit 2026-05-08 |
+| A | Migrate-Spezifikation und Namensbereinigung | ✅ erledigt seit 2026-05-08 |
+| B | PostgreSQL-`USING`-Overlays binden Up/Down getrennt, `PG_USING_OVERLAY_MISSING` blockiert ohne Nutzer-Overlay, `expressionSource` ist allowlist-beschraenkt; SQLite-Live-Cast-Preflight schreibt strukturierte `sqliteCastPreflights` in den Report | ✅ erledigt (2026-05-13) |
+| C.1 Install-Policy | Konservative Extension-Install-Policy umgesetzt; MISSING/UNKNOWN/Privilege-Diagnostik separat unter C.1 Rest | ✅ erledigt seit 2026-05-08 |
+| C.1 Rest | Renderer-Diagnostics trennen `EXTENSION_DEPENDENCY_MISSING` / `UNKNOWN` / `EXTENSION_INSTALL_PRIVILEGE_MISSING` / `_UNVERIFIED`; PostgreSQL-Reverse-Pfad trennt Installationsbefund (`R400`) vom Objektbefund (`R401`) | ✅ erledigt (2026-05-13) |
+| C.2 | Planner-/Dependency-Slice | ✅ erledigt seit 2026-05-08 |
+| D.1/D.2/D.3a | Erste dialektspezifische DDL-Matrix fuer PostgreSQL, MySQL und SQLite-Simple/Rebuild | ✅ erledigt seit 2026-05-08 |
+| D.3b | Materialized-View-Migrationsvertrag vollstaendig implementiert: PG rendert Create/Replace/Drop diff-basiert; MySQL/SQLite blocken mit `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`; Report und Dependency-Blocker sind umgesetzt | ✅ erledigt (2026-05-17) |
+| E.1 | Routine-Migration fuer PostgreSQL/MySQL inklusive Body-Normalisierung, Scrubbing und Dependency-Sortierung | ✅ erledigt (2026-05-15/16) |
+| E.2 | Trigger-Rendering fuer PostgreSQL, MySQL und SQLite inklusive Strict-Gap-Wiring, Body-Validierung, Namens-Kollisionsschutz und SQLite-Rebuild-Klassifikation | ✅ erledigt (2026-05-18) |
+| E.3 | Erster PostgreSQL-Sequence-Slice; Preserve-/aktueller-Wert-Policy und Cross-Dialect-Sequencing bleiben offen | ✅ erledigt seit 2026-05-08 |
+| E Rest | Nach E.1/E.2 verbleiben MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert / Preserve-Policy, SQLite-Trigger-Reverse-Read und Cross-Dialect-Sequencing; Routine-Bodies, Secret-Scrubbing und Dependency-Sortierung sind ueber E.1 erledigt | offen |
+| F.0-F.3 | Versionierte Plan-/Overlay-Vertraege, Reversibilitaets-Summaries, Rollback-v2-Header, Overlay-Secret-Diagnostik und `DataTransformationContract`-Default `NONE`; echte automatische Backfills bleiben Phase-1.x-Material | ✅ erste Slices erledigt |
+| F.4 | Dependency-Re-Projection nach Rename ist vollstaendig (FK-Targets, View-/Trigger-/Index-/Default-Bindungen); View-/Trigger-/Routine-/Sequence-Renames sind ueber alle drei Dialekte umgesetzt | ✅ erledigt (2026-05-19) |
+| F.5 | CHECK-/EXCLUDE-Erstscheibe mit konservativem SQL-Textvergleich; unveraenderte Constraints blocken Tabellenops nicht mehr, echte CHECK-/EXCLUDE-Aenderungen warten auf Dialekt-/Enforcement-Vertrag und Daten-Preflight | teilerledigt |
+| Telemetry/Observability | Adaptervertrag, Gates und Port-Grenzen dokumentiert; produktives Metrics-/Tracing-Wiring ausserhalb 0.9.7 | ✅ Plan erledigt seit 2026-05-08 |
+| Coverage/QA | MySQL-`AlterColumnNullability` ist als bewusster Blocker umgesetzt; verbleibend sind breitere Report-/Exit-Code-Erwartungen, Rollback-Verhalten je Workstream und Artifact-/Overlay-Kompatibilitaet | offen |
 
 ### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
 
