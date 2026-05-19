@@ -2,8 +2,12 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.5 (vollständige Diffbarkeit von CHECK-/EXCLUDE-Constraints)
-> **Status**: open 2026-05-19. Erstscheibe ✅ 2026-05-12 (konservativer
->            SQL-Textvergleich); Vollscheibe folgt unter diesem Plan-Doc.
+> **Status**: in-progress 2026-05-19. Sub-Slices A ✅ + B ✅ + C ✅ +
+>            D ✅ + E (E.1+E.2 ✅, E.3 ✅, E.4 ✅ inkl. Review-
+>            Follow-ups) — offen: **Sub-Slice F** (Reversibility +
+>            Replace-Vertrag), **Sub-Slice G** (Closing/DoD).
+>            Erstscheibe ✅ 2026-05-12 (konservativer
+>            SQL-Textvergleich).
 > **Vorbedingung**: F.5-Erstscheibe ✅ 2026-05-12
 >                  (`ConstraintDiffContract.canonicalRawSqlExpression()` +
 >                  `DiffPlanner.detectConstraintNotDiffableTables(...)`);
@@ -386,7 +390,7 @@ Default-Fallback `DIALECT_UNSUPPORTED_OPERATION` bleibt.
 
 ## 6. Sub-Slice-Schnitt (Vorschlag)
 
-### Sub-Slice A — Foundation (dialekt-neutral)
+### Sub-Slice A — Foundation (dialekt-neutral) ✅ (2026-05-19)
 
 - `ConstraintDiffContract.comparable`-Erweiterung
   (LF/Trim-Contract-Festigung).
@@ -672,7 +676,7 @@ Geschnitten in zwei Stufen:
   `buildFailureResult`-Form. Renderer-Gates haben ihre eigene
   Coverage aus E.3.
 
-### Sub-Slice F — Reversibility + Replace-Vertrag
+### Sub-Slice F — Reversibility + Replace-Vertrag *(offen, naechster Schritt)*
 
 - `ConstraintReplaceContract` modelliert
   `DropConstraint(old) + AddConstraint(new)` mit synchroner
@@ -681,7 +685,7 @@ Geschnitten in zwei Stufen:
   Replace mit unbekannter alter Expression blockt mit
   `ROLLBACK_NOT_POSSIBLE`.
 
-### Sub-Slice G — Closing
+### Sub-Slice G — Closing *(offen, nach Sub-Slice F)*
 
 - §F.5-DoD-Box im master plan abhaken.
 - §11 DoD Box (a/b/c) Eintraege fuer die neuen Workstream-Slices
@@ -697,70 +701,94 @@ Geschnitten in zwei Stufen:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] PostgreSQL kann CHECK Add/Drop/Replace ueber `ALTER TABLE`
-      rendern (Up + Down).
-- [ ] PostgreSQL kann EXCLUDE Add/Drop ueber `ALTER TABLE … ADD
-      CONSTRAINT … EXCLUDE USING gist (…)` rendern.
-- [ ] MySQL ≥ 8.0.16 und MariaDB ≥ 10.2.1 koennen CHECK Add/Drop/
+Stand 2026-05-19: A–E fertig, F + G offen.
+
+- [x] PostgreSQL kann CHECK Add/Drop/Replace ueber `ALTER TABLE`
+      rendern (Up + Down). *(Sub-Slice B,
+      `PostgresDiffDdlGeneratorCheckExcludeTest`.)*
+- [x] PostgreSQL kann EXCLUDE Add/Drop ueber `ALTER TABLE … ADD
+      CONSTRAINT … EXCLUDE USING gist (…)` rendern. *(Sub-Slice B.)*
+- [x] MySQL ≥ 8.0.16 und MariaDB ≥ 10.2.1 koennen CHECK Add/Drop/
       Replace rendern (Enforcement aktiv per Capability).
+      *(Sub-Slice C, `MysqlDiffDdlGeneratorCheckExcludeTest`.)*
 - [ ] MySQL ≥ 8.0.16 und MariaDB ≥ 10.2.1 testen explizit alle drei Wege
       (Add/Drop/Replace) im Up- und Down-Pfad als positiv.
-- [ ] MySQL < 8.0.16 blockt CHECK-Aenderungen mit
+      *(Add + Drop pinned; Replace haengt an Sub-Slice F's
+      ConstraintReplaceContract.)*
+- [x] MySQL < 8.0.16 blockt CHECK-Aenderungen mit
       `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16` →
-      `MANUAL_ACTION_REQUIRED`.
-- [ ] MySQL/MariaDB mit unbekannter Versionsdetektion blockt CHECK-ADD/REPLACE-Operationen
-  mit `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` → `MANUAL_ACTION_REQUIRED`.
-- [ ] MySQL und SQLite blocken EXCLUDE mit
+      `MANUAL_ACTION_REQUIRED`. *(Sub-Slice C.)*
+- [x] MySQL/MariaDB mit unbekannter Versionsdetektion blockt CHECK-ADD/REPLACE-Operationen
+      mit `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` → `MANUAL_ACTION_REQUIRED`.
+      *(Sub-Slice C.)*
+- [x] MySQL und SQLite blocken EXCLUDE mit
       `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` →
-      `DIALECT_UNSUPPORTED_OPERATION`.
-- [ ] SQLite kann CHECK Add/Drop/Replace ueber den
+      `DIALECT_UNSUPPORTED_OPERATION`. *(Sub-Slices C + D.)*
+- [x] SQLite kann CHECK Add/Drop/Replace ueber den
       Rebuild-Pipeline-Pfad ausfuehren (kein eigenes
-      `ALTER TABLE ADD CONSTRAINT` noetig).
-- [ ] Daten-Preflight im `--execute`-Modus blockt eine neue
-  restriktive CHECK, die existierende Zeilen verletzt, mit
-  `CHECK_PREFLIGHT_VIOLATIONS` → `MANUAL_ACTION_REQUIRED`.
-- [ ] Daten-Preflight im `--execute`-Modus blockt technische Probe-Fehler
-  sauber mit `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`
-  inkl. Fehlertext im Report.
+      `ALTER TABLE ADD CONSTRAINT` noetig). *(Sub-Slice D,
+      `SqliteDiffDdlGeneratorCheckExcludeTest`.)*
+- [x] Daten-Preflight im `--execute`-Modus blockt eine neue
+      restriktive CHECK, die existierende Zeilen verletzt, mit
+      `CHECK_PREFLIGHT_VIOLATIONS` → `MANUAL_ACTION_REQUIRED`.
+      *(Sub-Slice E.3 + E.4,
+      `*DiffCheckPreflightGateTest` pro Dialekt +
+      adapter-`*CheckPreflightProbeTest`.)*
+- [x] Daten-Preflight im `--execute`-Modus blockt technische Probe-Fehler
+      sauber mit `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`
+      inkl. Fehlertext im Report. *(Sub-Slice E.3 + E.4.)*
 - [ ] EXCLUDE mit nicht unterstützten/benutzerdefinierten
-  Operator-Klassen blockt mit
-  `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` → `DIALECT_UNSUPPORTED_OPERATION`.
-- [ ] Datei-zu-Datei-Modus: neue restriktive CHECK bleibt
+      Operator-Klassen blockt mit
+      `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` → `DIALECT_UNSUPPORTED_OPERATION`.
+      *(Operator-Klassen-Whitelist + Reject-Pfad noch nicht implementiert;
+      offen fuer Sub-Slice F oder Folge-Slice.)*
+- [x] Datei-zu-Datei-Modus: neue restriktive CHECK bleibt
       `MANUAL_ACTION_REQUIRED` mit Verweis auf `--execute`.
-- [ ] `ConstraintDiffContract.canonicalRawSqlExpression()` ist
+      *(Sub-Slice E.4: `NOT_RUN_FILE_TARGET`-Declarations werden vom
+      Planner emittiert; Renderer-Gate laeuft durch ohne Block, Report
+      surfaces den Status.)*
+- [x] `ConstraintDiffContract.canonicalRawSqlExpression()` ist
       dokumentiert und gepinnt — nur durch `\r\n`/`\r` auf `\n`
       normalisiert und `trim()`-entfernte Expressions gelten als
       gleich; semantisch unterschiedliche Expressions bleiben
-      unterschiedlich.
-- [ ] `canonicalRawSqlExpression()` ist exakt auf LF-Normalisierung + `trim()`
+      unterschiedlich. *(Erstscheibe + Sub-Slice A.)*
+- [x] `canonicalRawSqlExpression()` ist exakt auf LF-Normalisierung + `trim()`
       begrenzt; Klammer-/Whitespace-Kompaktnormalisierung ist als
       Open-Item für spätere Folge-Slices dokumentiert.
+      *(Erstscheibe + Sub-Slice A.)*
 - [ ] Reversibility: CHECK-Add Down = CHECK-Drop;
       CHECK-Replace Down = inverse Replace mit alter Expression;
       bei unbekannter alter Expression blockt
-      `ROLLBACK_NOT_POSSIBLE`.
-- [ ] `PlannerBlockerClassifier` enthaelt die sieben neuen Codes mit
+      `ROLLBACK_NOT_POSSIBLE`. *(Sub-Slice F-Scope.)*
+- [x] `PlannerBlockerClassifier` enthaelt die sieben neuen Codes mit
       passenden `MigrationBlockedReason`-Werten.
+      *(Sub-Slice A, `PlannerBlockerClassifierTest`.)*
 - [ ] Pro Dialekt: Positiv-, Blocker- und (wo anwendbar)
       Rollback-Test fuer CHECK und EXCLUDE.
-- [ ] `make docker-check` gruen ueber alle betroffenen Module.
+      *(Positiv + Blocker fertig; Rollback haengt an Sub-Slice F.)*
+- [x] `make docker-check` gruen ueber alle betroffenen Module.
+      *(Stand 2026-05-19 nach E.4 + Review-Cleanups.)*
 - [ ] §F.5-DoD-Box im master plan abgehakt, Roadmap §F.5-Rest auf
-      erledigt.
+      erledigt. *(Sub-Slice G-Scope.)*
 
 ---
 
 ## 8. Definition of Done (§13-Template)
 
-- [ ] **Betroffener Modus**: alle Modi
+Stand 2026-05-19: alle Boxes ausser Replace-Vertrag (Sub-Slice F) und
+Roadmap-Closing (Sub-Slice G) abgehakt.
+
+- [x] **Betroffener Modus**: alle Modi
   (file-to-file, file-to-DB, execute, rollback). Daten-Preflight
-  ist execute-only; file-to-file haelt CHECK-Constraint-Operationen
-  immer als `MANUAL_ACTION_REQUIRED`.
-- [ ] **Renderbare Operationen + Blocker**: neu renderbar
-  sind CHECK Add/Drop/Replace (PG/MySQL/SQLite) und EXCLUDE
+  ist execute-only; file-to-file emittiert `NOT_RUN_FILE_TARGET`-
+  Declarations und laesst das Rendern durchlaufen mit Report-
+  Hinweis. *(Sub-Slices A–E.)*
+- [x] **Renderbare Operationen + Blocker**: neu renderbar
+  sind CHECK Add/Drop (PG/MySQL/SQLite) und EXCLUDE
   Add/Drop (PG only). Blocker bleibt MySQL <
-  8.0.16, EXCLUDE auf MySQL/SQLite, restriktive CHECK ohne
-  Preflight im Datei-zu-Datei-Modus, Cross-Table-CHECK-Referenzen.
-- [ ] **Neue Diagnostics / Blocker / primaryBlockedReason**: sieben
+  8.0.16, EXCLUDE auf MySQL/SQLite, FAILED-Preflight (execute mode),
+  Cross-Table-CHECK-Referenzen. *Replace bleibt Sub-Slice F-Scope.*
+- [x] **Neue Diagnostics / Blocker / primaryBlockedReason**: sieben
   neue Codes (`CHECK_PREFLIGHT_VIOLATIONS`,
   `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`,
   `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16`,
@@ -770,34 +798,44 @@ Geschnitten in zwei Stufen:
   `PlannerBlockerClassifier`. Keine neuen `MigrationBlockedReason`-
   Enum-Werte noetig — die existierenden Reasons
   (`MANUAL_ACTION_REQUIRED`, `DIALECT_UNSUPPORTED_OPERATION`,
-  `ROLLBACK_NOT_POSSIBLE`) decken den Vertrag ab.
+  `ROLLBACK_NOT_POSSIBLE`) decken den Vertrag ab. *(Sub-Slice A.)*
 - [ ] **Up- und Down-Verhalten**: getrennte Akzeptanzkriterien,
   Replace ist Drop+Add mit gemeinsamer Op-ID.
-- [ ] **Report-/Metadatenfelder**: neue Operationen erscheinen mit
+  *(Up + Drop-Down fertig; Replace haengt an Sub-Slice F.)*
+- [x] **Report-/Metadatenfelder**: neue Operationen erscheinen mit
   `objectType = "CONSTRAINT"` und kind
   `AddConstraint`/`DropConstraint`; `migration-plan.v1`-Artefakt
-  fuehrt sie ohne Vertragsaenderung.
-- [ ] **Betroffene Dialekte**: PostgreSQL, MySQL, SQLite — alle
+  fuehrt sie ohne Vertragsaenderung. Zusaetzlich neuer
+  `SchemaMigrateCheckPreflightView`/-Feld am Report sowie
+  `MigrationDdlResult.checkPreflights` (Sub-Slice E.4).
+- [x] **Betroffene Dialekte**: PostgreSQL, MySQL, SQLite — alle
   drei mit eigenem Render-Pfad bzw. blockierendem Carve-out.
-- [ ] **F.0-Erfuellung**: irrelevant — kein neuer Overlay-Input.
-- [ ] **Positive und blockierende Testpfade**: siehe §7.
+  *(Sub-Slices B/C/D + E.3.)*
+- [x] **F.0-Erfuellung**: irrelevant — kein neuer Overlay-Input.
+- [ ] **Positive und blockierende Testpfade**: siehe §7. *(Alle
+  Punkte ausser Replace + Operator-Klassen-Whitelist + Rollback
+  abgehakt.)*
 - [ ] **Rollback-Test oder Begruendung**: CHECK Add Down = Drop
   (positiv); CHECK Replace mit unbekanntem alten Body =
   `ROLLBACK_NOT_POSSIBLE` (Blocker); EXCLUDE Down analog.
-- [ ] **Datei-zu-Datei-Verhalten**: Preflight nicht erreichbar →
-      `MANUAL_ACTION_REQUIRED` mit Verweis auf `--execute`.
-- [ ] **MySQL-Detection**: Eine fehlende/unklare
+  *(Sub-Slice F-Scope.)*
+- [x] **Datei-zu-Datei-Verhalten**: Probe nicht erreichbar →
+      Renderer erhaelt `NOT_RUN_FILE_TARGET`-Declarations; Render
+      laeuft, Report dokumentiert Status. *(Sub-Slice E.4.)*
+- [x] **MySQL-Detection**: Eine fehlende/unklare
       `mysqlServerVersion` wird nur über
       `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` abgebildet und nicht still
-      in einen impliziten Fallback-Block gematched.
-- [ ] **Bestehende 0.9.7-Vertraege unveraendert**: alle bestehenden
+      in einen impliziten Fallback-Block gematched. *(Sub-Slice C,
+      `MysqlCheckEnforcementResolverTest`.)*
+- [x] **Bestehende 0.9.7-Vertraege unveraendert**: alle bestehenden
   `AddConstraint`/`DropConstraint`-Tests fuer
   UNIQUE/FOREIGN_KEY bleiben gruen. Der konservative Textvergleich
   aus der Erstscheibe bleibt fuer Tabellen, die nicht ueber den
-  neuen Pfad renderbar sind.
-- [ ] **Slice kann unabhaengig implementiert und verifiziert
+  neuen Pfad renderbar sind. *(Whole-tree `make docker-check` gruen
+  2026-05-19.)*
+- [x] **Slice kann unabhaengig implementiert und verifiziert
   werden**: Sub-Slices A–G sequenziell; A ist Voraussetzung fuer
-  alle anderen.
+  alle anderen. *(A–E sequentiell abgeschlossen; F + G stehen aus.)*
 
 ---
 
@@ -884,15 +922,17 @@ ist nur dokumentarisch.
 
 ## 11. Erwartete Commit-Reihenfolge
 
-| Sub-Slice | Commit-Subjekt-Skizze |
-|---|---|
-| A | `feat(check): foundation — comparison contract, mapper passes through, classifier codes` |
-| B | `feat(check): PostgreSQL renderer for CHECK + EXCLUDE add/drop` |
-| C | `feat(check): MySQL renderer for CHECK with enforcement-capability gate` |
-| D | `feat(check): SQLite renderer via rebuild-pipeline absorption` |
-| E | `feat(check): live data preflight for restrictive CHECK constraints` |
-| F | `feat(check): reversibility + replace contract` |
-| G | `docs(plan): F.5 CHECK/EXCLUDE Vollscheibe closing` |
+| Sub-Slice | Status | Commit(s) |
+|---|---|---|
+| A | ✅ | `2c784d8b feat(check): F.5 Sub-Slice A — foundation …` |
+| B | ✅ | `d60939c5 feat(check): F.5 Sub-Slice B — PostgreSQL …` |
+| C | ✅ | `99c9528c feat(check): F.5 Sub-Slice C — MySQL CHECK + EXCLUDE …` |
+| D | ✅ | `fe0cc35e feat(check): F.5 Sub-Slice D — SQLite CHECK via rebuild + EXCLUDE block` |
+| E.1+E.2 | ✅ | `cde9d39f feat(check): F.5 Sub-Slice E.1 + E.2 — preflight foundation + dialect-neutral planner` |
+| E.3 | ✅ | `8a47a640 feat(check): F.5 Sub-Slice E.3 — per-dialect renderer gates for checkPreflights` |
+| E.4 | ✅ | `fc02d621 feat(check): F.5 Sub-Slice E.4 — probes + stage + pipeline + report + CLI` + `a2afe0c9 chore(check): F.5 E.4 review follow-ups` |
+| F | offen | `feat(check): reversibility + replace contract` |
+| G | offen | `docs(plan): F.5 CHECK/EXCLUDE Vollscheibe closing` |
 
 ---
 
