@@ -3,6 +3,7 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
@@ -235,35 +236,35 @@ internal class SchemaMigrateRenderPipeline(
         val castPreflightOutcome = outcomes.cast
         val checkPreflightOutcome = outcomes.check
         return when {
-        overlayPreflight.hasBlockers ->
-            MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
-        probeOutcome is SqliteProbeStage.Outcome.Failed ->
-            SqliteProbeStage.buildFailureResult(probeOutcome.message)
-        castPreflightOutcome is SqliteCastPreflightStage.Outcome.Failed ->
-            SqliteCastPreflightStage.buildFailureResult(
-                castPreflightOutcome.message,
-                castPreflightOutcome.declarations,
-            )
-        checkPreflightOutcome is CheckPreflightStage.Outcome.Failed ->
-            CheckPreflightStage.buildFailureResult(
-                checkPreflightOutcome.message,
-                checkPreflightOutcome.declarations,
-            )
-        else -> {
-            val rendered = renderer.generateUp(plan, renderOptions)
-            val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {
-                rendered.copy(checkPreflights = renderOptions.checkPreflights)
-            } else {
-                rendered
-            }
-            if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
-                withCheckPreflights.copy(
-                    diagnostics = withCheckPreflights.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
+            overlayPreflight.hasBlockers ->
+                MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
+            probeOutcome is SqliteProbeStage.Outcome.Failed ->
+                SqliteProbeStage.buildFailureResult(probeOutcome.message)
+            castPreflightOutcome is SqliteCastPreflightStage.Outcome.Failed ->
+                SqliteCastPreflightStage.buildFailureResult(
+                    castPreflightOutcome.message,
+                    castPreflightOutcome.declarations,
                 )
-            } else {
-                withCheckPreflights
+            checkPreflightOutcome is CheckPreflightStage.Outcome.Failed ->
+                CheckPreflightStage.buildFailureResult(
+                    checkPreflightOutcome.message,
+                    checkPreflightOutcome.declarations,
+                )
+            else -> {
+                val rendered = renderer.generateUp(plan, renderOptions)
+                val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {
+                    rendered.copy(checkPreflights = renderOptions.checkPreflights)
+                } else {
+                    rendered
+                }
+                if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
+                    withCheckPreflights.copy(
+                        diagnostics = withCheckPreflights.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
+                    )
+                } else {
+                    withCheckPreflights
+                }
             }
-        }
         }
     }
 
@@ -304,22 +305,6 @@ internal class SchemaMigrateRenderPipeline(
         )
     }
 
-    /**
-     * F.5 Sub-Slice E.4: dedupe CHECK-preflight declarations across
-     * Up + Down render results by [CheckPreflightDeclaration.bindingKey].
-     * Up takes precedence; Down only contributes entries Up doesn't
-     * already carry.
-     */
-    private fun mergeCheckPreflights(
-        up: List<dev.dmigrate.driver.CheckPreflightDeclaration>,
-        down: List<dev.dmigrate.driver.CheckPreflightDeclaration>,
-    ): List<dev.dmigrate.driver.CheckPreflightDeclaration> {
-        if (down.isEmpty()) return up
-        val seen = up.map { it.bindingKey }.toMutableSet()
-        val extras = down.filter { seen.add(it.bindingKey) }
-        return up + extras
-    }
-
     private fun applyTransactionScopeGuard(
         request: SchemaMigrateRequest,
         rendered: MigrationDdlResult,
@@ -345,4 +330,25 @@ internal class SchemaMigrateRenderPipeline(
             diagnostics = rendered.diagnostics + diagnostic,
         )
     }
+}
+
+/**
+ * F.5 Sub-Slice E.4: dedupe CHECK-preflight declarations across
+ * Up + Down render results by [CheckPreflightDeclaration.bindingKey].
+ * Up takes precedence; Down only contributes entries Up doesn't
+ * already carry.
+ *
+ * Top-level + `internal` so the pipeline can call it directly AND
+ * the unit-test suite can exercise it without instantiating the
+ * full pipeline (which would drag in probe + planner + renderer
+ * collaborators just for a pure list operation).
+ */
+internal fun mergeCheckPreflights(
+    up: List<CheckPreflightDeclaration>,
+    down: List<CheckPreflightDeclaration>,
+): List<CheckPreflightDeclaration> {
+    if (down.isEmpty()) return up
+    val seen = up.map { it.bindingKey }.toMutableSet()
+    val extras = down.filter { seen.add(it.bindingKey) }
+    return up + extras
 }

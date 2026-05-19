@@ -42,13 +42,15 @@ internal object CheckPreflightProbeRunner {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }
         val pool = HikariConnectionPoolFactory.create(config)
+        // Intentionally exhaustive over DatabaseDialect (no `else`):
+        // a future dialect must wire a probe explicitly, the
+        // compiler enforces it here.
         return pool.use { p ->
             p.borrow().use { conn ->
                 when (dialect) {
                     DatabaseDialect.POSTGRESQL -> PostgresCheckPreflightProbe.probe(conn, plan)
                     DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(conn, plan)
                     DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(conn, plan)
-                    else -> emptyList()
                 }
             }
         }

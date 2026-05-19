@@ -29,7 +29,14 @@ import dev.dmigrate.core.util.sha256Hex
  * Operations that the planner intentionally skips:
  *
  * - `DropConstraint(CHECK)` — dropping a constraint never violates
- *   existing data; no preflight needed.
+ *   existing data; no preflight needed. NOTE: this also means the
+ *   *Down*-direction of a `DropConstraint(CHECK)` (a logical re-add
+ *   during rollback) has no preflight either. The contract is
+ *   conservative: rolling back a previously-applied CHECK drop
+ *   replays the original CREATE-time data shape, which the operator
+ *   verified once before applying the Up. If you need explicit
+ *   rollback-time verification, run a fresh `schema migrate --execute`
+ *   from the rolled-back state.
  * - `AddConstraint(EXCLUDE)` and `DropConstraint(EXCLUDE)` — EXCLUDE
  *   is blocked upstream by per-dialect renderers; the preflight has
  *   nothing to verify.

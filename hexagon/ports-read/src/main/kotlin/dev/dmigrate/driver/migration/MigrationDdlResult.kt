@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.migration
 
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 
@@ -64,7 +65,7 @@ data class MigrationDdlResult(
      * the report and runner can surface what was verified, what was
      * skipped, and why a render blocked.
      */
-    val checkPreflights: List<dev.dmigrate.driver.CheckPreflightDeclaration> = emptyList(),
+    val checkPreflights: List<CheckPreflightDeclaration> = emptyList(),
     val spatialProfile: String? = null,
 ) {
     /** Convenience: the plan must not execute. */
