@@ -82,7 +82,9 @@ Roadmap §E Rest listet explizit:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
     WHERE name = <sequence_name>` (`next_value` ist der nächste von
-    `nextval` gelieferte Wert).
+    `nextval` gelieferte Wert). `managed_by` und `format_version` werden
+    verwendet, um sicherzustellen, dass die Reihe aus der d-migrate-
+    Sequence-Emulation stammt.
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype:
@@ -175,13 +177,20 @@ interface SequenceCurrentValueProbe {
 }
 
 sealed class SequenceCurrentValueProbeResult {
-    data class Read(val value: Long, val isCalled: Boolean? = null) : SequenceCurrentValueProbeResult()
+    data class Read(
+        val value: Long,
+        val isCalled: Boolean? = null,
+        val managedBy: String? = null,
+        val formatVersion: Int? = null,
+    ) : SequenceCurrentValueProbeResult()
     data class Failed(val code: String, val message: String) : SequenceCurrentValueProbeResult()
     data object NotFound : SequenceCurrentValueProbeResult() // erwarteter Vorzustand nicht vorhanden
     data object NotApplicable : SequenceCurrentValueProbeResult() // SQLite without sequence support
 }
 
 // PG muss isCalled liefern; MySQL/SQLite dürfen null setzen.
+// Bei MySQL wird zusätzlich geprüft, dass managedBy/formatVersion auf ein
+// von d-migrate verwaltetes Emulationsformat verweisen.
 ```
 
 ### 5.2 Pipeline-Integration
@@ -196,12 +205,24 @@ data class SequencePreserveContext(
     val applySequenceRef: SequenceObjectRef,
 )
 
-val sequencesNeedingPreservation = plan.operations
+val preserveSequenceCandidates = plan.operations
     .filterIsInstance<DiffOperation.AlterSequence>()
     .filter { it.shouldPreserveCurrentValue() }
     .plus(plan.operations.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(it) && it.shouldPreserveCurrentValue() })
     .plus(plan.operations.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
-    .map { op ->
+
+if (plan.isFileToFileMode && preserveSequenceCandidates.isNotEmpty()) {
+    emitBlocker(
+        "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
+        "preserveCurrentValue requires execute mode with a reachable target database.",
+    )
+} else {
+    fun isManagedDmgSequenceProbeResult(result: SequenceCurrentValueProbeResult.Read): Boolean {
+        // true, wenn Dialekt-spezifische Konventionen (managedBy/formatVersion) passen.
+        return result.managedBy != null && result.formatVersion != null
+    }
+
+    val sequencesNeedingPreservation = preserveSequenceCandidates.map { op ->
         when (op) {
             is DiffOperation.AlterSequence -> SequencePreserveContext(
                 sequenceOp = op,
@@ -231,6 +252,13 @@ for (ctx in sequencesNeedingPreservation) {
     val result = probe.probe(connection, probeSequenceName, ctx.probeSequenceRef.dialect)
     when (result) {
         is Read -> {
+            if (ctx.probeSequenceRef.dialect == Dialect.MYSQL && !isManagedDmgSequenceProbeResult(result)) {
+                emitBlocker(
+                    "SEQUENCE_PRESERVE_PROBE_FAILED",
+                    "MySQL sequence ${ctx.probeSequenceRef} is not recognized as d-migrate-managed sequence metadata.",
+                )
+                continue
+            }
             val isCalled = when (ctx.probeSequenceRef.dialect) {
                 Dialect.POSTGRES -> {
                     if (result.isCalled == null) {
@@ -269,6 +297,7 @@ for (ctx in sequencesNeedingPreservation) {
         NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
     }
 }
+}
 ```
 
 `shouldProbeCreateSequence(createOp)` gilt nur für explizit vorher vorhandene und
@@ -291,12 +320,17 @@ wenn der Wert aus einem pre-existing Snapshot eindeutig bestimmt ist; andernfall
 Ein Wert gilt als deterministisch, wenn die Ziel-Sequenz vor `AlterSequenceCurrentValue`
 stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 
+Für PG gilt: `restoreIsCalled` ist für den Down-Pfad verpflichtend.
+Fehlt dieser, ist `AlterSequenceCurrentValue` als `ROLLBACK_NOT_POSSIBLE`
+zu kennzeichnen.
+
 ### 5.3 Operation-Modell
 
 Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
 `probeSequenceRef`, `applySequenceRef`, `currentValue`, optionalem `isCalled`,
 optionalem `restoreValue`
-und optionalem `restoreIsCalled`,
+und optionalem `restoreIsCalled` (für PG muss Down zwingend einen
+non-null `restoreIsCalled` liefern),
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 
 ### 5.4 Dialekt-Render-Matrix
@@ -330,8 +364,12 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] PG-Probe liest `last_value`; PG-Renderer emittiert
       `SELECT setval('<seq>', <value>, <isCalled>)` mit korrekt
       propagiertem `isCalled`.
+- [ ] PG-Probe übermittelt bei `Read` ein nicht-null `isCalled`.
 - [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
+- [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
+      bekanntes d-migrate Sequenz-Emulationsformat, sonst wird
+      `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
 - [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
       `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
       Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
@@ -352,9 +390,11 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       Plan gespeicherten `restoreValue` und setzt damit den
       vor-Up-Wert wieder zurueck; fehlt der Wert, wird
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
-- [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` und optional
-      `restoreIsCalled` exakt in den Fällen gesetzt, in denen ein
-      deterministischer Ausgangszustand bekannt ist; für die übrigen Fälle
+- [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` exakt in den Fällen gesetzt, in denen ein
+      deterministischer Ausgangszustand bekannt ist; `restoreIsCalled` ist für PG dort
+      ebenfalls verpflichtend, sonst ist Down als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
+- [ ] Für alle Nicht-PG-Op ist `restoreIsCalled` optional.
+      Für die übrigen Fälle
       ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] Pro Dialekt mindestens je ein Positiv- und ein
       Blocker-Test.
@@ -376,9 +416,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       keinen lesbaren Vorzustand hat.
       Für diesen Fall ist `ROLLBACK_NOT_POSSIBLE` verpflichtend.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
-      `setval`/`UPDATE` auf den gespeicherten `restoreValue` und optionalen
-      `restoreIsCalled` (PG), sonst
-      expliziter `ROLLBACK_NOT_POSSIBLE`.
+      `setval`/`UPDATE` auf den gespeicherten `restoreValue` und für PG
+      zwingend `restoreIsCalled`, sonst explizit `ROLLBACK_NOT_POSSIBLE`.
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
       (blocker).
