@@ -10,7 +10,7 @@
 >                  MySQL/SQLite-Sequence-Diff-Migration *(parallele Plans)*.
 > **Referenz**: `diffresult-migration-plan-2.md` §E.3 (heutige
 >             Sequence-Erstscheibe pinnt ausdruecklich: „aktueller
->             Wert wird NICHT migriert"); `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`;
+>             Wert wird NICHT migriert“); `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`;
 >             `open/sqlite-sequence-emulation-plan.md`.
 
 ---
@@ -84,7 +84,7 @@ Roadmap §E Rest listet explizit:
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
     WHERE name = <sequence_name>` (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
-- Pipeline-Integration in `SchemaMigrateRunner`:
+- Pipeline-Integration in `SchemaMigratePreflightPlanner`:
   - Wenn `preserveCurrentValue = true` UND DB-Target verfuegbar:
     Probe vor Render; emittiere `AlterSequenceCurrentValue` mit
     dem geprobten Wert, inklusive `isCalled` (falls vom Dialekt
@@ -203,7 +203,10 @@ for (op in sequencesNeedingPreservation) {
                 restoreIsCalled = determineRestoreIsCalledHint(op),
             )
         }
-        is Failed -> emitBlocker(result.code, result.message)
+        is Failed -> emitBlocker(
+            "SEQUENCE_PRESERVE_PROBE_FAILED",
+            "Probe failed for ${op.objectRef}: ${result.code}: ${result.message}",
+        )
         NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
     }
 }
@@ -216,9 +219,12 @@ for (op in sequencesNeedingPreservation) {
 `determineRestoreValueHint(op)` leitet den Reverse-Zustand deterministisch aus dem Planer-Kontext ab:
 - Bei bestehender Ziel-Sequenz wird der vor-Migrationszustand als `restoreValue` und optional `restoreIsCalled` gesetzt.
 - Bei neu anzulegenden Sequenzen bleibt der Reverse-Hint `null`.
+- Bei fehlendem deterministischen Snapshot wird ebenfalls `null` zurückgegeben.
 
 `determineRestoreValueHint(op)` / `determineRestoreIsCalledHint(op)` dürfen nur dann Werte liefern,
 wenn der Wert aus einem pre-existing Snapshot eindeutig bestimmt ist; andernfalls werden sie `null`.
+Ein Wert gilt als deterministisch, wenn die Ziel-Sequenz vor `AlterSequenceCurrentValue`
+stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 
 ### 5.3 Operation-Modell
 
@@ -244,7 +250,7 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
 | B | PG-Probe + PG-Renderer fuer `setval` |
 | C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` |
-| D | Pipeline-Integration in `SchemaMigrateRunner` (probe → emit) |
+| D | Pipeline-Integration in `SchemaMigratePreflightPlanner` (probe → emit) |
 | E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
@@ -290,7 +296,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `MANUAL_ACTION_REQUIRED` bzw.
       `DIALECT_UNSUPPORTED_OPERATION`.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
-      `setval`/`UPDATE` auf den gespeicherten `restoreValue`, sonst
+      `setval`/`UPDATE` auf den gespeicherten `restoreValue` und optionalen
+      `restoreIsCalled` (PG), sonst
       expliziter `ROLLBACK_NOT_POSSIBLE`.
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
