@@ -25,8 +25,10 @@
 >            `SequenceNextVal`-Defaults in CreateTable/AddColumn/
 >            AlterColumnDefault + `DependencyAnalyzer` erkennt
 >            `RenameSequence` als Sequence-Provider) ✅ 2026-05-19.
->            Sub-Slices E (Plan-Artefakt-Vertrag-Erweiterung) /
->            F (Roadmap + cli-spec + CHANGELOG Closing) offen.
+>            **Sub-Slice E** (`migration-plan.v1` versioniert
+>            `renameProjections` + `MigrationPlanArtifactFeatures.
+>            RENAME_PROJECTIONS_V1`-Gate + Codec/Validator/Tests) ✅ 2026-05-19.
+>            Sub-Slice F (Roadmap + cli-spec + CHANGELOG Closing) offen.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
 >                  Serialisierung, Execution-Status), **E.1 Routine-
@@ -464,12 +466,50 @@ Out of scope (folgt einem spaeteren Slice):
   lebende Spalten transparent ist; ein textueller Rewrite ist nur
   fuer im selben Plan emittierte Ops noetig.
 
-### Sub-Slice E — Plan-Artefakt-Vertrag-Erweiterung
+### Sub-Slice E — Plan-Artefakt-Vertrag-Erweiterung ✅ 2026-05-19
 
-- `migration-plan.v1` behandelt `renameProjections` als versionierte
-  Semantik (heute optionales Producer-Metadatum). Codec/Validator/
-  Goldens entsprechend.
-- `requiredFeatures`/`semanticExtensions`-Gate fuer alte Consumer.
+- Neues optionales `renameProjections: List<MigrationPlanArtifactRenameProjection>`
+  Feld auf `MigrationPlanArtifact`. Der DTO mirrors den Public-Subset
+  des internen `RenameProjectionReport`-Carriers (candidateId,
+  objectType, from/toPath, overlaySource, overlayEntryId, overlayHash,
+  renameOperationId, fallbackOperationIds, fallbackReason). Die
+  reicheren Felder `automatic`/`explicit`/`blockers` bleiben dem
+  internen Report-Carrier vorbehalten — der Artefakt-Vertrag
+  dokumentiert nur das Rename-Outcome und seine Op-ID-Bindings.
+- Neuer `MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1 =
+  "rename-projections.v1"` als Semantic-Extension-Gate. Producer muss
+  den Identifier in `semanticExtensions` setzen wenn
+  `renameProjections` non-empty ist; sonst wuerde ein alter Consumer
+  den Drop+Create-Fallback als gewoehnlichen destruktiven Change
+  ausfuehren statt als Logik-Rename. `withRenameProjectionExtension()`
+  Convenience-Methode setzt das Flag idempotent.
+- `MigrationPlanArtifactCanonicalJson` encodiert `renameProjections`
+  konditional zwischen `renderedStatements` und `createdAt`; Order
+  pinned per Test.
+- `MigrationPlanArtifactValidator` zwei neue Pfade:
+  - Producer-Bug: `renameProjections` non-empty, aber Gate fehlt →
+    `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION`.
+  - Consumer ohne `RENAME_PROJECTIONS_V1` in
+    `supportedSemanticExtensions` → bestehender
+    `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION`-Blocker greift.
+- `MigrationPlanArtifactContractTest` 6 neue Cases:
+  - Leeres `renameProjections` → kein JSON-Feld, kein Gate.
+  - Encode mit zwei Projektionen (Native + Fallback) → JSON in
+    korrekter Field-Order + `rename-projections.v1` in
+    `semanticExtensions`.
+  - Producer ohne Gate → Validator blockt mit
+    `RENAME_PROJECTIONS_REQUIRE_EXTENSION`.
+  - Consumer mit Extension → akzeptiert.
+  - Consumer ohne Extension → blockt mit
+    `UNKNOWN_SEMANTIC_EXTENSION`.
+  - `withRenameProjectionExtension()` idempotent.
+
+Out of scope (Sub-Slice F oder spaeter):
+- CLI-Seite (`SchemaMigrateRunner` / `SchemaMigrateArtefactSink`)
+  ueberreicht heute den `SchemaMigrateReport` (nicht das Plan-Artefakt)
+  ans Filesystem — dieser Slice schliesst den Artefakt-Vertrag selbst
+  ab, die Producer-Verdrahtung folgt in F oder einem dedizierten
+  Artefakt-Emit-Slice.
 
 ### Sub-Slice F — Closing
 

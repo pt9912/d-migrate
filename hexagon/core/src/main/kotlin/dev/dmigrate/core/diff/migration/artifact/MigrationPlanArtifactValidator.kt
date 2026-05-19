@@ -37,6 +37,22 @@ object MigrationPlanArtifactDiagnostics {
     const val SECRET_BEARING_PRODUCER_METADATA: String = "PLAN_ARTIFACT_SECRET_BEARING_PRODUCER_METADATA"
     const val REVERSIBILITY_SUMMARY_MISMATCH: String = "PLAN_ARTIFACT_REVERSIBILITY_SUMMARY_MISMATCH"
     const val UNKNOWN_REVERSIBILITY_OPERATION: String = "PLAN_ARTIFACT_UNKNOWN_REVERSIBILITY_OPERATION"
+
+    /**
+     * F.4 Sub-Slice E: a non-empty
+     * [MigrationPlanArtifact.renameProjections] payload requires the
+     * producer to advertise
+     * [MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1] in
+     * [MigrationPlanArtifact.semanticExtensions]. Without the gate, an
+     * old consumer would silently execute the Drop+Create fallback as
+     * an ordinary destructive change instead of treating it as a
+     * logical rename. This diagnostic surfaces a producer bug — the
+     * standard fix is to call
+     * [MigrationPlanArtifact.withRenameProjectionExtension] before
+     * signing.
+     */
+    const val RENAME_PROJECTIONS_REQUIRE_EXTENSION: String =
+        "PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION"
 }
 
 object MigrationPlanArtifactValidator {
@@ -89,6 +105,17 @@ object MigrationPlanArtifactValidator {
             block(
                 MigrationPlanArtifactDiagnostics.UNKNOWN_SEMANTIC_EXTENSION,
                 "Unsupported semantic extension '$unknownExtension'",
+            )
+        }
+
+        if (artifact.renameProjections.isNotEmpty() &&
+            MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1 !in artifact.semanticExtensions
+        ) {
+            block(
+                MigrationPlanArtifactDiagnostics.RENAME_PROJECTIONS_REQUIRE_EXTENSION,
+                "renameProjections is non-empty but '${MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1}' " +
+                    "is missing from semanticExtensions — old consumers would execute the Drop+Create " +
+                    "fallback as an ordinary destructive change.",
             )
         }
 

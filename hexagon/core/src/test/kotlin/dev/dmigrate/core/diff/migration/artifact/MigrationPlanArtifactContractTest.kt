@@ -4,6 +4,7 @@ import dev.dmigrate.core.util.sha256Hex
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 
 class MigrationPlanArtifactContractTest : FunSpec({
 
@@ -119,13 +120,111 @@ class MigrationPlanArtifactContractTest : FunSpec({
         result.diagnostics.map { it.code }
             .shouldContain(MigrationPlanArtifactDiagnostics.UNKNOWN_SEMANTIC_EXTENSION)
     }
+
+    // ── F.4 Sub-Slice E: renameProjections artifact contract ───────
+
+    test("F.4 E: empty renameProjections does not appear in canonical JSON and hash is stable") {
+        val artifact = unsignedArtifact()
+        // Encoding does NOT contain the field at all when empty.
+        MigrationPlanArtifactCanonicalJson.encodeUnsigned(artifact).contains("renameProjections") shouldBe false
+        // withRenameProjectionExtension is a no-op when the list is empty.
+        artifact.withRenameProjectionExtension() shouldBe artifact
+    }
+
+    test("F.4 E: renameProjections encode into canonical JSON between renderedStatements and createdAt") {
+        val artifact = unsignedArtifact(
+            renameProjections = listOf(sampleNativeProjection(), sampleFallbackProjection()),
+        ).withRenameProjectionExtension()
+        val encoded = MigrationPlanArtifactCanonicalJson.encodeUnsigned(artifact)
+        encoded shouldContain "\"renameProjections\":"
+        encoded shouldContain "\"candidateId\": \"cand-rename-users\""
+        encoded shouldContain "\"renameOperationId\": \"rename-users\""
+        encoded shouldContain "\"candidateId\": \"cand-fallback-audit\""
+        encoded shouldContain "\"fallbackOperationIds\":"
+        encoded shouldContain "\"fallbackReason\": \"MySQL has no `ALTER TRIGGER ... RENAME`\""
+        // Field order: renderedStatements precedes renameProjections precedes createdAt.
+        val renderedStatementsIdx = encoded.indexOf("\"renderedStatements\":")
+        val renameProjectionsIdx = encoded.indexOf("\"renameProjections\":")
+        val createdAtIdx = encoded.indexOf("\"createdAt\":")
+        (renderedStatementsIdx in 0..<renameProjectionsIdx && renameProjectionsIdx < createdAtIdx) shouldBe true
+        // semanticExtensions auto-includes the gate after withRenameProjectionExtension.
+        encoded shouldContain "\"rename-projections.v1\""
+    }
+
+    test("F.4 E: validator blocks renameProjections without the rename-projections.v1 extension") {
+        // Producer forgot to call withRenameProjectionExtension().
+        val artifact = unsignedArtifact(
+            renameProjections = listOf(sampleNativeProjection()),
+        ).withComputedHash()
+        val result = MigrationPlanArtifactValidator.validate(artifact)
+        result.diagnostics.map { it.code } shouldContain
+            MigrationPlanArtifactDiagnostics.RENAME_PROJECTIONS_REQUIRE_EXTENSION
+        result.hasBlockers shouldBe true
+    }
+
+    test("F.4 E: consumer that supports the extension accepts artifacts with renameProjections") {
+        val artifact = unsignedArtifact(
+            renameProjections = listOf(sampleNativeProjection()),
+        ).withRenameProjectionExtension().withComputedHash()
+        val result = MigrationPlanArtifactValidator.validate(
+            artifact,
+            context = MigrationPlanArtifactValidationContext(
+                supportedSemanticExtensions = setOf(MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1),
+            ),
+        )
+        result.hasBlockers shouldBe false
+    }
+
+    test("F.4 E: consumer without the extension support rejects artifacts with renameProjections") {
+        val artifact = unsignedArtifact(
+            renameProjections = listOf(sampleNativeProjection()),
+        ).withRenameProjectionExtension().withComputedHash()
+        val result = MigrationPlanArtifactValidator.validate(artifact)
+        // Default context's supportedSemanticExtensions is empty —
+        // the extension flag is unknown so the artifact is rejected.
+        result.diagnostics.map { it.code } shouldContain
+            MigrationPlanArtifactDiagnostics.UNKNOWN_SEMANTIC_EXTENSION
+    }
+
+    test("F.4 E: withRenameProjectionExtension is idempotent") {
+        val once = unsignedArtifact(
+            renameProjections = listOf(sampleNativeProjection()),
+        ).withRenameProjectionExtension()
+        val twice = once.withRenameProjectionExtension()
+        twice shouldBe once
+    }
 })
+
+private fun sampleNativeProjection() = MigrationPlanArtifactRenameProjection(
+    candidateId = "cand-rename-users",
+    objectType = "TABLE",
+    fromPath = listOf("users_old"),
+    toPath = listOf("users"),
+    overlaySource = "ovl/rename.json",
+    overlayEntryId = "users_old-to-users",
+    overlayHash = "0123456789abcdef",
+    renameOperationId = "rename-users",
+)
+
+private fun sampleFallbackProjection() = MigrationPlanArtifactRenameProjection(
+    candidateId = "cand-fallback-audit",
+    objectType = "TRIGGER",
+    fromPath = listOf("orders", "audit_old"),
+    toPath = listOf("orders", "audit_new"),
+    overlaySource = "ovl/rename.json",
+    overlayEntryId = "audit_old-to-audit_new",
+    overlayHash = "fedcba9876543210",
+    renameOperationId = null,
+    fallbackOperationIds = listOf("drop-trigger-audit_old", "create-trigger-audit_new"),
+    fallbackReason = "MySQL has no `ALTER TRIGGER ... RENAME`",
+)
 
 private fun unsignedArtifact(
     formatVersion: String = MigrationPlanArtifact.FORMAT_VERSION,
     requiredFeatures: Set<String> = emptySet(),
     semanticExtensions: Set<String> = emptySet(),
     producerMetadata: Map<String, String> = emptyMap(),
+    renameProjections: List<MigrationPlanArtifactRenameProjection> = emptyList(),
 ): MigrationPlanArtifact =
     MigrationPlanArtifact(
         formatVersion = formatVersion,
@@ -163,6 +262,7 @@ private fun unsignedArtifact(
                 transactionScope = "SINGLE_STATEMENT",
             ),
         ),
+        renameProjections = renameProjections,
         createdAt = "2026-05-13T10:15:30Z",
         producerMetadata = producerMetadata,
     )

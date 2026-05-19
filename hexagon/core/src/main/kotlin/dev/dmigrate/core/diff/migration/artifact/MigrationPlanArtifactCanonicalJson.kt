@@ -21,6 +21,9 @@ object MigrationPlanArtifactCanonicalJson {
         if (artifact.renderedStatements.isNotEmpty()) {
             fields += "renderedStatements" to JsonArray(artifact.renderedStatements.map(::statementValue))
         }
+        if (artifact.renameProjections.isNotEmpty()) {
+            fields += "renameProjections" to JsonArray(artifact.renameProjections.map(::renameProjectionValue))
+        }
         fields += "createdAt" to JsonString(artifact.createdAt)
         if (artifact.producerMetadata.isNotEmpty()) {
             fields += "producerMetadata" to JsonObject(
@@ -98,6 +101,24 @@ object MigrationPlanArtifactCanonicalJson {
                 "sqlHash" to JsonString(statement.sqlHash),
                 "transactionScope" to JsonString(statement.transactionScope),
             ),
+        )
+
+    private fun renameProjectionValue(projection: MigrationPlanArtifactRenameProjection): JsonValue =
+        JsonObject(
+            buildList {
+                add("candidateId" to JsonString(projection.candidateId))
+                add("objectType" to JsonString(projection.objectType))
+                add("fromPath" to stringArray(projection.fromPath))
+                add("toPath" to stringArray(projection.toPath))
+                add("overlaySource" to JsonString(projection.overlaySource))
+                add("overlayEntryId" to JsonString(projection.overlayEntryId))
+                projection.overlayHash?.let { add("overlayHash" to JsonString(it)) }
+                projection.renameOperationId?.let { add("renameOperationId" to JsonString(it)) }
+                if (projection.fallbackOperationIds.isNotEmpty()) {
+                    add("fallbackOperationIds" to stringArray(projection.fallbackOperationIds))
+                }
+                projection.fallbackReason?.let { add("fallbackReason" to JsonString(it)) }
+            },
         )
 
     private fun stringArray(values: List<String>): JsonValue =
