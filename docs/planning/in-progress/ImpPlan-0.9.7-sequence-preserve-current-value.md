@@ -82,12 +82,16 @@ Roadmap §E Rest listet explizit:
   dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
-    WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)` (`next_value` ist der nächste von
+    WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)` (`next_value` ist der nächste von
     `nextval` gelieferte Wert). `managed_by` und `format_version` werden
     verwendet, und zusammen mit den in der Emulation definierten
     unterstützten `format_version`-Werten (`mysqlExpectedFormatVersions`),
     um sicherzustellen, dass die Reihe aus der d-migrate-
     Sequence-Emulation stammt.
+    Für `dmg_sequences` ist der Lookup-Key deterministisch aus dem
+    `SequenceObjectRef` abzuleiten (Name + stabiler Resolver auf schema/namespace),
+    und dieselbe Funktion muss von der MySQL-Render- und Probe-Seite konsistent genutzt
+    werden (`dmg_sequences` kennt keine weitere Disambiguierungsspalte).
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype:
@@ -100,7 +104,7 @@ Roadmap §E Rest listet explizit:
     als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
     übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
-    WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)`
+    WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)`
     (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
@@ -198,6 +202,12 @@ sealed class SequenceCurrentValueProbeResult {
 // Bei MySQL wird zusätzlich geprüft, dass managedBy/formatVersion auf ein
 // von d-migrate verwaltetes Emulationsformat verweisen.
 // MySQL ist zusätzlich nur deterministisch, wenn genau eine Zeile zurückkommt.
+
+// MySQL-Helfer für deterministic name mapping:
+// val mysqlSequenceKey: String = formatMysqlDmgSequenceKey(sequenceRef)
+// -> escaped via escapeMysqlStringLiteral(mysqlSequenceKey)
+// -> Query/Update WHERE name = :mysqlSequenceKey
+// (gleiche Funktion für Probe und Renderer)
 ```
 
 ### 5.2 Pipeline-Integration
@@ -261,6 +271,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
     } else {
         val mysqlExpectedManagedBy = setOf("d-migrate")
         val mysqlExpectedFormatVersions = mysqlSequenceEmulationMetadata.supportedFormatVersions
+        fun mysqlSequenceLookupKey(ref: SequenceObjectRef): String = renderMysqlDmgSequenceLookupKey(ref)
 
         fun validateMysqlReadDeterminism(
             result: SequenceCurrentValueProbeResult.Read,
@@ -269,7 +280,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             return if (result.matchedRows != 1) {
                 SequenceCurrentValueProbeResult.Failed(
                     code = "SEQUENCE_PRESERVE_PROBE_FAILED",
-                    message = "dmg_sequences query returned ${result.matchedRows} rows for name=${probeSequenceRef.name}",
+                    message = "dmg_sequences query returned ${result.matchedRows} rows for nameKey=${mysqlSequenceLookupKey(probeSequenceRef)}",
                 )
             } else result
         }
@@ -395,6 +406,13 @@ Die Reihenfolge ist lokal über `revertAfterRename` deterministisch zu erzwingen
 vergleichbarer Down-Emitter-Ordering-Block schreiben einen festen Reihenfolgen-Constraint von
 `RenameSequence`-Down zu `AlterSequenceCurrentValue`-Down.
 
+Implementierungs-Constraint:
+- Jede `AlterSequenceCurrentValue`-Down-Op mit `revertAfterRename = true` MUSS in der
+  Down-Emission nach der passenden `RenameSequence`-Down-Op mit derselben `probeSequenceRef`
+  ausgegeben werden.
+- Bei Gruppen-Bildung im Sortierer ist ein lokaler Ordering-Key verpflichtend:
+  `(pairId, step)` mit `step = RenameDown (0)`, `AlterSequenceCurrentValue-Down (1)`.
+
 Für PG gilt: `restoreIsCalled` ist für den Down-Pfad verpflichtend.
 Fehlt dieser, ist `AlterSequenceCurrentValue` als `ROLLBACK_NOT_POSSIBLE`
 zu kennzeichnen. Das ist kein zusätzlicher Planer-Blocker, sondern
@@ -414,7 +432,7 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | Dialekt | Render |
 |---|---|
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>);` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>);` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
 MySQL-Renderer müssen sicherstellen, dass genau eine Zeile betroffen ist;
@@ -426,9 +444,8 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 - Bei `rollback`: bei 0 oder >1 betroffenen Zeilen ist der Downpfad explizit als
   `ROLLBACK_NOT_POSSIBLE` zu kennzeichnen.
 
-`<escaped_sequence_name>` ist als SQL-literal-seitig escaped String zu rendern
-(z. B. über vorhandene Dialekt-Quoting-Helfer), nicht als unformatierter Identifier
-einzusetzen.
+`<escaped_mysql_sequence_key>` ist als SQL-literal-seitig escaped String zu rendern
+(z. B. über vorhandene Dialekt-Quoting-Helfer), nicht als unformatierter Identifier einzusetzen.
 
 ---
 
@@ -459,6 +476,9 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
       bekanntes d-migrate Sequenz-Emulationsformat, sonst wird
       `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
+- [ ] MySQL-Probe und MySQL-Renderer verwenden dieselbe Resolverfunktion
+      für den `dmg_sequences.name`-Lookup-Key aus `SequenceObjectRef`
+      (gleicher `mysql_sequence_key` für Probe/Render-Phase).
 - [ ] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
       die Abfrage auf `dmg_sequences` mehr als eine deterministische Trefferzeile liefert
       oder keine eindeutig matcht.
@@ -476,6 +496,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] Bei `RenameSequence` mit `revertAfterRename = true` ist die Down-Reihenfolge
       durchgängig fest: Rename-Rückoperation (`RenameSequence` down) **vor** der
       `AlterSequenceCurrentValue`-Restore-Operation.
+      Eine Down-Assertion muss den Sortierindex des Rename-Downs deterministisch
+      vor dem zugehörigen Restore nachweisen.
 - [ ] MySQL-Prüfung/Restore nutzt `mysqlExpectedFormatVersions` aus der
       Emulations-Definition (nicht einen einzelnen hartkodierten Wert im
       Renderer/Planner), und `format_version` wird über diese Menge evaluiert.
