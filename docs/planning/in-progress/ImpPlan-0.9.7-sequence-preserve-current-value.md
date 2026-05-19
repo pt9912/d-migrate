@@ -73,8 +73,10 @@ Roadmap §E Rest listet explizit:
   - **SQLite**: TBD pro `sqlite-sequence-emulation-plan.md`;
     blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
     der SQLite-Plan landet.
-- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?)`
+- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?)`
   (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
+- Erweiterung: Für Reversibility wird zusätzlich ein optionales
+  `restoreIsCalled: Boolean?` vorgesehen.
 - Renderer-Pfade pro Dialekt:
   - **PG**: `SELECT setval('<sequence_name>', <value>, <is_called>)`
     als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
@@ -90,6 +92,12 @@ Roadmap §E Rest listet explizit:
     bestimmen kann.
     Für PG ist `isCalled` zwingend (kein Default), für andere
     Dialekte wird `isCalled` nicht verwendet.
+  - Reverse-Daten:
+    - `restoreValue`/`restoreIsCalled` werden nur gesetzt, wenn ein stabiler
+      Ausgangszustand deterministisch vorliegt (bestehende Ziel-Sequenz vor der
+      Migration, oder explizit dokumentierter pre-existing Snapshot).
+    - Bei neu erstellten Sequenzen ohne deterministische Historie bleibt der
+      Reverse-Zustand `null` und Down wird mit `ROLLBACK_NOT_POSSIBLE`.
   - Datei-zu-Datei-Modus: `preserveCurrentValue = true` blockt
     mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
     `MANUAL_ACTION_REQUIRED`.
@@ -103,10 +111,10 @@ Roadmap §E Rest listet explizit:
   Wenn kein stabiler Restore-Wert vorliegt (z. B. fehlender
   pre-existing Sequence-Snapshot oder konkurrierende `nextval`-Calls),
   resultiert Down in `ROLLBACK_NOT_POSSIBLE`.
-  Diese `restoreValue` wird als `restoreValueHint` auf der Follow-up-Operation
-  geführt. Der Planer setzt den Hint deterministisch, wenn der
+  Diese Werte werden als `restoreValue`/`restoreIsCalled` auf der
+  Follow-up-Operation geführt. Der Planer setzt den Hint deterministisch, wenn der
   Ausgangswert aus einem pre-existing target-snapshot ableitbar ist.
-  Bei neu angelegten Zielen bleibt der Hint `null` und Down wird als
+  Bei neu angelegten Zielen bleibt der Restore-Hint `null` und Down wird als
   `ROLLBACK_NOT_POSSIBLE` markiert.
 
 ### 3.2 Out-of-Scope
@@ -166,6 +174,7 @@ Analog zu `SqliteCastPreflightProbe` in
 ```
 val sequencesNeedingPreservation = plan.operations
     .filterIsInstance<DiffOperation.CreateSequence>()
+    .plus(plan.operations.filterIsInstance<DiffOperation.AlterSequence>())
     .filter { it.sequence.preserveCurrentValue }
 
 for (op in sequencesNeedingPreservation) {
@@ -181,9 +190,8 @@ for (op in sequencesNeedingPreservation) {
                     if (result.isCalled == null) {
                         emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
                         continue
-                    } else {
-                        result.isCalled
                     }
+                    result.isCalled
                 }
                 else -> null
             }
@@ -191,7 +199,8 @@ for (op in sequencesNeedingPreservation) {
                 op,
                 value = result.value,
                 isCalled = isCalled,
-                restoreValue = op.restoreValueHint,
+                restoreValue = determineRestoreValueHint(op),
+                restoreIsCalled = determineRestoreIsCalledHint(op),
             )
         }
         is Failed -> emitBlocker(result.code, result.message)
@@ -204,10 +213,18 @@ for (op in sequencesNeedingPreservation) {
 // DB-Identifikator (z. B. "public.my_seq"). Für MySQL/SQLite-Emulation wird der
 // unqualifizierte Sequenzname benötigt (z. B. "my_seq").
 
+`determineRestoreValueHint(op)` leitet den Reverse-Zustand deterministisch aus dem Planer-Kontext ab:
+- Bei bestehender Ziel-Sequenz wird der vor-Migrationszustand als `restoreValue` und optional `restoreIsCalled` gesetzt.
+- Bei neu anzulegenden Sequenzen bleibt der Reverse-Hint `null`.
+
+`determineRestoreValueHint(op)` / `determineRestoreIsCalledHint(op)` dürfen nur dann Werte liefern,
+wenn der Wert aus einem pre-existing Snapshot eindeutig bestimmt ist; andernfalls werden sie `null`.
+
 ### 5.3 Operation-Modell
 
 Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
-`currentValue`, optionalem `isCalled` und optionalem `restoreValue`,
+`currentValue`, optionalem `isCalled`, optionalem `restoreValue`
+und optionalem `restoreIsCalled`,
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 
 ### 5.4 Dialekt-Render-Matrix
@@ -253,8 +270,9 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       Plan gespeicherten `restoreValue` und setzt damit den
       vor-Up-Wert wieder zurueck; fehlt der Wert, wird
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
-- [ ] `restoreValueHint` ist genau in den Fällen gesetzt, in denen ein
-      deterministischer Ausgangswert bekannt ist; für die übrigen Fälle
+- [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` und optional
+      `restoreIsCalled` exakt in den Fällen gesetzt, in denen ein
+      deterministischer Ausgangszustand bekannt ist; für die übrigen Fälle
       ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] Pro Dialekt mindestens je ein Positiv- und ein
       Blocker-Test.
