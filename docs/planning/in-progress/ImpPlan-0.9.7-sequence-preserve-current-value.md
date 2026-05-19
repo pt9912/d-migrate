@@ -64,15 +64,22 @@ Roadmap §E Rest listet explizit:
   auf `SequenceDefinition` als primäre Steuerung.
 - Kein neuer globaler CLI-Flag in dieser Tranche; `preserveCurrentValue`
   wird vollständig über das Schema gesteuert.
+- Kandidaten für Preserve:
+  - `AlterSequence`: immer.
+  - `RenameSequence`: nur, wenn die Rename-Zuordnung eindeutig auf eine
+    bereits verwaltete Ziel-Sequenz zeigt (Drop+Create-Fallbacks ohne
+    deterministischen Vorzustand sind ausgeschlossen).
+  - `CreateSequence`: nur, wenn die Sequenz vor Migration im Ziel bereits
+    deterministisch lesbar ist (idempotente/dirty Zielzustände); reine
+    Neu-Erzeugung ohne Vorzustand erzeugt keinen Preserve-Follow-up.
 - Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read`
   mit dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
-  - **MySQL** (Emulation): `SELECT next_value FROM dmg_sequences
+  - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
     WHERE name = <sequence_name>` (`next_value` ist der nächste von
     `nextval` gelieferte Wert).
-  - **SQLite**: TBD pro `sqlite-sequence-emulation-plan.md`;
-    blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
-    der SQLite-Plan landet.
+  - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
+    SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?)`
   (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
 - Erweiterung: Für Reversibility wird zusätzlich ein optionales
@@ -84,7 +91,8 @@ Roadmap §E Rest listet explizit:
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
     WHERE name = <sequence_name>` (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
-- Pipeline-Integration in `SchemaMigratePreflightPlanner`:
+- Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
+  `SchemaMigrateRenderPipeline` (`CheckPreflight` + `MigrationPreflightPlanner`):
   - Wenn `preserveCurrentValue = true` UND DB-Target verfuegbar:
     Probe vor Render; emittiere `AlterSequenceCurrentValue` mit
     dem geprobten Wert, inklusive `isCalled` (falls vom Dialekt
@@ -160,6 +168,7 @@ interface SequenceCurrentValueProbe {
 sealed class SequenceCurrentValueProbeResult {
     data class Read(val value: Long, val isCalled: Boolean? = null) : SequenceCurrentValueProbeResult()
     data class Failed(val code: String, val message: String) : SequenceCurrentValueProbeResult()
+    data object NotFound : SequenceCurrentValueProbeResult() // erwarteter Vorzustand nicht vorhanden
     data object NotApplicable : SequenceCurrentValueProbeResult() // SQLite without sequence support
 }
 
@@ -168,14 +177,15 @@ sealed class SequenceCurrentValueProbeResult {
 
 ### 5.2 Pipeline-Integration
 
-Analog zu `SqliteCastPreflightProbe` in
-`SchemaMigratePreflightPlanner`:
+Analog zu `CheckPreflight` im bestehenden
+`MigrationPreflightPlanner` + `SchemaMigrateRenderPipeline`-Fluss:
 
 ```
 val sequencesNeedingPreservation = plan.operations
-    .filterIsInstance<DiffOperation.CreateSequence>()
-    .plus(plan.operations.filterIsInstance<DiffOperation.AlterSequence>())
-    .filter { it.sequence.preserveCurrentValue }
+    .filterIsInstance<DiffOperation.AlterSequence>()
+    .plus(plan.operations.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(op) })
+    .plus(plan.operations.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(op) })
+    .filter { it.shouldPreserveCurrentValue() }
 
 for (op in sequencesNeedingPreservation) {
     val probeSequenceName = when (op.objectRef.dialect) {
@@ -203,6 +213,16 @@ for (op in sequencesNeedingPreservation) {
                 restoreIsCalled = determineRestoreIsCalledHint(op),
             )
         }
+        is NotFound -> {
+            if (op is DiffOperation.CreateSequence) {
+                emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${op.objectRef}; create value remains declarative.")
+            } else {
+                emitBlocker(
+                    "SEQUENCE_PRESERVE_PROBE_FAILED",
+                    "No existing target state found for ${op.objectRef}: preserve requires deterministic pre-existing value",
+                )
+            }
+        }
         is Failed -> emitBlocker(
             "SEQUENCE_PRESERVE_PROBE_FAILED",
             "Probe failed for ${op.objectRef}: ${result.code}: ${result.message}",
@@ -211,6 +231,12 @@ for (op in sequencesNeedingPreservation) {
     }
 }
 ```
+
+`shouldProbeCreateSequence(op)` gilt nur für explizit vorher vorhandene und
+deterministisch lesbare Ziel-Sequenzen (`op.priorTargetState != null` o. ä.).
+`shouldProbeRenameSequence(op)` gilt nur, wenn die Rename-Zuordnung eindeutig auf
+eine verwaltete Ziel-Sequenz zeigt (keine Auflösung über heuristische
+Fallbacks).
 
 // renderSequenceDbIdentifier liefert nur für PG den schematisch-quotierten
 // DB-Identifikator (z. B. "public.my_seq"). Für MySQL/SQLite-Emulation wird der
@@ -250,7 +276,7 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
 | B | PG-Probe + PG-Renderer fuer `setval` |
 | C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` |
-| D | Pipeline-Integration in `SchemaMigratePreflightPlanner` (probe → emit) |
+| D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
 | E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
@@ -266,6 +292,10 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       propagiertem `isCalled`.
 - [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
+- [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
+      `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
+      Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
+      `SEQUENCE_PRESERVE_PROBE_FAILED`.
 - [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true`
       blockt mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`.
 - [ ] Probe-Failure blockt mit
@@ -295,6 +325,9 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       mappen ueber `PlannerBlockerClassifier` auf
       `MANUAL_ACTION_REQUIRED` bzw.
       `DIALECT_UNSUPPORTED_OPERATION`.
+- [ ] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
+      ohne Blocker-Klasse ausgegeben, wenn eine `CreateSequence`-Operation
+      keinen lesbaren Vorzustand hat.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
       `setval`/`UPDATE` auf den gespeicherten `restoreValue` und optionalen
       `restoreIsCalled` (PG), sonst
