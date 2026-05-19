@@ -68,10 +68,15 @@ Roadmap §E Rest listet explizit:
   - `AlterSequence`: immer.
   - `RenameSequence`: nur, wenn die Rename-Zuordnung eindeutig auf eine
     bereits verwaltete Ziel-Sequenz zeigt (Drop+Create-Fallbacks ohne
-    deterministischen Vorzustand sind ausgeschlossen).
+    deterministischen Vorzustand sind ausgeschlossen). Für Reversibility und
+    deterministisches Recovery werden sowohl Probe- als auch Apply-Objektreferenz
+    getrennt im Folge-Op geführt (`probeSequenceRef`, `applySequenceRef`), damit
+    bei Umbenennung eindeutig ist, welches Objekt gelesen und welches gesetzt wird.
   - `CreateSequence`: nur, wenn die Sequenz vor Migration im Ziel bereits
     deterministisch lesbar ist (idempotente/dirty Zielzustände); reine
     Neu-Erzeugung ohne Vorzustand erzeugt keinen Preserve-Follow-up.
+    Ohne deterministischen Vorzustand ist der Down-Pfad explizit als
+    `ROLLBACK_NOT_POSSIBLE` zu markieren.
 - Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read`
   mit dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
@@ -80,7 +85,8 @@ Roadmap §E Rest listet explizit:
     `nextval` gelieferte Wert).
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
-- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?)`
+- Neue Operation-Subtype:
+  `AlterSequenceCurrentValue(probeSequenceRef, applySequenceRef, value, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?)`
   (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
 - Erweiterung: Für Reversibility wird zusätzlich ein optionales
   `restoreIsCalled: Boolean?` vorgesehen.
@@ -111,6 +117,9 @@ Roadmap §E Rest listet explizit:
     `MANUAL_ACTION_REQUIRED`.
 - F.5-Carve-out-Pattern wiederverwendet (Probe → Pipeline →
   Blocker-bei-Failure).
+- Follow-up-Operations (`AlterSequenceCurrentValue`) werden deterministisch als direkte
+  Folgeoperationen hinter dem jeweiligen Sequence-Diff-Op emittiert, damit
+  `renderSequenceDbIdentifier`/`apply`-Namen kohärent bleiben.
 - Kein CLI-Override in dieser Tranche. Die Tranche arbeitet nur mit
   `SequenceDefinition.preserveCurrentValue` (deterministische Steuerung).
 - Reversibility: `AlterSequenceCurrentValue` Down setzt den
@@ -181,21 +190,48 @@ Analog zu `CheckPreflight` im bestehenden
 `MigrationPreflightPlanner` + `SchemaMigrateRenderPipeline`-Fluss:
 
 ```
+data class SequencePreserveContext(
+    val sequenceOp: DiffOperation, // AlterSequence | CreateSequence | RenameSequence
+    val probeSequenceRef: SequenceObjectRef,
+    val applySequenceRef: SequenceObjectRef,
+)
+
 val sequencesNeedingPreservation = plan.operations
     .filterIsInstance<DiffOperation.AlterSequence>()
-    .plus(plan.operations.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(op) })
-    .plus(plan.operations.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(op) })
     .filter { it.shouldPreserveCurrentValue() }
-
-for (op in sequencesNeedingPreservation) {
-    val probeSequenceName = when (op.objectRef.dialect) {
-        Dialect.POSTGRES -> renderSequenceDbIdentifier(op.objectRef)
-        else -> op.sequence.name
+    .plus(plan.operations.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(it) && it.shouldPreserveCurrentValue() })
+    .plus(plan.operations.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
+    .map { op ->
+        when (op) {
+            is DiffOperation.AlterSequence -> SequencePreserveContext(
+                sequenceOp = op,
+                probeSequenceRef = op.objectRef,
+                applySequenceRef = op.objectRef,
+            )
+            is DiffOperation.CreateSequence -> SequencePreserveContext(
+                sequenceOp = op,
+                probeSequenceRef = op.sequenceRef,
+                applySequenceRef = op.sequenceRef,
+            )
+            is DiffOperation.RenameSequence -> SequencePreserveContext(
+                sequenceOp = op,
+                probeSequenceRef = op.fromRef,
+                applySequenceRef = op.toRef,
+            )
+            else -> throw IllegalArgumentException("unexpected sequence operation type")
+        }
     }
-    val result = probe.probe(connection, probeSequenceName, op.objectRef.dialect)
+
+for (ctx in sequencesNeedingPreservation) {
+    val op = ctx.sequenceOp
+    val probeSequenceName = when (ctx.probeSequenceRef.dialect) {
+        Dialect.POSTGRES -> renderSequenceDbIdentifier(ctx.probeSequenceRef)
+        else -> ctx.probeSequenceRef.name
+    }
+    val result = probe.probe(connection, probeSequenceName, ctx.probeSequenceRef.dialect)
     when (result) {
         is Read -> {
-            val isCalled = when (op.objectRef.dialect) {
+            val isCalled = when (ctx.probeSequenceRef.dialect) {
                 Dialect.POSTGRES -> {
                     if (result.isCalled == null) {
                         emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
@@ -207,34 +243,37 @@ for (op in sequencesNeedingPreservation) {
             }
             emitFollowupAlterSequenceCurrentValue(
                 op,
+                probeSequenceRef = ctx.probeSequenceRef,
+                applySequenceRef = ctx.applySequenceRef,
                 value = result.value,
                 isCalled = isCalled,
                 restoreValue = determineRestoreValueHint(op),
                 restoreIsCalled = determineRestoreIsCalledHint(op),
+                insertAfter = true,
             )
         }
         is NotFound -> {
             if (op is DiffOperation.CreateSequence) {
-                emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${op.objectRef}; create value remains declarative.")
+                emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${ctx.applySequenceRef}; create value remains declarative.")
             } else {
                 emitBlocker(
                     "SEQUENCE_PRESERVE_PROBE_FAILED",
-                    "No existing target state found for ${op.objectRef}: preserve requires deterministic pre-existing value",
+                    "No existing target state found for ${ctx.applySequenceRef}: preserve requires deterministic pre-existing value",
                 )
             }
         }
         is Failed -> emitBlocker(
             "SEQUENCE_PRESERVE_PROBE_FAILED",
-            "Probe failed for ${op.objectRef}: ${result.code}: ${result.message}",
+            "Probe failed for ${ctx.applySequenceRef}: ${result.code}: ${result.message}",
         )
         NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
     }
 }
 ```
 
-`shouldProbeCreateSequence(op)` gilt nur für explizit vorher vorhandene und
-deterministisch lesbare Ziel-Sequenzen (`op.priorTargetState != null` o. ä.).
-`shouldProbeRenameSequence(op)` gilt nur, wenn die Rename-Zuordnung eindeutig auf
+`shouldProbeCreateSequence(createOp)` gilt nur für explizit vorher vorhandene und
+deterministisch lesbare Ziel-Sequenzen (`createOp.priorTargetState != null` o. ä.).
+`shouldProbeRenameSequence(renameOp)` gilt nur, wenn die Rename-Zuordnung eindeutig auf
 eine verwaltete Ziel-Sequenz zeigt (keine Auflösung über heuristische
 Fallbacks).
 
@@ -255,7 +294,8 @@ stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 ### 5.3 Operation-Modell
 
 Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
-`currentValue`, optionalem `isCalled`, optionalem `restoreValue`
+`probeSequenceRef`, `applySequenceRef`, `currentValue`, optionalem `isCalled`,
+optionalem `restoreValue`
 und optionalem `restoreIsCalled`,
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 
@@ -296,6 +336,12 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
       Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`.
+- [ ] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
+      `probeSequenceRef` (old/origin) und `applySequenceRef` (new/target)
+      emittiert.
+- [ ] Follow-up-Operationen werden direkt im Anschluss an die jeweilige
+      Sequence-Operation emittiert (keine Umordnung durch
+      allgemeine Plan-Sortierung).
 - [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true`
       blockt mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`.
 - [ ] Probe-Failure blockt mit
@@ -328,6 +374,7 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
       ohne Blocker-Klasse ausgegeben, wenn eine `CreateSequence`-Operation
       keinen lesbaren Vorzustand hat.
+      Für diesen Fall ist `ROLLBACK_NOT_POSSIBLE` verpflichtend.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
       `setval`/`UPDATE` auf den gespeicherten `restoreValue` und optionalen
       `restoreIsCalled` (PG), sonst
