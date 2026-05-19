@@ -120,6 +120,9 @@ Roadmap §E Rest listet explizit:
     - `restoreValue`/`restoreIsCalled` werden nur gesetzt, wenn ein stabiler
       Ausgangszustand deterministisch vorliegt (bestehende Ziel-Sequenz vor der
       Migration, oder explizit dokumentierter pre-existing Snapshot).
+      Als primäre Quelle gilt die erfolgreiche Probe (`Read`) auf dem
+      jeweiligen Sequenzziel/-ursprung; daraus werden `restoreValue` (für alle
+      Dialekte) und für PG `restoreIsCalled` deterministisch abgeleitet.
     - Bei neu erstellten Sequenzen ohne deterministische Historie bleibt der
       Reverse-Zustand `null` und Down wird mit `ROLLBACK_NOT_POSSIBLE`.
   - Datei-zu-Datei-Modus: sobald `preserveCurrentValue = true` und mindestens eine
@@ -265,8 +268,9 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
 
     if (plan.isFileToFileMode && sequencesNeedingPreservation.isNotEmpty()) {
         // Datei-zu-Datei kann keinen deterministischen Preflight ausführen;
-        // nur ops mit probe-basierter Preservation werden geblockt.
-        // Reine CreateSequence ohne lesbaren Vorzustand bleibt als Hinweis.
+        // nur probe-fähige Preservation-Operationen (Read-Pfad) werden geblockt.
+        // Reine CreateSequence ohne lesbaren Vorzustand wurde bereits auf
+        // `SEQUENCE_PRESERVE_NOT_FOUND` reduziert und landet hier nicht.
         // MANUAL_ACTION_REQUIRED geblockt.
         emitBlocker(
             "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
@@ -298,9 +302,26 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                 && result.formatVersion in mysqlExpectedFormatVersions
         }
 
-        fun buildRollbackImpossibleReason(reason: String): String {
-            // Follow-up-Operation als nicht reversibel markieren.
-            return reason
+        data class RestoreHints(
+            val restoreValueHint: Long?,
+            val restoreIsCalledHint: Boolean?,
+        )
+
+        fun resolveRestoreHints(
+            op: DiffOperation,
+            probeSequenceRef: SequenceObjectRef,
+            readResult: SequenceCurrentValueProbeResult.Read,
+        ): RestoreHints {
+            // Restore-Hinweise deterministisch ableiten; Probe ist primäre Quelle.
+            val restoreValueHint = determineRestoreValueHint(op) ?: readResult.value
+            val restoreIsCalledHint = when (probeSequenceRef.dialect) {
+                Dialect.POSTGRES -> readResult.isCalled
+                else -> determineRestoreIsCalledHint(op)
+            }
+            return RestoreHints(
+                restoreValueHint = restoreValueHint,
+                restoreIsCalledHint = restoreIsCalledHint,
+            )
         }
 
 for (ctx in sequencesNeedingPreservation) {
@@ -341,18 +362,17 @@ for (ctx in sequencesNeedingPreservation) {
                 }
                 else -> null
             }
-            val restoreValueHint = determineRestoreValueHint(op)
-            val restoreIsCalledHint = determineRestoreIsCalledHint(op)
-            val isRollbackPossible = restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRES || restoreIsCalledHint != null)
+            val restoreHints = resolveRestoreHints(op, ctx.probeSequenceRef, readResult)
+            val isRollbackPossible = restoreHints.restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRES || restoreHints.restoreIsCalledHint != null)
             val rollbackNotPossible = if (isRollbackPossible) {
                 null
             } else {
-                val reason = if (restoreValueHint == null) {
+                val reason = if (restoreHints.restoreValueHint == null) {
                     "deterministic restore snapshot unavailable"
                 } else {
                     "PG restore_is_called missing"
                 }
-                buildRollbackImpossibleReason(reason)
+                reason
             }
             emitFollowupAlterSequenceCurrentValue(
                 op,
@@ -361,8 +381,8 @@ for (ctx in sequencesNeedingPreservation) {
                 applySequenceRef = ctx.applySequenceRef,
                 currentValue = readResult.value,
                 isCalled = isCalled,
-                restoreValue = restoreValueHint,
-                restoreIsCalled = restoreIsCalledHint,
+                restoreValue = restoreHints.restoreValueHint,
+                restoreIsCalled = restoreHints.restoreIsCalledHint,
                 rollbackImpossible = !isRollbackPossible,
                 rollbackImpossibleReason = rollbackNotPossible,
                 revertAfterRename = op is DiffOperation.RenameSequence,
@@ -398,15 +418,14 @@ Fallbacks).
 // Caller übergibt `SequenceObjectRef`; jede Dialekt-Implementierung kapselt eigenes
 // Naming/Quoting (inkl. Literalbildung) intern.
 
-`determineRestoreValueHint(op)` leitet den Reverse-Zustand deterministisch aus dem Planer-Kontext ab:
-- Bei bestehender Ziel-Sequenz wird der vor-Migrationszustand als `restoreValue` und optional `restoreIsCalled` gesetzt.
-- Bei neu anzulegenden Sequenzen bleibt der Reverse-Hint `null`.
-- Bei fehlendem deterministischen Snapshot wird ebenfalls `null` zurückgegeben.
-
-`determineRestoreValueHint(op)` / `determineRestoreIsCalledHint(op)` dürfen nur dann Werte liefern,
-wenn der Wert aus einem pre-existing Snapshot eindeutig bestimmt ist; andernfalls werden sie `null`.
-Ein Wert gilt als deterministisch, wenn die Ziel-Sequenz vor `AlterSequenceCurrentValue`
-stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
+`resolveRestoreHints(op, probeSequenceRef, readResult)` leitet den Reverse-Zustand deterministisch aus Planer-Kontext und Probe ab:
+- Als Primärquelle dient der konkrete Probe-Wert (`readResult.value`) als `restoreValue`.
+- Für PG wird `restoreIsCalled` aus `readResult.is_called` geliefert.
+- Für Nicht-PG dient `restoreIsCalled` als optionales Zusatzfeld aus
+  `determineRestoreIsCalledHint(op)`.
+- Bei neu anzulegenden Sequenzen ohne deterministische Historie bleibt `restoreValue`
+  `null` und der Down-Pfad ist als `ROLLBACK_NOT_POSSIBLE` zu kennzeichnen.
+  Für diesen Pfad soll `resolveRestoreHints` nicht aufgerufen werden.
 
 `AlterSequenceCurrentValue` nutzt für Down explizit:
 - `applySequenceRef` für Up/Forward-Pfad (die neue Zielsequenz nach `RenameSequence`,
@@ -523,7 +542,7 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       Sequence-Operation emittiert (keine Umordnung durch
       allgemeine Plan-Sortierung).
 - [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true` und mindestens
-      einer probebaren Sequence-Operation blockt mit
+      einer probe-fähigen Sequence-Operation blockt mit
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`; reine `CreateSequence` ohne
       deterministischen Vorzustand darf nur `SEQUENCE_PRESERVE_NOT_FOUND`
       ausgeben.
@@ -537,7 +556,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
 - [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` exakt in den Fällen gesetzt, in denen ein
       deterministischer Ausgangszustand bekannt ist; `restoreIsCalled` ist für PG dort
-      ebenfalls verpflichtend, sonst ist Down als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
+      ebenfalls verpflichtend und wird aus dem PG-Probefeld `is_called` übernommen,
+      sonst ist Down als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] Für alle Nicht-PG-Op ist `restoreIsCalled` optional.
       Für die übrigen Fälle
       ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
