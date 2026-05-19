@@ -1,0 +1,269 @@
+# Implementierungsplan: 0.9.7 — Sequence preserveCurrentValue-Policy
+
+> **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
+> **Workstream**: E.3 Cross-Dialect Folge-Slice
+> **Status**: open 2026-05-19.
+> **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
+>                  PG-`SequenceDefinition` ✅;
+>                  Live-DB-Reader-Pfade pro Dialekt ✅;
+>                  F.4 Renderer-Blocker-Bridge ✅ 2026-05-19;
+>                  MySQL/SQLite-Sequence-Diff-Migration *(parallele Plans)*.
+> **Referenz**: `diffresult-migration-plan-2.md` §E.3 (heutige
+>             Sequence-Erstscheibe pinnt ausdruecklich: „aktueller
+>             Wert wird NICHT migriert"); `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`;
+>             `open/sqlite-sequence-emulation-plan.md`.
+
+---
+
+## 1. Auslöser
+
+Die heutige Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
+in `done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
+`open/`) deckt nur die **deklarativen Attribute** ab —
+`start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`.
+Den **aktuellen Wert** (`last_value` in PG, naechster Wert aus
+`dmg_sequences.next_value` in MySQL-Emulation) migriert keine
+Pipeline. Effekt:
+
+- Operator migriert eine bestehende Tabelle mit `id` aus einer
+  PG-Sequenz nach DB-Target. Die Sequenz wird mit
+  `CREATE SEQUENCE … START WITH 1` neu angelegt. Bei einem
+  spaeteren `INSERT` springt `nextval('seq')` auf 1 statt auf den
+  vorherigen Wert + 1 → **PK-Konflikt** mit existierenden Zeilen,
+  Migration scheitert beim ersten Schreibzugriff.
+
+Das ist der Hauptgrund, warum d-migrate fuer
+sequence-tragende Schemata in Produktion heute nicht
+ohne manuelle Nachbearbeitung benutzt werden kann. Operatoren
+muessen nach jeder Migration manuell `ALTER SEQUENCE … RESTART WITH
+<observed-max>` ausfuehren.
+
+---
+
+## 2. Warum jetzt?
+
+`preserveCurrentValue` ist die kritische Live-DB-Bruecke, die
+Sequence-Migrationen ueberhaupt erst produktionstauglich macht.
+Der DDL-Generator-Pfad (`schema generate`) deckt Schema-Strukturen
+ab, aber Migrationen brauchen **Daten-Bewusstsein** fuer Sequences
+genauso wie Cast-Preflight fuer Spalten-Typaenderungen
+(B.2-Pattern). Ohne diesen Slice ist der MySQL-Sequence-Diff-
+Slice (parallel) und der SQLite-Sequence-Plan halbgar in
+Production.
+
+Roadmap §E Rest listet explizit:
+> Aktueller Sequence-Wert / Preserve-Policy
+
+---
+
+## 3. Scope
+
+### 3.1 In-Scope
+
+- Neues optionales Feld `preserveCurrentValue: Boolean = false`
+  auf `SequenceDefinition` *(oder als separater Operator-Flag
+  am `schema migrate`-Kommando; Decision in Sub-Slice A)*.
+- Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read`
+  mit dialect-spezifischer Implementierung:
+  - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
+  - **MySQL** (Emulation): `SELECT next_value FROM dmg_sequences
+    WHERE name = <sequence_name>`
+  - **SQLite**: TBD pro `sqlite-sequence-emulation-plan.md`;
+    blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
+    der SQLite-Plan landet.
+- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value)`
+  *(oder Re-Use bestehender `AlterSequence` mit zusaetzlichem
+  `currentValue`-Feld; Decision in Sub-Slice A)*.
+- Renderer-Pfade pro Dialekt:
+  - **PG**: `SELECT setval('<sequence_name>', <value>, true)` als
+    DDL-Equivalent (vorhandenes Setval-Pattern).
+  - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
+    WHERE name = <sequence_name>`.
+  - **SQLite**: erst sobald der SQLite-Plan landet.
+- Pipeline-Integration in `SchemaMigrateRunner`:
+  - Wenn `preserveCurrentValue = true` UND DB-Target verfuegbar:
+    Probe vor Render; emittiere `AlterSequenceCurrentValue` mit
+    dem geprobten Wert.
+  - Datei-zu-Datei-Modus: `preserveCurrentValue = true` blockt
+    mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
+    `MANUAL_ACTION_REQUIRED`.
+- F.5-Carve-out-Pattern wiederverwendet (Probe → Pipeline →
+  Blocker-bei-Failure).
+- CLI-Surface: vermutlich kein neuer Flag — die
+  `preserveCurrentValue`-Eigenschaft sitzt auf
+  `SequenceDefinition` und wird vom Schema-File gesteuert.
+  Alternative: globaler `--preserve-sequence-values`-Flag
+  als opt-in fuer alle Sequenzen (Decision in Sub-Slice A).
+- Reversibility: `AlterSequenceCurrentValue` Down setzt den
+  Wert auf den vor-Up-Wert zurueck, sofern dieser bekannt ist.
+  Wenn nicht bekannt → `ROLLBACK_NOT_POSSIBLE` (Operator hat
+  zwischen Up und Down `nextval` aufgerufen und der
+  Original-Stand ist verloren).
+
+### 3.2 Out-of-Scope
+
+- **Atomare Konsistenz** zwischen `nextval`-Calls in der App
+  und der Migration: wenn die App parallel waehrend des
+  Preflights Sequenzen-Calls macht, ist der geprobte Wert
+  veraltet. Mitigation: Probe + `setval` in derselben
+  Transaktion / unter Tabellen-Lock — separater Slice.
+- **Sequence-Ownership-Inferenz** (wer „besitzt" eine Sequenz —
+  PG `OWNED BY` table.column): bleibt im DDL-Generator-Pfad,
+  diff-basiert ausgeklammert.
+- **Multi-Sequence-Atomarity**: wenn ein Plan mehrere Sequenzen
+  preserved, sind die Probe-Punkte zeitlich auseinander; ein
+  Operator, der zwischen den Probes Inserts macht, kann
+  Inkonsistenzen erzeugen. Carve-out documented.
+
+---
+
+## 4. Vorbedingungen
+
+| Vorbedingung | Status |
+| ------------ | ------ |
+| `SequenceDefinition` neutrales Modell | ✅ |
+| PG-Sequence-Diff-Renderer | ✅ E.3 Erstscheibe |
+| MySQL-Sequence-Emulation (DDL-Generator) | ✅ 0.9.4 |
+| MySQL-Sequence-Diff-Renderer | ⚠️ parallele Plan |
+| SQLite-Sequence-Plan | ⚠️ `open/sqlite-sequence-emulation-plan.md` |
+| Live-DB-Probe-Pattern (Cast-Preflight) | ✅ B.2 |
+
+---
+
+## 5. Architektur
+
+### 5.1 Probe-Port
+
+```kotlin
+// hexagon:ports-read
+interface SequenceCurrentValueProbe {
+    fun probe(connection: JdbcOperations, sequenceName: String): SequenceCurrentValueProbeResult
+}
+
+sealed class SequenceCurrentValueProbeResult {
+    data class Read(val value: Long, val isCalled: Boolean) : SequenceCurrentValueProbeResult()
+    data class Failed(val code: String, val message: String) : SequenceCurrentValueProbeResult()
+    data object NotApplicable : SequenceCurrentValueProbeResult() // SQLite without sequence support
+}
+```
+
+### 5.2 Pipeline-Integration
+
+Analog zu `SqliteCastPreflightProbe` in
+`SchemaMigratePreflightPlanner`:
+
+```
+val sequencesNeedingPreservation = plan.operations
+    .filterIsInstance<DiffOperation.CreateSequence>()
+    .filter { it.sequence.preserveCurrentValue }
+
+for (op in sequencesNeedingPreservation) {
+    val result = probe.probe(connection, op.objectRef.rootName)
+    when (result) {
+        is Read -> emitFollowupAlterSequenceCurrentValue(op, result.value)
+        is Failed -> emitBlocker(result.code, result.message)
+        NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
+    }
+}
+```
+
+### 5.3 Operation-Modell
+
+Decision: re-use `AlterSequence` mit optionalem `currentValue`-
+Feld oder neuer Subtyp `AlterSequenceCurrentValue`. Empfehlung:
+neuer Subtyp, weil der Render-Pfad fundamental anders ist
+(Daten-Statement statt DDL).
+
+### 5.4 Dialekt-Render-Matrix
+
+| Dialekt | Render |
+|---|---|
+| PG | `SELECT setval('<seq>', <value>, true);` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value+1> WHERE name = '<seq>';` |
+| SQLite | Blocker bis SQLite-Sequence-Plan landet |
+
+---
+
+## 6. Sub-Slice-Schnitt
+
+| Sub-Slice | Inhalt |
+|---|---|
+| A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + Operation-Subtyp-Decision |
+| B | PG-Probe + PG-Renderer fuer `setval` |
+| C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` |
+| D | Pipeline-Integration in `SchemaMigrateRunner` (probe → emit) |
+| E | Datei-zu-Datei-Blocker + CLI-Spec-Doku + Closing |
+
+SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
+
+---
+
+## 7. Akzeptanzkriterien
+
+- [ ] `SequenceDefinition.preserveCurrentValue` (oder
+      equivalent Flag) ist im Schema-Modell.
+- [ ] PG-Probe liest `last_value`; PG-Renderer emittiert
+      `SELECT setval('<seq>', <value>, true)`.
+- [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
+      emittiert `UPDATE dmg_sequences …`.
+- [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true`
+      blockt mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`.
+- [ ] Probe-Failure blockt mit
+      `SEQUENCE_PRESERVE_PROBE_FAILED`.
+- [ ] SQLite blockt mit
+      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
+- [ ] Reversibility: `AlterSequenceCurrentValue` Down setzt den
+      vor-Up-Wert wieder zurueck, falls bekannt.
+- [ ] Pro Dialekt mindestens je ein Positiv- und ein
+      Blocker-Test.
+
+---
+
+## 8. Definition of Done (§13-Template)
+
+- [ ] **Modus**: execute (Probe braucht Live-DB).
+- [ ] **Renderbare Ops**: `AlterSequenceCurrentValue` auf PG/MySQL.
+- [ ] **Neue Diagnostics**: `SEQUENCE_PRESERVE_PROBE_FAILED`,
+      `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`,
+      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`. Alle drei
+      mappen ueber `PlannerBlockerClassifier` (siehe §3.1) auf
+      `MANUAL_ACTION_REQUIRED` bzw.
+      `DIALECT_UNSUPPORTED_OPERATION`.
+- [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
+      inverse Probe.
+- [ ] **Report-Felder**: keine neuen.
+- [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
+      (blocker).
+- [ ] **F.0-Erfuellung**: irrelevant.
+- [ ] **Positive + Blocker-Tests**: siehe §7.
+- [ ] **Rollback-Test**: explizit gepinnt fuer alle drei
+      Dialekte; SQLite-Blocker ist auch Rollback-Blocker.
+- [ ] **Datei-zu-Datei**: blockt, weil keine Live-DB.
+- [ ] **Bestehende Vertraege unveraendert**: bestehende
+      Sequence-Slices bleiben gruen.
+
+---
+
+## 9. Out-of-Scope / Folge-Themen
+
+- Atomare Probe + setval unter Lock.
+- Multi-Sequence-Atomarity.
+- Sequence-Ownership-Inferenz.
+- SQLite-Sequence-Vollvariante mit preserve-Pfad.
+
+---
+
+## 10. Risiken
+
+- **Probe-Race-Conditions**: Wenn die App parallel zwischen
+  Probe und Setval `nextval` aufruft, ist der gesetzte Wert
+  veraltet. Mitigation: Pipeline-Doku schreibt klar, dass der
+  Operator den Schreibverkehr stoppt; eine kuenftige Tranche
+  kann `LOCK TABLES` / `BEGIN; SELECT FOR UPDATE`-Wrapper
+  ergaenzen.
+- **Sequence-Ownership-Sichtbarkeit**: ohne `OWNED BY` ist nicht
+  klar, welche Sequenz zu welcher Spalte gehoert. Mitigation:
+  diese Tranche behandelt benannte Sequences nur ueber den
+  `SequenceDefinition`-Namen; Inferenz aus PG-Reverse-Read
+  ist bereits in `MysqlSchemaReader` und `PostgresSchemaReader`
+  gepinnt.
