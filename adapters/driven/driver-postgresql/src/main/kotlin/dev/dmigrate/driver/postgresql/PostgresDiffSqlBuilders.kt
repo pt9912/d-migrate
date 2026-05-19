@@ -51,7 +51,27 @@ internal class PostgresDiffSqlBuilders(private val typeMapper: PostgresTypeMappe
             val refCols = ref.columns.joinToString(", ") { quote(it) }
             "CONSTRAINT ${quote(c.name)} FOREIGN KEY ($cols) REFERENCES ${quote(ref.table)}($refCols)"
         }
-        ConstraintType.CHECK, ConstraintType.EXCLUDE -> null
+        // F.5 Sub-Slice B (2026-05-19): PostgreSQL native CHECK
+        // rendering. The expression is interpolated as-is — see the
+        // `expression` field doc in ConstraintDefinition: trusted
+        // input authored by the schema owner, sanitisation is out
+        // of scope at the renderer.
+        ConstraintType.CHECK -> {
+            val expression = c.expression?.takeIf { it.isNotBlank() } ?: return null
+            "CONSTRAINT ${quote(c.name)} CHECK ($expression)"
+        }
+        // F.5 Sub-Slice B: PostgreSQL native EXCLUDE rendering. The
+        // expression carries the element list (`col WITH op, …`); the
+        // renderer wraps it with the standard `USING gist (…)` form.
+        // Custom operator classes and WHERE predicates are §3.2
+        // out-of-scope for the first F.5 tranche — operators who
+        // need them block (or embed them inline; behaviour is
+        // pinned by Sub-Slice F's tests once the reversibility
+        // contract lands).
+        ConstraintType.EXCLUDE -> {
+            val expression = c.expression?.takeIf { it.isNotBlank() } ?: return null
+            "CONSTRAINT ${quote(c.name)} EXCLUDE USING gist ($expression)"
+        }
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {

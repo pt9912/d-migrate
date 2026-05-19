@@ -416,16 +416,27 @@ Default-Fallback `DIALECT_UNSUPPORTED_OPERATION` bleibt.
   LF/Trim-Konstanz), Mapper emittiert `AddConstraint`/
   `DropConstraint` fuer CHECK/EXCLUDE-Diffs.
 
-### Sub-Slice B — PostgreSQL Renderer
+### Sub-Slice B — PostgreSQL Renderer ✅ (2026-05-19)
 
-- `PostgresDiffOtherOps.renderAddConstraint` /
-  `renderDropConstraint` Branch fuer CHECK + EXCLUDE entwirft die
-  SQL-Templates.
-- EXCLUDE-Rendering inkl. `USING gist (…)` und optionalem
-  `WHERE (…)`.
-- Tests: per-Subtyp Up/Down-Render-Pins; Carve-out-Tests fuer
-  Cross-Table-Referenzen und unbekannte Operator-Klassen
-  (Whitelist-Reject).
+- `PostgresDiffSqlBuilders.constraintLine` erweitert um native
+  Branches fuer `CHECK` (`CONSTRAINT n CHECK (expr)`) und
+  `EXCLUDE` (`CONSTRAINT n EXCLUDE USING gist (expr)`); blanke
+  Expression bleibt nicht-renderable und faellt auf den bestehenden
+  `DIALECT_UNSUPPORTED_OPERATION`-Skip-Pfad in
+  `PostgresDiffOtherOps.renderAddConstraint` /
+  `renderDropConstraint` zurueck.
+- `WHERE (…)`-Klausel + Custom-Operator-Klassen bleiben pro §3.2
+  out-of-scope der Erstscheibe; ein Operator, der eine eigene
+  Klasse braucht, kann sie in `expression` inline kodieren
+  (Reversibility wird in Sub-Slice F gepinnt).
+- Tests: `PostgresDiffDdlGeneratorCheckExcludeTest` (eigene
+  Datei wegen Detekt-LargeClass) pinnt Add/Drop/Up/Down fuer
+  CHECK + EXCLUDE, Inline-Variante in CreateTable, sowie den
+  Blank-Expression-Fallback auf den `DIALECT_UNSUPPORTED_OPERATION`-
+  Blocker. Carve-outs fuer Cross-Table-Referenzen sind bereits durch
+  Sub-Slice A's Planner-Pfad abgedeckt (siehe
+  `§F.5 Sub-Slice A: cross-table CHECK planner-blocker cascades`
+  in `PostgresDiffDdlGeneratorTest`).
 
 ### Sub-Slice C — MySQL Renderer + Enforcement-Capability
 
