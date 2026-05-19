@@ -72,7 +72,7 @@ Roadmap §E Rest listet explizit:
   - **SQLite**: TBD pro `sqlite-sequence-emulation-plan.md`;
     blockt mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis
     der SQLite-Plan landet.
-- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?)`
+- Neue Operation-Subtype: `AlterSequenceCurrentValue(name, value, isCalled: Boolean?, restoreValue: Long?)`
   *(oder Re-Use bestehender `AlterSequence` mit zusaetzlichem
   `currentValue`-/`isCalled`-Feld; Decision in Sub-Slice A)*.
 - Renderer-Pfade pro Dialekt:
@@ -88,6 +88,8 @@ Roadmap §E Rest listet explizit:
     dem geprobten Wert, inklusive `isCalled` (falls vom Dialekt
     geliefert) sowie optionalem `restoreValue`, sofern diese Planerzeit
     bestimmen kann.
+    Für PG ist `isCalled` zwingend (kein Default), für andere
+    Dialekte wird `isCalled` nicht verwendet.
   - Datei-zu-Datei-Modus: `preserveCurrentValue = true` blockt
     mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
     `MANUAL_ACTION_REQUIRED`.
@@ -104,6 +106,8 @@ Roadmap §E Rest listet explizit:
   Wenn kein stabiler Restore-Wert vorliegt (z. B. fehlender
   pre-existing Sequence-Snapshot oder konkurrierende `nextval`-Calls),
   resultiert Down in `ROLLBACK_NOT_POSSIBLE`.
+  Diese `restoreValue` wird als `restoreValueHint` auf der Follow-up-Operation
+  geführt, sofern der Planner einen sinnvollen Ausgangswert bestimmen kann.
 
 ### 3.2 Out-of-Scope
 
@@ -150,6 +154,8 @@ sealed class SequenceCurrentValueProbeResult {
     data class Failed(val code: String, val message: String) : SequenceCurrentValueProbeResult()
     data object NotApplicable : SequenceCurrentValueProbeResult() // SQLite without sequence support
 }
+
+// PG muss isCalled liefern; MySQL/SQLite dürfen null setzen.
 ```
 
 ### 5.2 Pipeline-Integration
@@ -163,18 +169,36 @@ val sequencesNeedingPreservation = plan.operations
     .filter { it.sequence.preserveCurrentValue }
 
 for (op in sequencesNeedingPreservation) {
-    val result = probe.probe(connection, op.objectRef.rootName)
+    val sequenceDbName = renderSequenceDbIdentifier(op.objectRef)
+    val result = probe.probe(connection, sequenceDbName)
     when (result) {
-        is Read -> emitFollowupAlterSequenceCurrentValue(
-            op,
-            value = result.value,
-            isCalled = result.isCalled,
-        )
+        is Read -> {
+            val isCalled = when (op.objectRef.dialect) {
+                Dialect.POSTGRES -> {
+                    if (result.isCalled == null) {
+                        emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
+                        continue
+                    } else {
+                        result.isCalled
+                    }
+                }
+                else -> null
+            }
+            emitFollowupAlterSequenceCurrentValue(
+                op,
+                value = result.value,
+                isCalled = isCalled,
+                restoreValue = op.restoreValueHint,
+            )
+        }
         is Failed -> emitBlocker(result.code, result.message)
         NotApplicable -> emitBlocker("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT")
     }
 }
 ```
+
+// renderSequenceDbIdentifier liefert den schematisch-quotierten DB-Identifikator
+// (z. B. "public.my_seq"), nicht nur den rohen rootName.
 
 ### 5.3 Operation-Modell
 
@@ -188,7 +212,7 @@ ist (Daten-Statement statt DDL).
 
 | Dialekt | Render |
 |---|---|
-| PG | `SELECT setval('<seq>', <value>, :isCalled);` |
+| PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
 | MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = '<seq>';` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
