@@ -70,8 +70,9 @@ Roadmap §E Rest listet explizit:
     bereits verwaltete Ziel-Sequenz zeigt (Drop+Create-Fallbacks ohne
     deterministischen Vorzustand sind ausgeschlossen). Für Reversibility und
     deterministisches Recovery werden sowohl Probe- als auch Apply-Objektreferenz
-    getrennt im Folge-Op geführt (`probeSequenceRef`, `applySequenceRef`), damit
-    bei Umbenennung eindeutig ist, welches Objekt gelesen und welches gesetzt wird.
+    getrennt im Folge-Op geführt (`probeSequenceRef`, `applySequenceRef`):
+    `applySequenceRef` identifiziert die Zielsequenz für Up (`setval`/`UPDATE`),
+    `probeSequenceRef` die Ursprungssequenz für Down/Restore bei Rename.
   - `CreateSequence`: nur, wenn die Sequenz vor Migration im Ziel bereits
     deterministisch lesbar ist (idempotente/dirty Zielzustände); reine
     Neu-Erzeugung ohne Vorzustand erzeugt keinen Preserve-Follow-up.
@@ -180,6 +181,7 @@ interface SequenceCurrentValueProbe {
 sealed class SequenceCurrentValueProbeResult {
     data class Read(
         val value: Long,
+        val matchedRows: Int = 1,
         val isCalled: Boolean? = null,
         val managedBy: String? = null,
         val formatVersion: Int? = null,
@@ -192,6 +194,7 @@ sealed class SequenceCurrentValueProbeResult {
 // PG muss isCalled liefern; MySQL/SQLite dürfen null setzen.
 // Bei MySQL wird zusätzlich geprüft, dass managedBy/formatVersion auf ein
 // von d-migrate verwaltetes Emulationsformat verweisen.
+// MySQL ist zusätzlich nur deterministisch, wenn genau eine Zeile zurückkommt.
 ```
 
 ### 5.2 Pipeline-Integration
@@ -224,6 +227,18 @@ val preserveSequenceOps = plan.operations
     } else {
         val mysqlExpectedManagedBy = setOf("d-migrate")
         val mysqlExpectedFormatVersion = 1
+
+        fun validateMysqlReadDeterminism(
+            result: SequenceCurrentValueProbeResult.Read,
+            probeSequenceRef: SequenceObjectRef,
+        ): SequenceCurrentValueProbeResult {
+            return if (result.matchedRows != 1) {
+                SequenceCurrentValueProbeResult.Failed(
+                    code = "SEQUENCE_PRESERVE_PROBE_FAILED",
+                    message = "dmg_sequences query returned ${result.matchedRows} rows for name=${probeSequenceRef.name}",
+                )
+            } else result
+        }
 
         fun isManagedDmgSequenceProbeResult(result: SequenceCurrentValueProbeResult.Read): Boolean {
             // true, wenn Dialekt-spezifische Konventionen (managedBy/formatVersion) passen.
@@ -275,6 +290,22 @@ for (ctx in sequencesNeedingPreservation) {
     val result = probe.probe(connection, probeSequenceName, ctx.probeSequenceRef.dialect)
     when (result) {
         is Read -> {
+            val deterministicResult = when {
+                ctx.probeSequenceRef.dialect == Dialect.MYSQL -> validateMysqlReadDeterminism(
+                    result = result,
+                    probeSequenceRef = ctx.probeSequenceRef,
+                )
+                else -> result
+            }
+            if (deterministicResult is SequenceCurrentValueProbeResult.Failed) {
+                emitBlocker(
+                    "SEQUENCE_PRESERVE_PROBE_FAILED",
+                    deterministicResult.message,
+                )
+                continue
+            }
+
+            val readResult = deterministicResult as SequenceCurrentValueProbeResult.Read
             if (ctx.probeSequenceRef.dialect == Dialect.MYSQL && !isManagedDmgSequenceProbeResult(result)) {
                 emitBlocker(
                     "SEQUENCE_PRESERVE_PROBE_FAILED",
@@ -288,7 +319,7 @@ for (ctx in sequencesNeedingPreservation) {
                         emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
                         continue
                     }
-                    result.isCalled
+                    readResult.isCalled
                 }
                 else -> null
             }
@@ -300,7 +331,7 @@ for (ctx in sequencesNeedingPreservation) {
                 op,
                 probeSequenceRef = ctx.probeSequenceRef,
                 applySequenceRef = ctx.applySequenceRef,
-                value = result.value,
+                value = readResult.value,
                 isCalled = isCalled,
                 restoreValue = determineRestoreValueHint(op),
                 restoreIsCalled = restoreIsCalledHint,
@@ -347,6 +378,12 @@ wenn der Wert aus einem pre-existing Snapshot eindeutig bestimmt ist; andernfall
 Ein Wert gilt als deterministisch, wenn die Ziel-Sequenz vor `AlterSequenceCurrentValue`
 stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 
+`AlterSequenceCurrentValue` nutzt für Down explizit:
+- `applySequenceRef` für Up/Forward-Pfad (die neue Zielsequenz nach `RenameSequence`,
+  sonst das betroffene Objekt).
+- `probeSequenceRef` für Down/Restore nur bei Rename-Fällen, damit ein Rename deterministisch
+  auf den Quellnamen zurückrollt.
+
 Für PG gilt: `restoreIsCalled` ist für den Down-Pfad verpflichtend.
 Fehlt dieser, ist `AlterSequenceCurrentValue` als `ROLLBACK_NOT_POSSIBLE`
 zu kennzeichnen. Das ist kein zusätzlicher Planer-Blocker, sondern
@@ -366,7 +403,7 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | Dialekt | Render |
 |---|---|
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name>;` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version = 1;` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
 `<escaped_sequence_name>` ist als SQL-literal-seitig escaped String zu rendern
@@ -402,13 +439,16 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
       bekanntes d-migrate Sequenz-Emulationsformat, sonst wird
       `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
+- [ ] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
+      die Abfrage auf `dmg_sequences` mehr als eine deterministische Trefferzeile liefert
+      oder keine eindeutig matcht.
 - [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
       `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
       Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`.
 - [ ] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
       `probeSequenceRef` (old/origin) und `applySequenceRef` (new/target)
-      emittiert.
+      emittiert; Down-Renderer wendet den Restore auf `probeSequenceRef` an.
 - [ ] Follow-up-Operationen werden direkt im Anschluss an die jeweilige
       Sequence-Operation emittiert (keine Umordnung durch
       allgemeine Plan-Sortierung).
@@ -429,7 +469,7 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       Für die übrigen Fälle
       ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] Pro Dialekt mindestens je ein Positiv- und ein
-      Blocker-Test.
+      Blocker-Test, inklusive eines Rename-Up/Down-Reversibility-Tests.
 
 ---
 
