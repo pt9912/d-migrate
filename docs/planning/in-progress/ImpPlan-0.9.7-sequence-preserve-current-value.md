@@ -281,6 +281,13 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
     } else {
         val mysqlExpectedManagedBy = setOf("d-migrate")
         val mysqlExpectedFormatVersions = mysqlSequenceEmulationMetadata.supportedFormatVersions
+        if (mysqlExpectedFormatVersions.isEmpty()) {
+            emitBlocker(
+                "SEQUENCE_PRESERVE_CONFIG_INVALID",
+                "MySQL sequence metadata is missing supported format versions; cannot perform a deterministic preserve run.",
+            )
+            return
+        }
         fun mysqlSequenceLookupKey(ref: SequenceObjectRef): String = renderMysqlDmgSequenceLookupKey(ref)
 
         fun validateMysqlReadDeterminism(
@@ -315,7 +322,8 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             readResult: SequenceCurrentValueProbeResult.Read,
         ): RestoreHints {
             // Restore-Hinweise deterministisch ableiten; Probe ist primäre Quelle.
-            val restoreValueHint = determineRestoreValueHint(op) ?: readResult.value
+            // Restore value is always derived from the deterministic probe snapshot.
+            val restoreValueHint = readResult.value
             val restoreIsCalledHint = when (probeSequenceRef.dialect) {
                 Dialect.POSTGRES -> readResult.isCalled
                 else -> determineRestoreIsCalledHint(op)
@@ -519,6 +527,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] PG-Probe übermittelt bei `Read` ein nicht-null `isCalled`.
 - [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
+- [ ] Konfigurationsabweichung im MySQL-Flow (`mysqlExpectedFormatVersions` leer) blockt den
+      Planner deterministisch mit `SEQUENCE_PRESERVE_CONFIG_INVALID`.
 - [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
       bekanntes d-migrate Sequenz-Emulationsformat, sonst wird
       `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
@@ -582,7 +592,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] **Renderbare Ops**: `AlterSequenceCurrentValue` auf PG/MySQL.
 - [ ] **Neue Diagnostics**: `SEQUENCE_PRESERVE_PROBE_FAILED`,
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`,
-      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`. Alle drei
+      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
+      `SEQUENCE_PRESERVE_CONFIG_INVALID`. Alle vier
       mappen ueber `PlannerBlockerClassifier` auf
       `MANUAL_ACTION_REQUIRED` bzw.
       `DIALECT_UNSUPPORTED_OPERATION`.
