@@ -142,6 +142,18 @@ data class MigrationPlanReversibilitySummary(
     val notReversibleOperationIds: List<String> = emptyList(),
 )
 
+/**
+ * One rendered SQL statement projected into the public plan artifact.
+ *
+ * [transactionScope] mirrors the runtime
+ * [dev.dmigrate.driver.migration.TransactionScope] enum as a string
+ * — the canonical values are `RUNNER_OWNED`, `STREAM_OWNED` and
+ * `NO_TRANSACTION` (`enum.name`). The field is typed as `String`
+ * (not the enum directly) so artifact consumers can read forward-
+ * compatibly: a future runtime that adds a fourth scope value
+ * surfaces as an unknown string rather than a deserialisation
+ * failure, and the artifact validator can warn without rejecting.
+ */
 data class MigrationPlanRenderedStatement(
     val statementId: String,
     val operationIds: List<String>,

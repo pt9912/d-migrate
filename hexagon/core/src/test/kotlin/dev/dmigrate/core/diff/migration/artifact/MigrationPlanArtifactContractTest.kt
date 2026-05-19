@@ -64,7 +64,7 @@ class MigrationPlanArtifactContractTest : FunSpec({
                     "alter-users-age-type"
                   ],
                   "sqlHash": "sql-hash",
-                  "transactionScope": "SINGLE_STATEMENT"
+                  "transactionScope": "RUNNER_OWNED"
                 }
               ],
               "createdAt": "2026-05-13T10:15:30Z"
@@ -259,7 +259,7 @@ private fun unsignedArtifact(
                 statementId = "stmt-1",
                 operationIds = listOf("alter-users-age-type"),
                 sqlHash = "sql-hash",
-                transactionScope = "SINGLE_STATEMENT",
+                transactionScope = "RUNNER_OWNED",
             ),
         ),
         renameProjections = renameProjections,
