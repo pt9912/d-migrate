@@ -1894,26 +1894,19 @@ DoD:
     `SchemaMigrateRunnerArtefactProtectionTest` (line 80, primary
     pinned).
 
-  **Carve-out — `OBJECT_RENAME_UNSUPPORTED` (F.4)**: der F.4-Mapper
-  emittiert die `OBJECT_RENAME_UNSUPPORTED`-Diagnostic mit
-  BLOCKER-Schweregrad; der PG-Renderer
-  (`PostgresDiffRenderContext.kt`:300-302) wickelt Planner-Blockers
-  heute pauschal in einen `MigrationBlocker(reason =
-  DIALECT_UNSUPPORTED_OPERATION)` ein, sodass der `primaryBlockedReason`
-  auf der Report-Ebene `DIALECT_UNSUPPORTED_OPERATION` statt
-  `OBJECT_RENAME_UNSUPPORTED` ist. Die F.4 Plan-Doc
-  (`done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md` §5.2)
-  reserviert `OBJECT_RENAME_UNSUPPORTED` aber explizit fuer
-  Mapper-/Planner-Faelle. Damit der Vertrag konsistent wird, muss
-  ein folgender Slice (H.5? F.4-Followup-Bridge?) den Renderer-
-  Wrapper entkoppeln und den Reason durchreichen. Bis dahin
-  pinnen die Mapper-Tests
-  (`RenameObjectMapperTest`, `MysqlDiffObjectRenameTest`,
-  `SqliteDiffObjectRenameTest`) die Diagnostic-Code-Schiene
-  `OBJECT_RENAME_UNSUPPORTED`, und ein End-to-End-`--execute`-Pfad
-  surftet als `DIALECT_UNSUPPORTED_OPERATION` (gepinnt via
-  `renderer-side blockers (DIALECT_UNSUPPORTED) yield exit 8`).
-  Die Box (b) ist mit diesem dokumentierten Carve-out abgehakt.
+  **Carve-out — `OBJECT_RENAME_UNSUPPORTED` (F.4)**: ✅ resolved
+  2026-05-19 durch den F.4-Renderer-Blocker-Bridge-Slice. Der neue
+  `PlannerBlockerClassifier` (`hexagon:ports-read`) mappt die
+  Diagnostic-Code-Schiene `OBJECT_RENAME_UNSUPPORTED` auf
+  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED`; die drei
+  Render-Contexts (`PostgresDiffRenderContext`,
+  `MysqlDiffRenderContext`, `SqliteDiffRenderContext`) gruppieren
+  planner-blockers jetzt per Reason und emittieren pro Reason einen
+  eigenen `MigrationBlocker`. Plan-Doc:
+  `done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`. Per-Dialekt-
+  Pin (`PostgresDiffObjectRenameTest`, `MysqlDiffObjectRenameTest`,
+  `SqliteDiffObjectRenameTest`) +
+  `SchemaMigrateRunnerTest`-E2E-Pin halten den Vertrag.
 - [ ] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
   ausgeschlossen.
 - [x] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,

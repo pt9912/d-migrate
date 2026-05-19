@@ -2,7 +2,11 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 Follow-up nach G-Slices (Audit-Closure §11 DoD Box (b))
-> **Status**: in-progress 2026-05-19.
+> **Status**: ✅ complete 2026-05-19.
+>            Sub-Slice A (Classifier + Renderer-Wiring +
+>            Unit-/Integration-Tests) ✅ 2026-05-19 (Commit `3b9db807`).
+>            Sub-Slice B (CHANGELOG + Roadmap + §11 DoD Box (b) Carve-out resolved
+>            + Plan-Doc nach `done/`) ✅ 2026-05-19.
 > **Vorbedingung**: F.4 routine-trigger-view-renames Vollscheibe ✅
 >                  (A.1 → F, 2026-05-18/19); F.4 G Artefakt-Producer-Wiring ✅
 >                  (G.1 + G.2 + G.3, 2026-05-19); §11 DoD Box (b) Audit

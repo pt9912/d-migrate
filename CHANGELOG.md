@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **0.9.7 F.4 Renderer-Blocker-Bridge — preserve `OBJECT_RENAME_UNSUPPORTED`
+  as `primaryBlockedReason`** *(2026-05-19)* — `PostgresDiffRenderContext`,
+  `MysqlDiffRenderContext` and `SqliteDiffRenderContext` used to wrap
+  every planner-emitted BLOCKER diagnostic into a single
+  `MigrationBlocker(reason = DIALECT_UNSUPPORTED_OPERATION)`,
+  collapsing the F.4-specific
+  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` reason that the
+  Mapper / Planner had set per F.4 plan-doc §5.2.
+
+  The fix introduces a `PlannerBlockerClassifier` in
+  `hexagon:ports-read` that maps `DiffDiagnostic.code →
+  MigrationBlockedReason` with the initial entry
+  `"OBJECT_RENAME_UNSUPPORTED" →
+  MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` and a
+  conservative default to `DIALECT_UNSUPPORTED_OPERATION` so legacy
+  codes (`CONSTRAINT_NOT_DIFFABLE`,
+  `MATERIALIZED_VIEW_DIFF_UNSUPPORTED`, etc.) keep their pre-F.4
+  contract. The three render contexts now group planner-blockers
+  by classified reason and emit one `MigrationBlocker` per reason,
+  so a Materialized-View-Rename / body-drift / missing-body rename
+  candidate surfaces `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`
+  end-to-end while a co-existing `CONSTRAINT_NOT_DIFFABLE` keeps its
+  legacy `DIALECT_UNSUPPORTED_OPERATION` reason.
+
+  **Breaking-change-note for downstream consumers**: the report
+  field `summary.primaryBlockedReason` for F.4
+  materialized-view-rename and body-drift routine/trigger
+  scenarios now reads `OBJECT_RENAME_UNSUPPORTED` instead of
+  `DIALECT_UNSUPPORTED_OPERATION`. Existing tooling that pinned
+  the old reason as primary for these scenarios needs to widen its
+  expectation. The H.3 audit found no in-tree consumer that did so,
+  and the enum value
+  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` has existed
+  since F.4 A.1 (2026-05-18) — only the wiring through the
+  renderer wrap was missing.
+
+  New tests:
+    - `PlannerBlockerClassifierTest` (`hexagon:ports-read`) pins the
+      mapping + the public `OBJECT_RENAME_UNSUPPORTED_CODE`
+      constant.
+    - `PostgresDiffObjectRenameTest` / `MysqlDiffObjectRenameTest` /
+      `SqliteDiffObjectRenameTest` each get a sibling case that
+      drives the full `planner.plan(...) → gen.generateUp(...)`
+      pipeline through a mapper-only-block scenario
+      (materialized-view rename on PG, trigger-body-drift on
+      MySQL / SQLite — both surface
+      `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`).
+    - `SchemaMigrateRunnerTest` gets an end-to-end pin that the
+      report-emit pipeline carries the new primary reason through
+      to stdout.
+
+  §11 DoD Box (b) Carve-out (committed in `ffc6970e`) is resolved.
+  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
+
 ### Added
 
 - **0.9.7 F.4 Follow-up — `migration-plan.v1` Artefact Producer Wiring**
