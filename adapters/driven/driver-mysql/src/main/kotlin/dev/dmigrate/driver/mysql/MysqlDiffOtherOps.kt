@@ -1,7 +1,10 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.driver.MysqlCheckEnforcementResolver
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
 /**
  * Per-operation renderers for constraint / index / view / custom-
@@ -17,45 +20,120 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 internal object MysqlDiffOtherOps {
 
     fun renderAddConstraint(op: DiffOperation.AddConstraint, ctx: MysqlDiffRenderContext) {
-        val table = op.objectRef.path[0]
-        if (ctx.direction == MysqlRenderDirection.DOWN) {
-            val drop = ctx.sql.dropConstraintSql(table, op.constraint)
-            if (drop == null) {
-                ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
-                ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
-                return
-            }
-            ctx.emit(op, drop)
+        if (op.constraint.type == ConstraintType.EXCLUDE) {
+            blockExcludeOnMysql(op, ctx)
             return
         }
-        val line = ctx.sql.constraintLine(op.constraint)
+        val table = op.objectRef.path[0]
+        val isLogicalAdd = ctx.direction == MysqlRenderDirection.UP
+        if (op.constraint.type == ConstraintType.CHECK && !gateMysqlCheck(op, ctx, isLogicalAdd)) {
+            return
+        }
+        if (ctx.direction == MysqlRenderDirection.DOWN) {
+            emitDropConstraint(op, ctx, table)
+            return
+        }
+        emitAddConstraint(op, ctx, table)
+    }
+
+    fun renderDropConstraint(op: DiffOperation.DropConstraint, ctx: MysqlDiffRenderContext) {
+        if (op.constraint.type == ConstraintType.EXCLUDE) {
+            blockExcludeOnMysql(op, ctx)
+            return
+        }
+        val table = op.objectRef.path[0]
+        val isLogicalAdd = ctx.direction == MysqlRenderDirection.DOWN
+        if (op.constraint.type == ConstraintType.CHECK && !gateMysqlCheck(op, ctx, isLogicalAdd)) {
+            return
+        }
+        if (ctx.direction == MysqlRenderDirection.DOWN) {
+            emitAddConstraint(op, ctx, table)
+            return
+        }
+        emitDropConstraint(op, ctx, table)
+    }
+
+    private fun emitAddConstraint(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
+        val constraint = when (op) {
+            is DiffOperation.AddConstraint -> op.constraint
+            is DiffOperation.DropConstraint -> op.constraint
+            else -> error("emitAddConstraint called with unsupported op ${op::class.simpleName}")
+        }
+        val line = ctx.sql.constraintLine(constraint)
         if (line == null) {
-            ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
+            ctx.skip(op, "Constraint type ${constraint.type} is not in the first matrix.")
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
     }
 
-    fun renderDropConstraint(op: DiffOperation.DropConstraint, ctx: MysqlDiffRenderContext) {
-        val table = op.objectRef.path[0]
-        if (ctx.direction == MysqlRenderDirection.DOWN) {
-            val line = ctx.sql.constraintLine(op.constraint)
-            if (line == null) {
-                ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
-                ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
-                return
-            }
-            ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
-            return
+    private fun emitDropConstraint(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
+        val constraint = when (op) {
+            is DiffOperation.AddConstraint -> op.constraint
+            is DiffOperation.DropConstraint -> op.constraint
+            else -> error("emitDropConstraint called with unsupported op ${op::class.simpleName}")
         }
-        val drop = ctx.sql.dropConstraintSql(table, op.constraint)
+        val drop = ctx.sql.dropConstraintSql(table, constraint)
         if (drop == null) {
-            ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
+            ctx.skip(op, "Constraint type ${constraint.type} is not in the first matrix.")
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
             return
         }
         ctx.emit(op, drop)
+    }
+
+    /**
+     * F.5 Sub-Slice C: gate MySQL CHECK rendering against the live
+     * server's enforcement capability. Returns `true` when the
+     * renderer may proceed, `false` after emitting the block.
+     *
+     * Logical-add ops (ADD CHECK on Up, ADD CHECK on Down-of-Drop)
+     * need both `known` and `enforced`: a parsed-but-not-evaluated
+     * CHECK is silently no-op and would mask real data violations.
+     *
+     * Logical-drop ops only need `known`: dropping a never-enforced
+     * constraint is harmless, but the renderer still needs proof the
+     * server supports the `DROP CHECK` syntax (MySQL ≥ 8.0.16 /
+     * MariaDB ≥ 10.2.1).
+     */
+    private fun gateMysqlCheck(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        isLogicalAdd: Boolean,
+    ): Boolean {
+        val cap = MysqlCheckEnforcementResolver.resolve(ctx.options.mysqlServerVersion)
+        if (!cap.known) {
+            ctx.skip(
+                op,
+                "MySQL CHECK rendering is blocked: ${cap.rationale}. Set --mysql-server-version " +
+                    "or run against a live MySQL ≥ 8.0.16 / MariaDB ≥ 10.2.1 target.",
+                code = PlannerBlockerClassifier.MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+        if (isLogicalAdd && !cap.enforced) {
+            ctx.skip(
+                op,
+                "MySQL CHECK rendering is blocked: ${cap.rationale}. The server parses the clause " +
+                    "but never evaluates it, so the migration would silently no-op.",
+                code = PlannerBlockerClassifier.MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16_CODE,
+            )
+            ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            return false
+        }
+        return true
+    }
+
+    private fun blockExcludeOnMysql(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        ctx.skip(
+            op,
+            "MySQL does not support EXCLUDE constraints (PostgreSQL-only feature). " +
+                "Use a UNIQUE index plus a CHECK constraint or model the invariant in application code.",
+            code = PlannerBlockerClassifier.EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE,
+        )
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: MysqlDiffRenderContext) {

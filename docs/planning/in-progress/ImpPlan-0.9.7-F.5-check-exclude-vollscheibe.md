@@ -438,18 +438,46 @@ Default-Fallback `DIALECT_UNSUPPORTED_OPERATION` bleibt.
   `§F.5 Sub-Slice A: cross-table CHECK planner-blocker cascades`
   in `PostgresDiffDdlGeneratorTest`).
 
-### Sub-Slice C — MySQL Renderer + Enforcement-Capability
+### Sub-Slice C — MySQL Renderer + Enforcement-Capability ✅ (2026-05-19)
 
-- `MysqlCheckEnforcementCapability` einfuehren.
-- `MysqlDiffOtherOps.renderAddConstraint` /
-  `renderDropConstraint` Branch fuer CHECK (Add: `CHECK (…)` mit
-  Capability-Gate; Drop: `DROP CHECK n`).
-- EXCLUDE blockt unconditional mit
-  `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`.
-- Tests: MySQL ≥ 8.0.16 positive; MariaDB ≥ 10.2.1 positive;
-  < 8.0.16 blockt ADD/REPLACE mit `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16`;
-  Versions-Unknown blockt CHECK-ADD/REPLACE mit
-  `MYSQL_CHECK_ENFORCEMENT_UNKNOWN`; EXCLUDE blockt.
+- `MysqlCheckEnforcementCapability` + `MysqlCheckEnforcementResolver`
+  liegen in `hexagon:ports-read`. Floors sind `MySQL 8.0.16` und
+  `MariaDB 10.2.1`; `null`-Version (file-only oder unverfuegbar)
+  faellt auf `known=false, enforced=false` mit
+  Rationale-Begruendung. Auswertung via `Comparable<MysqlServerVersion>`,
+  Vendor-Routing per `isMariaDb`.
+- `MysqlDiffSqlBuilders`:
+  - `constraintLine` rendert CHECK als `CONSTRAINT n CHECK (expr)`
+    (blanke Expression bleibt null → bestehender Skip-Pfad), EXCLUDE
+    bleibt null.
+  - `dropConstraintSql` rendert CHECK als
+    `ALTER TABLE t DROP CHECK n;` (EXCLUDE bleibt null).
+- `MysqlDiffOtherOps`:
+  - `renderAddConstraint` + `renderDropConstraint` extrahieren die
+    bisher duplizierte Up/Down-Emission in `emitAddConstraint` /
+    `emitDropConstraint`-Helper. Davor laeuft fuer `EXCLUDE` der
+    unconditional `blockExcludeOnMysql` (Code:
+    `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`, Reason:
+    `DIALECT_UNSUPPORTED_OPERATION`); fuer `CHECK` greift
+    `gateMysqlCheck(isLogicalAdd)`:
+    - `!cap.known` → `MYSQL_CHECK_ENFORCEMENT_UNKNOWN`,
+      `MANUAL_ACTION_REQUIRED` (gilt fuer ADD und DROP).
+    - `isLogicalAdd && !cap.enforced` →
+      `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16`,
+      `MANUAL_ACTION_REQUIRED`. Drop ohne Enforcement laeuft durch
+      (keine Schutzwirkung erforderlich).
+- Tests:
+  - `MysqlCheckEnforcementResolverTest` (ports-read) pinnt alle vier
+    Quadranten (MySQL ≥/< 8.0.16, MariaDB ≥/< 10.2.1) plus null und
+    den Vendor-Routing-Edge-Case (10.2.1 ohne MariaDB-Vendor laeuft
+    als plain MySQL ≥ 8.0.16).
+  - `MysqlDiffDdlGeneratorCheckExcludeTest` (driver-mysql, eigene
+    Datei wegen Detekt-LargeClass) pinnt:
+    CHECK-ADD positiv auf MySQL 8.0.16 + MariaDB 10.2.1;
+    CHECK-ADD blockt pre-Version (beide Vendor) + null;
+    CHECK-DROP rendert `DROP CHECK n` und blockt nur bei `!known`;
+    CHECK-ADD-Up + Down-Pfade pinnen das Round-Trip;
+    EXCLUDE-ADD blockt auf jeder Server-Version inkl. null.
 
 ### Sub-Slice D — SQLite Renderer (Rebuild-Pipeline)
 

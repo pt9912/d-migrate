@@ -49,7 +49,21 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             val refCols = ref.columns.joinToString(", ") { quote(it) }
             "CONSTRAINT ${quote(c.name)} FOREIGN KEY ($cols) REFERENCES ${quote(ref.table)}($refCols)"
         }
-        ConstraintType.CHECK, ConstraintType.EXCLUDE -> null
+        // F.5 Sub-Slice C (2026-05-19): MySQL / MariaDB native CHECK
+        // clause. The enforcement gate
+        // (`MysqlCheckEnforcementCapability`) is checked by the
+        // renderer (`MysqlDiffOtherOps`), not here — the builder
+        // unconditionally produces the syntactic form, the renderer
+        // decides whether to emit or block.
+        ConstraintType.CHECK -> {
+            val expression = c.expression?.takeIf { it.isNotBlank() } ?: return null
+            "CONSTRAINT ${quote(c.name)} CHECK ($expression)"
+        }
+        // EXCLUDE is a PostgreSQL-only contract; MySQL has no
+        // syntactic equivalent. The renderer blocks unconditionally
+        // with `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`; the builder mirrors
+        // that by refusing to render anything.
+        ConstraintType.EXCLUDE -> null
     }
 
     /** MySQL: `DROP FOREIGN KEY` for FK, `DROP INDEX` for UNIQUE, otherwise `DROP CONSTRAINT` (8.0.13+). */
@@ -58,10 +72,14 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
             "ALTER TABLE ${quote(table)} DROP FOREIGN KEY ${quote(c.name)};"
         ConstraintType.UNIQUE ->
             "ALTER TABLE ${quote(table)} DROP INDEX ${quote(c.name)};"
-        // TODO: MySQL ≥ 8.0.16 supports `ALTER TABLE … DROP CHECK <name>` for CHECK
-        // constraints. Not in the first matrix because the planner blocks CHECK upstream
-        // (Phase A `CONSTRAINT_NOT_DIFFABLE`); revisit when CHECK lands in the comparator.
-        ConstraintType.CHECK, ConstraintType.EXCLUDE -> null
+        // F.5 Sub-Slice C: MySQL ≥ 8.0.16 / MariaDB ≥ 10.2.1 support
+        // `ALTER TABLE … DROP CHECK <name>`. The renderer
+        // (`MysqlDiffOtherOps.renderDropConstraint`) gates the call by
+        // capability `known`-ness; the builder produces the syntactic
+        // form once that gate is open.
+        ConstraintType.CHECK ->
+            "ALTER TABLE ${quote(table)} DROP CHECK ${quote(c.name)};"
+        ConstraintType.EXCLUDE -> null
     }
 
     fun createIndexSql(table: String, idx: IndexDefinition): String {
