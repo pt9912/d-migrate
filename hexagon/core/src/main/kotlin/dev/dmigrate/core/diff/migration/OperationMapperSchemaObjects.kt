@@ -57,22 +57,27 @@ internal object OperationMapperSchemaObjects {
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+        sequenceFold: RenameObjectMapper.ObjectFoldResult,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.sequencesAdded) {
+            if (added.name in sequenceFold.absorbedToNames) continue
             val ref = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(added.name))
             ops += DiffOperation.CreateSequence(
                 id = OperationIdFactory.makeId("CreateSequence", ref, added.definition.toString()),
                 objectRef = ref,
                 sequence = added.definition,
+                renameProvenance = sequenceFold.fallbackByToName[added.name],
             )
         }
         for (removed in diff.sequencesRemoved) {
+            if (removed.name in sequenceFold.absorbedFromNames) continue
             val ref = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(removed.name))
             ops += DiffOperation.DropSequence(
                 id = OperationIdFactory.makeId("DropSequence", ref, removed.definition.toString()),
                 objectRef = ref,
                 sequence = removed.definition,
+                renameProvenance = sequenceFold.fallbackByFromName[removed.name],
             )
         }
         for (changed in diff.sequencesChanged) {

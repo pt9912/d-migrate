@@ -146,26 +146,57 @@ internal object PostgresDiffFunctionOps {
         fn: FunctionDefinition,
         ctx: PostgresDiffRenderContext,
     ) {
-        // PostgreSQL identifies a function by `(IN | INOUT)` parameter
-        // types only — `OUT` parameters are NOT part of the
-        // drop-signature. INOUT parameters keep the keyword so the
-        // signature matches the catalog. Names are intentionally
-        // omitted: PostgreSQL ignores them in DROP, only types and
-        // direction modifiers count.
-        val signatureParams = fn.parameters
-            .filter { it.direction != ParameterDirection.OUT }
-            .joinToString(", ") { p ->
-                if (p.direction == ParameterDirection.INOUT) "INOUT ${p.type}" else p.type
-            }
         val sql = buildString {
             append("DROP FUNCTION ")
             append(ctx.sql.quote(ref.rootName))
             append('(')
-            append(signatureParams)
+            append(renderDropSignature(fn.parameters))
             append(");")
         }
         ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
+
+    /**
+     * F.4 Sub-Slice A.2 Teil 2: PostgreSQL native function rename.
+     * `ALTER FUNCTION <fromName>(<signature>) RENAME TO <toName>` —
+     * the signature follows the same OUT-excluded, name-omitted
+     * convention as DROP FUNCTION because PostgreSQL identifies a
+     * function by `(name, IN/INOUT types)` only. The renderer never
+     * derives the existing name from `objectRef.path[0]` (which holds
+     * the canonical target key for plan/report ID stability).
+     */
+    fun renderRenameFunction(op: DiffOperation.RenameFunction, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        val sql = buildString {
+            append("ALTER FUNCTION ")
+            append(ctx.sql.quote(oldName))
+            append('(')
+            append(renderDropSignature(op.signature))
+            append(") RENAME TO ")
+            append(ctx.sql.quote(newName))
+            append(';')
+        }
+        ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
+    }
+
+    /**
+     * PostgreSQL identifies a routine by `(IN | INOUT)` parameter types
+     * only — `OUT` parameters are NOT part of the
+     * drop/alter-signature. INOUT parameters keep the keyword so the
+     * signature matches the catalog. Names are intentionally omitted:
+     * PostgreSQL ignores them in DROP / ALTER, only types and
+     * direction modifiers count.
+     */
+    private fun renderDropSignature(parameters: List<ParameterDefinition>): String =
+        parameters
+            .filter { it.direction != ParameterDirection.OUT }
+            .joinToString(", ") { p ->
+                if (p.direction == ParameterDirection.INOUT) "INOUT ${p.type}" else p.type
+            }
 
     private fun renderParameters(parameters: List<ParameterDefinition>): String =
         parameters.joinToString(", ") { p ->

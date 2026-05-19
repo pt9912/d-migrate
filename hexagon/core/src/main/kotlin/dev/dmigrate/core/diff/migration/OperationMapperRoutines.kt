@@ -18,22 +18,27 @@ internal object OperationMapperRoutines {
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+        functionFold: RenameObjectMapper.ObjectFoldResult,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.functionsAdded) {
+            if (added.name in functionFold.absorbedToNames) continue
             val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(added.name))
             ops += DiffOperation.CreateFunction(
                 id = OperationIdFactory.makeId("CreateFunction", ref, added.definition.toString()),
                 objectRef = ref,
                 function = added.definition,
+                renameProvenance = functionFold.fallbackByToName[added.name],
             )
         }
         for (removed in diff.functionsRemoved) {
+            if (removed.name in functionFold.absorbedFromNames) continue
             val ref = DiffObjectRef(DiffObjectType.FUNCTION, listOf(removed.name))
             ops += DiffOperation.DropFunction(
                 id = OperationIdFactory.makeId("DropFunction", ref, removed.definition.toString()),
                 objectRef = ref,
                 function = removed.definition,
+                renameProvenance = functionFold.fallbackByFromName[removed.name],
             )
         }
         for (changed in diff.functionsChanged) {
@@ -69,22 +74,27 @@ internal object OperationMapperRoutines {
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+        procedureFold: RenameObjectMapper.ObjectFoldResult,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.proceduresAdded) {
+            if (added.name in procedureFold.absorbedToNames) continue
             val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(added.name))
             ops += DiffOperation.CreateProcedure(
                 id = OperationIdFactory.makeId("CreateProcedure", ref, added.definition.toString()),
                 objectRef = ref,
                 procedure = added.definition,
+                renameProvenance = procedureFold.fallbackByToName[added.name],
             )
         }
         for (removed in diff.proceduresRemoved) {
+            if (removed.name in procedureFold.absorbedFromNames) continue
             val ref = DiffObjectRef(DiffObjectType.PROCEDURE, listOf(removed.name))
             ops += DiffOperation.DropProcedure(
                 id = OperationIdFactory.makeId("DropProcedure", ref, removed.definition.toString()),
                 objectRef = ref,
                 procedure = removed.definition,
+                renameProvenance = procedureFold.fallbackByFromName[removed.name],
             )
         }
         for (changed in diff.proceduresChanged) {
@@ -116,27 +126,33 @@ internal object OperationMapperRoutines {
         }
     }
 
+    @Suppress("LongParameterList")
     fun mapTriggers(
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
+        triggerFold: RenameObjectMapper.ObjectFoldResult,
         ops: MutableList<DiffOperation>,
         triggerPlanningContext: TriggerPlanningContext = TriggerPlanningContext(),
     ) {
         for (added in diff.triggersAdded) {
+            if (added.name in triggerFold.absorbedToNames) continue
             val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(added.name))
             ops += DiffOperation.CreateTrigger(
                 id = OperationIdFactory.makeId("CreateTrigger", ref, added.definition.toString()),
                 objectRef = ref,
                 trigger = added.definition,
+                renameProvenance = triggerFold.fallbackByToName[added.name],
             )
         }
         for (removed in diff.triggersRemoved) {
+            if (removed.name in triggerFold.absorbedFromNames) continue
             val ref = DiffObjectRef(DiffObjectType.TRIGGER, listOf(removed.name))
             ops += DiffOperation.DropTrigger(
                 id = OperationIdFactory.makeId("DropTrigger", ref, removed.definition.toString()),
                 objectRef = ref,
                 trigger = removed.definition,
+                renameProvenance = triggerFold.fallbackByFromName[removed.name],
             )
         }
         for (changed in diff.triggersChanged) {

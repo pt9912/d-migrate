@@ -33,4 +33,24 @@ internal object PostgresDiffSequenceOps {
         }
         ctx.emit(op, "DROP SEQUENCE ${ctx.sql.quote(name)};", PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
+
+    /**
+     * F.4 Sub-Slice A.2 Teil 2: PostgreSQL native sequence rename.
+     * `ALTER SEQUENCE <fromName> RENAME TO <toName>` — the left side
+     * is the existing identity (`fromName`), the right side is the new
+     * visible name (`toName`). `objectRef.path[0]` is the canonical
+     * target key but must not appear in the SQL itself.
+     */
+    fun renderRenameSequence(op: DiffOperation.RenameSequence, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            "ALTER SEQUENCE ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};",
+            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+        )
+    }
 }

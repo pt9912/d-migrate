@@ -120,21 +120,25 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateView,
         is DiffOperation.ReplaceView,
         is DiffOperation.DropView,
+        is DiffOperation.RenameView,
         -> OpCategory.OTHER
 
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
+        is DiffOperation.RenameSequence,
         -> OpCategory.SEQUENCE
 
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
+        is DiffOperation.RenameFunction,
         -> OpCategory.FUNCTION
 
         is DiffOperation.CreateProcedure,
         is DiffOperation.ReplaceProcedure,
         is DiffOperation.DropProcedure,
+        is DiffOperation.RenameProcedure,
         -> OpCategory.PROCEDURE
 
         is DiffOperation.CreateMaterializedView,
@@ -145,14 +149,10 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateTrigger,
         is DiffOperation.ReplaceTrigger,
         is DiffOperation.DropTrigger,
+        is DiffOperation.RenameTrigger,
         -> OpCategory.TRIGGER
 
         is DiffOperation.AlterCustomType,
-        is DiffOperation.RenameView,
-        is DiffOperation.RenameTrigger,
-        is DiffOperation.RenameFunction,
-        is DiffOperation.RenameProcedure,
-        is DiffOperation.RenameSequence,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -184,6 +184,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> PostgresDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> PostgresDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> PostgresDiffOtherOps.renderDropView(op, ctx)
+            is DiffOperation.RenameView -> PostgresDiffOtherOps.renderRenameView(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised OTHER but renderOtherOp does not handle it")
         }
     }
@@ -193,6 +194,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateSequence -> PostgresDiffSequenceOps.renderCreateSequence(op, ctx)
             is DiffOperation.AlterSequence -> PostgresDiffSequenceOps.renderAlterSequence(op, ctx)
             is DiffOperation.DropSequence -> PostgresDiffSequenceOps.renderDropSequence(op, ctx)
+            is DiffOperation.RenameSequence -> PostgresDiffSequenceOps.renderRenameSequence(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it")
         }
     }
@@ -202,6 +204,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateFunction -> PostgresDiffFunctionOps.renderCreateFunction(op, ctx)
             is DiffOperation.ReplaceFunction -> PostgresDiffFunctionOps.renderReplaceFunction(op, ctx)
             is DiffOperation.DropFunction -> PostgresDiffFunctionOps.renderDropFunction(op, ctx)
+            is DiffOperation.RenameFunction -> PostgresDiffFunctionOps.renderRenameFunction(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised FUNCTION but renderFunctionOp does not handle it")
         }
     }
@@ -211,6 +214,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateProcedure -> PostgresDiffProcedureOps.renderCreateProcedure(op, ctx)
             is DiffOperation.ReplaceProcedure -> PostgresDiffProcedureOps.renderReplaceProcedure(op, ctx)
             is DiffOperation.DropProcedure -> PostgresDiffProcedureOps.renderDropProcedure(op, ctx)
+            is DiffOperation.RenameProcedure -> PostgresDiffProcedureOps.renderRenameProcedure(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised PROCEDURE but renderProcedureOp does not handle it")
         }
     }
@@ -220,6 +224,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateTrigger -> PostgresTriggerDdlHelper.renderCreateTrigger(op, ctx)
             is DiffOperation.ReplaceTrigger -> PostgresTriggerDdlHelper.renderReplaceTrigger(op, ctx)
             is DiffOperation.DropTrigger -> PostgresTriggerDdlHelper.renderDropTrigger(op, ctx)
+            is DiffOperation.RenameTrigger -> PostgresTriggerDdlHelper.renderRenameTrigger(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised TRIGGER but renderTriggerOp does not handle it")
         }
     }

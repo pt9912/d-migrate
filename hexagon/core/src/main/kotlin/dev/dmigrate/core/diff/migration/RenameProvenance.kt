@@ -25,7 +25,15 @@ package dev.dmigrate.core.diff.migration
  * - [fallbackReason]: human-readable rationale ("MySQL has no
  *   `ALTER TRIGGER … RENAME`", etc.).
  */
-internal data class RenameProvenance(
+/**
+ * Visible on the public `DiffOperation` API surface because the data
+ * classes that carry the field (`CreateView`/`DropView`/...) are
+ * themselves public. "Internal" in the plan refers to the
+ * `migration-plan.v1` artifact contract: serialisers ignore this
+ * field; the only public projection is via the `RenameProjectionReport`
+ * carrier on `DiffResult.renameProjections`.
+ */
+data class RenameProvenance(
     val candidateId: String,
     val objectType: DiffObjectType,
     val fromPath: List<String>,

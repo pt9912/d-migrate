@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
+import dev.dmigrate.core.identity.ObjectKeyCodec
 import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
@@ -588,6 +589,11 @@ internal data class RenameOverlayIndex(
     private val tableMappings: List<TableRenameMapping>,
     private val qualifiedColumnMappings: Map<String, List<ColumnRenameMapping>>,
     private val unqualifiedColumnMappings: List<ColumnRenameMapping>,
+    private val viewMappings: List<ViewRenameMapping>,
+    private val triggerMappings: List<TriggerRenameMapping>,
+    private val functionMappings: List<RoutineRenameMapping>,
+    private val procedureMappings: List<RoutineRenameMapping>,
+    private val sequenceMappings: List<SequenceRenameMapping>,
     /**
      * Diagnostics produced while indexing the overlay entries (e.g.
      * cross-table or partially-qualified column-rename mappings the
@@ -599,7 +605,9 @@ internal data class RenameOverlayIndex(
     val issues: List<DiffDiagnostic>,
 ) {
     fun isEmpty(): Boolean =
-        tableMappings.isEmpty() && qualifiedColumnMappings.isEmpty() && unqualifiedColumnMappings.isEmpty()
+        tableMappings.isEmpty() && qualifiedColumnMappings.isEmpty() && unqualifiedColumnMappings.isEmpty() &&
+            viewMappings.isEmpty() && triggerMappings.isEmpty() && functionMappings.isEmpty() &&
+            procedureMappings.isEmpty() && sequenceMappings.isEmpty()
 
     fun tableMappings(): List<TableRenameMapping> = tableMappings
 
@@ -610,15 +618,31 @@ internal data class RenameOverlayIndex(
         return qualified + withDefaults
     }
 
+    fun viewMappings(): List<ViewRenameMapping> = viewMappings
+    fun triggerMappings(): List<TriggerRenameMapping> = triggerMappings
+    fun functionMappings(): List<RoutineRenameMapping> = functionMappings
+    fun procedureMappings(): List<RoutineRenameMapping> = procedureMappings
+    fun sequenceMappings(): List<SequenceRenameMapping> = sequenceMappings
+
     companion object {
         private const val CROSS_TABLE_REJECTED: String = "RENAME_OVERLAY_CROSS_TABLE_REJECTED"
         private const val MIXED_QUALIFICATION: String = "RENAME_OVERLAY_MIXED_COLUMN_QUALIFICATION"
+        private const val TRIGGER_KEY_INVALID: String = "RENAME_OVERLAY_TRIGGER_KEY_INVALID"
+        private const val TRIGGER_CROSS_TABLE: String = "RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED"
+        private const val ROUTINE_KEY_INVALID: String = "RENAME_OVERLAY_ROUTINE_KEY_INVALID"
+        private const val ROUTINE_SIGNATURE_MISMATCH: String = "RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH"
 
+        @Suppress("LongMethod")
         fun build(documents: List<MigrationOverlayDocument>): RenameOverlayIndex {
             if (documents.isEmpty()) return EMPTY
             val tables = mutableListOf<TableRenameMapping>()
             val qualified = mutableMapOf<String, MutableList<ColumnRenameMapping>>()
             val unqualified = mutableListOf<ColumnRenameMapping>()
+            val views = mutableListOf<ViewRenameMapping>()
+            val triggers = mutableListOf<TriggerRenameMapping>()
+            val functions = mutableListOf<RoutineRenameMapping>()
+            val procedures = mutableListOf<RoutineRenameMapping>()
+            val sequences = mutableListOf<SequenceRenameMapping>()
             val issues = mutableListOf<DiffDiagnostic>()
             // Defensive dedupe: even though MigrationOverlayValidator blocks
             // exact duplicates with RENAME_MAPPING_DUPLICATE before the mapper
@@ -628,18 +652,42 @@ internal data class RenameOverlayIndex(
             // so duplicates short-circuit without an op being emitted.
             val seenTables = mutableSetOf<Pair<String, String>>()
             val seenColumns = mutableSetOf<Triple<String?, String, String>>()
+            val seenViews = mutableSetOf<Pair<String, String>>()
+            val seenTriggers = mutableSetOf<Pair<String, String>>()
+            val seenFunctions = mutableSetOf<Pair<String, String>>()
+            val seenProcedures = mutableSetOf<Pair<String, String>>()
+            val seenSequences = mutableSetOf<Pair<String, String>>()
             for (doc in documents) {
                 if (doc.overlay.overlayKind != MigrationOverlayKinds.RENAME_MAPPING) continue
                 for (entry in doc.overlay.entries.filterIsInstance<RenameMappingOverlayEntry>()) {
                     when (entry.objectType.lowercase(Locale.ROOT)) {
                         "table" -> addTableMapping(doc, entry, tables, seenTables)
                         "column" -> indexColumnEntry(doc, entry, qualified, unqualified, issues, seenColumns)
+                        "view" -> addViewMapping(doc, entry, views, seenViews)
+                        "trigger" -> addTriggerMapping(doc, entry, triggers, issues, seenTriggers)
+                        "function" -> addRoutineMapping(
+                            doc, entry, functions, issues, seenFunctions, kindLabel = "function",
+                        )
+                        "procedure" -> addRoutineMapping(
+                            doc, entry, procedures, issues, seenProcedures, kindLabel = "procedure",
+                        )
+                        "sequence" -> addSequenceMapping(doc, entry, sequences, seenSequences)
                         // Unknown objectType: silently skipped here — the overlay
                         // validator's UNKNOWN_ENTRY_KIND blocker covers it.
                     }
                 }
             }
-            return RenameOverlayIndex(tables, qualified, unqualified, issues)
+            return RenameOverlayIndex(
+                tableMappings = tables,
+                qualifiedColumnMappings = qualified,
+                unqualifiedColumnMappings = unqualified,
+                viewMappings = views,
+                triggerMappings = triggers,
+                functionMappings = functions,
+                procedureMappings = procedures,
+                sequenceMappings = sequences,
+                issues = issues,
+            )
         }
 
         private fun addTableMapping(
@@ -725,7 +773,149 @@ internal data class RenameOverlayIndex(
             }
         }
 
-        val EMPTY: RenameOverlayIndex = RenameOverlayIndex(emptyList(), emptyMap(), emptyList(), emptyList())
+        val EMPTY: RenameOverlayIndex = RenameOverlayIndex(
+            tableMappings = emptyList(),
+            qualifiedColumnMappings = emptyMap(),
+            unqualifiedColumnMappings = emptyList(),
+            viewMappings = emptyList(),
+            triggerMappings = emptyList(),
+            functionMappings = emptyList(),
+            procedureMappings = emptyList(),
+            sequenceMappings = emptyList(),
+            issues = emptyList(),
+        )
+
+        private fun addViewMapping(
+            doc: MigrationOverlayDocument,
+            entry: RenameMappingOverlayEntry,
+            views: MutableList<ViewRenameMapping>,
+            seen: MutableSet<Pair<String, String>>,
+        ) {
+            val key = entry.fromName.lowercase(Locale.ROOT) to entry.toName.lowercase(Locale.ROOT)
+            if (!seen.add(key)) return
+            views += ViewRenameMapping(
+                fromName = entry.fromName,
+                toName = entry.toName,
+                source = doc.source,
+                entryId = entry.id,
+                overlayHash = doc.overlay.overlayHash,
+            )
+        }
+
+        private fun addSequenceMapping(
+            doc: MigrationOverlayDocument,
+            entry: RenameMappingOverlayEntry,
+            sequences: MutableList<SequenceRenameMapping>,
+            seen: MutableSet<Pair<String, String>>,
+        ) {
+            val key = entry.fromName.lowercase(Locale.ROOT) to entry.toName.lowercase(Locale.ROOT)
+            if (!seen.add(key)) return
+            sequences += SequenceRenameMapping(
+                fromName = entry.fromName,
+                toName = entry.toName,
+                source = doc.source,
+                entryId = entry.id,
+                overlayHash = doc.overlay.overlayHash,
+            )
+        }
+
+        private fun addTriggerMapping(
+            doc: MigrationOverlayDocument,
+            entry: RenameMappingOverlayEntry,
+            triggers: MutableList<TriggerRenameMapping>,
+            issues: MutableList<DiffDiagnostic>,
+            seen: MutableSet<Pair<String, String>>,
+        ) {
+            val fromParsed = parseTriggerKey(entry.fromName)
+            val toParsed = parseTriggerKey(entry.toName)
+            if (fromParsed == null || toParsed == null) {
+                issues += DiffDiagnostic(
+                    code = TRIGGER_KEY_INVALID,
+                    message = "Rename mapping ${doc.source} entry=${entry.id} for objectType=trigger requires " +
+                        "canonical keys 'table::name' on both sides ('${entry.fromName}' -> '${entry.toName}').",
+                    severity = DiffDiagnostic.Severity.BLOCKER,
+                )
+                return
+            }
+            val (fromTable, fromName) = fromParsed
+            val (toTable, toName) = toParsed
+            if (!fromTable.equals(toTable, ignoreCase = true)) {
+                issues += DiffDiagnostic(
+                    code = TRIGGER_CROSS_TABLE,
+                    message = "Rename mapping ${doc.source} entry=${entry.id} for trigger '${entry.fromName}' -> " +
+                        "'${entry.toName}' moves between tables ('$fromTable' -> '$toTable'). Cross-table trigger " +
+                        "moves are not a rename; remove the mapping or rewrite the schema.",
+                    severity = DiffDiagnostic.Severity.BLOCKER,
+                )
+                return
+            }
+            val key = entry.fromName.lowercase(Locale.ROOT) to entry.toName.lowercase(Locale.ROOT)
+            if (!seen.add(key)) return
+            triggers += TriggerRenameMapping(
+                table = fromTable,
+                fromName = fromName,
+                toName = toName,
+                source = doc.source,
+                entryId = entry.id,
+                overlayHash = doc.overlay.overlayHash,
+            )
+        }
+
+        private fun addRoutineMapping(
+            doc: MigrationOverlayDocument,
+            entry: RenameMappingOverlayEntry,
+            routines: MutableList<RoutineRenameMapping>,
+            issues: MutableList<DiffDiagnostic>,
+            seen: MutableSet<Pair<String, String>>,
+            kindLabel: String,
+        ) {
+            val fromParsed = parseRoutineKey(entry.fromName)
+            val toParsed = parseRoutineKey(entry.toName)
+            if (fromParsed == null || toParsed == null) {
+                issues += DiffDiagnostic(
+                    code = ROUTINE_KEY_INVALID,
+                    message = "Rename mapping ${doc.source} entry=${entry.id} for objectType=$kindLabel requires " +
+                        "canonical keys 'name(direction:type,...)' on both sides ('${entry.fromName}' -> " +
+                        "'${entry.toName}').",
+                    severity = DiffDiagnostic.Severity.BLOCKER,
+                )
+                return
+            }
+            val (fromName, fromParams) = fromParsed
+            val (toName, toParams) = toParsed
+            if (fromParams != toParams) {
+                issues += DiffDiagnostic(
+                    code = ROUTINE_SIGNATURE_MISMATCH,
+                    message = "Rename mapping ${doc.source} entry=${entry.id} for $kindLabel '${entry.fromName}' -> " +
+                        "'${entry.toName}' carries differing signatures ($fromParams vs $toParams). A signature " +
+                        "change is a different routine, not a rename.",
+                    severity = DiffDiagnostic.Severity.BLOCKER,
+                )
+                return
+            }
+            val key = entry.fromName.lowercase(Locale.ROOT) to entry.toName.lowercase(Locale.ROOT)
+            if (!seen.add(key)) return
+            routines += RoutineRenameMapping(
+                fromName = fromName,
+                toName = toName,
+                parameters = fromParams,
+                source = doc.source,
+                entryId = entry.id,
+                overlayHash = doc.overlay.overlayHash,
+            )
+        }
+
+        private fun parseTriggerKey(raw: String): Pair<String, String>? = try {
+            if (!raw.contains("::")) null else ObjectKeyCodec.parseTriggerKey(raw)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+
+        private fun parseRoutineKey(raw: String): Pair<String, List<Pair<String, String>>>? = try {
+            if (!raw.contains('(') || !raw.endsWith(')')) null else ObjectKeyCodec.parseRoutineKey(raw)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
     }
 }
 
@@ -741,6 +931,48 @@ internal data class ColumnRenameMapping(
     val tableName: String,
     val fromColumn: String,
     val toColumn: String,
+    val source: String,
+    val entryId: String,
+    val overlayHash: String?,
+)
+
+/** F.4 Sub-Slice A.2 view-rename mapping (plain visible names, no canonical key). */
+internal data class ViewRenameMapping(
+    val fromName: String,
+    val toName: String,
+    val source: String,
+    val entryId: String,
+    val overlayHash: String?,
+)
+
+/** F.4 Sub-Slice A.2 trigger-rename mapping. Cross-table moves are pre-filtered at index time. */
+internal data class TriggerRenameMapping(
+    val table: String,
+    val fromName: String,
+    val toName: String,
+    val source: String,
+    val entryId: String,
+    val overlayHash: String?,
+)
+
+/**
+ * F.4 Sub-Slice A.2 routine-rename mapping (function or procedure). The
+ * canonical key embeds the signature on both sides; [parameters]
+ * carries the shared signature in `direction:type` form so the
+ * Mapper can match against the schema-side `ParameterDefinition` list.
+ */
+internal data class RoutineRenameMapping(
+    val fromName: String,
+    val toName: String,
+    val parameters: List<Pair<String, String>>,
+    val source: String,
+    val entryId: String,
+    val overlayHash: String?,
+)
+
+internal data class SequenceRenameMapping(
+    val fromName: String,
+    val toName: String,
     val source: String,
     val entryId: String,
     val overlayHash: String?,

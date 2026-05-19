@@ -78,12 +78,27 @@ internal object OperationMapper {
         // T6: mapTables also collects structured per-candidate
         // [RenameProjectionReport] entries so DiffPlanner can attach
         // them to `DiffResult.renameProjections`.
-        val absorbedViews = mapTables(diff, ctx, blockedTables, renameIndex, diagnostics, ops, renameProjections)
-        mapViews(diff, current, desired, absorbedViews, diagnostics, ops)
-        OperationMapperSchemaObjects.mapSequences(diff, current, desired, ops)
-        OperationMapperRoutines.mapFunctions(diff, current, desired, ops)
-        OperationMapperRoutines.mapProcedures(diff, current, desired, ops)
-        OperationMapperRoutines.mapTriggers(diff, current, desired, ops, triggerPlanningContext)
+        val absorbedViewsFromTables = mapTables(
+            diff, ctx, blockedTables, renameIndex, diagnostics, ops, renameProjections,
+        )
+        // F.4 A.2 Teil 2: fold rename-overlay mappings for the five
+        // new object-level kinds before the regular Create/Drop loops
+        // run. Each fold either:
+        // - emits a single `Rename*` op and absorbs the from/to names
+        //   so the regular loop skips them;
+        // - registers a `RenameProvenance` keyed by from/to so the
+        //   regular loop tags its Drop+Create ops; or
+        // - emits an `OBJECT_RENAME_UNSUPPORTED` BLOCKER diagnostic.
+        val viewFold = RenameObjectMapper.foldRenameViews(diff, ctx, renameIndex, diagnostics, ops)
+        val sequenceFold = RenameObjectMapper.foldRenameSequences(diff, ctx, renameIndex, diagnostics, ops)
+        val functionFold = RenameObjectMapper.foldRenameFunctions(diff, ctx, renameIndex, diagnostics, ops)
+        val procedureFold = RenameObjectMapper.foldRenameProcedures(diff, ctx, renameIndex, diagnostics, ops)
+        val triggerFold = RenameObjectMapper.foldRenameTriggers(diff, ctx, renameIndex, diagnostics, ops)
+        mapViews(diff, current, desired, absorbedViewsFromTables, viewFold, diagnostics, ops)
+        OperationMapperSchemaObjects.mapSequences(diff, current, desired, sequenceFold, ops)
+        OperationMapperRoutines.mapFunctions(diff, current, desired, functionFold, ops)
+        OperationMapperRoutines.mapProcedures(diff, current, desired, procedureFold, ops)
+        OperationMapperRoutines.mapTriggers(diff, current, desired, triggerFold, ops, triggerPlanningContext)
         return PreparedMapping(
             operations = ops,
             diagnostics = diagnostics,
@@ -481,15 +496,18 @@ internal object OperationMapper {
         }
     }
 
+    @Suppress("LongParameterList")
     private fun mapViews(
         diff: SchemaDiff,
         current: SchemaDefinition,
         desired: SchemaDefinition,
         absorbedViews: Set<String>,
+        viewFold: RenameObjectMapper.ObjectFoldResult,
         diagnostics: MutableList<DiffDiagnostic>,
         ops: MutableList<DiffOperation>,
     ) {
         for (added in diff.viewsAdded) {
+            if (added.name in viewFold.absorbedToNames) continue
             if (added.definition.materialized) {
                 OperationMapperMaterializedView.emitCreate(added, diagnostics, ops)
             } else {
@@ -498,10 +516,12 @@ internal object OperationMapper {
                     id = OperationIdFactory.makeId("CreateView", ref, CanonicalPayload.view(added.definition)),
                     objectRef = ref,
                     view = added.definition,
+                    renameProvenance = viewFold.fallbackByToName[added.name],
                 )
             }
         }
         for (removed in diff.viewsRemoved) {
+            if (removed.name in viewFold.absorbedFromNames) continue
             if (removed.definition.materialized) {
                 OperationMapperMaterializedView.emitDrop(removed, diagnostics, ops)
             } else {
@@ -510,6 +530,7 @@ internal object OperationMapper {
                     id = OperationIdFactory.makeId("DropView", ref, CanonicalPayload.view(removed.definition)),
                     objectRef = ref,
                     view = removed.definition,
+                    renameProvenance = viewFold.fallbackByFromName[removed.name],
                 )
             }
         }

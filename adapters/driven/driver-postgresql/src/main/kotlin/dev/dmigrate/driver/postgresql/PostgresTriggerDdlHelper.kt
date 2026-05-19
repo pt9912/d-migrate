@@ -62,6 +62,27 @@ internal object PostgresTriggerDdlHelper {
         }
     }
 
+    /**
+     * F.4 Sub-Slice A.2 Teil 2: PostgreSQL native trigger rename.
+     * `ALTER TRIGGER <fromName> ON <tableName> RENAME TO <toName>` —
+     * the trigger table sits in the SQL template, not on a separate
+     * line. The renderer never derives the existing identity from
+     * `objectRef.path[0]` (which holds the canonical `table::name`
+     * key for plan/report ID stability), only from `op.tableName` and
+     * `op.fromName`.
+     */
+    fun renderRenameTrigger(op: DiffOperation.RenameTrigger, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        val sql = "ALTER TRIGGER ${ctx.sql.quote(oldName)} " +
+            "ON ${ctx.sql.quote(op.tableName)} " +
+            "RENAME TO ${ctx.sql.quote(newName)};"
+        ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
+    }
+
     fun renderReplaceTrigger(op: DiffOperation.ReplaceTrigger, ctx: PostgresDiffRenderContext) {
         val target = if (ctx.direction == PostgresRenderDirection.UP) op.after else op.before
         if (target.body.isNullOrBlank()) {

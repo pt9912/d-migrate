@@ -152,6 +152,27 @@ internal object PostgresDiffOtherOps {
         ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};", PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
 
+    /**
+     * F.4 Sub-Slice A.2 Teil 2: PostgreSQL native view rename.
+     * `ALTER VIEW <fromName> RENAME TO <toName>` — left is the existing
+     * identity, right is the new visible name. Materialized views are
+     * blocked at the Mapper/Planner phase via
+     * `OBJECT_RENAME_UNSUPPORTED`, so a `RenameView` op here always
+     * targets a regular (non-materialized) view.
+     */
+    fun renderRenameView(op: DiffOperation.RenameView, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(
+            op,
+            "ALTER VIEW ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};",
+            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+        )
+    }
+
     private fun blockMaterializedView(
         op: DiffOperation,
         ctx: PostgresDiffRenderContext,

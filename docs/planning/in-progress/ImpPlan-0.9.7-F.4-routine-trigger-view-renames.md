@@ -10,9 +10,10 @@
 >            **A.2 Teil 1** (5 `Rename*`-Subtypes, `ObjectRenamePolicy`-
 >            Interface + 3 per-Dialekt-Impls, 3-Renderer-Categorize-
 >            Stubs als UNSUPPORTED) ✅ 2026-05-18.
->            **A.2 Teil 2** (Mapper-Faltung im `RenameOverlayMapper` +
->            PG-Renderer fuer alle 5 Subtypes + Body-Drift-Tests +
->            End-to-End-Tests) offen.
+>            **A.2 Teil 2** (Mapper-Faltung im `RenameObjectMapper` +
+>            `RenameOverlayIndex`-Erweiterung fuer view/trigger/function/
+>            procedure/sequence + PG-Renderer fuer alle 5 Subtypes +
+>            Body-Drift- / Cross-Document- / Signatur-Tests) ✅ 2026-05-19.
 >            Sub-Slices B (MySQL Renderer) / C (SQLite Renderer) /
 >            D (Sequence-Default-Reprojection) /
 >            E (Plan-Artefakt-Vertrag-Erweiterung) /
@@ -296,23 +297,49 @@ Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
   materialized-view-Carve-out, Body-Drift-Detection, missing-body-
   Klassifikation, routines-not-in-SQLite-Block, sequence-Carve-outs.
 
-### Sub-Slice A.2 Teil 2 — Mapper + PG-Renderer (offen)
+### Sub-Slice A.2 Teil 2 — Mapper + PG-Renderer ✅ 2026-05-19
 
-- `RenameOverlayMapper`-Erweiterung: konsumiert
-  `RenameMappingOverlayEntry`-Eintraege mit den neuen `objectType`-
-  Werten und faltet Drop+Create-Paare zu `Rename*`-Ops. Die
-  Mapper-Faltung konsultiert `ObjectRenamePolicyRegistry.forDialect`
-  vor dem Emit; `Blocked`-Klassifikation ersetzt das Drop+Create
-  durch einen `OBJECT_RENAME_UNSUPPORTED`-Blocker; `DropCreateFallback`
-  emittiert das Drop+Create mit `RenameProvenance`-Marker.
-- PostgreSQL-Renderer fuer alle 5 neuen Subtypes (`ALTER VIEW`,
-  `ALTER TRIGGER ... ON ...`, `ALTER FUNCTION ...`,
-  `ALTER PROCEDURE ...`, `ALTER SEQUENCE ...`). PG-categorize-
-  Eintraege wandern von `UNSUPPORTED` nach `OpCategory.OBJECT_RENAME`
-  (oder analog).
-- Tests: per neuem Subtyp Positiv/Negativ inkl. PG-spezifische
-  Signatur-Tests fuer ueberladene Routinen, Body-Drift-Pins,
-  Cross-Document-Uniqueness-Pin via Mapper.
+- `RenameOverlayIndex` indiziert jetzt die fuenf neuen `objectType`-
+  Werte (`view`, `trigger`, `function`, `procedure`, `sequence`) mit
+  Per-Kind-Dedupe und Pre-Plan-Blockern fuer kaputte kanonische Keys
+  (`RENAME_OVERLAY_TRIGGER_KEY_INVALID`,
+  `RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED`,
+  `RENAME_OVERLAY_ROUTINE_KEY_INVALID`,
+  `RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH`).
+- Neuer `RenameObjectMapper` mit fuenf `foldRename*`-Methoden, die
+  pro Mapping `ObjectRenamePolicyRegistry.forDialect(...).classify(...)`
+  konsultieren und einen von drei Outputs erzeugen:
+  - `Native`: ein einzelner `Rename*`-Op + Absorption der from/to-
+    Visible-Names, damit die regulaere `mapViews/Sequences/Functions/
+    Procedures/Triggers`-Schleife sie ueberspringt.
+  - `DropCreateFallback`: `RenameProvenance`-Marker keyed auf from/to,
+    den die regulaere Schleife an die emittierten `Create*`/`Drop*`-Ops
+    haengt.
+  - `Blocked`: BLOCKER-Diagnostic mit `OBJECT_RENAME_UNSUPPORTED`,
+    kein Op, kein Marker.
+- `Create*`/`Drop*`-Subtypes (View/Trigger/Function/Procedure/Sequence)
+  tragen optionales `renameProvenance: RenameProvenance? = null` als
+  internes Metadatum (Plan-Artefakt-Serialisierung weiterhin via
+  `renameProjections` in A.2 Folgeslice).
+- PostgreSQL-Renderer fuer alle fuenf Subtypes (`ALTER VIEW … RENAME
+  TO …`, `ALTER SEQUENCE … RENAME TO …`,
+  `ALTER FUNCTION fromName(types) RENAME TO toName`,
+  `ALTER PROCEDURE fromName(types) RENAME TO toName`,
+  `ALTER TRIGGER fromName ON tableName RENAME TO toName`).
+  PG-`categorize()` routet die fuenf Subtypes zu den passenden
+  bestehenden Kategorien (`OTHER` / `SEQUENCE` / `FUNCTION` /
+  `PROCEDURE` / `TRIGGER`); `UNSUPPORTED` bleibt nur `AlterCustomType`
+  vorbehalten.
+- Tests:
+  - `RenameObjectMapperTest`: pro Subtyp Positiv-Fold + Body-Drift-
+    Block + ueberlandene-Routine-Signaturmatch + Pre-Index-Blocker
+    (Cross-Table-Trigger, Trigger-Key-Invalid, Routine-Signature-
+    Mismatch, Routine-Key-Invalid) + Materialized-View-Block +
+    Cross-Document-Uniqueness-Pin via Doppel-Dokument-Overlay.
+  - `PostgresDiffObjectRenameTest`: Up/Down-SQL-Pins pro Subtyp,
+    Signatur-Rendering mit `INOUT`/`OUT`-Konvention,
+    Cross-Check, dass der kanonische Ziel-Key NICHT als linke
+    Seite des `ALTER ... RENAME` auftaucht.
 
 ### Sub-Slice B — MySQL Renderer + Policy
 

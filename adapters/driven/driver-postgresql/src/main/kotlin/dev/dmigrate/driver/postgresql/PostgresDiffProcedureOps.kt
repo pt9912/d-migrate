@@ -126,23 +126,52 @@ internal object PostgresDiffProcedureOps {
         proc: ProcedureDefinition,
         ctx: PostgresDiffRenderContext,
     ) {
-        // PostgreSQL identifies a procedure by `(IN | INOUT)` parameter
-        // types only — `OUT` parameters are NOT part of the
-        // drop-signature. Same contract as DROP FUNCTION.
-        val signatureParams = proc.parameters
-            .filter { it.direction != ParameterDirection.OUT }
-            .joinToString(", ") { p ->
-                if (p.direction == ParameterDirection.INOUT) "INOUT ${p.type}" else p.type
-            }
         val sql = buildString {
             append("DROP PROCEDURE ")
             append(ctx.sql.quote(ref.rootName))
             append('(')
-            append(signatureParams)
+            append(renderDropSignature(proc.parameters))
             append(");")
         }
         ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
     }
+
+    /**
+     * F.4 Sub-Slice A.2 Teil 2: PostgreSQL native procedure rename.
+     * `ALTER PROCEDURE <fromName>(<signature>) RENAME TO <toName>` —
+     * mirrors [PostgresDiffFunctionOps.renderRenameFunction] with the
+     * `PROCEDURE` keyword. Signature follows the same OUT-excluded,
+     * name-omitted convention as DROP PROCEDURE.
+     */
+    fun renderRenameProcedure(op: DiffOperation.RenameProcedure, ctx: PostgresDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == PostgresRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        val sql = buildString {
+            append("ALTER PROCEDURE ")
+            append(ctx.sql.quote(oldName))
+            append('(')
+            append(renderDropSignature(op.signature))
+            append(") RENAME TO ")
+            append(ctx.sql.quote(newName))
+            append(';')
+        }
+        ctx.emit(op, sql, PostgresDiffRenderContext.POSTGRES_METADATA_HINTS)
+    }
+
+    /**
+     * See [PostgresDiffFunctionOps.renderDropSignature] — same contract,
+     * separate object because Detekt's `TooManyFunctions` threshold
+     * counts across files. Procedures follow the identical convention.
+     */
+    private fun renderDropSignature(parameters: List<ParameterDefinition>): String =
+        parameters
+            .filter { it.direction != ParameterDirection.OUT }
+            .joinToString(", ") { p ->
+                if (p.direction == ParameterDirection.INOUT) "INOUT ${p.type}" else p.type
+            }
 
     private fun renderParameters(parameters: List<ParameterDefinition>): String =
         parameters.joinToString(", ") { p ->
