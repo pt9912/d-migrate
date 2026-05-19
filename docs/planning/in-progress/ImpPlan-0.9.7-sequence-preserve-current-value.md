@@ -84,12 +84,14 @@ Roadmap §E Rest listet explizit:
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
     WHERE name = <escaped_sequence_name>` (`next_value` ist der nächste von
     `nextval` gelieferte Wert). `managed_by` und `format_version` werden
-    verwendet, um sicherzustellen, dass die Reihe aus der d-migrate-
+    verwendet, und zusammen mit den in der Emulation definierten
+    unterstützten `format_version`-Werten (`mysqlExpectedFormatVersions`),
+    um sicherzustellen, dass die Reihe aus der d-migrate-
     Sequence-Emulation stammt.
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype:
-  `AlterSequenceCurrentValue(probeSequenceRef, applySequenceRef, value, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?)`
+  `AlterSequenceCurrentValue(probeSequenceRef, applySequenceRef, currentValue, isCalled: Boolean?, restoreValue: Long?, restoreIsCalled: Boolean?, revertAfterRename: Boolean = false)`
   (kein Reuse von `AlterSequence`; Daten-statement-Renderer ist separat).
 - Erweiterung: Für Reversibility wird zusätzlich ein optionales
   `restoreIsCalled: Boolean?` vorgesehen.
@@ -226,7 +228,7 @@ val preserveSequenceOps = plan.operations
         )
     } else {
         val mysqlExpectedManagedBy = setOf("d-migrate")
-        val mysqlExpectedFormatVersion = 1
+        val mysqlExpectedFormatVersions = mysqlSequenceEmulationMetadata.supportedFormatVersions
 
         fun validateMysqlReadDeterminism(
             result: SequenceCurrentValueProbeResult.Read,
@@ -245,7 +247,7 @@ val preserveSequenceOps = plan.operations
             return result.managedBy != null
                 && result.formatVersion != null
                 && result.managedBy in mysqlExpectedManagedBy
-                && result.formatVersion == mysqlExpectedFormatVersion
+                && result.formatVersion in mysqlExpectedFormatVersions
         }
 
         fun markRollbackNotPossibleForDown(op: DiffOperation) {
@@ -331,10 +333,11 @@ for (ctx in sequencesNeedingPreservation) {
                 op,
                 probeSequenceRef = ctx.probeSequenceRef,
                 applySequenceRef = ctx.applySequenceRef,
-                value = readResult.value,
+                currentValue = readResult.value,
                 isCalled = isCalled,
                 restoreValue = determineRestoreValueHint(op),
                 restoreIsCalled = restoreIsCalledHint,
+                revertAfterRename = op is DiffOperation.RenameSequence,
                 insertAfter = true,
             )
         }
@@ -384,6 +387,10 @@ stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 - `probeSequenceRef` für Down/Restore nur bei Rename-Fällen, damit ein Rename deterministisch
   auf den Quellnamen zurückrollt.
 
+`revertAfterRename` signalisiert die Reverse-Order: bei `RenameSequence`
+muß die Down-Operation auf `probeSequenceRef` **nach** der zugehörigen Rename-Rückoperation
+(new -> old) ausgeführt werden.
+
 Für PG gilt: `restoreIsCalled` ist für den Down-Pfad verpflichtend.
 Fehlt dieser, ist `AlterSequenceCurrentValue` als `ROLLBACK_NOT_POSSIBLE`
 zu kennzeichnen. Das ist kein zusätzlicher Planer-Blocker, sondern
@@ -403,7 +410,7 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | Dialekt | Render |
 |---|---|
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version = 1;` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<supported_format_versions>);` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
 `<escaped_sequence_name>` ist als SQL-literal-seitig escaped String zu rendern
@@ -449,6 +456,12 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
       `probeSequenceRef` (old/origin) und `applySequenceRef` (new/target)
       emittiert; Down-Renderer wendet den Restore auf `probeSequenceRef` an.
+- [ ] Bei `RenameSequence` mit `revertAfterRename = true` ist die Down-Reihenfolge
+      durchgängig fest: Rename-Rückoperation (`RenameSequence` down) **vor** der
+      `AlterSequenceCurrentValue`-Restore-Operation.
+- [ ] MySQL-Prüfung/Restore nutzt `mysqlExpectedFormatVersions` aus der
+      Emulations-Definition (nicht einen einzelnen hartkodierten Wert im
+      Renderer/Planner), und `format_version` wird über diese Menge evaluiert.
 - [ ] Follow-up-Operationen werden direkt im Anschluss an die jeweilige
       Sequence-Operation emittiert (keine Umordnung durch
       allgemeine Plan-Sortierung).
@@ -490,6 +503,9 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
       `setval`/`UPDATE` auf den gespeicherten `restoreValue` und für PG
       zwingend `restoreIsCalled`, sonst explizit `ROLLBACK_NOT_POSSIBLE`.
+- [ ] **Rename-Down-Ordering**: bei `RenameSequence` wird die
+      `AlterSequenceCurrentValue`-Rollback-Operation deterministisch
+      nach der zugehörigen Rename-Rückoperation ausgeführt.
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
       (blocker).
