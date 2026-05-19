@@ -578,28 +578,32 @@ Aktuell offene 0.9.7-Restpunkte:
   `DataTransformationMode.AUTOMATIC`-Backfills bleiben Phase-1.x-
   Material (eigener Workstream mit Storage-, Privacy- und
   Retention-Regeln).
-- **F.4 Rest**: Dependency-Re-Projection nach Rename
-  (FK-Targets, View-/Trigger-/Index-/Default-Bindungen), so dass
-  Mischfaelle nicht mehr ueber `RENAME_OVERLAY_STRUCTURAL_MISMATCH`
-  auf Drop+Add zurueckfallen muessen. *(2026-05-15: Dependency-
-  Projection T1–T6 fertig; rename-mapping-invalid-enum mit neuem
-  `MigrationBlockedReason.RENAME_MAPPING_INVALID` und
-  `{table, column}`-Pre-Plan-Whitelist fertig; cli-inline-overlay
-  mit `--rename-table` / `--rename-column` + Cross-Document-
-  Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance fertig.
-  View-/Trigger-/Routine-/Sequence-Rename ist seit 2026-05-18 mit
-  E.1/E.2 freigeschaltet und in Arbeit: Plan-Doc
-  `docs/planning/in-progress/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.
-  Sub-Slice A.1 (Foundation: `OBJECT_RENAME_UNSUPPORTED`-Enum-Wert,
-  `RenameSupport`/`ObjectRenameCandidate`/`RenameProvenance`,
-  Overlay-Whitelist auf 7 ObjectTypes erweitert) ✅ 2026-05-18.
-  Sub-Slice A.2 Teil 1 (5 `Rename*`-`DiffOperation`-Subtypes,
-  `ObjectRenamePolicy`-Interface + 3 per-Dialekt-Impls in
-  `hexagon:core`, 3-Renderer-`categorize()`-Triage als UNSUPPORTED
-  bis Renderer landet) ✅ 2026-05-18. Offen: A.2 Teil 2
-  (Mapper-Faltung + PG-Renderer), B (MySQL-Renderer), C (SQLite-
-  Renderer), D (Sequence-Default-Reprojection), E (Plan-Artefakt-
-  Vertrag-Erweiterung), F (Closing).)*
+- **F.4 Rest**: ✅ erledigt 2026-05-19 — Dependency-Re-Projection
+  nach Rename (FK-Targets, View-/Trigger-/Index-/Default-Bindungen)
+  ist vollstaendig, plus View-/Trigger-/Routine-/Sequence-Rename
+  ueber alle drei Dialekte. *(2026-05-15: Dependency-Projection
+  T1–T6 fertig; rename-mapping-invalid-enum mit neuem
+  `MigrationBlockedReason.RENAME_MAPPING_INVALID` fertig;
+  cli-inline-overlay mit `--rename-table` / `--rename-column` +
+  Cross-Document-Uniqueness-Gate + `OVERLAY_ACCEPTED`-Provenance
+  fertig.)*
+  *(2026-05-18/19: F.4 routine-trigger-view-renames komplett.
+  Sub-Slice A.1 Foundation (Enum + Carrier-Typen + Whitelist auf
+  7 ObjectTypes); A.2 Teil 1 (5 `Rename*`-Subtypes +
+  `ObjectRenamePolicy` per Dialekt); A.2 Teil 2 (dialektneutraler
+  `RenameObjectMapper`-Fold + PG-Renderer fuer alle 5 Subtypes —
+  `ALTER VIEW`, `ALTER TRIGGER … ON …`, `ALTER FUNCTION
+  …(types)`, `ALTER PROCEDURE …(types)`, `ALTER SEQUENCE`); B
+  (MySQL `RENAME TABLE` fuer View; Trigger/Routinen
+  Drop+Create-Fallback mit `RenameProvenance`-Marker; Sequence
+  blockiert); C (SQLite: View/Trigger Drop+Create-Fallback mit
+  Marker; Routinen/Sequence blockiert); D (`SequenceDefaultReprojector`
+  schreibt `SequenceNextVal`-Defaults in `CreateTable`/`AddColumn`/
+  `AlterColumnDefault` auf den Zielnamen um; `DependencyAnalyzer`
+  erkennt `RenameSequence` als Sequence-Provider); E
+  (`migration-plan.v1` versionierte `renameProjections` hinter
+  `rename-projections.v1`-Semantic-Extension-Gate). Plan-Doc
+  `docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.)*
 - **F.5 Rest**: echte CHECK-/EXCLUDE-Aenderungen, Dialekt-/Enforcement-
   Vertrag und Daten-Preflight. *(2026-05-12: F.5-Erstscheibe
   implementiert — Comparator nutzt konservativen SQL-Textvergleich,

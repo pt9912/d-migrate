@@ -9,6 +9,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 F.4 routine-trigger-view-renames Vollscheibe** — overlay-bound
+  renames for views, triggers, functions, procedures and sequences land
+  alongside the existing table/column rename pipeline. The mapper
+  consults a per-dialect `ObjectRenamePolicy` for each rename
+  candidate and emits one of three outcomes: a native `Rename*`
+  operation (`RenameView` / `RenameTrigger` / `RenameFunction` /
+  `RenameProcedure` / `RenameSequence`); a `Drop*` + `Create*` pair
+  tagged with a `RenameProvenance` marker; or an
+  `OBJECT_RENAME_UNSUPPORTED` BLOCKER diagnostic. Mapper / renderer
+  / dependency-analyzer / plan-artifact contracts close together in
+  this slice; the carve-out from earlier slices (rename-mapping
+  overlay whitelisted only `{table, column}`) is gone.
+
+  Per-dialect contract:
+    - **PostgreSQL** renders native rename SQL for every kind —
+      `ALTER VIEW name RENAME TO new`, `ALTER TRIGGER name ON table
+      RENAME TO new`, `ALTER FUNCTION name(types) RENAME TO new`,
+      `ALTER PROCEDURE name(types) RENAME TO new`, `ALTER SEQUENCE
+      name RENAME TO new`. Function / procedure signatures follow
+      PG's drop / alter convention: OUT parameters excluded, INOUT
+      keeps the keyword, names omitted. Materialized-view rename
+      remains blocked (D.3b carve-out). Body-drift on view /
+      trigger / routine rename blocks with
+      `OBJECT_RENAME_UNSUPPORTED`.
+    - **MySQL** renders `RENAME TABLE old TO new` for view-rename
+      (views share the table namespace). Trigger / function /
+      procedure renames lower to `Drop*` + `Create*` with a
+      `RenameProvenance` marker (no native `ALTER … RENAME`
+      grammar); missing bodies or body drift block. Sequence rename
+      stays blocked until the E.3 MySQL-sequence rendering
+      contract lands.
+    - **SQLite** lowers view and trigger renames to Drop+Create
+      with a `RenameProvenance` marker (no native rename grammar);
+      function / procedure rename blocks (SQLite has no routine
+      model); sequence rename stays blocked until an E.3
+      SQLite-sequence contract lands.
+
+  Pre-plan blockers for malformed overlay payloads:
+  `RENAME_OVERLAY_TRIGGER_KEY_INVALID` (trigger entry without the
+  `table::name` canonical form),
+  `RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED` (cross-table moves
+  are not renames), `RENAME_OVERLAY_ROUTINE_KEY_INVALID`
+  (function / procedure entry without `name(direction:type,...)`),
+  `RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH` (from / to signatures
+  differ). The `MigrationOverlayValidator` `objectType` whitelist
+  is widened to `{table, column, view, trigger, function,
+  procedure, sequence}`; `materialized_view` stays blocked.
+
+  Sequence-default reprojection: when a plan combines
+  `RenameSequence(old → new)` with `CreateTable` / `AddColumn` /
+  `AlterColumnDefault` ops that carry `DefaultValue.SequenceNextVal("old")`,
+  the new `SequenceDefaultReprojector` rewrites the column-default
+  references to `"new"` and the `DependencyAnalyzer` recognises
+  `RenameSequence` as a sequence-provider so the topological sort
+  places the rename strictly before the column-bearing ops. The
+  reprojection is order-independent — the mapper may emit
+  `CreateTable` before `RenameSequence` and the reprojector still
+  walks the full list once.
+
+  Plan-artifact contract: `migration-plan.v1` gains an optional
+  versioned `renameProjections[]` field carrying `candidateId`,
+  `objectType`, `fromPath` / `toPath`, overlay provenance,
+  `renameOperationId` (null → fallback) and
+  `fallbackOperationIds` + `fallbackReason`. The payload is gated
+  behind a new semantic extension
+  `MigrationPlanArtifactFeatures.RENAME_PROJECTIONS_V1 =
+  "rename-projections.v1"`. Producers MUST call
+  `MigrationPlanArtifact.withRenameProjectionExtension()` before
+  signing (the validator surfaces
+  `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION` otherwise);
+  consumers that do not list the extension in their supported set
+  reject the artifact via the existing
+  `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` blocker. Old
+  consumers are therefore forced to reject artifacts they cannot
+  read correctly rather than running the Drop+Create fallback as
+  an ordinary destructive change.
+
+  New code carriers (hexagon:core):
+  `DiffOperation.RenameView`/`RenameTrigger`/`RenameFunction`/
+  `RenameProcedure`/`RenameSequence` (with `bodyHash` /
+  `signature` payloads where required); `RenameProvenance` (now
+  public — it is exposed via the public `DiffOperation` data
+  classes); `RenameSupport` sealed interface; `ObjectRenamePolicy`
+  + `ObjectRenamePolicyRegistry`; `ObjectRenameCandidate`;
+  `RenameObjectMapper`; `SequenceDefaultReprojector`;
+  `MigrationPlanArtifactRenameProjection`;
+  `MigrationPlanArtifactFeatures`. All ten `Create*`/`Drop*` ops
+  for view / trigger / function / procedure / sequence gain an
+  optional `renameProvenance: RenameProvenance? = null` field
+  (internal metadata; the public artifact projection is via
+  `renameProjections[]`). New `MigrationBlockedReason` enum value
+  `OBJECT_RENAME_UNSUPPORTED` (ordinal 10, appended at the tail —
+  earlier ordinals stay pinned).
+
+  CLI surface: no new `--rename-{view,trigger,…}` inline shortcuts
+  in this slice. The canonical keys (trigger `table::name`, routine
+  `name(direction:type,...)`) are handled more cleanly in
+  `--migration-overlay <file>` payloads than on the command line;
+  inline shortcuts may follow if operator demand justifies the
+  argument-parser complexity.
+
+  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`.
+
 - **0.9.7 E.2 Trigger-Rendering Vollscheibe** — `CreateTrigger`,
   `ReplaceTrigger` and `DropTrigger` leave `OpCategory.UNSUPPORTED` in
   all three dialects. PostgreSQL renders strict `CREATE TRIGGER ...

@@ -2,11 +2,10 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.4 (vierter Slice — Renames jenseits von Tabellen/Spalten)
-> **Status**: in-progress.
+> **Status**: ✅ complete 2026-05-19.
 >            Sub-Slice A.1 (Foundation: `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED`,
 >            `RenameSupport`, `ObjectRenameCandidate`,
 >            `RenameProvenance`, Overlay-Whitelist) ✅ 2026-05-18.
->            Sub-Slice A.2 in zwei Teile gesplittet:
 >            **A.2 Teil 1** (5 `Rename*`-Subtypes, `ObjectRenamePolicy`-
 >            Interface + 3 per-Dialekt-Impls, 3-Renderer-Categorize-
 >            Stubs als UNSUPPORTED) ✅ 2026-05-18.
@@ -28,7 +27,10 @@
 >            **Sub-Slice E** (`migration-plan.v1` versioniert
 >            `renameProjections` + `MigrationPlanArtifactFeatures.
 >            RENAME_PROJECTIONS_V1`-Gate + Codec/Validator/Tests) ✅ 2026-05-19.
->            Sub-Slice F (Roadmap + cli-spec + CHANGELOG Closing) offen.
+>            **Sub-Slice F** (Roadmap-Status, `spec/cli-spec.md` §6.1
+>            Rename-Workflow + Whitelist-Update + Artefakt-Gate-Doku,
+>            CHANGELOG-Eintrag, Plan-Doc nach `docs/planning/done/`)
+>            ✅ 2026-05-19.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
 >                  Serialisierung, Execution-Status), **E.1 Routine-
@@ -511,12 +513,45 @@ Out of scope (Sub-Slice F oder spaeter):
   ab, die Producer-Verdrahtung folgt in F oder einem dedizierten
   Artefakt-Emit-Slice.
 
-### Sub-Slice F — Closing
+### Sub-Slice F — Closing ✅ 2026-05-19
 
-- Roadmap-Update.
-- cli-spec.md: Rename-Workflow + Overlay-Erweiterung dokumentieren.
-- CHANGELOG-Eintrag.
-- Plan-Doc nach `docs/planning/done/`.
+- `docs/planning/in-progress/roadmap.md` §F.4 markiert komplett mit
+  Verweis auf den abgeschlossenen Plan-Doc; Sub-Slice-Inventar
+  inline.
+- `spec/cli-spec.md` §6.1:
+  - `renameProjections[]`-Carrier dokumentiert die fuenf neuen
+    `objectType`-Werte (`view` / `trigger` / `function` /
+    `procedure` / `sequence`) und die korrespondierenden
+    `Rename*`-Operations-IDs auf der erfolgreichen Faltung; die
+    Drop+Create-Fallback-Pfade nutzen den unveraenderten
+    `fallbackOperationIds`/`fallbackReason`-Vertrag.
+  - Neuer Workflow-Abschnitt fuer Renames jenseits Tabelle/Spalte:
+    kanonische Key-Pflicht (`table::name` fuer Trigger,
+    `name(direction:type,...)` fuer Routinen), neue Pre-Plan-
+    Blocker (`RENAME_OVERLAY_TRIGGER_KEY_INVALID`,
+    `RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED`,
+    `RENAME_OVERLAY_ROUTINE_KEY_INVALID`,
+    `RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH`), Per-Dialekt-
+    Policy-Tabelle (PG nativ / MySQL Drop+Create mit View-
+    Sonderfall / SQLite Drop+Create ohne Routinen / Sequence E.3-
+    Carve-out), Sequence-Default-Reprojection-Vertrag.
+  - Plan-Artefakt-Section dokumentiert das neue optionale
+    `renameProjections[]`-Feld in `migration-plan.v1` hinter dem
+    `rename-projections.v1`-Semantic-Extension-Gate und die zwei
+    Validator-Codes
+    (`PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION` fuer
+    Producer-Bug, bestehender
+    `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` fuer Consumer ohne
+    Support).
+  - Whitelist-Hinweis im Exit-8-Block aktualisiert auf
+    `{table, column, view, trigger, function, procedure, sequence}`;
+    `materialized_view` bleibt explizit blockiert.
+- `CHANGELOG.md` [Unreleased] §Added: `0.9.7 F.4
+  routine-trigger-view-renames Vollscheibe` rollt alle sieben
+  Sub-Slices auf einen Eintrag zusammen mit Per-Dialekt-Tabelle,
+  Pre-Plan-Blocker-Liste, Sequence-Reprojection-Vertrag und
+  Plan-Artefakt-Gate.
+- Plan-Doc wandert nach `docs/planning/done/`.
 
 ## 4. Vorbedingungen
 

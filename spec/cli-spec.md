@@ -754,17 +754,21 @@ Report-Felder für `--execute`:
 Report-Felder für Rename-Projection (F.4):
 
 - `renameProjections[]` enthält pro Overlay-Eintrag genau einen Eintrag,
-  unabhängig davon, ob die Faltung erfolgreich war oder auf Drop+Add
+  unabhängig davon, ob die Faltung erfolgreich war oder auf Drop+Create
   zurückfiel. Jeder Eintrag trägt:
-  - `candidateId`, `objectType` (`table` / `column`), `fromPath`, `toPath`
+  - `candidateId`, `objectType`
+    (`table` / `column` / `view` / `trigger` / `function` / `procedure` /
+    `sequence`), `fromPath`, `toPath`
   - Overlay-Provenance: `overlaySource`, `overlayEntryId`, optional `overlayHash`.
     `overlayEntryId` ist die stabile Schlüsselgrundlage: mehrere Einträge
     teilen denselben `overlayHash`, nur `overlayEntryId` identifiziert den
     autorisierenden Eintrag.
   - `renameOperationId`: bei erfolgreicher Faltung die ID der emittierten
-    `RenameTable`/`RenameColumn`-Operation. Bei Drop+Add-Fallback `null`.
+    `RenameTable`/`RenameColumn`/`RenameView`/`RenameTrigger`/
+    `RenameFunction`/`RenameProcedure`/`RenameSequence`-Operation. Bei
+    Drop+Create-Fallback `null`.
   - `fallbackOperationIds`: bei Fallback die deterministischen IDs der
-    regulär emittierten `DropTable`+`CreateTable` (resp.
+    regulär emittierten `Drop*`/`Create*`-Paare (resp.
     `DropColumn`+`AddColumn`). Leer bei erfolgreicher Faltung.
   - `fallbackReason`: kurze, menschenlesbare Begründung bei Fallback.
   - `automatic[]`: vom Engine ohne Folge-Operation projizierte
@@ -781,6 +785,75 @@ Report-Felder für Rename-Projection (F.4):
 - Report-Consumer rekonstruieren `renameProjections`-Einträge nicht aus
   `diagnostics`, Operation-IDs oder Renderer-Nebenwirkungen. Das Feld ist
   der einzige verbindliche Carrier.
+
+Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-renames,
+2026-05-19):
+
+- Overlay-`objectType`-Whitelist ist seit 2026-05-18 erweitert auf
+  `{table, column, view, trigger, function, procedure, sequence}`.
+  `materialized_view` bleibt blockiert (Materialized-View-Rename folgt
+  einem eigenen D.3b-Vertrag).
+- Kanonische Keys sind für `trigger` und `function`/`procedure` pflicht:
+  - `objectType=trigger`: `fromName` und `toName` MÜSSEN das Format
+    `table::name` haben (`ObjectKeyCodec.triggerKey`). Cross-Table-Moves
+    (`orders::audit_old → users::audit_new`) sind kein Rename und werden
+    pre-plan blockiert mit `RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED`.
+    Fehlt das `::`-Trennzeichen → `RENAME_OVERLAY_TRIGGER_KEY_INVALID`.
+  - `objectType=function` / `procedure`: kanonische Form
+    `name(direction:type,...)` auf beiden Seiten
+    (`ObjectKeyCodec.routineKey`). Unterschiedliche Signaturen zwischen
+    `fromName` und `toName` sind eine Objektänderung, kein Rename, und
+    werden pre-plan blockiert mit
+    `RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH`. Fehlende Klammern
+    → `RENAME_OVERLAY_ROUTINE_KEY_INVALID`.
+  - `objectType=view` / `sequence`: sichtbare Namen ohne kanonischen
+    Wrapper (analog zu `table` / `column`).
+- Per-Dialekt-Verhalten (`ObjectRenamePolicy`):
+  - **PostgreSQL**: View, Sequence, Trigger, Function, Procedure
+    haben native `ALTER … RENAME`-Templates; der Renderer emittiert
+    direkt ein `Rename*`. Materialized-View-Rename bleibt blockiert
+    (`OBJECT_RENAME_UNSUPPORTED`). Body-Drift (View/Trigger/Routine
+    mit unterschiedlichen Bodies vor/nach Rename) blockiert ebenfalls
+    mit `OBJECT_RENAME_UNSUPPORTED`.
+  - **MySQL**: View nutzt `RENAME TABLE` (Views liegen im Tabellen-
+    Namespace). Trigger, Function, Procedure haben kein
+    `ALTER … RENAME` und fallen auf Drop+Create+`RenameProvenance`
+    zurück, sofern beide Bodies bekannt und identisch sind; fehlender
+    Body oder Drift blockiert. Sequence-Rename bleibt blockiert bis
+    der E.3 MySQL-Sequence-Vertrag steht.
+  - **SQLite**: View und Trigger fallen immer auf
+    Drop+Create+`RenameProvenance` zurück (kein natives Rename); gleiche
+    Body-Bekanntheits-Regeln wie MySQL. Function/Procedure blockieren
+    (SQLite hat kein Routinen-Modell). Sequence-Rename bleibt blockiert
+    bis der E.3 SQLite-Sequence-Vertrag steht.
+- Sequence-Default-Reprojection: `RenameSequence(old → new)` schreibt
+  `DefaultValue.SequenceNextVal("old")`-Referenzen in
+  `CreateTable`/`AddColumn`/`AlterColumnDefault`-Ops desselben Plans
+  auf `"new"` um. Der `DependencyAnalyzer` erkennt `RenameSequence`
+  als Sequence-Provider, sodass die topologische Sortierung den
+  Rename strikt vor jeder Spalten-Op platziert. Spalten, die nur in
+  der Live-Datenbank existieren und vom Plan nicht berührt werden,
+  brauchen keine textuelle Reprojection — PostgreSQL speichert
+  `nextval('seq')`-Defaults als OID-Referenzen und folgt dem Rename
+  automatisch.
+- Plan-Artefakt (`migration-plan.v1`) trägt seit 2026-05-19 ein
+  optionales `renameProjections[]`-Feld mit denselben Rename-Provenance-
+  Informationen (`candidateId`, `objectType`, `from/toPath`,
+  Overlay-Provenance, `renameOperationId` oder
+  `fallbackOperationIds`+`fallbackReason`). Producer MÜSSEN
+  `"rename-projections.v1"` in `semanticExtensions` setzen
+  (Convenience: `MigrationPlanArtifact.withRenameProjectionExtension()`),
+  sonst blockt der Validator mit
+  `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION`. Consumer ohne
+  Support für die Extension lehnen das Artefakt mit
+  `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` ab — alte Consumer dürfen
+  Drop+Create-Fallbacks NICHT als gewöhnliche destruktive Operationen
+  ausführen.
+- CLI-Eingang: für die fünf neuen `objectType`-Werte gibt es heute
+  keine `--rename-{view,trigger,…}`-Inline-Shortcuts; Renames müssen
+  über `--migration-overlay <file>` mit einem `rename-mapping`-Overlay
+  eingebracht werden. Die kanonischen Keys (Trigger / Routine) sind in
+  einer Overlay-Datei besser handhabbar als auf der Kommandozeile.
 
 Exit-Codes:
 
@@ -810,8 +883,9 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
   im selben Slice (`OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED`),
   doppelter Eintrag (`OVERLAY_RENAME_MAPPING_DUPLICATE`) oder
   unfreigeschalteter `rename-mapping.objectType` ausserhalb der
-  aktuellen Whitelist `{table, column}`
-  (`OVERLAY_UNKNOWN_ENTRY_KIND`, getaggt mit Rename-Kontext). Der
+  aktuellen Whitelist `{table, column, view, trigger, function,
+  procedure, sequence}` (`OVERLAY_UNKNOWN_ENTRY_KIND`, getaggt mit
+  Rename-Kontext; `materialized_view` bleibt blockiert). Der
   Reason ist additiv: bestehende Reports mit
   `MANUAL_ACTION_REQUIRED` fuer dieselben Codes bleiben semantisch
   als blockiert dokumentiert. Generische Overlay-Probleme ohne
