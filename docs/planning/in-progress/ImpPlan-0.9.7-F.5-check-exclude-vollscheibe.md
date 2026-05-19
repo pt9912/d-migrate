@@ -550,20 +550,51 @@ Geschnitten in zwei Stufen:
   Probe-SQL-Format, Hash-Determinismus und
   `initialStatus`-Durchreichung.
 
-#### E.3+ — Per-Dialekt-Probes + Renderer-Gates + Pipeline (offen)
+#### E.3 — Renderer-Gates pro Dialekt ✅ (2026-05-19)
+
+- Geteilte Entscheidungslogik in `hexagon:ports-read`
+  (`CheckPreflightGate`): `decide(operationId, declarations)` liefert
+  `Decision.Proceed` oder `Decision.Block(code, reason, message)`.
+  Operator-lesbare Nachrichten enthalten Tabelle, Constraint-Name,
+  Expression sowie optional `Failing rows:`, `Total rows:`,
+  `Sample row ids:` (FAILED) bzw. Probe-Problem-Text
+  (PROBE_RUNTIME_ERROR). Status-Routing:
+  - `PASSED` / `NOT_RUN_FILE_TARGET` / `NOT_RUN_POLICY` /
+    keine Declaration → `Proceed`.
+  - `FAILED` → Block (`CHECK_PREFLIGHT_VIOLATIONS`,
+    `MANUAL_ACTION_REQUIRED`).
+  - `PROBE_RUNTIME_ERROR` → Block (`CHECK_PREFLIGHT_RUNTIME_ERROR`,
+    `MANUAL_ACTION_REQUIRED`).
+- `PostgresDiffOtherOps.renderAddConstraint` konsultiert das Gate
+  ausschliesslich auf der UP-Direction (Down = Drop, kein
+  Preflight). Match per `operationId`.
+- `MysqlDiffOtherOps.renderAddConstraint` konsultiert das Gate
+  nachdem `gateMysqlCheck` Erfolg hatte und nur fuer `isLogicalAdd`.
+  Reihenfolge ist bewusst: Capability-Gate zuerst, damit Operator
+  nie Preflight-Block sieht, den er ohne Server-Upgrade nicht
+  aufheben koennte.
+- `SqliteDiffDdlGenerator.renderRebuildBucket` blockt die gesamte
+  Bucket, sobald irgendein `AddConstraint(CHECK)`-Op in der Bucket
+  eine `Block`-Decision liefert. Pro Op wird der spezifischste
+  Diagnose-Text emittiert (Fallback: erster Bucket-Block-Hit fuer
+  nicht-CHECK Ops), Blocker traegt alle Bucket-Op-IDs. Mirror zum
+  EXCLUDE-Block-Pfad.
+- Tests:
+  - `CheckPreflightGateTest` (ports-read) pinnt alle Status-Branches
+    inklusive Multi-Match-Determinismus.
+  - `PostgresDiffCheckPreflightGateTest`,
+    `MysqlDiffCheckPreflightGateTest`,
+    `SqliteDiffCheckPreflightGateTest` pinnen pro Dialekt: PASSED,
+    NOT_RUN_FILE_TARGET, NOT_RUN_POLICY, fehlende Declaration,
+    FAILED, PROBE_RUNTIME_ERROR, Down-Direction ignoriert Preflight.
+    MySQL pinnt zusaetzlich: Capability-Block gewinnt gegen
+    Preflight-Block (Pre-Version + Unknown-Version).
+
+#### E.4+ — Per-Dialekt-Probes + Pipeline-Wiring (offen)
 
 - `PostgresCheckPreflightProbe`, `MysqlCheckPreflightProbe`,
   `SqliteCheckPreflightProbe` in den jeweiligen Driver-Adaptern
   (analog zu `SqliteCastPreflightProbe`).
-- `PostgresDiffOtherOps.renderAddConstraint` /
-  `MysqlDiffOtherOps.renderAddConstraint` /
-  `SqliteDiffDdlGenerator.renderRebuildBucket` konsultieren
-  `options.checkPreflights` per Binding-Key und blocken bei
-  `FAILED` (Code `CHECK_PREFLIGHT_VIOLATIONS`,
-  Reason `MANUAL_ACTION_REQUIRED`) bzw. bei
-  `PROBE_RUNTIME_ERROR` (Code `CHECK_PREFLIGHT_RUNTIME_ERROR`,
-  Reason `MANUAL_ACTION_REQUIRED`). `NOT_RUN_*` lassen das Rendern
-  durchlaufen; der Report deklariert den Status.
 - `SchemaMigrateRenderPipeline.buildRenderOptions` + neue
   `CheckPreflightStage`-Klasse parallel zu
   `SqliteCastPreflightStage`. `MigrationPreflightPlanner` baut

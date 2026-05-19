@@ -1,9 +1,11 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
+import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -25,7 +27,32 @@ internal object PostgresDiffOtherOps {
             ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
             return
         }
+        if (op.constraint.type == ConstraintType.CHECK && blockOnCheckPreflight(op, ctx)) return
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
+    }
+
+    /**
+     * F.5 Sub-Slice E.3 (2026-05-19): gate `AddConstraint(CHECK)` UP
+     * emission against the live-data preflight declaration carried in
+     * `DdlGenerationOptions.checkPreflights`. Returns `true` when the
+     * gate emitted a block.
+     *
+     * The shared [CheckPreflightGate] resolves the per-status routing
+     * (PASSED / NOT_RUN_* → proceed; FAILED → CHECK_PREFLIGHT_VIOLATIONS;
+     * PROBE_RUNTIME_ERROR → CHECK_PREFLIGHT_RUNTIME_ERROR). Match key
+     * is the operation id only; the gate planner emits exactly one
+     * declaration per AddConstraint(CHECK) op.
+     */
+    private fun blockOnCheckPreflight(
+        op: DiffOperation.AddConstraint,
+        ctx: PostgresDiffRenderContext,
+    ): Boolean = when (val decision = CheckPreflightGate.decide(op.id, ctx.options.checkPreflights)) {
+        CheckPreflightGate.Decision.Proceed -> false
+        is CheckPreflightGate.Decision.Block -> {
+            ctx.skip(op, decision.message, code = decision.code)
+            ctx.addBlocker(decision.reason, operationIds = setOf(op.id))
+            true
+        }
     }
 
     fun renderDropConstraint(op: DiffOperation.DropConstraint, ctx: PostgresDiffRenderContext) {

@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -107,6 +108,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             return
         }
         if (blockExcludeConstraintsInRebuild(table, bucket, current, desired, ctx)) return
+        if (blockCheckPreflightFailures(bucket, ctx)) return
         if (ctx.direction == SqliteRenderDirection.DOWN) {
             // Any NOT_REVERSIBLE op in the bucket (notably DropColumn — the
             // dropped data is gone) prevents the inverse-rebuild from
@@ -382,6 +384,51 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         }
         ctx.addBlocker(
             MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
+            operationIds = bucket.map { it.id }.toSet(),
+        )
+        return true
+    }
+
+    /**
+     * F.5 Sub-Slice E.3 (2026-05-19): block the whole rebuild bucket
+     * when any `AddConstraint(CHECK)` op in it has a FAILED or
+     * PROBE_RUNTIME_ERROR preflight declaration in
+     * `options.checkPreflights`. Returns `true` when the bucket was
+     * blocked.
+     *
+     * SQLite's rebuild is all-or-nothing: the new CHECK clause lands
+     * in `CREATE TABLE <temp>` and the INSERT-SELECT fires immediately
+     * against the source rows. There's no per-op render path, so the
+     * gate has to deny the whole bucket — same shape as the
+     * EXCLUDE block. Op-by-op skipping with bucket-level blocker
+     * mirrors that contract.
+     */
+    private fun blockCheckPreflightFailures(
+        bucket: List<DiffOperation>,
+        ctx: SqliteDiffRenderContext,
+    ): Boolean {
+        if (ctx.options.checkPreflights.isEmpty()) return false
+        val checkAdds = bucket.filterIsInstance<DiffOperation.AddConstraint>()
+            .filter { it.constraint.type == ConstraintType.CHECK }
+        if (checkAdds.isEmpty()) return false
+        val blockingDecisions = checkAdds.mapNotNull { op ->
+            when (val decision = CheckPreflightGate.decide(op.id, ctx.options.checkPreflights)) {
+                CheckPreflightGate.Decision.Proceed -> null
+                is CheckPreflightGate.Decision.Block -> op to decision
+            }
+        }
+        if (blockingDecisions.isEmpty()) return false
+        for (op in bucket) {
+            // Surface the most specific message: prefer the decision
+            // for this op's own id, fall back to the first blocking
+            // decision in the bucket so non-CHECK ops carry a clear
+            // diagnostic too.
+            val ownDecision = blockingDecisions.firstOrNull { it.first.id == op.id }?.second
+                ?: blockingDecisions.first().second
+            ctx.skip(op, ownDecision.message, code = ownDecision.code)
+        }
+        ctx.addBlocker(
+            blockingDecisions.first().second.reason,
             operationIds = bucket.map { it.id }.toSet(),
         )
         return true

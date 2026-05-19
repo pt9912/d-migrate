@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.ConstraintType
+import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
@@ -27,6 +28,9 @@ internal object MysqlDiffOtherOps {
         val table = op.objectRef.path[0]
         val isLogicalAdd = ctx.direction == MysqlRenderDirection.UP
         if (op.constraint.type == ConstraintType.CHECK && !gateMysqlCheck(op, ctx, isLogicalAdd)) {
+            return
+        }
+        if (op.constraint.type == ConstraintType.CHECK && isLogicalAdd && blockOnCheckPreflight(op, ctx)) {
             return
         }
         if (ctx.direction == MysqlRenderDirection.DOWN) {
@@ -124,6 +128,29 @@ internal object MysqlDiffOtherOps {
             return false
         }
         return true
+    }
+
+    /**
+     * F.5 Sub-Slice E.3 (2026-05-19): live-data preflight gate for
+     * logical-add CHECK paths. Returns `true` when the gate emitted a
+     * block. Mirrors the PG counterpart via the shared
+     * [CheckPreflightGate].
+     *
+     * Order matters: this runs AFTER [gateMysqlCheck] succeeds, so the
+     * operator never sees a preflight message they can't act on
+     * (their server version must support enforced CHECK first;
+     * otherwise the preflight is moot).
+     */
+    private fun blockOnCheckPreflight(
+        op: DiffOperation.AddConstraint,
+        ctx: MysqlDiffRenderContext,
+    ): Boolean = when (val decision = CheckPreflightGate.decide(op.id, ctx.options.checkPreflights)) {
+        CheckPreflightGate.Decision.Proceed -> false
+        is CheckPreflightGate.Decision.Block -> {
+            ctx.skip(op, decision.message, code = decision.code)
+            ctx.addBlocker(decision.reason, operationIds = setOf(op.id))
+            true
+        }
     }
 
     private fun blockExcludeOnMysql(op: DiffOperation, ctx: MysqlDiffRenderContext) {
