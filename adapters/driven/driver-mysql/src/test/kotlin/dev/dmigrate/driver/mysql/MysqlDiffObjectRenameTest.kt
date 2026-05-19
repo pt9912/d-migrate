@@ -27,6 +27,7 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
@@ -295,5 +296,43 @@ class MysqlDiffObjectRenameTest : FunSpec({
         plan.diagnostics.firstOrNull {
             it.code == "OBJECT_RENAME_UNSUPPORTED" && it.message.contains("MySQL sequence")
         } shouldNotBe null
+    }
+
+    // ── F.4 Renderer-Blocker-Bridge (2026-05-19) ────────────────────
+
+    test("F.4 G: trigger body-drift rename surfaces OBJECT_RENAME_UNSUPPORTED as primaryBlockedReason on MySQL") {
+        // Pure Mapper-/Planner-block: the F.4 trigger-body-drift case
+        // returns RenameSupport.Blocked from MysqlObjectRenamePolicy
+        // and emits a BLOCKER OBJECT_RENAME_UNSUPPORTED diagnostic. The
+        // Drop+Create trigger ops still render cleanly on MySQL, so the
+        // renderer does NOT emit a competing blocker — the bridge
+        // surfaces the planner reason as primary.
+        val before = TriggerDefinition(
+            table = "orders",
+            event = TriggerEvent.INSERT,
+            timing = TriggerTiming.AFTER,
+            body = "INSERT INTO audit VALUES (NEW.id, 1)",
+        )
+        val after = before.copy(body = "INSERT INTO audit VALUES (NEW.id, 2)")
+        val plan = planner.plan(
+            current = emptySchema().copy(triggers = mapOf("audit_old" to before)),
+            desired = emptySchema().copy(triggers = mapOf("audit_new" to after)),
+            schemaDiff = SchemaDiff(
+                triggersAdded = listOf(NamedTrigger("audit_new", after)),
+                triggersRemoved = listOf(NamedTrigger("audit_old", before)),
+            ),
+            migrationOverlays = listOf(
+                renameOverlay(
+                    "trigger",
+                    ObjectKeyCodec.triggerKey("orders", "audit_old"),
+                    ObjectKeyCodec.triggerKey("orders", "audit_new"),
+                ),
+            ),
+            capabilities = mysqlCaps,
+        )
+        val up = gen.generateUp(plan, DdlGenerationOptions())
+        up.isBlocked shouldBe true
+        up.primaryBlockedReason shouldBe MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
+        up.blockers.any { it.reason == MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED } shouldBe true
     }
 })

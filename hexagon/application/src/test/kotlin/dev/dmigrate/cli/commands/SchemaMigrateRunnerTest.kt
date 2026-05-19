@@ -217,6 +217,30 @@ class SchemaMigrateRunnerTest : FunSpec({
             ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
     }
 
+    test("F.4 G renderer-blocker-bridge: OBJECT_RENAME_UNSUPPORTED surfaces as primaryBlockedReason in stdout report") {
+        val (runner, capture) = captureRunner(
+            renderedFor = {
+                MigrationDdlResult(
+                    statements = emptyList(),
+                    operationsRendered = emptySet(),
+                    operationsSkipped = setOf("op-rename"),
+                    blockers = listOf(
+                        MigrationBlocker(reason = MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED),
+                    ),
+                    primaryBlockedReason = MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED,
+                )
+            },
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            planOnly = true,
+        )
+        runner.execute(request) shouldBe 8
+        capture["stdout"] shouldContain "OBJECT_RENAME_UNSUPPORTED"
+    }
+
     test("renderer-side blockers (DIALECT_UNSUPPORTED) yield exit 8") {
         val (runner, capture) = captureRunner(
             renderedFor = {

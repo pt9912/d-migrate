@@ -16,6 +16,7 @@ import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.ExtensionInstallPrivilegeStatus
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -292,17 +293,21 @@ internal class PostgresDiffRenderContext(
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
-        // Planner-emitted blockers (CONSTRAINT_NOT_DIFFABLE etc.) always translate to a
-        // DIALECT_UNSUPPORTED_OPERATION blocker on the renderer side — even when the
-        // renderer also has its own blockers. A CLI consumer that reads only the
-        // `blockers` list must see *every* reason the plan can't run.
-        val effectiveBlockers = if (plannerBlockers.isNotEmpty()) {
-            blockers + MigrationBlocker(
-                reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
-                diagnostics = plannerBlockers,
-            )
-        } else {
+        // F.4 Renderer-Blocker-Bridge (2026-05-19): planner-emitted
+        // BLOCKER diagnostics are grouped by their classified
+        // `MigrationBlockedReason` and emitted as one MigrationBlocker
+        // per reason — so F.4 Mapper/Planner blockers surface as
+        // `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED` and the
+        // legacy `CONSTRAINT_NOT_DIFFABLE` / `MATERIALIZED_VIEW_DIFF_UNSUPPORTED`
+        // pathways keep their `DIALECT_UNSUPPORTED_OPERATION` reason.
+        // A CLI consumer that reads only the `blockers` list still
+        // sees *every* reason the plan can't run.
+        val effectiveBlockers = if (plannerBlockers.isEmpty()) {
             blockers
+        } else {
+            blockers + plannerBlockers
+                .groupBy { PlannerBlockerClassifier.classify(it.code) }
+                .map { (reason, diags) -> MigrationBlocker(reason = reason, diagnostics = diags) }
         }
         val primary = effectiveBlockers.firstOrNull()?.reason
         val requiresConfirmation = manualActions.isNotEmpty() || destructive.isNotEmpty()

@@ -29,6 +29,7 @@ import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -368,5 +369,31 @@ class PostgresDiffObjectRenameTest : FunSpec({
         down.statements.size shouldBe 1
         down.statements.single().sql shouldContain
             "ALTER TRIGGER \"audit_new\" ON \"orders\" RENAME TO \"audit_old\";"
+    }
+
+    // ── F.4 Renderer-Blocker-Bridge (2026-05-19) ────────────────────
+
+    test("F.4 G: materialized-view rename surfaces OBJECT_RENAME_UNSUPPORTED as primaryBlockedReason") {
+        val mv = ViewDefinition(query = "SELECT 1", materialized = true)
+        val plan = planner.plan(
+            current = emptySchema().copy(views = mapOf("mv_old" to mv)),
+            desired = emptySchema().copy(views = mapOf("mv_new" to mv)),
+            schemaDiff = SchemaDiff(
+                viewsAdded = listOf(NamedView("mv_new", mv)),
+                viewsRemoved = listOf(NamedView("mv_old", mv)),
+            ),
+            migrationOverlays = listOf(renameOverlay("view", "mv_old", "mv_new")),
+        )
+        val up = gen.generateUp(plan, DdlGenerationOptions())
+        up.isBlocked shouldBe true
+        up.primaryBlockedReason shouldBe MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
+        up.blockers.any { it.reason == MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED } shouldBe true
+        // The diagnostic that drove the bridge is preserved on the
+        // emitted MigrationBlocker — consumers can drill in for the
+        // operator-readable rationale.
+        up.blockers
+            .single { it.reason == MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED }
+            .diagnostics.map { it.code }
+            .any { it == "OBJECT_RENAME_UNSUPPORTED" } shouldBe true
     }
 })

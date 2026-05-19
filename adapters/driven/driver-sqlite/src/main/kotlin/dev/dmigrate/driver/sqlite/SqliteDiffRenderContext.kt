@@ -15,6 +15,7 @@ import dev.dmigrate.driver.ExtensionDependencyReport
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 import dev.dmigrate.driver.migration.DialectExecutionHints
 import dev.dmigrate.driver.migration.LockBehavior
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -305,15 +306,17 @@ internal class SqliteDiffRenderContext(
     fun toResult(diff: DiffResult): MigrationDdlResult {
         val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
         val combinedDiagnostics = plannerBlockers + diagnostics
-        // Planner-emitted blockers (CONSTRAINT_NOT_DIFFABLE etc.) always translate to a
-        // DIALECT_UNSUPPORTED_OPERATION blocker — even alongside renderer blockers.
-        val effectiveBlockers = if (plannerBlockers.isNotEmpty()) {
-            blockers + MigrationBlocker(
-                reason = MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
-                diagnostics = plannerBlockers,
-            )
-        } else {
+        // F.4 Renderer-Blocker-Bridge (2026-05-19): see
+        // `PostgresDiffRenderContext.toResult` for the shared contract
+        // — every planner-emitted BLOCKER diagnostic is classified via
+        // `PlannerBlockerClassifier.classify(diag.code)` and grouped
+        // into one MigrationBlocker per reason.
+        val effectiveBlockers = if (plannerBlockers.isEmpty()) {
             blockers
+        } else {
+            blockers + plannerBlockers
+                .groupBy { PlannerBlockerClassifier.classify(it.code) }
+                .map { (reason, diags) -> MigrationBlocker(reason = reason, diagnostics = diags) }
         }
         val primary = effectiveBlockers.firstOrNull()?.reason
         val requiresConfirmation = manualActions.isNotEmpty() || destructive.isNotEmpty()
