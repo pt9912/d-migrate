@@ -154,6 +154,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
             sqliteCastPreflightPlanner = SqliteCastPreflightProbeRunner::planNotRun,
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
+            checkPreflightProbe = CheckPreflightProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },

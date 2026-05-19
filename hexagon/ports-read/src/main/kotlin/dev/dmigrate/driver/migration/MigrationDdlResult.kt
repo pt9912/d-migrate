@@ -56,6 +56,15 @@ data class MigrationDdlResult(
     val recoverability: ExecutionRecoverability? = null,
     val extensionDependencies: List<ExtensionDependencyReport> = emptyList(),
     val sqliteCastPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
+    /**
+     * F.5 Sub-Slice E.4: live-data CHECK preflight declarations,
+     * one per `AddConstraint(CHECK)` op in the source diff. Carries
+     * the per-op live-probe outcome (PASSED / FAILED /
+     * NOT_RUN_FILE_TARGET / NOT_RUN_POLICY / PROBE_RUNTIME_ERROR) so
+     * the report and runner can surface what was verified, what was
+     * skipped, and why a render blocked.
+     */
+    val checkPreflights: List<dev.dmigrate.driver.CheckPreflightDeclaration> = emptyList(),
     val spatialProfile: String? = null,
 ) {
     /** Convenience: the plan must not execute. */

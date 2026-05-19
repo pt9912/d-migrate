@@ -590,20 +590,87 @@ Geschnitten in zwei Stufen:
     MySQL pinnt zusaetzlich: Capability-Block gewinnt gegen
     Preflight-Block (Pre-Version + Unknown-Version).
 
-#### E.4+ — Per-Dialekt-Probes + Pipeline-Wiring (offen)
+#### E.4 — Per-Dialekt-Probes + Pipeline-Wiring + Report + CLI ✅ (2026-05-19)
 
-- `PostgresCheckPreflightProbe`, `MysqlCheckPreflightProbe`,
-  `SqliteCheckPreflightProbe` in den jeweiligen Driver-Adaptern
-  (analog zu `SqliteCastPreflightProbe`).
-- `SchemaMigrateRenderPipeline.buildRenderOptions` + neue
-  `CheckPreflightStage`-Klasse parallel zu
-  `SqliteCastPreflightStage`. `MigrationPreflightPlanner` baut
-  eine `MigrationPreflightPlan`-Erweiterung; Report-Builder ergaenzt
-  einen `checkPreflights`-View. CLI-Wiring entsprechend.
-- Tests: PASSED-Pfad pro Dialekt; FAILED-Pfad pro Dialekt mit
-  `CHECK_PREFLIGHT_VIOLATIONS` Blocker; `--execute`-Required-Pfad
-  pin; technischer Probe-Fehler-Pfad mit
-  `CHECK_PREFLIGHT_RUNTIME_ERROR` inkl. `problem`-Text im Report.
+- Drei Driver-Probes:
+  `PostgresCheckPreflightProbe` (driver-postgresql),
+  `MysqlCheckPreflightProbe` (driver-mysql),
+  `SqliteCheckPreflightProbe` (driver-sqlite). Alle teilen das
+  Muster aus `SqliteCastPreflightProbe`: `probe(conn, diff)` plant
+  via `CheckPreflightPlanner` (hexagon:core), iteriert pro
+  geplanter Op, fuehrt die count-Query
+  (`SELECT count(*) FROM <t> WHERE NOT (<expr>)`) aus und liefert
+  eine `CheckPreflightDeclaration` (`PASSED`/`FAILED`). `SQLException`
+  fangen die Probes lokal ab und liefern
+  `PROBE_RUNTIME_ERROR` mit `problem` = Fehlertext.
+  Tests: pro Dialekt eigene Test-Datei (Postgres + MySQL mit
+  mockk-`Connection`/`Statement`-Stubs; SQLite mit in-memory
+  DriverManager-Connection); decken `empty / PASSED / FAILED /
+  PROBE_RUNTIME_ERROR / quoting-shape / sqlHash-Format` ab.
+- `MigrationDdlResult.checkPreflights: List<CheckPreflightDeclaration>`
+  neu in `hexagon:ports-read`, sodass Renderer-Output und Report
+  die Live-Probe-Outcomes mitfuehren koennen.
+- `MigrationPreflightPlanner.plan` ergaenzt um den CHECK-Teil:
+  fuer JEDEN Dialekt erzeugt der Planner per
+  `CheckPreflightPlanner` (core) eine
+  `NOT_RUN_FILE_TARGET` / `NOT_RUN_POLICY`-Vorlage pro Add-CHECK-Op,
+  damit der Report auch ohne live-Probe immer sichtbar macht, was
+  geprueft worden waere. Cast-Teil bleibt SQLite-only.
+- Neues `CheckPreflightStage`-Object (parallel zu
+  `SqliteCastPreflightStage`) mit `Outcome.Succeeded /
+  Failed / NotRun` plus `buildFailureResult`. Stage laeuft nur,
+  wenn `request.execute && target is Database && probe != null &&
+  preflightPlan.checkPreflights.isNotEmpty()`. Probe-Exception
+  wandelt die `NOT_RUN_*`-Vorlagen in
+  `PROBE_RUNTIME_ERROR`-Eintraege mit `problem`-Text um.
+- `SchemaMigrateRenderPipeline`:
+  - `runPreflightPlan` ersetzt `runCastPreflightPlan` (deckt jetzt
+    Cast + Check ab).
+  - `runCheckPreflight` ruft die neue Stage auf.
+  - `buildRenderOptions` schreibt das resolvierte
+    `checkDeclarations`-Set in
+    `DdlGenerationOptions.checkPreflights`. Quelle:
+    `Outcome.Succeeded.declarations` oder
+    `preflightPlan.checkPreflights` (`NotRun`/`Failed`).
+  - `renderUp` short-circuit fuer
+    `CheckPreflightStage.Outcome.Failed` mit
+    `CheckPreflightStage.buildFailureResult`. Im Erfolgspfad faellt
+    `rendered.checkPreflights` ggf. auf `renderOptions.checkPreflights`
+    zurueck, damit das File-only-Rendering die NOT_RUN_*-Eintraege
+    im Report behaelt.
+  - `mergeDownIntoUp` dedupliziert `checkPreflights` per
+    `bindingKey` (Up gewinnt, Down ergaenzt fehlende Eintraege).
+  - Die drei Preflight-Outcomes (`probe`, `cast`, `check`) werden
+    in einem privaten `PreflightOutcomes`-Datenklasse-Carrier
+    gebuendelt, damit `buildRenderOptions` / `renderUp` unter
+    Detekt's 8-Parameter-Limit bleiben.
+- `SchemaMigrateRunner` akzeptiert
+  `checkPreflightProbe: CheckPreflightProbeFn? = null` als optionalen
+  Constructor-Param und reicht ihn an die Pipeline durch.
+- Report:
+  - Neuer `SchemaMigrateCheckPreflightView` (`operationId`,
+    `dialect`, `table`, `constraintName`, `expression`, `status`,
+    `sqlHash`, `totalRows`, `failingRows`, `sampleRowIds`,
+    `problem`).
+  - `SchemaMigrateReport.checkPreflights: List<…>` ergaenzt; null-
+    sicher mit `emptyList()` als Default.
+  - `SchemaMigrateReportBuilder.buildCheckPreflightViews` projiziert
+    `MigrationDdlResult.checkPreflights` 1:1.
+- CLI-Wiring (`adapters/driving/cli`):
+  - `CheckPreflightProbeRunner.probe` resolved per
+    `NamedConnectionResolver` + `ConnectionUrlParser` +
+    `HikariConnectionPoolFactory` die Connection, dispatched auf
+    den Dialekt-Probe via `when (dialect)` und gibt
+    `emptyList()` fuer nicht-unterstuetzte Dialekte zurueck.
+  - `SchemaMigrateCommand` reicht
+    `CheckPreflightProbeRunner::probe` an den `SchemaMigrateRunner`
+    durch.
+- Tests: `CheckPreflightStageTest` (hexagon:application) pinnt
+  alle drei `MigrationPreflightPlanner`-CHECK-Pfade (DB/exec,
+  Datei, no-op) plus die Stage-Outcomes (NotRun-Varianten,
+  Succeeded, Failed mit Problem-Text) und
+  `buildFailureResult`-Form. Renderer-Gates haben ihre eigene
+  Coverage aus E.3.
 
 ### Sub-Slice F — Reversibility + Replace-Vertrag
 

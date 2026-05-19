@@ -69,6 +69,7 @@ class SchemaMigrateRunner(
     private val sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)? = null,
     private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn? = null,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn? = null,
+    private val checkPreflightProbe: CheckPreflightProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -110,6 +111,7 @@ class SchemaMigrateRunner(
         sqliteLiveCatalogProbe = sqliteLiveCatalogProbe,
         sqliteCastPreflightPlanner = sqliteCastPreflightPlanner,
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
+        checkPreflightProbe = checkPreflightProbe,
     )
 
     private val executionStage = SchemaMigrateExecutionStage(
@@ -535,6 +537,13 @@ data class SchemaMigrateReport(
     val overlays: List<SchemaMigrateOverlayView> = emptyList(),
     val sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
     /**
+     * F.5 Sub-Slice E.4: live-data CHECK preflight declarations from
+     * the renderer pipeline. Empty when no `AddConstraint(CHECK)` op
+     * was planned. Status carries one of PASSED / FAILED /
+     * NOT_RUN_FILE_TARGET / NOT_RUN_POLICY / PROBE_RUNTIME_ERROR.
+     */
+    val checkPreflights: List<SchemaMigrateCheckPreflightView> = emptyList(),
+    /**
      * F.4 T6: one entry per overlay-bound rename candidate that the
      * planner saw. Successful folds carry [SchemaMigrateRenameProjectionView.renameOperationId];
      * drop+add fallbacks set it to `null` and populate
@@ -760,6 +769,26 @@ data class SchemaMigrateSqliteCastPreflightView(
     val column: String,
     val sourceType: String,
     val targetType: String,
+    val status: String,
+    val sqlHash: String,
+    val totalRows: Long?,
+    val failingRows: Long?,
+    val sampleRowIds: List<String>,
+    val problem: String?,
+)
+
+/**
+ * F.5 Sub-Slice E.4: report view for one CHECK preflight outcome.
+ * One entry per `AddConstraint(CHECK)` op the planner saw. Mirrors
+ * [SchemaMigrateSqliteCastPreflightView] shape — JSON / human report
+ * consumers can iterate both lists with the same template.
+ */
+data class SchemaMigrateCheckPreflightView(
+    val operationId: String,
+    val dialect: String,
+    val table: String,
+    val constraintName: String,
+    val expression: String,
     val status: String,
     val sqlHash: String,
     val totalRows: Long?,

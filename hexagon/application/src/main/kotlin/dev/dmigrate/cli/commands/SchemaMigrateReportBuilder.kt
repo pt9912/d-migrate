@@ -74,6 +74,7 @@ internal object SchemaMigrateReportBuilder {
                 )
             },
             sqliteCastPreflights = buildSqliteCastPreflightViews(rendered),
+            checkPreflights = buildCheckPreflightViews(rendered),
             renameProjections = plan.renameProjections.map { it.toReportView() },
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
@@ -188,6 +189,31 @@ internal object SchemaMigrateReportBuilder {
                 column = preflight.column,
                 sourceType = preflight.sourceType,
                 targetType = preflight.targetType,
+                status = preflight.status.name,
+                sqlHash = preflight.sqlHash,
+                totalRows = preflight.totalRows,
+                failingRows = preflight.failingRows,
+                sampleRowIds = preflight.sampleRowIds,
+                problem = preflight.problem,
+            )
+        }
+
+    /**
+     * F.5 Sub-Slice E.4: project `MigrationDdlResult.checkPreflights`
+     * into the report view shape so report formatters (JSON, human)
+     * can iterate without coupling to the ports-read declaration
+     * type.
+     */
+    private fun buildCheckPreflightViews(
+        rendered: MigrationDdlResult,
+    ): List<SchemaMigrateCheckPreflightView> =
+        rendered.checkPreflights.map { preflight ->
+            SchemaMigrateCheckPreflightView(
+                operationId = preflight.operationId,
+                dialect = preflight.dialect,
+                table = preflight.table,
+                constraintName = preflight.constraintName,
+                expression = preflight.expression,
                 status = preflight.status.name,
                 sqlHash = preflight.sqlHash,
                 totalRows = preflight.totalRows,

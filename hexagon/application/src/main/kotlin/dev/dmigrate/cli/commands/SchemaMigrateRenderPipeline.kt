@@ -54,6 +54,7 @@ internal class SchemaMigrateRenderPipeline(
     private val sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)?,
     private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn?,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn?,
+    private val checkPreflightProbe: CheckPreflightProbeFn? = null,
 ) {
 
     fun run(
@@ -68,20 +69,16 @@ internal class SchemaMigrateRenderPipeline(
         routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)? = null,
     ): SchemaMigrateRenderResult {
         val probeOutcome = runProbe(request, targetOp, dialect, overlayPreflight)
-        val castPreflightPlan = runCastPreflightPlan(request, targetOp, dialect, plan, overlayPreflight)
-        val castPreflightOutcome = runCastPreflight(
-            request,
-            targetOp,
-            dialect,
-            plan,
-            castPreflightPlan,
-            overlayPreflight,
+        val preflightPlan = runPreflightPlan(request, targetOp, dialect, plan, overlayPreflight)
+        val outcomes = PreflightOutcomes(
+            probe = probeOutcome,
+            cast = runCastPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
+            check = runCheckPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
         )
         val renderOptions = buildRenderOptions(
-            request, dialect, probeOutcome, castPreflightOutcome, castPreflightPlan, mysqlServerVersion,
-            routineCapabilityResolver,
+            request, dialect, outcomes, preflightPlan, mysqlServerVersion, routineCapabilityResolver,
         )
-        val renderedUp = renderUp(plan, overlayPreflight, renderer, renderOptions, probeOutcome, castPreflightOutcome)
+        val renderedUp = renderUp(plan, overlayPreflight, renderer, renderOptions, outcomes)
         val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
 
         val renderedDown = if (request.generateRollback && !overlayPreflight.hasBlockers) {
@@ -115,7 +112,7 @@ internal class SchemaMigrateRenderPipeline(
         SqliteProbeStage.run(sqliteLiveCatalogProbe, request, targetOp, dialect)
     }
 
-    private fun runCastPreflightPlan(
+    private fun runPreflightPlan(
         request: SchemaMigrateRequest,
         targetOp: CompareOperand,
         dialect: DatabaseDialect,
@@ -154,15 +151,43 @@ internal class SchemaMigrateRenderPipeline(
         )
     }
 
+    /**
+     * F.5 Sub-Slice E.4: cross-dialect CHECK live-data preflight
+     * gate. Mirrors the cast-preflight wiring but uses the
+     * per-dialect [checkPreflightProbe] resolved by the driving
+     * adapter at CLI-bind time.
+     */
+    private fun runCheckPreflight(
+        request: SchemaMigrateRequest,
+        targetOp: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+        preflightPlan: MigrationPreflightPlan,
+        overlayPreflight: MigrationOverlayPreflightResult,
+    ): CheckPreflightStage.Outcome = if (overlayPreflight.hasBlockers) {
+        CheckPreflightStage.Outcome.NotRun
+    } else {
+        CheckPreflightStage.run(
+            checkPreflightProbe,
+            request,
+            targetOp,
+            dialect,
+            plan,
+            preflightPlan,
+        )
+    }
+
     private fun buildRenderOptions(
         request: SchemaMigrateRequest,
         dialect: DatabaseDialect,
-        probeOutcome: SqliteProbeStage.Outcome,
-        castPreflightOutcome: SqliteCastPreflightStage.Outcome,
-        castPreflightPlan: MigrationPreflightPlan,
+        outcomes: PreflightOutcomes,
+        preflightPlan: MigrationPreflightPlan,
         mysqlServerVersion: MysqlServerVersion?,
         routineCapabilityResolver: ((EffectiveRoutineCapability.Valid) -> EffectiveRoutineCapability)?,
     ): DdlGenerationOptions {
+        val probeOutcome = outcomes.probe
+        val castPreflightOutcome = outcomes.cast
+        val checkPreflightOutcome = outcomes.check
         val defaultsForKindAndVersion = if (dialect == DatabaseDialect.MYSQL) {
             RoutineCapabilityDefaults.forMysqlServerVersion(mysqlServerVersion)
         } else {
@@ -170,14 +195,19 @@ internal class SchemaMigrateRenderPipeline(
         }
         val routineCapability: EffectiveRoutineCapability =
             routineCapabilityResolver?.invoke(defaultsForKindAndVersion) ?: defaultsForKindAndVersion
+        val checkDeclarations = when (checkPreflightOutcome) {
+            is CheckPreflightStage.Outcome.Succeeded -> checkPreflightOutcome.declarations
+            else -> preflightPlan.checkPreflights
+        }
         return DdlGenerationOptions(
             spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
             executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
             liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
             sqliteCastPreflights = when (castPreflightOutcome) {
                 is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
-                else -> castPreflightPlan.sqliteCastPreflights
+                else -> preflightPlan.sqliteCastPreflights
             },
+            checkPreflights = checkDeclarations,
             catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
                 SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
             } else {
@@ -199,9 +229,12 @@ internal class SchemaMigrateRenderPipeline(
         overlayPreflight: MigrationOverlayPreflightResult,
         renderer: DiffDdlGenerator,
         renderOptions: DdlGenerationOptions,
-        probeOutcome: SqliteProbeStage.Outcome,
-        castPreflightOutcome: SqliteCastPreflightStage.Outcome,
-    ): MigrationDdlResult = when {
+        outcomes: PreflightOutcomes,
+    ): MigrationDdlResult {
+        val probeOutcome = outcomes.probe
+        val castPreflightOutcome = outcomes.cast
+        val checkPreflightOutcome = outcomes.check
+        return when {
         overlayPreflight.hasBlockers ->
             MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
         probeOutcome is SqliteProbeStage.Outcome.Failed ->
@@ -211,15 +244,41 @@ internal class SchemaMigrateRenderPipeline(
                 castPreflightOutcome.message,
                 castPreflightOutcome.declarations,
             )
+        checkPreflightOutcome is CheckPreflightStage.Outcome.Failed ->
+            CheckPreflightStage.buildFailureResult(
+                checkPreflightOutcome.message,
+                checkPreflightOutcome.declarations,
+            )
         else -> {
             val rendered = renderer.generateUp(plan, renderOptions)
-            if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
-                rendered.copy(diagnostics = rendered.diagnostics + SqliteProbeStage.buildNotRunDiagnostic())
+            val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {
+                rendered.copy(checkPreflights = renderOptions.checkPreflights)
             } else {
                 rendered
             }
+            if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
+                withCheckPreflights.copy(
+                    diagnostics = withCheckPreflights.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
+                )
+            } else {
+                withCheckPreflights
+            }
+        }
         }
     }
+
+    /**
+     * F.5 Sub-Slice E.4: bundles the three preflight outcomes
+     * threaded through render-options assembly + `renderUp`. Keeps
+     * the per-method parameter count under Detekt's 8-param budget
+     * without forcing every preflight to inflate the public
+     * pipeline-level surface.
+     */
+    private data class PreflightOutcomes(
+        val probe: SqliteProbeStage.Outcome,
+        val cast: SqliteCastPreflightStage.Outcome,
+        val check: CheckPreflightStage.Outcome,
+    )
 
     /**
      * Merge Down-rendering blockers into the Up result so callers see a
@@ -229,7 +288,10 @@ internal class SchemaMigrateRenderPipeline(
      */
     private fun mergeDownIntoUp(up: MigrationDdlResult, down: MigrationDdlResult): MigrationDdlResult {
         if (down.blockers.isEmpty()) {
-            return up.copy(sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights)
+            return up.copy(
+                sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights,
+                checkPreflights = mergeCheckPreflights(up.checkPreflights, down.checkPreflights),
+            )
         }
         val merged = up.blockers + down.blockers
         val primary = up.primaryBlockedReason ?: down.primaryBlockedReason
@@ -238,7 +300,24 @@ internal class SchemaMigrateRenderPipeline(
             primaryBlockedReason = primary,
             diagnostics = up.diagnostics + down.diagnostics,
             sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights,
+            checkPreflights = mergeCheckPreflights(up.checkPreflights, down.checkPreflights),
         )
+    }
+
+    /**
+     * F.5 Sub-Slice E.4: dedupe CHECK-preflight declarations across
+     * Up + Down render results by [CheckPreflightDeclaration.bindingKey].
+     * Up takes precedence; Down only contributes entries Up doesn't
+     * already carry.
+     */
+    private fun mergeCheckPreflights(
+        up: List<dev.dmigrate.driver.CheckPreflightDeclaration>,
+        down: List<dev.dmigrate.driver.CheckPreflightDeclaration>,
+    ): List<dev.dmigrate.driver.CheckPreflightDeclaration> {
+        if (down.isEmpty()) return up
+        val seen = up.map { it.bindingKey }.toMutableSet()
+        val extras = down.filter { seen.add(it.bindingKey) }
+        return up + extras
     }
 
     private fun applyTransactionScopeGuard(
