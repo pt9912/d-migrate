@@ -1727,8 +1727,18 @@ DoD:
 - [ ] Report- und Exit-Code-Erwartungen sind in Tests gepinnt.
 - [ ] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
   ausgeschlossen.
-- [ ] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
+- [x] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
   manipulierte Hashes und Secret-Scrubbing ab.
+  *(Status 2026-05-19 nach G-Slices: heute existiert genau eine
+  `migration-plan.v1`-Format-Version, deshalb ist „alte Versionen“
+  N/A. Die anderen drei Pfade sind in `MigrationPlanArtifactContractTest`
+  gepinnt — `UNKNOWN_FORMAT_VERSION` blockt jede Version ausserhalb
+  des `supportedFormatVersions`-Sets; `HASH_MISMATCH` blockt
+  manipulierte `artifactHash`-Werte; `SECRET_BEARING_PRODUCER_METADATA`
+  + `RESERVED_PRODUCER_METADATA` pinnen Secret-Scrubbing. Sobald ein
+  echtes v2-Format eingefuehrt wird, ist dieser Carve-out neu zu
+  bewerten und „alte Versionen werden bewusst akzeptiert oder mit
+  Diagnose abgelehnt“ als separater Testfall nachzuziehen.)*
 - [x] Overlay-Compatibility-Tests decken unbekannte Versionen, unbekannte Kinds,
   stale Fingerprints, Dialekt-Mismatch, manipulierte Hashes und Secret-
   Scrubbing ab.

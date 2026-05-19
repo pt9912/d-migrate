@@ -480,9 +480,10 @@ und die weiterhin offenen Restpunkte zusammen.
 | E Rest | Nach E.1/E.2 verbleiben MySQL-/SQLite-Sequence-Emulation, aktueller Sequence-Wert / Preserve-Policy, SQLite-Trigger-Reverse-Read und Cross-Dialect-Sequencing; Routine-Bodies, Secret-Scrubbing und Dependency-Sortierung sind ueber E.1 erledigt | offen |
 | F.0-F.3 | Versionierte Plan-/Overlay-Vertraege, Reversibilitaets-Summaries, Rollback-v2-Header, Overlay-Secret-Diagnostik und `DataTransformationContract`-Default `NONE`; echte automatische Backfills bleiben Phase-1.x-Material | ✅ erste Slices erledigt |
 | F.4 | Dependency-Re-Projection nach Rename ist vollstaendig (FK-Targets, View-/Trigger-/Index-/Default-Bindungen); View-/Trigger-/Routine-/Sequence-Renames sind ueber alle drei Dialekte umgesetzt | ✅ erledigt (2026-05-19) |
+| F.4 G | Artefact-Producer-Wiring: `--plan-artefact <path>` emittiert signierte `migration-plan.v1`-JSON; `MigrationPlanArtifactBuilder` + Sink-Write + Runner-Emission live; `transactionScope`-Drift im Contract-Test gefixt; §E.3 DoD-Checkliste + §11 DoD Box (d) abgehakt. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md` | ✅ erledigt (2026-05-19) |
 | F.5 | CHECK-/EXCLUDE-Erstscheibe mit konservativem SQL-Textvergleich; unveraenderte Constraints blocken Tabellenops nicht mehr, echte CHECK-/EXCLUDE-Aenderungen warten auf Dialekt-/Enforcement-Vertrag und Daten-Preflight | teilerledigt |
 | Telemetry/Observability | Adaptervertrag, Gates und Port-Grenzen dokumentiert; produktives Metrics-/Tracing-Wiring ausserhalb 0.9.7 | ✅ Plan erledigt seit 2026-05-08 |
-| Coverage/QA | MySQL-`AlterColumnNullability` ist als bewusster Blocker umgesetzt; verbleibend sind breitere Report-/Exit-Code-Erwartungen, Rollback-Verhalten je Workstream und Artifact-/Overlay-Kompatibilitaet | offen |
+| Coverage/QA | MySQL-`AlterColumnNullability` ist als bewusster Blocker umgesetzt; Artifact-Compatibility (`UNKNOWN_FORMAT_VERSION` / `HASH_MISMATCH` / Secret-Scrubbing) + Overlay-Compatibility seit G-Slices vollstaendig gepinnt. Verbleibend: workstream-uebergreifender Audit-Sweep ueber §11 DoD Box (a) Positiv+Blocker pro Workstream, Box (b) Report-/Exit-Code-Tests, Box (c) Rollback-Tests je Workstream. | teilerledigt |
 
 ### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
 

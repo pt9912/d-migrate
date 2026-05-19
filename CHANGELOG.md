@@ -9,6 +9,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 F.4 Follow-up — `migration-plan.v1` Artefact Producer Wiring**
+  *(2026-05-19, Sub-Slice G)* — closes the audit gap raised after
+  F.4's closing slice: the `MigrationPlanArtifact` contract that
+  landed under F.4 Sub-Slice E was modelled, encoded and validated
+  in `hexagon:core`, but never constructed in the production CLI
+  flow. `schema migrate` now emits a signed `migration-plan.v1`
+  JSON to disk when the new `--plan-artefact <path>` flag is set.
+
+  Producer surface:
+    - New `MigrationPlanArtifactBuilder` (`hexagon:application`) —
+      pure projection
+      `(DiffResult, MigrationDdlResult, dialect, clock, dMigrateVersion)
+      → MigrationPlanArtifact`. Maps every `DiffOperation` to a
+      public DTO (kind = subtype simpleName, objectType / phase /
+      reversibility as enum names, risk projection including
+      `dataTransformationMode` + optional model-version / model-id);
+      `DiffDiagnostic` → public DTO with enum-name severity;
+      reversibility summary aggregated from per-op `Reversibility`
+      (`MANUAL_REQUIRED` / `NOT_REVERSIBLE` op-id lists,
+      `fullyReversible` true iff all ops AUTOMATIC or
+      AUTOMATIC_WITH_DATA_RISK); rendered statements with stable
+      `stmt-N` ids + canonical `RoutineBodyScrubber.preview` hashes
+      + `TransactionScope.name` strings;
+      `DiffResult.renameProjections` round-tripped into the public
+      DTO. Builder tail-calls `withRenameProjectionExtension()`
+      (auto-adds `rename-projections.v1` to `semanticExtensions`
+      when the list is non-empty) + `withComputedHash()`.
+    - New `SchemaMigrateArtefactSink.writePlanArtefact(path, artifact)`
+      — atomic write of the canonical JSON via the existing
+      `atomicWriter`. Returns `null` on success, `7` on local I/O
+      failure (matches `--report` write semantics).
+    - New `SchemaMigrateRequest.planArtefact: Path? = null` field.
+      `SchemaMigrateRunner` invokes `maybeWritePlanArtefact(...)`
+      between the report build and the rollback compose, so the
+      artefact lands even on Exit 8 (blocker) and `--plan-only`
+      paths.
+    - New `--plan-artefact <path>` Clikt option on `schema migrate`.
+
+  Contract documentation: `spec/cli-spec.md` §6.1 gains a new
+  **`migration-plan.v1`-Artefakt** section listing every top-level
+  field, the semantic-extension gates (`rename-projections.v1`),
+  and the eleven validator codes (`PLAN_ARTIFACT_*`) consumers
+  may see. Plan-doc:
+  `docs/planning/done/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md`.
+
+  Tests: `MigrationPlanArtifactBuilderTest` (7 cases) pins per-field
+  projection, reversibility-summary aggregation, stable `stmt-N`
+  ids, diagnostic severity round-trip, `renameProjections` plus
+  semantic-extension auto-gate, fingerprint-missing fail-fast.
+  `SchemaMigrateRunnerTest` gets a `--plan-artefact` end-to-end
+  case mirroring the `--report` integration test.
+
+- **0.9.7 F.4 Follow-up — `transactionScope` enum drift fix in
+  plan-artefact contract test** *(2026-05-19, Sub-Slice G.1)* —
+  `MigrationPlanArtifactContractTest` pinned
+  `"transactionScope": "SINGLE_STATEMENT"` since the artefact was
+  introduced in 2026-05-13. That string never matched any value in
+  the runtime `TransactionScope` enum
+  (`RUNNER_OWNED` / `STREAM_OWNED` / `NO_TRANSACTION`). Both
+  occurrences are updated to `"RUNNER_OWNED"` — the enum's default
+  and the scope every PostgreSQL diff stream emits for ordinary
+  single-statement DDL. `MigrationPlanRenderedStatement.transactionScope`
+  gains a KDoc block documenting the canonical contract: the field
+  carries `TransactionScope.name` as a `String` (not the enum) so
+  a future scope value surfaces as an unknown string for
+  validators / consumers rather than a deserialisation failure.
+
 - **0.9.7 F.4 routine-trigger-view-renames Vollscheibe** — overlay-bound
   renames for views, triggers, functions, procedures and sequences land
   alongside the existing table/column rename pipeline. The mapper

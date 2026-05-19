@@ -600,6 +600,7 @@ d-migrate schema migrate --source <desired> --target <current> \
 | `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen. Bei Routine-Replace (`ReplaceFunction`/`ReplaceProcedure`) blockt der Renderer mit `ROUTINE_DOWN_BODY_UNKNOWN` und `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE`, wenn der alte Routine-Body nicht vollstaendig bekannt ist. Bei Datei-zu-DB darf der Reverse-Pfad alte Bodies aus der Live-DB lesen; bei Datei-zu-Datei muss der Operator den Vorbody im Schema-File mitliefern oder ohne `--generate-rollback` migrieren. Verwandte Render-Blocker ohne `--generate-rollback`-Bezug: `ROUTINE_BODY_UNKNOWN` (Up-Body fehlt), `ROUTINE_REPLACE_UP_BODY_UNKNOWN` (Replace-Up-Body fehlt), `ROUTINE_BODY_DOLLAR_TAG_COLLISION` (Body enthaelt den Renderer-Dollar-Tag `$body$`) |
 | `--plan-only` | Nein | Boolean | Nur Plan-/Risiko-Report, kein SQL; in dieser Kombination ist `--rollback-output` unzulässig |
 | `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
+| `--plan-artefact` | Nein | Pfad | Signierter `migration-plan.v1`-JSON wird atomar an diesen Pfad geschrieben (additiv zu `--report`/`--output`/`--rollback-output`). Der Artefakt-Vertrag ist im Abschnitt **migration-plan.v1 Artefakt** unten beschrieben. Wird auch im `--plan-only`- und Exit-8-Pfad emittiert, sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler beendet mit Exit 7. |
 | `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
 | `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
 | `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
@@ -890,6 +891,71 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
   `MANUAL_ACTION_REQUIRED` fuer dieselben Codes bleiben semantisch
   als blockiert dokumentiert. Generische Overlay-Probleme ohne
   Rename-Bezug behalten `MANUAL_ACTION_REQUIRED`.
+
+**`migration-plan.v1`-Artefakt** *(F.4 Sub-Slice G.2, 2026-05-19)*:
+
+Mit `--plan-artefact <path>` schreibt `schema migrate` einen signierten
+`migration-plan.v1`-JSON neben den anderen Artefakten. Das Feld ist
+opt-in und additiv zu `--report` / `--output` / `--rollback-output`;
+der Artefakt wird auch im `--plan-only`- und Exit-8-Pfad emittiert,
+sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler
+beendet mit Exit `7` (lokaler I/O-Fehler).
+
+Top-Level-Felder (kanonisierte JSON-Reihenfolge):
+
+| Feld | Typ | Inhalt |
+|---|---|---|
+| `formatVersion` | String | Konstant `"migration-plan.v1"` |
+| `dMigrateVersion` | String | Erzeuger-Version (`SchemaMigrateRunner.createdByVersion`) |
+| `sourceFingerprint` / `targetFingerprint` | String | Schema-Fingerprints aus dem Diff |
+| `dialect` | String | Lowercase-Dialektname (`postgresql` / `mysql` / `sqlite`) |
+| `operations[]` | Array | Pro `DiffOperation`: `id`, `kind` (Subtype-Klassenname), `objectType`, `objectPath`, `phase`, `reversibility`, `upRisk`, optionales `downRisk` |
+| `diagnostics[]` | Array | Pro Diagnostic: `code`, `severity`, optionales `operationId` |
+| `reversibilitySummary` | Object | `fullyReversible`, `manualRequiredOperationIds[]`, `notReversibleOperationIds[]` |
+| `requiredFeatures` | Array | Versionierte Pflichtfeatures, die Consumer unterstuetzen MUESSEN |
+| `semanticExtensions` | Array (konditional) | Versionierte erweiternde Semantiken (z.B. `"rename-projections.v1"`); Consumer ohne Support REJECTen |
+| `renderedStatements[]` | Array (konditional) | Pro Statement: `statementId` (`stmt-1`, `stmt-2`, ...), `operationIds[]`, `sqlHash`, `transactionScope` (Enum-Name: `RUNNER_OWNED` / `STREAM_OWNED` / `NO_TRANSACTION`) |
+| `renameProjections[]` | Array (konditional, Gate `rename-projections.v1`) | Pro Overlay-Rename-Eintrag: `candidateId`, `objectType`, `fromPath`, `toPath`, Overlay-Provenance, `renameOperationId` ODER `fallbackOperationIds` + `fallbackReason` |
+| `createdAt` | String | ISO-8601 UTC |
+| `producerMetadata` | Object (konditional) | Dekorative Producer-Felder; reservierte Praefixe (`execution.`, `risk.`, `rollback.`, `locking.`, `preflights.`, `secrets.`, `sql.`) blocken; Secret-Marker (`password`, `token`, `jdbc:`, ...) blocken |
+| `artifactHash` | String | SHA-256 ueber den signed Payload (ohne `artifactHash` selbst) |
+
+Semantic-Extension-Gates (Producer setzt automatisch, Consumer muss in
+`MigrationPlanArtifactValidationContext.supportedSemanticExtensions`
+listen):
+
+- `"rename-projections.v1"`: aktiv wenn `renameProjections[]` nicht
+  leer. Producer-Convenience:
+  `MigrationPlanArtifact.withRenameProjectionExtension()`. Alte
+  Consumer ohne diesen Eintrag im Supported-Set lehnen den Artefakt
+  ueber `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` ab — vermeidet,
+  dass ein Drop+Create-Fallback als gewoehnlicher destruktiver Change
+  ausgefuehrt wird.
+
+Validator-Codes (`MigrationPlanArtifactDiagnostics`):
+
+| Code | Bedingung |
+|---|---|
+| `PLAN_ARTIFACT_REQUIRED_FIELD_MISSING` | Pflichtfeld ist blank |
+| `PLAN_ARTIFACT_UNKNOWN_FORMAT_VERSION` | `formatVersion` nicht in `supportedFormatVersions` |
+| `PLAN_ARTIFACT_HASH_MISSING` | `artifactHash` fehlt |
+| `PLAN_ARTIFACT_HASH_MISMATCH` | `artifactHash` weicht vom Re-Hash des Payloads ab |
+| `PLAN_ARTIFACT_UNKNOWN_REQUIRED_FEATURE` | `requiredFeatures` enthaelt unbekannten Eintrag |
+| `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` | `semanticExtensions` enthaelt unbekannten Eintrag |
+| `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION` | `renameProjections` non-empty aber Gate `"rename-projections.v1"` fehlt — Producer-Bug |
+| `PLAN_ARTIFACT_RESERVED_PRODUCER_METADATA` | `producerMetadata`-Key matched reserviertes Praefix |
+| `PLAN_ARTIFACT_SECRET_BEARING_PRODUCER_METADATA` | Key oder Wert enthaelt Secret-Marker |
+| `PLAN_ARTIFACT_REVERSIBILITY_SUMMARY_MISMATCH` | `reversibilitySummary` widerspricht den Operations-`reversibility`-Werten |
+| `PLAN_ARTIFACT_UNKNOWN_REVERSIBILITY_OPERATION` | `reversibilitySummary` referenziert nicht-existente `operationId` |
+
+Verbindlich: Drop+Create-Operationen, die ueber einen
+`renameProjections[]`-Eintrag mit gefuelltem `fallbackOperationIds`
+referenziert werden, sind Teil einer logischen Rename-Faltung und
+duerfen vom Consumer NICHT als gewoehnliche destruktive Operation
+ausgefuehrt werden. Die Drop+Create-Ops selbst tragen optional ein
+internes `renameProvenance`-Metadatum (nicht im Artefakt seriell
+exponiert); die fuer Consumer verbindliche Quelle bleibt
+`renameProjections[]`.
 
 Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
 
