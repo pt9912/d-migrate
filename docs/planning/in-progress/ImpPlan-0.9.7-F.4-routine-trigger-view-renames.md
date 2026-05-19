@@ -17,8 +17,11 @@
 >            **Sub-Slice B** (MySQL `renderRenameView` via `RENAME TABLE`
 >            + MySQL-Dialekt-Mapper-Integrationstests fuer Drop+Create-
 >            Fallback bei Trigger/Routinen + Sequence/MV-Block) ✅ 2026-05-19.
->            Sub-Slices C (SQLite Renderer) /
->            D (Sequence-Default-Reprojection) /
+>            **Sub-Slice C** (SQLite-Dialekt-Mapper-Integrationstests
+>            fuer View/Trigger-Drop+Create-Fallback + Body-Drift-/Missing-
+>            Body-/Routine-/Sequence-/MV-Block + defensive UNSUPPORTED-
+>            Annotation am SQLite-Renderer) ✅ 2026-05-19.
+>            Sub-Slices D (Sequence-Default-Reprojection) /
 >            E (Plan-Artefakt-Vertrag-Erweiterung) /
 >            F (Roadmap + cli-spec + CHANGELOG Closing) offen.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
@@ -373,13 +376,39 @@ Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
     den Pfaden).
   - Sequence-Rename → Blocker (`MySQL sequence`-Begruendung).
 
-### Sub-Slice C — SQLite Renderer + Policy
+### Sub-Slice C — SQLite Renderer + Policy ✅ 2026-05-19
 
-- SQLite `ObjectRenamePolicy`: View Drop+Create-Fallback (kein
-  natives View-Rename); Trigger Drop+Create-Fallback; Routinen
-  BLOCKED (SQLite hat keine Routinen-Modell); Sequence BLOCKED bis
-  E.3 SQLite-Sequence-Vertrag.
-- SQLite-Renderer mit Drop+Create-Fallback + Body-Drift-Vertrag.
+- SQLite `ObjectRenamePolicy` bereits in A.2 Teil 1 live (View/Trigger
+  `DropCreateFallback` mit Body-Vorvertrag; Function/Procedure
+  `Blocked` weil kein SQLite-Routinen-Modell; Sequence `Blocked` bis
+  E.3 SQLite-Sequence-Vertrag; Materialized-View `Blocked`).
+- Kein neuer Renderer-Code: SQLite kennt fuer keinen Subtyp ein
+  natives Rename; alle Faelle werden vom Mapper schon zu `Drop*` +
+  `Create*` (mit `renameProvenance`-Marker) oder einer
+  `OBJECT_RENAME_UNSUPPORTED`-Blocker-Diagnostic aufgeloest. Das
+  bestehende `Drop*`/`Create*`-Rendering von Views und Triggers
+  rendert die emittierten Ops korrekt; der `renameProvenance`-Marker
+  ist nur internes Metadatum, das der Renderer ignoriert.
+- `SqliteDiffDdlGenerator.categorize()` haelt die fuenf `Rename*`-
+  Subtypes weiterhin auf `UNSUPPORTED` und dokumentiert per Kommentar,
+  warum diese Subtypes unter dem A.2-Teil-2-Vertrag den Renderer nie
+  erreichen.
+- `SqliteDiffObjectRenameTest` pinnt:
+  - View-Rename mit identischem Body → `DropView` + `CreateView` mit
+    `renameProvenance` (`fromPath`/`toPath` = visible view names,
+    `fallbackReason` enthaelt "SQLite has no native view-rename");
+    Up-SQL enthaelt `DROP VIEW "v_old";` + `CREATE VIEW "v_new" …`.
+  - View-Rename mit fehlendem Source-Body → Blocker (`sourceBodyHash`),
+    Drop+Create weiterhin emittiert aber ohne `renameProvenance`.
+  - View-Rename mit Body-Drift → Blocker, kein `renameProvenance`.
+  - Materialized-View-Rename → Blocker (Materialized-Hinweis).
+  - Trigger-Rename mit identischem Body → `DropTrigger` +
+    `CreateTrigger` mit `renameProvenance` (`fromPath`/`toPath` =
+    `table::name`-Pfad, `fallbackReason` enthaelt "SQLite has no
+    native trigger-rename").
+  - Trigger-Rename mit Body-Drift → Blocker, kein `renameProvenance`.
+  - Function-Rename → Blocker ("SQLite has no user-defined FUNCTION").
+  - Sequence-Rename → Blocker ("SQLite sequence emulation").
 
 ### Sub-Slice D — Sequence-Default-Reprojection
 

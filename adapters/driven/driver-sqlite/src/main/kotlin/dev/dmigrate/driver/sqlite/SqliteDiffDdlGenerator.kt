@@ -248,6 +248,17 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropTrigger,
         -> OpCategory.TRIGGER
 
+        // F.4 Sub-Slice C: `SqliteObjectRenamePolicy` returns
+        // `DropCreateFallback` for views and triggers (when both body
+        // hashes are known and equal) and `Blocked` for every other
+        // kind. The Mapper therefore emits `Drop*`+`Create*` with
+        // `renameProvenance` for views/triggers, or an
+        // `OBJECT_RENAME_UNSUPPORTED` blocker for routines/sequences/
+        // materialized views — no `Rename*` subtype ever reaches this
+        // renderer under the contract. The defensive `UNSUPPORTED`
+        // routing exists so a future planner regression that lets one
+        // through surfaces as `DIALECT_UNSUPPORTED_OPERATION` instead
+        // of being silently emitted as garbled SQL.
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
