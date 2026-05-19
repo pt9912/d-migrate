@@ -82,7 +82,7 @@ Roadmap §E Rest listet explizit:
   dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
-    WHERE name = <escaped_sequence_name>` (`next_value` ist der nächste von
+    WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<supported_format_versions>)` (`next_value` ist der nächste von
     `nextval` gelieferte Wert). `managed_by` und `format_version` werden
     verwendet, und zusammen mit den in der Emulation definierten
     unterstützten `format_version`-Werten (`mysqlExpectedFormatVersions`),
@@ -100,7 +100,8 @@ Roadmap §E Rest listet explizit:
     als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
     übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
-    WHERE name = <escaped_sequence_name>` (kein +1).
+    WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<supported_format_versions>)`
+    (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
   `SchemaMigrateRenderPipeline` (`CheckPreflight` + `MigrationPreflightPlanner`):
@@ -230,6 +231,8 @@ val preserveSequenceOps = plan.operations
         val mysqlExpectedManagedBy = setOf("d-migrate")
         val mysqlExpectedFormatVersions = mysqlSequenceEmulationMetadata.supportedFormatVersions
 
+        fun escapeMysqlStringLiteral(value: String): String = "'" + value.replace("'", "''") + "'"
+
         fun validateMysqlReadDeterminism(
             result: SequenceCurrentValueProbeResult.Read,
             probeSequenceRef: SequenceObjectRef,
@@ -287,6 +290,7 @@ for (ctx in sequencesNeedingPreservation) {
     val op = ctx.sequenceOp
     val probeSequenceName = when (ctx.probeSequenceRef.dialect) {
         Dialect.POSTGRES -> renderSequenceDbIdentifier(ctx.probeSequenceRef)
+        Dialect.MYSQL -> escapeMysqlStringLiteral(ctx.probeSequenceRef.name)
         else -> ctx.probeSequenceRef.name
     }
     val result = probe.probe(connection, probeSequenceName, ctx.probeSequenceRef.dialect)
@@ -308,7 +312,7 @@ for (ctx in sequencesNeedingPreservation) {
             }
 
             val readResult = deterministicResult as SequenceCurrentValueProbeResult.Read
-            if (ctx.probeSequenceRef.dialect == Dialect.MYSQL && !isManagedDmgSequenceProbeResult(result)) {
+            if (ctx.probeSequenceRef.dialect == Dialect.MYSQL && !isManagedDmgSequenceProbeResult(readResult)) {
                 emitBlocker(
                     "SEQUENCE_PRESERVE_PROBE_FAILED",
                     "MySQL sequence ${ctx.probeSequenceRef} is not recognized as d-migrate-managed sequence metadata.",
@@ -317,7 +321,7 @@ for (ctx in sequencesNeedingPreservation) {
             }
             val isCalled = when (ctx.probeSequenceRef.dialect) {
                 Dialect.POSTGRES -> {
-                    if (result.isCalled == null) {
+                    if (readResult.isCalled == null) {
                         emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
                         continue
                     }
@@ -400,7 +404,7 @@ konzeptionell ein explizit dokumentierter nicht unterstützter Down-Pfad.
 
 Festlegung: neuer Subtyp `AlterSequenceCurrentValue` mit
 `probeSequenceRef`, `applySequenceRef`, `currentValue`, optionalem `isCalled`,
-optionalem `restoreValue`
+optionalem `restoreValue`, optionalem `revertAfterRename`
 und optionalem `restoreIsCalled` (für PG muss Down zwingend einen
 non-null `restoreIsCalled` liefern),
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
@@ -412,6 +416,10 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
 | MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name> AND managed_by = 'd-migrate' AND format_version IN (<supported_format_versions>);` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
+
+MySQL-Renderer müssen sicherstellen, dass genau eine Zeile betroffen ist;
+bei 0 oder >1 betroffenen Zeilen ist der Plan als nicht deterministisch zu behandeln
+(`SEQUENCE_PRESERVE_PROBE_FAILED` oder `ROLLBACK_NOT_POSSIBLE` je Phase).
 
 `<escaped_sequence_name>` ist als SQL-literal-seitig escaped String zu rendern
 (z. B. über vorhandene Dialekt-Quoting-Helfer), nicht als unformatierter Identifier
@@ -449,6 +457,10 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
       die Abfrage auf `dmg_sequences` mehr als eine deterministische Trefferzeile liefert
       oder keine eindeutig matcht.
+- [ ] MySQL-Renderer führt `UPDATE` nur auf genau eine determinierte Zeile aus
+      (`1` affected row); bei 0 oder >1 betroffenen Zeilen ist der Down/Up
+      als nicht deterministisch (`SEQUENCE_PRESERVE_PROBE_FAILED` bzw.
+      `ROLLBACK_NOT_POSSIBLE`) zu behandeln.
 - [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
       `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
       Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
