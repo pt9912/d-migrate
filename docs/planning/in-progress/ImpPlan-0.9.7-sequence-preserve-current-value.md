@@ -76,8 +76,10 @@ Roadmap §E Rest listet explizit:
   - `CreateSequence`: nur, wenn die Sequenz vor Migration im Ziel bereits
     deterministisch lesbar ist (idempotente/dirty Zielzustände); reine
     Neu-Erzeugung ohne Vorzustand erzeugt keinen Preserve-Follow-up.
-    Ohne deterministischen Vorzustand ist der Down-Pfad explizit als
-    `ROLLBACK_NOT_POSSIBLE` zu markieren.
+    Ohne deterministischen Vorzustand ist der Down-Pfad für den
+    *Current-Value-Teil* explizit als `ROLLBACK_NOT_POSSIBLE` zu markieren
+    (die eigentliche `CreateSequence`-`DROP`-Reversibilität bleibt davon
+    getrennt).
 - Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read` mit
   dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
@@ -391,7 +393,11 @@ for (ctx in sequencesNeedingPreservation) {
         }
         is NotFound -> {
             if (op is DiffOperation.CreateSequence) {
-                emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${ctx.applySequenceRef}; create value remains declarative.")
+                emitNote(
+                    "SEQUENCE_PRESERVE_NOT_FOUND",
+                    "No existing target state for ${ctx.applySequenceRef}; create value remains declarative, " +
+                    "current-value rollback is not possible and must be treated as ROLLBACK_NOT_POSSIBLE.",
+                )
             } else {
                 emitBlocker(
                     "SEQUENCE_PRESERVE_PROBE_FAILED",
@@ -424,8 +430,11 @@ Fallbacks).
 - Für Nicht-PG dient `restoreIsCalled` als optionales Zusatzfeld aus
   `determineRestoreIsCalledHint(op)`.
 - Bei neu anzulegenden Sequenzen ohne deterministische Historie bleibt `restoreValue`
-  `null` und der Down-Pfad ist als `ROLLBACK_NOT_POSSIBLE` zu kennzeichnen.
-  Für diesen Pfad soll `resolveRestoreHints` nicht aufgerufen werden.
+  `null` und der Down-Pfad für den Current-Value-Teil ist als `ROLLBACK_NOT_POSSIBLE`
+  zu kennzeichnen.
+  Für diesen Pfad soll `resolveRestoreHints` nicht aufgerufen werden; die Dokumentation
+  erfolgt über die `SEQUENCE_PRESERVE_NOT_FOUND`-Hinweisdiagnose mit explizitem
+  Hinweis auf fehlende Deterministik.
 
 `AlterSequenceCurrentValue` nutzt für Down explizit:
 - `applySequenceRef` für Up/Forward-Pfad (die neue Zielsequenz nach `RenameSequence`,
@@ -524,9 +533,10 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `SEQUENCE_PRESERVE_PROBE_FAILED`, Down/rollback kennzeichnet explizit
       `ROLLBACK_NOT_POSSIBLE`.
 - [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
-      `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen
-      Blocker; `AlterSequence`/`RenameSequence` ohne Vorzustand blocken mit
-      `SEQUENCE_PRESERVE_PROBE_FAILED`.
+      `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen Blocker.
+      Der Hinweis enthält explizit, dass der Current-Value-Restore als
+      `ROLLBACK_NOT_POSSIBLE` zu behandeln ist; `AlterSequence`/`RenameSequence`
+      ohne Vorzustand blocken mit `SEQUENCE_PRESERVE_PROBE_FAILED`.
 - [ ] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
       `probeSequenceRef` (old/origin) und `applySequenceRef` (new/target)
       emittiert; Down-Renderer wendet den Restore auf `probeSequenceRef` an.
@@ -579,7 +589,8 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 - [ ] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
       ohne Blocker-Klasse ausgegeben, wenn eine `CreateSequence`-Operation
       keinen lesbaren Vorzustand hat.
-      Für diesen Fall ist `ROLLBACK_NOT_POSSIBLE` verpflichtend.
+      Für diesen Fall ist der Current-Value-Teil explizit als
+      `ROLLBACK_NOT_POSSIBLE` dokumentiert.
 - [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
       `setval`/`UPDATE` auf den gespeicherten `restoreValue` und für PG
       zwingend `restoreIsCalled`, sonst explizit `ROLLBACK_NOT_POSSIBLE`.
