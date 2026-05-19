@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.diff.NamedFunction
 import dev.dmigrate.core.diff.NamedProcedure
 import dev.dmigrate.core.diff.NamedSequence
+import dev.dmigrate.core.diff.NamedTable
 import dev.dmigrate.core.diff.NamedTrigger
 import dev.dmigrate.core.diff.NamedView
 import dev.dmigrate.core.diff.SchemaDiff
@@ -12,13 +13,17 @@ import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayKinds
 import dev.dmigrate.core.diff.migration.overlay.RenameMappingOverlayEntry
 import dev.dmigrate.core.identity.ObjectKeyCodec
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.FunctionDefinition
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.ParameterDefinition
 import dev.dmigrate.core.model.ParameterDirection
 import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerTiming
@@ -260,6 +265,85 @@ class PostgresDiffObjectRenameTest : FunSpec({
             "ALTER TRIGGER \"audit_old\" ON \"orders\" RENAME TO \"audit_new\";"
         // Canonical key (orders::audit_new) must not leak into SQL.
         up.statements.single().sql.contains("orders::audit") shouldBe false
+    }
+
+    // ── Sub-Slice D: sequence-default reprojection ──────────────────
+
+    test("D: CreateTable with rewritten sequence default renders nextval('new_seq')") {
+        val seq = SequenceDefinition()
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("old_seq"),
+                    required = true,
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val plan = planner.plan(
+            current = emptySchema().copy(sequences = mapOf("old_seq" to seq)),
+            desired = emptySchema().copy(
+                sequences = mapOf("new_seq" to seq),
+                tables = mapOf("orders" to table),
+            ),
+            schemaDiff = SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("new_seq", seq)),
+                sequencesRemoved = listOf(NamedSequence("old_seq", seq)),
+                tablesAdded = listOf(NamedTable("orders", table)),
+            ),
+            migrationOverlays = listOf(renameOverlay("sequence", "old_seq", "new_seq")),
+        )
+        val up = gen.generateUp(plan, DdlGenerationOptions())
+        // The renamed sequence is created before the table referencing
+        // it (topological order), and the table's column default points
+        // at the new sequence name — not the old one.
+        val sqlBlob = up.statements.joinToString("\n") { it.sql }
+        sqlBlob shouldContain "ALTER SEQUENCE \"old_seq\" RENAME TO \"new_seq\";"
+        sqlBlob shouldContain "nextval('new_seq')"
+        sqlBlob.contains("nextval('old_seq')") shouldBe false
+
+        // Topological ordering pin: rename precedes CreateTable.
+        val renameStmtIdx = up.statements.indexOfFirst { it.sql.contains("ALTER SEQUENCE") }
+        val createStmtIdx = up.statements.indexOfFirst { it.sql.contains("CREATE TABLE") }
+        (renameStmtIdx in 0..<createStmtIdx) shouldBe true
+    }
+
+    test("D: Down direction renders DROP TABLE before reversing the sequence rename") {
+        val seq = SequenceDefinition()
+        val table = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("old_seq"),
+                    required = true,
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val plan = planner.plan(
+            current = emptySchema().copy(sequences = mapOf("old_seq" to seq)),
+            desired = emptySchema().copy(
+                sequences = mapOf("new_seq" to seq),
+                tables = mapOf("orders" to table),
+            ),
+            schemaDiff = SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("new_seq", seq)),
+                sequencesRemoved = listOf(NamedSequence("old_seq", seq)),
+                tablesAdded = listOf(NamedTable("orders", table)),
+            ),
+            migrationOverlays = listOf(renameOverlay("sequence", "old_seq", "new_seq")),
+        )
+        val down = gen.generateDown(plan, DdlGenerationOptions())
+        val sqlBlob = down.statements.joinToString("\n") { it.sql }
+        // DROP TABLE first (reverse of CreateTable), then reverse of
+        // the sequence rename. The old sequence name is the target of
+        // the reversed rename, not a column default.
+        sqlBlob shouldContain "DROP TABLE \"orders\";"
+        sqlBlob shouldContain "ALTER SEQUENCE \"new_seq\" RENAME TO \"old_seq\";"
+        val dropIdx = down.statements.indexOfFirst { it.sql.contains("DROP TABLE") }
+        val renameIdx = down.statements.indexOfFirst { it.sql.contains("ALTER SEQUENCE") }
+        (dropIdx in 0..<renameIdx) shouldBe true
     }
 
     test("trigger rename Down renders the inverse") {

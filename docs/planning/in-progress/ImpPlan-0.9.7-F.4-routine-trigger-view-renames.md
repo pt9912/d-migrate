@@ -21,8 +21,11 @@
 >            fuer View/Trigger-Drop+Create-Fallback + Body-Drift-/Missing-
 >            Body-/Routine-/Sequence-/MV-Block + defensive UNSUPPORTED-
 >            Annotation am SQLite-Renderer) ✅ 2026-05-19.
->            Sub-Slices D (Sequence-Default-Reprojection) /
->            E (Plan-Artefakt-Vertrag-Erweiterung) /
+>            **Sub-Slice D** (`SequenceDefaultReprojector` rewriting
+>            `SequenceNextVal`-Defaults in CreateTable/AddColumn/
+>            AlterColumnDefault + `DependencyAnalyzer` erkennt
+>            `RenameSequence` als Sequence-Provider) ✅ 2026-05-19.
+>            Sub-Slices E (Plan-Artefakt-Vertrag-Erweiterung) /
 >            F (Roadmap + cli-spec + CHANGELOG Closing) offen.
 > **Vorbedingung**: F.4 Rendering-Slice ✅, Workstream G ✅
 >                  (`transactionScope`, strukturierte Statement-
@@ -410,15 +413,56 @@ Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
   - Function-Rename → Blocker ("SQLite has no user-defined FUNCTION").
   - Sequence-Rename → Blocker ("SQLite sequence emulation").
 
-### Sub-Slice D — Sequence-Default-Reprojection
+### Sub-Slice D — Sequence-Default-Reprojection ✅ 2026-05-19
 
-- `RenameSequence` reprojiziert `DefaultValue.SequenceNextVal`-
-  Referenzen in `CreateTable`/`AddColumn`/`AlterColumnDefault` auf
-  den neuen Sequenznamen.
-- Cross-Op-Dependency-Sortierung: jede `*ColumnDefault`-Op mit
-  Sequenz-Default referenziert die finale `RenameSequence`-ID als
-  Dependency.
-- `DependencyAnalyzer` kennt `RenameSequence` als Sequenz-Provider.
+- Neuer `SequenceDefaultReprojector` in `hexagon:core` als Post-Map-
+  Schritt am Ende von `OperationMapper.prepare(...)`. Sammelt alle
+  `DiffOperation.RenameSequence`-Ops, baut ein
+  `fromName → toName`-Mapping und schreibt jeden
+  `DefaultValue.SequenceNextVal`-Default in `CreateTable.table.columns`,
+  `AddColumn.column.default`, `AlterColumnDefault.before` und
+  `AlterColumnDefault.after` auf den Zielnamen um. Reihenfolge-
+  unabhaengig: der Reprojector laeuft EINMAL am Mapper-Tail, der
+  Mapper darf Tabellen- vor Sequenz-Operationen emittieren.
+- `DependencyAnalyzer` erweitert `createSequenceByName` zum
+  `sequenceSourceIdByName: Map<String, String>` und fuegt
+  `RenameSequence.toName → rename.id` hinzu (gleiche Form wie
+  `tableSourceIdByName` mit `CreateTable` + `RenameTable`). Damit
+  haengen `CreateTable`/`AddColumn`/`AlterColumnDefault` mit einer
+  `SequenceNextVal`-Referenz auf einen *umbenannten* Sequenznamen
+  automatisch von der `RenameSequence` ab — der Topo-Sort platziert
+  den Rename also vor jeder Spalten-Op, ohne dass der Reprojector
+  manuell Dependencies setzt.
+- `SequenceDefaultReprojectorTest` pinnt:
+  - CreateTable mit Spalten-Default `SeqNextVal("old_seq")` +
+    Rename `old_seq → new_seq` → rewrite auf `"new_seq"` + Dep auf
+    Rename-Op-Id.
+  - AddColumn analog.
+  - AlterColumnDefault: `before` (referenziert die alte Sequenz)
+    wird auf den neuen Namen umgeschrieben; nicht-Sequenz-`after`
+    bleibt unveraendert.
+  - AlterColumnDefault mit `after = SeqNextVal("new_seq")` → Dep
+    auf Rename (ueber DependencyAnalyzer).
+  - Spalte mit unrelated Sequenz `SeqNextVal("other_seq")` → kein
+    Rewrite, keine Dep.
+  - Mehrere parallele Renames in einem Plan → pro Spalte korrektes
+    Rewrite.
+  - Topo-Reihenfolge: Rename steht in `plan.operations` strikt vor
+    der korrespondierenden `CreateTable`.
+  - No-Rename → Reprojector ist ein No-Op.
+- `PostgresDiffObjectRenameTest` (2 neue Cases) pinnt das End-to-End-
+  SQL: Up emittiert `ALTER SEQUENCE "old_seq" RENAME TO "new_seq";`
+  vor `CREATE TABLE … DEFAULT nextval('new_seq')` (kein `nextval('old_seq')`
+  irgendwo im Output). Down emittiert `DROP TABLE "orders"` vor
+  `ALTER SEQUENCE "new_seq" RENAME TO "old_seq";`.
+
+Out of scope (folgt einem spaeteren Slice):
+- Spalten in der Live-Datenbank, deren Default die alte Sequenz
+  referenziert, aber in diesem Plan nicht via Create/Add/Alter
+  beruehrt werden. PostgreSQL speichert `nextval('seq')`-Defaults als
+  OID-Referenzen, sodass ein `ALTER SEQUENCE … RENAME` fuer bereits
+  lebende Spalten transparent ist; ein textueller Rewrite ist nur
+  fuer im selben Plan emittierte Ops noetig.
 
 ### Sub-Slice E — Plan-Artefakt-Vertrag-Erweiterung
 

@@ -23,7 +23,10 @@ import dev.dmigrate.core.model.DefaultValue
  * - `DropTable` → depends on the `DropConstraint` of every FK
  *   pointing at the dropped table (drop dependents first).
  * - `CreateTable` / `AddColumn` / `AlterColumnDefault` with
- *   `SequenceNextVal` → depends on the referenced `CreateSequence`.
+ *   `SequenceNextVal` → depends on the referenced `CreateSequence`
+ *   **or** `RenameSequence` (F.4 Sub-Slice D — when a rename brings
+ *   the target sequence name into existence in the same plan, the
+ *   column-bearing op must wait for the rename to complete).
  * - `CreateView` → depends on the `CreateTable` / `RenameTable` for
  *   every table listed in `view.dependencies.tables` **and** the
  *   `CreateView`s listed in `view.dependencies.views` (chained views
@@ -66,8 +69,21 @@ internal object DependencyAnalyzer {
                 put(op.toName, op.id)
             }
         }
-        val createSequenceByName = ops.filterIsInstance<DiffOperation.CreateSequence>()
-            .associateBy { it.objectRef.rootName }
+        // F.4 Sub-Slice D: a RenameSequence makes the renamed sequence
+        // available under its new name, so column-default
+        // `SequenceNextVal` references on the new name must wait for
+        // the rename to complete. Same shape as `tableSourceIdByName`
+        // above. Both CreateSequence and RenameSequence contribute to
+        // the lookup; the planner-assigned op-id is enough for the
+        // dependency edge.
+        val sequenceSourceIdByName: Map<String, String> = buildMap {
+            for (op in ops.filterIsInstance<DiffOperation.CreateSequence>()) {
+                put(op.objectRef.rootName, op.id)
+            }
+            for (op in ops.filterIsInstance<DiffOperation.RenameSequence>()) {
+                put(op.toName, op.id)
+            }
+        }
         val createViewByName = ops.filterIsInstance<DiffOperation.CreateView>()
             .associateBy { it.objectRef.rootName }
         // Build reverse indices once so DropTable's edge computation is
@@ -87,7 +103,7 @@ internal object DependencyAnalyzer {
             val computed = computeDeps(
                 op,
                 tableSourceIdByName,
-                createSequenceByName,
+                sequenceSourceIdByName,
                 createViewByName,
                 dropConstraintsByRefTable,
                 dropViewsByRefTable,
@@ -100,14 +116,14 @@ internal object DependencyAnalyzer {
     private fun computeDeps(
         op: DiffOperation,
         tableSourceIdByName: Map<String, String>,
-        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
+        sequenceSourceIdByName: Map<String, String>,
         createViewByName: Map<String, DiffOperation.CreateView>,
         dropConstraintsByRefTable: Map<String, List<DiffOperation.DropConstraint>>,
         dropViewsByRefTable: Map<String, List<DiffOperation.DropView>>,
     ): Set<String> = when (op) {
-        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, tableSourceIdByName, createSequenceByName)
-        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, tableSourceIdByName, createSequenceByName)
-        is DiffOperation.AlterColumnDefault -> dependenciesForAlterColumnDefault(op, createSequenceByName)
+        is DiffOperation.CreateTable -> dependenciesForCreateTable(op, tableSourceIdByName, sequenceSourceIdByName)
+        is DiffOperation.AddColumn -> dependenciesForAddColumn(op, tableSourceIdByName, sequenceSourceIdByName)
+        is DiffOperation.AlterColumnDefault -> dependenciesForAlterColumnDefault(op, sequenceSourceIdByName)
         is DiffOperation.AddConstraint -> dependenciesForAddConstraint(op, tableSourceIdByName)
         is DiffOperation.DropTable -> dependenciesForDropTable(op, dropConstraintsByRefTable, dropViewsByRefTable)
         is DiffOperation.CreateView -> dependenciesForCreateView(op, tableSourceIdByName, createViewByName)
@@ -117,7 +133,7 @@ internal object DependencyAnalyzer {
     private fun dependenciesForCreateTable(
         op: DiffOperation.CreateTable,
         tableSourceIdByName: Map<String, String>,
-        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
+        sequenceSourceIdByName: Map<String, String>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         op.table.columns.values
@@ -127,9 +143,9 @@ internal object DependencyAnalyzer {
             .forEach { deps += it }
         op.table.columns.values
             .mapNotNull { sequenceName(it.default) }
-            .mapNotNull { createSequenceByName[it] }
-            .filter { it.id != op.id }
-            .forEach { deps += it.id }
+            .mapNotNull { sequenceSourceIdByName[it] }
+            .filter { it != op.id }
+            .forEach { deps += it }
         op.table.constraints
             .filter { it.type == ConstraintType.FOREIGN_KEY }
             .mapNotNull { it.references?.table }
@@ -142,27 +158,27 @@ internal object DependencyAnalyzer {
     private fun dependenciesForAddColumn(
         op: DiffOperation.AddColumn,
         tableSourceIdByName: Map<String, String>,
-        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
+        sequenceSourceIdByName: Map<String, String>,
     ): Set<String> {
         val deps = mutableSetOf<String>()
         val ref = op.column.references
         val targetId = ref?.let { tableSourceIdByName[it.table] }
         if (targetId != null && targetId != op.id) deps += targetId
         sequenceName(op.column.default)
-            ?.let(createSequenceByName::get)
-            ?.takeIf { it.id != op.id }
-            ?.let { deps += it.id }
+            ?.let(sequenceSourceIdByName::get)
+            ?.takeIf { it != op.id }
+            ?.let { deps += it }
         return deps
     }
 
     private fun dependenciesForAlterColumnDefault(
         op: DiffOperation.AlterColumnDefault,
-        createSequenceByName: Map<String, DiffOperation.CreateSequence>,
+        sequenceSourceIdByName: Map<String, String>,
     ): Set<String> =
         sequenceName(op.after)
-            ?.let(createSequenceByName::get)
-            ?.takeIf { it.id != op.id }
-            ?.let { setOf(it.id) }
+            ?.let(sequenceSourceIdByName::get)
+            ?.takeIf { it != op.id }
+            ?.let { setOf(it) }
             ?: emptySet()
 
     private fun sequenceName(defaultValue: DefaultValue?): String? =

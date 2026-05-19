@@ -99,8 +99,16 @@ internal object OperationMapper {
         OperationMapperRoutines.mapFunctions(diff, current, desired, functionFold, ops)
         OperationMapperRoutines.mapProcedures(diff, current, desired, procedureFold, ops)
         OperationMapperRoutines.mapTriggers(diff, current, desired, triggerFold, ops, triggerPlanningContext)
+        // F.4 Sub-Slice D: rewrite `SequenceNextVal` references in
+        // `CreateTable` / `AddColumn` / `AlterColumnDefault` ops that
+        // point at a sequence renamed elsewhere in this plan. The
+        // companion DependencyAnalyzer extension makes those column-
+        // bearing ops depend on the corresponding `RenameSequence`,
+        // so the topological sort places the rename first regardless
+        // of the order in which the Mapper emitted the ops.
+        val finalOps = SequenceDefaultReprojector.apply(ops)
         return PreparedMapping(
-            operations = ops,
+            operations = finalOps,
             diagnostics = diagnostics,
             renameProjections = renameProjections,
         )
