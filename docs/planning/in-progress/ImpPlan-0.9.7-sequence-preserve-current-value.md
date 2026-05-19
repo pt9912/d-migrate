@@ -114,8 +114,9 @@ Roadmap §E Rest listet explizit:
       Migration, oder explizit dokumentierter pre-existing Snapshot).
     - Bei neu erstellten Sequenzen ohne deterministische Historie bleibt der
       Reverse-Zustand `null` und Down wird mit `ROLLBACK_NOT_POSSIBLE`.
-  - Datei-zu-Datei-Modus: `preserveCurrentValue = true` blockt
-    mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
+  - Datei-zu-Datei-Modus: sobald `preserveCurrentValue = true` und mindestens eine
+    relevante Sequence-Operation (`AlterSequence`, `CreateSequence`, `RenameSequence`)
+    vorliegt, blockt der Plan mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
     `MANUAL_ACTION_REQUIRED`.
 - F.5-Carve-out-Pattern wiederverwendet (Probe → Pipeline →
   Blocker-bei-Failure).
@@ -205,13 +206,17 @@ data class SequencePreserveContext(
     val applySequenceRef: SequenceObjectRef,
 )
 
-val preserveSequenceCandidates = plan.operations
+val preserveSequenceOps = plan.operations
+    .filter { it is DiffOperation.AlterSequence || it is DiffOperation.CreateSequence || it is DiffOperation.RenameSequence }
+    .filter { it.shouldPreserveCurrentValue() }
+
+val preserveSequenceCandidates = preserveSequenceOps
     .filterIsInstance<DiffOperation.AlterSequence>()
     .filter { it.shouldPreserveCurrentValue() }
-    .plus(plan.operations.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(it) && it.shouldPreserveCurrentValue() })
-    .plus(plan.operations.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
+    .plus(preserveSequenceOps.filterIsInstance<DiffOperation.CreateSequence>().filter { shouldProbeCreateSequence(it) && it.shouldPreserveCurrentValue() })
+    .plus(preserveSequenceOps.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
 
-if (plan.isFileToFileMode && preserveSequenceCandidates.isNotEmpty()) {
+if (plan.isFileToFileMode && preserveSequenceOps.isNotEmpty()) {
     emitBlocker(
         "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
         "preserveCurrentValue requires execute mode with a reachable target database.",
@@ -269,6 +274,11 @@ for (ctx in sequencesNeedingPreservation) {
                 }
                 else -> null
             }
+            val restoreIsCalledHint = determineRestoreIsCalledHint(op)
+            if (ctx.probeSequenceRef.dialect == Dialect.POSTGRES && restoreIsCalledHint == null) {
+                // PG Down-Pfad ist deterministisch unmöglich: Operation ist mit Rollback-Hinweis
+                // (`ROLLBACK_NOT_POSSIBLE`) zu markieren.
+            }
             emitFollowupAlterSequenceCurrentValue(
                 op,
                 probeSequenceRef = ctx.probeSequenceRef,
@@ -276,7 +286,7 @@ for (ctx in sequencesNeedingPreservation) {
                 value = result.value,
                 isCalled = isCalled,
                 restoreValue = determineRestoreValueHint(op),
-                restoreIsCalled = determineRestoreIsCalledHint(op),
+                restoreIsCalled = restoreIsCalledHint,
                 insertAfter = true,
             )
         }
@@ -322,7 +332,8 @@ stabil gelesen werden kann und der Probe-Pfad ohne Fallback erfolgreich ist.
 
 Für PG gilt: `restoreIsCalled` ist für den Down-Pfad verpflichtend.
 Fehlt dieser, ist `AlterSequenceCurrentValue` als `ROLLBACK_NOT_POSSIBLE`
-zu kennzeichnen.
+zu kennzeichnen. Das ist kein zusätzlicher Planer-Blocker, sondern
+konzeptionell ein explizit dokumentierter nicht unterstützter Down-Pfad.
 
 ### 5.3 Operation-Modell
 
@@ -338,8 +349,12 @@ weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
 | Dialekt | Render |
 |---|---|
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = '<seq>';` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_sequence_name>;` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
+
+`<escaped_sequence_name>` ist als SQL-literal-seitig escaped String zu rendern
+(z. B. über vorhandene Dialekt-Quoting-Helfer), nicht als unformatierter Identifier
+einzusetzen.
 
 ---
 
