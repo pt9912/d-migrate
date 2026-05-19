@@ -14,7 +14,10 @@
 >            `RenameOverlayIndex`-Erweiterung fuer view/trigger/function/
 >            procedure/sequence + PG-Renderer fuer alle 5 Subtypes +
 >            Body-Drift- / Cross-Document- / Signatur-Tests) ✅ 2026-05-19.
->            Sub-Slices B (MySQL Renderer) / C (SQLite Renderer) /
+>            **Sub-Slice B** (MySQL `renderRenameView` via `RENAME TABLE`
+>            + MySQL-Dialekt-Mapper-Integrationstests fuer Drop+Create-
+>            Fallback bei Trigger/Routinen + Sequence/MV-Block) ✅ 2026-05-19.
+>            Sub-Slices C (SQLite Renderer) /
 >            D (Sequence-Default-Reprojection) /
 >            E (Plan-Artefakt-Vertrag-Erweiterung) /
 >            F (Roadmap + cli-spec + CHANGELOG Closing) offen.
@@ -341,15 +344,34 @@ Reuse aus Dependency-Projection-Slice (keine Neueinfuehrung):
     Cross-Check, dass der kanonische Ziel-Key NICHT als linke
     Seite des `ALTER ... RENAME` auftaucht.
 
-### Sub-Slice B — MySQL Renderer + Policy
+### Sub-Slice B — MySQL Renderer + Policy ✅ 2026-05-19
 
-- MySQL `ObjectRenamePolicy`: View `RENAME TABLE` (nativ, Views liegen
-  im selben Namespace wie Tabellen); Trigger Drop+Create-Fallback
-  (kein `ALTER TRIGGER ... RENAME`); Routinen Drop+Create-Fallback
-  (kein `CREATE OR REPLACE ROUTINE ... RENAME`); Sequence BLOCKED
-  bis E.3 MySQL-Sequence-Vertrag steht.
-- MySQL-Renderer fuer alle Subtypes (mit Drop+Create-Fallback und
-  `renameProvenance`-Markierung im Report).
+- MySQL `ObjectRenamePolicy` bereits in A.2 Teil 1 live (View `Native`
+  ueber `RENAME TABLE`; Trigger/Routinen `DropCreateFallback` mit
+  Body-Vorvertrag; Sequence `Blocked` bis E.3).
+- `MysqlDiffOtherOps.renderRenameView`: `RENAME TABLE old TO new`
+  (MySQL-Views liegen im Tabellen-Namespace; es gibt kein
+  `ALTER VIEW … RENAME`). Up/Down symmetrisch.
+- `MysqlDiffDdlGenerator.categorize()` routet `RenameView` nach
+  `OTHER`; `RenameTrigger`/`RenameFunction`/`RenameProcedure`/
+  `RenameSequence` bleiben defensiv auf `UNSUPPORTED`, da
+  `MysqlObjectRenamePolicy` sie ueber Drop+Create-Fallback bzw.
+  Blocker schon im Mapper abfaengt — die Subtypes erreichen den
+  Renderer regulaer nie.
+- `MysqlDiffObjectRenameTest` pinnt:
+  - View-Rename Up/Down → `RENAME TABLE \`v_old\` TO \`v_new\`;`
+  - Materialized-View-Rename → `OBJECT_RENAME_UNSUPPORTED`-Blocker.
+  - Trigger-Rename mit identischem Body → keine `RenameTrigger`-Op,
+    sondern `DropTrigger`+`CreateTrigger` mit gefuelltem
+    `renameProvenance` (`fallbackReason` enthaelt "ALTER TRIGGER").
+  - Trigger-Rename mit Body-Drift → Blocker, kein
+    `renameProvenance`-Marker.
+  - Trigger-Rename mit fehlendem Source-Body → Blocker (Hinweis auf
+    `sourceBodyHash`).
+  - Function-/Procedure-Rename mit identischer Signatur und Body →
+    Drop+Create mit `renameProvenance` (kanonische from/to-Keys auf
+    den Pfaden).
+  - Sequence-Rename → Blocker (`MySQL sequence`-Begruendung).
 
 ### Sub-Slice C — SQLite Renderer + Policy
 

@@ -108,6 +108,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateView,
         is DiffOperation.ReplaceView,
         is DiffOperation.DropView,
+        is DiffOperation.RenameView,
         -> OpCategory.OTHER
 
         is DiffOperation.CreateFunction,
@@ -128,11 +129,21 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropTrigger,
         -> OpCategory.TRIGGER
 
+        // F.4 Sub-Slice B: `MysqlObjectRenamePolicy` returns
+        // `DropCreateFallback` for triggers / functions / procedures
+        // (MySQL has no native `ALTER ... RENAME` grammar) and
+        // `Blocked` for sequences (out of E.3 scope). The Mapper
+        // therefore emits Drop+Create+RenameProvenance or a blocker —
+        // a `Rename{Trigger,Function,Procedure,Sequence}` op should
+        // never reach this renderer. The defensive `UNSUPPORTED`
+        // routing exists so a future planner regression that lets
+        // such an op through gets surfaced as
+        // `DIALECT_UNSUPPORTED_OPERATION` instead of being silently
+        // emitted as garbled SQL.
         is DiffOperation.AlterCustomType,
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
-        is DiffOperation.RenameView,
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
@@ -168,6 +179,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.CreateView -> MysqlDiffOtherOps.renderCreateView(op, ctx)
             is DiffOperation.ReplaceView -> MysqlDiffOtherOps.renderReplaceView(op, ctx)
             is DiffOperation.DropView -> MysqlDiffOtherOps.renderDropView(op, ctx)
+            is DiffOperation.RenameView -> MysqlDiffOtherOps.renderRenameView(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised OTHER but renderOtherOp does not handle it")
         }
     }

@@ -137,6 +137,23 @@ internal object MysqlDiffOtherOps {
         ctx.emit(op, "DROP VIEW ${ctx.sql.quote(name)};")
     }
 
+    /**
+     * F.4 Sub-Slice B: MySQL native view rename. Views share the table
+     * namespace, so the rename uses `RENAME TABLE` rather than
+     * `ALTER VIEW` (which in MySQL only supports body changes via
+     * `CREATE OR REPLACE VIEW`, not name changes). The Mapper-/Planner-
+     * phase has already filtered out materialized views via
+     * `MysqlObjectRenamePolicy` (MySQL has no MV support).
+     */
+    fun renderRenameView(op: DiffOperation.RenameView, ctx: MysqlDiffRenderContext) {
+        val (oldName, newName) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        ctx.emit(op, "RENAME TABLE ${ctx.sql.quote(oldName)} TO ${ctx.sql.quote(newName)};")
+    }
+
     private fun blockMaterializedView(
         op: DiffOperation,
         ctx: MysqlDiffRenderContext,
