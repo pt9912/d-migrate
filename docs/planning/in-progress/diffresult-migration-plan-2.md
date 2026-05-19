@@ -1907,8 +1907,119 @@ DoD:
   Pin (`PostgresDiffObjectRenameTest`, `MysqlDiffObjectRenameTest`,
   `SqliteDiffObjectRenameTest`) +
   `SchemaMigrateRunnerTest`-E2E-Pin halten den Vertrag.
-- [ ] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
+- [x] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
   ausgeschlossen.
+  *(Audit-Sweep 2026-05-19 nach H.3 + Renderer-Blocker-Bridge. 22
+  Workstreams, je ein Positivpfad fuer Down-Rendering ODER ein
+  expliziter NOT_REVERSIBLE-/ROLLBACK_NOT_POSSIBLE-Blocker. Drei
+  Carve-outs sind strukturell — der Blocker IST der Rollback-Vertrag,
+  ein Rollback-Artefakt wird nie emittiert:)*
+
+  **Down-Render-Positivpfade**:
+  - **G.1** transactionScope: `MigrationStreamClassifierTest`
+    „§G.1 regression: SQL body starting with routine BEGIN ... END
+    but scope=RUNNER_OWNED stays runner-owned" — tx-scope-getriebene
+    Inversion bleibt korrekt.
+  - **G.2** Rollback-SQL v2: `SchemaRollbackRunnerTest`
+    „G.2 — v2 rollback execute reconstructs statements from
+    structured ranges" — strukturierte Statement-Indexe ueberleben
+    Roundtrip.
+  - **G.3** Execution-Status: `MigrationExecutionStatusBuilderTest`
+    „§G.3 groups contiguous statements..." und
+    „§G.3 recoverability derives from executor observations".
+  - **A.1** Locking/Tx-Hints: `PostgresDiffDdlGeneratorTest`
+    „§A.1: PostgreSQL CreateTable statements carry
+    FULLY_TRANSACTIONAL + TABLE_EXCLUSIVE hints" — hints sind
+    direction-symmetrisch.
+  - **B.1** PG `USING`: `PostgresUsingOverlayResolverTest`
+    „B.1 down rendering uses the explicit down expression" +
+    `PostgresDiffDdlGeneratorTest` Blocker „AlterColumnType:
+    missing downUsingExpression blocks rollback render"
+    (`ROLLBACK_NOT_POSSIBLE`).
+  - **D.1** PG View visible-signature:
+    `PostgresDiffDdlGeneratorTest` „ReplaceView emits CREATE OR
+    REPLACE in both directions, with target swap on Down".
+  - **D.2** MySQL `VIEW_ROUTINE_USAGE`: `MysqlDiffDdlGeneratorTest`
+    „ReplaceView emits CREATE OR REPLACE; target swap on Down".
+  - **D.3b** Materialized Views: `PostgresDiffMaterializedViewTest`
+    Positiv „CreateMaterializedView Down emits DROP MATERIALIZED
+    VIEW on PostgreSQL" / „DropMaterializedView Down reconstructs
+    via CREATE MATERIALIZED VIEW when query is known"; Blocker
+    „ReplaceMaterializedView Down without before.query blocks with
+    MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN".
+  - **E.3** PG Sequence: `PostgresDiffDdlGeneratorTest`
+    „AlterSequence renders declarative attributes in both
+    directions" / „DropSequence renders DROP and can recreate
+    declarative state on down".
+  - **F.4** Renames (table/column): `PostgresDiffRenameTest`
+    „table rename Down renders the inverse" + Sibling-Tests in
+    `MysqlDiffRenameTest`/`SqliteDiffRenameTest`. F.4-Object-
+    Renames: `PostgresDiffObjectRenameTest`
+    „view rename Down renders the inverse" / „sequence rename Down
+    renders the inverse" / „function rename Down renders the
+    inverse signature-aware SQL" / „procedure rename Down" /
+    „trigger rename Down renders the inverse".
+  - **SQLite Rebuild Down (D.5)**: `SqliteRebuildRendererTest`
+    „Down direction on a fully reversible rebuild bucket emits
+    inverse rebuild (D.5)".
+
+  **NOT_REVERSIBLE / ROLLBACK_NOT_POSSIBLE-Blocker-Pfade**:
+  - **E.1** Routine-Migration: `PostgresDiffFunctionOpsTest`
+    „ReplaceFunction Down without known prior body blocks with
+    ROUTINE_DOWN_BODY_UNKNOWN" + Positivpfad mit bekanntem Body.
+  - **E.2** Trigger-Rendering: `PostgresTriggerDdlHelperTest`
+    „ReplaceTrigger Down without before body blocks with
+    ROUTINE_DOWN_BODY_UNKNOWN" + Positivpfad „CreateTrigger Down
+    inverts to DROP TRIGGER ... ON <table>".
+  - **F.1** DataTransformationContract: `DataTransformationContractTest`
+    „§F.1 risks default to no automatic data transformation" —
+    MANUAL_REQUIRED-Mode blockt `--generate-rollback` per Vertrag.
+  - **F.2** Plan-Artifact v1: `MigrationPlanArtifactBuilderTest`
+    „reversibility summary aggregates MANUAL_REQUIRED and
+    NOT_REVERSIBLE op ids" — Artefakt fuehrt
+    `notReversibleOperationIds` fuer Downstream-Rollback-Filter.
+  - **F.3** Partial Rollback v2: `SchemaRollbackRunnerPartialRollbackTest`
+    Blocker „F.3 partial rollback execute blocks without explicit
+    allow flag before DB load" + Positiv „F.3 partial rollback
+    execute proceeds with explicit allow flag".
+  - **F.5** Constraint-Policy: `DiffPlannerF5ConstraintTest`
+    „§F.5 added CHECK constraints still block with
+    CONSTRAINT_NOT_DIFFABLE" + „§F.5 changed CHECK constraints
+    block without emitting drop or add operations" — Up und Down
+    blocken vor jedem Render, deshalb kein Rollback-Artefakt
+    emittierbar.
+
+  **Strukturelle Carve-outs (Blocker IST der Rollback-Vertrag)**:
+  - **A.2** SQLite-Catalog-Probe: `SchemaMigrateRunnerSqliteProbeTest`
+    „§A.2 — probe throws → Exit 8 with
+    SQLITE_LIVE_CATALOG_PROBE_FAILED" — Probe-Failure blockt
+    pre-Execute; kein Rollback-Artefakt erreichbar.
+  - **B.2** SQLite Cast-Preflight: `SqliteCastPreflightProbeTest`
+    „B.2 negative: non-convertible live rows block execute
+    rendering before CAST SQL" — failing preflight blockt
+    pre-Execute; kein Rollback-Pfad reachable.
+  - **C.1** Extension-Install-Policy: `PostgresDiffSpatialTest`
+    „§C.1: PostgreSQL geometry CreateTable blocks when PostGIS
+    availability is unknown" — fehlende Extension blockt vor
+    Render; Rollback strukturell nicht emittierbar.
+  - **C.2** Spatial-Migrationen: Down-Pfad fuer GIST-Index nutzt
+    den generischen `AddIndex`/`DropIndex`-Down-Vertrag
+    (`PostgresDiffDdlGeneratorTest::AddIndex with explicit name;
+    DropIndex round-trip`); spatial-Specific-Down-Test ist
+    strukturell redundant.
+  - **F.0** Overlay-Grundvertrag: stale Fingerprint blockt
+    pre-Plan-Gate (`MigrationOverlayPreflightTest::unsigned using-
+    expression overlay blocks before render` + Sibling-Tests);
+    nachgelagertes Rollback-Verhalten strukturell unmoeglich.
+
+  **F.4 G Renderer-Blocker-Bridge** *(2026-05-19, Commit `3b9db807`)*:
+  Die drei Render-Contexts (`PostgresDiffRenderContext` /
+  `MysqlDiffRenderContext` / `SqliteDiffRenderContext`) gruppieren
+  planner-blockers nach klassifiziertem Reason; Up- und Down-
+  Rendering tragen denselben `primaryBlockedReason` durch. Pin:
+  `PostgresDiffObjectRenameTest`, `MysqlDiffObjectRenameTest`,
+  `SqliteDiffObjectRenameTest` „F.4 G: ... primaryBlockedReason"
+  +  `SchemaMigrateRunnerTest`-E2E-Pin.
 - [x] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
   manipulierte Hashes und Secret-Scrubbing ab.
   *(Status 2026-05-19 nach G-Slices: heute existiert genau eine
