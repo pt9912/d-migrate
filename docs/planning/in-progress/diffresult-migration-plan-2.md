@@ -1830,7 +1830,90 @@ DoD:
     Positiv „§F.5 unchanged CHECK constraints do not block
     unrelated table changes"; Blocker „§F.5 added CHECK constraints
     still block with CONSTRAINT_NOT_DIFFABLE".
-- [ ] Report- und Exit-Code-Erwartungen sind in Tests gepinnt.
+- [x] Report- und Exit-Code-Erwartungen sind in Tests gepinnt.
+  *(Audit-Sweep 2026-05-19 nach G.3 + H.2. Alle sieben in
+  `spec/cli-spec.md` dokumentierten Exit-Codes (0, 2, 3, 4, 5, 7, 8)
+  haben mindestens einen Pinning-Test, ebenso die drei
+  `report.status`-Werte (`ok`/`no_op`/`blocked`):)*
+
+  **Exit-Codes**:
+  - **0** Success / no_op: `SchemaMigrateRunnerTest`
+    „file-to-file plan-only emits report and exits 0 on a non-empty
+    plan" (status=`ok`); „identical schemas yield no_op and exit 0"
+    (status=`no_op`).
+  - **2** Invalid CLI args: `SchemaMigrateRunnerCliExitCodeTest`
+    „--dry-run and --execute are mutually exclusive (exit 2)",
+    „--execute and --plan-only are mutually exclusive (exit 2)",
+    „--execute against a file target is rejected with exit 2";
+    `SchemaMigrateRunnerTest` „--execute without --report is rejected
+    with exit 2 (audit-trail)", „File-to-file without --dialect
+    yields exit 2".
+  - **3** Schema validation: `CliTest` „schema validate with invalid
+    schema exits with code 3"; `SchemaMigrateRunnerTest` „validation
+    errors surface as exit 3 with structured report".
+  - **4** Connection: `SchemaMigrateRunnerTest` „DB connection error
+    in dbLoader yields exit 4"; `SchemaRollbackRunnerTest`
+    „--execute with connection failure in dbLoader is exit 4".
+  - **5** `MIGRATION_ERROR`: `SchemaMigrateRunnerExecuteTest`
+    „--execute with no executor wired returns exit 5 with
+    executionError populated"; `SchemaRollbackRunnerTest` „--execute
+    with executor error returns exit 5".
+  - **7** Local I/O / planning / artefact: `CliTest` „schema
+    validate with broken YAML exits with code 7";
+    `SchemaMigrateRunnerTest` „DB config error
+    (CompareConfigException) yields exit 7";
+    `SchemaRollbackRunnerTest` „invalid artefact (corrupt hash)
+    exits 7 before any DB access".
+  - **8** `MIGRATION_BLOCKED`: `SchemaMigrateRunnerTest`
+    „destructive Up without --allow-destructive yields exit 8 with
+    primary blocked reason"; „renderer-side blockers
+    (DIALECT_UNSUPPORTED) yield exit 8"; „Down-side blockers
+    (NOT_REVERSIBLE) propagate into combined exit 8";
+    `SchemaRollbackRunnerTest` „--execute with target dialect
+    mismatch yields TARGET_DIALECT_MISMATCH (exit 8)",
+    „--execute with target state drift yields TARGET_STATE_MISMATCH
+    (exit 8)".
+
+  **`primaryBlockedReason`** (sechs der sieben CLI-spec-relevanten
+  Reasons sind als `primary` gepinnt; F.4-Mapper-Carve-out s.u.):
+  - `DESTRUCTIVE_OPERATION_REQUIRES_CONFIRMATION`:
+    `SchemaMigrateRunnerTest::destructive Up without
+    --allow-destructive yields exit 8 with primary blocked reason`.
+  - `DIALECT_UNSUPPORTED_OPERATION`:
+    `SchemaMigrateRunnerTest::renderer-side blockers
+    (DIALECT_UNSUPPORTED) yield exit 8`.
+  - `ROLLBACK_NOT_POSSIBLE`:
+    `SchemaMigrateRunnerTest::Down-side blockers (NOT_REVERSIBLE)
+    propagate into combined exit 8`.
+  - `RENAME_MAPPING_INVALID`: `SchemaMigratePrePlanOverlayGateTest`
+    „F.4 rename-mapping-invalid-enum: stale fingerprint".
+  - `TRANSACTION_SCOPE_UNSUPPORTED`:
+    `SchemaMigrateRunnerExecuteTest::TRANSACTION_SCOPE_UNSUPPORTED
+    yields exit 8`.
+  - `MANUAL_ACTION_REQUIRED`:
+    `SchemaMigrateRunnerArtefactProtectionTest` (line 80, primary
+    pinned).
+
+  **Carve-out — `OBJECT_RENAME_UNSUPPORTED` (F.4)**: der F.4-Mapper
+  emittiert die `OBJECT_RENAME_UNSUPPORTED`-Diagnostic mit
+  BLOCKER-Schweregrad; der PG-Renderer
+  (`PostgresDiffRenderContext.kt`:300-302) wickelt Planner-Blockers
+  heute pauschal in einen `MigrationBlocker(reason =
+  DIALECT_UNSUPPORTED_OPERATION)` ein, sodass der `primaryBlockedReason`
+  auf der Report-Ebene `DIALECT_UNSUPPORTED_OPERATION` statt
+  `OBJECT_RENAME_UNSUPPORTED` ist. Die F.4 Plan-Doc
+  (`done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md` §5.2)
+  reserviert `OBJECT_RENAME_UNSUPPORTED` aber explizit fuer
+  Mapper-/Planner-Faelle. Damit der Vertrag konsistent wird, muss
+  ein folgender Slice (H.5? F.4-Followup-Bridge?) den Renderer-
+  Wrapper entkoppeln und den Reason durchreichen. Bis dahin
+  pinnen die Mapper-Tests
+  (`RenameObjectMapperTest`, `MysqlDiffObjectRenameTest`,
+  `SqliteDiffObjectRenameTest`) die Diagnostic-Code-Schiene
+  `OBJECT_RENAME_UNSUPPORTED`, und ein End-to-End-`--execute`-Pfad
+  surftet als `DIALECT_UNSUPPORTED_OPERATION` (gepinnt via
+  `renderer-side blockers (DIALECT_UNSUPPORTED) yield exit 8`).
+  Die Box (b) ist mit diesem dokumentierten Carve-out abgehakt.
 - [ ] Rollback-Verhalten ist getestet oder mit konkreter Blocker-Begruendung
   ausgeschlossen.
 - [x] Artifact-Compatibility-Tests decken alte Versionen, unbekannte Versionen,
