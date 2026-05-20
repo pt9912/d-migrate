@@ -33,19 +33,31 @@ class MysqlSequenceCanonicityProbeAdapter(
     private val dialect: String = DatabaseDialect.MYSQL.name.lowercase()
 
     override fun probeSupportTable(operationId: String): MysqlSequenceCanonicityDeclaration {
-        val sql =
+        val columnsSql =
             "SELECT column_name, column_type, is_nullable FROM information_schema.columns " +
                 "WHERE table_schema = DATABASE() AND table_name = " +
                 MysqlSequenceSqlCodec.quoteStringLiteral(MysqlSequenceNaming.SUPPORT_TABLE) +
                 " ORDER BY ordinal_position"
-        val sqlHash = sha256Hex(sql).take(SQL_HASH_PREFIX_LEN)
+        // E.3 Sub-Slice F follow-up (2026-05-20): the canonical
+        // contract for `dmg_sequences` includes `PRIMARY KEY (name)`;
+        // without it duplicate-name guards collapse and dmg_nextval
+        // returns indeterminate rows. Probe the PK columns from
+        // information_schema.statistics (PRIMARY index name is
+        // always "PRIMARY") so a table that drifted to "no PK" is
+        // detected.
+        val pkSql =
+            "SELECT column_name FROM information_schema.statistics " +
+                "WHERE table_schema = DATABASE() AND table_name = " +
+                MysqlSequenceSqlCodec.quoteStringLiteral(MysqlSequenceNaming.SUPPORT_TABLE) +
+                " AND index_name = 'PRIMARY' ORDER BY seq_in_index"
+        val sqlHash = sha256Hex(columnsSql + "|" + pkSql).take(SQL_HASH_PREFIX_LEN)
         return runProbe(operationId, MysqlSequenceCanonicityKind.SUPPORT_TABLE,
             MysqlSequenceNaming.SUPPORT_TABLE, sqlHash) {
-            val actual = mutableListOf<Triple<String, String, Boolean>>()
+            val actualColumns = mutableListOf<Triple<String, String, Boolean>>()
             connection.createStatement().use { stmt ->
-                stmt.executeQuery(sql).use { rs ->
+                stmt.executeQuery(columnsSql).use { rs ->
                     while (rs.next()) {
-                        actual += Triple(
+                        actualColumns += Triple(
                             rs.getString("column_name").lowercase(),
                             rs.getString("column_type").lowercase(),
                             rs.getString("is_nullable").equals("YES", ignoreCase = true),
@@ -53,7 +65,20 @@ class MysqlSequenceCanonicityProbeAdapter(
                     }
                 }
             }
-            classifySupportTable(operationId, sqlHash, actual)
+            if (actualColumns.isEmpty()) {
+                missing(operationId, MysqlSequenceCanonicityKind.SUPPORT_TABLE,
+                    MysqlSequenceNaming.SUPPORT_TABLE, sqlHash)
+            } else {
+                val actualPk = mutableListOf<String>()
+                connection.createStatement().use { stmt ->
+                    stmt.executeQuery(pkSql).use { rs ->
+                        while (rs.next()) {
+                            actualPk += rs.getString("column_name").lowercase()
+                        }
+                    }
+                }
+                classifySupportTable(operationId, sqlHash, actualColumns, actualPk)
+            }
         }
     }
 
@@ -216,10 +241,19 @@ class MysqlSequenceCanonicityProbeAdapter(
         operationId: String,
         sqlHash: String,
         actual: List<Triple<String, String, Boolean>>,
+        actualPk: List<String> = listOf("name"),
     ): MysqlSequenceCanonicityDeclaration {
         if (actual.isEmpty()) {
             return missing(operationId, MysqlSequenceCanonicityKind.SUPPORT_TABLE,
                 MysqlSequenceNaming.SUPPORT_TABLE, sqlHash)
+        }
+        val expectedPk = listOf("name")
+        if (actualPk != expectedPk) {
+            return drift(operationId, MysqlSequenceCanonicityKind.SUPPORT_TABLE,
+                MysqlSequenceNaming.SUPPORT_TABLE, sqlHash,
+                field = "primary_key",
+                expected = expectedPk.joinToString(","),
+                actual = actualPk.joinToString(",").ifEmpty { "<none>" })
         }
         val expected = listOf(
             Triple("managed_by", "varchar(32)", false),

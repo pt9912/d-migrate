@@ -235,14 +235,64 @@ internal object MysqlDiffSequenceOps {
         columnName: String,
         sequenceName: String,
     ) {
+        val triggerName = MysqlSequenceNaming.triggerName(tableName, columnName)
+        // E.3 Sub-Slice F follow-up (2026-05-20): the trigger-emit
+        // path is reached from `AddColumn` / `AlterColumnDefault`
+        // (not from a Sequence Op), so the per-op canonicity gate in
+        // `renderCreate/Alter/Drop/RenameSequence` does NOT cover it.
+        // Consult the live-probe declarations scoped to THIS column
+        // op + the trigger name so an operator-modified trigger
+        // doesn't get overwritten silently. Intent is ALTER because
+        // the canonical body replaces whatever sits there.
+        if (canonicityBlocksForTrigger(op, ctx, triggerName)) return
         emitBootstrapIfNeeded(op, ctx)
         val spec = MysqlSequenceTriggerSpec(tableName, columnName, sequenceName)
-        val triggerName = MysqlSequenceNaming.triggerName(tableName, columnName)
         ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
         ctx.emit(
             op,
             MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, ctx.sql::quote),
         )
+    }
+
+    /**
+     * E.3 Sub-Slice F follow-up (2026-05-20): filters
+     * `ctx.options.mysqlSequenceCanonicity` to declarations where
+     * `kind == SUPPORT_TRIGGER`, `operationId == op.id`, and
+     * `objectName == triggerName`. Runs the
+     * [MysqlSequenceCanonicityGate] with ALTER intent on each
+     * matching declaration; first Block wins. Empty match list →
+     * no probe ran for this trigger → proceed.
+     *
+     * Per-trigger scoping is intentional: a single
+     * `AddColumn`-op may bind a column to ONE sequence, so at most
+     * one SUPPORT_TRIGGER declaration is relevant. Filtering by
+     * triggerName guards against future fan-outs where a single
+     * column op carries multiple bindings.
+     */
+    private fun canonicityBlocksForTrigger(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        triggerName: String,
+    ): Boolean {
+        val declarations = ctx.options.mysqlSequenceCanonicity.filter {
+            it.operationId == op.id &&
+                it.kind == dev.dmigrate.driver.MysqlSequenceCanonicityKind.SUPPORT_TRIGGER &&
+                it.objectName == triggerName
+        }
+        if (declarations.isEmpty()) return false
+        for (declaration in declarations) {
+            when (val decision = MysqlSequenceCanonicityGate.decide(declaration,
+                MysqlSequenceCanonicityGate.OpIntent.ALTER)) {
+                MysqlSequenceCanonicityGate.Decision.Proceed -> continue
+                is MysqlSequenceCanonicityGate.Decision.Info -> ctx.info(op, decision.message, decision.code)
+                is MysqlSequenceCanonicityGate.Decision.Block -> {
+                    ctx.skip(op, decision.message, code = decision.code)
+                    ctx.addBlocker(decision.reason, operationIds = setOf(op.id))
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /**

@@ -233,19 +233,29 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
       Pre-Planner emittiert `NOT_RUN_FILE_TARGET` Declarations).
 - [x] Unit-Tests für Port-Adapter, Gate, Stage, Renderer-Gate,
       Pre-Planner.
-- [x] `make docker-check` grün.
-
-### Carve-out
-
-- **testcontainers-Integration**: Ein End-to-End-Test gegen einen
-  realen MySQL-Server (testcontainers oder gleichwertig) ist in
-  diesem Slice **nicht** enthalten. Die Unit-Tests verwenden MockK
-  für JDBC-Primitive (Connection / Statement / ResultSet), wodurch
-  alle Probe-Pfade isoliert pinning sind. Eine echte Live-DB-
-  Validation des Drift-Checks ist ein eigener Folge-Slice, sobald
-  d-migrate generell eine testcontainers-MySQL-Suite hat — das
-  trifft nicht nur diesen Drift-Check, sondern jeden MySQL-
-  Adapter im Projekt gleichermaßen.
+- [x] testcontainers-Integration-Test: live MySQL 8 Container,
+      probt SUPPORT_TABLE / NEXTVAL_ROUTINE / SETVAL_ROUTINE /
+      SEQUENCE_ROW / SUPPORT_TRIGGER gegen kanonischen und drifted
+      State (`MysqlSequenceCanonicityProbeIntegrationTest`,
+      Lauf via `make integration`).
+- [x] CLI-Wiring: `SchemaMigrateCommand` reicht
+      `MysqlSequenceCanonicityProbeRunner::probe` an
+      `SchemaMigrateRunner` durch, sodass `schema migrate --execute`
+      gegen ein MySQL-Target den Drift-Check tatsächlich auslöst
+      (kein `NOT_RUN_POLICY`-Fallback bei DB-execute).
+- [x] PK-Drift-Detection in `probeSupportTable`:
+      `INFORMATION_SCHEMA.STATISTICS`-Lookup auf den `PRIMARY`-
+      Index pinnt `PRIMARY KEY (name)`; eine `dmg_sequences`-
+      Tabelle ohne PK wird als DRIFT mit `driftField = "primary_key"`
+      gemeldet.
+- [x] Trigger-Drift-Gate in `emitSupportTriggerForColumn`:
+      `AddColumn` / `AlterColumnDefault` mit
+      `SequenceNextVal`-Default konsultieren vor dem
+      `DROP + CREATE TRIGGER` eine SUPPORT_TRIGGER-Declaration
+      und blocken bei DRIFT, sodass Operator-modifizierte Trigger
+      nicht stillschweigend überschrieben werden.
+- [x] `make docker-check` grün; Integration-Test in `make integration`
+      grün.
 
 ---
 

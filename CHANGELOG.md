@@ -158,14 +158,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       Down-Render-Results werden über `bindingKey` (op-id +
       kind + object + hash) dedupliziert gemerged.
 
+  Live-DB-Coverage:
+    - `MysqlSequenceCanonicityProbeIntegrationTest` läuft via
+      testcontainers gegen einen echten MySQL-8-Container und
+      pinnt jede Probe-Methode gegen kanonischen und
+      drifted State. Aktivierung über `make integration` (oder
+      `-PintegrationTests`); aus der reinen `make docker-check`-
+      Suite weiterhin ausgeklammert, weil docker-in-docker
+      benötigt wird.
+    - PK-Drift wird vom Probe-Adapter zusätzlich zur Spalten-
+      Signatur geprüft (`INFORMATION_SCHEMA.STATISTICS` auf den
+      `PRIMARY`-Index): eine `dmg_sequences` ohne `PRIMARY KEY
+      (name)` ergibt `driftField = "primary_key"`. Damit ist eine
+      Tabelle ohne PK nicht mehr CANONICAL.
+    - Trigger-Drift-Gate in `emitSupportTriggerForColumn`:
+      `AddColumn` / `AlterColumnDefault` mit `SequenceNextVal`-
+      Default holen vor dem `DROP + CREATE TRIGGER` die
+      passende SUPPORT_TRIGGER-Declaration und blocken bei DRIFT.
+      Vorher wurde Operator-modifizierter Trigger-Body
+      stillschweigend überschrieben.
+    - CLI-Wiring komplettiert: `SchemaMigrateCommand` übergibt
+      `MysqlSequenceCanonicityProbeRunner::probe` an
+      `SchemaMigrateRunner`, sodass `schema migrate --execute`
+      gegen MySQL den Live-Drift-Check tatsächlich ausführt
+      statt auf `NOT_RUN_POLICY` zu fallen.
+
   Out-of-scope für diesen Slice (eigene Folge-Slices):
-    - **testcontainers-Integration**: Ein E2E-Test gegen einen
-      realen MySQL-Server fehlt; die Unit-Tests verwenden MockK
-      für JDBC-Primitive. Sobald d-migrate eine
-      testcontainers-MySQL-Suite hat, wird der Drift-Check
-      dort mitlaufen — bis dahin sichert die Sub-Slice-D-Pinning
-      gegen Renderer-Regressionen und Sub-Slice-A-Pinning gegen
-      Probe-Regressionen.
     - **Auto-fix / Drift-Repair**: Der Drift-Check meldet
       ausschließlich. Repair-DDLs zu emittieren (z.B. die
       `dmg_sequences`-Spalte nachträglich auf NULLABLE schalten)
