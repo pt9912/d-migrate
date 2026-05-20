@@ -4,12 +4,14 @@ import dev.dmigrate.core.diff.migration.CheckPreflightPlanner
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.CheckPreflightStatus
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
+import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
@@ -83,16 +85,21 @@ object MigrationPreflightPlanner {
     /**
      * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20):
      * pre-plans one [MysqlSequenceCanonicityDeclaration] per
-     * sequence op in [plan] when the live probe will not run.
-     * Returns an empty list when the dialect is not MySQL (the
-     * gate is MySQL-only) or when there are no sequence ops at
-     * all.
+     * sequence-related op in [plan] when the live probe will not
+     * run. Returns an empty list when the dialect is not MySQL
+     * (the gate is MySQL-only) or when nothing in the plan
+     * touches the helper-table emulation.
      *
-     * Kind is fixed to [MysqlSequenceCanonicityKind.SEQUENCE_ROW]:
-     * the row-level declaration is the canonical "this op was on
-     * the table" marker. The other kinds (support table, routines,
-     * trigger) only need probing when there is a live probe — the
-     * NOT_RUN report-line is per-op, not per-canonical-object.
+     * Sequence ops (Create/Alter/Drop/Rename) carry a SEQUENCE_ROW
+     * NOT_RUN declaration. Column ops (AddColumn,
+     * AlterColumnDefault) whose target default is a
+     * `SequenceNextVal` carry an additional SUPPORT_TRIGGER NOT_RUN
+     * declaration with the synthesised canonical trigger name —
+     * matching the trigger-side renderer-gate in
+     * `MysqlDiffSequenceOps.emitSupportTriggerForColumn`. Without
+     * the column-op declaration the gate sees an empty list and
+     * proceeds, so a file-target plan would never surface a
+     * "Trigger-Body drift-check skipped" line for these ops.
      */
     private fun planMysqlSequenceCanonicity(
         request: SchemaMigrateRequest,
@@ -105,23 +112,64 @@ object MigrationPreflightPlanner {
             request.execute && target is CompareOperand.Database -> MysqlSequenceCanonicityStatus.NOT_RUN_POLICY
             else -> MysqlSequenceCanonicityStatus.NOT_RUN_FILE_TARGET
         }
-        return plan.operations.mapNotNull { op ->
-            val name = when (op) {
-                is DiffOperation.CreateSequence -> op.objectRef.rootName
-                is DiffOperation.AlterSequence -> op.objectRef.rootName
-                is DiffOperation.DropSequence -> op.objectRef.rootName
-                is DiffOperation.RenameSequence -> op.fromName
-                else -> return@mapNotNull null
+        val mysqlDialectName = DatabaseDialect.MYSQL.name.lowercase()
+        return plan.operations.flatMap { op ->
+            when (op) {
+                is DiffOperation.CreateSequence ->
+                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
+                is DiffOperation.AlterSequence ->
+                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
+                is DiffOperation.DropSequence ->
+                    listOf(rowNotRun(op.id, mysqlDialectName, op.objectRef.rootName, initialStatus))
+                is DiffOperation.RenameSequence ->
+                    listOf(rowNotRun(op.id, mysqlDialectName, op.fromName, initialStatus))
+                is DiffOperation.AddColumn -> {
+                    val def = op.column.default as? DefaultValue.SequenceNextVal
+                        ?: return@flatMap emptyList<MysqlSequenceCanonicityDeclaration>()
+                    listOf(triggerNotRun(op.id, mysqlDialectName, op.objectRef, def.sequenceName, initialStatus))
+                }
+                is DiffOperation.AlterColumnDefault -> {
+                    val def = op.after as? DefaultValue.SequenceNextVal
+                        ?: return@flatMap emptyList<MysqlSequenceCanonicityDeclaration>()
+                    listOf(triggerNotRun(op.id, mysqlDialectName, op.objectRef, def.sequenceName, initialStatus))
+                }
+                else -> emptyList()
             }
-            MysqlSequenceCanonicityDeclaration(
-                operationId = op.id,
-                dialect = DatabaseDialect.MYSQL.name.lowercase(),
-                kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
-                objectName = name,
-                status = initialStatus,
-                sqlHash = "not-run",
-            )
         }
+    }
+
+    private fun rowNotRun(
+        operationId: String,
+        dialect: String,
+        sequenceName: String,
+        status: MysqlSequenceCanonicityStatus,
+    ): MysqlSequenceCanonicityDeclaration = MysqlSequenceCanonicityDeclaration(
+        operationId = operationId,
+        dialect = dialect,
+        kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+        objectName = sequenceName,
+        status = status,
+        sqlHash = "not-run",
+    )
+
+    private fun triggerNotRun(
+        operationId: String,
+        dialect: String,
+        columnRef: dev.dmigrate.core.diff.migration.DiffObjectRef,
+        @Suppress("UNUSED_PARAMETER") sequenceName: String,
+        status: MysqlSequenceCanonicityStatus,
+    ): MysqlSequenceCanonicityDeclaration {
+        // Column op's objectRef path: [tableName, columnName].
+        val tableName = columnRef.path[0]
+        val columnName = columnRef.path[1]
+        return MysqlSequenceCanonicityDeclaration(
+            operationId = operationId,
+            dialect = dialect,
+            kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+            objectName = MysqlSequenceSupportNaming.triggerName(tableName, columnName),
+            status = status,
+            sqlHash = "not-run",
+        )
     }
 
     /**

@@ -2,9 +2,15 @@ package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
@@ -88,7 +94,7 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
         ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
     }
 
-    test("execute against MySQL with no sequence ops in plan → NotRun") {
+    test("execute against MySQL with no sequence-related ops in plan → NotRun") {
         MysqlSequenceCanonicityStage.run(
             probe = { _, _, _ -> emptyList() },
             request = requestExecuteDb("mysql"),
@@ -96,6 +102,96 @@ class MysqlSequenceCanonicityStageTest : FunSpec({
             dialect = DatabaseDialect.MYSQL,
             plan = planWithoutSequenceOps(),
         ) shouldBe MysqlSequenceCanonicityStage.Outcome.NotRun
+    }
+
+    // ── Column-default-only path (no Sequence-Op in plan) ──────
+
+    val sequenceForDefault = SequenceDefinition(start = 1L, increment = 1L)
+    val currentSchemaWithSeq = SchemaDefinition(
+        name = "App", version = "1",
+        sequences = mapOf("order_seq" to sequenceForDefault),
+        tables = mapOf("orders" to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+            ),
+            primaryKey = listOf("id"),
+        )),
+    )
+    val desiredSchemaWithSeqDefault = SchemaDefinition(
+        name = "App", version = "1",
+        sequences = mapOf("order_seq" to sequenceForDefault),
+        tables = mapOf("orders" to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                "number" to ColumnDefinition(
+                    type = NeutralType.BigInteger,
+                    default = DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )),
+    )
+    fun planWithColumnDefaultOnly() = planner.plan(
+        currentSchemaWithSeq,
+        desiredSchemaWithSeqDefault,
+        SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "orders",
+                    columnsAdded = mapOf(
+                        "number" to ColumnDefinition(
+                            type = NeutralType.BigInteger,
+                            default = DefaultValue.SequenceNextVal("order_seq"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    test("AddColumn with SequenceNextVal default → probe runs (Trigger-Drift-Check requirement)") {
+        // Plan-Doc §1.4 / §3.1 Trigger-Body-Drift: a pure column-
+        // default migration still renders a DROP + CREATE TRIGGER
+        // for the column-bound support trigger. The stage must
+        // run the probe even without an explicit Sequence-Op so
+        // the gate can block on an operator-modified trigger.
+        val canned = MysqlSequenceCanonicityDeclaration(
+            operationId = "op-x",
+            dialect = "mysql",
+            kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+            objectName = "dmg_seq_orders_number_xyz_bi",
+            status = MysqlSequenceCanonicityStatus.CANONICAL,
+            sqlHash = "h",
+        )
+        val outcome = MysqlSequenceCanonicityStage.run(
+            probe = { _, _, _ -> listOf(canned) },
+            request = requestExecuteDb("mysql"),
+            target = dbTarget("mysql"),
+            dialect = DatabaseDialect.MYSQL,
+            plan = planWithColumnDefaultOnly(),
+        )
+        outcome shouldBe MysqlSequenceCanonicityStage.Outcome.Succeeded(listOf(canned))
+    }
+
+    test("AddColumn probe exception → Failed, stamps SUPPORT_TRIGGER PROBE_RUNTIME_ERROR with canonical trigger name") {
+        val plan = planWithColumnDefaultOnly()
+        val addColumnOp = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+        val outcome = MysqlSequenceCanonicityStage.run(
+            probe = { _, _, _ -> error("permission denied") },
+            request = requestExecuteDb("mysql"),
+            target = dbTarget("mysql"),
+            dialect = DatabaseDialect.MYSQL,
+            plan = plan,
+        )
+        val failed = outcome as MysqlSequenceCanonicityStage.Outcome.Failed
+        failed.message shouldContain "permission denied"
+        // Exactly one declaration for the AddColumn op, kind
+        // SUPPORT_TRIGGER, op-id matches so the renderer-gate in
+        // `emitSupportTriggerForColumn` can attribute the block.
+        val stamped = failed.declarations.single()
+        stamped.operationId shouldBe addColumnOp.id
+        stamped.kind shouldBe MysqlSequenceCanonicityKind.SUPPORT_TRIGGER
+        stamped.objectName shouldContain "dmg_seq_orders_number_"
     }
 
     // ── Happy path ──────────────────────────────────────────────

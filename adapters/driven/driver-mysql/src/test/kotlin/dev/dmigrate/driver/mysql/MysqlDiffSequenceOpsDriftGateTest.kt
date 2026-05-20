@@ -3,11 +3,16 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.SequenceDiff
+import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
@@ -271,5 +276,71 @@ class MysqlDiffSequenceOpsDriftGateTest : FunSpec({
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == MysqlSequenceCanonicityGate.DRIFT_ROUTINE_CODE } shouldBe true
         r.diagnostics.none { it.code == MysqlSequenceCanonicityGate.PROBE_RUNTIME_ERROR_CODE } shouldBe true
+    }
+
+    // ── Column-default-only path (no Sequence-Op in the plan) ──
+
+    test("AddColumn(SequenceNextVal) + SUPPORT_TRIGGER DRIFT → blocked at emitSupportTriggerForColumn") {
+        // Plan-Doc §3.1 Trigger-Body-Drift: the column op's
+        // canonical trigger drift must surface as a block even
+        // when no Sequence-Op is in the plan. Pre-Sub-Slice-F-
+        // follow-up the gate at `emitSupportTriggerForColumn`
+        // never saw a declaration here, so an operator-modified
+        // trigger would be silently overwritten.
+        val seq = SequenceDefinition(start = 1L)
+        val currentSchema = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                ),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val desiredSchema = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                    "number" to ColumnDefinition(
+                        type = NeutralType.BigInteger,
+                        default = DefaultValue.SequenceNextVal("order_seq"),
+                    ),
+                ),
+                primaryKey = listOf("id"),
+            )),
+        )
+        val plan = planner.plan(
+            currentSchema, desiredSchema,
+            SchemaDiff(tablesChanged = listOf(TableDiff(
+                name = "orders",
+                columnsAdded = mapOf("number" to ColumnDefinition(
+                    type = NeutralType.BigInteger,
+                    default = DefaultValue.SequenceNextVal("order_seq"),
+                )),
+            ))),
+        )
+        val addColumnOp = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+        val triggerName = dev.dmigrate.driver.MysqlSequenceSupportNaming.triggerName("orders", "number")
+        val r = gen.generateUp(
+            plan,
+            helperOptionsWith(listOf(MysqlSequenceCanonicityDeclaration(
+                operationId = addColumnOp.id,
+                dialect = "mysql",
+                kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+                objectName = triggerName,
+                status = MysqlSequenceCanonicityStatus.DRIFT,
+                sqlHash = "h",
+                driftField = "body_signature",
+            ))),
+        )
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == MysqlSequenceCanonicityGate.DRIFT_TRIGGER_CODE } shouldBe true
+        // No CREATE TRIGGER was emitted for the blocked column.
+        r.statements.none {
+            it.sql.contains("CREATE TRIGGER") && it.operationIds.contains(addColumnOp.id)
+        } shouldBe true
     }
 })

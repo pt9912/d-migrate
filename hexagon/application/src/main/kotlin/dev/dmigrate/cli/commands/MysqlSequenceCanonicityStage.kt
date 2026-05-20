@@ -3,9 +3,12 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
+import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
+import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -75,7 +78,7 @@ object MysqlSequenceCanonicityStage {
         val dbTarget = target as? CompareOperand.Database ?: return Outcome.NotRun
         if (dialect != DatabaseDialect.MYSQL) return Outcome.NotRun
         if (probe == null) return Outcome.NotRun
-        if (!hasSequenceOps(plan)) return Outcome.NotRun
+        if (!hasSequenceRelatedOps(plan)) return Outcome.NotRun
         return try {
             Outcome.Succeeded(probe(dbTarget, request.cliConfigPath, plan))
         } catch (e: Exception) {
@@ -116,40 +119,117 @@ object MysqlSequenceCanonicityStage {
         )
     }
 
-    private fun hasSequenceOps(plan: DiffResult): Boolean =
-        plan.operations.any {
-            it is DiffOperation.CreateSequence ||
-                it is DiffOperation.AlterSequence ||
-                it is DiffOperation.DropSequence ||
-                it is DiffOperation.RenameSequence
+    /**
+     * The probe is interesting whenever the plan touches the helper-
+     * table emulation, i.e. when there is either an explicit sequence
+     * op (Create/Alter/Drop/Rename) or a column op (`AddColumn` /
+     * `AlterColumnDefault`) whose target default is a
+     * `SequenceNextVal` — the latter renders into a
+     * `DROP TRIGGER IF EXISTS … ; CREATE TRIGGER …` block via
+     * `MysqlDiffSequenceOps.emitSupportTriggerForColumn`, which is
+     * exactly the path the Plan-Doc §1.4 / §3.1 "Trigger-Body-Drift"
+     * case calls out: an operator-modified trigger would be
+     * silently overwritten if we skipped the probe.
+     */
+    private fun hasSequenceRelatedOps(plan: DiffResult): Boolean =
+        plan.operations.any { op ->
+            when (op) {
+                is DiffOperation.CreateSequence,
+                is DiffOperation.AlterSequence,
+                is DiffOperation.DropSequence,
+                is DiffOperation.RenameSequence,
+                -> true
+                is DiffOperation.AddColumn ->
+                    op.column.default is DefaultValue.SequenceNextVal
+                is DiffOperation.AlterColumnDefault ->
+                    op.after is DefaultValue.SequenceNextVal
+                else -> false
+            }
         }
 
     /**
      * Synthesises one `PROBE_RUNTIME_ERROR` declaration per
-     * sequence op in the plan. When the probe function never
-     * delivered a per-op result (it threw before producing any),
-     * the renderer still needs a per-op declaration so the gate
-     * can attribute the block to the right operation id.
+     * sequence-related op in the plan. When the probe function
+     * never delivered a per-op result (it threw before producing
+     * any), the renderer still needs a per-op declaration so the
+     * gate can attribute the block to the right operation id.
+     *
+     * Sequence ops carry a SEQUENCE_ROW declaration; column ops
+     * with a `SequenceNextVal` default carry a SUPPORT_TRIGGER
+     * declaration with the synthesised trigger name so the
+     * column-default-emit gate (op-id + kind + objectName) matches.
      */
     private fun stampStageFailure(plan: DiffResult, message: String): List<MysqlSequenceCanonicityDeclaration> {
         val dialect = DatabaseDialect.MYSQL.name.lowercase()
+        val problem = "MySQL sequence drift-check failed before render/execute: $message"
         return plan.operations.mapNotNull { op ->
-            val opName = when (op) {
-                is DiffOperation.CreateSequence -> op.objectRef.rootName
-                is DiffOperation.AlterSequence -> op.objectRef.rootName
-                is DiffOperation.DropSequence -> op.objectRef.rootName
-                is DiffOperation.RenameSequence -> op.fromName
-                else -> return@mapNotNull null
-            }
-            MysqlSequenceCanonicityDeclaration(
-                operationId = op.id,
-                dialect = dialect,
-                kind = dev.dmigrate.driver.MysqlSequenceCanonicityKind.SEQUENCE_ROW,
-                objectName = opName,
-                status = MysqlSequenceCanonicityStatus.PROBE_RUNTIME_ERROR,
-                sqlHash = "stage-failure",
-                problem = "MySQL sequence drift-check failed before render/execute: $message",
-            )
+            stageFailureDeclaration(op, dialect, problem)
         }
+    }
+
+    private fun stageFailureDeclaration(
+        op: DiffOperation,
+        dialect: String,
+        problem: String,
+    ): MysqlSequenceCanonicityDeclaration? {
+        return when (op) {
+            is DiffOperation.CreateSequence ->
+                stageFailureRow(op.id, dialect, op.objectRef.rootName, problem)
+            is DiffOperation.AlterSequence ->
+                stageFailureRow(op.id, dialect, op.objectRef.rootName, problem)
+            is DiffOperation.DropSequence ->
+                stageFailureRow(op.id, dialect, op.objectRef.rootName, problem)
+            is DiffOperation.RenameSequence ->
+                stageFailureRow(op.id, dialect, op.fromName, problem)
+            is DiffOperation.AddColumn -> {
+                val def = op.column.default as? DefaultValue.SequenceNextVal ?: return null
+                stageFailureTrigger(op.id, dialect, op.objectRef, def.sequenceName, problem)
+            }
+            is DiffOperation.AlterColumnDefault -> {
+                val def = op.after as? DefaultValue.SequenceNextVal ?: return null
+                stageFailureTrigger(op.id, dialect, op.objectRef, def.sequenceName, problem)
+            }
+            else -> null
+        }
+    }
+
+    private fun stageFailureRow(
+        operationId: String,
+        dialect: String,
+        sequenceName: String,
+        problem: String,
+    ): MysqlSequenceCanonicityDeclaration = MysqlSequenceCanonicityDeclaration(
+        operationId = operationId,
+        dialect = dialect,
+        kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+        objectName = sequenceName,
+        status = MysqlSequenceCanonicityStatus.PROBE_RUNTIME_ERROR,
+        sqlHash = "stage-failure",
+        problem = problem,
+    )
+
+    private fun stageFailureTrigger(
+        operationId: String,
+        dialect: String,
+        columnRef: dev.dmigrate.core.diff.migration.DiffObjectRef,
+        @Suppress("UNUSED_PARAMETER") sequenceName: String,
+        problem: String,
+    ): MysqlSequenceCanonicityDeclaration {
+        // The column op's objectRef path is `[tableName, columnName]`;
+        // derive the canonical trigger name via the same helper the
+        // renderer uses so the gate-side `objectName` match lines up
+        // even on a stage-level failure.
+        val tableName = columnRef.path[0]
+        val columnName = columnRef.path[1]
+        val triggerName = MysqlSequenceSupportNaming.triggerName(tableName, columnName)
+        return MysqlSequenceCanonicityDeclaration(
+            operationId = operationId,
+            dialect = dialect,
+            kind = MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+            objectName = triggerName,
+            status = MysqlSequenceCanonicityStatus.PROBE_RUNTIME_ERROR,
+            sqlHash = "stage-failure",
+            problem = problem,
+        )
     }
 }
