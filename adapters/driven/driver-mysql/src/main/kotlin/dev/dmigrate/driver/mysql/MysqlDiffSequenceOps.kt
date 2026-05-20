@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.MysqlSequenceCanonicityGate
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -63,6 +64,7 @@ internal object MysqlDiffSequenceOps {
 
     fun renderCreateSequence(op: DiffOperation.CreateSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
+        if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.CREATE, ctx)) return
         val name = op.objectRef.rootName
         if (ctx.direction == MysqlRenderDirection.DOWN) {
             // Inverse of UP `INSERT` — no bootstrap teardown (the helper
@@ -79,6 +81,7 @@ internal object MysqlDiffSequenceOps {
 
     fun renderAlterSequence(op: DiffOperation.AlterSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
+        if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.ALTER, ctx)) return
         val name = op.objectRef.rootName
         val (source, target) = if (ctx.direction == MysqlRenderDirection.UP) {
             op.before to op.after
@@ -111,6 +114,7 @@ internal object MysqlDiffSequenceOps {
 
     fun renderDropSequence(op: DiffOperation.DropSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
+        if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.DROP, ctx)) return
         val name = op.objectRef.rootName
         // Both directions read bound triggers from `currentSchema` —
         // that's the pre-Up state where the column→sequence bindings
@@ -171,6 +175,9 @@ internal object MysqlDiffSequenceOps {
      */
     fun renderRenameSequence(op: DiffOperation.RenameSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
+        // Rename emits an UPDATE on the existing row → ALTER intent for
+        // the drift gate (the row must exist and not have drifted).
+        if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.ALTER, ctx)) return
         val (oldName, newName) = if (ctx.direction == MysqlRenderDirection.UP) {
             op.fromName to op.toName
         } else {
@@ -261,6 +268,49 @@ internal object MysqlDiffSequenceOps {
      */
     fun requireHelperModeForColumnDefault(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean =
         ensureHelperMode(op, ctx)
+
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice D (2026-05-20): consults
+     * the live-probe declarations on [ctx.options.mysqlSequenceCanonicity]
+     * for [op] and routes the per-declaration [MysqlSequenceCanonicityGate]
+     * decision into the render context:
+     *
+     * - [MysqlSequenceCanonicityGate.Decision.Proceed]: continue to the
+     *   next declaration; if every declaration is Proceed, return
+     *   `false` and the caller emits SQL.
+     * - [MysqlSequenceCanonicityGate.Decision.Info]: emit an INFO-level
+     *   diagnostic but keep iterating — render still proceeds.
+     * - [MysqlSequenceCanonicityGate.Decision.Block]: skip the op,
+     *   add the gate's blocker, return `true` immediately (first
+     *   Block wins; subsequent declarations are not consulted).
+     *
+     * An op whose probe set is empty proceeds unconditionally — that's
+     * the file-target / `--plan-only` / pre-probe path where no
+     * declarations were threaded in. The dedicated NOT_RUN_FILE_TARGET
+     * / NOT_RUN_POLICY declarations are emitted by the planner /
+     * stage (Sub-Slice E) and arrive here as Info-routed
+     * declarations, NOT as an empty list.
+     */
+    private fun canonicityBlocks(
+        op: DiffOperation,
+        intent: MysqlSequenceCanonicityGate.OpIntent,
+        ctx: MysqlDiffRenderContext,
+    ): Boolean {
+        val declarations = ctx.options.mysqlSequenceCanonicity.filter { it.operationId == op.id }
+        if (declarations.isEmpty()) return false
+        for (declaration in declarations) {
+            when (val decision = MysqlSequenceCanonicityGate.decide(declaration, intent)) {
+                MysqlSequenceCanonicityGate.Decision.Proceed -> continue
+                is MysqlSequenceCanonicityGate.Decision.Info -> ctx.info(op, decision.message, decision.code)
+                is MysqlSequenceCanonicityGate.Decision.Block -> {
+                    ctx.skip(op, decision.message, code = decision.code)
+                    ctx.addBlocker(decision.reason, operationIds = setOf(op.id))
+                    return true
+                }
+            }
+        }
+        return false
+    }
 
     private fun ensureHelperMode(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
         if (ctx.options.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE) return true
