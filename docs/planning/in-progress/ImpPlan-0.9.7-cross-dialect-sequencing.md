@@ -41,22 +41,22 @@ die folgenden Fragen entscheidet:
    nach der Einführung dieser Schicht.
    Nach den parallelen Plans: MySQL emittiert die helper_table-
    Emulation — aber wie soll die Source-PG-Sequence-Definition
-   ueberhaupt nach MySQL gemappt werden? Welche Attribute gehen
+   überhaupt nach MySQL gemappt werden? Welche Attribute gehen
    verloren?
 
 2. **Sequence-Default-Reprojection** (F.4 Sub-Slice D): wirkt heute
-   nur fuer `RenameSequence`-Op. Soll sie auch fuer
-   Cross-Dialect-Transfer wirken, wenn die Sequenz-Identitaet via
+   nur für `RenameSequence`-Op. Soll sie auch für
+   Cross-Dialect-Transfer wirken, wenn die Sequenz-Identität via
    Schema-Reader rekonstruiert wird?
 
-3. **Sequence-Identitaet ueber Dialekte hinweg**: PG-`SequenceName`
+3. **Sequence-Identität über Dialekte hinweg**: PG-`SequenceName`
    ist global im Schema; MySQL-Emulation nutzt `dmg_sequences.name`
    (auch global) plus einen Trigger pro Tabellen-Spalte; SQLite hat keine
-   native Sequence, emuliert aber ebenfalls ueber `dmg_sequences.name`.
+   native Sequence, emuliert aber ebenfalls über `dmg_sequences.name`.
    Wer ist der Single Source of Truth?
 
 4. **Capability-Matrix**: welche
-   `SequenceDefinition`-Attribute ueberleben den Cross-Dialect-
+   `SequenceDefinition`-Attribute überleben den Cross-Dialect-
    Transfer verlustfrei?
    - `start`, `increment`, `cycle`: PG + MySQL-Emulation plus
      SQLite-Helper-Table-Vertrag (`next_value`, `increment_by`,
@@ -99,33 +99,34 @@ parallele Slice referenzieren kann.
 
 ### 3.1 In-Scope (Entscheidungen, die hier getroffen werden)
 
-- **D1**: Sequence-Identitaet ueber Dialekte hinweg — der
-  `SequenceDefinition.name` aus dem neutralen Modell ist der
-  Single Source of Truth. Dialekt-spezifische Emulation
-  (MySQL: `dmg_sequences.name`; SQLite: `dmg_sequences.name` im
-  Helper-Table-Pfad) MUSS auf diesen Namen mappen, ohne ihn zu
-  transformieren.
+- **D1**: Sequence-Identität über Dialekte hinweg — der
+  Sequenz-Name aus dem neutralen Modell ist der Single Source of
+  Truth. Konkret ist `NamedSequence.name` (bzw. das gleichnamige Feld in
+  `SequenceDiff`) die Identitäts-Schluesselstelle. Dialekt-spezifische
+  Emulation (MySQL: `dmg_sequences.name`; SQLite:
+  `dmg_sequences.name` im Helper-Table-Pfad) MUSS auf diesen Namen
+  mappen, ohne ihn zu transformieren.
 - **D2**: Cross-Dialect-Transfer-Vertrag —
-  Source-Dialekt-Sequenzen werden ueber den Neutralmodell-
-  Pfad gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
-  unterstuetzt wird (z.B. PG-`CACHE` nach SQLite), emittiert
+  Source-Dialekt-Sequenzen werden über den neutralen Modellpfad
+  gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
+  unterstützt wird (z.B. PG-`CACHE` nach SQLite), emittiert
   der Renderer standardmaessig
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
   Für explizit als kontrollierten Attribut-Verlust dokumentierte
-  Felder (z.B. `cache`) kann ein bestehender Overlay-/Override-
+  Felder (z.B. `cache`) kann ein vorhandener Overlay-/Override-
   Mechanismus die Migration auf `W114` als WARNING begrenzen;
   fehlt ein solcher Treffer, bleibt der Standardfall Blocker.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
-  Cross-Dialect-Capability-Tabelle (welches Attribut ueberlebt
+  Cross-Dialect-Capability-Tabelle (welches Attribut überlebt
   welchen Transfer); `spec/cli-spec.md` §4 listet die neuen
   Blocker-Codes pro Carve-out.
-- **D4**: Sequence-Default-Reprojection-Vertrag fuer
+- **D4**: Sequence-Default-Reprojection-Vertrag für
   Cross-Dialect-Transfer — F.4 Sub-Slice D
   (`SequenceDefaultReprojector`) wirkt bereits dialekt-neutral
-  fuer `RenameSequence`. Fuer Cross-Dialect-Transfer wirkt sie
+  für `RenameSequence`. Fuer Cross-Dialect-Transfer wirkt sie
   IMPLIZIT, weil der Neutralmodell-Vergleich keine Rename-
-  Information traegt (Source und Target haben denselben
+  Information trägt (Source und Target haben denselben
   Sequenz-Namen). Falls der Operator explizit eine Sequenz
   umbenennen will (Cross-Dialect-Migration plus Rename), nutzt
   er das bestehende F.4-Overlay-Schema mit
@@ -133,7 +134,7 @@ parallele Slice referenzieren kann.
 - **D5**: Capability-Source-Resolution-Pattern — analog zu
   E.1 Routine-Capability (`RoutineCapabilityDefaults` + `EffectiveRoutineCapability`).
   Sequence-Capabilities haben Defaults pro Dialekt + Version
-  und sind via Overlay/CLI ueberschreibbar.
+  und sind via Overlay/CLI überschreibbar.
 
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
@@ -151,14 +152,14 @@ parallele Slice referenzieren kann.
 | `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`) | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
 | `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` | Source = neutral; Mapping verlustfrei |
-| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Verlustfrei für frische Migrationen; SQLite modelliert nur den Seed-Zustand, nicht zwingend den späteren aktuellen Wert |
+| `start` | `START WITH` | `dmg_sequences.next_value` | Seed via `next_value` (kein natives Start-Attribut) | Verlustfrei für frische Migrationen; SQLite modelliert nur den Seed-Zustand, nicht zwingend den späteren aktuellen Wert |
 | `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite analog |
 | `minValue` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | SQLite: verlustfrei in `helper_table` |
 | `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
 | `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
 | `cache` | `CACHE n` | `dmg_sequences.cache_size` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | standardmaessig lossy/Blocker; mit Overlay/Override als kontrollierte `W114`-Warning |
 | `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | Execute-only; siehe preserveCurrentValue-Plan |
-| `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL: WARNING; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
+| `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL/SQLite: `MANUAL_ACTION_REQUIRED`; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
 
 **Blocker-Codes** (neu in
 `PlannerBlockerClassifier`):
@@ -177,12 +178,13 @@ parallele Slice referenzieren kann.
 
 ### 5.1 Neutralmodell-Pfad
 
-`SequenceDefinition` lebt im neutralen Modell
-(`hexagon:core/model/SequenceDefinition.kt`). Reader pro Dialekt
-fuellen die Sequenz-Definition ins neutrale Modell; Renderer pro Dialekt konsumieren sie. Cross-Dialect-
-Transfer ist die Kombination:
-`source-reader → SequenceDefinition → target-renderer`. Wenn ein
-Attribut im Target nicht abbildbar ist, blockt der Target-Renderer.
+`NamedSequence` und `SequenceDefinition` bilden das neutrale Sequenzmodell
+(`hexagon:core/model/SequenceDefinition.kt`, Name über `NamedSequence.name`).
+Reader pro Dialekt liefern `NamedSequence`-Eintraege; Renderer pro
+Dialekt konsumieren deren `SequenceDefinition`. Cross-Dialect-Transfer ist
+die Kombination:
+`source-reader → NamedSequence + SequenceDefinition → target-renderer`.
+Wenn ein Attribut im Target nicht abbildbar ist, blockt der Target-Renderer.
 
 ### 5.2 Capability-Resolver
 
@@ -216,7 +218,7 @@ object SequenceCapabilityDefaults {
             supportsOwnedBy = false,
         )
         DatabaseDialect.SQLITE -> SequenceCapability(
-            supportsStart = true, // initial ueber seed in helper-table
+            supportsStart = true, // initial über seed in helper-table
             supportsMinMaxValue = true,
             supportsCycle = true,
             supportsCache = false, // metadata-only; kein runtime-caching (`W114`), W114-Warnung
@@ -228,7 +230,7 @@ object SequenceCapabilityDefaults {
 ```
 
 Renderer prüfen pro Op die `SequenceCapability`; nicht
-unterstuetzte Attribute → Blocker.
+unterstützte Attribute → Blocker.
 
 ### 5.3 Cross-Dialect-Validation in `DiffPlanner`
 
@@ -240,8 +242,9 @@ erweitert die Capabilities-Struktur (oder fuegt eine parallele
 Renderer-Validierungsstufe Sequence-Attribute-Mismatches
 diagnostizieren kann VOR Render.
 
-Alternative: Validation lebt nur im Renderer (Default heute fuer
-andere dialect-mismatches). Decision in Sub-Slice B.
+Alternative: Validation lebt nur im Renderer (Default heute für
+andere dialect-mismatches). Die finalen Entscheidungen trifft
+Sub-Slice B.
 
 ---
 
@@ -256,7 +259,7 @@ und delegierbar:
 | B | Renderer-Side-Validation: pro Dialekt-Renderer pruefen Capability, emit Blocker bei Mismatch |
 | C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `spec/cli-spec.md` §4 erweitern um die neuen Blocker-Codes |
 | D | ADR (`docs/adr/0003-cross-dialect-sequencing.md`, neu anzulegen) dokumentiert die fuenf Decisions (D1–D5) |
-| E | Closing: Plan-Doc nach `done/`; Cross-Links in die drei dialekt-spezifischen Plans setzen |
+| E | Closing: Plan-Doc nach `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`; Cross-Links in die drei dialekt-spezifischen Plans setzen |
 
 ---
 
@@ -268,9 +271,9 @@ und delegierbar:
       emittiert bei Mismatch entweder Blocker oder via
       Overlay/Override kontrollierte Warnung (`W114`).
 - [ ] PG → MySQL mit `OWNED BY` blockt mit dem neuen Code
-  (positiver Test).
+  (negativer Test).
 - [ ] PG → MySQL mit `CACHE` nutzt den Overlay/Override-Pfad zu
-  `W114` als WARNING (kein harter Blocker im Standard-Testfall).
+  `W114` als WARNING (kein harter Blocker im Standardpfad).
 - [ ] Decision-Record (ADR) ist gepinnt.
 - [ ] `spec/neutral-model-spec.md` und `spec/cli-spec.md` sind auf
       Stand.
@@ -292,7 +295,7 @@ und delegierbar:
 - [ ] **Dialekte**: PG, MySQL, SQLite — alle drei mit Capability-
       Defaults.
 - [ ] **F.0-Erfuellung**: irrelevant; ggf. Operator-Overlay-Override
-      ueber bestehenden F.0-Vertrag, falls eine spaetere
+      über bestehenden F.0-Vertrag, falls eine spaetere
       Operator-Override-Tranche das verlangt.
 - [ ] **Positiv- + Blocker-Tests**: pro Dialekt mindestens je
       einer.
@@ -307,9 +310,9 @@ und delegierbar:
 ## 9. Out-of-Scope / Folge-Themen
 
 - MariaDB-native Sequences (`CREATE SEQUENCE`) →
-  Capability-Gate fuer Dialekt-Family-Override.
-- Operator-Override fuer Cross-Dialect-Attribute-Loss
-  (`--accept-sequence-attribute-loss`) → spaetere Tranche.
+  Capability-Gate für Dialekt-Family-Override.
+- Operator-Override/Carve-out für Cross-Dialect-Attribute-Loss
+  (via Sequenz-Overlay/CLI-Pfad) → spaetere Tranche.
 - Sequence-Default-Reprojection beim Cross-Dialect-Transfer
   (anders als beim Rename) — ist durch das Neutralmodell-
   Pattern abgedeckt, bedarf keiner separaten Verdrahtung.
@@ -326,9 +329,9 @@ und delegierbar:
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, blockt jeder SQLite-Pfad mit
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`. Das ist kein Blocker
-  fuer DIESEN Plan — die Capability-Defaults sind konservativ.
+  für DIESEN Plan — die Capability-Defaults sind konservativ.
 - **PG `OWNED BY` semantisch nicht abbildbar**: PG-Sequenzen
   koennen einer Spalte gehoeren; MySQL/SQLite kennen das nicht.
-  Wenn Reverse-Read den `OWNED BY` traegt und der Transfer-
+  Wenn Reverse-Read den `OWNED BY` trägt und der Transfer-
   Renderer das nicht abbilden kann, blockt der Slice mit
   `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`.
