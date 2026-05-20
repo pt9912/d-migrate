@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Folge-Slice (SQLite-Reader-Hardening fuer Trigger)
-> **Status**: offen seit 2026-05-19.
+> **Status**: offen seit 2026-05-19
 > **Vorbedingung**: E.2 Trigger-Rendering Vollscheibe ✅ 2026-05-18
 >                  (PG / MySQL / SQLite-Render alle gruen);
 >                  bestehender `SqliteSchemaReader.readTriggers` (Stub).
@@ -33,8 +33,10 @@ naiver String-Substring-Suche
 - **Multi-Statement-Body**: Parser-Regex
   `BEGIN\\s+(.*?)\\s+END` greift den Body als einen einzigen
   Block, normalisiert aber kein Whitespace und keine
-  Semikolons zwischen Statements. Reverse-Read → File-Write →
-  Reverse-Read ist nicht idempotent.
+  Semikolons zwischen Statements. `END`-Abgrenzungen innerhalb
+  von geschachtelten oder untypischen Bodies werden damit aktuell
+  nicht robust erkannt.
+  Reverse-Read → File-Write → Reverse-Read ist nicht idempotent.
 - **Fehlerhafte Parse-Fallbacks**: bei Mehrdeutigkeit setzt der
   Parser `BEFORE` / `INSERT` als Default und emittiert nur eine
   `WARNING` (R210 / R211). Das schluckt Daten still — der
@@ -154,24 +156,27 @@ CREATE [TEMP|TEMPORARY] TRIGGER [IF NOT EXISTS]
 
 Token-basierter Parser (kein vollwertiger SQL-Parser noetig):
 
-1. Strip Whitespace + Comments (`--`-Line-Comments,
-   `/* */`-Block-Comments).
+1. Strip/normalize Whitespace + Header-Comments (`--`-Line-Comments,
+   `/* */`-Block-Comments), aber halte das `BEGIN .. END`-Body-Segment
+   in Inhalt und Formatierung unveraendert fuer Idempotenz.
 2. Konsumiere `CREATE` `[TEMP|TEMPORARY]` `TRIGGER`
    `[IF NOT EXISTS]`.
-3. Konsumiere `[schema.]trigger_name` — bei `schema.`-Praefix:
-   blockt (Out-of-Scope).
-4. Konsumiere `[BEFORE | AFTER | INSTEAD OF]`. Default `BEFORE`
-   nur bei expliziter Abwesenheit; sonst `TriggerParseResult`
-   mit Note.
+3. Konsumiere `[schema.]trigger_name`.
+   Bei `schema.`-Praefix wird `R212` als `BLOCKER` gesetzt
+   (`SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED`) und der Trigger wird
+   verworfen, damit kein falscher Objektkey entsteht.
+4. Konsumiere `[BEFORE | AFTER | INSTEAD OF]`.
+   Bei fehlendem Token wird `R210` als `BLOCKER` gesetzt und als
+   Fallback `timing = BEFORE` gemeldet.
 5. Konsumiere `{ DELETE | INSERT | UPDATE [OF cols] }`.
    `UPDATE OF cols` wird heute nicht im Modell unterstuetzt —
-   `WARNING` + Default `UPDATE` ohne Spalten.
+   `WARNING` + Default `UPDATE` ohne Spaltenliste.
 6. Konsumiere `ON [schema.]table_name`. Schema-Praefix blockt.
 7. Konsumiere `[FOR EACH ROW]` → setzt `forEach = ROW`.
    (SQLite unterstuetzt nur ROW; Default ROW wenn nicht
    spezifiziert.)
-8. Konsumiere `[WHEN expr]` — `expr` lazy-extracted bis
-   `BEGIN`; setzt `condition = <captured>`.
+8. Konsumiere `[WHEN expr]` — `expr` wird lazy bis `BEGIN`
+   extrahiert und als `condition = <captured>` gesetzt.
 9. Konsumiere `BEGIN` … `END` → `body = <captured>`.
    Whitespace pinned (siehe §5.2).
 
@@ -180,8 +185,9 @@ Token-basierter Parser (kein vollwertiger SQL-Parser noetig):
 Der Body soll Reverse → Write → Reverse identisch bleiben.
 Pinning:
 
-- Trim trailing `;` vor `END` (SQLite-Konvention).
-- Normalize Whitespace zwischen Statements zu single LF.
+- Trim exakt ein optionales `;` direkt vor `END` (SQLite-Konvention).
+- Normalize Zeilenumbrueche (CRLF -> LF) im Trigger-Body.
+- Interne Einrückung und Statement-Spacing bleibt unveraendert.
 - Keine semantische Kanonisierung (Statements bleiben in ihrer
   syntaktischen Form).
 
@@ -286,8 +292,9 @@ Inkrement.
 - **Trigger-DDL-Varianten**: SQLite's `sqlite_master.sql` ist
   der ORIGINAL-DDL-Text, den der User angelegt hat — beliebige
   Whitespace-/Comment-Varianten. Mitigation: Parser ist
-  token-basiert + Comment-Stripper; Tests decken die
-  typischen Varianten.
+  token-basiert + eingeschraenkter Header-Comment-Strip auf dem
+  Praeheader, sodass das Body-Format fuer Idempotenz erhalten bleibt;
+  Tests decken die typischen Varianten.
 - **Round-Trip-Idempotenz**: wenn Reverse → YAML → Reverse
   unterschiedliche Whitespace produziert, gilt der Slice als
   fehlgeschlagen. Mitigation: explizite Round-Trip-Tests in
