@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: in progress (2026-05-19).
+> **Status**: in progress (2026-05-20).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`done/mysql-sequence-emulation-plan.md`) ✅
@@ -22,12 +22,12 @@ Die vollständige MySQL-Sequence-Emulation
 rendert vollständige Sequence-DDL aus einer
 `SequenceDefinition` (helper_table-Modus mit
 `dmg_sequences`-Hilfsobjekten + kanonischen Sequence-Triggern); der
-`MysqlSchemaReader` faltet die Hilfsobjekte zurück auf
+`MysqlSchemaReader` rekonstruiert die Hilfsobjekte zurück zu
 `SequenceDefinition`. Der Vergleich ist sequence-stabil.
 
 Was fehlt: der **diff-basierte** Pfad. Heute routet
 `MysqlDiffDdlGenerator.categorize()` jede der vier
-Sequence-`DiffOperation`-Subtypes
+Sequence-`DiffOperation`-Subtypen
 (`CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`)
 zu `OpCategory.UNSUPPORTED`. Der Renderer emittiert keinen DDL und
 blockt mit `DIALECT_UNSUPPORTED_OPERATION`. Operatoren koennen
@@ -55,8 +55,8 @@ Im Detail:
 ## 2. Warum jetzt?
 
 E.3 (Sequence-Rendering im Diff-Pfad) hat heute nur den PG-Slice
-erledigt; MySQL und SQLite sind im Roadmap "E Rest" als offen
-markiert. Die zugrundeliegende **MySQL-Emulation** ist
+erledigt; MySQL und SQLite sind im verbleibenden `E.3`-Rest weiterhin
+als offen markiert. Die zugrundeliegende **MySQL-Emulation** ist
 produktreif (Phase A–E2 abgeschlossen 0.9.4); fehlt nur die
 Überführung in den Diff-Pfad. Das ist eine vergleichsweise kleine
 Brücke für einen relativ grossen Funktionsgewinn — Operatoren
@@ -175,7 +175,7 @@ Migrationen ohne `schema generate`-Workaround.
 
 | Vorbedingung | Status | Kommentar |
 | ------------ | ------ | --------- |
-| `MysqlDdlGenerator.helper_table`-Emulation | ✅ 0.9.4 AP 6.3/6.4 | Plan-Doc: `done/mysql-sequence-emulation-plan.md` |
+| `MysqlNamedSequenceMode.HELPER_TABLE`-Emulation | ✅ 0.9.4 AP 6.3/6.4 | Plan-Doc: `done/mysql-sequence-emulation-plan.md` |
 | `MysqlSchemaReader` faltet Hilfsobjekte zurück | ✅ 0.9.4 AP 6.1–6.3 | `dmg_sequences` + Support-Routinen + Trigger werden erkannt |
 | F.4 RenameSequence Subtyp + Policy | ✅ 2026-05-19 | `MysqlObjectRenamePolicy` blockt heute, wartet auf Upgrade |
 | F.4 Renderer-Blocker-Bridge | ✅ 2026-05-19 | `PlannerBlockerClassifier`-Pattern verfuegbar |
