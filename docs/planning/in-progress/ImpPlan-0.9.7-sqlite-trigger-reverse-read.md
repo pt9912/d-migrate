@@ -2,15 +2,15 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Folge-Slice (SQLite-Reader-Hardening fuer Trigger)
-> **Status**: open 2026-05-19.
+> **Status**: offen seit 2026-05-19.
 > **Vorbedingung**: E.2 Trigger-Rendering Vollscheibe ✅ 2026-05-18
 >                  (PG / MySQL / SQLite-Render alle gruen);
 >                  bestehender `SqliteSchemaReader.readTriggers` (Stub).
 > **Referenz**: `done/ImpPlan-0.9.7-E.2-trigger-rendering.md` §7.3
 >             (SQLite-Trigger-Reverse-Read als E.2-Carve-out);
->             `adapters/driven/driver-sqlite/.../SqliteTriggerDdlHelper.kt:75-78`
+>             `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelper.kt`
 >             (in-code-Carve-out-Hinweis);
->             `adapters/driven/driver-sqlite/.../SqliteTypeMapping.kt:185-221`
+>             `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTypeMapping.kt`
 >             (heutiger Parser-Stub).
 
 ---
@@ -41,7 +41,7 @@ naiver String-Substring-Suche
   Reverse-gelesene Trigger ist semantisch falsch.
 - **Schemaqualifizierte Trigger-Namen** (`main.trigger_name`):
   nicht behandelt; SQLite-Schemata mit attached databases
-  surface als fehlinterpretierter Name.
+  werden als fehlinterpretiertem Namen gelesen.
 
 Konsequenz: E.2-Trigger-Vollscheibe ist auf SQLite nur fuer den
 **File-to-File**-Pfad voll funktionsfaehig. Live-DB-zu-Live-DB-
@@ -84,17 +84,18 @@ Konsequenzen:
   - `timing` (BEFORE / AFTER / INSTEAD_OF) — robuster Parser
     (Token-basiert statt Substring-Suche).
   - `event` (INSERT / UPDATE / DELETE) — Token-basiert.
-  - `forEach` (ROW / STATEMENT) — heute fehlend; SQLite
-    unterstuetzt nur ROW, aber der Reader pinnt es explizit.
+  - `forEach` — heute fehlt in der bestehenden Reader-Route.
+    SQLite unterstützt nur `ROW`; der neue Reader setzt `forEach = ROW`
+    explizit (als Default), `STATEMENT` bleibt weiterhin ein
+    inkompatibles Modell für den Renderer.
   - `condition` (WHEN-Klausel) — heute fehlend.
   - `body` (Multi-Statement-Block zwischen `BEGIN` und `END`) —
     pinnt Whitespace und Semikolons fuer Idempotenz.
   - `table` — bleibt wie heute aus `tbl_name`.
   - `sourceDialect = "sqlite"` — bleibt.
 - `SqliteSchemaReader.readTriggers` ruft den neuen Parser.
-- `SqliteTypeMapping.parseTriggerSql` deprecated und entfernt
-  (Aufrufer-Test bleibt erhalten, mit Re-Direct auf den neuen
-  Parser).
+- `SqliteTypeMapping.parseTriggerSql` als deprecated markieren, aber
+  als Redirect auf den neuen Parser behalten.
 - Round-Trip-Tests: Reverse → emit YAML → Reverse → identisch.
 - Live-DB-Integration: pinned mit einem echten SQLite-File
   (`adapters/driven/driver-sqlite/src/test/resources/round-trip/`)
@@ -248,8 +249,8 @@ Inkrement.
 - [ ] **Renderbare Ops**: keine neuen; nur Reverse-Read-Hardening.
 - [ ] **Neue Diagnostics**: `R212` (schema-qualified-name
       block), `R213` (UPDATE OF cols warning). Bestehende
-      `R210` / `R211` werden von WARNING zu BLOCKER bei
-      Parse-Fehler.
+      `R210` / `R211` werden von WARNING zu BLOCKER, wenn das
+      `CREATE TRIGGER`-DDL nicht parsebar ist.
 - [ ] **Up / Down**: irrelevant (Reader-Slice).
 - [ ] **Report-Felder**: `SchemaReadNote` traegt neue Codes.
 - [ ] **Dialekte**: nur SQLite.
@@ -293,10 +294,9 @@ Inkrement.
   Sub-Slice C.
 - **R210/R211 BLOCKER-Upgrade**: bestehende Live-DBs mit
   unparseable Triggern werden ploetzlich blockiert statt
-  WARNING-akzeptiert. Mitigation: opt-in Flag
-  `--accept-unparsable-triggers` als Carve-out fuer Migrationen
-  auf solchen Bestandsystemen; oder bewusste Breaking-Change-
-  Erklaerung im CHANGELOG.
+  WARNING-akzeptiert. Mitigation: dokumentierte Breaking-Change-
+  Kommunikation im CHANGELOG und optionaler Folge-Slice für ein
+  bewusstes Override-Verhalten.
 
 ---
 
