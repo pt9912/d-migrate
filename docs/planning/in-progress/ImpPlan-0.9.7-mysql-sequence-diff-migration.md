@@ -23,7 +23,7 @@ rendert vollstaendige Sequence-DDL aus einer
 `SequenceDefinition` (helper_table-Modus mit
 `dmg_sequences`-Hilfsobjekten + kanonischen Sequence-Triggern); der
 `MysqlSchemaReader` faltet die Hilfsobjekte zurueck auf
-`SequenceDefinition`. Compare ist sequence-stabil.
+`SequenceDefinition`. Der Vergleich ist sequence-stabil.
 
 Was fehlt: der **diff-basierte** Pfad. Heute routet
 `MysqlDiffDdlGenerator.categorize()` jede der vier
@@ -42,11 +42,11 @@ Im Detail:
 - `AlterSequence`: heute Blocker. Soll: declarative-Attribute-Aenderung
   emittieren (z.B. `UPDATE dmg_sequences SET increment_by = …`).
 - `DropSequence`: heute Blocker. Soll: helper_table + Trigger droppen.
-- `RenameSequence`: F.4 Sub-Slice A.2 Teil 1 hat die Mapper-Policy
+- `RenameSequence`: F.4 Sub-Slice C hat die Mapper-Policy
   bereits auf `RenameSupport.Blocked("OBJECT_RENAME_UNSUPPORTED")`
   gesetzt — die Renderer-Pfade landen in diesem Zustand nie hier.
   Sobald dieser Slice freischaltet, kann die Policy zu
-  `RenameSupport.DropCreateFallback` upgegradet werden, damit der
+  `RenameSupport.DropCreateFallback` hochgestuft werden kann, damit der
   Mapper den Sequence-Rename als emuliertes `DropSequence` + `CreateSequence`
   mit `RenameProvenance` rendert.
 
@@ -135,7 +135,7 @@ Migrationen ohne `schema generate`-Workaround.
    `RenameSupport.Blocked(..."MySQL sequence rendering is out of
    E.3 scope today")` wird auf `RenameSupport.DropCreateFallback`
    (emulierter Rename) gesetzt.
-- `make docker-check` gruen ueber MySQL-Driver + hexagon:core.
+- `make docker-check` soll gruen ueber MySQL-Driver + hexagon:core laufen.
 - Tests pro Subtyp: Positiv-Render (Up + Down), Down-Regressionen, sowie
   gezielte Blocker- und Schutzfälle für Carve-outs (z.B.
   start-Wert-/Laufzeitzustands-Update, mehrfaches `CreateSequence` in einer Migration,
@@ -225,7 +225,7 @@ Standard-Pattern wie bei den anderen Sequence-Renderern:
   Direkter `RenameSequence`-Down/Up bleibt nur defensive Regression-Coverage
   (`UPDATE` + Trigger-Rebuild).
 
-### 5.4 RenameSequence-Policy upgraden
+### 5.4 RenameSequence-Policy aktualisieren
 
 `MysqlObjectRenamePolicy.classify(...)` heute:
 
@@ -236,7 +236,7 @@ DiffObjectType.SEQUENCE -> RenameSupport.Blocked(
 )
 ```
 
-Sub-Slice C upgradet zu:
+Sub-Slice C wird hochgestuft zu:
 
 ```kotlin
 DiffObjectType.SEQUENCE -> RenameSupport.DropCreateFallback(
@@ -279,7 +279,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ### Sub-Slice C — `RenameSequence` Pfad
 
-- `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` upgraded.
+- `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` wird aktualisiert.
 - `MysqlDiffSequenceOps.renderRenameSequence` als defensive Implementierung
   ergänzt.
 - Tests: Mapper emittiert in diesem Slice primär den
