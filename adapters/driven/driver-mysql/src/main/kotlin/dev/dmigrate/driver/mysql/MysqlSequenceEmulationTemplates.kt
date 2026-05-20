@@ -3,11 +3,28 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.model.SequenceDefinition
 
 /**
+ * Canonical specification of a sequence-backed insert trigger,
+ * shared between [MysqlSequenceDdlSupport] (DDL-Generator pipeline)
+ * and the upcoming `MysqlDiffSequenceOps` (per-op diff rendering,
+ * Sub-Slice B). Lives at top level so callers do not need the
+ * nested `MysqlSequenceEmulationTemplates.SequenceTriggerSpec`
+ * qualifier.
+ */
+internal data class MysqlSequenceTriggerSpec(
+    val tableName: String,
+    val columnName: String,
+    val sequenceName: String,
+)
+
+/**
  * E.3 MySQL Sequence-Diff Sub-Slice A: pure SQL templates for the
  * helper-table emulation. Extracted from [MysqlSequenceDdlSupport]
  * so both the DDL-Generator pipeline (full schema emission) and the
  * upcoming `MysqlDiffSequenceOps` (per-op diff rendering, Sub-Slice
  * B) share a single source of truth for the emitted SQL shape.
+ *
+ * Plan-Doc: `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
+ * §5.1 (Re-Use vs. Duplikation) and §6 Sub-Slice A.
  *
  * All functions are stateless and produce a single
  * [String] — callers wrap them into `DdlStatement` / per-renderer
@@ -22,18 +39,6 @@ import dev.dmigrate.core.model.SequenceDefinition
  * stream. Those concerns live above the SQL-template layer.
  */
 internal object MysqlSequenceEmulationTemplates {
-
-    /**
-     * Canonical specification of a sequence-backed insert trigger,
-     * promoted from a private `SupportTriggerSpec` in
-     * [MysqlSequenceDdlSupport] so the diff path can construct it
-     * without re-deriving the trigger contract.
-     */
-    data class SequenceTriggerSpec(
-        val tableName: String,
-        val columnName: String,
-        val sequenceName: String,
-    )
 
     /**
      * `CREATE TABLE dmg_sequences` — the helper table that stores
@@ -150,7 +155,7 @@ internal object MysqlSequenceEmulationTemplates {
      * during reconcile.
      */
     fun sequenceTriggerSql(
-        spec: SequenceTriggerSpec,
+        spec: MysqlSequenceTriggerSpec,
         triggerName: String,
         quoteIdentifier: (String) -> String,
     ): String = buildString {

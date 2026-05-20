@@ -9,8 +9,7 @@ internal class MysqlSequenceDdlSupport(
     private var currentOptions: DdlGenerationOptions = DdlGenerationOptions()
     private var currentSchema: SchemaDefinition? = null
     private var supportObjectsBlocked = false
-    private val pendingSupportTriggers =
-        mutableListOf<MysqlSequenceEmulationTemplates.SequenceTriggerSpec>()
+    private val pendingSupportTriggers = mutableListOf<MysqlSequenceTriggerSpec>()
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
 
     private val isHelperTable: Boolean
@@ -44,7 +43,7 @@ internal class MysqlSequenceDdlSupport(
         seqDefault: DefaultValue.SequenceNextVal,
     ): String? {
         if (isHelperTable) {
-            pendingSupportTriggers += MysqlSequenceEmulationTemplates.SequenceTriggerSpec(
+            pendingSupportTriggers += MysqlSequenceTriggerSpec(
                 tableName, columnName, seqDefault.sequenceName,
             )
             pendingSequenceNotes += TransformationNote(
