@@ -225,7 +225,7 @@ Inkrement.
 | B | `SqliteSchemaReader.readTriggers` ruft den neuen Parser; alter `SqliteTypeMapping.parseTriggerSql` wird deprecated |
 | C | Round-Trip-Tests: Reverse → File-Write → Reverse mit echtem SQLite-File |
 | D | Live-DB-Integrationstest in `test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt Identitaet |
-| E | Closing: §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `done/` |
+| E | Closing: §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `docs/planning/done/` |
 
 ---
 
