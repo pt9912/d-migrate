@@ -10,7 +10,7 @@
 >                  F.4 Renderer-Blocker-Bridge ✅ 2026-05-19.
 > **Referenz**: `docs/planning/done/mysql-sequence-emulation-plan.md` (Vollvariante
 >             im DDL-Generator-Pfad); `docs/planning/in-progress/diffresult-migration-plan-2.md`
->             §E.3; `docs/spec/ddl-generation-rules.md` §7.
+>             §E.3; `spec/ddl-generation-rules.md` §7.
 
 ---
 
@@ -75,7 +75,7 @@ Migrationen ohne `schema generate`-Workaround.
 - Alle neuen Sequence-Diff-Renderer sind nur im
   `MysqlNamedSequenceMode.HELPER_TABLE`-Modus aktiv; bei anderem
   Modus werden sie explizit auf Diff-Ebene mit `E056` + `MANUAL_ACTION_REQUIRED`
-  blockiert (`ctx.skip(op, "...", "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`).
+  blockiert (`ctx.skip(op, "...", code = "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))`).
   Es darf dann keinerlei SQL emittiert werden. Die eigentliche Guard-Logik wird im
   `MysqlDiffSequenceOps`-Renderer verankert, nicht erst indirekt
   im `MysqlDdlGenerator`.
@@ -83,15 +83,17 @@ Migrationen ohne `schema generate`-Workaround.
   - `renderCreateSequence(op, ctx)` — produziert die SQL-Statements
     für die einzelne Sequence (`INSERT` nur bei fehlender
     `dmg_sequences`-Zeile, sonst Drift-Check + Trigger-Reconcile) aus der
-    bestehenden `MysqlDdlGenerator`-Emulation.
+    bestehenden `MysqlSequenceDdlSupport`-Emulation.
     Alle globalen
     Bootstrap-Objekte (`dmg_sequences`, `dmg_nextval`, `dmg_setval`) werden
     über einen zentralen Diff-Header (einmal pro Migration) erzeugt.
     Vorher wird die Support-Kanonik geprüft: `dmg_sequences`-Tabellenschema,
     `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Row-Metadaten
-    (`managed_by`, `format_version`, `next_value`-Spalte) und der dem Sequence-Objekt
-    zugeordnete Trigger-Name aus der Emulationsdefinition.
-    Ein Trigger-Muster darf nur aus verifizierten Sequenz-Metadaten abgeleitet werden;
+    (`managed_by`, `format_version`, `next_value`-Spalte), plus verifizierte
+    Trigger-Metadaten aus der Sequenz-Rekonstruktion (`MysqlSchemaReader`/
+    `MysqlSequenceSupport`, Marker im Trigger-Body und `MysqlSequenceNaming`).
+    Ein Trigger-Muster darf nur aus explizit verifizierten Sequenz-Metadaten
+    abgeleitet werden;
     ohne harte Trigger-Zuordnung wird mit `E124` geblockt.
     Bei `dmg_*`-Objekten mit fachlich unpassender Form (`E124`) wird die
     Render-Pipeline abgebrochen. Danach gilt:
@@ -117,7 +119,7 @@ Migrationen ohne `schema generate`-Workaround.
     verändert. Up + Down (inverse Werte aus `op.before`) auf den
     verwalteten Deklarativfeldern (`increment`, `minValue`,
     `maxValue`, `cycle`, `cache`) ausschliesslich.
-  - `renderDropSequence(op, ctx)` — droppt die dem `SequenceDefinition`-
+  - `renderDropSequence(op, ctx)` — droppt die durch Support-Rekonstruktion
     zugeordneten Trigger + Zeile in `dmg_sequences`. Up + Down.
   - `renderRenameSequence(op, ctx)` — `RENAME TABLE`-Pattern
     funktioniert nicht (Sequence ist eine Zeile in einem Helper-Table,
@@ -126,7 +128,7 @@ Migrationen ohne `schema generate`-Workaround.
     dmg_sequences SET name = …` + Trigger-Rebuild (`DROP TRIGGER` +
     `CREATE TRIGGER`) erforderlich, da MySQL kein generisches
     Trigger-Rename kennt. Die betroffenen Trigger werden aus
-    Sequence-Metadaten aufgelöst.
+    rekonstruierten Support-Metadaten aufgelöst.
     Im F.4-Pfad ist der Rename primär als
     `DropSequence` + `CreateSequence`-Fallback gedacht, und dann darf
     dieser Renderer als Defensive-Implementierung nur als Fallback
@@ -192,7 +194,7 @@ heute in `MysqlDdlGenerator`. Sub-Slice A muss diese Templates
 extrahieren in eine wiederverwendbare Helper-Klasse
 (`MysqlSequenceEmulationTemplates` oder analog), damit
 `MysqlDiffSequenceOps` sie konsumieren kann ohne den ganzen
-DDL-Generator zu instantiieren. Die Helper-Klasse liefert zusätzlich einen
+DDL-Generator zu instanziieren. Die Helper-Klasse liefert zusätzlich einen
 expliziten "bootstrap once"-Ausgabe-Mechanismus für `dmg_sequences` und
 `dmg_nextval`/`dmg_setval`, der im Diff-Generator nur ein einziges Mal
 emittiert wird.
@@ -204,18 +206,18 @@ extrahieren, weil sonst zwei Wartungs-Stellen.
 
 | DiffOperation | MySQL-Rendering |
 |---|---|
-| `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Metadaten `managed_by`, `format_version`, `next_value`-Spalte sowie bekannte Trigger-Zuordnung aus der Emulationsdefinition): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment`, `minValue`, `maxValue`, `cycle`, `cache`; plus `managed_by`, `format_version`; `next_value` wird nur als Laufzeitstatus gelesen): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
+| `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Metadaten `managed_by`, `format_version`, `next_value`-Spalte und verifizierte Trigger-Zuordnung aus der Support-Rekonstruktion): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment`, `minValue`, `maxValue`, `cycle`, `cache`; plus `managed_by`, `format_version`; `next_value` wird nur als Laufzeitstatus gelesen): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
 | `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`increment`, `minValue`, `maxValue`, `cycle`, `cache`; in der Tabelle `increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`). |
-| `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER IF EXISTS` für alle dem Sequence-Objekt zugeordneten Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
-| `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` für den dem Rename-Objekt zugeordneten Sequence-Trigger |
+| `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER IF EXISTS` für alle per Support-Rekonstruktion zugeordneten Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
+| `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` für den durch Support-Rekonstruktion zugeordneten Sequence-Trigger |
 
 Die `dmg_sequences`-Helper-Table wird beim ersten `CreateSequence`
 im Plan nach erfolgreicher Kollisionsprüfung angelegt; spaetere
 `CreateSequence`-Ops nutzen sie wieder. Im `DropSequence`-Pfad
 wird die Tabelle NICHT geloescht (andere Sequenzen leben darin)
 — bleibt als idempotente Infrastruktur-Tabelle.
-Hinweis: Trigger-Reconcile nutzt nur im `SequenceDefinition` hinterlegte
-Trigger-Namensmetadaten; fehlt diese sichere Zuordnung, darf kein blindes
+Hinweis: Trigger-Reconcile nutzt nur per Support-Rekonstruktion verifizierte
+Trigger-Namen; fehlt diese sichere Zuordnung, darf kein blindes
 `DROP TRIGGER`/`CREATE TRIGGER` erfolgen, sondern es wird `E124` berichtet.
 
 ### 5.3 Down-Direction
@@ -268,9 +270,10 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ### Sub-Slice A — Template-Extraktion
 
-- `MysqlSequenceEmulationTemplates` extrahiert aus
-  `MysqlDdlGenerator` die helper_table-DDL, INSERT-Template,
-  Support-Funktions-Templates und Sequence-Trigger-Templates.
+  - `MysqlSequenceEmulationTemplates` (oder besser Wiederverwendung von
+  `MysqlSequenceDdlSupport`) aus `MysqlDdlGenerator` die
+  helper_table-DDL, INSERT-Template, Support-Funktions-Templates und
+  Sequence-Trigger-Templates.
 - Existierende `MysqlDdlGenerator`-Tests bleiben grün.
 - Keine Verhaltensänderung sonst.
 
@@ -321,7 +324,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 - [ ] `MysqlDiffSequenceOps` rendert `CreateSequence`,
       `AlterSequence` und `DropSequence` in beide Richtungen.
-- [ ] `MysqlSequenceEmulationTemplates`/`MysqlDiffSequenceOps` emittieren
+- [ ] `MysqlSequenceDdlSupport` (oder `MysqlSequenceEmulationTemplates`) / `MysqlDiffSequenceOps` emittieren
   `dmg_sequences` + `dmg_nextval`/`dmg_setval` exakt einmal pro
   Migrationslauf in einer kontrollierten Reihenfolge.
 - [ ] Bestehende Diff-Tests, die MySQL-Sequenz-Operationen noch als
@@ -450,7 +453,7 @@ ansonsten wird ebenfalls `E124` erzeugt.
 
 `renderCreateSequence`/`renderAlterSequence`/`renderDropSequence`/`renderRenameSequence`
 sind im Nicht-`HELPER_TABLE`-Modus strikt verboten:
-`ctx.skip(op, ..., code = "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`.
+`ctx.skip(op, ..., code = "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))`.
 Es darf anschließend keine SQL-Emission mehr stattfinden. Erst danach kann SQL
 für HELPER_TABLE gerendert werden.
 
