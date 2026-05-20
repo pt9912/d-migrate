@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: open 2026-05-19.
+> **Status**: in progress (2026-05-19).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`done/mysql-sequence-emulation-plan.md`) ✅
@@ -16,13 +16,13 @@
 
 ## 1. Auslöser
 
-Die vollstaendige MySQL-Sequence-Emulation
+Die vollständige MySQL-Sequence-Emulation
 (`done/mysql-sequence-emulation-plan.md`, Phasen A–E2, abgeschlossen
 2026-04-21) liefert den DDL-Generator-Pfad: `MysqlDdlGenerator`
-rendert vollstaendige Sequence-DDL aus einer
+rendert vollständige Sequence-DDL aus einer
 `SequenceDefinition` (helper_table-Modus mit
 `dmg_sequences`-Hilfsobjekten + kanonischen Sequence-Triggern); der
-`MysqlSchemaReader` faltet die Hilfsobjekte zurueck auf
+`MysqlSchemaReader` faltet die Hilfsobjekte zurück auf
 `SequenceDefinition`. Der Vergleich ist sequence-stabil.
 
 Was fehlt: der **diff-basierte** Pfad. Heute routet
@@ -33,20 +33,20 @@ zu `OpCategory.UNSUPPORTED`. Der Renderer emittiert keinen DDL und
 blockt mit `DIALECT_UNSUPPORTED_OPERATION`. Operatoren koennen
 sequence-betreffende Diff-Migrationen damit nicht via `schema migrate`
 fahren — sie muessten den DDL-Generator-Pfad (`schema generate`) nutzen
-und das resultierende Skript manuell ausfuehren.
+und das resultierende Skript manuell ausführen.
 
 Im Detail:
 
-- `CreateSequence`: heute Blocker. Soll: vollstaendige Emulation
+- `CreateSequence`: heute Blocker. Soll: vollständige Emulation
   emittieren (helper_table + Trigger).
-- `AlterSequence`: heute Blocker. Soll: declarative-Attribute-Aenderung
+- `AlterSequence`: heute Blocker. Soll: declarative-Attribute-Änderung
   emittieren (z.B. `UPDATE dmg_sequences SET increment_by = …`).
 - `DropSequence`: heute Blocker. Soll: helper_table + Trigger droppen.
 - `RenameSequence`: F.4 Sub-Slice C hat die Mapper-Policy
   bereits auf `RenameSupport.Blocked("OBJECT_RENAME_UNSUPPORTED")`
   gesetzt — die Renderer-Pfade landen in diesem Zustand nie hier.
   Sobald dieser Slice freischaltet, kann die Policy zu
-  `RenameSupport.DropCreateFallback` hochgestuft werden kann, damit der
+  `RenameSupport.DropCreateFallback` hochgestuft werden, damit der
   Mapper den Sequence-Rename als emuliertes `DropSequence` + `CreateSequence`
   mit `RenameProvenance` rendert.
 
@@ -58,8 +58,8 @@ E.3 (Sequence-Rendering im Diff-Pfad) hat heute nur den PG-Slice
 erledigt; MySQL und SQLite sind im Roadmap "E Rest" als offen
 markiert. Die zugrundeliegende **MySQL-Emulation** ist
 produktreif (Phase A–E2 abgeschlossen 0.9.4); fehlt nur die
-Brueckung in den Diff-Pfad. Das ist eine vergleichsweise kleine
-Bruecke fuer einen relativ grossen Funktionsgewinn — Operatoren
+Überführung in den Diff-Pfad. Das ist eine vergleichsweise kleine
+Brücke für einen relativ grossen Funktionsgewinn — Operatoren
 mit Sequence-tragenden MySQL-Schemata bekommen Diff-basierte
 Migrationen ohne `schema generate`-Workaround.
 
@@ -81,41 +81,47 @@ Migrationen ohne `schema generate`-Workaround.
   im `MysqlDdlGenerator`.
 - Render-Funktionen pro Subtyp:
   - `renderCreateSequence(op, ctx)` — produziert die SQL-Statements
-    für die einzelne Sequence (`INSERT` bei Neueintrag, sonst Drift-Check
-    + Trigger-Reconcile) aus der bestehenden `MysqlDdlGenerator`-Emulation.
+    für die einzelne Sequence (`INSERT` nur bei fehlender
+    `dmg_sequences`-Zeile, sonst Drift-Check + Trigger-Reconcile) aus der
+    bestehenden `MysqlDdlGenerator`-Emulation.
     Alle globalen
     Bootstrap-Objekte (`dmg_sequences`, `dmg_nextval`, `dmg_setval`) werden
     über einen zentralen Diff-Header (einmal pro Migration) erzeugt.
     Vorher wird die Support-Kanonik geprüft: `dmg_sequences`-Tabellenschema,
     `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Row-Metadaten
-    (`managed_by`, `format_version`, `next_value`) und der dem Sequence-Objekt
+    (`managed_by`, `format_version`, `next_value`-Spalte) und der dem Sequence-Objekt
     zugeordnete Trigger-Name aus der Emulationsdefinition.
     Ein Trigger-Muster darf nur aus verifizierten Sequenz-Metadaten abgeleitet werden;
     ohne harte Trigger-Zuordnung wird mit `E124` geblockt.
     Bei `dmg_*`-Objekten mit fachlich unpassender Form (`E124`) wird die
     Render-Pipeline abgebrochen. Danach gilt:
     Wenn die `dmg_sequences`-Zeile bereits existiert, erfolgt zuerst ein
-    Drift-Check gegen verwaltete Felder (`increment_by`, `min_value`,
-    `max_value`, `cycle`, `cache`) sowie `managed_by`/`format_version`/`next_value`:
+    Drift-Check gegen die fachlichen Felder `increment`, `minValue`,
+    `maxValue`, `cycle`, `cache` (in `dmg_sequences` als
+    `increment_by`, `min_value`, `max_value`, `cycle_enabled`,
+    `cache_size`) sowie `managed_by`/`format_version`:
     `start` ist in der Emulation der persistierte Laufzeitzustand
     (`next_value`) der Sequence und darf nicht als harte
-    Konsistenzprüfung verwendet werden.
+    Konsistenzprüfung verwendet werden; `next_value` selbst bleibt
+    Laufzeit-Read-only.
     Bei Konsistenz wird ein Trigger-Reconcile (`DROP TRIGGER IF EXISTS` +
     `CREATE TRIGGER`) ausgeführt, bei Abweichung wird `E124` geblockt; bei
     fehlender Zeile wird normaler `INSERT` gerendert. Up + Down.
   - `renderAlterSequence(op, ctx)` — produziert
-    `UPDATE dmg_sequences SET …`-Statements fuer managed
-    Felder (`increment_by`, `min_value`, `max_value`,
-    `cycle`, `cache`). `start` ist in diesem Slice der persistierte
+    `UPDATE dmg_sequences SET …`-Statements für managed
+    Felder (`increment`, `minValue`, `maxValue`,
+    `cycle`, `cache`; in `dmg_sequences` als `increment_by`,
+    `min_value`, `max_value`, `cycle_enabled`, `cache_size`).
+    `start` ist in diesem Slice der persistierte
     Laufzeitzustand (`next_value`) und wird nicht als DDL-Attribut
     verändert. Up + Down (inverse Werte aus `op.before`) auf den
-    verwalteten Deklarativfeldern (`increment_by`, `min_value`,
-    `max_value`, `cycle`, `cache`) ausschliesslich.
+    verwalteten Deklarativfeldern (`increment`, `minValue`,
+    `maxValue`, `cycle`, `cache`) ausschliesslich.
   - `renderDropSequence(op, ctx)` — droppt die dem `SequenceDefinition`-
     zugeordneten Trigger + Zeile in `dmg_sequences`. Up + Down.
   - `renderRenameSequence(op, ctx)` — `RENAME TABLE`-Pattern
     funktioniert nicht (Sequence ist eine Zeile in einem Helper-Table,
-    und der Support-Path ist auf `HELPER_TABLE` begrenzt).
+    und der Support-Pfad ist auf `HELPER_TABLE` begrenzt).
     Wenn ein echter `RenameSequence`-Op emittiert wird, ist `UPDATE
     dmg_sequences SET name = …` + Trigger-Rebuild (`DROP TRIGGER` +
     `CREATE TRIGGER`) erforderlich, da MySQL kein generisches
@@ -136,7 +142,7 @@ Migrationen ohne `schema generate`-Workaround.
    `RenameSupport.Blocked(..."MySQL sequence rendering is out of
    E.3 scope today")` wird auf `RenameSupport.DropCreateFallback`
    (emulierter Rename) gesetzt.
-- `make docker-check` soll gruen ueber MySQL-Driver + hexagon:core laufen.
+- `make docker-check` soll grün über MySQL-Driver + hexagon:core laufen.
 - Tests pro Subtyp: Positiv-Render (Up + Down), Down-Regressionen, sowie
   gezielte Blocker- und Schutzfälle für Carve-outs (z.B.
   start-Wert-/Laufzeitzustands-Update, mehrfaches `CreateSequence` in einer Migration,
@@ -170,10 +176,10 @@ Migrationen ohne `schema generate`-Workaround.
 | Vorbedingung | Status | Kommentar |
 | ------------ | ------ | --------- |
 | `MysqlDdlGenerator.helper_table`-Emulation | ✅ 0.9.4 AP 6.3/6.4 | Plan-Doc: `done/mysql-sequence-emulation-plan.md` |
-| `MysqlSchemaReader` faltet Hilfsobjekte zurueck | ✅ 0.9.4 AP 6.1–6.3 | `dmg_sequences` + Support-Routinen + Trigger werden erkannt |
+| `MysqlSchemaReader` faltet Hilfsobjekte zurück | ✅ 0.9.4 AP 6.1–6.3 | `dmg_sequences` + Support-Routinen + Trigger werden erkannt |
 | F.4 RenameSequence Subtyp + Policy | ✅ 2026-05-19 | `MysqlObjectRenamePolicy` blockt heute, wartet auf Upgrade |
 | F.4 Renderer-Blocker-Bridge | ✅ 2026-05-19 | `PlannerBlockerClassifier`-Pattern verfuegbar |
-| MySQL Server-Version-Detection | ✅ E.1 C.2 | Vendor-String + Version fuer Capability-Gates |
+| MySQL Server-Version-Detection | ✅ E.1 C.2 | Vendor-String + Version für Capability-Gates |
 
 ---
 
@@ -198,8 +204,8 @@ extrahieren, weil sonst zwei Wartungs-Stellen.
 
 | DiffOperation | MySQL-Rendering |
 |---|---|
-| `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Metadaten `managed_by`, `format_version`, `next_value` sowie bekannte Trigger-Zuordnung aus der Emulationsdefinition): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`; plus `managed_by`, `format_version`, `next_value`; `start`/persistierter Zustand nicht hart geprüft): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
-| `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`). |
+| `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Metadaten `managed_by`, `format_version`, `next_value`-Spalte sowie bekannte Trigger-Zuordnung aus der Emulationsdefinition): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment`, `minValue`, `maxValue`, `cycle`, `cache`; plus `managed_by`, `format_version`; `next_value` wird nur als Laufzeitstatus gelesen): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
+| `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`increment`, `minValue`, `maxValue`, `cycle`, `cache`; in der Tabelle `increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`). |
 | `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER IF EXISTS` für alle dem Sequence-Objekt zugeordneten Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
 | `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` für den dem Rename-Objekt zugeordneten Sequence-Trigger |
 
@@ -217,7 +223,9 @@ Trigger-Namensmetadaten; fehlt diese sichere Zuordnung, darf kein blindes
 Standard-Pattern wie bei den anderen Sequence-Renderern:
 - `CreateSequence` Down = `DropSequence`-Sequenz.
 - `AlterSequence` Down = `UPDATE` auf `op.before`-Werte für die verwalteten
-  Deklarativfelder (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`).
+  Deklarativfelder (`increment`, `minValue`, `maxValue`, `cycle`, `cache`;
+  in der Tabelle `increment_by`, `min_value`, `max_value`, `cycle_enabled`,
+  `cache_size`).
 - `DropSequence` Down = `CreateSequence`-Sequenz mit gespeicherter
   `SequenceDefinition`.
 - `RenameSequence` ist primär kein Produktivpfad. `Up/Down` werden
@@ -245,7 +253,7 @@ DiffObjectType.SEQUENCE -> RenameSupport.DropCreateFallback(
 )
 ```
 
-Begruendung: In F.4 ist der primäre Sequenz-Rename-Pfad
+Begründung: In F.4 ist der primäre Sequenz-Rename-Pfad
 `DropCreateFallback`, also `DropSequence` + `CreateSequence` mit
 `RenameProvenance`. Produktiv darf in diesem Slice kein direkter
 `RenameSequence`-Renderer-Output entstehen; dieser Pfad muss in den
@@ -256,15 +264,15 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ---
 
-## 6. Sub-Slice-Schnitt
+## 6. Sub-Slice-Schnittstellen
 
 ### Sub-Slice A — Template-Extraktion
 
 - `MysqlSequenceEmulationTemplates` extrahiert aus
   `MysqlDdlGenerator` die helper_table-DDL, INSERT-Template,
   Support-Funktions-Templates und Sequence-Trigger-Templates.
-- Existierende `MysqlDdlGenerator`-Tests bleiben gruen.
-- Keine Verhaltensaenderung sonst.
+- Existierende `MysqlDdlGenerator`-Tests bleiben grün.
+- Keine Verhaltensänderung sonst.
 
 ### Sub-Slice B — Diff-Render-Pfade
 
@@ -291,7 +299,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ### Sub-Slice D — F.4 Sub-Slice D Integration
 
-- `SequenceDefaultReprojector` wird fuer den `RenameProvenance`-Fall
+- `SequenceDefaultReprojector` wird für den `RenameProvenance`-Fall
   im `DropCreateFallback` erweitert: bei `DropSequence`/`CreateSequence`
   nach Sequence-Rename darf die Projektion die neuen Default-Verweise
   auf den umbenannten Sequenznamen neu verdrahten.
@@ -302,7 +310,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ### Sub-Slice E — Closing
 
-- §E.3-DoD im master plan Eintrag fuer MySQL ergänzen.
+- §E.3-DoD im master plan Eintrag für MySQL ergänzen.
 - CHANGELOG-Eintrag `### Added`.
 - `spec/cli-spec.md` MySQL-Sequence-Renderbarkeit dokumentieren.
 - Plan-Doc nach `done/`.
@@ -327,26 +335,26 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
       `RenameSupport.DropCreateFallback` (emulierte Rename-Strategie).
 - [ ] Bei `MysqlNamedSequenceMode != HELPER_TABLE` werden Sequence-Diff-Operationen
       weiterhin geblockt (`E056`), kein SQL wird emittiert.
-- [ ] Datei-zu-Datei-Mode rendert keine Blocker gegen bestehende
+- [ ] Datei-zu-Datei-Mode rendert keine DB-live Blocker gegen bestehende
       `dmg_*`-Objekte, sondern erzeugt direkt SQL nach Plan; nur
       `E056` ist weiterhin modusspezifisch und gilt als harte Sperre.
-- [ ] Bestehende `MysqlDdlGenerator`-Tests bleiben gruen
+- [ ] Bestehende `MysqlDdlGenerator`-Tests bleiben grün
       (Template-Extraktion ist nicht-destruktiv).
 - [ ] F.4 Sub-Slice D `SequenceDefaultReprojector` mappt
       `RenameProvenance` auf `SequenceDefault`/`SequenceNextVal` korrekt
       auf `DropSequence` + `CreateSequence` im Fallback-Pfad.
 - [ ] Pro Subtyp je ein Positiv-Test (Up + Down) und ein
-      Blocker-Test fuer ein Carve-out (z.B. Laufzeit-`start` mit bereits
+      Blocker-Test für ein Carve-out (z.B. Laufzeit-`start` mit bereits
       vorhandener `dmg_sequences`-Zeile und nicht kompatiblen
       statischen Werten).
 - [ ] Für Slice A selbst wird `preserveCurrentValue` nicht implementiert
       (kein Modellfeld dafür vorhanden); es bleibt im separaten
       `ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 - [ ] `CreateSequence`-Render erzeugt bei bestehender Zeile einen
-      expliziten Drift-Check gegen `increment_by`, `min_value`, `max_value`,
+      expliziten Drift-Check gegen `increment`, `minValue`, `maxValue`,
       `cycle`, `cache` statt stillen `INSERT ... ON DUP KEY UPDATE`;
       bei inkonsistenten Werten wird Blocker gemeldet.
-- [ ] `make docker-check` gruen.
+- [ ] `make docker-check` grün.
 
 ---
 
@@ -357,8 +365,8 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 - [ ] **Mode-spezifische Validierung**:
       - execute/file-to-DB: `E056` zuerst, danach `E124`-Prüfungen gegen
         bestehende `dmg_*`-Objekte (bei vorhandenem DB-Kontext).
-      - file-to-file: nur DDL-Emission; keine `dmg_*`-Kanonik auf
-        vorhandene DB-Objekte, nur `E056` als Modusblocker.
+      - file-to-file: nur DDL-Emission; keine DB-live `dmg_*`-Kanonik auf
+        vorhandene Objekte, nur `E056` als Modusblocker.
 - [ ] **Renderbare Operationen + Blocker**: CREATE/ALTER/DROP/RENAME
       Sequence rendern; `preserveCurrentValue`-Implementierung bleibt
       separat im Cross-Dialect-Plan.
@@ -378,15 +386,16 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
       daher keine separaten `current_value`-Blocker.
 - [ ] **Up- und Down-Verhalten**: getrennt gepinnt pro Subtyp.
 - [ ] **Report-/Metadatenfelder**: bestehende
-      `objectType = "SEQUENCE"`-Konvention; keine Aenderung.
+      `objectType = "SEQUENCE"`-Konvention; keine Änderung.
 - [ ] **Betroffene Dialekte**: nur MySQL.
 - [ ] **F.0-Erfuellung**: irrelevant.
 - [ ] **Positive und blockierende Testpfade**: siehe §7.
-- [ ] **Rollback-Test oder Begruendung**: Standard-Down-Pfad fuer
+- [ ] **Rollback-Test oder Begründung**: Standard-Down-Pfad für
       jeden Subtyp.
-- [ ] **Datei-zu-Datei-Verhalten**: identisch zum DB-Pfad
-      (`preserveCurrentValue` nicht relevant in Datei-zu-Datei),
-      aber ohne Live-Kontrollen auf bestehende `dmg_*`-Objekte.
+- [ ] **Datei-zu-Datei-Verhalten**: nicht wie DB-Live-Validierung,
+      sondern reine Plan-basierte DDL-Emission ohne Live-Kontrollen
+      auf bestehende `dmg_*`-Objekte (`preserveCurrentValue` nicht
+      relevant in Datei-zu-Datei).
 - [ ] **Bestehende 0.9.7-Vertraege unveraendert**: bestehende
       `MysqlDdlGenerator`-Pfade bleiben unveraendert. F.4
       RenameSequence-Mapper-Pfad wird aktiviert.
@@ -403,7 +412,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
   (`open/sqlite-sequence-emulation-plan.md`).
 - **Cross-Dialect-Sequence-Transfer**: Architektur-Plan
   (`ImpPlan-0.9.7-cross-dialect-sequencing.md`).
-- **MariaDB-native Sequences** (10.3+): koennte ueber einen
+- **MariaDB-native Sequences** (10.3+): koennte über einen
   Capability-Gate zukuenftig den Emulation-Pfad ersetzen; kein
   0.9.7-Scope.
 - **Sequence-`cache`-Attribut**: MySQL hat kein direkt
@@ -428,8 +437,10 @@ abweichendes Objekt/Typ) wird ein `E124`-Blocker statt stiller
 `IF NOT EXISTS`-Logik ausgegeben.
 Zusätzlich gilt für sequenzspezifische Namens-Kollisionen:
 bei bereits vorhandener Zeile in `dmg_sequences` wird zunächst ein Drift-Check
-gegen verwaltete Felder (`increment_by`, `min_value`, `max_value`,
-`cycle`, `cache`) durchgeführt; `start` (der persistierte
+gegen die fachlichen Felder (`increment`, `minValue`, `maxValue`,
+`cycle`, `cache`; in der Support-Tabelle als
+`increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`)
+durchgeführt; `start` (der persistierte
 `next_value`-Zustand) ist kein harter Vergleichsanker, da es den
 aktuellen Laufzeitstatus widerspiegelt.
 Nur bei vollständiger Konsistenz wird ein Trigger-Reconcile gerendert,
