@@ -329,7 +329,7 @@ und delegierbar:
   Slices muessen ihn konsumieren.
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, blockt SQLite nur für nicht representierbare
-  Attribute wie `preserveCurrentValue` mit
+  Attribute wie `preserveCurrentValue` oder `OWNED BY` mit
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` oder `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
   (abhängig von den gewählten Capabilities).
   Das ist kein Blocker für DIESEN Plan — die Capability-Defaults sind
