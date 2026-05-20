@@ -160,7 +160,7 @@ Roadmap §E Rest listet explizit:
 - **Sequence-Ownership-Inferenz** (wer „besitzt" eine Sequenz —
   PG `OWNED BY` table.column): bleibt im DDL-Generator-Pfad,
   diff-basiert ausgeklammert.
--- **Multi-Sequence-Atomicity**: wenn ein Plan mehrere Sequenzen
+- **Multi-Sequence-Atomicity**: wenn ein Plan mehrere Sequenzen
   preserved, sind die Probe-Punkte zeitlich auseinander; ein
   Operator, der zwischen den Probes Inserts macht, kann
   Inkonsistenzen erzeugen. Carve-out dokumentiert.
@@ -626,7 +626,7 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 ## 9. Out-of-Scope / Folge-Themen
 
 - Atomare Probe + setval unter Lock.
-- Multi-Sequence-Atomarity.
+- Multi-Sequence-Atomicity.
 - Sequence-Ownership-Inferenz.
 - SQLite-Sequence-Vollvariante mit preserve-Pfad.
 

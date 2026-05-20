@@ -36,10 +36,10 @@ die folgenden Fragen entscheidet:
 
 1. **Cross-Dialect-Transfer**: was passiert, wenn ein
    PG-Schema mit `CREATE SEQUENCE` nach MySQL transferiert wird?
-  Heute: MySQL-Renderer blockiert mit `DIALECT_UNSUPPORTED_OPERATION`;
+  Heute: MySQL-Renderer blockiert mit einem Dialekt-Blocker;
    geplant ist die Feineinstellung auf sequence-spezifische Blocker-Codes
    nach der Einführung dieser Schicht.
-   Nach den parallelen Plans: MySQL emittiert die helper_table-
+   Nach den parallelen Plänen: MySQL emittiert die helper_table-
    Emulation — aber wie soll die Source-PG-Sequence-Definition
    überhaupt nach MySQL gemappt werden? Welche Attribute gehen
    verloren?
@@ -114,8 +114,8 @@ parallele Slice referenzieren kann.
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
   Für explizit als kontrollierten Attribut-Verlust dokumentierte
   Felder (z.B. `cache`) kann ein vorhandener Overlay-/Override-
-  Mechanismus die Migration auf `W114` als WARNING begrenzen;
-  fehlt ein solcher Treffer, bleibt der Standardfall Blocker.
+  Mechanismus die Migration auf ein kontrolliertes `W114` begrenzen.
+  Fehlt ein solcher Treffer, bleibt es beim Standardfall Blocker.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut überlebt
@@ -170,7 +170,8 @@ parallele Slice referenzieren kann.
 - `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` →
   `MANUAL_ACTION_REQUIRED`.
 - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
-  `MANUAL_ACTION_REQUIRED` (bestehender Preserve-Current-Value-Vertrag; Delegation an Slice E).
+  `MANUAL_ACTION_REQUIRED` (bestehender Preserve-Current-Value-Vertrag; Delegation an den
+  `preserveCurrentValue`-Slice).
 
 ---
 
@@ -230,7 +231,10 @@ object SequenceCapabilityDefaults {
 ```
 
 Renderer prüfen pro Op die `SequenceCapability`; nicht
-unterstützte Attribute → Blocker.
+unterstützte Attribute → standardmaessig Blocker.
+Kontrollierte Werteverluste können optional als `W114`-Warning
+gemeldet werden, wenn ein passender Overlay/Override-Carve-out
+vorliegt.
 
 ### 5.3 Cross-Dialect-Validation in `DiffPlanner`
 
@@ -238,9 +242,9 @@ Heute kennt der Planner den Ziel-Dialekt bereits über
 `RenameProjectionCapabilities.dialect`; was fehlt, ist eine
 dedizierte Sequence-Capability-Schicht. Dieser Plan
 erweitert die Capabilities-Struktur (oder fuegt eine parallele
-`SequenceCapabilities` hinzu), sodass der Mapper /
-Renderer-Validierungsstufe Sequence-Attribute-Mismatches
-diagnostizieren kann VOR Render.
+`SequenceCapabilities` hinzu), sodass die Mapper- und
+Renderer-Validierung Sequence-Attribute-Mismatches
+vor Rendern diagnostizieren können.
 
 Alternative: Validation lebt nur im Renderer (Default heute für
 andere dialect-mismatches). Die finalen Entscheidungen trifft
@@ -290,7 +294,8 @@ und delegierbar:
       `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`. Mappen via
-      `PlannerBlockerClassifier`.
+      `PlannerBlockerClassifier` (standardmaessig `MANUAL_ACTION_REQUIRED`,
+      optionales `W114` via Overlay/Override bei kontrolliertem Werteverlust).
 - [ ] **Up / Down**: identisch (Validation greift in beide).
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG, MySQL, SQLite — alle drei mit Capability-
@@ -330,8 +335,10 @@ und delegierbar:
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, blockt SQLite nur für nicht representierbare
   Attribute wie `preserveCurrentValue` oder `OWNED BY` mit
-  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` oder `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
-  (abhängig von den gewählten Capabilities).
+  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`,
+  `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` oder
+  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` (abhängig von den gewählten
+  Capabilities).
   Das ist kein Blocker für DIESEN Plan — die Capability-Defaults sind
   konservativ.
 - **PG `OWNED BY` semantisch nicht abbildbar**: PG-Sequenzen

@@ -30,26 +30,28 @@ naiver String-Substring-Suche
   Feld nicht; spätere Vergleiche koennten falsch ausschlagen,
   wenn das neutrale Modell `FOR EACH STATEMENT` enthält
   (z.B. nach Cross-Dialect-Transfer).
+- **`INSTEAD OF` vs. `BEFORE` Reihenfolge**: Die
+  aktuelle Suche nach `timing` matcht `BEFORE` vor `INSTEAD OF`,
+  wodurch `INSTEAD OF` fälschlich als `BEFORE` geparst werden kann.
 - **Multi-Statement-Body**: Parser-Regex
   `BEGIN\\s+(.*?)\\s+END` greift den Body als einen einzigen
-  Block, normalisiert aber kein Whitespace und keine
-  Semikolons zwischen Statements. `END`-Abgrenzungen innerhalb
-  von geschachtelten oder untypischen Bodies werden damit aktuell
-  nicht robust erkannt.
-  Reverse-Read → File-Write → Reverse-Read ist nicht idempotent.
+  Block und behandelt `END` nicht robust bei geschachtelter
+  Syntax (Kommentare/Strings/untergeordnete `BEGIN..END`-Blöcke)
+  sowie semikolon-getrennten Statements mit Sonderformatierung.
+  Reverse-Read → Write → Reverse ist deshalb nicht idempotent.
 - **Fehlerhafte Parse-Fallbacks**: bei Mehrdeutigkeit setzt der
   Parser `BEFORE` / `INSERT` als Default und emittiert nur eine
-  `WARNING` (R210 / R211). Das schluckt Daten still — der
+  `WARNING` (R210 / R211). Das kann Daten still schlucken — der
   Reverse-gelesene Trigger ist semantisch falsch.
 - **Schemaqualifizierte Trigger-Namen** (`main.trigger_name`):
   nicht vollständig behandelt; SQLite-`attached`-Schemata
-  werden derzeit als falsch-qualifizierte Trigger-Objekte gelesen.
+  werden derzeit als falsch zugeordnete Trigger-Objekte gelesen.
 
 Konsequenz: E.2-Trigger-Vollscheibe ist auf SQLite nur fuer den
 **File-to-File**-Pfad voll funktionsfaehig. Live-DB-zu-Live-DB-
-Diffing fuer SQLite-Schemata mit Triggern blockt nicht — gibt
+Diffing fuer SQLite-Schemata mit Triggern ist nicht blockiert, erzeugt
 aber semantisch fehlerhafte Vergleiche, weil der Reverse-Read
-nicht alle Trigger-Attribute traegt.
+nicht alle Trigger-Attribute sauber traegt.
 
 ---
 
@@ -64,10 +66,10 @@ ausdrücklich Carve-out (siehe in-code-Hinweis
 Operatoren, die SQLite-Datenbanken mit Triggern reverse-readen
 (`schema reverse` oder `schema compare` mit DB-Operand), bekommen
 heute eine fehlerhafte `TriggerDefinition` zurueck. Das hat
-Konsequenzen:
-- `schema compare` zwischen zwei Live-DBs mit identischen
+konkrete Konsequenzen:
+- `schema compare` zwischen zwei Live-DBs mit gleichen
   Triggern erzeugt false-positive Diffs (WHEN-Klausel oder
-  Body-Whitespace unterschiedlich gelesen).
+  Body-Whitespace werden inkonsistent gelesen).
 - `schema migrate` (Datei-zu-DB) gegen eine SQLite-DB mit
   Triggern emittiert Drop+Create-Ops fuer Trigger, die in der
   Source-Datei identisch deklariert sind.
@@ -90,6 +92,7 @@ Konsequenzen:
     SQLite unterstützt nur `ROW`; der neue Reader setzt `forEach = ROW`
     explizit (als Default), `STATEMENT` bleibt weiterhin ein
     inkompatibles Modell für den Renderer.
+    (`FOR EACH` wird in diesem Slice nie auf `STATEMENT` aufgelöst.)
   - `condition` (WHEN-Klausel) — heute fehlend.
   - `body` (Multi-Statement-Block zwischen `BEGIN` und `END`) —
     pinnt Whitespace und Semikolons fuer Idempotenz.
@@ -102,14 +105,14 @@ Konsequenzen:
 - Live-DB-Integration: pinned mit einem echten SQLite-File
   (`test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/` oder
    `adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`)
-  und mehreren Trigger-Variants (mit/ohne WHEN, BEFORE/AFTER/
+  und mehreren Trigger-Varianten (mit/ohne WHEN, BEFORE/AFTER/
   INSTEAD_OF, multi-statement Body).
 
 ### 3.2 Out-of-Scope
 
 - **SQLite-Schemata mit attached databases** (`main.x` /
   `temp.x` / `aux.x`). Schemaqualifizierte Namen bleiben
-  blockierender Carve-out; der Parser blockt mit
+  blockierender Carve-out; der Parser reagiert mit
   `SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED`.
 - **Trigger-Body-Sanitization**: Body bleibt opaker SQL-Text.
   Der Renderer hat den Sanitization-Carve-out
@@ -158,27 +161,34 @@ CREATE [TEMP|TEMPORARY] TRIGGER [IF NOT EXISTS]
 Token-basierter Parser (kein vollwertiger SQL-Parser noetig):
 
 1. Strip/normalize Whitespace + Header-Comments (`--`-Line-Comments,
-   `/* */`-Block-Comments), aber halte das `BEGIN .. END`-Body-Segment
-   in Inhalt und Formatierung unveraendert fuer Idempotenz.
+   `/* */`-Block-Comments) vor dem `BEGIN`; halte das
+   `BEGIN .. END`-Body-Segment in Inhalt und Formatierung
+   unveraendert fuer Idempotenz.
 2. Konsumiere `CREATE` `[TEMP|TEMPORARY]` `TRIGGER`
    `[IF NOT EXISTS]`.
 3. Konsumiere `[schema.]trigger_name`.
    Bei `schema.`-Praefix wird `R212` als `ACTION_REQUIRED` gesetzt
    (`SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED`) und der Trigger wird
    verworfen, damit kein falscher Objektkey entsteht.
-4. Konsumiere `[BEFORE | AFTER | INSTEAD OF]`.
+4. Konsumiere `[INSTEAD OF | BEFORE | AFTER]`.
+   (`INSTEAD OF` zuerst, damit die SUBSTRING-Kollision mit `BEFORE`
+   vermieden wird.)
    Bei fehlendem Token wird `R210` als `ACTION_REQUIRED` gesetzt und als
    Fallback `timing = BEFORE` gemeldet.
 5. Konsumiere `{ DELETE | INSERT | UPDATE [OF cols] }`.
    `UPDATE OF cols` wird heute nicht im Modell unterstuetzt —
    `WARNING` + Default `UPDATE` ohne Spaltenliste.
-6. Konsumiere `ON [schema.]table_name`. Schema-Praefix blockt.
+6. Konsumiere `ON [schema.]table_name`. Bei einem Schema-Praefix wird `R212`
+   gesetzt und der Trigger verworfen, damit kein Objektkey auf
+   `schema.table` entsteht.
 7. Konsumiere `[FOR EACH ROW]` → setzt `forEach = ROW`.
    (SQLite unterstuetzt nur ROW; Default ROW wenn nicht
    spezifiziert.)
 8. Konsumiere `[WHEN expr]` — `expr` wird lazy bis `BEGIN`
    extrahiert und als `condition = <captured>` gesetzt.
 9. Konsumiere `BEGIN` … `END` → `body = <captured>`.
+   Falls nicht vorhanden oder mehrdeutig, `body = null` und der Trigger
+   wird ohne Body als best-effort weitergeführt.
    Whitespace pinned (siehe §5.2).
 
 ### 5.2 Body-Idempotenz
@@ -186,7 +196,7 @@ Token-basierter Parser (kein vollwertiger SQL-Parser noetig):
 Der Body soll Reverse → Write → Reverse identisch bleiben.
 Pinning:
 
-- Trim exakt ein optionales `;` direkt vor `END` (SQLite-Konvention).
+- Trim maximal ein optionales `;` direkt vor `END` (SQLite-Konvention).
 - Normalize Zeilenumbrueche (CRLF -> LF) im Trigger-Body.
 - Interne Einrückung und Statement-Spacing bleibt unveraendert.
 - Keine semantische Kanonisierung (Statements bleiben in ihrer
@@ -198,7 +208,11 @@ idempotent. Tests pinnen explizit.
 
 ### 5.3 Error-Handling
 
-`TriggerParseResult` traegt heute schon `notes: List<SchemaReadNote>`.
+`TriggerParseResult` dient als Grundlage für
+`timing/event/body` + `notes: List<SchemaReadNote>`.
+Es ist sinnvoll, ihn für dieses Slice auf
+`forEach/condition/table` zu erweitern oder intern direkt eine
+`TriggerDefinition` plus Notes aufzubauen.
 Erweitert:
 
 - `R210` (timing unklar) → ACTION_REQUIRED statt WARNING, wenn die
@@ -221,11 +235,11 @@ Inkrement.
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | Neuer `SqliteTriggerSqlParser` (token-basiert) mit Unit-Tests fuer alle Trigger-Variants |
+| A | Neuer `SqliteTriggerSqlParser` (token-basiert) mit Unit-Tests fuer alle Trigger-Varianten |
 | B | `SqliteSchemaReader.readTriggers` ruft den neuen Parser; alter `SqliteTypeMapping.parseTriggerSql` wird deprecated |
 | C | Round-Trip-Tests: Reverse → File-Write → Reverse mit echtem SQLite-File |
-| D | Live-DB-Integrationstest in `test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt Identitaet |
-| E | Closing: §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `docs/planning/done/` |
+| D | Live-DB-Integrationstest in `test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt Identitaet der Trigger-Definition |
+| E | `R212`-Ausnahmen (`schema.table` oder `schema.trigger`) im Reader nicht in die Trigger-Map übernehmen; bestehende Schema-/Objekt-Keys vermeiden; zudem §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `docs/planning/done/` |
 
 ---
 
@@ -236,7 +250,7 @@ Inkrement.
       `sqlite_master.sql` zurueckgegebenen DDL-String.
 - [ ] WHEN-Klausel wird korrekt extrahiert.
 - [ ] `FOR EACH ROW` wird explizit gepinnt.
-- [ ] Schema-qualifizierte Trigger-Namen (`main.x`) blockt mit
+- [ ] Schema-qualifizierte Trigger-Namen (`main.x`) wird mit
       `SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED` (R212).
 - [ ] `UPDATE OF cols` emittiert `R213`-WARNING; Trigger wird
       mit `event = UPDATE` ohne Spalten gefuehrt.
