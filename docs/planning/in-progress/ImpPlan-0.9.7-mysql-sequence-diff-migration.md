@@ -199,8 +199,8 @@ extrahieren, weil sonst zwei Wartungs-Stellen.
 |---|---|
 | `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, `dmg_sequences`-Metadaten `managed_by`, `format_version`, `next_value` sowie bekannte Trigger-Zuordnung aus der Emulationsdefinition): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`; plus `managed_by`, `format_version`, `next_value`; `start`/persistierter Zustand nicht hart geprüft): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
 | `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`). |
-| `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER` für alle dem Sequence-Objekt zugeordneten Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
-| `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER` + `CREATE TRIGGER` für den dem Rename-Objekt zugeordneten Sequence-Trigger |
+| `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER IF EXISTS` für alle dem Sequence-Objekt zugeordneten Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
+| `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` für den dem Rename-Objekt zugeordneten Sequence-Trigger |
 
 Die `dmg_sequences`-Helper-Table wird beim ersten `CreateSequence`
 im Plan nach erfolgreicher Kollisionsprüfung angelegt; spaetere
