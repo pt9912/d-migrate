@@ -36,7 +36,7 @@ die folgenden Fragen entscheidet:
 
 1. **Cross-Dialect-Transfer**: was passiert, wenn ein
    PG-Schema mit `CREATE SEQUENCE` nach MySQL transferiert wird?
-   Heute: MySQL-Renderer blockt mit `DIALECT_UNSUPPORTED_OPERATION`;
+  Heute: MySQL-Renderer blockiert mit `DIALECT_UNSUPPORTED_OPERATION`;
    geplant ist die Feineinstellung auf sequence-spezifische Blocker-Codes
    nach der Einführung dieser Schicht.
    Nach den parallelen Plans: MySQL emittiert die helper_table-
@@ -65,7 +65,7 @@ die folgenden Fragen entscheidet:
    - `minValue` / `maxValue`: PG + MySQL-Emulation + SQLite-Helper-Table.
    - `cache`: PG `CACHE` ist ein Performance-Hint, MySQL hat
      kein direktes Analog (heute deklarativ in
-     `dmg_sequences.cache` gefuehrt, aber semantisch ignoriert).
+     `dmg_sequences.cache_size` gefuehrt, aber semantisch ignoriert).
      SQLite speichert als `dmg_sequences.cache_size` nur als Metadatum
      (`W114`).
    - aktueller Wert: siehe preserveCurrentValue-Plan.
@@ -108,13 +108,13 @@ parallele Slice referenzieren kann.
 - **D2**: Cross-Dialect-Transfer-Vertrag —
   Source-Dialekt-Sequenzen werden ueber den Neutralmodell-
   Pfad gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
-  unterstuetzt wird (z.B. PG-`CACHE` nach SQLite), blockt
-  der Renderer systematisch mit
+  unterstuetzt wird (z.B. PG-`CACHE` nach SQLite), emittiert
+  der Renderer standardmaessig
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
   Für explizit als kontrollierten Attribut-Verlust dokumentierte
-  Felder (z.B. `cache`) kann ein bestehender Overlay-Mechanismus
-  die Migration auf `WARNING` begrenzen; fehlt ein solcher
-  Overlay-Treffer, bleibt der Standardfall Blocker.
+  Felder (z.B. `cache`) kann ein bestehender Overlay-/Override-
+  Mechanismus die Migration auf `W114` als WARNING begrenzen;
+  fehlt ein solcher Treffer, bleibt der Standardfall Blocker.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut ueberlebt
@@ -151,12 +151,12 @@ parallele Slice referenzieren kann.
 | `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`) | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
 | `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` | Source = neutral; Mapping verlustfrei |
-| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Zwischen PG/MySQL/SQLite verlustfrei: SQLite setzt `next_value` beim CREATE als Initialwert |
+| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Verlustfrei für frische Migrationen; SQLite modelliert nur den Seed-Zustand, nicht zwingend den späteren aktuellen Wert |
 | `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite analog |
 | `minValue` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | SQLite: verlustfrei in `helper_table` |
 | `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
 | `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
-| `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | MySQL/SQLite: `W114`, kein Runtime-Caching |
+| `cache` | `CACHE n` | `dmg_sequences.cache_size` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | standardmaessig lossy/Blocker; mit Overlay/Override als kontrollierte `W114`-Warning |
 | `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | Execute-only; siehe preserveCurrentValue-Plan |
 | `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL: WARNING; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
 
@@ -179,7 +179,7 @@ parallele Slice referenzieren kann.
 
 `SequenceDefinition` lebt im neutralen Modell
 (`hexagon:core/model/SequenceDefinition.kt`). Reader pro Dialekt
-fuellen es; Renderer pro Dialekt konsumieren es. Cross-Dialect-
+fuellen die Sequenz-Definition ins neutrale Modell; Renderer pro Dialekt konsumieren sie. Cross-Dialect-
 Transfer ist die Kombination:
 `source-reader → SequenceDefinition → target-renderer`. Wenn ein
 Attribut im Target nicht abbildbar ist, blockt der Target-Renderer.
@@ -227,7 +227,7 @@ object SequenceCapabilityDefaults {
 }
 ```
 
-Renderer pruefen pro Op die `SequenceCapability`; nicht
+Renderer prüfen pro Op die `SequenceCapability`; nicht
 unterstuetzte Attribute → Blocker.
 
 ### 5.3 Cross-Dialect-Validation in `DiffPlanner`
@@ -241,7 +241,7 @@ Renderer-Validierungsstufe Sequence-Attribute-Mismatches
 diagnostizieren kann VOR Render.
 
 Alternative: Validation lebt nur im Renderer (Default heute fuer
-andere dialect-mismatches). Decision in Sub-Slice A.
+andere dialect-mismatches). Decision in Sub-Slice B.
 
 ---
 
@@ -265,12 +265,12 @@ und delegierbar:
 - [ ] `SequenceCapability` + `SequenceCapabilityDefaults` sind im
       Code; Defaults pro Dialekt gepinnt.
 - [ ] Renderer pro Dialekt prueft Capability vor Render und
-      emittiert `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`-
-      Blocker bei Mismatch.
+      emittiert bei Mismatch entweder Blocker oder via
+      Overlay/Override kontrollierte Warnung (`W114`).
 - [ ] PG → MySQL mit `OWNED BY` blockt mit dem neuen Code
   (positiver Test).
-- [ ] PG → MySQL mit `CACHE` produziert mindestens
-  `W114` als WARNING (kein harter Blocker).
+- [ ] PG → MySQL mit `CACHE` nutzt den Overlay/Override-Pfad zu
+  `W114` als WARNING (kein harter Blocker im Standard-Testfall).
 - [ ] Decision-Record (ADR) ist gepinnt.
 - [ ] `spec/neutral-model-spec.md` und `spec/cli-spec.md` sind auf
       Stand.
