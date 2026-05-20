@@ -876,6 +876,54 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
 - Ziel-Dialekt kann eine geplante Operation nicht rendern
 - gerenderter Execute-Stream mischt nicht gemeinsam ausfuehrbare
   `transactionScope`-Werte (`TRANSACTION_SCOPE_UNSUPPORTED`)
+- F.5 CHECK / EXCLUDE-Vollscheibe (2026-05-20): sieben dedizierte
+  Diagnostic-Codes pro Blocker, alle ueber den
+  `PlannerBlockerClassifier` auf einen `MigrationBlockedReason`
+  abgebildet (`hexagon:ports-read`):
+  - `CHECK_PREFLIGHT_VIOLATIONS` → `MANUAL_ACTION_REQUIRED`: der
+    `--execute`-Preflight-Probe (`SELECT count(*) FROM <t>
+    WHERE NOT (<expr>)`) findet existierende Zeilen, die die neue
+    restriktive CHECK verletzen. Operator muss die Daten bereinigen
+    oder die Constraint locker schreiben.
+  - `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`: der
+    Preflight-Probe selbst wirft (Privilegien, Netzwerk, malformierter
+    Expression-Text). Fehlertext steht im Report-Feld
+    `checkPreflights[].message`.
+  - `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` →
+    `DIALECT_UNSUPPORTED_OPERATION`: EXCLUDE ist PostgreSQL-only;
+    MySQL- und SQLite-Renderer blocken den Op (auch im
+    SQLite-Rebuild-Pfad, der ein bereits in der Tabelle vorhandenes
+    EXCLUDE nicht durch den Rebuild rutschen lassen darf).
+  - `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16` →
+    `MANUAL_ACTION_REQUIRED`: MySQL < 8.0.16 (bzw. MariaDB < 10.2.1)
+    parst die CHECK-Klausel, evaluiert sie aber nie. Der Renderer
+    weigert sich, Silent-No-Op-DDL zu emittieren; Operator muss
+    upgraden oder die Constraint manuell verwalten.
+  - `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` → `MANUAL_ACTION_REQUIRED`:
+    `mysqlServerVersion` konnte nicht ermittelt werden (Privilegien,
+    Offline-Modus); ohne diese Information wird kein
+    Default-Enforcement angenommen.
+  - `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED` →
+    `MANUAL_ACTION_REQUIRED`: konservative Heuristik findet im
+    CHECK-Ausdruck Subquery-Marker (`SELECT`, `EXISTS`, `IN (...
+    SELECT`). False positives sind moeglich (Spalte heisst
+    `selection_count`) — Operator kann den Slice via Out-of-Scope-
+    Workstream (Trigger-basierte-CHECK) loesen.
+  - `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` →
+    `MANUAL_ACTION_REQUIRED`: die EXCLUDE-Element-Whitelist
+    akzeptiert bare oder quoted Identifier bzw. balancierte
+    `(expr)`-Ausdruecke vor `WITH`; custom Operator-Klassen,
+    `COLLATE`, `ASC`/`DESC` und `NULLS …` blocken. Operator kann die
+    Constraint mit Standard-Operator-Klassen umschreiben.
+
+  Zusätzlich surfacieren die PostgreSQL- und MySQL-Renderer einen
+  fehlenden `expression`-String beim Down-Pass von
+  `DropConstraint(CHECK/EXCLUDE)` als `ROLLBACK_NOT_POSSIBLE`
+  (Diagnostic-Code `CONSTRAINT_ROLLBACK_EXPRESSION_MISSING`); SQLite
+  fällt im Rebuild-Pfad über den existierenden `NOT_REVERSIBLE`-Gate
+  auf dieselbe Reason zurueck. Damit ist die Replace-Reversibilität
+  als drei-stufiger Vertrag pro Op gepinnt
+  (`AUTOMATIC` → `AUTOMATIC_WITH_DATA_RISK` → `NOT_REVERSIBLE`).
 - Rename-Overlay strukturell ungueltig (`primaryBlockedReason =
   RENAME_MAPPING_INVALID`): stale Fingerprint
   (`OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT`), mehrdeutige

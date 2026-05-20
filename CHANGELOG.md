@@ -65,6 +65,146 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 F.5 — CHECK / EXCLUDE Constraint Vollscheibe (Sub-Slices A–G)**
+  *(2026-05-20)* — the conservative F.5 carve-out from the
+  first-matrix slice (every table carrying a CHECK or EXCLUDE
+  constraint was tagged `CONSTRAINT_NOT_DIFFABLE`) is removed.
+  CHECK and EXCLUDE constraints now flow through the standard
+  Add/Drop/Replace pipeline with per-dialect rendering, live-data
+  preflight in execute mode, MySQL enforcement gating, and a
+  reversibility + replace contract.
+
+  Comparison and planning:
+    - `ConstraintDiffContract.canonicalRawSqlExpression()` pins
+      raw-SQL constraint comparison to LF normalisation +
+      surrounding `trim()` — semantically different expressions
+      remain different.
+    - `OperationMapper` no longer skips CHECK / EXCLUDE; they emit
+      `AddConstraint` / `DropConstraint` (and a `DropConstraint +
+      AddConstraint` pair for `constraintsChanged`) like UNIQUE /
+      FOREIGN_KEY.
+    - Both ops gain `replacePairId: String?`, a deterministic
+      Replace-group identity (`SHA-256(table | name |
+      canonical(before) | canonical(after))`) that downstream
+      reporters use to recognise the pair. Op ids stay unique;
+      dependency-sort, artefact binding and
+      `renderedStatements.operationIds` continue to work unchanged.
+    - New `ConstraintReplaceContract` post-pass classifies
+      reversibility:
+      `AddConstraint(CHECK/EXCLUDE)` → `AUTOMATIC`;
+      `DropConstraint(CHECK/EXCLUDE)` with known expression →
+      `AUTOMATIC_WITH_DATA_RISK`;
+      `DropConstraint(CHECK/EXCLUDE)` without expression →
+      `NOT_REVERSIBLE`. UNIQUE / FOREIGN_KEY ops pass through
+      unchanged.
+    - `PlannerBlockerClassifier` adds seven new diagnostic codes:
+      `CHECK_PREFLIGHT_VIOLATIONS`,
+      `CHECK_PREFLIGHT_RUNTIME_ERROR`,
+      `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`,
+      `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16`,
+      `MYSQL_CHECK_ENFORCEMENT_UNKNOWN`,
+      `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED`,
+      `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED`. All but the
+      dialect-incapability case map to `MANUAL_ACTION_REQUIRED`
+      (operator can rewrite the expression, clean up data, or
+      upgrade the server); EXCLUDE on MySQL/SQLite maps to
+      `DIALECT_UNSUPPORTED_OPERATION`. No new
+      `MigrationBlockedReason` enum values were required.
+
+  Per-dialect rendering matrix:
+    - **PostgreSQL** renders CHECK and EXCLUDE via `ALTER TABLE
+      … ADD CONSTRAINT … CHECK (…)` / `… EXCLUDE USING gist (…)`
+      and `… DROP CONSTRAINT …` on the inverse side; inline
+      `CREATE TABLE` keeps the constraint clause in the body.
+      New `ExcludeOperatorClassGate` whitelists element heads
+      (bare or quoted identifier, balanced parenthesised
+      expression) before `WITH`; custom operator classes,
+      `COLLATE`, `ASC`/`DESC` and `NULLS …` tokens block with
+      `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` →
+      `MANUAL_ACTION_REQUIRED` on Add (UP), Drop (DOWN) and inline
+      `CREATE TABLE`.
+    - **MySQL ≥ 8.0.16 / MariaDB ≥ 10.2.1** render CHECK via
+      `ADD CONSTRAINT … CHECK (…)` / `DROP CHECK …`.
+      `MysqlCheckEnforcementResolver` (`hexagon:ports-read`) maps
+      `mysqlServerVersion` to a `(known, enforced)` capability:
+      pre-8.0.16 (or MariaDB < 10.2.1) blocks
+      `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16` on logical-add
+      paths (silent enforcement-skip is treated as a contract
+      violation); missing `mysqlServerVersion` blocks
+      `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` on both add and drop.
+      EXCLUDE is short-circuited with
+      `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`.
+    - **SQLite** absorbs CHECK Add/Drop/Replace into the rebuild
+      pipeline (the temporary `CREATE TABLE` embeds the new
+      constraint set inline). EXCLUDE blocks the bucket with
+      `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` — including the
+      schema-level safety net that catches a pre-existing EXCLUDE
+      on a column-reshape rebuild that no op would otherwise
+      mention.
+
+  Live-data preflight (execute mode):
+    - New `CheckPreflightProbe` port + per-dialect adapter
+      (`Postgres`/`Mysql`/`SqliteCheckPreflightProbe`) runs
+      `SELECT count(*) FROM <t> WHERE NOT (<expr>)` against the
+      target. A non-zero count surfaces
+      `CHECK_PREFLIGHT_VIOLATIONS`; a thrown SQL error surfaces
+      `CHECK_PREFLIGHT_RUNTIME_ERROR` with the message embedded
+      in the report. The execute pipeline declares one preflight
+      per `AddConstraint(CHECK)` via `CheckPreflightPlanner` +
+      `CheckPreflightStage`, and the renderer gate
+      (`CheckPreflightGate`, consumed identically by all three
+      dialects) decides Proceed vs. Block. File-to-file mode
+      emits `NOT_RUN_FILE_TARGET` declarations so the report can
+      tell the operator the gate did not run; the renderer keeps
+      emitting.
+    - Reports surface a new `MigrationDdlResult.checkPreflights`
+      list and `SchemaMigrateCheckPreflightView` field
+      (Sub-Slice E.4); the CLI status command renders the per-op
+      verdict alongside existing per-op diagnostics.
+
+  Reversibility + Replace contract (Sub-Slice F):
+    - PostgreSQL and MySQL renderers route a `DropConstraint`
+      DOWN-pass for CHECK/EXCLUDE without expression to
+      `ROLLBACK_NOT_POSSIBLE` (the inverse `ADD CONSTRAINT …
+      <expr>` cannot be reconstructed) instead of the generic
+      `DIALECT_UNSUPPORTED_OPERATION`. SQLite is already covered
+      via the existing NOT_REVERSIBLE rebuild-bucket gate.
+    - The Replace pair (Drop+Add for `constraintsChanged`)
+      round-trips through Up and Down — Up emits Drop-then-Add of
+      the new expression; Down emits Add-of-old followed by Drop
+      of new. Op ids stay unique; the shared `replacePairId` ties
+      them together for reporters.
+
+  Carve-outs documented as out-of-scope (deferred to follow-up
+  slices, named per plan §9): semantic SQL parser for CHECK
+  expressions; PostgreSQL `NOT VALID` + `VALIDATE` two-step
+  workflow; EXCLUDE with custom operator classes beyond the
+  Whitelist; MySQL `CHECK` `NOT ENFORCED` override; preflight
+  sampling for very large tables; cross-table CHECK references
+  via trigger emulation.
+
+  Tests landed across the affected modules:
+  `ConstraintReplaceContractTest`,
+  `OperationMapperReplacePairTest`,
+  `CheckPreflightPlannerTest`,
+  `MysqlCheckEnforcementResolverTest`,
+  `PlannerBlockerClassifierTest`,
+  `PostgresDiffDdlGeneratorCheckExcludeTest` /
+  `MysqlDiffDdlGeneratorCheckExcludeTest` /
+  `SqliteDiffDdlGeneratorCheckExcludeTest`,
+  `PostgresDiffCheckPreflightGateTest` /
+  `MysqlDiffCheckPreflightGateTest`,
+  `Postgres`/`Mysql`/`SqliteCheckPreflightProbeTest`,
+  `ExcludeOperatorClassGateTest`,
+  `CheckPreflightStageTest`,
+  `MergeCheckPreflightsTest`.
+
+  Commit timeline:
+  Sub-Slice A `2c784d8b`, B `d60939c5`, C `99c9528c`,
+  D `fe0cc35e`, E.1+E.2 `cde9d39f`, E.3 `8a47a640`,
+  E.4 `fc02d621` + `a2afe0c9`, F `172c9b82`.
+  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`.
+
 - **0.9.7 F.4 Follow-up — `migration-plan.v1` Artefact Producer Wiring**
   *(2026-05-19, Sub-Slice G)* — closes the audit gap raised after
   F.4's closing slice: the `MigrationPlanArtifact` contract that

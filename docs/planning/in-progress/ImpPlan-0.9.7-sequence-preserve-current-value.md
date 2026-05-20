@@ -19,7 +19,7 @@
 
 Die heutige Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
 in `done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
-`open/`) deckt nur die **deklarativen Attribute** ab —
+`open/sqlite-sequence-emulation-plan.md`) deckt nur die **deklarativen Attribute** ab —
 `start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`.
 Den **aktuellen Wert** (`last_value` in PG, `next_value` in
 MySQL-Emulation als *nächster von `nextval()`-Rückgabewert*) migriert
@@ -160,7 +160,7 @@ Roadmap §E Rest listet explizit:
 - **Sequence-Ownership-Inferenz** (wer „besitzt" eine Sequenz —
   PG `OWNED BY` table.column): bleibt im DDL-Generator-Pfad,
   diff-basiert ausgeklammert.
-- **Multi-Sequence-Atomarity**: wenn ein Plan mehrere Sequenzen
+- **Multi-Sequence-Atomicity**: wenn ein Plan mehrere Sequenzen
   preserved, sind die Probe-Punkte zeitlich auseinander; ein
   Operator, der zwischen den Probes Inserts macht, kann
   Inkonsistenzen erzeugen. Carve-out documented.
@@ -594,8 +594,10 @@ SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`,
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_PRESERVE_CONFIG_INVALID`. Alle vier
-      mappen ueber `PlannerBlockerClassifier` auf
-      `MANUAL_ACTION_REQUIRED` bzw.
+      mappen über `PlannerBlockerClassifier` auf: `SEQUENCE_PRESERVE_PROBE_FAILED`,
+      `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` und
+      `SEQUENCE_PRESERVE_CONFIG_INVALID` auf `MANUAL_ACTION_REQUIRED`;
+      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` auf
       `DIALECT_UNSUPPORTED_OPERATION`.
 - [ ] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
       ohne Blocker-Klasse ausgegeben, wenn eine `CreateSequence`-Operation
