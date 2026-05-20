@@ -3,7 +3,8 @@
 > **Milestone**: 0.9.7 (Folge-Slice der MySQL Sequence Diff-Migration)
 > **Workstream**: E.3 Folge-Slice (Live-DB-Validation für helper-table-
 >                  Support-Objekte und `dmg_sequences`-Zeilen)
-> **Status**: Draft (2026-05-20, open).
+> **Status**: Done (2026-05-20). Sub-Slices A–F implementiert,
+>             `make docker-check` grün, Plan-Doc unter `done/`.
 > **Vorbedingung**: MySQL Sequence Diff-Migration ✅
 >                  (`docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`,
 >                  Sub-Slices A–H);
@@ -175,31 +176,76 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
 
 ---
 
-## 6. Sub-Slice-Vorschlag
+## 6. Sub-Slice-Status
 
-- **A** — Port + Adapter (`MysqlSequenceCanonicityProbe` Interface
-  + Adapter-Impl mit `INFORMATION_SCHEMA`-Queries).
-- **B** — Gate + Diagnostic-Code (`E124_MYSQL_SEQUENCE_DRIFT`).
-- **C** — Stage + Pipeline-Integration (CLI ruft den Probe einmal
-  pro `--execute`-Lauf auf).
-- **D** — Renderer-Integration (`MysqlDiffSequenceOps` gates
-  Create/Alter/Drop).
-- **E** — Datei-zu-Datei-Modus + Report-Felder.
-- **F** — Closing (Plan-Doc done, CHANGELOG, spec).
+- **A** — Port + Adapter ✅ (Commit `84b46a59`).
+  `MysqlSequenceCanonicityProbe` Interface +
+  `MysqlSequenceCanonicityProbeAdapter` mit `INFORMATION_SCHEMA`-
+  Queries für SUPPORT_TABLE, NEXTVAL_ROUTINE, SETVAL_ROUTINE,
+  SEQUENCE_ROW und SUPPORT_TRIGGER. MySQL-Fehlercode 1305
+  (SP_DOES_NOT_EXIST) und 1360 (TRG_DOES_NOT_EXIST) werden zu
+  `MISSING` mapped statt PROBE_RUNTIME_ERROR.
+- **B** — Gate + Diagnostic-Codes ✅ (Commit `3d4a0db1`).
+  `MysqlSequenceCanonicityGate.decide(declaration, intent)` mit
+  drei `Decision`-Varianten (Proceed / Info / Block) und sechs
+  Drift-spezifischen Codes (`E124_MYSQL_SEQUENCE_DRIFT_TABLE`,
+  `…_ROUTINE`, `…_ROW`, `…_TRIGGER`, `…_MISSING_FOR_ALTER`,
+  `…_PROBE_FAILED`). `PlannerBlockerClassifier` mapped alle sechs
+  Codes auf `MANUAL_ACTION_REQUIRED`.
+- **C** — Stage + Pipeline-Integration ✅ (Commit `583564a3`).
+  `MysqlSequenceCanonicityStage` (Outcome Succeeded/Failed/NotRun)
+  mit Skip-Pfaden für !execute, file-target, non-MySQL und
+  fehlenden Probe-Wires; Exception-Pfad stempelt jede Sequence-Op
+  als `PROBE_RUNTIME_ERROR`. Neue Felder
+  `DdlGenerationOptions.mysqlSequenceCanonicity` und
+  `MigrationDdlResult.mysqlSequenceCanonicity`.
+- **D** — Renderer-Integration ✅ (Commit `66b9b963`).
+  `MysqlDiffSequenceOps.canonicityBlocks(op, intent, ctx)` ruft das
+  Gate pro op-id-gefiltertem Declaration auf; First-Block-Wins,
+  Info-Decisions emittieren INFO-Diagnostics. Per-Op-Intent:
+  Create→CREATE, Alter→ALTER, Drop→DROP, Rename→ALTER. Drift-Tests
+  in eigener `MysqlDiffSequenceOpsDriftGateTest.kt` (Detekt
+  LargeClass split).
+- **E** — Datei-zu-Datei-Modus + Report-Felder ✅
+  (Commit `3db54122`). `MigrationPreflightPlanner` emittiert
+  SEQUENCE_ROW `NOT_RUN_FILE_TARGET` / `NOT_RUN_POLICY`
+  Declarations pro Sequence-Op; `SchemaMigrateRenderPipeline`
+  threadet den Probe optional, fällt sonst auf Pre-Planning zurück.
+  `SchemaMigrateReport` carriert `mysqlSequenceCanonicity` als
+  neues View-DTO.
+- **F** — Closing ✅ (dieser Commit). Plan-Doc nach `done/`,
+  CHANGELOG-Eintrag unter "Added".
 
 ---
 
-## 7. Akzeptanzkriterien (Stub)
+## 7. Akzeptanzkriterien (final)
 
-- [ ] `MysqlSequenceCanonicityProbe`-Port + Adapter implementiert.
-- [ ] Drift in `dmg_sequences`-Zeile → `E124_MYSQL_SEQUENCE_DRIFT`
-      mit strukturiertem Feld-Diff.
-- [ ] Drift in `dmg_nextval` / `dmg_setval` Routine-Body → `E124`
-      mit Marker-Hinweis.
-- [ ] Drift in Trigger-Body → `E124` mit Body-Marker-Hinweis.
-- [ ] Datei-zu-Datei-Mode unverändert (kein Probe-Aufruf).
-- [ ] Tests gegen testcontainers MySQL + Unit-Tests.
-- [ ] `make docker-check` grün.
+- [x] `MysqlSequenceCanonicityProbe`-Port + Adapter implementiert.
+- [x] Drift in `dmg_sequences`-Zeile → `E124_MYSQL_SEQUENCE_DRIFT_ROW`
+      mit strukturiertem Feld-Diff (`driftField` / `expected` /
+      `actual`).
+- [x] Drift in `dmg_nextval` / `dmg_setval` Routine-Body →
+      `E124_MYSQL_SEQUENCE_DRIFT_ROUTINE` mit Marker-Hinweis
+      (`driftField = "body_marker"`).
+- [x] Drift in Trigger-Body → `E124_MYSQL_SEQUENCE_DRIFT_TRIGGER`
+      mit Body-Marker-Hinweis.
+- [x] Datei-zu-Datei-Mode unverändert (kein Probe-Aufruf;
+      Pre-Planner emittiert `NOT_RUN_FILE_TARGET` Declarations).
+- [x] Unit-Tests für Port-Adapter, Gate, Stage, Renderer-Gate,
+      Pre-Planner.
+- [x] `make docker-check` grün.
+
+### Carve-out
+
+- **testcontainers-Integration**: Ein End-to-End-Test gegen einen
+  realen MySQL-Server (testcontainers oder gleichwertig) ist in
+  diesem Slice **nicht** enthalten. Die Unit-Tests verwenden MockK
+  für JDBC-Primitive (Connection / Statement / ResultSet), wodurch
+  alle Probe-Pfade isoliert pinning sind. Eine echte Live-DB-
+  Validation des Drift-Checks ist ein eigener Folge-Slice, sobald
+  d-migrate generell eine testcontainers-MySQL-Suite hat — das
+  trifft nicht nur diesen Drift-Check, sondern jeden MySQL-
+  Adapter im Projekt gleichermaßen.
 
 ---
 
@@ -207,6 +253,7 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
 
 - Adapter-Pattern strikt nach F.5 E.3.
 - Drift-Report im strukturierten JSON-Format
-  (`migration-plan.v1`-kompatibel).
+  (`migration-plan.v1`-kompatibel) über das neue Feld
+  `report.mysqlSequenceCanonicity[]`.
 - Op-by-op Probe ist OK; in der Praxis sind Sequence-Ops selten so
   zahlreich, dass eine Batch-Probe nötig wäre.

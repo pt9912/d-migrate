@@ -65,6 +65,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 E.3 Folge-Slice — MySQL Sequence Live-DB-Drift-Check
+  (Sub-Slices A–F)** *(2026-05-20)* — `schema migrate --execute`
+  gegen MySQL-Targets verifiziert jetzt vor dem Render, dass die
+  Helper-Table-Emulation der Sequence-Migration (`dmg_sequences`-
+  Tabelle, `dmg_nextval` / `dmg_setval`-Routinen, betroffene
+  `dmg_sequences`-Zeile, gebundene `dmg_seq_…_bi`-Trigger) der
+  kanonischen Form entspricht. Drift in einem dieser Objekte
+  blockiert die Migration vor jeder DDL-Emission statt mit
+  unklarem JDBC-Constraint-Fehler abzubrechen.
+
+  Probe & Port:
+    - Neuer Port `MysqlSequenceCanonicityProbe`
+      (`hexagon:ports-read`) mit Methoden für Support-Table-
+      Spaltensignatur, Routine-Body-Marker, Sequence-Row
+      Managed-Fields (`increment_by` / `min_value` /
+      `max_value` / `cycle_enabled` / `cache_size`) und
+      Support-Trigger-Body. Per-Probe-Aufruf liefert eine
+      `MysqlSequenceCanonicityDeclaration` mit Status
+      CANONICAL / DRIFT / MISSING / NOT_RUN_FILE_TARGET /
+      NOT_RUN_POLICY / PROBE_RUNTIME_ERROR und — bei DRIFT —
+      strukturiertem Feld-Diff (`driftField` / `expected` /
+      `actual`).
+    - JDBC-Adapter `MysqlSequenceCanonicityProbeAdapter`
+      (`adapters/driven/driver-mysql`) implementiert die Probes
+      über `INFORMATION_SCHEMA.COLUMNS`, `SHOW CREATE FUNCTION`
+      und `SHOW CREATE TRIGGER`. MySQL-Fehlercodes 1305
+      (SP_DOES_NOT_EXIST) und 1360 (TRG_DOES_NOT_EXIST) werden
+      zu Status `MISSING` mapped (nicht
+      `PROBE_RUNTIME_ERROR`), weil der canonical Bootstrap
+      diese Objekte erst noch erzeugen wird.
+
+  Gate-Entscheidung:
+    - `MysqlSequenceCanonicityGate.decide(declaration, intent)`
+      routet pro Status × Op-Intent (`CREATE` / `ALTER` /
+      `DROP`):
+        * `CANONICAL` → Proceed in jedem Intent.
+        * `DRIFT` → Block mit kind-spezifischem Code
+          (`E124_MYSQL_SEQUENCE_DRIFT_TABLE` /
+          `…_ROUTINE` / `…_ROW` / `…_TRIGGER`) und
+          MANUAL_ACTION_REQUIRED.
+        * `MISSING` + `CREATE` / `DROP` → Proceed (Bootstrap
+          oder idempotenter Drop). `MISSING` + `ALTER` → Block
+          mit `E124_MYSQL_SEQUENCE_MISSING_FOR_ALTER`.
+        * `PROBE_RUNTIME_ERROR` → Block mit
+          `E124_MYSQL_SEQUENCE_DRIFT_PROBE_FAILED`.
+        * `NOT_RUN_*` → Info-Decision (kein Blocker), damit der
+          Report den "drift-check skipped"-Grund tracked.
+    - `PlannerBlockerClassifier` mapped alle sechs neuen Codes
+      auf `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`.
+
+  CLI-Stage + Pipeline:
+    - Neue `MysqlSequenceCanonicityStage` (`hexagon:application`)
+      mit drei Outcome-Zuständen (Succeeded / Failed / NotRun).
+      Skip-Pfade: `!execute`, file-target, non-MySQL Dialekt,
+      keine `MysqlSequenceCanonicityProbeFn` gewired, keine
+      Sequence-Op im Plan. Bei Exception aus der Probe-Funktion
+      werden alle Sequence-Ops als `PROBE_RUNTIME_ERROR`
+      gestempelt und ein Top-Level `MYSQL_SEQUENCE_DRIFT_RUN_FAILED`-
+      Diagnostic emittiert.
+    - `SchemaMigrateRenderPipeline` bekommt einen optionalen
+      `mysqlSequenceCanonicityProbe`-Parameter (rückwärtskompatibel
+      über `null` default); `runMysqlSequenceCanonicity` läuft
+      vor `buildRenderOptions`, deren `mysqlSequenceCanonicity`-
+      Feld bei Succeeded die Probe-Ergebnisse trägt, sonst die
+      Pre-Plan-Declarations.
+    - Pre-Planning: `MigrationPreflightPlanner.plan(…)` emittiert
+      pro Sequence-Op eine SEQUENCE_ROW-Declaration mit
+      `NOT_RUN_FILE_TARGET` (file-target) oder `NOT_RUN_POLICY`
+      (DB-execute ohne wired Probe). Non-MySQL Dialekte und
+      Pläne ohne Sequence-Op liefern nichts.
+
+  Renderer-Gate:
+    - `MysqlDiffSequenceOps.canonicityBlocks(op, intent, ctx)`
+      konsultiert `ctx.options.mysqlSequenceCanonicity`,
+      gefiltert auf `op.id`. Erste Block-Decision gewinnt;
+      Info-Decisions emittieren INFO-Diagnostics und der Renderer
+      fährt fort. Per-Op-Intent: `CreateSequence` → `CREATE`,
+      `AlterSequence` → `ALTER`, `DropSequence` → `DROP`,
+      `RenameSequence` → `ALTER` (UPDATE auf existierender
+      Zeile). Eine leere Declaration-Liste für die op-id heißt
+      "kein Probe gelaufen" → Proceed.
+
+  Report:
+    - `SchemaMigrateReport.mysqlSequenceCanonicity[]` carriert
+      ein neues `SchemaMigrateMysqlSequenceCanonicityView`-DTO
+      pro (Sequence-Op, kanonisches Objekt). JSON / human-Reports
+      sehen Status, Kind, Object-Name, sqlHash und bei Drift /
+      Probe-Fehler die zusätzlichen Felder.
+    - `MigrationDdlResult.mysqlSequenceCanonicity` lebt parallel
+      zu `checkPreflights` / `sqliteCastPreflights`; Up- und
+      Down-Render-Results werden über `bindingKey` (op-id +
+      kind + object + hash) dedupliziert gemerged.
+
+  Out-of-scope für diesen Slice (eigene Folge-Slices):
+    - **testcontainers-Integration**: Ein E2E-Test gegen einen
+      realen MySQL-Server fehlt; die Unit-Tests verwenden MockK
+      für JDBC-Primitive. Sobald d-migrate eine
+      testcontainers-MySQL-Suite hat, wird der Drift-Check
+      dort mitlaufen — bis dahin sichert die Sub-Slice-D-Pinning
+      gegen Renderer-Regressionen und Sub-Slice-A-Pinning gegen
+      Probe-Regressionen.
+    - **Auto-fix / Drift-Repair**: Der Drift-Check meldet
+      ausschließlich. Repair-DDLs zu emittieren (z.B. die
+      `dmg_sequences`-Spalte nachträglich auf NULLABLE schalten)
+      ist eine eigene Operatoren-Aufgabe; die
+      `MANUAL_ACTION_REQUIRED`-Diagnose nennt den betroffenen
+      Drift-Field genau, damit der Operator das gezielt
+      adressieren kann.
+    - **`--skip-sequence-drift-check`-Flag**: Status
+      `NOT_RUN_POLICY` ist bereits vorgesehen, ein
+      User-facing-Flag dafür gibt's noch nicht. Operatoren, die
+      den Check temporär ausstellen wollen, müssten heute den
+      Probe-Wire weglassen.
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`.
+
 - **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–I)**
   *(2026-05-20)* — `schema migrate` against a MySQL target now
   renders the four sequence `DiffOperation` subtypes
