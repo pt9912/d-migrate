@@ -160,6 +160,52 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         sql shouldContainStr "`increment_by` = 1"
     }
 
+    test("AlterSequence UP delta SET only contains the fields that actually differ") {
+        // Only `cycle` changes; the SQL must SET exactly one field.
+        val before = SequenceDefinition(start = 1L, increment = 1L, minValue = 1L, maxValue = 1000L, cycle = false, cache = 10)
+        val after = before.copy(cycle = true)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(SequenceDiff(name = "order_seq", cycle = ValueChange(false, true))),
+        )
+        val r = planAndUp(
+            diff,
+            current = schemaOf(mapOf("order_seq" to before)),
+            desired = schemaOf(mapOf("order_seq" to after)),
+        )
+        val sql = r.statements.single().sql
+        sql shouldContainStr "`cycle_enabled` = 1"
+        // No other field surfaces in the SET list.
+        sql.contains("`increment_by`") shouldBe false
+        sql.contains("`min_value`") shouldBe false
+        sql.contains("`max_value`") shouldBe false
+        sql.contains("`cache_size`") shouldBe false
+    }
+
+    test("AlterSequence renders NULL fallbacks when fields are nulled out") {
+        // before has populated min/max/cache; after sets all three to NULL.
+        val before = SequenceDefinition(start = 1L, increment = 1L, minValue = 1L, maxValue = 1000L, cycle = false, cache = 10)
+        val after = SequenceDefinition(start = 1L, increment = 1L, minValue = null, maxValue = null, cycle = false, cache = null)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(
+                SequenceDiff(
+                    name = "order_seq",
+                    minValue = ValueChange(1L, null),
+                    maxValue = ValueChange(1000L, null),
+                    cache = ValueChange(10, null),
+                ),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            current = schemaOf(mapOf("order_seq" to before)),
+            desired = schemaOf(mapOf("order_seq" to after)),
+        )
+        val sql = r.statements.single().sql
+        sql shouldContainStr "`min_value` = NULL"
+        sql shouldContainStr "`max_value` = NULL"
+        sql shouldContainStr "`cache_size` = NULL"
+    }
+
     // ── DropSequence ─────────────────────────────────────────────
 
     test("DropSequence UP emits DELETE on dmg_sequences row") {
@@ -181,14 +227,90 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         sqls.any { it.contains("INSERT INTO `dmg_sequences`") && it.contains("'order_seq', 42") } shouldBe true
     }
 
+    test("DropSequence UP drops every column-bound trigger before deleting the row") {
+        // Two columns reference the dropped sequence via
+        // SequenceNextVal defaults. The renderer must emit a
+        // `DROP TRIGGER IF EXISTS` per binding from `currentSchema`
+        // and only then `DELETE FROM dmg_sequences`.
+        val seq = SequenceDefinition(start = 1L)
+        val ordersTable = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+        )
+        val invoicesTable = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "ref" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to ordersTable, "invoices" to invoicesTable),
+        )
+        val diff = SchemaDiff(sequencesRemoved = listOf(NamedSequence("order_seq", seq)))
+        val r = planAndUp(diff, current = current)
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        val ordersTrigger = MysqlSequenceNaming.triggerName("orders", "id")
+        val invoicesTrigger = MysqlSequenceNaming.triggerName("invoices", "ref")
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$ordersTrigger`;" } shouldBe true
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$invoicesTrigger`;" } shouldBe true
+        // The row delete is the final statement.
+        sqls.last() shouldBe "DELETE FROM `dmg_sequences` WHERE `name` = 'order_seq';"
+    }
+
+    test("DropSequence DOWN re-creates every column-bound trigger from currentSchema") {
+        // The Down inverse re-emits bootstrap + INSERT + the same
+        // triggers that the UP path dropped. The trigger spec MUST
+        // come from `currentSchema` (pre-Up state, where the column
+        // bindings exist) — `desiredSchema` is post-Up and would
+        // yield zero triggers.
+        val seq = SequenceDefinition(start = 7L)
+        val ordersTable = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+        )
+        val current = SchemaDefinition(
+            name = "App",
+            version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to ordersTable),
+        )
+        val diff = SchemaDiff(sequencesRemoved = listOf(NamedSequence("order_seq", seq)))
+        val r = planAndDown(diff, current = current)
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        sqls.any { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe true
+        sqls.any { it.contains("INSERT INTO `dmg_sequences`") && it.contains("'order_seq', 7") } shouldBe true
+        val ordersTrigger = MysqlSequenceNaming.triggerName("orders", "id")
+        sqls.any { it.contains("CREATE TRIGGER `$ordersTrigger`") } shouldBe true
+    }
+
     // ── RenameSequence (defensive only) ──────────────────────────
 
-    test("RenameSequence defensive renderer emits UPDATE name via a synthetic op") {
+    test("RenameSequence defensive renderer blocks with MANUAL_ACTION_REQUIRED, no SQL") {
         // The Mapper's `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)`
-        // still blocks today; Sub-Slice C lifts it to
-        // `DropCreateFallback`. Pin the defensive path by driving the
-        // renderer directly with a synthetic `RenameSequence` op so
-        // the regression coverage holds through both phases.
+        // still produces `RenameSupport.Blocked`. A `RenameSequence`
+        // op reaching the renderer is a planner regression — the
+        // defensive renderer must short-circuit with
+        // `MANUAL_ACTION_REQUIRED` instead of emitting SQL that
+        // would silently bypass the F.4 contract. Sub-Slice C lifts
+        // the policy to `DropCreateFallback`; until then this is the
+        // contract.
         val ctx = MysqlDiffRenderContext(
             direction = MysqlRenderDirection.UP,
             sql = MysqlDiffSqlBuilders(MysqlTypeMapper()),
@@ -212,8 +334,13 @@ class MysqlDiffSequenceOpsTest : FunSpec({
             diagnostics = emptyList(),
         )
         val result = ctx.toResult(plan)
-        result.isBlocked shouldBe false
-        val sql = result.statements.single().sql
-        sql shouldContainStr "UPDATE `dmg_sequences` SET `name` = 'new_seq' WHERE `name` = 'old_seq'"
+        result.isBlocked shouldBe true
+        result.statements.shouldBeEmpty()
+        result.diagnostics.any {
+            it.code == MysqlDiffSequenceOps.RENAME_BLOCKED_CODE
+        } shouldBe true
+        result.blockers.any {
+            it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        } shouldBe true
     }
 })

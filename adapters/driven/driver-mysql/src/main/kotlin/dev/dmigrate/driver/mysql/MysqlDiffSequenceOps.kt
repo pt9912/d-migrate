@@ -50,6 +50,18 @@ internal object MysqlDiffSequenceOps {
     /** Diagnostic code emitted when the renderer is invoked outside `HELPER_TABLE` mode. */
     const val MODE_REQUIRED_CODE: String = "E056"
 
+    /**
+     * Diagnostic code emitted when a `RenameSequence` op slips
+     * through to the renderer while `MysqlObjectRenamePolicy` still
+     * marks sequence renames as `Blocked`. The op is short-circuited
+     * with `MANUAL_ACTION_REQUIRED` (no SQL) so a planner regression
+     * surfaces as a clear blocker instead of writing to
+     * `dmg_sequences` against the F.4 contract. Sub-Slice C upgrades
+     * the policy to `DropCreateFallback` and re-enables the SQL
+     * path here.
+     */
+    const val RENAME_BLOCKED_CODE: String = "MYSQL_RENAME_SEQUENCE_DEFENSIVE_BLOCK"
+
     fun renderCreateSequence(op: DiffOperation.CreateSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
@@ -69,23 +81,43 @@ internal object MysqlDiffSequenceOps {
     fun renderAlterSequence(op: DiffOperation.AlterSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
-        val target = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
-        ctx.emit(op, updateRowSql(name, target, ctx))
+        val (source, target) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.before to op.after
+        } else {
+            op.after to op.before
+        }
+        val sql = updateRowSql(name, source, target, ctx)
+            ?: run {
+                // No managed field actually differs between before /
+                // after — `AlterSequence` was emitted by the Mapper
+                // because the [SequenceDiff] flagged a `start` /
+                // runtime-state change, which this slice leaves to
+                // the `preserveCurrentValue` follow-up. Skip the
+                // UPDATE emit; the op is a no-op for this direction.
+                return
+            }
+        ctx.emit(op, sql)
     }
 
     fun renderDropSequence(op: DiffOperation.DropSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
+        // Both directions read bound triggers from `currentSchema` —
+        // that's the pre-Up state where the column→sequence bindings
+        // still live. `desiredSchema` is post-Up (sequence removed,
+        // bindings removed) and would yield an empty trigger set,
+        // which would silently break the Down rollback contract.
+        val boundTriggers = ctx.triggersForSequence(name, SchemaSide.CURRENT)
         if (ctx.direction == MysqlRenderDirection.DOWN) {
-            // Inverse: re-emit the bootstrap (if not yet emitted in this
-            // direction's pass), then re-INSERT the row and rebuild the
-            // bound triggers from the desired-side schema.
+            // Inverse: re-emit the bootstrap (if not yet emitted in
+            // this direction's pass), then re-INSERT the row and
+            // rebuild every trigger that was dropped during UP.
             emitBootstrapIfNeeded(op, ctx)
             ctx.emit(
                 op,
                 MysqlSequenceEmulationTemplates.sequenceSeedSql(name, op.sequence, ctx.sql::quote),
             )
-            for (spec in ctx.triggersForSequence(name)) {
+            for (spec in boundTriggers) {
                 val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
                 ctx.emit(
                     op,
@@ -94,7 +126,7 @@ internal object MysqlDiffSequenceOps {
             }
             return
         }
-        for (spec in ctx.triggersForSequence(name)) {
+        for (spec in boundTriggers) {
             val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
             ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
         }
@@ -102,41 +134,31 @@ internal object MysqlDiffSequenceOps {
     }
 
     /**
-     * Defensive-only path. The Mapper's `MysqlObjectRenamePolicy`
-     * upgrade in Sub-Slice C re-routes sequence renames to
-     * `DropSequence + CreateSequence` with `RenameProvenance`, so a
-     * direct `RenameSequence` op reaching this renderer indicates a
-     * regression. The implementation stays so the path remains
-     * exercised under integration / regression tests.
+     * Defensive-only path. The Mapper's
+     * `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` still
+     * produces `RenameSupport.Blocked` for MySQL today, so a
+     * `RenameSequence` op reaching this renderer is a planner
+     * regression. Until Sub-Slice C upgrades the policy to
+     * `DropCreateFallback`, the defensive path short-circuits with
+     * `MANUAL_ACTION_REQUIRED` so the regression surfaces as a
+     * clear blocker — emitting the actual `UPDATE dmg_sequences`
+     * SQL would silently bypass the F.4 contract that put
+     * sequence renames out of scope.
      */
     fun renderRenameSequence(op: DiffOperation.RenameSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
-        val (oldName, newName) = if (ctx.direction == MysqlRenderDirection.UP) {
-            op.fromName to op.toName
-        } else {
-            op.toName to op.fromName
-        }
-        val oldLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(oldName)
-        val newLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(newName)
-        ctx.emit(
+        ctx.skip(
             op,
-            "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
-                "${ctx.sql.quote("name")} = $newLiteral " +
-                "WHERE ${ctx.sql.quote("name")} = $oldLiteral;",
+            "MySQL sequence rename is currently routed through " +
+                "`MysqlObjectRenamePolicy = Blocked`; a `RenameSequence` op reaching the " +
+                "renderer is a planner regression. Sub-Slice C of " +
+                "ImpPlan-0.9.7-mysql-sequence-diff-migration upgrades the policy to " +
+                "`DropCreateFallback`, after which this op type is rerouted to " +
+                "DropSequence + CreateSequence with RenameProvenance. " +
+                "Hint: re-plan with the policy upgrade landed.",
+            code = RENAME_BLOCKED_CODE,
         )
-        // Trigger names are derived from (table, column), not the
-        // sequence name, so the trigger NAME does not change — but the
-        // body literal `dmg_nextval('<sequence>')` does. Drop+recreate
-        // covers both.
-        for (spec in ctx.triggersForSequence(oldName)) {
-            val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
-            val newSpec = spec.copy(sequenceName = newName)
-            ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
-            ctx.emit(
-                op,
-                MysqlSequenceEmulationTemplates.sequenceTriggerSql(newSpec, triggerName, ctx.sql::quote),
-            )
-        }
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
     }
 
     private fun ensureHelperMode(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
@@ -144,13 +166,35 @@ internal object MysqlDiffSequenceOps {
         ctx.skip(
             op,
             "Sequence diff rendering requires --mysql-named-sequences helper_table; current " +
-                "mode is ${ctx.options.mysqlNamedSequenceMode}. No SQL is emitted.",
+                "mode is ${ctx.options.mysqlNamedSequenceMode}. No SQL is emitted. " +
+                "Hint: add --mysql-named-sequences helper_table to enable sequence emulation.",
             code = MODE_REQUIRED_CODE,
         )
         ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
         return false
     }
 
+    /**
+     * Emits the three helper-table bootstrap statements as a single
+     * block (table + `dmg_nextval` + `dmg_setval`) before the first
+     * row-level INSERT in this direction, then flips
+     * [MysqlSequenceMigrationContext.markBootstrapEmitted].
+     *
+     * Note on order vs the DDL-Generator pipeline: production
+     * (`MysqlDdlGenerator`) interleaves the bootstrap with row seed
+     * across three pipeline stages — `generateSequences()` emits the
+     * table + per-sequence INSERTs, `generateSupportFunctions()`
+     * emits the routines, `generateSupportTriggers()` emits column
+     * triggers. The diff path keeps the bootstrap atomic and emits
+     * it BEFORE the first INSERT instead. The two SQL shapes are
+     * functionally equivalent (a row INSERT into `dmg_sequences`
+     * does not depend on the routines existing), but golden
+     * snapshots that compare full-schema-emit output against
+     * from-empty diff-migration output will see the routines in a
+     * different relative position. This trade-off is deliberate:
+     * tracking a multi-stage finalisation across diff render passes
+     * is more invasive than the runtime gain is worth.
+     */
     private fun emitBootstrapIfNeeded(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         if (!ctx.sequenceMigration.needsBootstrap()) return
         ctx.emit(op, MysqlSequenceEmulationTemplates.supportTableSql(ctx.sql::quote))
@@ -166,26 +210,44 @@ internal object MysqlDiffSequenceOps {
     }
 
     /**
-     * UPDATE on the managed declarative fields only. `start` /
-     * `next_value` are the runtime state and are not migrated by an
-     * `AlterSequence` (see Plan §3.1 + §3.2 Out-of-Scope:
-     * `preserveCurrentValue` is its own slice).
+     * UPDATE on the managed declarative fields ONLY for fields that
+     * actually differ between [source] and [target]. Per Plan §5.2
+     * the SET list is the delta, not the full record — so an
+     * `AlterSequence` that only flips `cycle` emits a one-field
+     * UPDATE instead of overwriting all five.
+     *
+     * `start` / `next_value` are the runtime state and are never
+     * migrated by `AlterSequence` (Plan §3.2 Out-of-Scope:
+     * `preserveCurrentValue` is its own slice). Returns `null` when
+     * the delta is empty — the caller suppresses the emit so a
+     * runtime-state-only diff does not produce a no-op UPDATE.
      */
     private fun updateRowSql(
         sequenceName: String,
-        sequence: SequenceDefinition,
+        source: SequenceDefinition,
+        target: SequenceDefinition,
         ctx: MysqlDiffRenderContext,
-    ): String {
+    ): String? {
         val literal = MysqlSequenceSqlCodec.quoteStringLiteral(sequenceName)
-        val cycle = if (sequence.cycle == true) 1 else 0
-        val sets = listOf(
-            "${ctx.sql.quote("increment_by")} = ${sequence.increment ?: 1L}",
-            "${ctx.sql.quote("min_value")} = ${sequence.minValue?.toString() ?: "NULL"}",
-            "${ctx.sql.quote("max_value")} = ${sequence.maxValue?.toString() ?: "NULL"}",
-            "${ctx.sql.quote("cycle_enabled")} = $cycle",
-            "${ctx.sql.quote("cache_size")} = ${sequence.cache?.toString() ?: "NULL"}",
-        ).joinToString(", ")
-        return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET $sets " +
-            "WHERE ${ctx.sql.quote("name")} = $literal;"
+        val sets = mutableListOf<String>()
+        if (source.increment != target.increment) {
+            sets += "${ctx.sql.quote("increment_by")} = ${target.increment}"
+        }
+        if (source.minValue != target.minValue) {
+            sets += "${ctx.sql.quote("min_value")} = ${target.minValue?.toString() ?: "NULL"}"
+        }
+        if (source.maxValue != target.maxValue) {
+            sets += "${ctx.sql.quote("max_value")} = ${target.maxValue?.toString() ?: "NULL"}"
+        }
+        if (source.cycle != target.cycle) {
+            sets += "${ctx.sql.quote("cycle_enabled")} = ${if (target.cycle) 1 else 0}"
+        }
+        if (source.cache != target.cache) {
+            sets += "${ctx.sql.quote("cache_size")} = ${target.cache?.toString() ?: "NULL"}"
+        }
+        if (sets.isEmpty()) return null
+        return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
+            sets.joinToString(", ") +
+            " WHERE ${ctx.sql.quote("name")} = $literal;"
     }
 }

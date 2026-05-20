@@ -23,6 +23,18 @@ import dev.dmigrate.driver.migration.TransactionScope
 /** Rendering direction. */
 internal enum class MysqlRenderDirection { UP, DOWN }
 
+/**
+ * E.3 MySQL Sequence-Diff Sub-Slice B: which side of the diff the
+ * caller wants when looking up sequence-bound triggers. `CURRENT`
+ * = pre-Up state; `DESIRED` = post-Up state. The direction-based
+ * default works for `RenameSequence` (where the bound triggers
+ * live in `currentSchema` for UP and `desiredSchema` for DOWN)
+ * but NOT for `DropSequence`: both UP (drop triggers) and DOWN
+ * (re-create the same triggers) need `CURRENT`, the only schema
+ * that still contains the bindings.
+ */
+internal enum class SchemaSide { CURRENT, DESIRED }
+
 /** Mutable accumulator for one MySQL renderer invocation. Mirrors `PostgresDiffRenderContext`. */
 internal class MysqlDiffRenderContext(
     val direction: MysqlRenderDirection,
@@ -173,12 +185,10 @@ internal class MysqlDiffRenderContext(
     /**
      * E.3 MySQL Sequence-Diff Sub-Slice B: discover all canonical
      * support-trigger names that target [sequenceName] in the
-     * source-side schema for the current direction.
-     *
-     * - UP direction's source is `currentSchema` — DropSequence's UP
-     *   path removes triggers that exist in the source schema.
-     * - DOWN direction's source is `desiredSchema` — CreateSequence's
-     *   DOWN path (inverse DELETE) walks the post-Up state.
+     * requested [side]. Caller picks the side explicitly because the
+     * "default by direction" heuristic only works for renames —
+     * `DropSequence` UP and DOWN both consult `CURRENT` (the only
+     * schema that still carries the bindings).
      *
      * Returns an empty list if the schema is unknown or no column
      * carries a `SequenceNextVal` default pointing at the given
@@ -186,8 +196,14 @@ internal class MysqlDiffRenderContext(
      * [MysqlSequenceNaming.triggerName] so re-running this against
      * the same schema state always yields the same set.
      */
-    fun triggersForSequence(sequenceName: String): List<MysqlSequenceTriggerSpec> {
-        val schema = if (direction == MysqlRenderDirection.UP) currentSchema else desiredSchema
+    fun triggersForSequence(
+        sequenceName: String,
+        side: SchemaSide,
+    ): List<MysqlSequenceTriggerSpec> {
+        val schema = when (side) {
+            SchemaSide.CURRENT -> currentSchema
+            SchemaSide.DESIRED -> desiredSchema
+        }
         val tables = schema?.tables ?: return emptyList()
         val result = mutableListOf<MysqlSequenceTriggerSpec>()
         for ((tableName, table) in tables) {
