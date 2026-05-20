@@ -65,6 +65,114 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–E)**
+  *(2026-05-20)* — `schema migrate` against a MySQL target now
+  renders the four sequence `DiffOperation` subtypes
+  (`CreateSequence`, `AlterSequence`, `DropSequence`,
+  `RenameSequence`) into the helper-table emulation that landed in
+  0.9.4 (`docs/planning/done/mysql-sequence-emulation-plan.md`).
+  Previously the diff generator routed sequence ops to
+  `OpCategory.UNSUPPORTED`, so operators with sequence-tracking
+  MySQL schemas had to bypass `schema migrate` and apply the full
+  `schema generate` script manually.
+
+  Template surface:
+    - New internal `MysqlSequenceEmulationTemplates`
+      (`adapters/driven/driver-mysql`) holds the pure helper-table
+      SQL templates extracted from `MysqlSequenceDdlSupport` so the
+      DDL-Generator pipeline (full-schema emission) and the
+      diff renderer share one source of truth. `MysqlSequenceDdlSupport`
+      delegates to it; the production SQL output stays
+      byte-identical (verified via existing
+      `MysqlDdlGenerator*Test` fixtures).
+
+  Diff renderer:
+    - New `MysqlDiffSequenceOps` (`internal object`) implements
+      Up/Down for all four subtypes. `CreateSequence` emits the
+      helper-table bootstrap (`CREATE TABLE dmg_sequences` +
+      `CREATE FUNCTION dmg_nextval` + `CREATE FUNCTION dmg_setval`)
+      at most once per migration direction via
+      `MysqlSequenceMigrationContext.needsBootstrap()`, followed by
+      a row INSERT; subsequent `CreateSequence` ops reuse the
+      bootstrap. `AlterSequence` emits an `UPDATE dmg_sequences`
+      that touches only the managed declarative fields that
+      actually differ between `op.before` and `op.after`
+      (`increment_by`, `min_value`, `max_value`, `cycle_enabled`,
+      `cache_size`); the runtime `next_value` / `start` state is
+      left to the `preserveCurrentValue`-Cross-Dialect-Slice.
+      `DropSequence` UP drops every sequence-bound trigger
+      (discovered via the new
+      `MysqlDiffRenderContext.triggersForSequence(name, SchemaSide)`
+      helper that walks column-level `SequenceNextVal` defaults)
+      before deleting the `dmg_sequences` row, so the catalog
+      cannot leak `dmg_nextval('<deleted>')` references. The DOWN
+      inverse re-creates the same triggers. Trigger discovery for
+      `DropSequence` always consults `SchemaSide.CURRENT` (the
+      pre-Up state); for `RenameSequence` the direction-based
+      heuristic applies.
+    - `MysqlDiffDdlGenerator.categorize()` routes the four
+      subtypes to a new `OpCategory.SEQUENCE`. `RenameSequence`
+      lands here as a defensive regression guard only — see the
+      policy section below.
+    - Mode gate: when `MysqlNamedSequenceMode != HELPER_TABLE`
+      every sequence op blocks with diagnostic code `E056` →
+      `MANUAL_ACTION_REQUIRED`, including the actionable hint
+      "Add --mysql-named-sequences helper_table to enable
+      sequence emulation."; no SQL is emitted.
+
+  Rename policy + decomposition:
+    - `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` lifted
+      from `RenameSupport.Blocked` to
+      `RenameSupport.DropCreateFallback`. The Mapper now
+      decomposes sequence renames into
+      `DropSequence(from)` + `CreateSequence(to)` with shared
+      `renameProvenance`, mirroring the trigger / function /
+      procedure fallback that F.4 Sub-Slice B established. The
+      `RenameSequence` op type still has a defensive `UPDATE
+      dmg_sequences SET name = …` + trigger rebuild path in the
+      renderer for planner regressions / custom plans / artefact
+      replays.
+
+  Column-default reprojection:
+    - `SequenceDefaultReprojector` (F.4 Sub-Slice D) extended to
+      recognise the Drop-Create fallback path. Without this, a
+      MySQL plan that combines a rename overlay
+      (`old_seq → new_seq`) with a `CreateTable` / `AddColumn` /
+      `AlterColumnDefault` referencing `nextval('old_seq')` would
+      silently emit DDL that points at the dropped sequence name.
+      The reprojector picks up the `CreateSequence` half of every
+      fallback pair (those whose `renameProvenance.objectType ==
+      SEQUENCE`) and reads its `fromPath[0]` / `toPath[0]` into
+      the same rewrite map the PostgreSQL-native `RenameSequence`
+      path uses. The `DependencyAnalyzer` requires no change — its
+      `sequenceSourceIdByName` map already keys
+      `CreateSequence.objectRef.rootName → CreateSequence.id`, so
+      column-bearing ops with rewritten defaults get the correct
+      dependency edge for free.
+
+  Carve-outs documented as out-of-scope (deferred to follow-up
+  slices, named per plan §9): live-DB drift / canonical-form
+  checks against existing `dmg_sequences` rows (analogous to F.5
+  E.3's `CheckPreflightProbe`); `preserveCurrentValue` policy
+  across dialects; SQLite sequence diff; cross-dialect sequence
+  transfer; MariaDB-native `CREATE SEQUENCE`.
+
+  Tests landed across the affected modules:
+  `MysqlSequenceEmulationTemplatesTest`,
+  `MysqlDiffSequenceOpsTest`,
+  `ObjectRenamePolicyTest` (MySQL SEQUENCE case),
+  `RenameObjectMapperTest` (MySQL fallback case),
+  `MysqlDiffObjectRenameTest` (Drop+Create+Provenance pin),
+  `SequenceDefaultReprojectorTest` (three new MySQL fallback
+  cases).
+
+  Commit timeline:
+  Sub-Slice A `edc1fb9d` + review `4336284d`,
+  B `28598cde` + review `7c2b8bec`,
+  C `d3724a33` + review `93aa3e40`,
+  D `0bda4f15`.
+  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
+
 - **0.9.7 F.5 — CHECK / EXCLUDE Constraint Vollscheibe (Sub-Slices A–G)**
   *(2026-05-20)* — the conservative F.5 carve-out from the
   first-matrix slice (every table carrying a CHECK or EXCLUDE

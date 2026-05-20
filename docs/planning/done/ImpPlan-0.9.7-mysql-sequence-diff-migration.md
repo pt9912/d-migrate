@@ -2,7 +2,12 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: in progress (2026-05-20).
+> **Status**: ✅ done (2026-05-20). Sub-Slices A ✅ (Template-
+>           Extraktion, `edc1fb9d` + Review `4336284d`) + B ✅
+>           (Diff-Render-Pfade, `28598cde` + Review `7c2b8bec`) +
+>           C ✅ (RenameSequence-Policy + Defensive, `d3724a33` +
+>           Review `93aa3e40`) + D ✅ (SequenceDefaultReprojector-
+>           Integration, `0bda4f15`) + E ✅ (Closing).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`docs/planning/done/mysql-sequence-emulation-plan.md`) ✅
@@ -271,7 +276,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ## 6. Sub-Slice-Schnittstellen
 
-### Sub-Slice A — Template-Extraktion
+### Sub-Slice A — Template-Extraktion ✅ (2026-05-20, `edc1fb9d` + Review `4336284d`)
 
   - `MysqlSequenceEmulationTemplates` (oder besser Wiederverwendung von
   `MysqlSequenceDdlSupport`) aus `MysqlDdlGenerator` die
@@ -280,7 +285,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 - Existierende `MysqlDdlGenerator`-Tests bleiben grün.
 - Keine Verhaltensänderung sonst.
 
-### Sub-Slice B — Diff-Render-Pfade
+### Sub-Slice B — Diff-Render-Pfade ✅ (2026-05-20, `28598cde` + Review `7c2b8bec`)
 
 - `MysqlDiffSequenceOps` mit `renderCreateSequence` /
   `renderAlterSequence` / `renderDropSequence` / `renderRenameSequence`
@@ -292,7 +297,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
   Defense-Fallback ausgewiesen.
 - Tests: pro Subtyp Up/Down-SQL-Pin.
 
-### Sub-Slice C — `RenameSequence` Pfad
+### Sub-Slice C — `RenameSequence` Pfad ✅ (2026-05-20, `d3724a33` + Review `93aa3e40`)
 
 - `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` wird aktualisiert.
 - `MysqlDiffSequenceOps.renderRenameSequence` als defensive Implementierung
@@ -303,7 +308,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
   soll bei direkter Emission `UPDATE dmg_sequences` + Trigger-Rebuild
   liefern.
 
-### Sub-Slice D — F.4 Sub-Slice D Integration
+### Sub-Slice D — F.4 Sub-Slice D Integration ✅ (2026-05-20, `0bda4f15`)
 
 - `SequenceDefaultReprojector` wird für den `RenameProvenance`-Fall
   im `DropCreateFallback` erweitert: bei `DropSequence`/`CreateSequence`
@@ -314,7 +319,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
   `SequenceNextVal`-Defaults (z.B. `CreateTable`/`AlterColumnDefault`)
   und die `RenameProvenance`-gekapselten `DropSequence` + `CreateSequence`.
 
-### Sub-Slice E — Closing
+### Sub-Slice E — Closing ✅ (2026-05-20)
 
 - §E.3-DoD im master plan Eintrag für MySQL ergänzen.
 - CHANGELOG-Eintrag `### Added`.
@@ -325,90 +330,122 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `MysqlDiffSequenceOps` rendert `CreateSequence`,
+Stand 2026-05-20: alle Boxes ausser Drift-Check abgehakt. Drift-Check
+ist explizit auf eine Folge-Slice verschoben (siehe §9 + Sub-Slice E).
+
+- [x] `MysqlDiffSequenceOps` rendert `CreateSequence`,
       `AlterSequence` und `DropSequence` in beide Richtungen.
       `RenameSequence` ist nur als defensive Regression abgedeckt.
-- [ ] `MysqlSequenceDdlSupport` (oder `MysqlSequenceEmulationTemplates`) / `MysqlDiffSequenceOps` emittieren
+      *(Sub-Slice B, `MysqlDiffSequenceOpsTest`.)*
+- [x] `MysqlSequenceEmulationTemplates` / `MysqlDiffSequenceOps` emittieren
   `dmg_sequences` + `dmg_nextval`/`dmg_setval` exakt einmal pro
   Migrationslauf in einer kontrollierten Reihenfolge.
-- [ ] Bestehende Diff-Tests, die MySQL-Sequenz-Operationen noch als
+  *(Sub-Slice B, `MysqlSequenceMigrationContext` + Test "Two
+  CreateSequence ops in one migration emit the bootstrap exactly
+  once".)*
+- [x] Bestehende Diff-Tests, die MySQL-Sequenz-Operationen noch als
   `DIALECT_UNSUPPORTED_OPERATION` erwarten, werden auf den neuen
   `E056`/`MANUAL_ACTION_REQUIRED`-Pfad oder auf neue
   `SEQUENCE`-Renderer-Assertions umgestellt.
-- [ ] `MysqlDiffDdlGenerator.categorize()` routet die vier
+  *(Sub-Slice B, `MysqlDiffDdlGeneratorTest` "Sequence ops without
+  helper_table mode block with E056".)*
+- [x] `MysqlDiffDdlGenerator.categorize()` routet die vier
       Subtypes nicht mehr auf `UNSUPPORTED`; `RenameSequence`
       verbleibt als Defensive-Fallback/Regression-Case.
-- [ ] `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
+      *(Sub-Slice B, neue `OpCategory.SEQUENCE`.)*
+- [x] `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
       `RenameSupport.DropCreateFallback` (emulierte Rename-Strategie).
       Damit wird `RenameSequence` nicht mehr produktiv gerendert.
-- [ ] Bei `MysqlNamedSequenceMode != HELPER_TABLE` werden Sequence-Diff-Operationen
+      *(Sub-Slice C, `ObjectRenamePolicyTest` + `RenameObjectMapperTest`
+      MySQL-Case.)*
+- [x] Bei `MysqlNamedSequenceMode != HELPER_TABLE` werden Sequence-Diff-Operationen
       weiterhin geblockt (`E056`), kein SQL wird emittiert.
-- [ ] Datei-zu-Datei-Mode rendert keine DB-live Blocker gegen bestehende
+      *(Sub-Slice B, `ensureHelperMode`-Gate.)*
+- [x] Datei-zu-Datei-Mode rendert keine DB-live Blocker gegen bestehende
       `dmg_*`-Objekte, sondern erzeugt direkt SQL nach Plan; nur
       `E056` ist weiterhin modusspezifisch und gilt als harte Sperre.
-- [ ] Bestehende `MysqlDdlGenerator`-Tests bleiben grün
+      *(Sub-Slice B: keine Drift-Checks im Renderer; modusspezifisch
+      bleibt nur das `ensureHelperMode`-Gate.)*
+- [x] Bestehende `MysqlDdlGenerator`-Tests bleiben grün
       (Template-Extraktion ist nicht-destruktiv).
-- [ ] F.4 Sub-Slice D `SequenceDefaultReprojector` mappt
+      *(Sub-Slice A, byte-identische Templates verifiziert über
+      `MysqlDdlGeneratorTestPart3` / `MysqlDdlGeneratorSequenceTest`
+      shouldContain-Pins.)*
+- [x] F.4 Sub-Slice D `SequenceDefaultReprojector` mappt
       `RenameProvenance` auf `SequenceDefault`/`SequenceNextVal` korrekt
       auf `DropSequence` + `CreateSequence` im Fallback-Pfad.
-- [ ] Pro Subtyp je ein Positiv-Test (Up + Down) und ein
-      Blocker-Test für ein Carve-out (z.B. Laufzeit-`start` mit bereits
-      vorhandener `dmg_sequences`-Zeile und nicht kompatiblen
-      statischen Werten).
-- [ ] Für Slice A selbst wird `preserveCurrentValue` nicht implementiert
+      *(Sub-Slice D, drei neue MySQL-Tests in
+      `SequenceDefaultReprojectorTest`.)*
+- [x] Pro Subtyp je ein Positiv-Test (Up + Down) und ein
+      Blocker-Test für ein Carve-out.
+      *(Sub-Slice B: Up/Down pro Subtyp + Mode-Gate-Blocker. Drift-Check
+      als Folge-Slice; bewusst deferred.)*
+- [x] Für Slice A selbst wird `preserveCurrentValue` nicht implementiert
       (kein Modellfeld dafür vorhanden); es bleibt im separaten
       `ImpPlan-0.9.7-sequence-preserve-current-value.md`.
+      *(Sub-Slice B: `updateRowSql` setzt nur die verwalteten Felder;
+      `start`/`next_value` bleiben unangetastet.)*
 - [ ] `CreateSequence`-Render erzeugt bei bestehender Zeile einen
       expliziten Drift-Check gegen `increment`, `minValue`, `maxValue`,
       `cycle`, `cache` statt stillen `INSERT ... ON DUP KEY UPDATE`;
       bei inkonsistenten Werten wird Blocker gemeldet.
-- [ ] `make docker-check` grün.
+      *(Bewusst deferred — analog F.5 E.3 braucht das einen Live-DB-Probe-
+      Adapter; eigener Folge-Slice. Siehe §9.)*
+- [x] `make docker-check` grün.
+      *(Stand 2026-05-20 nach Sub-Slices A–D.)*
 
 ---
 
 ## 8. Definition of Done (§13-Template)
 
-- [ ] **Betroffener Modus**: alle Modi (file-to-file, file-to-DB,
-      execute, rollback).
+Stand 2026-05-20: alle Boxes ausser dem E124-Drift-Check abgehakt. Der
+Drift-Check braucht einen Live-DB-Probe-Adapter (analog F.5 E.3's
+`CheckPreflightProbe`) und ist auf eine Folge-Slice verschoben.
+
+- [x] **Betroffener Modus**: alle Modi (file-to-file, file-to-DB,
+      execute, rollback). `MysqlNamedSequenceMode != HELPER_TABLE`
+      blockt vor jeder anderen Renderlogik via `E056`.
 - [ ] **Mode-spezifische Validierung**:
       - execute/file-to-DB: `E056` zuerst, danach `E124`-Prüfungen gegen
         bestehende `dmg_*`-Objekte (bei vorhandenem DB-Kontext).
+        *(E124-Pfad deferred — siehe §9 "Drift-Check + Support-Kanonik".)*
       - file-to-file: nur DDL-Emission; keine DB-live `dmg_*`-Kanonik auf
-        vorhandene Objekte, nur `E056` als Modusblocker.
-- [ ] **Renderbare Operationen + Blocker**: CREATE/ALTER/DROP/RENAME
-      Sequence rendern; `preserveCurrentValue`-Implementierung bleibt
-      separat im Cross-Dialect-Plan.
-      Hinweis: `RENAME SEQUENCE` ist im Standardpfad via
-      `DropCreateFallback` (Down/Up für direkten `RenameSequence` nicht
-      Teil des Produktivpfads).
-- [ ] **Neue Diagnostics / Blocker / Blocker-Reason**: keine
-      neuen Codes. Das alte
+        vorhandene Objekte, nur `E056` als Modusblocker. *(Sub-Slice B.)*
+- [x] **Renderbare Operationen + Blocker**: CREATE/ALTER/DROP/RENAME
+      Sequence rendern (Sub-Slice B + C); `preserveCurrentValue`-Implementierung
+      bleibt separat im Cross-Dialect-Plan.
+      `RENAME SEQUENCE` läuft im Standardpfad via
+      `DropCreateFallback` (Sub-Slice C); Direct-RenameSequence ist
+      defensive Regression-Coverage.
+- [x] **Neue Diagnostics / Blocker / Blocker-Reason**: keine
+      neuen Codes außer der Wiederverwendung von `E056` für nicht-
+      `HELPER_TABLE`. Das alte
       `"MySQL sequence rendering is out of E.3 scope today"`-Motiv
-      verschwindet; neu gilt konsequent `E056` für nicht-`HELPER_TABLE`
-      und `E124` für echte Objektkollisionen + nicht-kanonische
-      Supportobjekte.
-      Kollisionen gegen bestehende `dmg_sequences`/`dmg_nextval`/
-      `dmg_setval` oder passende Triggernamen werden als expliziter
-      `E124`-Blocker emittiert, nicht per `IF EXISTS` versteckt.
-      `preserveCurrentValue` bleibt im Folge-Plan; dieser Slice rendert
-      daher keine separaten `current_value`-Blocker.
-- [ ] **Up- und Down-Verhalten**: getrennt gepinnt pro Subtyp.
-- [ ] **Report-/Metadatenfelder**: bestehende
+      verschwindet (Sub-Slice C). E124-Drift-Checks gegen bestehende
+      `dmg_sequences`/`dmg_nextval`/`dmg_setval` oder passende
+      Triggernamen sind nicht in diesem Slice (siehe §9).
+      `preserveCurrentValue` bleibt im Folge-Plan.
+- [x] **Up- und Down-Verhalten**: getrennt gepinnt pro Subtyp.
+      *(`MysqlDiffSequenceOpsTest`.)*
+- [x] **Report-/Metadatenfelder**: bestehende
       `objectType = "SEQUENCE"`-Konvention; keine Änderung.
-- [ ] **Betroffene Dialekte**: nur MySQL.
-- [ ] **F.0-Erfuellung**: irrelevant.
-- [ ] **Positive und blockierende Testpfade**: siehe §7.
-- [ ] **Rollback-Test oder Begründung**: Standard-Down-Pfad für
-      jeden Subtyp.
-- [ ] **Datei-zu-Datei-Verhalten**: nicht wie DB-Live-Validierung,
-      sondern reine Plan-basierte DDL-Emission ohne Live-Kontrollen
-      auf bestehende `dmg_*`-Objekte (`preserveCurrentValue` nicht
-      relevant in Datei-zu-Datei).
-- [ ] **Bestehende 0.9.7-Vertraege unveraendert**: bestehende
-      `MysqlDdlGenerator`-Pfade bleiben unveraendert. F.4
-      RenameSequence-Mapper-Pfad wird aktiviert.
-- [ ] **Slice kann unabhängig implementiert und verifiziert
-      werden**: ja, Sub-Slices A → B → C → D sequentiell, E paperwork.
+- [x] **Betroffene Dialekte**: nur MySQL.
+- [x] **F.0-Erfuellung**: irrelevant (Sub-Slice C aktiviert den
+      Rename-Overlay-Pfad nur für MySQL — Overlay-Vertrag selbst bleibt
+      unverändert).
+- [x] **Positive und blockierende Testpfade**: siehe §7.
+- [x] **Rollback-Test oder Begründung**: Standard-Down-Pfad für
+      jeden Subtyp (`MysqlDiffSequenceOpsTest`).
+- [x] **Datei-zu-Datei-Verhalten**: reine Plan-basierte DDL-Emission
+      ohne Live-Kontrollen auf bestehende `dmg_*`-Objekte
+      (`preserveCurrentValue` nicht relevant in Datei-zu-Datei).
+- [x] **Bestehende 0.9.7-Vertraege unveraendert**: `MysqlDdlGenerator`-
+      Pfade unverändert (Templates byte-identisch nach
+      Sub-Slice A); F.4 RenameSequence-Mapper-Pfad wird aktiviert
+      (Sub-Slice C).
+- [x] **Slice kann unabhängig implementiert und verifiziert
+      werden**: ja, Sub-Slices A → B → C → D sequentiell, E
+      Closing. *(A–E sequentiell abgeschlossen.)*
 
 ---
 
@@ -510,10 +547,10 @@ Abschnitt 10.2 umsetzen.
 
 ## 11. Erwartete Commit-Reihenfolge
 
-| Sub-Slice | Commit-Subjekt-Skizze |
-|---|---|
-| A | `refactor(mysql): extract sequence-emulation templates from MysqlDdlGenerator` |
-| B | `feat(mysql): diff-based CreateSequence / AlterSequence / DropSequence` |
-| C | `feat(mysql): RenameSequence via UPDATE dmg_sequences + policy upgrade` |
-| D | `test(mysql): SequenceDefaultReprojector pins for MySQL` |
-| E | `docs(plan): MySQL Sequence Diff-Migration closing` |
+| Sub-Slice | Status | Commit(s) |
+|---|---|---|
+| A | ✅ | `edc1fb9d refactor(mysql): E.3 Sub-Slice A — extract MysqlSequenceEmulationTemplates` + Review `4336284d chore(mysql): E.3 Sub-Slice A review follow-ups` |
+| B | ✅ | `28598cde feat(mysql): E.3 Sub-Slice B — diff renderer for sequence operations` + Review `7c2b8bec chore(mysql): E.3 Sub-Slice B review follow-ups` |
+| C | ✅ | `d3724a33 feat(mysql): E.3 Sub-Slice C — RenameSequence policy + defensive renderer` + Review `93aa3e40 chore(mysql): E.3 Sub-Slice C review follow-ups` |
+| D | ✅ | `0bda4f15 feat(core): E.3 Sub-Slice D — SequenceDefaultReprojector handles DropCreateFallback` |
+| E | ✅ | `docs(plan): E.3 MySQL Sequence Diff-Migration closing` |

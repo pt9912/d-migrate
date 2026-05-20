@@ -637,6 +637,54 @@ Routine-Rendering:
 
 - PostgreSQL rendert Routine-Replace fuer Functions und Procedures ueber `CREATE OR REPLACE`, sofern der jeweilige Body bekannt und der Dollar-Tag konfliktfrei ist.
 - MySQL-Familie unterscheidet Oracle MySQL und MariaDB. Der neutrale Datei-zu-Datei-Dialekt `mysql` verwendet Oracle-MySQL-Semantik: Stored-Routine-Replace darf kein `CREATE OR REPLACE` erzeugen und nutzt nur bei sicherem Dependency-Guard `DROP` + `CREATE`, sonst `MANUAL_ACTION_REQUIRED`. Bei Datei-zu-DB aktiviert ein live erkannter MariaDB-Vendor-String `CREATE OR REPLACE` fuer Functions/Procedures.
+- **MySQL Sequence Diff-Migration** *(E.3 Sub-Slices A–E,
+  2026-05-20)*: `schema migrate` rendert jetzt
+  `CreateSequence` / `AlterSequence` / `DropSequence` /
+  `RenameSequence` gegen die helper-table-Emulation aus 0.9.4
+  (`dmg_sequences` + `dmg_nextval` / `dmg_setval` + per-Spalte-
+  Trigger). Mode-Gate: nur mit `--mysql-named-sequences
+  helper_table` aktiv; im Default `action_required`-Modus blockt
+  jede Sequence-Diff-Op mit Diagnostic-Code `E056` →
+  `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`, kein SQL wird
+  emittiert. Im `helper_table`-Modus emittieren die Renderer:
+    - `CreateSequence` UP: Bootstrap einmalig pro Migration
+      (`CREATE TABLE dmg_sequences` + `CREATE FUNCTION dmg_nextval`
+      + `CREATE FUNCTION dmg_setval`) gefolgt von
+      `INSERT INTO dmg_sequences (...) VALUES (...)`. DOWN: nur
+      `DELETE FROM dmg_sequences WHERE name = ...`.
+    - `AlterSequence` UP/DOWN: `UPDATE dmg_sequences SET ...` auf
+      den deklarativen Feldern, die sich tatsächlich zwischen
+      `before` und `after` unterscheiden (`increment_by`,
+      `min_value`, `max_value`, `cycle_enabled`, `cache_size`);
+      `start` / `next_value` (Laufzeitstatus) bleiben unangetastet
+      und sind Out-of-Scope für diesen Slice
+      (`preserveCurrentValue` ist ein eigener Cross-Dialect-Plan).
+    - `DropSequence` UP: `DROP TRIGGER IF EXISTS …` pro per-Spalte
+      gebundenem Sequence-Trigger (aus `currentSchema` ermittelt
+      durch `SequenceNextVal`-Default-Walk) + `DELETE FROM
+      dmg_sequences`. DOWN: Bootstrap (einmalig) + `INSERT` + alle
+      gebundenen Trigger wiederherstellen.
+    - `RenameSequence`: kommt unter Normalbetrieb nicht durch —
+      `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
+      `RenameSupport.DropCreateFallback`, der Mapper zerlegt die
+      Rename in `DropSequence(from)` + `CreateSequence(to)` mit
+      gemeinsamer `RenameProvenance`. Der `SequenceDefaultReprojector`
+      schreibt `SequenceNextVal("from")`-Referenzen in
+      `CreateTable` / `AddColumn` / `AlterColumnDefault`-Ops auf
+      `"to"` um; der `DependencyAnalyzer` setzt die Kante auf das
+      Fallback-`CreateSequence`. Ein direkt emittierter
+      `RenameSequence`-Op (planner regression / artefact replay)
+      fällt auf eine defensive Implementierung zurück, die
+      `UPDATE dmg_sequences SET name = …` plus
+      `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (mit neuem
+      Body-Literal `dmg_nextval('to')`) emittiert.
+  Out of scope dieses Slice (eigener Folge-Slice):
+  Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
+  (E124-Kollisionsprüfung gegen vorgefundene Werte) — analog F.5
+  E.3's `CheckPreflightProbe` braucht das einen separaten Probe-
+  Adapter. Der Renderer prüft im aktuellen Slice nur die
+  Mode-Gate-Bedingung (`E056`); echte Live-Inkonsistenzen führen
+  zu Runtime-Fehlern im `--execute`-Pfad.
 - Operatoren koennen die Defaults pro Routine-Kind ueberschreiben — via wiederholbarer `--routine-capability`-Flag oder via `.d-migrate.yaml`-Sektion `routineCapability:`. Format des YAML-Eintrags:
 
   ```yaml
@@ -820,8 +868,10 @@ Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-rena
     Namespace). Trigger, Function, Procedure haben kein
     `ALTER … RENAME` und fallen auf Drop+Create+`RenameProvenance`
     zurück, sofern beide Bodies bekannt und identisch sind; fehlender
-    Body oder Drift blockiert. Sequence-Rename bleibt blockiert bis
-    der E.3 MySQL-Sequence-Vertrag steht.
+    Body oder Drift blockiert. Sequences fallen seit E.3 MySQL-
+    Sequence-Diff (2026-05-20) ebenfalls auf
+    Drop+Create+`RenameProvenance` zurück (helper-table-Emulation —
+    siehe MySQL-Sequence-Diff-Block weiter unten).
   - **SQLite**: View und Trigger fallen immer auf
     Drop+Create+`RenameProvenance` zurück (kein natives Rename); gleiche
     Body-Bekanntheits-Regeln wie MySQL. Function/Procedure blockieren
