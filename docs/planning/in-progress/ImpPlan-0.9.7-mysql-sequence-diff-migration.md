@@ -75,14 +75,15 @@ Migrationen ohne `schema generate`-Workaround.
 - Alle neuen Sequence-Diff-Renderer sind nur im
   `MysqlNamedSequenceMode.HELPER_TABLE`-Modus aktiv; bei anderem
   Modus werden sie explizit auf Diff-Ebene mit `E056` + `MANUAL_ACTION_REQUIRED`
-  blockiert (`ctx.skip(..., primaryBlockedReason = MANUAL_ACTION_REQUIRED)`).
+  blockiert (`ctx.skip(op, \"...\", \"E056\"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`).
   Es darf dann keinerlei SQL emittiert werden. Die eigentliche Guard-Logik wird im
   `MysqlDiffSequenceOps`-Renderer verankert, nicht erst indirekt
   im `MysqlDdlGenerator`.
 - Render-Funktionen pro Subtyp:
   - `renderCreateSequence(op, ctx)` — produziert die SQL-Statements
-    für die einzelne Sequence (`INSERT`/`UPDATE` der Zeile + Trigger-Rendern)
-    aus der bestehenden `MysqlDdlGenerator`-Emulation. Alle globalen
+    für die einzelne Sequence (`INSERT` bei Neueintrag, sonst Drift-Check
+    + Trigger-Reconcile) aus der bestehenden `MysqlDdlGenerator`-Emulation.
+    Alle globalen
     Bootstrap-Objekte (`dmg_sequences`, `dmg_nextval`, `dmg_setval`) werden
     über einen zentralen Diff-Header (einmal pro Migration) erzeugt.
     Vorher wird die Support-Kanonik geprüft: `dmg_sequences`-Tabellenschema,
@@ -364,7 +365,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
       Hinweis: `RENAME SEQUENCE` ist im Standardpfad via
       `DropCreateFallback` (Down/Up für direkten `RenameSequence` nicht
       Teil des Produktivpfads).
-- [ ] **Neue Diagnostics / Blocker / primaryBlockedReason**: keine
+- [ ] **Neue Diagnostics / Blocker / Blocker-Reason**: keine
       neuen Codes. Das alte
       `"MySQL sequence rendering is out of E.3 scope today"`-Motiv
       verschwindet; neu gilt konsequent `E056` für nicht-`HELPER_TABLE`
@@ -438,7 +439,7 @@ ansonsten wird ebenfalls `E124` erzeugt.
 
 `renderCreateSequence`/`renderAlterSequence`/`renderDropSequence`/`renderRenameSequence`
 sind im Nicht-`HELPER_TABLE`-Modus strikt verboten:
-`ctx.skip(op, ..., code = "E056", primaryBlockedReason = MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))`.
+`ctx.skip(op, ..., code = "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`.
 Es darf anschließend keine SQL-Emission mehr stattfinden. Erst danach kann SQL
 für HELPER_TABLE gerendert werden.
 
