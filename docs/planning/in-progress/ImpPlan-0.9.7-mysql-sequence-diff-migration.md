@@ -2,12 +2,17 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: ✅ done (2026-05-20). Sub-Slices A ✅ (Template-
->           Extraktion, `edc1fb9d` + Review `4336284d`) + B ✅
->           (Diff-Render-Pfade, `28598cde` + Review `7c2b8bec`) +
->           C ✅ (RenameSequence-Policy + Defensive, `d3724a33` +
+> **Status**: in progress 2026-05-20 (Sub-Slice F follow-up).
+>           Sub-Slices A ✅ (Template-Extraktion, `edc1fb9d` +
+>           Review `4336284d`) + B ✅ (Diff-Render-Pfade,
+>           `28598cde` + Review `7c2b8bec`) + C ✅
+>           (RenameSequence-Policy + Defensive, `d3724a33` +
 >           Review `93aa3e40`) + D ✅ (SequenceDefaultReprojector-
->           Integration, `0bda4f15`) + E ✅ (Closing).
+>           Integration, `0bda4f15`) + E (Closing, `c7e92bf4` +
+>           `1431fb24`) — Closing wurde anschließend re-opened, weil
+>           die Closing-Review vier echte Funktionslücken aufdeckte
+>           (siehe Sub-Slice F). Sub-Slice F + erneutes Closing
+>           offen.
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`docs/planning/done/mysql-sequence-emulation-plan.md`) ✅
@@ -319,12 +324,87 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
   `SequenceNextVal`-Defaults (z.B. `CreateTable`/`AlterColumnDefault`)
   und die `RenameProvenance`-gekapselten `DropSequence` + `CreateSequence`.
 
-### Sub-Slice E — Closing ✅ (2026-05-20)
+### Sub-Slice E — Closing (Iteration 1, `c7e92bf4` + `1431fb24`, re-opened)
 
 - §E.3-DoD im master plan Eintrag für MySQL ergänzen.
 - CHANGELOG-Eintrag `### Added`.
 - `spec/cli-spec.md` MySQL-Sequence-Renderbarkeit dokumentieren.
 - Plan-Doc nach `done/`.
+
+Anmerkung: Die Closing-Review (post-`1431fb24`) deckte vier echte
+Funktionslücken auf, die Sub-Slice F adressiert. Die Doku aus
+Sub-Slice E (CHANGELOG, spec, Roadmap) bleibt im wesentlichen
+korrekt — die spec beschreibt den Endzustand nach Sub-Slice F;
+das CHANGELOG wird in der zweiten Closing-Iteration um Sub-Slice F
+erweitert.
+
+### Sub-Slice F — Closing-Follow-up *(offen, naechster Schritt)*
+
+Adressiert die vier Findings der Closing-Review:
+
+1. **Bootstrap-Idempotenz** (high): `emitBootstrapIfNeeded`
+   emittiert heute `CREATE TABLE dmg_sequences` + `CREATE FUNCTION
+   dmg_nextval` / `dmg_setval` ohne Existenz-Check. Eine Migration
+   gegen eine DB, die schon helper_table-Sequenzen nutzt, läuft
+   gegen "table already exists". Fix:
+   `MysqlSequenceEmulationTemplates.supportTableSql` nutzt
+   `CREATE TABLE IF NOT EXISTS`; `nextval`/`setval`-Routinen
+   nutzen `DROP FUNCTION IF EXISTS … ;` vor `CREATE FUNCTION …`.
+   Auch die DDL-Generator-Pipeline profitiert (idempotent gegen
+   wiederholte `schema generate`-Läufe).
+2. **Column-Default-Renderer für `SequenceNextVal`** (high): Der
+   Diff-Pfad routet `CreateTable` / `AddColumn` / `AlterColumnDefault`
+   durch `MysqlDiffSqlBuilders.columnLine` → `MysqlTypeMapper.toDefaultSql`,
+   und letzteres wirft `error("SequenceNextVal requires
+   helper_table mode (not yet implemented in 6.3)")` für jede
+   Spalte mit `DefaultValue.SequenceNextVal`. Damit ist Sub-Slice
+   D's Reprojector zwar korrekt, aber der gerenderte Plan crasht
+   beim ersten Tabellenop mit Sequence-Default. Fix:
+   `MysqlDiffSqlBuilders.columnLine` erkennt SequenceNextVal-
+   Defaults separat (analog `AbstractDdlGenerator.columnSql` →
+   `resolveSequenceDefault`-Bypass) und emittiert KEINE `DEFAULT`-
+   Klausel; pro betroffener Spalte wird der Support-Trigger
+   (BEFORE INSERT) lazy direkt nach dem Tabellen-/Spalten-Op
+   emittiert. AlterColumnDefault muss Direction-aware drop +
+   create für Trigger handhaben.
+3. **start-only `AlterSequence`-Operation wird still verworfen**
+   (medium): `renderAlterSequence` ist nach dem Sub-Slice-B-
+   Review-Fix so geschrieben, dass es bei leerem managed-fields-
+   Delta einfach `return`'t ohne `emit`/`skip`/`addBlocker`. Eine
+   Sequenz-Diff, deren einzige Änderung `start` ist (Laufzeitstatus,
+   deferred zu `preserveCurrentValue`), wird im Report weder als
+   gerendert noch als skipped markiert — die Op verschwindet
+   einfach. Fix: explizit `ctx.skip` mit Info-Diagnostic
+   `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` + Hinweis auf den Folge-
+   Slice, kein Blocker (es ist keine Funktionalitätslücke des
+   Operators).
+4. **§10.1 Plan-Doc-Konsistenz** (low): §10.1 beschreibt den
+   Drift-/Kanonik-Check als implementierte Mitigation, während §7
+   und §8 ihn explizit als deferred markieren. Fix: §10.1 auf
+   "geplant für Folge-Slice" umformulieren, mit Verweis auf den
+   eigenen Plan-Doc-Stub.
+
+Tests:
+- Bootstrap-IF-NOT-EXISTS / DROP+CREATE-Pattern im
+  `MysqlSequenceEmulationTemplatesTest` (snapshot-Update).
+- start-only `AlterSequence` → skip + Info-Diagnostic
+  (`MysqlDiffSequenceOpsTest`).
+- `CreateTable` mit SequenceNextVal-Default rendert sauber: keine
+  DEFAULT-Klausel + nachfolgender Trigger
+  (`MysqlDiffSequenceOpsTest` neuer Case oder eigene Test-Datei).
+- `AddColumn` analog.
+- `AlterColumnDefault` (4 Fälle: SeqNextVal → SeqNextVal-other,
+  SeqNextVal → konstanter Wert, konstanter Wert → SeqNextVal,
+  Direction-Swap im DOWN).
+- Mode-Gate für Column-Default-Pfad: bei !HELPER_TABLE → E056
+  analog zum Sequence-Op-Pfad.
+
+### Sub-Slice G — Closing-Iteration 2 *(nach Sub-Slice F)*
+
+- §E.3-DoD im master plan + Roadmap auf wirklich done setzen.
+- CHANGELOG-Eintrag erweitern um Sub-Slice F.
+- `spec/cli-spec.md` Column-Default-Trigger-Pfad ergänzen.
+- Plan-Doc zurück nach `done/`.
 
 ---
 
@@ -472,24 +552,33 @@ Drift-Check braucht einen Live-DB-Probe-Adapter (analog F.5 E.3's
 ### 10.1 `dmg_sequences`-Helper-Table- und Support-Objekt-Kanonizität
 
 Wenn das Live-Schema bereits ein Objekt `dmg_sequences` enthält, darf
-`CreateSequence` nicht blind weiterlaufen. Mitigation:
-`MysqlDiffSequenceOps` prüft vor dem Create/Insert die Existenz und
-Kanonik der Support-Objekte: `dmg_sequences`, `dmg_nextval`,
-`dmg_setval` sowie den zugehörigen Sequence-Trigger
-`dmg_seq_<table16>_<column16>_<hash10>_bi` inklusive Marker im Body.
-Bei fachlich unpassendem Vorhandensein (falsche Signatur/Marker oder
-abweichendes Objekt/Typ) wird ein `E124`-Blocker statt stiller
-`IF NOT EXISTS`-Logik ausgegeben.
-Zusätzlich gilt für sequenzspezifische Namens-Kollisionen:
-bei bereits vorhandener Zeile in `dmg_sequences` wird zunächst ein Drift-Check
-gegen die fachlichen Felder (`increment`, `minValue`, `maxValue`,
-`cycle`, `cache`; in der Support-Tabelle als
-`increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`)
-durchgeführt; `start` (der persistierte
-`next_value`-Zustand) ist kein harter Vergleichsanker, da es den
-aktuellen Laufzeitstatus widerspiegelt.
-Nur bei vollständiger Konsistenz wird ein Trigger-Reconcile gerendert,
-ansonsten wird ebenfalls `E124` erzeugt.
+`CreateSequence` nicht blind weiterlaufen. Mitigation in zwei
+Schichten:
+
+**Heute (Sub-Slice F)**: Bootstrap-Idempotenz. Die Templates emittieren
+`CREATE TABLE IF NOT EXISTS dmg_sequences (...)` und
+`DROP FUNCTION IF EXISTS dmg_nextval; CREATE FUNCTION dmg_nextval(...)`
+(analog für `dmg_setval`). Damit bricht eine Migration gegen eine DB
+mit existierenden Support-Objekten nicht beim Bootstrap-Schritt; bei
+abweichender Spaltensignatur in `dmg_sequences` schlägt allerdings
+der spätere `INSERT` fehl — das ist eine bewusste Schwelle, die der
+zweite Schicht-Slice anhebt.
+
+**Folge-Slice (Drift-Check, geplant)**: Live-DB-Probe gegen `dmg_sequences`-
+Spaltensignatur, `dmg_nextval`/`dmg_setval`-Body-Marker und
+`dmg_seq_<table16>_<column16>_<hash10>_bi`-Trigger-Body-Marker (analog
+F.5 E.3's `CheckPreflightProbe`-Adapter). Bei abweichender Kanonik
+(falsche Signatur, fehlender Marker, anderes Objekt/Typ) erzeugt
+der Probe-Gate einen `E124`-Blocker statt stiller `IF NOT EXISTS`-
+Toleranz. Zusätzlich: bei bereits vorhandener `dmg_sequences`-Zeile
+ein Drift-Check gegen die fachlichen Felder (`increment`, `minValue`,
+`maxValue`, `cycle`, `cache`); `start` (`next_value`-Zustand) ist
+kein harter Vergleichsanker. Bei voller Konsistenz Trigger-Reconcile;
+sonst `E124`.
+
+Hinweis: Sub-Slice F dokumentiert den Drift-Check explizit als
+Out-of-Scope; §7 + §8 markieren die zugehörigen Akzeptanzkriterien
+als deferred.
 
 ### 10.2 `MysqlSequenceDdlSupport`-Guard im Diff-Pfad
 

@@ -25,7 +25,7 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
 
     test("supportTableSql renders the canonical dmg_sequences DDL byte-for-byte") {
         val expected = """
-            CREATE TABLE `dmg_sequences` (
+            CREATE TABLE IF NOT EXISTS `dmg_sequences` (
                 `managed_by` VARCHAR(32) NOT NULL,
                 `format_version` VARCHAR(32) NOT NULL,
                 `name` VARCHAR(255) NOT NULL,
@@ -57,6 +57,13 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
             "`cache_size`) VALUES ('d-migrate', 'mysql-sequence-v1', 'anon', 1, 1, NULL, " +
             "NULL, 0, NULL);"
         normalise(MysqlSequenceEmulationTemplates.sequenceSeedSql("anon", seq, ::backtickQuote)) shouldBe expected
+    }
+
+    test("dropNextvalRoutineSql / dropSetvalRoutineSql produce idempotent DROP FUNCTION statements") {
+        MysqlSequenceEmulationTemplates.dropNextvalRoutineSql(::backtickQuote) shouldBe
+            "DROP FUNCTION IF EXISTS `dmg_nextval`;"
+        MysqlSequenceEmulationTemplates.dropSetvalRoutineSql(::backtickQuote) shouldBe
+            "DROP FUNCTION IF EXISTS `dmg_setval`;"
     }
 
     test("nextvalRoutineSql wraps the increment-and-return body in DELIMITER //") {
@@ -124,7 +131,7 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
         val custom: (String) -> String = { "<<$it>>" }
         val sql = normalise(MysqlSequenceEmulationTemplates.supportTableSql(custom))
         // Identifier list is fully driven by the custom quoter.
-        sql.startsWith("CREATE TABLE <<dmg_sequences>> (") shouldBe true
+        sql.startsWith("CREATE TABLE IF NOT EXISTS <<dmg_sequences>> (") shouldBe true
         sql.contains("<<managed_by>>") shouldBe true
         sql.contains("PRIMARY KEY (<<name>>)") shouldBe true
         // Body literals (`VARCHAR`, `BIGINT`, `ENGINE=InnoDB`) are not

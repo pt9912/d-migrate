@@ -73,7 +73,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         val r = planAndUp(diff, desired = schemaOf(mapOf("order_seq" to seq)))
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
-        sqls.any { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe true
+        sqls.any { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe true
         sqls.any { it.contains("CREATE FUNCTION `dmg_nextval`") } shouldBe true
         sqls.any { it.contains("CREATE FUNCTION `dmg_setval`") } shouldBe true
         sqls.any {
@@ -88,7 +88,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         val r = planAndDown(diff, desired = schemaOf(mapOf("order_seq" to seq)))
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
-        sqls.none { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe true
+        sqls.none { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe true
         sqls.single() shouldBe
             "DELETE FROM `dmg_sequences` WHERE `name` = 'order_seq';"
     }
@@ -105,7 +105,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         val r = planAndUp(diff, desired = schemaOf(mapOf("seq_a" to a, "seq_b" to b)))
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
-        sqls.count { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe 1
+        sqls.count { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe 1
         sqls.count { it.contains("CREATE FUNCTION `dmg_nextval`") } shouldBe 1
         sqls.count { it.contains("CREATE FUNCTION `dmg_setval`") } shouldBe 1
         sqls.count { it.contains("INSERT INTO `dmg_sequences`") } shouldBe 2
@@ -223,7 +223,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         val r = planAndDown(diff, current = schemaOf(mapOf("order_seq" to seq)))
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
-        sqls.any { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe true
+        sqls.any { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe true
         sqls.any { it.contains("INSERT INTO `dmg_sequences`") && it.contains("'order_seq', 42") } shouldBe true
     }
 
@@ -294,7 +294,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         val r = planAndDown(diff, current = current)
         r.isBlocked shouldBe false
         val sqls = r.statements.map { it.sql }
-        sqls.any { it.contains("CREATE TABLE `dmg_sequences`") } shouldBe true
+        sqls.any { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe true
         sqls.any { it.contains("INSERT INTO `dmg_sequences`") && it.contains("'order_seq', 7") } shouldBe true
         val ordersTrigger = MysqlSequenceNaming.triggerName("orders", "id")
         sqls.any { it.contains("CREATE TRIGGER `$ordersTrigger`") } shouldBe true
@@ -363,6 +363,206 @@ class MysqlDiffSequenceOpsTest : FunSpec({
             it.contains("CREATE TRIGGER `$triggerName`") &&
                 it.contains("`dmg_nextval`('new_seq')")
         } shouldBe true
+    }
+
+    // ── E.3 Sub-Slice F: start-only AlterSequence + column-defaults ──────
+
+    test("AlterSequence with runtime-state-only delta skips with INFO + no SQL") {
+        // SequenceDiff carrying only a `start` change should not
+        // crash and should not silently disappear from the report:
+        // the renderer emits an INFO-severity diagnostic, marks the
+        // op as skipped, and does NOT add a blocker.
+        val before = SequenceDefinition(start = 1L, increment = 1L)
+        val after = before.copy(start = 100L)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(
+                SequenceDiff(name = "order_seq", start = ValueChange(1L, 100L)),
+            ),
+        )
+        val r = planAndUp(
+            diff,
+            current = schemaOf(mapOf("order_seq" to before)),
+            desired = schemaOf(mapOf("order_seq" to after)),
+        )
+        r.isBlocked shouldBe false
+        r.statements.shouldBeEmpty()
+        r.diagnostics.any {
+            it.code == MysqlDiffSequenceOps.RUNTIME_STATE_NO_OP_CODE &&
+                it.severity == dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.INFO
+        } shouldBe true
+    }
+
+    test("CreateTable with SequenceNextVal column default emits trigger after CREATE TABLE") {
+        // E.3 Sub-Slice F core fix: the diff renderer must NOT route
+        // a SequenceNextVal default through `toDefaultSql` (which
+        // crashes on MySQL by contract). Instead the column line
+        // omits the `DEFAULT` clause and the renderer emits a
+        // BEFORE INSERT trigger that calls `dmg_nextval`.
+        val seq = SequenceDefinition(start = 1L)
+        val orders = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+                "name" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.Text(),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to orders),
+        )
+        val r = planAndUp(
+            SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("order_seq", seq)),
+                tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("orders", orders)),
+            ),
+            desired = desired,
+        )
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        // Bootstrap + sequence INSERT come first (Sequence-phase ops).
+        sqls.any { it.contains("CREATE TABLE IF NOT EXISTS `dmg_sequences`") } shouldBe true
+        // CREATE TABLE column line must NOT contain a DEFAULT clause
+        // for the sequence-defaulted column.
+        val createTableSql = sqls.first { it.contains("CREATE TABLE `orders`") }
+        createTableSql.contains("DEFAULT") shouldBe false
+        // Per sequence-defaulted column: DROP TRIGGER IF EXISTS +
+        // CREATE TRIGGER.
+        val triggerName = MysqlSequenceNaming.triggerName("orders", "id")
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$triggerName`;" } shouldBe true
+        sqls.any {
+            it.contains("CREATE TRIGGER `$triggerName`") &&
+                it.contains("`dmg_nextval`('order_seq')")
+        } shouldBe true
+    }
+
+    test("AddColumn with SequenceNextVal default emits trigger after ADD COLUMN") {
+        val seq = SequenceDefinition(start = 1L)
+        val before = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(
+            columns = before.columns + mapOf(
+                "seq_id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+        )
+        val current = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to before),
+        )
+        val desired = current.copy(tables = mapOf("orders" to after))
+        val r = planAndUp(
+            SchemaDiff(
+                tablesChanged = listOf(
+                    dev.dmigrate.core.diff.TableDiff(
+                        name = "orders",
+                        columnsAdded = mapOf(
+                            "seq_id" to after.columns.getValue("seq_id"),
+                        ),
+                    ),
+                ),
+            ),
+            current = current,
+            desired = desired,
+        )
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        val addColumn = sqls.first { it.contains("ADD COLUMN") }
+        addColumn.contains("DEFAULT") shouldBe false
+        val triggerName = MysqlSequenceNaming.triggerName("orders", "seq_id")
+        sqls.any { it.contains("CREATE TRIGGER `$triggerName`") } shouldBe true
+    }
+
+    test("CreateTable with SequenceNextVal default blocks E056 when mode is not helper_table") {
+        val seq = SequenceDefinition(start = 1L)
+        val orders = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to seq),
+            tables = mapOf("orders" to orders),
+        )
+        val r = gen.generateUp(
+            planner.plan(
+                schemaOf(),
+                desired,
+                SchemaDiff(
+                    sequencesAdded = listOf(NamedSequence("order_seq", seq)),
+                    tablesAdded = listOf(dev.dmigrate.core.diff.NamedTable("orders", orders)),
+                ),
+            ),
+            DdlGenerationOptions(), // default = ACTION_REQUIRED
+        )
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == "E056" } shouldBe true
+        r.statements.any { it.sql.contains("CREATE TABLE `orders`") } shouldBe false
+    }
+
+    test("AlterColumnDefault — SequenceNextVal → constant drops trigger then SET DEFAULT") {
+        val seq = SequenceDefinition(start = 1L)
+        val beforeCol = dev.dmigrate.core.model.ColumnDefinition(
+            type = dev.dmigrate.core.model.NeutralType.BigInteger,
+            default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("order_seq"),
+        )
+        val afterCol = beforeCol.copy(default = dev.dmigrate.core.model.DefaultValue.NumberLiteral(42))
+        val before = dev.dmigrate.core.model.TableDefinition(columns = mapOf("seq_id" to beforeCol))
+        val after = before.copy(columns = mapOf("seq_id" to afterCol))
+        val r = planAndUp(
+            SchemaDiff(
+                tablesChanged = listOf(
+                    dev.dmigrate.core.diff.TableDiff(
+                        name = "orders",
+                        columnsChanged = listOf(
+                            dev.dmigrate.core.diff.ColumnDiff(
+                                name = "seq_id",
+                                default = ValueChange(beforeCol.default, afterCol.default),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            current = SchemaDefinition(
+                name = "App", version = "1",
+                sequences = mapOf("order_seq" to seq),
+                tables = mapOf("orders" to before),
+            ),
+            desired = SchemaDefinition(
+                name = "App", version = "1",
+                sequences = mapOf("order_seq" to seq),
+                tables = mapOf("orders" to after),
+            ),
+        )
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        val triggerName = MysqlSequenceNaming.triggerName("orders", "seq_id")
+        // Drop the trigger first.
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$triggerName`;" } shouldBe true
+        // Then SET DEFAULT '42'.
+        sqls.any { it.contains("SET DEFAULT") && it.contains("42") } shouldBe true
     }
 
     test("RenameSequence defensive renderer DOWN reads bindings from desiredSchema") {

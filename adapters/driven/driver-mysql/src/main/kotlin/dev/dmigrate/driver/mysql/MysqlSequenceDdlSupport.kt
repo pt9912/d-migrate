@@ -149,7 +149,13 @@ internal class MysqlSequenceDdlSupport(
             }
         }
 
+        // Sub-Slice F: idempotent bootstrap — DROP first, CREATE
+        // second. The DROP is a separate DdlStatement so the
+        // DDL-Generator's rollback parser still recognises the
+        // routine name from the `DELIMITER //`-wrapped CREATE.
+        statements += DdlStatement(MysqlSequenceEmulationTemplates.dropNextvalRoutineSql(quoteIdentifier))
         statements += DdlStatement(MysqlSequenceEmulationTemplates.nextvalRoutineSql(quoteIdentifier))
+        statements += DdlStatement(MysqlSequenceEmulationTemplates.dropSetvalRoutineSql(quoteIdentifier))
         statements += DdlStatement(MysqlSequenceEmulationTemplates.setvalRoutineSql(quoteIdentifier))
         return statements
     }

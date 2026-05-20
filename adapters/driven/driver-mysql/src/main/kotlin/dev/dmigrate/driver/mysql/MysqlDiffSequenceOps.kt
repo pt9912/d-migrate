@@ -50,6 +50,17 @@ internal object MysqlDiffSequenceOps {
     /** Diagnostic code emitted when the renderer is invoked outside `HELPER_TABLE` mode. */
     const val MODE_REQUIRED_CODE: String = "E056"
 
+    /**
+     * Sub-Slice F: `AlterSequence` whose `before → after` delta only
+     * touches the runtime-state (`start` / `next_value`) emits this
+     * INFO-severity diagnostic and is skipped without a blocker. The
+     * actual runtime-state migration lives in the
+     * `preserveCurrentValue` cross-dialect follow-up slice; for now
+     * the renderer documents that the op was acknowledged but
+     * deferred.
+     */
+    const val RUNTIME_STATE_NO_OP_CODE: String = "MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP"
+
     fun renderCreateSequence(op: DiffOperation.CreateSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
@@ -75,15 +86,26 @@ internal object MysqlDiffSequenceOps {
             op.after to op.before
         }
         val sql = updateRowSql(name, source, target, ctx)
-            ?: run {
-                // No managed field actually differs between before /
-                // after — `AlterSequence` was emitted by the Mapper
-                // because the [SequenceDiff] flagged a `start` /
-                // runtime-state change, which this slice leaves to
-                // the `preserveCurrentValue` follow-up. Skip the
-                // UPDATE emit; the op is a no-op for this direction.
-                return
-            }
+        if (sql == null) {
+            // Sub-Slice F: `SequenceDiff` flagged only the runtime-
+            // state field (`start` / `next_value`) — `AlterSequence`
+            // was emitted by the Mapper, but the managed-fields delta
+            // is empty. Skip with an INFO-severity diagnostic so the
+            // report tracks the op without surfacing a blocker. The
+            // actual runtime-state migration is the `preserveCurrent-
+            // Value` cross-dialect follow-up.
+            ctx.skip(
+                op,
+                "AlterSequence for `$name` carries only a runtime-state " +
+                    "change (start / next_value); the managed-fields delta is empty. " +
+                    "Deferred to the `preserveCurrentValue` follow-up slice " +
+                    "(`docs/planning/in-progress/ImpPlan-0.9.7-sequence-preserve-current-value.md`); " +
+                    "no SQL emitted in this slice.",
+                code = RUNTIME_STATE_NO_OP_CODE,
+                severity = dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.INFO,
+            )
+            return
+        }
         ctx.emit(op, sql)
     }
 
@@ -184,6 +206,62 @@ internal object MysqlDiffSequenceOps {
         }
     }
 
+    /**
+     * Sub-Slice F: emit the helper-table support trigger for a
+     * column whose default is a `SequenceNextVal`. Called by
+     * `MysqlDiffTableOps` after `CREATE TABLE` / `ADD COLUMN` or an
+     * `AlterColumnDefault` that introduces a sequence default.
+     *
+     * Includes the mode gate (`E056` if not `HELPER_TABLE`) and the
+     * bootstrap-once latch via [MysqlSequenceMigrationContext]. The
+     * caller is expected to call [requireHelperModeForColumnDefault]
+     * BEFORE emitting the column-bearing statement when at least one
+     * column carries a sequence default; this method only emits the
+     * trigger side (idempotent `DROP TRIGGER IF EXISTS` +
+     * `CREATE TRIGGER` so a re-run does not collide with a leftover
+     * trigger).
+     */
+    fun emitSupportTriggerForColumn(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        tableName: String,
+        columnName: String,
+        sequenceName: String,
+    ) {
+        emitBootstrapIfNeeded(op, ctx)
+        val spec = MysqlSequenceTriggerSpec(tableName, columnName, sequenceName)
+        val triggerName = MysqlSequenceNaming.triggerName(tableName, columnName)
+        ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
+        ctx.emit(
+            op,
+            MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, ctx.sql::quote),
+        )
+    }
+
+    /**
+     * Sub-Slice F: emit `DROP TRIGGER IF EXISTS` for a column whose
+     * `SequenceNextVal` default is being removed or replaced.
+     */
+    fun emitDropSupportTriggerForColumn(
+        op: DiffOperation,
+        ctx: MysqlDiffRenderContext,
+        tableName: String,
+        columnName: String,
+    ) {
+        val triggerName = MysqlSequenceNaming.triggerName(tableName, columnName)
+        ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
+    }
+
+    /**
+     * Sub-Slice F: mode gate that table-level renderers call when at
+     * least one column carries a `SequenceNextVal` default. Returns
+     * `true` when the renderer may proceed with the column-bearing
+     * statement; returns `false` after emitting an `E056` block
+     * (no SQL must follow on the same op).
+     */
+    fun requireHelperModeForColumnDefault(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean =
+        ensureHelperMode(op, ctx)
+
     private fun ensureHelperMode(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
         if (ctx.options.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE) return true
         ctx.skip(
@@ -221,7 +299,15 @@ internal object MysqlDiffSequenceOps {
     private fun emitBootstrapIfNeeded(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         if (!ctx.sequenceMigration.needsBootstrap()) return
         ctx.emit(op, MysqlSequenceEmulationTemplates.supportTableSql(ctx.sql::quote))
+        // Sub-Slice F: DROP-then-CREATE for each routine, in
+        // separate statements. The drop keeps the bootstrap
+        // idempotent; the create is the `DELIMITER //`-wrapped
+        // body. Keeping them as separate `emit()` calls preserves
+        // the inverse-pass parser's `startsWith("DELIMITER //")`
+        // contract.
+        ctx.emit(op, MysqlSequenceEmulationTemplates.dropNextvalRoutineSql(ctx.sql::quote))
         ctx.emit(op, MysqlSequenceEmulationTemplates.nextvalRoutineSql(ctx.sql::quote))
+        ctx.emit(op, MysqlSequenceEmulationTemplates.dropSetvalRoutineSql(ctx.sql::quote))
         ctx.emit(op, MysqlSequenceEmulationTemplates.setvalRoutineSql(ctx.sql::quote))
         ctx.sequenceMigration.markBootstrapEmitted()
     }

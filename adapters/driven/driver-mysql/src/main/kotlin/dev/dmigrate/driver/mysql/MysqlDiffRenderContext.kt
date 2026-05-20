@@ -114,12 +114,27 @@ internal class MysqlDiffRenderContext(
             )
         }
 
-    fun skip(op: DiffOperation, message: String, code: String = "MYSQL_RENDER_SKIP") {
+    /**
+     * Mark [op] as skipped and emit a diagnostic. The default
+     * [severity] is `BLOCKER` (typical short-circuit-with-blocker
+     * pathway); callers that want to record the skip without a
+     * blocker — e.g. an `AlterSequence` whose delta only touches
+     * the runtime-state (`start` / `next_value`, deferred to the
+     * `preserveCurrentValue` Folge-Slice) — pass
+     * `severity = DiffDiagnostic.Severity.INFO` so the report
+     * still tracks the op without surfacing a Migration-Blocker.
+     */
+    fun skip(
+        op: DiffOperation,
+        message: String,
+        code: String = "MYSQL_RENDER_SKIP",
+        severity: DiffDiagnostic.Severity = DiffDiagnostic.Severity.BLOCKER,
+    ) {
         skipped += op.id
         diagnostics += DiffDiagnostic(
             code = code,
             message = message,
-            severity = DiffDiagnostic.Severity.BLOCKER,
+            severity = severity,
             operationId = op.id,
         )
     }

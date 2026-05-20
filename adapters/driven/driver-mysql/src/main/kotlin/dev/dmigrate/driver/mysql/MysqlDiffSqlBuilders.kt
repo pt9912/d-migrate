@@ -29,7 +29,19 @@ internal class MysqlDiffSqlBuilders(private val typeMapper: MysqlTypeMapper) {
         parts += typeMapper.toSql(col.type)
         if (col.required) parts += "NOT NULL"
         if (col.unique) parts += "UNIQUE"
-        col.default?.let { parts += "DEFAULT ${typeMapper.toDefaultSql(it, col.type)}" }
+        col.default?.let { default ->
+            // E.3 Sub-Slice F: `SequenceNextVal`-Defaults emit no
+            // inline `DEFAULT` clause on MySQL — the helper-table
+            // emulation handles the value via a per-column
+            // `BEFORE INSERT` trigger that calls `dmg_nextval('<seq>')`
+            // when the inserted value is NULL. Mirrors the
+            // `AbstractDdlGenerator.columnSql` →
+            // `resolveSequenceDefault` bypass in the full-schema
+            // DDL pipeline. The triggers themselves are emitted by
+            // `MysqlDiffTableOps` after the column-bearing statement.
+            if (default is DefaultValue.SequenceNextVal) return@let
+            parts += "DEFAULT ${typeMapper.toDefaultSql(default, col.type)}"
+        }
         col.references?.let { ref ->
             val onDelete = ref.onDelete?.let { " ON DELETE ${referentialActionSql(it)}" } ?: ""
             val onUpdate = ref.onUpdate?.let { " ON UPDATE ${referentialActionSql(it)}" } ?: ""

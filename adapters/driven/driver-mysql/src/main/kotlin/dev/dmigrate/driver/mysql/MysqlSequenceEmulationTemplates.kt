@@ -41,11 +41,18 @@ internal data class MysqlSequenceTriggerSpec(
 internal object MysqlSequenceEmulationTemplates {
 
     /**
-     * `CREATE TABLE dmg_sequences` — the helper table that stores
-     * one row per managed sequence.
+     * `CREATE TABLE IF NOT EXISTS dmg_sequences` — the helper table
+     * that stores one row per managed sequence. `IF NOT EXISTS` keeps
+     * the bootstrap idempotent across migration runs against the same
+     * database; a migration that adds a single new sequence on a DB
+     * that already has `dmg_sequences` no longer fails on
+     * "table already exists". Spaltensignatur-Kanonik (echter Drift-
+     * Check gegen vorhandene `dmg_sequences`-Definition) ist
+     * out-of-scope und auf einen separaten Live-DB-Probe-Slice
+     * verschoben.
      */
     fun supportTableSql(quoteIdentifier: (String) -> String): String = buildString {
-        appendLine("CREATE TABLE ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} (")
+        appendLine("CREATE TABLE IF NOT EXISTS ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} (")
         appendLine("    ${quoteIdentifier("managed_by")} VARCHAR(32) NOT NULL,")
         appendLine("    ${quoteIdentifier("format_version")} VARCHAR(32) NOT NULL,")
         appendLine("    ${quoteIdentifier("name")} VARCHAR(255) NOT NULL,")
@@ -88,10 +95,35 @@ internal object MysqlSequenceEmulationTemplates {
     }
 
     /**
+     * `DROP FUNCTION IF EXISTS dmg_nextval;` — emitted right before
+     * [nextvalRoutineSql] in the bootstrap stream so the routine
+     * create is idempotent across migration re-runs.
+     */
+    fun dropNextvalRoutineSql(quoteIdentifier: (String) -> String): String =
+        "DROP FUNCTION IF EXISTS ${quoteIdentifier(MysqlSequenceNaming.NEXTVAL_ROUTINE)};"
+
+    /**
+     * `DROP FUNCTION IF EXISTS dmg_setval;` — emitted right before
+     * [setvalRoutineSql].
+     */
+    fun dropSetvalRoutineSql(quoteIdentifier: (String) -> String): String =
+        "DROP FUNCTION IF EXISTS ${quoteIdentifier(MysqlSequenceNaming.SETVAL_ROUTINE)};"
+
+    /**
      * `CREATE FUNCTION dmg_nextval` — atomically increments the row
      * and returns the previous value. Emitted with the
      * `DELIMITER //` wrapper because the multi-statement body needs
      * an explicit statement separator that MySQL's client honours.
+     *
+     * Idempotency note: the bootstrap caller emits a separate
+     * `DROP FUNCTION IF EXISTS …;` statement BEFORE this one, so a
+     * migration against a DB that already has the routine drops and
+     * re-creates it cleanly. The drop is intentionally NOT included
+     * inside the `DELIMITER //`-wrapped string here because the
+     * DDL-Generator's rollback-pass parser keys off
+     * `startsWith("DELIMITER //")` to extract the function name
+     * and build the inverse `DROP FUNCTION`. See
+     * [dropNextvalRoutineSql] for the matching drop statement.
      */
     fun nextvalRoutineSql(quoteIdentifier: (String) -> String): String = buildString {
         appendLine("DELIMITER //")
@@ -121,7 +153,9 @@ internal object MysqlSequenceEmulationTemplates {
     /**
      * `CREATE FUNCTION dmg_setval` — sets and returns a new value
      * (PostgreSQL-`setval` semantics). Same delimiter convention as
-     * [nextvalRoutineSql].
+     * [nextvalRoutineSql]; the matching `DROP FUNCTION IF EXISTS`
+     * is emitted as a separate statement by the bootstrap caller
+     * (see [dropSetvalRoutineSql]).
      */
     fun setvalRoutineSql(quoteIdentifier: (String) -> String): String = buildString {
         appendLine("DELIMITER //")

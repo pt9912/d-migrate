@@ -203,7 +203,7 @@ class DdlGoldenMasterTest : FunSpec({
         val result = generator.generate(input, opts)
         val ddl = result.render()
         // Verify key support objects are present
-        ddl shouldContain "CREATE TABLE `dmg_sequences`"
+        ddl shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         ddl shouldContain "CREATE FUNCTION `dmg_nextval`"
         ddl shouldContain "CREATE FUNCTION `dmg_setval`"
         ddl shouldContain "BEFORE INSERT ON `invoices`"
@@ -222,7 +222,7 @@ class DdlGoldenMasterTest : FunSpec({
         val postData = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
 
         // PRE_DATA: support table + seed + user table
-        preData shouldContain "CREATE TABLE `dmg_sequences`"
+        preData shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         preData shouldContain "INSERT INTO `dmg_sequences`"
         preData shouldContain "CREATE TABLE `invoices`"
         preData shouldNotContain "CREATE FUNCTION"

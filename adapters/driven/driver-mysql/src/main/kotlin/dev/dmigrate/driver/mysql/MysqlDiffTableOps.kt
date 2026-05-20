@@ -1,6 +1,8 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -30,6 +32,14 @@ internal object MysqlDiffTableOps {
             blockSpatialIndex(op, ctx, tableName)
             return
         }
+        // E.3 Sub-Slice F: if any column carries a SequenceNextVal
+        // default the mode gate must clear first; emitting CREATE
+        // TABLE before the gate would leave a half-rendered op on
+        // the report.
+        val sequenceColumns = sequenceDefaultColumns(op.table)
+        if (sequenceColumns.isNotEmpty() && !MysqlDiffSequenceOps.requireHelperModeForColumnDefault(op, ctx)) {
+            return
+        }
         val lines = mutableListOf<String>()
         for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
             lines += "    " + ctx.sql.columnLine(colName, col)
@@ -49,6 +59,36 @@ internal object MysqlDiffTableOps {
         for (idx in op.table.indices) {
             ctx.emit(op, ctx.sql.createIndexSql(tableName, idx))
         }
+        // Now that the table exists, emit one BEFORE INSERT trigger
+        // per `SequenceNextVal`-defaulted column. The trigger calls
+        // `dmg_nextval('<sequence>')` when the inserted row leaves
+        // the column NULL — the same contract the full-schema DDL
+        // generator emits via `generateSupportTriggers`. Sequence-
+        // phase Create ops run BEFORE this op in the topological
+        // sort, so the helper-table row and the dmg_nextval routine
+        // already exist.
+        for ((colName, seqDefault) in sequenceColumns) {
+            MysqlDiffSequenceOps.emitSupportTriggerForColumn(
+                op, ctx, tableName, colName, seqDefault.sequenceName,
+            )
+        }
+    }
+
+    /**
+     * E.3 Sub-Slice F: walks the table's columns once and returns
+     * the `(columnName, SequenceNextVal)`-pairs that drive support-
+     * trigger emission. Other defaults (literals, function calls,
+     * etc.) flow through the regular `columnLine` path unchanged.
+     */
+    private fun sequenceDefaultColumns(
+        table: TableDefinition,
+    ): List<Pair<String, DefaultValue.SequenceNextVal>> {
+        val result = mutableListOf<Pair<String, DefaultValue.SequenceNextVal>>()
+        for ((name, col) in table.columns.entries.sortedBy { it.key }) {
+            val seq = col.default as? DefaultValue.SequenceNextVal ?: continue
+            result += name to seq
+        }
+        return result
     }
 
     fun renderDropTable(op: DiffOperation.DropTable, ctx: MysqlDiffRenderContext) {
@@ -64,10 +104,28 @@ internal object MysqlDiffTableOps {
     fun renderAddColumn(op: DiffOperation.AddColumn, ctx: MysqlDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
         if (ctx.direction == MysqlRenderDirection.DOWN) {
+            // DROP COLUMN cascades any column-bound triggers
+            // implicitly (MySQL drops triggers when their referenced
+            // column disappears via DROP COLUMN). The canonical
+            // support-trigger name is keyed by `(table, column)`,
+            // so once the column is gone the trigger goes with it.
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
             return
         }
+        // E.3 Sub-Slice F: when the new column carries a
+        // SequenceNextVal default the mode gate must clear first;
+        // the column line itself drops the `DEFAULT` clause for that
+        // case (see `MysqlDiffSqlBuilders.columnLine`).
+        val seqDefault = op.column.default as? DefaultValue.SequenceNextVal
+        if (seqDefault != null && !MysqlDiffSequenceOps.requireHelperModeForColumnDefault(op, ctx)) {
+            return
+        }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        if (seqDefault != null) {
+            MysqlDiffSequenceOps.emitSupportTriggerForColumn(
+                op, ctx, table, column, seqDefault.sequenceName,
+            )
+        }
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: MysqlDiffRenderContext) {
@@ -106,14 +164,44 @@ internal object MysqlDiffTableOps {
 
     fun renderAlterColumnDefault(op: DiffOperation.AlterColumnDefault, ctx: MysqlDiffRenderContext) {
         val (table, column) = op.objectRef.path[0] to op.objectRef.path[1]
-        val target = if (ctx.direction == MysqlRenderDirection.UP) op.after else op.before
-        val text = if (target == null) {
+        val (source, target) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.before to op.after
+        } else {
+            op.after to op.before
+        }
+        val sourceSeq = source as? DefaultValue.SequenceNextVal
+        val targetSeq = target as? DefaultValue.SequenceNextVal
+        // E.3 Sub-Slice F: any side that touches SequenceNextVal
+        // needs the mode gate before any SQL is emitted, otherwise
+        // a half-rendered ALTER would land in the report.
+        if ((sourceSeq != null || targetSeq != null) &&
+            !MysqlDiffSequenceOps.requireHelperModeForColumnDefault(op, ctx)
+        ) {
+            return
+        }
+        // Source was a sequence default: drop the bound trigger
+        // before changing the column's DDL default.
+        if (sourceSeq != null) {
+            MysqlDiffSequenceOps.emitDropSupportTriggerForColumn(op, ctx, table, column)
+        }
+        // The column-level `ALTER … SET/DROP DEFAULT` only emits a
+        // literal DEFAULT clause; SequenceNextVal targets reach the
+        // sequence-trigger path below instead, so the column-level
+        // statement just clears the default.
+        val text = if (target == null || targetSeq != null) {
             "ALTER TABLE ${ctx.sql.quote(table)} ALTER ${ctx.sql.quote(column)} DROP DEFAULT;"
         } else {
             "ALTER TABLE ${ctx.sql.quote(table)} ALTER ${ctx.sql.quote(column)} " +
                 "SET DEFAULT ${ctx.sql.toDefaultSql(target, NeutralType.Text())};"
         }
         ctx.emit(op, text)
+        // Target is a sequence default: emit the bound trigger so
+        // INSERTs that leave the column NULL pick up `dmg_nextval`.
+        if (targetSeq != null) {
+            MysqlDiffSequenceOps.emitSupportTriggerForColumn(
+                op, ctx, table, column, targetSeq.sequenceName,
+            )
+        }
     }
 
     fun renderAddPrimaryKey(op: DiffOperation.AddPrimaryKey, ctx: MysqlDiffRenderContext) {

@@ -89,7 +89,7 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
     test("helper_table generates dmg_sequences table and seed") {
         val result = generator.generate(seqSchema(), helperOpts)
         val ddl = result.render()
-        ddl shouldContain "CREATE TABLE `dmg_sequences`"
+        ddl shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         ddl shouldContain "INSERT INTO `dmg_sequences`"
         ddl shouldContain "'invoice_seq'"
         ddl shouldContain "1000"
@@ -179,7 +179,7 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
         val result = generator.generate(seqSchema(), helperOpts)
         val preData = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)
         val postData = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
-        preData shouldContain "CREATE TABLE `dmg_sequences`"
+        preData shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         postData shouldContain "CREATE FUNCTION `dmg_nextval`"
         postData shouldContain "BEFORE INSERT"
     }
