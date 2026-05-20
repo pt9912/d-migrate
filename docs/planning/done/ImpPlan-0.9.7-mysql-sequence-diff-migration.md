@@ -2,18 +2,11 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: in progress 2026-05-20 (Sub-Slice H follow-up).
->           Sub-Slices A ✅ + B ✅ + C ✅ + D ✅ + E (iter 1,
->           `c7e92bf4` + `1431fb24`) + F ✅ (`3bea97e7`) + G (iter
->           2, `aba3392f`) — closing iter 2 wurde re-opened, weil
->           eine weitere Review (post-`aba3392f`) zwei zusätzliche
->           Findings aufdeckte: (1) DELIMITER `//` in der
->           Diff-Renderer-Output verletzt den
->           `MysqlDiffRoutineOps`-Vertrag ("delimiterfrei") und
->           bricht `schema migrate --execute` gegen JDBC; (2) der
->           reduzierte Scope (Drift-Check als Folge-Slice) ist
->           nicht ausreichend abgegrenzt. Sub-Slice H + iter 3
->           Closing offen.
+> **Status**: ✅ done (2026-05-20, reduzierter Scope — siehe
+>           Scope-Hinweis unten). Sub-Slices A ✅ + B ✅ + C ✅ +
+>           D ✅ + E (iter 1, `c7e92bf4` + `1431fb24`) + F ✅
+>           (`3bea97e7`) + G (iter 2, `aba3392f`) + H ✅
+>           (`d248cd11`) + I ✅ (closing iter 3).
 > **Scope-Hinweis**: Der ursprüngliche §3.1-Scope schloss einen
 >           Live-DB-Drift-Check gegen vorhandene `dmg_sequences`-
 >           Zeilen + Support-Objekte ein. Dieser ist in einen
@@ -419,7 +412,7 @@ Tests:
 Anmerkung: Die Closing-iter-2-Review (post-`aba3392f`) deckte
 zwei zusätzliche Findings auf — siehe Sub-Slice H.
 
-### Sub-Slice H — DELIMITER + Scope-Korrektur *(offen, naechster Schritt)*
+### Sub-Slice H — DELIMITER + Scope-Korrektur ✅ (2026-05-20, `d248cd11`)
 
 Adressiert die zwei Findings der Closing-iter-2-Review:
 
@@ -475,7 +468,7 @@ Adressiert die zwei Findings der Closing-iter-2-Review:
    - §11 Commit-Tabelle ergänzt um Sub-Slice H + erneutes
      Closing.
 
-### Sub-Slice I — Closing-Iteration 3 *(nach Sub-Slice H)*
+### Sub-Slice I — Closing-Iteration 3 ✅ (2026-05-20)
 
 - Plan-Doc-Status auf done (reduzierter Scope) setzen.
 - CHANGELOG erweitern um Sub-Slice H.
@@ -723,4 +716,6 @@ Abschnitt 10.2 umsetzen.
 | D | ✅ | `0bda4f15 feat(core): E.3 Sub-Slice D — SequenceDefaultReprojector handles DropCreateFallback` |
 | E (iter 1) | ✅ | `c7e92bf4 docs(plan): E.3 MySQL Sequence Diff-Migration closing` + `1431fb24 docs(spec): E.3 closing review follow-ups` (re-opened wegen Sub-Slice F-Findings) |
 | F | ✅ | `3bea97e7 feat(mysql): E.3 Sub-Slice F — bootstrap idempotency + column-default rendering + start-only skip` |
-| G (iter 2) | ✅ | `docs(plan): E.3 MySQL Sequence Diff-Migration closing iter 2` |
+| G (iter 2) | ✅ | `aba3392f docs(plan): E.3 MySQL Sequence Diff-Migration closing iter 2` (re-opened — Findings) |
+| H | ✅ | `d248cd11 feat(mysql): E.3 Sub-Slice H — delimiter-free diff routines + drift-check follow-up plan + scope clarification` |
+| I (iter 3) | ✅ | `docs(plan): E.3 MySQL Sequence Diff-Migration closing iter 3` |

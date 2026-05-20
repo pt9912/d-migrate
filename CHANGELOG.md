@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–G)**
+- **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–I)**
   *(2026-05-20)* — `schema migrate` against a MySQL target now
   renders the four sequence `DiffOperation` subtypes
   (`CreateSequence`, `AlterSequence`, `DropSequence`,
@@ -196,6 +196,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       op. The actual runtime-state migration is the
       `preserveCurrentValue` cross-dialect follow-up.
 
+  DELIMITER fix + scope clarification (Sub-Slice H):
+    - The Sub-Slice B/F templates wrapped the routine + trigger
+      bodies in `DELIMITER //…DELIMITER ;`, which is a mysql-CLI
+      client directive — JDBC throws `SQLException`. Sub-Slice H
+      moves the template output to a delimiterfreien BEGIN…END
+      body; the DDL-Generator pipeline wraps the result with
+      `wrapWithDelimiter` for `--output file.sql` artefacts, and
+      the diff path passes the body directly through JDBC. Without
+      this fix `schema migrate --execute` would have failed on
+      every helper-table bootstrap or column-bound trigger
+      emission.
+    - The drift-/canonicity-check scope (live-DB validation of
+      existing `dmg_sequences` rows and `dmg_*` support objects)
+      is now explicitly out of this slice with a dedicated
+      follow-up plan-doc stub
+      (`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
+      6 sub-slices) so "done" no longer hides the reduced scope.
+
   Commit timeline:
   Sub-Slice A `edc1fb9d` + review `4336284d`,
   B `28598cde` + review `7c2b8bec`,
@@ -203,7 +221,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   D `0bda4f15`,
   E (closing iter 1) `c7e92bf4` + `1431fb24`,
   F `3bea97e7`,
-  G (closing iter 2) ⟵ this commit.
+  G (closing iter 2) `aba3392f`,
+  H `d248cd11`,
+  I (closing iter 3) ⟵ this commit.
   Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
 
 - **0.9.7 F.5 — CHECK / EXCLUDE Constraint Vollscheibe (Sub-Slices A–G)**

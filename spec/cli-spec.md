@@ -637,7 +637,7 @@ Routine-Rendering:
 
 - PostgreSQL rendert Routine-Replace fuer Functions und Procedures ueber `CREATE OR REPLACE`, sofern der jeweilige Body bekannt und der Dollar-Tag konfliktfrei ist.
 - MySQL-Familie unterscheidet Oracle MySQL und MariaDB. Der neutrale Datei-zu-Datei-Dialekt `mysql` verwendet Oracle-MySQL-Semantik: Stored-Routine-Replace darf kein `CREATE OR REPLACE` erzeugen und nutzt nur bei sicherem Dependency-Guard `DROP` + `CREATE`, sonst `MANUAL_ACTION_REQUIRED`. Bei Datei-zu-DB aktiviert ein live erkannter MariaDB-Vendor-String `CREATE OR REPLACE` fuer Functions/Procedures.
-- **MySQL Sequence Diff-Migration** *(E.3 Sub-Slices A–E,
+- **MySQL Sequence Diff-Migration** *(E.3 Sub-Slices A–I,
   2026-05-20)*: `schema migrate` rendert jetzt
   `CreateSequence` / `AlterSequence` / `DropSequence` /
   `RenameSequence` gegen die helper-table-Emulation aus 0.9.4
@@ -718,13 +718,30 @@ Routine-Rendering:
       `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` mit Hinweis auf den
       `preserveCurrentValue`-Folge-Slice. Die Op wird im Report
       als skipped + Info dokumentiert, ohne Migration-Blocker.
-  Out of scope dieses Slice (eigener Folge-Slice):
+  DELIMITER-Konvention *(Sub-Slice H, 2026-05-20)*:
+  Der `schema migrate --execute`-Pfad emittiert Routinen + Trigger
+  **delimiterfrei** als ein einzelnes JDBC-Statement (BEGIN…END
+  ist eine logische MySQL-Anweisung; die internen `;` sind Teil
+  des Bodies). Der `schema generate --output file.sql`-Pfad
+  wickelt die gleichen Templates mit `DELIMITER //…DELIMITER ;` für
+  mysql-CLI-Konsum. Vor Sub-Slice H emittierte der Diff-Pfad die
+  DELIMITER-gewickelte Variante — JDBC kennt `DELIMITER` nicht und
+  hätte mit `SQLException` abgelehnt; der Bug ist seit `d248cd11`
+  gefixt.
+  Out of scope dieses Slice (eigener Folge-Slice
+  `docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`):
   Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
-  (E124-Kollisionsprüfung gegen vorgefundene Werte) — analog F.5
-  E.3's `CheckPreflightProbe` braucht das einen separaten Probe-
-  Adapter. Der Renderer prüft im aktuellen Slice nur die
-  Mode-Gate-Bedingung (`E056`); echte Live-Inkonsistenzen führen
-  zu Runtime-Fehlern im `--execute`-Pfad.
+  (E124-Kollisionsprüfung gegen vorgefundene Werte und Trigger-
+  Body-Marker) — analog F.5 E.3's `CheckPreflightProbe` braucht
+  das einen separaten Probe-Adapter (Port + Adapter + Stage +
+  Gate + Renderer-Integration, 6 Sub-Slices). Der heutige Renderer
+  prüft nur die Mode-Gate-Bedingung (`E056`); die Bootstrap-
+  Idempotenz (`CREATE TABLE IF NOT EXISTS` + `DROP FUNCTION IF
+  EXISTS`) schützt vor wiederholten Migrations-Läufen, fängt aber
+  keine Drift zwischen erwarteten und tatsächlichen Helper-Objekt-
+  Definitionen. Solche Live-Inkonsistenzen führen heute zu
+  Runtime-Fehlern im `--execute`-Pfad; der Folge-Slice surfaceiert
+  sie als `E124`-Block.
 - Operatoren koennen die Defaults pro Routine-Kind ueberschreiben — via wiederholbarer `--routine-capability`-Flag oder via `.d-migrate.yaml`-Sektion `routineCapability:`. Format des YAML-Eintrags:
 
   ```yaml
