@@ -2,9 +2,9 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 architektonischer Schirm
-> **Status**: open 2026-05-19 (Architektur-Plan, nicht Code-Plan).
-> **Vorbedingung**: PG-Sequence-Diff-Renderer ✅; MySQL-Sequence-
->                  Diff-Plan *(parallel in-progress,
+> **Status**: `open` (seit 2026-05-19) — Architektur-Plan, kein Code-Plan.
+> **Vorbedingung**: PG-Sequence-Diff-Renderer ✅; MySQL-Sequence-Diff-Plan
+>                  *(parallel in-progress,
 >                  `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
 >                  SQLite-Sequence-Plan
 >                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`);
@@ -151,12 +151,12 @@ parallele Slice referenzieren kann.
 | `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`) | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
 | `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` | Source = neutral; Mapping verlustfrei |
-| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Zwischen PG/MySQL verlustfrei; SQLite blockt aktuell nur solange es kein eigenes Start-Feld gibt |
+| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Zwischen PG/MySQL/SQLite verlustfrei: SQLite setzt `next_value` beim CREATE als Initialwert |
 | `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite analog |
 | `minValue` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | SQLite: verlustfrei in `helper_table` |
 | `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
 | `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
-| `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ) | `dmg_sequences.cache_size` | SQLite: kein Runtime-Caching, `W114` |
+| `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | MySQL/SQLite: `W114`, kein Runtime-Caching |
 | `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | TBD | Execute-only; siehe preserveCurrentValue-Plan |
 | `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL: WARNING; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
 
@@ -214,10 +214,10 @@ object SequenceCapabilityDefaults {
             supportsOwnedBy = false,
         )
         DatabaseDialect.SQLITE -> SequenceCapability(
-            supportsStart = false,
-            supportsMinMaxValue = false,
-            supportsCycle = false,
-            supportsCache = false,
+            supportsStart = true, // initial ueber seed in helper-table
+            supportsMinMaxValue = true,
+            supportsCycle = true,
+            supportsCache = true, // metadata-only; kein runtime-caching (`W114`)
             supportsCurrentValuePreserve = false, // bis SQLite-Plan landet
             supportsOwnedBy = false,
         )
