@@ -300,21 +300,37 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         sqls.any { it.contains("CREATE TRIGGER `$ordersTrigger`") } shouldBe true
     }
 
-    // ── RenameSequence (defensive only) ──────────────────────────
+    // ── RenameSequence (defensive regression guard) ──────────────
 
-    test("RenameSequence defensive renderer blocks with MANUAL_ACTION_REQUIRED, no SQL") {
-        // The Mapper's `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)`
-        // still produces `RenameSupport.Blocked`. A `RenameSequence`
-        // op reaching the renderer is a planner regression — the
-        // defensive renderer must short-circuit with
-        // `MANUAL_ACTION_REQUIRED` instead of emitting SQL that
-        // would silently bypass the F.4 contract. Sub-Slice C lifts
-        // the policy to `DropCreateFallback`; until then this is the
-        // contract.
+    test("RenameSequence defensive renderer emits UPDATE name + trigger rebuild for a bound column") {
+        // Sub-Slice C: `MysqlObjectRenamePolicy` now returns
+        // `DropCreateFallback`, so the Mapper decomposes sequence
+        // renames into DropSequence + CreateSequence. The
+        // `RenameSequence` op type should therefore not reach the
+        // renderer under normal flow. The defensive path stays as a
+        // regression guard — if a planner ever emits it directly,
+        // the renderer rebuilds the helper-table row + every bound
+        // trigger so the migration is at least self-consistent.
+        val orders = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("old_seq"),
+                ),
+            ),
+        )
+        val currentSchema = SchemaDefinition(
+            name = "App",
+            version = "1",
+            sequences = mapOf("old_seq" to SequenceDefinition(start = 1L)),
+            tables = mapOf("orders" to orders),
+        )
         val ctx = MysqlDiffRenderContext(
             direction = MysqlRenderDirection.UP,
             sql = MysqlDiffSqlBuilders(MysqlTypeMapper()),
             options = helperOptions,
+            currentSchema = currentSchema,
         )
         val op = DiffOperation.RenameSequence(
             id = "rename-seq",
@@ -334,13 +350,18 @@ class MysqlDiffSequenceOpsTest : FunSpec({
             diagnostics = emptyList(),
         )
         val result = ctx.toResult(plan)
-        result.isBlocked shouldBe true
-        result.statements.shouldBeEmpty()
-        result.diagnostics.any {
-            it.code == MysqlDiffSequenceOps.RENAME_BLOCKED_CODE
-        } shouldBe true
-        result.blockers.any {
-            it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        result.isBlocked shouldBe false
+        val sqls = result.statements.map { it.sql }
+        // 1) Rename the helper-table row.
+        sqls.first() shouldContainStr
+            "UPDATE `dmg_sequences` SET `name` = 'new_seq' WHERE `name` = 'old_seq'"
+        // 2) For each bound column: drop the trigger, then recreate
+        //    with the new sequence literal in the body.
+        val triggerName = MysqlSequenceNaming.triggerName("orders", "id")
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$triggerName`;" } shouldBe true
+        sqls.any {
+            it.contains("CREATE TRIGGER `$triggerName`") &&
+                it.contains("`dmg_nextval`('new_seq')")
         } shouldBe true
     }
 })

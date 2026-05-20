@@ -31,6 +31,7 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
@@ -280,7 +281,14 @@ class MysqlDiffObjectRenameTest : FunSpec({
 
     // ── Sequence ────────────────────────────────────────────────────
 
-    test("sequence rename is blocked on MySQL (E.3 scope)") {
+    test("sequence rename on MySQL decomposes into DropSequence + CreateSequence with RenameProvenance") {
+        // E.3 Sub-Slice C: MySQL has no native sequence-rename
+        // grammar. The policy now returns `DropCreateFallback`, so
+        // the Mapper emits both halves of the rename with shared
+        // `renameProvenance` instead of a `RenameSequence` op or an
+        // `OBJECT_RENAME_UNSUPPORTED` blocker. The renderer's
+        // defensive `UPDATE dmg_sequences` path stays for regression
+        // coverage only.
         val seq = SequenceDefinition()
         val plan = planner.plan(
             current = emptySchema().copy(sequences = mapOf("s_old" to seq)),
@@ -293,9 +301,11 @@ class MysqlDiffObjectRenameTest : FunSpec({
             capabilities = mysqlCaps,
         )
         plan.operations.filterIsInstance<DiffOperation.RenameSequence>() shouldBe emptyList()
-        plan.diagnostics.firstOrNull {
-            it.code == "OBJECT_RENAME_UNSUPPORTED" && it.message.contains("MySQL sequence")
-        } shouldNotBe null
+        plan.diagnostics.map { it.code } shouldNotContain "OBJECT_RENAME_UNSUPPORTED"
+        val drop = plan.operations.filterIsInstance<DiffOperation.DropSequence>().single()
+        val create = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
+        drop.renameProvenance shouldNotBe null
+        create.renameProvenance shouldNotBe null
     }
 
     // ── F.4 Renderer-Blocker-Bridge (2026-05-19) ────────────────────

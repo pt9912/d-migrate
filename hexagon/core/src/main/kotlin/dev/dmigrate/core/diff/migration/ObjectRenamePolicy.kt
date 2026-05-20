@@ -87,8 +87,12 @@ internal object PostgresObjectRenamePolicy : ObjectRenamePolicy {
  * MySQL: views share the table namespace and rename via
  * `RENAME TABLE` (native). Triggers and routines have no
  * `ALTER … RENAME` grammar, so the policy falls back to
- * Drop+Create. Sequence renames are blocked until the MySQL
- * sequence-emulation E.3-tranche ships.
+ * Drop+Create. Sequence renames also fall back to Drop+Create —
+ * MySQL has no native sequence concept (the helper-table
+ * emulation in `MysqlSequenceEmulationTemplates` stores each
+ * sequence as a row in `dmg_sequences`), and the diff renderer's
+ * defensive `UPDATE dmg_sequences SET name = …` path is a
+ * regression guard only.
  */
 internal object MysqlObjectRenamePolicy : ObjectRenamePolicy {
 
@@ -115,10 +119,12 @@ internal object MysqlObjectRenamePolicy : ObjectRenamePolicy {
             DiffObjectType.FUNCTION, DiffObjectType.PROCEDURE -> mysqlBodyAwareFallback(
                 candidate, "MySQL has no `ALTER ${candidate.objectType.name} … RENAME`",
             )
-            DiffObjectType.SEQUENCE -> RenameSupport.Blocked(
-                code = "OBJECT_RENAME_UNSUPPORTED",
-                message = "MySQL sequence rendering is out of E.3 scope today; rename is blocked " +
-                    "until MySQL/MariaDB sequence emulation is enabled.",
+            DiffObjectType.SEQUENCE -> RenameSupport.DropCreateFallback(
+                rationale = "MySQL has no native sequence-rename grammar; the helper-table " +
+                    "emulation stores each sequence as a row in `dmg_sequences`, so a rename " +
+                    "decomposes into DropSequence(from) + CreateSequence(to) with " +
+                    "RenameProvenance. The diff renderer's `UPDATE dmg_sequences SET name = …` " +
+                    "path stays as a defensive regression guard for direct RenameSequence ops.",
             )
             else -> RenameSupport.Blocked(
                 code = "OBJECT_RENAME_UNSUPPORTED",

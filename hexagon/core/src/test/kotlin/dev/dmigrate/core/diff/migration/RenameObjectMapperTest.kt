@@ -179,6 +179,42 @@ class RenameObjectMapperTest : FunSpec({
         renames.single().toName shouldBe "s_new"
     }
 
+    test("MySQL: sequence rename overlay decomposes into DropSequence+CreateSequence with RenameProvenance") {
+        // E.3 Sub-Slice C: MySQL has no native sequence-rename
+        // grammar; the policy returns DropCreateFallback so the
+        // Mapper emits both halves of the rename with shared
+        // `renameProvenance` instead of a single RenameSequence op.
+        val seq = SequenceDefinition(start = 1)
+        val current = emptySchema().copy(sequences = mapOf("s_old" to seq))
+        val desired = emptySchema().copy(sequences = mapOf("s_new" to seq))
+        val diff = SchemaDiff(
+            sequencesAdded = listOf(NamedSequence("s_new", seq)),
+            sequencesRemoved = listOf(NamedSequence("s_old", seq)),
+        )
+
+        val plan = planner.plan(
+            current = current,
+            desired = desired,
+            schemaDiff = diff,
+            migrationOverlays = listOf(renameOverlay(listOf(renameEntry("sequence", "s_old", "s_new")))),
+            capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL),
+        )
+
+        plan.operations.filterIsInstance<DiffOperation.RenameSequence>() shouldBe emptyList()
+        val drop = plan.operations.filterIsInstance<DiffOperation.DropSequence>().single()
+        val create = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
+        drop.objectRef.rootName shouldBe "s_old"
+        create.objectRef.rootName shouldBe "s_new"
+        // Both ops carry the rename provenance pointing at the pair.
+        drop.renameProvenance shouldNotBe null
+        create.renameProvenance shouldNotBe null
+        drop.renameProvenance!!.fromPath shouldBe listOf("s_old")
+        drop.renameProvenance!!.toPath shouldBe listOf("s_new")
+        create.renameProvenance!!.fromPath shouldBe listOf("s_old")
+        create.renameProvenance!!.toPath shouldBe listOf("s_new")
+        drop.renameProvenance!!.objectType shouldBe DiffObjectType.SEQUENCE
+    }
+
     // ── Functions ───────────────────────────────────────────────────
 
     test("function rename overlay folds DropFunction+CreateFunction into RenameFunction with signature") {

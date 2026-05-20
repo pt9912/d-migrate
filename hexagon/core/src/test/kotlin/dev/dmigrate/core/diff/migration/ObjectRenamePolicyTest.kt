@@ -133,10 +133,16 @@ class ObjectRenamePolicyTest : FunSpec({
         r.shouldBeInstanceOf<RenameSupport.DropCreateFallback>()
     }
 
-    test("MySQL: sequence rename is Blocked (out of E.3 scope today)") {
+    test("MySQL: sequence rename falls back to Drop+Create (helper-table emulation)") {
+        // E.3 Sub-Slice C: MySQL has no native sequence-rename
+        // grammar; the helper-table emulation stores sequences as
+        // rows in `dmg_sequences`. The Mapper decomposes the rename
+        // into DropSequence(from) + CreateSequence(to) with
+        // RenameProvenance — the defensive `UPDATE dmg_sequences`
+        // path in MysqlDiffSequenceOps is a regression guard only.
         val r = MysqlObjectRenamePolicy.classify(sequenceCandidate(), capsMysql)
-        val blocked = r.shouldBeInstanceOf<RenameSupport.Blocked>()
-        blocked.message.shouldContain("MySQL sequence rendering")
+        val fallback = r.shouldBeInstanceOf<RenameSupport.DropCreateFallback>()
+        fallback.rationale.shouldContain("helper-table")
     }
 
     // ── SQLite ─────────────────────────────────────────────────────

@@ -50,18 +50,6 @@ internal object MysqlDiffSequenceOps {
     /** Diagnostic code emitted when the renderer is invoked outside `HELPER_TABLE` mode. */
     const val MODE_REQUIRED_CODE: String = "E056"
 
-    /**
-     * Diagnostic code emitted when a `RenameSequence` op slips
-     * through to the renderer while `MysqlObjectRenamePolicy` still
-     * marks sequence renames as `Blocked`. The op is short-circuited
-     * with `MANUAL_ACTION_REQUIRED` (no SQL) so a planner regression
-     * surfaces as a clear blocker instead of writing to
-     * `dmg_sequences` against the F.4 contract. Sub-Slice C upgrades
-     * the policy to `DropCreateFallback` and re-enables the SQL
-     * path here.
-     */
-    const val RENAME_BLOCKED_CODE: String = "MYSQL_RENAME_SEQUENCE_DEFENSIVE_BLOCK"
-
     fun renderCreateSequence(op: DiffOperation.CreateSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
@@ -134,31 +122,66 @@ internal object MysqlDiffSequenceOps {
     }
 
     /**
-     * Defensive-only path. The Mapper's
-     * `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` still
-     * produces `RenameSupport.Blocked` for MySQL today, so a
-     * `RenameSequence` op reaching this renderer is a planner
-     * regression. Until Sub-Slice C upgrades the policy to
-     * `DropCreateFallback`, the defensive path short-circuits with
-     * `MANUAL_ACTION_REQUIRED` so the regression surfaces as a
-     * clear blocker — emitting the actual `UPDATE dmg_sequences`
-     * SQL would silently bypass the F.4 contract that put
-     * sequence renames out of scope.
+     * Defensive regression path. Sub-Slice C upgraded
+     * `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` from
+     * `RenameSupport.Blocked` to `RenameSupport.DropCreateFallback`,
+     * so the Mapper now decomposes sequence renames into
+     * `DropSequence(from) + CreateSequence(to)` with
+     * `RenameProvenance` — a `RenameSequence` op should NOT reach
+     * this renderer under normal flow.
+     *
+     * If one does land here (planner regression, custom plan,
+     * artefact replay), the renderer emits a best-effort sequence:
+     *
+     * - `UPDATE dmg_sequences SET name = '<to>' WHERE name = '<from>'`
+     *   to rename the helper-table row.
+     * - For every column-bound trigger (`SequenceNextVal('<from>')`)
+     *   in the source-side schema: `DROP TRIGGER IF EXISTS …` +
+     *   `CREATE TRIGGER` with the body literal rewritten to
+     *   `dmg_nextval('<to>')`. Trigger names are derived from
+     *   `(table, column)` per [MysqlSequenceNaming.triggerName] and
+     *   therefore stay stable across the rename — only the body
+     *   literal changes.
+     *
+     * Side picks: UP reads bindings from `currentSchema` (where
+     * `<from>` is still the active name), DOWN reads them from
+     * `desiredSchema` (where `<to>` is the active name post-Up).
      */
     fun renderRenameSequence(op: DiffOperation.RenameSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
-        ctx.skip(
+        val (oldName, newName) = if (ctx.direction == MysqlRenderDirection.UP) {
+            op.fromName to op.toName
+        } else {
+            op.toName to op.fromName
+        }
+        val oldLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(oldName)
+        val newLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(newName)
+        ctx.emit(
             op,
-            "MySQL sequence rename is currently routed through " +
-                "`MysqlObjectRenamePolicy = Blocked`; a `RenameSequence` op reaching the " +
-                "renderer is a planner regression. Sub-Slice C of " +
-                "ImpPlan-0.9.7-mysql-sequence-diff-migration upgrades the policy to " +
-                "`DropCreateFallback`, after which this op type is rerouted to " +
-                "DropSequence + CreateSequence with RenameProvenance. " +
-                "Hint: re-plan with the policy upgrade landed.",
-            code = RENAME_BLOCKED_CODE,
+            "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
+                "${ctx.sql.quote("name")} = $newLiteral " +
+                "WHERE ${ctx.sql.quote("name")} = $oldLiteral;",
         )
-        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        // For `RenameSequence` the binding lives in `currentSchema`
+        // for UP (old name is the active name pre-Up) and
+        // `desiredSchema` for DOWN (new name is the active name
+        // post-Up; DOWN reverts back). The trigger NAME is derived
+        // from (table, column) so it does not change — only the body
+        // literal `dmg_nextval('<sequence>')` does. Drop + recreate.
+        val triggerSide = if (ctx.direction == MysqlRenderDirection.UP) {
+            SchemaSide.CURRENT
+        } else {
+            SchemaSide.DESIRED
+        }
+        for (spec in ctx.triggersForSequence(oldName, triggerSide)) {
+            val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
+            val newSpec = spec.copy(sequenceName = newName)
+            ctx.emit(op, "DROP TRIGGER IF EXISTS ${ctx.sql.quote(triggerName)};")
+            ctx.emit(
+                op,
+                MysqlSequenceEmulationTemplates.sequenceTriggerSql(newSpec, triggerName, ctx.sql::quote),
+            )
+        }
     }
 
     private fun ensureHelperMode(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
