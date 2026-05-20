@@ -9,14 +9,9 @@ internal class MysqlSequenceDdlSupport(
     private var currentOptions: DdlGenerationOptions = DdlGenerationOptions()
     private var currentSchema: SchemaDefinition? = null
     private var supportObjectsBlocked = false
-    private val pendingSupportTriggers = mutableListOf<SupportTriggerSpec>()
+    private val pendingSupportTriggers =
+        mutableListOf<MysqlSequenceEmulationTemplates.SequenceTriggerSpec>()
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
-
-    private data class SupportTriggerSpec(
-        val tableName: String,
-        val columnName: String,
-        val sequenceName: String,
-    )
 
     private val isHelperTable: Boolean
         get() = currentOptions.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE
@@ -49,7 +44,9 @@ internal class MysqlSequenceDdlSupport(
         seqDefault: DefaultValue.SequenceNextVal,
     ): String? {
         if (isHelperTable) {
-            pendingSupportTriggers += SupportTriggerSpec(tableName, columnName, seqDefault.sequenceName)
+            pendingSupportTriggers += MysqlSequenceEmulationTemplates.SequenceTriggerSpec(
+                tableName, columnName, seqDefault.sequenceName,
+            )
             pendingSequenceNotes += TransformationNote(
                 type = NoteType.WARNING,
                 code = "W115",
@@ -110,9 +107,11 @@ internal class MysqlSequenceDdlSupport(
             return statements
         }
 
-        statements += DdlStatement(buildSupportTableSql())
+        statements += DdlStatement(MysqlSequenceEmulationTemplates.supportTableSql(quoteIdentifier))
         for ((name, sequence) in sequences) {
-            statements += DdlStatement(buildSequenceSeedSql(name, sequence))
+            statements += DdlStatement(
+                MysqlSequenceEmulationTemplates.sequenceSeedSql(name, sequence, quoteIdentifier),
+            )
             if (sequence.cache != null) {
                 notes += TransformationNote(
                     type = NoteType.WARNING,
@@ -151,8 +150,8 @@ internal class MysqlSequenceDdlSupport(
             }
         }
 
-        statements += DdlStatement(buildNextvalRoutineSql())
-        statements += DdlStatement(buildSetvalRoutineSql())
+        statements += DdlStatement(MysqlSequenceEmulationTemplates.nextvalRoutineSql(quoteIdentifier))
+        statements += DdlStatement(MysqlSequenceEmulationTemplates.setvalRoutineSql(quoteIdentifier))
         return statements
     }
 
@@ -181,109 +180,11 @@ internal class MysqlSequenceDdlSupport(
         for (spec in pendingSupportTriggers) {
             val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
             if (triggerName in triggers) continue
-            statements += DdlStatement(buildSupportTriggerSql(spec, triggerName))
+            statements += DdlStatement(
+                MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, quoteIdentifier),
+            )
         }
         return statements
-    }
-
-    private fun buildSupportTableSql(): String = buildString {
-        appendLine("CREATE TABLE ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} (")
-        appendLine("    ${quoteIdentifier("managed_by")} VARCHAR(32) NOT NULL,")
-        appendLine("    ${quoteIdentifier("format_version")} VARCHAR(32) NOT NULL,")
-        appendLine("    ${quoteIdentifier("name")} VARCHAR(255) NOT NULL,")
-        appendLine("    ${quoteIdentifier("next_value")} BIGINT NOT NULL,")
-        appendLine("    ${quoteIdentifier("increment_by")} BIGINT NOT NULL,")
-        appendLine("    ${quoteIdentifier("min_value")} BIGINT NULL,")
-        appendLine("    ${quoteIdentifier("max_value")} BIGINT NULL,")
-        appendLine("    ${quoteIdentifier("cycle_enabled")} TINYINT(1) NOT NULL,")
-        appendLine("    ${quoteIdentifier("cache_size")} INT NULL,")
-        appendLine("    PRIMARY KEY (${quoteIdentifier("name")})")
-        append(") ENGINE=InnoDB;")
-    }
-
-    private fun buildSequenceSeedSql(name: String, sequence: SequenceDefinition): String {
-        val start = sequence.start ?: 1L
-        val increment = sequence.increment ?: 1L
-        val minValue = sequence.minValue?.toString() ?: "NULL"
-        val maxValue = sequence.maxValue?.toString() ?: "NULL"
-        val cycle = if (sequence.cycle == true) 1 else 0
-        val cache = sequence.cache?.toString() ?: "NULL"
-        val nameLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(name)
-        return "INSERT INTO ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
-            "(${quoteIdentifier("managed_by")}, ${quoteIdentifier("format_version")}, ${quoteIdentifier("name")}, " +
-            "${quoteIdentifier("next_value")}, ${quoteIdentifier("increment_by")}, ${quoteIdentifier("min_value")}, " +
-            "${quoteIdentifier("max_value")}, ${quoteIdentifier("cycle_enabled")}, " +
-            "${quoteIdentifier("cache_size")}) VALUES " +
-            "('d-migrate', 'mysql-sequence-v1', $nameLiteral, $start, $increment, " +
-            "$minValue, $maxValue, $cycle, $cache);"
-    }
-
-    private fun buildNextvalRoutineSql(): String = buildString {
-        appendLine("DELIMITER //")
-        appendLine("CREATE FUNCTION ${quoteIdentifier(MysqlSequenceNaming.NEXTVAL_ROUTINE)}(seq_name VARCHAR(255))")
-        appendLine("RETURNS BIGINT")
-        appendLine("DETERMINISTIC")
-        appendLine("MODIFIES SQL DATA")
-        appendLine("BEGIN")
-        appendLine("    /* d-migrate:mysql-sequence-v1 object=nextval */")
-        appendLine("    DECLARE val BIGINT;")
-        appendLine(
-            "    UPDATE ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
-                "SET ${quoteIdentifier("next_value")} = ${quoteIdentifier("next_value")} + " +
-                "${quoteIdentifier("increment_by")} " +
-                "WHERE ${quoteIdentifier("name")} = seq_name;"
-        )
-        appendLine(
-            "    SELECT ${quoteIdentifier("next_value")} - ${quoteIdentifier("increment_by")} INTO val " +
-                "FROM ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
-                "WHERE ${quoteIdentifier("name")} = seq_name;"
-        )
-        appendLine("    RETURN val;")
-        appendLine("END //")
-        append("DELIMITER ;")
-    }
-
-    private fun buildSetvalRoutineSql(): String = buildString {
-        appendLine("DELIMITER //")
-        appendLine(
-            "CREATE FUNCTION ${quoteIdentifier(MysqlSequenceNaming.SETVAL_ROUTINE)}" +
-                "(seq_name VARCHAR(255), new_value BIGINT)"
-        )
-        appendLine("RETURNS BIGINT")
-        appendLine("DETERMINISTIC")
-        appendLine("MODIFIES SQL DATA")
-        appendLine("BEGIN")
-        appendLine("    /* d-migrate:mysql-sequence-v1 object=setval */")
-        appendLine(
-            "    UPDATE ${quoteIdentifier(MysqlSequenceNaming.SUPPORT_TABLE)} " +
-                "SET ${quoteIdentifier("next_value")} = new_value WHERE ${quoteIdentifier("name")} = seq_name;"
-        )
-        appendLine("    RETURN new_value;")
-        appendLine("END //")
-        append("DELIMITER ;")
-    }
-
-    private fun buildSupportTriggerSql(spec: SupportTriggerSpec, triggerName: String): String = buildString {
-        val sequenceLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(spec.sequenceName)
-        appendLine("DELIMITER //")
-        appendLine("CREATE TRIGGER ${quoteIdentifier(triggerName)}")
-        appendLine("    BEFORE INSERT ON ${quoteIdentifier(spec.tableName)}")
-        appendLine("    FOR EACH ROW")
-        appendLine("BEGIN")
-        appendLine(
-            "    /* d-migrate:mysql-sequence-v1 object=sequence-trigger " +
-                "sequence=${MysqlSequenceSqlCodec.markerValue(spec.sequenceName)} " +
-                "table=${MysqlSequenceSqlCodec.markerValue(spec.tableName)} " +
-                "column=${MysqlSequenceSqlCodec.markerValue(spec.columnName)} */"
-        )
-        appendLine("    IF NEW.${quoteIdentifier(spec.columnName)} IS NULL THEN")
-        appendLine(
-            "        SET NEW.${quoteIdentifier(spec.columnName)} = " +
-                "${quoteIdentifier(MysqlSequenceNaming.NEXTVAL_ROUTINE)}($sequenceLiteral);"
-        )
-        appendLine("    END IF;")
-        appendLine("END //")
-        append("DELIMITER ;")
     }
 
 }
