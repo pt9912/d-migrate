@@ -185,13 +185,16 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
   SEQUENCE_ROW und SUPPORT_TRIGGER. MySQL-Fehlercode 1305
   (SP_DOES_NOT_EXIST) und 1360 (TRG_DOES_NOT_EXIST) werden zu
   `MISSING` mapped statt PROBE_RUNTIME_ERROR.
-- **B** — Gate + Diagnostic-Codes ✅ (Commit `3d4a0db1`).
+- **B** — Gate + Diagnostic-Codes ✅ (Commit `3d4a0db1`,
+  erweitert in Review 2 `1790c138`).
   `MysqlSequenceCanonicityGate.decide(declaration, intent)` mit
-  drei `Decision`-Varianten (Proceed / Info / Block) und sechs
-  Drift-spezifischen Codes (`E124_MYSQL_SEQUENCE_DRIFT_TABLE`,
-  `…_ROUTINE`, `…_ROW`, `…_TRIGGER`, `…_MISSING_FOR_ALTER`,
-  `…_PROBE_FAILED`). `PlannerBlockerClassifier` mapped alle sechs
-  Codes auf `MANUAL_ACTION_REQUIRED`.
+  drei `Decision`-Varianten (Proceed / Info / Block) und sieben
+  Drift-spezifischen Codes:
+  `E124_MYSQL_SEQUENCE_DRIFT_TABLE`,
+  `…_DRIFT_ROUTINE`, `…_DRIFT_ROW`, `…_DRIFT_TRIGGER`,
+  `…_MISSING_FOR_ALTER`, `…_MISSING_FOR_DROP`,
+  `…_DRIFT_PROBE_FAILED`. `PlannerBlockerClassifier` mapped alle
+  sieben Codes auf `MANUAL_ACTION_REQUIRED`.
 - **C** — Stage + Pipeline-Integration ✅ (Commit `583564a3`).
   `MysqlSequenceCanonicityStage` (Outcome Succeeded/Failed/NotRun)
   mit Skip-Pfaden für !execute, file-target, non-MySQL und
@@ -213,8 +216,37 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
   threadet den Probe optional, fällt sonst auf Pre-Planning zurück.
   `SchemaMigrateReport` carriert `mysqlSequenceCanonicity` als
   neues View-DTO.
-- **F** — Closing ✅ (dieser Commit). Plan-Doc nach `done/`,
+- **F** — Closing ✅ (Commit `86374752`). Plan-Doc nach `done/`,
   CHANGELOG-Eintrag unter "Added".
+- **F follow-up Review 1** ✅ (Commit `b342004c`). CLI-Wiring
+  (`SchemaMigrateCommand` →
+  `MysqlSequenceCanonicityProbeRunner::probe`), PK-Check in
+  `probeSupportTable`, Trigger-Drift-Gate in
+  `emitSupportTriggerForColumn`, testcontainers-IT-Test gegen
+  MySQL 8.
+- **F follow-up Review 2** ✅ (Commit `1790c138`). Gate routet
+  `MISSING + DROP` für SEQUENCE_ROW / SUPPORT_TABLE als Block
+  (`E124_MYSQL_SEQUENCE_MISSING_FOR_DROP`, siebenter Code);
+  Probe-Adapter verifiziert Routine-/Trigger-Body über
+  `BEGIN…END`-Slice + normalisierte Signatur statt nur Marker-
+  Substring; Trigger zusätzlich `sequence_reference`-Check für
+  den `dmg_nextval('…')`-Call.
+- **F follow-up Review 3** ✅ (Commit `f002461c`). Stage-Gate
+  läuft auch für reine `AddColumn` / `AlterColumnDefault`-Pläne
+  mit `SequenceNextVal`-Default; Pre-Planning emittiert
+  SUPPORT_TRIGGER `NOT_RUN_*`-Declarations pro Column-Op;
+  `MysqlSequenceSupportNaming` aus `hexagon/ports-read` als
+  cross-layer Naming-Quelle (driver-side
+  `MysqlSequenceNaming` ist nun Facade darüber).
+- **F follow-up Review 4** ✅ (Commit `f2aacb87`).
+  `SchemaMigrateReportRenderer` JSON + YAML emittieren
+  `mysqlSequenceCanonicity` (JSON-Projection in eigenem
+  `SchemaMigratePreflightRenderers`-Object wegen Detekt-
+  TooManyFunctions); Trigger-Drift im
+  `AddColumn`/`AlterColumnDefault`-Pfad trägt einen
+  BLOCKER-severity `DiffDiagnostic`, der direkt am
+  `MigrationBlocker.diagnostics` hängt (Symmetrie zu den
+  Sequence-Op-Pfaden).
 
 ---
 
@@ -261,7 +293,23 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
       `SequenceNextVal`-Default konsultieren vor dem
       `DROP + CREATE TRIGGER` eine SUPPORT_TRIGGER-Declaration
       und blocken bei DRIFT, sodass Operator-modifizierte Trigger
-      nicht stillschweigend überschrieben werden.
+      nicht stillschweigend überschrieben werden. Der Stage läuft
+      dafür auch für reine Column-Default-Pläne ohne explizite
+      Sequence-Op, das Pre-Planning emittiert
+      SUPPORT_TRIGGER-Declarations pro Column-Op mit
+      `SequenceNextVal`-Default, und der Block trägt eine
+      BLOCKER-severity `DiffDiagnostic` direkt am
+      `MigrationBlocker` (Symmetrie zu den Sequence-Op-Pfaden).
+- [x] `MISSING + DROP` für SEQUENCE_ROW / SUPPORT_TABLE blockt
+      mit `E124_MYSQL_SEQUENCE_MISSING_FOR_DROP` (Plan §3.1
+      "Missing → UPDATE/DELETE-Path: Block"). Routinen /
+      Column-Trigger MISSING bleiben Proceed (idempotent /
+      collateral state).
+- [x] Report-Output: `report.mysqlSequenceCanonicity[]` wird vom
+      `SchemaMigrateReportRenderer` sowohl in JSON als auch in
+      YAML emittiert (eine Zeile pro Declaration mit
+      `operationId`, `kind`, `objectName`, `status`, `sqlHash`,
+      `driftField` / `expected` / `actual` / `problem`).
 - [x] `make docker-check` grün; Integration-Test in `make integration`
       grün.
 

@@ -93,6 +93,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     operator-verschobener Trigger (Marker stehen lassen, Call
     auf andere Sequence umbiegen) bricht jetzt sichtbar.
 
+- **0.9.7 E.3 Folge-Slice — Drift-Check Trigger-Gate für reine
+  Column-Default-Migrationen + Naming-Lift** *(2026-05-20)* —
+  Lücke geschlossen, in der `AddColumn` /
+  `AlterColumnDefault` mit `SequenceNextVal`-Default ihren
+  `DROP + CREATE TRIGGER`-Block ohne Probe-Konsultation
+  ausführten, weil `MysqlSequenceCanonicityStage` auf
+  `!hasSequenceOps(plan)` short-circuitete: ein
+  operator-modifizierter Trigger wurde stillschweigend
+  überschrieben. `hasSequenceOps` → `hasSequenceRelatedOps`
+  zählt jetzt auch Column-Ops mit `SequenceNextVal`-Default;
+  `MigrationPreflightPlanner` emittiert pro solcher Column-Op
+  eine SUPPORT_TRIGGER `NOT_RUN_*`-Declaration; der
+  Stage-Failure-Stamping pflegt SUPPORT_TRIGGER-Declarations mit
+  kanonischem Trigger-Namen. `MysqlSequenceSupportNaming` wurde
+  nach `hexagon/ports-read` gehoben, sodass Stage (application),
+  Renderer (driver-mysql) und Probe-Runner (driving/cli)
+  dieselbe Naming-Quelle verwenden; das driver-side
+  `MysqlSequenceNaming` ist nun Facade darüber.
+
+- **0.9.7 E.3 Folge-Slice — Report-Renderer + BLOCKER-
+  Diagnostic-Symmetrie** *(2026-05-20)* —
+  `SchemaMigrateReportRenderer` emittierte
+  `mysqlSequenceCanonicity` weder in JSON noch in YAML, obwohl
+  das DTO befüllt wurde — Operatoren sahen den
+  Plan-dokumentierten Feldnamen, aber nie die tatsächlichen
+  Declarations. Beide Renderer geben das Feld jetzt aus
+  (JSON-Projection in eigenem
+  `SchemaMigratePreflightRenderers`-Object, damit der
+  Main-Renderer unter Detekt's `TooManyFunctions`-Budget bleibt).
+  Zusätzlich trägt der Trigger-Drift-Block im
+  `AddColumn`/`AlterColumnDefault`-Pfad jetzt einen
+  BLOCKER-severity `DiffDiagnostic` (vorher WARNING ohne
+  Blocker-Attach), der direkt am `MigrationBlocker.diagnostics`
+  hängt — gleiche Report-Semantik wie die Sequence-Op-Pfade.
+  `MysqlDiffRenderContext.addBlocker(reason, opIds,
+  diagnostics)` und `recordDiagnostic(...)` neu (letzteres
+  schreibt in den Diagnostic-Stream ohne `rendered`/`skipped` zu
+  berühren, sodass die `rendered ∩ skipped = ∅`-Invariante des
+  `MigrationDdlResult` bei vorab emittierter Column-DDL nicht
+  verletzt wird).
+
 ### Added
 
 - **0.9.7 E.3 Folge-Slice — MySQL Sequence Live-DB-Drift-Check
