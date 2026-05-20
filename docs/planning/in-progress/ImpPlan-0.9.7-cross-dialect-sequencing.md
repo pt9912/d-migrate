@@ -131,7 +131,7 @@ parallele Slice referenzieren kann.
   er das bestehende F.4-Overlay-Schema mit
   `objectType = "sequence"`.
 - **D5**: Capability-Source-Resolution-Pattern — analog zu
-  E.1 Routine-Capability (`RoutineCapabilityConfigResolver`).
+  E.1 Routine-Capability (`RoutineCapabilityDefaults` + `EffectiveRoutineCapability`).
   Sequence-Capabilities haben Defaults pro Dialekt + Version
   und sind via Overlay/CLI ueberschreibbar.
 
@@ -157,7 +157,7 @@ parallele Slice referenzieren kann.
 | `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
 | `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
 | `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | MySQL/SQLite: `W114`, kein Runtime-Caching |
-| `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | TBD | Execute-only; siehe preserveCurrentValue-Plan |
+| `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | Execute-only; siehe preserveCurrentValue-Plan |
 | `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL: WARNING; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
 
 **Blocker-Codes** (neu in
