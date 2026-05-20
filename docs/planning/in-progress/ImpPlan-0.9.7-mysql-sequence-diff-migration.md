@@ -39,7 +39,7 @@ Im Detail:
 
 - `CreateSequence`: heute Blocker. Soll: vollständige Emulation
   emittieren (helper_table + Trigger).
-- `AlterSequence`: heute Blocker. Soll: declarative-Attribute-Änderung
+- `AlterSequence`: heute Blocker. Soll: deklarative Attributänderung
   emittieren (z.B. `UPDATE dmg_sequences SET increment_by = …`).
 - `DropSequence`: heute Blocker. Soll: helper_table + Trigger droppen.
 - `RenameSequence`: F.4 Sub-Slice C hat die Mapper-Policy
@@ -76,7 +76,9 @@ Migrationen ohne `schema generate`-Workaround.
   `MysqlNamedSequenceMode.HELPER_TABLE`-Modus aktiv; bei anderem
   Modus werden sie explizit auf Diff-Ebene mit `E056` + `MANUAL_ACTION_REQUIRED`
   blockiert (`ctx.skip(op, "...", code = "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))`).
-  Es darf dann keinerlei SQL emittiert werden. Die eigentliche Guard-Logik wird im
+  In `file-to-file` gibt es keine DB-Live-Objekt-Validierung, aber die gleiche
+  harte Modusblockade (`E056`) bleibt bestehen. Es darf dann keinerlei SQL
+  emittiert werden. Die eigentliche Guard-Logik wird im
   `MysqlDiffSequenceOps`-Renderer verankert, nicht erst indirekt
   im `MysqlDdlGenerator`.
 - Render-Funktionen pro Subtyp:
@@ -124,8 +126,9 @@ Migrationen ohne `schema generate`-Workaround.
   - `renderRenameSequence(op, ctx)` — `RENAME TABLE`-Pattern
     funktioniert nicht (Sequence ist eine Zeile in einem Helper-Table,
     und der Support-Pfad ist auf `HELPER_TABLE` begrenzt).
-    Wenn ein echter `RenameSequence`-Op emittiert wird, ist `UPDATE
-    dmg_sequences SET name = …` + Trigger-Rebuild (`DROP TRIGGER` +
+    Wenn ein echter `RenameSequence`-Op emittiert wird, ist
+    `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'` + Trigger-Rebuild
+    (`DROP TRIGGER` +
     `CREATE TRIGGER`) erforderlich, da MySQL kein generisches
     Trigger-Rename kennt. Die betroffenen Trigger werden aus
     rekonstruierten Support-Metadaten aufgelöst.
@@ -251,7 +254,7 @@ Sub-Slice C wird hochgestuft zu:
 
 ```kotlin
 DiffObjectType.SEQUENCE -> RenameSupport.DropCreateFallback(
-    message = "MySQL emuliert Sequenz-Rename über UPDATE auf dmg_sequences und Trigger-Rebuild.",
+    rationale = "MySQL emuliert Sequenz-Rename über UPDATE auf dmg_sequences und Trigger-Rebuild.",
 )
 ```
 
@@ -324,6 +327,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 
 - [ ] `MysqlDiffSequenceOps` rendert `CreateSequence`,
       `AlterSequence` und `DropSequence` in beide Richtungen.
+      `RenameSequence` ist nur als defensive Regression abgedeckt.
 - [ ] `MysqlSequenceDdlSupport` (oder `MysqlSequenceEmulationTemplates`) / `MysqlDiffSequenceOps` emittieren
   `dmg_sequences` + `dmg_nextval`/`dmg_setval` exakt einmal pro
   Migrationslauf in einer kontrollierten Reihenfolge.
@@ -336,6 +340,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
       verbleibt als Defensive-Fallback/Regression-Case.
 - [ ] `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
       `RenameSupport.DropCreateFallback` (emulierte Rename-Strategie).
+      Damit wird `RenameSequence` nicht mehr produktiv gerendert.
 - [ ] Bei `MysqlNamedSequenceMode != HELPER_TABLE` werden Sequence-Diff-Operationen
       weiterhin geblockt (`E056`), kein SQL wird emittiert.
 - [ ] Datei-zu-Datei-Mode rendert keine DB-live Blocker gegen bestehende
@@ -462,7 +467,7 @@ Prioritaet im Diff-Pfad:
 - `E124`-Blocker (nicht-kanonische/inkonsistente Support-Objekte oder Drift bei bestehender
   `dmg_sequences`-Zeile) wird erst geprüft, wenn der Modus-Guard erfolgreich war.
 
-Datei-zu-Datei-Planer werden explizit separiert:
+Datei-zu-Datei-Pfade werden explizit separiert:
 - In file-to-file wird keine Live-Objekt-Kanonik geprüft, da kein DB-Zustand vorliegt;
   es werden ausschließlich SQL-Statements gerendert.
 - `E124` aus Support-Objekt- und Driftprüfung bleibt auf execute/file-to-db-Pfade beschraenkt,
