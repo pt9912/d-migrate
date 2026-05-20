@@ -56,6 +56,24 @@ class PlannerBlockerClassifierTest : FunSpec({
             MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
+    test("E.3 MySQL Sequence Drift-Check codes classify to MANUAL_ACTION_REQUIRED") {
+        // E.3 Sub-Slice B (2026-05-20): six drift-related codes from
+        // `MysqlSequenceCanonicityGate` all surface as
+        // MANUAL_ACTION_REQUIRED — operator either reconciles the
+        // live state, switches op intent, or re-plans after repair.
+        listOf(
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_TABLE_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_ROUTINE_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_ROW_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_TRIGGER_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_MISSING_FOR_ALTER_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE,
+        ).forEach { code ->
+            PlannerBlockerClassifier.classify(code) shouldBe
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+    }
+
     test("classifier is exhaustive (every MigrationBlockedReason value is reachable)") {
         // We don't pin every value, but we pin that the function
         // never throws / never returns null for any input string —

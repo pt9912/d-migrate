@@ -128,6 +128,25 @@ object PlannerBlockerClassifier {
     const val CHECK_PREFLIGHT_RUNTIME_ERROR_CODE: String =
         "CHECK_PREFLIGHT_RUNTIME_ERROR"
 
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice B (2026-05-20):
+     * the six drift-related diagnostic codes the
+     * `MysqlSequenceCanonicityGate` emits. All map to
+     * `MANUAL_ACTION_REQUIRED` — the operator must either
+     * reconcile the live state with the plan, switch op intent
+     * (CreateSequence vs. AlterSequence), or re-plan after
+     * external repair. The codes are intentionally distinct from
+     * the F.5 CHECK preflight codes so reports surface drift
+     * source (table / routine / row / trigger) without parsing
+     * the message text.
+     */
+    const val MYSQL_SEQUENCE_DRIFT_TABLE_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_TABLE"
+    const val MYSQL_SEQUENCE_DRIFT_ROUTINE_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_ROUTINE"
+    const val MYSQL_SEQUENCE_DRIFT_ROW_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_ROW"
+    const val MYSQL_SEQUENCE_DRIFT_TRIGGER_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_TRIGGER"
+    const val MYSQL_SEQUENCE_MISSING_FOR_ALTER_CODE: String = "E124_MYSQL_SEQUENCE_MISSING_FOR_ALTER"
+    const val MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_PROBE_FAILED"
+
     fun classify(code: String): MigrationBlockedReason = when (code) {
         OBJECT_RENAME_UNSUPPORTED_CODE ->
             MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
@@ -136,7 +155,13 @@ object PlannerBlockerClassifier {
         MYSQL_CHECK_ENFORCEMENT_UNKNOWN_CODE,
         EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE,
         CHECK_PREFLIGHT_VIOLATIONS_CODE,
-        CHECK_PREFLIGHT_RUNTIME_ERROR_CODE ->
+        CHECK_PREFLIGHT_RUNTIME_ERROR_CODE,
+        MYSQL_SEQUENCE_DRIFT_TABLE_CODE,
+        MYSQL_SEQUENCE_DRIFT_ROUTINE_CODE,
+        MYSQL_SEQUENCE_DRIFT_ROW_CODE,
+        MYSQL_SEQUENCE_DRIFT_TRIGGER_CODE,
+        MYSQL_SEQUENCE_MISSING_FOR_ALTER_CODE,
+        MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE ->
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE ->
             MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
