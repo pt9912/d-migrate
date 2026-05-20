@@ -3,9 +3,13 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.diff.migration.CheckPreflightPlanner
 import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.CheckPreflightStatus
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
+import dev.dmigrate.driver.MysqlSequenceCanonicityKind
+import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.SqlIdentifiers
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
@@ -30,6 +34,17 @@ data class MigrationPreflightPlan(
      * not run (file target or `NOT_RUN_POLICY`).
      */
     val checkPreflights: List<CheckPreflightDeclaration> = emptyList(),
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20):
+     * NOT_RUN declarations (one per sequence op, kind=SEQUENCE_ROW)
+     * that surface "drift-check skipped because there is no live
+     * MySQL target" in the report. Populated by
+     * [MigrationPreflightPlanner.plan]; consumed by the renderer via
+     * `DdlGenerationOptions.mysqlSequenceCanonicity` when the live
+     * probe was not run (file target / non-MySQL dialect /
+     * `--plan-only`-style flow).
+     */
+    val mysqlSequenceCanonicity: List<MysqlSequenceCanonicityDeclaration> = emptyList(),
 ) {
     companion object {
         val EMPTY: MigrationPreflightPlan = MigrationPreflightPlan()
@@ -57,10 +72,56 @@ object MigrationPreflightPlanner {
             emptyList()
         }
         val checkPart = planCheckPreflights(request, target, dialect, plan)
+        val mysqlSequencePart = planMysqlSequenceCanonicity(request, target, dialect, plan)
         return MigrationPreflightPlan(
             sqliteCastPreflights = castPart,
             checkPreflights = checkPart,
+            mysqlSequenceCanonicity = mysqlSequencePart,
         )
+    }
+
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20):
+     * pre-plans one [MysqlSequenceCanonicityDeclaration] per
+     * sequence op in [plan] when the live probe will not run.
+     * Returns an empty list when the dialect is not MySQL (the
+     * gate is MySQL-only) or when there are no sequence ops at
+     * all.
+     *
+     * Kind is fixed to [MysqlSequenceCanonicityKind.SEQUENCE_ROW]:
+     * the row-level declaration is the canonical "this op was on
+     * the table" marker. The other kinds (support table, routines,
+     * trigger) only need probing when there is a live probe — the
+     * NOT_RUN report-line is per-op, not per-canonical-object.
+     */
+    private fun planMysqlSequenceCanonicity(
+        request: SchemaMigrateRequest,
+        target: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+    ): List<MysqlSequenceCanonicityDeclaration> {
+        if (dialect != DatabaseDialect.MYSQL) return emptyList()
+        val initialStatus = when {
+            request.execute && target is CompareOperand.Database -> MysqlSequenceCanonicityStatus.NOT_RUN_POLICY
+            else -> MysqlSequenceCanonicityStatus.NOT_RUN_FILE_TARGET
+        }
+        return plan.operations.mapNotNull { op ->
+            val name = when (op) {
+                is DiffOperation.CreateSequence -> op.objectRef.rootName
+                is DiffOperation.AlterSequence -> op.objectRef.rootName
+                is DiffOperation.DropSequence -> op.objectRef.rootName
+                is DiffOperation.RenameSequence -> op.fromName
+                else -> return@mapNotNull null
+            }
+            MysqlSequenceCanonicityDeclaration(
+                operationId = op.id,
+                dialect = DatabaseDialect.MYSQL.name.lowercase(),
+                kind = MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+                objectName = name,
+                status = initialStatus,
+                sqlHash = "not-run",
+            )
+        }
     }
 
     /**

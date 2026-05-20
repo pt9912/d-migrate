@@ -1,13 +1,20 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.core.diff.migration.DiffEndpoint
-import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.NamedSequence
 import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.migration.DiffEndpoint
+import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.MysqlSequenceCanonicityKind
+import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import java.nio.file.Path
 
@@ -67,5 +74,65 @@ class MigrationPreflightPlannerTest : FunSpec({
         )
 
         result.sqliteCastPreflights.shouldBeEmpty()
+    }
+
+    // ── E.3 MySQL Sequence Drift-Check Sub-Slice E ─────────────
+
+    val sequencePlanner = DiffPlanner()
+    fun planWithSequenceAdd(): DiffResult = sequencePlanner.plan(
+        SchemaDefinition(name = "App", version = "1"),
+        SchemaDefinition(name = "App", version = "1", sequences = mapOf("order_seq" to SequenceDefinition(start = 1L))),
+        SchemaDiff(sequencesAdded = listOf(NamedSequence("order_seq", SequenceDefinition(start = 1L)))),
+    )
+
+    test("MySQL DB execute pre-plans sequence ops as NOT_RUN_POLICY") {
+        val result = MigrationPreflightPlanner.plan(
+            sqliteCastPlanner = null,
+            request = SchemaMigrateRequest(source = "desired.yaml", target = "db:mysql", execute = true),
+            target = CompareOperand.Database("mysql"),
+            dialect = DatabaseDialect.MYSQL,
+            plan = planWithSequenceAdd(),
+        )
+        result.mysqlSequenceCanonicity shouldHaveSize 1
+        val decl = result.mysqlSequenceCanonicity.single()
+        decl.status shouldBe MysqlSequenceCanonicityStatus.NOT_RUN_POLICY
+        decl.kind shouldBe MysqlSequenceCanonicityKind.SEQUENCE_ROW
+        decl.objectName shouldBe "order_seq"
+        decl.dialect shouldBe "mysql"
+    }
+
+    test("file target pre-plans sequence ops as NOT_RUN_FILE_TARGET") {
+        val result = MigrationPreflightPlanner.plan(
+            sqliteCastPlanner = null,
+            request = SchemaMigrateRequest(source = "desired.yaml", target = "file:current.yaml"),
+            target = CompareOperand.File(Path.of("current.yaml")),
+            dialect = DatabaseDialect.MYSQL,
+            plan = planWithSequenceAdd(),
+        )
+        result.mysqlSequenceCanonicity.single().status shouldBe MysqlSequenceCanonicityStatus.NOT_RUN_FILE_TARGET
+    }
+
+    test("non-MySQL dialects → no sequence canonicity declarations") {
+        for (dialect in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.SQLITE)) {
+            val result = MigrationPreflightPlanner.plan(
+                sqliteCastPlanner = null,
+                request = SchemaMigrateRequest(source = "desired.yaml", target = "db:${dialect.name.lowercase()}", execute = true),
+                target = CompareOperand.Database(dialect.name.lowercase()),
+                dialect = dialect,
+                plan = planWithSequenceAdd(),
+            )
+            result.mysqlSequenceCanonicity.shouldBeEmpty()
+        }
+    }
+
+    test("MySQL DB execute with no sequence ops → empty mysqlSequenceCanonicity") {
+        val result = MigrationPreflightPlanner.plan(
+            sqliteCastPlanner = null,
+            request = SchemaMigrateRequest(source = "desired.yaml", target = "db:mysql", execute = true),
+            target = CompareOperand.Database("mysql"),
+            dialect = DatabaseDialect.MYSQL,
+            plan = plan(),
+        )
+        result.mysqlSequenceCanonicity.shouldBeEmpty()
     }
 })

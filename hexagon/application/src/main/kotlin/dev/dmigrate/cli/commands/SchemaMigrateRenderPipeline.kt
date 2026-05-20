@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.ExtensionInstallPolicy
+import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.SpatialProfilePolicy
@@ -56,6 +57,16 @@ internal class SchemaMigrateRenderPipeline(
     private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn?,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn?,
     private val checkPreflightProbe: CheckPreflightProbeFn? = null,
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20): wired
+     * by the driving CLI to a MySQL-specific JDBC-backed probe; null
+     * for other dialects and for unit-test paths that don't need
+     * live-DB drift verification. The stage short-circuits to
+     * `NotRun` when this is null OR when the request is file-mode /
+     * non-MySQL — the pre-planned `NOT_RUN_*` declarations from
+     * [MigrationPreflightPlanner.plan] still flow through.
+     */
+    private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
 ) {
 
     fun run(
@@ -75,6 +86,7 @@ internal class SchemaMigrateRenderPipeline(
             probe = probeOutcome,
             cast = runCastPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
             check = runCheckPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
+            mysqlSequence = runMysqlSequenceCanonicity(request, targetOp, dialect, plan, overlayPreflight),
         )
         val renderOptions = buildRenderOptions(
             request, dialect, outcomes, preflightPlan, mysqlServerVersion, routineCapabilityResolver,
@@ -153,6 +165,31 @@ internal class SchemaMigrateRenderPipeline(
     }
 
     /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E: MySQL-only drift
+     * probe. Skips when the overlay-preflight already has blockers
+     * (`NotRun`) so we don't spend connections on a render that
+     * can't proceed. The stage internally also skips file targets,
+     * non-MySQL dialects, and missing-probe wiring.
+     */
+    private fun runMysqlSequenceCanonicity(
+        request: SchemaMigrateRequest,
+        targetOp: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+        overlayPreflight: MigrationOverlayPreflightResult,
+    ): MysqlSequenceCanonicityStage.Outcome = if (overlayPreflight.hasBlockers) {
+        MysqlSequenceCanonicityStage.Outcome.NotRun
+    } else {
+        MysqlSequenceCanonicityStage.run(
+            mysqlSequenceCanonicityProbe,
+            request,
+            targetOp,
+            dialect,
+            plan,
+        )
+    }
+
+    /**
      * F.5 Sub-Slice E.4: cross-dialect CHECK live-data preflight
      * gate. Mirrors the cast-preflight wiring but uses the
      * per-dialect [checkPreflightProbe] resolved by the driving
@@ -200,6 +237,10 @@ internal class SchemaMigrateRenderPipeline(
             is CheckPreflightStage.Outcome.Succeeded -> checkPreflightOutcome.declarations
             else -> preflightPlan.checkPreflights
         }
+        val mysqlSequenceDeclarations = when (val mysqlSequenceOutcome = outcomes.mysqlSequence) {
+            is MysqlSequenceCanonicityStage.Outcome.Succeeded -> mysqlSequenceOutcome.declarations
+            else -> preflightPlan.mysqlSequenceCanonicity
+        }
         return DdlGenerationOptions(
             spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
             executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
@@ -209,6 +250,7 @@ internal class SchemaMigrateRenderPipeline(
                 else -> preflightPlan.sqliteCastPreflights
             },
             checkPreflights = checkDeclarations,
+            mysqlSequenceCanonicity = mysqlSequenceDeclarations,
             catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
                 SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
             } else {
@@ -235,6 +277,7 @@ internal class SchemaMigrateRenderPipeline(
         val probeOutcome = outcomes.probe
         val castPreflightOutcome = outcomes.cast
         val checkPreflightOutcome = outcomes.check
+        val mysqlSequenceOutcome = outcomes.mysqlSequence
         return when {
             overlayPreflight.hasBlockers ->
                 MigrationOverlayPreflight.buildFailureResult(plan, overlayPreflight)
@@ -250,6 +293,11 @@ internal class SchemaMigrateRenderPipeline(
                     checkPreflightOutcome.message,
                     checkPreflightOutcome.declarations,
                 )
+            mysqlSequenceOutcome is MysqlSequenceCanonicityStage.Outcome.Failed ->
+                MysqlSequenceCanonicityStage.buildFailureResult(
+                    mysqlSequenceOutcome.message,
+                    mysqlSequenceOutcome.declarations,
+                )
             else -> {
                 val rendered = renderer.generateUp(plan, renderOptions)
                 val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {
@@ -257,12 +305,17 @@ internal class SchemaMigrateRenderPipeline(
                 } else {
                     rendered
                 }
-                if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
-                    withCheckPreflights.copy(
-                        diagnostics = withCheckPreflights.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
-                    )
+                val withMysqlSequence = if (withCheckPreflights.mysqlSequenceCanonicity.isEmpty()) {
+                    withCheckPreflights.copy(mysqlSequenceCanonicity = renderOptions.mysqlSequenceCanonicity)
                 } else {
                     withCheckPreflights
+                }
+                if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
+                    withMysqlSequence.copy(
+                        diagnostics = withMysqlSequence.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
+                    )
+                } else {
+                    withMysqlSequence
                 }
             }
         }
@@ -279,6 +332,7 @@ internal class SchemaMigrateRenderPipeline(
         val probe: SqliteProbeStage.Outcome,
         val cast: SqliteCastPreflightStage.Outcome,
         val check: CheckPreflightStage.Outcome,
+        val mysqlSequence: MysqlSequenceCanonicityStage.Outcome,
     )
 
     /**
@@ -292,6 +346,9 @@ internal class SchemaMigrateRenderPipeline(
             return up.copy(
                 sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights,
                 checkPreflights = mergeCheckPreflights(up.checkPreflights, down.checkPreflights),
+                mysqlSequenceCanonicity = mergeMysqlSequenceCanonicity(
+                    up.mysqlSequenceCanonicity, down.mysqlSequenceCanonicity,
+                ),
             )
         }
         val merged = up.blockers + down.blockers
@@ -302,6 +359,9 @@ internal class SchemaMigrateRenderPipeline(
             diagnostics = up.diagnostics + down.diagnostics,
             sqliteCastPreflights = up.sqliteCastPreflights + down.sqliteCastPreflights,
             checkPreflights = mergeCheckPreflights(up.checkPreflights, down.checkPreflights),
+            mysqlSequenceCanonicity = mergeMysqlSequenceCanonicity(
+                up.mysqlSequenceCanonicity, down.mysqlSequenceCanonicity,
+            ),
         )
     }
 
@@ -347,6 +407,23 @@ internal fun mergeCheckPreflights(
     up: List<CheckPreflightDeclaration>,
     down: List<CheckPreflightDeclaration>,
 ): List<CheckPreflightDeclaration> {
+    if (down.isEmpty()) return up
+    val seen = up.map { it.bindingKey }.toMutableSet()
+    val extras = down.filter { seen.add(it.bindingKey) }
+    return up + extras
+}
+
+/**
+ * E.3 MySQL Sequence Drift-Check Sub-Slice E: dedupe declarations
+ * across Up + Down render results by
+ * [MysqlSequenceCanonicityDeclaration.bindingKey] (op-id + kind +
+ * object + hash). Up takes precedence; Down only contributes
+ * entries Up doesn't already carry.
+ */
+internal fun mergeMysqlSequenceCanonicity(
+    up: List<MysqlSequenceCanonicityDeclaration>,
+    down: List<MysqlSequenceCanonicityDeclaration>,
+): List<MysqlSequenceCanonicityDeclaration> {
     if (down.isEmpty()) return up
     val seen = up.map { it.bindingKey }.toMutableSet()
     val extras = down.filter { seen.add(it.bindingKey) }

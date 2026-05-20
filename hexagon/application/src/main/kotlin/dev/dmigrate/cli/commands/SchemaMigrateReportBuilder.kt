@@ -75,6 +75,7 @@ internal object SchemaMigrateReportBuilder {
             },
             sqliteCastPreflights = buildSqliteCastPreflightViews(rendered),
             checkPreflights = buildCheckPreflightViews(rendered),
+            mysqlSequenceCanonicity = buildMysqlSequenceCanonicityViews(rendered),
             renameProjections = plan.renameProjections.map { it.toReportView() },
             operations = plan.operations.map { op ->
                 SchemaMigrateOperationView(
@@ -220,6 +221,30 @@ internal object SchemaMigrateReportBuilder {
                 failingRows = preflight.failingRows,
                 sampleRowIds = preflight.sampleRowIds,
                 problem = preflight.problem,
+            )
+        }
+
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20):
+     * project `MigrationDdlResult.mysqlSequenceCanonicity` into the
+     * report view shape so formatters iterate without coupling to
+     * the ports-read declaration type.
+     */
+    private fun buildMysqlSequenceCanonicityViews(
+        rendered: MigrationDdlResult,
+    ): List<SchemaMigrateMysqlSequenceCanonicityView> =
+        rendered.mysqlSequenceCanonicity.map { declaration ->
+            SchemaMigrateMysqlSequenceCanonicityView(
+                operationId = declaration.operationId,
+                dialect = declaration.dialect,
+                kind = declaration.kind.name,
+                objectName = declaration.objectName,
+                status = declaration.status.name,
+                sqlHash = declaration.sqlHash,
+                driftField = declaration.driftField,
+                expected = declaration.expected,
+                actual = declaration.actual,
+                problem = declaration.problem,
             )
         }
 

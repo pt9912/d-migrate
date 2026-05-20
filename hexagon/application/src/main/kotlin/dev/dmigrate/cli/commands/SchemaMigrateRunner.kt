@@ -70,6 +70,14 @@ class SchemaMigrateRunner(
     private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn? = null,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn? = null,
     private val checkPreflightProbe: CheckPreflightProbeFn? = null,
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20): probe
+     * for the MySQL helper-table emulation's drift detection. Wired
+     * by the driving CLI to a JDBC-backed adapter when the target
+     * dialect is MySQL; null otherwise. See
+     * [MysqlSequenceCanonicityStage] for skip semantics.
+     */
+    private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -112,6 +120,7 @@ class SchemaMigrateRunner(
         sqliteCastPreflightPlanner = sqliteCastPreflightPlanner,
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
         checkPreflightProbe = checkPreflightProbe,
+        mysqlSequenceCanonicityProbe = mysqlSequenceCanonicityProbe,
     )
 
     private val executionStage = SchemaMigrateExecutionStage(
@@ -544,6 +553,14 @@ data class SchemaMigrateReport(
      */
     val checkPreflights: List<SchemaMigrateCheckPreflightView> = emptyList(),
     /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20): live-
+     * data MySQL helper-table drift declarations. Empty when the
+     * dialect is not MySQL or no sequence op was planned. Status
+     * is one of CANONICAL / DRIFT / MISSING / NOT_RUN_FILE_TARGET /
+     * NOT_RUN_POLICY / PROBE_RUNTIME_ERROR.
+     */
+    val mysqlSequenceCanonicity: List<SchemaMigrateMysqlSequenceCanonicityView> = emptyList(),
+    /**
      * F.4 T6: one entry per overlay-bound rename candidate that the
      * planner saw. Successful folds carry [SchemaMigrateRenameProjectionView.renameOperationId];
      * drop+add fallbacks set it to `null` and populate
@@ -794,6 +811,33 @@ data class SchemaMigrateCheckPreflightView(
     val totalRows: Long?,
     val failingRows: Long?,
     val sampleRowIds: List<String>,
+    val problem: String?,
+)
+
+/**
+ * E.3 MySQL Sequence Drift-Check Sub-Slice E (2026-05-20): report
+ * view for one MySQL helper-table drift probe outcome. One entry
+ * per (sequence-op, canonical-object) tuple — kind discriminates
+ * SUPPORT_TABLE / NEXTVAL_ROUTINE / SETVAL_ROUTINE / SEQUENCE_ROW /
+ * SUPPORT_TRIGGER. Status carries one of CANONICAL / DRIFT /
+ * MISSING / NOT_RUN_FILE_TARGET / NOT_RUN_POLICY /
+ * PROBE_RUNTIME_ERROR.
+ *
+ * `driftField` / `expected` / `actual` are populated for `DRIFT`
+ * entries only; `problem` carries the underlying error text for
+ * `PROBE_RUNTIME_ERROR`. All three are otherwise null so JSON
+ * consumers see the field shape but nothing misleading.
+ */
+data class SchemaMigrateMysqlSequenceCanonicityView(
+    val operationId: String,
+    val dialect: String,
+    val kind: String,
+    val objectName: String,
+    val status: String,
+    val sqlHash: String,
+    val driftField: String?,
+    val expected: String?,
+    val actual: String?,
     val problem: String?,
 )
 
