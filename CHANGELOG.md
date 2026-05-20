@@ -65,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–E)**
+- **0.9.7 E.3 — MySQL Sequence Diff-Migration (Sub-Slices A–G)**
   *(2026-05-20)* — `schema migrate` against a MySQL target now
   renders the four sequence `DiffOperation` subtypes
   (`CreateSequence`, `AlterSequence`, `DropSequence`,
@@ -166,11 +166,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SequenceDefaultReprojectorTest` (three new MySQL fallback
   cases).
 
+  Bootstrap idempotency + column-default rendering (Sub-Slice F):
+    - The helper-table bootstrap is idempotent across migration
+      re-runs: `MysqlSequenceEmulationTemplates.supportTableSql`
+      emits `CREATE TABLE IF NOT EXISTS dmg_sequences`, and the
+      `nextval` / `setval` routines are preceded by separate
+      `DROP FUNCTION IF EXISTS …;` statements (kept outside the
+      `DELIMITER //`-wrapped CREATE so the DDL-Generator's
+      rollback parser still recognises the routine name). A
+      migration against a DB that already has the helper objects
+      no longer fails on "table already exists" / "function
+      already exists".
+    - `SequenceNextVal` column defaults now render correctly in
+      the diff path. `MysqlDiffSqlBuilders.columnLine` drops the
+      `DEFAULT` clause for sequence defaults (mirrors the DDL-
+      Generator's `resolveSequenceDefault` bypass), and the
+      table-level renderers emit a per-column BEFORE INSERT
+      trigger via `MysqlDiffSequenceOps.emitSupportTriggerForColumn`.
+      `renderCreateTable` / `renderAddColumn` /
+      `renderAlterColumnDefault` are all wired through the new
+      mode-gated path; before Sub-Slice F a plan that combined a
+      `CreateTable` / `AddColumn` with a `SequenceNextVal` default
+      crashed the renderer.
+    - `AlterSequence` whose `before → after` delta only touches
+      the runtime-state field `start` no longer disappears
+      silently. `renderAlterSequence` emits an INFO-severity
+      diagnostic `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` and marks
+      the op as skipped — no blocker, but the report tracks the
+      op. The actual runtime-state migration is the
+      `preserveCurrentValue` cross-dialect follow-up.
+
   Commit timeline:
   Sub-Slice A `edc1fb9d` + review `4336284d`,
   B `28598cde` + review `7c2b8bec`,
   C `d3724a33` + review `93aa3e40`,
-  D `0bda4f15`.
+  D `0bda4f15`,
+  E (closing iter 1) `c7e92bf4` + `1431fb24`,
+  F `3bea97e7`,
+  G (closing iter 2) ⟵ this commit.
   Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
 
 - **0.9.7 F.5 — CHECK / EXCLUDE Constraint Vollscheibe (Sub-Slices A–G)**

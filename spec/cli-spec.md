@@ -648,10 +648,17 @@ Routine-Rendering:
   `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`, kein SQL wird
   emittiert. Im `helper_table`-Modus emittieren die Renderer:
     - `CreateSequence` UP: Bootstrap einmalig pro Migrations-
-      Richtung (`CREATE TABLE dmg_sequences` +
-      `CREATE FUNCTION dmg_nextval` + `CREATE FUNCTION dmg_setval`)
-      gefolgt von `INSERT INTO dmg_sequences (...) VALUES (...)`.
-      Wer mit `--generate-rollback` Up + Down erzeugt, sieht den
+      Richtung. Der Bootstrap-Block ist idempotent:
+      `CREATE TABLE IF NOT EXISTS dmg_sequences (...)` + jeweils
+      `DROP FUNCTION IF EXISTS dmg_nextval;` /
+      `dmg_setval;` gefolgt von `CREATE FUNCTION ...`. Damit
+      kollidiert eine Migration gegen eine DB, die bereits
+      Helper-Objekte aus einem früheren Lauf trägt, nicht beim
+      Bootstrap-Schritt. Spaltensignatur-Drift der bestehenden
+      `dmg_sequences` ist nicht abgesichert (Out-of-Scope dieses
+      Slice, siehe Folge-Plan). Anschließend
+      `INSERT INTO dmg_sequences (...) VALUES (...)`. Wer mit
+      `--generate-rollback` Up + Down erzeugt, sieht den
       Bootstrap-Block in beiden Artefakten — UP und DOWN tracken
       separat. DOWN: nur
       `DELETE FROM dmg_sequences WHERE name = ...`.
@@ -685,6 +692,32 @@ Routine-Rendering:
       `UPDATE dmg_sequences SET name = …` plus
       `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (mit neuem
       Body-Literal `dmg_nextval('to')`) emittiert.
+    - **Spalten mit `SequenceNextVal`-Default** (Sub-Slice F):
+      `CreateTable` / `AddColumn` / `AlterColumnDefault` mit
+      `SequenceNextVal("...")`-Default werden nicht über
+      `MysqlTypeMapper.toDefaultSql` geroutet (würde crashen),
+      sondern lassen den `DEFAULT`-Token in der Spaltenzeile
+      aus und emittieren stattdessen einen per-Spalte
+      BEFORE-INSERT-Trigger (`dmg_seq_<table16>_<column16>_<hash10>_bi`)
+      über `MysqlSequenceEmulationTemplates.sequenceTriggerSql`,
+      der `dmg_nextval('<seq>')` aufruft wenn der Insert-Wert
+      NULL ist. Der Mode-Gate (`E056`) gilt auch für diesen
+      Pfad: ohne `--mysql-named-sequences helper_table` wird die
+      Op blockiert, bevor irgendein `CREATE TABLE` / `ADD COLUMN`
+      emittiert wird. `AlterColumnDefault` wechselt zwischen
+      Sequence- und Konstant-Defaults sauber (DROP TRIGGER vor
+      `SET DEFAULT`; bzw. `DROP DEFAULT` + CREATE TRIGGER). Das
+      DOWN von `DROP COLUMN` lässt MySQL den kanonisch
+      benannten Trigger implizit cascadieren — kein extra DROP
+      TRIGGER nötig.
+    - **`AlterSequence` mit nur Runtime-State-Delta**: wenn die
+      einzige Änderung der `start`-Wert ist (managed-Felder
+      `increment`/`minValue`/`maxValue`/`cycle`/`cache` bleiben
+      gleich), emittiert der Renderer keinen `UPDATE`, sondern
+      einen INFO-severity-Diagnostic
+      `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` mit Hinweis auf den
+      `preserveCurrentValue`-Folge-Slice. Die Op wird im Report
+      als skipped + Info dokumentiert, ohne Migration-Blocker.
   Out of scope dieses Slice (eigener Folge-Slice):
   Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
   (E124-Kollisionsprüfung gegen vorgefundene Werte) — analog F.5

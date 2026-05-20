@@ -2,17 +2,15 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: in progress 2026-05-20 (Sub-Slice F follow-up).
->           Sub-Slices A ✅ (Template-Extraktion, `edc1fb9d` +
->           Review `4336284d`) + B ✅ (Diff-Render-Pfade,
->           `28598cde` + Review `7c2b8bec`) + C ✅
->           (RenameSequence-Policy + Defensive, `d3724a33` +
+> **Status**: ✅ done (2026-05-20). Sub-Slices A ✅ (Template-
+>           Extraktion, `edc1fb9d` + Review `4336284d`) + B ✅
+>           (Diff-Render-Pfade, `28598cde` + Review `7c2b8bec`) +
+>           C ✅ (RenameSequence-Policy + Defensive, `d3724a33` +
 >           Review `93aa3e40`) + D ✅ (SequenceDefaultReprojector-
->           Integration, `0bda4f15`) + E (Closing, `c7e92bf4` +
->           `1431fb24`) — Closing wurde anschließend re-opened, weil
->           die Closing-Review vier echte Funktionslücken aufdeckte
->           (siehe Sub-Slice F). Sub-Slice F + erneutes Closing
->           offen.
+>           Integration, `0bda4f15`) + E (Closing iter 1,
+>           `c7e92bf4` + `1431fb24`) + F ✅ (Bootstrap-Idempotenz,
+>           Column-Default-Renderer, start-only-Skip,
+>           §10.1-Korrektur, `3bea97e7`) + G ✅ (Closing iter 2).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`docs/planning/done/mysql-sequence-emulation-plan.md`) ✅
@@ -338,7 +336,7 @@ korrekt — die spec beschreibt den Endzustand nach Sub-Slice F;
 das CHANGELOG wird in der zweiten Closing-Iteration um Sub-Slice F
 erweitert.
 
-### Sub-Slice F — Closing-Follow-up *(offen, naechster Schritt)*
+### Sub-Slice F — Closing-Follow-up ✅ (2026-05-20, `3bea97e7`)
 
 Adressiert die vier Findings der Closing-Review:
 
@@ -399,7 +397,7 @@ Tests:
 - Mode-Gate für Column-Default-Pfad: bei !HELPER_TABLE → E056
   analog zum Sequence-Op-Pfad.
 
-### Sub-Slice G — Closing-Iteration 2 *(nach Sub-Slice F)*
+### Sub-Slice G — Closing-Iteration 2 ✅ (2026-05-20)
 
 - §E.3-DoD im master plan + Roadmap auf wirklich done setzen.
 - CHANGELOG-Eintrag erweitern um Sub-Slice F.
@@ -642,4 +640,6 @@ Abschnitt 10.2 umsetzen.
 | B | ✅ | `28598cde feat(mysql): E.3 Sub-Slice B — diff renderer for sequence operations` + Review `7c2b8bec chore(mysql): E.3 Sub-Slice B review follow-ups` |
 | C | ✅ | `d3724a33 feat(mysql): E.3 Sub-Slice C — RenameSequence policy + defensive renderer` + Review `93aa3e40 chore(mysql): E.3 Sub-Slice C review follow-ups` |
 | D | ✅ | `0bda4f15 feat(core): E.3 Sub-Slice D — SequenceDefaultReprojector handles DropCreateFallback` |
-| E | ✅ | `docs(plan): E.3 MySQL Sequence Diff-Migration closing` |
+| E (iter 1) | ✅ | `c7e92bf4 docs(plan): E.3 MySQL Sequence Diff-Migration closing` + `1431fb24 docs(spec): E.3 closing review follow-ups` (re-opened wegen Sub-Slice F-Findings) |
+| F | ✅ | `3bea97e7 feat(mysql): E.3 Sub-Slice F — bootstrap idempotency + column-default rendering + start-only skip` |
+| G (iter 2) | ✅ | `docs(plan): E.3 MySQL Sequence Diff-Migration closing iter 2` |
