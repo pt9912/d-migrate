@@ -30,9 +30,9 @@ Was fehlt: der **diff-basierte** Pfad. Heute routet
 Sequence-`DiffOperation`-Subtypen
 (`CreateSequence`, `AlterSequence`, `DropSequence`, `RenameSequence`)
 zu `OpCategory.UNSUPPORTED`. Der Renderer emittiert keinen DDL und
-blockt mit `DIALECT_UNSUPPORTED_OPERATION`. Operatoren koennen
+blockt mit `DIALECT_UNSUPPORTED_OPERATION`. Operatoren können
 sequence-betreffende Diff-Migrationen damit nicht via `schema migrate`
-fahren — sie muessten den DDL-Generator-Pfad (`schema generate`) nutzen
+fahren — sie müssten den DDL-Generator-Pfad (`schema generate`) nutzen
 und das resultierende Skript manuell ausführen.
 
 Im Detail:
@@ -407,7 +407,7 @@ erlaubt; wenn er trotzdem emittiert wird, übernimmt ihn
 - [ ] **Bestehende 0.9.7-Vertraege unveraendert**: bestehende
       `MysqlDdlGenerator`-Pfade bleiben unveraendert. F.4
       RenameSequence-Mapper-Pfad wird aktiviert.
-- [ ] **Slice kann unabhaengig implementiert und verifiziert
+- [ ] **Slice kann unabhängig implementiert und verifiziert
       werden**: ja, Sub-Slices A → B → C → D sequentiell, E paperwork.
 
 ---
@@ -499,7 +499,7 @@ RenameProvenance-/Rollback-Dokumentation im Plan.
 ### 10.5 `MysqlSequenceDdlSupport`-Guard auf Moduskonfiguration
 
 Wenn `mysqlNamedSequenceMode` nicht auf `HELPER_TABLE` steht,
-muessen auch vorhandene `ALTER/DROP/RENAME SEQUENCE`-Diffops
+müssen auch vorhandene `ALTER/DROP/RENAME SEQUENCE`-Diffops
 als nicht-renderbar behandelt werden.
 Der DDL-Pfad kann bereits `E056` liefern; der Diff-Pfad darf davon aber
 nicht abhängig sein und muss weiterhin die explizite Guard-Kaskade aus
