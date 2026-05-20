@@ -101,10 +101,12 @@ Migrationen ohne `schema generate`-Workaround.
     fehlender Zeile wird normaler `INSERT` gerendert. Up + Down.
   - `renderAlterSequence(op, ctx)` — produziert
     `UPDATE dmg_sequences SET …`-Statements fuer managed
-    Felder (`start`, `increment`, `min_value`, `max_value`,
-    `cycle`, `cache`). `start` wird dabei als persistierter
-    Sequence-Zustand gerendert. Up + Down (inverse Werte aus
-    `op.before`).
+    Felder (`increment_by`, `min_value`, `max_value`,
+    `cycle`, `cache`). `start` ist in diesem Slice der persistierte
+    Laufzeitzustand (`next_value`) und wird nicht als DDL-Attribut
+    verändert. Up + Down (inverse Werte aus `op.before`) auf den
+    verwalteten Deklarativfeldern (`increment_by`, `min_value`,
+    `max_value`, `cycle`, `cache`) ausschliesslich.
   - `renderDropSequence(op, ctx)` — droppt Trigger + Zeile in
     `dmg_sequences`. Up + Down.
   - `renderRenameSequence(op, ctx)` — `RENAME TABLE`-Pattern
@@ -140,9 +142,9 @@ Migrationen ohne `schema generate`-Workaround.
   Sequence. Die eigentliche „current value preservation“ bleibt deshalb in
   einem separaten Cross-Dialect-Plan
   (`ImpPlan-0.9.7-sequence-preserve-current-value.md`, parallel
-  in-progress) und ist Out-of-Scope. Für diesen Slice wird `start` als
-  persistierter Laufzeitzustand (`next_value`) behandelt und über den
-  normalen `MysqlDiffSequenceOps.renderAlterSequence`-Pfad synchronisiert.
+  in-progress) und ist Out-of-Scope. Für diesen Slice gilt `start` als
+  persistierter Laufzeitzustand (`next_value`) und wird nicht als
+  deklaratives DDL-Attribut migriert.
 - **SQLite-Sequence-Diff**: eigener Plan
   (`open/sqlite-sequence-emulation-plan.md`). Dieser Slice ist
   MySQL-only.
@@ -190,7 +192,7 @@ extrahieren, weil sonst zwei Wartungs-Stellen.
 | DiffOperation | MySQL-Rendering |
 |---|---|
 | `CreateSequence` | (nur `HELPER_TABLE`) **Globaler Bootstrap einmalig pro Migration**: `dmg_sequences`-Tabelle + `dmg_nextval`/`dmg_setval` (nur einmal), danach pro Sequence `INSERT INTO dmg_sequences (name, …) VALUES (…)`. Vorher wird die Support-Kanonik geprüft (`dmg_sequences`-Schema, `dmg_nextval`/`dmg_setval`-Signaturen, Trigger-Muster `dmg_seq_<table>_<column>_<hash>_bi`): bei Abweichung `E124`-Blocker. Bei bestehender Zeile wird zuerst der Drift gegen verwaltete Felder geprüft (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`; `start`/persistierter Zustand nicht hart geprüft): bei Abweichung `E124`-Blocker, bei Konsistenz `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (idempotentes Reconcile). |
-| `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`start`, `increment_by`, `min_value`, `max_value`, `cycle`, `cache`). |
+| `AlterSequence(before, after)` | `UPDATE dmg_sequences SET <changed-fields> WHERE name = …` für verwaltete Felder (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`). |
 | `DropSequence` | (nur `HELPER_TABLE`) `DROP TRIGGER` fuer alle Sequence-Trigger; `DELETE FROM dmg_sequences WHERE name = …` |
 | `RenameSequence(from, to)` | Defensive-Fallback nur: `UPDATE dmg_sequences SET name = 'to' WHERE name = 'from'`; Trigger-Rebuild via `DROP TRIGGER` + `CREATE TRIGGER` für alle betroffenen Sequence-Trigger |
 
@@ -204,7 +206,8 @@ wird die Tabelle NICHT geloescht (andere Sequenzen leben darin)
 
 Standard-Pattern wie bei den anderen Sequence-Renderern:
 - `CreateSequence` Down = `DropSequence`-Sequenz.
-- `AlterSequence` Down = `UPDATE` auf `op.before`-Werte.
+- `AlterSequence` Down = `UPDATE` auf `op.before`-Werte für die verwalteten
+  Deklarativfelder (`increment_by`, `min_value`, `max_value`, `cycle`, `cache`).
 - `DropSequence` Down = `CreateSequence`-Sequenz mit gespeicherter
   `SequenceDefinition`.
 - `RenameSequence` ist primär kein Produktivpfad. `Up/Down` werden
@@ -419,9 +422,17 @@ ansonsten wird ebenfalls `E124` erzeugt.
 sind im Nicht-`HELPER_TABLE`-Modus strikt verboten:
 `ctx.skip(op, ..., code = "E056", primaryBlockedReason = MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))`.
 Es darf anschließend keine SQL-Emission mehr stattfinden. Erst danach kann SQL
-für HELPER_TABLE gerendert werden. Diese Guard-Schicht macht den Diff-Pfad
-explizit mode-korrekt
-und reduziert die Abhängigkeit von impliziten Verhalten.
+für HELPER_TABLE gerendert werden.
+
+Prioritaet im Diff-Pfad:
+- `E056`-Blocker (falscher Sequenz-Modus) ist der harte First-Check im Renderer.
+- `E124`-Blocker (nicht-kanonische/inkonsistente Support-Objekte oder Drift bei bestehender
+  `dmg_sequences`-Zeile) wird erst geprüft, wenn der Modus-Guard erfolgreich war.
+
+Damit ist die Quelle für die Diff-Pfad-Diagnose eindeutig und verhindert,
+dass bei aktivem Blocker zusätzlich SQL ausgegeben werden kann.
+Diese Guard-Schicht macht den Diff-Pfad explizit mode-korrekt und reduziert
+die Abhängigkeit von impliziten Verhalten.
 
 ### 10.3 Trigger-Body-Stabilitaet
 
