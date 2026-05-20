@@ -5,25 +5,25 @@
 > **Status**: in progress (2026-05-20).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
->                  (`done/mysql-sequence-emulation-plan.md`) ✅
+>                  (`docs/planning/done/mysql-sequence-emulation-plan.md`) ✅
 >                  Phase A–E2 (2026-04-21) im DDL-Generator-Pfad;
 >                  F.4 Renderer-Blocker-Bridge ✅ 2026-05-19.
-> **Referenz**: `done/mysql-sequence-emulation-plan.md` (Vollvariante
->             im DDL-Generator-Pfad); `diffresult-migration-plan-2.md`
->             §E.3; `spec/ddl-generation-rules.md` §7.
+> **Referenz**: `docs/planning/done/mysql-sequence-emulation-plan.md` (Vollvariante
+>             im DDL-Generator-Pfad); `docs/planning/in-progress/diffresult-migration-plan-2.md`
+>             §E.3; `docs/spec/ddl-generation-rules.md` §7.
 
 ---
 
 ## 1. Auslöser
 
 Die vollständige MySQL-Sequence-Emulation
-(`done/mysql-sequence-emulation-plan.md`, Phasen A–E2, abgeschlossen
+(`docs/planning/done/mysql-sequence-emulation-plan.md`, Phasen A–E2, abgeschlossen
 2026-04-21) liefert den DDL-Generator-Pfad: `MysqlDdlGenerator`
 rendert vollständige Sequence-DDL aus einer
 `SequenceDefinition` (helper_table-Modus mit
 `dmg_sequences`-Hilfsobjekten + kanonischen Sequence-Triggern); der
 `MysqlSchemaReader` rekonstruiert die Hilfsobjekte zurück zu
-`SequenceDefinition`. Der Vergleich ist sequence-stabil.
+`SequenceDefinition`. Die Emulation ist sequence-stabil.
 
 Was fehlt: der **diff-basierte** Pfad. Heute routet
 `MysqlDiffDdlGenerator.categorize()` jede der vier
@@ -175,7 +175,7 @@ Migrationen ohne `schema generate`-Workaround.
 
 | Vorbedingung | Status | Kommentar |
 | ------------ | ------ | --------- |
-| `MysqlNamedSequenceMode.HELPER_TABLE`-Emulation | ✅ 0.9.4 AP 6.3/6.4 | Plan-Doc: `done/mysql-sequence-emulation-plan.md` |
+| `MysqlNamedSequenceMode.HELPER_TABLE`-Emulation | ✅ 0.9.4 AP 6.3/6.4 | Plan-Doc: `docs/planning/done/mysql-sequence-emulation-plan.md` |
 | `MysqlSchemaReader` faltet Hilfsobjekte zurück | ✅ 0.9.4 AP 6.1–6.3 | `dmg_sequences` + Support-Routinen + Trigger werden erkannt |
 | F.4 RenameSequence Subtyp + Policy | ✅ 2026-05-19 | `MysqlObjectRenamePolicy` blockt heute, wartet auf Upgrade |
 | F.4 Renderer-Blocker-Bridge | ✅ 2026-05-19 | `PlannerBlockerClassifier`-Pattern verfuegbar |
@@ -431,7 +431,7 @@ Wenn das Live-Schema bereits ein Objekt `dmg_sequences` enthält, darf
 `MysqlDiffSequenceOps` prüft vor dem Create/Insert die Existenz und
 Kanonik der Support-Objekte: `dmg_sequences`, `dmg_nextval`,
 `dmg_setval` sowie den zugehörigen Sequence-Trigger
-`dmg_seq_<table>_<column>_<hash>_bi` inklusive Marker im Body.
+`dmg_seq_<table16>_<column16>_<hash10>_bi` inklusive Marker im Body.
 Bei fachlich unpassendem Vorhandensein (falsche Signatur/Marker oder
 abweichendes Objekt/Typ) wird ein `E124`-Blocker statt stiller
 `IF NOT EXISTS`-Logik ausgegeben.
