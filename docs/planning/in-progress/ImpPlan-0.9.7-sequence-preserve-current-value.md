@@ -160,10 +160,10 @@ Roadmap §E Rest listet explizit:
 - **Sequence-Ownership-Inferenz** (wer „besitzt" eine Sequenz —
   PG `OWNED BY` table.column): bleibt im DDL-Generator-Pfad,
   diff-basiert ausgeklammert.
-- **Multi-Sequence-Atomicity**: wenn ein Plan mehrere Sequenzen
+-- **Multi-Sequence-Atomicity**: wenn ein Plan mehrere Sequenzen
   preserved, sind die Probe-Punkte zeitlich auseinander; ein
   Operator, der zwischen den Probes Inserts macht, kann
-  Inkonsistenzen erzeugen. Carve-out documented.
+  Inkonsistenzen erzeugen. Carve-out dokumentiert.
 
 ---
 
