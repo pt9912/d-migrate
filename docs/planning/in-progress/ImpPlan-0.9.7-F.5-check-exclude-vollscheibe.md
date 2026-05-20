@@ -119,7 +119,8 @@ betroffenen Tabellen vorher manuell anfassen.
   Planner-Blocker-Code, bestehend auf existierendem
   `MigrationBlockedReason`).
   Nicht-standardisierte EXCLUDE-Operator-Klassen blockt PG ebenfalls mit
-  `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` als `DIALECT_UNSUPPORTED_OPERATION`.
+  `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` als `MANUAL_ACTION_REQUIRED`
+  (Operator kann die Constraint mit Standard-Operator-Klasse umschreiben).
   Die Implementierung nutzt eine konservative Whitelist-Validierung
   (`with`-Operator und optionale `WHERE`-Klausel), und alles
   Nicht-Whitelisted wird als unsupported markiert.
@@ -168,7 +169,8 @@ betroffenen Tabellen vorher manuell anfassen.
   - `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED` →
     `MANUAL_ACTION_REQUIRED`.
   - `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` →
-    `DIALECT_UNSUPPORTED_OPERATION`.
+    `MANUAL_ACTION_REQUIRED` (Operator kann die Constraint mit
+    Standard-Operator-Klasse umschreiben).
 - Plan-Artefakt-Vertrag (`migration-plan.v1`) bleibt
   unveraendert; CHECK/EXCLUDE-Operationen tragen ihre
   `objectType`/`phase` per bestehender Konvention.
@@ -186,7 +188,7 @@ betroffenen Tabellen vorher manuell anfassen.
   (`USING gist (col WITH &&)`). Erste Vollscheibe deckt nur
   bekannte Standard-Range-Operatoren; nicht-standardisierte
   Operator-Klassen blocken mit
-  `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED`/`DIALECT_UNSUPPORTED_OPERATION`.
+  `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED`/`MANUAL_ACTION_REQUIRED`.
 - **MySQL `CHECK` mit Enforcement-Override via Operator** (z.B.
   `--allow-check-not-enforced`). Diese Vollscheibe blockt bewusst ohne
   8.0.16+ oder MariaDB; spaetere Tranche kann das Override
@@ -355,7 +357,7 @@ Sub-Slice A fuegt sieben neue Codes hinzu:
 "MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16" -> MANUAL_ACTION_REQUIRED
 "MYSQL_CHECK_ENFORCEMENT_UNKNOWN" -> MANUAL_ACTION_REQUIRED
 "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED" -> MANUAL_ACTION_REQUIRED
-"EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED" -> DIALECT_UNSUPPORTED_OPERATION
+"EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED" -> MANUAL_ACTION_REQUIRED
 "CHECK_PREFLIGHT_RUNTIME_ERROR" -> MANUAL_ACTION_REQUIRED
 ```
 
@@ -737,11 +739,13 @@ Stand 2026-05-19: A–E fertig, F + G offen.
 - [x] Daten-Preflight im `--execute`-Modus blockt technische Probe-Fehler
       sauber mit `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`
       inkl. Fehlertext im Report. *(Sub-Slice E.3 + E.4.)*
-- [ ] EXCLUDE mit nicht unterstützten/benutzerdefinierten
+- [x] EXCLUDE mit nicht unterstützten/benutzerdefinierten
       Operator-Klassen blockt mit
-      `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` → `DIALECT_UNSUPPORTED_OPERATION`.
-      *(Operator-Klassen-Whitelist + Reject-Pfad noch nicht implementiert;
-      offen fuer Sub-Slice F oder Folge-Slice.)*
+      `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` → `MANUAL_ACTION_REQUIRED`.
+      *(Sub-Slice F: konservative Whitelist in `ExcludeOperatorClassGate`
+      — bare/quoted identifier oder parenthesisierter Ausdruck vor `WITH`;
+      Reject-Pfad in AddConstraint UP, DropConstraint DOWN und inline
+      CreateTable.)*
 - [x] Datei-zu-Datei-Modus: neue restriktive CHECK bleibt
       `MANUAL_ACTION_REQUIRED` mit Verweis auf `--execute`.
       *(Sub-Slice E.4: `NOT_RUN_FILE_TARGET`-Declarations werden vom

@@ -272,6 +272,17 @@ sealed interface DiffOperation {
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+        /**
+         * F.5 Sub-Slice F: when a constraint change is mapped as
+         * `DropConstraint(before) + AddConstraint(after)`, both ops
+         * share a deterministic [replacePairId] derived from
+         * `table | name | canonicalBefore | canonicalAfter`. Op ids
+         * remain unique (dependency-sort, artefact binding,
+         * `renderedStatements.operationIds` depend on that); the pair
+         * id is a separate group identity for reporters and the
+         * `ConstraintReplaceContract` post-pass.
+         */
+        val replacePairId: String? = null,
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)
@@ -285,6 +296,8 @@ sealed interface DiffOperation {
         override val dependencies: Set<String> = emptySet(),
         override val reversibility: Reversibility = Reversibility.AUTOMATIC,
         override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+        /** See [AddConstraint.replacePairId]. */
+        val replacePairId: String? = null,
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)

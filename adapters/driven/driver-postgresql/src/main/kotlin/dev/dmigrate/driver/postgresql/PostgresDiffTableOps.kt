@@ -1,10 +1,12 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
 /**
  * Per-operation renderers for table / column / primary-key DDL.
@@ -32,6 +34,7 @@ internal object PostgresDiffTableOps {
             blockSpatialIndex(op, ctx, tableName, unsupportedSpatialIndex.type.name)
             return
         }
+        if (blockUnsupportedExcludeOpClassInTable(op, ctx, tableName)) return
         val lines = mutableListOf<String>()
         for ((colName, col) in op.table.columns.entries.sortedBy { it.key }) {
             lines += "    " + ctx.sql.columnLine(colName, col)
@@ -209,6 +212,42 @@ internal object PostgresDiffTableOps {
 
     private fun dev.dmigrate.core.model.IndexDefinition.referencesGeometry(table: TableDefinition): Boolean =
         columnNames.any { name -> table.columns[name]?.type is NeutralType.Geometry }
+
+    /**
+     * F.5 Sub-Slice F: inline `CREATE TABLE` constraint loop emits
+     * EXCLUDE clauses verbatim via [PostgresDiffSqlBuilders.constraintLine].
+     * Apply the same operator-class whitelist as the standalone
+     * AddConstraint path so a `CREATE TABLE` with a custom opclass is
+     * blocked instead of silently emitting non-round-trippable DDL.
+     * Returns `true` when a block was emitted.
+     */
+    private fun blockUnsupportedExcludeOpClassInTable(
+        op: DiffOperation.CreateTable,
+        ctx: PostgresDiffRenderContext,
+        tableName: String,
+    ): Boolean {
+        val offender = op.table.constraints
+            .asSequence()
+            .filter { it.type == ConstraintType.EXCLUDE }
+            .mapNotNull { c ->
+                when (val v = ExcludeOperatorClassGate.verdict(c.expression)) {
+                    ExcludeOperatorClassGate.Verdict.Allowed -> null
+                    is ExcludeOperatorClassGate.Verdict.Blocked -> c to v
+                }
+            }
+            .firstOrNull()
+            ?: return false
+        val (constraint, verdict) = offender
+        ctx.skip(
+            op,
+            "Operation ${op.id} would create table `$tableName` with EXCLUDE constraint " +
+                "'${constraint.name}' using unsupported element '${verdict.offendingElement}': " +
+                "${verdict.reason}.",
+            code = PlannerBlockerClassifier.EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE,
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
+    }
 
     private fun blockSpatialIndex(
         op: DiffOperation,

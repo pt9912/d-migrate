@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
@@ -51,11 +52,52 @@ internal object MysqlDiffOtherOps {
             return
         }
         if (ctx.direction == MysqlRenderDirection.DOWN) {
+            // F.5 Sub-Slice F: Down of `DropConstraint(CHECK)` would
+            // re-emit the original `ADD CONSTRAINT … CHECK (expr)`,
+            // but a missing/blank expression makes that impossible —
+            // surface `ROLLBACK_NOT_POSSIBLE` instead of the generic
+            // dialect-unsupported blocker. EXCLUDE is already blocked
+            // above; FOREIGN_KEY / UNIQUE keep their existing path.
+            if (isRollbackBlockedRawSql(op.constraint)) {
+                blockRollbackNotPossible(op, ctx, table)
+                return
+            }
             emitAddConstraint(op, ctx, table)
             return
         }
         emitDropConstraint(op, ctx, table)
     }
+
+    /**
+     * F.5 Sub-Slice F: see [renderDropConstraint]'s Down-branch — the
+     * inverse cannot be rendered without the original CHECK / EXCLUDE
+     * expression.
+     */
+    private fun blockRollbackNotPossible(
+        op: DiffOperation.DropConstraint,
+        ctx: MysqlDiffRenderContext,
+        table: String,
+    ) {
+        ctx.skip(
+            op,
+            "Operation ${op.id} drops CHECK/EXCLUDE constraint '${op.constraint.name}' on " +
+                "'$table' but the prior expression is not available; the renderer cannot " +
+                "reconstruct the inverse ADD CONSTRAINT.",
+            code = "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING",
+        )
+        ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
+    }
+
+    /**
+     * MySQL-side rollback predicate is CHECK-only: EXCLUDE has already
+     * been short-circuited by [blockExcludeOnMysql] at the start of
+     * [renderDropConstraint] (PostgreSQL-exclusive feature), so an
+     * EXCLUDE op never reaches this gate. PostgreSQL handles both
+     * CHECK and EXCLUDE in its sibling predicate; the two dialects
+     * diverge here on purpose.
+     */
+    private fun isRollbackBlockedRawSql(c: ConstraintDefinition): Boolean =
+        c.type == ConstraintType.CHECK && c.expression.isNullOrBlank()
 
     private fun emitAddConstraint(op: DiffOperation, ctx: MysqlDiffRenderContext, table: String) {
         val constraint = when (op) {

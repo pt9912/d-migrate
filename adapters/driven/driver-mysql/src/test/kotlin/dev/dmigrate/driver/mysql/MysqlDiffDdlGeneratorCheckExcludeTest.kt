@@ -2,6 +2,7 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
+import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
@@ -159,5 +160,49 @@ class MysqlDiffDdlGeneratorCheckExcludeTest : FunSpec({
         r.diagnostics.any {
             it.code == PlannerBlockerClassifier.EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE
         } shouldBe true
+    }
+
+    // ── F.5 Sub-Slice F ─────────────────────────────────────────────
+
+    test("F.5 §F: Replace CHECK on MySQL ≥ 8.0.16 emits DROP CHECK + ADD CONSTRAINT in Up") {
+        val before = ConstraintDefinition(
+            name = "chk_age_nonneg", type = ConstraintType.CHECK, expression = "age >= 0",
+        )
+        val after = before.copy(expression = "age >= 18")
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "users", constraintsChanged = listOf(ValueChange(before, after))),
+            ),
+        )
+        val up = planAndUp(diff, MysqlServerVersion(8, 0, 16)).statements.map { it.sql }
+        up.any { it.contains("DROP CHECK `chk_age_nonneg`") } shouldBe true
+        up.any { it.contains("ADD CONSTRAINT `chk_age_nonneg` CHECK (age >= 18)") } shouldBe true
+    }
+
+    test("F.5 §F: Replace CHECK on MySQL ≥ 8.0.16 — Down emits inverse ADD(old) + DROP(new)") {
+        val before = ConstraintDefinition(
+            name = "chk_age_nonneg", type = ConstraintType.CHECK, expression = "age >= 0",
+        )
+        val after = before.copy(expression = "age >= 18")
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "users", constraintsChanged = listOf(ValueChange(before, after))),
+            ),
+        )
+        val down = planAndDown(diff, MysqlServerVersion(8, 0, 16)).statements.map { it.sql }
+        down.any { it.contains("ADD CONSTRAINT `chk_age_nonneg` CHECK (age >= 0)") } shouldBe true
+        down.any { it.contains("DROP CHECK `chk_age_nonneg`") } shouldBe true
+    }
+
+    test("F.5 §F: DropConstraint(CHECK) without expression — DOWN blocks with ROLLBACK_NOT_POSSIBLE") {
+        val ghost = ConstraintDefinition(
+            name = "chk_ghost", type = ConstraintType.CHECK, expression = null,
+        )
+        val diff = SchemaDiff(
+            tablesChanged = listOf(TableDiff(name = "users", constraintsRemoved = listOf(ghost))),
+        )
+        val r = planAndDown(diff, MysqlServerVersion(8, 0, 16))
+        r.isBlocked shouldBe true
+        r.blockers.any { it.reason == MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE } shouldBe true
     }
 })

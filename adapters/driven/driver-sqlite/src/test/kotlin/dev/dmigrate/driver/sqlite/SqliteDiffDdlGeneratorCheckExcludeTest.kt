@@ -187,6 +187,75 @@ class SqliteDiffDdlGeneratorCheckExcludeTest : FunSpec({
         } shouldBe true
     }
 
+    // ── F.5 Sub-Slice F ──────────────────────────────────────────
+
+    test("F.5 §F: Replace CHECK via constraintsChanged carries the new expression in Up rebuild") {
+        val before = chkAgeNonneg
+        val after = chkAgeNonneg.copy(expression = "age >= 18")
+        val currentTable = baseTable.copy(constraints = listOf(before))
+        val desiredTable = baseTable.copy(constraints = listOf(after))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    constraintsChanged = listOf(ValueChange(before, after)),
+                ),
+            ),
+        )
+        val r = render(
+            schemaWith(mapOf("u" to currentTable)),
+            schemaWith(mapOf("u" to desiredTable)),
+            diff,
+        )
+        r.isBlocked shouldBe false
+        val createTemp = r.statements.first { it.sql.contains("CREATE TABLE \"u__dmg_rebuild_") }.sql
+        createTemp shouldContain "CHECK (age >= 18)"
+        createTemp shouldNotContain "CHECK (age >= 0)"
+    }
+
+    test("F.5 §F: Replace CHECK via constraintsChanged — Down rebuild swaps back to the old expression") {
+        val before = chkAgeNonneg
+        val after = chkAgeNonneg.copy(expression = "age >= 18")
+        val currentTable = baseTable.copy(constraints = listOf(before))
+        val desiredTable = baseTable.copy(constraints = listOf(after))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(
+                    name = "u",
+                    constraintsChanged = listOf(ValueChange(before, after)),
+                ),
+            ),
+        )
+        val r = renderDown(
+            schemaWith(mapOf("u" to currentTable)),
+            schemaWith(mapOf("u" to desiredTable)),
+            diff,
+        )
+        r.isBlocked shouldBe false
+        val createTemp = r.statements.first { it.sql.contains("CREATE TABLE \"u__dmg_rebuild_") }.sql
+        createTemp shouldContain "CHECK (age >= 0)"
+        createTemp shouldNotContain "CHECK (age >= 18)"
+    }
+
+    test("F.5 §F: DropConstraint(CHECK) without expression — Down rebuild blocks ROLLBACK_NOT_POSSIBLE") {
+        val ghost = ConstraintDefinition(
+            name = "chk_ghost", type = ConstraintType.CHECK, expression = null,
+        )
+        val before = baseTable.copy(constraints = listOf(ghost))
+        val diff = SchemaDiff(
+            tablesChanged = listOf(
+                TableDiff(name = "u", constraintsRemoved = listOf(ghost)),
+            ),
+        )
+        val r = renderDown(
+            schemaWith(mapOf("u" to before)),
+            schemaWith(mapOf("u" to baseTable)),
+            diff,
+        )
+        r.isBlocked shouldBe true
+        r.blockers.any { it.reason == MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE } shouldBe true
+    }
+
     test("Column reshape on a table carrying an EXCLUDE blocks even when no op mentions it") {
         // Pre-existing EXCLUDE that the rebuild would otherwise drop
         // silently via constraintLine returning null. The dispatcher

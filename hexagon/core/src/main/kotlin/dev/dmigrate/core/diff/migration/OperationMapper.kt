@@ -4,8 +4,11 @@ import dev.dmigrate.core.diff.ColumnDiff
 import dev.dmigrate.core.diff.SchemaDiff
 import dev.dmigrate.core.diff.TableDiff
 import dev.dmigrate.core.diff.migration.overlay.MigrationOverlayDocument
+import dev.dmigrate.core.model.ConstraintDefinition
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.util.sha256Hex
 
 /**
  * Maps a [SchemaDiff] to a flat list of [DiffOperation]s with stable
@@ -105,7 +108,13 @@ internal object OperationMapper {
         // bearing ops depend on the corresponding `RenameSequence`,
         // so the topological sort places the rename first regardless
         // of the order in which the Mapper emitted the ops.
-        val finalOps = SequenceDefaultReprojector.apply(ops)
+        val reprojected = SequenceDefaultReprojector.apply(ops)
+        // F.5 Sub-Slice F: pin reversibility for CHECK / EXCLUDE
+        // Add/Drop ops (Replace pairs and standalone). Down-rendering
+        // of a `DropConstraint(CHECK/EXCLUDE)` without expression
+        // surfaces `ROLLBACK_NOT_POSSIBLE` once this classification
+        // reaches the dialect renderer.
+        val finalOps = ConstraintReplaceContract.apply(reprojected)
         return PreparedMapping(
             operations = finalOps,
             diagnostics = diagnostics,
@@ -431,19 +440,62 @@ internal object OperationMapper {
         }
         for (vc in table.constraintsChanged) {
             val refOld = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, vc.before.name))
+            val refNew = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, vc.after.name))
+            // F.5 Sub-Slice F: tag both ops of a `constraintsChanged`
+            // pair with a deterministic `replacePairId` so the
+            // `ConstraintReplaceContract` post-pass and downstream
+            // reporters can treat the (Drop, Add) pair as one logical
+            // replacement without conflating the unique op ids that
+            // dependency-sort / artefact binding /
+            // `renderedStatements.operationIds` rely on. Only CHECK
+            // and EXCLUDE participate in the contract; UNIQUE /
+            // FOREIGN_KEY pairs are out-of-scope for F.
+            val pairId: String? = if (
+                vc.before.type == ConstraintType.CHECK ||
+                vc.before.type == ConstraintType.EXCLUDE
+            ) {
+                replacePairIdFor(table.name, vc.before, vc.after)
+            } else {
+                null
+            }
             ops += DiffOperation.DropConstraint(
                 id = OperationIdFactory.makeId("DropConstraint", refOld, CanonicalPayload.constraint(vc.before)),
                 objectRef = refOld,
                 constraint = vc.before,
+                replacePairId = pairId,
             )
-            val refNew = DiffObjectRef(DiffObjectType.CONSTRAINT, listOf(table.name, vc.after.name))
             ops += DiffOperation.AddConstraint(
                 id = OperationIdFactory.makeId("AddConstraint", refNew, CanonicalPayload.constraint(vc.after)),
                 objectRef = refNew,
                 constraint = vc.after,
+                replacePairId = pairId,
             )
         }
     }
+
+    /**
+     * F.5 Sub-Slice F: deterministic pair identity for a
+     * `DropConstraint(before) + AddConstraint(after)` replacement.
+     * Folds the table name and both canonical payloads through
+     * SHA-256 and keeps the leading 12 hex chars — same prefix length
+     * the [OperationIdFactory] uses for its own hash tails.
+     */
+    private fun replacePairIdFor(
+        tableName: String,
+        before: ConstraintDefinition,
+        after: ConstraintDefinition,
+    ): String {
+        val seed = buildString {
+            append("ReplaceConstraint")
+            append(CanonicalEncoding.SEP).append(tableName)
+            append(CanonicalEncoding.SEP).append(before.name)
+            append(CanonicalEncoding.SEP).append(CanonicalPayload.constraint(before))
+            append(CanonicalEncoding.SEP).append(CanonicalPayload.constraint(after))
+        }
+        return "replace:" + sha256Hex(seed).take(REPLACE_PAIR_HEX_LEN)
+    }
+
+    private const val REPLACE_PAIR_HEX_LEN: Int = 12
 
     private fun mapTableIndices(table: TableDiff, ops: MutableList<DiffOperation>) {
         for (idx in table.indicesAdded) {

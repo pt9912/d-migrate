@@ -1,12 +1,14 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.CustomTypeKind
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.IndexType
 import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
 /**
  * Per-operation renderers for constraint / index / view / custom-
@@ -21,6 +23,7 @@ internal object PostgresDiffOtherOps {
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT ${ctx.sql.quote(op.constraint.name)};")
             return
         }
+        if (op.constraint.type == ConstraintType.EXCLUDE && blockUnsupportedExcludeOpClass(op, ctx)) return
         val line = ctx.sql.constraintLine(op.constraint)
         if (line == null) {
             ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
@@ -29,6 +32,36 @@ internal object PostgresDiffOtherOps {
         }
         if (op.constraint.type == ConstraintType.CHECK && blockOnCheckPreflight(op, ctx)) return
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
+    }
+
+    /**
+     * F.5 Sub-Slice F: surface
+     * [PlannerBlockerClassifier.EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE]
+     * when an EXCLUDE element references an operator class, COLLATE
+     * clause or ordering token the first F.5 tranche does not round-
+     * trip. Returns `true` when a block was emitted.
+     */
+    private fun blockUnsupportedExcludeOpClass(
+        op: DiffOperation,
+        ctx: PostgresDiffRenderContext,
+    ): Boolean {
+        val constraint = when (op) {
+            is DiffOperation.AddConstraint -> op.constraint
+            is DiffOperation.DropConstraint -> op.constraint
+            else -> return false
+        }
+        val verdict = ExcludeOperatorClassGate.verdict(constraint.expression)
+        if (verdict !is ExcludeOperatorClassGate.Verdict.Blocked) return false
+        ctx.skip(
+            op,
+            "EXCLUDE constraint '${constraint.name}' on '${op.objectRef.path.firstOrNull() ?: ""}' " +
+                "uses unsupported element '${verdict.offendingElement}': ${verdict.reason}. " +
+                "Rewrite the constraint to use bare column names or parenthesised expressions " +
+                "with the default operator class, or add it manually outside the migration.",
+            code = PlannerBlockerClassifier.EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED_CODE,
+        )
+        ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+        return true
     }
 
     /**
@@ -58,10 +91,14 @@ internal object PostgresDiffOtherOps {
     fun renderDropConstraint(op: DiffOperation.DropConstraint, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.path[0]
         if (ctx.direction == PostgresRenderDirection.DOWN) {
+            if (op.constraint.type == ConstraintType.EXCLUDE &&
+                blockUnsupportedExcludeOpClass(op, ctx)
+            ) {
+                return
+            }
             val line = ctx.sql.constraintLine(op.constraint)
             if (line == null) {
-                ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
-                ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+                blockDropConstraintDown(op, ctx)
                 return
             }
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD $line;")
@@ -69,6 +106,46 @@ internal object PostgresDiffOtherOps {
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP CONSTRAINT ${ctx.sql.quote(op.constraint.name)};")
     }
+
+    /**
+     * F.5 Sub-Slice F: the Down-pass of a `DropConstraint` can fail
+     * for two distinct reasons that must surface as different
+     * blockers in the report:
+     *
+     * - CHECK / EXCLUDE without a persisted expression — the renderer
+     *   has no way to reconstruct the inverse `ADD CONSTRAINT … CHECK
+     *   (expr)`, so the rollback is genuinely impossible
+     *   (`ROLLBACK_NOT_POSSIBLE`). The `ConstraintReplaceContract`
+     *   already classified the op as `NOT_REVERSIBLE`; the renderer
+     *   matches that classification on the down side.
+     * - Any other constraint type the dialect cannot render
+     *   (`DIALECT_UNSUPPORTED_OPERATION`). UNIQUE / FOREIGN_KEY hit
+     *   this when columns / references are missing; the inverse is
+     *   not architecturally rolled back here, but the dialect simply
+     *   does not know how to encode the constraint.
+     */
+    private fun blockDropConstraintDown(
+        op: DiffOperation.DropConstraint,
+        ctx: PostgresDiffRenderContext,
+    ) {
+        if (isRollbackBlockedRawSql(op.constraint)) {
+            ctx.skip(
+                op,
+                "Operation ${op.id} drops CHECK/EXCLUDE constraint '${op.constraint.name}' on " +
+                    "'${op.objectRef.path.firstOrNull() ?: ""}' but the prior expression is not " +
+                    "available; the renderer cannot reconstruct the inverse ADD CONSTRAINT.",
+                code = "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING",
+            )
+            ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
+            return
+        }
+        ctx.skip(op, "Constraint type ${op.constraint.type} is not in the first matrix.")
+        ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
+    }
+
+    private fun isRollbackBlockedRawSql(c: ConstraintDefinition): Boolean =
+        (c.type == ConstraintType.CHECK || c.type == ConstraintType.EXCLUDE) &&
+            c.expression.isNullOrBlank()
 
     fun renderAddIndex(op: DiffOperation.AddIndex, ctx: PostgresDiffRenderContext) {
         val table = op.objectRef.path[0]
