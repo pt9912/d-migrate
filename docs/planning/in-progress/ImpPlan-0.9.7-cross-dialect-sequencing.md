@@ -118,7 +118,7 @@ parallele Slice referenzieren kann.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut ueberlebt
-  welchen Transfer); `spec/cli-spec.md` §6.1 listet die neuen
+  welchen Transfer); `spec/cli-spec.md` §4 listet die neuen
   Blocker-Codes pro Carve-out.
 - **D4**: Sequence-Default-Reprojection-Vertrag fuer
   Cross-Dialect-Transfer — F.4 Sub-Slice D
@@ -168,6 +168,8 @@ parallele Slice referenzieren kann.
   ob Attribut verloren geht oder Migration blockt).
 - `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` →
   `MANUAL_ACTION_REQUIRED`.
+- `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
+  `MANUAL_ACTION_REQUIRED` (bestehender Preserve-Current-Value-Vertrag; Delegation an Slice E).
 
 ---
 
@@ -209,7 +211,7 @@ object SequenceCapabilityDefaults {
             supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
-            supportsCache = true, // deklarativ gespeichert, semantisch jedoch nicht aequivalent
+            supportsCache = false, // W114 als lossy-Mapping über Overlay/Warning
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
         )
@@ -217,7 +219,7 @@ object SequenceCapabilityDefaults {
             supportsStart = true, // initial ueber seed in helper-table
             supportsMinMaxValue = true,
             supportsCycle = true,
-            supportsCache = true, // metadata-only; kein runtime-caching (`W114`)
+            supportsCache = false, // metadata-only; kein runtime-caching (`W114`), W114-Warnung
             supportsCurrentValuePreserve = false, // bis SQLite-Plan landet
             supportsOwnedBy = false,
         )
@@ -252,8 +254,8 @@ und delegierbar:
 |---|---|
 | A | `SequenceCapability` + `SequenceCapabilityDefaults` in `hexagon:ports-read`; Tests pinnen Defaults pro Dialekt |
 | B | Renderer-Side-Validation: pro Dialekt-Renderer pruefen Capability, emit Blocker bei Mismatch |
-| C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `spec/cli-spec.md` §6.1 erweitern um die neuen Blocker-Codes |
-| D | ADR (`docs/adr/0009-cross-dialect-sequencing.md`, neu anzulegen) dokumentiert die fuenf Decisions (D1–D5) |
+| C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `spec/cli-spec.md` §4 erweitern um die neuen Blocker-Codes |
+| D | ADR (`docs/adr/0003-cross-dialect-sequencing.md`, neu anzulegen) dokumentiert die fuenf Decisions (D1–D5) |
 | E | Closing: Plan-Doc nach `done/`; Cross-Links in die drei dialekt-spezifischen Plans setzen |
 
 ---
@@ -265,9 +267,10 @@ und delegierbar:
 - [ ] Renderer pro Dialekt prueft Capability vor Render und
       emittiert `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`-
       Blocker bei Mismatch.
-- [ ] PG → SQLite mit `CYCLE` blockt mit dem neuen Code (positiver
-      Test).
-- [ ] PG → MySQL mit `CACHE` produziert WARNING (nicht Blocker).
+- [ ] PG → MySQL mit `OWNED BY` blockt mit dem neuen Code
+  (positiver Test).
+- [ ] PG → MySQL mit `CACHE` produziert mindestens
+  `W114` als WARNING (kein harter Blocker).
 - [ ] Decision-Record (ADR) ist gepinnt.
 - [ ] `spec/neutral-model-spec.md` und `spec/cli-spec.md` sind auf
       Stand.
@@ -281,6 +284,7 @@ und delegierbar:
       bestehender Sequence-Ops.
 - [ ] **Neue Diagnostics**:
       `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`,
+      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`. Mappen via
       `PlannerBlockerClassifier`.
 - [ ] **Up / Down**: identisch (Validation greift in beide).
