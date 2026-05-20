@@ -647,10 +647,13 @@ Routine-Rendering:
   jede Sequence-Diff-Op mit Diagnostic-Code `E056` →
   `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`, kein SQL wird
   emittiert. Im `helper_table`-Modus emittieren die Renderer:
-    - `CreateSequence` UP: Bootstrap einmalig pro Migration
-      (`CREATE TABLE dmg_sequences` + `CREATE FUNCTION dmg_nextval`
-      + `CREATE FUNCTION dmg_setval`) gefolgt von
-      `INSERT INTO dmg_sequences (...) VALUES (...)`. DOWN: nur
+    - `CreateSequence` UP: Bootstrap einmalig pro Migrations-
+      Richtung (`CREATE TABLE dmg_sequences` +
+      `CREATE FUNCTION dmg_nextval` + `CREATE FUNCTION dmg_setval`)
+      gefolgt von `INSERT INTO dmg_sequences (...) VALUES (...)`.
+      Wer mit `--generate-rollback` Up + Down erzeugt, sieht den
+      Bootstrap-Block in beiden Artefakten — UP und DOWN tracken
+      separat. DOWN: nur
       `DELETE FROM dmg_sequences WHERE name = ...`.
     - `AlterSequence` UP/DOWN: `UPDATE dmg_sequences SET ...` auf
       den deklarativen Feldern, die sich tatsächlich zwischen
@@ -662,8 +665,12 @@ Routine-Rendering:
     - `DropSequence` UP: `DROP TRIGGER IF EXISTS …` pro per-Spalte
       gebundenem Sequence-Trigger (aus `currentSchema` ermittelt
       durch `SequenceNextVal`-Default-Walk) + `DELETE FROM
-      dmg_sequences`. DOWN: Bootstrap (einmalig) + `INSERT` + alle
-      gebundenen Trigger wiederherstellen.
+      dmg_sequences`. DOWN: Bootstrap (einmalig pro Down-Richtung)
+      + `INSERT` + alle gebundenen Trigger wiederherstellen. **Beide
+      Richtungen lesen die Trigger-Bindungen aus `currentSchema`**
+      (Pre-Up-State, einziger Ort, an dem die Bindungen leben);
+      `desiredSchema` ist Post-Up und enthält die Bindungen nicht
+      mehr — analoger Reviews-Fix dokumentiert das ausdrücklich.
     - `RenameSequence`: kommt unter Normalbetrieb nicht durch —
       `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
       `RenameSupport.DropCreateFallback`, der Mapper zerlegt die
