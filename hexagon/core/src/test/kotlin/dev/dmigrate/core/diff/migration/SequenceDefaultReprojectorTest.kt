@@ -18,6 +18,7 @@ import dev.dmigrate.core.model.TableDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 
 /**
  * F.4 Sub-Slice D: column-default `SequenceNextVal` references that
@@ -368,5 +369,156 @@ class SequenceDefaultReprojectorTest : FunSpec({
         val createTable = plan.operations.filterIsInstance<DiffOperation.CreateTable>().single()
         // No rewrite happens because there's no rename to project.
         createTable.table.columns.getValue("id").default shouldBe DefaultValue.SequenceNextVal("old_seq")
+    }
+
+    // ── E.3 Sub-Slice D: Drop-Create fallback (MySQL) ────────────
+
+    test("MySQL: CreateTable column default rewrites to new sequence via fallback CreateSequence provenance") {
+        // MySQL's `MysqlObjectRenamePolicy` produces
+        // `DropCreateFallback` for sequence renames. The Mapper
+        // emits `DropSequence(old)` + `CreateSequence(new)` with
+        // shared `renameProvenance`. The reprojector picks up the
+        // `CreateSequence`'s provenance and rewrites
+        // `SequenceNextVal("old_seq")` → `SequenceNextVal("new_seq")`
+        // in column defaults exactly as it does for the
+        // PostgreSQL-native `RenameSequence` path.
+        val seq = SequenceDefinition()
+        val plan = planner.plan(
+            current = emptySchema().copy(sequences = mapOf("old_seq" to seq)),
+            desired = emptySchema().copy(
+                sequences = mapOf("new_seq" to seq),
+                tables = mapOf("orders" to tableWithSeqDefault("old_seq")),
+            ),
+            schemaDiff = SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("new_seq", seq)),
+                sequencesRemoved = listOf(NamedSequence("old_seq", seq)),
+                tablesAdded = listOf(NamedTable("orders", tableWithSeqDefault("old_seq"))),
+            ),
+            migrationOverlays = listOf(renameOverlay("old_seq", "new_seq")),
+            capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL),
+        )
+
+        // No `RenameSequence` op was emitted — the fallback path is
+        // active.
+        plan.operations.filterIsInstance<DiffOperation.RenameSequence>() shouldBe emptyList()
+        val createSeq = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
+        createSeq.renameProvenance shouldNotBe null
+        createSeq.objectRef.rootName shouldBe "new_seq"
+
+        // CreateTable's column default points at the new name.
+        val createTable = plan.operations.filterIsInstance<DiffOperation.CreateTable>().single()
+        createTable.table.columns.getValue("id").default shouldBe DefaultValue.SequenceNextVal("new_seq")
+
+        // DependencyAnalyzer already maps `CreateSequence.rootName`
+        // → CreateSequence.id, so the column-bearing op carries an
+        // edge on the fallback's CreateSequence.
+        createTable.dependencies shouldContain createSeq.id
+    }
+
+    test("MySQL: AddColumn with fallback rename rewrites default to the new sequence name") {
+        val seq = SequenceDefinition()
+        val before = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Identifier(), required = true)),
+            primaryKey = listOf("id"),
+        )
+        val after = before.copy(
+            columns = before.columns + mapOf(
+                "seq_id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("old_seq"),
+                ),
+            ),
+        )
+        val plan = planner.plan(
+            current = emptySchema().copy(
+                sequences = mapOf("old_seq" to seq),
+                tables = mapOf("orders" to before),
+            ),
+            desired = emptySchema().copy(
+                sequences = mapOf("new_seq" to seq),
+                tables = mapOf("orders" to after),
+            ),
+            schemaDiff = SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("new_seq", seq)),
+                sequencesRemoved = listOf(NamedSequence("old_seq", seq)),
+                tablesChanged = listOf(
+                    TableDiff(
+                        name = "orders",
+                        columnsAdded = mapOf(
+                            "seq_id" to ColumnDefinition(
+                                type = NeutralType.Integer,
+                                default = DefaultValue.SequenceNextVal("old_seq"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            migrationOverlays = listOf(renameOverlay("old_seq", "new_seq")),
+            capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL),
+        )
+
+        plan.operations.filterIsInstance<DiffOperation.RenameSequence>() shouldBe emptyList()
+        val createSeq = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
+        val addColumn = plan.operations.filterIsInstance<DiffOperation.AddColumn>().single()
+        addColumn.column.default shouldBe DefaultValue.SequenceNextVal("new_seq")
+        addColumn.dependencies shouldContain createSeq.id
+    }
+
+    test("MySQL: AlterColumnDefault with fallback rename rewrites before+after to the new sequence name") {
+        val seq = SequenceDefinition()
+        val before = TableDefinition(
+            columns = mapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(), required = true),
+                "seq_id" to ColumnDefinition(
+                    type = NeutralType.Integer,
+                    default = DefaultValue.SequenceNextVal("old_seq"),
+                ),
+            ),
+            primaryKey = listOf("id"),
+        )
+        // After the rename, the desired schema points at new_seq; in
+        // the diff we model a change that keeps the column referring
+        // to "old_seq" textually so the reprojector has to rewrite
+        // both `before` and `after` sides.
+        val plan = planner.plan(
+            current = emptySchema().copy(
+                sequences = mapOf("old_seq" to seq),
+                tables = mapOf("orders" to before),
+            ),
+            desired = emptySchema().copy(
+                sequences = mapOf("new_seq" to seq),
+                tables = mapOf("orders" to before.copy(
+                    columns = before.columns + mapOf(
+                        "seq_id" to before.columns.getValue("seq_id").copy(
+                            default = DefaultValue.SequenceNextVal("old_seq"),
+                        ),
+                    ),
+                )),
+            ),
+            schemaDiff = SchemaDiff(
+                sequencesAdded = listOf(NamedSequence("new_seq", seq)),
+                sequencesRemoved = listOf(NamedSequence("old_seq", seq)),
+                tablesChanged = listOf(
+                    TableDiff(
+                        name = "orders",
+                        columnsChanged = listOf(
+                            dev.dmigrate.core.diff.ColumnDiff(
+                                name = "seq_id",
+                                default = ValueChange(
+                                    before = DefaultValue.SequenceNextVal("old_seq"),
+                                    after = DefaultValue.SequenceNextVal("old_seq"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+            migrationOverlays = listOf(renameOverlay("old_seq", "new_seq")),
+            capabilities = RenameProjectionCapabilities.fileOnly(RenameProjectionDialect.MYSQL),
+        )
+
+        val alter = plan.operations.filterIsInstance<DiffOperation.AlterColumnDefault>().single()
+        alter.before shouldBe DefaultValue.SequenceNextVal("new_seq")
+        alter.after shouldBe DefaultValue.SequenceNextVal("new_seq")
     }
 })

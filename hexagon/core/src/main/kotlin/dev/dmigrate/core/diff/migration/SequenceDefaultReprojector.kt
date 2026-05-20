@@ -4,23 +4,32 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.DefaultValue
 
 /**
- * F.4 Sub-Slice D (2026-05-19): post-map step that rewrites
- * `DefaultValue.SequenceNextVal` references in `CreateTable`,
- * `AddColumn` and `AlterColumnDefault` operations whenever a
- * `RenameSequence` operation in the same plan renames the referenced
- * sequence.
+ * F.4 Sub-Slice D (2026-05-19) + E.3 Sub-Slice D (2026-05-20):
+ * post-map step that rewrites `DefaultValue.SequenceNextVal`
+ * references in `CreateTable`, `AddColumn` and `AlterColumnDefault`
+ * operations whenever the same plan renames the referenced sequence,
+ * either via a native [DiffOperation.RenameSequence] (PostgreSQL —
+ * `ALTER SEQUENCE … RENAME TO …`) or via the
+ * `DropSequence + CreateSequence` Drop-Create fallback that MySQL's
+ * `MysqlObjectRenamePolicy` produces (helper-table emulation has no
+ * native rename grammar). The fallback pair carries the
+ * source / target names on the `renameProvenance` field of both
+ * halves; only the `CreateSequence` side contributes to the rewrite
+ * map because its `objectRef.rootName` is also the target name the
+ * [DependencyAnalyzer] uses for the dependency edge.
  *
- * Without this step, a plan that combines `RenameSequence(old → new)`
- * with a `CreateTable` whose column default references `old`
- * (because the desired schema still uses the old name, or the column
- * is freshly created and the diff carries the current-state default)
- * would emit `CREATE TABLE … DEFAULT nextval('old')` after the
- * sequence has already been renamed — which fails at runtime because
- * `old` no longer exists. The reprojector rewrites the reference to
- * `new` so the emitted SQL is consistent with the renamed sequence;
- * the [DependencyAnalyzer] then attaches an explicit edge from the
- * column-bearing op to the `RenameSequence` so the topological sort
- * places the rename first.
+ * Without this step, a plan that combines a rename (or its
+ * fallback) with a `CreateTable` whose column default references the
+ * source name (because the desired schema still uses the old name,
+ * or the column is freshly created and the diff carries the
+ * current-state default) would emit `CREATE TABLE … DEFAULT
+ * nextval('old')` after the sequence has already been renamed —
+ * which fails at runtime because `old` no longer exists. The
+ * reprojector rewrites the reference to `new` so the emitted SQL is
+ * consistent with the renamed sequence; the [DependencyAnalyzer]
+ * then attaches an explicit edge from the column-bearing op to the
+ * `RenameSequence` (or the fallback's `CreateSequence`) so the
+ * topological sort places the rename first.
  *
  * The rewrite is **deterministic** and **order-independent**: the
  * Mapper today emits `CreateTable` / `AddColumn` / `AlterColumnDefault`
@@ -51,14 +60,38 @@ internal object SequenceDefaultReprojector {
      * Returns a new ops list where every `SequenceNextVal` default in
      * `CreateTable` / `AddColumn` / `AlterColumnDefault` that
      * references a sequence renamed by some `RenameSequence` op in
-     * [ops] points at the rename's `toName`. Other ops pass through
-     * unchanged. When no `RenameSequence` is present, the original
-     * list is returned identity-equal.
+     * [ops] — OR by a Drop-Create fallback pair whose
+     * `CreateSequence` half carries a sequence-typed
+     * `renameProvenance` — points at the rename's target name. Other
+     * ops pass through unchanged. When neither a `RenameSequence`
+     * nor a fallback-tagged `CreateSequence` is present, the
+     * original list is returned identity-equal.
      */
     fun apply(ops: List<DiffOperation>): List<DiffOperation> {
         val renames = ops.filterIsInstance<DiffOperation.RenameSequence>()
-        if (renames.isEmpty()) return ops
-        val rewriteMap: Map<String, String> = renames.associate { it.fromName to it.toName }
+        // E.3 Sub-Slice D: pick up the Drop-Create fallback that
+        // MySQL's policy produces. The `CreateSequence` half carries
+        // a sequence-typed `RenameProvenance` whose `fromPath[0]` /
+        // `toPath[0]` are the source / target names; the
+        // `DropSequence` half carries the same provenance but does
+        // not contribute to the rewrite map (its rootName is the
+        // source, not the target).
+        val fallbackCreates = ops.filterIsInstance<DiffOperation.CreateSequence>()
+            .filter { it.renameProvenance?.objectType == DiffObjectType.SEQUENCE }
+        if (renames.isEmpty() && fallbackCreates.isEmpty()) return ops
+        val rewriteMap: Map<String, String> = buildMap {
+            for (r in renames) put(r.fromName, r.toName)
+            for (create in fallbackCreates) {
+                val provenance = create.renameProvenance ?: continue
+                val from = provenance.fromPath.singleOrNull() ?: continue
+                val to = provenance.toPath.singleOrNull() ?: continue
+                // Native + fallback should not name the same source
+                // twice in the same plan (the Mapper picks exactly
+                // one strategy per overlay entry). `put` overwrites
+                // defensively if it ever does.
+                put(from, to)
+            }
+        }
         return ops.map { op -> rewrite(op, rewriteMap) }
     }
 
