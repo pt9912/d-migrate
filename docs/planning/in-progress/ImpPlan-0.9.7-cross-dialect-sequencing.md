@@ -11,7 +11,7 @@
 >                  preserveCurrentValue-Plan
 >                  *(parallel in-progress,
 >                  `ImpPlan-0.9.7-sequence-preserve-current-value.md`)*.
-> **Referenz**: `diffresult-migration-plan-2.md` §E.3;
+> **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md` §E.3;
 >             `docs/planning/done/mysql-sequence-emulation-plan.md`;
 >             `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 
@@ -105,7 +105,7 @@ parallele Slice referenzieren kann.
   Source-Dialekt-Sequenzen werden ueber den Neutralmodell-
   Pfad gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
   unterstuetzt wird (z.B. PG-`CACHE` nach SQLite), blockt
-  der Renderer regelmaessig mit
+  der Renderer systematisch mit
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
   Für explizit als kontrollierten Attribut-Verlust dokumentierte
   Felder (z.B. `cache`) kann ein bestehender Overlay-Mechanismus
@@ -183,6 +183,7 @@ Attribut im Target nicht abbildbar ist, blockt der Target-Renderer.
 ```kotlin
 // hexagon:ports-read
 data class SequenceCapability(
+    val supportsStart: Boolean,
     val supportsMinMaxValue: Boolean,
     val supportsCycle: Boolean,
     val supportsCache: Boolean,
@@ -193,6 +194,7 @@ data class SequenceCapability(
 object SequenceCapabilityDefaults {
     fun forDialect(dialect: RenameProjectionDialect): SequenceCapability = when (dialect) {
         POSTGRESQL -> SequenceCapability(
+            supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
             supportsCache = true,
@@ -200,6 +202,7 @@ object SequenceCapabilityDefaults {
             supportsOwnedBy = true,
         )
         MYSQL -> SequenceCapability(
+            supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
             supportsCache = true, // deklarativ, semantisch ignoriert
@@ -207,6 +210,7 @@ object SequenceCapabilityDefaults {
             supportsOwnedBy = false,
         )
         SQLITE -> SequenceCapability(
+            supportsStart = false,
             supportsMinMaxValue = false,
             supportsCycle = false,
             supportsCache = false,
@@ -244,7 +248,7 @@ und delegierbar:
 | A | `SequenceCapability` + `SequenceCapabilityDefaults` in `hexagon:ports-read`; Tests pinnen Defaults pro Dialekt |
 | B | Renderer-Side-Validation: pro Dialekt-Renderer pruefen Capability, emit Blocker bei Mismatch |
 | C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `spec/cli-spec.md` §6.1 erweitern um die neuen Blocker-Codes |
-| D | ADR (`docs/adr/0009-cross-dialect-sequencing.md`) dokumentiert die fuenf Decisions (D1–D5) |
+| D | ADR (`docs/adr/0009-cross-dialect-sequencing.md`, neu anzulegen) dokumentiert die fuenf Decisions (D1–D5) |
 | E | Closing: Plan-Doc nach `done/`; Cross-Links in die drei dialekt-spezifischen Plans setzen |
 
 ---
