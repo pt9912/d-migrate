@@ -128,12 +128,26 @@ object MysqlSequenceCanonicityGate {
     ): Decision = when (intent) {
         OpIntent.CREATE -> Decision.Proceed
         OpIntent.DROP -> when (declaration.kind) {
-            // The Sequence-row absence is idempotent for DROP.
-            MysqlSequenceCanonicityKind.SEQUENCE_ROW -> Decision.Proceed
-            // Support-table / routine / trigger absence on a DROP
-            // means the catalog is already torn down — let the
-            // renderer's IF-EXISTS guards swallow it.
+            // Plan-Doc §3.1 (`Missing → bei UPDATE/DELETE-Path:
+            // Block`): the row-targeting DELETE cannot proceed
+            // against an absent sequence row, and the DELETE itself
+            // would error against a missing support table. Block
+            // both with a dedicated MISSING_FOR_DROP code so the
+            // operator sees the right call to action (re-plan as
+            // no-op or restore the sequence before drop).
+            MysqlSequenceCanonicityKind.SEQUENCE_ROW,
             MysqlSequenceCanonicityKind.SUPPORT_TABLE,
+            -> Decision.Block(
+                code = MISSING_FOR_DROP_CODE,
+                reason = MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
+                message = buildMissingForDropMessage(declaration),
+            )
+            // Routine / column-trigger absence does not affect the
+            // `DELETE FROM dmg_sequences`-statement the renderer
+            // emits for DropSequence, and the row-level
+            // `DROP TRIGGER IF EXISTS` is idempotent against
+            // missing triggers — keep the catalog tear-down moving
+            // instead of stalling on collateral state.
             MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE,
             MysqlSequenceCanonicityKind.SETVAL_ROUTINE,
             MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
@@ -170,6 +184,21 @@ object MysqlSequenceCanonicityGate {
             "switch the op to `CreateSequence` (the row is genuinely absent) or restore the " +
             "sequence outside this migration before re-running."
 
+    private fun buildMissingForDropMessage(d: MysqlSequenceCanonicityDeclaration): String = when (d.kind) {
+        MysqlSequenceCanonicityKind.SEQUENCE_ROW ->
+            "MySQL sequence `${d.objectName}` row is missing in the live database; the plan " +
+                "expected a `DropSequence` against an existing row. The operator must either " +
+                "remove the op from the plan (the row is already gone) or restore the row " +
+                "outside this migration before re-running."
+        MysqlSequenceCanonicityKind.SUPPORT_TABLE ->
+            "MySQL helper table `${d.objectName}` is missing in the live database; the " +
+                "DELETE FROM the plan's `DropSequence` step would error. The operator must " +
+                "either remove the sequence op (no helper-table objects exist anyway) or " +
+                "bootstrap the helper-table outside this migration before re-running."
+        else -> "MySQL sequence object `${d.objectName}` is missing in the live database " +
+            "and the plan's DROP path cannot proceed."
+    }
+
     private fun buildRuntimeErrorMessage(d: MysqlSequenceCanonicityDeclaration): String = buildString {
         append("MySQL sequence drift-check failed technically for ").append(d.kind.name.lowercase())
         append(" `").append(d.objectName).append('`')
@@ -191,6 +220,9 @@ object MysqlSequenceCanonicityGate {
 
     /** `AlterSequence` against a non-existent row. */
     const val MISSING_FOR_ALTER_CODE: String = "E124_MYSQL_SEQUENCE_MISSING_FOR_ALTER"
+
+    /** `DropSequence` against a non-existent row / helper table. */
+    const val MISSING_FOR_DROP_CODE: String = "E124_MYSQL_SEQUENCE_MISSING_FOR_DROP"
 
     /** The probe itself failed (privileges, connection, …). */
     const val PROBE_RUNTIME_ERROR_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_PROBE_FAILED"

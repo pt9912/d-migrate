@@ -226,9 +226,17 @@ DiffPlanner ─→ Plan with Sequence-Ops ─→│ MysqlSequenceCanonicity- │
       `actual`).
 - [x] Drift in `dmg_nextval` / `dmg_setval` Routine-Body →
       `E124_MYSQL_SEQUENCE_DRIFT_ROUTINE` mit Marker-Hinweis
-      (`driftField = "body_marker"`).
+      (`driftField = "body_marker"`) UND zusätzlicher
+      Body-Signature-Check (`driftField = "body_signature"`):
+      ein operator-bearbeiteter Body wird auch dann erkannt,
+      wenn der Marker stehen bleibt — der Bereich zwischen
+      `BEGIN` und letztem `END` wird normalisiert und gegen
+      `MysqlSequenceEmulationTemplates` verglichen.
 - [x] Drift in Trigger-Body → `E124_MYSQL_SEQUENCE_DRIFT_TRIGGER`
-      mit Body-Marker-Hinweis.
+      mit Body-Marker-Hinweis (`driftField = "body_marker"`)
+      oder, bei intaktem Marker aber abweichendem
+      `dmg_nextval('…')`-Call, mit
+      `driftField = "sequence_reference"`.
 - [x] Datei-zu-Datei-Mode unverändert (kein Probe-Aufruf;
       Pre-Planner emittiert `NOT_RUN_FILE_TARGET` Declarations).
 - [x] Unit-Tests für Port-Adapter, Gate, Stage, Renderer-Gate,

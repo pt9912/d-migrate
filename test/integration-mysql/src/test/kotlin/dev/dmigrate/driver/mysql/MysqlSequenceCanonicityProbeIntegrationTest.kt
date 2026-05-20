@@ -1,5 +1,13 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
 import io.kotest.core.spec.style.FunSpec
@@ -40,84 +48,46 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
         conn().use { c -> c.createStatement().use { it.execute(sql) } }
     }
 
+    val canonicalSchema = SchemaDefinition(
+        name = "DriftIT", version = "1",
+        sequences = mapOf("invoice_seq" to SequenceDefinition(start = 1000L, increment = 1L)),
+        tables = mapOf("invoices" to TableDefinition(
+            columns = linkedMapOf(
+                "id" to ColumnDefinition(type = NeutralType.Identifier(autoIncrement = true)),
+                "invoice_number" to ColumnDefinition(
+                    type = NeutralType.BigInteger,
+                    default = DefaultValue.SequenceNextVal("invoice_seq"),
+                ),
+                "description" to ColumnDefinition(type = NeutralType.Text(maxLength = 200)),
+            ),
+            primaryKey = listOf("id"),
+        )),
+    )
+
     fun bootstrapCanonical() {
-        // Canonical column shape per `MysqlSequenceCanonicityProbeAdapter.probeSupportTable`.
-        exec("DROP TABLE IF EXISTS `dmg_sequences`")
-        exec(
-            """
-            CREATE TABLE `dmg_sequences` (
-                `managed_by` VARCHAR(32) NOT NULL,
-                `format_version` VARCHAR(32) NOT NULL,
-                `name` VARCHAR(255) NOT NULL,
-                `next_value` BIGINT NOT NULL,
-                `increment_by` BIGINT NOT NULL,
-                `min_value` BIGINT NULL,
-                `max_value` BIGINT NULL,
-                `cycle_enabled` TINYINT(1) NOT NULL,
-                `cache_size` INT NULL,
-                PRIMARY KEY (`name`)
-            )
-            """.trimIndent(),
-        )
-
-        exec("DROP FUNCTION IF EXISTS `dmg_nextval`")
-        exec(
-            """
-            CREATE FUNCTION `dmg_nextval`(seq_name VARCHAR(255)) RETURNS BIGINT
-                NOT DETERMINISTIC
-                MODIFIES SQL DATA
-            BEGIN
-                /* d-migrate:mysql-sequence-v1 object=nextval */
-                DECLARE next_val BIGINT;
-                UPDATE `dmg_sequences` SET `next_value` = `next_value` + `increment_by`
-                    WHERE `name` = seq_name;
-                SELECT `next_value` - `increment_by` INTO next_val FROM `dmg_sequences`
-                    WHERE `name` = seq_name;
-                RETURN next_val;
-            END
-            """.trimIndent(),
-        )
-
-        exec("DROP FUNCTION IF EXISTS `dmg_setval`")
-        exec(
-            """
-            CREATE FUNCTION `dmg_setval`(seq_name VARCHAR(255), new_value BIGINT) RETURNS BIGINT
-                NOT DETERMINISTIC
-                MODIFIES SQL DATA
-            BEGIN
-                /* d-migrate:mysql-sequence-v1 object=setval */
-                UPDATE `dmg_sequences` SET `next_value` = new_value WHERE `name` = seq_name;
-                RETURN new_value;
-            END
-            """.trimIndent(),
-        )
-
-        exec(
-            "INSERT INTO `dmg_sequences` (`managed_by`, `format_version`, `name`, `next_value`, " +
-                "`increment_by`, `min_value`, `max_value`, `cycle_enabled`, `cache_size`) " +
-                "VALUES ('d-migrate', 'mysql-sequence-v1', 'invoice_seq', 1000, 1, NULL, NULL, 0, NULL)",
-        )
-
-        exec("DROP TABLE IF EXISTS `invoices`")
-        exec(
-            "CREATE TABLE `invoices` (`id` BIGINT AUTO_INCREMENT PRIMARY KEY, " +
-                "`invoice_number` BIGINT, `description` VARCHAR(200))",
-        )
+        // Tear down any leftovers from a previous test so each
+        // case starts on a clean slate.
         val triggerName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
         exec("DROP TRIGGER IF EXISTS `$triggerName`")
-        exec(
-            """
-            CREATE TRIGGER `$triggerName`
-                BEFORE INSERT ON `invoices`
-                FOR EACH ROW
-            BEGIN
-                /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=invoices column=invoice_number */
-                IF NEW.`invoice_number` IS NULL THEN
-                    SET NEW.`invoice_number` = `dmg_nextval`('invoice_seq');
-                END IF;
-            END
-            """.trimIndent(),
+        exec("DROP TABLE IF EXISTS `invoices`")
+        exec("DROP FUNCTION IF EXISTS `dmg_nextval`")
+        exec("DROP FUNCTION IF EXISTS `dmg_setval`")
+        exec("DROP TABLE IF EXISTS `dmg_sequences`")
+
+        // Drive the production DDL generator so the routine /
+        // trigger bodies installed here are byte-equivalent to
+        // what the runtime renderer would emit. That makes the
+        // probe's body-signature check pin a real canonical
+        // shape, not a hand-rolled stand-in.
+        val result = MysqlDdlGenerator().generate(
+            canonicalSchema,
+            DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
         )
+        for (block in splitMysqlStatements(result.render())) {
+            if (block.isNotBlank()) {
+                conn().use { c -> c.createStatement().use { it.execute(block) } }
+            }
+        }
     }
 
     beforeEach { bootstrapCanonical() }
@@ -293,11 +263,11 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
         }
     }
 
-    test("probeSupportTrigger pointing at a different sequence → DRIFT") {
+    test("probeSupportTrigger pointing at a different sequence (marker too) → DRIFT body_marker") {
         val triggerName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
-        // Re-emit the trigger with a body that resolves a
-        // different sequence. The body marker is intact; only the
-        // referenced sequence name drifts.
+        // Both the marker and the dmg_nextval call mention a
+        // different sequence. The marker-mismatch is the first
+        // signal the gate sees.
         exec("DROP TRIGGER `$triggerName`")
         exec(
             """
@@ -319,6 +289,69 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
                 expectedSequenceName = "invoice_seq",
             )
             decl.status shouldBe MysqlSequenceCanonicityStatus.DRIFT
+            decl.driftField shouldBe "body_marker"
+        }
+    }
+
+    test("probeSupportTrigger with intact marker but redirected nextval call → DRIFT sequence_reference") {
+        val triggerName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
+        // Plan-Doc §1.4 calls this out explicitly: operator keeps
+        // the marker pointing at the original sequence but flips
+        // the dmg_nextval call to a different one. Before the
+        // Sub-Slice F follow-up this drifted past the probe as
+        // CANONICAL.
+        exec("DROP TRIGGER `$triggerName`")
+        exec(
+            """
+            CREATE TRIGGER `$triggerName`
+                BEFORE INSERT ON `invoices`
+                FOR EACH ROW
+            BEGIN
+                /* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=invoice_seq table=invoices column=invoice_number */
+                IF NEW.`invoice_number` IS NULL THEN
+                    SET NEW.`invoice_number` = `dmg_nextval`('redirected_seq');
+                END IF;
+            END
+            """.trimIndent(),
+        )
+        conn().use { c ->
+            val decl = MysqlSequenceCanonicityProbeAdapter(c).probeSupportTrigger(
+                operationId = "op-1",
+                triggerName = triggerName,
+                expectedSequenceName = "invoice_seq",
+            )
+            decl.status shouldBe MysqlSequenceCanonicityStatus.DRIFT
+            decl.driftField shouldBe "sequence_reference"
+        }
+    }
+
+    test("probeRoutine: marker intact but body rewritten → DRIFT body_signature") {
+        // Plan-Doc §1.2: operator-modified routine body (extra
+        // logging / different increment semantics) with the
+        // marker comment left alone. Pre-follow-up this passed
+        // the probe as CANONICAL.
+        exec("DROP FUNCTION `dmg_nextval`")
+        exec(
+            """
+            CREATE FUNCTION `dmg_nextval`(seq_name VARCHAR(255)) RETURNS BIGINT
+                DETERMINISTIC
+                MODIFIES SQL DATA
+            BEGIN
+                /* d-migrate:mysql-sequence-v1 object=nextval */
+                DECLARE v BIGINT;
+                /* operator-added: bump by 2 instead of increment_by */
+                UPDATE `dmg_sequences` SET `next_value` = `next_value` + 2 WHERE `name` = seq_name;
+                SELECT `next_value` - 2 INTO v FROM `dmg_sequences` WHERE `name` = seq_name;
+                RETURN v;
+            END
+            """.trimIndent(),
+        )
+        conn().use { c ->
+            val decl = MysqlSequenceCanonicityProbeAdapter(c).probeRoutine(
+                "op-1", MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE,
+            )
+            decl.status shouldBe MysqlSequenceCanonicityStatus.DRIFT
+            decl.driftField shouldBe "body_signature"
         }
     }
 

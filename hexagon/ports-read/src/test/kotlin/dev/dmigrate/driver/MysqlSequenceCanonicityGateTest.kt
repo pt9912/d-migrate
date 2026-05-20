@@ -91,11 +91,38 @@ class MysqlSequenceCanonicityGateTest : FunSpec({
         }
     }
 
-    test("MISSING + DROP intent proceeds for every kind (idempotent / cascade)") {
-        for (kind in MysqlSequenceCanonicityKind.entries) {
-            MysqlSequenceCanonicityGate.decide(decl(MysqlSequenceCanonicityStatus.MISSING, kind),
-                MysqlSequenceCanonicityGate.OpIntent.DROP) shouldBe
-                MysqlSequenceCanonicityGate.Decision.Proceed
+    test("MISSING + DROP intent blocks SEQUENCE_ROW and SUPPORT_TABLE (DELETE cannot proceed)") {
+        // Plan-Doc §3.1: "Missing → bei UPDATE/DELETE-Path: Block".
+        // SEQUENCE_ROW: nothing to delete. SUPPORT_TABLE: the DELETE
+        // statement itself would error. Both surface as
+        // MISSING_FOR_DROP_CODE → MANUAL_ACTION_REQUIRED.
+        for (kind in listOf(
+            MysqlSequenceCanonicityKind.SEQUENCE_ROW,
+            MysqlSequenceCanonicityKind.SUPPORT_TABLE,
+        )) {
+            val decision = MysqlSequenceCanonicityGate.decide(
+                decl(MysqlSequenceCanonicityStatus.MISSING, kind),
+                MysqlSequenceCanonicityGate.OpIntent.DROP,
+            ).shouldBeInstanceOf<MysqlSequenceCanonicityGate.Decision.Block>()
+            decision.code shouldBe MysqlSequenceCanonicityGate.MISSING_FOR_DROP_CODE
+            decision.reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+    }
+
+    test("MISSING + DROP intent proceeds for routine / column-trigger kinds (idempotent IF EXISTS)") {
+        // Routines + the column-bound trigger are collateral state
+        // for the DropSequence renderer: it emits `DELETE FROM
+        // dmg_sequences` (does not call the routines) and `DROP
+        // TRIGGER IF EXISTS` (idempotent against missing triggers).
+        for (kind in listOf(
+            MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE,
+            MysqlSequenceCanonicityKind.SETVAL_ROUTINE,
+            MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+        )) {
+            MysqlSequenceCanonicityGate.decide(
+                decl(MysqlSequenceCanonicityStatus.MISSING, kind),
+                MysqlSequenceCanonicityGate.OpIntent.DROP,
+            ) shouldBe MysqlSequenceCanonicityGate.Decision.Proceed
         }
     }
 

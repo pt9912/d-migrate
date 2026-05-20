@@ -32,6 +32,24 @@ class MysqlSequenceCanonicityProbeAdapter(
 
     private val dialect: String = DatabaseDialect.MYSQL.name.lowercase()
 
+    // E.3 Sub-Slice F follow-up (2026-05-20): the canonical body
+    // hashes for `dmg_nextval` / `dmg_setval`. Computed once over
+    // the templates with the same backtick-quoting the renderer
+    // uses, so the probe can fail an operator who tampered with
+    // the body but kept the marker comment intact. The renderer
+    // emits the same template, so a freshly-created routine is
+    // guaranteed to match.
+    private val expectedNextvalBodySignature: String by lazy {
+        canonicalBodySignature(
+            MysqlSequenceEmulationTemplates.nextvalRoutineSql(::backtick),
+        )
+    }
+    private val expectedSetvalBodySignature: String by lazy {
+        canonicalBodySignature(
+            MysqlSequenceEmulationTemplates.setvalRoutineSql(::backtick),
+        )
+    }
+
     override fun probeSupportTable(operationId: String): MysqlSequenceCanonicityDeclaration {
         val columnsSql =
             "SELECT column_name, column_type, is_nullable FROM information_schema.columns " +
@@ -102,20 +120,34 @@ class MysqlSequenceCanonicityProbeAdapter(
         }
         val sql = "SHOW CREATE FUNCTION " + MysqlSequenceSqlCodec.quoteIdentifier(routineName)
         val sqlHash = sha256Hex(sql).take(SQL_HASH_PREFIX_LEN)
+        val expectedBodySignature = when (kind) {
+            MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE -> expectedNextvalBodySignature
+            MysqlSequenceCanonicityKind.SETVAL_ROUTINE -> expectedSetvalBodySignature
+            else -> error("unreachable")
+        }
         return runProbe(operationId, kind, routineName, sqlHash) {
             val body = readShowCreateBody(sql, "Create Function")
             if (body == null) {
                 missing(operationId, kind, routineName, sqlHash)
             } else {
                 val expectedMarker = "/* d-migrate:mysql-sequence-v1 object=$markerKind */"
-                if (body.contains(expectedMarker)) {
-                    canonical(operationId, kind, routineName, sqlHash)
-                } else {
+                if (!body.contains(expectedMarker)) {
                     drift(operationId, kind, routineName, sqlHash,
                         field = "body_marker",
                         expected = expectedMarker,
                         actual = body.take(MARKER_PREVIEW_LEN),
                     )
+                } else {
+                    val actualSignature = canonicalBodySignature(body)
+                    if (actualSignature != expectedBodySignature) {
+                        drift(operationId, kind, routineName, sqlHash,
+                            field = "body_signature",
+                            expected = expectedBodySignature.take(SIGNATURE_PREVIEW_LEN),
+                            actual = actualSignature.take(SIGNATURE_PREVIEW_LEN),
+                        )
+                    } else {
+                        canonical(operationId, kind, routineName, sqlHash)
+                    }
                 }
             }
         }
@@ -179,16 +211,40 @@ class MysqlSequenceCanonicityProbeAdapter(
                 val expectedMarkerSubstring =
                     "object=sequence-trigger sequence=" +
                         MysqlSequenceSqlCodec.markerValue(expectedSequenceName)
-                if (body.contains(expectedMarkerSubstring)) {
-                    canonical(operationId, MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
-                        triggerName, sqlHash)
-                } else {
+                if (!body.contains(expectedMarkerSubstring)) {
                     drift(operationId, MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
                         triggerName, sqlHash,
                         field = "body_marker",
                         expected = expectedMarkerSubstring,
                         actual = body.take(MARKER_PREVIEW_LEN),
                     )
+                } else {
+                    // E.3 Sub-Slice F follow-up (2026-05-20): the
+                    // marker is only a necessary condition — Plan-Doc
+                    // §1.4 calls out operator-moved sequences (marker
+                    // still points at the original sequence but the
+                    // body resolves a different one). Pin the actual
+                    // dmg_nextval('…') call against the expected
+                    // sequence name; failure surfaces a precise
+                    // `sequence_reference` drift instead of the
+                    // misleading-CANONICAL we'd report otherwise.
+                    val expectedCallNormalized = canonicalBodySignature(
+                        "dmg_nextval(" +
+                            MysqlSequenceSqlCodec.quoteStringLiteral(expectedSequenceName) +
+                            ")",
+                    )
+                    val actualSignature = canonicalBodySignature(body)
+                    if (!actualSignature.contains(expectedCallNormalized)) {
+                        drift(operationId, MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+                            triggerName, sqlHash,
+                            field = "sequence_reference",
+                            expected = "dmg_nextval('$expectedSequenceName')",
+                            actual = actualSignature.take(SIGNATURE_PREVIEW_LEN),
+                        )
+                    } else {
+                        canonical(operationId, MysqlSequenceCanonicityKind.SUPPORT_TRIGGER,
+                            triggerName, sqlHash)
+                    }
                 }
             }
         }
@@ -416,11 +472,62 @@ class MysqlSequenceCanonicityProbeAdapter(
         actual = actual,
     )
 
+    /**
+     * E.3 Sub-Slice F follow-up (2026-05-20): normalises a routine
+     * or trigger body to a canonical form that ignores formatting
+     * differences `SHOW CREATE FUNCTION` introduces (the
+     * `CREATE DEFINER=…@…` prefix MySQL appends, casing,
+     * whitespace, optional backticks).
+     *
+     * Steps:
+     *   1. Slice between the first `BEGIN` and the last `END`
+     *      (inclusive). Header noise like `CREATE DEFINER=…@… FUNCTION`
+     *      / `RETURNS BIGINT` / `MODIFIES SQL DATA` is outside that
+     *      block and varies across MySQL versions, so it would
+     *      drift-spam otherwise. Body checks are about content
+     *      between BEGIN/END.
+     *   2. Lowercase.
+     *   3. Strip backticks.
+     *   4. Collapse ASCII whitespace runs to a single space; trim.
+     *
+     * Block comments (incl. the canonical marker) and string
+     * literals are intentionally NOT parsed out — they are part of
+     * the canonical shape and an operator who edits them deserves
+     * a drift hit. Returning the normalised string (not a hash)
+     * keeps the drift preview readable in the report.
+     */
+    private fun canonicalBodySignature(body: String): String {
+        val sliced = sliceBetweenBeginEnd(body) ?: body
+        val withoutBackticks = sliced.replace("`", "")
+        val lower = withoutBackticks.lowercase()
+        return WHITESPACE.replace(lower, " ").trim()
+    }
+
+    private fun sliceBetweenBeginEnd(body: String): String? {
+        val startIdx = BEGIN_KEYWORD.find(body)?.range?.first ?: return null
+        val endMatch = END_KEYWORD.findAll(body).lastOrNull() ?: return null
+        val endIdx = endMatch.range.last + 1
+        if (endIdx <= startIdx) return null
+        return body.substring(startIdx, endIdx)
+    }
+
+    /**
+     * Backtick-quoter for [MysqlSequenceEmulationTemplates] — matches
+     * the renderer's `MysqlDiffSqlBuilders.quote` so the expected
+     * body signature lines up with what the renderer emits at
+     * generation time.
+     */
+    private fun backtick(identifier: String): String = "`$identifier`"
+
     companion object {
         private const val SQL_HASH_PREFIX_LEN: Int = 16
         private const val MARKER_PREVIEW_LEN: Int = 200
+        private const val SIGNATURE_PREVIEW_LEN: Int = 120
         private const val MYSQL_ERR_SP_DOES_NOT_EXIST: Int = 1305
         private const val MYSQL_ERR_TRG_DOES_NOT_EXIST: Int = 1360
         private val INTEGER_DISPLAY_WIDTH = Regex("\\(\\d+\\)")
+        private val WHITESPACE = Regex("\\s+")
+        private val BEGIN_KEYWORD = Regex("\\bBEGIN\\b", RegexOption.IGNORE_CASE)
+        private val END_KEYWORD = Regex("\\bEND\\b", RegexOption.IGNORE_CASE)
     }
 }

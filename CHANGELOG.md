@@ -63,6 +63,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   §11 DoD Box (b) Carve-out (committed in `ffc6970e`) is resolved.
   Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
 
+### Fixed
+
+- **0.9.7 E.3 Folge-Slice — MySQL Sequence Drift-Check
+  Plan-Compliance-Fixes** *(2026-05-20)* — zwei Verhaltensabwei-
+  chungen zwischen Plan-Doc und Implementierung des Drift-Checks
+  korrigiert:
+  - `MysqlSequenceCanonicityGate` routet jetzt
+    `MISSING + DROP` für `SEQUENCE_ROW` und `SUPPORT_TABLE` als
+    Block (`E124_MYSQL_SEQUENCE_MISSING_FOR_DROP` →
+    `MANUAL_ACTION_REQUIRED`). Plan-Doc §3.1 hatte das schon
+    immer als "Missing → UPDATE/DELETE-Path: Block"
+    deklariert; Renderer war auf `OpIntent.DROP` schon korrekt
+    verdrahtet, das Gate hat es aber durchgewunken. Routinen
+    und Column-Trigger fallen weiterhin auf Proceed durch, weil
+    das `DELETE FROM dmg_sequences` sie nicht braucht und das
+    column-trigger-Drop ohnehin idempotent ist.
+  - `MysqlSequenceCanonicityProbeAdapter` verifiziert
+    Routine- und Trigger-Bodies jetzt jenseits des
+    Marker-Substrings: der Body zwischen `BEGIN` und letztem
+    `END` wird normalisiert (backticks raus, lowercase,
+    whitespace kollabiert) und gegen die kanonische Form aus
+    `MysqlSequenceEmulationTemplates` verglichen. Driftet ein
+    operator-bearbeiteter Routine-/Trigger-Body bei intaktem
+    Marker → `body_signature`-Drift mit Preview im Report.
+    Für Trigger zusätzlich `sequence_reference`-Check: der
+    tatsächliche `dmg_nextval('…')`-Call muss den Sequence-
+    Namen referenzieren, den der Plan erwartet — ein
+    operator-verschobener Trigger (Marker stehen lassen, Call
+    auf andere Sequence umbiegen) bricht jetzt sichtbar.
+
 ### Added
 
 - **0.9.7 E.3 Folge-Slice — MySQL Sequence Live-DB-Drift-Check

@@ -77,7 +77,11 @@ class MysqlSequenceCanonicityProbeAdapterTest : FunSpec({
         decl.driftField shouldBe "body_marker"
     }
 
-    test("probeRoutine: body with canonical marker → CANONICAL") {
+    test("probeRoutine: marker intact but body changed → DRIFT body_signature") {
+        // E.3 Sub-Slice F follow-up: an operator who keeps the
+        // canonical marker comment but rewrites the body (extra
+        // logging, different increment semantics) used to pass the
+        // probe. The body-signature check catches it.
         val conn = mockk<Connection>(relaxed = true)
         val stmt = mockk<Statement>(relaxed = true)
         val rs = mockk<ResultSet>(relaxed = true)
@@ -90,7 +94,8 @@ class MysqlSequenceCanonicityProbeAdapterTest : FunSpec({
 
         val decl = MysqlSequenceCanonicityProbeAdapter(conn)
             .probeRoutine("op-1", MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE)
-        decl.status shouldBe MysqlSequenceCanonicityStatus.CANONICAL
+        decl.status shouldBe MysqlSequenceCanonicityStatus.DRIFT
+        decl.driftField shouldBe "body_signature"
     }
 
     test("probeSequenceRow: matching managed fields → CANONICAL") {
@@ -185,7 +190,12 @@ class MysqlSequenceCanonicityProbeAdapterTest : FunSpec({
         decl.status shouldBe MysqlSequenceCanonicityStatus.MISSING
     }
 
-    test("probeSupportTrigger: body marker mentions expected sequence → CANONICAL") {
+    test("probeSupportTrigger: body marker + dmg_nextval('expected') call → CANONICAL") {
+        // Marker AND the actual nextval call resolve the right
+        // sequence; the body-signature normaliser ignores
+        // backticks / whitespace so the body shape doesn't have to
+        // match the template byte-for-byte (that's the integration
+        // test's job; here we pin the contract).
         val conn = mockk<Connection>(relaxed = true)
         val stmt = mockk<Statement>(relaxed = true)
         val rs = mockk<ResultSet>(relaxed = true)
@@ -195,7 +205,8 @@ class MysqlSequenceCanonicityProbeAdapterTest : FunSpec({
         every { rs.getString("SQL Original Statement") } returns
             "CREATE TRIGGER `dmg_seq_…` BEFORE INSERT ON `orders` FOR EACH ROW BEGIN " +
                 "/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=order_seq " +
-                "table=orders column=id */ END"
+                "table=orders column=id */ " +
+                "IF NEW.`id` IS NULL THEN SET NEW.`id` = `dmg_nextval`('order_seq'); END IF; END"
 
         val decl = MysqlSequenceCanonicityProbeAdapter(conn).probeSupportTrigger(
             operationId = "op-1",
@@ -203,6 +214,32 @@ class MysqlSequenceCanonicityProbeAdapterTest : FunSpec({
             expectedSequenceName = "order_seq",
         )
         decl.status shouldBe MysqlSequenceCanonicityStatus.CANONICAL
+    }
+
+    test("probeSupportTrigger: marker intact but dmg_nextval resolves OTHER sequence → DRIFT sequence_reference") {
+        // Plan-Doc §1.4: the operator may have manually moved the
+        // column to a different sequence while leaving the marker
+        // pointing at the original. The sequence_reference probe
+        // catches this exact case.
+        val conn = mockk<Connection>(relaxed = true)
+        val stmt = mockk<Statement>(relaxed = true)
+        val rs = mockk<ResultSet>(relaxed = true)
+        every { conn.createStatement() } returns stmt
+        every { stmt.executeQuery(any()) } returns rs
+        every { rs.next() } returns true
+        every { rs.getString("SQL Original Statement") } returns
+            "CREATE TRIGGER `dmg_seq_…` BEFORE INSERT ON `orders` FOR EACH ROW BEGIN " +
+                "/* d-migrate:mysql-sequence-v1 object=sequence-trigger sequence=order_seq " +
+                "table=orders column=id */ " +
+                "IF NEW.`id` IS NULL THEN SET NEW.`id` = `dmg_nextval`('different_seq'); END IF; END"
+
+        val decl = MysqlSequenceCanonicityProbeAdapter(conn).probeSupportTrigger(
+            operationId = "op-1",
+            triggerName = "dmg_seq_orders_id_abc123_bi",
+            expectedSequenceName = "order_seq",
+        )
+        decl.status shouldBe MysqlSequenceCanonicityStatus.DRIFT
+        decl.driftField shouldBe "sequence_reference"
     }
 
     test("probeSupportTrigger: body marker mentions OTHER sequence → DRIFT") {

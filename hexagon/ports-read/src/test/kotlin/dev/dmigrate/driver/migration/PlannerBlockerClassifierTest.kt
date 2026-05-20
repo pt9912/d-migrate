@@ -67,6 +67,7 @@ class PlannerBlockerClassifierTest : FunSpec({
             PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_ROW_CODE,
             PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_TRIGGER_CODE,
             PlannerBlockerClassifier.MYSQL_SEQUENCE_MISSING_FOR_ALTER_CODE,
+            PlannerBlockerClassifier.MYSQL_SEQUENCE_MISSING_FOR_DROP_CODE,
             PlannerBlockerClassifier.MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE,
         ).forEach { code ->
             PlannerBlockerClassifier.classify(code) shouldBe

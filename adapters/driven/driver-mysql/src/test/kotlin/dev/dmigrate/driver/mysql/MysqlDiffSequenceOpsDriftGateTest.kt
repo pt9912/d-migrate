@@ -140,12 +140,37 @@ class MysqlDiffSequenceOpsDriftGateTest : FunSpec({
         } shouldBe true
     }
 
-    test("DropSequence + MISSING → proceeds (idempotent)") {
+    test("DropSequence + MISSING (SEQUENCE_ROW) → blocked with MISSING_FOR_DROP") {
+        // Plan-Doc §3.1: "Missing → bei UPDATE/DELETE-Path: Block".
+        // A DropSequence whose target row is already gone must
+        // surface as a blocker so the operator either removes the
+        // op from the plan or restores the row before re-running.
         val seq = SequenceDefinition(start = 1L)
         val diff = SchemaDiff(sequencesRemoved = listOf(NamedSequence("order_seq", seq)))
         val plan = planner.plan(schemaOf(mapOf("order_seq" to seq)), schemaOf(), diff)
         val dropOpId = plan.operations.filterIsInstance<DiffOperation.DropSequence>().single().id
         val r = gen.generateUp(plan, helperOptionsWith(listOf(canonicityDecl(dropOpId, MysqlSequenceCanonicityStatus.MISSING))))
+        r.isBlocked shouldBe true
+        r.diagnostics.any { it.code == MysqlSequenceCanonicityGate.MISSING_FOR_DROP_CODE } shouldBe true
+        // No DELETE statement was emitted for the blocked op.
+        r.statements.none {
+            it.sql.contains("DELETE FROM `dmg_sequences`") && it.operationIds.contains(dropOpId)
+        } shouldBe true
+    }
+
+    test("DropSequence + MISSING (NEXTVAL_ROUTINE) → proceeds (collateral state, DELETE does not need the routine)") {
+        val seq = SequenceDefinition(start = 1L)
+        val diff = SchemaDiff(sequencesRemoved = listOf(NamedSequence("order_seq", seq)))
+        val plan = planner.plan(schemaOf(mapOf("order_seq" to seq)), schemaOf(), diff)
+        val dropOpId = plan.operations.filterIsInstance<DiffOperation.DropSequence>().single().id
+        val r = gen.generateUp(
+            plan,
+            helperOptionsWith(listOf(canonicityDecl(
+                dropOpId,
+                MysqlSequenceCanonicityStatus.MISSING,
+                kind = MysqlSequenceCanonicityKind.NEXTVAL_ROUTINE,
+            ))),
+        )
         r.isBlocked shouldBe false
         r.statements.any { it.sql.contains("DELETE FROM `dmg_sequences`") } shouldBe true
     }
