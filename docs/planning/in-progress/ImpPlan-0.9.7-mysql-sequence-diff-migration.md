@@ -75,7 +75,7 @@ Migrationen ohne `schema generate`-Workaround.
 - Alle neuen Sequence-Diff-Renderer sind nur im
   `MysqlNamedSequenceMode.HELPER_TABLE`-Modus aktiv; bei anderem
   Modus werden sie explizit auf Diff-Ebene mit `E056` + `MANUAL_ACTION_REQUIRED`
-  blockiert (`ctx.skip(op, \"...\", \"E056\"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`).
+  blockiert (`ctx.skip(op, "...", "E056"); ctx.addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, setOf(op.id))`).
   Es darf dann keinerlei SQL emittiert werden. Die eigentliche Guard-Logik wird im
   `MysqlDiffSequenceOps`-Renderer verankert, nicht erst indirekt
   im `MysqlDdlGenerator`.
