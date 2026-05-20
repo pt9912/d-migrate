@@ -16,10 +16,14 @@ import dev.dmigrate.core.util.sha256Hex
  * [DependencyAnalyzer] then attaches edges, [TopologicalSorter]
  * orders the result.
  *
- * `CHECK` and `EXCLUDE` constraints are explicitly skipped (Phase A
- * decision: tables carrying them are surfaced via
- * `CONSTRAINT_NOT_DIFFABLE` blockers; the comparator does not lossless-
- * diff their semantics).
+ * `CHECK` and `EXCLUDE` constraints flow through the same
+ * `AddConstraint` / `DropConstraint` ops as UNIQUE / FOREIGN_KEY
+ * since F.5 Sub-Slice A. A `constraintsChanged` entry emits a
+ * `DropConstraint(before)` + `AddConstraint(after)` pair, both
+ * tagged with a shared deterministic [DiffOperation.AddConstraint.replacePairId]
+ * so reporters recognise the Replace; the [ConstraintReplaceContract]
+ * post-pass then pins per-op reversibility. Per-dialect renderers
+ * decide whether to emit DDL or to block.
  *
  * Operation-ID payload determinism: at-risk types (those carrying
  * `Map` fields whose iteration order can vary across loaders / JVM

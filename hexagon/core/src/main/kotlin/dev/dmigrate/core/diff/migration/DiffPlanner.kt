@@ -34,13 +34,19 @@ import dev.dmigrate.core.model.ViewDefinition
  * - View-level fine-grained column tracking.
  * - Routine-only dependencies between Functions/Procedures and Views.
  *
- * Plan-2 §F.5 first slice (CHECK/EXCLUDE constraints): unchanged raw-SQL
- * constraints are comparable by conservative SQL text. Added, removed or
- * changed CHECK/EXCLUDE constraints still surface a `CONSTRAINT_NOT_DIFFABLE`
- * blocker and the affected table is skipped in the operation list. Operations
- * on unblocked tables that nonetheless reference a blocked table (FK column /
- * FK constraint) are tagged with a `FK_TO_BLOCKED_TABLE` blocker so the
- * renderer cannot silently emit dangling references.
+ * Plan-2 §F.5 vollscheibe (Sub-Slices A-G, 2026-05-20): CHECK and
+ * EXCLUDE constraints flow through the standard Add/Drop/Replace
+ * pipeline. The `CONSTRAINT_NOT_DIFFABLE` blanket from the first
+ * slice is replaced by per-dialect renderers (PG native, MySQL via
+ * `MysqlCheckEnforcementCapability`, SQLite via the rebuild
+ * pipeline), a live-data preflight gate in execute mode
+ * (`CheckPreflightGate`), and the `ConstraintReplaceContract`
+ * post-pass that pins per-op reversibility. The only remaining
+ * planner-level CHECK/EXCLUDE block is the conservative cross-table
+ * heuristic (`CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED`). Operations
+ * on unblocked tables that nonetheless reference a blocked table (FK
+ * column / FK constraint) are tagged with a `FK_TO_BLOCKED_TABLE`
+ * blocker so the renderer cannot silently emit dangling references.
  *
  * Phase F.6.b decision (View column-level deps): column-altering
  * operations (`DropColumn`, `AlterColumnType`,

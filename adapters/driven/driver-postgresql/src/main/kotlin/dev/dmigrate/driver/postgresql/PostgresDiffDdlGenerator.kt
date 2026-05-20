@@ -3,6 +3,7 @@ package dev.dmigrate.driver.postgresql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -74,7 +75,24 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
 
     private fun renderOp(op: DiffOperation, ctx: PostgresDiffRenderContext) {
         if (ctx.direction == PostgresRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
-            ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
+            // F.5 Sub-Slice F: a `DropConstraint(CHECK/EXCLUDE)` with
+            // no expression is `NOT_REVERSIBLE` by contract — surface
+            // the specific diagnostic code so the report tells
+            // operators why the inverse couldn't be reconstructed,
+            // not just the generic short-circuit message.
+            if (op is DiffOperation.DropConstraint && isRawSqlConstraintMissingExpression(op)) {
+                ctx.skip(
+                    op,
+                    "Operation ${op.id} drops CHECK/EXCLUDE constraint " +
+                        "'${op.constraint.name}' on " +
+                        "'${op.objectRef.path.firstOrNull() ?: ""}' but the prior " +
+                        "expression is not available; the renderer cannot " +
+                        "reconstruct the inverse ADD CONSTRAINT.",
+                    code = "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING",
+                )
+            } else {
+                ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
+            }
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
@@ -259,4 +277,9 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         TRIGGER,
         UNSUPPORTED,
     }
+
+    private fun isRawSqlConstraintMissingExpression(op: DiffOperation.DropConstraint): Boolean =
+        (op.constraint.type == ConstraintType.CHECK ||
+            op.constraint.type == ConstraintType.EXCLUDE) &&
+            op.constraint.expression.isNullOrBlank()
 }

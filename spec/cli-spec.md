@@ -888,7 +888,7 @@ Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und e
   - `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`: der
     Preflight-Probe selbst wirft (Privilegien, Netzwerk, malformierter
     Expression-Text). Fehlertext steht im Report-Feld
-    `checkPreflights[].message`.
+    `checkPreflights[].problem`.
   - `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` →
     `DIALECT_UNSUPPORTED_OPERATION`: EXCLUDE ist PostgreSQL-only;
     MySQL- und SQLite-Renderer blocken den Op (auch im

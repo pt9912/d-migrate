@@ -3,6 +3,7 @@ package dev.dmigrate.driver.mysql
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
@@ -63,7 +64,25 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
 
     private fun renderOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
         if (ctx.direction == MysqlRenderDirection.DOWN && op.reversibility == Reversibility.NOT_REVERSIBLE) {
-            ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
+            // F.5 Sub-Slice F: surface the specific rollback diagnostic
+            // for `DropConstraint(CHECK)` without expression — the
+            // generic short-circuit would otherwise hide which path
+            // the renderer refused to reconstruct. (EXCLUDE on MySQL
+            // is blocked earlier via `EXCLUDE_NOT_SUPPORTED_BY_DIALECT`
+            // so it never reaches the rollback predicate.)
+            if (op is DiffOperation.DropConstraint && isRawSqlConstraintMissingExpression(op)) {
+                ctx.skip(
+                    op,
+                    "Operation ${op.id} drops CHECK constraint " +
+                        "'${op.constraint.name}' on " +
+                        "'${op.objectRef.path.firstOrNull() ?: ""}' but the prior " +
+                        "expression is not available; the renderer cannot " +
+                        "reconstruct the inverse ADD CONSTRAINT.",
+                    code = "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING",
+                )
+            } else {
+                ctx.skip(op, "Operation ${op.id} is NOT_REVERSIBLE; cannot render down direction.")
+            }
             ctx.addBlocker(MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE, operationIds = setOf(op.id))
             return
         }
@@ -229,4 +248,8 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
     }
 
     private enum class OpCategory { TABLE, OTHER, ROUTINE, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }
+
+    private fun isRawSqlConstraintMissingExpression(op: DiffOperation.DropConstraint): Boolean =
+        op.constraint.type == ConstraintType.CHECK &&
+            op.constraint.expression.isNullOrBlank()
 }

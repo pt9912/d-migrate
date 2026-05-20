@@ -203,6 +203,11 @@ class PostgresDiffDdlGeneratorCheckExcludeTest : FunSpec({
         val downReport = planAndDown(diff)
         downReport.isBlocked shouldBe true
         downReport.blockers.any { it.reason == MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE } shouldBe true
+        // The specific diagnostic code is surfaced (not the generic
+        // NOT_REVERSIBLE short-circuit message) so the report can
+        // explain WHY the inverse failed.
+        downReport.diagnostics.map { it.code } shouldContain
+            "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING"
     }
 
     test("F.5 §F: AddConstraint(EXCLUDE) with custom opclass blocks with EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED") {

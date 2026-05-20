@@ -204,5 +204,9 @@ class MysqlDiffDdlGeneratorCheckExcludeTest : FunSpec({
         val r = planAndDown(diff, MysqlServerVersion(8, 0, 16))
         r.isBlocked shouldBe true
         r.blockers.any { it.reason == MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE } shouldBe true
+        // F.5 review fix: the specific diagnostic code is surfaced by
+        // the generator's NOT_REVERSIBLE short-circuit branch so the
+        // report explains WHY the inverse failed.
+        r.diagnostics.any { it.code == "CONSTRAINT_ROLLBACK_EXPRESSION_MISSING" } shouldBe true
     }
 })

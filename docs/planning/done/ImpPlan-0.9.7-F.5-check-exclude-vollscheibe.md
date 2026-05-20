@@ -2,10 +2,10 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: F.5 (vollständige Diffbarkeit von CHECK-/EXCLUDE-Constraints)
-> **Status**: in-progress 2026-05-19. Sub-Slices A ✅ + B ✅ + C ✅ +
+> **Status**: ✅ done (2026-05-20). Sub-Slices A ✅ + B ✅ + C ✅ +
 >            D ✅ + E (E.1+E.2 ✅, E.3 ✅, E.4 ✅ inkl. Review-
->            Follow-ups) — offen: **Sub-Slice F** (Reversibility +
->            Replace-Vertrag), **Sub-Slice G** (Closing/DoD).
+>            Follow-ups) + **F ✅** (Reversibility + Replace-Vertrag,
+>            Commit `172c9b82`) + **G ✅** (Closing/DoD).
 >            Erstscheibe ✅ 2026-05-12 (konservativer
 >            SQL-Textvergleich).
 > **Vorbedingung**: F.5-Erstscheibe ✅ 2026-05-12
@@ -114,7 +114,11 @@ betroffenen Tabellen vorher manuell anfassen.
     kennt kein `ALTER TABLE ADD CONSTRAINT`). Sub-Slice D
     integriert in den SQLite-Rebuild-Planner.
 - Per-Dialekt-Renderer fuer EXCLUDE (PG-only): `ALTER TABLE … ADD
-  CONSTRAINT name EXCLUDE USING gist (…) WHERE (…)`. MySQL und
+  CONSTRAINT name EXCLUDE USING gist (…)`. Die optionale
+  `WHERE (…)`-Klausel bleibt out-of-scope (siehe §3.2 und §5.3); ein
+  Operator, der sie braucht, kodiert sie im `expression`-String mit
+  und nimmt damit den `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED`-Block in
+  Kauf. MySQL und
   SQLite blocken mit `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` (neuer
   Planner-Blocker-Code, bestehend auf existierendem
   `MigrationBlockedReason`).
