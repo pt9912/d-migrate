@@ -5,12 +5,12 @@
 > **Status**: open 2026-05-19 (Architektur-Plan, nicht Code-Plan).
 > **Vorbedingung**: PG-Sequence-Diff-Renderer ✅; MySQL-Sequence-
 >                  Diff-Plan *(parallel in-progress,
->                  `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
+>                  `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
 >                  SQLite-Sequence-Plan
 >                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`);
 >                  preserveCurrentValue-Plan
 >                  *(parallel in-progress,
->                  `ImpPlan-0.9.7-sequence-preserve-current-value.md`)*.
+>                  `docs/planning/in-progress/ImpPlan-0.9.7-sequence-preserve-current-value.md`)*.
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md` §E.3;
 >             `docs/planning/done/mysql-sequence-emulation-plan.md`;
 >             `docs/planning/open/sqlite-sequence-emulation-plan.md`.
@@ -36,7 +36,9 @@ die folgenden Fragen entscheidet:
 
 1. **Cross-Dialect-Transfer**: was passiert, wenn ein
    PG-Schema mit `CREATE SEQUENCE` nach MySQL transferiert wird?
-   Heute: MySQL-Renderer blockt mit `DIALECT_UNSUPPORTED_OPERATION`.
+   Heute: MySQL-Renderer blockt mit `DIALECT_UNSUPPORTED_OPERATION`;
+   geplant ist die Feineinstellung auf sequence-spezifische Blocker-Codes
+   nach der Einführung dieser Schicht.
    Nach den parallelen Plans: MySQL emittiert die helper_table-
    Emulation — aber wie soll die Source-PG-Sequence-Definition
    ueberhaupt nach MySQL gemappt werden? Welche Attribute gehen
@@ -49,22 +51,23 @@ die folgenden Fragen entscheidet:
 
 3. **Sequence-Identitaet ueber Dialekte hinweg**: PG-`SequenceName`
    ist global im Schema; MySQL-Emulation nutzt `dmg_sequences.name`
-   (auch global) plus einen Trigger pro Tabellen-Spalte; SQLite
-   hat keine Sequenz-Identitaet — der Wert lebt in
-   `INTEGER PRIMARY KEY AUTOINCREMENT` oder einer Emulation. Wer
-   ist der Single Source of Truth?
+   (auch global) plus einen Trigger pro Tabellen-Spalte; SQLite hat keine
+   native Sequence, emuliert aber ebenfalls ueber `dmg_sequences.name`.
+   Wer ist der Single Source of Truth?
 
 4. **Capability-Matrix**: welche
    `SequenceDefinition`-Attribute ueberleben den Cross-Dialect-
    Transfer verlustfrei?
-   - `start`, `increment`, `cycle`: verlustfrei in PG + MySQL-
-     Emulation; SQLite hat kein Konzept fuer `cycle`.
-   - `minValue` / `maxValue`: PG + MySQL-Emulation;
-     SQLite ignoriert.
+   - `start`, `increment`, `cycle`: PG + MySQL-Emulation plus
+     SQLite-Helper-Table-Vertrag (`next_value`, `increment_by`,
+     `cycle_enabled`); bei SQLite ist `start` nur als Seed-Zustand
+     sinnvoll belegbar, nicht aber für Reverse nach Laufzeitnutzung.
+   - `minValue` / `maxValue`: PG + MySQL-Emulation + SQLite-Helper-Table.
    - `cache`: PG `CACHE` ist ein Performance-Hint, MySQL hat
      kein direktes Analog (heute deklarativ in
      `dmg_sequences.cache` gefuehrt, aber semantisch ignoriert).
-     SQLite hat kein Konzept.
+     SQLite speichert als `dmg_sequences.cache_size` nur als Metadatum
+     (`W114`).
    - aktueller Wert: siehe preserveCurrentValue-Plan.
 
 5. **Cross-Dialect-Rename**: ein `RenameSequence` auf PG ist nativ;
@@ -99,8 +102,9 @@ parallele Slice referenzieren kann.
 - **D1**: Sequence-Identitaet ueber Dialekte hinweg — der
   `SequenceDefinition.name` aus dem neutralen Modell ist der
   Single Source of Truth. Dialekt-spezifische Emulation
-  (MySQL: `dmg_sequences.name`; SQLite: TBD) MUSS auf diesen
-  Namen mappen, ohne ihn zu transformieren.
+  (MySQL: `dmg_sequences.name`; SQLite: `dmg_sequences.name` im
+  Helper-Table-Pfad) MUSS auf diesen Namen mappen, ohne ihn zu
+  transformieren.
 - **D2**: Cross-Dialect-Transfer-Vertrag —
   Source-Dialekt-Sequenzen werden ueber den Neutralmodell-
   Pfad gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
@@ -109,8 +113,8 @@ parallele Slice referenzieren kann.
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
   Für explizit als kontrollierten Attribut-Verlust dokumentierte
   Felder (z.B. `cache`) kann ein bestehender Overlay-Mechanismus
-  die Migration auf Warning begrenzen; der Standardfall bleibt aber
-  Blocker.
+  die Migration auf `WARNING` begrenzen; fehlt ein solcher
+  Overlay-Treffer, bleibt der Standardfall Blocker.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut ueberlebt
@@ -133,10 +137,10 @@ parallele Slice referenzieren kann.
 
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
-- Konkretes MySQL-Render-DDL → `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
+- Konkretes MySQL-Render-DDL → `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
 - Konkretes SQLite-Render-DDL → `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 - `preserveCurrentValue`-Probe-Implementation →
-  `ImpPlan-0.9.7-sequence-preserve-current-value.md`.
+  `docs/planning/in-progress/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 - MariaDB-native `CREATE SEQUENCE` (10.3+) — separate
   Capability-Gate-Tranche.
 
@@ -144,15 +148,15 @@ parallele Slice referenzieren kann.
 
 ## 4. Capability-Matrix (Decision-Record)
 
-| `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (TBD) | Cross-Dialect-Verhalten |
+| `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`) | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
-| `name` | nativ | `dmg_sequences.name` | Emul. TBD | Source = neutral; Mapping verlustfrei |
-| `start` | `START WITH` | `dmg_sequences.start_value` | Emul. TBD | Verlustfrei zwischen PG/MySQL; SQLite-Pfad blockt bis Plan landet |
-| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | Emul. TBD | Verlustfrei zwischen PG/MySQL; SQLite analog |
-| `minValue` | `MINVALUE` | `dmg_sequences.min_value` | nicht modelliert | PG → SQLite: blockt mit `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT(minValue)` |
-| `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | nicht modelliert | analog |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | nicht modelliert | PG → SQLite blockt |
-| `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ) | nicht modelliert | PG-`CACHE` ist semantisch nur Performance — Cross-Dialect-Verlust ist **acceptable**, dokumentiert als WARNING |
+| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` | Source = neutral; Mapping verlustfrei |
+| `start` | `START WITH` | `dmg_sequences.start_value` | Seed via `next_value` (kein natives Start-Attribut) | Zwischen PG/MySQL verlustfrei; SQLite blockt aktuell nur solange es kein eigenes Start-Feld gibt |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite analog |
+| `minValue` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | SQLite: verlustfrei in `helper_table` |
+| `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
+| `cache` | `CACHE n` | `dmg_sequences.cache` (deklarativ) | `dmg_sequences.cache_size` | SQLite: kein Runtime-Caching, `W114` |
 | `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | TBD | Execute-only; siehe preserveCurrentValue-Plan |
 | `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL: WARNING; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
 
@@ -192,8 +196,8 @@ data class SequenceCapability(
 )
 
 object SequenceCapabilityDefaults {
-    fun forDialect(dialect: RenameProjectionDialect): SequenceCapability = when (dialect) {
-        POSTGRESQL -> SequenceCapability(
+    fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {
+        DatabaseDialect.POSTGRESQL -> SequenceCapability(
             supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
@@ -201,15 +205,15 @@ object SequenceCapabilityDefaults {
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = true,
         )
-        MYSQL -> SequenceCapability(
+        DatabaseDialect.MYSQL -> SequenceCapability(
             supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
-            supportsCache = true, // deklarativ, semantisch ignoriert
+            supportsCache = true, // deklarativ gespeichert, semantisch jedoch nicht aequivalent
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
         )
-        SQLITE -> SequenceCapability(
+        DatabaseDialect.SQLITE -> SequenceCapability(
             supportsStart = false,
             supportsMinMaxValue = false,
             supportsCycle = false,
@@ -226,8 +230,9 @@ unterstuetzte Attribute → Blocker.
 
 ### 5.3 Cross-Dialect-Validation in `DiffPlanner`
 
-Heute weiss der Planner nicht, welcher Dialekt das Target ist —
-er bekommt nur `RenameProjectionCapabilities`. Dieser Plan
+Heute kennt der Planner den Ziel-Dialekt bereits über
+`RenameProjectionCapabilities.dialect`; was fehlt, ist eine
+dedizierte Sequence-Capability-Schicht. Dieser Plan
 erweitert die Capabilities-Struktur (oder fuegt eine parallele
 `SequenceCapabilities` hinzu), sodass der Mapper /
 Renderer-Validierungsstufe Sequence-Attribute-Mismatches
@@ -238,7 +243,7 @@ andere dialect-mismatches). Decision in Sub-Slice A.
 
 ---
 
-## 6. Sub-Slice-Schnitt
+## 6. Sub-Slice-Schnittstellen
 
 Da dies ein **Architektur-Plan** ist, sind die Sub-Slices kleiner
 und delegierbar:
@@ -271,7 +276,7 @@ und delegierbar:
 
 ## 8. Definition of Done (§13-Template)
 
-- [ ] **Modus**: alle (Capability ist render-time).
+- [ ] **Modus**: alle Prüfungen laufen render-time.
 - [ ] **Renderbare Ops**: keine neuen — nur Validierung
       bestehender Sequence-Ops.
 - [ ] **Neue Diagnostics**:
@@ -316,7 +321,7 @@ und delegierbar:
   Slices muessen ihn konsumieren.
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, blockt jeder SQLite-Pfad mit
-  `SEQUENCE_NOT_SUPPORTED_BY_DIALECT`. Das ist kein Blocker
+  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`. Das ist kein Blocker
   fuer DIESEN Plan — die Capability-Defaults sind konservativ.
 - **PG `OWNED BY` semantisch nicht abbildbar**: PG-Sequenzen
   koennen einer Spalte gehoeren; MySQL/SQLite kennen das nicht.
