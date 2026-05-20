@@ -66,6 +66,15 @@ data class MigrationDdlResult(
      * skipped, and why a render blocked.
      */
     val checkPreflights: List<CheckPreflightDeclaration> = emptyList(),
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice C (2026-05-20):
+     * per-sequence-op live-probe outcomes (CANONICAL / DRIFT /
+     * MISSING / NOT_RUN_FILE_TARGET / NOT_RUN_POLICY /
+     * PROBE_RUNTIME_ERROR) so the report and runner can surface what
+     * was verified, what was skipped, and which drift / missing-row
+     * combination blocked a render.
+     */
+    val mysqlSequenceCanonicity: List<dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration> = emptyList(),
     val spatialProfile: String? = null,
 ) {
     /** Convenience: the plan must not execute. */

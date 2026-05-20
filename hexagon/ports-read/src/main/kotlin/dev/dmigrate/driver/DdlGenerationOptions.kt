@@ -82,6 +82,21 @@ data class DdlGenerationOptions(
      */
     val checkPreflights: List<CheckPreflightDeclaration> = emptyList(),
     /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice C (2026-05-20):
+     * per-sequence-op live-DB probe outcomes against the helper-
+     * table emulation's canonical objects (`dmg_sequences`,
+     * `dmg_nextval`, `dmg_setval`, sequence-row, support-trigger).
+     * `MysqlDiffSequenceOps` consults each declaration via
+     * [MysqlSequenceCanonicityGate] before emitting any DML against
+     * the helper table.
+     *
+     * File-only / plan-only / non-MySQL / no-sequence-op paths leave
+     * this empty; the renderer proceeds natively and the report
+     * surfaces `NOT_RUN_FILE_TARGET` declarations from the stage so
+     * the operator knows no live verification happened.
+     */
+    val mysqlSequenceCanonicity: List<MysqlSequenceCanonicityDeclaration> = emptyList(),
+    /**
      * Plan-2 §A.2: which input fed the SQLite-rebuild temp-name
      * collision catalog. `SCHEMA_ONLY` (the default) covers
      * file-to-file, plan-only, non-SQLite, and SQLite-with-execute
