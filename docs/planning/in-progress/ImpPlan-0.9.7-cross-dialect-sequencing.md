@@ -7,19 +7,19 @@
 >                  Diff-Plan *(parallel in-progress,
 >                  `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
 >                  SQLite-Sequence-Plan
->                  (`open/sqlite-sequence-emulation-plan.md`);
+>                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`);
 >                  preserveCurrentValue-Plan
 >                  *(parallel in-progress,
 >                  `ImpPlan-0.9.7-sequence-preserve-current-value.md`)*.
 > **Referenz**: `diffresult-migration-plan-2.md` §E.3;
->             `done/mysql-sequence-emulation-plan.md`;
->             `open/sqlite-sequence-emulation-plan.md`.
+>             `docs/planning/done/mysql-sequence-emulation-plan.md`;
+>             `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 
 ---
 
 ## 1. Auslöser
 
-Sequence-Migrationen leben in 0.9.7 als drei voneinander unabhängige
+Sequence-Migrationen leben in 0.9.7 als vier voneinander unabhängige
 Slices:
 
 - **PG** (E.3 Erstscheibe ✅): native `CREATE/ALTER/DROP/RENAME
@@ -27,7 +27,7 @@ Slices:
 - **MySQL** (parallel-Plan): Emulation via `dmg_sequences`-Helper-
   Table und Sequence-Trigger.
 - **SQLite** (parallel-Plan): rebuild-basierte Emulation; Details
-  in `open/sqlite-sequence-emulation-plan.md`.
+  in `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 - **preserveCurrentValue** (parallel-Plan): cross-dialect
   Live-DB-Probe + Setval-Pattern.
 
@@ -69,7 +69,7 @@ die folgenden Fragen entscheidet:
 
 5. **Cross-Dialect-Rename**: ein `RenameSequence` auf PG ist nativ;
    auf MySQL ist es ein `UPDATE dmg_sequences`; auf SQLite
-   blockiert (`done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`
+   blockiert (`docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`
    Sub-Slice A.2 Teil 1). Cross-Dialect: nicht definiert.
 
 ---
@@ -105,13 +105,16 @@ parallele Slice referenzieren kann.
   Source-Dialekt-Sequenzen werden ueber den Neutralmodell-
   Pfad gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
   unterstuetzt wird (z.B. PG-`CACHE` nach SQLite), blockt
-  der Renderer mit `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`
-  (Operator entscheidet, ob das Attribut bewusst verloren
-  geht oder die Migration blockt).
+  der Renderer regelmaessig mit
+  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
+  Für explizit als kontrollierten Attribut-Verlust dokumentierte
+  Felder (z.B. `cache`) kann ein bestehender Overlay-Mechanismus
+  die Migration auf Warning begrenzen; der Standardfall bleibt aber
+  Blocker.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut ueberlebt
-  welchen Transfer); `cli-spec.md` §6.1 listet die neuen
+  welchen Transfer); `spec/cli-spec.md` §6.1 listet die neuen
   Blocker-Codes pro Carve-out.
 - **D4**: Sequence-Default-Reprojection-Vertrag fuer
   Cross-Dialect-Transfer — F.4 Sub-Slice D
@@ -131,7 +134,7 @@ parallele Slice referenzieren kann.
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
 - Konkretes MySQL-Render-DDL → `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
-- Konkretes SQLite-Render-DDL → `open/sqlite-sequence-emulation-plan.md`.
+- Konkretes SQLite-Render-DDL → `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 - `preserveCurrentValue`-Probe-Implementation →
   `ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 - MariaDB-native `CREATE SEQUENCE` (10.3+) — separate
@@ -240,8 +243,8 @@ und delegierbar:
 |---|---|
 | A | `SequenceCapability` + `SequenceCapabilityDefaults` in `hexagon:ports-read`; Tests pinnen Defaults pro Dialekt |
 | B | Renderer-Side-Validation: pro Dialekt-Renderer pruefen Capability, emit Blocker bei Mismatch |
-| C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `cli-spec.md` §6.1 erweitern um die neuen Blocker-Codes |
-| D | ADR (`docs/adr/ADR-0009-cross-dialect-sequencing.md`) dokumentiert die fuenf Decisions (D1–D5) |
+| C | `spec/neutral-model-spec.md` §9 erweitern um die Capability-Matrix; `spec/cli-spec.md` §6.1 erweitern um die neuen Blocker-Codes |
+| D | ADR (`docs/adr/0009-cross-dialect-sequencing.md`) dokumentiert die fuenf Decisions (D1–D5) |
 | E | Closing: Plan-Doc nach `done/`; Cross-Links in die drei dialekt-spezifischen Plans setzen |
 
 ---
@@ -307,7 +310,7 @@ und delegierbar:
   Capability-Annahmen einbauen, koennen sie divergieren.
   Mitigation: Capability-Resolver ist die einzige Quelle, alle
   Slices muessen ihn konsumieren.
-- **SQLite-Plan ist offen**: solange `open/sqlite-sequence-emulation-plan.md`
+- **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, blockt jeder SQLite-Pfad mit
   `SEQUENCE_NOT_SUPPORTED_BY_DIALECT`. Das ist kein Blocker
   fuer DIESEN Plan — die Capability-Defaults sind konservativ.
