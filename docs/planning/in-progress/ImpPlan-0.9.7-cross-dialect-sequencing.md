@@ -133,8 +133,8 @@ parallele Slice referenzieren kann.
   `objectType = "sequence"`.
 - **D5**: Capability-Source-Resolution-Pattern — analog zu
   E.1 Routine-Capability (`RoutineCapabilityDefaults` + `EffectiveRoutineCapability`).
-  Sequence-Capabilities haben Defaults pro Dialekt + Version
-  und sind via Overlay/CLI überschreibbar.
+  Sequence-Capabilities besitzen konservative Defaults pro Dialekt und
+  sind via Overlay/CLI überschreibbar (inkl. version-sensitiver Regeln).
 
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
@@ -273,7 +273,8 @@ und delegierbar:
 - [ ] PG → MySQL mit `OWNED BY` blockt mit dem neuen Code
   (negativer Test).
 - [ ] PG → MySQL mit `CACHE` nutzt den Overlay/Override-Pfad zu
-  `W114` als WARNING (kein harter Blocker im Standardpfad).
+  `W114` als WARNING; ohne passendes Overlay bleibt es beim
+  Standard-Blocker.
 - [ ] Decision-Record (ADR) ist gepinnt.
 - [ ] `spec/neutral-model-spec.md` und `spec/cli-spec.md` sind auf
       Stand.
@@ -327,9 +328,12 @@ und delegierbar:
   Mitigation: Capability-Resolver ist die einzige Quelle, alle
   Slices muessen ihn konsumieren.
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
-  nicht implementiert ist, blockt jeder SQLite-Pfad mit
-  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`. Das ist kein Blocker
-  für DIESEN Plan — die Capability-Defaults sind konservativ.
+  nicht implementiert ist, blockt SQLite nur für nicht representierbare
+  Attribute wie `preserveCurrentValue` mit
+  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` oder `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
+  (abhängig von den gewählten Capabilities).
+  Das ist kein Blocker für DIESEN Plan — die Capability-Defaults sind
+  konservativ.
 - **PG `OWNED BY` semantisch nicht abbildbar**: PG-Sequenzen
   koennen einer Spalte gehoeren; MySQL/SQLite kennen das nicht.
   Wenn Reverse-Read den `OWNED BY` trägt und der Transfer-
