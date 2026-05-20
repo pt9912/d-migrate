@@ -6,7 +6,7 @@
 > **Vorbedingung**: E.2 Trigger-Rendering Vollscheibe ✅ 2026-05-18
 >                  (PG / MySQL / SQLite-Render alle gruen);
 >                  bestehender `SqliteSchemaReader.readTriggers` (Stub).
-> **Referenz**: `done/ImpPlan-0.9.7-E.2-trigger-rendering.md` §7.3
+> **Referenz**: `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md` §7.3
 >             (SQLite-Trigger-Reverse-Read als E.2-Carve-out);
 >             `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelper.kt`
 >             (in-code-Carve-out-Hinweis);
@@ -42,8 +42,8 @@ naiver String-Substring-Suche
   `WARNING` (R210 / R211). Das schluckt Daten still — der
   Reverse-gelesene Trigger ist semantisch falsch.
 - **Schemaqualifizierte Trigger-Namen** (`main.trigger_name`):
-  nicht behandelt; SQLite-Schemata mit attached databases
-  werden als fehlinterpretiertem Namen gelesen.
+  nicht vollständig behandelt; SQLite-`attached`-Schemata
+  werden derzeit als falsch-qualifizierte Trigger-Objekte gelesen.
 
 Konsequenz: E.2-Trigger-Vollscheibe ist auf SQLite nur fuer den
 **File-to-File**-Pfad voll funktionsfaehig. Live-DB-zu-Live-DB-
@@ -100,7 +100,8 @@ Konsequenzen:
   als Redirect auf den neuen Parser behalten.
 - Round-Trip-Tests: Reverse → emit YAML → Reverse → identisch.
 - Live-DB-Integration: pinned mit einem echten SQLite-File
-  (`adapters/driven/driver-sqlite/src/test/resources/round-trip/`)
+  (`test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/` oder
+   `adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`)
   und mehreren Trigger-Variants (mit/ohne WHEN, BEFORE/AFTER/
   INSTEAD_OF, multi-statement Body).
 
@@ -162,11 +163,11 @@ Token-basierter Parser (kein vollwertiger SQL-Parser noetig):
 2. Konsumiere `CREATE` `[TEMP|TEMPORARY]` `TRIGGER`
    `[IF NOT EXISTS]`.
 3. Konsumiere `[schema.]trigger_name`.
-   Bei `schema.`-Praefix wird `R212` als `BLOCKER` gesetzt
+   Bei `schema.`-Praefix wird `R212` als `ACTION_REQUIRED` gesetzt
    (`SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED`) und der Trigger wird
    verworfen, damit kein falscher Objektkey entsteht.
 4. Konsumiere `[BEFORE | AFTER | INSTEAD OF]`.
-   Bei fehlendem Token wird `R210` als `BLOCKER` gesetzt und als
+   Bei fehlendem Token wird `R210` als `ACTION_REQUIRED` gesetzt und als
    Fallback `timing = BEFORE` gemeldet.
 5. Konsumiere `{ DELETE | INSERT | UPDATE [OF cols] }`.
    `UPDATE OF cols` wird heute nicht im Modell unterstuetzt —
@@ -200,10 +201,10 @@ idempotent. Tests pinnen explizit.
 `TriggerParseResult` traegt heute schon `notes: List<SchemaReadNote>`.
 Erweitert:
 
-- `R210` (timing unklar) → BLOCKER statt WARNING, wenn die
+- `R210` (timing unklar) → ACTION_REQUIRED statt WARNING, wenn die
   CREATE-TRIGGER-Grammatik nicht parsed.
-- `R211` (event unklar) → BLOCKER.
-- `R212` (NEU, schema-qualifizierter Trigger-Name) → BLOCKER.
+- `R211` (event unklar) → ACTION_REQUIRED.
+- `R212` (NEU, schema-qualifizierter Trigger-Name) → ACTION_REQUIRED.
 - `R213` (NEU, `UPDATE OF cols` ohne Modell-Support) → WARNING.
 
 ### 5.4 Integration mit bestehender Pipeline
@@ -223,7 +224,7 @@ Inkrement.
 | A | Neuer `SqliteTriggerSqlParser` (token-basiert) mit Unit-Tests fuer alle Trigger-Variants |
 | B | `SqliteSchemaReader.readTriggers` ruft den neuen Parser; alter `SqliteTypeMapping.parseTriggerSql` wird deprecated |
 | C | Round-Trip-Tests: Reverse → File-Write → Reverse mit echtem SQLite-File |
-| D | Live-DB-Integrationstest in `test/integration-sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt identitaet |
+| D | Live-DB-Integrationstest in `test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt Identitaet |
 | E | Closing: §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `done/` |
 
 ---
@@ -254,8 +255,8 @@ Inkrement.
       file-to-file unveraendert.
 - [ ] **Renderbare Ops**: keine neuen; nur Reverse-Read-Hardening.
 - [ ] **Neue Diagnostics**: `R212` (schema-qualified-name
-      block), `R213` (UPDATE OF cols warning). Bestehende
-      `R210` / `R211` werden von WARNING zu BLOCKER, wenn das
+      `ACTION_REQUIRED`-Block), `R213` (UPDATE OF cols warning). Bestehende
+      `R210` / `R211` werden von WARNING zu `ACTION_REQUIRED`, wenn das
       `CREATE TRIGGER`-DDL nicht parsebar ist.
 - [ ] **Up / Down**: irrelevant (Reader-Slice).
 - [ ] **Report-Felder**: `SchemaReadNote` traegt neue Codes.
@@ -299,11 +300,11 @@ Inkrement.
   unterschiedliche Whitespace produziert, gilt der Slice als
   fehlgeschlagen. Mitigation: explizite Round-Trip-Tests in
   Sub-Slice C.
-- **R210/R211 BLOCKER-Upgrade**: bestehende Live-DBs mit
-  unparseable Triggern werden ploetzlich blockiert statt
-  WARNING-akzeptiert. Mitigation: dokumentierte Breaking-Change-
-  Kommunikation im CHANGELOG und optionaler Folge-Slice für ein
-  bewusstes Override-Verhalten.
+- **R210/R211 ACTION_REQUIRED-Upgrade**: bestehende Live-DBs mit
+  unparseable Triggern werden ploetzlich in der Ergebnisbewertung als
+  `ACTION_REQUIRED` markiert statt rein akzeptiert. Mitigation:
+  dokumentierte Breaking-Change-Kommunikation im CHANGELOG und optionaler
+  Folge-Slice für ein bewusstes Override-Verhalten.
 
 ---
 
