@@ -286,19 +286,29 @@ internal object MysqlDiffSequenceOps {
                 MysqlSequenceCanonicityGate.Decision.Proceed -> continue
                 is MysqlSequenceCanonicityGate.Decision.Info -> ctx.info(op, decision.message, decision.code)
                 is MysqlSequenceCanonicityGate.Decision.Block -> {
-                    // The column op may have already emitted its
-                    // own DDL (ADD COLUMN / ALTER COLUMN) earlier
-                    // in `MysqlDiffTableOps`, so calling `ctx.skip`
+                    // The column op may have already emitted ADD
+                    // COLUMN / ALTER COLUMN DDL earlier in
+                    // `MysqlDiffTableOps`, so calling `ctx.skip`
                     // would violate the "rendered ∩ skipped =
-                    // ∅"-invariant on MigrationDdlResult. Surface
-                    // the drift as a blocker + diagnostic instead
-                    // — the trigger statements are not emitted
-                    // (this method returned true before the
-                    // DROP/CREATE TRIGGER pair), and
-                    // `MigrationDdlResult.isBlocked` ensures the
-                    // runner exits non-zero.
-                    ctx.warning(op, decision.message, code = decision.code)
-                    ctx.addBlocker(decision.reason, operationIds = setOf(op.id))
+                    // ∅"-invariant on `MigrationDdlResult`. Emit a
+                    // BLOCKER-severity diagnostic and attach it to
+                    // the `MigrationBlocker` directly so the
+                    // report semantics line up with the
+                    // sequence-op-side path
+                    // (`E124_…` + `MANUAL_ACTION_REQUIRED` +
+                    // BLOCKER-severity diagnostic on the blocker).
+                    val diagnostic = dev.dmigrate.core.diff.migration.DiffDiagnostic(
+                        code = decision.code,
+                        message = decision.message,
+                        severity = dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER,
+                        operationId = op.id,
+                    )
+                    ctx.recordDiagnostic(diagnostic)
+                    ctx.addBlocker(
+                        reason = decision.reason,
+                        operationIds = setOf(op.id),
+                        diagnostics = listOf(diagnostic),
+                    )
                     return true
                 }
             }

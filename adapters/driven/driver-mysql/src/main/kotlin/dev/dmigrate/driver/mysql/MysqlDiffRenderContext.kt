@@ -179,8 +179,29 @@ internal class MysqlDiffRenderContext(
         )
     }
 
-    fun addBlocker(reason: MigrationBlockedReason, operationIds: Set<String>) {
-        blockers += MigrationBlocker(reason = reason, operationIds = operationIds)
+    fun addBlocker(
+        reason: MigrationBlockedReason,
+        operationIds: Set<String>,
+        diagnostics: List<DiffDiagnostic> = emptyList(),
+    ) {
+        blockers += MigrationBlocker(
+            reason = reason,
+            operationIds = operationIds,
+            diagnostics = diagnostics,
+        )
+    }
+
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice F follow-up
+     * (2026-05-20): records a pre-built [DiffDiagnostic] in the
+     * context's diagnostic stream without touching the
+     * rendered/skipped sets. Used by `canonicityBlocksForTrigger`
+     * where the column op has already emitted DDL earlier in
+     * `MysqlDiffTableOps` and `ctx.skip` would violate the
+     * "rendered ∩ skipped = ∅"-invariant on `MigrationDdlResult`.
+     */
+    fun recordDiagnostic(diagnostic: DiffDiagnostic) {
+        diagnostics += diagnostic
     }
 
     fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {

@@ -337,7 +337,17 @@ class MysqlDiffSequenceOpsDriftGateTest : FunSpec({
             ))),
         )
         r.isBlocked shouldBe true
-        r.diagnostics.any { it.code == MysqlSequenceCanonicityGate.DRIFT_TRIGGER_CODE } shouldBe true
+        // The drift diagnostic is BLOCKER-severity and travels both
+        // in the top-level diagnostics list AND attached to the
+        // MigrationBlocker — matching the sequence-op-side path so
+        // the report semantics line up.
+        val driftDiagnostic = r.diagnostics.single { it.code == MysqlSequenceCanonicityGate.DRIFT_TRIGGER_CODE }
+        driftDiagnostic.severity shouldBe dev.dmigrate.core.diff.migration.DiffDiagnostic.Severity.BLOCKER
+        driftDiagnostic.operationId shouldBe addColumnOp.id
+        val blocker = r.blockers.single { it.reason == MigrationBlockedReason.MANUAL_ACTION_REQUIRED }
+        blocker.diagnostics.any {
+            it.code == MysqlSequenceCanonicityGate.DRIFT_TRIGGER_CODE
+        } shouldBe true
         // No CREATE TRIGGER was emitted for the blocked column.
         r.statements.none {
             it.sql.contains("CREATE TRIGGER") && it.operationIds.contains(addColumnOp.id)

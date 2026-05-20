@@ -19,6 +19,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
         blockers: List<SchemaMigrateBlockerView> = emptyList(),
         diagnostics: List<SchemaMigrateDiagnosticView> = emptyList(),
         sqliteCastPreflights: List<SchemaMigrateSqliteCastPreflightView> = emptyList(),
+        mysqlSequenceCanonicity: List<SchemaMigrateMysqlSequenceCanonicityView> = emptyList(),
         bodyDisplay: RoutineBodyDisplay = RoutineBodyDisplay.SCRUBBED_ONLY,
     ) = SchemaMigrateReport(
         status = "ok",
@@ -52,6 +53,7 @@ class SchemaMigrateReportRendererTest : FunSpec({
             ),
         ),
         sqliteCastPreflights = sqliteCastPreflights,
+        mysqlSequenceCanonicity = mysqlSequenceCanonicity,
         summary = SchemaMigrateSummary(
             operationsTotal = 1,
             operationsRendered = 1,
@@ -540,5 +542,97 @@ class SchemaMigrateReportRendererTest : FunSpec({
         out shouldContain "  status: DISABLED"
         out shouldContain "  version: body-embed.v1"
         out shouldContain "  source: NONE"
+    }
+
+    // ── mysqlSequenceCanonicity (E.3 Sub-Slice F follow-up) ─────────
+
+    fun canonicityView(
+        operationId: String = "op-seq",
+        kind: String = "SEQUENCE_ROW",
+        objectName: String = "order_seq",
+        status: String = "DRIFT",
+        driftField: String? = "increment_by",
+        expected: String? = "1",
+        actual: String? = "5",
+        problem: String? = null,
+    ) = SchemaMigrateMysqlSequenceCanonicityView(
+        operationId = operationId,
+        dialect = "mysql",
+        kind = kind,
+        objectName = objectName,
+        status = status,
+        sqlHash = "h",
+        driftField = driftField,
+        expected = expected,
+        actual = actual,
+        problem = problem,
+    )
+
+    test("JSON renderer emits mysqlSequenceCanonicity key (empty array when absent)") {
+        val out = SchemaMigrateReportRenderer.render(report(), "json")
+        out shouldContain "\"mysqlSequenceCanonicity\": []"
+    }
+
+    test("JSON renderer emits mysqlSequenceCanonicity details including driftField / expected / actual") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(mysqlSequenceCanonicity = listOf(canonicityView())),
+            "json",
+        )
+        out shouldContain "\"mysqlSequenceCanonicity\": ["
+        out shouldContain "\"operationId\":\"op-seq\""
+        out shouldContain "\"kind\":\"SEQUENCE_ROW\""
+        out shouldContain "\"objectName\":\"order_seq\""
+        out shouldContain "\"status\":\"DRIFT\""
+        out shouldContain "\"driftField\":\"increment_by\""
+        out shouldContain "\"expected\":\"1\""
+        out shouldContain "\"actual\":\"5\""
+
+        val root = JsonParser.parseString(out).asJsonObject
+        val view = root.getAsJsonArray("mysqlSequenceCanonicity").single().asJsonObject
+        view["status"].asString shouldBe "DRIFT"
+        view["driftField"].asString shouldBe "increment_by"
+    }
+
+    test("JSON renderer keeps nullable preview fields as JSON null when absent") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(mysqlSequenceCanonicity = listOf(canonicityView(
+                status = "CANONICAL",
+                driftField = null, expected = null, actual = null,
+            ))),
+            "json",
+        )
+        out shouldContain "\"driftField\":null"
+        out shouldContain "\"expected\":null"
+        out shouldContain "\"actual\":null"
+    }
+
+    test("YAML renderer emits mysqlSequenceCanonicity block with per-declaration fields") {
+        val out = SchemaMigrateReportRenderer.render(
+            report(mysqlSequenceCanonicity = listOf(canonicityView(
+                kind = "SUPPORT_TRIGGER",
+                objectName = "dmg_seq_orders_id_abc_bi",
+                status = "DRIFT",
+                driftField = "sequence_reference",
+                expected = "dmg_nextval('order_seq')",
+                actual = "dmg_nextval...",
+            ))),
+            "yaml",
+        )
+        out shouldContain "mysqlSequenceCanonicity:\n  - operationId: op-seq"
+        out shouldContain "    kind: SUPPORT_TRIGGER"
+        out shouldContain "    objectName: dmg_seq_orders_id_abc_bi"
+        out shouldContain "    status: DRIFT"
+        out shouldContain "    driftField: sequence_reference"
+        // Parses cleanly as YAML.
+        val parsed = parseYaml(out)
+        @Suppress("UNCHECKED_CAST")
+        val list = parsed["mysqlSequenceCanonicity"] as List<Map<*, *>>
+        list.single()["status"] shouldBe "DRIFT"
+        list.single()["driftField"] shouldBe "sequence_reference"
+    }
+
+    test("YAML renderer emits empty mysqlSequenceCanonicity as []") {
+        val out = SchemaMigrateReportRenderer.render(report(), "yaml")
+        out shouldContain "mysqlSequenceCanonicity: []"
     }
 })

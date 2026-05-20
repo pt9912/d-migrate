@@ -26,7 +26,18 @@ internal object SchemaMigrateReportRenderer {
         appendField(sb, "diagnostics", renderDiagnostics(report.diagnostics), indent = 1)
         appendField(sb, "materializedViews", renderMaterializedViews(report.materializedViews), indent = 1)
         appendField(sb, "overlays", renderOverlays(report.overlays), indent = 1)
-        appendField(sb, "sqliteCastPreflights", renderSqliteCastPreflights(report.sqliteCastPreflights), indent = 1)
+        appendField(
+            sb,
+            "sqliteCastPreflights",
+            SchemaMigratePreflightRenderers.renderSqliteCastPreflights(report.sqliteCastPreflights),
+            indent = 1,
+        )
+        appendField(
+            sb,
+            "mysqlSequenceCanonicity",
+            SchemaMigratePreflightRenderers.renderMysqlSequenceCanonicity(report.mysqlSequenceCanonicity),
+            indent = 1,
+        )
         appendField(sb, "summary", renderSummary(report.summary), indent = 1)
         appendField(sb, "bodyDisplay", jsonString(report.bodyDisplay.name), indent = 1)
         appendField(sb, "bodyEmbedding", renderBodyEmbedding(report.bodyEmbedding), indent = 1)
@@ -104,6 +115,20 @@ internal object SchemaMigrateReportRenderer {
             sb.append("    failingRows: ").append(yamlOptional(preflight.failingRows?.toString())).append('\n')
             sb.append("    sampleRowIds: ").append(yamlList(preflight.sampleRowIds)).append('\n')
             sb.append("    problem: ").append(yamlOptional(preflight.problem)).append('\n')
+        }
+        sb.append("mysqlSequenceCanonicity:")
+            .append(if (report.mysqlSequenceCanonicity.isEmpty()) " []\n" else "\n")
+        for (declaration in report.mysqlSequenceCanonicity) {
+            sb.append("  - operationId: ").append(yamlString(declaration.operationId)).append('\n')
+            sb.append("    dialect: ").append(declaration.dialect).append('\n')
+            sb.append("    kind: ").append(declaration.kind).append('\n')
+            sb.append("    objectName: ").append(yamlString(declaration.objectName)).append('\n')
+            sb.append("    status: ").append(declaration.status).append('\n')
+            sb.append("    sqlHash: ").append(yamlString(declaration.sqlHash)).append('\n')
+            sb.append("    driftField: ").append(yamlOptional(declaration.driftField)).append('\n')
+            sb.append("    expected: ").append(yamlOptional(declaration.expected)).append('\n')
+            sb.append("    actual: ").append(yamlOptional(declaration.actual)).append('\n')
+            sb.append("    problem: ").append(yamlOptional(declaration.problem)).append('\n')
         }
         report.execution?.let {
             sb.append("execution:\n")
@@ -215,21 +240,9 @@ internal object SchemaMigrateReportRenderer {
                 "\"severity\":${jsonString(overlay.severity)}}"
         }
 
-    private fun renderSqliteCastPreflights(preflights: List<SchemaMigrateSqliteCastPreflightView>): String =
-        preflights.joinToString(prefix = "[", postfix = "]", separator = ",") { preflight ->
-            "{\"operationId\":${jsonString(preflight.operationId)}," +
-                "\"dialect\":${jsonString(preflight.dialect)}," +
-                "\"table\":${jsonString(preflight.table)}," +
-                "\"column\":${jsonString(preflight.column)}," +
-                "\"sourceType\":${jsonString(preflight.sourceType)}," +
-                "\"targetType\":${jsonString(preflight.targetType)}," +
-                "\"status\":${jsonString(preflight.status)}," +
-                "\"sqlHash\":${jsonString(preflight.sqlHash)}," +
-                "\"totalRows\":${preflight.totalRows ?: "null"}," +
-                "\"failingRows\":${preflight.failingRows ?: "null"}," +
-                "\"sampleRowIds\":${jsonStringArray(preflight.sampleRowIds)}," +
-                "\"problem\":${jsonOptString(preflight.problem)}}"
-        }
+    // `renderSqliteCastPreflights` + `renderMysqlSequenceCanonicity`
+    // live in `SchemaMigratePreflightRenderers` (split out to keep
+    // this object under Detekt's TooManyFunctions budget).
 
     private fun renderSummary(s: SchemaMigrateSummary): String = buildString {
         append('{')
