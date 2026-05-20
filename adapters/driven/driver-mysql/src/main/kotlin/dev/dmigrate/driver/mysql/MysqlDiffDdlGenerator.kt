@@ -91,8 +91,31 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.OTHER -> renderOtherOp(op, ctx)
             OpCategory.ROUTINE -> renderRoutineOp(op, ctx)
             OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
+            OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
+        }
+    }
+
+    /**
+     * E.3 MySQL Sequence-Diff Sub-Slice B: dispatch to
+     * [MysqlDiffSequenceOps] for the four sequence subtypes.
+     * `RenameSequence` lands here only as a defensive regression
+     * path — once Sub-Slice C upgrades
+     * `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` from
+     * `Blocked` to `DropCreateFallback`, the Mapper emits
+     * `DropSequence + CreateSequence` with `RenameProvenance` and a
+     * direct `RenameSequence` op should not reach this renderer.
+     */
+    private fun renderSequenceOp(op: DiffOperation, ctx: MysqlDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateSequence -> MysqlDiffSequenceOps.renderCreateSequence(op, ctx)
+            is DiffOperation.AlterSequence -> MysqlDiffSequenceOps.renderAlterSequence(op, ctx)
+            is DiffOperation.DropSequence -> MysqlDiffSequenceOps.renderDropSequence(op, ctx)
+            is DiffOperation.RenameSequence -> MysqlDiffSequenceOps.renderRenameSequence(op, ctx)
+            else -> error(
+                "Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it",
+            )
         }
     }
 
@@ -148,25 +171,32 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.DropTrigger,
         -> OpCategory.TRIGGER
 
-        // F.4 Sub-Slice B: `MysqlObjectRenamePolicy` returns
-        // `DropCreateFallback` for triggers / functions / procedures
-        // (MySQL has no native `ALTER ... RENAME` grammar) and
-        // `Blocked` for sequences (out of E.3 scope). The Mapper
-        // therefore emits Drop+Create+RenameProvenance or a blocker —
-        // a `Rename{Trigger,Function,Procedure,Sequence}` op should
-        // never reach this renderer. The defensive `UNSUPPORTED`
-        // routing exists so a future planner regression that lets
-        // such an op through gets surfaced as
-        // `DIALECT_UNSUPPORTED_OPERATION` instead of being silently
-        // emitted as garbled SQL.
-        is DiffOperation.AlterCustomType,
+        // E.3 MySQL Sequence-Diff Sub-Slice B: the four sequence
+        // subtypes get their own category. `RenameSequence` is
+        // listed alongside Create / Alter / Drop even though
+        // `MysqlObjectRenamePolicy` currently still produces
+        // `Blocked` — once Sub-Slice C upgrades the policy to
+        // `DropCreateFallback`, a direct `RenameSequence` should not
+        // reach the renderer, but the defensive path stays.
         is DiffOperation.CreateSequence,
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
+        is DiffOperation.RenameSequence,
+        -> OpCategory.SEQUENCE
+
+        // F.4 Sub-Slice B: `MysqlObjectRenamePolicy` returns
+        // `DropCreateFallback` for triggers / functions / procedures
+        // (MySQL has no native `ALTER ... RENAME` grammar). The
+        // Mapper emits Drop+Create+RenameProvenance — a
+        // `Rename{Trigger,Function,Procedure}` op should never reach
+        // this renderer. The defensive `UNSUPPORTED` routing exists
+        // so a future planner regression that lets such an op
+        // through gets surfaced as `DIALECT_UNSUPPORTED_OPERATION`
+        // instead of being silently emitted as garbled SQL.
+        is DiffOperation.AlterCustomType,
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
-        is DiffOperation.RenameSequence,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -247,7 +277,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         ctx.addBlocker(MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION, operationIds = setOf(op.id))
     }
 
-    private enum class OpCategory { TABLE, OTHER, ROUTINE, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }
+    private enum class OpCategory { TABLE, OTHER, ROUTINE, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, UNSUPPORTED }
 
     private fun isRawSqlConstraintMissingExpression(op: DiffOperation.DropConstraint): Boolean =
         op.constraint.type == ConstraintType.CHECK &&

@@ -5,6 +5,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.IndexDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
@@ -159,6 +160,48 @@ internal class MysqlDiffRenderContext(
         val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
         val columns = schema?.tables?.get(table)?.columns.orEmpty()
         return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+    }
+
+    /**
+     * E.3 MySQL Sequence-Diff Sub-Slice B: bootstrap-once tracker for
+     * `dmg_sequences` + `dmg_nextval` / `dmg_setval` infrastructure
+     * emission. Lives on the per-direction render context so UP and
+     * DOWN passes each get a clean latch.
+     */
+    val sequenceMigration: MysqlSequenceMigrationContext = MysqlSequenceMigrationContext()
+
+    /**
+     * E.3 MySQL Sequence-Diff Sub-Slice B: discover all canonical
+     * support-trigger names that target [sequenceName] in the
+     * source-side schema for the current direction.
+     *
+     * - UP direction's source is `currentSchema` — DropSequence's UP
+     *   path removes triggers that exist in the source schema.
+     * - DOWN direction's source is `desiredSchema` — CreateSequence's
+     *   DOWN path (inverse DELETE) walks the post-Up state.
+     *
+     * Returns an empty list if the schema is unknown or no column
+     * carries a `SequenceNextVal` default pointing at the given
+     * sequence. Trigger names are derived deterministically via
+     * [MysqlSequenceNaming.triggerName] so re-running this against
+     * the same schema state always yields the same set.
+     */
+    fun triggersForSequence(sequenceName: String): List<MysqlSequenceTriggerSpec> {
+        val schema = if (direction == MysqlRenderDirection.UP) currentSchema else desiredSchema
+        val tables = schema?.tables ?: return emptyList()
+        val result = mutableListOf<MysqlSequenceTriggerSpec>()
+        for ((tableName, table) in tables) {
+            for ((columnName, column) in table.columns) {
+                val def = column.default as? DefaultValue.SequenceNextVal ?: continue
+                if (def.sequenceName != sequenceName) continue
+                result += MysqlSequenceTriggerSpec(
+                    tableName = tableName,
+                    columnName = columnName,
+                    sequenceName = sequenceName,
+                )
+            }
+        }
+        return result
     }
 
     fun toResult(diff: DiffResult): MigrationDdlResult {

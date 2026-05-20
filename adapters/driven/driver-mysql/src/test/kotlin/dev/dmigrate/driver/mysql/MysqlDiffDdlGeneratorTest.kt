@@ -322,10 +322,19 @@ class MysqlDiffDdlGeneratorTest : FunSpec({
         drop.diagnostics.any { it.code == "MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT" } shouldBe true
     }
 
-    test("Out-of-matrix operations (Sequence) yield DIALECT_UNSUPPORTED_OPERATION") {
+    test("Sequence ops without helper_table mode block with E056 / MANUAL_ACTION_REQUIRED") {
+        // E.3 Sub-Slice B: sequence diff renderer requires
+        // `--mysql-named-sequences helper_table`. The default
+        // `ACTION_REQUIRED` mode blocks at the renderer with E056
+        // → MANUAL_ACTION_REQUIRED (no SQL emitted).
         val seq = dev.dmigrate.core.model.SequenceDefinition(start = 1)
         val r = planAndUp(SchemaDiff(sequencesAdded = listOf(dev.dmigrate.core.diff.NamedSequence("s", seq))))
         r.isBlocked shouldBe true
+        r.statements.shouldBeEmpty()
+        r.diagnostics.any { it.code == "E056" } shouldBe true
+        r.blockers.any {
+            it.reason == dev.dmigrate.driver.migration.MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        } shouldBe true
     }
 
     test("Empty diff yields empty result without blockers") {
