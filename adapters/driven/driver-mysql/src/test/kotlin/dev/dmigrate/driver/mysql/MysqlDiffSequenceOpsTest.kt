@@ -93,6 +93,25 @@ class MysqlDiffSequenceOpsTest : FunSpec({
             "DELETE FROM `dmg_sequences` WHERE `name` = 'order_seq';"
     }
 
+    test("Diff renderer emits delimiterfreie routines + triggers (Sub-Slice H)") {
+        // Sub-Slice H: `schema migrate --execute` submits each
+        // `MigrationDdlStatement.sql` directly to JDBC, which has
+        // no DELIMITER concept. None of the emitted statements
+        // may contain `DELIMITER //` or `DELIMITER ;` substrings —
+        // the diff path must use the delimiterfreien templates.
+        val seq = SequenceDefinition(start = 1L)
+        val diff = SchemaDiff(sequencesAdded = listOf(NamedSequence("order_seq", seq)))
+        val r = planAndUp(diff, desired = schemaOf(mapOf("order_seq" to seq)))
+        r.isBlocked shouldBe false
+        val sqls = r.statements.map { it.sql }
+        sqls.none { it.contains("DELIMITER //") } shouldBe true
+        sqls.none { it.contains("DELIMITER ;") } shouldBe true
+        // Routine bodies still appear as single statements that JDBC
+        // submits in one go (multi-statement BEGIN…END is a single
+        // logical MySQL statement).
+        sqls.any { it.startsWith("CREATE FUNCTION `dmg_nextval`") && it.endsWith("END") } shouldBe true
+    }
+
     test("Two CreateSequence ops in one migration emit the bootstrap exactly once") {
         val a = SequenceDefinition(start = 1L)
         val b = SequenceDefinition(start = 1L)

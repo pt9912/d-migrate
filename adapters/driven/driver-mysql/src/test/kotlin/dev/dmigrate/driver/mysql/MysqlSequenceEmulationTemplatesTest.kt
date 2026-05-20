@@ -66,9 +66,14 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
             "DROP FUNCTION IF EXISTS `dmg_setval`;"
     }
 
-    test("nextvalRoutineSql wraps the increment-and-return body in DELIMITER //") {
+    test("nextvalRoutineSql renders the delimiterfreien BEGIN…END body (Sub-Slice H)") {
+        // Sub-Slice H: the template no longer wraps with
+        // DELIMITER // — that wrapping is the DDL-Generator-pipeline's
+        // responsibility (via `wrapWithDelimiter`) for mysql-CLI
+        // artefacts. The Diff-renderer / JDBC path submits the body
+        // as-is; intermediate `;` characters are part of the routine
+        // body, not separate statements.
         val expected = """
-            DELIMITER //
             CREATE FUNCTION `dmg_nextval`(seq_name VARCHAR(255))
             RETURNS BIGINT
             DETERMINISTIC
@@ -79,15 +84,13 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
                 UPDATE `dmg_sequences` SET `next_value` = `next_value` + `increment_by` WHERE `name` = seq_name;
                 SELECT `next_value` - `increment_by` INTO val FROM `dmg_sequences` WHERE `name` = seq_name;
                 RETURN val;
-            END //
-            DELIMITER ;
+            END
         """.trimIndent()
         normalise(MysqlSequenceEmulationTemplates.nextvalRoutineSql(::backtickQuote)) shouldBe expected
     }
 
-    test("setvalRoutineSql sets next_value to the operator-supplied argument") {
+    test("setvalRoutineSql renders the delimiterfreien BEGIN…END body (Sub-Slice H)") {
         val expected = """
-            DELIMITER //
             CREATE FUNCTION `dmg_setval`(seq_name VARCHAR(255), new_value BIGINT)
             RETURNS BIGINT
             DETERMINISTIC
@@ -96,13 +99,21 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
                 /* d-migrate:mysql-sequence-v1 object=setval */
                 UPDATE `dmg_sequences` SET `next_value` = new_value WHERE `name` = seq_name;
                 RETURN new_value;
-            END //
-            DELIMITER ;
+            END
         """.trimIndent()
         normalise(MysqlSequenceEmulationTemplates.setvalRoutineSql(::backtickQuote)) shouldBe expected
     }
 
-    test("sequenceTriggerSql emits BEFORE INSERT body with marker comment + NULL guard") {
+    test("wrapWithDelimiter produces the mysql-CLI artefact form (Sub-Slice H)") {
+        val body = MysqlSequenceEmulationTemplates.nextvalRoutineSql(::backtickQuote)
+        val wrapped = MysqlSequenceEmulationTemplates.wrapWithDelimiter(body)
+        wrapped.startsWith("DELIMITER //") shouldBe true
+        wrapped.endsWith("DELIMITER ;") shouldBe true
+        wrapped.contains("END //\n") shouldBe true
+        wrapped.contains("CREATE FUNCTION `dmg_nextval`") shouldBe true
+    }
+
+    test("sequenceTriggerSql emits delimiterfreien BEFORE INSERT body (Sub-Slice H)") {
         val spec = MysqlSequenceTriggerSpec(
             tableName = "orders",
             columnName = "id",
@@ -110,7 +121,6 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
         )
         val triggerName = MysqlSequenceNaming.triggerName("orders", "id")
         val expected = """
-            DELIMITER //
             CREATE TRIGGER `$triggerName`
                 BEFORE INSERT ON `orders`
                 FOR EACH ROW
@@ -119,8 +129,7 @@ class MysqlSequenceEmulationTemplatesTest : FunSpec({
                 IF NEW.`id` IS NULL THEN
                     SET NEW.`id` = `dmg_nextval`('order_seq');
                 END IF;
-            END //
-            DELIMITER ;
+            END
         """.trimIndent()
         normalise(
             MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, ::backtickQuote),

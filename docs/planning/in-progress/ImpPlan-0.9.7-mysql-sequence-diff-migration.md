@@ -2,15 +2,27 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Folge-Slice (MySQL diff-basierter Sequence-Renderer)
-> **Status**: ✅ done (2026-05-20). Sub-Slices A ✅ (Template-
->           Extraktion, `edc1fb9d` + Review `4336284d`) + B ✅
->           (Diff-Render-Pfade, `28598cde` + Review `7c2b8bec`) +
->           C ✅ (RenameSequence-Policy + Defensive, `d3724a33` +
->           Review `93aa3e40`) + D ✅ (SequenceDefaultReprojector-
->           Integration, `0bda4f15`) + E (Closing iter 1,
->           `c7e92bf4` + `1431fb24`) + F ✅ (Bootstrap-Idempotenz,
->           Column-Default-Renderer, start-only-Skip,
->           §10.1-Korrektur, `3bea97e7`) + G ✅ (Closing iter 2).
+> **Status**: in progress 2026-05-20 (Sub-Slice H follow-up).
+>           Sub-Slices A ✅ + B ✅ + C ✅ + D ✅ + E (iter 1,
+>           `c7e92bf4` + `1431fb24`) + F ✅ (`3bea97e7`) + G (iter
+>           2, `aba3392f`) — closing iter 2 wurde re-opened, weil
+>           eine weitere Review (post-`aba3392f`) zwei zusätzliche
+>           Findings aufdeckte: (1) DELIMITER `//` in der
+>           Diff-Renderer-Output verletzt den
+>           `MysqlDiffRoutineOps`-Vertrag ("delimiterfrei") und
+>           bricht `schema migrate --execute` gegen JDBC; (2) der
+>           reduzierte Scope (Drift-Check als Folge-Slice) ist
+>           nicht ausreichend abgegrenzt. Sub-Slice H + iter 3
+>           Closing offen.
+> **Scope-Hinweis**: Der ursprüngliche §3.1-Scope schloss einen
+>           Live-DB-Drift-Check gegen vorhandene `dmg_sequences`-
+>           Zeilen + Support-Objekte ein. Dieser ist in einen
+>           eigenen Folge-Plan ausgegliedert
+>           (`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
+>           erstellt unter Sub-Slice H). "Done" bezieht sich auf
+>           den verbleibenden Scope: Bootstrap-Idempotenz statt
+>           Live-Drift-Validation, Mode-Gate (`E056`) statt
+>           Drift-Block (`E124`).
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  Vollständige MySQL-Sequence-Emulation
 >                  (`docs/planning/done/mysql-sequence-emulation-plan.md`) ✅
@@ -397,11 +409,78 @@ Tests:
 - Mode-Gate für Column-Default-Pfad: bei !HELPER_TABLE → E056
   analog zum Sequence-Op-Pfad.
 
-### Sub-Slice G — Closing-Iteration 2 ✅ (2026-05-20)
+### Sub-Slice G — Closing-Iteration 2 (`aba3392f`, re-opened)
 
 - §E.3-DoD im master plan + Roadmap auf wirklich done setzen.
 - CHANGELOG-Eintrag erweitern um Sub-Slice F.
 - `spec/cli-spec.md` Column-Default-Trigger-Pfad ergänzen.
+- Plan-Doc zurück nach `done/`.
+
+Anmerkung: Die Closing-iter-2-Review (post-`aba3392f`) deckte
+zwei zusätzliche Findings auf — siehe Sub-Slice H.
+
+### Sub-Slice H — DELIMITER + Scope-Korrektur *(offen, naechster Schritt)*
+
+Adressiert die zwei Findings der Closing-iter-2-Review:
+
+1. **DELIMITER `//` im Diff-Pfad bricht `schema migrate --execute`**
+   (high): `MysqlSequenceEmulationTemplates.nextvalRoutineSql` /
+   `setvalRoutineSql` / `sequenceTriggerSql` umschließen ihren
+   Body mit `DELIMITER //\n…END //\nDELIMITER ;`. Sowohl der
+   DDL-Generator-Pfad (`MysqlSequenceDdlSupport.generateSupport*`)
+   als auch der Diff-Pfad (`MysqlDiffSequenceOps.emitBootstrap*` /
+   `emitSupportTriggerForColumn`) übernehmen diesen String 1:1.
+   `DELIMITER` ist aber kein Server-SQL, sondern eine
+   MySQL-CLI-Client-Direktive — JDBC wirft `SQLException` beim
+   Submit. Das widerspricht dem etablierten
+   `MysqlDiffRoutineOps`-Vertrag (Routine-Diff-Artefakte sind
+   delimiterfrei). Folge: `schema migrate --execute` schlägt fehl
+   sobald irgendein Sequence-Bootstrap oder Support-Trigger
+   emittiert wird. Render-Tests bleiben grün, weil sie nur die
+   String-Form prüfen.
+
+   Fix:
+   - Templates produzieren delimiterfreien Body (`END` statt
+     `END //…DELIMITER ;`); die DELIMITER-Wrappung wandert in
+     einen neuen Helper `wrapWithDelimiter(body)` an
+     `MysqlSequenceEmulationTemplates`.
+   - DDL-Generator-Pfad (`generateSupportFunctions` /
+     `generateSupportTriggers` in `MysqlSequenceDdlSupport`)
+     ruft `wrapWithDelimiter` explizit, damit die `--target
+     mysql --output file.sql`-Artefakte für die mysql-CLI
+     ausführbar bleiben (Fixtures `full-featured.mysql.helper-
+     table.*.sql` bleiben mit DELIMITER drin).
+   - Diff-Pfad (`emitBootstrapIfNeeded` /
+     `emitSupportTriggerForColumn`) nutzt die delimiterfreien
+     Templates direkt; JDBC submittiert das BEGIN…END-Body
+     als einzelnes Statement.
+   - Templates-Snapshot-Test + Diff-Tests entsprechend
+     aktualisiert (DELIMITER-Substrings nicht mehr im Diff-
+     Output erwartet).
+
+2. **Scope-Reduktion explizit machen** (medium): §3.1 listete
+   einen Live-DB-Drift-Check gegen vorhandene `dmg_sequences`-
+   Zeilen, `dmg_*`-Support-Objekte und Trigger-Body-Marker
+   ein. §10.1 wurde in Sub-Slice F auf "Bootstrap-Idempotenz
+   + Folge-Slice" gesetzt, aber der Plan-Doc-Status sagt seit
+   Sub-Slice G "✅ done". Beide Aussagen sind nur dann
+   konsistent, wenn der Scope nachträglich reduziert wurde —
+   das wird hier explizit gemacht:
+   - Neuer Folge-Plan-Stub
+     `docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
+     mit Scope (E124-Probe-Adapter, Drift-Check pro Feld,
+     Trigger-Body-Marker-Validation), §10.1 verlinkt darauf.
+   - Status-Header zeigt explizit, dass "done" sich auf den
+     reduzierten Scope bezieht.
+   - §11 Commit-Tabelle ergänzt um Sub-Slice H + erneutes
+     Closing.
+
+### Sub-Slice I — Closing-Iteration 3 *(nach Sub-Slice H)*
+
+- Plan-Doc-Status auf done (reduzierter Scope) setzen.
+- CHANGELOG erweitern um Sub-Slice H.
+- `spec/cli-spec.md` MySQL-Sequence-Diff-Block: DELIMITER-
+  Korrektur dokumentieren.
 - Plan-Doc zurück nach `done/`.
 
 ---
@@ -574,9 +653,11 @@ ein Drift-Check gegen die fachlichen Felder (`increment`, `minValue`,
 kein harter Vergleichsanker. Bei voller Konsistenz Trigger-Reconcile;
 sonst `E124`.
 
-Hinweis: Sub-Slice F dokumentiert den Drift-Check explizit als
-Out-of-Scope; §7 + §8 markieren die zugehörigen Akzeptanzkriterien
-als deferred.
+Plan-Doc-Stub:
+`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
+(Sub-Slice H, 2026-05-20). Sub-Slice H des aktuellen Plans
+dokumentiert den Scope-Cut explizit; §7 + §8 markieren die
+zugehörigen Akzeptanzkriterien als deferred.
 
 ### 10.2 `MysqlSequenceDdlSupport`-Guard im Diff-Pfad
 

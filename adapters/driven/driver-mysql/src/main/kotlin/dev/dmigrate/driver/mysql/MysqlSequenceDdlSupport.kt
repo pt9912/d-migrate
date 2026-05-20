@@ -153,10 +153,25 @@ internal class MysqlSequenceDdlSupport(
         // second. The DROP is a separate DdlStatement so the
         // DDL-Generator's rollback parser still recognises the
         // routine name from the `DELIMITER //`-wrapped CREATE.
+        //
+        // Sub-Slice H: the routine bodies the templates return are
+        // delimiterfrei (so the Diff-Renderer / JDBC path can
+        // submit them directly). The DDL-Generator output is for
+        // `schema generate --output file.sql` consumption by the
+        // mysql CLI, which needs the `DELIMITER //` wrapper —
+        // [wrapWithDelimiter] applies it.
         statements += DdlStatement(MysqlSequenceEmulationTemplates.dropNextvalRoutineSql(quoteIdentifier))
-        statements += DdlStatement(MysqlSequenceEmulationTemplates.nextvalRoutineSql(quoteIdentifier))
+        statements += DdlStatement(
+            MysqlSequenceEmulationTemplates.wrapWithDelimiter(
+                MysqlSequenceEmulationTemplates.nextvalRoutineSql(quoteIdentifier),
+            ),
+        )
         statements += DdlStatement(MysqlSequenceEmulationTemplates.dropSetvalRoutineSql(quoteIdentifier))
-        statements += DdlStatement(MysqlSequenceEmulationTemplates.setvalRoutineSql(quoteIdentifier))
+        statements += DdlStatement(
+            MysqlSequenceEmulationTemplates.wrapWithDelimiter(
+                MysqlSequenceEmulationTemplates.setvalRoutineSql(quoteIdentifier),
+            ),
+        )
         return statements
     }
 
@@ -185,8 +200,12 @@ internal class MysqlSequenceDdlSupport(
         for (spec in pendingSupportTriggers) {
             val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
             if (triggerName in triggers) continue
+            // Sub-Slice H: wrap the delimiterfreien Trigger-Body
+            // with DELIMITER //…DELIMITER ; for mysql-CLI consumption.
             statements += DdlStatement(
-                MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, quoteIdentifier),
+                MysqlSequenceEmulationTemplates.wrapWithDelimiter(
+                    MysqlSequenceEmulationTemplates.sequenceTriggerSql(spec, triggerName, quoteIdentifier),
+                ),
             )
         }
         return statements

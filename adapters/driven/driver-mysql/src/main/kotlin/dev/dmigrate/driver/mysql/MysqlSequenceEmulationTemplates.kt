@@ -111,22 +111,20 @@ internal object MysqlSequenceEmulationTemplates {
 
     /**
      * `CREATE FUNCTION dmg_nextval` — atomically increments the row
-     * and returns the previous value. Emitted with the
-     * `DELIMITER //` wrapper because the multi-statement body needs
-     * an explicit statement separator that MySQL's client honours.
+     * and returns the previous value. Produces a **delimiterfreien
+     * Body**: the multi-statement BEGIN…END block is one logical
+     * MySQL statement that the JDBC driver submits as-is (the
+     * intermediate `;` characters are part of the routine body, not
+     * separate statements). For file-output use cases that need a
+     * mysql-CLI-compatible artefact, wrap with [wrapWithDelimiter].
      *
      * Idempotency note: the bootstrap caller emits a separate
-     * `DROP FUNCTION IF EXISTS …;` statement BEFORE this one, so a
-     * migration against a DB that already has the routine drops and
-     * re-creates it cleanly. The drop is intentionally NOT included
-     * inside the `DELIMITER //`-wrapped string here because the
-     * DDL-Generator's rollback-pass parser keys off
-     * `startsWith("DELIMITER //")` to extract the function name
-     * and build the inverse `DROP FUNCTION`. See
-     * [dropNextvalRoutineSql] for the matching drop statement.
+     * `DROP FUNCTION IF EXISTS …;` statement BEFORE this one (see
+     * [dropNextvalRoutineSql]); the drop stays outside the body so
+     * the DDL-Generator's rollback-pass parser can still extract
+     * the function name from the wrapped CLI form.
      */
     fun nextvalRoutineSql(quoteIdentifier: (String) -> String): String = buildString {
-        appendLine("DELIMITER //")
         appendLine("CREATE FUNCTION ${quoteIdentifier(MysqlSequenceNaming.NEXTVAL_ROUTINE)}(seq_name VARCHAR(255))")
         appendLine("RETURNS BIGINT")
         appendLine("DETERMINISTIC")
@@ -146,19 +144,16 @@ internal object MysqlSequenceEmulationTemplates {
                 "WHERE ${quoteIdentifier("name")} = seq_name;"
         )
         appendLine("    RETURN val;")
-        appendLine("END //")
-        append("DELIMITER ;")
+        append("END")
     }
 
     /**
      * `CREATE FUNCTION dmg_setval` — sets and returns a new value
-     * (PostgreSQL-`setval` semantics). Same delimiter convention as
-     * [nextvalRoutineSql]; the matching `DROP FUNCTION IF EXISTS`
-     * is emitted as a separate statement by the bootstrap caller
-     * (see [dropSetvalRoutineSql]).
+     * (PostgreSQL-`setval` semantics). Same delimiterfreier Body
+     * shape as [nextvalRoutineSql]; wrap with [wrapWithDelimiter]
+     * for CLI artefacts.
      */
     fun setvalRoutineSql(quoteIdentifier: (String) -> String): String = buildString {
-        appendLine("DELIMITER //")
         appendLine(
             "CREATE FUNCTION ${quoteIdentifier(MysqlSequenceNaming.SETVAL_ROUTINE)}" +
                 "(seq_name VARCHAR(255), new_value BIGINT)"
@@ -173,7 +168,22 @@ internal object MysqlSequenceEmulationTemplates {
                 "SET ${quoteIdentifier("next_value")} = new_value WHERE ${quoteIdentifier("name")} = seq_name;"
         )
         appendLine("    RETURN new_value;")
-        appendLine("END //")
+        append("END")
+    }
+
+    /**
+     * Wraps a delimiterfreien routine / trigger body
+     * ([nextvalRoutineSql], [setvalRoutineSql], [sequenceTriggerSql])
+     * with `DELIMITER //` and `DELIMITER ;` for mysql-CLI consumption.
+     * The diff renderer path does NOT call this — JDBC submits the
+     * body directly as one statement. The DDL-Generator pipeline
+     * (`MysqlSequenceDdlSupport.generateSupport*`) calls this so the
+     * `schema generate --output file.sql` artefact stays mysql-CLI-
+     * executable.
+     */
+    fun wrapWithDelimiter(body: String): String = buildString {
+        appendLine("DELIMITER //")
+        appendLine("$body //")
         append("DELIMITER ;")
     }
 
@@ -194,7 +204,6 @@ internal object MysqlSequenceEmulationTemplates {
         quoteIdentifier: (String) -> String,
     ): String = buildString {
         val sequenceLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(spec.sequenceName)
-        appendLine("DELIMITER //")
         appendLine("CREATE TRIGGER ${quoteIdentifier(triggerName)}")
         appendLine("    BEFORE INSERT ON ${quoteIdentifier(spec.tableName)}")
         appendLine("    FOR EACH ROW")
@@ -211,7 +220,6 @@ internal object MysqlSequenceEmulationTemplates {
                 "${quoteIdentifier(MysqlSequenceNaming.NEXTVAL_ROUTINE)}($sequenceLiteral);"
         )
         appendLine("    END IF;")
-        appendLine("END //")
-        append("DELIMITER ;")
+        append("END")
     }
 }
