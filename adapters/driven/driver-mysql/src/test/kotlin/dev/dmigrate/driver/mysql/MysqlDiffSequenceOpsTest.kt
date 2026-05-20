@@ -364,4 +364,65 @@ class MysqlDiffSequenceOpsTest : FunSpec({
                 it.contains("`dmg_nextval`('new_seq')")
         } shouldBe true
     }
+
+    test("RenameSequence defensive renderer DOWN reads bindings from desiredSchema") {
+        // The DOWN path swaps from/to: `oldName = op.toName`,
+        // `newName = op.fromName`. The bindings to look up are the
+        // ones still active POST-Up — `new_seq` — which the renderer
+        // finds in `desiredSchema` (the rename was applied; bindings
+        // there reference `new_seq`). Verify that the renderer picks
+        // the right side and rewrites the trigger back to
+        // `dmg_nextval('old_seq')`.
+        val orders = dev.dmigrate.core.model.TableDefinition(
+            columns = mapOf(
+                "id" to dev.dmigrate.core.model.ColumnDefinition(
+                    type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                    required = true,
+                    default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal("new_seq"),
+                ),
+            ),
+        )
+        val desiredSchema = SchemaDefinition(
+            name = "App",
+            version = "1",
+            sequences = mapOf("new_seq" to SequenceDefinition(start = 1L)),
+            tables = mapOf("orders" to orders),
+        )
+        val ctx = MysqlDiffRenderContext(
+            direction = MysqlRenderDirection.DOWN,
+            sql = MysqlDiffSqlBuilders(MysqlTypeMapper()),
+            options = helperOptions,
+            desiredSchema = desiredSchema,
+        )
+        val op = DiffOperation.RenameSequence(
+            id = "rename-seq",
+            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("new_seq")),
+            fromName = "old_seq",
+            toName = "new_seq",
+            overlaySource = "test",
+            overlayEntryId = "test#0",
+            overlayHash = null,
+        )
+        MysqlDiffSequenceOps.renderRenameSequence(op, ctx)
+        val plan = dev.dmigrate.core.diff.migration.DiffResult(
+            current = dev.dmigrate.core.diff.migration.DiffEndpoint(schemaName = "App"),
+            desired = dev.dmigrate.core.diff.migration.DiffEndpoint(schemaName = "App"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(op),
+            diagnostics = emptyList(),
+        )
+        val result = ctx.toResult(plan)
+        result.isBlocked shouldBe false
+        val sqls = result.statements.map { it.sql }
+        // 1) Rename the row backwards: new → old.
+        sqls.first() shouldContainStr
+            "UPDATE `dmg_sequences` SET `name` = 'old_seq' WHERE `name` = 'new_seq'"
+        // 2) Trigger name stable; body literal flips back to old_seq.
+        val triggerName = MysqlSequenceNaming.triggerName("orders", "id")
+        sqls.any { it == "DROP TRIGGER IF EXISTS `$triggerName`;" } shouldBe true
+        sqls.any {
+            it.contains("CREATE TRIGGER `$triggerName`") &&
+                it.contains("`dmg_nextval`('old_seq')")
+        } shouldBe true
+    }
 })

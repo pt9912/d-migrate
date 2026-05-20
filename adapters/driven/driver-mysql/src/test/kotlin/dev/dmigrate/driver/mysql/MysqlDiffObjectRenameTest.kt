@@ -36,15 +36,19 @@ import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain as shouldContainStr
 
 /**
- * F.4 Sub-Slice B (2026-05-19): per-dialect pins for the MySQL object-
- * rename pipeline. The native side is `RENAME TABLE` for views; every
- * other kind goes through `RenameSupport.DropCreateFallback` (triggers,
- * routines) or `RenameSupport.Blocked` (sequences, materialized views).
+ * F.4 Sub-Slice B (2026-05-19) + E.3 Sub-Slice C (2026-05-20):
+ * per-dialect pins for the MySQL object-rename pipeline. The native
+ * side is `RENAME TABLE` for views; triggers, routines and sequences
+ * go through `RenameSupport.DropCreateFallback` (MySQL has no
+ * `ALTER … RENAME` grammar for any of them — for sequences the
+ * helper-table emulation rebuilds via `DropSequence + CreateSequence`
+ * with `RenameProvenance`). Materialized views remain
+ * `RenameSupport.Blocked` because MySQL has no MV support at all.
  *
  * Mapper-level tests check that the policy choice surfaces as the
- * right operation shape — `RenameView` for views, `Drop+Create` with a
- * `RenameProvenance` marker for triggers/routines, `OBJECT_RENAME_UNSUPPORTED`
- * diagnostic for blocked kinds.
+ * right operation shape — `RenameView` for views, `Drop+Create` with
+ * a `RenameProvenance` marker for triggers / routines / sequences,
+ * `OBJECT_RENAME_UNSUPPORTED` diagnostic for blocked kinds.
  *
  * Renderer-level tests pin the actual SQL.
  */
@@ -306,6 +310,12 @@ class MysqlDiffObjectRenameTest : FunSpec({
         val create = plan.operations.filterIsInstance<DiffOperation.CreateSequence>().single()
         drop.renameProvenance shouldNotBe null
         create.renameProvenance shouldNotBe null
+        drop.renameProvenance!!.fromPath shouldBe listOf("s_old")
+        drop.renameProvenance!!.toPath shouldBe listOf("s_new")
+        drop.renameProvenance!!.objectType shouldBe dev.dmigrate.core.diff.migration.DiffObjectType.SEQUENCE
+        create.renameProvenance!!.fromPath shouldBe listOf("s_old")
+        create.renameProvenance!!.toPath shouldBe listOf("s_new")
+        create.renameProvenance!!.objectType shouldBe dev.dmigrate.core.diff.migration.DiffObjectType.SEQUENCE
     }
 
     // ── F.4 Renderer-Blocker-Bridge (2026-05-19) ────────────────────
