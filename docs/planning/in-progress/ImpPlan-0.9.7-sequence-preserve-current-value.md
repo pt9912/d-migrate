@@ -8,8 +8,8 @@
 >                  Live-DB-Reader-Pfade pro Dialekt ✅;
 >                  F.4 Renderer-Blocker-Bridge ✅ 2026-05-19;
 >                  MySQL/SQLite-Sequence-Diff-Migration *(parallele Plans)*.
-> **Referenz**: `diffresult-migration-plan-2.md` §E.3 (heutige
->             Sequence-Erstscheibe pinnt ausdruecklich: „aktueller
+> **Referenz**: `diffresult-migration-plan-2.md` §E.3 (aktuelle
+>             Sequence-Erstscheibe pinnt ausdrücklich: „aktueller
 >             Wert wird NICHT migriert“); `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`;
 >             `open/sqlite-sequence-emulation-plan.md`.
 
@@ -17,7 +17,7 @@
 
 ## 1. Auslöser
 
-Die heutige Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
+Die aktuelle Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
 in `docs/planning/done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
 `open/sqlite-sequence-emulation-plan.md`) deckt nur die **deklarativen Attribute** ab —
 `start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`.
@@ -36,7 +36,7 @@ Das ist der Hauptgrund, warum d-migrate fuer
 sequence-tragende Schemata in Produktion heute nicht
 ohne manuelle Nachbearbeitung benutzt werden kann. Operatoren
 muessen nach jeder Migration manuell `ALTER SEQUENCE … RESTART WITH
-<observed-max>` ausfuehren.
+<observed-max>` asfuehren.
 
 ---
 
@@ -274,7 +274,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
     }
 
     if (plan.isFileToFileMode && sequencesNeedingPreservation.isNotEmpty()) {
-        // Datei-zu-Datei kann keinen deterministischen Preflight ausführen;
+        // Datei-zu-Datei kann keinen deterministischen Preflight asfuehren;
         // nur probe-fähige Preservation-Operationen (Read-Pfad) werden geblockt.
         // Reine CreateSequence ohne lesbaren Vorzustand wurde bereits auf
         // `SEQUENCE_PRESERVE_NOT_FOUND` reduziert und landet hier nicht.
@@ -695,12 +695,12 @@ isoliert lieferbar.
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
       (blocker).
-- [ ] **F.0-Erfuellung**: irrelevant.
+- [ ] **F.0-Erfüllung**: irrelevant.
 - [ ] **Positive + Blocker-Tests**: siehe §7.
 - [ ] **Rollback-Test**: explizit gepinnt fuer alle drei
       Dialekte; SQLite-Blocker ist auch Rollback-Blocker.
 - [ ] **Datei-zu-Datei**: blockt, weil keine Live-DB.
-- [ ] **Bestehende Vertraege unveraendert**: bestehende
+- [ ] **Bestehende Verträge unveraendert**: bestehende
       Sequence-Slices bleiben gruen.
 
 ---
