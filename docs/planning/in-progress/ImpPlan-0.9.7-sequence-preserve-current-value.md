@@ -18,7 +18,7 @@
 ## 1. Auslöser
 
 Die heutige Sequence-Migration (PG E.3 Erstscheibe, MySQL Emulation
-in `done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
+in `docs/planning/done/mysql-sequence-emulation-plan.md`, SQLite-Plan in
 `open/sqlite-sequence-emulation-plan.md`) deckt nur die **deklarativen Attribute** ab —
 `start`, `increment`, `minValue`, `maxValue`, `cycle`, `cache`.
 Den **aktuellen Wert** (`last_value` in PG, `next_value` in
@@ -237,6 +237,11 @@ val preserveSequenceCandidates = preserveSequenceOps
     .plus(preserveSequenceOps.filterIsInstance<DiffOperation.CreateSequence>())
     .plus(preserveSequenceOps.filterIsInstance<DiffOperation.RenameSequence>().filter { shouldProbeRenameSequence(it) && it.shouldPreserveCurrentValue() })
 
+fun sequenceRefForRename(renameOp: DiffOperation.RenameSequence, name: String): SequenceObjectRef {
+    // Deterministischer Resolver: Name aus Rename (fromName/toName), Namespace/Dialekt aus dem Rename-Kontext ableiten.
+    return SequenceObjectRef.forRenameTarget(renameOp.objectRef, sequenceName = name) // to be implemented once in planner utilities
+}
+
 val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
         when (op) {
             is DiffOperation.AlterSequence -> SequencePreserveContext(
@@ -247,22 +252,22 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             )
             is DiffOperation.CreateSequence -> {
                 if (!shouldProbeCreateSequence(op)) {
-                    emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${op.sequenceRef}; create value remains declarative.")
+                    emitNote("SEQUENCE_PRESERVE_NOT_FOUND", "No existing target state for ${op.objectRef}; create value remains declarative.")
                     null
                 } else {
                     SequencePreserveContext(
                         sequenceOp = op,
-                        probeSequenceRef = op.sequenceRef,
-                        applySequenceRef = op.sequenceRef,
-                        pairId = "create:${op.sequenceRef}",
+                        probeSequenceRef = op.objectRef,
+                        applySequenceRef = op.objectRef,
+                        pairId = "create:${op.objectRef}",
                     )
                 }
             }
             is DiffOperation.RenameSequence -> SequencePreserveContext(
                 sequenceOp = op,
-                probeSequenceRef = op.fromRef,
-                applySequenceRef = op.toRef,
-                pairId = "rename:${op.fromRef}->${op.toRef}",
+                probeSequenceRef = sequenceRefForRename(op, op.fromName),
+                applySequenceRef = sequenceRefForRename(op, op.toName),
+                pairId = "rename:${op.fromName}->${op.toName}",
             )
             else -> throw IllegalArgumentException("unexpected sequence operation type")
         }
