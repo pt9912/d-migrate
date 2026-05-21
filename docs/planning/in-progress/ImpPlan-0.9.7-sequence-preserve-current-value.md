@@ -80,20 +80,22 @@ Roadmap §E Rest listet explizit:
     *Current-Value-Teil* explizit als `ROLLBACK_NOT_POSSIBLE` zu markieren
     (die eigentliche `CreateSequence`-`DROP`-Reversibilität bleibt davon
     getrennt).
+    Für diese Tranche ist `shouldProbeCreateSequence(op)` konservativ
+    auf Rename-basierte `CreateSequence`-Fälle (`renameProvenance != null`)
+    beschränkt; andere deterministische Wege werden in einem Folge-Slice ergänzt.
 - Neuer `SequenceCurrentValueProbe`-Port in `hexagon:ports-read` mit
   dialect-spezifischer Implementierung:
   - **PG**: `SELECT last_value, is_called FROM <sequence_name>`
   - **MySQL** (Emulation): `SELECT next_value, managed_by, format_version FROM dmg_sequences
-    WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)` (`next_value` ist der nächste von
-    `nextval` gelieferte Wert). `managed_by` und `format_version` werden
-    verwendet, und zusammen mit den in der Emulation definierten
-    unterstützten `format_version`-Werten (`mysqlExpectedFormatVersions`),
-    um sicherzustellen, dass die Reihe aus der d-migrate-
-    Sequence-Emulation stammt.
+    WHERE name = <escaped_mysql_sequence_key>` (`next_value` ist der nächste von
+    `nextval` gelieferte Wert). Die Zuordnung zu einem d-migrate verwalteten
+    Emulations-Objekt erfolgt im Probe-Adapter über die Validierung von
+    `managed_by` und `format_version` gegen `mysqlExpectedManagedBy`/`mysqlExpectedFormatVersions`.
     Für `dmg_sequences` ist der Lookup-Key deterministisch aus dem
     `SequenceObjectRef` abzuleiten (Name + stabiler Resolver auf schema/namespace),
     und dieselbe Funktion muss von der MySQL-Render- und Probe-Seite konsistent genutzt
-    werden (`dmg_sequences` kennt keine weitere Disambiguierungsspalte).
+    werden (`dmg_sequences` kennt keine weitere Disambiguierungsspalte). Der Read ist
+    deterministisch nur, wenn exakt eine Zeile zurückkommt (`matchedRows == 1`).
   - **SQLite**: `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` bis die
     SQLite-Planung für `preserveCurrentValue` vorliegt (`open/sqlite-sequence-emulation-plan.md`).
 - Neue Operation-Subtype:
@@ -106,7 +108,7 @@ Roadmap §E Rest listet explizit:
     als auszuführende Folgeanweisung (DML), wobei `<is_called>` vom Probe-Ergebnis
     übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
-    WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)`
+    WHERE name = <escaped_mysql_sequence_key> AND managed_by IN (<mysqlExpectedManagedBy>) AND format_version IN (<mysqlExpectedFormatVersions>)`
     (kein +1).
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
@@ -128,9 +130,15 @@ Roadmap §E Rest listet explizit:
     - Bei neu erstellten Sequenzen ohne deterministische Historie bleibt der
       Reverse-Zustand `null` und Down wird mit `ROLLBACK_NOT_POSSIBLE`.
   - Datei-zu-Datei-Modus: sobald `preserveCurrentValue = true` und mindestens eine
-    relevante Sequence-Operation (`AlterSequence`, `CreateSequence`, `RenameSequence`)
-    vorliegt, blockt der Plan mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` →
-    `MANUAL_ACTION_REQUIRED`.
+    probe-fähige Sequence-Kandidaten-Operation (`AlterSequence`, `RenameSequence`,
+    `CreateSequence` mit `shouldProbeCreateSequence = true`) vorliegt, blockt der
+    Plan mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` → `MANUAL_ACTION_REQUIRED`.
+    `CreateSequence` mit `shouldProbeCreateSequence = false` bleibt im Datei-zu-Datei-Modus
+    weiterhin `SEQUENCE_PRESERVE_NOT_FOUND` (INFO), da kein deterministischer
+    Probe-Zustand vorhanden ist.
+    Diese Blocker-Entscheidung hat Vorrang vor Dialekt-spezifischen
+    `NOT_SUPPORTED_BY_DIALECT`-Diagnosen (z. B. SQLite), da kein stabiler Probe-Read
+    in Dateiquell-Läufen möglich ist.
 - F.5-Carve-out-Pattern wiederverwendet (Probe → Pipeline →
   Blocker-bei-Failure).
 - Follow-up-Operations (`AlterSequenceCurrentValue`) werden deterministisch als direkte
@@ -248,7 +256,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                 sequenceOp = op,
                 probeSequenceRef = op.objectRef,
                 applySequenceRef = op.objectRef,
-                pairId = "alter:${op.objectRef}",
+                pairId = "alter:${op.id}",
             )
             is DiffOperation.CreateSequence -> {
                 if (!shouldProbeCreateSequence(op)) {
@@ -259,7 +267,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                         sequenceOp = op,
                         probeSequenceRef = op.objectRef,
                         applySequenceRef = op.objectRef,
-                        pairId = "create:${op.objectRef}",
+                        pairId = "create:${op.id}",
                     )
                 }
             }
@@ -267,13 +275,15 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
                 sequenceOp = op,
                 probeSequenceRef = sequenceRefForRename(op, op.fromName),
                 applySequenceRef = sequenceRefForRename(op, op.toName),
-                pairId = "rename:${op.fromName}->${op.toName}",
+                pairId = "rename:${op.id}",
             )
             else -> throw IllegalArgumentException("unexpected sequence operation type")
         }
     }
 
-    if (plan.isFileToFileMode && sequencesNeedingPreservation.isNotEmpty()) {
+    if (!request.execute) {
+        // File-only / plan-only: Stage ist nicht aktiv.
+    } else if (request.isFileToFileMode && sequencesNeedingPreservation.isNotEmpty()) {
         // Datei-zu-Datei kann keinen deterministischen Preflight ausführen;
         // nur probe-fähige Preservation-Operationen (Read-Pfad) werden geblockt.
         // Reine CreateSequence ohne lesbaren Vorzustand wurde bereits auf
@@ -283,10 +293,35 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET",
             "preserveCurrentValue requires execute mode with a reachable target database.",
         )
+    } else if (sequenceCurrentValueProbe == null) {
+        for (ctx in sequencesNeedingPreservation) {
+            emitNote(
+                "SEQUENCE_PRESERVE_NOT_RUN_POLICY",
+                "No sequence probe adapter configured for ${ctx.applySequenceRef}; preserve policy is active but probe/follow-up are intentionally skipped.",
+            )
+        }
     } else {
-        val mysqlExpectedManagedBy = setOf("d-migrate")
-        val mysqlExpectedFormatVersions = mysqlSequenceEmulationMetadata.supportedFormatVersions
-        if (mysqlExpectedFormatVersions.isEmpty()) {
+        val hasMysqlSequenceCandidates = sequencesNeedingPreservation.any { it.probeSequenceRef.dialect == Dialect.MYSQL }
+        val mysqlExpectedManagedBy =
+            if (hasMysqlSequenceCandidates) {
+                mysqlSequenceEmulationMetadata.supportedManagedBy
+            } else {
+                emptyList<String>()
+            }
+        val mysqlExpectedFormatVersions =
+            if (hasMysqlSequenceCandidates) {
+                mysqlSequenceEmulationMetadata.supportedFormatVersions
+            } else {
+                emptyList<Int>()
+            }
+        if (hasMysqlSequenceCandidates && mysqlExpectedManagedBy.isEmpty()) {
+            emitBlocker(
+                "SEQUENCE_PRESERVE_CONFIG_INVALID",
+                "MySQL sequence metadata is missing supported managed-by markers; cannot perform a deterministic preserve run.",
+            )
+            return
+        }
+        if (hasMysqlSequenceCandidates && mysqlExpectedFormatVersions.isEmpty()) {
             emitBlocker(
                 "SEQUENCE_PRESERVE_CONFIG_INVALID",
                 "MySQL sequence metadata is missing supported format versions; cannot perform a deterministic preserve run.",
@@ -484,13 +519,16 @@ und Reversibility-Metadaten `rollbackImpossible`, optionaler `rollbackImpossible
 (`pairId` dient zur Rename-Down-Kopplung; für PG muss Down zwingend einen
 non-null `restoreIsCalled` liefern),
 weil der Render-Pfad fundamental anders ist (Daten-Statement statt DDL).
+`pairId` ist beziehungsunabhängig eindeutig (z. B. `alter:<op.id>`, `rename:<op.id>`),
+um Kollisionen bei identischen Sequenznamen in unterschiedlichen Schema-Kontexten
+oder mehrfachen Rename-Schritten auszuschließen.
 
 ### 5.4 Dialekt-Render-Matrix
 
 | Dialekt | Render |
 |---|---|
 | PG | `SELECT setval('<seq>', <value>, <isCalled>);` |
-| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>);` |
+| MySQL | `UPDATE dmg_sequences SET next_value = <value> WHERE name = <escaped_mysql_sequence_key> AND managed_by IN (<mysqlExpectedManagedBy>) AND format_version IN (<mysqlExpectedFormatVersions>);` |
 | SQLite | Blocker bis SQLite-Sequence-Plan landet |
 
 MySQL-Renderer müssen sicherstellen, dass genau eine Zeile betroffen ist;
@@ -515,7 +553,7 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 | B | PG-Probe-Adapter (JDBC live-DB read) |
 | C | MySQL-Probe-Adapter (JDBC live-DB read, inkl. `mysqlSequenceLookupKey`-Helper) |
 | D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
-| E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
+| E | Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 
@@ -572,7 +610,7 @@ Re-Schnitt-Begründung).
   in `OpCategory.SEQUENCE`, `renderSequenceOp` dispatched darauf.
 - **MySQL-Renderer**: `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue`
   emittiert `UPDATE dmg_sequences SET next_value = <value> WHERE name =
-  <escaped> AND managed_by = 'd-migrate' AND format_version IN
+  <escaped> AND managed_by IN (<mysqlExpectedManagedBy>) AND format_version IN
   (<mysqlExpectedFormatVersions>)`. `AlterSequenceCurrentValue` landet
   in `OpCategory.SEQUENCE`, `renderSequenceOp` dispatched darauf.
   (`mysqlSequenceLookupKey`-Helper wird hier eingeführt — wird von C
@@ -623,7 +661,7 @@ Re-Schnitt-Begründung).
       muss aus dem DiffOp-Feld propagiert werden (PG verlangt es).
 - [ ] **MySQL-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
       als `UPDATE dmg_sequences SET next_value = <value> WHERE name =
-      <escaped> AND managed_by = 'd-migrate' AND format_version IN
+      <escaped> AND managed_by IN (<mysqlExpectedManagedBy>) AND format_version IN
       (<mysqlExpectedFormatVersions>)`. Statement betrifft exakt eine
       Zeile (`expectedAffectedRows = 1`).
 - [ ] **SQLite-Diff-DDL-Generator** mapped
@@ -650,7 +688,7 @@ Re-Schnitt-Begründung).
   FROM dmg_sequences ...`) — in B (PG) und C (MySQL).
 - `MigrationPreflightPlanner`-Erweiterung (probe → emit
   `AlterSequenceCurrentValue`) — D.
-- File-target-Blocker und Schema-Doku — E.
+- File-target-Blocker und Plan-Artefakt-Integration — D; Schema-Doku — E.
 
 ### 6.2 Sub-Slice B — PG-Probe-Adapter (Detail-DoD)
 
@@ -752,7 +790,7 @@ in A erledigt, Planner-Emit in D, kein CLI-Wiring.
   WHERE `name` = '<lookupKey>'
   ```
   (Filter auf `managed_by` / `format_version` passieren in Kotlin,
-  damit ein `managed_by != 'd-migrate'`-Treffer als strukturierter
+  damit ein `managed_by` außerhalb von `supportedManagedBy` als strukturierter
   `Failed` surfaced, nicht als false-positive `NotFound`.)
   Der `lookupKey` kommt deterministisch aus
   `MysqlSequenceSupportNaming.lookupKey(sequenceRef)` (siehe A).
@@ -763,7 +801,7 @@ in A erledigt, Planner-Emit in D, kein CLI-Wiring.
     `Failed("PROBE_PERMISSION_DENIED", …)`.
   - Andere `SQLException` → `Failed("PROBE_QUERY_FAILED", …)`.
   - ResultSet leer → `NotFound` (Sequence-Row nicht in Helper-Table).
-  - Row gefunden aber `managed_by != 'd-migrate'` →
+  - Row gefunden aber `managed_by` außerhalb von `supportedManagedBy` →
     `Failed("PROBE_UNMANAGED_ROW", …)`.
   - Row gefunden aber `format_version` nicht in
     `SUPPORTED_FORMAT_VERSIONS` →
@@ -791,12 +829,12 @@ in A erledigt, Planner-Emit in D, kein CLI-Wiring.
 - [ ] `MysqlSequenceCurrentValueProbe` implementiert
       `SequenceCurrentValueProbe` und gibt für eine d-migrate-managed
       Helper-Table-Row `Read(value=next_value, matchedRows=1,
-      isCalled=null, managedBy='d-migrate', formatVersion=…)` zurück.
+      isCalled=null, managedBy in `supportedManagedBy`, formatVersion=…)` zurück.
 - [ ] `dmg_sequences` nicht vorhanden (MySQL error 1146) → `NotFound`.
 - [ ] Sequence-Row nicht vorhanden (0-row SELECT) → `NotFound`.
 - [ ] Lese-Recht fehlt (MySQL error 1142) →
       `Failed("PROBE_PERMISSION_DENIED", …)`.
-- [ ] `managed_by != 'd-migrate'` → `Failed("PROBE_UNMANAGED_ROW", …)`.
+- [ ] `managed_by` außerhalb von `supportedManagedBy` → `Failed("PROBE_UNMANAGED_ROW", …)`.
 - [ ] `format_version` außerhalb
       `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS` →
       `Failed("PROBE_UNKNOWN_FORMAT_VERSION", …)`.
@@ -817,7 +855,7 @@ in A erledigt, Planner-Emit in D, kein CLI-Wiring.
 - Pipeline-Integration / Planner-Emit — in D.
 - CLI-Wiring des Probes — in D.
 - Diagnose-Codes (`SEQUENCE_PRESERVE_PROBE_FAILED` etc.) — in D.
-- File-target-Blocker und Schema-Doku — E.
+- File-target-Blocker — in D.
 
 ### 6.4 Sub-Slice D — Pipeline-Integration + Planner-Emit (Detail-DoD)
 
@@ -837,7 +875,7 @@ D ist die größte Tranche der Workstream-Folge: Stage,
 Probe-Wiring (PG + MySQL Runner + dispatcher in
 `SchemaMigrateCommand`), Plan-Augmentation, Diagnose-Code-
 Emission inkl. `PlannerBlockerClassifier`-Mapping, und die
-Rename-Down-Ordering aus §5.2 / §7. E (File-Target + Closing)
+Rename-Down-Ordering aus §5.2 / §7. E (Schema-Doku + Closing)
 bleibt absichtlich separat, damit D in einem reviewbaren Schritt
 landet.
 
@@ -845,8 +883,6 @@ landet.
 
 - Keine Renderer-Änderungen — die sind in A erledigt.
 - Keine Probe-Adapter-Logik — die kommen aus B (PG) und C (MySQL).
-- Kein File-target-Blocker (`SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`)
-  → in E.
 - Keine User-/Schema-Doku → in E.
 
 #### 6.4.1 Kandidatenfilter (vor Probe)
@@ -913,11 +949,18 @@ selten so zahlreich, dass eine Batch-Probe nötig wäre").
 
 #### 6.4.3 Stage-Skip-Pfade
 
-`SequencePreserveStage.run(...)` returns `NotRun` for any of:
+`SequencePreserveStage.run(...)` priorisiert den Dateiquell-Blocker vor allen
+anderen Skip/Pfaden und gilt danach als folgt:
+
+1. Wenn `request.execute && request.isFileToFileMode` und mindestens eine probe-fähige Kandidat-Op
+   (`AlterSequence`, `RenameSequence`, `CreateSequence` mit `shouldProbeCreateSequence = true`)
+   vorliegt: Top-Level-Blocker `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` mit
+   `MANUAL_ACTION_REQUIRED` und `Failed`-Outcome (kein Probe-Aufruf).
+
+Ist dieser Check nicht aktiv, gibt es diese weiteren Outcomes:
 
 - `!request.execute` — File-Modus / Plan-only sehen den Stage nicht.
-  Der File-Target-Blocker `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` ist
-  E-Scope.
+  Der Stage ist nicht aktiv, daher wird kein Datei-zu-Datei-Blocker emittiert.
 - `target !is CompareOperand.Database` — defensiv; `--execute` mit
   File-Target ist sowieso CLI-Level-Exit-2.
 - `dialect ∉ {POSTGRESQL, MYSQL}` — z.B. SQLite: pro Kandidat-Op wird
@@ -928,19 +971,27 @@ selten so zahlreich, dass eine Batch-Probe nötig wäre").
   ausschließlich der Stage-Skip-Pfad triggert die Block-Diagnose;
   der Emitter sieht für SQLite nie eine Probe-Result-Eingabe.
 - `sequenceCurrentValueProbe == null` — keine Probe-Fn wired (z.B.
-  reine Unit-Tests, Test-DI mit Null-Probe). Emittiert pro Kandidat-
-  Op eine INFO-Diagnose `SEQUENCE_PRESERVE_NOT_RUN_POLICY`. Identisch
-  zum Drift-Check-Pattern.
+  reine Unit-Tests, Test-DI mit Null-Probe oder fehlende Test-DB-Mocks). Emittiert
+  pro Kandidat-Op eine non-blocking INFO-Diagnose `SEQUENCE_PRESERVE_NOT_RUN_POLICY`.
+  Die Preserve-Policy ist aktiv, aber es wird bewusst kein Probe/Follow-up
+  ausgeführt.
+  Dieser Pfad ist absichtlich nur für Test-/Fallback-Szenarien vorgesehen.
+  In echten `--execute`-Produktivpfaden ist über `SchemaMigrateCommand` ein
+  Probe-Dispatcher zu verdrahten; hier darf dieser Branch nicht mehr erreicht
+  werden.
 - Keine Kandidat-Op nach §6.4.1-Filter — `NotRun` ohne Diagnose.
 
 #### 6.4.4 Stage-Initial-Check (vor dem ersten Probe-Aufruf)
 
-`MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` → der
-Stage emittiert einen einzelnen Top-Level-`SEQUENCE_PRESERVE_CONFIG_INVALID`-
-Blocker mit `MANUAL_ACTION_REQUIRED` und kehrt mit `Failed` zurück, OHNE
-irgendeinen Probe-Aufruf zu öffnen. Die Konstante ist heute hartkodiert
-und nie leer; der Check ist defensiv gegen eine zukünftige Refactor-
-Regression, in der die Konstante zur Config-getriebenen Quelle wird.
+`MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` bei vorhandenen
+MySQL-Kandidaten-Operations → der Stage emittiert einen einzelnen
+Top-Level-`SEQUENCE_PRESERVE_CONFIG_INVALID`-Blocker mit
+`MANUAL_ACTION_REQUIRED` und kehrt mit `Failed` zurück, OHNE irgendeinen
+Probe-Aufruf zu öffnen. Die Konstante ist heute hartkodiert und nie leer;
+der Check ist defensiv gegen eine zukünftige Refactor-Regression, in der die
+Konstante zur Config-getriebenen Quelle wird.
+Bei reinen PG- oder SQLite-Preserver-Kandidaten ohne MySQL-Anteile darf dieser
+Check nicht greifen.
 Lokation: ganz am Anfang des Stage-`run(...)`-Bodies, nach den
 Skip-Pfaden aus §6.4.3.
 
@@ -964,16 +1015,18 @@ Tabelle pro `(parentOp, probeResult)`:
 
 | Parent-Op | Probe-Result | Outcome |
 |---|---|---|
-| `AlterSequence` (Kandidat) | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(…))` |
-| `AlterSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` — Plan erwartete einen Vorzustand. |
+| `AlterSequence` (Kandidat) | `Read(value, matchedRows = 1)` | `FollowUp(AlterSequenceCurrentValue(…))` |
+| `AlterSequence` (Kandidat) | `Read(value, matchedRows != 1)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` |
+| `AlterSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` — Plan erwartete einen deterministischen Vorzustand. |
 | `AlterSequence` (Kandidat) | `Failed(code, message)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` — Code im Message. |
-| `RenameSequence` (Kandidat) | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(probe=fromRef, apply=toRef, revertAfterRename=true, …))` |
-| `RenameSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
+| `RenameSequence` (Kandidat) | `Read(value, matchedRows = 1)` | `FollowUp(AlterSequenceCurrentValue(probe=fromRef, apply=toRef, revertAfterRename=true, …))` |
+| `RenameSequence` (Kandidat) | `Read(value, matchedRows != 1)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` |
+| `RenameSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` |
 | `RenameSequence` (Kandidat) | `Failed(...)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
-| `CreateSequence` mit `shouldProbeCreateSequence = true` | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(probe=apply=op.ref, …))` |
-| `CreateSequence` mit `shouldProbeCreateSequence = true` | `NotFound` | `Info(SEQUENCE_PRESERVE_NOT_FOUND)` — kein Blocker; Plan-Doc §3.1. |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `Read(value, matchedRows = 1)` | `FollowUp(AlterSequenceCurrentValue(probe=apply=op.ref, …))` |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `Read(value, matchedRows != 1)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `NotFound` | `Info(SEQUENCE_PRESERVE_NOT_FOUND)` — nur Create-Path: kein deterministischer Vorzustand, daher kein Blocker; Current-Value-Restore ist `ROLLBACK_NOT_POSSIBLE` zu dokumentieren. |
 | `CreateSequence` mit `shouldProbeCreateSequence = true` | `Failed(...)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
-| `CreateSequence` mit `shouldProbeCreateSequence = false` | — (kein Probe) | `Info(SEQUENCE_PRESERVE_NOT_FOUND)` — Vorzustand nicht deterministisch. |
 | `DropSequence` | — (nicht Kandidat) | — (Stage filtert raus, kommt nicht in die Routing-Tabelle) |
 | SQLite (jede Op) | — (Stage-Skip greift vorher) | — (Stage-Skip-Pfad emittiert Block, nicht Routing) |
 
@@ -1041,16 +1094,16 @@ sehen.
 **Diagnose-Codes + Classifier:**
 
 - `hexagon/core/.../diff/migration/PlannerBlockerClassifier.kt`
-  (extend): Mapping für die drei Blocker-Codes:
+  (extend): Mapping für die vier Blocker-Codes:
   - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
   - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
     `DIALECT_UNSUPPORTED_OPERATION`
   - `SEQUENCE_PRESERVE_CONFIG_INVALID` → `MANUAL_ACTION_REQUIRED`
+  - `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` → `MANUAL_ACTION_REQUIRED`
   - INFO-Codes (`SEQUENCE_PRESERVE_NOT_FOUND`,
     `SEQUENCE_PRESERVE_NOT_RUN_POLICY`) bleiben außerhalb der
     Classifier-Tabelle — sie sind keine Blocker, werden also nicht
     klassifiziert.
-  - (`SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` kommt mit E.)
 
 **Pipeline-Integration:**
 
@@ -1060,8 +1113,9 @@ sehen.
   Wenn `Outcome.Succeeded` → der augmentierte Plan ersetzt das
   Pipeline-internal `plan`-Field für alle nachfolgenden Schritte.
   Wenn `Outcome.Failed` → das Render-Result wird mit dem
-  `Failed`-Diagnostics-Bündel gemerged (Plan-Artefakt-Pfad bekommt
-  den UNVERÄNDERTEN Original-Plan; Blocker-Pfad).
+  `Failed`-Diagnostics-Bündel gemerged; auch im Blocker-Pfad wird der
+  vom Stage augmentierte Plan (inkl. bereits generierter Follow-ups/Diagnosen)
+  für `maybeWritePlanArtefact` verwendet.
 - `hexagon/application/.../cli/commands/SchemaMigrateRunner.kt`
   (extend): EIN neuer Konstruktor-Parameter
   `sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null`;
@@ -1097,7 +1151,7 @@ sehen.
   Failed mit Stamping pro betroffener parent-Op).
 - `PlannerBlockerClassifierSequencePreserveTest`
   (in `hexagon:core` falls Classifier dort liegt; sonst in
-  `hexagon:application`): pinnt das Mapping der drei Blocker-Codes
+  `hexagon:application`): pinnt das Mapping der vier Blocker-Codes
   + INFO-Codes außerhalb der Tabelle.
 
 **Runner-Level E2E (hexagon:application):**
@@ -1145,7 +1199,8 @@ sehen.
 - [ ] `RenameSequence`-Follow-ups setzen `revertAfterRename = true`;
       Down-Reihenfolge ist `RenameSequence-Down` vor
       `AlterSequenceCurrentValue-Down` mit gleicher `pairId`
-      (umgesetzt im Diff-Down-Renderer; im Stage nur Flag-Setzung).
+      (umgesetzt im Diff-Down-Renderer; im Stage nur Flag-Setzung). Der
+      `pairId` ist op-id-basiert und daher eindeutig.
 - [ ] Probe-Exceptions blocken mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`; jede betroffene parent-Op
       bekommt eine eigene Diagnose mit propagiertem Probe-`code`.
@@ -1154,7 +1209,11 @@ sehen.
       (kein Probe-Aufruf wird gestartet).
 - [ ] `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` →
       Stage emittiert `SEQUENCE_PRESERVE_CONFIG_INVALID` BEVOR
-      irgendein Probe öffnet (§6.4.4).
+      irgendein Probe öffnet (§6.4.4), falls mindestens eine
+      MySQL-Kandidaten-Op existiert.
+- [ ] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist nur dann aktiv, wenn der
+      Planer bewusst ohne Probe-Adapter läuft (z. B. Null-Probe-Fn in
+      Tests/DI oder ähnliches), bleibt INFO und erzeugt keinen Blocker.
 - [ ] `PlannerBlockerClassifier` mapped:
       - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
       - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
@@ -1180,8 +1239,6 @@ sehen.
 
 #### Bewusst nicht in D
 
-- File-Target-Blocker (`SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`) und
-  zugehöriges `PlannerBlockerClassifier`-Mapping — in E.
 - Schema-Spec-Doku (`preserveCurrentValue`-Feld in
   `spec/neutral-model-spec.md`) — in E.
 - CHANGELOG-Eintrag für die Workstream — in E.
@@ -1203,13 +1260,21 @@ sehen.
 - [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
 - [ ] Konfigurationsabweichung im MySQL-Flow (`mysqlExpectedFormatVersions` leer) blockt den
-      Planner deterministisch mit `SEQUENCE_PRESERVE_CONFIG_INVALID`.
+      Planner deterministisch mit `SEQUENCE_PRESERVE_CONFIG_INVALID`, wenn mindestens eine
+      MySQL-Kandidaten-Op vorliegt.
 - [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
-      bekanntes d-migrate Sequenz-Emulationsformat, sonst wird
-      `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
+  bekanntes d-migrate Sequenz-Emulationsformat (`supportedManagedBy` inkl.
+  `supportedFormatVersions`), sonst wird
+  `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
 - [ ] MySQL-Probe und MySQL-Renderer verwenden dieselbe Resolverfunktion
       für den `dmg_sequences.name`-Lookup-Key aus `SequenceObjectRef`
       (gleicher `mysql_sequence_key` für Probe/Render-Phase).
+- [ ] `SEQUENCE_PRESERVE_NOT_FOUND` ist als INFO für `CreateSequence` ohne deterministischen Vorzustand definiert
+      (kein Blocker) und dokumentiert explizit die `ROLLBACK_NOT_POSSIBLE`-Auswirkung
+      für den Current-Value-Teil.
+- [ ] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist als INFO definiert, nur für
+      Test-/Fallback-Pfade aktiv und dokumentiert bewusstes Nicht-Ausführen
+      von Probe/Follow-up ohne Blockerwirkung.
 - [ ] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
       die Abfrage auf `dmg_sequences` mehr als eine deterministische Trefferzeile liefert
       oder keine eindeutig matcht.
@@ -1237,14 +1302,17 @@ sehen.
       Sequence-Operation emittiert (keine Umordnung durch
       allgemeine Plan-Sortierung).
 - [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true` und mindestens
-      einer probe-fähigen Sequence-Operation blockt mit
+      einer probe-fähigen Sequence-Operation blockt vorrangig mit
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`; reine `CreateSequence` ohne
       deterministischen Vorzustand darf nur `SEQUENCE_PRESERVE_NOT_FOUND`
       ausgeben.
 - [ ] Probe-Failure blockt mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`.
-- [ ] SQLite blockt mit
+- [ ] SQLite im Execute-Modus blockt mit
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
+- [ ] Datei-zu-Datei + SQLite mit `preserveCurrentValue = true` blockt weiterhin
+      mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` (Dateiquell hat Vorrang vor
+      Dialektblockern).
 - [ ] Reversibility: `AlterSequenceCurrentValue` Down nutzt den im
       Plan gespeicherten `restoreValue` und setzt damit den
       vor-Up-Wert wieder zurück; fehlt der Wert, wird
@@ -1294,7 +1362,7 @@ sehen.
       Dialekte; SQLite-Blocker ist auch Rollback-Blocker.
 - [ ] **Datei-zu-Datei**: blockt, weil keine Live-DB.
 - [ ] **Bestehende Verträge unveraendert**: bestehende
-      Sequence-Slices bleiben gruen.
+      Sequence-Slices bleiben grün.
 
 ---
 
