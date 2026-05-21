@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Cross-Dialect Folge-Slice
-> **Status**: open 2026-05-19.
+> **Status**: offen seit 2026-05-19.
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  PG-`SequenceDefinition` ✅;
 >                  Live-DB-Reader-Pfade pro Dialekt ✅;
@@ -28,25 +28,25 @@ keine Pipeline. Effekt:
 - Operator migriert eine bestehende Tabelle mit `id` aus einer
   PG-Sequenz nach DB-Target. Die Sequenz wird mit
   `CREATE SEQUENCE … START WITH 1` neu angelegt. Bei einem
-  spaeteren `INSERT` springt `nextval('seq')` auf 1 statt auf den
+  späteren `INSERT` springt `nextval('seq')` auf 1 statt auf den
   vorherigen Wert + 1 → **PK-Konflikt** mit existierenden Zeilen,
   Migration scheitert beim ersten Schreibzugriff.
 
-Das ist der Hauptgrund, warum d-migrate fuer
+Das ist der Hauptgrund, warum d-migrate für
 sequence-tragende Schemata in Produktion heute nicht
 ohne manuelle Nachbearbeitung benutzt werden kann. Operatoren
-muessen nach jeder Migration manuell `ALTER SEQUENCE … RESTART WITH
-<observed-max>` asfuehren.
+müssen nach jeder Migration manuell `ALTER SEQUENCE … RESTART WITH
+<observed-max>` ausführen.
 
 ---
 
 ## 2. Warum jetzt?
 
-`preserveCurrentValue` ist die kritische Live-DB-Bruecke, die
-Sequence-Migrationen ueberhaupt erst produktionstauglich macht.
+`preserveCurrentValue` ist die kritische Live-DB-Brücke, die
+Sequence-Migrationen überhaupt erst produktionstauglich macht.
 Der DDL-Generator-Pfad (`schema generate`) deckt Schema-Strukturen
-ab, aber Migrationen brauchen **Daten-Bewusstsein** fuer Sequences
-genauso wie Cast-Preflight fuer Spalten-Typaenderungen
+ab, aber Migrationen brauchen **Daten-Bewusstsein** für Sequences
+genauso wie Cast-Preflight für Spalten-Typänderungen
 (B.2-Pattern). Ohne diesen Slice ist der MySQL-Sequence-Diff-
 Slice (parallel) und der SQLite-Sequence-Plan halbgar in
 Production.
@@ -103,7 +103,7 @@ Roadmap §E Rest listet explizit:
   `restoreIsCalled: Boolean?` vorgesehen.
 - Renderer-Pfade pro Dialekt:
   - **PG**: `SELECT setval('<sequence_name>', <value>, <is_called>)`
-    als DDL-Equivalent, wobei `<is_called>` vom Probe-Ergebnis
+    als auszuführende Folgeanweisung (DML), wobei `<is_called>` vom Probe-Ergebnis
     übernommen wird.
   - **MySQL**: `UPDATE dmg_sequences SET next_value = <value>
     WHERE name = <escaped_mysql_sequence_key> AND managed_by = 'd-migrate' AND format_version IN (<mysqlExpectedFormatVersions>)`
@@ -111,7 +111,7 @@ Roadmap §E Rest listet explizit:
   - **SQLite**: erst sobald der SQLite-Plan landet.
 - Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor
   `SchemaMigrateRenderPipeline` (`CheckPreflight` + `MigrationPreflightPlanner`):
-  - Wenn `preserveCurrentValue = true` UND DB-Target verfuegbar:
+  - Wenn `preserveCurrentValue = true` UND DB-Target verfügbar:
     Probe vor Render; emittiere `AlterSequenceCurrentValue` mit
     dem geprobten Wert, inklusive `isCalled` (falls vom Dialekt
     geliefert) sowie optionalem `restoreValue`, sofern diese Planerzeit
@@ -153,7 +153,7 @@ Roadmap §E Rest listet explizit:
 ### 3.2 Out-of-Scope
 
 - **Atomare Konsistenz** zwischen `nextval`-Calls in der App
-  und der Migration: wenn die App parallel waehrend des
+  und der Migration: wenn die App parallel während des
   Preflights Sequenzen-Calls macht, ist der geprobte Wert
   veraltet. Mitigation: Probe + `setval` in derselben
   Transaktion / unter Tabellen-Lock — separater Slice.
@@ -220,7 +220,7 @@ sealed class SequenceCurrentValueProbeResult {
 Analog zu `CheckPreflight` im bestehenden
 `MigrationPreflightPlanner` + `SchemaMigrateRenderPipeline`-Fluss:
 
-```
+```kotlin
 data class SequencePreserveContext(
     val sequenceOp: DiffOperation, // AlterSequence | CreateSequence | RenameSequence
     val probeSequenceRef: SequenceObjectRef,
@@ -274,7 +274,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
     }
 
     if (plan.isFileToFileMode && sequencesNeedingPreservation.isNotEmpty()) {
-        // Datei-zu-Datei kann keinen deterministischen Preflight asfuehren;
+        // Datei-zu-Datei kann keinen deterministischen Preflight ausführen;
         // nur probe-fähige Preservation-Operationen (Read-Pfad) werden geblockt.
         // Reine CreateSequence ohne lesbaren Vorzustand wurde bereits auf
         // `SEQUENCE_PRESERVE_NOT_FOUND` reduziert und landet hier nicht.
@@ -322,7 +322,6 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
         )
 
         fun resolveRestoreHints(
-            op: DiffOperation,
             probeSequenceRef: SequenceObjectRef,
             readResult: SequenceCurrentValueProbeResult.Read,
         ): RestoreHints {
@@ -331,7 +330,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             val restoreValueHint = readResult.value
             val restoreIsCalledHint = when (probeSequenceRef.dialect) {
                 Dialect.POSTGRES -> readResult.isCalled
-                else -> determineRestoreIsCalledHint(op)
+                else -> null // Nicht-PG-Dialekte benötigen restoreIsCalled derzeit nicht.
             }
             return RestoreHints(
                 restoreValueHint = restoreValueHint,
@@ -377,7 +376,7 @@ for (ctx in sequencesNeedingPreservation) {
                 }
                 else -> null
             }
-            val restoreHints = resolveRestoreHints(op, ctx.probeSequenceRef, readResult)
+            val restoreHints = resolveRestoreHints(ctx.probeSequenceRef, readResult)
             val isRollbackPossible = restoreHints.restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRES || restoreHints.restoreIsCalledHint != null)
             val rollbackNotPossible = if (isRollbackPossible) {
                 null
@@ -439,9 +438,9 @@ Fallbacks).
 
 `resolveRestoreHints(op, probeSequenceRef, readResult)` leitet den Reverse-Zustand deterministisch aus Planer-Kontext und Probe ab:
 - Als Primärquelle dient der konkrete Probe-Wert (`readResult.value`) als `restoreValue`.
-- Für PG wird `restoreIsCalled` aus `readResult.is_called` geliefert.
-- Für Nicht-PG dient `restoreIsCalled` als optionales Zusatzfeld aus
-  `determineRestoreIsCalledHint(op)`.
+- Für PG wird `restoreIsCalled` aus `readResult.isCalled` geliefert.
+- Für Nicht-PG bleibt `restoreIsCalled` aktuell `null`, weil es dort für die
+  Reversibilität nicht benötigt wird.
 - Bei neu anzulegenden Sequenzen ohne deterministische Historie bleibt `restoreValue`
   `null` und der Down-Pfad für den Current-Value-Teil ist als `ROLLBACK_NOT_POSSIBLE`
   zu kennzeichnen.
@@ -513,8 +512,8 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 | Sub-Slice | Inhalt |
 |---|---|
 | A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
-| B | PG-Probe + PG-Renderer fuer `setval` |
-| C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` (inkl. `mysqlSequenceLookupKey`-Helper) |
+| B | PG-Probe + PG-Renderer für `setval` |
+| C | MySQL-Probe + MySQL-Renderer für `UPDATE dmg_sequences` (inkl. `mysqlSequenceLookupKey`-Helper) |
 | D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
 | E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
@@ -654,7 +653,7 @@ isoliert lieferbar.
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
 - [ ] Reversibility: `AlterSequenceCurrentValue` Down nutzt den im
       Plan gespeicherten `restoreValue` und setzt damit den
-      vor-Up-Wert wieder zurueck; fehlt der Wert, wird
+      vor-Up-Wert wieder zurück; fehlt der Wert, wird
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
 - [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` exakt in den Fällen gesetzt, in denen ein
       deterministischer Ausgangszustand bekannt ist; `restoreIsCalled` ist für PG dort
@@ -697,7 +696,7 @@ isoliert lieferbar.
       (blocker).
 - [ ] **F.0-Erfüllung**: irrelevant.
 - [ ] **Positive + Blocker-Tests**: siehe §7.
-- [ ] **Rollback-Test**: explizit gepinnt fuer alle drei
+- [ ] **Rollback-Test**: explizit gepinnt für alle drei
       Dialekte; SQLite-Blocker ist auch Rollback-Blocker.
 - [ ] **Datei-zu-Datei**: blockt, weil keine Live-DB.
 - [ ] **Bestehende Verträge unveraendert**: bestehende
@@ -723,8 +722,8 @@ isoliert lieferbar.
   kann `LOCK TABLES` / `BEGIN; SELECT FOR UPDATE`-Wrapper
   ergaenzen.
 - **Sequence-Ownership-Sichtbarkeit**: ohne `OWNED BY` ist nicht
-  klar, welche Sequenz zu welcher Spalte gehoert. Mitigation:
-  diese Tranche behandelt benannte Sequences nur ueber den
+  klar, welche Sequenz zu welcher Spalte gehört. Mitigation:
+  diese Tranche behandelt benannte Sequences nur über den
   `SequenceDefinition`-Namen; Inferenz aus PG-Reverse-Read
   ist bereits in `MysqlSchemaReader` und `PostgresSchemaReader`
   gepinnt.
