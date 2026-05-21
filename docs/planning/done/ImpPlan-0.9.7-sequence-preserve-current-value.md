@@ -2,7 +2,9 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 Cross-Dialect Folge-Slice
-> **Status**: offen seit 2026-05-19.
+> **Status**: Done (2026-05-21). Sub-Slices A–E implementiert,
+>             `make docker-test` + `make docker-coverage-gate` grün,
+>             Plan-Doc unter `done/`. Commit-Refs siehe §6.
 > **Vorbedingung**: E.3 Erstscheibe (PG-Sequence-Diff-Renderer) ✅;
 >                  PG-`SequenceDefinition` ✅;
 >                  Live-DB-Reader-Pfade pro Dialekt ✅;
@@ -547,13 +549,13 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 
 ## 6. Sub-Slice-Schnitt
 
-| Sub-Slice | Inhalt |
-|---|---|
-| A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp **+ PG-Renderer (`setval`) + MySQL-Renderer (`UPDATE dmg_sequences`) + SQLite-Block (`DIALECT_UNSUPPORTED_OPERATION`)** |
-| B | PG-Probe-Adapter (JDBC live-DB read) |
-| C | MySQL-Probe-Adapter (JDBC live-DB read, inkl. `mysqlSequenceLookupKey`-Helper) |
-| D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
-| E | Schema-Doku + Closing |
+| Sub-Slice | Inhalt | Commit |
+|---|---|---|
+| A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp **+ PG-Renderer (`setval`) + MySQL-Renderer (`UPDATE dmg_sequences`) + SQLite-Block (`DIALECT_UNSUPPORTED_OPERATION`)** | `29ade761` (+ Refactor `12f4b812` für `SUPPORTED_MANAGED_BY: Set`) |
+| B | PG-Probe-Adapter (JDBC live-DB read) | `c93e44ef` |
+| C | MySQL-Probe-Adapter (JDBC live-DB read, inkl. `mysqlSequenceLookupKey`-Helper) | `4eb0f525` (+ Test-Fix `86f188a6` für testcontainers-Permission) |
+| D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) | `257908fd` |
+| E | Schema-Doku + Closing | *this commit* |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 
@@ -1246,6 +1248,76 @@ sehen.
   (`docs/planning/open/sqlite-sequence-emulation-plan.md`).
 - Atomare `BEGIN; SELECT FOR UPDATE; setval; COMMIT`-Wrappers
   unter Lock — separater Folge-Slice (siehe §10 Risiken).
+
+### 6.5 Sub-Slice E — Schema-Doku + Closing (Detail-DoD)
+
+Reines Doku-Slice; **kein Produktionscode**. Schließt die Workstream
+mit drei Artefakten:
+
+1. **Schema-Spec** (`spec/neutral-model-spec.md` §9): erklärt das neue
+   `preserve_current_value`-YAML-Feld auf Sequence-Definitionen,
+   inklusive Renderer-Matrix (PG `setval`, MySQL `UPDATE
+   dmg_sequences`, SQLite Blocker) und Down-Renderer-Hinweis
+   (Restore-Hint nur bei deterministischem Vorzustand).
+2. **CHANGELOG** (`CHANGELOG.md`): ein Eintrag unter `### Added`,
+   der A/B/C/D zusammenfasst — analog zum Drift-Check-Eintrag
+   (Probe & Port, Renderer-Pfade, Pipeline-Integration, Diagnose-
+   Codes, Carve-outs).
+3. **Plan-Doc** (diese Datei): Status auf `Done` setzen,
+   §6-Tabelle bekommt Commit-Refs pro Sub-Slice, `git mv` nach
+   `docs/planning/done/`.
+
+**Artefakte (Dokumentation):**
+
+- `spec/neutral-model-spec.md` §9 (extend):
+  - Neue Yaml-Beispielzeile `preserve_current_value: true`.
+  - Erklärung der Semantik: opt-in pro Sequence; der Renderer
+    emittiert nach `CreateSequence` (nur mit deterministischem
+    Vorzustand) / `AlterSequence` / `RenameSequence` einen
+    `setval`/`UPDATE`-Follow-up, der das Target auf den
+    probed `last_value`/`next_value` setzt.
+  - Hinweis: `--execute` + DB-Target Pflicht; File-Mode unterstützt
+    die Probe nicht.
+  - SQLite-Carve-out: `DIALECT_UNSUPPORTED_OPERATION` bis ein
+    SQLite-Sequence-Emulationsplan landet.
+  - `preserve_current_value: false` (oder fehlend) = Default,
+    bestehende Pipelines unverändert.
+- `CHANGELOG.md` (extend, `### Added`):
+  - Ein Bullet "0.9.7 E.3 Folge-Slice — Sequence preserveCurrentValue
+    (Sub-Slices A–E)" mit Commit-Refs und Plan-Doc-Pfad.
+  - Sub-Bullets: Probe & Port (B/C), Renderer-Pfade (A), Pipeline-
+    Integration & Planner-Emit (D), Diagnose-Codes (D), CLI-Wiring
+    (D), Carve-outs (CreateSequence-Pre-Probe-Gate konservativ,
+    SQLite UNSUPPORTED, atomare Probe+setval out-of-scope).
+- `docs/planning/in-progress/…sequence-preserve-current-value.md`:
+  - `> **Status**: Done (2026-05-21).` im Frontmatter.
+  - §6-Tabelle mit Commit-SHAs pro Sub-Slice.
+  - `git mv` nach `docs/planning/done/`.
+
+**Definition of Done (E):**
+
+- [ ] `spec/neutral-model-spec.md` §9 dokumentiert
+      `preserve_current_value` mit Yaml-Beispiel, Renderer-Matrix
+      und SQLite-Carve-out.
+- [ ] `CHANGELOG.md` enthält einen einzelnen Workstream-Eintrag
+      unter `### Added` mit allen Commit-Refs A–D.
+- [ ] Plan-Doc ist in `docs/planning/done/` (umbenannt via
+      `git mv`); Status auf `Done` gesetzt.
+- [ ] §6-Tabelle im Plan-Doc bekommt Commit-Refs pro Sub-Slice.
+- [ ] `make docker-test` grün (Doku-only-Edit; nur Cache-
+      Validierung erwartet).
+- [ ] `make docker-coverage-gate` grün.
+- [ ] Doku-Konsistenz: keine Markdown-Linter-Errors, alle
+      Querverweise auf den `done/`-Plan-Doc-Pfad stimmen.
+
+**Bewusst nicht in E:**
+
+- Kein Code-Edit. Wenn beim Doku-Schreiben eine Lücke auffällt,
+  wird sie in einem separaten Folge-Slice geschlossen, nicht in E
+  reingezogen.
+- SQLite-Sequence-Emulation, atomare Probe+setval, Multi-Sequence-
+  Atomicity, Sequence-Ownership-Inferenz — alle separater Plan /
+  Folge-Slice (siehe §9 Out-of-Scope und §10 Risiken).
 
 ---
 

@@ -765,12 +765,52 @@ sequences:
     max_value: 99999999
     cycle: false                       # Neustart nach max_value?
     cache: 20                          # Anzahl vorausberechneter Werte
+    preserve_current_value: false      # 0.9.7: Runtime-Wert über Migration retten?
 ```
 
 **Generierung**:
 - PostgreSQL: `CREATE SEQUENCE ... START WITH ... INCREMENT BY ...`
 - MySQL: Emulation über dedizierte Sequenz-Tabelle oder generator-spezifische Hilfsstruktur
 - SQLite: Keine nativen benannten Sequenzen; Emulation nur über explizite Hilfstabelle/Trigger oder `action_required`
+
+### 9.1 `preserve_current_value` (0.9.7)
+
+Per Default verlieren Sequenzen ihren Laufzeit-Wert bei einer
+Migration: eine `CREATE SEQUENCE … START WITH 1` startet `nextval` bei
+1, auch wenn die existierende Sequenz auf dem Ziel bereits bei 5000
+stand. Das passt für Neu-Migrationen; für **bestehende Produktions-
+DBs mit befüllten Tabellen** führt es zu PK-Konflikten bei der
+ersten INSERT-Operation nach der Migration.
+
+`preserve_current_value: true` aktiviert das opt-in pro Sequence:
+nach jeder declarative `CREATE` / `ALTER` / `RENAME SEQUENCE`-Operation
+emittiert der Migrate-Pipeline einen Follow-up, der den runtime-Wert
+aus dem Live-Target übernimmt:
+
+| Dialekt | Renderer | Probe |
+|---|---|---|
+| PostgreSQL | `SELECT setval('<seq>', <last_value>, <is_called>);` | `SELECT last_value, is_called FROM <seq>` |
+| MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
+| SQLite | — *(Blocker `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`)* | — |
+
+**Voraussetzungen** (gemäß
+`docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
+
+- `--execute` mit DB-Target. Die Probe braucht eine offene
+  Connection; File-Mode emittiert `SEQUENCE_PRESERVE_NOT_RUN_POLICY`
+  als INFO ohne Follow-up.
+- Auf `AlterSequence` / `RenameSequence` muss das Live-Target die
+  Sequenz bereits kennen — sonst blockt der Plan mit
+  `SEQUENCE_PRESERVE_PROBE_FAILED` (kein deterministischer
+  Vor-Zustand).
+- Für reine `CreateSequence`-Operationen (ohne Rename-Provenance)
+  emittiert die Pipeline `SEQUENCE_PRESERVE_NOT_FOUND` als INFO und
+  überspringt den Follow-up — der current-value-Restore wird im
+  Down-Pfad als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
+
+**Default-Verhalten**: ohne `preserve_current_value` (oder mit
+explizitem `false`) bleibt die Migration unverändert — kein Probe,
+kein Follow-up, keine neuen Statements im Migrate-Output.
 
 ---
 

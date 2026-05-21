@@ -136,6 +136,165 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 E.3 Folge-Slice — Sequence preserveCurrentValue
+  (Sub-Slices A–E)** *(2026-05-21)* — neue, opt-in pro Sequenz
+  steuerbare Policy `SequenceDefinition.preserveCurrentValue`. Wenn
+  `true` und das Migrate-Target ist eine Live-DB, probt die
+  Pipeline vor dem Render den runtime-Wert der Sequenz
+  (PG `last_value`/`is_called`, MySQL `dmg_sequences.next_value`)
+  und emittiert einen `AlterSequenceCurrentValue`-Follow-up direkt
+  hinter der parent-Op (Create/Alter/Rename). Der Renderer
+  übersetzt das per Dialekt in `SELECT setval(...)` (PG) oder
+  `UPDATE dmg_sequences SET next_value = ...` (MySQL). Damit landen
+  Migrationen gegen Bestandsdatenbanken mit befüllten
+  sequence-tragenden Tabellen produktiv, ohne dass der erste
+  Schreibzugriff in einen PK-Konflikt läuft.
+
+  Probe & Port (Sub-Slices B `c93e44ef` / C `4eb0f525`):
+    - Neuer Port `SequenceCurrentValueProbe` (`hexagon:ports-read`)
+      mit sealed `SequenceCurrentValueProbeResult`
+      (`Read{value, matchedRows, isCalled?, managedBy?,
+      formatVersion?}`, `Failed{code, message}`, `NotFound`,
+      `NotApplicable`).
+    - JDBC-Adapter `PostgresSequenceCurrentValueProbe`
+      (`adapters/driven/driver-postgresql`): `SELECT last_value,
+      is_called FROM "<schema>"."<seq>"` mit SQLSTATE-Mapping
+      `42P01 → NotFound`, `42501 → Failed(PROBE_PERMISSION_DENIED)`.
+    - JDBC-Adapter `MysqlSequenceCurrentValueProbe`
+      (`adapters/driven/driver-mysql`): `SELECT next_value,
+      managed_by, format_version FROM dmg_sequences WHERE name = …`
+      mit Error-Code-Mapping (1146/1142) und
+      `SUPPORTED_MANAGED_BY` / `SUPPORTED_FORMAT_VERSIONS`-
+      Validation gegen operator-eingefügte oder fremdformat
+      Helper-Table-Zeilen
+      (`PROBE_UNMANAGED_ROW` / `PROBE_UNKNOWN_FORMAT_VERSION`).
+    - `MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY` wird als
+      `Set<String>` geführt (single value `"d-migrate"` heute);
+      Renderer + Probe beziehen die Filter-Liste aus derselben
+      Konstante, damit sich Marker-Erweiterungen
+      (`d-migrate-legacy` etc.) in einem einzigen Edit ergeben
+      (Refactor-Commit `12f4b812`).
+
+  Renderer-Pfade (Sub-Slice A `29ade761` + `feature(core)…
+  no carve-outs` Folge-Commit):
+    - PG: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
+      emittiert `SELECT setval('<seq>', <value>, <isCalled>);` als
+      Up-Statement; Down setzt auf `restoreValue`/`restoreIsCalled`
+      zurück. `isCalled` ist auf PG zwingend (Renderer-Assertion
+      verweigert einen half-built `setval(seq, value, null)`).
+    - MySQL: `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue`
+      emittiert `UPDATE dmg_sequences SET next_value = …
+      WHERE name = … AND managed_by IN (...) AND format_version
+      IN (...);` — die `IN`-Listen iterieren
+      `SUPPORTED_MANAGED_BY`/`SUPPORTED_FORMAT_VERSIONS`
+      deterministisch.
+    - SQLite: bleibt `OpCategory.UNSUPPORTED` →
+      `DIALECT_UNSUPPORTED_OPERATION`. Endzustand, kein
+      „kommt später"-Carve-out, bis ein SQLite-Sequence-
+      Emulationsplan landet.
+    - Plan-Augmentation (Sub-Slice D): jede
+      `AlterSequenceCurrentValue`-Follow-up trägt
+      `dependencies = setOf(parent.id)`; der Renderer-Switch
+      routet sie über die SEQUENCE-Category zu denselben
+      Per-Op-Renderern.
+
+  Pipeline-Integration + Planner-Emit (Sub-Slice D `257908fd`):
+    - Neue `SequencePreserveStage` (`hexagon:application`,
+      `cli/commands/SequencePreserveStage.kt`) mit drei-Outcome-
+      Shape (`Succeeded(augmentedPlan, infos)` / `Failed(diags)` /
+      `NotRun`). Skip-Pfade: `!--execute`, file-Target, nicht-PG/
+      MySQL-Dialect (per-Op `NOT_SUPPORTED_BY_DIALECT`-Blocker),
+      kein Probe wired (per-Op `NOT_RUN_POLICY`-INFO), keine
+      preserve-Kandidaten im Plan.
+    - Kandidatenfilter: `AlterSequence` (immer, wenn
+      preserve=true), `CreateSequence` nur mit
+      `renameProvenance != null` (konservative Pre-Probe-Gate;
+      Widening in Folge-Slice), `RenameSequence` wenn die
+      Quell-Sequenz aus `currentSchema` preserve=true trägt.
+      `DropSequence` ist nicht Kandidat.
+    - Routing (`SequencePreserveStage.routeProbeResult`):
+      `Read(matchedRows=1)` → Follow-up; `Read(matchedRows≠1)` →
+      `PROBE_FAILED`-Blocker; `NotFound` → INFO für Create, Block
+      für Alter+Rename; `Failed`/`NotApplicable` → entsprechende
+      Blocker-Codes. Probe-Exceptions werden gefangen und als
+      `PROBE_FAILED`-Diagnose pro betroffener parent-Op gestempelt.
+    - Plan-Augmentation: jede `AlterSequenceCurrentValue`-Op
+      landet direkt hinter ihrer parent-Op im
+      `DiffResult.operations`-Stream. Der augmentierte Plan
+      ersetzt den Original-Plan für `generateUp` / `generateDown`,
+      `maybeWritePlanArtefact` (`migration-plan.v1`-Artefakt
+      reflektiert den tatsächlich ausgeführten Op-Stream),
+      Report-Builder und Rollback-Composer.
+    - CLI-Wiring: `SequenceCurrentValueProbeRunner` als
+      dialect-dispatchender Lambda an
+      `SchemaMigrateRunner.sequenceCurrentValueProbe`. Routet pro
+      `SequenceObjectRef.dialect` an `PostgresSequenceCurrentValueProbe`
+      oder `MysqlSequenceCurrentValueProbe`; SQLite bleibt
+      `NotApplicable`.
+
+  Diagnose-Codes + `PlannerBlockerClassifier`-Mapping:
+    - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
+    - `SEQUENCE_PRESERVE_CONFIG_INVALID` → `MANUAL_ACTION_REQUIRED`
+    - `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` → `MANUAL_ACTION_REQUIRED`
+      (für zukünftige E-Slice-Erweiterung; D emittiert ihn heute
+      nicht, weil `SchemaMigratePreparation` bereits Exit 2 für
+      `--execute` mit File-Target hat).
+    - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
+      `DIALECT_UNSUPPORTED_OPERATION` (SQLite).
+    - INFO-Codes (`SEQUENCE_PRESERVE_NOT_FOUND` für CreateSequence
+      ohne Vorzustand, `SEQUENCE_PRESERVE_NOT_RUN_POLICY` für
+      fehlende Probe) bleiben absichtlich aus dem
+      Classifier-Mapping — die Stage surfaced sie über
+      `MigrationDdlResult.diagnostics` ohne Blocker-Klassifizierung.
+
+  Out-of-Scope (eigene Folge-Slices):
+    - **Atomare Probe + setval/UPDATE unter Lock**: wenn die App
+      parallel `nextval` aufruft während der Pipeline-Probe läuft,
+      ist der gesetzte Wert veraltet. Operator-Pflicht ist heute
+      ein Freeze-Window. Eine künftige Tranche kann
+      `LOCK TABLES` / `BEGIN; SELECT FOR UPDATE`-Wrappers
+      ergänzen.
+    - **CreateSequence-Pre-Probe-Gate Widening**: die heutige
+      konservative Definition (`renameProvenance != null`) deckt
+      nur Drop+Create-Rename-Fallbacks ab; der idempotente
+      Re-Run-gegen-bestehendes-Target-Use-Case bleibt
+      `SEQUENCE_PRESERVE_NOT_FOUND` (INFO) bis ein deterministischer
+      pre-probe-Pfad spezifiziert ist.
+    - **Multi-Sequence-Atomicity**: pro-Op-Probes laufen seriell;
+      Operator-Inserts zwischen den Probes können Inkonsistenzen
+      erzeugen. Carve-out dokumentiert.
+    - **SQLite-Sequence-Vollvariante**: separater Plan unter
+      `docs/planning/open/sqlite-sequence-emulation-plan.md`.
+
+  Tests:
+    - Unit: `SequencePreserveStageTest`,
+      `PlannerBlockerClassifierTest` (extended),
+      `PostgresSequenceCurrentValueProbeTest`,
+      `MysqlSequenceCurrentValueProbeTest`,
+      `PostgresDiffSequenceOpsPreserveCurrentValueTest`,
+      `MysqlDiffSequenceOpsPreserveCurrentValueTest`.
+    - Runner-E2E: `SchemaMigrateRunnerSequencePreserveTest` —
+      probe → augmented plan → MigrationDdlResult → Report (Read,
+      NotFound auf Alter/Create, Probe-throws, SQLite-Blocker,
+      no-probe-NOT_RUN_POLICY).
+    - Integration (`make integration`):
+      `PostgresSequenceCurrentValueProbeIntegrationTest` (live PG),
+      `MysqlSequenceCurrentValueProbeIntegrationTest` (live MySQL),
+      pinnen Probe-Outcomes gegen echte DB-Bytes.
+
+  Sub-Slice-Commits:
+    - A — Foundations + Renderers: `29ade761`.
+    - B — PG Probe: `c93e44ef`.
+    - C — MySQL Probe: `4eb0f525`.
+    - C-Fix — Permission-Test entfernt (testcontainers MySQL-User
+      hat kein CREATE USER): `86f188a6`.
+    - `managed_by`-Refactor auf `SUPPORTED_MANAGED_BY: Set`:
+      `12f4b812`.
+    - D — Pipeline + Planner-Emit: `257908fd`.
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
+
 - **0.9.7 E.3 Folge-Slice — MySQL Sequence Live-DB-Drift-Check
   (Sub-Slices A–F)** *(2026-05-20)* — `schema migrate --execute`
   gegen MySQL-Targets verifiziert jetzt vor dem Render, dass die
