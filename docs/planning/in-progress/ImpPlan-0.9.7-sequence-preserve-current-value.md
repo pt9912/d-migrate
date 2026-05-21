@@ -827,9 +827,9 @@ Probe-Adapter zur ersten produktiv-nutzbaren Pipeline:
 ```
 plan(initial)
    → SequencePreserveStage.run(probeFn, request, target, dialect, plan)
-       → for each Create/Alter/Drop/RenameSequence with preserveCurrentValue=true:
-            probe → emit AlterSequenceCurrentValue follow-up
-   → augmented plan
+       → for each candidate parent op:
+            (pre-probe gate?) → probe → emit follow-up or diagnostic
+   → augmented plan (operations + follow-ups + dependencies)
    → render
 ```
 
@@ -849,156 +849,312 @@ landet.
   → in E.
 - Keine User-/Schema-Doku → in E.
 
+#### 6.4.1 Kandidatenfilter (vor Probe)
+
+Bevor der Stage probt, filtert er die Sequence-Op-Kandidaten nach
+Plan-Doc §3.1:
+
+- **`AlterSequence`**: Kandidat, wenn die Quelle der Op eine Sequenz mit
+  `preserveCurrentValue = true` ist (aus der `before`- oder `after`-
+  `SequenceDefinition`, je nach Direction).
+- **`CreateSequence`**: Kandidat ALS Probe-Kandidat **nur**, wenn
+  `shouldProbeCreateSequence(op) = true` (Plan-Doc §5.2). Das ist
+  ein Pre-Probe-Gate: heute kann der Planner nicht deterministisch
+  feststellen, ob eine `CreateSequence` einen pre-existing Vorzustand
+  am Target hat. In dieser Tranche ist die Funktion konservativ:
+  - Wenn `op.renameProvenance != null` (Create-aus-Rename-Fallback) →
+    `true` (es gibt einen Vorzustand unter altem Namen).
+  - Sonst → `false`, INFO-Diagnose `SEQUENCE_PRESERVE_NOT_FOUND` mit
+    dem Plan-Doc-§3.1-Hinweis, dass der Current-Value-Restore als
+    `ROLLBACK_NOT_POSSIBLE` zu behandeln ist.
+  Ein zukünftiger Folge-Slice kann `shouldProbeCreateSequence` zu
+  einer echten Target-Probe erweitern (z.B. „existiert die Sequenz
+  unter diesem Namen schon"); für jetzt ist die deterministische
+  Konservativität wichtiger als Vollständigkeit.
+- **`RenameSequence`**: Kandidat, wenn `shouldProbeRenameSequence(op) =
+  true`. Definiert als: Rename-Quelle ist eine verwaltete Sequenz mit
+  `preserveCurrentValue = true` UND die Zuordnung ist eindeutig
+  (kein Drop+Create-Fallback). Für Drop+Create-Fallbacks erzeugt der
+  Renamer ohnehin separate `DropSequence` + `CreateSequence` ops, die
+  über ihre eigenen Branches laufen.
+- **`DropSequence`**: **Kein Kandidat.** Plan-Doc §3.1 listet Drop
+  nicht in der Kandidaten-Tabelle. Drop entfernt das Target ohnehin;
+  ein Follow-up-Setval/Update wäre semantisch leer. Der Stage filtert
+  Drop-Ops vor jeder Probe-Entscheidung raus.
+
+Plan ohne Kandidaten nach diesem Filter → Stage `NotRun`, kein
+Probe-Aufruf.
+
+#### 6.4.2 Probe-Fn-Vertrag
+
+Der Per-Op-Probe-Aufruf läuft über folgende Funktionssignatur (analog
+zum Drift-Check-Pattern; `MysqlSequenceCanonicityProbeFn` ist die
+Vorlage):
+
+```kotlin
+// hexagon:application
+typealias SequenceCurrentValueProbeFn = (
+    target: CompareOperand.Database,
+    configPath: Path?,
+    sequenceRef: SequenceObjectRef,
+) -> SequenceCurrentValueProbeResult
+```
+
+`SchemaMigrateRunner` bekommt EINEN Parameter
+`sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null`;
+der CLI-Adapter resolvt das pro Dialekt über einen
+`SequenceCurrentValueProbeDispatcher` (siehe CLI-Wiring unten). So
+bleibt die Runner-Signatur kompakt und der Per-Dialekt-Resolver lebt
+am Boundary, wo er hingehört.
+
+Per-Op-Probe (nicht batch): identisch zur Drift-Check-Praxis und
+Plan-Doc §10 („Op-by-op Probe ist OK; in der Praxis sind Sequence-Ops
+selten so zahlreich, dass eine Batch-Probe nötig wäre").
+
+#### 6.4.3 Stage-Skip-Pfade
+
+`SequencePreserveStage.run(...)` returns `NotRun` for any of:
+
+- `!request.execute` — File-Modus / Plan-only sehen den Stage nicht.
+  Der File-Target-Blocker `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` ist
+  E-Scope.
+- `target !is CompareOperand.Database` — defensiv; `--execute` mit
+  File-Target ist sowieso CLI-Level-Exit-2.
+- `dialect ∉ {POSTGRESQL, MYSQL}` — z.B. SQLite: pro Kandidat-Op wird
+  eine Block-Diagnose `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
+  emittiert; **die Probe wird gar nicht aufgerufen** (es gibt für
+  SQLite keine Probe-Fn). Damit ist die ehemals doppelte SQLite-
+  Routing-Tabelle aus dem ursprünglichen §6.4-Draft aufgelöst:
+  ausschließlich der Stage-Skip-Pfad triggert die Block-Diagnose;
+  der Emitter sieht für SQLite nie eine Probe-Result-Eingabe.
+- `sequenceCurrentValueProbe == null` — keine Probe-Fn wired (z.B.
+  reine Unit-Tests, Test-DI mit Null-Probe). Emittiert pro Kandidat-
+  Op eine INFO-Diagnose `SEQUENCE_PRESERVE_NOT_RUN_POLICY`. Identisch
+  zum Drift-Check-Pattern.
+- Keine Kandidat-Op nach §6.4.1-Filter — `NotRun` ohne Diagnose.
+
+#### 6.4.4 Stage-Initial-Check (vor dem ersten Probe-Aufruf)
+
+`MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` → der
+Stage emittiert einen einzelnen Top-Level-`SEQUENCE_PRESERVE_CONFIG_INVALID`-
+Blocker mit `MANUAL_ACTION_REQUIRED` und kehrt mit `Failed` zurück, OHNE
+irgendeinen Probe-Aufruf zu öffnen. Die Konstante ist heute hartkodiert
+und nie leer; der Check ist defensiv gegen eine zukünftige Refactor-
+Regression, in der die Konstante zur Config-getriebenen Quelle wird.
+Lokation: ganz am Anfang des Stage-`run(...)`-Bodies, nach den
+Skip-Pfaden aus §6.4.3.
+
+#### 6.4.5 Routing-Tabelle (Stage-intern, keine eigene Datei)
+
+Statt einer separaten `SequencePreserveEmitter`-Datei in `hexagon:core`
+(was nicht ginge, weil `SequenceCurrentValueProbeResult` in
+`hexagon:ports-read` lebt und `hexagon:core` von dort nicht abhängt)
+und eines separaten `SequencePreservePlanInjector` lebt die Routing-
+und Augmentations-Logik als **private Funktion innerhalb von
+`SequencePreserveStage`**:
+
+```kotlin
+private fun routeProbeResult(
+    parentOp: DiffOperation,
+    probeResult: SequenceCurrentValueProbeResult,
+): RouteOutcome  // sealed: FollowUp(op), Info(diag), Block(diag)
+```
+
+Tabelle pro `(parentOp, probeResult)`:
+
+| Parent-Op | Probe-Result | Outcome |
+|---|---|---|
+| `AlterSequence` (Kandidat) | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(…))` |
+| `AlterSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` — Plan erwartete einen Vorzustand. |
+| `AlterSequence` (Kandidat) | `Failed(code, message)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)` — Code im Message. |
+| `RenameSequence` (Kandidat) | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(probe=fromRef, apply=toRef, revertAfterRename=true, …))` |
+| `RenameSequence` (Kandidat) | `NotFound` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
+| `RenameSequence` (Kandidat) | `Failed(...)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `Read(value, …)` | `FollowUp(AlterSequenceCurrentValue(probe=apply=op.ref, …))` |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `NotFound` | `Info(SEQUENCE_PRESERVE_NOT_FOUND)` — kein Blocker; Plan-Doc §3.1. |
+| `CreateSequence` mit `shouldProbeCreateSequence = true` | `Failed(...)` | `Block(SEQUENCE_PRESERVE_PROBE_FAILED)`. |
+| `CreateSequence` mit `shouldProbeCreateSequence = false` | — (kein Probe) | `Info(SEQUENCE_PRESERVE_NOT_FOUND)` — Vorzustand nicht deterministisch. |
+| `DropSequence` | — (nicht Kandidat) | — (Stage filtert raus, kommt nicht in die Routing-Tabelle) |
+| SQLite (jede Op) | — (Stage-Skip greift vorher) | — (Stage-Skip-Pfad emittiert Block, nicht Routing) |
+
+`Read`-Outcome → der Stage baut den `AlterSequenceCurrentValue`-Follow-up
+inkl. `pairId`, `probeSequenceRef`, `applySequenceRef`, `currentValue`,
+`isCalled` (PG: aus Probe; MySQL/SQLite: `null`), Restore-Hints aus
+Plan-Doc §5.2 `resolveRestoreHints`. `revertAfterRename = true` nur
+für Rename-Op-Kandidaten. Defaults für `rollbackImpossible` /
+`rollbackImpossibleReason` aus den Restore-Hints.
+
+#### 6.4.6 Plan-Augmentation
+
+Folge-Ops werden direkt am Ende des Stage-`run(...)`-Aufrufs in die
+`DiffResult.operations`-Liste eingewoben:
+
+- Reihenfolge: jede `AlterSequenceCurrentValue`-Op landet direkt
+  hinter ihrer parent-Op im `operations`-Stream
+  (`operations.subList(0, parentIdx+1) + followUp +
+  operations.subList(parentIdx+1, ...)`).
+- Dependencies des Follow-ups: `dependencies = setOf(parentOp.id)`,
+  damit ein zukünftiger Top-Sort die Reihenfolge nicht verletzt.
+- Down-Reihenfolge bei `RenameSequence` mit `revertAfterRename = true`:
+  Plan-Doc §5.2 verlangt `RenameSequence-Down` VOR
+  `AlterSequenceCurrentValue-Down` mit gleichem `pairId`. Das wird
+  durch das Down-Renderer-Ordering im Diff-DDL-Generator umgesetzt
+  (nicht im Stage); der Stage stellt nur sicher, dass `pairId` und
+  `revertAfterRename` korrekt gesetzt sind. Down-Ordering-Check
+  separat in der zugehörigen Down-Render-Test-Suite.
+
+#### 6.4.7 Plan-Artefakt-Interaktion (F.4 G.2)
+
+`maybeWritePlanArtefact(request, plan, …)` in `SchemaMigrateRunner`
+heute mit dem PRE-Render-`plan` aufgerufen. Mit D muss der
+`plan`-Parameter durch das vom Stage AUGMENTIERTE `DiffResult`
+ersetzt werden, BEVOR `maybeWritePlanArtefact` läuft. Sonst zeigt das
+signierte `migration-plan.v1`-Artefakt nicht den tatsächlich
+auszuführenden Op-Stream — ein Operator, der nur das Artefakt liest,
+würde `setval`/`UPDATE`-Statements übersehen.
+
+Implementierungs-Punkt: `SchemaMigrateRunner.execute(...)` ruft
+`renderPipeline.run(...)` auf; die Pipeline hält den augmentierten
+Plan; der Runner verwendet diesen für Plan-Artefakt UND für Report.
+Aktuell verzweigt die Plan-Artefakt-Schreib-Logik zwischen Blocker-
+Pfad und normalem Pfad — beide müssen denselben augmentierten Plan
+sehen.
+
 #### Artefakte (Produktionscode)
 
-**Stage + Plan-Augmentation:**
+**Stage + Routing:**
 
 - `hexagon/application/.../cli/commands/SequencePreserveStage.kt`
   *(neu)*: analog zu `MysqlSequenceCanonicityStage`. Drei-State-
-  Outcome (`Succeeded(augmentedOps)` / `Failed(message, diagnostics)`
-  / `NotRun`). Skip-Pfade:
-  - `!request.execute` → `NotRun`.
-  - Target ist `CompareOperand.File` → `NotRun` (E.target-File-
-    Blocker greift; D ignoriert es).
-  - Dialect ∉ {PG, MySQL} → `NotRun` für PG/MySQL-Probe-Wiring;
-    SQLite emittiert `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
-    pro betroffener Sequence-Op (Read-Pfad blockt, weil Probe
-    `NotApplicable` zurückgibt; siehe SQLite-Routing in A).
-  - Keine Probe-Fn für den Dialect wired → `NotRun` mit
-    `SEQUENCE_PRESERVE_NOT_RUN_POLICY` INFO-Diagnose (analog zum
-    Drift-Check-Pattern).
-  - Plan enthält keine Sequence-Op mit `preserveCurrentValue=true`
-    → `NotRun` (kein Probe-Aufruf nötig).
-- `hexagon/core/.../diff/migration/SequencePreserveEmitter.kt`
-  *(neu)*: pure Funktion, die für eine gegebene parent Sequence-Op
-  (Create/Alter/Drop/Rename) + `SequenceCurrentValueProbeResult` →
-  `Either<List<DiffDiagnostic>, AlterSequenceCurrentValue>` produziert.
-  Per Plan-Doc §5.2 Routing:
-  - `CreateSequence` + `Read` → `AlterSequenceCurrentValue` mit
-    `applySequenceRef = probeSequenceRef = parent.ref`, `pairId =
-    "create:<seqName>"`, optional restoreHints aus Probe.
-  - `CreateSequence` + `NotFound` → INFO `SEQUENCE_PRESERVE_NOT_FOUND`
-    (kein Blocker; Plan-Doc §3.1 / §5.2).
-  - `AlterSequence` / `RenameSequence` + `NotFound` → Block mit
-    `SEQUENCE_PRESERVE_PROBE_FAILED` (Vorzustand fehlt).
-  - `RenameSequence` + `Read` → `AlterSequenceCurrentValue` mit
-    `probeSequenceRef = parent.fromRef`, `applySequenceRef =
-    parent.toRef`, `pairId = "rename:<from>-><to>"`,
-    `revertAfterRename = true`.
-  - `DropSequence` mit `preserveCurrentValue=true` → INFO-only
-    (kein Follow-up; Drop entfernt das Ziel ohnehin).
-  - `Failed(code, message)` → Block mit `SEQUENCE_PRESERVE_PROBE_FAILED`
-    inkl. propagiertem Probe-Code im Message.
-  - `NotApplicable` → Block mit
-    `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
-- `hexagon/application/.../cli/commands/SequencePreservePlanInjector.kt`
-  *(neu)*: nimmt die ursprüngliche `DiffResult` + die vom Stage
-  produzierten `AlterSequenceCurrentValue`-Ops und fügt jede
-  Follow-up-Op deterministisch direkt hinter ihre parent-Sequence-
-  Op in den `operations`-Stream ein. Dependencies des Follow-ups
-  zeigen auf die parent-Op-ID, damit ein zukünftiger Top-Sort
-  die Reihenfolge nicht verletzt. Down-Reihenfolge per
-  `revertAfterRename` siehe §5.2.
+  Outcome (`Succeeded(augmentedPlan)` / `Failed(message, diagnostics)`
+  / `NotRun`). Enthält:
+  - Kandidaten-Filter aus §6.4.1
+  - Skip-Pfade aus §6.4.3
+  - Initial-Check aus §6.4.4
+  - Routing-Tabelle aus §6.4.5 (als private Funktion mit sealed
+    `RouteOutcome`)
+  - Plan-Augmentations-Logik aus §6.4.6 (private Funktion, keine
+    eigene Datei).
+- `SequenceCurrentValueProbeFn` typealias (Definition siehe §6.4.2)
+  in derselben Datei oder im Stage-Begleiter.
 
 **Diagnose-Codes + Classifier:**
 
 - `hexagon/core/.../diff/migration/PlannerBlockerClassifier.kt`
-  (extend): Mapping für die fünf neuen Codes:
+  (extend): Mapping für die drei Blocker-Codes:
   - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
   - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
     `DIALECT_UNSUPPORTED_OPERATION`
   - `SEQUENCE_PRESERVE_CONFIG_INVALID` → `MANUAL_ACTION_REQUIRED`
-  - `SEQUENCE_PRESERVE_NOT_FOUND` → INFO (kein Blocker — bleibt
-    außerhalb der Classifier-Mapping-Tabelle).
-  - `SEQUENCE_PRESERVE_NOT_RUN_POLICY` → INFO.
+  - INFO-Codes (`SEQUENCE_PRESERVE_NOT_FOUND`,
+    `SEQUENCE_PRESERVE_NOT_RUN_POLICY`) bleiben außerhalb der
+    Classifier-Tabelle — sie sind keine Blocker, werden also nicht
+    klassifiziert.
   - (`SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` kommt mit E.)
 
 **Pipeline-Integration:**
 
 - `hexagon/application/.../cli/commands/SchemaMigrateRenderPipeline.kt`
   (extend): zwischen `MigrationPreflightPlanner.plan(...)` und
-  `renderer.generateUp(...)` läuft `SequencePreserveStage.run(...)`
-  und das Ergebnis ersetzt den `plan`-Parameter für die nachfolgenden
-  Stages. Identisch zum Drift-Check-Wiring, plus
-  `SequencePreservePlanInjector.inject(...)` für die Op-Stream-
-  Augmentation.
+  `renderer.generateUp(...)` läuft `SequencePreserveStage.run(...)`.
+  Wenn `Outcome.Succeeded` → der augmentierte Plan ersetzt das
+  Pipeline-internal `plan`-Field für alle nachfolgenden Schritte.
+  Wenn `Outcome.Failed` → das Render-Result wird mit dem
+  `Failed`-Diagnostics-Bündel gemerged (Plan-Artefakt-Pfad bekommt
+  den UNVERÄNDERTEN Original-Plan; Blocker-Pfad).
 - `hexagon/application/.../cli/commands/SchemaMigrateRunner.kt`
-  (extend): zwei neue Konstruktor-Parameter
-  `pgSequencePreserveProbe: SequenceCurrentValueProbeFn?` und
-  `mysqlSequencePreserveProbe: SequenceCurrentValueProbeFn?` (oder
-  ein Single-Param-Dispatch); pass-through an
-  `SchemaMigrateRenderPipeline`.
+  (extend): EIN neuer Konstruktor-Parameter
+  `sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null`;
+  pass-through an `SchemaMigrateRenderPipeline`. Plan-Artefakt-
+  Schreib-Logik (§6.4.7) bekommt den augmentierten Plan
+  zurückgereicht.
 
 **CLI-Wiring:**
 
-- `adapters/driving/cli/.../cli/commands/PostgresSequenceCurrentValueProbeRunner.kt`
-  *(neu)*: analog zu `MysqlSequenceCanonicityProbeRunner` — öffnet
-  einen Hikari-Pool für das Target, borrowt eine Connection, ruft
-  `PostgresSequenceCurrentValueProbe.probe(connection, ref)` pro
-  relevante Sequence-Op auf.
-- `adapters/driving/cli/.../cli/commands/MysqlSequenceCurrentValueProbeRunner.kt`
-  *(neu)*: analog für MySQL.
+- `adapters/driving/cli/.../cli/commands/SequenceCurrentValueProbeRunner.kt`
+  *(neu)*: dialect-dispatchender Runner. Bekommt eine
+  `CompareOperand.Database` + `configPath` + `SequenceObjectRef`,
+  öffnet einen Hikari-Pool, borrowt eine Connection, dispatcht auf
+  `PostgresSequenceCurrentValueProbe` (B) oder
+  `MysqlSequenceCurrentValueProbe` (C) abhängig vom
+  `SequenceObjectRef.dialect`. Schließt den Pool nach jedem Aufruf
+  (oder verwendet einen Pool-pro-Plan-Cache; Implementierungs-Detail).
 - `adapters/driving/cli/.../cli/commands/SchemaMigrateCommand.kt`
-  (extend): beide Probe-Lambdas an `SchemaMigrateRunner` durchreichen.
+  (extend): reicht `SequenceCurrentValueProbeRunner::probe` an
+  `SchemaMigrateRunner`'s `sequenceCurrentValueProbe`-Parameter
+  durch. (Per-Dialekt-Probe-Auswahl passiert im Runner intern; aus
+  CLI-Sicht ist es nur eine Lambda.)
 
 #### Artefakte (Tests)
 
-**Unit (hexagon:application / hexagon:core):**
+**Unit (hexagon:application):**
 
-- `SequencePreserveStageTest`: Skip-Pfade (`!execute`, file-target,
-  non-MySQL/PG, kein Probe, kein preserveCurrentValue im Plan),
-  Happy-Path (Probe → AlterSequenceCurrentValue als Follow-up),
-  Exception-Path (Probe throws → Failed mit Stamping).
-- `SequencePreserveEmitterTest`: alle Routing-Branches aus §5.2
-  (Create+Read/NotFound, Alter+Read/NotFound, Drop+Read/NotFound,
-  Rename+Read mit revertAfterRename=true, Probe-Failed, NotApplicable).
-- `PlannerBlockerClassifierSequencePreserveTest`: pinnt das Mapping
-  der vier Diagnose-Codes auf die richtigen `MigrationBlockedReason`-
-  Werte; pinnt INFO-Codes außerhalb der Tabelle.
-- `SequencePreservePlanInjectorTest`: Follow-up landet direkt hinter
-  parent-Op; Dependencies zeigen auf parent-Op-ID; Down-Ordering bei
-  `revertAfterRename = true` (Rename-Down vor AlterSequenceCurrentValue-Down).
+- `SequencePreserveStageTest`: Skip-Pfade (§6.4.3), Initial-Check
+  (§6.4.4), Kandidaten-Filter (§6.4.1) inkl. Drop-out, Routing
+  (§6.4.5) für jede Tabellenzeile, Plan-Augmentation (§6.4.6:
+  Follow-up an richtiger Position, Dependencies, `pairId`,
+  `revertAfterRename`-Setting), Exception-Path (Probe throws →
+  Failed mit Stamping pro betroffener parent-Op).
+- `PlannerBlockerClassifierSequencePreserveTest`
+  (in `hexagon:core` falls Classifier dort liegt; sonst in
+  `hexagon:application`): pinnt das Mapping der drei Blocker-Codes
+  + INFO-Codes außerhalb der Tabelle.
 
 **Runner-Level E2E (hexagon:application):**
 
 - `SchemaMigrateRunnerSequencePreserveTest` (analog zum
   `SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest`-Pattern):
-  pinnt Probe → DdlGenerationOptions → MigrationDdlResult →
-  SchemaMigrateReport für PG-CANONICAL, MySQL-Read, PG-NotFound mit
-  CreateSequence parent, PG-NotFound mit AlterSequence parent
-  (Blocker), Probe-throws → exit 8 mit
-  `SEQUENCE_PRESERVE_PROBE_FAILED`, non-MySQL/PG dialect ohne probe.
+  pinnt Probe → augmentierter Plan → MigrationDdlResult →
+  SchemaMigrateReport — inkl. Plan-Artefakt-Snapshot, der die
+  Follow-up-Op enthält. Cases:
+  - PG `Read` → AlterSequenceCurrentValue im Statement-Stream
+  - MySQL `Read` → UPDATE-Statement-Output
+  - PG `NotFound` mit `CreateSequence`-Parent →
+    `SEQUENCE_PRESERVE_NOT_FOUND` INFO, kein Follow-up, exit 0
+  - PG `NotFound` mit `AlterSequence`-Parent →
+    `SEQUENCE_PRESERVE_PROBE_FAILED` Blocker, exit 8
+  - Probe throws → exit 8 mit
+    `SEQUENCE_PRESERVE_PROBE_FAILED`
+  - SQLite + `preserveCurrentValue=true` →
+    `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` Blocker
+  - Plan-Artefakt (`--plan-artefact`)-Output zeigt die Follow-up-Op
+    (§6.4.7-Check).
 
 **Integration (test:integration-postgresql / test:integration-mysql):**
 
 - Eigene Integration-Tests sind NICHT in D — B (PG) und C (MySQL)
   haben die Probe-Live-Verifikation; D's runtime-Verhalten ist
   oberhalb des Probes und durch die Runner-E2E-Tests adäquat
-  abgedeckt. Falls die Integration-Test-Suite einen End-to-End-Lauf
-  mit einer PG-Sequence-Migration und `preserveCurrentValue = true`
-  zeigen will, kommt der in E.
+  abgedeckt. Eine End-to-End-Integration mit echter Sequence-
+  Migration und `preserveCurrentValue = true` kommt in E.
 
 #### Definition of Done (D)
 
 - [ ] `SequencePreserveStage` läuft auf `--execute` gegen MySQL- und
-      PG-Targets, wenn der Plan mindestens eine Sequence-Op mit
-      `preserveCurrentValue = true` enthält.
-- [ ] Für jede solche Sequence-Op läuft der dialect-spezifische
-      Probe; Outcome ist deterministisch nach
-      `SequencePreserveEmitter`-Tabelle in `AlterSequenceCurrentValue`
-      oder eine BLOCKER-/INFO-Diagnose übersetzt.
+      PG-Targets, wenn der Plan mindestens eine Kandidat-Sequence-Op
+      mit `preserveCurrentValue = true` enthält (§6.4.1-Filter).
+- [ ] Für jede Kandidat-Op läuft der dialect-spezifische Probe;
+      Outcome wird deterministisch nach §6.4.5-Tabelle in einen
+      Follow-up oder eine Diagnose übersetzt. **DropSequence** läuft
+      nicht durch die Routing-Tabelle (vorher gefiltert).
+- [ ] `CreateSequence` mit `shouldProbeCreateSequence = false` →
+      INFO-Diagnose `SEQUENCE_PRESERVE_NOT_FOUND` OHNE Probe-Aufruf.
 - [ ] `AlterSequenceCurrentValue`-Follow-ups landen direkt hinter
-      ihrer parent-Op im finalen `DiffResult.operations`-Stream.
-      Dependencies des Follow-ups zeigen auf die parent-Op-ID.
+      ihrer parent-Op im finalen `DiffResult.operations`-Stream
+      (§6.4.6). `dependencies = setOf(parentOp.id)`.
 - [ ] `RenameSequence`-Follow-ups setzen `revertAfterRename = true`;
-      Down-Reihenfolge ist `RenameSequence-Down`
-      vor `AlterSequenceCurrentValue-Down` mit gleicher `pairId`.
+      Down-Reihenfolge ist `RenameSequence-Down` vor
+      `AlterSequenceCurrentValue-Down` mit gleicher `pairId`
+      (umgesetzt im Diff-Down-Renderer; im Stage nur Flag-Setzung).
 - [ ] Probe-Exceptions blocken mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`; jede betroffene parent-Op
       bekommt eine eigene Diagnose mit propagiertem Probe-`code`.
-- [ ] `SQLite-Dialect` + `preserveCurrentValue = true` blockt mit
-      `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` (Probe gibt
-      `NotApplicable`; Emitter mapped).
+- [ ] `SQLite` + `preserveCurrentValue = true` blockt über den
+      Stage-Skip-Pfad mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
+      (kein Probe-Aufruf wird gestartet).
+- [ ] `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` →
+      Stage emittiert `SEQUENCE_PRESERVE_CONFIG_INVALID` BEVOR
+      irgendein Probe öffnet (§6.4.4).
 - [ ] `PlannerBlockerClassifier` mapped:
       - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
       - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
@@ -1006,12 +1162,15 @@ landet.
       - `SEQUENCE_PRESERVE_CONFIG_INVALID` →
         `MANUAL_ACTION_REQUIRED`
       - `SEQUENCE_PRESERVE_NOT_FOUND` und
-        `SEQUENCE_PRESERVE_NOT_RUN_POLICY` bleiben INFO.
-- [ ] CLI (`SchemaMigrateCommand`) wired beide Probe-Lambdas an
-      `SchemaMigrateRunner`; `schema migrate --execute` gegen ein
-      MySQL- oder PG-Target mit einer
+        `SEQUENCE_PRESERVE_NOT_RUN_POLICY` bleiben INFO (kein
+        Mapping-Eintrag).
+- [ ] CLI (`SchemaMigrateCommand`) wired ein einziges Probe-Lambda
+      (Dispatcher) an `SchemaMigrateRunner`; `schema migrate
+      --execute` gegen ein MySQL- oder PG-Target mit einer
       `preserveCurrentValue = true`-Sequence läuft End-to-End ohne
       manuelles Eingreifen.
+- [ ] Plan-Artefakt (`--plan-artefact`) reflektiert den augmentierten
+      Plan inkl. `AlterSequenceCurrentValue`-Follow-ups (§6.4.7).
 - [ ] Kein neues Report-Feld in `SchemaMigrateReport` — die
       Follow-up-Ops surfacen über `operations`/`statements`; die
       neuen Diagnose-Codes über `diagnostics`.
