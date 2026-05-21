@@ -14,11 +14,15 @@ import java.sql.Connection
  *   needs it to decide whether the next `nextval` returns `value` or
  *   `value + 1`.
  * - **MySQL** (`adapters/driven/driver-mysql`): `SELECT next_value,
- *   managed_by, format_version FROM dmg_sequences WHERE name = <key>
- *   AND managed_by = 'd-migrate' AND format_version IN (...)`. The
- *   `managed_by` / `format_version` filter guards against operator-
- *   modified or non-d-migrate-managed rows accidentally surfacing as
- *   a preserve target.
+ *   managed_by, format_version FROM dmg_sequences WHERE name = <key>`.
+ *   The implementation filters `managed_by` and `format_version`
+ *   in Kotlin against
+ *   [dev.dmigrate.driver.MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY]
+ *   and `SUPPORTED_FORMAT_VERSIONS` — sets, not literal equality —
+ *   so a single managed-by marker today (`"d-migrate"`) can grow to
+ *   include a transitional `"d-migrate-legacy"` entry without
+ *   touching the renderer or the probe code (see
+ *   `MysqlSequenceCurrentValueProbe.readSingleRow`).
  * - **SQLite**: no implementation in 0.9.7. Adapters return
  *   [SequenceCurrentValueProbeResult.NotApplicable] so the upstream
  *   `MigrationPreflightPlanner` (Sub-Slice D) can emit a

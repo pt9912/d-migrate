@@ -125,7 +125,12 @@ class SequencePreserveStageTest : FunSpec({
 
     // ── Skip-paths (§6.4.3) ────────────────────────────────────────────
 
-    test("!request.execute → NotRun, no probe call") {
+    test("file target with preserve candidates → REQUIRES_DB_TARGET regardless of execute flag") {
+        // §6.4.3 priority blocker — Plan-Doc §3.1 calls it out:
+        // file source/target plus preserve=true means the probe can't
+        // run; emitting a plan that silently misses the setval/UPDATE
+        // follow-ups would lie. Block per-candidate so the operator
+        // sees the structured diagnostic.
         var probeCalls = 0
         val outcome = SequencePreserveStage.run(
             probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
@@ -134,18 +139,55 @@ class SequencePreserveStageTest : FunSpec({
             dialect = DatabaseDialect.MYSQL,
             plan = synthesisePlan(listOf(alterSeqOp())),
         )
-        outcome shouldBe SequencePreserveStage.Outcome.NotRun
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
+        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET"
+        outcome.diagnostics.single().severity shouldBe DiffDiagnostic.Severity.BLOCKER
         probeCalls shouldBe 0
     }
 
-    test("execute against file target → NotRun (CLI-Level-Exit-2 catches this earlier)") {
+    test("file target without preserve candidates → NotRun (no noise)") {
         SequencePreserveStage.run(
             probe = probe(SequenceCurrentValueProbeResult.NotFound),
-            request = executeRequest(),
+            request = planOnlyRequest(),
             target = fileTarget(),
             dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(listOf(alterSeqOp())),
+            plan = synthesisePlan(listOf(alterSeqOp(beforePreserve = false, afterPreserve = false))),
         ) shouldBe SequencePreserveStage.Outcome.NotRun
+    }
+
+    test("REQUIRES_DB_TARGET wins over NOT_SUPPORTED_BY_DIALECT for SQLite + file target") {
+        // Plan-Doc §3.1: file-target blocker hat Vorrang vor
+        // Dialekt-spezifischen NOT_SUPPORTED_BY_DIALECT-Diagnosen.
+        val outcome = SequencePreserveStage.run(
+            probe = probe(SequenceCurrentValueProbeResult.NotApplicable),
+            request = planOnlyRequest(),
+            target = fileTarget(),
+            dialect = DatabaseDialect.SQLITE,
+            plan = synthesisePlan(listOf(alterSeqOp())),
+        )
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
+        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET"
+    }
+
+    test("DB target + !request.execute → NotRun (plan-only against DB skips probe)") {
+        // Plan-only against a DB target stays NotRun: probing would
+        // open a connection without operator intent. The drift-check
+        // stage uses the same pattern.
+        var probeCalls = 0
+        val outcome = SequencePreserveStage.run(
+            probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
+            request = SchemaMigrateRequest(
+                source = "desired.yaml",
+                target = "db:mysql://x",
+                execute = false,
+                planOnly = true,
+            ),
+            target = dbTarget(),
+            dialect = DatabaseDialect.MYSQL,
+            plan = synthesisePlan(listOf(alterSeqOp())),
+        )
+        outcome shouldBe SequencePreserveStage.Outcome.NotRun
+        probeCalls shouldBe 0
     }
 
     test("SQLite with preserve candidates → Failed(NOT_SUPPORTED_BY_DIALECT) per candidate, no probe") {

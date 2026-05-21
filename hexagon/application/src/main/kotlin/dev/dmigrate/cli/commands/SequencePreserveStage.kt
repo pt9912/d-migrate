@@ -46,19 +46,10 @@ import java.nio.file.Path
  */
 object SequencePreserveStage {
 
-    /**
-     * Codes the stage emits; classifier mapping in [PlannerBlockerClassifier].
-     *
-     * `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` is defined in the
-     * classifier but not aliased here: [SchemaMigratePreparation]
-     * already exits 2 for `--execute` against a file target before
-     * the stage runs, and the stage short-circuits to `NotRun` for
-     * `!request.execute`. The classifier entry exists for the
-     * forward-compat case where a future Sub-Slice E moves the
-     * pre-plan file-target check into the stage.
-     */
+    /** Codes the stage emits; classifier mapping in [PlannerBlockerClassifier]. */
     private const val PROBE_FAILED_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_PROBE_FAILED_CODE
     private const val CONFIG_INVALID_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_CONFIG_INVALID_CODE
+    private const val REQUIRES_DB_TARGET_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE
     private const val NOT_SUPPORTED_BY_DIALECT_CODE =
         PlannerBlockerClassifier.SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE
     private const val NOT_FOUND_INFO_CODE = "SEQUENCE_PRESERVE_NOT_FOUND"
@@ -98,20 +89,52 @@ object SequencePreserveStage {
         dialect: DatabaseDialect,
         plan: DiffResult,
     ): Outcome {
-        // §6.4.3 skip-paths.
+        // §6.4.3: file-target with preserve-candidates is a structural
+        // blocker (the probe needs a live DB; plan-only against a file
+        // target cannot emit setval/UPDATE follow-ups, so the migration
+        // would silently miss the preserve step). `SchemaMigratePreparation`
+        // already exits 2 for `--execute` + file target, so this branch
+        // primarily fires for `--plan-only` against a file source — but
+        // it stays here as a single Stage-level guard so the diagnostic
+        // path is consistent regardless of preparation-layer routing.
+        val candidates = collectCandidates(plan, dialect)
+        if (target !is CompareOperand.Database) {
+            return if (candidates.isEmpty()) Outcome.NotRun else requiresDbTargetBlocker(candidates, plan)
+        }
         if (!request.execute) return Outcome.NotRun
-        val dbTarget = target as? CompareOperand.Database ?: return Outcome.NotRun
         if (dialect != DatabaseDialect.MYSQL && dialect != DatabaseDialect.POSTGRESQL) {
             return blockUnsupportedDialect(plan, dialect)
         }
-        val candidates = collectCandidates(plan, dialect)
         if (candidates.isEmpty()) return Outcome.NotRun
         if (probe == null) return notRunPolicy(candidates, plan)
 
         // §6.4.4 initial config check (only when MySQL candidates exist).
         configInvalidIfMysqlNeedsIt(candidates, plan)?.let { return it }
 
-        return runCandidates(candidates, probe, dbTarget, request.cliConfigPath, plan)
+        return runCandidates(candidates, probe, target, request.cliConfigPath, plan)
+    }
+
+    /**
+     * §6.4.3 priority blocker: when the target is a file and the plan
+     * carries preserve-candidate sequence ops, no probe can run and
+     * the resulting plan would lie about the preserve follow-ups it
+     * cannot produce. Block per-candidate with the
+     * `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` code so the operator
+     * sees a structured blocker instead of a silently-incomplete
+     * preserve plan.
+     */
+    private fun requiresDbTargetBlocker(candidates: List<Candidate>, plan: DiffResult): Outcome.Failed {
+        val diagnostics = candidates.map { ctx ->
+            DiffDiagnostic(
+                code = REQUIRES_DB_TARGET_CODE,
+                message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
+                    "`${ctx.applyRef.name}` requires a live database target — " +
+                    "rerun with --execute against a DB source/target.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+                operationId = ctx.parentOp.id,
+            )
+        }
+        return Outcome.Failed(diagnostics = diagnostics, plan = plan)
     }
 
     /**

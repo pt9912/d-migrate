@@ -951,20 +951,36 @@ selten so zahlreich, dass eine Batch-Probe nötig wäre").
 
 #### 6.4.3 Stage-Skip-Pfade
 
-`SequencePreserveStage.run(...)` priorisiert den Dateiquell-Blocker vor allen
-anderen Skip/Pfaden und gilt danach als folgt:
+`SequencePreserveStage.run(...)` priorisiert den File-Target-Blocker
+vor allen anderen Skip-Pfaden — eine Probe gegen ein File-Target ist
+strukturell nicht möglich, also fängt der Stage das BEVOR andere
+Routing-Entscheidungen anfallen:
 
-1. Wenn `request.execute && request.isFileToFileMode` und mindestens eine probe-fähige Kandidat-Op
-   (`AlterSequence`, `RenameSequence`, `CreateSequence` mit `shouldProbeCreateSequence = true`)
-   vorliegt: Top-Level-Blocker `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` mit
-   `MANUAL_ACTION_REQUIRED` und `Failed`-Outcome (kein Probe-Aufruf).
+1. **File-Target + preserve-Kandidaten → Failed(`SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`)**.
+   Sobald mindestens eine probe-fähige Kandidat-Op (`AlterSequence`,
+   `RenameSequence`, `CreateSequence` mit `shouldProbeCreateSequence
+   = true`) vorliegt UND `target !is CompareOperand.Database`, blockt
+   der Stage per Kandidat mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`
+   → `MANUAL_ACTION_REQUIRED`.
+   Diese Priorisierung gilt unabhängig vom `--execute`-Flag: für
+   `--execute` + File-Target greift `SchemaMigratePreparation`
+   bereits am CLI-Boundary mit Exit 2, daher fällt dieser Branch in
+   der Praxis vor allem für `--plan-only`-Läufe mit File-Target
+   und `preserveCurrentValue = true` an — und verhindert dort
+   einen still-unvollständigen Migrationsplan (ohne preserve-
+   Follow-ups). Vorrang über Dialekt-`NOT_SUPPORTED_BY_DIALECT`,
+   weil ohne Live-DB kein Probe entscheiden kann ob die Operation
+   überhaupt zustande käme.
+2. **File-Target ohne Kandidaten → `NotRun`** ohne Diagnose.
 
-Ist dieser Check nicht aktiv, gibt es diese weiteren Outcomes:
+Ist der File-Target-Pfad nicht aktiv (target ist DB), gibt es diese
+weiteren Outcomes:
 
-- `!request.execute` — File-Modus / Plan-only sehen den Stage nicht.
-  Der Stage ist nicht aktiv, daher wird kein Datei-zu-Datei-Blocker emittiert.
-- `target !is CompareOperand.Database` — defensiv; `--execute` mit
-  File-Target ist sowieso CLI-Level-Exit-2.
+- `!request.execute` mit DB-Target → `NotRun`. Plan-only gegen DB
+  öffnet keine Probe-Connection ohne Operator-Intent (analog zum
+  Drift-Check-Stage). Der ggf. unvollständige Plan ist hier explizit
+  in Ordnung — der Operator hat das DB-Target gesetzt und sieht,
+  dass es kein `--execute` ist.
 - `dialect ∉ {POSTGRESQL, MYSQL}` — z.B. SQLite: pro Kandidat-Op wird
   eine Block-Diagnose `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
   emittiert; **die Probe wird gar nicht aufgerufen** (es gibt für
