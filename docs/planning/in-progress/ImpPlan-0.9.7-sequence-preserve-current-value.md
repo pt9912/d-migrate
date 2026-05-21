@@ -507,13 +507,90 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `preserveCurrentValue`-Feld + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
+| A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
 | B | PG-Probe + PG-Renderer fuer `setval` |
-| C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` |
+| C | MySQL-Probe + MySQL-Renderer fuer `UPDATE dmg_sequences` (inkl. `mysqlSequenceLookupKey`-Helper) |
 | D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
 | E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
+
+### 6.1 Sub-Slice A — Foundations (Detail-DoD)
+
+Sub-Slice A liefert die reinen Datentypen, an die B/C/D anknüpfen. **Kein
+Renderer-, Probe- oder Planner-Code in A** — diese Sub-Slices sind
+isoliert lieferbar.
+
+**Artefakte (Produktionscode):**
+
+- `SequenceDefinition.preserveCurrentValue: Boolean = false` (default-additiv,
+  rückwärtskompatibel) in `hexagon/core/.../model/SequenceDefinition.kt`.
+- YAML-Codec für das neue Feld in
+  `adapters/driven/formats/.../SchemaNodeProgrammabilityParsers.kt` (read+write;
+  fehlendes Feld → `false`). Ohne den Codec ist `preserveCurrentValue` aus
+  User-Schemas unerreichbar — A ist erst dann nutzbar.
+- `SequenceObjectRef` als neuer Werttyp in
+  `hexagon/core/.../diff/migration/SequenceObjectRef.kt` mit Feldern für
+  Sequenz-Name, optionalem Schema/Namespace und `DatabaseDialect`. Wird in
+  §5.1 (Probe-Port) und §5.3 (`AlterSequenceCurrentValue`) verwendet — muss
+  daher zusammen mit Port + DiffOp landen, sonst sind beide nicht baubar.
+- `SequenceCurrentValueProbe`-Port + sealed
+  `SequenceCurrentValueProbeResult` (`Read{value, matchedRows, isCalled?,
+  managedBy?, formatVersion?}`, `Failed{code, message}`, `NotFound`,
+  `NotApplicable`) in `hexagon/ports-read/.../driver/SequenceCurrentValueProbe.kt`.
+- `AlterSequenceCurrentValue`-DiffOperation-Subtyp in
+  `hexagon/core/.../diff/migration/DiffOperation.kt` mit allen Feldern aus
+  §3.1/§5.3 (`pairId`, `probeSequenceRef: SequenceObjectRef`,
+  `applySequenceRef: SequenceObjectRef`, `currentValue: Long`, `isCalled:
+  Boolean?`, `restoreValue: Long?`, `restoreIsCalled: Boolean?`,
+  `rollbackImpossible: Boolean = false`, `rollbackImpossibleReason: String?`,
+  `revertAfterRename: Boolean = false`).
+
+**Artefakte (Tests):**
+
+- `SequenceDefinitionTest` — Default-Wert pinned, `copy()`-Roundtrip.
+- YAML-Codec-Roundtrip-Test (bestehende `SchemaNode…Test`-Datei
+  erweitern) — missing field → `false`, `true`/`false` echtes Mapping.
+- `SequenceObjectRefTest` — Konstruktion, Equality, Dialect-Branching.
+- `SequenceCurrentValueProbeTest` — Sealed-Class-Shape: alle vier
+  Subtypen konstruierbar, equals/hashCode für `Read`/`Failed`.
+- `DiffOperationTest` (extend) — `AlterSequenceCurrentValue`-Konstruktion +
+  `withDependencies`/`withId`-Invarianten.
+
+**Definition of Done (A):**
+
+- [ ] `SequenceDefinition.preserveCurrentValue` existiert mit Default
+      `false`; bestehende Code-Pfade kompilieren ohne Änderung.
+- [ ] YAML-Roundtrip pinnt: fehlendes Feld → `false`, `true`/`false`
+      werden gelesen/geschrieben.
+- [ ] `SequenceObjectRef` ist als eigener Werttyp angelegt (nicht
+      Alias auf `DiffObjectRef`); Dialekt-Feld ist `DatabaseDialect`
+      (Code-Konvention; Plan-Doc-Pseudocode `Dialect.POSTGRES` mapped
+      darauf ab).
+- [ ] `SequenceCurrentValueProbe`-Port kompiliert; sealed
+      `SequenceCurrentValueProbeResult` deckt alle vier Outcomes
+      ohne `else`-Zweige in Tests ab.
+- [ ] `AlterSequenceCurrentValue` ist als `DiffOperation`-Subtyp
+      konstruierbar mit allen Feldern aus §3.1/§5.3; partial `when`-
+      Branches in den 7 bestehenden Sequence-Op-Konsumenten
+      (`SqliteCastPreflightStage`, `MysqlSequenceCanonicityStage`,
+      `RoutineDependencyAnalyzer`, drei Dialekt-DDL-Generatoren,
+      `MysqlSequenceCanonicityProbeRunner`) bleiben unverändert weil
+      sie `else`-Fallback haben — Build grün.
+- [ ] Kein Planner-Emit, kein Renderer-Code, kein Probe-Adapter in A.
+- [ ] Tests laufen via `make docker-test MODULES=":hexagon:core
+      :hexagon:ports-read :adapters:driven:formats"` grün.
+
+**Bewusst nicht in A:**
+
+- Diagnose-Codes (`SEQUENCE_PRESERVE_*`) — landen erst, wo sie tatsächlich
+  emittiert werden (B/C/D).
+- `PlannerBlockerClassifier`-Mapping — gehört zur Diagnose-Emission, nicht zu A.
+- `mysqlSequenceLookupKey` / `formatMysqlDmgSequenceKey` — MySQL-spezifisch,
+  in C.
+- Renderer-Pfade pro Dialekt — B (PG) und C (MySQL).
+- `MigrationPreflightPlanner`-Erweiterung — D.
+- File-target-Blocker und Schema-Doku — E.
 
 ---
 
