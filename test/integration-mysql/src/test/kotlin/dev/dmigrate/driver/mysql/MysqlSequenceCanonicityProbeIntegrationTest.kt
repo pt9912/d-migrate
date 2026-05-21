@@ -465,9 +465,16 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
         // the hash10. Pinning the inequality protects against a
         // regression that would only keep the truncated segment.
         trig1 shouldNotBe trig2
-        // And the canonical 55-char layout still holds.
-        trig1.length shouldBe 55
-        trig2.length shouldBe 55
+        // Canonical layout: prefix + table + _ + column16 + _ +
+        // hash10 + _bi. The total length floats with the (short)
+        // table segment — the 55-char ceiling only applies when
+        // both identifiers normalise to ≥16 chars — so pin the
+        // shape via prefix/suffix, not via total length.
+        for (trig in listOf(trig1, trig2)) {
+            trig.startsWith("dmg_seq_ledger_transaction_amou_") shouldBe true
+            trig.endsWith("_bi") shouldBe true
+            trig.length shouldBe "dmg_seq_ledger_transaction_amou_".length + 10 + "_bi".length
+        }
     }
 
     test("probeSequenceRow targets one specific row when dmg_sequences holds many") {
