@@ -721,6 +721,104 @@ erledigt), kein Planner-Emit (das ist D).
 - CLI-Wiring des Probes auf `SchemaMigrateCommand` — in D.
 - Diagnose-Codes (`SEQUENCE_PRESERVE_PROBE_FAILED` etc.) — in D.
 
+### 6.3 Sub-Slice C — MySQL-Probe-Adapter (Detail-DoD)
+
+Sub-Slice C liefert die JDBC-Implementierung der
+[`SequenceCurrentValueProbe`] für MySQL gegen die Helper-Table-
+Emulation (`dmg_sequences`). Reine Read-Side-Arbeit — Renderer ist
+in A erledigt, Planner-Emit in D, kein CLI-Wiring.
+
+**Wichtige Unterschiede zu B (PG):**
+
+- Query operiert auf `dmg_sequences` (Helper-Table), nicht direkt
+  auf einer Sequence-Relation.
+- `managed_by` und `format_version` werden geprüft, damit
+  operator-eingefügte Zeilen nicht versehentlich als preserve-Target
+  surfaced werden. Mismatch → `Failed`, nicht `Read`.
+- MySQL hat kein `is_called` — `Read.isCalled` bleibt `null`.
+- Das Fehlen der `dmg_sequences`-Tabelle (Helper-Table noch nicht
+  gebootstrappt) ist ein Read-State, kein Konfigurationsfehler:
+  mapped zu `NotFound`, sodass `CreateSequence`-Pfade (welche die
+  Helper-Table erst aufsetzen) sauber durchlaufen.
+
+**Artefakt (Produktionscode):**
+
+- `adapters/driven/driver-mysql/.../MysqlSequenceCurrentValueProbe.kt`
+  *(neu)*: implementiert `SequenceCurrentValueProbe.probe(connection,
+  sequenceRef)`. Query-Shape:
+  ```sql
+  SELECT `next_value`, `managed_by`, `format_version`
+  FROM `dmg_sequences`
+  WHERE `name` = '<lookupKey>'
+  ```
+  (Filter auf `managed_by` / `format_version` passieren in Kotlin,
+  damit ein `managed_by != 'd-migrate'`-Treffer als strukturierter
+  `Failed` surfaced, nicht als false-positive `NotFound`.)
+  Der `lookupKey` kommt deterministisch aus
+  `MysqlSequenceSupportNaming.lookupKey(sequenceRef)` (siehe A).
+  Mapping pro MySQL-Error-Code:
+  - `1146` *ER_NO_SUCH_TABLE* (`dmg_sequences` existiert nicht) →
+    `NotFound` (Helper-Table-Bootstrap fehlt noch).
+  - `1142` *ER_TABLEACCESS_DENIED_ERROR* (SELECT-Recht fehlt) →
+    `Failed("PROBE_PERMISSION_DENIED", …)`.
+  - Andere `SQLException` → `Failed("PROBE_QUERY_FAILED", …)`.
+  - ResultSet leer → `NotFound` (Sequence-Row nicht in Helper-Table).
+  - Row gefunden aber `managed_by != 'd-migrate'` →
+    `Failed("PROBE_UNMANAGED_ROW", …)`.
+  - Row gefunden aber `format_version` nicht in
+    `SUPPORTED_FORMAT_VERSIONS` →
+    `Failed("PROBE_UNKNOWN_FORMAT_VERSION", …)`.
+  - Mehr als 1 Row (defensiv; PK auf `name` macht das unmöglich) →
+    `Failed("PROBE_AMBIGUOUS_ROW", …)`.
+
+**Artefakt (Tests):**
+
+- `MysqlSequenceCurrentValueProbeTest` (Unit mit JDBC-Mock): pinnt
+  Query-SQL inkl. Lookup-Key, alle sechs Outcome-Branches
+  (Read, NotFound × 2 (table missing, row missing), Failed × 4
+  (permission, unmanaged, unknown-format-version, query-failed)),
+  und Statement/ResultSet-close-Garantien.
+- `MysqlSequenceCurrentValueProbeIntegrationTest` (live MySQL via
+  testcontainers): pinnt End-to-End gegen `dmg_sequences` —
+  bootstrapped Helper-Table + frische Row → Read; Row nach
+  `dmg_nextval()` → Read mit hochgezähltem `next_value`; gelöschte
+  Row → NotFound; nicht-existente `dmg_sequences` → NotFound;
+  unmanaged-row (manuelles INSERT mit `managed_by = 'other'`) →
+  Failed(`PROBE_UNMANAGED_ROW`). Lauf via `make integration`.
+
+**Definition of Done (C):**
+
+- [ ] `MysqlSequenceCurrentValueProbe` implementiert
+      `SequenceCurrentValueProbe` und gibt für eine d-migrate-managed
+      Helper-Table-Row `Read(value=next_value, matchedRows=1,
+      isCalled=null, managedBy='d-migrate', formatVersion=…)` zurück.
+- [ ] `dmg_sequences` nicht vorhanden (MySQL error 1146) → `NotFound`.
+- [ ] Sequence-Row nicht vorhanden (0-row SELECT) → `NotFound`.
+- [ ] Lese-Recht fehlt (MySQL error 1142) →
+      `Failed("PROBE_PERMISSION_DENIED", …)`.
+- [ ] `managed_by != 'd-migrate'` → `Failed("PROBE_UNMANAGED_ROW", …)`.
+- [ ] `format_version` außerhalb
+      `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS` →
+      `Failed("PROBE_UNKNOWN_FORMAT_VERSION", …)`.
+- [ ] `lookupKey` wird über `MysqlSequenceSupportNaming.lookupKey`
+      ermittelt (single source of truth mit dem A-Renderer).
+- [ ] Unit-Test mit JDBC-Mock pinnt das Query-SQL und alle Error-
+      Branches.
+- [ ] Integration-Test (`make integration`) pinnt End-to-End gegen
+      einen echten MySQL-Container, inkl. Bootstrap → Read,
+      `dmg_nextval` → Read, unmanaged-row → Failed.
+- [ ] Kein Planner-Emit, kein CLI-Wiring in C.
+- [ ] `make docker-test MODULES=":adapters:driven:driver-mysql
+      :test:integration-mysql"` grün.
+- [ ] `make docker-coverage-gate` grün.
+
+**Bewusst nicht in C:**
+
+- Pipeline-Integration / Planner-Emit — in D.
+- CLI-Wiring des Probes — in D.
+- Diagnose-Codes (`SEQUENCE_PRESERVE_PROBE_FAILED` etc.) — in D.
+- File-target-Blocker und Schema-Doku — E.
+
 ---
 
 ## 7. Akzeptanzkriterien
