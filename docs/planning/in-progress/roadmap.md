@@ -457,7 +457,7 @@ Muster. Details:
 > `NeutralType.Identifier`) und migriert keine handgeschriebenen
 > SQLite-Sequence-Loesungen.
 
-#### Aktueller Arbeitsstand 0.9.7 (2026-05-19)
+#### Aktueller Arbeitsstand 0.9.7 (2026-05-21)
 
 0.9.7 ist weiterhin in Arbeit; die Zeilen A-E oben beschreiben abgeschlossene
 Migrate-Basis-Slices, nicht den vollstaendigen Milestone-Abschluss.
@@ -477,7 +477,7 @@ und die weiterhin offenen Restpunkte zusammen.
 | E.1 | Routine-Migration fuer PostgreSQL/MySQL inklusive Body-Normalisierung, Scrubbing und Dependency-Sortierung | ✅ erledigt (2026-05-15/16) |
 | E.2 | Trigger-Rendering fuer PostgreSQL, MySQL und SQLite inklusive Strict-Gap-Wiring, Body-Validierung, Namens-Kollisionsschutz und SQLite-Rebuild-Klassifikation | ✅ erledigt (2026-05-18) |
 | E.3 | Erster PostgreSQL-Sequence-Slice; Preserve-/aktueller-Wert-Policy und Cross-Dialect-Sequencing bleiben offen | ✅ erledigt seit 2026-05-08 |
-| E Rest | MySQL-Sequence-Diff-Migration ✅ (2026-05-20, Sub-Slices A–E: Template-Extraktion + Diff-Renderer + RenameSequence via DropCreateFallback + SequenceDefaultReprojector-Integration + Closing; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`). Offen bleiben: SQLite-Sequence-Diff, aktueller Sequence-Wert / Preserve-Policy, SQLite-Trigger-Reverse-Read, Cross-Dialect-Sequencing, MySQL-Sequence-Drift-Check (Live-DB-Probe-Adapter analog F.5 E.3) | teilerledigt |
+| E Rest | MySQL-Sequence-Diff-Migration ✅ (2026-05-20, Sub-Slices A–E; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`). MySQL-Sequence-Drift-Check ✅ (2026-05-20, Sub-Slices A–F + Review-Follow-ups 1–4; Live-DB-Probe-Adapter analog F.5 E.3; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`). Sequence-preserveCurrentValue ✅ (2026-05-21, Sub-Slices A–E: Foundations + PG/MySQL-Renderer in A, PG-Probe in B, MySQL-Probe in C, Pipeline-Integration + Planner-Emit + CLI in D, Schema-Doku + Closing in E; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`). Offen bleiben: SQLite-Sequence-Diff, SQLite-Trigger-Reverse-Read, Cross-Dialect-Sequencing, atomare Probe+setval unter Lock, CreateSequence-Pre-Probe-Gate Widening, Multi-Sequence-Atomicity | teilerledigt |
 | F.0-F.3 | Versionierte Plan-/Overlay-Vertraege, Reversibilitaets-Summaries, Rollback-v2-Header, Overlay-Secret-Diagnostik und `DataTransformationContract`-Default `NONE`; echte automatische Backfills bleiben Phase-1.x-Material | ✅ erste Slices erledigt |
 | F.4 | Dependency-Re-Projection nach Rename ist vollstaendig (FK-Targets, View-/Trigger-/Index-/Default-Bindungen); View-/Trigger-/Routine-/Sequence-Renames sind ueber alle drei Dialekte umgesetzt | ✅ erledigt (2026-05-19) |
 | F.4 G | Artefact-Producer-Wiring: `--plan-artefact <path>` emittiert signierte `migration-plan.v1`-JSON; `MigrationPlanArtifactBuilder` + Sink-Write + Runner-Emission live; `transactionScope`-Drift im Contract-Test gefixt; §E.3 DoD-Checkliste + §11 DoD Box (d) abgehakt. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md` | ✅ erledigt (2026-05-19) |

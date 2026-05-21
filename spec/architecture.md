@@ -766,6 +766,128 @@ DdlResult
 Der Default-Modus `SINGLE` bleibt rueckwaertskompatibel — alle Statements
 werden in einer Datei ausgegeben, die Phase-Information wird ignoriert.
 
+### 3.9 Live-DB-Probes fuer Sequence-Migrationen (0.9.7)
+
+`schema migrate --execute` gegen MySQL/PostgreSQL-Targets traegt zwei
+unabhaengige Live-DB-Probe-Stages im Render-Pfad — beide folgen dem
+F.5 `CheckPreflightProbe`-Adapter-Muster: stateless Port in
+`hexagon:ports-read`, JDBC-Adapter im Driver-Modul, Application-Layer-
+Stage entscheidet ueber Skip/Probe/Block, CLI-Wiring im `:adapters:driving:cli`-
+Modul.
+
+#### 3.9.1 Drift-Check fuer die MySQL-Helper-Table-Emulation
+
+Sub-Slices A-F + Follow-ups (Plan-Doc:
+[`done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`](../docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md)).
+
+Vor jedem Sequence-/`SequenceNextVal`-Render verifiziert die Pipeline,
+dass die `dmg_sequences`-Helper-Table (Tabelle + `dmg_nextval`/`dmg_setval`-
+Routinen + per-Sequenz-Zeile + spaltenbezogener `dmg_seq_…_bi`-Trigger)
+der kanonischen Form entspricht. Drift wird mit
+`E124_MYSQL_SEQUENCE_DRIFT_TABLE`/`_ROUTINE`/`_ROW`/`_TRIGGER` (alle
+`MANUAL_ACTION_REQUIRED`) geblockt; PK-Verlust und Body-Signatur-
+Vergleich (nicht nur Marker-Substring) sind Teil des Vertrags.
+
+```
+plan
+  → MysqlSequenceCanonicityStage.run(probe, request, target, dialect, plan)
+        → fuer jede Sequence-Op + jede AddColumn/AlterColumnDefault mit SequenceNextVal:
+              SUPPORT_TABLE + NEXTVAL_ROUTINE + SETVAL_ROUTINE + SEQUENCE_ROW + SUPPORT_TRIGGER
+              → Declarations (CANONICAL/DRIFT/MISSING/NOT_RUN_*/PROBE_RUNTIME_ERROR)
+  → DdlGenerationOptions.mysqlSequenceCanonicity
+  → MysqlDiffSequenceOps.canonicityBlocks(op, intent, ctx) gated Create/Alter/Drop/Rename
+  → MigrationDdlResult.mysqlSequenceCanonicity → SchemaMigrateReport
+```
+
+Schluesselkomponenten:
+
+- **Port**: `MysqlSequenceCanonicityProbe` + sealed `MysqlSequenceCanonicityKind`
+  (`SUPPORT_TABLE`/`NEXTVAL_ROUTINE`/`SETVAL_ROUTINE`/`SEQUENCE_ROW`/
+  `SUPPORT_TRIGGER`) + `MysqlSequenceCanonicityStatus`.
+- **Gate**: `MysqlSequenceCanonicityGate.decide(declaration, intent)` routet
+  per `(status × OpIntent)`-Matrix; `MISSING + DROP` fuer `SEQUENCE_ROW`/
+  `SUPPORT_TABLE` blockt mit `E124_MYSQL_SEQUENCE_MISSING_FOR_DROP`.
+- **Adapter**: `MysqlSequenceCanonicityProbeAdapter` (`driver-mysql`) nutzt
+  `INFORMATION_SCHEMA.COLUMNS` + `SHOW CREATE FUNCTION/TRIGGER`; 1305/1360
+  MySQL-Errors → `MISSING`.
+- **Stage**: `MysqlSequenceCanonicityStage` (`hexagon:application`) im Render-
+  Pipeline-Flow.
+
+#### 3.9.2 preserveCurrentValue — runtime-state-Migration
+
+Sub-Slices A-E (Plan-Doc:
+[`done/ImpPlan-0.9.7-sequence-preserve-current-value.md`](../docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md)).
+
+Per Default verliert eine Sequenz ihren runtime-Wert beim Migrieren —
+`CREATE SEQUENCE … START WITH 1` setzt `nextval` auf `1`, auch wenn das
+Live-Target bereits bei `5000` stand. `preserveCurrentValue: true` auf
+`SequenceDefinition` aktiviert opt-in pro Sequenz einen Follow-up-Pfad,
+der den geprobten `last_value`/`next_value` ueber die Migration rettet.
+
+```
+plan(initial)
+  → SequencePreserveStage.run(probe, request, target, dialect, plan)
+        → fuer jede Create/Alter/RenameSequence mit preserveCurrentValue=true:
+              SequenceCurrentValueProbe(target, ref) → Read/NotFound/Failed/NotApplicable
+              → AlterSequenceCurrentValue-FollowUp direkt hinter der parent-Op
+                  (dependencies = setOf(parent.id))
+              | INFO SEQUENCE_PRESERVE_NOT_FOUND (CreateSequence ohne Vorzustand)
+              | BLOCKER SEQUENCE_PRESERVE_PROBE_FAILED/REQUIRES_DB_TARGET/NOT_SUPPORTED_BY_DIALECT/CONFIG_INVALID
+  → augmentierter Plan ersetzt das Original (auch fuer migration-plan.v1-Artefakt!)
+  → Renderer:
+        PG  → SELECT setval('<seq>', <value>, <is_called>);
+        MySQL → UPDATE dmg_sequences SET next_value = <v>
+                 WHERE name = <key> AND managed_by IN (...) AND format_version IN (...);
+        SQLite → DIALECT_UNSUPPORTED_OPERATION (kein helper-table-Emulationsplan landet)
+```
+
+Schluesselkomponenten:
+
+- **Port**: `SequenceCurrentValueProbe` + sealed `SequenceCurrentValueProbeResult`
+  (`Read{value, matchedRows, isCalled?, managedBy?, formatVersion?}`,
+  `Failed{code, message}`, `NotFound`, `NotApplicable`).
+- **Werttyp**: `SequenceObjectRef(name, schema, dialect: RenameProjectionDialect)`
+  als Probe-Eingabe.
+- **DiffOp-Subtyp**: `DiffOperation.AlterSequenceCurrentValue` mit
+  `pairId`/`probeSequenceRef`/`applySequenceRef`/`currentValue`/`isCalled?`/
+  `restoreValue?`/`restoreIsCalled?`/`rollbackImpossible`/
+  `rollbackImpossibleReason?`/`revertAfterRename`.
+- **Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
+  (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL).
+- **JDBC-Adapter**: `PostgresSequenceCurrentValueProbe` (SQLSTATE
+  42P01/42501-Mapping), `MysqlSequenceCurrentValueProbe`
+  (Error-Code 1146/1142 + `managed_by`/`format_version`-Set-Validation
+  ueber `MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY` /
+  `SUPPORTED_FORMAT_VERSIONS`).
+- **Stage**: `SequencePreserveStage` (`hexagon:application`) — Kandidaten-
+  Filter, file-Target-Priority-Blocker, Dialekt-Skip, Probe-Routing,
+  Plan-Augmentation.
+- **CLI**: `SequenceCurrentValueProbeRunner` dispatcht per
+  `SequenceObjectRef.dialect` an die PG/MySQL-Adapter.
+
+`AlterSequenceCurrentValue`-Follow-ups landen **direkt hinter ihrer
+parent-Op** im augmentierten Plan und sind in `dependencies` auf die
+parent-Op-ID gepinnt. Das signierte `migration-plan.v1`-Artefakt
+(`--plan-artefact`) erhaelt den augmentierten Plan — ein Operator,
+der nur das Artefakt liest, sieht das `setval`/`UPDATE`-Statement.
+
+#### 3.9.3 Gemeinsames Probe-Adapter-Pattern
+
+Beide Stages folgen dem gleichen Schichtschnitt — neue Live-DB-Probes
+(z.B. fuer CHECK-Constraints in F.5 Sub-Slice E) folgen diesem
+Pattern, sodass `:hexagon:application` keine driver-spezifischen
+Importe sieht und CLI-Wiring konsistent bleibt:
+
+| Schicht | Drift-Check | preserveCurrentValue |
+|---|---|---|
+| Port (`hexagon:ports-read`) | `MysqlSequenceCanonicityProbe` | `SequenceCurrentValueProbe` |
+| Result-Typ | `MysqlSequenceCanonicityDeclaration` | sealed `SequenceCurrentValueProbeResult` |
+| Application-Layer Stage | `MysqlSequenceCanonicityStage` | `SequencePreserveStage` |
+| JDBC-Adapter | `MysqlSequenceCanonicityProbeAdapter` | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe` |
+| CLI-Runner | `MysqlSequenceCanonicityProbeRunner` | `SequenceCurrentValueProbeRunner` |
+| Renderer-Anbindung | `MysqlDiffSequenceOps.canonicityBlocks` | Stage augmentiert Plan; Renderer emittiert Follow-up |
+| Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_*` → `MANUAL_ACTION_REQUIRED`/`DIALECT_UNSUPPORTED_OPERATION` |
+
 ---
 
 ## 4. Querschnittsthemen

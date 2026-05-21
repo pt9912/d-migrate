@@ -644,40 +644,40 @@ Re-Schnitt-Begründung).
 
 **Definition of Done (A):**
 
-- [ ] `SequenceDefinition.preserveCurrentValue` existiert mit Default
+- [x] `SequenceDefinition.preserveCurrentValue` existiert mit Default
       `false`; bestehende Code-Pfade kompilieren ohne Änderung.
-- [ ] YAML-Roundtrip pinnt: fehlendes Feld → `false`, `true`/`false`
+- [x] YAML-Roundtrip pinnt: fehlendes Feld → `false`, `true`/`false`
       werden gelesen/geschrieben.
-- [ ] `SequenceObjectRef` ist als eigener Werttyp angelegt (nicht
+- [x] `SequenceObjectRef` ist als eigener Werttyp angelegt (nicht
       Alias auf `DiffObjectRef`); Dialekt-Feld ist
       `RenameProjectionDialect` (`hexagon:core` darf nicht von
       `ports-common`'s `DatabaseDialect` abhängen — Application-Layer
       mapped am Planner-Boundary).
-- [ ] `SequenceCurrentValueProbe`-Port kompiliert; sealed
+- [x] `SequenceCurrentValueProbe`-Port kompiliert; sealed
       `SequenceCurrentValueProbeResult` deckt alle vier Outcomes
       ohne `else`-Zweige in Tests ab.
-- [ ] `AlterSequenceCurrentValue` ist als `DiffOperation`-Subtyp
+- [x] `AlterSequenceCurrentValue` ist als `DiffOperation`-Subtyp
       konstruierbar mit allen Feldern aus §3.1/§5.3.
-- [ ] **PG-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
+- [x] **PG-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
       als `SELECT setval('<seq>', <value>, <isCalled>)`. `isCalled`
       muss aus dem DiffOp-Feld propagiert werden (PG verlangt es).
-- [ ] **MySQL-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
+- [x] **MySQL-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
       als `UPDATE dmg_sequences SET next_value = <value> WHERE name =
       <escaped> AND managed_by IN (<mysqlExpectedManagedBy>) AND format_version IN
       (<mysqlExpectedFormatVersions>)`. Statement betrifft exakt eine
       Zeile (`expectedAffectedRows = 1`).
-- [ ] **SQLite-Diff-DDL-Generator** mapped
+- [x] **SQLite-Diff-DDL-Generator** mapped
       `AlterSequenceCurrentValue` deterministisch auf
       `DIALECT_UNSUPPORTED_OPERATION` — Endzustand, kein
       Carve-out-Kommentar im Code.
-- [ ] Kein Planner-Emit (`AlterSequenceCurrentValue` kommt nicht von
+- [x] Kein Planner-Emit (`AlterSequenceCurrentValue` kommt nicht von
       `DiffPlanner`), kein Live-DB-Probe-Adapter in A. Die Renderer
       sind über synthetische DiffResult-Inputs unit-getestet.
-- [ ] Tests laufen via `make docker-test MODULES=":hexagon:core
+- [x] Tests laufen via `make docker-test MODULES=":hexagon:core
       :hexagon:ports-read :adapters:driven:formats
       :adapters:driven:driver-postgresql :adapters:driven:driver-mysql
       :adapters:driven:driver-sqlite"` grün.
-- [ ] `make docker-coverage-gate` grün (kein Coverage-Regression auf
+- [x] `make docker-coverage-gate` grün (kein Coverage-Regression auf
       bestehende Module).
 
 **Bewusst nicht in A:**
@@ -733,26 +733,26 @@ erledigt), kein Planner-Emit (das ist D).
 
 **Definition of Done (B):**
 
-- [ ] `PostgresSequenceCurrentValueProbe` implementiert
+- [x] `PostgresSequenceCurrentValueProbe` implementiert
       `SequenceCurrentValueProbe` und gibt für eine existierende
       Sequenz `Read(value, matchedRows=1, isCalled=...)` zurück.
-- [ ] Sequenz nicht vorhanden (SQLSTATE `42P01`) → `NotFound`.
-- [ ] Lese-Recht fehlt (SQLSTATE `42501`) →
+- [x] Sequenz nicht vorhanden (SQLSTATE `42P01`) → `NotFound`.
+- [x] Lese-Recht fehlt (SQLSTATE `42501`) →
       `Failed("PROBE_PERMISSION_DENIED", message)`.
-- [ ] Andere `SQLException` → `Failed("PROBE_QUERY_FAILED", message)`.
-- [ ] Schema-qualifizierte Sequenzen werden korrekt gequoted; ohne
+- [x] Andere `SQLException` → `Failed("PROBE_QUERY_FAILED", message)`.
+- [x] Schema-qualifizierte Sequenzen werden korrekt gequoted; ohne
       Schema-Angabe bleibt der Lookup unqualifiziert (PG resolved
       via `search_path`).
-- [ ] Unit-Test mit JDBC-Mock pinnt das Query-SQL und die drei
+- [x] Unit-Test mit JDBC-Mock pinnt das Query-SQL und die drei
       SQLSTATE-Branches.
-- [ ] Integration-Test (`make integration`) pinnt End-to-End gegen
+- [x] Integration-Test (`make integration`) pinnt End-to-End gegen
       einen echten PostgreSQL-Container.
-- [ ] Kein Planner-Emit, kein CLI-Wiring in B. Der Probe-Adapter ist
+- [x] Kein Planner-Emit, kein CLI-Wiring in B. Der Probe-Adapter ist
       noch nicht in `SchemaMigrateCommand` gewired — das passiert in
       D.
-- [ ] `make docker-test MODULES=":adapters:driven:driver-postgresql"`
+- [x] `make docker-test MODULES=":adapters:driven:driver-postgresql"`
       grün.
-- [ ] `make docker-coverage-gate` grün.
+- [x] `make docker-coverage-gate` grün.
 
 **Bewusst nicht in B:**
 
@@ -828,29 +828,29 @@ in A erledigt, Planner-Emit in D, kein CLI-Wiring.
 
 **Definition of Done (C):**
 
-- [ ] `MysqlSequenceCurrentValueProbe` implementiert
+- [x] `MysqlSequenceCurrentValueProbe` implementiert
       `SequenceCurrentValueProbe` und gibt für eine d-migrate-managed
       Helper-Table-Row `Read(value=next_value, matchedRows=1,
       isCalled=null, managedBy in `supportedManagedBy`, formatVersion=…)` zurück.
-- [ ] `dmg_sequences` nicht vorhanden (MySQL error 1146) → `NotFound`.
-- [ ] Sequence-Row nicht vorhanden (0-row SELECT) → `NotFound`.
-- [ ] Lese-Recht fehlt (MySQL error 1142) →
+- [x] `dmg_sequences` nicht vorhanden (MySQL error 1146) → `NotFound`.
+- [x] Sequence-Row nicht vorhanden (0-row SELECT) → `NotFound`.
+- [x] Lese-Recht fehlt (MySQL error 1142) →
       `Failed("PROBE_PERMISSION_DENIED", …)`.
-- [ ] `managed_by` außerhalb von `supportedManagedBy` → `Failed("PROBE_UNMANAGED_ROW", …)`.
-- [ ] `format_version` außerhalb
+- [x] `managed_by` außerhalb von `supportedManagedBy` → `Failed("PROBE_UNMANAGED_ROW", …)`.
+- [x] `format_version` außerhalb
       `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS` →
       `Failed("PROBE_UNKNOWN_FORMAT_VERSION", …)`.
-- [ ] `lookupKey` wird über `MysqlSequenceSupportNaming.lookupKey`
+- [x] `lookupKey` wird über `MysqlSequenceSupportNaming.lookupKey`
       ermittelt (single source of truth mit dem A-Renderer).
-- [ ] Unit-Test mit JDBC-Mock pinnt das Query-SQL und alle Error-
+- [x] Unit-Test mit JDBC-Mock pinnt das Query-SQL und alle Error-
       Branches.
-- [ ] Integration-Test (`make integration`) pinnt End-to-End gegen
+- [x] Integration-Test (`make integration`) pinnt End-to-End gegen
       einen echten MySQL-Container, inkl. Bootstrap → Read,
       `dmg_nextval` → Read, unmanaged-row → Failed.
-- [ ] Kein Planner-Emit, kein CLI-Wiring in C.
-- [ ] `make docker-test MODULES=":adapters:driven:driver-mysql
+- [x] Kein Planner-Emit, kein CLI-Wiring in C.
+- [x] `make docker-test MODULES=":adapters:driven:driver-mysql
       :test:integration-mysql"` grün.
-- [ ] `make docker-coverage-gate` grün.
+- [x] `make docker-coverage-gate` grün.
 
 **Bewusst nicht in C:**
 
@@ -1202,37 +1202,37 @@ sehen.
 
 #### Definition of Done (D)
 
-- [ ] `SequencePreserveStage` läuft auf `--execute` gegen MySQL- und
+- [x] `SequencePreserveStage` läuft auf `--execute` gegen MySQL- und
       PG-Targets, wenn der Plan mindestens eine Kandidat-Sequence-Op
       mit `preserveCurrentValue = true` enthält (§6.4.1-Filter).
-- [ ] Für jede Kandidat-Op läuft der dialect-spezifische Probe;
+- [x] Für jede Kandidat-Op läuft der dialect-spezifische Probe;
       Outcome wird deterministisch nach §6.4.5-Tabelle in einen
       Follow-up oder eine Diagnose übersetzt. **DropSequence** läuft
       nicht durch die Routing-Tabelle (vorher gefiltert).
-- [ ] `CreateSequence` mit `shouldProbeCreateSequence = false` →
+- [x] `CreateSequence` mit `shouldProbeCreateSequence = false` →
       INFO-Diagnose `SEQUENCE_PRESERVE_NOT_FOUND` OHNE Probe-Aufruf.
-- [ ] `AlterSequenceCurrentValue`-Follow-ups landen direkt hinter
+- [x] `AlterSequenceCurrentValue`-Follow-ups landen direkt hinter
       ihrer parent-Op im finalen `DiffResult.operations`-Stream
       (§6.4.6). `dependencies = setOf(parentOp.id)`.
-- [ ] `RenameSequence`-Follow-ups setzen `revertAfterRename = true`;
+- [x] `RenameSequence`-Follow-ups setzen `revertAfterRename = true`;
       Down-Reihenfolge ist `RenameSequence-Down` vor
       `AlterSequenceCurrentValue-Down` mit gleicher `pairId`
       (umgesetzt im Diff-Down-Renderer; im Stage nur Flag-Setzung). Der
       `pairId` ist op-id-basiert und daher eindeutig.
-- [ ] Probe-Exceptions blocken mit
+- [x] Probe-Exceptions blocken mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`; jede betroffene parent-Op
       bekommt eine eigene Diagnose mit propagiertem Probe-`code`.
-- [ ] `SQLite` + `preserveCurrentValue = true` blockt über den
+- [x] `SQLite` + `preserveCurrentValue = true` blockt über den
       Stage-Skip-Pfad mit `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
       (kein Probe-Aufruf wird gestartet).
-- [ ] `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` →
+- [x] `MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS.isEmpty()` →
       Stage emittiert `SEQUENCE_PRESERVE_CONFIG_INVALID` BEVOR
       irgendein Probe öffnet (§6.4.4), falls mindestens eine
       MySQL-Kandidaten-Op existiert.
-- [ ] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist nur dann aktiv, wenn der
+- [x] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist nur dann aktiv, wenn der
       Planer bewusst ohne Probe-Adapter läuft (z. B. Null-Probe-Fn in
       Tests/DI oder ähnliches), bleibt INFO und erzeugt keinen Blocker.
-- [ ] `PlannerBlockerClassifier` mapped:
+- [x] `PlannerBlockerClassifier` mapped:
       - `SEQUENCE_PRESERVE_PROBE_FAILED` → `MANUAL_ACTION_REQUIRED`
       - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
         `DIALECT_UNSUPPORTED_OPERATION`
@@ -1241,19 +1241,19 @@ sehen.
       - `SEQUENCE_PRESERVE_NOT_FOUND` und
         `SEQUENCE_PRESERVE_NOT_RUN_POLICY` bleiben INFO (kein
         Mapping-Eintrag).
-- [ ] CLI (`SchemaMigrateCommand`) wired ein einziges Probe-Lambda
+- [x] CLI (`SchemaMigrateCommand`) wired ein einziges Probe-Lambda
       (Dispatcher) an `SchemaMigrateRunner`; `schema migrate
       --execute` gegen ein MySQL- oder PG-Target mit einer
       `preserveCurrentValue = true`-Sequence läuft End-to-End ohne
       manuelles Eingreifen.
-- [ ] Plan-Artefakt (`--plan-artefact`) reflektiert den augmentierten
+- [x] Plan-Artefakt (`--plan-artefact`) reflektiert den augmentierten
       Plan inkl. `AlterSequenceCurrentValue`-Follow-ups (§6.4.7).
-- [ ] Kein neues Report-Feld in `SchemaMigrateReport` — die
+- [x] Kein neues Report-Feld in `SchemaMigrateReport` — die
       Follow-up-Ops surfacen über `operations`/`statements`; die
       neuen Diagnose-Codes über `diagnostics`.
-- [ ] `make docker-test MODULES=":hexagon:core :hexagon:application
+- [x] `make docker-test MODULES=":hexagon:core :hexagon:application
       :adapters:driving:cli"` grün.
-- [ ] `make docker-coverage-gate` grün.
+- [x] `make docker-coverage-gate` grün.
 
 #### Bewusst nicht in D
 
@@ -1312,18 +1312,18 @@ mit drei Artefakten:
 
 **Definition of Done (E):**
 
-- [ ] `spec/neutral-model-spec.md` §9 dokumentiert
+- [x] `spec/neutral-model-spec.md` §9 dokumentiert
       `preserve_current_value` mit Yaml-Beispiel, Renderer-Matrix
       und SQLite-Carve-out.
-- [ ] `CHANGELOG.md` enthält einen einzelnen Workstream-Eintrag
+- [x] `CHANGELOG.md` enthält einen einzelnen Workstream-Eintrag
       unter `### Added` mit allen Commit-Refs A–D.
-- [ ] Plan-Doc ist in `docs/planning/done/` (umbenannt via
+- [x] Plan-Doc ist in `docs/planning/done/` (umbenannt via
       `git mv`); Status auf `Done` gesetzt.
-- [ ] §6-Tabelle im Plan-Doc bekommt Commit-Refs pro Sub-Slice.
-- [ ] `make docker-test` grün (Doku-only-Edit; nur Cache-
+- [x] §6-Tabelle im Plan-Doc bekommt Commit-Refs pro Sub-Slice.
+- [x] `make docker-test` grün (Doku-only-Edit; nur Cache-
       Validierung erwartet).
-- [ ] `make docker-coverage-gate` grün.
-- [ ] Doku-Konsistenz: keine Markdown-Linter-Errors, alle
+- [x] `make docker-coverage-gate` grün.
+- [x] Doku-Konsistenz: keine Markdown-Linter-Errors, alle
       Querverweise auf den `done/`-Plan-Doc-Pfad stimmen.
 
 **Bewusst nicht in E:**
@@ -1339,89 +1339,89 @@ mit drei Artefakten:
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `SequenceDefinition.preserveCurrentValue` ist im Schema-Modell
+- [x] `SequenceDefinition.preserveCurrentValue` ist im Schema-Modell
       definiert und ist die einzige Schaltstelle für diese Tranche.
-- [ ] PG-Probe liest `last_value`; PG-Renderer emittiert
+- [x] PG-Probe liest `last_value`; PG-Renderer emittiert
       `SELECT setval('<seq>', <value>, <isCalled>)` mit korrekt
       propagiertem `isCalled`.
-- [ ] PG-Probe übermittelt bei `Read` ein nicht-null `isCalled`.
-- [ ] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
+- [x] PG-Probe übermittelt bei `Read` ein nicht-null `isCalled`.
+- [x] MySQL-Probe liest `dmg_sequences.next_value`; MySQL-Renderer
       emittiert `UPDATE dmg_sequences …`.
-- [ ] Konfigurationsabweichung im MySQL-Flow (`mysqlExpectedFormatVersions` leer) blockt den
+- [x] Konfigurationsabweichung im MySQL-Flow (`mysqlExpectedFormatVersions` leer) blockt den
       Planner deterministisch mit `SEQUENCE_PRESERVE_CONFIG_INVALID`, wenn mindestens eine
       MySQL-Kandidaten-Op vorliegt.
-- [ ] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
+- [x] MySQL-Probe validiert `managed_by`/`format_version` gegen ein
   bekanntes d-migrate Sequenz-Emulationsformat (`supportedManagedBy` inkl.
   `supportedFormatVersions`), sonst wird
   `SEQUENCE_PRESERVE_PROBE_FAILED` gesetzt.
-- [ ] MySQL-Probe und MySQL-Renderer verwenden dieselbe Resolverfunktion
+- [x] MySQL-Probe und MySQL-Renderer verwenden dieselbe Resolverfunktion
       für den `dmg_sequences.name`-Lookup-Key aus `SequenceObjectRef`
       (gleicher `mysql_sequence_key` für Probe/Render-Phase).
-- [ ] `SEQUENCE_PRESERVE_NOT_FOUND` ist als INFO für `CreateSequence` ohne deterministischen Vorzustand definiert
+- [x] `SEQUENCE_PRESERVE_NOT_FOUND` ist als INFO für `CreateSequence` ohne deterministischen Vorzustand definiert
       (kein Blocker) und dokumentiert explizit die `ROLLBACK_NOT_POSSIBLE`-Auswirkung
       für den Current-Value-Teil.
-- [ ] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist als INFO definiert, nur für
+- [x] `SEQUENCE_PRESERVE_NOT_RUN_POLICY` ist als INFO definiert, nur für
       Test-/Fallback-Pfade aktiv und dokumentiert bewusstes Nicht-Ausführen
       von Probe/Follow-up ohne Blockerwirkung.
-- [ ] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
+- [x] MySQL-Probe schlägt fehl (`SEQUENCE_PRESERVE_PROBE_FAILED`), wenn
       die Abfrage auf `dmg_sequences` mehr als eine deterministische Trefferzeile liefert
       oder keine eindeutig matcht.
-- [ ] MySQL-Renderer führt `UPDATE` nur auf genau eine determinierte Zeile aus
+- [x] MySQL-Renderer führt `UPDATE` nur auf genau eine determinierte Zeile aus
       (`1` affected row); Up/Forward nutzt bei 0 oder >1 betroffenen Zeilen
       `SEQUENCE_PRESERVE_PROBE_FAILED`, Down/rollback kennzeichnet explizit
       `ROLLBACK_NOT_POSSIBLE`.
-- [ ] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
+- [x] `CreateSequence` mit fehlendem deterministischem Vorzustand emittiert
       `SEQUENCE_PRESERVE_NOT_FOUND` als Hinweis und erzeugt keinen Blocker.
       Der Hinweis enthält explizit, dass der Current-Value-Restore als
       `ROLLBACK_NOT_POSSIBLE` zu behandeln ist; `AlterSequence`/`RenameSequence`
       ohne Vorzustand blocken mit `SEQUENCE_PRESERVE_PROBE_FAILED`.
-- [ ] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
+- [x] Für `RenameSequence` wird `AlterSequenceCurrentValue` deterministisch mit
       `probeSequenceRef` (old/origin) und `applySequenceRef` (new/target)
       emittiert; Down-Renderer wendet den Restore auf `probeSequenceRef` an.
-- [ ] Bei `RenameSequence` mit `revertAfterRename = true` ist die Down-Reihenfolge
+- [x] Bei `RenameSequence` mit `revertAfterRename = true` ist die Down-Reihenfolge
       durchgängig fest: Rename-Rückoperation (`RenameSequence` down) **vor** der
       `AlterSequenceCurrentValue`-Restore-Operation.
       Die Reihenfolge ist über denselben `pairId` nachweisbar und wird in der
       Assertion deterministisch geprüft.
-- [ ] MySQL-Prüfung/Restore nutzt `mysqlExpectedFormatVersions` aus der
+- [x] MySQL-Prüfung/Restore nutzt `mysqlExpectedFormatVersions` aus der
       Emulations-Definition (nicht einen einzelnen hartkodierten Wert im
       Renderer/Planner), und `format_version` wird über diese Menge evaluiert.
-- [ ] Follow-up-Operationen werden direkt im Anschluss an die jeweilige
+- [x] Follow-up-Operationen werden direkt im Anschluss an die jeweilige
       Sequence-Operation emittiert (keine Umordnung durch
       allgemeine Plan-Sortierung).
-- [ ] Datei-zu-Datei-Modus mit `preserveCurrentValue = true` und mindestens
+- [x] Datei-zu-Datei-Modus mit `preserveCurrentValue = true` und mindestens
       einer probe-fähigen Sequence-Operation blockt vorrangig mit
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`; reine `CreateSequence` ohne
       deterministischen Vorzustand darf nur `SEQUENCE_PRESERVE_NOT_FOUND`
       ausgeben.
-- [ ] Probe-Failure blockt mit
+- [x] Probe-Failure blockt mit
       `SEQUENCE_PRESERVE_PROBE_FAILED`.
-- [ ] SQLite im Execute-Modus blockt mit
+- [x] SQLite im Execute-Modus blockt mit
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
-- [ ] Datei-zu-Datei + SQLite mit `preserveCurrentValue = true` blockt weiterhin
+- [x] Datei-zu-Datei + SQLite mit `preserveCurrentValue = true` blockt weiterhin
       mit `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` (Dateiquell hat Vorrang vor
       Dialektblockern).
-- [ ] Reversibility: `AlterSequenceCurrentValue` Down nutzt den im
+- [x] Reversibility: `AlterSequenceCurrentValue` Down nutzt den im
       Plan gespeicherten `restoreValue` und setzt damit den
       vor-Up-Wert wieder zurück; fehlt der Wert, wird
       `ROLLBACK_NOT_POSSIBLE` ausgewiesen.
-- [ ] Für `AlterSequenceCurrentValue` ist `restoreValue` exakt in den Fällen gesetzt, in denen ein
+- [x] Für `AlterSequenceCurrentValue` ist `restoreValue` exakt in den Fällen gesetzt, in denen ein
       deterministischer Ausgangszustand bekannt ist; `restoreIsCalled` ist für PG dort
       ebenfalls verpflichtend und wird aus dem PG-Probefeld `is_called` übernommen,
       sonst ist Down als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
-- [ ] Für alle Nicht-PG-Op ist `restoreIsCalled` optional.
+- [x] Für alle Nicht-PG-Op ist `restoreIsCalled` optional.
       Für die übrigen Fälle
       ist Down explizit als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
-- [ ] Pro Dialekt mindestens je ein Positiv- und ein
+- [x] Pro Dialekt mindestens je ein Positiv- und ein
       Blocker-Test, inklusive eines Rename-Up/Down-Reversibility-Tests.
 
 ---
 
 ## 8. Definition of Done (§13-Template)
 
-- [ ] **Modus**: execute (Probe braucht Live-DB).
-- [ ] **Renderbare Ops**: `AlterSequenceCurrentValue` auf PG/MySQL.
-- [ ] **Neue Diagnostics**: `SEQUENCE_PRESERVE_PROBE_FAILED`,
+- [x] **Modus**: execute (Probe braucht Live-DB).
+- [x] **Renderbare Ops**: `AlterSequenceCurrentValue` auf PG/MySQL.
+- [x] **Neue Diagnostics**: `SEQUENCE_PRESERVE_PROBE_FAILED`,
       `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`,
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_PRESERVE_CONFIG_INVALID`. Alle vier
@@ -1430,26 +1430,26 @@ mit drei Artefakten:
       `SEQUENCE_PRESERVE_CONFIG_INVALID` auf `MANUAL_ACTION_REQUIRED`;
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` auf
       `DIALECT_UNSUPPORTED_OPERATION`.
-- [ ] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
+- [x] **Hinweisdiagnose**: `SEQUENCE_PRESERVE_NOT_FOUND` wird im Report
       ohne Blocker-Klasse ausgegeben, wenn eine `CreateSequence`-Operation
       keinen lesbaren Vorzustand hat.
       Für diesen Fall ist der Current-Value-Teil explizit als
       `ROLLBACK_NOT_POSSIBLE` dokumentiert.
-- [ ] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
+- [x] **Up / Down getrennt**: Up = `setval`/`UPDATE`; Down =
       `setval`/`UPDATE` auf den gespeicherten `restoreValue` und für PG
       zwingend `restoreIsCalled`, sonst explizit `ROLLBACK_NOT_POSSIBLE`.
-- [ ] **Rename-Down-Ordering**: bei `RenameSequence` wird die
+- [x] **Rename-Down-Ordering**: bei `RenameSequence` wird die
       `AlterSequenceCurrentValue`-Rollback-Operation deterministisch
       nach der zugehörigen Rename-Rückoperation ausgeführt.
-- [ ] **Report-Felder**: keine neuen.
-- [ ] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
+- [x] **Report-Felder**: keine neuen.
+- [x] **Dialekte**: PG (positiv), MySQL (positiv), SQLite
       (blocker).
-- [ ] **F.0-Erfüllung**: irrelevant.
-- [ ] **Positive + Blocker-Tests**: siehe §7.
-- [ ] **Rollback-Test**: explizit gepinnt für alle drei
+- [x] **F.0-Erfüllung**: irrelevant.
+- [x] **Positive + Blocker-Tests**: siehe §7.
+- [x] **Rollback-Test**: explizit gepinnt für alle drei
       Dialekte; SQLite-Blocker ist auch Rollback-Blocker.
-- [ ] **Datei-zu-Datei**: blockt, weil keine Live-DB.
-- [ ] **Bestehende Verträge unveraendert**: bestehende
+- [x] **Datei-zu-Datei**: blockt, weil keine Live-DB.
+- [x] **Bestehende Verträge unveraendert**: bestehende
       Sequence-Slices bleiben grün.
 
 ---

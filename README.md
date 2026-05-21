@@ -29,7 +29,9 @@ d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migra
 - Direkter DB-zu-DB-Datentransfer mit `data transfer`
 - Inkrementeller Export über `--since-column` / `--since`
 - Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
-- CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `data export`, `data import`, `data transfer` und `data profile`
+- CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `schema migrate`, `schema rollback`, `data export`, `data import`, `data transfer` und `data profile`
+- Diff-basierte Migrationen mit `schema migrate` und `schema rollback`: Plan → Render → Execute → Post-Compare → optionales Rollback-Artefakt; signiertes `migration-plan.v1`-Artefakt per `--plan-artefact`
+- Live-DB-Probes für MySQL-Sequence-Migrationen: Drift-Check der `dmg_sequences`-Helper-Table-Emulation gegen die kanonische Form (`E124_MYSQL_SEQUENCE_DRIFT_*` Diagnostik) und opt-in `preserveCurrentValue` auf Sequence-Definitionen, das den runtime-Wert (PG `last_value`, MySQL `dmg_sequences.next_value`) über `CREATE`/`ALTER`/`RENAME SEQUENCE`-Migrationen rettet
 - MCP-Server (`d-migrate mcp serve --transport stdio|http`) per MCP 2025-11-25 mit Transport, Auth (JWT-JWKS, JWT-Introspection, stdio-Token-Registry), Discovery (`tools/list`, `resources/list`, `resources/templates/list`), JSON-Schema-Vertrag und produktiven MCP-Tool-Handlern inklusive kontrollierter Start-Tools
 - Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
 - OCI-Image für die Nutzung mit Docker
