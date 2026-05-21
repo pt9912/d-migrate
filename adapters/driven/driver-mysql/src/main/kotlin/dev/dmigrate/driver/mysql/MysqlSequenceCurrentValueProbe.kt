@@ -31,7 +31,8 @@ import java.sql.SQLException
  * Outcome routing:
  *
  * - **`Read(value=next_value, isCalled=null, managedBy=…, formatVersion=…)`**
- *   when exactly one row matches and `managed_by = 'd-migrate'` and
+ *   when exactly one row matches and `managed_by` is in
+ *   [MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY] and
  *   `format_version` is in
  *   [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS]. MySQL
  *   has no `is_called` analogue; the helper-table `next_value` column
@@ -47,11 +48,12 @@ import java.sql.SQLException
  * - **`Failed(PROBE_PERMISSION_DENIED, …)`** when the role lacks
  *   `SELECT` privileges (MySQL error 1142 *ER_TABLEACCESS_DENIED_ERROR*).
  * - **`Failed(PROBE_UNMANAGED_ROW, …)`** when a row matches `name`
- *   but `managed_by` is not `'d-migrate'`. Operator-inserted rows
- *   must not be silently overwritten by the preserve renderer's
- *   `UPDATE`.
- * - **`Failed(PROBE_UNKNOWN_FORMAT_VERSION, …)`** when `managed_by =
- *   'd-migrate'` but `format_version` is outside the
+ *   but `managed_by` is outside
+ *   [MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY]. Operator-
+ *   inserted rows must not be silently overwritten by the preserve
+ *   renderer's `UPDATE`.
+ * - **`Failed(PROBE_UNKNOWN_FORMAT_VERSION, …)`** when `managed_by`
+ *   is in `SUPPORTED_MANAGED_BY` but `format_version` is outside the
  *   `SUPPORTED_FORMAT_VERSIONS` set. The emulation has been
  *   upgraded to a layout this build doesn't understand — explicit
  *   blocker prevents accidental cross-version writes.
@@ -74,10 +76,10 @@ object MysqlSequenceCurrentValueProbe : SequenceCurrentValueProbe {
     /** Diagnostic code stamped on a `Failed` outcome when error = 1142. */
     const val CODE_PERMISSION_DENIED: String = "PROBE_PERMISSION_DENIED"
 
-    /** Diagnostic code for rows whose `managed_by` is not `'d-migrate'`. */
+    /** Diagnostic code for rows whose `managed_by` is outside [MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY]. */
     const val CODE_UNMANAGED_ROW: String = "PROBE_UNMANAGED_ROW"
 
-    /** Diagnostic code for `managed_by = 'd-migrate'` but `format_version` not supported. */
+    /** Diagnostic code for `managed_by` in `SUPPORTED_MANAGED_BY` but `format_version` not supported. */
     const val CODE_UNKNOWN_FORMAT_VERSION: String = "PROBE_UNKNOWN_FORMAT_VERSION"
 
     /** Diagnostic code for the (defensive) multi-row case. */
@@ -139,11 +141,12 @@ object MysqlSequenceCurrentValueProbe : SequenceCurrentValueProbe {
             )
         }
 
-        if (managedBy != MysqlSequenceSupportNaming.MANAGED_BY) {
+        if (managedBy !in MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY) {
             return SequenceCurrentValueProbeResult.Failed(
                 code = CODE_UNMANAGED_ROW,
                 message = "dmg_sequences row name='$lookupKey' is owned by " +
-                    "managed_by='$managedBy' (expected '${MysqlSequenceSupportNaming.MANAGED_BY}')",
+                    "managed_by='$managedBy' (expected one of " +
+                    "${MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY})",
             )
         }
 

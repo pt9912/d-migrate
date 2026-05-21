@@ -273,11 +273,13 @@ internal object MysqlDiffSequenceOps {
 
     /**
      * Builds the `UPDATE dmg_sequences SET next_value = <value>
-     * WHERE name = <key> AND managed_by = '<MANAGED_BY>' AND
-     * format_version IN (...)` statement. The `name` literal escapes
-     * via [MysqlSequenceSqlCodec.quoteStringLiteral]; the
-     * `format_version` IN-list iterates [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS]
-     * in declaration order so the rendered SQL is deterministic.
+     * WHERE name = <key> AND managed_by IN (…) AND format_version IN (…)`
+     * statement. The `name` literal escapes via
+     * [MysqlSequenceSqlCodec.quoteStringLiteral]; the `managed_by` and
+     * `format_version` IN-lists iterate
+     * [MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY] /
+     * [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS] in
+     * declaration order so the rendered SQL is deterministic.
      */
     private fun updateNextValueSql(
         sequenceName: String,
@@ -285,13 +287,14 @@ internal object MysqlDiffSequenceOps {
         ctx: MysqlDiffRenderContext,
     ): String {
         val nameLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(sequenceName)
-        val managedByLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(MysqlSequenceSupportNaming.MANAGED_BY)
+        val managedByList = MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY
+            .joinToString(", ") { MysqlSequenceSqlCodec.quoteStringLiteral(it) }
         val formatVersionList = MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS
             .joinToString(", ") { MysqlSequenceSqlCodec.quoteStringLiteral(it) }
         return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
             "${ctx.sql.quote("next_value")} = $value " +
             "WHERE ${ctx.sql.quote("name")} = $nameLiteral " +
-            "AND ${ctx.sql.quote("managed_by")} = $managedByLiteral " +
+            "AND ${ctx.sql.quote("managed_by")} IN ($managedByList) " +
             "AND ${ctx.sql.quote("format_version")} IN ($formatVersionList);"
     }
 

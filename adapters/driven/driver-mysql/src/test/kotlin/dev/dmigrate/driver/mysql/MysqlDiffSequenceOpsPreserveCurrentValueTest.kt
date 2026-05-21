@@ -67,7 +67,7 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
         val sql = up.statements.single().sql
         sql shouldContain "UPDATE `dmg_sequences` SET `next_value` = 42 "
         sql shouldContain "`name` = 'order_seq'"
-        sql shouldContain "`managed_by` = 'd-migrate'"
+        sql shouldContain "`managed_by` IN ('d-migrate')"
         sql shouldContain "`format_version` IN ('mysql-sequence-v1')"
         // 1-row determinism note in §5.4: trailing semicolon present.
         sql.endsWith(";") shouldBe true
@@ -130,6 +130,20 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
         up.isBlocked shouldBe true
     }
 
+    test("managed_by IN-list iterates SUPPORTED_MANAGED_BY in declaration order") {
+        // The constant SUPPORTED_MANAGED_BY holds the source of truth;
+        // the renderer's IN-list must match it so the Sub-Slice C
+        // probe (which filters with the same set in adapter-side
+        // Kotlin) and the renderer cannot drift. Pinning this through
+        // the constant means a future entry like "d-migrate-legacy"
+        // automatically flows through both sides without touching the
+        // renderer/probe code.
+        val expected = MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY
+            .joinToString(", ") { "'$it'" }
+        val up = gen.generateUp(synthesiseDiff(preserveOp()), helperOptions)
+        up.statements.single().sql shouldContain "`managed_by` IN ($expected)"
+    }
+
     test("format_version IN-list iterates SUPPORTED_FORMAT_VERSIONS in declaration order") {
         // The constant SUPPORTED_FORMAT_VERSIONS holds the source of
         // truth; the renderer's IN-list must match it so the
@@ -138,7 +152,7 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
         val expected = MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS
             .joinToString(", ") { "'$it'" }
         val up = gen.generateUp(synthesiseDiff(preserveOp()), helperOptions)
-        up.statements.single().sql shouldContain "IN ($expected)"
+        up.statements.single().sql shouldContain "`format_version` IN ($expected)"
     }
 
     test("mysqlSequenceLookupKey is consistent with renderer's name-literal source") {
