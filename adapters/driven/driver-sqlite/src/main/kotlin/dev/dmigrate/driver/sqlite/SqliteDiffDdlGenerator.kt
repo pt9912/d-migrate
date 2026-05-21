@@ -282,14 +282,15 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
         is DiffOperation.RenameSequence,
-        // 0.9.7 preserve-current-value Sub-Slice A: SQLite has no
-        // sequence-runtime-state probe (the SQLite-sequence-emulation
-        // plan in `docs/planning/open/` hasn't landed yet), so any
-        // `AlterSequenceCurrentValue` reaching this renderer is a
-        // planner regression — surface as DIALECT_UNSUPPORTED_OPERATION.
-        // The planner-side gate in Sub-Slice D will block these with
-        // `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` before they
-        // ever reach the renderer.
+        // SQLite has no sequence concept (the dialect was carved out
+        // of the entire E.3 sequence workstream — see file-level
+        // KDoc "Out of first matrix entirely"). Every sequence-related
+        // op — including 0.9.7's `AlterSequenceCurrentValue`
+        // preserve-current-value follow-up — is permanently routed
+        // to UNSUPPORTED. This will change only when (and if)
+        // `docs/planning/open/sqlite-sequence-emulation-plan.md`
+        // lands a SQLite emulation; until then `DIALECT_UNSUPPORTED_OPERATION`
+        // is the correct end state, not a placeholder.
         is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.UNSUPPORTED
     }

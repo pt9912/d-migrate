@@ -511,19 +511,32 @@ der Statement-Execution-Step muss das betroffene Row-Count-Metadatum als
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp |
-| B | PG-Probe + PG-Renderer für `setval` |
-| C | MySQL-Probe + MySQL-Renderer für `UPDATE dmg_sequences` (inkl. `mysqlSequenceLookupKey`-Helper) |
+| A | `preserveCurrentValue`-Feld + YAML-Codec + `SequenceObjectRef`-Werttyp + `SequenceCurrentValueProbe`-Port + `AlterSequenceCurrentValue`-Subtyp **+ PG-Renderer (`setval`) + MySQL-Renderer (`UPDATE dmg_sequences`) + SQLite-Block (`DIALECT_UNSUPPORTED_OPERATION`)** |
+| B | PG-Probe-Adapter (JDBC live-DB read) |
+| C | MySQL-Probe-Adapter (JDBC live-DB read, inkl. `mysqlSequenceLookupKey`-Helper) |
 | D | Pipeline-Integration im `MigrationPreflightPlanner`-Flow vor Render (probe → emit) |
 | E | Datei-zu-Datei-Blocker + Schema-Doku + Closing |
 
 SQLite folgt aus `open/sqlite-sequence-emulation-plan.md`.
 
-### 6.1 Sub-Slice A — Foundations (Detail-DoD)
+**Re-Schnitt-Begründung (2026-05-21):** Der ursprüngliche Schnitt
+deferred die PG-/MySQL-Renderer nach B/C. Das ist nicht haltbar,
+weil `AlterSequenceCurrentValue` als neuer Subtyp in der sealed
+`DiffOperation`-Hierarchie ALLE drei Dialekt-Diff-DDL-Generatoren
+zwingt, eine Branch zu haben (exhaustiver `categorize`-Switch).
+„UNSUPPORTED-Routing als Stopgap bis B/C" wäre ein Carve-out im
+Produktionscode — Reviewer könnten echte vs. transitorische
+UNSUPPORTED-Routings nicht mehr unterscheiden. Daher ziehen die
+PG-/MySQL-Renderer in dieselbe Tranche wie der DiffOp-Subtyp; B/C
+reduzieren sich auf die echten Live-DB-JDBC-Probes.
 
-Sub-Slice A liefert die reinen Datentypen, an die B/C/D anknüpfen. **Kein
-Renderer-, Probe- oder Planner-Code in A** — diese Sub-Slices sind
-isoliert lieferbar.
+### 6.1 Sub-Slice A — Foundations + dialect render paths (Detail-DoD)
+
+Sub-Slice A liefert die Datentypen UND die Renderer-Pfade für alle
+drei Dialekte — ohne Planner-Emit und ohne Live-DB-Probe-Adapter (das
+kommt in B/C/D). Die Renderer landen in derselben Tranche wie der
+DiffOp-Subtyp, weil der Strukturzwang das verlangt (siehe §6
+Re-Schnitt-Begründung).
 
 **Artefakte (Produktionscode):**
 
@@ -535,9 +548,13 @@ isoliert lieferbar.
   User-Schemas unerreichbar — A ist erst dann nutzbar.
 - `SequenceObjectRef` als neuer Werttyp in
   `hexagon/core/.../diff/migration/SequenceObjectRef.kt` mit Feldern für
-  Sequenz-Name, optionalem Schema/Namespace und `DatabaseDialect`. Wird in
-  §5.1 (Probe-Port) und §5.3 (`AlterSequenceCurrentValue`) verwendet — muss
-  daher zusammen mit Port + DiffOp landen, sonst sind beide nicht baubar.
+  Sequenz-Name, optionalem Schema/Namespace und `RenameProjectionDialect`
+  (Core-local boundary-Mirror; Application-Layer mapped
+  `DatabaseDialect` → `RenameProjectionDialect` am Planner-Boundary,
+  identisch zum F.4 Rename- und Trigger-Planning-Pfad).
+  Wird in §5.1 (Probe-Port) und §5.3 (`AlterSequenceCurrentValue`)
+  verwendet — muss daher zusammen mit Port + DiffOp landen, sonst sind
+  beide nicht baubar.
 - `SequenceCurrentValueProbe`-Port + sealed
   `SequenceCurrentValueProbeResult` (`Read{value, matchedRows, isCalled?,
   managedBy?, formatVersion?}`, `Failed{code, message}`, `NotFound`,
@@ -549,17 +566,41 @@ isoliert lieferbar.
   Boolean?`, `restoreValue: Long?`, `restoreIsCalled: Boolean?`,
   `rollbackImpossible: Boolean = false`, `rollbackImpossibleReason: String?`,
   `revertAfterRename: Boolean = false`).
+- **PG-Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
+  emittiert `SELECT setval('<seq>', <value>, <isCalled>)` als
+  ausführbare Folgeanweisung (DML). `AlterSequenceCurrentValue` landet
+  in `OpCategory.SEQUENCE`, `renderSequenceOp` dispatched darauf.
+- **MySQL-Renderer**: `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue`
+  emittiert `UPDATE dmg_sequences SET next_value = <value> WHERE name =
+  <escaped> AND managed_by = 'd-migrate' AND format_version IN
+  (<mysqlExpectedFormatVersions>)`. `AlterSequenceCurrentValue` landet
+  in `OpCategory.SEQUENCE`, `renderSequenceOp` dispatched darauf.
+  (`mysqlSequenceLookupKey`-Helper wird hier eingeführt — wird von C
+  beim Probe-Adapter wiederverwendet.)
+- **SQLite-Routing**: `AlterSequenceCurrentValue` landet in
+  `OpCategory.UNSUPPORTED` → `DIALECT_UNSUPPORTED_OPERATION`. **Echter
+  Endzustand** (SQLite hat keine Sequence-Emulation; das ändert sich
+  erst, wenn `open/sqlite-sequence-emulation-plan.md` umgesetzt wird).
+  Kein „kommt später"-Carve-out.
 
 **Artefakte (Tests):**
 
 - `SequenceDefinitionTest` — Default-Wert pinned, `copy()`-Roundtrip.
-- YAML-Codec-Roundtrip-Test (bestehende `SchemaNode…Test`-Datei
-  erweitern) — missing field → `false`, `true`/`false` echtes Mapping.
+- YAML-Codec-Roundtrip-Test (eigene Test-Datei) — missing field →
+  `false`, `true`/`false` echtes Mapping, `false` auf Write-Seite elided.
 - `SequenceObjectRefTest` — Konstruktion, Equality, Dialect-Branching.
 - `SequenceCurrentValueProbeTest` — Sealed-Class-Shape: alle vier
   Subtypen konstruierbar, equals/hashCode für `Read`/`Failed`.
-- `DiffOperationTest` (extend) — `AlterSequenceCurrentValue`-Konstruktion +
+- `DiffOperationDefaultsTest` (extend) — `AlterSequenceCurrentValue`-Konstruktion +
   `withDependencies`/`withId`-Invarianten.
+- **PG-Renderer-Test**: `PostgresDiffSequenceOpsTest` (oder eigene
+  Datei) — pinnt `setval`-Output für `isCalled=true`/`false` und
+  korrektes Quoting des Sequenznamens.
+- **MySQL-Renderer-Test**: `MysqlDiffSequenceOpsTest` — pinnt
+  `UPDATE dmg_sequences`-Output inkl. der `managed_by`-/`format_version`-
+  Filter und escape des `name`-Literals.
+- **SQLite-Renderer-Test**: pinnt, dass `AlterSequenceCurrentValue`
+  zu `DIALECT_UNSUPPORTED_OPERATION` führt (Endzustand-Check).
 
 **Definition of Done (A):**
 
@@ -568,32 +609,47 @@ isoliert lieferbar.
 - [ ] YAML-Roundtrip pinnt: fehlendes Feld → `false`, `true`/`false`
       werden gelesen/geschrieben.
 - [ ] `SequenceObjectRef` ist als eigener Werttyp angelegt (nicht
-      Alias auf `DiffObjectRef`); Dialekt-Feld ist `DatabaseDialect`
-      (Code-Konvention; Plan-Doc-Pseudocode `Dialect.POSTGRES` mapped
-      darauf ab).
+      Alias auf `DiffObjectRef`); Dialekt-Feld ist
+      `RenameProjectionDialect` (`hexagon:core` darf nicht von
+      `ports-common`'s `DatabaseDialect` abhängen — Application-Layer
+      mapped am Planner-Boundary).
 - [ ] `SequenceCurrentValueProbe`-Port kompiliert; sealed
       `SequenceCurrentValueProbeResult` deckt alle vier Outcomes
       ohne `else`-Zweige in Tests ab.
 - [ ] `AlterSequenceCurrentValue` ist als `DiffOperation`-Subtyp
-      konstruierbar mit allen Feldern aus §3.1/§5.3; partial `when`-
-      Branches in den 7 bestehenden Sequence-Op-Konsumenten
-      (`SqliteCastPreflightStage`, `MysqlSequenceCanonicityStage`,
-      `RoutineDependencyAnalyzer`, drei Dialekt-DDL-Generatoren,
-      `MysqlSequenceCanonicityProbeRunner`) bleiben unverändert weil
-      sie `else`-Fallback haben — Build grün.
-- [ ] Kein Planner-Emit, kein Renderer-Code, kein Probe-Adapter in A.
+      konstruierbar mit allen Feldern aus §3.1/§5.3.
+- [ ] **PG-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
+      als `SELECT setval('<seq>', <value>, <isCalled>)`. `isCalled`
+      muss aus dem DiffOp-Feld propagiert werden (PG verlangt es).
+- [ ] **MySQL-Diff-DDL-Generator** rendert `AlterSequenceCurrentValue`
+      als `UPDATE dmg_sequences SET next_value = <value> WHERE name =
+      <escaped> AND managed_by = 'd-migrate' AND format_version IN
+      (<mysqlExpectedFormatVersions>)`. Statement betrifft exakt eine
+      Zeile (`expectedAffectedRows = 1`).
+- [ ] **SQLite-Diff-DDL-Generator** mapped
+      `AlterSequenceCurrentValue` deterministisch auf
+      `DIALECT_UNSUPPORTED_OPERATION` — Endzustand, kein
+      Carve-out-Kommentar im Code.
+- [ ] Kein Planner-Emit (`AlterSequenceCurrentValue` kommt nicht von
+      `DiffPlanner`), kein Live-DB-Probe-Adapter in A. Die Renderer
+      sind über synthetische DiffResult-Inputs unit-getestet.
 - [ ] Tests laufen via `make docker-test MODULES=":hexagon:core
-      :hexagon:ports-read :adapters:driven:formats"` grün.
+      :hexagon:ports-read :adapters:driven:formats
+      :adapters:driven:driver-postgresql :adapters:driven:driver-mysql
+      :adapters:driven:driver-sqlite"` grün.
+- [ ] `make docker-coverage-gate` grün (kein Coverage-Regression auf
+      bestehende Module).
 
 **Bewusst nicht in A:**
 
 - Diagnose-Codes (`SEQUENCE_PRESERVE_*`) — landen erst, wo sie tatsächlich
-  emittiert werden (B/C/D).
-- `PlannerBlockerClassifier`-Mapping — gehört zur Diagnose-Emission, nicht zu A.
-- `mysqlSequenceLookupKey` / `formatMysqlDmgSequenceKey` — MySQL-spezifisch,
-  in C.
-- Renderer-Pfade pro Dialekt — B (PG) und C (MySQL).
-- `MigrationPreflightPlanner`-Erweiterung — D.
+  emittiert werden (D).
+- `PlannerBlockerClassifier`-Mapping — gehört zur Diagnose-Emission, in D.
+- **Live-DB-JDBC-Probe-Adapter** (PG → `SELECT last_value, is_called
+  FROM <seq>`; MySQL → `SELECT next_value, managed_by, format_version
+  FROM dmg_sequences ...`) — in B (PG) und C (MySQL).
+- `MigrationPreflightPlanner`-Erweiterung (probe → emit
+  `AlterSequenceCurrentValue`) — D.
 - File-target-Blocker und Schema-Doku — E.
 
 ---

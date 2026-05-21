@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityGate
+import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -211,6 +212,87 @@ internal object MysqlDiffSequenceOps {
                 MysqlSequenceEmulationTemplates.sequenceTriggerSql(newSpec, triggerName, ctx.sql::quote),
             )
         }
+    }
+
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice A: emit
+     * `UPDATE dmg_sequences SET next_value = <value> WHERE name =
+     * <key> AND managed_by = 'd-migrate' AND format_version IN (...)`
+     * so a freshly-created or altered sequence resumes at the live
+     * `next_value` snapshot rather than restarting from the seed.
+     *
+     * Up/Down split:
+     * - **Up**: applies `currentValue` to the row matching
+     *   `applySequenceRef`.
+     * - **Down**: applies `restoreValue` to the row matching
+     *   `probeSequenceRef`. When [DiffOperation.AlterSequenceCurrentValue.rollbackImpossible]
+     *   is `true` (or `restoreValue` is `null`) the renderer emits a
+     *   structured note instead of `UPDATE` — Down for new sequences
+     *   without a pre-Up snapshot cannot run safely.
+     *
+     * The `managed_by` / `format_version` filter guards against
+     * operator-inserted rows that bypass `dmg_setval` — those should
+     * stay invisible to the preserve-current-value path. The
+     * `mysqlExpectedFormatVersions` set lives on
+     * [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS] so the
+     * Sub-Slice C probe and this renderer can never drift.
+     *
+     * MySQL `isCalled` is intentionally NOT used — the helper-table
+     * `next_value` column already encodes the "next-to-be-returned"
+     * semantics, equivalent to PG's `setval(seq, value, false)`. The
+     * planner-side gate in Sub-Slice D drops `isCalled` for MySQL
+     * before emitting the op.
+     */
+    fun renderAlterSequenceCurrentValue(
+        op: DiffOperation.AlterSequenceCurrentValue,
+        ctx: MysqlDiffRenderContext,
+    ) {
+        if (!ensureHelperMode(op, ctx)) return
+        // UPDATE on an existing row → ALTER intent for the drift gate
+        // (the row must exist and not have drifted from the canonical
+        // managed shape).
+        if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.ALTER, ctx)) return
+        if (ctx.direction == MysqlRenderDirection.UP) {
+            ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue, ctx))
+            return
+        }
+        val restoreValue = op.restoreValue
+        if (op.rollbackImpossible || restoreValue == null) {
+            // Down without a deterministic restore snapshot cannot
+            // run — emit a structured comment so the report still
+            // tracks the op without a half-built `UPDATE`.
+            ctx.emit(
+                op,
+                "-- preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
+                    (op.rollbackImpossibleReason ?: "no deterministic restore snapshot"),
+            )
+            return
+        }
+        ctx.emit(op, updateNextValueSql(op.probeSequenceRef.name, restoreValue, ctx))
+    }
+
+    /**
+     * Builds the `UPDATE dmg_sequences SET next_value = <value>
+     * WHERE name = <key> AND managed_by = '<MANAGED_BY>' AND
+     * format_version IN (...)` statement. The `name` literal escapes
+     * via [MysqlSequenceSqlCodec.quoteStringLiteral]; the
+     * `format_version` IN-list iterates [MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS]
+     * in declaration order so the rendered SQL is deterministic.
+     */
+    private fun updateNextValueSql(
+        sequenceName: String,
+        value: Long,
+        ctx: MysqlDiffRenderContext,
+    ): String {
+        val nameLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(sequenceName)
+        val managedByLiteral = MysqlSequenceSqlCodec.quoteStringLiteral(MysqlSequenceSupportNaming.MANAGED_BY)
+        val formatVersionList = MysqlSequenceSupportNaming.SUPPORTED_FORMAT_VERSIONS
+            .joinToString(", ") { MysqlSequenceSqlCodec.quoteStringLiteral(it) }
+        return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
+            "${ctx.sql.quote("next_value")} = $value " +
+            "WHERE ${ctx.sql.quote("name")} = $nameLiteral " +
+            "AND ${ctx.sql.quote("managed_by")} = $managedByLiteral " +
+            "AND ${ctx.sql.quote("format_version")} IN ($formatVersionList);"
     }
 
     /**

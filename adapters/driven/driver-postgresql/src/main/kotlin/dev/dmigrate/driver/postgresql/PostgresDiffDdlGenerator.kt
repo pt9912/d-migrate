@@ -145,6 +145,7 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
         is DiffOperation.RenameSequence,
+        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.SEQUENCE
 
         is DiffOperation.CreateFunction,
@@ -171,14 +172,6 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.TRIGGER
 
         is DiffOperation.AlterCustomType,
-        // 0.9.7 preserve-current-value Sub-Slice A: subtype lands as
-        // UNSUPPORTED until Sub-Slice B wires the PG `setval` renderer
-        // (`SELECT setval('<seq>', <value>, <isCalled>);`). The
-        // planner does not emit `AlterSequenceCurrentValue` until
-        // Sub-Slice D, so this branch is defensive: a stale
-        // op reaching this renderer surfaces as
-        // `DIALECT_UNSUPPORTED_OPERATION` instead of silent skip.
-        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.UNSUPPORTED
     }
 
@@ -221,6 +214,8 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterSequence -> PostgresDiffSequenceOps.renderAlterSequence(op, ctx)
             is DiffOperation.DropSequence -> PostgresDiffSequenceOps.renderDropSequence(op, ctx)
             is DiffOperation.RenameSequence -> PostgresDiffSequenceOps.renderRenameSequence(op, ctx)
+            is DiffOperation.AlterSequenceCurrentValue ->
+                PostgresDiffSequenceOps.renderAlterSequenceCurrentValue(op, ctx)
             else -> error("Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it")
         }
     }

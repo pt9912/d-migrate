@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.driver.SqlIdentifiers
 
 /**
  * PostgreSQL sequence DDL for Plan-2 E.3's first declarative slice.
@@ -50,6 +51,93 @@ internal object PostgresDiffSequenceOps {
         ctx.emit(
             op,
             "ALTER SEQUENCE ${ctx.sql.quote(oldName)} RENAME TO ${ctx.sql.quote(newName)};",
+            PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+        )
+    }
+
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice A: emit
+     * `SELECT setval('<seq>', <value>, <isCalled>);` so a freshly-
+     * created or altered sequence resumes at the live
+     * `last_value` snapshot rather than jumping back to `start`.
+     *
+     * Up/Down split:
+     * - **Up**: applies `currentValue` + `isCalled` against
+     *   `applySequenceRef` (post-rename target for `RenameSequence`
+     *   follow-ups, identity for `CreateSequence` / `AlterSequence`).
+     * - **Down**: applies `restoreValue` + `restoreIsCalled` against
+     *   `probeSequenceRef` (origin name on Rename, identity otherwise).
+     *   When [DiffOperation.AlterSequenceCurrentValue.rollbackImpossible]
+     *   is `true` the renderer emits a structured note instead of
+     *   `setval(...)` — Down for new sequences without a deterministic
+     *   pre-state cannot run safely.
+     *
+     * `isCalled` is propagated verbatim because `setval(seq, value, true)`
+     * makes the next `nextval` return `value + 1`, while `setval(seq,
+     * value, false)` makes it return `value`. The PG probe in Sub-Slice
+     * B reads this flag from `pg_sequences.is_called`.
+     */
+    fun renderAlterSequenceCurrentValue(
+        op: DiffOperation.AlterSequenceCurrentValue,
+        ctx: PostgresDiffRenderContext,
+    ) {
+        if (ctx.direction == PostgresRenderDirection.UP) {
+            renderSetval(
+                op = op,
+                ctx = ctx,
+                sequenceName = op.applySequenceRef.name,
+                value = op.currentValue,
+                isCalled = op.isCalled,
+            )
+            return
+        }
+        val restoreValue = op.restoreValue
+        val restoreIsCalled = op.restoreIsCalled
+        if (op.rollbackImpossible || restoreValue == null || restoreIsCalled == null) {
+            // The PG `setval(seq, value, is_called)` form requires
+            // a 3-arg call — Down without both `restoreValue` and
+            // `restoreIsCalled` is not renderable. The planner-side
+            // gate in Sub-Slice D guards this at emit time; the
+            // renderer falls back to a structured note so the operator
+            // still sees the op in the report without a half-built
+            // `setval(seq, NULL, NULL)`.
+            ctx.emit(
+                op,
+                "-- preserve-current-value down skipped for ${op.applySequenceRef.name}: " +
+                    (op.rollbackImpossibleReason ?: "no deterministic restore snapshot"),
+                PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+            )
+            return
+        }
+        renderSetval(
+            op = op,
+            ctx = ctx,
+            sequenceName = op.probeSequenceRef.name,
+            value = restoreValue,
+            isCalled = restoreIsCalled,
+        )
+    }
+
+    private fun renderSetval(
+        op: DiffOperation.AlterSequenceCurrentValue,
+        ctx: PostgresDiffRenderContext,
+        sequenceName: String,
+        value: Long,
+        isCalled: Boolean?,
+    ) {
+        // PG `setval` needs `is_called` to disambiguate the post-call
+        // `nextval` behaviour. The DiffOp's `isCalled` is nullable
+        // for cross-dialect symmetry; PG MUST have it set by the
+        // planner — the gate in Sub-Slice D enforces this. Falling
+        // back to `true` here would silently change the post-call
+        // sequence position by +1, so we refuse instead.
+        requireNotNull(isCalled) {
+            "AlterSequenceCurrentValue on PG must carry isCalled (op-id=${op.id})"
+        }
+        val literal = SqlIdentifiers.quoteStringLiteral(sequenceName)
+        ctx.emit(
+            op,
+            "SELECT setval($literal, $value, $isCalled);",
             PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
         )
     }

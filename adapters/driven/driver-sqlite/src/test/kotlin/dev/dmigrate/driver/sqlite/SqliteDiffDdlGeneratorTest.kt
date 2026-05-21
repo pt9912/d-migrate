@@ -384,6 +384,45 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
+    test("AlterSequenceCurrentValue is permanently DIALECT_UNSUPPORTED on SQLite") {
+        // SQLite carves out the entire sequence workstream (see file-
+        // level KDoc "Out of first matrix entirely"). The 0.9.7
+        // preserve-current-value Sub-Slice A follow-up adds
+        // AlterSequenceCurrentValue to the DiffOperation hierarchy;
+        // SQLite must keep routing it to DIALECT_UNSUPPORTED_OPERATION
+        // as a permanent end state. This changes ONLY when (and if)
+        // `docs/planning/open/sqlite-sequence-emulation-plan.md`
+        // lands a SQLite emulation. Until then any routing change
+        // fails this test loudly.
+        val acv = dev.dmigrate.core.diff.migration.DiffOperation.AlterSequenceCurrentValue(
+            id = "acv-1",
+            objectRef = dev.dmigrate.core.diff.migration.DiffObjectRef(
+                dev.dmigrate.core.diff.migration.DiffObjectType.SEQUENCE,
+                listOf("any_seq"),
+            ),
+            pairId = "alter:any_seq",
+            probeSequenceRef = dev.dmigrate.core.diff.migration.SequenceObjectRef(
+                "any_seq",
+                null,
+                dev.dmigrate.core.diff.migration.RenameProjectionDialect.SQLITE,
+            ),
+            applySequenceRef = dev.dmigrate.core.diff.migration.SequenceObjectRef(
+                "any_seq",
+                null,
+                dev.dmigrate.core.diff.migration.RenameProjectionDialect.SQLITE,
+            ),
+            currentValue = 1L,
+        )
+        val synthetic = dev.dmigrate.core.diff.migration.DiffResult(
+            current = dev.dmigrate.core.diff.migration.DiffEndpoint("App", "1", "fp-current"),
+            desired = dev.dmigrate.core.diff.migration.DiffEndpoint("App", "1", "fp-desired"),
+            schemaDiff = SchemaDiff(),
+            operations = listOf(acv),
+        )
+        val r = gen.generateUp(synthetic, DdlGenerationOptions())
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
+
     test("Empty diff yields empty result") {
         val r = planAndUp(SchemaDiff())
         r.statements.shouldBeEmpty()

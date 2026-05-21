@@ -113,6 +113,8 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
             is DiffOperation.AlterSequence -> MysqlDiffSequenceOps.renderAlterSequence(op, ctx)
             is DiffOperation.DropSequence -> MysqlDiffSequenceOps.renderDropSequence(op, ctx)
             is DiffOperation.RenameSequence -> MysqlDiffSequenceOps.renderRenameSequence(op, ctx)
+            is DiffOperation.AlterSequenceCurrentValue ->
+                MysqlDiffSequenceOps.renderAlterSequenceCurrentValue(op, ctx)
             else -> error(
                 "Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it",
             )
@@ -182,6 +184,7 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.AlterSequence,
         is DiffOperation.DropSequence,
         is DiffOperation.RenameSequence,
+        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.SEQUENCE
 
         // F.4 Sub-Slice B: `MysqlObjectRenamePolicy` returns
@@ -197,14 +200,6 @@ class MysqlDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
-        // 0.9.7 preserve-current-value Sub-Slice A: subtype lands as
-        // UNSUPPORTED until Sub-Slice C wires the MySQL
-        // `UPDATE dmg_sequences SET next_value = ...` renderer. The
-        // planner does not emit `AlterSequenceCurrentValue` until
-        // Sub-Slice D, so this branch is defensive: a stale op
-        // reaching this renderer surfaces as
-        // `DIALECT_UNSUPPORTED_OPERATION` instead of silent skip.
-        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.UNSUPPORTED
     }
 
