@@ -78,6 +78,16 @@ class SchemaMigrateRunner(
      * [MysqlSequenceCanonicityStage] for skip semantics.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): per-op
+     * runtime-state probe for sequences with
+     * `preserveCurrentValue = true`. The driving CLI wires this to a
+     * dialect-dispatcher that resolves PG vs MySQL by the
+     * [SequenceObjectRef.dialect] field; unit-test paths leave it
+     * `null` so [SequencePreserveStage] emits per-candidate
+     * `SEQUENCE_PRESERVE_NOT_RUN_POLICY` INFO instead of probing.
+     */
+    private val sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -121,6 +131,7 @@ class SchemaMigrateRunner(
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
         checkPreflightProbe = checkPreflightProbe,
         mysqlSequenceCanonicityProbe = mysqlSequenceCanonicityProbe,
+        sequenceCurrentValueProbe = sequenceCurrentValueProbe,
     )
 
     private val executionStage = SchemaMigrateExecutionStage(
@@ -193,6 +204,15 @@ class SchemaMigrateRunner(
             mysqlServerVersion = prepared.targetNormalized.mysqlServerVersion,
             routineCapabilityResolver = request.routineCapabilityResolver,
         )
+        // 0.9.7 preserve-current-value Sub-Slice D (§6.4.7):
+        // `render.augmentedPlan` carries the original plan plus any
+        // `AlterSequenceCurrentValue` follow-ups the SequencePreserveStage
+        // produced. Use it (NOT the input `plan`) for every downstream
+        // consumer that surfaces operations to the operator — report
+        // builder, signed migration-plan.v1 artefact, rollback
+        // composer. Otherwise the artefact would hide setval/UPDATE
+        // statements the runtime actually executes.
+        val effectivePlan = render.augmentedPlan
 
         val executionTrace = executionStage.maybeExecute(
             request, prepared.targetOp, render.executableCombined, cancellationToken,
@@ -208,7 +228,7 @@ class SchemaMigrateRunner(
             request,
             prepared.sourceResolved,
             prepared.targetResolved,
-            plan,
+            effectivePlan,
             withExecution,
             prepared.effectiveDialect,
             render.renderedDown,
@@ -220,7 +240,7 @@ class SchemaMigrateRunner(
         // report / SQL artefacts. The artefact captures the plan +
         // rendered statements; a write failure routes through
         // emitReportAndExit with exit 7 like other local I/O errors.
-        val planArtefactExit = maybeWritePlanArtefact(request, plan, withExecution, prepared.effectiveDialect)
+        val planArtefactExit = maybeWritePlanArtefact(request, effectivePlan, withExecution, prepared.effectiveDialect)
         if (planArtefactExit != null) {
             return artefactSink.emitReportAndExit(
                 request, report, rollbackFinalized = null, baseExit = planArtefactExit,
@@ -228,10 +248,10 @@ class SchemaMigrateRunner(
         }
         val rollbackArtefact = rollbackComposer.maybeBuildRollback(
             request, render.executableCombined, render.renderedDown,
-            executionTrace, postCompareOutcome, plan, prepared.effectiveDialect,
+            executionTrace, postCompareOutcome, effectivePlan, prepared.effectiveDialect,
         )
         val recoveryContext = rollbackComposer.buildRecoveryContextIfApplicable(
-            request, render.executableCombined, render.renderedDown, plan, prepared.effectiveDialect,
+            request, render.executableCombined, render.renderedDown, effectivePlan, prepared.effectiveDialect,
         )
         return finalize(
             request, withExecution, report, rollbackArtefact,

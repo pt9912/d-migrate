@@ -148,6 +148,30 @@ object PlannerBlockerClassifier {
     const val MYSQL_SEQUENCE_MISSING_FOR_DROP_CODE: String = "E124_MYSQL_SEQUENCE_MISSING_FOR_DROP"
     const val MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE: String = "E124_MYSQL_SEQUENCE_DRIFT_PROBE_FAILED"
 
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): four
+     * BLOCKER codes the `SequencePreserveStage` emits. Three map to
+     * `MANUAL_ACTION_REQUIRED` — operator decides whether to reconcile
+     * state, switch op intent, or supply a working probe — and one
+     * (`NOT_SUPPORTED_BY_DIALECT`) keeps the dialect-unsupported
+     * routing because SQLite has no sequence emulation yet.
+     *
+     * Two INFO codes (`SEQUENCE_PRESERVE_NOT_FOUND` for the canonical
+     * "CreateSequence without prior state" path, and
+     * `SEQUENCE_PRESERVE_NOT_RUN_POLICY` for the no-probe-configured
+     * test path) intentionally have NO mapping here — they are not
+     * blockers, so [classify] should never see them. If they ever
+     * reach this function, the `else` branch's
+     * DIALECT_UNSUPPORTED_OPERATION fallback would be wrong; the
+     * stage is responsible for routing INFO codes through
+     * `recordDiagnostic`-style emit paths that bypass classification.
+     */
+    const val SEQUENCE_PRESERVE_PROBE_FAILED_CODE: String = "SEQUENCE_PRESERVE_PROBE_FAILED"
+    const val SEQUENCE_PRESERVE_CONFIG_INVALID_CODE: String = "SEQUENCE_PRESERVE_CONFIG_INVALID"
+    const val SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE: String = "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET"
+    const val SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE: String =
+        "SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT"
+
     fun classify(code: String): MigrationBlockedReason = when (code) {
         OBJECT_RENAME_UNSUPPORTED_CODE ->
             MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
@@ -163,9 +187,13 @@ object PlannerBlockerClassifier {
         MYSQL_SEQUENCE_DRIFT_TRIGGER_CODE,
         MYSQL_SEQUENCE_MISSING_FOR_ALTER_CODE,
         MYSQL_SEQUENCE_MISSING_FOR_DROP_CODE,
-        MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE ->
+        MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE,
+        SEQUENCE_PRESERVE_PROBE_FAILED_CODE,
+        SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
+        SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE ->
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED
-        EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE ->
+        EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE,
+        SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE ->
             MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
         else -> MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }

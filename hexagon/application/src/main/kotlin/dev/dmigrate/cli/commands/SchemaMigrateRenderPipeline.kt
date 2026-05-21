@@ -34,6 +34,16 @@ internal data class SchemaMigrateRenderResult(
     val combined: MigrationDdlResult,
     val executableCombined: MigrationDdlResult,
     val catalogProbeMode: SqliteCatalogProbeMode,
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): the plan
+     * the renderer actually saw — equal to the input plan unless
+     * [SequencePreserveStage] augmented it with
+     * `AlterSequenceCurrentValue` follow-ups behind their parent ops.
+     * The runner threads this through to `maybeWritePlanArtefact` /
+     * the report builder / rollback composer so the signed plan
+     * artefact reflects every op that will actually execute (§6.4.7).
+     */
+    val augmentedPlan: DiffResult,
 )
 
 /**
@@ -67,6 +77,17 @@ internal class SchemaMigrateRenderPipeline(
      * [MigrationPreflightPlanner.plan] still flow through.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): per-op
+     * sequence runtime-state probe (PG `SELECT last_value, is_called`,
+     * MySQL `SELECT next_value, managed_by, format_version FROM
+     * dmg_sequences`). Wired by the driving CLI to a dialect-dispatcher
+     * that routes by [SequenceObjectRef.dialect]; null for unit-test
+     * paths. The stage short-circuits to `NotRun` when this is null
+     * (per-candidate `SEQUENCE_PRESERVE_NOT_RUN_POLICY` INFO) or no
+     * preserveCurrentValue=true sequence op is in the plan.
+     */
+    private val sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null,
 ) {
 
     fun run(
@@ -82,22 +103,34 @@ internal class SchemaMigrateRenderPipeline(
     ): SchemaMigrateRenderResult {
         val probeOutcome = runProbe(request, targetOp, dialect, overlayPreflight)
         val preflightPlan = runPreflightPlan(request, targetOp, dialect, plan, overlayPreflight)
+        // 0.9.7 preserve-current-value Sub-Slice D: probe per
+        // preserveCurrentValue-candidate sequence-op and (if probe
+        // returned Read) emit AlterSequenceCurrentValue follow-ups
+        // behind their parents BEFORE render. The renderer iterates
+        // operations linearly, so the augmented plan is what the Up
+        // and Down generators must see. Plan-Doc §6.4 / §6.4.6.
+        val preserveOutcome = runSequencePreserve(request, targetOp, dialect, plan, overlayPreflight)
+        val effectivePlan = when (preserveOutcome) {
+            is SequencePreserveStage.Outcome.Succeeded -> preserveOutcome.augmentedPlan
+            else -> plan
+        }
         val outcomes = PreflightOutcomes(
             probe = probeOutcome,
-            cast = runCastPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
-            check = runCheckPreflight(request, targetOp, dialect, plan, preflightPlan, overlayPreflight),
-            mysqlSequence = runMysqlSequenceCanonicity(request, targetOp, dialect, plan, overlayPreflight),
+            cast = runCastPreflight(request, targetOp, dialect, effectivePlan, preflightPlan, overlayPreflight),
+            check = runCheckPreflight(request, targetOp, dialect, effectivePlan, preflightPlan, overlayPreflight),
+            mysqlSequence = runMysqlSequenceCanonicity(request, targetOp, dialect, effectivePlan, overlayPreflight),
+            preserve = preserveOutcome,
         )
         val renderOptions = buildRenderOptions(
             request, dialect, outcomes, preflightPlan, mysqlServerVersion, routineCapabilityResolver,
         )
-        val renderedUp = renderUp(plan, overlayPreflight, renderer, renderOptions, outcomes)
+        val renderedUp = renderUp(effectivePlan, overlayPreflight, renderer, renderOptions, outcomes)
         val effectiveUp = MigrateDestructiveGuard.apply(renderedUp, request.allowDestructive)
 
         val renderedDown = if (request.generateRollback && !overlayPreflight.hasBlockers) {
             cancellationToken.throwIfCancellationRequested()
             renderer.generateDown(
-                plan,
+                effectivePlan,
                 renderOptions.copy(executionMode = ExecutionMode.STANDALONE),
             )
         } else {
@@ -111,6 +144,7 @@ internal class SchemaMigrateRenderPipeline(
             combined = combined,
             executableCombined = executableCombined,
             catalogProbeMode = renderOptions.catalogProbeMode,
+            augmentedPlan = effectivePlan,
         )
     }
 
@@ -161,6 +195,32 @@ internal class SchemaMigrateRenderPipeline(
             dialect,
             plan,
             castPreflightPlan,
+        )
+    }
+
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): per-op
+     * sequence runtime-state probe. Same skip semantics as
+     * [runMysqlSequenceCanonicity] — overlay-preflight blockers short-
+     * circuit to `NotRun` so we don't waste connections. The stage
+     * itself filters on `--execute`, dialect (PG/MySQL only), and the
+     * presence of preserveCurrentValue=true ops in the plan.
+     */
+    private fun runSequencePreserve(
+        request: SchemaMigrateRequest,
+        targetOp: CompareOperand,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+        overlayPreflight: MigrationOverlayPreflightResult,
+    ): SequencePreserveStage.Outcome = if (overlayPreflight.hasBlockers) {
+        SequencePreserveStage.Outcome.NotRun
+    } else {
+        SequencePreserveStage.run(
+            sequenceCurrentValueProbe,
+            request,
+            targetOp,
+            dialect,
+            plan,
         )
     }
 
@@ -298,6 +358,8 @@ internal class SchemaMigrateRenderPipeline(
                     mysqlSequenceOutcome.message,
                     mysqlSequenceOutcome.declarations,
                 )
+            outcomes.preserve is SequencePreserveStage.Outcome.Failed ->
+                SequencePreserveStage.buildFailureResult(outcomes.preserve.diagnostics)
             else -> {
                 val rendered = renderer.generateUp(plan, renderOptions)
                 val withCheckPreflights = if (rendered.checkPreflights.isEmpty()) {
@@ -310,12 +372,26 @@ internal class SchemaMigrateRenderPipeline(
                 } else {
                     withCheckPreflights
                 }
-                if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
+                val withProbeNotRun = if (probeOutcome is SqliteProbeStage.Outcome.NotRun) {
                     withMysqlSequence.copy(
                         diagnostics = withMysqlSequence.diagnostics + SqliteProbeStage.buildNotRunDiagnostic(),
                     )
                 } else {
                     withMysqlSequence
+                }
+                // §6.4.5: Succeeded preserve outcome may carry INFO
+                // diagnostics (e.g. SEQUENCE_PRESERVE_NOT_FOUND for
+                // CreateSequence without prior state, NOT_RUN_POLICY
+                // for unwired probe). Merge them into the render
+                // result so the report surfaces them without
+                // requiring a separate report-level field.
+                val preserveInfos = (outcomes.preserve as? SequencePreserveStage.Outcome.Succeeded)
+                    ?.infoDiagnostics
+                    .orEmpty()
+                if (preserveInfos.isEmpty()) {
+                    withProbeNotRun
+                } else {
+                    withProbeNotRun.copy(diagnostics = withProbeNotRun.diagnostics + preserveInfos)
                 }
             }
         }
@@ -332,6 +408,7 @@ internal class SchemaMigrateRenderPipeline(
         val probe: SqliteProbeStage.Outcome,
         val cast: SqliteCastPreflightStage.Outcome,
         val check: CheckPreflightStage.Outcome,
+        val preserve: SequencePreserveStage.Outcome,
         val mysqlSequence: MysqlSequenceCanonicityStage.Outcome,
     )
 

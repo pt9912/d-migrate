@@ -75,6 +75,40 @@ class PlannerBlockerClassifierTest : FunSpec({
         }
     }
 
+    test("0.9.7 preserve-current-value blocker codes split between MANUAL_ACTION_REQUIRED and DIALECT_UNSUPPORTED_OPERATION") {
+        // Sub-Slice D (2026-05-21): three preserve-current-value
+        // blocker codes plus the file-target-blocker the stage does
+        // not emit today but the classifier carries for future
+        // expansion. PROBE_FAILED, CONFIG_INVALID, REQUIRES_DB_TARGET
+        // → MANUAL_ACTION_REQUIRED (operator must reconcile config /
+        // target / probe). NOT_SUPPORTED_BY_DIALECT →
+        // DIALECT_UNSUPPORTED_OPERATION (SQLite has no probe).
+        listOf(
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_PROBE_FAILED_CODE,
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE,
+        ).forEach { code ->
+            PlannerBlockerClassifier.classify(code) shouldBe
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+        PlannerBlockerClassifier.classify(
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE,
+        ) shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
+
+    test("INFO codes (SEQUENCE_PRESERVE_NOT_FOUND / NOT_RUN_POLICY) are NOT in the blocker mapping table") {
+        // §6.4.5 / §6.4.3: info-only codes flow into the
+        // `MigrationDdlResult.diagnostics` stream without classifier
+        // routing. If they ever reach `classify()`, the else-branch
+        // would mis-label them as DIALECT_UNSUPPORTED_OPERATION, which
+        // is the contract this test pins as "documented unintended
+        // fallback, never on the happy path".
+        PlannerBlockerClassifier.classify("SEQUENCE_PRESERVE_NOT_FOUND") shouldBe
+            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        PlannerBlockerClassifier.classify("SEQUENCE_PRESERVE_NOT_RUN_POLICY") shouldBe
+            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+    }
+
     test("classifier is exhaustive (every MigrationBlockedReason value is reachable)") {
         // We don't pin every value, but we pin that the function
         // never throws / never returns null for any input string —

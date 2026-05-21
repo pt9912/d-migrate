@@ -207,6 +207,15 @@ kover {
                     // connection behaviour belongs to integration coverage.
                     "dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*",
                     "dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*",
+                    // 0.9.7 preserve-current-value Sub-Slice D: thin
+                    // dialect-dispatcher that opens a Hikari pool per
+                    // probe call and routes to PG/MySQL probe adapters.
+                    // Routing logic + skip behaviour is unit-tested in
+                    // :hexagon:application (SequencePreserveStageTest /
+                    // SchemaMigrateRunnerSequencePreserveTest); the
+                    // pool + dialect dispatch itself belongs to
+                    // integration coverage like its SQLite analogues.
+                    "dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*",
                     // Private data class for the excluded ExportCommand*
                     // shells; carries no behaviour beyond field accessors.
                     "dev.dmigrate.cli.commands.ExportParams*",
