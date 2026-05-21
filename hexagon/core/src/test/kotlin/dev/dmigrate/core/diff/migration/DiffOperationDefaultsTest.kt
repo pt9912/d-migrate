@@ -195,6 +195,15 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.CreateSequence("c-s", sequenceRef, sequence),
             DiffOperation.AlterSequence("at-s", sequenceRef, sequence, sequence),
             DiffOperation.DropSequence("d-s", sequenceRef, sequence),
+            DiffOperation.AlterSequenceCurrentValue(
+                id = "acv-s",
+                objectRef = sequenceRef,
+                pairId = "alter:seq_x",
+                probeSequenceRef = SequenceObjectRef("seq_x", null, RenameProjectionDialect.POSTGRESQL),
+                applySequenceRef = SequenceObjectRef("seq_x", null, RenameProjectionDialect.POSTGRESQL),
+                currentValue = 42L,
+                isCalled = true,
+            ),
             DiffOperation.CreateView("c-v", viewRef, view),
             DiffOperation.ReplaceView("r-v", viewRef, view, view),
             DiffOperation.DropView("d-v", viewRef, view),
@@ -211,7 +220,7 @@ class DiffOperationDefaultsTest : FunSpec({
             DiffOperation.ReplaceTrigger("r-trg", triggerRef, trigger, trigger),
             DiffOperation.DropTrigger("d-trg", triggerRef, trigger),
         )
-        ops shouldHaveSize 34
+        ops shouldHaveSize 35
 
         // Phase pinning (Plan §4.4):
         ops.filterIsInstance<DiffOperation.CreateTable>().single().phase shouldBe DiffPhase.TABLES
@@ -254,13 +263,15 @@ class DiffOperationDefaultsTest : FunSpec({
             withNewId::class shouldBe op::class
         }
 
-        // Catalog-size guard: the §4.3 catalog has 34 subtypes today
+        // Catalog-size guard: the §4.3 catalog has 35 subtypes today
         // (Plan-2 §8 D.3b Sub-Slices A/B added CreateMaterializedView,
-        // ReplaceMaterializedView, DropMaterializedView). Adding a new
-        // subtype must be paired with a smoke-test entry in `ops`; the
-        // count makes the omission impossible to miss without pulling
-        // in kotlin-reflect for `sealedSubclasses`.
+        // ReplaceMaterializedView, DropMaterializedView; 0.9.7
+        // preserve-current-value Sub-Slice A added
+        // AlterSequenceCurrentValue). Adding a new subtype must be
+        // paired with a smoke-test entry in `ops`; the count makes
+        // the omission impossible to miss without pulling in
+        // kotlin-reflect for `sealedSubclasses`.
         val distinctClasses = ops.map { it::class }.toSet()
-        distinctClasses.size shouldBe 34
+        distinctClasses.size shouldBe 35
     }
 })

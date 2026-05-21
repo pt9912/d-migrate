@@ -115,6 +115,7 @@ internal fun parseSequences(node: JsonNode?): Map<String, SequenceDefinition> =
             maxValue = childNode.optionalLong("max_value"),
             cycle = childNode.boolOrDefault("cycle", false),
             cache = childNode.optionalInt("cache"),
+            preserveCurrentValue = childNode.boolOrDefault("preserve_current_value", false),
         )
     }
 

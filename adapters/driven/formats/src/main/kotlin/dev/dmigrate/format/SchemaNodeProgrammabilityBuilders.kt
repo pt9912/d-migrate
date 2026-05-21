@@ -175,6 +175,7 @@ internal fun buildSequences(
         if (definition.maxValue != null) sequenceNode.put("max_value", definition.maxValue!!)
         if (definition.cycle) sequenceNode.put("cycle", true)
         if (definition.cache != null) sequenceNode.put("cache", definition.cache!!)
+        if (definition.preserveCurrentValue) sequenceNode.put("preserve_current_value", true)
         node.set<ObjectNode>(name, sequenceNode)
     }
     return node

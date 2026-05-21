@@ -838,4 +838,91 @@ sealed interface DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)
     }
+
+    /**
+     * 0.9.7 preserve-current-value Sub-Slice A: follow-up operation
+     * the planner emits **after** a `CreateSequence` / `AlterSequence` /
+     * `RenameSequence` whose `SequenceDefinition.preserveCurrentValue`
+     * is `true`. Carries the live `currentValue` from the
+     * `SequenceCurrentValueProbe` plus all reversibility metadata —
+     * the renderer-side translation is dialect-specific
+     * (`SELECT setval(...)` for PG, `UPDATE dmg_sequences SET
+     * next_value = ...` for MySQL).
+     *
+     * Why a dedicated subtype rather than reusing `AlterSequence`:
+     * the render contract is fundamentally different. `AlterSequence`
+     * emits DDL (`ALTER SEQUENCE` / `UPDATE dmg_sequences SET
+     * increment_by = ...`); `AlterSequenceCurrentValue` emits a
+     * data-statement that touches only the runtime-state field. Mixing
+     * them would force every consumer to branch on a `preserveValueOnly`
+     * flag.
+     *
+     * @property pairId stable key linking this follow-up to its parent
+     *           op. For `CreateSequence` / `AlterSequence`:
+     *           `"alter:${sequenceName}"` / `"create:${sequenceName}"`.
+     *           For `RenameSequence`: `"rename:${fromName}->${toName}"`.
+     *           Down-render ordering inside a `RenameSequence` group
+     *           keys on this so the rename-reverse op precedes the
+     *           current-value restore op (§5.2 / §7).
+     * @property probeSequenceRef the sequence the probe observed
+     *           [currentValue] against. For non-Rename ops this equals
+     *           [applySequenceRef]. For `RenameSequence` this is the
+     *           origin (old) name — used by Down/restore.
+     * @property applySequenceRef the sequence the Up-renderer targets
+     *           with `setval` / `UPDATE`. For non-Rename ops this
+     *           equals [probeSequenceRef]. For `RenameSequence` this
+     *           is the post-rename (new) name.
+     * @property currentValue the live runtime value the probe read. PG:
+     *           `last_value`. MySQL helper-table: `next_value` (the
+     *           next-to-be-returned-by-`nextval` value, not +1).
+     * @property isCalled PG-specific: whether `last_value` was returned
+     *           by `nextval`. Renderer passes this to
+     *           `setval('seq', value, is_called)`. MySQL and SQLite
+     *           leave it `null` — the helper-table semantics encode the
+     *           equivalent state in `next_value` directly.
+     * @property restoreValue the pre-Up snapshot value for Down/rollback.
+     *           Set only when a deterministic snapshot exists (probe
+     *           reported `Read`). `null` means the Down-side current-
+     *           value restore is impossible — see [rollbackImpossible].
+     * @property restoreIsCalled PG-specific Down counterpart to
+     *           [isCalled]. For PG, Down without [restoreIsCalled]
+     *           collapses to [rollbackImpossible] = true.
+     * @property rollbackImpossible `true` when the Down-side current-
+     *           value restore cannot run deterministically (no
+     *           [restoreValue], or PG without [restoreIsCalled]). The
+     *           runner treats this as a per-op `ROLLBACK_NOT_POSSIBLE`
+     *           — the parent Sequence op's reversibility is unaffected.
+     * @property rollbackImpossibleReason human-readable explanation when
+     *           [rollbackImpossible] is `true`. Surfaces in the
+     *           migration report so the operator knows whether the
+     *           restore was structurally impossible (new sequence, no
+     *           prior state) or a precondition was missing
+     *           (PG `is_called` absent).
+     * @property revertAfterRename `true` only on `RenameSequence`
+     *           follow-ups. Pins the Down-render ordering: the
+     *           `RenameSequence` reverse op MUST emit before this op's
+     *           reverse, so `applySequenceRef` (old name on Down) is
+     *           valid when the restore runs.
+     */
+    data class AlterSequenceCurrentValue(
+        override val id: String,
+        override val objectRef: DiffObjectRef,
+        val pairId: String,
+        val probeSequenceRef: SequenceObjectRef,
+        val applySequenceRef: SequenceObjectRef,
+        val currentValue: Long,
+        val isCalled: Boolean? = null,
+        val restoreValue: Long? = null,
+        val restoreIsCalled: Boolean? = null,
+        val rollbackImpossible: Boolean = false,
+        val rollbackImpossibleReason: String? = null,
+        val revertAfterRename: Boolean = false,
+        override val phase: DiffPhase = DiffPhase.SEQUENCES,
+        override val dependencies: Set<String> = emptySet(),
+        override val reversibility: Reversibility = Reversibility.AUTOMATIC,
+        override val risks: OperationRisks = OperationRisks(up = OperationRisk.SAFE, down = OperationRisk.SAFE),
+    ) : DiffOperation {
+        override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
+        override fun withId(id: String): DiffOperation = copy(id = id)
+    }
 }

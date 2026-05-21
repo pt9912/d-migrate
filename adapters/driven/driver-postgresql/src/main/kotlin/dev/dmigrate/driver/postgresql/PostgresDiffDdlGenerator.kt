@@ -171,6 +171,14 @@ class PostgresDiffDdlGenerator : DiffDdlGenerator {
         -> OpCategory.TRIGGER
 
         is DiffOperation.AlterCustomType,
+        // 0.9.7 preserve-current-value Sub-Slice A: subtype lands as
+        // UNSUPPORTED until Sub-Slice B wires the PG `setval` renderer
+        // (`SELECT setval('<seq>', <value>, <isCalled>);`). The
+        // planner does not emit `AlterSequenceCurrentValue` until
+        // Sub-Slice D, so this branch is defensive: a stale
+        // op reaching this renderer surfaces as
+        // `DIALECT_UNSUPPORTED_OPERATION` instead of silent skip.
+        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.UNSUPPORTED
     }
 
