@@ -329,7 +329,7 @@ val sequencesNeedingPreservation = preserveSequenceCandidates.mapNotNull { op ->
             // Restore value is always derived from the deterministic probe snapshot.
             val restoreValueHint = readResult.value
             val restoreIsCalledHint = when (probeSequenceRef.dialect) {
-                Dialect.POSTGRES -> readResult.isCalled
+                Dialect.POSTGRESQL -> readResult.isCalled
                 else -> null // Nicht-PG-Dialekte benötigen restoreIsCalled derzeit nicht.
             }
             return RestoreHints(
@@ -367,7 +367,7 @@ for (ctx in sequencesNeedingPreservation) {
                 continue
             }
             val isCalled = when (ctx.probeSequenceRef.dialect) {
-                Dialect.POSTGRES -> {
+                Dialect.POSTGRESQL -> {
                     if (readResult.isCalled == null) {
                         emitBlocker("SEQUENCE_PRESERVE_PROBE_FAILED", "PG-Probe muss is_called liefern")
                         continue
@@ -377,7 +377,7 @@ for (ctx in sequencesNeedingPreservation) {
                 else -> null
             }
             val restoreHints = resolveRestoreHints(ctx.probeSequenceRef, readResult)
-            val isRollbackPossible = restoreHints.restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRES || restoreHints.restoreIsCalledHint != null)
+            val isRollbackPossible = restoreHints.restoreValueHint != null && (ctx.probeSequenceRef.dialect != Dialect.POSTGRESQL || restoreHints.restoreIsCalledHint != null)
             val rollbackNotPossible = if (isRollbackPossible) {
                 null
             } else {
