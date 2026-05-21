@@ -652,6 +652,75 @@ Re-Schnitt-Begründung).
   `AlterSequenceCurrentValue`) — D.
 - File-target-Blocker und Schema-Doku — E.
 
+### 6.2 Sub-Slice B — PG-Probe-Adapter (Detail-DoD)
+
+Sub-Slice B liefert die JDBC-Implementierung der
+[`SequenceCurrentValueProbe`] aus Sub-Slice A für PostgreSQL.
+Reine Read-Side-Arbeit — keine Renderer-Änderungen (die sind in A
+erledigt), kein Planner-Emit (das ist D).
+
+**Artefakt (Produktionscode):**
+
+- `adapters/driven/driver-postgresql/.../PostgresSequenceCurrentValueProbe.kt`
+  *(neu)*: implementiert
+  `SequenceCurrentValueProbe.probe(connection, sequenceRef)`.
+  Query-Shape:
+  `SELECT last_value, is_called FROM <schema>.<sequence_name>`
+  (quoted via `SqlIdentifiers.quoteQualifiedIdentifier` für
+  `<schema>.<name>`-Form; ohne Schema unquoted-resolved über die
+  Connection's `search_path`).
+  Mapping pro SQLSTATE:
+  - `42P01` *undefined_table*: Sequenz existiert nicht → `NotFound`.
+  - `42501` *insufficient_privilege*: Lese-Rechte fehlen →
+    `Failed("PROBE_PERMISSION_DENIED", …)`.
+  - Andere `SQLException`: → `Failed("PROBE_QUERY_FAILED", …)`.
+  Bei `Read`-Outcome: `isCalled` MUSS aus dem `is_called`-Spaltenwert
+  gefüllt werden (PG-Probe-Vertrag).
+
+**Artefakt (Tests):**
+
+- `PostgresSequenceCurrentValueProbeTest` (Unit, mit JDBC-Mock):
+  pinnt das Query-SQL für mit/ohne Schema-Qualifier, das Mapping der
+  drei SQLSTATEs, und dass `isCalled` korrekt aus dem ResultSet
+  propagiert wird.
+- `PostgresSequenceCurrentValueProbeIntegrationTest` (live PG via
+  testcontainers): pinnt End-to-End gegen eine echte Sequenz —
+  initial nach `CREATE SEQUENCE` (is_called=false), nach `nextval`
+  (is_called=true, last_value=1), und MISSING bei nicht-existierender
+  Sequenz. Lauf via `make integration` (`-PintegrationTests`),
+  konsistent mit dem `MysqlSequenceCanonicityProbeIntegrationTest`-
+  Pattern aus dem Drift-Check-Workstream.
+
+**Definition of Done (B):**
+
+- [ ] `PostgresSequenceCurrentValueProbe` implementiert
+      `SequenceCurrentValueProbe` und gibt für eine existierende
+      Sequenz `Read(value, matchedRows=1, isCalled=...)` zurück.
+- [ ] Sequenz nicht vorhanden (SQLSTATE `42P01`) → `NotFound`.
+- [ ] Lese-Recht fehlt (SQLSTATE `42501`) →
+      `Failed("PROBE_PERMISSION_DENIED", message)`.
+- [ ] Andere `SQLException` → `Failed("PROBE_QUERY_FAILED", message)`.
+- [ ] Schema-qualifizierte Sequenzen werden korrekt gequoted; ohne
+      Schema-Angabe bleibt der Lookup unqualifiziert (PG resolved
+      via `search_path`).
+- [ ] Unit-Test mit JDBC-Mock pinnt das Query-SQL und die drei
+      SQLSTATE-Branches.
+- [ ] Integration-Test (`make integration`) pinnt End-to-End gegen
+      einen echten PostgreSQL-Container.
+- [ ] Kein Planner-Emit, kein CLI-Wiring in B. Der Probe-Adapter ist
+      noch nicht in `SchemaMigrateCommand` gewired — das passiert in
+      D.
+- [ ] `make docker-test MODULES=":adapters:driven:driver-postgresql"`
+      grün.
+- [ ] `make docker-coverage-gate` grün.
+
+**Bewusst nicht in B:**
+
+- MySQL-Probe-Adapter — in C.
+- Pipeline-Integration / Planner-Emit — in D.
+- CLI-Wiring des Probes auf `SchemaMigrateCommand` — in D.
+- Diagnose-Codes (`SEQUENCE_PRESERVE_PROBE_FAILED` etc.) — in D.
+
 ---
 
 ## 7. Akzeptanzkriterien
