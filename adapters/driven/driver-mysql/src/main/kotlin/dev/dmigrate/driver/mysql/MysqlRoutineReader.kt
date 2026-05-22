@@ -136,6 +136,9 @@ internal class MysqlRoutineReader {
                 body = row["routine_definition"] as? String,
                 deterministic = (row["is_deterministic"] as? String) == "YES",
                 sourceDialect = "mysql",
+                security = parseRoutineSecurity(row["security_type"] as? String),
+                definer = (row["definer"] as? String)?.takeIf { it.isNotBlank() },
+                sqlMode = (row["sql_mode"] as? String)?.takeIf { it.isNotBlank() },
             )
         }
         return result
@@ -167,9 +170,18 @@ internal class MysqlRoutineReader {
                 language = row["routine_body"] as? String,
                 body = row["routine_definition"] as? String,
                 sourceDialect = "mysql",
+                security = parseRoutineSecurity(row["security_type"] as? String),
+                definer = (row["definer"] as? String)?.takeIf { it.isNotBlank() },
+                sqlMode = (row["sql_mode"] as? String)?.takeIf { it.isNotBlank() },
             )
         }
         return result
+    }
+
+    private fun parseRoutineSecurity(value: String?): RoutineSecurity? = when (value?.uppercase()) {
+        "DEFINER" -> RoutineSecurity.DEFINER
+        "INVOKER" -> RoutineSecurity.INVOKER
+        else -> null
     }
 
     fun readTriggers(session: JdbcOperations, database: String): Map<String, TriggerDefinition> {

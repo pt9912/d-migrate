@@ -208,7 +208,8 @@ object MysqlMetadataQueries {
             """
             SELECT routine_name, routine_type, data_type,
                    dtd_identifier, routine_definition,
-                   is_deterministic, routine_body
+                   is_deterministic, routine_body,
+                   security_type, definer, sql_mode
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'FUNCTION'
             ORDER BY routine_name
@@ -220,7 +221,8 @@ object MysqlMetadataQueries {
         return session.queryList(
             """
             SELECT routine_name, routine_type,
-                   routine_definition, routine_body
+                   routine_definition, routine_body,
+                   security_type, definer, sql_mode
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'PROCEDURE'
             ORDER BY routine_name
