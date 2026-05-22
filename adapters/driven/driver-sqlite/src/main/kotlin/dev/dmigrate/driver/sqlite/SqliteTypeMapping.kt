@@ -181,42 +181,4 @@ internal object SqliteTypeMapping {
         val idx = createSql.indexOf(" AS ", ignoreCase = true)
         return if (idx >= 0) createSql.substring(idx + 4).trim() else null
     }
-
-    data class TriggerParseResult(
-        val timing: dev.dmigrate.core.model.TriggerTiming,
-        val event: dev.dmigrate.core.model.TriggerEvent,
-        val body: String?,
-        val notes: List<SchemaReadNote> = emptyList(),
-    )
-
-    fun parseTriggerSql(sql: String, name: String): TriggerParseResult {
-        val upper = sql.uppercase()
-        val notes = mutableListOf<SchemaReadNote>()
-
-        val timing = when {
-            upper.contains("BEFORE") -> dev.dmigrate.core.model.TriggerTiming.BEFORE
-            upper.contains("AFTER") -> dev.dmigrate.core.model.TriggerTiming.AFTER
-            upper.contains("INSTEAD OF") -> dev.dmigrate.core.model.TriggerTiming.INSTEAD_OF
-            else -> {
-                notes += SchemaReadNote(SchemaReadSeverity.WARNING, "R210", name,
-                    "Could not determine trigger timing")
-                dev.dmigrate.core.model.TriggerTiming.BEFORE
-            }
-        }
-        val event = when {
-            upper.contains(" INSERT ") || upper.contains(" INSERT\n") -> dev.dmigrate.core.model.TriggerEvent.INSERT
-            upper.contains(" UPDATE ") || upper.contains(" UPDATE\n") -> dev.dmigrate.core.model.TriggerEvent.UPDATE
-            upper.contains(" DELETE ") || upper.contains(" DELETE\n") -> dev.dmigrate.core.model.TriggerEvent.DELETE
-            else -> {
-                notes += SchemaReadNote(SchemaReadSeverity.WARNING, "R211", name,
-                    "Could not determine trigger event")
-                dev.dmigrate.core.model.TriggerEvent.INSERT
-            }
-        }
-        val bodyMatch = Regex("BEGIN\\s+(.*?)\\s+END", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-            .find(sql)
-        val body = bodyMatch?.groupValues?.get(1)?.trim()
-
-        return TriggerParseResult(timing, event, body, notes)
-    }
 }
