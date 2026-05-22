@@ -178,7 +178,10 @@ internal object SqliteTriggerSqlParser {
 
     private fun parseWhenClause(header: Scanner): String? =
         if (header.consumeKeyword("WHEN")) {
-            header.readRemaining().takeIf { it.isNotBlank() }
+            // Strip comments while preserving string literals so a header
+            // like `WHEN NEW.x > 0 -- ignore zero` round-trips as the bare
+            // expression, not as expression + trailing comment text.
+            header.readExpressionUntilEnd().takeIf { it.isNotBlank() }
         } else null
 
     private fun missingOnClause(
@@ -338,6 +341,48 @@ internal object SqliteTriggerSqlParser {
             val tail = sql.substring(pos).trim()
             pos = sql.length
             return tail
+        }
+
+        /** Read the rest of the input as a SQL expression: `-- line` and
+         *  `/* block */` comments are dropped, string literals
+         *  (`'...'`) and quoted identifiers (`"x"`, `` `x` ``, `[x]`)
+         *  are kept verbatim. Outer whitespace is trimmed. */
+        fun readExpressionUntilEnd(): String {
+            skipWhitespaceAndComments()
+            val out = StringBuilder()
+            while (pos < sql.length) {
+                val c = sql[pos]
+                when {
+                    c == '-' && pos + 1 < sql.length && sql[pos + 1] == '-' -> skipLineComment()
+                    c == '/' && pos + 1 < sql.length && sql[pos + 1] == '*' -> skipBlockComment()
+                    c == '\'' -> appendDelimitedRun(out, '\'', '\'')
+                    c == '"' -> appendDelimitedRun(out, '"', '"')
+                    c == '`' -> appendDelimitedRun(out, '`', '`')
+                    c == '[' -> appendDelimitedRun(out, '[', ']')
+                    else -> {
+                        out.append(c)
+                        pos++
+                    }
+                }
+            }
+            return out.toString().trim()
+        }
+
+        private fun appendDelimitedRun(out: StringBuilder, open: Char, close: Char) {
+            val start = pos
+            pos++
+            while (pos < sql.length) {
+                if (sql[pos] == close) {
+                    if (open == close && pos + 1 < sql.length && sql[pos + 1] == close) {
+                        pos += 2
+                        continue
+                    }
+                    pos++
+                    break
+                }
+                pos++
+            }
+            out.append(sql, start, pos)
         }
 
         fun findKeyword(keyword: String, from: Int): Int {

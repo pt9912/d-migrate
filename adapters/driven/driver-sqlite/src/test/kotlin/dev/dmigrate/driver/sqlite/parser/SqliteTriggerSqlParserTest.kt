@@ -81,6 +81,30 @@ class SqliteTriggerSqlParserTest : FunSpec({
         r.condition shouldBe "(NEW.a IS NULL AND OLD.b <> NEW.b)"
     }
 
+    test("WHEN clause drops a trailing line comment before BEGIN") {
+        val r = parse(
+            "CREATE TRIGGER trg AFTER UPDATE ON t WHEN NEW.x > 0 -- ignore zero\nBEGIN SELECT 1; END",
+        )
+        r.condition shouldBe "NEW.x > 0"
+    }
+
+    test("WHEN clause drops a trailing block comment before BEGIN") {
+        val r = parse(
+            "CREATE TRIGGER trg AFTER UPDATE ON t WHEN NEW.x > 0 /* ignore zero */ BEGIN SELECT 1; END",
+        )
+        r.condition shouldBe "NEW.x > 0"
+    }
+
+    test("WHEN clause keeps `--` that lives inside a string literal") {
+        // The substring `--` only opens a line comment outside string
+        // context. The reader-side parser must keep it as data when it
+        // appears inside `'...'`.
+        val r = parse(
+            "CREATE TRIGGER trg AFTER UPDATE ON t WHEN NEW.tag <> '--reserved--' BEGIN SELECT 1; END",
+        )
+        r.condition shouldBe "NEW.tag <> '--reserved--'"
+    }
+
     // -- Body extraction (idempotency-relevant) -------------------------
 
     test("body strips exactly one trailing `;` before END for renderer symmetry") {

@@ -135,6 +135,67 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
         }
     }
 
+    test("BEFORE DELETE trigger reverse-reads identical") {
+        val pool = newPool()
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)",
+                "CREATE TABLE log (id INTEGER, ts TEXT)",
+                "CREATE TRIGGER trg BEFORE DELETE ON t BEGIN INSERT INTO log (id) VALUES (OLD.id); END",
+            )
+            val live = SqliteSchemaReader().read(pool, SchemaReadOptions(includeTriggers = true)).schema
+            val expected = fileSchemaWith(
+                TriggerDefinition(
+                    table = "t",
+                    event = TriggerEvent.DELETE,
+                    timing = TriggerTiming.BEFORE,
+                    forEach = TriggerForEach.ROW,
+                    body = "INSERT INTO log (id) VALUES (OLD.id)",
+                    sourceDialect = "sqlite",
+                ),
+            )
+            val diff = SchemaComparator().compare(live, expected)
+            diff.triggersChanged.shouldBeEmpty()
+        } finally {
+            pool.close()
+        }
+    }
+
+    test("multi-statement trigger body reverse-reads identical (inner `;` preserved)") {
+        val pool = newPool()
+        try {
+            execDdl(
+                pool,
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)",
+                "CREATE TABLE log (id INTEGER, ts TEXT)",
+                """
+                CREATE TRIGGER trg AFTER INSERT ON t
+                BEGIN
+                  INSERT INTO log (id) VALUES (NEW.id);
+                  UPDATE log SET ts = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                END
+                """.trimIndent(),
+            )
+            val live = SqliteSchemaReader().read(pool, SchemaReadOptions(includeTriggers = true)).schema
+            val expected = fileSchemaWith(
+                TriggerDefinition(
+                    table = "t",
+                    event = TriggerEvent.INSERT,
+                    timing = TriggerTiming.AFTER,
+                    forEach = TriggerForEach.ROW,
+                    body = "INSERT INTO log (id) VALUES (NEW.id);\n" +
+                        "  UPDATE log SET ts = CURRENT_TIMESTAMP WHERE id = NEW.id",
+                    sourceDialect = "sqlite",
+                ),
+            )
+            val diff = SchemaComparator().compare(live, expected)
+            diff.triggersChanged.shouldBeEmpty()
+        } finally {
+            pool.close()
+        }
+    }
+
     test("INSTEAD OF trigger on view reverse-reads identical") {
         val pool = newPool()
         try {

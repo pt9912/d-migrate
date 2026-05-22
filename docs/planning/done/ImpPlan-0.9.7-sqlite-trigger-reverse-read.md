@@ -99,8 +99,16 @@ konkrete Konsequenzen:
   - `table` — bleibt wie heute aus `tbl_name`.
   - `sourceDialect = "sqlite"` — bleibt.
 - `SqliteSchemaReader.readTriggers` ruft den neuen Parser.
-- `SqliteTypeMapping.parseTriggerSql` als deprecated markieren, aber
-  als Redirect auf den neuen Parser behalten.
+- ~~`SqliteTypeMapping.parseTriggerSql` als deprecated markieren, aber
+  als Redirect auf den neuen Parser behalten.~~ **Abweichung in der
+  Umsetzung (2026-05-22, Sub-Slice B Commit `0256bc5b`)**:
+  `parseTriggerSql` und `TriggerParseResult` wurden ersatzlos gelöscht
+  statt als deprecated Shim behalten. Begründung: beide waren
+  `internal`-only, der einzige Aufrufer (`SqliteSchemaReader.readTriggers`)
+  wurde im selben Commit migriert, und ein deprecated Wrapper wäre
+  damit Dead-Code. Die vier Trigger-Tests in `SqliteTypeMappingTest`
+  wurden mitentfernt — jeder Case ist in
+  `SqliteTriggerSqlParserTest` mit strikteren Assertions abgedeckt.
 - Round-Trip-Tests: Reverse → emit YAML → Reverse → identisch.
 - Live-DB-Integration: pinned mit einem echten SQLite-File
   (`test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/` oder
@@ -236,7 +244,7 @@ Inkrement.
 | Sub-Slice | Inhalt |
 |---|---|
 | A | Neuer `SqliteTriggerSqlParser` (token-basiert) mit Unit-Tests fuer alle Trigger-Varianten |
-| B | `SqliteSchemaReader.readTriggers` ruft den neuen Parser; alter `SqliteTypeMapping.parseTriggerSql` wird deprecated |
+| B | `SqliteSchemaReader.readTriggers` ruft den neuen Parser; alter `SqliteTypeMapping.parseTriggerSql` wird gelöscht (Abweichung vom Originaltext „deprecated + Redirect" — siehe §3.1, Begründung internal-only + single caller migrated atomically) |
 | C | Round-Trip-Tests: Reverse → File-Write → Reverse mit echtem SQLite-File |
 | D | Live-DB-Integrationstest in `test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/`: Trigger anlegen, Reverse-Read, Compare bestaetigt Identitaet der Trigger-Definition |
 | E | `R212`-Ausnahmen (`schema.table` oder `schema.trigger`) im Reader nicht in die Trigger-Map übernehmen; bestehende Schema-/Objekt-Keys vermeiden; zudem §7.3 E.2 Carve-out-Eintrag im master plan loeschen; Roadmap §E Rest aktualisieren; Plan-Doc nach `docs/planning/done/` |
