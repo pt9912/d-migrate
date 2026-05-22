@@ -888,6 +888,73 @@ Importe sieht und CLI-Wiring konsistent bleibt:
 | Renderer-Anbindung | `MysqlDiffSequenceOps.canonicityBlocks` | Stage augmentiert Plan; Renderer emittiert Follow-up |
 | Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_*` → `MANUAL_ACTION_REQUIRED`/`DIALECT_UNSUPPORTED_OPERATION` |
 
+### 3.10 Reverse-Read-Treue fuer Programmability-Objekte (0.9.7)
+
+`schema reverse` und der DB-Operand in `schema compare` / `schema
+migrate` muessen pro Dialekt nicht nur Strukturobjekte (Tabellen,
+Indices, FKs) sondern auch Programmability-Objekte (Trigger,
+Stored-Functions, Procedures, Views, Sequences) mit allen
+Identity-Attributen korrekt aus dem Live-Katalog projizieren. Sonst
+emittiert ein anschliessender Compare gegen ein File-Schema mit
+identischen Werten spurious `Replace`-Diagnosen, die der Operator
+manuell wegsortieren muss.
+
+0.9.7 schliesst zwei der bekannten Reader-Luecken:
+
+#### 3.10.1 SQLite-Trigger-Reverse-Read (E.2 Folge-Slice)
+
+`sqlite_master` liefert Trigger als rohen `CREATE TRIGGER`-Text;
+der Reader muss den DDL-String parsen, da SQLite kein
+strukturiertes `information_schema` hat. Vor 0.9.7 nutzte der
+Reader naive Substring-Suche, die WHEN-Klauseln verlor und
+`INSTEAD OF` mit `BEFORE` verwechseln konnte. Plan-Doc:
+[`done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`](../docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md).
+
+- **Parser**: `SqliteTriggerSqlParser` (token-basiert, string- und
+  comment-aware) extrahiert `timing` (BEFORE / AFTER / INSTEAD OF),
+  `event` (INSERT / UPDATE / DELETE), `forEach` (ROW), `condition`
+  (WHEN-Klausel inkl. Comment-Stripping) und `body` (Multi-Statement
+  zwischen `BEGIN` und letztem `END`, mit einem Trim des optionalen
+  trailing `;` fuer Renderer-Symmetrie).
+- **Reader-Routing**: `SqliteSchemaReader.readTriggers` ruft den
+  Parser; R212-rejected Trigger (schema-qualifizierte Namen wie
+  `main.trg`) werden aus der Trigger-Map ausgeschlossen, damit
+  downstream Object-Key-Kollisionen mit der `schema.table`-Form
+  ausgeschlossen sind.
+- **Diagnostics**: `R210` (timing missing) / `R211` (event missing)
+  sind jetzt `ACTION_REQUIRED` (vorher `WARNING`); `R212`
+  (schema-qualified, `ACTION_REQUIRED`) und `R213` (`UPDATE OF
+  cols`, `WARNING`) sind neu.
+- **Round-Trip-Vertrag**: Reverse → Renderer-DDL → DB → Reverse
+  bleibt bit-identisch (`body` ohne trailing `;` weil der Renderer
+  `;\nEND;` unconditional anhaengt); die YAML-Codec-Seite ist via
+  `SchemaNodeProgrammabilityTriggerRoundtripTest` separat gepinnt.
+
+#### 3.10.2 MySQL-Routine-Identity-Reverse-Read (E.1 Folge-Slice)
+
+`information_schema.routines` liefert pro Routine ein
+`security_type`, einen `definer`-String (`'user'@'host'`) und einen
+`sql_mode`-Snapshot zur Erzeugungszeit. Vor 0.9.7 las der
+`MysqlRoutineReader` keine dieser Spalten, sodass alle drei Felder
+auf den Data-Class-Defaults `null` standen — file-zu-DB-Diffs gegen
+ein File-Schema mit explizitem `SQL SECURITY DEFINER` oder
+`sql_mode` produzierten spurious-Replace-Diagnosen. Plan-Doc:
+[`done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`](../docs/planning/done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md).
+
+- **MetadataQueries**: `listFunctions` / `listProcedures` projizieren
+  `security_type`, `definer`, `sql_mode` aus
+  `information_schema.routines`.
+- **Reader**: `readFunctions` / `readProcedures` populieren
+  `FunctionDefinition.security` / `definer` / `sqlMode` (analog auf
+  `ProcedureDefinition`). Leeres `sql_mode` wird zu `null`
+  normalisiert; unbekannte `security_type`-Werte (z.B. aelteres
+  MySQL oder eingeschraenkte `information_schema`-Sicht) fallen
+  ebenfalls auf `null` zurueck.
+- **Comparator-Symmetrie**: `RoutineIdentityNormalizer.normalizeMysqlSqlMode`
+  (seit E.1 Slice A) sortiert / dedupliziert die `sql_mode`-Liste,
+  sodass Reihenfolge-Drift im Live-Katalog keinen spurious-Replace
+  ausloest.
+
 ---
 
 ## 4. Querschnittsthemen
