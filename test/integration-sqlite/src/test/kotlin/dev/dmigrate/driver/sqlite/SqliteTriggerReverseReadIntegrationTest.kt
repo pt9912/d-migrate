@@ -9,6 +9,7 @@ import dev.dmigrate.core.model.TriggerDefinition
 import dev.dmigrate.core.model.TriggerEvent
 import dev.dmigrate.core.model.TriggerForEach
 import dev.dmigrate.core.model.TriggerTiming
+import dev.dmigrate.core.model.ViewDefinition
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.SchemaReadOptions
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -16,7 +17,6 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
-import io.kotest.matchers.shouldBe
 
 /**
  * Live-DB integration smoke for the SQLite trigger reverse-read.
@@ -196,7 +196,7 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
         }
     }
 
-    test("INSTEAD OF trigger on view reverse-reads identical") {
+    test("INSTEAD OF trigger on view reverse-reads identical — full schema no-op") {
         val pool = newPool()
         try {
             execDdl(
@@ -207,10 +207,9 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
                 "CREATE TRIGGER trg INSTEAD OF DELETE ON vt BEGIN DELETE FROM t WHERE id = OLD.id; END",
             )
             val live = SqliteSchemaReader().read(pool, SchemaReadOptions(includeTriggers = true)).schema
-            // Note: the trigger is on view `vt`, not table `t` — adjust the
-            // file-side definition's `table` accordingly. The view also
-            // shows up in `live.views`, so the file-side schema needs it
-            // too, otherwise the compare would surface a missing view.
+            // The trigger is on view `vt`; model the view on the file
+            // side too so the compare proves *whole-schema* equivalence,
+            // not just trigger-equivalence.
             val expected = SchemaDefinition(
                 name = "file-schema",
                 version = "0",
@@ -229,6 +228,12 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
                         ),
                     ),
                 ),
+                views = mapOf(
+                    "vt" to ViewDefinition(
+                        query = "SELECT id, name FROM t",
+                        sourceDialect = "sqlite",
+                    ),
+                ),
                 triggers = mapOf(
                     "vt::trg" to TriggerDefinition(
                         table = "vt",
@@ -241,7 +246,15 @@ class SqliteTriggerReverseReadIntegrationTest : FunSpec({
                 ),
             )
             val diff = SchemaComparator().compare(live, expected)
+            diff.triggersAdded.shouldBeEmpty()
+            diff.triggersRemoved.shouldBeEmpty()
             diff.triggersChanged.shouldBeEmpty()
+            diff.viewsAdded.shouldBeEmpty()
+            diff.viewsRemoved.shouldBeEmpty()
+            diff.viewsChanged.shouldBeEmpty()
+            diff.tablesAdded.shouldBeEmpty()
+            diff.tablesRemoved.shouldBeEmpty()
+            diff.tablesChanged.shouldBeEmpty()
         } finally {
             pool.close()
         }

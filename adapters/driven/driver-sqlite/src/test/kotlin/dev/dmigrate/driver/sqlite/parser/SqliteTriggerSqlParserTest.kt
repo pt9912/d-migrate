@@ -41,6 +41,19 @@ class SqliteTriggerSqlParserTest : FunSpec({
         r.notes.shouldBeEmpty()
     }
 
+    test("INSTEAD without OF parses leniently as INSTEAD_OF without R210") {
+        // Documents the parser's lenient-recovery behaviour: once
+        // `INSTEAD` is consumed, the timing commits to INSTEAD_OF even
+        // when the keyword `OF` is missing. sqlite_master never returns
+        // malformed CREATE TRIGGER DDL for triggers SQLite itself
+        // accepted, so this is a pure robustness path for hand-edited
+        // sqlite_master rows — no R210 timing-missing note is emitted.
+        val r = parse("CREATE TRIGGER trg INSTEAD DELETE ON v BEGIN SELECT 1; END")
+        r.timing shouldBe TriggerTiming.INSTEAD_OF
+        r.event shouldBe TriggerEvent.DELETE
+        r.notes.any { it.code == "R210" } shouldBe false
+    }
+
     test("CREATE TEMP TRIGGER variant accepted") {
         val r = parse("CREATE TEMP TRIGGER trg AFTER INSERT ON t BEGIN SELECT 1; END")
         r.timing shouldBe TriggerTiming.AFTER
