@@ -71,11 +71,6 @@ import dev.dmigrate.driver.migration.MigrationBlockedReason
  * sees stand-alone trigger ops — ones whose target table is not in
  * any rebuild bucket. Tests pin that no separate `CREATE TRIGGER`
  * leaks outside the rebuild block.
- *
- * SQLite-trigger reverse-read (`sqlite_master` lookups) is out of
- * E.2 scope — see the plan doc §7.3. File-to-file is the primary
- * SQLite migrate path; live-DB→live-DB trigger diffing is a
- * follow-up slice.
  */
 internal object SqliteTriggerDdlHelper {
 

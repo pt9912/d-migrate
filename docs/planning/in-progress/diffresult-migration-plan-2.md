@@ -1165,9 +1165,13 @@ E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
   Trigger-Operationen auf rebuild-betroffenen Tabellen werden in den
   Rebuild-Block absorbiert; der Standalone-Renderer bekommt eine
   bereits gefilterte Op-Liste.
-- SQLite-Trigger-Reverse-Read aus `sqlite_master` ist bewusst out of
-  E.2-Scope. Datei-zu-Datei ist der primaere SQLite-Migrate-Pfad;
-  Live-DB-Live-DB-Trigger-Diff folgt als separater Slice.
+- SQLite-Trigger-Reverse-Read aus `sqlite_master` ist seit 2026-05-22
+  produktiv (siehe `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`).
+  `SqliteTriggerSqlParser` extrahiert `timing`, `event`, `forEach`,
+  `condition` (WHEN-Klausel) und `body` token-basiert aus
+  `sqlite_master.sql`; Schema-qualifizierte Namen werden mit `R212`
+  abgelehnt, `UPDATE OF cols` mit `R213` gemeldet. Live-DB-zu-Live-DB-
+  und File-zu-DB-Trigger-Diff sind damit semantisch korrekt.
 - MySQL DEFINER-Rendering, schemaqualifizierter `DROP TRIGGER` und
   `INSTEAD OF` (PG-only) bleiben Carve-outs — Modell traegt heute
   weder Definer- noch Schema-Felder; INSTEAD OF blockt der

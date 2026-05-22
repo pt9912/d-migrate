@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.2 Folge-Slice (SQLite-Reader-Hardening fuer Trigger)
-> **Status**: offen seit 2026-05-19
+> **Status**: ✅ erledigt 2026-05-22 (Sub-Slices A–E, Commits `61587635` Parser+Unit-Tests / `0256bc5b` Schema-Reader-Routing + Substring-Pfad-Löschung / `8ba78822` Round-Trip-Tests / `bcd374b3` Live-DB-Integration / Closing)
 > **Vorbedingung**: E.2 Trigger-Rendering Vollscheibe ✅ 2026-05-18
 >                  (PG / MySQL / SQLite-Render alle gruen);
 >                  bestehender `SqliteSchemaReader.readTriggers` (Stub).
@@ -245,41 +245,45 @@ Inkrement.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `SqliteTriggerSqlParser` extrahiert `timing`, `event`,
+- [x] `SqliteTriggerSqlParser` extrahiert `timing`, `event`,
       `forEach`, `condition`, `body` aus jedem von SQLite via
       `sqlite_master.sql` zurueckgegebenen DDL-String.
-- [ ] WHEN-Klausel wird korrekt extrahiert.
-- [ ] `FOR EACH ROW` wird explizit gepinnt.
-- [ ] Schema-qualifizierte Trigger-Namen (`main.x`) wird mit
-      `SQLITE_TRIGGER_SCHEMA_QUALIFIED_NAME_UNSUPPORTED` (R212).
-- [ ] `UPDATE OF cols` emittiert `R213`-WARNING; Trigger wird
+- [x] WHEN-Klausel wird korrekt extrahiert.
+- [x] `FOR EACH ROW` wird explizit gepinnt.
+- [x] Schema-qualifizierte Trigger-Namen (`main.x`) werden mit
+      `R212` `ACTION_REQUIRED` markiert und der Trigger aus dem
+      Reverse-Read-Ergebnis ausgeschlossen
+      (`ParsedTrigger.rejected = true`).
+- [x] `UPDATE OF cols` emittiert `R213`-WARNING; Trigger wird
       mit `event = UPDATE` ohne Spalten gefuehrt.
-- [ ] Multi-Statement-Body wird Round-Trip-idempotent.
-- [ ] Live-DB-Integrationstest: `CREATE TRIGGER` anlegen,
+- [x] Multi-Statement-Body wird Round-Trip-idempotent.
+- [x] Live-DB-Integrationstest: `CREATE TRIGGER` anlegen,
       Reverse-Read, Compare gegen ein File-Schema-Modell mit
-      identischer Trigger-Definition → No-op.
-- [ ] Bestehende Trigger-Tests bleiben gruen.
-- [ ] `make docker-check` gruen.
+      identischer Trigger-Definition → No-op
+      (`SqliteTriggerReverseReadIntegrationTest`).
+- [x] Bestehende Trigger-Tests bleiben gruen.
+- [x] `make docker-check` gruen.
 
 ---
 
 ## 8. Definition of Done (§13-Template)
 
-- [ ] **Modus**: file-to-DB + DB-to-DB (Reader-Pfad);
+- [x] **Modus**: file-to-DB + DB-to-DB (Reader-Pfad);
       file-to-file unveraendert.
-- [ ] **Renderbare Ops**: keine neuen; nur Reverse-Read-Hardening.
-- [ ] **Neue Diagnostics**: `R212` (schema-qualified-name
+- [x] **Renderbare Ops**: keine neuen; nur Reverse-Read-Hardening.
+- [x] **Neue Diagnostics**: `R212` (schema-qualified-name
       `ACTION_REQUIRED`-Block), `R213` (UPDATE OF cols warning). Bestehende
       `R210` / `R211` werden von WARNING zu `ACTION_REQUIRED`, wenn das
       `CREATE TRIGGER`-DDL nicht parsebar ist.
-- [ ] **Up / Down**: irrelevant (Reader-Slice).
-- [ ] **Report-Felder**: `SchemaReadNote` traegt neue Codes.
-- [ ] **Dialekte**: nur SQLite.
-- [ ] **F.0-Erfuellung**: irrelevant.
-- [ ] **Positive + Blocker-Tests**: pro Parser-Case ein Test.
-- [ ] **Rollback-Test**: irrelevant.
-- [ ] **Datei-zu-Datei**: unveraendert.
-- [ ] **Bestehende Vertraege unveraendert**: File-Codec
+- [x] **Up / Down**: irrelevant (Reader-Slice).
+- [x] **Report-Felder**: `SchemaReadNote` traegt neue Codes.
+- [x] **Dialekte**: nur SQLite.
+- [x] **F.0-Erfuellung**: irrelevant.
+- [x] **Positive + Blocker-Tests**: pro Parser-Case ein Test
+      (`SqliteTriggerSqlParserTest`, ~30 Cases).
+- [x] **Rollback-Test**: irrelevant.
+- [x] **Datei-zu-Datei**: unveraendert.
+- [x] **Bestehende Vertraege unveraendert**: File-Codec
       unveraendert; `TriggerDefinition`-Modell unveraendert;
       `OperationMapper`-Pfad unveraendert. Nur der Reader-Pfad
       wird strikter.

@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **0.9.7 E.2 Folge-Slice — SQLite Trigger Reverse-Read
+  (Sub-Slices A–E)** *(2026-05-22)* — neuer token-basierter
+  `SqliteTriggerSqlParser` ersetzt den regex-/substring-basierten
+  `SqliteTypeMapping.parseTriggerSql`. Reverse-Read aus
+  `sqlite_master.sql` populiert jetzt `forEach`, `condition`
+  (WHEN-Klausel) und einen Round-Trip-symmetrischen `body` (genau
+  ein trailing `;` vor `END` wird gestrippt, weil der Renderer
+  unconditional `;\nEND;` anhängt — sonst driften Bodies nach
+  ein paar Cycles zu `...;;`).
+
+  Diagnostics:
+    - `R210` / `R211` werden zu `ACTION_REQUIRED` (vorher `WARNING`),
+      wenn die `CREATE TRIGGER`-Grammatik nicht parsebar ist.
+    - Neu: `R212` (`ACTION_REQUIRED`) für schema-qualifizierte
+      Trigger-Namen oder Target-Tabellen (`main.trg`, `aux.t`).
+      Betroffene Trigger werden aus dem Reverse-Read-Ergebnis
+      ausgeschlossen, kein `TriggerDefinition` wird gebaut.
+    - Neu: `R213` (`WARNING`) für `UPDATE OF <cols>`-Spaltenliste —
+      das neutrale Modell behandelt UPDATE als whole-row.
+
+  Auswirkung: `schema compare` zwischen zwei SQLite-Live-DBs mit
+  identischen WHEN-getragenen Triggern emittiert keine spurious
+  False-Positive-Diffs mehr; `schema migrate` (file-to-DB) gegen
+  SQLite triggert keinen `Drop+Create`-Replace mehr, wenn das
+  Source-File und das Live-DB-Trigger semantisch übereinstimmen.
+
+  **Breaking-Change-Note**: alte Live-DBs mit unparseable
+  Trigger-DDL surfen jetzt als `ACTION_REQUIRED` statt `WARNING`.
+  Tooling, das `notes.severity` filtert, sollte beide Severities
+  akzeptieren, bevor 0.9.7 ausgerollt wird.
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`.
+
 ### Fixed
 
 - **0.9.7 F.4 Renderer-Blocker-Bridge — preserve `OBJECT_RENAME_UNSUPPORTED`
