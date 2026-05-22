@@ -176,10 +176,10 @@ Aus Scope:
   Embedding-Gate; bis dahin blockieren persistierte Mischfaelle
   fuer Replace mit klarer Begruendung.
 - MySQL-Reverse-Read von Routine-Identity-Attributen
-  (`security`/`definer`/`sqlMode`) — Slice E schliesst diese
-  Lücke nur für PostgreSQL (über `pg_proc`). MySQL bleibt mit
-  Reader-Defaults `null`; Folge-Plan
-  [`open/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`](../open/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md).
+  (`security`/`definer`/`sqlMode`) — Slice E schloss diese Lücke
+  nur für PostgreSQL (über `pg_proc`). MySQL-Seite seit
+  2026-05-22 ebenfalls erledigt; Folge-Plan
+  [`done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`](./ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md).
 - Konfigurierbare Capability-Quelle (CLI / YAML) — Defaults sind
   in C.1.a hardcoded je Dialekt, eine operator-überschreibbare
   Quelle (mit `InvalidConfig`-Pfad) gehört in einen späteren

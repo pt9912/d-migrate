@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **0.9.7 E.1 Folge-Slice — MySQL Routine-Identity Reverse-Read**
+  *(2026-05-22)* — `MysqlRoutineReader.readFunctions` / `readProcedures`
+  populieren jetzt `security` (`SQL SECURITY DEFINER`/`INVOKER`),
+  `definer` (roher `'user'@'host'`-String) und `sqlMode`
+  (komma-getrennter Snapshot zur Routine-Erzeugungszeit) aus
+  `information_schema.routines`. PG-Slice E lieferte die analogen
+  Felder schon seit E.1; MySQL blieb auf den Data-Class-Defaults
+  `null` stehen, sodass file-zu-DB-Diffs gegen ein MySQL-Schema mit
+  expliziten Identity-Attributen spurious-Replace-Diagnosen
+  emittierten.
+
+  Leere `sql_mode`-Strings werden zu `null` normalisiert; ein
+  unbekanntes `security_type` (älteres MySQL oder eingeschränkte
+  `information_schema`-Sicht) fällt ebenfalls auf `null` zurück.
+  `RoutineIdentityNormalizer.normalizeMysqlSqlMode` (bereits seit
+  E.1 im Comparator/Fingerprint) sortiert und dedupliziert die
+  Modus-Liste, sodass Reihenfolge-Drift kein spurious-Replace mehr
+  ist.
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`.
+
 ### Changed
 
 - **0.9.7 E.2 Folge-Slice — SQLite Trigger Reverse-Read

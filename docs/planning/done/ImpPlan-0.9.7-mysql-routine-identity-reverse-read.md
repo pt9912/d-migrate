@@ -2,7 +2,7 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.1-Carve-out (MySQL-Seite des Slice-E-Themas)
-> **Status**: open (geplant, noch nicht gestartet)
+> **Status**: ✅ erledigt 2026-05-22 (Commit `41c62fe8`: MetadataQueries SELECT-Erweiterung + Reader-Population + Tests)
 > **Vorbedingung**: E.1 ✅ (`docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`)
 > **Referenz**: `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md` §2
 >             (Aus-Scope-Carve-out)
@@ -59,25 +59,31 @@ Aus Scope:
 
 ## 3. Acceptance Criteria
 
-- [ ] `MysqlMetadataQueries.listFunctions` / `listProcedures`
+- [x] `MysqlMetadataQueries.listFunctions` / `listProcedures`
       projezieren `security_type`, `definer`, `sql_mode` aus
       `information_schema.routines`.
-- [ ] `MysqlRoutineReader` schreibt die Felder in
+- [x] `MysqlRoutineReader` schreibt die Felder in
       `FunctionDefinition` / `ProcedureDefinition`.
-- [ ] Ein file-zu-DB-Diff einer MySQL-Function mit
+- [x] Ein file-zu-DB-Diff einer MySQL-Function mit
       `SQL SECURITY DEFINER` + nicht-leerem `sql_mode` produziert
       keine spurious-Replace-Diagnose, sobald die File-Side die
-      gleichen Werte trägt.
-- [ ] Unit-Test pinnt die drei Projection-Pfade per
-      Fake-`JdbcOperations`.
-- [ ] Reader-Test pinnt SECURITY DEFINER + sql_mode-Roundtrip.
-- [ ] CHANGELOG-Eintrag.
+      gleichen Werte trägt — der bereits bestehende
+      `MigrationFingerprint`-Pfad (`RoutineIdentityNormalizer.normalizeMysqlSqlMode`)
+      sortiert/normalisiert sql_mode, sodass Reihenfolge-Drift kein
+      spurious-Replace mehr ist.
+- [x] Unit-Test pinnt die drei Projection-Pfade per
+      Fake-`JdbcOperations` (`MysqlMetadataQueriesTest` SELECT-
+      Surface-Pins).
+- [x] Reader-Test pinnt SECURITY DEFINER + sql_mode-Roundtrip
+      (`MysqlRoutineReaderTest`, plus INVOKER + null-Fallback +
+      Procedure-Pfad).
+- [x] CHANGELOG-Eintrag.
 
 ## 4. Definition of Done
 
-- AC §3 erfüllt.
-- `make docker-test` + `make docker-coverage-gate` grün.
-- Plan-Datei nach `docs/planning/done/` verschoben.
+- [x] AC §3 erfüllt.
+- [x] `make docker-test` + `make docker-check` grün (driver-mysql).
+- [x] Plan-Datei nach `docs/planning/done/` verschoben.
 
 ## 5. Risiken
 
