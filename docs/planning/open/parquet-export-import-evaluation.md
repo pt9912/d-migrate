@@ -164,4 +164,9 @@ Das Manifest enthaelt mindestens:
 - Parquet ist spaltenorientiert; sehr kleine Tabellen profitieren kaum.
 - Eine zu fruehe Lakehouse-Abstraktion wuerde den bestehenden Format-Adapter
   unnoetig verkomplizieren.
+- Chunk-Granularitaet kann zu vielen kleinen Parquet-Dateien fuehren, die fuer
+  nachgelagerte Analyse-Engines (DuckDB, Trino) ungeschickt sind. Der Prototyp
+  sollte klaeren, ob Chunks innerhalb einer Datei pro Tabelle akkumuliert
+  werden oder ob ein adaptives Commit-Muster (Mindestbatchgroesse vor Flush)
+  noetig wird, sobald der Writer-Pfad streamingnah arbeitet.
 
