@@ -2,9 +2,12 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityGate
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
+import dev.dmigrate.driver.SequenceCapability
+import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
 /**
@@ -63,6 +66,18 @@ internal object MysqlDiffSequenceOps {
      */
     const val RUNTIME_STATE_NO_OP_CODE: String = "MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP"
 
+    /**
+     * 0.9.7 Cross-Dialect-Sequencing Sub-Slice B: dialect-static
+     * capability lookup. The MySQL diff path consults this single
+     * value at render time to decide whether `cache != null` writes
+     * trigger a `W114` warning. Keeps the diff path symmetric to the
+     * full-schema `MysqlSequenceDdlSupport.generateSequences` W114
+     * emission — both now derive from one capability default rather
+     * than from independently hard-coded `cache != null` checks.
+     */
+    private val SEQUENCE_CAPABILITY: SequenceCapability =
+        SequenceCapabilityDefaults.forDialect(DatabaseDialect.MYSQL)
+
     fun renderCreateSequence(op: DiffOperation.CreateSequence, ctx: MysqlDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         if (canonicityBlocks(op, MysqlSequenceCanonicityGate.OpIntent.CREATE, ctx)) return
@@ -78,6 +93,7 @@ internal object MysqlDiffSequenceOps {
             op,
             MysqlSequenceEmulationTemplates.sequenceSeedSql(name, op.sequence, ctx.sql::quote),
         )
+        emitCachePreallocationWarningIfNeeded(op, name, op.sequence.cache, ctx)
     }
 
     fun renderAlterSequence(op: DiffOperation.AlterSequence, ctx: MysqlDiffRenderContext) {
@@ -111,6 +127,11 @@ internal object MysqlDiffSequenceOps {
             return
         }
         ctx.emit(op, sql)
+        if (source.cache != target.cache) {
+            // Only warn when this direction's UPDATE actually writes a
+            // new `cache_size` value (see `updateRowSql` gate).
+            emitCachePreallocationWarningIfNeeded(op, name, target.cache, ctx)
+        }
     }
 
     fun renderDropSequence(op: DiffOperation.DropSequence, ctx: MysqlDiffRenderContext) {
@@ -132,6 +153,7 @@ internal object MysqlDiffSequenceOps {
                 op,
                 MysqlSequenceEmulationTemplates.sequenceSeedSql(name, op.sequence, ctx.sql::quote),
             )
+            emitCachePreallocationWarningIfNeeded(op, name, op.sequence.cache, ctx)
             for (spec in boundTriggers) {
                 val triggerName = MysqlSequenceNaming.triggerName(spec.tableName, spec.columnName)
                 ctx.emit(
@@ -564,5 +586,35 @@ internal object MysqlDiffSequenceOps {
         return "UPDATE ${ctx.sql.quote(MysqlSequenceNaming.SUPPORT_TABLE)} SET " +
             sets.joinToString(", ") +
             " WHERE ${ctx.sql.quote("name")} = $literal;"
+    }
+
+    /**
+     * 0.9.7 Cross-Dialect-Sequencing Sub-Slice B: emit `W114` when an
+     * op writes a non-null `cache_size` into the `dmg_sequences` row.
+     * Gated by [SequenceCapability.emitsCachePreallocationWarning] so
+     * the contract — "MySQL helper-table persists cache as metadata,
+     * no runtime preallocation" — has a single source of truth shared
+     * with the full-schema path in `MysqlSequenceDdlSupport`.
+     *
+     * The caller is responsible for gating on whether the SQL actually
+     * touched `cache_size` (e.g., `AlterSequence` only emits the
+     * warning when `source.cache != target.cache`); this helper just
+     * decides whether the warning is suppressed by the capability.
+     */
+    private fun emitCachePreallocationWarningIfNeeded(
+        op: DiffOperation,
+        sequenceName: String,
+        cache: Int?,
+        ctx: MysqlDiffRenderContext,
+    ) {
+        if (cache == null) return
+        val cap = SEQUENCE_CAPABILITY
+        if (!cap.supportsCache || !cap.emitsCachePreallocationWarning) return
+        ctx.warning(
+            op,
+            "Sequence '$sequenceName' has cache=$cache but MySQL helper-table mode " +
+                "does not emulate preallocation; cache value is stored as metadata only.",
+            code = "W114",
+        )
     }
 }
