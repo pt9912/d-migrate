@@ -96,6 +96,23 @@ class PlannerBlockerClassifierTest : FunSpec({
         ) shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
+    test("0.9.7 Cross-Dialect-Sequencing reserved codes classify to MANUAL_ACTION_REQUIRED") {
+        // Sub-Slice B (2026-05-27): two forward-compatibility codes
+        // for sequence cross-dialect mismatches. No renderer emits
+        // them today (OP-level SQLite block stays DIALECT_UNSUPPORTED_
+        // OPERATION; ownership is filtered at the PG reader), but the
+        // classifier carries them so a later neutral-model extension
+        // (ownership field, partial helper-table emulation) can emit
+        // without rewriting the routing table.
+        listOf(
+            PlannerBlockerClassifier.SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT_CODE,
+            PlannerBlockerClassifier.SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT_CODE,
+        ).forEach { code ->
+            PlannerBlockerClassifier.classify(code) shouldBe
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+    }
+
     test("INFO codes (SEQUENCE_PRESERVE_NOT_FOUND / NOT_RUN_POLICY) are NOT in the blocker mapping table") {
         // §6.4.5 / §6.4.3: info-only codes flow into the
         // `MigrationDdlResult.diagnostics` stream without classifier

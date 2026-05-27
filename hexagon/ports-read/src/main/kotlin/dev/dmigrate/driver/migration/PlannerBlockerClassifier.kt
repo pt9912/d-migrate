@@ -172,6 +172,35 @@ object PlannerBlockerClassifier {
     const val SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE: String =
         "SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT"
 
+    /**
+     * 0.9.7 Cross-Dialect-Sequencing Sub-Slice B: two BLOCKER codes
+     * reserved for per-attribute and ownership-related sequence
+     * mismatches across dialects. Both map to
+     * `MANUAL_ACTION_REQUIRED` — the operator can resolve them via
+     * overlay, target-dialect swap, or by enabling a helper-table
+     * emulation once available.
+     *
+     * Forward-compatibility: today no renderer emits either code.
+     * The OP-level block ("dialect has no sequence concept at all" —
+     * SQLite with `supportsNamedSequences=false`) keeps the existing
+     * `DIALECT_UNSUPPORTED_OPERATION` routing because no operator
+     * action enables the dialect's sequence renderer; the
+     * attribute-level code only fires once a renderer supports named
+     * sequences but a specific attribute (e.g., `cycle`) is not
+     * representable. Plan-doc §3.1 D2 + §4 pins the OP-/attribute-
+     * split.
+     *
+     * `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` is reserved
+     * for a future neutral-model extension that introduces a
+     * sequence-ownership field; today the PG reverse-reader filters
+     * owned sequences via `pg_depend.deptype IN ('a','i')`, so no
+     * Cross-Dialect-Transfer surfaces ownership yet.
+     */
+    const val SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT_CODE: String =
+        "SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT"
+    const val SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT_CODE: String =
+        "SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT"
+
     fun classify(code: String): MigrationBlockedReason = when (code) {
         OBJECT_RENAME_UNSUPPORTED_CODE ->
             MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED
@@ -190,7 +219,9 @@ object PlannerBlockerClassifier {
         MYSQL_SEQUENCE_DRIFT_PROBE_FAILED_CODE,
         SEQUENCE_PRESERVE_PROBE_FAILED_CODE,
         SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
-        SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE ->
+        SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE,
+        SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT_CODE,
+        SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT_CODE ->
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED
         EXCLUDE_NOT_SUPPORTED_BY_DIALECT_CODE,
         SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE ->
