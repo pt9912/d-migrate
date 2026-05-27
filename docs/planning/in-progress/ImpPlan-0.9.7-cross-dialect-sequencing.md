@@ -109,13 +109,14 @@ parallele Slice referenzieren kann.
 - **D2**: Cross-Dialect-Transfer-Vertrag —
   Source-Dialekt-Sequenzen werden über den neutralen Modellpfad
   gespiegelt. Wenn ein Attribut im Ziel-Dialekt nicht
-  unterstützt wird (z.B. PG-`CACHE` nach SQLite), emittiert
+  unterstützt wird (z.B. PG-Sequence nach SQLite, solange der
+  SQLite-Sequence-Renderer fehlt), emittiert
   der Renderer standardmaessig
   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`.
-  Für explizit als kontrollierten Attribut-Verlust dokumentierte
-  Felder (z.B. `cache`) kann ein vorhandener Overlay-/Override-
-  Mechanismus die Migration auf ein kontrolliertes `W114` begrenzen.
-  Fehlt ein solcher Treffer, bleibt es beim Standardfall Blocker.
+  `cache` ist im `helper_table`-Pfad kein Blocker: MySQL speichert
+  den Wert heute als Metadatum und emittiert defaultmaessig `W114`;
+  der offene SQLite-Plan definiert denselben Vertrag fuer die spaetere
+  SQLite-`helper_table`-Implementierung.
 - **D3**: Capability-Matrix als versionierte
   Spec — `spec/neutral-model-spec.md` §9 fuehrt die
   Cross-Dialect-Capability-Tabelle (welches Attribut überlebt
@@ -149,17 +150,17 @@ parallele Slice referenzieren kann.
 
 ## 4. Capability-Matrix (Decision-Record)
 
-| `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`) | Cross-Dialect-Verhalten |
+| `SequenceDefinition`-Attribut | PG | MySQL (Emul.) | SQLite heute / geplantes `helper_table` | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
-| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` | Source = neutral; Mapping verlustfrei |
-| `start` | `START WITH` | `dmg_sequences.next_value` | Seed via `next_value` (kein natives Start-Attribut) | Verlustfrei für frische Migrationen; SQLite modelliert nur den Seed-Zustand, nicht zwingend den späteren aktuellen Wert |
-| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite analog |
-| `minValue` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | SQLite: verlustfrei in `helper_table` |
-| `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | SQLite: verlustfrei in `helper_table` |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | `dmg_sequences.cycle_enabled` | SQLite: verlustfrei in `helper_table` |
-| `cache` | `CACHE n` | `dmg_sequences.cache_size` (deklarativ, semantisch nicht äquivalent) | `dmg_sequences.cache_size` | standardmaessig lossy/Blocker; mit Overlay/Override als kontrollierte `W114`-Warning |
+| `name` | nativ | `dmg_sequences.name` | heute nicht gerendert (`E056` / Diff-Blocker); geplant: `dmg_sequences.name` | Source = neutral; Mapping verlustfrei, sobald der Target-Renderer Sequences aktiviert |
+| `start` | `START WITH` | `dmg_sequences.next_value` | heute nicht gerendert; geplant: Seed via `next_value` (kein natives Start-Attribut) | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand, nicht zwingend den späteren aktuellen Wert |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | heute nicht gerendert; geplant: `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL; SQLite erst nach `helper_table`-Implementierung |
+| `minValue` | `MINVALUE` | `dmg_sequences.min_value` | heute nicht gerendert; geplant: `dmg_sequences.min_value` | SQLite erst nach `helper_table`-Implementierung verlustfrei |
+| `maxValue` | `MAXVALUE` | `dmg_sequences.max_value` | heute nicht gerendert; geplant: `dmg_sequences.max_value` | SQLite erst nach `helper_table`-Implementierung verlustfrei |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | heute nicht gerendert; geplant: `dmg_sequences.cycle_enabled` | SQLite erst nach `helper_table`-Implementierung verlustfrei |
+| `cache` | `CACHE n` | `dmg_sequences.cache_size` (Metadaten; keine Preallocation) | heute nicht gerendert; geplant: `dmg_sequences.cache_size` (Metadaten; keine Preallocation) | Kein Blocker im `helper_table`-Pfad; Renderer emittieren defaultmaessig `W114` ohne Overlay, weil der Wert gespeichert, aber nicht als Runtime-Cache emuliert wird |
 | `preserveCurrentValue` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | Execute-only; siehe preserveCurrentValue-Plan |
-| `OWNED BY <table>.<column>` (nur PG) | nativ | nicht abbildbar | nicht abbildbar | PG → MySQL/SQLite: `MANUAL_ACTION_REQUIRED`; ownership-Inferenz vom Reader entscheidet, ob die Sequenz mit ihrer „eigentuemer-Spalte" verbunden ist |
+| `OWNED BY <table>.<column>` (nur PG) | nativ, aber nicht als `SequenceDefinition`-Attribut modelliert | nicht abbildbar | nicht abbildbar | Heute out of scope: PostgreSQL-Reader filtert `deptype IN ('a','i')` bewusst aus dem Standalone-Sequence-Modell, und der PG-Generator rendert spalteneigene Identity-/Serial-Sequenzen nicht als Standalone-Sequences. Kein Renderer-Blocker, bis das Neutralmodell ein Ownership-Feld traegt. |
 
 **Blocker-Codes** (neu in
 `PlannerBlockerClassifier`):
@@ -168,10 +169,13 @@ parallele Slice referenzieren kann.
   `MANUAL_ACTION_REQUIRED` (Operator entscheidet,
   ob Attribut verloren geht oder Migration blockt).
 - `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` →
-  `MANUAL_ACTION_REQUIRED`.
+  `MANUAL_ACTION_REQUIRED` (reserviert fuer eine spaetere
+  Neutralmodell-Erweiterung; Sub-Slice A erzeugt diesen Code nicht,
+  weil `OWNED BY` heute nicht in `SequenceDefinition` landet).
 - `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` →
-  `MANUAL_ACTION_REQUIRED` (bestehender Preserve-Current-Value-Vertrag; Delegation an den
-  `preserveCurrentValue`-Slice).
+  `DIALECT_UNSUPPORTED_OPERATION` (bestehender
+  Preserve-Current-Value-Vertrag: SQLite hat heute keinen
+  Sequence-Renderer / keine Sequence-Emulation).
 
 ---
 
@@ -192,10 +196,12 @@ Wenn ein Attribut im Target nicht abbildbar ist, blockt der Target-Renderer.
 ```kotlin
 // hexagon:ports-read
 data class SequenceCapability(
+    val supportsNamedSequences: Boolean,
     val supportsStart: Boolean,
     val supportsMinMaxValue: Boolean,
     val supportsCycle: Boolean,
     val supportsCache: Boolean,
+    val emitsCachePreallocationWarning: Boolean,
     val supportsCurrentValuePreserve: Boolean,
     val supportsOwnedBy: Boolean,
 )
@@ -203,27 +209,33 @@ data class SequenceCapability(
 object SequenceCapabilityDefaults {
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {
         DatabaseDialect.POSTGRESQL -> SequenceCapability(
+            supportsNamedSequences = true,
             supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
             supportsCache = true,
+            emitsCachePreallocationWarning = false,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = true,
         )
         DatabaseDialect.MYSQL -> SequenceCapability(
+            supportsNamedSequences = true,
             supportsStart = true,
             supportsMinMaxValue = true,
             supportsCycle = true,
-            supportsCache = false, // W114 als lossy-Mapping über Overlay/Warning
+            supportsCache = true, // metadata roundtrip; W114 notes no preallocation
+            emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
         )
         DatabaseDialect.SQLITE -> SequenceCapability(
-            supportsStart = true, // initial über seed in helper-table
-            supportsMinMaxValue = true,
-            supportsCycle = true,
-            supportsCache = false, // metadata-only; kein runtime-caching (`W114`), W114-Warnung
-            supportsCurrentValuePreserve = false, // bis SQLite-Plan landet
+            supportsNamedSequences = false, // Reality-first: renderer emits E056 / Diff blocks today
+            supportsStart = false,
+            supportsMinMaxValue = false,
+            supportsCycle = false,
+            supportsCache = false,
+            emitsCachePreallocationWarning = false,
+            supportsCurrentValuePreserve = false,
             supportsOwnedBy = false,
         )
     }
@@ -232,9 +244,11 @@ object SequenceCapabilityDefaults {
 
 Renderer prüfen pro Op die `SequenceCapability`; nicht
 unterstützte Attribute → standardmaessig Blocker.
-Kontrollierte Werteverluste können optional als `W114`-Warning
-gemeldet werden, wenn ein passender Overlay/Override-Carve-out
-vorliegt.
+`cache` ist im `helper_table`-Pfad kein Attribut-Blocker: MySQL
+speichert den Wert heute als Metadatum und emittiert `W114` ohne
+Overlay. Der offene SQLite-Plan definiert denselben Vertrag fuer eine
+spaetere `helper_table`-Implementierung; bis dahin bleiben die
+SQLite-Defaults `false`.
 
 ### 5.3 Cross-Dialect-Validation in `DiffPlanner`
 
@@ -272,13 +286,15 @@ und delegierbar:
 - [ ] `SequenceCapability` + `SequenceCapabilityDefaults` sind im
       Code; Defaults pro Dialekt gepinnt.
 - [ ] Renderer pro Dialekt prueft Capability vor Render und
-      emittiert bei Mismatch entweder Blocker oder via
-      Overlay/Override kontrollierte Warnung (`W114`).
-- [ ] PG → MySQL mit `OWNED BY` blockt mit dem neuen Code
-  (negativer Test).
-- [ ] PG → MySQL mit `CACHE` nutzt den Overlay/Override-Pfad zu
-  `W114` als WARNING; ohne passendes Overlay bleibt es beim
-  Standard-Blocker.
+      emittiert bei Mismatch Blocker; `cache` im `helper_table`-Pfad
+      bleibt eine defaultmaessige Renderer-Warnung (`W114`).
+- [ ] PG-`OWNED BY` bleibt in Sub-Slice A ausserhalb des
+  Standalone-Sequence-Modells: Reader-Filterung fuer `deptype IN
+  ('a','i')` bleibt bestehen; kein negativer Renderer-Test, bis das
+  Neutralmodell ein Ownership-Feld besitzt.
+- [ ] PG → MySQL mit `CACHE` nutzt den defaultmaessigen `W114`-
+  Warning-Pfad; kein Overlay ist erforderlich, weil `helper_table`
+  den Wert als Metadatum kontrolliert erhaelt.
 - [ ] Decision-Record (ADR) ist gepinnt.
 - [ ] `spec/neutral-model-spec.md` und `spec/cli-spec.md` sind auf
       Stand.
@@ -294,8 +310,10 @@ und delegierbar:
       `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`,
       `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`. Mappen via
-      `PlannerBlockerClassifier` (standardmaessig `MANUAL_ACTION_REQUIRED`,
-      optionales `W114` via Overlay/Override bei kontrolliertem Werteverlust).
+      `PlannerBlockerClassifier` (`SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
+      → `DIALECT_UNSUPPORTED_OPERATION`; operator-fixbare Attribut- und
+      spaetere Ownership-Faelle → `MANUAL_ACTION_REQUIRED`; `W114` ist
+      eine Renderer-Warnung, kein Overlay-Carve-out).
 - [ ] **Up / Down**: identisch (Validation greift in beide).
 - [ ] **Report-Felder**: keine neuen.
 - [ ] **Dialekte**: PG, MySQL, SQLite — alle drei mit Capability-
@@ -333,16 +351,17 @@ und delegierbar:
   Mitigation: Capability-Resolver ist die einzige Quelle, alle
   Slices muessen ihn konsumieren.
 - **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
-  nicht implementiert ist, blockt SQLite nur für nicht representierbare
-  Attribute wie `preserveCurrentValue` oder `OWNED BY` mit
-  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`,
-  `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` oder
-  `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` (abhängig von den gewählten
-  Capabilities).
-  Das ist kein Blocker für DIESEN Plan — die Capability-Defaults sind
-  konservativ.
+  nicht implementiert ist, melden die SQLite-Capability-Defaults
+  `supportsNamedSequences = false`. Das ist Reality-First:
+  `SqliteCapabilityDdlSupport.generateSequences` erzeugt heute `E056`,
+  und `SqliteDiffDdlGenerator` blockt Sequence-Ops mit
+  `DIALECT_UNSUPPORTED_OPERATION`. Der offene SQLite-Plan bleibt die
+  Vorlage fuer eine spaetere effektive `helper_table`-Capability, nicht
+  fuer heutige Defaults.
 - **PG `OWNED BY` semantisch nicht abbildbar**: PG-Sequenzen
   koennen einer Spalte gehoeren; MySQL/SQLite kennen das nicht.
-  Wenn Reverse-Read den `OWNED BY` trägt und der Transfer-
-  Renderer das nicht abbilden kann, blockt der Slice mit
-  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`.
+  Der heutige Reader filtert solche Sequenzen bewusst aus
+  `schema.sequences`, und das Neutralmodell besitzt kein
+  Ownership-Feld. Sub-Slice A entfernt diese Filterung nicht; ein
+  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`-Blocker wird erst
+  relevant, wenn Ownership neutral modelliert wird.
