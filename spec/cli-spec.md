@@ -270,6 +270,7 @@ W200 - W299: Performance-Warnungen
 | W103 | Materialized View not supported, using regular View |
 | W104 | XML type not supported, using TEXT fallback |
 | W113 | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
+| W114 | Sequence cache value persisted as metadata only; helper-table mode does not emulate runtime preallocation |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
@@ -285,6 +286,29 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 | E056 | Named sequence cannot be generated natively and needs emulation/manual handling |
 | E120 | Unknown `geometry_type` value (schema validation) |
 | E121 | `srid` must be greater than 0 (schema validation) |
+
+### 4.7 Sequence-Cross-Dialect-Blocker (string codes, 0.9.7)
+
+String-codierte Blocker-Diagnostiken aus dem Sequence-Render-Pfad
+(`schema migrate`). Sie ergänzen die E0xx-Kompatibilitätsfehler aus
+§4.6 um Codes, die spezifisch für den Cross-Dialect-Transfer von
+Sequenzen sind. Alle Codes mappen via `PlannerBlockerClassifier` auf
+genau ein `MigrationBlockedReason`; das Mapping ist Teil des
+0.9.7-Schirms (siehe `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
+sobald geschlossen) und der zugehörigen ADR `docs/adr/0003-cross-dialect-sequencing.md`.
+
+| Code | Reason | Emittiert in | Bedeutung |
+|---|---|---|---|
+| `SEQUENCE_PRESERVE_PROBE_FAILED` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | Live-DB-Probe für `preserve_current_value` schlug fehl; kein deterministischer Vor-Zustand für Up/Down. |
+| `SEQUENCE_PRESERVE_CONFIG_INVALID` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value`-Konfiguration (CLI/YAML) ist strukturell ungültig. |
+| `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value` verlangt `--execute` mit DB-Target; File-Mode blockiert vor Render. |
+| `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | `DIALECT_UNSUPPORTED_OPERATION` | `SequencePreserveStage` | Ziel-Dialekt hat heute keine Sequence-Emulation (aktuell SQLite). Kein Operator-Eingriff löst das, bis die helper-table-Emulation landet. |
+| `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | Per-Attribut-Mismatch im Cross-Dialect-Transfer (z. B. künftiger SQLite-Renderer ohne `cycle`-Support). Heute kein Renderer-Pfad — der OP-level-Block für SQLite bleibt `DIALECT_UNSUPPORTED_OPERATION`, weil `supportsNamedSequences=false`. |
+| `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | PG-`OWNED BY` ist nicht im Target abbildbar. Heute kein Renderer-Pfad — der PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`, sodass owned sequences gar nicht ins neutrale Modell landen. Erst eine Neutralmodell-Erweiterung mit Ownership-Feld aktiviert die Emission. |
+
+`MYSQL_SEQUENCE_DRIFT_*` (E124-Familie aus Sub-Slice F der
+MySQL-Sequence-Drift-Check-Tranche) sind separat in §6.1 dokumentiert
+und nicht Teil des Cross-Dialect-Capability-Vertrags.
 
 ---
 
