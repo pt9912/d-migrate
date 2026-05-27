@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
@@ -149,9 +150,15 @@ class SchemaGenerateRunner(
 
         val mysqlSeqMode = resolveMysqlSeqMode(request, dialect) ?: return Preflight.Exit(2)
         val generatedAt = resolveGeneratedAt(request) ?: return Preflight.Exit(2)
+        val dialectContext: DdlDialectContext = when (dialect) {
+            DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
+                namedSequenceMode = mysqlSeqMode.value ?: MysqlNamedSequenceMode.ACTION_REQUIRED,
+            )
+            else -> DdlDialectContext.None
+        }
         val options = DdlGenerationOptions(
             spatialProfile = spatialProfile,
-            mysqlNamedSequenceMode = mysqlSeqMode.value,
+            dialectContext = dialectContext,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,
             deferForeignKeys = request.splitMode == SplitMode.PRE_POST && dialect == DatabaseDialect.POSTGRESQL,

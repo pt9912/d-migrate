@@ -5,9 +5,12 @@ import dev.dmigrate.core.diff.migration.DiffDiagnostic
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.ExecutionMode
+import dev.dmigrate.driver.mysqlContext
+import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.driver.ExtensionInstallPolicy
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlServerVersion
@@ -143,7 +146,7 @@ internal class SchemaMigrateRenderPipeline(
             renderedDown = renderedDown,
             combined = combined,
             executableCombined = executableCombined,
-            catalogProbeMode = renderOptions.catalogProbeMode,
+            catalogProbeMode = renderOptions.sqliteContext?.catalogProbeMode ?: SqliteCatalogProbeMode.SCHEMA_ONLY,
             augmentedPlan = effectivePlan,
         )
     }
@@ -301,29 +304,37 @@ internal class SchemaMigrateRenderPipeline(
             is MysqlSequenceCanonicityStage.Outcome.Succeeded -> mysqlSequenceOutcome.declarations
             else -> preflightPlan.mysqlSequenceCanonicity
         }
+        val dialectContext: DdlDialectContext = when (dialect) {
+            DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
+                routineCapability = routineCapability,
+                serverVersion = mysqlServerVersion,
+                sequenceCanonicity = mysqlSequenceDeclarations,
+            )
+            DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
+                liveCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
+                catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
+                    SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
+                } else {
+                    SqliteCatalogProbeMode.SCHEMA_ONLY
+                },
+                castPreflights = when (castPreflightOutcome) {
+                    is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
+                    else -> preflightPlan.sqliteCastPreflights
+                },
+            )
+            DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
+        }
         return DdlGenerationOptions(
             spatialProfile = SpatialProfilePolicy.defaultFor(dialect),
             executionMode = if (request.execute) ExecutionMode.EXECUTE else ExecutionMode.STANDALONE,
-            liveSqliteCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,
-            sqliteCastPreflights = when (castPreflightOutcome) {
-                is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
-                else -> preflightPlan.sqliteCastPreflights
-            },
             checkPreflights = checkDeclarations,
-            mysqlSequenceCanonicity = mysqlSequenceDeclarations,
-            catalogProbeMode = if (probeOutcome is SqliteProbeStage.Outcome.Succeeded) {
-                SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
-            } else {
-                SqliteCatalogProbeMode.SCHEMA_ONLY
-            },
             extensionInstallPolicy = if (request.allowExtensionInstall) {
                 ExtensionInstallPolicy.ALLOW_CREATE_IF_MISSING
             } else {
                 ExtensionInstallPolicy.NEVER
             },
-            routineCapability = routineCapability,
-            mysqlServerVersion = mysqlServerVersion,
             strictGapOperations = request.strictGapOperations,
+            dialectContext = dialectContext,
         )
     }
 
@@ -368,7 +379,10 @@ internal class SchemaMigrateRenderPipeline(
                     rendered
                 }
                 val withMysqlSequence = if (withCheckPreflights.mysqlSequenceCanonicity.isEmpty()) {
-                    withCheckPreflights.copy(mysqlSequenceCanonicity = renderOptions.mysqlSequenceCanonicity)
+                    withCheckPreflights.copy(
+                        mysqlSequenceCanonicity =
+                            renderOptions.mysqlContext?.sequenceCanonicity ?: emptyList(),
+                    )
                 } else {
                     withCheckPreflights
                 }

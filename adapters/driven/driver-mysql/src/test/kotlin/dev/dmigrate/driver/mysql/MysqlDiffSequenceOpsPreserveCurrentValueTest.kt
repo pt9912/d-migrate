@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
@@ -27,7 +28,7 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
 
     val gen = MysqlDiffDdlGenerator()
     val helperOptions = DdlGenerationOptions(
-        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+        dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
     )
 
     fun synthesiseDiff(op: DiffOperation.AlterSequenceCurrentValue): DiffResult = DiffResult(
@@ -121,7 +122,7 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
 
     test("non-HELPER_TABLE mode → blocker, no UPDATE emitted") {
         val actionRequiredOptions = DdlGenerationOptions(
-            mysqlNamedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED,
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED),
         )
         val up = gen.generateUp(synthesiseDiff(preserveOp()), actionRequiredOptions)
         // Mode gate emits a blocker; statements must not carry an UPDATE

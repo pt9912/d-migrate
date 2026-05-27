@@ -4,6 +4,7 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonElement
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
@@ -239,7 +240,12 @@ internal class SchemaGenerateHandler(
             )
         }
         val mysqlMode = args.mysqlMode?.let(MysqlNamedSequenceMode::fromCliName)
-        return DdlGenerationOptions(spatialProfile = profile, mysqlNamedSequenceMode = mysqlMode)
+        val dialectContext: DdlDialectContext = if (mysqlMode != null) {
+            DdlDialectContext.MySql(namedSequenceMode = mysqlMode)
+        } else {
+            DdlDialectContext.None
+        }
+        return DdlGenerationOptions(spatialProfile = profile, dialectContext = dialectContext)
     }
 
     @Suppress("SwallowedException")

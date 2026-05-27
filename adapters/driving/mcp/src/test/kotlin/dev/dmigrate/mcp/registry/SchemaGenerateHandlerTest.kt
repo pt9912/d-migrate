@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.SpatialProfile
@@ -382,7 +383,7 @@ class SchemaGenerateHandlerTest : FunSpec({
                 PRINCIPAL,
             ),
         )
-        fake.lastOptions!!.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        fake.lastOptions!!.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
         // POSTGRESQL default for MYSQL is NATIVE.
         fake.lastOptions!!.spatialProfile shouldBe SpatialProfile.NATIVE
     }

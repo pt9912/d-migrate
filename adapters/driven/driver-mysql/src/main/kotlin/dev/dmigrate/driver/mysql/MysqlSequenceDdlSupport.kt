@@ -13,7 +13,7 @@ internal class MysqlSequenceDdlSupport(
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
 
     private val isHelperTable: Boolean
-        get() = currentOptions.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE
+        get() = currentOptions.mysqlContext?.namedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE
 
     fun beginRun(schema: SchemaDefinition, options: DdlGenerationOptions) {
         currentOptions = options

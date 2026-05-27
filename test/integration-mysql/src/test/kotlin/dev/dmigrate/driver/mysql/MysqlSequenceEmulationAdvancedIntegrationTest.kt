@@ -7,6 +7,7 @@ import dev.dmigrate.cli.commands.ResolvedSchemaOperand
 import dev.dmigrate.cli.commands.SchemaCompareDocument
 import dev.dmigrate.cli.commands.SchemaCompareRequest
 import dev.dmigrate.cli.commands.SchemaCompareRunner
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import io.kotest.core.spec.style.FunSpec
@@ -41,7 +42,9 @@ class MysqlSequenceEmulationAdvancedIntegrationTest : FunSpec({
 
     val generator = MysqlDdlGenerator()
     val reader = MysqlSchemaReader()
-    val helperOpts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+    val helperOpts = DdlGenerationOptions(
+        dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+    )
     val supportTriggerName = MysqlSequenceNaming.triggerName("invoices", "invoice_number")
 
     val schema = SchemaDefinition(

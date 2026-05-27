@@ -13,6 +13,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.report.TransformationReportWriter
 import dev.dmigrate.text.icu.IcuUnicodeTextService
@@ -82,7 +83,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                     dialect,
                     src,
                     splitModeStr,
-                    options.mysqlNamedSequenceMode,
+                    options.mysqlContext?.namedSequenceMode,
                     options.generatedAt,
                     options.deterministic,
                 )

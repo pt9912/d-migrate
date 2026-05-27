@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.ValueChange
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import io.kotest.core.spec.style.FunSpec
@@ -40,7 +41,7 @@ class MysqlDiffSequenceOpsCacheWarningTest : FunSpec({
         SchemaDefinition(name = "App", version = "1", sequences = sequences)
 
     val helperOptions = DdlGenerationOptions(
-        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+        dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
     )
 
     fun planAndUp(

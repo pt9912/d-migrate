@@ -9,6 +9,7 @@ import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.CheckPreflightDeclaration
 import dev.dmigrate.driver.CheckPreflightStatus
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -65,7 +66,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateUp(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = enforcedServer,
+                dialectContext = DdlDialectContext.MySql(serverVersion = enforcedServer),
                 checkPreflights = listOf(declaration(addCheckOpId(), CheckPreflightStatus.PASSED)),
             ),
         )
@@ -77,7 +78,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateUp(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = enforcedServer,
+                dialectContext = DdlDialectContext.MySql(serverVersion = enforcedServer),
                 checkPreflights = listOf(declaration(addCheckOpId(), CheckPreflightStatus.FAILED, failingRows = 5)),
             ),
         )
@@ -90,7 +91,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateUp(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = enforcedServer,
+                dialectContext = DdlDialectContext.MySql(serverVersion = enforcedServer),
                 checkPreflights = listOf(
                     declaration(
                         addCheckOpId(),
@@ -109,7 +110,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateUp(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = MysqlServerVersion(8, 0, 15),
+                dialectContext = DdlDialectContext.MySql(serverVersion = MysqlServerVersion(8, 0, 15)),
                 checkPreflights = listOf(declaration(addCheckOpId(), CheckPreflightStatus.FAILED, failingRows = 5)),
             ),
         )
@@ -127,7 +128,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateUp(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = null,
+                dialectContext = DdlDialectContext.MySql(serverVersion = null),
                 checkPreflights = listOf(declaration(addCheckOpId(), CheckPreflightStatus.FAILED, failingRows = 5)),
             ),
         )
@@ -144,7 +145,7 @@ class MysqlDiffCheckPreflightGateTest : FunSpec({
         val r = gen.generateDown(
             planResult(),
             DdlGenerationOptions(
-                mysqlServerVersion = enforcedServer,
+                dialectContext = DdlDialectContext.MySql(serverVersion = enforcedServer),
                 checkPreflights = listOf(declaration(addCheckOpId(), CheckPreflightStatus.FAILED, failingRows = 5)),
             ),
         )

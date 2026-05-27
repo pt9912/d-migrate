@@ -125,24 +125,32 @@ class PortsReadTest : FunSpec({
         MysqlNamedSequenceMode.HELPER_TABLE.cliName shouldBe "helper_table"
     }
 
-    test("DdlGenerationOptions carries mysqlNamedSequenceMode") {
-        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
-        opts.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+    test("DdlGenerationOptions carries mysql named-sequence mode via DdlDialectContext.MySql") {
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
+        opts.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
 
         val defaultOpts = DdlGenerationOptions()
-        defaultOpts.mysqlNamedSequenceMode shouldBe null
+        defaultOpts.mysqlContext shouldBe null
     }
 
-    test("DdlGenerationOptions copy and equality") {
-        val a = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED)
-        val b = a.copy(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+    test("DdlGenerationOptions copy and equality (with DialectContext.MySql)") {
+        val a = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED),
+        )
+        val b = a.copy(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
         a shouldNotBe b
-        b.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        b.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
         a.copy() shouldBe a
     }
 
     test("DdlGenerationOptions toString contains class name") {
-        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
         opts.toString() shouldContain "DdlGenerationOptions"
         opts.toString() shouldContain "HELPER_TABLE"
     }

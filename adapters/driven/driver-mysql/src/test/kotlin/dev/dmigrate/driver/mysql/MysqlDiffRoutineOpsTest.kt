@@ -12,6 +12,7 @@ import dev.dmigrate.core.model.ProcedureDefinition
 import dev.dmigrate.core.model.ReturnType
 import dev.dmigrate.core.model.RoutineSecurity
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.MysqlServerVersion
@@ -40,23 +41,30 @@ class MysqlDiffRoutineOpsTest : FunSpec({
 
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
+    // Default options pre-Phase-B.0 carried the MySQL routine-capability defaults at the top
+    // level; the new shape requires an explicit DdlDialectContext.MySql() to surface them so
+    // the routine renderer doesn't fall through to InvalidConfig.
+    val defaultMysqlOptions = DdlGenerationOptions(dialectContext = DdlDialectContext.MySql())
+
     fun planAndUp(
         diff: SchemaDiff,
         current: SchemaDefinition = emptySchema(),
         desired: SchemaDefinition = emptySchema(),
-        options: DdlGenerationOptions = DdlGenerationOptions(),
+        options: DdlGenerationOptions = defaultMysqlOptions,
     ) = gen.generateUp(planner.plan(current, desired, diff), options)
 
     fun planAndDown(
         diff: SchemaDiff,
         current: SchemaDefinition = emptySchema(),
         desired: SchemaDefinition = emptySchema(),
-        options: DdlGenerationOptions = DdlGenerationOptions(),
+        options: DdlGenerationOptions = defaultMysqlOptions,
     ) = gen.generateDown(planner.plan(current, desired, diff), options)
 
     fun mariaDbOptions() = DdlGenerationOptions(
-        routineCapability = RoutineCapabilityDefaults.forMysqlServerVersion(MysqlServerVersion(10, 11, 6, "MariaDB")),
-        mysqlServerVersion = MysqlServerVersion(10, 11, 6, "MariaDB"),
+        dialectContext = DdlDialectContext.MySql(
+            routineCapability = RoutineCapabilityDefaults.forMysqlServerVersion(MysqlServerVersion(10, 11, 6, "MariaDB")),
+            serverVersion = MysqlServerVersion(10, 11, 6, "MariaDB"),
+        ),
     )
 
     val sampleFunction = FunctionDefinition(
@@ -114,7 +122,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateUp(planner.plan(current, desired, diff), defaultMysqlOptions)
         r.isBlocked shouldBe false
         val statements = r.statements.map { it.sql }
         statements.shouldHaveSize(2)
@@ -144,7 +152,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateDown(planner.plan(current, desired, diff), defaultMysqlOptions)
         r.isBlocked shouldBe true
         r.blockers.single().reason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
         r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
@@ -212,7 +220,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(procedures = mapOf("audit_call" to before))
         val desired = emptySchema().copy(procedures = mapOf("audit_call" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateDown(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateDown(planner.plan(current, desired, diff), defaultMysqlOptions)
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
     }
@@ -235,9 +243,11 @@ class MysqlDiffRoutineOpsTest : FunSpec({
     // ── Capability gates (Replace path only — Create/Drop ignore capability) ──
 
     fun disabledCapability() = DdlGenerationOptions(
-        routineCapability = EffectiveRoutineCapability.Valid(
-            function = RoutineKindCapability(enabled = false),
-            procedure = RoutineKindCapability(enabled = false),
+        dialectContext = DdlDialectContext.MySql(
+            routineCapability = EffectiveRoutineCapability.Valid(
+                function = RoutineKindCapability(enabled = false),
+                procedure = RoutineKindCapability(enabled = false),
+            ),
         ),
     )
 
@@ -373,7 +383,9 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val diff = comparator.compare(current, desired)
         val r = gen.generateUp(
             planner.plan(current, desired, diff),
-            DdlGenerationOptions(routineCapability = cap, mysqlServerVersion = null),
+            DdlGenerationOptions(
+                dialectContext = DdlDialectContext.MySql(routineCapability = cap, serverVersion = null),
+            ),
         )
         r.isBlocked shouldBe false
         r.statements.shouldHaveSize(2)
@@ -394,8 +406,10 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val r = gen.generateUp(
             planner.plan(current, desired, diff),
             DdlGenerationOptions(
-                routineCapability = cap,
-                mysqlServerVersion = MysqlServerVersion(8, 0, 36, vendor = "log"),
+                dialectContext = DdlDialectContext.MySql(
+                    routineCapability = cap,
+                    serverVersion = MysqlServerVersion(8, 0, 36, vendor = "log"),
+                ),
             ),
         )
         r.isBlocked shouldBe false
@@ -418,8 +432,10 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val r = gen.generateUp(
             planner.plan(current, desired, diff),
             DdlGenerationOptions(
-                routineCapability = cap,
-                mysqlServerVersion = MysqlServerVersion(5, 7, 44, vendor = "log"),
+                dialectContext = DdlDialectContext.MySql(
+                    routineCapability = cap,
+                    serverVersion = MysqlServerVersion(5, 7, 44, vendor = "log"),
+                ),
             ),
         )
         r.isBlocked shouldBe false
@@ -457,7 +473,7 @@ class MysqlDiffRoutineOpsTest : FunSpec({
         val current = emptySchema().copy(functions = mapOf("compute_total" to before))
         val desired = emptySchema().copy(functions = mapOf("compute_total" to after))
         val diff = comparator.compare(current, desired)
-        val r = gen.generateUp(planner.plan(current, desired, diff), DdlGenerationOptions())
+        val r = gen.generateUp(planner.plan(current, desired, diff), defaultMysqlOptions)
         r.isBlocked shouldBe true
         r.diagnostics.any { it.code == "ROUTINE_REPLACE_UP_BODY_UNKNOWN" } shouldBe true
     }
@@ -498,7 +514,9 @@ class MysqlDiffRoutineOpsTest : FunSpec({
     // as blocked / MANUAL_ACTION_REQUIRED.
 
     fun invalidCapability(reason: String = "bad config: unparsable minServerVersion=not-a-version") =
-        DdlGenerationOptions(routineCapability = EffectiveRoutineCapability.Invalid(reason))
+        DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(routineCapability = EffectiveRoutineCapability.Invalid(reason)),
+        )
 
     test("Sub-Slice C: ReplaceFunction with Invalid capability blocks with reason in diagnostic body") {
         val before = sampleFunction

@@ -13,6 +13,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
@@ -66,8 +67,10 @@ class MysqlDiffSequenceOpsDriftGateTest : FunSpec({
     )
 
     fun helperOptionsWith(declarations: List<MysqlSequenceCanonicityDeclaration>) = DdlGenerationOptions(
-        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
-        mysqlSequenceCanonicity = declarations,
+        dialectContext = DdlDialectContext.MySql(
+            namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+            sequenceCanonicity = declarations,
+        ),
     )
 
     test("CreateSequence + CANONICAL declaration → proceeds (idempotent re-run)") {

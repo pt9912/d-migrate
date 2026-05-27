@@ -6,6 +6,7 @@ import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
@@ -82,7 +83,7 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
         // shape, not a hand-rolled stand-in.
         val result = MysqlDdlGenerator().generate(
             canonicalSchema,
-            DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+            DdlGenerationOptions(dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)),
         )
         for (block in splitMysqlStatements(result.render())) {
             if (block.isNotBlank()) {
@@ -389,7 +390,7 @@ class MysqlSequenceCanonicityProbeIntegrationTest : FunSpec({
         exec("DROP FUNCTION IF EXISTS `dmg_setval`")
         val result = MysqlDdlGenerator().generate(
             schema,
-            DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+            DdlGenerationOptions(dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)),
         )
         for (block in splitMysqlStatements(result.render())) {
             if (block.isNotBlank()) {

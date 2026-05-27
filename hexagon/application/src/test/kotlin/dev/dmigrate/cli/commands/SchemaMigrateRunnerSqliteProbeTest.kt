@@ -7,6 +7,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
+import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -150,8 +151,8 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
             report = reportPath,
         )
         runner.execute(request) shouldBe 0
-        capturedOptions.value?.liveSqliteCatalog shouldBe probedCatalog
-        capturedOptions.value?.catalogProbeMode shouldBe SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
+        capturedOptions.value?.sqliteContext?.liveCatalog shouldBe probedCatalog
+        capturedOptions.value?.sqliteContext?.catalogProbeMode shouldBe SqliteCatalogProbeMode.LIVE_SQLITE_MASTER
         capturedReport.value?.summary?.catalogProbeMode shouldBe "LIVE_SQLITE_MASTER"
     }
 
@@ -203,8 +204,8 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
         )
         runner.execute(request) shouldBe 0
         // Renderer saw default options because the probe is gated by --execute.
-        capturedOptions.value?.liveSqliteCatalog shouldBe null
-        capturedOptions.value?.catalogProbeMode shouldBe SqliteCatalogProbeMode.SCHEMA_ONLY
+        capturedOptions.value?.sqliteContext?.liveCatalog shouldBe null
+        capturedOptions.value?.sqliteContext?.catalogProbeMode shouldBe SqliteCatalogProbeMode.SCHEMA_ONLY
         val codes = capturedReport.value?.diagnostics?.map { it.code }.orEmpty()
         ("SQLITE_LIVE_CATALOG_NOT_RUN_FILE_TARGET" in codes) shouldBe true
     }
@@ -233,8 +234,8 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
         )
         runner.execute(request) shouldBe 0
         probeInvocations shouldBe 0
-        capturedOptions.value?.liveSqliteCatalog shouldBe null
-        capturedOptions.value?.catalogProbeMode shouldBe SqliteCatalogProbeMode.SCHEMA_ONLY
+        // Non-SQLite dialects leave dialectContext = None so no SQLite-specific context is set.
+        capturedOptions.value?.sqliteContext shouldBe null
         // Non-SQLite dialect is silently skipped — no NOT_RUN diagnostic noise.
         val codes = capturedReport.value?.diagnostics?.map { it.code }.orEmpty()
         ("SQLITE_LIVE_CATALOG_NOT_RUN_FILE_TARGET" in codes) shouldBe false

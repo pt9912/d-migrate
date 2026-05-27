@@ -14,6 +14,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
 import dev.dmigrate.driver.MysqlSequenceCanonicityStatus
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -200,7 +201,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
         probeInvocations.value shouldBe 1
         // Render options carry the probe's declarations verbatim
         // (Sub-Slice E plumbing).
-        capturedOptions.value?.mysqlSequenceCanonicity shouldBe cannedDeclarations
+        capturedOptions.value?.mysqlContext?.sequenceCanonicity shouldBe cannedDeclarations
         // Report view carries one entry per probed object — JSON/YAML
         // renderers iterate this directly.
         val views = capturedReport.value?.mysqlSequenceCanonicity.orEmpty()
@@ -244,7 +245,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                         // it surfaces a MANUAL_ACTION_REQUIRED blocker
                         // with the E124_… code and propagates the
                         // declaration into the result.
-                        val driftDecl = options.mysqlSequenceCanonicity.single {
+                        val driftDecl = (options.mysqlContext?.sequenceCanonicity ?: emptyList()).single {
                             it.status == MysqlSequenceCanonicityStatus.DRIFT
                         }
                         val diag = dev.dmigrate.core.diff.migration.DiffDiagnostic(
@@ -270,7 +271,7 @@ class SchemaMigrateRunnerMysqlSequenceCanonicityProbeTest : FunSpec({
                             // so lift the gate diagnostic up to the top level — mirror of how
                             // the production MySQL renderer emits drift diagnostics.
                             diagnostics = listOf(diag),
-                            mysqlSequenceCanonicity = options.mysqlSequenceCanonicity,
+                            mysqlSequenceCanonicity = options.mysqlContext?.sequenceCanonicity ?: emptyList(),
                         )
                     }
 

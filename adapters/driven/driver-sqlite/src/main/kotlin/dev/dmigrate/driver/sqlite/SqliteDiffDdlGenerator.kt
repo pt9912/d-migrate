@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.driver.migration.MigrationDdlResult
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
 
@@ -165,7 +166,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         // never re-resolved during SQL emission.
         val schemaCatalog = diff.currentSchema?.let { SqliteCatalogSnapshot.fromSchema(it) }
             ?: SqliteCatalogSnapshot.EMPTY
-        val upCatalog = ctx.options.liveSqliteCatalog
+        val upCatalog = ctx.options.sqliteContext?.liveCatalog
             ?.let { schemaCatalog.union(SqliteCatalogSnapshot.fromLiveCatalog(it)) }
             ?: schemaCatalog
         val upPlan = SqliteRebuildPlanner.planRebuild(

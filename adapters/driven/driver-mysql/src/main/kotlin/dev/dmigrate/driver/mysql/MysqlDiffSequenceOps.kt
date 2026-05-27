@@ -6,6 +6,7 @@ import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.MysqlSequenceCanonicityGate
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.SequenceCapability
 import dev.dmigrate.driver.SequenceCapabilityDefaults
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -381,7 +382,7 @@ internal object MysqlDiffSequenceOps {
         ctx: MysqlDiffRenderContext,
         triggerName: String,
     ): Boolean {
-        val declarations = ctx.options.mysqlSequenceCanonicity.filter {
+        val declarations = (ctx.options.mysqlContext?.sequenceCanonicity ?: emptyList()).filter {
             it.operationId == op.id &&
                 it.kind == dev.dmigrate.driver.MysqlSequenceCanonicityKind.SUPPORT_TRIGGER &&
                 it.objectName == triggerName
@@ -474,7 +475,8 @@ internal object MysqlDiffSequenceOps {
         intent: MysqlSequenceCanonicityGate.OpIntent,
         ctx: MysqlDiffRenderContext,
     ): Boolean {
-        val declarations = ctx.options.mysqlSequenceCanonicity.filter { it.operationId == op.id }
+        val declarations = (ctx.options.mysqlContext?.sequenceCanonicity ?: emptyList())
+            .filter { it.operationId == op.id }
         if (declarations.isEmpty()) return false
         for (declaration in declarations) {
             when (val decision = MysqlSequenceCanonicityGate.decide(declaration, intent)) {
@@ -491,11 +493,12 @@ internal object MysqlDiffSequenceOps {
     }
 
     private fun ensureHelperMode(op: DiffOperation, ctx: MysqlDiffRenderContext): Boolean {
-        if (ctx.options.mysqlNamedSequenceMode == MysqlNamedSequenceMode.HELPER_TABLE) return true
+        val mode = ctx.options.mysqlContext?.namedSequenceMode
+        if (mode == MysqlNamedSequenceMode.HELPER_TABLE) return true
         ctx.skip(
             op,
             "Sequence diff rendering requires --mysql-named-sequences helper_table; current " +
-                "mode is ${ctx.options.mysqlNamedSequenceMode}. No SQL is emitted. " +
+                "mode is $mode. No SQL is emitted. " +
                 "Hint: add --mysql-named-sequences helper_table to enable sequence emulation.",
             code = MODE_REQUIRED_CODE,
         )

@@ -10,6 +10,7 @@ import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -33,7 +34,7 @@ class MysqlDiffSequenceOpsTest : FunSpec({
         SchemaDefinition(name = "App", version = "1", sequences = sequences)
 
     val helperOptions = DdlGenerationOptions(
-        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+        dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
     )
 
     fun planAndUp(

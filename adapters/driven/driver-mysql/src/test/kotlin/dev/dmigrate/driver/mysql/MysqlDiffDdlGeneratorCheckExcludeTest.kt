@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.DiffPlanner
 import dev.dmigrate.core.model.ConstraintDefinition
 import dev.dmigrate.core.model.ConstraintType
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -33,7 +34,7 @@ class MysqlDiffDdlGeneratorCheckExcludeTest : FunSpec({
         serverVersion: MysqlServerVersion? = null,
     ) = gen.generateUp(
         planner.plan(emptySchema(), emptySchema(), diff),
-        DdlGenerationOptions(mysqlServerVersion = serverVersion),
+        DdlGenerationOptions(dialectContext = DdlDialectContext.MySql(serverVersion = serverVersion)),
     )
 
     fun planAndDown(
@@ -41,7 +42,7 @@ class MysqlDiffDdlGeneratorCheckExcludeTest : FunSpec({
         serverVersion: MysqlServerVersion? = null,
     ) = gen.generateDown(
         planner.plan(emptySchema(), emptySchema(), diff),
-        DdlGenerationOptions(mysqlServerVersion = serverVersion),
+        DdlGenerationOptions(dialectContext = DdlDialectContext.MySql(serverVersion = serverVersion)),
     )
 
     val checkConstraint = ConstraintDefinition(

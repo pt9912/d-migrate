@@ -7,6 +7,7 @@ import dev.dmigrate.driver.CheckPreflightGate
 import dev.dmigrate.driver.MysqlCheckEnforcementResolver
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.PlannerBlockerClassifier
+import dev.dmigrate.driver.mysqlContext
 
 /**
  * Per-operation renderers for constraint / index / view / custom-
@@ -148,7 +149,7 @@ internal object MysqlDiffOtherOps {
         ctx: MysqlDiffRenderContext,
         isLogicalAdd: Boolean,
     ): Boolean {
-        val cap = MysqlCheckEnforcementResolver.resolve(ctx.options.mysqlServerVersion)
+        val cap = MysqlCheckEnforcementResolver.resolve(ctx.options.mysqlContext?.serverVersion)
         if (!cap.known) {
             ctx.skip(
                 op,

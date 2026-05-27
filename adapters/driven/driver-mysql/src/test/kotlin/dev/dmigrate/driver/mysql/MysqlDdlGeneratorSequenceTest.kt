@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.*
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
@@ -63,7 +64,7 @@ class MysqlDdlGeneratorSequenceTest : FunSpec({
     }
 
     val helperOpts = DdlGenerationOptions(
-        mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE,
+        dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
     )
 
     fun seqSchema(

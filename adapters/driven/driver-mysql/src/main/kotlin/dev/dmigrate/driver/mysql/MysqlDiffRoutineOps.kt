@@ -11,6 +11,7 @@ import dev.dmigrate.driver.EffectiveRoutineCapability
 import dev.dmigrate.driver.RoutineCapabilityResolution
 import dev.dmigrate.driver.RoutineKind
 import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.resolve
 
 /**
@@ -143,11 +144,14 @@ internal object MysqlDiffRoutineOps {
 
     // ── Capability helpers ────────────────────────────────────────
 
-    private fun resolveCapability(ctx: MysqlDiffRenderContext, kind: RoutineKind): RoutineCapabilityResolution =
-        when (val cap = ctx.options.routineCapability) {
+    private fun resolveCapability(ctx: MysqlDiffRenderContext, kind: RoutineKind): RoutineCapabilityResolution {
+        val mysql = ctx.options.mysqlContext
+            ?: return RoutineCapabilityResolution.InvalidConfig
+        return when (val cap = mysql.routineCapability) {
             is EffectiveRoutineCapability.Invalid -> RoutineCapabilityResolution.InvalidConfig
-            is EffectiveRoutineCapability.Valid -> cap.forKind(kind).resolve(ctx.options.mysqlServerVersion)
+            is EffectiveRoutineCapability.Valid -> cap.forKind(kind).resolve(mysql.serverVersion)
         }
+    }
 
     private fun blockMissingBody(op: DiffOperation, ctx: MysqlDiffRenderContext, opName: String) {
         val isDown = ctx.direction == MysqlRenderDirection.DOWN
@@ -283,7 +287,7 @@ internal object MysqlDiffRoutineOps {
         // envelope, surface its reason in the diagnostic body so the
         // operator can correct the misconfigured input directly from
         // the migration report instead of cross-referencing CLI logs.
-        val reasonSuffix = (ctx.options.routineCapability as? EffectiveRoutineCapability.Invalid)
+        val reasonSuffix = (ctx.options.mysqlContext?.routineCapability as? EffectiveRoutineCapability.Invalid)
             ?.reason
             ?.let { ": $it" }
             ?: ""

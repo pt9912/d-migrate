@@ -4,6 +4,7 @@ import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
@@ -71,7 +72,7 @@ class MysqlSequenceCurrentValueProbeIntegrationTest : FunSpec({
         // would emit during a real migration.
         val result = MysqlDdlGenerator().generate(
             canonicalSchema,
-            DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+            DdlGenerationOptions(dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)),
         )
         for (block in splitMysqlStatements(result.render())) {
             if (block.isNotBlank()) {

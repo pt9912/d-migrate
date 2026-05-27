@@ -163,7 +163,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.sql")
         val actual = generator.generate(input, opts).render()
@@ -174,7 +176,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.pre-data.sql")
         val result = generator.generate(input, opts)
@@ -185,7 +189,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.post-data.sql")
         val result = generator.generate(input, opts)
@@ -198,7 +204,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/sequence-emulation.yaml")
         val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
         val opts = dev.dmigrate.driver.DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val result = generator.generate(input, opts)
         val ddl = result.render()
@@ -215,7 +223,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/sequence-emulation.yaml")
         val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
         val opts = dev.dmigrate.driver.DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val result = generator.generate(input, opts)
         val preData = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)

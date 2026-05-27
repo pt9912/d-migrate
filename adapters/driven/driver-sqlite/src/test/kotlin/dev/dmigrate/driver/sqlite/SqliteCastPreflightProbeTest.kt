@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.ColumnDefinition
 import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
@@ -81,7 +82,7 @@ class SqliteCastPreflightProbeTest : FunSpec({
                 diff,
                 DdlGenerationOptions(
                     executionMode = ExecutionMode.EXECUTE,
-                    sqliteCastPreflights = declarations,
+                    dialectContext = DdlDialectContext.Sqlite(castPreflights = declarations),
                 ),
             )
             rendered.isBlocked shouldBe false
@@ -108,7 +109,7 @@ class SqliteCastPreflightProbeTest : FunSpec({
                 diff,
                 DdlGenerationOptions(
                     executionMode = ExecutionMode.EXECUTE,
-                    sqliteCastPreflights = declarations,
+                    dialectContext = DdlDialectContext.Sqlite(castPreflights = declarations),
                 ),
             )
             rendered.isBlocked shouldBe true
@@ -163,16 +164,18 @@ class SqliteCastPreflightProbeTest : FunSpec({
         val rendered = generator.generateUp(
             diff,
             DdlGenerationOptions(
-                sqliteCastPreflights = listOf(
-                    SqliteCastPreflightDeclaration(
-                        operationId = binding.operationId,
-                        dialect = binding.dialect,
-                        table = binding.table,
-                        column = binding.column,
-                        sourceType = binding.sourceTypeText,
-                        targetType = binding.targetTypeText,
-                        status = SqliteCastPreflightStatus.NOT_RUN_POLICY,
-                        sqlHash = binding.sqlHash,
+                dialectContext = DdlDialectContext.Sqlite(
+                    castPreflights = listOf(
+                        SqliteCastPreflightDeclaration(
+                            operationId = binding.operationId,
+                            dialect = binding.dialect,
+                            table = binding.table,
+                            column = binding.column,
+                            sourceType = binding.sourceTypeText,
+                            targetType = binding.targetTypeText,
+                            status = SqliteCastPreflightStatus.NOT_RUN_POLICY,
+                            sqlHash = binding.sqlHash,
+                        ),
                     ),
                 ),
             ),

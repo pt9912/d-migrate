@@ -7,6 +7,7 @@ import dev.dmigrate.core.diff.migration.OperationRisk
 import dev.dmigrate.driver.ExecutionMode
 import dev.dmigrate.driver.SqliteCastPreflightDeclaration
 import dev.dmigrate.driver.SqliteCastPreflightStatus
+import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 
@@ -99,7 +100,7 @@ internal class SqliteRebuildRenderer(
     private fun emitCastPreflightBlockersIfAny(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext): Boolean {
         val required = requiredCastPreflights(plan, ctx.direction)
         if (required.isEmpty()) return false
-        val byKey = ctx.options.sqliteCastPreflights.associateBy { it.bindingKey }
+        val byKey = (ctx.options.sqliteContext?.castPreflights ?: emptyList()).associateBy { it.bindingKey }
         var blocked = false
         for (binding in required) {
             val declaration = byKey[binding.bindingKey]
@@ -198,7 +199,7 @@ internal class SqliteRebuildRenderer(
     private fun emitCastPreflightInfoDiagnostics(plan: SqliteRebuildPlan, ctx: SqliteDiffRenderContext) {
         val required = requiredCastPreflights(plan, ctx.direction)
         if (required.isEmpty()) return
-        val byKey = ctx.options.sqliteCastPreflights.associateBy { it.bindingKey }
+        val byKey = (ctx.options.sqliteContext?.castPreflights ?: emptyList()).associateBy { it.bindingKey }
         for (binding in required) {
             val declaration = byKey[binding.bindingKey]
             if (declaration == null) {
