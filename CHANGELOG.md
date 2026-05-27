@@ -9,6 +9,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 E.3 Schirm — Cross-Dialect Sequencing (Sub-Slices A–E)**
+  *(2026-05-27)* — retroaktive Harmonisierung der drei bereits
+  abgeschlossenen Sequence-Slices (PG-DDL, MySQL helper_table,
+  preserveCurrentValue) hinter einem einzigen Capability-Vertrag.
+
+  Neu im Code:
+  - `hexagon:ports-read:SequenceCapability` + `SequenceCapabilityDefaults`
+    analog zu `RoutineCapability` / `TriggerCapability`. Acht
+    Felder pro Dialekt: `supportsNamedSequences`, `supportsStart`,
+    `supportsMinMaxValue`, `supportsCycle`, `supportsCache`,
+    `emitsCachePreallocationWarning`, `supportsCurrentValuePreserve`,
+    `supportsOwnedBy`. SQLite-Defaults sind reality-first
+    (`supportsNamedSequences=false`); sie flippen, wenn der offene
+    SQLite-Sequence-Emulation-Plan landet.
+  - `PlannerBlockerClassifier`: zwei forward-kompatible Codes
+    `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` und
+    `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`, beide auf
+    `MANUAL_ACTION_REQUIRED`. Kein Renderer emittiert sie heute —
+    OP-level SQLite-Block bleibt `DIALECT_UNSUPPORTED_OPERATION`.
+  - `MysqlDiffSequenceOps`: emittiert `W114` im Diff-Pfad bei
+    `CreateSequence` UP, `AlterSequence` (beidseitig wenn `cache`
+    differiert), `DropSequence` DOWN — gegated über
+    `SequenceCapability.emitsCachePreallocationWarning`. Bisher
+    war `W114` nur im Full-Schema-Pfad (`MysqlSequenceDdlSupport`)
+    aktiv; ein Operator mit `schema migrate --execute` sah die
+    Warnung für sequence-altering Diffs nicht.
+
+  Spec-/ADR-Updates:
+  - `spec/neutral-model-spec.md` §9.2 (neu): Cross-Dialect-
+    Capability-Matrix pro `SequenceDefinition`-Attribut.
+  - `spec/cli-spec.md` §4.5: `W114` in der kanonischen
+    Warning-Tabelle (war zuvor nur in §6.1-Prosa).
+  - `spec/cli-spec.md` §4.7 (neu): String-codiertes Sequence-
+    Blocker-Katalog mit Routing pro Code.
+  - `docs/adr/0003-cross-dialect-sequencing.md` (neu): Decisions
+    D1–D5 in binder Form für künftige Sequence-Tranchen
+    (SQLite-helper-table, MariaDB-native, Ownership-Feld).
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`.
+
 - **0.9.7 E.1 Folge-Slice — MySQL Routine-Identity Reverse-Read**
   *(2026-05-22)* — `MysqlRoutineReader.readFunctions` / `readProcedures`
   populieren jetzt `security` (`SQL SECURITY DEFINER`/`INVOKER`),

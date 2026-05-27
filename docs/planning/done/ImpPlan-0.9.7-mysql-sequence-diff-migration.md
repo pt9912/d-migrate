@@ -23,7 +23,12 @@
 >                  F.4 Renderer-Blocker-Bridge ✅ 2026-05-19.
 > **Referenz**: `docs/planning/done/mysql-sequence-emulation-plan.md` (Vollvariante
 >             im DDL-Generator-Pfad); `docs/planning/in-progress/diffresult-migration-plan-2.md`
->             §E.3; `spec/ddl-generation-rules.md` §7.
+>             §E.3; `spec/ddl-generation-rules.md` §7;
+>             ADR-0003 (`docs/adr/0003-cross-dialect-sequencing.md`)
+>             pinnt die Capability-Vertrags-Decisions retroaktiv,
+>             unter denen die hier verdrahtete `W114`-Emission im
+>             Diff-Pfad (Sub-Slice B.1 des Schirms) das Default
+>             ohne Overlay ist.
 
 ---
 

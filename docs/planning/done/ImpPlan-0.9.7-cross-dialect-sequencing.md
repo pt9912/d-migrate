@@ -2,18 +2,22 @@
 
 > **Milestone**: 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen
 > **Workstream**: E.3 architektonischer Schirm
-> **Status**: `open` (seit 2026-05-19) — Architektur-Plan, kein Code-Plan.
-> **Vorbedingung**: PG-Sequence-Diff-Renderer ✅; MySQL-Sequence-Diff-Plan
->                  *(parallel in-progress,
->                  `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
+> **Status**: ✅ Done (2026-05-27). Architektur-Plan harmonisiert die
+>           drei bereits abgeschlossenen parallelen Slices retroaktiv.
+>           Sub-Slices A ✅ (`c912386f`) + B.0 ✅ (`04a74225`) + B.1 ✅
+>           (`cc8a2643`) + C ✅ (`387304b6`) + D ✅ (`e27c3164`) +
+>           E (closing iter, dieser Commit).
+> **Vorbedingung**: PG-Sequence-Diff-Renderer ✅; MySQL-Sequence-Diff
+>                  *(done, `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)*;
+>                  preserveCurrentValue-Slice
+>                  *(done, `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`)*;
 >                  SQLite-Sequence-Plan
->                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`);
->                  preserveCurrentValue-Plan
->                  *(parallel in-progress,
->                  `docs/planning/in-progress/ImpPlan-0.9.7-sequence-preserve-current-value.md`)*.
+>                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`, weiter offen).
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md` §E.3;
 >             `docs/planning/done/mysql-sequence-emulation-plan.md`;
->             `docs/planning/open/sqlite-sequence-emulation-plan.md`.
+>             `docs/planning/open/sqlite-sequence-emulation-plan.md`;
+>             ADR-0003 (`docs/adr/0003-cross-dialect-sequencing.md`)
+>             dokumentiert die fünf Decisions D1-D5 in binder Form.
 
 ---
 
@@ -139,10 +143,10 @@ parallele Slice referenzieren kann.
 
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
-- Konkretes MySQL-Render-DDL → `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
+- Konkretes MySQL-Render-DDL → `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
 - Konkretes SQLite-Render-DDL → `docs/planning/open/sqlite-sequence-emulation-plan.md`.
 - `preserveCurrentValue`-Probe-Implementation →
-  `docs/planning/in-progress/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
+  `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 - MariaDB-native `CREATE SEQUENCE` (10.3+) — separate
   Capability-Gate-Tranche.
 

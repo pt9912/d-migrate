@@ -13,7 +13,12 @@
 > **Referenz**: `diffresult-migration-plan-2.md` §E.3 (aktuelle
 >             Sequence-Erstscheibe pinnt ausdrücklich: „aktueller
 >             Wert wird NICHT migriert“); `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`;
->             `open/sqlite-sequence-emulation-plan.md`.
+>             `open/sqlite-sequence-emulation-plan.md`; ADR-0003
+>             (`docs/adr/0003-cross-dialect-sequencing.md`)
+>             dokumentiert die Cross-Dialect-Capability-Decisions,
+>             unter denen das `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`-
+>             Routing zu `DIALECT_UNSUPPORTED_OPERATION` retroaktiv
+>             gepinnt ist.
 
 ---
 

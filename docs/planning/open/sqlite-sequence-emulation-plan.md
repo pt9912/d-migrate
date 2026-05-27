@@ -9,8 +9,15 @@
 >
 > Referenzen:
 > - `spec/ddl-generation-rules.md` §7
-> - `spec/neutral-model-spec.md`
+> - `spec/neutral-model-spec.md` §9 (inkl. §9.2 Cross-Dialect-
+>   Capability-Matrix — SQLite-Defaults stehen heute auf
+>   `supportsNamedSequences=false`; dieser Plan flippt sie als Teil
+>   seiner eigenen Implementierung)
 > - `docs/planning/mysql-sequence-emulation-plan.md`
+> - `docs/adr/0003-cross-dialect-sequencing.md` — vor Implementierung
+>   lesen: bindet `SequenceCapabilityDefaults`,
+>   `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`-Routing und das
+>   reality-first-Pattern, an dem dieser Plan ansetzt
 > - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SequenceDefinition.kt`
 > - `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGenerator.kt`
 > - `adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSchemaReader.kt`
