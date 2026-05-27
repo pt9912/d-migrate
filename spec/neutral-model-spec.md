@@ -830,7 +830,7 @@ Tranche kann Overlay-/CLI-Overrides ergänzen.
 | `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | heute n.g.; geplant: `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL |
 | `min_value` | `MINVALUE` | `dmg_sequences.min_value` | heute n.g.; geplant: `dmg_sequences.min_value` | Verlustfrei in `helper_table` |
 | `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | heute n.g.; geplant: `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle` | heute n.g.; geplant: `dmg_sequences.cycle_enabled` | Verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | heute n.g.; geplant: `dmg_sequences.cycle_enabled` | Verlustfrei in `helper_table` |
 | `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | heute n.g.; geplant: `dmg_sequences.cache_size` (Metadatum) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Beide Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
 | `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | nicht abbildbar (`SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`) | Execute-only; siehe §9.1 |
 | `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |

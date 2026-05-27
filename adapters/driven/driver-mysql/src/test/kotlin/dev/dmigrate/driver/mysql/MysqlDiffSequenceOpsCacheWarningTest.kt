@@ -125,6 +125,41 @@ class MysqlDiffSequenceOpsCacheWarningTest : FunSpec({
         r.diagnostics.none { it.code == "W114" } shouldBe true
     }
 
+    test("AlterSequence DOWN does NOT emit W114 when pre-Up state had no cache (target=before=null)") {
+        // Regression guard: catches a future bug where DOWN reads
+        // op.after.cache (= 50) instead of op.before.cache (= null).
+        // With the current source/target swap, target=before=null
+        // → helper short-circuits, no warning.
+        val before = SequenceDefinition(start = 1L, cache = null)
+        val after = before.copy(cache = 50)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(SequenceDiff(name = "order_seq", cache = ValueChange(null, 50))),
+        )
+        val r = planAndDown(
+            diff,
+            current = schemaOf(mapOf("order_seq" to before)),
+            desired = schemaOf(mapOf("order_seq" to after)),
+        )
+        r.diagnostics.none { it.code == "W114" } shouldBe true
+    }
+
+    test("AlterSequence DOWN emits W114 when DOWN restores a previously cached value (target=before=50)") {
+        // Complement to the UP `target=null` test: DOWN of an Up
+        // that nulled cache restores cache=50, so the W114 fires
+        // with the pre-Up value.
+        val before = SequenceDefinition(start = 1L, cache = 50)
+        val after = before.copy(cache = null)
+        val diff = SchemaDiff(
+            sequencesChanged = listOf(SequenceDiff(name = "order_seq", cache = ValueChange(50, null))),
+        )
+        val r = planAndDown(
+            diff,
+            current = schemaOf(mapOf("order_seq" to before)),
+            desired = schemaOf(mapOf("order_seq" to after)),
+        )
+        r.diagnostics.any { it.code == "W114" && it.message.contains("cache=50") } shouldBe true
+    }
+
     test("AlterSequence UP does NOT emit W114 when only non-cache fields differ") {
         val before = SequenceDefinition(start = 1L, increment = 1L, cache = 50)
         val after = before.copy(increment = 5L)
