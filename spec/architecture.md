@@ -797,7 +797,7 @@ plan
         → fuer jede Sequence-Op + jede AddColumn/AlterColumnDefault mit SequenceNextVal:
               SUPPORT_TABLE + NEXTVAL_ROUTINE + SETVAL_ROUTINE + SEQUENCE_ROW + SUPPORT_TRIGGER
               → Declarations (CANONICAL/DRIFT/MISSING/NOT_RUN_*/PROBE_RUNTIME_ERROR)
-  → DdlGenerationOptions.mysqlSequenceCanonicity
+  → DdlGenerationOptions.dialectContext (MySql.sequenceCanonicity)
   → MysqlDiffSequenceOps.canonicityBlocks(op, intent, ctx) gated Create/Alter/Drop/Rename
   → MigrationDdlResult.mysqlSequenceCanonicity → SchemaMigrateReport
 ```

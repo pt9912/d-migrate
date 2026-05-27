@@ -7,7 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **0.9.7 Port-Refactor — `DdlDialectContext`** *(2026-05-27)* —
+  `DdlGenerationOptions` trug bislang nullable `mysql*` /
+  `sqlite*`-Felder parallel am Top-Level (`mysqlNamedSequenceMode`,
+  `mysqlServerVersion`, `mysqlSequenceCanonicity`, `routineCapability`
+  mit MySQL-flavored Default, `liveSqliteCatalog`,
+  `sqliteCastPreflights`, `catalogProbeMode`). Diese sind jetzt in
+  einen sealed `DdlDialectContext` mit Varianten `None`, `MySql(...)`,
+  `Sqlite(...)` gewandert. Renderer/Tests greifen über die neuen
+  Extension-Properties `options.mysqlContext` / `options.sqliteContext`
+  zu. Dialekt-neutrale Felder (`spatialProfile`, `executionMode`,
+  `checkPreflights`, `extension*`, `strictGapOperations`,
+  `generatedAt`, `deterministic`, `deferForeignKeys`) bleiben am
+  Top-Level. 30 Files migriert, semantisch identisch.
+
+  Plan-Doc: `docs/planning/open/sqlite-sequence-emulation-plan.md`
+  Phase B.0; Memory-Pin: `feedback_hexagon_dialect_context`.
+
 ### Added
+
+- **0.9.7 SQLite-Sequence-Emulation Phase B.1 — CLI-Plumbing**
+  *(2026-05-27)* — neues `SqliteNamedSequenceMode`-Enum
+  (`action_required` / `helper_table`) im `hexagon:ports-read`,
+  Slot in `DdlDialectContext.Sqlite.namedSequenceMode`. CLI-Flag
+  `--sqlite-named-sequences <action_required|helper_table>` auf
+  `schema generate`; Default für SQLite-Targets bleibt
+  `action_required`. Runner-seitige Validierung lehnt das Flag mit
+  Exit 2 + Hinweistext ab, wenn `--target` nicht `sqlite` ist.
+  JSON-Output und YAML-Sidecar-Report zeigen das Feld
+  (`sqlite_named_sequences`) wenn gesetzt.
+
+  Der Generator-Pfad (`helper_table`-Mode emittiert noch keine DDL)
+  folgt in Phase B.3. Phase A § 11 Pre-Code-Klärungen sind alle
+  geschlossen: Min-Version `3.35.0`, `DefaultValue.SequenceNextVal`
+  vorhanden, Trigger-Body-Layout gegen SQLite 3.53.1 prototyp-
+  validiert (`/tmp/sqlite-two-trigger-prototype.sql`, 8/8 Szenarien),
+  W114-Vertrag via ADR-0003 fixiert.
 
 - **0.9.7 E.3 Schirm — Cross-Dialect Sequencing (Sub-Slices A–E)**
   *(2026-05-27)* — retroaktive Harmonisierung der drei bereits

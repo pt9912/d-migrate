@@ -1,12 +1,17 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12). Workstream G.1-G.3 sowie A.1/A.2,
-> D.1-D.3b, die konservative F.5-Erstscheibe, ein PostgreSQL-E.3-
-> Sequence-Slice und die zweite F.4-Scheibe (Rename-Rendering fuer
-> PostgreSQL/MySQL/SQLite, Plan-2 §10 F.4) sind implementiert. C.1 hat
-> zusaetzlich eine explizite PostgreSQL-Extension-Install-Policy (siehe
-> Status-Bloecke in §4, §5, §7, §8, §9 und §10); weitere B/C/E/F-Slices
-> bleiben offen.
+> Status: In Progress (seit 2026-05-12, Refresh 2026-05-27).
+> Praktisch alle Workstreams sind abgeschlossen: G.1-G.3 (Artefakt/
+> Runner), A.1/A.2 (Locking, SQLite-Live-Catalog), B.1/B.2 (PG-`USING`,
+> SQLite-Cast-Preflight), C.1/C.2 (Extensions, Spatial), D.1/D.2/D.3a/
+> D.3b (Views + Materialized Views), E.1 (Routine), E.2 (Trigger),
+> E.3 (PG-Sequence + MySQL-helper_table + preserveCurrentValue +
+> Cross-Dialect-Sequencing-Schirm 2026-05-27), F.0-F.4 (Overlays/
+> Plan-Artefakte/Partial-Rollback/Rename-Mappings) und F.5 Vollscheibe
+> (CHECK/EXCLUDE). Einzig offen: SQLite-Sequence-Emulation als
+> ausgelagerter Folge-Plan (`docs/planning/open/sqlite-sequence-emulation-plan.md`,
+> Phase A + B.0 + B.1 abgeschlossen, B.2-E offen). Die per-Workstream-
+> Status-Bloecke in §4-§10 sind individuell aktualisiert.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -1182,15 +1187,17 @@ E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
 
 ### E.3 Sequence-Migrationen
 
-> Status: PostgreSQL-Erstscheibe implementiert (2026-05-12).
-> Diff-basierte PostgreSQL-Migrationen rendern deklarative
-> `CreateSequence`-/`AlterSequence`-/`DropSequence`-Operationen fuer
-> `start`, `increment`, `minValue`, `maxValue`, `cycle` und `cache`.
-> `SequenceNextVal`-Defaults haengen explizit von im selben Plan erzeugten
-> `CreateSequence`-Operationen ab, sodass Tabellen-/Spalten-DDL nicht vor der
-> referenzierten Sequence gerendert wird. Der aktuelle Sequence-Wert bleibt
-> bewusst ausserhalb dieses Slice; MySQL-/SQLite-Sequence-Migrationen bleiben
-> im diffbasierten Pfad blockierend.
+> Status: PostgreSQL-Erstscheibe implementiert (2026-05-12); MySQL-
+> helper_table-Diff (2026-05-20), preserveCurrentValue (2026-05-21),
+> Cross-Dialect-Sequencing-Schirm (2026-05-27, ADR-0003) und SQLite-
+> Sequence Phase A + B.0 + B.1 (2026-05-27) abgeschlossen. SQLite
+> blockt diff-basierte Sequence-Ops weiterhin mit
+> `DIALECT_UNSUPPORTED_OPERATION`, bis Phase B.2/B.3 des SQLite-
+> Sequence-Plans (`docs/planning/open/sqlite-sequence-emulation-plan.md`)
+> den `helper_table`-Renderer + Trigger-Paar emittiert. Der
+> aktuelle Sequence-Wert wird über die preserveCurrentValue-Policy
+> migriert (Up: `setval(...)` PG / `UPDATE dmg_sequences` MySQL;
+> Down: `ROLLBACK_NOT_POSSIBLE` wenn ohne Probe).
 
 Nicht in der ersten Matrix:
 

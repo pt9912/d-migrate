@@ -1,6 +1,25 @@
 # Implementierungsplan: Vollständige SQLite-Sequence-Emulation
 
-> Status: Draft (2026-04-20)
+> Status: In Progress (2026-05-27). Phase A § 11 Pre-Code-Klärungen
+> abgeschlossen; Phase B.0 (`DdlDialectContext`-Refactor, `48c7f01c`)
+> und Phase B.1 (`SqliteNamedSequenceMode` + CLI-Plumbing, `84ba7ab7`)
+> abgeschlossen. Offen: Phase B.2 (Validator-Regeln), B.3 (helper_table-
+> DDL + `_bi`/`_ai`-Trigger-Paar), B.4 (`SequenceCapability`-Defaults
+> flippen), C (Tests + Golden-Master), D (Reverse), E (Compare +
+> Stabilisierung).
+>
+> Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender
+> Projekt-Floor); `DefaultValue.SequenceNextVal` ist in
+> `hexagon:core/model/DefaultValue.kt` vorhanden und von MySQL
+> bereits konsumiert; W114-Vertrag via ADR-0003 (`SequenceCapability.
+> emitsCachePreallocationWarning` als Single-Source-of-Truth);
+> kanonisches Zwei-Trigger-Body-Layout (§ 3.4) gegen SQLite 3.53.1
+> in einem Spike-Script (`/tmp/sqlite-two-trigger-prototype.sql`,
+> nicht im Repo) prototyp-validiert (8/8 Szenarien: sequential
+> INSERT, batch INSERT, NULL-Lossy-Semantik, explizite Werte,
+> Rollback-Inversion, Cycle, Exhaustion mit RAISE(ABORT),
+> Multi-Sequence-per-Table); §3.7 Concurrency-Vertrag und §3.4
+> Manuelle-`dmg_sequences`-Zugriffe als final akzeptiert.
 >
 > Zweck: Produktplan fuer eine **vollstaendige** SQLite-Variante von
 > benannten Sequences im DDL-Pfad, inklusive DDL-Generierung,
