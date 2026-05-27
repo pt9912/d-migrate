@@ -14,6 +14,7 @@ import dev.dmigrate.cli.DMigrate
 import dev.dmigrate.cli.output.OutputFormatter
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.mysqlContext
+import dev.dmigrate.driver.sqliteContext
 import dev.dmigrate.format.SchemaFileResolver
 import dev.dmigrate.format.report.TransformationReportWriter
 import dev.dmigrate.text.icu.IcuUnicodeTextService
@@ -52,6 +53,9 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val mysqlNamedSequences by option("--mysql-named-sequences",
         help = "MySQL named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
         .choice("action_required", "helper_table")
+    val sqliteNamedSequences by option("--sqlite-named-sequences",
+        help = "SQLite named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
+        .choice("action_required", "helper_table")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -70,6 +74,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
             quiet = ctx.quiet,
             splitMode = splitMode,
             mysqlNamedSequences = mysqlNamedSequences,
+            sqliteNamedSequences = sqliteNamedSequences,
             deterministic = deterministic,
         )
         val runner = SchemaGenerateRunner(
@@ -86,6 +91,7 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
                     options.mysqlContext?.namedSequenceMode,
                     options.generatedAt,
                     options.deterministic,
+                    options.sqliteContext?.namedSequenceMode,
                 )
             },
             formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,

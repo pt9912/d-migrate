@@ -79,6 +79,7 @@ object SchemaGenerateHelpers {
         dialect: String,
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequenceMode: dev.dmigrate.driver.MysqlNamedSequenceMode? = null,
+        sqliteNamedSequenceMode: dev.dmigrate.driver.SqliteNamedSequenceMode? = null,
     ): String {
         val isSplit = splitMode == SplitMode.PRE_POST
         val notes = result.notes.joinToString(",\n") { note ->
@@ -105,6 +106,9 @@ object SchemaGenerateHelpers {
             appendLine("""  "target": "$dialect",""")
             if (mysqlNamedSequenceMode != null) {
                 appendLine("""  "mysql_named_sequences": "${mysqlNamedSequenceMode.cliName}",""")
+            }
+            if (sqliteNamedSequenceMode != null) {
+                appendLine("""  "sqlite_named_sequences": "${sqliteNamedSequenceMode.cliName}",""")
             }
             appendLine("""  "schema": {"name": "${escapeJson(schema.name)}", "version": "${escapeJson(schema.version)}"},""")
             if (isSplit) {

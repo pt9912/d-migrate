@@ -205,6 +205,7 @@ sealed interface DdlDialectContext {
      *   `NOT_RUN_FILE_TARGET` fuer file-only.
      */
     data class Sqlite(
+        val namedSequenceMode: SqliteNamedSequenceMode = SqliteNamedSequenceMode.ACTION_REQUIRED,
         val liveCatalog: SqliteLiveCatalog? = null,
         val catalogProbeMode: SqliteCatalogProbeMode = SqliteCatalogProbeMode.SCHEMA_ONLY,
         val castPreflights: List<SqliteCastPreflightDeclaration> = emptyList(),
@@ -265,6 +266,54 @@ enum class MysqlNamedSequenceMode(val cliName: String) {
         private val BY_CLI_NAME = entries.associateBy { it.cliName }
 
         fun fromCliName(name: String): MysqlNamedSequenceMode? =
+            BY_CLI_NAME[name.lowercase(java.util.Locale.ROOT)]
+    }
+}
+
+/**
+ * SQLite named-sequence emulation strategy (0.9.7 Phase B.1).
+ *
+ * Strukturell parallel zu [MysqlNamedSequenceMode]. Eigener Typ statt
+ * Wiederverwendung des MySQL-Enums, damit die runner-seitige
+ * Dialekt-Validierung sauber bleibt — ein `--mysql-named-sequences`-
+ * Wert kann nicht in einen SQLite-Target leaken und umgekehrt.
+ *
+ * SQLite-Emulation unterscheidet sich von MySQL in zwei Punkten:
+ * keine stored functions (die per-INSERT-Logik lebt komplett in
+ * einem kanonischen `BEFORE INSERT` + `AFTER INSERT`-Trigger-Paar,
+ * validiert gegen SQLite 3.53.1 im §11.1-Prototyp), und die
+ * `dmg_sequences`-Zeile traegt eine zusaetzliche `exhausted`-Flag-
+ * Spalte, die das Trigger-Paar setzt, wenn `cycle_enabled = 0` und
+ * das naechste Inkrement den Bereich verlassen wuerde. Beide
+ * Unterschiede sind dialekt-intern — die neutrale
+ * `SequenceDefinition` ist die gleiche wie bei MySQL.
+ *
+ * Modus-Gate:
+ *
+ * - [ACTION_REQUIRED] (Default fuer SQLite-Targets): heutiges
+ *   `E056`-Skip-Verhalten fuer benannte Sequenzen und
+ *   `SequenceNextVal`-Spalten-Defaults. Backward-kompatibel.
+ * - [HELPER_TABLE]: emittiert die helper-table-Emulation —
+ *   `dmg_sequences`-Tabelle, Seed-`INSERT`s, kanonisches
+ *   `_bi`/`_ai`-Trigger-Paar pro `SequenceNextVal`-Spalte. Phase
+ *   B.3 verdrahtet die eigentliche DDL; das Enum lebt hier, damit
+ *   B.1 die Option durch [DdlDialectContext.Sqlite] plumben kann,
+ *   bevor der Generator den Pfad oeffnet.
+ */
+enum class SqliteNamedSequenceMode(val cliName: String) {
+    /** Skip sequences with action_required E056 (default, backward compatible). */
+    ACTION_REQUIRED("action_required"),
+    /**
+     * Emit `dmg_sequences` table, seed INSERTs, and a canonical
+     * `_bi`/`_ai` trigger pair per `SequenceNextVal` column. Phase
+     * B.3 implementation.
+     */
+    HELPER_TABLE("helper_table");
+
+    companion object {
+        private val BY_CLI_NAME = entries.associateBy { it.cliName }
+
+        fun fromCliName(name: String): SqliteNamedSequenceMode? =
             BY_CLI_NAME[name.lowercase(java.util.Locale.ROOT)]
     }
 }

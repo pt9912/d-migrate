@@ -5,6 +5,7 @@ import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.MysqlNamedSequenceMode
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.SqliteNamedSequenceMode
 import java.nio.file.Path
 import java.time.Instant
 import kotlin.io.path.writeText
@@ -21,8 +22,14 @@ class TransformationReportWriter {
         mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
         generatedAt: Instant? = null,
         deterministic: Boolean = false,
+        sqliteNamedSequenceMode: SqliteNamedSequenceMode? = null,
     ) {
-        output.writeText(render(result, schema, dialect, sourceFile, splitMode, mysqlNamedSequenceMode, generatedAt, deterministic))
+        output.writeText(
+            render(
+                result, schema, dialect, sourceFile, splitMode,
+                mysqlNamedSequenceMode, generatedAt, deterministic, sqliteNamedSequenceMode,
+            ),
+        )
     }
 
     fun render(
@@ -34,6 +41,7 @@ class TransformationReportWriter {
         mysqlNamedSequenceMode: MysqlNamedSequenceMode? = null,
         generatedAt: Instant? = null,
         deterministic: Boolean = false,
+        sqliteNamedSequenceMode: SqliteNamedSequenceMode? = null,
     ): String = buildString {
         appendLine("source:")
         appendLine("  schema: \"${escapeYaml(schema.name)}\"")
@@ -44,6 +52,7 @@ class TransformationReportWriter {
         if (!deterministic) appendLine("  generated_at: \"${generatedAt ?: Instant.now()}\"")
         appendLine("  generator: \"d-migrate 0.9.6\"")
         if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
+        if (sqliteNamedSequenceMode != null) appendLine("  sqlite_named_sequences: ${sqliteNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")
         appendLine()
 

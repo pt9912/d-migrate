@@ -68,6 +68,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         quiet: Boolean = false,
         splitMode: SplitMode = SplitMode.SINGLE,
         mysqlNamedSequences: String? = null,
+        sqliteNamedSequences: String? = null,
         deterministic: Boolean = false,
     ) = SchemaGenerateRequest(
         source = source, target = target,
@@ -76,6 +77,7 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         outputFormat = outputFormat, verbose = verbose,
         quiet = quiet, splitMode = splitMode,
         mysqlNamedSequences = mysqlNamedSequences,
+        sqliteNamedSequences = sqliteNamedSequences,
         deterministic = deterministic,
     )
 
@@ -541,6 +543,62 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         val h = harness()
         h.runner().execute(request(target = "postgresql", outputFormat = "json")) shouldBe 0
         h.stdout.joined() shouldNotContain "mysql_named_sequences"
+    }
+
+    // ── Phase B.1: SQLite named-sequences plumbing ──────────────
+
+    test("Exit 0: --target sqlite without --sqlite-named-sequences defaults to action_required") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(request(target = "sqlite")) shouldBe 0
+    }
+
+    test("Exit 0: --target sqlite --sqlite-named-sequences helper_table accepted") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(
+            request(target = "sqlite", sqliteNamedSequences = "helper_table")
+        ) shouldBe 0
+    }
+
+    test("Exit 2: --sqlite-named-sequences with --target postgresql") {
+        val h = harness()
+        h.runner().execute(
+            request(target = "postgresql", sqliteNamedSequences = "helper_table")
+        ) shouldBe 2
+        h.stderr.joined() shouldContain "--sqlite-named-sequences is only valid with --target sqlite"
+        h.stderr.joined() shouldContain "Allowed values"
+    }
+
+    test("Exit 2: --sqlite-named-sequences with --target mysql") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.MYSQL)
+        h.runner().execute(
+            request(target = "mysql", sqliteNamedSequences = "action_required")
+        ) shouldBe 2
+        h.stderr.joined() shouldContain "--sqlite-named-sequences is only valid with --target sqlite"
+    }
+
+    test("JSON output for SQLite includes sqlite_named_sequences field") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(
+            request(target = "sqlite", outputFormat = "json", sqliteNamedSequences = "helper_table")
+        ) shouldBe 0
+        h.stdout.joined() shouldContain "\"sqlite_named_sequences\": \"helper_table\""
+    }
+
+    test("JSON output for SQLite default emits sqlite_named_sequences=action_required") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(request(target = "sqlite", outputFormat = "json")) shouldBe 0
+        h.stdout.joined() shouldContain "\"sqlite_named_sequences\": \"action_required\""
+    }
+
+    test("JSON output for non-SQLite does NOT include sqlite_named_sequences field") {
+        val h = harness()
+        h.runner().execute(request(target = "postgresql", outputFormat = "json")) shouldBe 0
+        h.stdout.joined() shouldNotContain "sqlite_named_sequences"
     }
 
     test("JSON output includes generator version 0.9.6") {

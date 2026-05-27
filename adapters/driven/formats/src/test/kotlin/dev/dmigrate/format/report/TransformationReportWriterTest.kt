@@ -269,4 +269,38 @@ class TransformationReportWriterTest : FunSpec({
         )
         report shouldNotContain "mysql_named_sequences"
     }
+
+    // ─── Phase B.1: sqlite_named_sequences in report ────────────
+
+    test("report with sqliteNamedSequenceMode includes field in target block") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "sqlite",
+            Path.of("schema.yaml"),
+            sqliteNamedSequenceMode = SqliteNamedSequenceMode.HELPER_TABLE,
+        )
+        report shouldContain "sqlite_named_sequences: helper_table"
+    }
+
+    test("report without sqliteNamedSequenceMode omits field (postgresql)") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "postgresql",
+            Path.of("schema.yaml"),
+        )
+        report shouldNotContain "sqlite_named_sequences"
+    }
+
+    test("report omits sqlite_named_sequences when explicitly null") {
+        val report = TransformationReportWriter().render(
+            DdlResult(listOf(DdlStatement("SELECT 1"))),
+            SchemaDefinition(name = "T", version = "1"),
+            "sqlite",
+            Path.of("schema.yaml"),
+            sqliteNamedSequenceMode = null,
+        )
+        report shouldNotContain "sqlite_named_sequences"
+    }
 })
