@@ -132,6 +132,131 @@ class McpJobExecutorConfigResolverTest : FunSpec({
         val outcome = McpJobExecutorConfigResolver(configPath = null, envLookup = { null }).resolve()
         outcome.config shouldBe JobExecutorConfig.SYNC_DEFAULT
     }
+
+    // ── YAML error paths ────────────────────────────────────────
+
+    test("non-existent config path returns Sync default (Files.isRegularFile short-circuit)") {
+        val nonExisting = Path.of("/tmp/dmigrate-non-existent-${System.nanoTime()}.yaml")
+        McpJobExecutorConfigResolver(nonExisting, envLookup = { null })
+            .resolve().config shouldBe JobExecutorConfig.SYNC_DEFAULT
+    }
+
+    test("malformed YAML throws McpJobExecutorConfigError with parse-failure context") {
+        val cfg = tempConfig("server:\n  jobs: [malformed:\n")
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "failed to parse"
+    }
+
+    test("YAML top-level scalar throws (top-level must be a mapping)") {
+        val cfg = tempConfig("just-a-string\n")
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "top-level YAML must be a mapping"
+    }
+
+    test("server.jobs.executor.async block requires a mapping (scalar value rejected)") {
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  async: 42
+            """.trimIndent(),
+        )
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "async"
+        ex.message!! shouldContainIgnoringCase "must be a mapping"
+    }
+
+    test("server.jobs.executor.async block requires string keys (numeric key rejected)") {
+        // SnakeYAML parses unquoted integer keys as Int; the resolver
+        // requires String keys for the nested async map.
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  async:
+                    1: 2
+            """.trimIndent(),
+        )
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "async"
+        ex.message!! shouldContainIgnoringCase "string keys"
+    }
+
+    test("server.jobs.executor outer block requires string keys") {
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  1: 2
+            """.trimIndent(),
+        )
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "string keys"
+    }
+
+    test("mode value of a non-string type is rejected") {
+        // mode must be a string; an integer triggers the type-error branch.
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  mode: 42
+            """.trimIndent(),
+        )
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "must be a string"
+    }
+
+    test("async.threadNamePrefix value of a non-string type is rejected") {
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  mode: async
+                  async:
+                    threadNamePrefix: 42
+            """.trimIndent(),
+        )
+        val ex = shouldThrow<McpJobExecutorConfigError> {
+            McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        }
+        ex.message!! shouldContainIgnoringCase "must be a string"
+    }
+
+    test("integer fields accept numeric and string forms (YAML number + env string both parse)") {
+        val cfg = tempConfig(
+            """
+            server:
+              jobs:
+                executor:
+                  mode: async
+                  async:
+                    coreThreads: 5
+                    maxThreads: "10"
+            """.trimIndent(),
+        )
+        val outcome = McpJobExecutorConfigResolver(cfg, envLookup = { null }).resolve()
+        val async = outcome.config.shouldBeInstanceOf<JobExecutorConfig.Async>()
+        async.coreThreads shouldBe 5
+        async.maxThreads shouldBe 10
+    }
 })
 
 private infix fun String.shouldContainIgnoringCase(needle: String) {

@@ -276,5 +276,53 @@ class McpServeRunnerTest : FunSpec({
             exit shouldBe 2
             lines.joinToString("\n") shouldContain "MCP server configuration is invalid"
         }
+
+        test("execute exits 2 with state-dir-error when --mcp-state-dir points at a regular file") {
+            // StateDirResolver returns the file unchanged (it doesn't
+            // validate); StateDirValidator then refuses with "is not a
+            // directory" → reportStateDirFailure prints + exits 2.
+            val file = Files.createTempFile("dmigrate-runner-notadir-", ".tmp")
+            try {
+                val (lines, sink) = stderrCapture()
+                val exit = newRunner(
+                    McpServeOptions(
+                        transport = "stdio",
+                        mcpStateDir = file,
+                    ),
+                    stderr = sink,
+                ).execute()
+                exit shouldBe 2
+                val joined = lines.joinToString("\n")
+                joined shouldContain "MCP server configuration is invalid"
+                joined shouldContain "is not a directory"
+            } finally {
+                Files.deleteIfExists(file)
+            }
+        }
+
+        test("execute exits 2 with lock-conflict diagnostic when another lock holder is active") {
+            val dir = Files.createTempDirectory("dmigrate-runner-lock-conflict-")
+            // Pre-acquire the OS-level lock so the runner's acquireLockOrExit
+            // path returns AcquireOutcome.Conflict.
+            val holder = McpStateDirLock.tryAcquire(dir, "holder")
+                .shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>()
+            try {
+                val (lines, sink) = stderrCapture()
+                val exit = newRunner(
+                    McpServeOptions(
+                        transport = "stdio",
+                        mcpStateDir = dir,
+                    ),
+                    stderr = sink,
+                ).execute()
+                exit shouldBe 2
+                val joined = lines.joinToString("\n")
+                joined shouldContain "MCP server cannot start"
+                joined shouldContain "another `mcp serve` is active"
+            } finally {
+                holder.lock.close()
+                runCatching { Files.walk(dir).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+            }
+        }
     }
 })

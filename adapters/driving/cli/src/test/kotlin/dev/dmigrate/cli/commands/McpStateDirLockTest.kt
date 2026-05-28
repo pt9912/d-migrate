@@ -156,4 +156,49 @@ class McpStateDirLockTest : FunSpec({
             dir.deleteRecursively()
         }
     }
+
+    test("tryAcquire returns Failed when the lockfile parent cannot host a file") {
+        // Use a temp *file* as the supposed stateDir — FileChannel.open
+        // sees the parent-of-lockfile as a regular file, not a directory,
+        // and raises IOException, which the catch maps to Failed.
+        val fileNotDir = Files.createTempFile("dmigrate-mcp-lock-notadir-", ".tmp")
+        try {
+            val outcome = McpStateDirLock.tryAcquire(fileNotDir, "v")
+            val failed = outcome.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Failed>()
+            failed.message shouldContain "could not open lockfile"
+            failed.message shouldContain fileNotDir.toString()
+        } finally {
+            Files.deleteIfExists(fileNotDir)
+        }
+    }
+
+    test("Conflict diagnostic reports 'lockfile payload unreadable' when readBestEffort returns null") {
+        // readBestEffort returns null when the file is empty (the
+        // `.takeIf { it.isNotEmpty() }` filter trips). Empty the lockfile
+        // while the first lock is held, then attempt the second acquire.
+        val dir = Files.createTempDirectory("dmigrate-mcp-lock-empty-payload-")
+        try {
+            val first = McpStateDirLock.tryAcquire(dir, "v1")
+                .shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>()
+            try {
+                // Truncate the payload to zero bytes while the OS lock is
+                // still held; the second tryAcquire's readBestEffort
+                // returns null and the diagnostic falls through to the
+                // "unreadable" branch.
+                Files.writeString(
+                    dir.resolve(McpStateDirLock.LOCKFILE_NAME),
+                    "",
+                    StandardCharsets.UTF_8,
+                )
+
+                val second = McpStateDirLock.tryAcquire(dir, "v2")
+                val conflict = second.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Conflict>()
+                conflict.diagnostic shouldContain "(lockfile payload unreadable)"
+            } finally {
+                first.lock.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
 })
