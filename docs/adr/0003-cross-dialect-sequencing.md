@@ -2,185 +2,197 @@
 status: accepted
 date: 2026-05-27
 decision-makers: pt9912
-consulted: 0.9.7 cross-dialect-sequencing umbrella plan review
-informed: Sub-Slice A / B / C reviewers; future SQLite-sequence-emulation-plan implementer
+consulted: 0.9.7-Cross-Dialect-Sequencing-Umbrella-Plan-Review
+informed: Sub-Slice-A/B/C-Reviewer; künftige Implementier des SQLite-Sequence-Emulation-Plans
 ---
 
-# Cross-Dialect Sequencing — Capability Contract
+# Cross-Dialect-Sequencing — Capability-Vertrag
 
-## Context and Problem Statement
+## Kontext und Problemstellung
 
-0.9.7 ships sequence migrations as four independent slices:
-PostgreSQL native DDL (E.3 first slice, done), MySQL
-`dmg_sequences`-helper-table emulation (parallel-plan, done),
-SQLite rebuild-based emulation (still
-`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`), and
-the cross-dialect `preserveCurrentValue` follow-up (parallel-plan,
+0.9.7 liefert Sequence-Migrationen als vier unabhängige Slices:
+PostgreSQL native DDL (E.3-Erstslice, done), MySQL
+`dmg_sequences`-Helper-Table-Emulation (Parallel-Plan, done),
+SQLite Rebuild-basierte Emulation (noch
+`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`) und
+das cross-dialect `preserveCurrentValue`-Follow-up (Parallel-Plan,
 done).
 
-By the time the umbrella plan-doc (`docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
-closing in Sub-Slice E) reached scope, three of the four slices had
-already merged. The plan-doc therefore changed shape from "upstream
-architecture for parallel slices" to "retrofit harmonisation of
-already-shipped slices". Three drifts surfaced between plan-doc
-intent and code reality:
+Als das Umbrella-Plan-Doc
+(`docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
+Closing in Sub-Slice E) Scope erreichte, waren drei der vier
+Slices bereits gemerged. Das Plan-Doc wandelte sich damit von
+"Upstream-Architektur für parallele Slices" zu "Retrofit-
+Harmonisierung bereits gelieferter Slices". Drei Drifts sind
+zwischen Plan-Doc-Intent und Code-Realität aufgetaucht:
 
-1. **preserve-not-supported routing**: the plan-doc wanted
-   `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` to map to
-   `MANUAL_ACTION_REQUIRED`; `PlannerBlockerClassifier` mapped it to
-   `DIALECT_UNSUPPORTED_OPERATION` with the explicit reason "SQLite
-   has no sequence emulation yet."
-2. **MySQL `cache` mapping**: the plan-doc wanted a default-blocker
-   + overlay-gated `W114` warning; the renderer emitted `W114`
-   directly without an overlay.
-3. **PG `OWNED BY`**: the plan-doc wanted a renderer-side blocker
-   (`SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`); the
-   PG reverse-reader filtered owned sequences via
-   `pg_depend.deptype IN ('a','i')`, so the renderer never saw them.
+1. **preserve-not-supported-Routing**: Das Plan-Doc wollte
+   `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` auf
+   `MANUAL_ACTION_REQUIRED` mappen; der `PlannerBlockerClassifier`
+   mappte es auf `DIALECT_UNSUPPORTED_OPERATION` mit dem
+   expliziten Grund "SQLite has no sequence emulation yet."
+2. **MySQL `cache`-Mapping**: Das Plan-Doc wollte einen
+   Default-Blocker plus Overlay-gegateten `W114`-Warning; der
+   Renderer emittierte `W114` direkt ohne Overlay.
+3. **PG `OWNED BY`**: Das Plan-Doc wollte einen renderer-seitigen
+   Blocker (`SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`); der
+   PG-Reverse-Reader filterte owned Sequences über
+   `pg_depend.deptype IN ('a','i')`, sodass der Renderer sie nie
+   sah.
 
-Without a single decision-record, the next sequence-related slice
-(SQLite-helper-table, MariaDB-native, neutral-model ownership field)
-would re-litigate these same questions and risk diverging.
+Ohne einen einzigen Decision-Record würde der nächste
+Sequence-Slice (SQLite-Helper-Table, MariaDB-native, neutrales
+Ownership-Feld) dieselben Fragen erneut verhandeln und
+auseinanderdriften.
 
-## Decision Drivers
+## Entscheidungstreiber
 
-- Honour the as-shipped contract where the code's reasoning is
-  load-bearing; don't reverse merged behaviour just to match a
-  draft plan-doc.
-- Reality-first SQLite defaults so the capability layer reflects
-  what the renderer actually does today, not what it might do once
-  the open SQLite plan lands.
-- Forward-compatibility for the OWNED BY case and the SQLite
-  per-attribute case — reserve codes so a later slice can emit them
-  without rewriting the classifier.
-- Minimum API surface: no operator-supplied configuration source
-  for sequences in 0.9.7. The capability layer is defaults-only.
-- Mirror the existing `RoutineCapability` / `TriggerCapability`
-  patterns so reviewers don't have to learn a third shape.
+- Den as-shipped-Vertrag dort respektieren, wo die Code-Begründung
+  tragfähig ist; bereits gemergedes Verhalten nicht zurückrollen,
+  nur um einem Entwurfs-Plan-Doc zu entsprechen.
+- Reality-first-SQLite-Defaults, damit die Capability-Schicht
+  abbildet, was der Renderer heute tatsächlich tut — nicht, was
+  er einmal können wird, sobald der offene SQLite-Plan landet.
+- Forward-Compatibility für den OWNED-BY-Fall und den
+  SQLite-Per-Attribute-Fall — Codes reservieren, damit ein
+  späterer Slice sie emittieren kann, ohne den Classifier
+  anzufassen.
+- Minimale API-Oberfläche: keine Operator-konfigurierbare
+  Capability-Quelle für Sequences in 0.9.7. Die
+  Capability-Schicht ist Defaults-only.
+- Die bestehenden `RoutineCapability` / `TriggerCapability`-
+  Muster spiegeln, damit Reviewer keine dritte Form lernen
+  müssen.
 
-## Considered Options
+## Betrachtete Optionen
 
-For each drift, the umbrella-plan review weighed (code wins,
-plan-doc wins, sunset compromise). The chosen path picked the
-already-shipped contract for the two drifts where the code's
-reasoning was sounder than the draft, and adapted the plan-doc for
-the third where reader-side filtering kept ownership out of the
-neutral model entirely.
+Für jede der drei Drifts hat das Umbrella-Plan-Review (Code
+gewinnt, Plan-Doc gewinnt, Sunset-Kompromiss) abgewogen. Der
+gewählte Pfad nimmt den as-shipped-Vertrag für die beiden Drifts,
+wo die Code-Begründung tragfähiger war als der Entwurf, und passt
+das Plan-Doc für die dritte an — wo Reader-seitiges Filtern
+Ownership komplett aus dem Neutralmodell heraushielt.
 
-## Decision Outcome
+## Entscheidung
 
-Five decisions, all pinned in the umbrella plan-doc §3.1 and
-materialised in Sub-Slices A (`SequenceCapability` defaults), B
-(MySQL diff-path `W114` via capability + classifier constants), and
-C (`spec/neutral-model-spec.md §9.2`, `spec/cli-spec.md §4.7`).
+Fünf Entscheidungen, alle im Umbrella-Plan-Doc §3.1 gepinnt und
+in den Sub-Slices A (`SequenceCapability`-Defaults), B (MySQL-
+Diff-Pfad `W114` via Capability + Classifier-Konstanten) und C
+(`spec/neutral-model-spec.md §9.2`, `spec/cli-spec.md §4.7`)
+materialisiert.
 
-### D1 — Sequence identity across dialects
+### D1 — Sequence-Identität dialektübergreifend
 
-`NamedSequence.name` (the neutral-model field, equivalent to
-`SequenceDiff.name`) is the single source of truth. Dialect
-emulations (`MySQL.dmg_sequences.name`, the planned
-SQLite-helper-table `dmg_sequences.name`) MUST map to this name
-without transformation.
+`NamedSequence.name` (das Neutralmodell-Feld, äquivalent zu
+`SequenceDiff.name`) ist die einzige Source-of-Truth.
+Dialekt-Emulationen (`MySQL.dmg_sequences.name`, die geplante
+SQLite-Helper-Table `dmg_sequences.name`) MÜSSEN ohne
+Transformation auf diesen Namen mappen.
 
-### D2 — Cross-dialect transfer contract
+### D2 — Cross-dialect-Transfervertrag
 
-Renderers consult `SequenceCapability` and emit
-`SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` when a populated
-attribute hits an unsupported flag at the target. The OP-level
-case (`supportsNamedSequences = false`, today SQLite) keeps
-`DIALECT_UNSUPPORTED_OPERATION` because no operator action
-enables a missing dialect concept; the attribute-level code is
-reserved for partial-support cases (e.g., a future SQLite renderer
-that supports named sequences but not `cycle`). MySQL `cache` is
-not a blocker: the renderer emits `W114` by default — both in the
-full-schema and diff path — because the `helper_table` already
-persists the value as metadata. No operator overlay is required.
+Renderer konsultieren `SequenceCapability` und emittieren
+`SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`, wenn ein gesetztes
+Attribut beim Ziel auf ein unsupported-Flag trifft. Der OP-Level-
+Fall (`supportsNamedSequences = false`, heute SQLite) bleibt bei
+`DIALECT_UNSUPPORTED_OPERATION`, weil keine Operator-Aktion ein
+fehlendes Dialekt-Konzept aktiviert; der Attribut-Level-Code ist
+für Partial-Support-Fälle reserviert (z. B. ein zukünftiger
+SQLite-Renderer, der Named Sequences unterstützt, aber `cycle`
+nicht). MySQL `cache` ist kein Blocker: der Renderer emittiert
+`W114` per Default — sowohl im Full-Schema- als auch im
+Diff-Pfad —, weil der `helper_table` den Wert ohnehin als
+Metadata persistiert. Kein Operator-Overlay erforderlich.
 
-### D3 — Capability matrix as versioned spec
+### D3 — Capability-Matrix als versionierte Spezifikation
 
-The cross-dialect capability matrix lives in
-`spec/neutral-model-spec.md §9.2`, and the catalog of string-coded
-sequence blocker codes (with their `MigrationBlockedReason`
-routing) lives in `spec/cli-spec.md §4.7`. Both are normative;
-the in-code `SequenceCapabilityDefaults` must stay consistent with
-them.
+Die cross-dialect Capability-Matrix lebt in
+`spec/neutral-model-spec.md §9.2`, und der Katalog der
+string-codierten Sequence-Blocker-Codes (mit
+`MigrationBlockedReason`-Routing) lebt in
+`spec/cli-spec.md §4.7`. Beide sind normativ; die in-Code
+`SequenceCapabilityDefaults` müssen mit ihnen konsistent
+bleiben.
 
-### D4 — Sequence-default-reprojection (Cross-Dialect)
+### D4 — Sequence-Default-Reprojection (cross-dialect)
 
-The F.4 Sub-Slice D `SequenceDefaultReprojector` already operates
-dialect-neutrally for `RenameSequence`. For cross-dialect transfer
-it applies implicitly: the neutral-model diff carries no rename
-information (source and target share the sequence name), so the
-reprojector simply sees the canonical name on both sides. Operators
-who want an explicit cross-dialect rename use the existing F.4
-overlay schema with `objectType = "sequence"`. No new code is
-required.
+Der F.4-Sub-Slice-D `SequenceDefaultReprojector` arbeitet bereits
+dialekt-neutral für `RenameSequence`. Für cross-dialect-Transfer
+gilt er implizit: der Neutralmodell-Diff trägt keine
+Rename-Information (Quelle und Ziel teilen den Sequence-Namen),
+also sieht der Reprojector schlicht den kanonischen Namen auf
+beiden Seiten. Operatoren, die ein explizites
+cross-dialect-Rename wollen, nutzen das bestehende F.4-Overlay-
+Schema mit `objectType = "sequence"`. Kein neuer Code nötig.
 
-### D5 — Capability-source-resolution pattern
+### D5 — Capability-Source-Resolution-Pattern
 
-`SequenceCapability` mirrors `RoutineCapability` /
-`TriggerCapability`: a data class in `hexagon:ports-read` with
-per-dialect defaults via `SequenceCapabilityDefaults.forDialect()`.
-0.9.7 ships defaults-only; an `EffectiveSequenceCapability` sealed
-envelope analogous to `EffectiveRoutineCapability` will land only
-when a later tranche introduces CLI / YAML overrides for sequences.
+`SequenceCapability` spiegelt `RoutineCapability` /
+`TriggerCapability`: eine Data-Class in `hexagon:ports-read` mit
+per-Dialekt-Defaults via `SequenceCapabilityDefaults.forDialect()`.
+0.9.7 liefert Defaults-only; ein
+`EffectiveSequenceCapability`-Sealed-Envelope analog zu
+`EffectiveRoutineCapability` landet erst, wenn ein späterer
+Tranche CLI- / YAML-Overrides für Sequences einführt.
 
-### Consequences
+### Konsequenzen
 
-- Good, because the four already-shipped slices now have one
-  binding contract instead of three independent assumptions.
-- Good, because the SQLite reality-first defaults make the
-  capability layer's claims true today; the open SQLite plan
-  flips the relevant flags as part of its own changes rather than
-  inheriting unfounded `true`s.
-- Good, because the two forward-compat classifier codes
+- Gut, weil die vier bereits gelieferten Slices jetzt einen
+  bindenden Vertrag haben statt dreier unabhängiger Annahmen.
+- Gut, weil die SQLite-Reality-first-Defaults dafür sorgen, dass
+  die Capability-Schicht heute wahr ist; der offene SQLite-Plan
+  flippt die relevanten Flags als Teil seiner eigenen Änderungen,
+  statt unbegründete `true`-Werte zu erben.
+- Gut, weil die beiden Forward-Compat-Classifier-Codes
   (`SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`,
-  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`) let later
-  slices emit them without re-touching the classifier or routing
-  table.
-- Bad, because the OP- vs. attribute-level split for SQLite means
-  the same observable behaviour (SQLite refuses sequence ops) is
-  signalled by two different reasons depending on whether
-  per-attribute emulation lands. Operators reading raw exit codes
-  will see `DIALECT_UNSUPPORTED_OPERATION` today but may see
-  `MANUAL_ACTION_REQUIRED` once partial SQLite emulation ships.
-  The cli-spec §4.7 catalog calls this out.
-- Neutral, because if MariaDB-native `CREATE SEQUENCE` (10.3+)
-  lands as its own capability gate, the existing
-  `SequenceCapabilityDefaults.forDialect(MYSQL)` will need a
-  vendor-version branch — analogous to
-  `RoutineCapabilityDefaults.forMysqlServerVersion` — without
-  changing this ADR.
+  `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT`) später
+  emittiert werden können, ohne den Classifier oder die
+  Routing-Tabelle anzufassen.
+- Schlecht, weil der OP- vs. Attribut-Level-Split für SQLite
+  bedeutet, dass dasselbe beobachtbare Verhalten (SQLite lehnt
+  Sequence-Ops ab) je nach Slice durch zwei verschiedene
+  Gründe signalisiert wird. Operatoren, die rohe Exit-Codes
+  lesen, sehen heute `DIALECT_UNSUPPORTED_OPERATION`, könnten
+  aber `MANUAL_ACTION_REQUIRED` sehen, sobald partielle
+  SQLite-Emulation landet. Der cli-spec-§4.7-Katalog kalliert das
+  explizit aus.
+- Neutral, weil MariaDB-natives `CREATE SEQUENCE` (10.3+), falls
+  als eigenes Capability-Gate landend, einen Vendor-Version-
+  Branch in `SequenceCapabilityDefaults.forDialect(MYSQL)`
+  brauchen wird — analog zu
+  `RoutineCapabilityDefaults.forMysqlServerVersion` — ohne diese
+  ADR zu ändern.
 
-### Confirmation
+### Bestätigung
 
-- `hexagon:ports-read:SequenceCapabilityTest` pins the per-dialect
-  defaults (Sub-Slice A).
-- `MysqlDiffSequenceOpsCacheWarningTest` (Sub-Slice B.1) pins
-  `W114` emission in CreateSequence UP, AlterSequence (both
-  directions when `cache` differs), and DropSequence DOWN; pins
-  silence on CreateSequence DOWN and DropSequence UP.
-- `PlannerBlockerClassifierTest` (Sub-Slice B.0) pins
-  `MANUAL_ACTION_REQUIRED` routing for the two forward-compat
-  codes.
-- `spec/neutral-model-spec.md §9.2` and `spec/cli-spec.md §4.7`
-  carry the normative contract.
+- `hexagon:ports-read:SequenceCapabilityTest` pinnt die
+  per-Dialekt-Defaults (Sub-Slice A).
+- `MysqlDiffSequenceOpsCacheWarningTest` (Sub-Slice B.1) pinnt
+  die `W114`-Emission in CreateSequence-UP, AlterSequence
+  (beide Richtungen wenn `cache` abweicht) und
+  DropSequence-DOWN; pinnt Stille bei CreateSequence-DOWN und
+  DropSequence-UP.
+- `PlannerBlockerClassifierTest` (Sub-Slice B.0) pinnt
+  `MANUAL_ACTION_REQUIRED`-Routing für die beiden
+  Forward-Compat-Codes.
+- `spec/neutral-model-spec.md §9.2` und `spec/cli-spec.md §4.7`
+  tragen den normativen Vertrag.
 
-## More Information
+## Weitere Informationen
 
-- Umbrella plan-doc:
+- Umbrella-Plan-Doc:
   `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`
-  (closing in Sub-Slice E).
-- Parallel slices that this ADR retroactively harmonises:
+  (Closing in Sub-Slice E).
+- Parallele Slices, die diese ADR retroaktiv harmonisiert:
   `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`,
   `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`,
   `docs/planning/done/mysql-sequence-emulation-plan.md`.
-- Open follow-up the ADR explicitly defers to:
+- Offenes Follow-up, an das diese ADR explizit deferred:
   `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`.
-- Related capability patterns:
+- Verwandte Capability-Muster:
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/RoutineCapability.kt`,
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/TriggerCapability.kt`.
-- Related ADRs: ADR-0001 / ADR-0002 picked WARNING for
-  routine-side risks; this ADR picks the same dial-down stance
-  for the MySQL `cache` lossy mapping (default `W114`, no overlay
-  gate).
+- Verwandte ADRs: ADR-0001 / ADR-0002 wählten WARNING für
+  Routine-seitige Risiken; diese ADR wählt dieselbe abgedämpfte
+  Haltung für das MySQL-`cache`-Lossy-Mapping (Default `W114`,
+  kein Overlay-Gate).

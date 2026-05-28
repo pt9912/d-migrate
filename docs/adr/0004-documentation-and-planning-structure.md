@@ -252,9 +252,10 @@ werden.
   §2.4 (4-stufiger Lebenszyklus), §2.2 (Dateinamen).
 - `docs/planning/{open,next,in-progress,done}/README.md` tragen
   die operative Konvention pro Ordner.
-- Sprachhinweis: Diese ADR ist auf Deutsch verfasst. ADRs 0001-0003
-  sind historisch englisch und bleiben es (MADR-Konvention
-  "Accepted = immutable"). Ab ADR-0004 sind neue ADRs in d-migrate
-  auf Deutsch zu schreiben; YAML-Frontmatter-Felder
-  (`status: accepted`, `date: …`) bleiben englisch, das ist
-  MADR-Spezifikation.
+- Sprachhinweis: ADRs in d-migrate sind auf Deutsch zu schreiben.
+  ADRs 0001-0003 wurden initial englisch verfasst und im
+  Folge-Commit zu dieser ADR ins Deutsche übersetzt — die
+  ADR-Immutability-Regel ("Accepted = immutable") gilt für den
+  Entscheidungsinhalt, nicht für sprachliche Form. YAML-Frontmatter-
+  Felder (`status: accepted`, `date: …`) bleiben englisch — das ist
+  MADR-Spezifikation und nicht durch diese ADR überschreibbar.

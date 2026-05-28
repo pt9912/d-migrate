@@ -2,120 +2,125 @@
 status: accepted
 date: 2026-05-16
 decision-makers: pt9912
-consulted: code-review agents (E.1 Slice C.3 post-commit review)
-informed: E.1 follow-up reviewers
+consulted: code-review-Agents (E.1 Slice C.3 Post-Commit-Review)
+informed: E.1-Follow-up-Reviewer
 ---
 
-# `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` is WARNING, not BLOCKER
+# `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` ist WARNING, kein BLOCKER
 
-## Context and Problem Statement
+## Kontext und Problemstellung
 
-E.1 Slice C.3 introduced a `DROP + CREATE` fallback for MySQL
-routines whose `RoutineCapability` resolves to `Disabled` (no
-`CREATE OR REPLACE` for the routine kind on the target server).
-MySQL DDL implicitly commits between statements: if `DROP`
-succeeds but `CREATE` fails (syntax error, privilege change,
-recompile OOM), the routine is gone with no automatic rollback.
-The dependency guard only knows whether the edge graph is `SAFE`
-for the fallback at all — it cannot model the operational risk
-between the two statements. `ReplaceFunction` /
-`ReplaceProcedure` carry `risk.up = SAFE` because the operator's
-intent is a body swap, so the destructive guard
-(`--allow-destructive`) does not flag the pair either. What
-severity should the renderer use to surface the implicit-commit
-risk?
+E.1 Slice C.3 hat einen `DROP + CREATE`-Fallback für MySQL-
+Routinen eingeführt, deren `RoutineCapability` sich zu
+`Disabled` auflöst (kein `CREATE OR REPLACE` für die jeweilige
+Routine-Art auf dem Zielserver). MySQL-DDL committet implizit
+zwischen Statements: schlägt `CREATE` nach erfolgreichem `DROP`
+fehl (Syntaxfehler, Privilegienwechsel, Recompile-OOM), ist die
+Routine weg, ohne automatisches Rollback. Der Dependency-Guard
+weiß nur, ob der Edge-Graph für den Fallback überhaupt `SAFE`
+ist — er kann das Betriebsrisiko zwischen den beiden Statements
+nicht modellieren. `ReplaceFunction` / `ReplaceProcedure` tragen
+`risk.up = SAFE`, weil der Operator-Intent ein Body-Swap ist, also
+flaggt der Destructive-Guard (`--allow-destructive`) das Paar auch
+nicht. Welche Severity soll der Renderer nutzen, um das
+Implicit-Commit-Risiko sichtbar zu machen?
 
-## Decision Drivers
+## Entscheidungstreiber
 
-- Operator must see the risk before running the migration.
-- The SAFE-guard `DROP + CREATE` path is the only practical
-  alternative to `MANUAL_ACTION_REQUIRED` when the target server
-  cannot offer `CREATE OR REPLACE` for the routine kind.
-- The existing destructive-guard pipeline works at the
-  *operation* level, not the *statement* level.
+- Der Operator muss das Risiko sehen, **bevor** er die Migration
+  ausführt.
+- Der SAFE-gegateder `DROP + CREATE`-Pfad ist die einzige
+  praktikable Alternative zu `MANUAL_ACTION_REQUIRED`, wenn der
+  Zielserver für die Routine-Art kein `CREATE OR REPLACE`
+  anbietet.
+- Die bestehende Destructive-Guard-Pipeline arbeitet auf
+  *Operations*-, nicht auf *Statement*-Ebene.
 
-## Considered Options
+## Betrachtete Optionen
 
-- **WARNING-severity diagnostic** alongside the rendered
-  statements.
-- **BLOCKER-severity diagnostic** (would suppress the fallback).
-- **INFO-severity diagnostic** (purely advisory).
-- **Mark the `Replace*` op as destructive at risk level**.
+- **WARNING-Severity-Diagnostic** neben den gerenderten
+  Statements.
+- **BLOCKER-Severity-Diagnostic** (würde den Fallback unterdrücken).
+- **INFO-Severity-Diagnostic** (rein hinweisend).
+- **Op-Level Destructive-Risk markieren**.
 
-## Decision Outcome
+## Entscheidung
 
-Chosen option: **WARNING-severity diagnostic**, because it
-surfaces the implicit-commit risk in the operator-facing report
-without blocking the fallback path the dependency guard
-explicitly authorised. Plan §3 step 5 says SAFE permits the
-fallback; BLOCKER would contradict that, and INFO is too quiet
-given that operators routinely skim INFO-level entries.
+Gewählt: **WARNING-Severity-Diagnostic**, weil sie das
+Implicit-Commit-Risiko im operator-zugewandten Report sichtbar
+macht, ohne den Fallback-Pfad zu blockieren, den der
+Dependency-Guard explizit erlaubt hat. Plan §3 Step 5 sagt, SAFE
+erlaubt den Fallback; BLOCKER würde dem widersprechen, und INFO
+ist zu leise — Operatoren überfliegen INFO-Einträge routinemäßig.
 
-### Consequences
+### Konsequenzen
 
-- Good, because operator reports for any
-  `Disabled`-capability + `SAFE`-guard MySQL routine `Replace`
-  carry the WARNING; tooling that escalates on WARNING severity
-  will catch it.
-- Good, because the SAFE-guard fallback the dependency guard
-  authorised stays reachable — no extra manual gate.
-- Bad, because operators who automate `WARNING` triage may
-  expect blocking semantics; the WARNING is advisory, not a
-  hard stop.
-- Neutral, because if MySQL ever ships transactional DDL
-  (MariaDB has partial support), this ADR may be superseded.
+- Gut, weil Operator-Reports für jede
+  `Disabled`-Capability + `SAFE`-Guard-MySQL-Routine-`Replace`
+  die WARNING tragen; Tooling, das auf WARNING-Severity
+  eskaliert, fängt sie ein.
+- Gut, weil der SAFE-gegateter Fallback-Pfad erreichbar bleibt —
+  kein zusätzliches manuelles Gate.
+- Schlecht, weil Operatoren, die `WARNING`-Triage automatisieren,
+  blockierende Semantik erwarten könnten; die WARNING ist
+  hinweisend, kein harter Stopp.
+- Neutral, weil eine spätere transaktionale DDL in MySQL
+  (MariaDB hat partielle Unterstützung) diese ADR ersetzen könnte.
 
-### Confirmation
+### Bestätigung
 
-`MysqlDiffRoutineOpsTest` pins the WARNING on every
-SAFE-guard path and asserts its absence on UNSAFE / UNKNOWN
-block paths — the test suite directly confirms the contract.
+`MysqlDiffRoutineOpsTest` pinnt die WARNING auf jedem
+SAFE-Guard-Pfad und prüft ihre Abwesenheit auf UNSAFE-/UNKNOWN-
+Block-Pfaden — die Testsuite bestätigt den Vertrag direkt.
 
-## Pros and Cons of the Options
+## Pros und Cons der Optionen
 
 ### WARNING
 
-- Good, because it is operator-visible without blocking the
-  fallback.
-- Good, because `DiffDiagnostic.Severity.WARNING` already has a
-  pre-existing meaning in the report and tooling pipeline.
-- Neutral, because automated WARNING-escalation downstream still
-  has to decide whether to treat it as blocking.
+- Gut, weil operator-sichtbar, ohne den Fallback zu blockieren.
+- Gut, weil `DiffDiagnostic.Severity.WARNING` in Report und
+  Tooling-Pipeline schon eine etablierte Bedeutung hat.
+- Neutral, weil eine nachgelagerte automatisierte
+  WARNING-Eskalation immer noch entscheiden muss, ob sie das
+  als blockierend behandeln will.
 
 ### BLOCKER
 
-- Good, because operator cannot accidentally run the risky
-  fallback.
-- Bad, because it forces every routine `Replace` on a
-  `Disabled` capability into `MANUAL_ACTION_REQUIRED` — the
-  fallback path becomes unreachable, defeating Slice C.3.
-- Bad, because it contradicts Plan §3 step 5's explicit grant
-  of `DROP + CREATE` under SAFE guard.
+- Gut, weil der Operator den riskanten Fallback nicht
+  versehentlich ausführen kann.
+- Schlecht, weil jeder Routinen-`Replace` auf einer
+  `Disabled`-Capability damit in `MANUAL_ACTION_REQUIRED`
+  gezwungen wird — der Fallback-Pfad wird unerreichbar,
+  Slice C.3 wäre damit konterkariert.
+- Schlecht, weil es Plan §3 Step 5 widerspricht, der
+  `DROP + CREATE` unter SAFE-Guard explizit erlaubt.
 
 ### INFO
 
-- Good, because it adds no friction to existing tooling.
-- Bad, because operators routinely skim INFO noise; the
-  implicit-commit risk would frequently be missed.
+- Gut, weil es bestehende Tooling-Pipelines nicht stört.
+- Schlecht, weil Operatoren INFO-Rauschen routinemäßig
+  überfliegen; das Implicit-Commit-Risiko würde häufig
+  übersehen.
 
-### Op-level destructive risk
+### Op-Level Destructive-Risk
 
-- Good, because it would integrate with the existing
-  destructive-guard pipeline.
-- Bad, because the `ReplaceFunction` / `ReplaceProcedure` op is
-  semantically a body swap; the renderer's choice to emit
-  `DROP + CREATE` is a fallback, not the operator's intent.
-  Marking the op destructive would also trip every regular
-  `CREATE OR REPLACE` path, which is wrong.
+- Gut, weil es sich in die bestehende Destructive-Guard-Pipeline
+  integrieren würde.
+- Schlecht, weil `ReplaceFunction` / `ReplaceProcedure` semantisch
+  ein Body-Swap ist; die Renderer-Entscheidung,
+  `DROP + CREATE` zu emittieren, ist Fallback, nicht
+  Operator-Intent. Die Op als destruktiv zu markieren, würde
+  außerdem jeden regulären `CREATE OR REPLACE`-Pfad triggern —
+  was falsch ist.
 
-## More Information
+## Weitere Informationen
 
-- Implementation: `MysqlDiffRoutineOps.warnDropCreateNonAtomic`
-  emits the diagnostic;
-  `MysqlDiffRenderContext.warning(...)` was added for this
-  use case and reused by Slice D.4.
-- Plan reference:
+- Implementierung:
+  `MysqlDiffRoutineOps.warnDropCreateNonAtomic` emittiert die
+  Diagnostic; `MysqlDiffRenderContext.warning(...)` wurde dafür
+  eingezogen und von Slice D.4 mitgenutzt.
+- Plan-Referenz:
   `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`
-  §3 step 5.
-- Related ADR: ADR-0002 documents the parallel choice on
-  `UNSAFE_DEPENDENCY_PAIR`.
+  §3 Step 5.
+- Verwandte ADR: ADR-0002 dokumentiert die parallele Entscheidung
+  zu `UNSAFE_DEPENDENCY_PAIR`.

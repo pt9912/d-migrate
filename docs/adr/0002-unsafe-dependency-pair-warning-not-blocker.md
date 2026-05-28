@@ -2,153 +2,163 @@
 status: accepted
 date: 2026-05-16
 decision-makers: pt9912
-consulted: code-review agents (E.1 Slice D.1 + D.4 post-commit reviews)
-informed: E.1 follow-up reviewers
+consulted: code-review-Agents (E.1 Slices D.1 + D.4 Post-Commit-Reviews)
+informed: E.1-Follow-up-Reviewer
 ---
 
-# `UNSAFE_DEPENDENCY_PAIR` stays WARNING, not BLOCKER
+# `UNSAFE_DEPENDENCY_PAIR` bleibt WARNING, kein BLOCKER
 
-## Context and Problem Statement
+## Kontext und Problemstellung
 
-E.1 Slice D.1 introduced `RoutineDependencyAnalyzer`. Its
-`UNSAFE_DEPENDENCY_PAIR` finding flags two co-resident routines
-in a plan with no manifest-declared dependency edge in either
-direction. The original plan §3 wanted this as
-`MANUAL_ACTION_REQUIRED` (BLOCKER), with a documented promotion
-path: "WARNING in D.1, BLOCKER once engine verification ships in
-D.2 / D.3."
+E.1 Slice D.1 hat den `RoutineDependencyAnalyzer` eingeführt.
+Sein `UNSAFE_DEPENDENCY_PAIR`-Befund markiert zwei im selben
+Plan koexistierende Routinen, zwischen denen das Manifest in
+keiner Richtung eine Dependency-Kante deklariert. Der
+ursprüngliche Plan §3 wollte das als `MANUAL_ACTION_REQUIRED`
+(BLOCKER), mit dokumentiertem Hochstufungs-Pfad:
+"WARNING in D.1, BLOCKER sobald Engine-Verifikation in D.2/D.3
+geliefert ist."
 
-By the end of Slice D.4 all three preconditions held: PG
-`pg_depend` projection, MySQL trigger reader-wiring, and a
-topology-driven `DependencyGuardEvaluator` that bases its routing
-on the actual edge graph. The D.4 follow-up review surfaced
-three concerns:
+Am Ende von Slice D.4 waren alle drei Voraussetzungen erfüllt:
+PG-`pg_depend`-Projektion, MySQL-Trigger-Reader-Wiring und ein
+topologie-getriebener `DependencyGuardEvaluator`, der seine
+Routing-Entscheidung am tatsächlichen Edge-Graph orientiert. Im
+D.4-Follow-up-Review sind drei Punkte aufgekommen:
 
-1. The D.4 topology evaluator now decides routing itself — an
-   edge-free pair evaluates as SAFE under topology and the
-   `Disabled`-capability path falls back to `DROP + CREATE`.
-2. Promoting `UNSAFE_DEPENDENCY_PAIR` to BLOCKER would lock
-   every file-only multi-routine plan out by default — operators
-   would need to enumerate every routine pair as
-   `dependencies.functions` even when the routines are obviously
-   unrelated. The manifest has no "independent-of" marker.
-3. A SAFE-driven `DROP + CREATE` would surface three diagnostics
-   simultaneously: `UNSAFE_DEPENDENCY_PAIR` WARNING +
+1. Der D.4-Topology-Evaluator entscheidet das Routing inzwischen
+   selbst — ein Edge-freies Paar wertet topologie-mäßig als SAFE,
+   und der `Disabled`-Capability-Pfad fällt auf `DROP + CREATE`
+   zurück.
+2. Eine Hochstufung von `UNSAFE_DEPENDENCY_PAIR` zu BLOCKER würde
+   jeden File-only-Multi-Routine-Plan per Default sperren —
+   Operatoren müssten jedes Routinen-Paar als
+   `dependencies.functions` aufzählen, selbst wenn die Routinen
+   offensichtlich nichts miteinander zu tun haben. Das Manifest
+   kennt keinen "Independent-of"-Marker.
+3. Ein SAFE-getriebener `DROP + CREATE` würde drei Diagnostics
+   gleichzeitig auslösen: `UNSAFE_DEPENDENCY_PAIR` WARNING +
    `DEPENDENCY_GUARD_TOPOLOGY` INFO +
-   `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` WARNING. Promoting (1)
-   to BLOCKER would make a contradictory pair (BLOCKER:
-   "independence unprovable" vs. INFO: "topology proves
-   independence").
+   `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` WARNING. Punkt (1) auf
+   BLOCKER zu heben, würde ein widersprüchliches Paar erzeugen
+   (BLOCKER: "Unabhängigkeit nicht beweisbar" vs. INFO: "Topologie
+   beweist Unabhängigkeit").
 
-What is the final severity for `UNSAFE_DEPENDENCY_PAIR` now that
-the D.4 topology evaluator is in place?
+Welche finale Severity hat `UNSAFE_DEPENDENCY_PAIR`, nachdem
+der D.4-Topology-Evaluator existiert?
 
-## Decision Drivers
+## Entscheidungstreiber
 
-- The topology evaluator already produces the load-bearing
-  routing decision; a parallel diagnostic must not override it.
-- File-only multi-routine plans are common in practice; a
-  BLOCKER-by-default behaviour breaks them.
-- Manifest-drift (an operator forgot to declare an edge that
-  exists in reality) is still a real concern; the WARNING
-  remains a useful safety net.
-- ADR-0001 already establishes a precedent for keeping
-  operationally-relevant findings at WARNING severity when the
-  alternative blocks a sanctioned path.
+- Der Topology-Evaluator produziert die tragende Routing-
+  Entscheidung; ein paralleler Diagnostic darf das nicht
+  überschreiben.
+- File-only-Multi-Routine-Pläne sind in der Praxis häufig; ein
+  BLOCKER-by-Default würde sie kaputtmachen.
+- Manifest-Drift (Operator hat eine real existierende Kante
+  vergessen zu deklarieren) ist weiterhin ein echtes Risiko;
+  die WARNING bleibt ein nützliches Sicherheitsnetz.
+- ADR-0001 setzt bereits Präzedenz, operativ relevante Befunde
+  auf WARNING-Severity zu belassen, wenn die Alternative einen
+  freigegebenen Pfad blockieren würde.
 
-## Considered Options
+## Betrachtete Optionen
 
-- **WARNING-severity (final state)** — operator-visible safety
-  net; topology evaluator owns routing.
-- **BLOCKER promotion** as the D.1 plan originally intended.
-- **Drop the diagnostic entirely** — topology evaluator already
-  handles routing.
-- **Re-classify as INFO** — quieter signal.
+- **WARNING-Severity (Endzustand)** — operator-sichtbares
+  Sicherheitsnetz; Routing-Entscheidung gehört dem
+  Topology-Evaluator.
+- **BLOCKER-Hochstufung** wie ursprünglich im D.1-Plan
+  vorgesehen.
+- **Diagnostic ganz fallenlassen** — der Topology-Evaluator
+  übernimmt das Routing ohnehin.
+- **Auf INFO neu klassifizieren** — leiseres Signal.
 
-## Decision Outcome
+## Entscheidung
 
-Chosen option: **WARNING-severity, no further promotion
-planned**. It functions as an informational safety net: when
-two routines co-exist without manifest edges, the WARNING
-nudges the operator to declare the relationship explicitly if
-the topology evaluator missed a hidden reference, without
-overriding the evaluator's routing decision. The D.1
-follow-up's documented promotion pathway is now closed; the
-diagnostic message and plan text were updated accordingly in
-commit `5d19903e`.
+Gewählt: **WARNING-Severity, keine weitere Hochstufung
+geplant.** Sie funktioniert als hinweisendes Sicherheitsnetz:
+wenn zwei Routinen ohne Manifest-Kanten koexistieren, stupst die
+WARNING den Operator an, die Beziehung explizit zu deklarieren,
+falls der Topology-Evaluator eine versteckte Referenz übersehen
+hat — ohne dessen Routing-Entscheidung zu überschreiben. Der im
+D.1-Follow-up dokumentierte Hochstufungs-Pfad ist damit
+geschlossen; Diagnostic-Message und Plan-Text wurden in
+Commit `5d19903e` entsprechend angepasst.
 
-### Consequences
+### Konsequenzen
 
-- Good, because file-only multi-routine plans keep working out
-  of the box.
-- Good, because the diagnostic still catches schema-manifest
-  drift — the topology evaluator only sees declared / projected
-  edges, so a missed declaration would otherwise hide silently.
-- Bad, because operators see the WARNING alongside a TOPOLOGY
-  INFO that proves independence; the messages are advisory in
-  two different registers and could read as noisy.
-- Bad, because operators with strict WARNING-escalation
-  pipelines may treat it as a hard signal it is not meant to
-  be.
-- Neutral, because the WARNING wording was tightened in commit
-  `5d19903e` to reflect the topology-evaluator world.
+- Gut, weil File-only-Multi-Routine-Pläne ohne Konfiguration
+  weiter laufen.
+- Gut, weil die Diagnostic Schema-Manifest-Drift weiterhin
+  einfängt — der Topology-Evaluator sieht nur deklarierte oder
+  projizierte Kanten, ein vergessener Eintrag wäre sonst stumm.
+- Schlecht, weil Operatoren die WARNING neben einer TOPOLOGY
+  INFO sehen, die Unabhängigkeit beweist; die Botschaften sind
+  in zwei verschiedenen Registern hinweisend und können
+  rauschig wirken.
+- Schlecht, weil Operatoren mit strikten
+  WARNING-Eskalations-Pipelines sie als harten Stopp
+  interpretieren könnten, was sie nicht ist.
+- Neutral, weil der WARNING-Wortlaut in Commit `5d19903e`
+  geschärft wurde, um die Topology-Evaluator-Welt
+  widerzuspiegeln.
 
-### Confirmation
+### Bestätigung
 
-- `DiffPlanner.kt` emits `UNSAFE_DEPENDENCY_PAIR` at WARNING
-  severity with the D.4-aware message; the CHANGELOG entry for
-  D.1 was corrected from the pre-follow-up "BLOCKER" claim to
-  the WARNING reality (commit `5d19903e`).
-- `RoutineDependencyAnalyzerTest` and the renderer tests pin the
-  WARNING path; no test asserts BLOCKER behaviour for this code.
+- `DiffPlanner.kt` emittiert `UNSAFE_DEPENDENCY_PAIR` mit
+  WARNING-Severity und der D.4-bewussten Message; der
+  CHANGELOG-Eintrag zu D.1 wurde von der Pre-Follow-up-
+  "BLOCKER"-Behauptung auf die WARNING-Realität korrigiert
+  (Commit `5d19903e`).
+- `RoutineDependencyAnalyzerTest` und die Renderer-Tests pinnen
+  den WARNING-Pfad; kein Test postuliert BLOCKER-Verhalten für
+  diesen Code.
 
-## Pros and Cons of the Options
+## Pros und Cons der Optionen
 
-### WARNING (chosen)
+### WARNING (gewählt)
 
-- Good, because file-only multi-routine plans run without
-  manual edge declaration.
-- Good, because the topology evaluator's routing decision
-  remains load-bearing.
-- Neutral, because the operator now sees a WARNING that the
-  TOPOLOGY INFO simultaneously says is fine — the operator must
-  read both.
+- Gut, weil File-only-Multi-Routine-Pläne ohne manuelle
+  Edge-Deklaration durchlaufen.
+- Gut, weil die Routing-Entscheidung des Topology-Evaluators
+  tragend bleibt.
+- Neutral, weil der Operator jetzt eine WARNING sieht, die die
+  TOPOLOGY INFO gleichzeitig als unkritisch ausweist — der
+  Operator muss beide lesen.
 
-### BLOCKER promotion
+### BLOCKER-Hochstufung
 
-- Good, because no operator can run a routine plan with
-  unprovable independence by accident.
-- Bad, because it locks out file-only multi-routine migrations
-  by default — there is no "independent-of" marker in the
-  manifest.
-- Bad, because it contradicts the D.4 topology routing on the
-  SAFE path.
+- Gut, weil kein Operator versehentlich einen Plan mit nicht
+  beweisbarer Unabhängigkeit ausführen kann.
+- Schlecht, weil File-only-Multi-Routine-Migrationen damit per
+  Default gesperrt wären — kein "Independent-of"-Marker im
+  Manifest.
+- Schlecht, weil es dem D.4-Topology-Routing auf dem SAFE-Pfad
+  widerspricht.
 
-### Drop entirely
+### Ganz fallenlassen
 
-- Good, because diagnostics stay clean.
-- Bad, because manifest drift loses its single safety net —
-  the topology evaluator only sees what was declared or
-  projected.
+- Gut, weil die Diagnostic-Ausgabe sauberer bleibt.
+- Schlecht, weil Manifest-Drift ihr einziges Sicherheitsnetz
+  verliert — der Topology-Evaluator sieht nur, was deklariert
+  oder projiziert wurde.
 
 ### INFO
 
-- Good, because no friction at all.
-- Bad, because manifest drift is operationally relevant; INFO
-  noise routinely gets skipped and the safety net would be
-  effectively invisible.
+- Gut, weil null Friction.
+- Schlecht, weil Manifest-Drift operativ relevant ist;
+  INFO-Rauschen wird routinemäßig überflogen und das
+  Sicherheitsnetz wäre faktisch unsichtbar.
 
-## More Information
+## Weitere Informationen
 
-- Implementation: `RoutineDependencyAnalyzer.detectUnsafeRoutinePairs`
-  generates the candidates; `DiffPlanner.kt` emits the
-  diagnostic.
-- Plan reference:
+- Implementierung:
+  `RoutineDependencyAnalyzer.detectUnsafeRoutinePairs` erzeugt
+  die Kandidaten; `DiffPlanner.kt` emittiert die Diagnostic.
+- Plan-Referenz:
   `docs/planning/done/ImpPlan-0.9.7-E.1-routine-migration.md`
-  §D.1 follow-up + §D.4 follow-up.
-- Related ADR: ADR-0001 documents the parallel choice for
-  `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`.
-- Potential supersession: a future slice could introduce an
-  explicit "independent-of" marker on the routine manifest
-  (e.g. `dependencies.independentOf: ["other_routine"]`); this
-  ADR would then be revisited.
+  §D.1-Follow-up + §D.4-Follow-up.
+- Verwandte ADR: ADR-0001 dokumentiert die parallele
+  Entscheidung zu `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`.
+- Mögliche Supersession: ein späterer Slice könnte einen
+  expliziten "Independent-of"-Marker auf das Routine-Manifest
+  einziehen (z. B. `dependencies.independentOf: ["other_routine"]`);
+  diese ADR wäre dann zu überarbeiten.
