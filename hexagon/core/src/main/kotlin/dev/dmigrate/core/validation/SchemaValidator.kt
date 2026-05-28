@@ -31,6 +31,7 @@ class SchemaValidator {
 
     fun validate(schema: SchemaDefinition): ValidationResult {
         val structureResult = SchemaStructureValidationRules.validate(schema)
+        val sequenceResult = SchemaSequenceValidationRules.validate(schema)
         val columnErrors = mutableListOf<ValidationError>()
         for ((tableName, table) in schema.tables) {
             for ((colName, col) in table.columns) {
@@ -39,8 +40,8 @@ class SchemaValidator {
             }
         }
         return ValidationResult(
-            errors = structureResult.errors + columnErrors,
-            warnings = structureResult.warnings,
+            errors = structureResult.errors + sequenceResult.errors + columnErrors,
+            warnings = structureResult.warnings + sequenceResult.warnings,
         )
     }
 }

@@ -46,6 +46,7 @@ neuen Version.
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung (ab 0.9.3) |
 | E124 | Support-Namenskollision (ab 0.9.3) |
+| E125 | Sequence-internal-Validierung (Inkrement/Bereich, ab 0.9.7) |
 | W001 | Float-fuer-Geldbetraege-Warnung |
 | W100 - W112 | Dialekt-Warnungen (Typ-Mapping, Index-Konvertierung) |
 | W113 | Circular-FK-Warnung |
