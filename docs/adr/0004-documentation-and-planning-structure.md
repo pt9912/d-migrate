@@ -192,23 +192,27 @@ Pläne wandern nach `done/`, nicht nach `archive/`.
 **Sonderbahn für Per-Slice-Closures:** Die
 `ImpPlan-<version>-<slice>.md`-Dateien laufen den Standard-Pfad
 `next/ → in-progress/ → done/` üblicherweise **nicht** durch. Sie
-entstehen direkt unter `done/` als Closure-Notiz für einen
-abgeschlossenen Slice — der Slice selbst wurde im zugehörigen
-Umbrella-Plan (in `in-progress/`) gepflegt. Die ImpPlan-Datei ist
-das schriftliche DoD-Belegstück, das nach Abschluss neben dem
+werden direkt unter `done/` final platziert — eine eventuelle
+Skizzen- oder Draft-Phase findet im zugehörigen Umbrella-Plan
+(in `in-progress/`) statt, nicht in `next/` oder
+`in-progress/` als eigenständige Datei. Die ImpPlan-Datei ist das
+schriftliche DoD-Belegstück, das nach Abschluss neben dem
 Umbrella platziert wird.
 
 ## Konsequenzen
 
-- Der 2026-05-28-Sweep besteht aus zwei Commits, beide auf
-  `develop`:
-  1. `457a54d9` (Phase A) verschiebt
+- Der 2026-05-28-Sweep besteht aus zwei aufeinander folgenden
+  Commits auf `develop` (Bezeichnung "Vorsweep" / "ADR-Commit",
+  um nicht mit dem `Phase A/B…`-Vokabular des
+  SQLite-Sequence-Emulation-Plans aus dem Kontext-Abschnitt zu
+  kollidieren):
+  1. **Vorsweep** `457a54d9` verschiebt
      `sqlite-sequence-emulation-plan.md` und
      `refactoring-cli-testability.md` von `open/` nach
      `in-progress/` und zieht 17 Querverweise nach.
-  2. Der ADR-0004-Implementierungs-Commit (Phase B) führt
-     `next/` ein, verschiebt 9 weitere Pläne dorthin, schreibt
-     die vier READMEs, fixt eine Reihe historisch falscher
+  2. **ADR-Commit** `d8bc4046` führt `next/` ein, verschiebt
+     9 weitere Pläne dorthin, schreibt die vier READMEs, fixt
+     eine Reihe historisch falscher
      `planning/in-progress/ImpPlan-*`- und
      `planning/open/ImpPlan-*`-Pfade in Code-KDoc und
      Done-Plänen und landet diese ADR.

@@ -121,7 +121,7 @@ Beziehungen werden dabei nicht als eigener Datentyp modelliert, sondern als Refe
 32-bit-Auto-Increment-Vertrag. PostgreSQL `BIGSERIAL` und
 `BIGINT GENERATED ... AS IDENTITY` brauchen zusaetzlich eine explizite
 Generierungssemantik an der Spalte; dieser Vertrag ist im Follow-up
-`docs/planning/in-progress/bigserial-neutral-identity-followup.md` als
+`docs/planning/done/bigserial-neutral-identity-followup.md` als
 `ColumnGeneration.Identity` beschrieben. `biginteger` ohne dieses Metadatum
 bleibt `BIGINT`.
 

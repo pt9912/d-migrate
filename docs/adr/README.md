@@ -1,45 +1,60 @@
 # Architecture Decision Records
 
-This directory holds Architecture Decision Records (ADRs) in
-**MADR** (Markdown Any Decision Records) format. ADRs capture
-significant decisions whose reasoning is not obvious from the
-code or commit message alone — typically severity choices,
-layering trade-offs, or carve-outs that future readers would
-otherwise re-litigate.
+Dieses Verzeichnis enthält Architecture Decision Records (ADRs) im
+**MADR**-Format (Markdown Any Decision Records). ADRs halten
+relevante Entscheidungen fest, deren Begründung sich nicht aus
+dem Code oder der Commit-Message ergibt — typischerweise
+Severity-Entscheidungen, Layering-Trade-offs oder Carve-outs, die
+spätere Leser sonst neu durchkauen würden.
 
-The format follows the
-[official MADR template](https://adr.github.io/madr/) hosted on
-[adr.github.io](https://adr.github.io/), which catalogues
-several legitimate ADR formats. We picked MADR over Michael
-Nygard's classic form because of its YAML front matter (queryable
-metadata: status, date, decision-makers) and its explicit
-`Decision Drivers` / `Considered Options` / `Pros and Cons`
-sections, which match how decisions tend to be argued in this
-codebase's review cycles.
+Das Format folgt dem
+[offiziellen MADR-Template](https://adr.github.io/madr/) auf
+[adr.github.io](https://adr.github.io/), das mehrere legitime
+ADR-Formate katalogisiert. Wir haben MADR gegenüber der
+klassischen Michael-Nygard-Form gewählt, weil das YAML-
+Frontmatter abfragbare Metadaten (`status`, `date`,
+`decision-makers`) trägt und die expliziten Sektionen
+`Decision Drivers` / `Considered Options` / `Pros and Cons` zu der
+Art passen, wie in diesem Repo Entscheidungen in Review-Zyklen
+argumentiert werden.
 
-## Conventions
+## Konventionen
 
-- One file per decision, named `NNNN-short-slug.md` (zero-padded
-  4-digit sequence number, dash-separated lowercase slug).
-- Template: copy
-  [the official MADR template](https://github.com/adr/madr/blob/main/template/adr-template.md)
-  and remove the sections that don't apply. Required sections:
-  `Context and Problem Statement`, `Considered Options`,
-  `Decision Outcome`. Optional but encouraged:
-  `Decision Drivers`, `Consequences`, `Confirmation`,
-  `Pros and Cons of the Options`, `More Information`.
-- Status values follow the MADR convention:
+- **Sprache**: ADR-Prosa ist auf Deutsch zu verfassen
+  (siehe [ADR-0004](0004-documentation-and-planning-structure.md)
+  „Sprachhinweis"). Das YAML-Frontmatter bleibt englisch
+  (`status: accepted`, `date: …`) — MADR-Spezifikation, nicht
+  durch lokale Konvention überschreibbar. MADR-Sektionsnamen
+  (`Decision Drivers`, `Considered Options`, `Pros and Cons of the Options`,
+  `More Information`) können englisch bleiben oder sinngemäß
+  übersetzt werden (`Entscheidungstreiber`, `Betrachtete Optionen`,
+  `Pros und Cons der Optionen`, `Weitere Informationen`); die
+  ADRs 0001-0004 nutzen die deutschen Übersetzungen.
+- **Dateinamen**: eine Datei pro Entscheidung,
+  `NNNN-kurz-titel.md` (vierstellige Nummer mit führenden Nullen,
+  Bindestrich-getrennter lowercase-Slug).
+- **Template**: vom
+  [offiziellen MADR-Template](https://github.com/adr/madr/blob/main/template/adr-template.md)
+  kopieren und nicht zutreffende Sektionen entfernen.
+  Pflicht-Sektionen: `Context and Problem Statement` /
+  `Kontext und Problemstellung`, `Considered Options` /
+  `Betrachtete Optionen`, `Decision Outcome` / `Entscheidung`.
+  Optional, aber empfohlen: `Decision Drivers`, `Consequences`,
+  `Confirmation`, `Pros and Cons of the Options`,
+  `More Information`.
+- **Status-Werte** folgen der MADR-Konvention:
   `proposed`, `accepted`, `rejected`, `deprecated`,
   `superseded by ADR-XXXX`.
-- When superseding, leave the original file in place, update its
-  `status` to `superseded by ADR-XXXX`, and reference the
-  superseding ADR in `More Information`.
+- **Supersession**: Die ursprüngliche Datei bleibt liegen, ihr
+  `status` wird auf `superseded by ADR-XXXX` aktualisiert, die
+  nachfolgende ADR wird im Abschnitt `More Information` /
+  `Weitere Informationen` referenziert.
 
 ## Index
 
-| # | Title | Status |
+| # | Titel | Status |
 |---|---|---|
-| 0001 | [MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC is WARNING, not BLOCKER](0001-mysql-routine-drop-create-non-atomic-warning.md) | accepted |
-| 0002 | [UNSAFE_DEPENDENCY_PAIR stays WARNING, not BLOCKER](0002-unsafe-dependency-pair-warning-not-blocker.md) | accepted |
-| 0003 | [Cross-Dialect Sequencing — Capability Contract](0003-cross-dialect-sequencing.md) | accepted |
-| 0004 | [Planning Folder Lifecycle (`open/` → `next/` → `in-progress/` → `done/`)](0004-documentation-and-planning-structure.md) | accepted |
+| 0001 | [`MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC` ist WARNING, kein BLOCKER](0001-mysql-routine-drop-create-non-atomic-warning.md) | accepted |
+| 0002 | [`UNSAFE_DEPENDENCY_PAIR` bleibt WARNING, kein BLOCKER](0002-unsafe-dependency-pair-warning-not-blocker.md) | accepted |
+| 0003 | [Cross-Dialect-Sequencing — Capability-Vertrag](0003-cross-dialect-sequencing.md) | accepted |
+| 0004 | [Lebenszyklus des Planungsverzeichnisses (`open/` → `next/` → `in-progress/` → `done/`)](0004-documentation-and-planning-structure.md) | accepted |

@@ -162,7 +162,7 @@ DDL generiert, sondern als `action_required` gemeldet.
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
 `NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
 Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist im
-Follow-up `docs/planning/in-progress/bigserial-neutral-identity-followup.md` als
+Follow-up `docs/planning/done/bigserial-neutral-identity-followup.md` als
 `ColumnGeneration.Identity` festgelegt. `biginteger` ohne dieses Metadatum
 bleibt im Forward-Generate `BIGINT`.
 
