@@ -6,7 +6,7 @@ package dev.dmigrate.driver
  * in `hexagon:ports-read` and follows the same default-only pattern
  * (no operator-supplied configuration source yet).
  *
- * The plan-doc (`docs/planning/in-progress/ImpPlan-0.9.7-cross-dialect-sequencing.md` §5.2)
+ * The plan-doc (`docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md` §5.2)
  * pins the field shape and per-dialect defaults. Renderer-side
  * validation (Sub-Slice B) will read these flags and either emit
  * `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT`, the existing

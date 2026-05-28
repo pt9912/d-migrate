@@ -9,7 +9,7 @@ import io.kotest.matchers.shouldBe
  * lowest-precedence layer Sub-Slice B will read; locking them here
  * keeps the renderer-side validation contract honest if a later
  * tranche tries to silently flip a flag without going through the
- * plan-doc (`docs/planning/in-progress/ImpPlan-0.9.7-cross-dialect-sequencing.md` §5.2).
+ * plan-doc (`docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md` §5.2).
  */
 class SequenceCapabilityTest : FunSpec({
 

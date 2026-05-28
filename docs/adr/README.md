@@ -42,3 +42,4 @@ codebase's review cycles.
 | 0001 | [MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC is WARNING, not BLOCKER](0001-mysql-routine-drop-create-non-atomic-warning.md) | accepted |
 | 0002 | [UNSAFE_DEPENDENCY_PAIR stays WARNING, not BLOCKER](0002-unsafe-dependency-pair-warning-not-blocker.md) | accepted |
 | 0003 | [Cross-Dialect Sequencing — Capability Contract](0003-cross-dialect-sequencing.md) | accepted |
+| 0004 | [Planning Folder Lifecycle (`open/` → `next/` → `in-progress/` → `done/`)](0004-documentation-and-planning-structure.md) | accepted |

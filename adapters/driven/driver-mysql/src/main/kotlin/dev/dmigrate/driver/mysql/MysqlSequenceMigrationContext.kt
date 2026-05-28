@@ -19,7 +19,7 @@ package dev.dmigrate.driver.mysql
  * `UPDATE dmg_sequences` (AlterSequence) or `DELETE FROM dmg_sequences`
  * (UP DropSequence, DOWN CreateSequence) paths skip the bootstrap.
  *
- * Plan-Doc: `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
+ * Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
  * §3.1 + §6 Sub-Slice B.
  */
 internal class MysqlSequenceMigrationContext {

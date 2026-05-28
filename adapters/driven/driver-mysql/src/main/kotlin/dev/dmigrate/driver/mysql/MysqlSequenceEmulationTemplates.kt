@@ -23,7 +23,7 @@ internal data class MysqlSequenceTriggerSpec(
  * upcoming `MysqlDiffSequenceOps` (per-op diff rendering, Sub-Slice
  * B) share a single source of truth for the emitted SQL shape.
  *
- * Plan-Doc: `docs/planning/in-progress/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
+ * Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
  * §5.1 (Re-Use vs. Duplikation) and §6 Sub-Slice A.
  *
  * All functions are stateless and produce a single

@@ -25,7 +25,7 @@
 > **Vorbedingung fuer**: E.2 Sub-Slice B (MySQL Renderer) — MySQL
 >                  rendert `ReplaceTrigger` immer Drop+Create und
 >                  konsumiert dieselbe Strict-Mode-Infrastruktur.
-> **Referenz**: `docs/planning/in-progress/ImpPlan-0.9.7-E.2-trigger-rendering.md`
+> **Referenz**: `docs/planning/done/ImpPlan-0.9.7-E.2-trigger-rendering.md`
 >             §2 Scope-Carve-out ("Replace-Fallback ist eine bewusste,
 >             nicht stille Entscheidung"), §3 Sub-Slice A.1 Foundation
 >             (`OperationRisk.hasGap`, `--strict`-Vertrag).

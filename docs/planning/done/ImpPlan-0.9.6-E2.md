@@ -11,7 +11,7 @@
 > Datenoperationen) — siehe § 0 zur Begründung.
 > **Referenz**: `spec/phase-e-port-atomicity.md` (§§ 1–6 + § E + Cross-Refs);
 > `docs/planning/done/ImpPlan-0.9.6-E.md`;
-> `docs/planning/in-progress/ImpPlan-0.9.6-F.md`;
+> `docs/planning/done/ImpPlan-0.9.6-F.md`;
 > `hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt`;
 > `hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/JobStartTransaction.kt`;
 > `hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/JobStore.kt`;
