@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfilePolicy
@@ -63,6 +64,17 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
+    /**
+     * Driver-supplied pre-generation validator, looked up per dialect.
+     * Runs **after** [validator] passes the dialect-agnostic gate and
+     * **before** [generatorLookup] is asked to render DDL — the same
+     * slot the SQLite-Seq-Emulation plan-doc §3.4 reserves for
+     * mode-specific checks. Defaults to a no-op lookup so existing
+     * wirings keep compiling without change; the SQLite branch hooks
+     * `SqlitePreGenerationValidator` in via `SqliteDriver.preGenerationValidator()`.
+     */
+    private val preGenerationValidatorLookup: (DatabaseDialect) -> PreGenerationValidator =
+        { PreGenerationValidator.NoOp },
     private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, DdlGenerationOptions) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content ->
@@ -113,6 +125,20 @@ class SchemaGenerateRunner(
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
             printValidationResult(validationResult, schema, request.source.toString())
+            return 3
+        }
+
+        // Driver-supplied pre-generation gate: lets a dialect emit
+        // mode-specific blockers (e.g. SQLite helper_table E059 for
+        // PK + SequenceNextVal) without polluting the dialect-agnostic
+        // SchemaValidator. NoOp for drivers that have no such rules.
+        val preGenErrors = preGenerationValidatorLookup(dialect).validate(schema, options)
+        if (preGenErrors.isNotEmpty()) {
+            printValidationResult(
+                ValidationResult(errors = preGenErrors),
+                schema,
+                request.source.toString(),
+            )
             return 3
         }
 

@@ -77,6 +77,7 @@ private fun CliktCommand.executeExport(params: ExportParams) {
     val runner = ToolExportRunner(
         schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
         generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
+        preGenerationValidatorLookup = { DatabaseDriverRegistry.get(it).preGenerationValidator() },
         exporterLookup = { migrationTool ->
             when (migrationTool) {
                 MigrationTool.FLYWAY -> FlywayMigrationExporter()

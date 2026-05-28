@@ -42,6 +42,7 @@ neuen Version.
 |---------|-----------|
 | E001 - E020 | Schema-Validierung (SchemaValidator) |
 | E052 - E056 | Dialekt-Inkompatibilitaeten (Composite, Routine, Sequence) |
+| E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY (ab 0.9.7) |
 | E060 | Split-Diagnostik (Phasenkonflikt) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung (ab 0.9.3) |

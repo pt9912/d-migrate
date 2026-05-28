@@ -24,4 +24,14 @@ interface DatabaseDriver {
     fun dataWriter(): DataWriter
     fun urlBuilder(): JdbcUrlBuilder
     fun schemaReader(): SchemaReader
+
+    /**
+     * Returns the driver's dialect-specific pre-generation validator,
+     * or [PreGenerationValidator.NoOp] if the driver carries no
+     * mode-specific gates. The runner calls
+     * [PreGenerationValidator.validate] after the dialect-agnostic
+     * [dev.dmigrate.core.validation.SchemaValidator] passes and before
+     * [DdlGenerator.generate] runs.
+     */
+    fun preGenerationValidator(): PreGenerationValidator = PreGenerationValidator.NoOp
 }

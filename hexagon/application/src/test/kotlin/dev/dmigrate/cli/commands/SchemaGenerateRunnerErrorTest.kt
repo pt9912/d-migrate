@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.TransformationNote
 import io.kotest.core.spec.style.FunSpec
@@ -113,11 +114,13 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         var validator: (SchemaDefinition) -> ValidationResult =
             { ValidationResult() }
         var generator: FakeGenerator = FakeGenerator()
+        var preGenerationValidator: PreGenerationValidator = PreGenerationValidator.NoOp
 
         fun runner(env: Map<String, String> = emptyMap()): SchemaGenerateRunner = SchemaGenerateRunner(
             schemaReader = schemaReader,
             validator = validator,
             generatorLookup = { generator },
+            preGenerationValidatorLookup = { preGenerationValidator },
             reportWriter = { path, result, schema, dialect, source, _, options ->
                 reportWrites += ReportRecord(path, result, schema, dialect, source, options)
             },
@@ -173,6 +176,53 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         }
         h.runner().execute(request()) shouldBe 0
         h.generator.generateCalls shouldBe 1
+    }
+
+    // ─── Exit 3: driver-supplied PreGenerationValidator ──────────
+
+    test("Exit 3: PreGenerationValidator returns errors → exit 3, generator never invoked") {
+        val h = harness()
+        h.preGenerationValidator = object : PreGenerationValidator {
+            override fun validate(
+                schema: SchemaDefinition,
+                options: dev.dmigrate.driver.DdlGenerationOptions,
+            ) = listOf(
+                ValidationError("E059", "PK + SequenceNextVal", "tables.orders.columns.id"),
+            )
+        }
+        h.runner().execute(request()) shouldBe 3
+        h.generator.generateCalls shouldBe 0
+        h.fileWrites.shouldBeEmpty()
+        h.reportWrites.shouldBeEmpty()
+    }
+
+    test("PreGenerationValidator NoOp lets generation proceed") {
+        val h = harness()
+        // preGenerationValidator stays at its default NoOp.
+        h.runner().execute(request()) shouldBe 0
+        h.generator.generateCalls shouldBe 1
+    }
+
+    test("PreGenerationValidator runs AFTER the dialect-agnostic validator (validator-failure short-circuits)") {
+        val h = harness()
+        h.validator = {
+            ValidationResult(
+                errors = listOf(ValidationError("E001", "structural", "tables.users")),
+            )
+        }
+        var preGenCalls = 0
+        h.preGenerationValidator = object : PreGenerationValidator {
+            override fun validate(
+                schema: SchemaDefinition,
+                options: dev.dmigrate.driver.DdlGenerationOptions,
+            ): List<ValidationError> {
+                preGenCalls++
+                return emptyList()
+            }
+        }
+        h.runner().execute(request()) shouldBe 3
+        preGenCalls shouldBe 0
+        h.generator.generateCalls shouldBe 0
     }
 
     // ─── Exit 7: schema parse failure ────────────────────────────

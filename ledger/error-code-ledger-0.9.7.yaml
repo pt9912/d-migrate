@@ -8,3 +8,12 @@ entries:
     evidence_paths:
       - source: "hexagon/core/src/main/kotlin/dev/dmigrate/core/validation/SchemaSequenceValidationRules.kt"
         path_type: production
+
+  - code: E059
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteHelperTableSequenceValidatorTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteHelperTableSequenceValidator.kt"
+        path_type: production

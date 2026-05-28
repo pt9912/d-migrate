@@ -370,6 +370,13 @@ class CodeLedgerValidationTest : FunSpec({
         extractField(content, "E125", "status") shouldBe "active"
     }
 
+    test("0.9.7 error ledger contains E059 as active (SQLite helper-table PK rule)") {
+        val content = readLedger("error-code-ledger-0.9.7.yaml")
+        val codes = extractCodes(content).toSet()
+        codes.contains("E059") shouldBe true
+        extractField(content, "E059", "status") shouldBe "active"
+    }
+
     test("0.9.7 error ledger: every entry has valid level, entry_type, and status") {
         val content = readLedger("error-code-ledger-0.9.7.yaml")
         val invalid = extractCodes(content).filter { code ->
