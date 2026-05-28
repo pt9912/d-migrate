@@ -836,7 +836,7 @@ Tranche kann Overlay-/CLI-Overrides ergänzen.
 | `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
 
 **SQLite-Defaults (Reality-First)**: solange
-`docs/planning/open/sqlite-sequence-emulation-plan.md` nicht
+`docs/planning/in-progress/sqlite-sequence-emulation-plan.md` nicht
 implementiert ist, melden die SQLite-Capability-Defaults
 `supportsNamedSequences = false`. Das ist konsistent mit
 `SqliteCapabilityDdlSupport.generateSequences` (`E056` im

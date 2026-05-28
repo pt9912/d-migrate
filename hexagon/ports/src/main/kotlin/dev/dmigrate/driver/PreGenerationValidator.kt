@@ -13,7 +13,7 @@ import dev.dmigrate.core.validation.ValidationError
  * specific emulation/mode combination (e.g. SQLite `helper_table`
  * emulation rejecting `PRIMARY KEY` columns with
  * `DefaultValue.SequenceNextVal` per
- * `docs/planning/open/sqlite-sequence-emulation-plan.md` §3.4) without
+ * `docs/planning/in-progress/sqlite-sequence-emulation-plan.md` §3.4) without
  * leaking that rule into the dialect-agnostic
  * [dev.dmigrate.core.validation.SchemaValidator]. PostgreSQL or MySQL
  * targets can keep using the same neutral schema without tripping the

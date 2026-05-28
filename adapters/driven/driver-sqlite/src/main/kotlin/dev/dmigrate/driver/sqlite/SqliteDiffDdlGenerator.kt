@@ -289,7 +289,7 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         // op — including 0.9.7's `AlterSequenceCurrentValue`
         // preserve-current-value follow-up — is permanently routed
         // to UNSUPPORTED. This will change only when (and if)
-        // `docs/planning/open/sqlite-sequence-emulation-plan.md`
+        // `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
         // lands a SQLite emulation; until then `DIALECT_UNSUPPORTED_OPERATION`
         // is the correct end state, not a placeholder.
         is DiffOperation.AlterSequenceCurrentValue,

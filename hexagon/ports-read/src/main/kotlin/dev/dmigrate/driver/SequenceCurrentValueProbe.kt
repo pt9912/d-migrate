@@ -145,7 +145,7 @@ sealed class SequenceCurrentValueProbeResult {
     /**
      * The dialect has no probe implementation. Today this is SQLite —
      * the SQLite sequence emulation plan (in
-     * `docs/planning/open/sqlite-sequence-emulation-plan.md`) will
+     * `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`) will
      * fill in the probe later. The planner maps this to
      * `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION`.
      */

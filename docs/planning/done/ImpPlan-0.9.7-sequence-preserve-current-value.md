@@ -1266,7 +1266,7 @@ sehen.
   `spec/neutral-model-spec.md`) — in E.
 - CHANGELOG-Eintrag für die Workstream — in E.
 - SQLite-Sequence-Emulation — separater Plan
-  (`docs/planning/open/sqlite-sequence-emulation-plan.md`).
+  (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`).
 - Atomare `BEGIN; SELECT FOR UPDATE; setval; COMMIT`-Wrappers
   unter Lock — separater Folge-Slice (siehe §10 Risiken).
 

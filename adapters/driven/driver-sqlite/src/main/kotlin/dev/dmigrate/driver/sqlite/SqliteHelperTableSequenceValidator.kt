@@ -21,7 +21,7 @@ import dev.dmigrate.driver.SqliteNamedSequenceMode
  *
  * - **E059** — a column with `DefaultValue.SequenceNextVal` is part of
  *   the table's `primaryKey`. SQLite enforces an implicit `NOT NULL`
- *   on PK columns (`docs/planning/open/sqlite-sequence-emulation-plan.md`
+ *   on PK columns (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
  *   §3.4 lines 737-757); the W119 NOT-NULL-suppression that lets the
  *   `_bi`/`_ai` trigger pair survive does NOT lift the PK-implicit
  *   NULL rejection, so an `INSERT` whose sequence column is left to

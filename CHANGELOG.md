@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `generatedAt`, `deterministic`, `deferForeignKeys`) bleiben am
   Top-Level. 30 Files migriert, semantisch identisch.
 
-  Plan-Doc: `docs/planning/open/sqlite-sequence-emulation-plan.md`
+  Plan-Doc: `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
   Phase B.0; Memory-Pin: `feedback_hexagon_dialect_context`.
 
 ### Added
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`E059` in der `E052-E060`-Gruppe, `E125` an
   `E122-E124`-Sequence-Default-Cluster anschließend).
 
-  Plan-Doc: `docs/planning/open/sqlite-sequence-emulation-plan.md`
+  Plan-Doc: `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
   Phase B.2. Bleiben offen: B.3 (`helper_table`-DDL +
   `_bi`/`_ai`-Trigger-Paar inkl. CHECK-Auto-Suppression), B.4
   (`SequenceCapability`-Defaults flippen), C/D/E.
@@ -452,7 +452,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       Operator-Inserts zwischen den Probes können Inkonsistenzen
       erzeugen. Carve-out dokumentiert.
     - **SQLite-Sequence-Vollvariante**: separater Plan unter
-      `docs/planning/open/sqlite-sequence-emulation-plan.md`.
+      `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`.
 
   Tests:
     - Unit: `SequencePreserveStageTest`,

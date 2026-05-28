@@ -391,7 +391,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         // AlterSequenceCurrentValue to the DiffOperation hierarchy;
         // SQLite must keep routing it to DIALECT_UNSUPPORTED_OPERATION
         // as a permanent end state. This changes ONLY when (and if)
-        // `docs/planning/open/sqlite-sequence-emulation-plan.md`
+        // `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
         // lands a SQLite emulation. Until then any routing change
         // fails this test loudly.
         val acv = dev.dmigrate.core.diff.migration.DiffOperation.AlterSequenceCurrentValue(

@@ -12,10 +12,10 @@
 >                  preserveCurrentValue-Slice
 >                  *(done, `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`)*;
 >                  SQLite-Sequence-Plan
->                  (`docs/planning/open/sqlite-sequence-emulation-plan.md`, weiter offen).
+>                  (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`, weiter offen).
 > **Referenz**: `docs/planning/in-progress/diffresult-migration-plan-2.md` §E.3;
 >             `docs/planning/done/mysql-sequence-emulation-plan.md`;
->             `docs/planning/open/sqlite-sequence-emulation-plan.md`;
+>             `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`;
 >             ADR-0003 (`docs/adr/0003-cross-dialect-sequencing.md`)
 >             dokumentiert die fünf Decisions D1-D5 in binder Form.
 
@@ -31,7 +31,7 @@ Slices:
 - **MySQL** (parallel-Plan): Emulation via `dmg_sequences`-Helper-
   Table und Sequence-Trigger.
 - **SQLite** (parallel-Plan): rebuild-basierte Emulation; Details
-  in `docs/planning/open/sqlite-sequence-emulation-plan.md`.
+  in `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`.
 - **preserveCurrentValue** (parallel-Plan): cross-dialect
   Live-DB-Probe + Setval-Pattern.
 
@@ -144,7 +144,7 @@ parallele Slice referenzieren kann.
 ### 3.2 Out-of-Scope (delegiert an die parallelen Plans)
 
 - Konkretes MySQL-Render-DDL → `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`.
-- Konkretes SQLite-Render-DDL → `docs/planning/open/sqlite-sequence-emulation-plan.md`.
+- Konkretes SQLite-Render-DDL → `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`.
 - `preserveCurrentValue`-Probe-Implementation →
   `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`.
 - MariaDB-native `CREATE SEQUENCE` (10.3+) — separate
@@ -354,7 +354,7 @@ und delegierbar:
   Capability-Annahmen einbauen, koennen sie divergieren.
   Mitigation: Capability-Resolver ist die einzige Quelle, alle
   Slices muessen ihn konsumieren.
-- **SQLite-Plan ist offen**: solange `docs/planning/open/sqlite-sequence-emulation-plan.md`
+- **SQLite-Plan ist offen**: solange `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
   nicht implementiert ist, melden die SQLite-Capability-Defaults
   `supportsNamedSequences = false`. Das ist Reality-First:
   `SqliteCapabilityDdlSupport.generateSequences` erzeugt heute `E056`,

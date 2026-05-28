@@ -7,7 +7,7 @@ import dev.dmigrate.core.model.SequenceDefinition
  * 0.9.7 SQLite-Sequence Phase B.2 step 1: dialect-agnostic semantic
  * validation of [SequenceDefinition] internals.
  *
- * Rules per `docs/planning/open/sqlite-sequence-emulation-plan.md` §3.6:
+ * Rules per `docs/planning/in-progress/sqlite-sequence-emulation-plan.md` §3.6:
  *
  * - `increment` must not be `0` — an increment-zero sequence either
  *   repeats forever or loops in the trigger body; rejecting here
@@ -126,7 +126,7 @@ internal object SchemaSequenceValidationRules {
      * Overflow-safe equivalent of `abs(inc) <= max - min`, never
      * computing the raw `max - min` subtraction (which overflows at
      * the `Long.MIN_VALUE / Long.MAX_VALUE` extremes). See
-     * `docs/planning/open/sqlite-sequence-emulation-plan.md` §3.6 for
+     * `docs/planning/in-progress/sqlite-sequence-emulation-plan.md` §3.6 for
      * the derivation. Assumes `inc != 0` and `inc != Long.MIN_VALUE`
      * (the caller checks both before invoking) and `min <= max`.
      */
