@@ -1,12 +1,17 @@
 # Implementierungsplan: Vollständige SQLite-Sequence-Emulation
 
-> Status: In Progress (2026-05-27). Phase A § 11 Pre-Code-Klärungen
+> Status: In Progress (2026-05-28). Phase A § 11 Pre-Code-Klärungen
 > abgeschlossen; Phase B.0 (`DdlDialectContext`-Refactor, `48c7f01c`)
 > und Phase B.1 (`SqliteNamedSequenceMode` + CLI-Plumbing, `84ba7ab7`)
-> abgeschlossen. Offen: Phase B.2 (Validator-Regeln), B.3 (helper_table-
-> DDL + `_bi`/`_ai`-Trigger-Paar), B.4 (`SequenceCapability`-Defaults
-> flippen), C (Tests + Golden-Master), D (Reverse), E (Compare +
-> Stabilisierung).
+> abgeschlossen 2026-05-27; Phase B.2 (Validator-Regeln) abgeschlossen
+> 2026-05-28: SequenceDefinition-internal-Regeln (Increment/Bereich,
+> `E125`) im `SchemaSequenceValidationRules` (`25f59f73`) und der
+> SQLite-helper_table-PK-Gate (`E059`) über den neuen
+> `PreGenerationValidator`-Port plus `SqliteHelperTableSequenceValidator`
+> (`09068f79`). Offen: Phase B.3 (helper_table-DDL + `_bi`/`_ai`-
+> Trigger-Paar inkl. CHECK-`IS NOT NULL`-Auto-Suppression nach §3.4),
+> B.4 (`SequenceCapability`-Defaults flippen), C (Tests + Golden-
+> Master), D (Reverse), E (Compare + Stabilisierung).
 >
 > Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender
 > Projekt-Floor); `DefaultValue.SequenceNextVal` ist in

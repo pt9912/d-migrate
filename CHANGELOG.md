@@ -28,6 +28,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 SQLite-Sequence-Emulation Phase B.2 — Validator-Regeln**
+  *(2026-05-28)* — zwei zusammengehörige Validator-Schichten, die
+  laut Plan-Doc §3.4 / §3.6 / §7 Phase B vor dem `helper_table`-
+  Generator (B.3) feststehen müssen.
+
+  **Step 1 — SequenceDefinition-internal-Regeln (`E125`,
+  `25f59f73`):** Neuer dialektagnostischer
+  `SchemaSequenceValidationRules` in `hexagon:core/validation`,
+  verdrahtet in `SchemaValidator.validate(...)`. Blockt
+  `increment = 0`, `increment = Long.MIN_VALUE`,
+  `min_value > max_value`, `start ∉ [min, max]` und
+  `|increment| > max − min`. Der overflow-sichere
+  `isIncrementInRange(inc, min, max)` folgt der Plan-Doc-§3.6-
+  Herleitung und vermeidet die `max − min`-Subtraktion komplett —
+  Grenzfälle bei `Long.MIN_VALUE`/`Long.MAX_VALUE` sind im Test
+  pinned.
+
+  **Step 2 — SQLite-helper_table-Cross-Check (`E059`, `09068f79`):**
+  Neuer `PreGenerationValidator`-Port in `hexagon:ports`
+  (Default-Methode `DatabaseDriver.preGenerationValidator(): NoOp`,
+  PG/MySQL bleiben unberührt). SQLite-Driver liefert
+  `SqliteHelperTableSequenceValidator` über die
+  `SqlitePreGenerationValidator`-Bridge: blockt im
+  `helper_table`-Modus jede Spalte, die `DefaultValue.SequenceNextVal`
+  trägt **und** Teil des `PRIMARY KEY` ist. Symmetrisch verdrahtet
+  in `SchemaGenerateRunner` und `ToolExportRunner` (jeweils nach dem
+  dialektagnostischen `SchemaValidator`, vor `DdlGenerator.generate`).
+  PG/MySQL erlauben PK + `SequenceNextVal` weiterhin — die Regel ist
+  bewusst SQLite-Helper-Table-spezifisch, statt sie in den
+  generischen Validator zu pressen.
+
+  **Out of scope für B.2:** "CHECK `IS NOT NULL` auf
+  `SequenceNextVal`-Spalte" — Plan-Doc §3.4 (Z. 728-735) sagt
+  explizit Generator-Zeit-Auto-Suppression mit Warn-Code, kein
+  Validator-Error → wandert nach B.3. "SequenceNextVal +
+  expliziter DEFAULT" ist bereits durch bestehendes `E131`
+  ("identity generation and default are mutually exclusive")
+  abgedeckt.
+
+  Ledger: neuer `error-code-ledger-0.9.7.yaml` registriert `E125`
+  und `E059` als `active`; `CodeLedgerValidationTest` pinnt beide.
+  `spec/ledger.md` Code-Number-Ranges um beide Codes erweitert
+  (`E059` in der `E052-E060`-Gruppe, `E125` an
+  `E122-E124`-Sequence-Default-Cluster anschließend).
+
+  Plan-Doc: `docs/planning/open/sqlite-sequence-emulation-plan.md`
+  Phase B.2. Bleiben offen: B.3 (`helper_table`-DDL +
+  `_bi`/`_ai`-Trigger-Paar inkl. CHECK-Auto-Suppression), B.4
+  (`SequenceCapability`-Defaults flippen), C/D/E.
+
 - **0.9.7 SQLite-Sequence-Emulation Phase B.1 — CLI-Plumbing**
   *(2026-05-27)* — neues `SqliteNamedSequenceMode`-Enum
   (`action_required` / `helper_table`) im `hexagon:ports-read`,

@@ -1,6 +1,6 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12, Refresh 2026-05-27).
+> Status: In Progress (seit 2026-05-12, Refresh 2026-05-28).
 > Praktisch alle Workstreams sind abgeschlossen: G.1-G.3 (Artefakt/
 > Runner), A.1/A.2 (Locking, SQLite-Live-Catalog), B.1/B.2 (PG-`USING`,
 > SQLite-Cast-Preflight), C.1/C.2 (Extensions, Spatial), D.1/D.2/D.3a/
@@ -10,8 +10,8 @@
 > Plan-Artefakte/Partial-Rollback/Rename-Mappings) und F.5 Vollscheibe
 > (CHECK/EXCLUDE). Einzig offen: SQLite-Sequence-Emulation als
 > ausgelagerter Folge-Plan (`docs/planning/open/sqlite-sequence-emulation-plan.md`,
-> Phase A + B.0 + B.1 abgeschlossen, B.2-E offen). Die per-Workstream-
-> Status-Bloecke in §4-§10 sind individuell aktualisiert.
+> Phase A + B.0 + B.1 + B.2 abgeschlossen, B.3-E offen). Die per-
+> Workstream-Status-Bloecke in §4-§10 sind individuell aktualisiert.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -1189,14 +1189,17 @@ E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
 
 > Status: PostgreSQL-Erstscheibe implementiert (2026-05-12); MySQL-
 > helper_table-Diff (2026-05-20), preserveCurrentValue (2026-05-21),
-> Cross-Dialect-Sequencing-Schirm (2026-05-27, ADR-0003) und SQLite-
-> Sequence Phase A + B.0 + B.1 (2026-05-27) abgeschlossen. SQLite
-> blockt diff-basierte Sequence-Ops weiterhin mit
-> `DIALECT_UNSUPPORTED_OPERATION`, bis Phase B.2/B.3 des SQLite-
-> Sequence-Plans (`docs/planning/open/sqlite-sequence-emulation-plan.md`)
-> den `helper_table`-Renderer + Trigger-Paar emittiert. Der
-> aktuelle Sequence-Wert wird über die preserveCurrentValue-Policy
-> migriert (Up: `setval(...)` PG / `UPDATE dmg_sequences` MySQL;
+> Cross-Dialect-Sequencing-Schirm (2026-05-27, ADR-0003), SQLite-
+> Sequence Phase A + B.0 + B.1 (2026-05-27) und Phase B.2 Validator-
+> Regeln (2026-05-28, `25f59f73` SequenceDefinition-internal `E125` +
+> `09068f79` helper_table-PK-Gate `E059` über neuen
+> `PreGenerationValidator`-Port) abgeschlossen. SQLite blockt
+> diff-basierte Sequence-Ops weiterhin mit
+> `DIALECT_UNSUPPORTED_OPERATION`, bis Phase B.3 des SQLite-Sequence-
+> Plans (`docs/planning/open/sqlite-sequence-emulation-plan.md`) den
+> `helper_table`-Renderer + Trigger-Paar emittiert. Der aktuelle
+> Sequence-Wert wird über die preserveCurrentValue-Policy migriert
+> (Up: `setval(...)` PG / `UPDATE dmg_sequences` MySQL;
 > Down: `ROLLBACK_NOT_POSSIBLE` wenn ohne Probe).
 
 Nicht in der ersten Matrix:
