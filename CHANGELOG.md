@@ -764,7 +764,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       existing `dmg_sequences` rows and `dmg_*` support objects)
       is now explicitly out of this slice with a dedicated
       follow-up plan-doc stub
-      (`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
+      (`docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
       6 sub-slices) so "done" no longer hides the reduced scope.
 
   Commit timeline:

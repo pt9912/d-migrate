@@ -11,7 +11,7 @@
 >           Live-DB-Drift-Check gegen vorhandene `dmg_sequences`-
 >           Zeilen + Support-Objekte ein. Dieser ist in einen
 >           eigenen Folge-Plan ausgegliedert
->           (`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
+>           (`docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`,
 >           erstellt unter Sub-Slice H). "Done" bezieht sich auf
 >           den verbleibenden Scope: Bootstrap-Idempotenz statt
 >           Live-Drift-Validation, Mode-Gate (`E056`) statt
@@ -465,7 +465,7 @@ Adressiert die zwei Findings der Closing-iter-2-Review:
    konsistent, wenn der Scope nachträglich reduziert wurde —
    das wird hier explizit gemacht:
    - Neuer Folge-Plan-Stub
-     `docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
+     `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
      mit Scope (E124-Probe-Adapter, Drift-Check pro Feld,
      Trigger-Body-Marker-Validation), §10.1 verlinkt darauf.
    - Status-Header zeigt explizit, dass "done" sich auf den
@@ -652,7 +652,7 @@ kein harter Vergleichsanker. Bei voller Konsistenz Trigger-Reconcile;
 sonst `E124`.
 
 Plan-Doc-Stub:
-`docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
+`docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`
 (Sub-Slice H, 2026-05-20). Sub-Slice H des aktuellen Plans
 dokumentiert den Scope-Cut explizit; §7 + §8 markieren die
 zugehörigen Akzeptanzkriterien als deferred.

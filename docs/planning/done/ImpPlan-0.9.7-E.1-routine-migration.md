@@ -170,7 +170,7 @@ Aus Scope:
 - SQLite-Routinen — SQLite hat keine User-Defined-Functions/-Procedures
   im klassischen Sinn; bleibt unveraendert.
 - Routine-Rename — gehoert zum spaeteren F.4-Routine-Trigger-View-
-  Rename-Slice (`docs/planning/open/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`),
+  Rename-Slice (`docs/planning/done/ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md`),
   der E.1 als harte Vorbedingung listet.
 - Plan-Artefakt-Einbettung von Routine-Bodies — braucht F.2-Body-
   Embedding-Gate; bis dahin blockieren persistierte Mischfaelle

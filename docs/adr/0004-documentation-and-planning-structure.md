@@ -2,218 +2,259 @@
 status: accepted
 date: 2026-05-28
 decision-makers: pt9912
-consulted: c-hsm-doc ADR-0001 (sister project's planning-structure ADR, 2026-05-26)
-informed: future plan-doc authors; reviewers grading where a plan-doc sits in its lifecycle
+consulted: c-hsm-doc ADR-0001 (Planning-Structure-ADR des Schwesterprojekts, 2026-05-26)
+informed: künftige Plan-Doc-Autoren; Reviewer, die einordnen wo ein Plan-Doc in seinem Lebenszyklus steht
 ---
 
-# Planning Folder Lifecycle (`open/` → `next/` → `in-progress/` → `done/`)
+# Lebenszyklus des Planungsverzeichnisses (`open/` → `next/` → `in-progress/` → `done/`)
 
-## Context and Problem Statement
+## Kontext und Problemstellung
 
-`docs/planning/` has grown from three folders (`open/`, `in-progress/`,
-`done/`) carrying informal, undocumented semantics. By 2026-05 the
-informality had produced concrete drift:
+`docs/planning/` war historisch in drei Ordnern (`open/`,
+`in-progress/`, `done/`) organisiert — mit informeller, nirgends
+dokumentierter Semantik. Bis 2026-05 hatte sich aus dieser
+Informalität konkrete Drift angesammelt:
 
-- `docs/planning/open/sqlite-sequence-emulation-plan.md` carried
-  `Status: In Progress (2026-05-28)` after Phase A/B.0/B.1/B.2
-  shipped (commits `48c7f01c`, `84ba7ab7`, `25f59f73`, `09068f79`)
-  but stayed in `open/` because the folder name "open" was reading
-  as "not closed yet" rather than "not started yet".
-- `docs/planning/open/refactoring-cli-testability.md` similarly
-  carried `Status: Teilweise umgesetzt (McpServeCommand)` while
-  still sitting in `open/`.
-- The remaining 12 `open/` entries were a mix of `Draft`,
-  `Entwurf`, `Vorschlag / Entscheidungsbasis` and pure
-  reference catalogues (`test-database-candidates.md`) without a
-  documented split: which of them have a scope to activate next vs.
-  which are pure trigger watches?
-- `docs/planning/in-progress/` held only two files
-  (`roadmap.md` and `diffresult-migration-plan-2.md`), suggesting
-  the folder was reserved for top-level aggregators rather than
-  active per-feature slice-plans — but no document said so.
-- Per-slice closure plans go to `docs/planning/done/` as
-  `ImpPlan-<version>-<slice>.md`; that pattern is established but
-  also undocumented.
+- `docs/planning/open/sqlite-sequence-emulation-plan.md` trug
+  `Status: In Progress (2026-05-28)`, nachdem die Phasen B.0/B.1/B.2
+  geliefert waren (Commits `48c7f01c` Phase B.0,
+  `84ba7ab7` Phase B.1, `25f59f73` Phase B.2 Step 1, `09068f79`
+  Phase B.2 Step 2; Phase A bestand ausschließlich aus § 11
+  Pre-Code-Klärungen und hatte keinen eigenen Shipping-Commit).
+  Trotz dieses Standes blieb die Datei in `open/`, weil der
+  Ordnername "open" als "noch nicht abgeschlossen" gelesen wurde
+  statt als "noch nicht angefangen".
+- `docs/planning/open/refactoring-cli-testability.md` trug
+  ähnlich `Status: Teilweise umgesetzt (McpServeCommand)` und saß
+  trotzdem in `open/`.
+- Die übrigen 12 `open/`-Einträge waren ein Mix aus `Draft`,
+  `Entwurf`, `Vorschlag / Entscheidungsbasis` und reinen
+  Referenz-Katalogen (`test-database-candidates.md`), ohne
+  dokumentierte Trennung: welche von ihnen haben einen Scope, der
+  als nächstes aktiviert werden kann, vs. welche sind reine
+  Trigger-Watches?
+- `docs/planning/in-progress/` enthielt nur zwei Dateien
+  (`roadmap.md` und `diffresult-migration-plan-2.md`); das legte
+  nahe, der Ordner sei für Top-Level-Aggregatoren reserviert statt
+  für aktive Per-Feature-Slice-Pläne — aber kein Dokument sagte
+  das aus.
+- Per-Slice-Closures landen unter `docs/planning/done/` als
+  `ImpPlan-<version>-<slice>.md`; auch dieses Muster war etabliert,
+  aber undokumentiert.
 
-The c-hsm-doc sister project ran into the same question and
-codified the convention in its own
+Das Schwesterprojekt c-hsm-doc stand vor derselben Frage und hat
+die Konvention in seiner
 [`ADR-0001`](https://github.com/pt9912/c-hsm-doc/blob/main/docs/plan/adr/0001-documentation-and-planning-structure.md)
-§2.4: a four-stage lifecycle with per-folder READMEs. This ADR
-adopts the same model for d-migrate, with d-migrate-specific
-naming carve-outs.
+§2.4 festgehalten: ein 4-stufiger Lebenszyklus mit Pflicht-README
+pro Ordner. Diese ADR übernimmt das Modell für d-migrate, mit
+d-migrate-spezifischen Carve-outs zum Namensschema.
 
-## Decision Drivers
+## Entscheidungstreiber
 
-- A plan-doc's folder location must be a single, glanceable signal
-  of where the work stands. "Open" reading as "not closed yet" vs.
-  "not started yet" is exactly the kind of overloaded signal that
-  rots silently.
-- Long-lived umbrella plans (e.g. `sqlite-sequence-emulation-plan.md`,
-  spanning Phases A through E) need a folder that admits both
-  "planning continues" and "first sub-slices shipped".
-- Cross-references between plans, code KDoc, CHANGELOG, ADRs and
-  the roadmap must remain stable; the folder structure should not
-  forcibly rename plans every time their status nudges.
-- The convention has to coexist with the established
-  `ImpPlan-<version>-<slice>.md` naming for per-slice closure
-  records under `done/` — that pattern is already cited from 152
-  files and must not be retconned.
+- Der Ordner eines Plan-Docs muss auf einen Blick eindeutig
+  signalisieren, in welchem Status die Arbeit steht. "Open" als
+  Doppelbedeutung ("nicht abgeschlossen" vs. "nicht angefangen")
+  ist genau die Art überladenes Signal, das schleichend verfault.
+- Langlebige Umbrella-Pläne (z. B.
+  `sqlite-sequence-emulation-plan.md`, der die Phasen A bis E
+  überspannt) brauchen einen Ordner, der sowohl "Planung läuft
+  weiter" als auch "erste Sub-Slices geliefert" toleriert.
+- Querverweise zwischen Plänen, Code-KDoc, CHANGELOG, ADRs und der
+  Roadmap müssen stabil bleiben; die Ordnerstruktur darf nicht
+  jedes Mal Plan-Renames erzwingen, wenn sich der Status ein
+  Stückchen weiterbewegt.
+- Die Konvention muss mit dem etablierten
+  `ImpPlan-<version>-<slice>.md`-Namensschema für Per-Slice-Closures
+  unter `done/` koexistieren — dieses Muster ist bereits aus über
+  150 Closure-Dateien dokumentiert und darf nicht rückwirkend
+  umgebaut werden.
 
-## Considered Options
+## Betrachtete Optionen
 
-### Option A — Three-stage `open/` → `in-progress/` → `done/` (status quo)
+### Option A — Drei Stufen `open/` → `in-progress/` → `done/` (Status quo)
 
-Keep the current folders, document the informal convention.
+Aktuelle Ordner beibehalten, die informelle Konvention nachträglich
+dokumentieren.
 
-- Pro: zero file moves, no path-reference updates.
-- Pro: matches what the 152 `done/ImpPlan-*` references already say.
-- Con: "open" stays overloaded — both "trigger watches without scope"
-  and "scope-skizzed-but-not-activated" land in the same folder.
-- Con: doesn't model "plans that are partially shipped but still
-  have phases ahead" — they don't fit cleanly in any of the three.
-  This is precisely how `sqlite-sequence-emulation-plan.md` drifted.
+- Pro: null Datei-Moves, keine Pfad-Updates.
+- Pro: konsistent mit den 152 Querverweisen aus `done/ImpPlan-*`,
+  die schon so existieren.
+- Contra: "open" bleibt überladen — sowohl "Trigger-Watch ohne
+  Scope" als auch "Scope-skizziert-aber-nicht-aktiviert" landen im
+  selben Ordner.
+- Contra: Pläne, die teilweise geliefert sind, aber noch Phasen
+  vor sich haben, passen in keinen der drei sauber. Genau so ist
+  `sqlite-sequence-emulation-plan.md` in `open/` hängengeblieben.
 
-### Option B — Four-stage `open/` → `next/` → `in-progress/` → `done/` (c-hsm-doc model)
+### Option B — Vier Stufen `open/` → `next/` → `in-progress/` → `done/` (c-hsm-doc-Modell)
 
-Introduce a new `docs/planning/next/` folder between `open/` and
-`in-progress/`. Plans with sketched scope but no active slice-work
-live there; plans without scope stay in `open/`; plans with active
-slice-work move to `in-progress/`.
+Einen neuen Ordner `docs/planning/next/` zwischen `open/` und
+`in-progress/` einziehen. Pläne mit skizziertem Scope, aber ohne
+aktive Slice-Arbeit, leben dort; Pläne ohne Scope bleiben in
+`open/`; Pläne mit aktiver Slice-Arbeit wandern nach
+`in-progress/`.
 
-- Pro: each folder has one unambiguous meaning, glanceable.
-- Pro: the partial-shipment case is no longer awkward —
-  `sqlite-sequence-emulation-plan.md` in `in-progress/` reads as
-  "active slice-work" without claiming everything is shipped.
-- Pro: tested in the sister project (c-hsm-doc) since 2026-05-26.
-- Con: one-time migration of 12 existing `open/` entries; ADR +
-  four READMEs to write.
-- Con: cross-references in CHANGELOG, ADRs, done-plans, and code
-  KDoc need a one-time bulk-update.
+- Pro: jeder Ordner trägt eindeutig eine einzige Bedeutung, auf
+  einen Blick lesbar.
+- Pro: der teilweise-geliefert-Fall ist nicht mehr unklar —
+  `sqlite-sequence-emulation-plan.md` in `in-progress/` liest sich
+  als "aktive Slice-Arbeit", ohne zu suggerieren alles sei schon
+  fertig.
+- Pro: im Schwesterprojekt c-hsm-doc seit 2026-05-26 erprobt.
+- Contra: einmalige Migration von 12 bestehenden `open/`-Einträgen;
+  eine neue ADR und vier READMEs zu schreiben.
+- Contra: Querverweise in CHANGELOG, ADRs, Done-Plänen und
+  Code-KDoc brauchen einen einmaligen Bulk-Sweep.
 
-### Option C — Status-only convention without folder moves
+### Option C — Nur Status-Konvention, keine Ordner-Moves
 
-Keep all in `open/`, mandate a machine-checkable `Status:` header
-that downstream tools key off.
+Alles in `open/` belassen, dafür einen maschinell prüfbaren
+`Status:`-Header vorschreiben, an dem nachgelagerte Tools andocken
+können.
 
-- Pro: no file moves.
-- Con: folders become decorative; readers must open every file to
-  see status. Glanceable-via-folder-name is the explicit driver
-  this ADR exists to satisfy.
+- Pro: keine Datei-Moves.
+- Contra: Ordner werden zur Dekoration; Leser müssen jede Datei
+  öffnen, um den Status zu sehen. Genau die Ordner-als-Signal-
+  Eigenschaft, die diese ADR explizit motiviert, wäre damit aufgegeben.
 
-## Decision Outcome
+## Entscheidung
 
-Chosen: **Option B** — adopt the c-hsm-doc four-stage lifecycle.
+Gewählt: **Option B** — Übernahme des 4-stufigen c-hsm-doc-Lebenszyklus.
 
+```text
+docs/planning/open/         — Trigger-Watches, offene Folgearbeiten ohne Scope
+docs/planning/next/         — Pläne mit skizziertem Scope, noch nicht aktiv
+docs/planning/in-progress/  — Roadmap-Aggregatoren + aktive Per-Feature-Umbrella-Pläne
+docs/planning/done/         — gelieferte Per-Slice-Closures (ImpPlan-*) + abgeschlossene Umbrellas
+docs/archive/               — explizit verworfene oder vollständig überholte Pläne
 ```
-docs/planning/open/         — trigger watches, open follow-ups without scope
-docs/planning/next/         — plans with sketched scope, not yet active
-docs/planning/in-progress/  — roadmap aggregators + active per-feature umbrella plans
-docs/planning/done/         — shipped per-slice closure plans (ImpPlan-*) + closed umbrellas
-docs/archive/               — explicitly discarded or fully superseded plans
-```
 
-### Conventions per folder
+### Konvention pro Ordner
 
-Each folder carries a `README.md` listing its convention. Summary:
+Jeder Ordner trägt eine `README.md`, die seine Konvention nennt.
+Zusammengefasst:
 
-- **`open/`** — entries describe a trigger / observation / open
-  follow-up that does not yet have a slice scope. They stay here
-  until either activated (move to `next/`) or discarded
-  (move to `docs/archive/`).
-- **`next/`** — entries have a sketched scope (goal, rough work
-  packages, acceptance criteria) but no active implementation
-  commits. They stay here until slice-work starts (move to
-  `in-progress/`) or get discarded.
-- **`in-progress/`** — two kinds of documents:
-  1. Top-level aggregators with sprechende names (`roadmap.md`,
-     `diffresult-migration-plan-2.md`). These never move.
-  2. Per-feature umbrella plans whose first slice has shipped or
-     whose slice-work is actively underway. They move to `done/`
-     once **every** phase has shipped.
-- **`done/`** — two kinds:
-  1. `ImpPlan-<version>-<slice>.md` per-slice closure plans
-     (established d-migrate pattern, 150+ files).
-  2. Umbrella plans whose every phase has shipped; carry a
-     `## Closure` section at the bottom.
+- **`open/`** — Einträge beschreiben einen Trigger / eine
+  Beobachtung / eine offene Folgearbeit ohne ausgearbeiteten
+  Slice-Scope. Sie bleiben hier, bis sie entweder aktiviert
+  werden (Move nach `next/`) oder verworfen werden (Move nach
+  `docs/archive/`).
+- **`next/`** — Einträge tragen einen skizzierten Scope (Ziel,
+  grobe Arbeitspakete, Akzeptanzkriterien), aber noch keine
+  aktiven Implementierungs-Commits. Sie bleiben hier, bis die
+  Slice-Arbeit startet (Move nach `in-progress/`) oder verworfen
+  wird.
+- **`in-progress/`** — zwei Dokumenttypen leben hier:
+  1. Top-Level-Aggregatoren mit sprechenden Namen (`roadmap.md`,
+     `diffresult-migration-plan-2.md`). Sie wandern nicht.
+  2. Per-Feature-Umbrella-Pläne, deren erste Phase geliefert ist
+     oder deren Slice-Arbeit aktiv läuft. Sie wandern nach `done/`,
+     sobald **alle** Phasen geliefert sind.
+- **`done/`** — zwei Typen:
+  1. `ImpPlan-<version>-<slice>.md`-Per-Slice-Closures
+     (etabliertes d-migrate-Muster, 150+ Dateien).
+  2. Umbrella-Pläne, deren sämtliche Phasen geliefert sind;
+     diese tragen am Ende eine `## Closure`-Sektion.
 
-### Naming conventions
+### Namenskonventionen
 
-- ADRs: `NNNN-short-slug.md` (4-digit, MADR format) — unchanged
-  from the existing convention.
-- Per-slice closure plans: `ImpPlan-<version>-<slice>.md`
-  (e.g. `ImpPlan-0.9.7-cross-dialect-sequencing.md`) — unchanged.
-- Umbrella plans + Roadmap-Aggregatoren: sprechende lowercase-kebab
-  names without numeric prefix (e.g. `roadmap.md`,
-  `sqlite-sequence-emulation-plan.md`,
+- ADRs: `NNNN-kurz-titel.md` (vierstellige Nummer, MADR-Format) —
+  unverändert gegenüber der bestehenden Konvention.
+- Per-Slice-Closures: `ImpPlan-<version>-<slice>.md`
+  (z. B. `ImpPlan-0.9.7-cross-dialect-sequencing.md`) — unverändert.
+- Umbrella-Pläne und Roadmap-Aggregatoren: sprechende
+  lowercase-kebab-Namen ohne numerischen Prefix (z. B.
+  `roadmap.md`, `sqlite-sequence-emulation-plan.md`,
   `diffresult-migration-plan-2.md`).
 
-Note: c-hsm-doc uses a `NNN-short-slug.md` (3-digit) numeric prefix
-for all plan entries. d-migrate deliberately does **not** adopt
-that — the established `ImpPlan-<version>-<slice>.md` per-slice
-naming carries the version information that a 3-digit prefix would
-lose, and renumbering 150+ existing `done/` files would be churn
-without a payoff.
+Hinweis: c-hsm-doc nutzt einen `NNN-kurz-titel.md`-Prefix
+(dreistellig, fortlaufend) für **alle** Plan-Einträge. d-migrate
+übernimmt diesen Teil bewusst **nicht** — das etablierte
+`ImpPlan-<version>-<slice>.md`-Schema trägt die Versionsinformation
+mit, die ein 3-stelliger Prefix verlieren würde, und ein Umbenennen
+von 150+ bestehenden `done/`-Dateien wäre Churn ohne Gewinn.
 
-### Lifecycle transitions
+### Lebenszyklus-Übergänge
 
-A plan moves between folders by `git mv` accompanied by:
-- a `> Status: ...` header update inside the file documenting the
-  transition;
-- a sweep over cross-references (CHANGELOG, ADRs, done-plans, code
-  KDoc, roadmap) to point at the new path. Frozen historical
-  records (closed ADRs, done-plans) are updated too — a broken
-  path is worse than an updated frozen record.
+Ein Plan wechselt zwischen Ordnern per `git mv`, begleitet von:
+- Einem `> Status: …`-Header-Update innerhalb der Datei, das den
+  Übergang dokumentiert.
+- Einem Sweep über alle Querverweise (CHANGELOG, ADRs, Done-Pläne,
+  Code-KDoc, Roadmap), damit sie auf den neuen Pfad zeigen.
+  Eingefrorene historische Records (geschlossene ADRs, Done-Pläne)
+  werden mit nachgezogen — ein gebrochener Pfad ist schlechter als
+  ein aktualisierter eingefrorener Record.
 
-A plan moves to `docs/archive/` only when explicitly discarded or
-fully superseded. Closed plans (every phase shipped) move to
-`done/`, not `archive/`.
+Ein Plan wandert nach `docs/archive/` nur, wenn er explizit
+verworfen oder vollständig überholt ist. Vollständig gelieferte
+Pläne wandern nach `done/`, nicht nach `archive/`.
 
-## Consequences
+**Sonderbahn für Per-Slice-Closures:** Die
+`ImpPlan-<version>-<slice>.md`-Dateien laufen den Standard-Pfad
+`next/ → in-progress/ → done/` üblicherweise **nicht** durch. Sie
+entstehen direkt unter `done/` als Closure-Notiz für einen
+abgeschlossenen Slice — der Slice selbst wurde im zugehörigen
+Umbrella-Plan (in `in-progress/`) gepflegt. Die ImpPlan-Datei ist
+das schriftliche DoD-Belegstück, das nach Abschluss neben dem
+Umbrella platziert wird.
 
-- The 2026-05-28 sweep (commit `457a54d9`) moved
-  `sqlite-sequence-emulation-plan.md` and
-  `refactoring-cli-testability.md` from `open/` to `in-progress/`
-  ahead of this ADR's acceptance. A follow-up commit (same date)
-  introduces `next/`, moves 9 of the 12 remaining `open/` entries
-  there, writes the four READMEs, and lands this ADR.
-- ADR-0003 references to
-  `docs/planning/open/sqlite-sequence-emulation-plan.md` were
-  rewritten to the new in-progress path in commit `457a54d9`. This
-  is a deliberate carve-out from the
-  "ADRs are immutable after Accepted" rule for path-reference-only
-  edits — the decision content is untouched, only the file
-  location moved.
-- The 12 existing `open/`-entries split as follows after the
-  follow-up commit:
-  - **Stay in `open/`** (no scope sketched):
-    `beispiel-stored-procedure-migration.md` (worked example),
-    `d-browser-integration-coupling-assessment.md` (coupling
-    Vorabklärung), `test-database-candidates.md` (reference
-    catalogue, arguably not a plan-doc at all).
-  - **Move to `next/`** (scope sketched, not active):
+## Konsequenzen
+
+- Der 2026-05-28-Sweep besteht aus zwei Commits, beide auf
+  `develop`:
+  1. `457a54d9` (Phase A) verschiebt
+     `sqlite-sequence-emulation-plan.md` und
+     `refactoring-cli-testability.md` von `open/` nach
+     `in-progress/` und zieht 17 Querverweise nach.
+  2. Der ADR-0004-Implementierungs-Commit (Phase B) führt
+     `next/` ein, verschiebt 9 weitere Pläne dorthin, schreibt
+     die vier READMEs, fixt eine Reihe historisch falscher
+     `planning/in-progress/ImpPlan-*`- und
+     `planning/open/ImpPlan-*`-Pfade in Code-KDoc und
+     Done-Plänen und landet diese ADR.
+- Verweise auf
+  `docs/planning/open/sqlite-sequence-emulation-plan.md` aus ADR-0003
+  wurden in Commit `457a54d9` auf den neuen `in-progress/`-Pfad
+  umgesetzt. Das ist ein bewusstes Carve-out gegenüber der
+  "ADRs sind nach Accepted immutable"-Regel: nur die
+  Pfad-Referenz wandert mit, der Entscheidungsinhalt bleibt
+  unberührt.
+- Die 12 bisherigen `open/`-Einträge teilen sich nach der
+  Phase-B-Migration wie folgt auf:
+  - **Bleiben in `open/`** (kein ausgearbeiteter Scope):
+    `beispiel-stored-procedure-migration.md` (worked Example),
+    `d-browser-integration-coupling-assessment.md` (Coupling-
+    Vorabklärung), `test-database-candidates.md`
+    (Referenz-Katalog, streng genommen gar kein Plan-Doc).
+  - **Wandern nach `next/`** (Scope skizziert, nicht aktiv):
     `bi-demo-compose.md`, `migrations-ef-core-10.md`,
-    `object-storage-artifact-store.md`, `orchestrator-examples.md`,
+    `object-storage-artifact-store.md`,
+    `orchestrator-examples.md`,
     `parquet-export-import-evaluation.md`,
     `persistence-jdbc-mig.md`,
     `profiling-data-quality-export.md`,
     `telemetry-observability-port.md`, `trino.md`.
 
-## Confirmation
+## Bestätigung
 
-A plan-doc's folder is now a glanceable single signal of where the
-work stands. The convention is testable mechanically (e.g. a CI
-check could assert that no file with `Status: In Progress` lives
-in `open/` or `next/`); that test is not part of this ADR but is
-listed as a follow-up in the `in-progress/` umbrella plan that
-introduces it.
+Der Ordner eines Plan-Docs ist jetzt ein eindeutiges Single-Signal
+seines Status. Die Konvention wäre mechanisch prüfbar (z. B. könnte
+ein CI-Check sicherstellen, dass keine Datei mit
+`Status: In Progress` in `open/` oder `next/` liegt). Ein solcher
+Check ist nicht Bestandteil dieser ADR; falls die Drift erneut
+auftritt, kann er separat im jeweiligen Folge-Slice eingezogen
+werden.
 
-## More Information
+## Weitere Informationen
 
-- Sister project's ADR that this one is patterned on:
+- Die Vorbild-ADR aus dem Schwesterprojekt:
   [c-hsm-doc ADR-0001](https://github.com/pt9912/c-hsm-doc/blob/main/docs/plan/adr/0001-documentation-and-planning-structure.md)
-  §2.4 (four-stage lifecycle), §2.2 (file naming).
-- `docs/planning/{open,next,in-progress,done}/README.md` carry the
-  per-folder operational conventions.
-- The 2026-05-28 sweep is split across two commits: `457a54d9`
-  (move the two in-progress umbrellas, this ADR's motivating drift)
-  and the follow-up commit landing `next/` + the READMEs + this ADR.
+  §2.4 (4-stufiger Lebenszyklus), §2.2 (Dateinamen).
+- `docs/planning/{open,next,in-progress,done}/README.md` tragen
+  die operative Konvention pro Ordner.
+- Sprachhinweis: Diese ADR ist auf Deutsch verfasst. ADRs 0001-0003
+  sind historisch englisch und bleiben es (MADR-Konvention
+  "Accepted = immutable"). Ab ADR-0004 sind neue ADRs in d-migrate
+  auf Deutsch zu schreiben; YAML-Frontmatter-Felder
+  (`status: accepted`, `date: …`) bleiben englisch, das ist
+  MADR-Spezifikation.

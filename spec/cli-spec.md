@@ -753,7 +753,7 @@ Routine-Rendering:
   hätte mit `SQLException` abgelehnt; der Bug ist seit `d248cd11`
   gefixt.
   Out of scope dieses Slice (eigener Folge-Slice
-  `docs/planning/open/ImpPlan-0.9.7-mysql-sequence-drift-check.md`):
+  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`):
   Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
   (E124-Kollisionsprüfung gegen vorgefundene Werte und Trigger-
   Body-Marker) — analog F.5 E.3's `CheckPreflightProbe` braucht

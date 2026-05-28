@@ -333,7 +333,7 @@ PG-Renderer-Slice ueberlasten wuerden:
 
 Beide hangen zusammen (Source + Consumer fuer dasselbe Signal) und
 landen in einem gemeinsamen Sub-Slice A.3. Detail-Plan:
-`docs/planning/open/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
+`docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`.
 
 ### Sub-Slice A.3 — `hasGap`-Wiring + Strict-Mode
 
