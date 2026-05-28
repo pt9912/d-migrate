@@ -6,6 +6,7 @@ import dev.dmigrate.core.diff.migration.DiffResult
 import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.driver.MysqlSequenceCanonicityDeclaration
 import dev.dmigrate.driver.MysqlSequenceCanonicityKind
+import dev.dmigrate.driver.MysqlSequenceCanonicityProbe
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlSequenceCanonicityProbeAdapter
@@ -60,8 +61,8 @@ internal object MysqlSequenceCanonicityProbeRunner {
         }
     }
 
-    private fun collect(
-        adapter: MysqlSequenceCanonicityProbeAdapter,
+    internal fun collect(
+        adapter: MysqlSequenceCanonicityProbe,
         plan: DiffResult,
     ): List<MysqlSequenceCanonicityDeclaration> = buildList {
         for (op in plan.operations) {
@@ -132,7 +133,7 @@ internal object MysqlSequenceCanonicityProbeRunner {
     }
 
     private fun probeSupportObjects(
-        adapter: MysqlSequenceCanonicityProbeAdapter,
+        adapter: MysqlSequenceCanonicityProbe,
         operationId: String,
     ): List<MysqlSequenceCanonicityDeclaration> = listOf(
         adapter.probeSupportTable(operationId),
@@ -141,7 +142,7 @@ internal object MysqlSequenceCanonicityProbeRunner {
     )
 
     private fun probeTriggerForColumn(
-        adapter: MysqlSequenceCanonicityProbeAdapter,
+        adapter: MysqlSequenceCanonicityProbe,
         operationId: String,
         columnRef: dev.dmigrate.core.diff.migration.DiffObjectRef,
         sequenceName: String,

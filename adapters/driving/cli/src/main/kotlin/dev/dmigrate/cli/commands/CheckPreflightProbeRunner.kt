@@ -10,6 +10,7 @@ import dev.dmigrate.driver.mysql.MysqlCheckPreflightProbe
 import dev.dmigrate.driver.postgresql.PostgresCheckPreflightProbe
 import dev.dmigrate.driver.sqlite.SqliteCheckPreflightProbe
 import java.nio.file.Path
+import java.sql.Connection
 
 /**
  * F.5 Sub-Slice E.4 (2026-05-19): cross-dialect CLI wiring for the
@@ -42,17 +43,23 @@ internal object CheckPreflightProbeRunner {
             throw CompareConfigException(e.message ?: "URL parse failed", e)
         }
         val pool = HikariConnectionPoolFactory.create(config)
-        // Intentionally exhaustive over DatabaseDialect (no `else`):
-        // a future dialect must wire a probe explicitly, the
-        // compiler enforces it here.
         return pool.use { p ->
-            p.borrow().use { conn ->
-                when (dialect) {
-                    DatabaseDialect.POSTGRESQL -> PostgresCheckPreflightProbe.probe(conn, plan)
-                    DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(conn, plan)
-                    DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(conn, plan)
-                }
-            }
+            p.borrow().use { conn -> dispatch(conn, dialect, plan) }
         }
+    }
+
+    /**
+     * Per-dialect probe selection. Intentionally exhaustive over
+     * [DatabaseDialect] (no `else`): a future dialect must wire a probe
+     * explicitly, the compiler enforces it here.
+     */
+    internal fun dispatch(
+        connection: Connection,
+        dialect: DatabaseDialect,
+        plan: DiffResult,
+    ): List<CheckPreflightDeclaration> = when (dialect) {
+        DatabaseDialect.POSTGRESQL -> PostgresCheckPreflightProbe.probe(connection, plan)
+        DatabaseDialect.MYSQL -> MysqlCheckPreflightProbe.probe(connection, plan)
+        DatabaseDialect.SQLITE -> SqliteCheckPreflightProbe.probe(connection, plan)
     }
 }
