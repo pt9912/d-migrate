@@ -14,10 +14,10 @@ package dev.dmigrate.driver
  * cache-preallocation warning.
  *
  * - [supportsNamedSequences]: dialect renderer emits standalone
- *   sequence DDL (PG native, MySQL `dmg_sequences`-helper). Today
- *   `false` for SQLite (renderer-side `E056` / Diff-blocker is the
- *   reality-first stance until the open SQLite-sequence-emulation-plan
- *   lands).
+ *   sequence DDL (PG native, MySQL `dmg_sequences`-helper, SQLite
+ *   `dmg_sequences`-helper since 0.9.7 Phase B.3; the SQLite
+ *   default-mode action_required still emits `E056` per opt-in
+ *   parity with MySQL).
  * - [supportsStart] / [supportsMinMaxValue] / [supportsCycle]: per
  *   `SequenceDefinition`-attribute fidelity in the target renderer.
  *   `false` ⇒ a Cross-Dialect-Transfer with that attribute populated
@@ -31,7 +31,10 @@ package dev.dmigrate.driver
  *   default — no operator overlay required (plan-doc §4 final).
  * - [supportsCurrentValuePreserve]: backs the
  *   `SequencePreserveStage` `preserveCurrentValue` contract. SQLite
- *   stays `false` until a helper-table emulation lands.
+ *   stays `false` until Phase E ships a `SqliteDiffSequenceOps`
+ *   with an `UPDATE dmg_sequences SET next_value = …` renderer;
+ *   the B.3 helper-table emulation only landed the full-schema
+ *   generator path.
  * - [supportsOwnedBy]: PG-only attribute. Today not modeled in
  *   `SequenceDefinition` (PG-reader filters `pg_depend.deptype IN
  *   ('a','i')` out of `schema.sequences`), so the capability is

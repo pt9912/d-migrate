@@ -21,14 +21,20 @@ package dev.dmigrate.driver
  *   `cache_size` is metadata only (no runtime preallocation), so
  *   `emitsCachePreallocationWarning = true` ⇒ renderer emits `W114`
  *   by default. `OWNED BY` is not abbildbar — `false`.
- * - **SQLite** — reality-first: today's
- *   `SqliteCapabilityDdlSupport.generateSequences` blocks all
- *   standalone sequences with `E056`, and `SqliteDiffDdlGenerator`
- *   routes sequence ops to `DIALECT_UNSUPPORTED_OPERATION`. Until
- *   the open `sqlite-sequence-emulation-plan.md` implements the
- *   helper-table renderer, every flag is `false`. When that slice
- *   lands it flips the relevant flags as part of its own changes;
- *   Sub-Slice A does not anticipate them.
+ * - **SQLite** — reality-first: 0.9.7 Phase B.3 landed the
+ *   `helper_table`-mode `dmg_sequences` emulation
+ *   (`SqliteSequenceDdlSupport`), so the full-schema renderer
+ *   carries named sequences plus all per-attribute fidelity flags.
+ *   `cache_size` is metadata-only (SQLite is single-writer / no
+ *   runtime preallocation) ⇒ `emitsCachePreallocationWarning = true`
+ *   so the renderer emits `W114` analog to MySQL. The default-mode
+ *   action_required path still emits `E056` skips — the capability
+ *   describes what the renderer is **capable of**, not which mode
+ *   is currently selected (parallel to MySQL's opt-in helper_table
+ *   default). `supportsCurrentValuePreserve` stays `false` until
+ *   Phase E ships an `SqliteDiffSequenceOps` with an `UPDATE
+ *   dmg_sequences SET next_value = …` renderer; `supportsOwnedBy`
+ *   stays `false` because SQLite has no ownership concept.
  */
 object SequenceCapabilityDefaults {
 
@@ -55,12 +61,12 @@ object SequenceCapabilityDefaults {
     )
 
     private val SQLite = SequenceCapability(
-        supportsNamedSequences = false,
-        supportsStart = false,
-        supportsMinMaxValue = false,
-        supportsCycle = false,
-        supportsCache = false,
-        emitsCachePreallocationWarning = false,
+        supportsNamedSequences = true,
+        supportsStart = true,
+        supportsMinMaxValue = true,
+        supportsCycle = true,
+        supportsCache = true,
+        emitsCachePreallocationWarning = true,
         supportsCurrentValuePreserve = false,
         supportsOwnedBy = false,
     )

@@ -43,11 +43,20 @@
 > `recordNotNullSuppressionNote` mit `require`-Pre-Assertion gegen
 > Aufruf vor Spalten-Registration; aiName-only-Collision-Test,
 > Non-ASCII-Naming-Tests, BEFORE-UPDATE-Trigger-Test, Multi-Sequence
-> + 1-Update-Trigger = 2× W122-Test. Offen: B.4
-> (`SequenceCapability`-Defaults flippen), C (Tests + Golden-Master
-> für `helper_table`-Pfad), D (Reverse — inkl. W120 modified-body
+> + 1-Update-Trigger = 2× W122-Test. Phase B.4
+> (`SequenceCapabilityDefaults.SQLite` flippen) abgeschlossen
+> 2026-05-29: `supportsNamedSequences`/`supportsStart`/
+> `supportsMinMaxValue`/`supportsCycle`/`supportsCache` von `false`
+> auf `true` (B.3-Renderer-Reality), `emitsCachePreallocationWarning`
+> auf `true` (Single-Writer-Backend ohne echte Preallocation,
+> W114-Vertrag analog MySQL); `supportsCurrentValuePreserve` bleibt
+> `false` bis Phase E einen `SqliteDiffSequenceOps` mit
+> `UPDATE dmg_sequences SET next_value = …`-Renderer liefert,
+> `supportsOwnedBy` bleibt `false` (SQLite kennt kein
+> Ownership-Konzept). Offen: C (Tests + Golden-Master für
+> `helper_table`-Pfad), D (Reverse — inkl. W120 modified-body
 > und W124 Reverse-Trigger-Reihenfolge), E (Compare + Stabilisierung);
-> W123 (Attached-DB-Rollback-Gate, §5.2) bleibt ausserhalb von B.3,
+> W123 (Attached-DB-Rollback-Gate, §5.2) bleibt ausserhalb von B,
 > da es Live-DB-Probing im Rollback-Pfad erfordert.
 >
 > Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender

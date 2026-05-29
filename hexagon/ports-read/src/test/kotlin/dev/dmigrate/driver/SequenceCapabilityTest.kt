@@ -39,14 +39,14 @@ class SequenceCapabilityTest : FunSpec({
         )
     }
 
-    test("SQLite default: reality-first, every flag false until helper-table plan lands") {
+    test("SQLite default: helper-table emulation since B.3, cache_size metadata only (W114), preserve still false until Phase E") {
         SequenceCapabilityDefaults.forDialect(DatabaseDialect.SQLITE) shouldBe SequenceCapability(
-            supportsNamedSequences = false,
-            supportsStart = false,
-            supportsMinMaxValue = false,
-            supportsCycle = false,
-            supportsCache = false,
-            emitsCachePreallocationWarning = false,
+            supportsNamedSequences = true,
+            supportsStart = true,
+            supportsMinMaxValue = true,
+            supportsCycle = true,
+            supportsCache = true,
+            emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = false,
             supportsOwnedBy = false,
         )
