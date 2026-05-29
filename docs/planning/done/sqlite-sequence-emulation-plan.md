@@ -1,6 +1,10 @@
 # Implementierungsplan: Vollständige SQLite-Sequence-Emulation
 
-> Status: In Progress (2026-05-29). Phase A § 11 Pre-Code-Klärungen
+> Status: Done (2026-05-29) — Phasen A bis E komplett umgesetzt;
+> einziger plan-übergreifender Carve-out: W123 Attached-DB-Rollback-
+> Gate (§5.2), gehört nicht in den helper_table-Generator-Plan.
+>
+> Historischer Verlauf: Phase A § 11 Pre-Code-Klärungen
 > abgeschlossen; Phase B.0 (`DdlDialectContext`-Refactor, `48c7f01c`)
 > und Phase B.1 (`SqliteNamedSequenceMode` + CLI-Plumbing, `84ba7ab7`)
 > abgeschlossen 2026-05-27; Phase B.2 (Validator-Regeln) abgeschlossen
