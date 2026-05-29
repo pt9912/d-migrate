@@ -1,6 +1,7 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -34,8 +35,26 @@ internal object SqliteDiffSequenceOps {
             SqliteRenderDirection.UP -> {
                 ensureBootstrapEmitted(op, ctx)
                 ctx.emit(op, SqliteSequenceEmulationTemplates.sequenceSeedSql(name, op.sequence))
+                // If the target schema already has columns bound to
+                // this sequence (a `CreateSequence` paired with
+                // pre-existing `SequenceNextVal`-defaults from the
+                // current schema), emit the trigger pair too. The
+                // `AddColumn`-with-SequenceNextVal-pathway in
+                // `SqliteDiffSimpleOps` handles the inverse case
+                // (sequence already present, column being added).
+                for ((tableName, columnName) in collectBoundColumns(name, ctx, SqliteRenderDirection.DOWN)) {
+                    emitTriggerPair(op, ctx, tableName, columnName, name)
+                }
             }
             SqliteRenderDirection.DOWN -> {
+                // Bound triggers are dropped first so the row delete
+                // doesn't leave orphan triggers behind.
+                for ((tableName, columnName) in collectBoundColumns(name, ctx, SqliteRenderDirection.DOWN)) {
+                    val biName = SqliteSequenceNaming.beforeInsertTriggerName(tableName, columnName, name)
+                    val aiName = SqliteSequenceNaming.afterInsertTriggerName(tableName, columnName, name)
+                    ctx.emit(op, """DROP TRIGGER IF EXISTS "$biName";""")
+                    ctx.emit(op, """DROP TRIGGER IF EXISTS "$aiName";""")
+                }
                 ctx.emit(op, deleteRowSql(name))
             }
         }
@@ -63,19 +82,28 @@ internal object SqliteDiffSequenceOps {
     fun renderDropSequence(op: DiffOperation.DropSequence, ctx: SqliteDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val name = op.objectRef.rootName
+        // Plan §6.1 Round-Trip: bound `_bi`/`_ai`-trigger pairs must
+        // be dropped together with the `dmg_sequences`-row, otherwise
+        // an INSERT on the host table later runs the orphaned _bi-
+        // trigger and surfaces "sequence row not found" via the
+        // canonical RAISE(ABORT).
+        val boundColumns = collectBoundColumns(name, ctx, SqliteRenderDirection.UP)
         when (ctx.direction) {
             SqliteRenderDirection.UP -> {
-                // F2-MVP: assume no bound trigger pairs are recorded in the
-                // op; the Plan-Doc's bound-trigger restore via
-                // `triggersForSequence(name, SchemaSide.CURRENT)` is left
-                // for a follow-up slice. We drop the row; if column-bound
-                // triggers still exist on tables they'll surface as
-                // E058-preflight blocker at rollback time (Phase F1).
+                for ((tableName, columnName) in boundColumns) {
+                    val biName = SqliteSequenceNaming.beforeInsertTriggerName(tableName, columnName, name)
+                    val aiName = SqliteSequenceNaming.afterInsertTriggerName(tableName, columnName, name)
+                    ctx.emit(op, """DROP TRIGGER IF EXISTS "$biName";""")
+                    ctx.emit(op, """DROP TRIGGER IF EXISTS "$aiName";""")
+                }
                 ctx.emit(op, deleteRowSql(name))
             }
             SqliteRenderDirection.DOWN -> {
                 ensureBootstrapEmitted(op, ctx)
                 ctx.emit(op, SqliteSequenceEmulationTemplates.sequenceSeedSql(name, op.sequence))
+                for ((tableName, columnName) in boundColumns) {
+                    emitTriggerPair(op, ctx, tableName, columnName, name)
+                }
             }
         }
     }
@@ -86,31 +114,59 @@ internal object SqliteDiffSequenceOps {
             SqliteRenderDirection.UP -> op.fromName to op.toName
             SqliteRenderDirection.DOWN -> op.toName to op.fromName
         }
+        // The trigger bodies embed the sequence name as a string
+        // literal (`WHERE "name" = 'old_seq'`); just renaming the
+        // `dmg_sequences`-row would leave the triggers pointing at a
+        // row that no longer exists. Drop the old pair and re-emit
+        // it under the new sequence name. Bound columns are the
+        // *current*-direction view (UP: pre-rename schema).
+        val sideForBindings = when (ctx.direction) {
+            SqliteRenderDirection.UP -> SqliteRenderDirection.UP
+            SqliteRenderDirection.DOWN -> SqliteRenderDirection.DOWN
+        }
+        val boundColumns = collectBoundColumns(oldName, ctx, sideForBindings)
         ctx.emit(
             op,
             """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "name" = '${escapeLiteral(newName)}' """ +
                 """WHERE "name" = '${escapeLiteral(oldName)}';""",
         )
+        for ((tableName, columnName) in boundColumns) {
+            val oldBi = SqliteSequenceNaming.beforeInsertTriggerName(tableName, columnName, oldName)
+            val oldAi = SqliteSequenceNaming.afterInsertTriggerName(tableName, columnName, oldName)
+            ctx.emit(op, """DROP TRIGGER IF EXISTS "$oldBi";""")
+            ctx.emit(op, """DROP TRIGGER IF EXISTS "$oldAi";""")
+            emitTriggerPair(op, ctx, tableName, columnName, newName)
+        }
     }
 
     fun renderAlterSequenceCurrentValue(op: DiffOperation.AlterSequenceCurrentValue, ctx: SqliteDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
         val targetName = op.applySequenceRef.name
-        val value = when (ctx.direction) {
-            SqliteRenderDirection.UP -> op.currentValue
-            // Plan-Doc-Phase-E carve-out: down-direction restore for
-            // current-value preservation lands with the cross-dialect
-            // follow-up; for now Down just leaves the runtime state
-            // untouched. The op itself is reversible (the value moves
-            // forward and re-applying CREATE/ALTER without a probe
-            // resets `next_value` to `start`), so we don't block.
-            SqliteRenderDirection.DOWN -> return
+        when (ctx.direction) {
+            SqliteRenderDirection.UP -> {
+                ctx.emit(
+                    op,
+                    """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "next_value" = ${op.currentValue} """ +
+                        """WHERE "name" = '${escapeLiteral(targetName)}';""",
+                )
+            }
+            SqliteRenderDirection.DOWN -> {
+                // Cross-dialect carve-out: the original `next_value`
+                // is not in the op (only the UP target value is). We
+                // skip with an INFO diagnostic so the report surfaces
+                // the gap and the operator can decide whether to
+                // accept the forward-only behaviour or roll the
+                // schema back to a pre-probe state manually.
+                ctx.skip(
+                    op,
+                    "AlterSequenceCurrentValue DOWN for '$targetName' is a no-op in SQLite — the pre-Up " +
+                        "`next_value` is not recorded in the op. The forward UP UPDATE is not reverted; " +
+                        "operators that need a strict rollback must restore the value manually or via a " +
+                        "follow-up `AlterSequence`/manual `UPDATE` step.",
+                    code = "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP",
+                )
+            }
         }
-        ctx.emit(
-            op,
-            """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "next_value" = $value """ +
-                """WHERE "name" = '${escapeLiteral(targetName)}';""",
-        )
     }
 
     // ── helpers ────────────────────────────────────────────────────
@@ -134,6 +190,90 @@ internal object SqliteDiffSequenceOps {
         ctx.bootstrapEmitted = true
     }
 
+    /**
+     * Walks the schema-side that holds the column→sequence bindings
+     * for [sequenceName] and returns every `(table, column)` pair.
+     * Used by [renderDropSequence] / [renderRenameSequence] to find
+     * the `_bi`/`_ai`-trigger pairs that need to be dropped or
+     * rebuilt alongside the `dmg_sequences`-row mutation.
+     */
+    private fun collectBoundColumns(
+        sequenceName: String,
+        ctx: SqliteDiffRenderContext,
+        side: SqliteRenderDirection,
+    ): List<Pair<String, String>> {
+        val schema = when (side) {
+            SqliteRenderDirection.UP -> ctx.currentSchema
+            SqliteRenderDirection.DOWN -> ctx.desiredSchema
+        } ?: return emptyList()
+        val out = mutableListOf<Pair<String, String>>()
+        for ((tableName, table) in schema.tables) {
+            for ((columnName, column) in table.columns) {
+                val default = column.default
+                if (default is DefaultValue.SequenceNextVal && default.sequenceName == sequenceName) {
+                    out += tableName to columnName
+                }
+            }
+        }
+        return out
+    }
+
+    /**
+     * Emits the canonical `_bi`/`_ai`-trigger pair for the given
+     * `(table, column, sequence)` triple. Used by
+     * [renderDropSequence] DOWN, [renderRenameSequence] (both
+     * directions) and the AddColumn-with-SequenceNextVal pathway in
+     * [SqliteDiffSimpleOps].
+     */
+    internal fun emitTriggerPair(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        tableName: String,
+        columnName: String,
+        sequenceName: String,
+    ) {
+        val spec = SqliteSequenceTriggerSpec(tableName, columnName, sequenceName)
+        val biName = SqliteSequenceNaming.beforeInsertTriggerName(tableName, columnName, sequenceName)
+        val aiName = SqliteSequenceNaming.afterInsertTriggerName(tableName, columnName, sequenceName)
+        ctx.emit(op, SqliteSequenceEmulationTemplates.beforeInsertTriggerSql(spec, biName))
+        ctx.emit(op, SqliteSequenceEmulationTemplates.afterInsertTriggerSql(spec, aiName))
+    }
+
+    /**
+     * G5: convenience for [SqliteDiffSimpleOps.renderAddColumn] /
+     * [SqliteDiffSimpleOps.renderDropColumn] — emit the trigger
+     * pair only if the column's default is a `SequenceNextVal`.
+     */
+    internal fun emitTriggerPairIfBound(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        tableName: String,
+        columnName: String,
+        default: DefaultValue?,
+    ) {
+        val seqDefault = default as? DefaultValue.SequenceNextVal ?: return
+        emitTriggerPair(op, ctx, tableName, columnName, seqDefault.sequenceName)
+    }
+
+    /**
+     * G5 inverse: drop the trigger pair for the column if a
+     * `SequenceNextVal` default is bound.
+     */
+    internal fun dropTriggerPairIfBound(
+        op: DiffOperation,
+        ctx: SqliteDiffRenderContext,
+        tableName: String,
+        columnName: String,
+        default: DefaultValue?,
+    ) {
+        val seqDefault = default as? DefaultValue.SequenceNextVal ?: return
+        val biName = SqliteSequenceNaming.beforeInsertTriggerName(tableName, columnName, seqDefault.sequenceName)
+        val aiName = SqliteSequenceNaming.afterInsertTriggerName(tableName, columnName, seqDefault.sequenceName)
+        ctx.emit(op, """DROP TRIGGER IF EXISTS "$biName";""")
+        ctx.emit(op, """DROP TRIGGER IF EXISTS "$aiName";""")
+    }
+
+
     private fun deleteRowSql(name: String): String =
         """DELETE FROM "${SqliteSequenceNaming.SUPPORT_TABLE}" WHERE "name" = '${escapeLiteral(name)}';"""
 
@@ -155,5 +295,12 @@ internal object SqliteDiffSequenceOps {
             """WHERE "name" = '${escapeLiteral(name)}';"""
     }
 
-    private fun escapeLiteral(s: String): String = s.replace("\\", "\\\\").replace("'", "''")
+    /**
+     * Standard-SQL single-quote escape. Standard-SQLite kennt keine
+     * Backslash-Escapes; deshalb darf hier **kein** `\\`-Doubling
+     * stehen — sonst würde es bei einem Sequence-Namen mit Backslash
+     * + Apostroph die Escape-Reihenfolge brechen (Backslash-Replace
+     * vor Apostroph-Replace würde das nachfolgende `''` zerschneiden).
+     */
+    private fun escapeLiteral(s: String): String = s.replace("'", "''")
 }

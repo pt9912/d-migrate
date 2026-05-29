@@ -6,9 +6,12 @@ import dev.dmigrate.core.model.DefaultValue
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.core.model.TriggerDefinition
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerTiming
 import dev.dmigrate.driver.SchemaReadNote
 import dev.dmigrate.driver.SchemaReadSeverity
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
+import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
 
 /**
  * 0.9.7 SQLite-Sequence Phase D: reverse-engineering support for
@@ -222,16 +225,61 @@ internal class SqliteSequenceReverseSupport {
                 out += TriggerObservation(name, table, rowid, sql, marker, classification)
                 continue
             }
-            // No marker → try the canonical name pattern as the
-            // secondary anchor. The full secondary-match decision
-            // (5-criteria) happens in [pairTriggers].
-            if (SqliteSequenceNaming.isCanonicalSupportTriggerName(name)) {
+            // No marker → enforce Plan §6.1 lines 1716-1726: only
+            // promote to SECONDARY_CANDIDATE if (a) the name matches
+            // the canonical schema, (b) event/timing align with the
+            // expected `_bi`/`_ai` semantics, (c) the WHEN-clause is
+            // `NEW.<column> IS NULL` for the column the canonical
+            // name decoder recovered, and (d) the body carries the
+            // required identifier tokens. Otherwise the trigger
+            // stays USER_DEFINED so the user object survives
+            // round-trip.
+            if (matchesSecondaryCriteria(name, table, sql)) {
                 out += TriggerObservation(name, table, rowid, sql, null, TriggerClassification.SECONDARY_CANDIDATE)
             } else {
                 out += TriggerObservation(name, table, rowid, sql, null, TriggerClassification.USER_DEFINED)
             }
         }
         return out
+    }
+
+    /**
+     * Implements four of the five Plan §6.1 secondary-match criteria
+     * that are decidable on a single trigger observation. The fifth
+     * criterion ("both `_bi` and `_ai` of the pair exist") is checked
+     * during pairing in [buildPairing].
+     */
+    private fun matchesSecondaryCriteria(name: String, table: String, sql: String): Boolean {
+        if (!SqliteSequenceNaming.isCanonicalSupportTriggerName(name)) return false
+        val parts = decomposeCanonicalName(name) ?: return false
+        val parsed = runCatching { SqliteTriggerSqlParser.parse(sql, name) }.getOrNull() ?: return false
+        if (parsed.event != TriggerEvent.INSERT) return false
+        val expectedTiming = when (parts.suffix) {
+            SqliteSequenceMarkerParser.ObjectType.BEFORE_INSERT -> TriggerTiming.BEFORE
+            SqliteSequenceMarkerParser.ObjectType.AFTER_INSERT -> TriggerTiming.AFTER
+        }
+        if (parsed.timing != expectedTiming) return false
+        if (!whenClauseMatchesColumn(parsed.condition, parts.column)) return false
+        return verifyBodyIntegrity(sql, parts.suffix, table)
+    }
+
+    /**
+     * Plan §6.1 line 1722: secondary-match accepts a trigger whose
+     * `WHEN`-clause checks `NEW.<column> IS NULL` for the column the
+     * canonical name encoded — across the four SQLite identifier-
+     * quoting forms.
+     */
+    private fun whenClauseMatchesColumn(condition: String?, column: String): Boolean {
+        if (condition.isNullOrBlank()) return false
+        val collapsed = condition.replace(Regex("\\s+"), " ").trim().lowercase()
+        val col = column.lowercase()
+        val colRefs = listOf(
+            col,
+            "\"${col.replace("\"", "\"\"")}\"",
+            "`${col.replace("`", "``")}`",
+            "[$col]",
+        )
+        return colRefs.any { ref -> collapsed == "new.$ref is null" }
     }
 
     private fun verifyBodyIntegrity(

@@ -222,12 +222,14 @@ internal object SqliteSequenceEmulationTemplates {
     }
 
     /**
-     * 0.9.7 Phase F1: Rollback preflight (Plan §5.2 lines 1494–1546).
+     * 0.9.7 Phase F1 + G2-Followup: Rollback preflight (Plan §5.2
+     * lines 1494–1568).
      *
      * Emits a multi-statement preamble that aborts the rollback
      * stream **before** any DROP runs if external objects reference
      * `dmg_sequences` (E058) or ATTACHed databases are present
-     * (E060).
+     * (E060). The scan covers `main.sqlite_master` AND
+     * `temp.sqlite_master` per Plan §5.2 lines 1548–1556.
      *
      * Mechanik: SQLite verbietet `RAISE()` außerhalb von Triggern,
      * deshalb fahren wir den Abbruch über eine CHECK-Constraint mit
@@ -237,14 +239,21 @@ internal object SqliteSequenceEmulationTemplates {
      * (`E058_external_dmg_sequences_refs`), so dass der Code im
      * Fehlertext nachweisbar bleibt.
      *
-     * Pragmatische Abweichung von Plan §5.2 lines 1485–1490: der
-     * token-basierte Literal-/Comment-Strip-Scan aus der Reverse-
-     * Pipeline ist in reinem SQL nicht portabel; der Preflight nutzt
-     * einen **liberalen** `LIKE`-Filter, der die gängigen Quoting-
-     * Formen erwischt und auf Whitespace-Grenzen fällt. Konsequenzen:
-     * gelegentliche False Positives (eine `dmg_sequences`-Erwähnung
-     * in einem unbeteiligten Trigger-Body kann den Rollback blocken)
-     * — false Negatives sind unmöglich.
+     * Managed-Erkennung: Plan §5.2 lines 1534–1540 verlangt dasselbe
+     * strenge Matching wie im Reverse-Pfad (Marker-Kommentar primär,
+     * 5-Kriterien sekundär). Reines SQL kann das nicht — wir
+     * akzeptieren stattdessen jeden Trigger, dessen kanonischer Name
+     * dem `dmg_seq_<...>_{bi,ai}`-Pattern entspricht UND dessen Body
+     * entweder den `d-migrate:sqlite-sequence-v1`-Marker-Substring
+     * oder (wenn fehlend) `WHEN NEW.` enthält. Trigger ohne diese
+     * Mindest-Charakteristik gelten als fremde Abhängigkeit. False
+     * Negatives bei sehr gekünstelten Trigger-Bodies sind möglich
+     * (Operator kann via `--force-rollback` umgehen).
+     *
+     * LIKE-Pattern decken die vier SQLite-Identifier-Quoting-Formen
+     * ab: `"…"`, backtick, `[…]`, unquoted; plus schema-qualifizierten
+     * Zugriff und Wort-Grenzen über Whitespace, Klammern und
+     * Funktionsaufruf-Klammern.
      */
     fun rollbackPreflightSqls(): List<String> =
         e058CheckSqls() + e060CheckSqls()
@@ -262,20 +271,44 @@ internal object SqliteSequenceEmulationTemplates {
             """
                 INSERT INTO "_dmg_pf_e058" ("x")
                     SELECT CASE WHEN EXISTS (
-                        SELECT 1 FROM sqlite_master
+                        SELECT 1 FROM (
+                            SELECT name, type, sql FROM sqlite_master
+                            UNION ALL
+                            SELECT name, type, sql FROM temp.sqlite_master
+                        )
                             WHERE type IN ('view', 'trigger', 'index', 'table')
                             AND name != '$tbl'
-                            AND name NOT GLOB 'dmg_seq_*_bi'
-                            AND name NOT GLOB 'dmg_seq_*_ai'
+                            AND NOT (
+                                name GLOB 'dmg_seq_*_bi'
+                                AND sql IS NOT NULL
+                                AND (
+                                    sql LIKE '%d-migrate:sqlite-sequence-v1%'
+                                    OR sql LIKE '%WHEN NEW.%IS NULL%'
+                                )
+                            )
+                            AND NOT (
+                                name GLOB 'dmg_seq_*_ai'
+                                AND sql IS NOT NULL
+                                AND (
+                                    sql LIKE '%d-migrate:sqlite-sequence-v1%'
+                                    OR sql LIKE '%WHEN NEW.%IS NULL%'
+                                )
+                            )
                             AND sql IS NOT NULL
                             AND (
                                 lower(sql) LIKE '%"$tbl"%'
                                 OR lower(sql) LIKE '%`$tbl`%'
+                                OR lower(sql) LIKE '%[$tbl]%'
                                 OR lower(sql) LIKE '% $tbl %'
                                 OR lower(sql) LIKE '%($tbl %'
                                 OR lower(sql) LIKE '%($tbl)%'
+                                OR lower(sql) LIKE '%($tbl,%'
                                 OR lower(sql) LIKE '% $tbl(%'
-                                OR lower(sql) LIKE '%.$tbl%'
+                                OR lower(sql) LIKE '% $tbl,%'
+                                OR lower(sql) LIKE '%.$tbl %'
+                                OR lower(sql) LIKE '%.$tbl(%'
+                                OR lower(sql) LIKE '%.$tbl)%'
+                                OR lower(sql) LIKE '%.$tbl,%'
                             )
                     ) THEN 1 ELSE 0 END;
             """.trimIndent(),

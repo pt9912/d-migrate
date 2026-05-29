@@ -40,6 +40,15 @@ entries:
       - source: "test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceCompareIntegrationTest.kt"
         path_type: test
 
+  - code: E060
+    level: error
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceRollbackPreflightTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceEmulationTemplates.kt"
+        path_type: production
+
   - code: E124
     level: error
     status: active

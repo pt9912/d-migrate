@@ -1,8 +1,23 @@
 # Implementierungsplan: Vollständige SQLite-Sequence-Emulation
 
-> Status: Done (2026-05-29) — Phasen A bis E komplett umgesetzt;
-> einziger plan-übergreifender Carve-out: W123 Attached-DB-Rollback-
-> Gate (§5.2), gehört nicht in den helper_table-Generator-Plan.
+> Status: Done (2026-05-29) — Phasen A bis E plus F1 (Rollback-
+> Preflight E058/E060), F2 (Diff-Migration SqliteDiffSequenceOps),
+> F3 (Spec-Sync) und G (Followup-Review-Sweep) komplett umgesetzt.
+> Erweiterungen außerhalb des ursprünglichen A-E-Vertrags:
+>
+> - F1: E058 Rollback-Preflight scant `main.sqlite_master` +
+>   `temp.sqlite_master` per CHECK-Constraint-Pattern; E060 deckt
+>   den vorherigen W123-Carve-out (ATTACHed-DB-Gate) mit ab.
+> - F2: `SqliteDiffSequenceOps` für CreateSequence/AlterSequence/
+>   DropSequence/RenameSequence/AlterSequenceCurrentValue. Drop und
+>   Rename verwalten gebundene Trigger-Pairs analog zu MySQL.
+>   `AddColumn`-mit-SequenceNextVal in `SqliteDiffSimpleOps`
+>   emittiert das Trigger-Paar mit.
+> - `supportsCurrentValuePreserve` bleibt `false` weil
+>   `SequencePreserveStage` einen Probe und eine Dialect-Allowlist
+>   braucht — eigene Folge-Workstream.
+> - W123 (Attached-DB-Rollback-Gate) ist mit F1 als E060 implementiert
+>   und damit kein offener Carve-out mehr.
 >
 > Historischer Verlauf: Phase A § 11 Pre-Code-Klärungen
 > abgeschlossen; Phase B.0 (`DdlDialectContext`-Refactor, `48c7f01c`)

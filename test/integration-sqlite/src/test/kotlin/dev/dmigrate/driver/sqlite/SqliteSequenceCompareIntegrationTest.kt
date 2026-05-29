@@ -245,6 +245,34 @@ class SqliteSequenceCompareIntegrationTest : FunSpec({
         ) shouldBe 1L
     }
 
+    test("rollback preflight — E058 fires for a user-defined trigger that writes dmg_sequences") {
+        val pool = newPool()
+        install(pool, simpleSequenceSchemaInline())
+        // A user trigger on `orders` that touches dmg_sequences as a
+        // side-effect — common audit pattern. Plan §5.2 lists "User-
+        // Trigger" alongside views as the canonical external-ref case.
+        execDdl(
+            pool,
+            """
+                CREATE TRIGGER "audit_orders_insert"
+                AFTER INSERT ON "orders"
+                FOR EACH ROW
+                BEGIN
+                    UPDATE "dmg_sequences" SET "next_value" = "next_value"
+                        WHERE "name" = 'order_seq';
+                END;
+            """.trimIndent(),
+        )
+
+        val rollback = SqliteDdlGenerator().generateRollback(simpleSequenceSchemaInline(), helperTableOptions())
+        val sqls = rollback.statements.map { it.sql.trim() }.filter { it.isNotEmpty() && !isCommentOnly(it) }
+
+        val ex = io.kotest.assertions.throwables.shouldThrow<java.sql.SQLException> {
+            execDdl(pool, *sqls.toTypedArray())
+        }
+        rootCauseMessage(ex) shouldContain "E058_external_dmg_sequences_refs"
+    }
+
     test("rollback preflight — succeeds when no external refs exist") {
         val pool = newPool()
         install(pool, simpleSequenceSchemaInline())

@@ -89,6 +89,9 @@ internal object SqliteDiffSimpleOps {
                 ctx.emit(op, discardGeometryColumnSql(table, column))
                 return
             }
+            // 0.9.7 G5: drop the sequence-support trigger pair before
+            // dropping the column itself, mirror of UP-side emit.
+            SqliteDiffSequenceOps.dropTriggerPairIfBound(op, ctx, table, column, op.column.default)
             ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
             return
         }
@@ -107,6 +110,13 @@ internal object SqliteDiffSimpleOps {
             return
         }
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} ADD COLUMN ${ctx.sql.columnLine(column, op.column)};")
+        // 0.9.7 G5: when the new column carries SequenceNextVal,
+        // emit the `_bi`/`_ai` trigger pair against the sequence
+        // declared in the target schema. action_required mode is a
+        // CreateSequence-side concern; if the sequence isn't yet
+        // declared `_bi` references a missing row at runtime, but
+        // E058 + E060 preflights guard the rollback path.
+        SqliteDiffSequenceOps.emitTriggerPairIfBound(op, ctx, table, column, op.column.default)
     }
 
     fun renderDropColumn(op: DiffOperation.DropColumn, ctx: SqliteDiffRenderContext) {
@@ -116,9 +126,18 @@ internal object SqliteDiffSimpleOps {
             ctx.emit(op, discardGeometryColumnSql(table, column))
             return
         }
+        // 0.9.7 G5: drop the sequence-support trigger pair before
+        // dropping the column itself. DOWN re-emits via the inverse
+        // AddColumn-path.
+        SqliteDiffSequenceOps.dropTriggerPairIfBound(op, ctx, table, column, op.column.default)
         // SQLite ≥ 3.35.0 supports DROP COLUMN; the planner has already filtered FK-bearing cases.
         ctx.emit(op, "ALTER TABLE ${ctx.sql.quote(table)} DROP COLUMN ${ctx.sql.quote(column)};")
+        // DOWN inverse: re-emit the trigger pair.
+        if (ctx.direction == SqliteRenderDirection.DOWN) {
+            SqliteDiffSequenceOps.emitTriggerPairIfBound(op, ctx, table, column, op.column.default)
+        }
     }
+
 
     /**
      * Plan-2 §F.4 second slice. SQLite ≥ 3.0 supports

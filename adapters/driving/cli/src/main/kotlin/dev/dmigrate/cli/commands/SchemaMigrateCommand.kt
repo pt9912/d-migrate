@@ -101,6 +101,10 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "native `CREATE OR REPLACE TRIGGER` exists). Default off — the lenient path emits the " +
             "fallback statements and surfaces the gap as a W_TRIGGER_REPLACE_GAP warning.",
     ).flag()
+    val sqliteNamedSequences by option(
+        "--sqlite-named-sequences",
+        help = "SQLite named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation",
+    ).choice("action_required", "helper_table")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
@@ -136,6 +140,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             debugBody = debugBody,
             routineCapabilityResolver = routineCapabilityResolver::resolve,
             strictGapOperations = strictGapOperations,
+            sqliteNamedSequences = sqliteNamedSequences,
         )
 
         val runner = SchemaMigrateRunner(

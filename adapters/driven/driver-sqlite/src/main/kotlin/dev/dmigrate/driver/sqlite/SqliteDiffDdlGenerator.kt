@@ -45,8 +45,15 @@ import dev.dmigrate.driver.migration.PlannerBlockerClassifier
  * (ROLLBACK_NOT_POSSIBLE blocker); D.5 will add the inverse-rebuild
  * support.
  *
- * Out of first matrix entirely (DIALECT_UNSUPPORTED_OPERATION):
- * routines, triggers, sequences, custom types.
+ * Op routing (Stand 0.9.7 F2):
+ * - Triggers via [SqliteTriggerDdlHelper] (`OpCategory.TRIGGER`).
+ * - Sequences (Create/Alter/Drop/Rename/AlterCurrentValue) via
+ *   [SqliteDiffSequenceOps] (`OpCategory.SEQUENCE`); gated on
+ *   `--sqlite-named-sequences helper_table`.
+ * - Routines (functions, procedures), custom types und einige
+ *   Rename-Pfade (View/Trigger/Function/Procedure) bleiben
+ *   `DIALECT_UNSUPPORTED_OPERATION`. Materialized Views haben einen
+ *   dedizierten Blocker (`MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`).
  */
 class SqliteDiffDdlGenerator : DiffDdlGenerator {
 

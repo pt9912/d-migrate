@@ -54,10 +54,15 @@ class SqliteSequenceRollbackPreflightTest : FunSpec({
         // The CHECK constraint carries the E058 code as its name so the
         // JDBC error message at runtime surfaces it.
         sqls[createIdx] shouldContain "E058_external_dmg_sequences_refs"
-        // The user-trigger canonical pattern is explicitly excluded so
-        // `dmg_seq_foo_bar_bi` user triggers don't bypass the scan.
-        sqls[insertIdx] shouldContain "NOT GLOB 'dmg_seq_*_bi'"
-        sqls[insertIdx] shouldContain "NOT GLOB 'dmg_seq_*_ai'"
+        // G2 strict managed-detection: name-only GLOB-exclusion is gone;
+        // exclusion now requires (canonical name) AND (marker or
+        // WHEN NEW.-substring), so user triggers with a canonical-like
+        // name but no body markers are still treated as fremde Referenz.
+        sqls[insertIdx] shouldContain "name GLOB 'dmg_seq_*_bi'"
+        sqls[insertIdx] shouldContain "name GLOB 'dmg_seq_*_ai'"
+        sqls[insertIdx] shouldContain "d-migrate:sqlite-sequence-v1"
+        // Plan §5.2: temp.sqlite_schema must be covered too.
+        sqls[insertIdx] shouldContain "temp.sqlite_master"
     }
 
     test("HELPER_TABLE — rollback stream emits an E060 attached-DB check") {

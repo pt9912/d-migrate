@@ -284,8 +284,10 @@ object SequencePreserveStage {
             DiffDiagnostic(
                 code = NOT_SUPPORTED_BY_DIALECT_CODE,
                 message = "preserveCurrentValue is not supported on ${dialect.name} for " +
-                    "${ctx.parentOp::class.simpleName} `${ctx.applyRef.name}`. SQLite has no " +
-                    "sequence emulation yet (see open/sqlite-sequence-emulation-plan.md).",
+                    "${ctx.parentOp::class.simpleName} `${ctx.applyRef.name}`. SQLite has the " +
+                    "helper-table emulation since 0.9.7 (see done/sqlite-sequence-emulation-plan.md) " +
+                    "but needs both a `SequenceCurrentValueProbe` adapter and an allowlist update " +
+                    "in this stage before preserveCurrentValue can run.",
                 severity = DiffDiagnostic.Severity.BLOCKER,
                 operationId = ctx.parentOp.id,
             )

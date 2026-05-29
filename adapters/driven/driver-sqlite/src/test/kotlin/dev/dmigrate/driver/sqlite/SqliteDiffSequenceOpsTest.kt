@@ -36,24 +36,62 @@ class SqliteDiffSequenceOpsTest : FunSpec({
 
     fun seqObjRef(name: String) = SequenceObjectRef(name, null, RenameProjectionDialect.SQLITE)
 
-    fun runUp(ops: List<DiffOperation>, opts: DdlGenerationOptions = helperOpts()) = gen.generateUp(
+    fun runUp(
+        ops: List<DiffOperation>,
+        opts: DdlGenerationOptions = helperOpts(),
+        currentSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+        desiredSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+    ) = gen.generateUp(
         DiffResult(
             current = DiffEndpoint("A", "1", "c"),
             desired = DiffEndpoint("A", "1", "d"),
             schemaDiff = SchemaDiff(),
             operations = ops,
+            currentSchema = currentSchema,
+            desiredSchema = desiredSchema,
         ),
         opts,
     )
 
-    fun runDown(ops: List<DiffOperation>, opts: DdlGenerationOptions = helperOpts()) = gen.generateDown(
+    fun runDown(
+        ops: List<DiffOperation>,
+        opts: DdlGenerationOptions = helperOpts(),
+        currentSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+        desiredSchema: dev.dmigrate.core.model.SchemaDefinition? = null,
+    ) = gen.generateDown(
         DiffResult(
             current = DiffEndpoint("A", "1", "c"),
             desired = DiffEndpoint("A", "1", "d"),
             schemaDiff = SchemaDiff(),
             operations = ops,
+            currentSchema = currentSchema,
+            desiredSchema = desiredSchema,
         ),
         opts,
+    )
+
+    fun seqBackedSchema(
+        sequenceName: String,
+        tableName: String = "orders",
+        columnName: String = "order_number",
+    ): dev.dmigrate.core.model.SchemaDefinition = dev.dmigrate.core.model.SchemaDefinition(
+        name = "synthetic",
+        version = "1",
+        tables = mapOf(
+            tableName to dev.dmigrate.core.model.TableDefinition(
+                columns = linkedMapOf(
+                    "id" to dev.dmigrate.core.model.ColumnDefinition(
+                        dev.dmigrate.core.model.NeutralType.Integer,
+                        required = true,
+                    ),
+                    columnName to dev.dmigrate.core.model.ColumnDefinition(
+                        type = dev.dmigrate.core.model.NeutralType.BigInteger,
+                        default = dev.dmigrate.core.model.DefaultValue.SequenceNextVal(sequenceName),
+                    ),
+                ),
+                primaryKey = listOf("id"),
+            ),
+        ),
     )
 
     // ── CreateSequence ─────────────────────────────────────────────
@@ -220,6 +258,83 @@ class SqliteDiffSequenceOpsTest : FunSpec({
         )
         val result = runDown(listOf(op))
         result.statements.none { it.sql.contains("UPDATE") } shouldBe true
+    }
+
+    // ── escapeLiteral edge cases ───────────────────────────────────
+
+    // ── G4: DropSequence + RenameSequence with bound triggers ─────
+
+    test("DropSequence UP — drops bound _bi/_ai trigger pairs before the row delete") {
+        val schema = seqBackedSchema("order_seq")
+        val op = DiffOperation.DropSequence(
+            id = "ds1",
+            objectRef = seqRef("order_seq"),
+            sequence = SequenceDefinition(start = 1),
+        )
+        val result = runUp(listOf(op), currentSchema = schema)
+        val sqls = result.statements.map { it.sql }
+        val expectedBi = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "order_seq")
+        val expectedAi = SqliteSequenceNaming.afterInsertTriggerName("orders", "order_number", "order_seq")
+        val biDropIdx = sqls.indexOfFirst { it.contains("DROP TRIGGER IF EXISTS \"$expectedBi\"") }
+        val aiDropIdx = sqls.indexOfFirst { it.contains("DROP TRIGGER IF EXISTS \"$expectedAi\"") }
+        val deleteIdx = sqls.indexOfFirst { it.contains("DELETE FROM \"dmg_sequences\"") }
+        (biDropIdx in 0 until deleteIdx) shouldBe true
+        (aiDropIdx in 0 until deleteIdx) shouldBe true
+    }
+
+    test("DropSequence DOWN — re-emits the trigger pair after the seed INSERT") {
+        // collectBoundColumns always reads from the pre-UP / post-DOWN
+        // schema side (i.e. currentSchema) — the binding lives there
+        // before the UP DropSequence (and after the DOWN restore).
+        val schema = seqBackedSchema("order_seq")
+        val op = DiffOperation.DropSequence(
+            id = "ds1",
+            objectRef = seqRef("order_seq"),
+            sequence = SequenceDefinition(start = 1000),
+        )
+        val result = runDown(listOf(op), currentSchema = schema)
+        val sqls = result.statements.map { it.sql }
+        sqls.any { it.contains("INSERT INTO \"dmg_sequences\"") } shouldBe true
+        sqls.any { it.contains("BEFORE INSERT ON \"orders\"") } shouldBe true
+        sqls.any { it.contains("AFTER INSERT ON \"orders\"") } shouldBe true
+    }
+
+    test("RenameSequence UP — drops old trigger pair and re-emits with new sequence name in body") {
+        val schema = seqBackedSchema("old_seq")
+        val op = DiffOperation.RenameSequence(
+            id = "rn1",
+            objectRef = seqRef("old_seq"),
+            fromName = "old_seq",
+            toName = "new_seq",
+            overlaySource = "overlay",
+            overlayEntryId = "rn1",
+            overlayHash = null,
+        )
+        val result = runUp(listOf(op), currentSchema = schema)
+        val sqls = result.statements.map { it.sql }
+        val oldBi = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "old_seq")
+        val newBi = SqliteSequenceNaming.beforeInsertTriggerName("orders", "order_number", "new_seq")
+        sqls.any { it.contains("DROP TRIGGER IF EXISTS \"$oldBi\"") } shouldBe true
+        sqls.any { it.contains("\"$newBi\"") && it.contains("BEFORE INSERT") } shouldBe true
+        // The new trigger body must reference the new sequence-name
+        // string literal — otherwise INSERTs surface "sequence row
+        // not found" at runtime.
+        sqls.any { it.contains("WHERE \"name\" = 'new_seq'") } shouldBe true
+    }
+
+    // ── G6: AlterSequenceCurrentValue DOWN diagnostic ─────────────
+
+    test("AlterSequenceCurrentValue DOWN emits SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP diagnostic") {
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "acv1",
+            objectRef = seqRef("s"),
+            pairId = "alter:s",
+            probeSequenceRef = seqObjRef("s"),
+            applySequenceRef = seqObjRef("s"),
+            currentValue = 5000L,
+        )
+        val result = runDown(listOf(op))
+        result.diagnostics.any { it.code == "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP" } shouldBe true
     }
 
     // ── escapeLiteral edge cases ───────────────────────────────────

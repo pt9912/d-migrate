@@ -621,9 +621,15 @@ Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequ
 > SQLite-Sequence-Migrationen sind seit 0.9.7 im `helper_table`-Modus
 > live: `CreateSequence` emittiert einen `INSERT INTO dmg_sequences`,
 > `AlterSequence` ein `UPDATE`, `DropSequence` ein `DELETE` (mit
-> E058-Preflight), `RenameSequence` ein `UPDATE`+Trigger-Rename und
-> `AlterSequenceCurrentValue` ein `UPDATE` auf `next_value`. Details:
-> [`sqlite-sequence-diff-migration-plan.md`](../docs/planning/done/sqlite-sequence-diff-migration-plan.md).
+> E058-Preflight + gebundenen Trigger-DROPs), `RenameSequence` ein
+> `UPDATE name`+Trigger-Pair-Rebuild und `AlterSequenceCurrentValue`
+> ein `UPDATE next_value`. `AddColumn` mit `SequenceNextVal`
+> emittiert das Trigger-Paar gleich mit. `supportsCurrentValue-
+> Preserve` bleibt `false`, weil `SequencePreserveStage` einen
+> SQLite-`SequenceCurrentValueProbe` und eine Dialect-Allowlist-
+> Erweiterung braucht (separater Folge-Workstream). Details siehe
+> [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
+> §6.2 und Phasen F/G.
 
 ---
 

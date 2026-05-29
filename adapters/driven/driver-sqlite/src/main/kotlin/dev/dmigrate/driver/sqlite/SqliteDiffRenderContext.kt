@@ -31,8 +31,8 @@ internal class SqliteDiffRenderContext(
     val direction: SqliteRenderDirection,
     val sql: SqliteDiffSqlBuilders,
     val options: DdlGenerationOptions,
-    private val currentSchema: SchemaDefinition? = null,
-    private val desiredSchema: SchemaDefinition? = null,
+    internal val currentSchema: SchemaDefinition? = null,
+    internal val desiredSchema: SchemaDefinition? = null,
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()

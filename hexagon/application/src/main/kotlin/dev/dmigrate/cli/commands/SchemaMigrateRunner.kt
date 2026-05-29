@@ -541,6 +541,14 @@ data class SchemaMigrateRequest(
      * `schema migrate` / `schema rollback`.
      */
     val strictGapOperations: Boolean = false,
+    /**
+     * SQLite preserve-current-value gate:
+     * `helper_table` enables Sub-Slice D probing/restore for
+     * named-sequence emulation; `action_required` keeps the old
+     * helper-table opt-in and blocks preserve-current-value for
+     * SQLite.
+     */
+    val sqliteNamedSequences: String? = null,
 )
 
 /**

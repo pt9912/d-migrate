@@ -31,10 +31,13 @@ package dev.dmigrate.driver
  *   action_required path still emits `E056` skips — the capability
  *   describes what the renderer is **capable of**, not which mode
  *   is currently selected (parallel to MySQL's opt-in helper_table
- *   default). `supportsCurrentValuePreserve` stays `false` until
- *   Phase E ships an `SqliteDiffSequenceOps` with an `UPDATE
- *   dmg_sequences SET next_value = …` renderer; `supportsOwnedBy`
- *   stays `false` because SQLite has no ownership concept.
+ *   default). `supportsCurrentValuePreserve` stays `false` even
+ *   though 0.9.7 F2 landed the `SqliteDiffSequenceOps` renderer
+ *   for `AlterSequenceCurrentValue` — `SequencePreserveStage`
+ *   still has a hard MySQL/PostgreSQL allowlist and SQLite has no
+ *   `SequenceCurrentValueProbe` implementation. Flipping requires
+ *   both (separate follow-up workstream). `supportsOwnedBy` stays
+ *   `false` because SQLite has no ownership concept.
  */
 object SequenceCapabilityDefaults {
 
@@ -67,9 +70,15 @@ object SequenceCapabilityDefaults {
         supportsCycle = true,
         supportsCache = true,
         emitsCachePreallocationWarning = true,
-        // 0.9.7 Phase F2: SqliteDiffSequenceOps.renderAlterSequenceCurrentValue
-        // emits `UPDATE dmg_sequences SET next_value = …` analog to MySQL.
-        supportsCurrentValuePreserve = true,
+        // 0.9.7 G7 consumer-check: SqliteDiffSequenceOps.renderAlter-
+        // SequenceCurrentValue is wired but unreachable today —
+        // `SequencePreserveStage` blocks the dialect at line 105
+        // (allowlist MySQL/PostgreSQL only) and SQLite has no
+        // `SequenceCurrentValueProbe` implementation. The renderer
+        // stays as forward-compat code; the flag stays `false` so
+        // the planner does not emit `AlterSequenceCurrentValue` ops
+        // that would surface as `NOT_SUPPORTED_BY_DIALECT` blockers.
+        supportsCurrentValuePreserve = false,
         supportsOwnedBy = false,
     )
 
