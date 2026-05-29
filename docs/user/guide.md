@@ -502,6 +502,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
 | `--split`             | DDL-Ausgabemodus: `single` (Standard) oder `pre-post` fuer importfreundliche Trennung in `pre-data`/`post-data` |
 | `--mysql-named-sequences` | MySQL-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber Hilfsobjekte). Nur fuer `--target mysql`; bei PostgreSQL/SQLite Exit 2. |
+| `--sqlite-named-sequences` | SQLite-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber `dmg_sequences` + kanonisches `_bi`/`_ai`-Trigger-Paar). Nur fuer `--target sqlite`; bei PostgreSQL/MySQL Exit 2. |
 | `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
 
 ### Optionen für `data export`
@@ -583,6 +584,71 @@ Operandseitiges `W116` (z.B. bei `schema compare --source file:schema.yaml
 den Exit-Code nicht: Exit 0 bei identischen Schemas, Exit 1 nur bei
 echten Schema-Unterschieden. In der JSON-/YAML-Ausgabe erscheint `W116`
 unter `target_operand.notes`, nicht als Diff-Eintrag.
+
+## SQLite-Sequence-Emulation: Reverse und Compare (0.9.7)
+
+Wenn du `schema generate --target sqlite --sqlite-named-sequences helper_table`
+verwendet hast, legt d-migrate kanonische Hilfsobjekte in der SQLite-Datenbank
+an (`dmg_sequences`-Tabelle und ein `_bi`/`_ai`-Trigger-Paar pro
+sequence-getragener Spalte). Anders als bei MySQL gibt es **keine** Stored
+Functions — SQLite kennt sie nicht; die Inkrement-Logik lebt komplett im
+`BEFORE INSERT`-Trigger, der `AFTER INSERT`-Trigger schreibt den reservierten
+Wert per `UPDATE ... WHERE ROWID = NEW.ROWID` in die eingefuegte Zeile.
+
+### Reverse-Engineering
+
+`schema reverse` erkennt die Hilfsobjekte automatisch und faltet sie zurueck
+auf native `sequences` und `default: { sequence_nextval: ... }` im neutralen
+Schema. Die `dmg_sequences`-Tabelle und die Sequence-Support-Trigger tauchen
+dabei nicht als normale Tabellen oder Trigger im Ergebnis auf.
+
+Voraussetzung: Die Hilfsobjekte muessen die kanonische Form und den
+d-migrate-Marker-Kommentar (`/* d-migrate:sqlite-sequence-v1 object=...
+sequence=... table=... column=... */`) tragen, so wie sie von
+`schema generate` erzeugt werden.
+
+**Warnung W116 — Degradiert**: Wenn der Marker-Kommentar fehlt, der Trigger
+aber dem kanonischen Namensschema (`dmg_seq_<table>_<column>_<hash>_{bi,ai}`)
+entspricht, greift ein sekundaeres Matching auf Basis von Name, WHEN-Klausel
+und Body-Tokens (`dmg_sequences`, ROWID). Erfuellt das Trigger-Paar alle
+fuenf Kriterien, wird die Sequence rekonstruiert — aber mit `W116`, weil die
+Identifikation nicht autoritativ war.
+
+**Warnung W120 — Body-modifiziert**: Wenn der Marker passt, aber der
+Trigger-Body wurde manuell veraendert (z.B. die `UPDATE "dmg_sequences"`-
+Klausel entfernt), bleibt die Sequence-Zuordnung erhalten — der Marker ist
+autoritativ —, der Trigger wird aber als **moeglicherweise nicht funktional**
+geflaggt. Vor einem vertrauenswuerdigen Round-Trip sollte der Trigger neu
+generiert werden.
+
+**Warnung W124 — Reverse-Reihenfolge-Maskierung**: SQLite fuert
+BEFORE INSERT-Trigger in ihrer `sqlite_master`-Anlage-Reihenfolge aus.
+Findet der Reader einen nutzerdefinierten BEFORE INSERT-Trigger auf der
+Zieltabelle mit einer kleineren `rowid` als der `_bi`-Trigger, emittiert er
+`W124`: der Nutzer-Trigger feuert zuerst und kann durch ein Setzen von
+`NEW.<column>` die WHEN-Klausel des Sequence-Triggers unterlaufen.
+
+### Compare-Verhalten
+
+`schema compare` arbeitet auf Neutralmodell-Ebene. Wenn beide Seiten dieselbe
+Sequence beschreiben — egal ob als Datei oder als reverse-te SQLite-DB —
+ergibt sich kein Diff. Driftet `dmg_sequences.next_value` zwischen zwei
+Reverse-Reads (z.B. weil die Sequence zwischenzeitlich Werte vergeben hat),
+erscheint genau ein `sequencesChanged`-Eintrag fuer die betroffene Sequence;
+die User-Tabellen bleiben unveraendert.
+
+Operandseitiges `W116`/`W120`/`W124` (z.B. bei `schema compare
+--source file:schema.yaml --target db:sqlite:///path/db.sqlite`) bleibt als
+Diagnose sichtbar, beeinflusst aber den Exit-Code nicht.
+
+### Round-Trip-Risiko
+
+> "Sequence-Support-Trigger sind generierte Infrastruktur. Das Entfernen des
+> Marker-Kommentars fuehrt zu degradierter Erkennung (W116). Das Aendern des
+> Trigger-Bodys fuehrt zu einer Body-Modified-Warnung (W120). Das Umbenennen
+> des Triggers fuehrt zum Verlust der Spaltenzuordnung. Aendern Sie
+> Sequence-Parameter ausschliesslich im neutralen Schema und generieren Sie
+> neu."
 
 ## Neutrales Typsystem
 

@@ -14,7 +14,7 @@ informed: Sub-Slice-A/B/C-Reviewer; künftige Implementier des SQLite-Sequence-E
 PostgreSQL native DDL (E.3-Erstslice, done), MySQL
 `dmg_sequences`-Helper-Table-Emulation (Parallel-Plan, done),
 SQLite Rebuild-basierte Emulation (noch
-`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`) und
+`docs/planning/done/sqlite-sequence-emulation-plan.md`) und
 das cross-dialect `preserveCurrentValue`-Follow-up (Parallel-Plan,
 done).
 
@@ -188,7 +188,7 @@ Tranche CLI- / YAML-Overrides für Sequences einführt.
   `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`,
   `docs/planning/done/mysql-sequence-emulation-plan.md`.
 - Offenes Follow-up, an das diese ADR explizit deferred:
-  `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`.
+  `docs/planning/done/sqlite-sequence-emulation-plan.md`.
 - Verwandte Capability-Muster:
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/RoutineCapability.kt`,
   `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/TriggerCapability.kt`.

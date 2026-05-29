@@ -9,7 +9,7 @@
 > Cross-Dialect-Sequencing-Schirm 2026-05-27), F.0-F.4 (Overlays/
 > Plan-Artefakte/Partial-Rollback/Rename-Mappings) und F.5 Vollscheibe
 > (CHECK/EXCLUDE). Einzig offen: SQLite-Sequence-Emulation als
-> ausgelagerter Folge-Plan (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`,
+> ausgelagerter Folge-Plan (`docs/planning/done/sqlite-sequence-emulation-plan.md`,
 > Phase A + B.0 + B.1 + B.2 abgeschlossen, B.3-E offen). Die per-
 > Workstream-Status-Bloecke in §4-§10 sind individuell aktualisiert.
 >
@@ -29,7 +29,7 @@
 > - `docs/planning/in-progress/roadmap.md`
 > - `spec/cli-spec.md` Abschnitt `schema migrate` / `schema rollback`
 > - `spec/ddl-generation-rules.md`
-> - `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
+> - `docs/planning/done/sqlite-sequence-emulation-plan.md`
 
 ---
 
@@ -1196,7 +1196,7 @@ E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
 > `PreGenerationValidator`-Port) abgeschlossen. SQLite blockt
 > diff-basierte Sequence-Ops weiterhin mit
 > `DIALECT_UNSUPPORTED_OPERATION`, bis Phase B.3 des SQLite-Sequence-
-> Plans (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`) den
+> Plans (`docs/planning/done/sqlite-sequence-emulation-plan.md`) den
 > `helper_table`-Renderer + Trigger-Paar emittiert. Der aktuelle
 > Sequence-Wert wird über die preserveCurrentValue-Policy migriert
 > (Up: `setval(...)` PG / `UPDATE dmg_sequences` MySQL;
@@ -1210,7 +1210,7 @@ Nicht in der ersten Matrix:
 
 Verweis:
 
-- `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
+- `docs/planning/done/sqlite-sequence-emulation-plan.md`
 
 Entscheidung:
 

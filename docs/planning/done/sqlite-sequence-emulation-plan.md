@@ -81,10 +81,20 @@
 > IdentifierTokenScannerTest 11 Tests, SqliteSequenceReverseSupport-
 > Test 10 Tests) plus 3 Round-Trip-Integrationstests (canonical
 > happy-path, W120 body rewrite, W116 marker stripped).
-> `make docker-check` und `make integration` beide grün. Offen:
-> E (Compare + Stabilisierung); W123 (Attached-DB-Rollback-Gate,
-> §5.2) bleibt ausserhalb von B, da es Live-DB-Probing im
-> Rollback-Pfad erfordert.
+> `make docker-check` und `make integration` beide grün. Phase E
+> (Compare + Stabilisierung) abgeschlossen 2026-05-29: vier
+> Compare-Integrationstests in
+> `test/integration-sqlite/SqliteSequenceCompareIntegrationTest`
+> (reverse-vs-reverse Round-Trip-Stabilität, sequencesChanged-Drift
+> via UPDATE auf dmg_sequences, Multi-Sequence-Disjunktion,
+> Shared-Sequence über mehrere Spalten). User-Doku in
+> `docs/user/guide.md` ergänzt: Abschnitt "SQLite-Sequence-Emulation:
+> Reverse und Compare (0.9.7)" mit W116/W120/W124-Beschreibung +
+> Round-Trip-Risiko-Hinweis; CLI-Optionstabelle um
+> `--sqlite-named-sequences` erweitert. Damit ist der gesamte
+> SQLite-Sequence-Emulation-Plan abgeschlossen. Einziges Carve-out:
+> W123 (Attached-DB-Rollback-Gate, §5.2) — braucht Live-DB-Probing
+> im Rollback-Pfad und ist deshalb plan-übergreifend offen.
 >
 > Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender
 > Projekt-Floor); `DefaultValue.SequenceNextVal` ist in

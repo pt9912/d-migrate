@@ -182,7 +182,7 @@ Migrationen ohne `schema generate`-Workaround.
   persistierter Laufzeitzustand (`next_value`) und wird nicht als
   deklaratives DDL-Attribut migriert.
 - **SQLite-Sequence-Diff**: eigener Plan
-  (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`). Dieser Slice ist
+  (`docs/planning/done/sqlite-sequence-emulation-plan.md`). Dieser Slice ist
   MySQL-only.
 - **Cross-Dialect-Transfer von Sequences zwischen Dialekten** (z.B.
   PG → MySQL): eigener Architektur-Plan
@@ -609,7 +609,7 @@ Drift-Check braucht einen Live-DB-Probe-Adapter (analog F.5 E.3's
 - **`preserveCurrentValue`-Policy**: eigener Cross-Dialect-Plan
   (`ImpPlan-0.9.7-sequence-preserve-current-value.md`).
 - **SQLite-Sequence-Diff**: eigener Plan
-  (`docs/planning/in-progress/sqlite-sequence-emulation-plan.md`).
+  (`docs/planning/done/sqlite-sequence-emulation-plan.md`).
 - **Cross-Dialect-Sequence-Transfer**: Architektur-Plan
   (`ImpPlan-0.9.7-cross-dialect-sequencing.md`).
 - **MariaDB-native Sequences** (10.3+): koennte über einen
