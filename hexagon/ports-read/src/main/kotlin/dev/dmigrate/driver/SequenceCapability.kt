@@ -31,12 +31,13 @@ package dev.dmigrate.driver
  *   default — no operator overlay required (plan-doc §4 final).
  * - [supportsCurrentValuePreserve]: backs the
  *   `SequencePreserveStage` `preserveCurrentValue` contract. SQLite
- *   stays `false` even though 0.9.7 F2 landed the
- *   `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue`
- *   renderer — `SequencePreserveStage` still has a hard
- *   MySQL/PostgreSQL allowlist and there is no
- *   `SequenceCurrentValueProbe` SQLite implementation yet.
- *   Flipping to `true` requires both pieces.
+ *   flipped to `true` im 0.9.7-E.3-Folge-Slice — the `SqliteSequenceCurrentValueProbe`
+ *   adapter and the SQLite branch in the stage allowlist are wired,
+ *   and the renderer's Up/Down for `AlterSequenceCurrentValue` emits
+ *   deterministic `UPDATE dmg_sequences SET next_value = …`. The
+ *   stage still requires the operator opt-in via
+ *   `--sqlite-named-sequences helper_table` and blocks otherwise
+ *   with `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`.
  * - [supportsOwnedBy]: PG-only attribute. Today not modeled in
  *   `SequenceDefinition` (PG-reader filters `pg_depend.deptype IN
  *   ('a','i')` out of `schema.sequences`), so the capability is

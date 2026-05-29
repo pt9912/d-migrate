@@ -23,10 +23,17 @@ import java.sql.Connection
  *   include a transitional `"d-migrate-legacy"` entry without
  *   touching the renderer or the probe code (see
  *   `MysqlSequenceCurrentValueProbe.readSingleRow`).
- * - **SQLite**: no implementation in 0.9.7. Adapters return
- *   [SequenceCurrentValueProbeResult.NotApplicable] so the upstream
- *   `MigrationPreflightPlanner` (Sub-Slice D) can emit a
- *   `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` block.
+ * - **SQLite** (`adapters/driven/driver-sqlite`, 0.9.7-E.3-Folge-Slice): `SELECT
+ *   next_value, managed_by, format_version FROM dmg_sequences WHERE
+ *   name = <key>`. Mirrors the MySQL probe; `isCalled` stays `null`
+ *   because the helper-table `next_value` column already encodes
+ *   the "next-to-be-returned" semantics. The probe never returns
+ *   [SequenceCurrentValueProbeResult.NotApplicable] — that outcome is
+ *   reserved for dialects without an emulation. Activation requires
+ *   the operator's `--sqlite-named-sequences helper_table` opt-in;
+ *   without it, `SequencePreserveStage` blocks the candidate ops
+ *   upstream with `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` and the probe
+ *   is never called.
  *
  * The port is the inversion of `SequenceCurrentValueRenderer` (Sub-
  * Slices B / C): probe reads the live value before render; the
@@ -143,10 +150,10 @@ sealed class SequenceCurrentValueProbeResult {
     data object NotFound : SequenceCurrentValueProbeResult()
 
     /**
-     * The dialect has no probe implementation. Today this is SQLite —
-     * the SQLite sequence emulation plan (in
-     * `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`) will
-     * fill in the probe later. The planner maps this to
+     * The dialect has no probe implementation — reserved for future
+     * dialects that lack a sequence emulation entirely. PG, MySQL,
+     * and SQLite (since 0.9.7-E.3-Folge-Slice) all return [Read] / [NotFound] /
+     * [Failed] instead. The planner maps this to
      * `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION`.
      */
     data object NotApplicable : SequenceCurrentValueProbeResult()

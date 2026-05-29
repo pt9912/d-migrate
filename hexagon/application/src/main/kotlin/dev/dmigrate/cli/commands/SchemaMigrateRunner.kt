@@ -541,6 +541,17 @@ data class SchemaMigrateRequest(
      * `schema migrate` / `schema rollback`.
      */
     val strictGapOperations: Boolean = false,
+    /**
+     * 0.9.7 SQLite preserve-current-value Folge-Slice (2026-05-29):
+     * optional opt-in for SQLite's helper-table sequence emulation
+     * (`dmg_sequences`) during migrate. Today only `"helper_table"`
+     * unlocks the [SequencePreserveStage] probe path for SQLite
+     * targets; any other value (or `null`) keeps the action-required
+     * default and blocks SQLite preserve candidates with
+     * `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`. Mirror of the
+     * `--sqlite-named-sequences` flag on `schema generate`.
+     */
+    val sqliteNamedSequences: String? = null,
 )
 
 /**

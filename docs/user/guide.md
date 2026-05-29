@@ -650,6 +650,35 @@ Diagnose sichtbar, beeinflusst aber den Exit-Code nicht.
 > Sequence-Parameter ausschliesslich im neutralen Schema und generieren Sie
 > neu."
 
+### preserveCurrentValue auf SQLite (0.9.7-E.3-Folge-Slice)
+
+Wenn deine Sequence im neutralen Schema mit `preserve_current_value: true`
+markiert ist, kann `schema migrate --execute` den laufenden `next_value` aus
+der Ziel-DB lesen und nach `CreateSequence`/`AlterSequence`/`RenameSequence`
+deterministisch wiederherstellen — kein manueller `UPDATE
+dmg_sequences`-Schritt mehr nach der Migration.
+
+Voraussetzung:
+
+```bash
+d-migrate schema migrate \
+  --source desired.yaml --target db:sqlite:///path/db.sqlite \
+  --execute \
+  --sqlite-named-sequences helper_table
+```
+
+Ohne `--sqlite-named-sequences helper_table` blockt der Plan pro Kandidat
+mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Exit 8). Die Diagnose enthaelt
+den Opt-in-Hinweis explizit; Capability und Renderer sind verdrahtet, nur
+der Opt-in fehlt.
+
+Carve-out: Probe und nachgelagerter `UPDATE` laufen ohne Lock — laenger
+laufende Apps muessen den Schreibverkehr vor `--execute` stoppen.
+Mehrfache parallele `dmg_nextval`-Aufrufe zwischen Probe-Read und
+Restore-Write koennen die Sequence in einen ueberholten Zustand
+zuruecksetzen. Eine atomare `BEGIN; SELECT FOR UPDATE; UPDATE; COMMIT`-
+Variante ist ein eigener Folge-Slice.
+
 ## Neutrales Typsystem
 
 d-migrate verwendet 18 neutrale Datentypen, die pro Zieldatenbank automatisch übersetzt werden:

@@ -305,10 +305,11 @@ class SchemaMigrateRunnerSequencePreserveTest : FunSpec({
         ("SEQUENCE_PRESERVE_PROBE_FAILED" in codes) shouldBe true
     }
 
-    test("SQLite + --execute + preserveCurrentValue → exit 8 with NOT_SUPPORTED_BY_DIALECT") {
-        // Use schemas where both carry preserveCurrentValue=true so
-        // the SQLite-skip path emits the per-op blocker. Probe is
-        // never called.
+    test("SQLite + --execute + preserveCurrentValue + no helper_table opt-in → exit 8 with OPT_IN_REQUIRED") {
+        // 0.9.7 Folge-Slice: SQLite is now in the SequencePreserveStage
+        // allowlist; without `--sqlite-named-sequences helper_table`
+        // the stage blocks with OPT_IN_REQUIRED instead of the legacy
+        // NOT_SUPPORTED_BY_DIALECT.
         var probeCalls = 0
         val capturedReport = PreserveCapturedRef<SchemaMigrateReport?>(null)
         val sourceSchema = SchemaDefinition(
@@ -323,7 +324,7 @@ class SchemaMigrateRunnerSequencePreserveTest : FunSpec({
             dialect = DatabaseDialect.SQLITE,
             probe = { _, _, _ ->
                 probeCalls++
-                SequenceCurrentValueProbeResult.NotApplicable
+                SequenceCurrentValueProbeResult.Read(value = 1L)
             },
             executor = { _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
             sourceSchema = sourceSchema,
@@ -340,7 +341,50 @@ class SchemaMigrateRunnerSequencePreserveTest : FunSpec({
         runner.execute(request) shouldBe 8
         probeCalls shouldBe 0
         val codes = capturedReport.value?.diagnostics?.map { it.code }.orEmpty()
-        ("SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT" in codes) shouldBe true
+        ("SEQUENCE_PRESERVE_OPT_IN_REQUIRED" in codes) shouldBe true
+    }
+
+    test("SQLite + --execute + preserveCurrentValue + helper_table opt-in → exit 0, follow-up emitted") {
+        // 0.9.7 Folge-Slice: with the opt-in, the probe runs and the
+        // augmented plan carries the AlterSequenceCurrentValue
+        // follow-up. The fake renderer surfaces every op as a
+        // statement; the report mirrors the augmented plan.
+        val capturedPlan = PreserveCapturedRef<dev.dmigrate.core.diff.migration.DiffResult?>(null)
+        var probeCalls = 0
+        val sourceSchema = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to SequenceDefinition(increment = 5L, preserveCurrentValue = true)),
+        )
+        val targetSchema = SchemaDefinition(
+            name = "App", version = "1",
+            sequences = mapOf("order_seq" to SequenceDefinition(increment = 1L, preserveCurrentValue = true)),
+        )
+        val runner = runnerWith(
+            dialect = DatabaseDialect.SQLITE,
+            probe = { _, _, _ ->
+                probeCalls++
+                SequenceCurrentValueProbeResult.Read(value = 42L)
+            },
+            executor = { _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
+            sourceSchema = sourceSchema,
+            targetSchema = targetSchema,
+            capturedPlan = capturedPlan,
+        )
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = "db:sqlite:/tmp/test.db",
+            dialect = DatabaseDialect.SQLITE,
+            execute = true,
+            report = tmpDir.resolve("preserve-sqlite-ok.json"),
+            sqliteNamedSequences = "helper_table",
+        )
+        runner.execute(request) shouldBe 0
+        probeCalls shouldBe 1
+        val followUp = capturedPlan.value!!.operations
+            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
+            .single()
+        followUp.currentValue shouldBe 42L
+        followUp.isCalled shouldBe null
     }
 
     test("No probe wired + --execute + preserveCurrentValue → exit 0, NOT_RUN_POLICY INFO surfaces") {

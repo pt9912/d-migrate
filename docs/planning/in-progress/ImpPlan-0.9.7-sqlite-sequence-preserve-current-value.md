@@ -1,10 +1,19 @@
-# Implementierungsplan: SQLite Sequence Current-Value Preserve (follow-up nach 0.9.7)
+# Implementierungsplan: SQLite Sequence Current-Value Preserve (0.9.7 E.3-Folge-Slice)
 
 > Status: In Progress (2026-05-29)
 > Workstream: E.3 Folge-Slice für SQLite `supportsCurrentValuePreserve`
 > Vorarbeit:
 > - `docs/planning/done/sqlite-sequence-emulation-plan.md`
 > - `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`
+>
+> Sub-Slice-Schnitt (2026-05-29):
+> - Phase A (Vertragsdefinition): siehe §7 Vertragsmatrix.
+> - Phase B: neuer `SqliteSequenceCurrentValueProbe`-Adapter.
+> - Phase C: Runner-Dispatch + Stage-Wiring inkl. `--sqlite-named-sequences`
+>   auf `schema migrate`.
+> - Phase D: deterministisches DOWN-Rendering in `SqliteDiffSequenceOps`.
+> - Phase E: Capability-Flip + Doku + Changelog.
+> - Phase F: Tests + `make docker-test` grün.
 
 ## 1. Ausgangslage
 
@@ -170,6 +179,64 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 ## 6. Risiken
 
 1. Zwischen Probe und Restore ist keine Transaktionsbarriere garantiert.
+   Folge-Plan: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
 2. Neue `format_version`-Werte in `dmg_sequences` erfordern Adaptererweiterung.
 3. Capability darf nicht vor Abschluss aller technischen Phasen eingeschaltet werden.
 4. SQLite-Fallback außerhalb `helper_table` bleibt hart blockiert, um unbestimmtes Verhalten zu vermeiden.
+
+## 7. Vertragsmatrix (Phase A)
+
+### 7.1 Probe-Ergebnis-Contract (SQLite)
+
+| Outcome | Bedingung |
+|---|---|
+| `Read(value, isCalled=null, managedBy="d-migrate", formatVersion=1)` | genau eine Zeile in `dmg_sequences` mit `managed_by = "d-migrate"` und `format_version = "sqlite-sequence-v1"`. |
+| `NotFound` | `dmg_sequences`-Tabelle fehlt **oder** kein Datensatz mit `name = <seq>`. |
+| `Failed(PROBE_PERMISSION_DENIED)` | `SQLException` mit SQLite-Fehler `SQLITE_PERM (3)` oder `SQLITE_AUTH (23)`. |
+| `Failed(PROBE_UNMANAGED_ROW)` | Zeile vorhanden, `managed_by != "d-migrate"`. |
+| `Failed(PROBE_UNKNOWN_FORMAT_VERSION)` | `managed_by = "d-migrate"`, aber `format_version != "sqlite-sequence-v1"`. |
+| `Failed(PROBE_AMBIGUOUS_ROW)` | >1 Zeile mit `name = <seq>` (defensiv; PK verhindert das real). |
+| `Failed(PROBE_QUERY_FAILED)` | beliebige andere `SQLException`. |
+| `NotApplicable` | nur Nicht-SQLite (SQLite gibt nie `NotApplicable` zurück). |
+
+`Read.isCalled` bleibt für SQLite immer `null` — analog zu MySQL, weil
+die `next_value`-Semantik bereits den nächsten Wert kodiert.
+
+### 7.2 Stage-Routing für SQLite
+
+Reihenfolge der Skip-/Block-Pfade in `SequencePreserveStage.run(...)`:
+
+1. **File-Target + Kandidaten** → `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET`
+   (unverändert; gilt unabhängig vom Dialekt).
+2. **`!request.execute`** → `NotRun`.
+3. **Dialekt unsupported (≠ PG/MySQL/SQLite)** → `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`.
+4. **SQLite mit Kandidaten + Modus ≠ `helper_table`** →
+   `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (neu; siehe §7.3).
+5. **Keine Kandidaten** → `NotRun`.
+6. **Probe-Fn `null`** → INFO `SEQUENCE_PRESERVE_NOT_RUN_POLICY` pro Kandidat.
+7. **MySQL-Config-Invalid-Check (§6.4.4 aus 0.9.7)** → `SEQUENCE_PRESERVE_CONFIG_INVALID`.
+8. **Probe-Routing pro Kandidat** (§6.4.5 aus 0.9.7).
+
+### 7.3 Restore-Referenzen
+
+- Up → `applySequenceRef.name` ist Ziel der `UPDATE dmg_sequences SET next_value = …`.
+- Down → `probeSequenceRef.name` ist Ziel des Restore-`UPDATE`s.
+- Bei `RenameSequence`: `revertAfterRename = true` ⇒ Down läuft nach der
+  Rename-Rückoperation; `probeSequenceRef` zeigt auf den ursprünglichen
+  (alten) Namen, der nach dem Rename-Down wieder existiert.
+
+### 7.4 NotFound-Policy
+
+- `CreateSequence` (Kandidat über `renameProvenance != null`) +
+  `NotFound` → `SEQUENCE_PRESERVE_NOT_FOUND` (INFO, kein Blocker).
+  Current-Value-Restore bleibt `ROLLBACK_NOT_POSSIBLE`.
+- `AlterSequence`/`RenameSequence` + `NotFound` →
+  `SEQUENCE_PRESERVE_PROBE_FAILED` (Blocker).
+
+### 7.5 Neuer Diagnose-Code
+
+`SEQUENCE_PRESERVE_OPT_IN_REQUIRED` → `PlannerBlockerClassifier`
+`MANUAL_ACTION_REQUIRED`. Fires für SQLite-Kandidaten ohne
+`--sqlite-named-sequences helper_table`; deutlich verschieden von
+`NOT_SUPPORTED_BY_DIALECT`, weil die Capability vorhanden ist und
+nur der Opt-in fehlt.

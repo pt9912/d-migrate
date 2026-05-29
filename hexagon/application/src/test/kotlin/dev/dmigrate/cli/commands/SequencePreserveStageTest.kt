@@ -155,9 +155,9 @@ class SequencePreserveStageTest : FunSpec({
         ) shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    test("REQUIRES_DB_TARGET wins over NOT_SUPPORTED_BY_DIALECT for SQLite + file target") {
-        // Plan-Doc §3.1: file-target blocker hat Vorrang vor
-        // Dialekt-spezifischen NOT_SUPPORTED_BY_DIALECT-Diagnosen.
+    test("REQUIRES_DB_TARGET wins over dialect-specific blockers for SQLite + file target") {
+        // Plan-Doc §3.1: file-target blocker has priority over
+        // dialect-specific blockers (OPT_IN_REQUIRED, NOT_SUPPORTED_BY_DIALECT).
         val outcome = SequencePreserveStage.run(
             probe = probe(SequenceCurrentValueProbeResult.NotApplicable),
             request = planOnlyRequest(),
@@ -190,7 +190,12 @@ class SequencePreserveStageTest : FunSpec({
         probeCalls shouldBe 0
     }
 
-    test("SQLite with preserve candidates → Failed(NOT_SUPPORTED_BY_DIALECT) per candidate, no probe") {
+    test("SQLite with preserve candidates + no helper_table opt-in → Failed(OPT_IN_REQUIRED) per candidate, no probe") {
+        // 0.9.7 Folge-Slice: SQLite is now in the allowlist, but the
+        // operator must opt into the helper-table emulation via
+        // `--sqlite-named-sequences helper_table`. Without it, the
+        // stage emits the new SEQUENCE_PRESERVE_OPT_IN_REQUIRED code
+        // (NOT the legacy NOT_SUPPORTED_BY_DIALECT one).
         var probeCalls = 0
         val outcome = SequencePreserveStage.run(
             probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
@@ -201,9 +206,32 @@ class SequencePreserveStageTest : FunSpec({
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
         outcome.diagnostics.single().code shouldBe
-            "SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT"
+            "SEQUENCE_PRESERVE_OPT_IN_REQUIRED"
         outcome.diagnostics.single().severity shouldBe DiffDiagnostic.Severity.BLOCKER
+        outcome.diagnostics.single().message shouldContain "--sqlite-named-sequences helper_table"
         probeCalls shouldBe 0
+    }
+
+    test("SQLite with preserve candidates + helper_table opt-in → probe runs, augmented plan emitted") {
+        var probeCalls = 0
+        val outcome = SequencePreserveStage.run(
+            probe = { _, _, _ ->
+                probeCalls++
+                SequenceCurrentValueProbeResult.Read(value = 99L)
+            },
+            request = executeRequest().copy(sqliteNamedSequences = "helper_table"),
+            target = dbTarget(),
+            dialect = DatabaseDialect.SQLITE,
+            plan = synthesisePlan(listOf(alterSeqOp())),
+        )
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        probeCalls shouldBe 1
+        val followUp = outcome.augmentedPlan.operations
+            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
+            .single()
+        followUp.currentValue shouldBe 99L
+        followUp.isCalled shouldBe null
+        followUp.probeSequenceRef.dialect shouldBe RenameProjectionDialect.SQLITE
     }
 
     test("SQLite without preserve candidates → NotRun (no per-op blocker noise)") {

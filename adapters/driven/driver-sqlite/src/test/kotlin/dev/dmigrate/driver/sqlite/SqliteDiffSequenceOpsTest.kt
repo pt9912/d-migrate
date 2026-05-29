@@ -247,7 +247,10 @@ class SqliteDiffSequenceOpsTest : FunSpec({
         sql shouldContain "WHERE \"name\" = 's'"
     }
 
-    test("AlterSequenceCurrentValue DOWN — no SQL (carve-out for cross-dialect follow-up)") {
+    test("AlterSequenceCurrentValue DOWN — emits UPDATE on probeSequenceRef with restoreValue") {
+        // 0.9.7 SQLite preserve-current-value Folge-Slice plan §7.3:
+        // DOWN restores against the probe-side name with the planner-
+        // captured snapshot value.
         val op = DiffOperation.AlterSequenceCurrentValue(
             id = "acv1",
             objectRef = seqRef("s"),
@@ -255,9 +258,50 @@ class SqliteDiffSequenceOpsTest : FunSpec({
             probeSequenceRef = seqObjRef("s"),
             applySequenceRef = seqObjRef("s"),
             currentValue = 5000L,
+            restoreValue = 1234L,
+        )
+        val result = runDown(listOf(op))
+        val sql = result.statements.first().sql
+        sql shouldContain "UPDATE \"dmg_sequences\""
+        sql shouldContain "\"next_value\" = 1234"
+        sql shouldContain "WHERE \"name\" = 's'"
+    }
+
+    test("AlterSequenceCurrentValue DOWN — rename uses probeSequenceRef (old name)") {
+        // For rename ops, probeSequenceRef carries the pre-rename name
+        // that exists again once the RenameSequence DOWN has run.
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "acv-rn",
+            objectRef = seqRef("new_seq"),
+            pairId = "rename:rn1",
+            probeSequenceRef = seqObjRef("old_seq"),
+            applySequenceRef = seqObjRef("new_seq"),
+            currentValue = 5000L,
+            restoreValue = 5000L,
+            revertAfterRename = true,
+        )
+        val result = runDown(listOf(op))
+        val sql = result.statements.first().sql
+        sql shouldContain "WHERE \"name\" = 'old_seq'"
+    }
+
+    test("AlterSequenceCurrentValue DOWN — rollbackImpossible (no restoreValue) emits skip") {
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "acv-create",
+            objectRef = seqRef("s"),
+            pairId = "create:s",
+            probeSequenceRef = seqObjRef("s"),
+            applySequenceRef = seqObjRef("s"),
+            currentValue = 100L,
+            restoreValue = null,
+            rollbackImpossible = true,
+            rollbackImpossibleReason = "CreateSequence has no pre-Up state",
         )
         val result = runDown(listOf(op))
         result.statements.none { it.sql.contains("UPDATE") } shouldBe true
+        result.diagnostics.any {
+            it.code == "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE"
+        } shouldBe true
     }
 
     // ── escapeLiteral edge cases ───────────────────────────────────
@@ -320,21 +364,6 @@ class SqliteDiffSequenceOpsTest : FunSpec({
         // string literal — otherwise INSERTs surface "sequence row
         // not found" at runtime.
         sqls.any { it.contains("WHERE \"name\" = 'new_seq'") } shouldBe true
-    }
-
-    // ── G6: AlterSequenceCurrentValue DOWN diagnostic ─────────────
-
-    test("AlterSequenceCurrentValue DOWN emits SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP diagnostic") {
-        val op = DiffOperation.AlterSequenceCurrentValue(
-            id = "acv1",
-            objectRef = seqRef("s"),
-            pairId = "alter:s",
-            probeSequenceRef = seqObjRef("s"),
-            applySequenceRef = seqObjRef("s"),
-            currentValue = 5000L,
-        )
-        val result = runDown(listOf(op))
-        result.diagnostics.any { it.code == "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP" } shouldBe true
     }
 
     // ── escapeLiteral edge cases ───────────────────────────────────

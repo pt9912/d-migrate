@@ -31,13 +31,16 @@ package dev.dmigrate.driver
  *   action_required path still emits `E056` skips — the capability
  *   describes what the renderer is **capable of**, not which mode
  *   is currently selected (parallel to MySQL's opt-in helper_table
- *   default). `supportsCurrentValuePreserve` stays `false` even
- *   though 0.9.7 F2 landed the `SqliteDiffSequenceOps` renderer
- *   for `AlterSequenceCurrentValue` — `SequencePreserveStage`
- *   still has a hard MySQL/PostgreSQL allowlist and SQLite has no
- *   `SequenceCurrentValueProbe` implementation. Flipping requires
- *   both (separate follow-up workstream). `supportsOwnedBy` stays
- *   `false` because SQLite has no ownership concept.
+ *   default). `supportsCurrentValuePreserve` flipped to `true` im
+ *   0.9.7-E.3-Folge-Slice: the `SqliteSequenceCurrentValueProbe`
+ *   adapter plus the deterministic Up/Down rendering in
+ *   `SqliteDiffSequenceOps` mean the preserve flow runs end-to-end
+ *   when the operator opts into
+ *   `--sqlite-named-sequences helper_table`; without the opt-in the
+ *   `SequencePreserveStage` blocks with
+ *   `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` BEFORE the probe opens.
+ *   `supportsOwnedBy` stays `false` because SQLite has no ownership
+ *   concept.
  */
 object SequenceCapabilityDefaults {
 
@@ -70,15 +73,16 @@ object SequenceCapabilityDefaults {
         supportsCycle = true,
         supportsCache = true,
         emitsCachePreallocationWarning = true,
-        // 0.9.7 G7 consumer-check: SqliteDiffSequenceOps.renderAlter-
-        // SequenceCurrentValue is wired but unreachable today —
-        // `SequencePreserveStage` blocks the dialect at line 105
-        // (allowlist MySQL/PostgreSQL only) and SQLite has no
-        // `SequenceCurrentValueProbe` implementation. The renderer
-        // stays as forward-compat code; the flag stays `false` so
-        // the planner does not emit `AlterSequenceCurrentValue` ops
-        // that would surface as `NOT_SUPPORTED_BY_DIALECT` blockers.
-        supportsCurrentValuePreserve = false,
+        // 0.9.7 SQLite preserve-current-value E.3-Folge-Slice: the renderer
+        // (`SqliteDiffSequenceOps.renderAlterSequenceCurrentValue`),
+        // the probe (`SqliteSequenceCurrentValueProbe`), and the
+        // SequencePreserveStage allowlist now form a complete loop.
+        // Activation is gated by `--sqlite-named-sequences helper_table`;
+        // the stage emits SEQUENCE_PRESERVE_OPT_IN_REQUIRED when the
+        // operator hasn't opted in. The capability flag describes what
+        // the dialect's renderer can express, not which CLI mode is
+        // currently selected.
+        supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
     )
 

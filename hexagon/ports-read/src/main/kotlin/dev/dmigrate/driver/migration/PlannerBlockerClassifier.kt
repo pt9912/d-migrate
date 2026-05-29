@@ -173,6 +173,18 @@ object PlannerBlockerClassifier {
         "SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT"
 
     /**
+     * 0.9.7 SQLite preserve-current-value Folge-Slice (2026-05-29):
+     * the dialect has the capability (SQLite helper_table emulation
+     * is implemented since 0.9.7) but the operator has not opted in
+     * via `--sqlite-named-sequences helper_table`. Distinct from
+     * `NOT_SUPPORTED_BY_DIALECT` so the report tells the operator
+     * the actual remedy — flip the CLI flag, do not give up on the
+     * dialect.
+     */
+    const val SEQUENCE_PRESERVE_OPT_IN_REQUIRED_CODE: String =
+        "SEQUENCE_PRESERVE_OPT_IN_REQUIRED"
+
+    /**
      * 0.9.7 Cross-Dialect-Sequencing Sub-Slice B: two BLOCKER codes
      * reserved for per-attribute and ownership-related sequence
      * mismatches across dialects. Both map to
@@ -220,6 +232,7 @@ object PlannerBlockerClassifier {
         SEQUENCE_PRESERVE_PROBE_FAILED_CODE,
         SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
         SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE,
+        SEQUENCE_PRESERVE_OPT_IN_REQUIRED_CODE,
         SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT_CODE,
         SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT_CODE ->
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED

@@ -39,7 +39,7 @@ class SequenceCapabilityTest : FunSpec({
         )
     }
 
-    test("SQLite default: helper-table emulation, preserveCurrentValue stays false (renderer ready but no probe / stage allowlist)") {
+    test("SQLite default: helper-table, preserveCurrentValue=true (0.9.7 follow-up: probe+stage+renderer)") {
         SequenceCapabilityDefaults.forDialect(DatabaseDialect.SQLITE) shouldBe SequenceCapability(
             supportsNamedSequences = true,
             supportsStart = true,
@@ -47,7 +47,7 @@ class SequenceCapabilityTest : FunSpec({
             supportsCycle = true,
             supportsCache = true,
             emitsCachePreallocationWarning = true,
-            supportsCurrentValuePreserve = false,
+            supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
         )
     }

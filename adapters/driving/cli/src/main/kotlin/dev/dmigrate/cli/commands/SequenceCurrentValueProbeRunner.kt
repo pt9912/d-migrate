@@ -8,14 +8,17 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.MysqlSequenceCurrentValueProbe
 import dev.dmigrate.driver.postgresql.PostgresSequenceCurrentValueProbe
+import dev.dmigrate.driver.sqlite.SqliteSequenceCurrentValueProbe
 import java.nio.file.Path
 
 /**
  * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): CLI-side
  * wiring for [SequenceCurrentValueProbeFn]. Routes the per-op probe
  * call to the dialect-specific JDBC adapter
- * ([PostgresSequenceCurrentValueProbe] / [MysqlSequenceCurrentValueProbe])
- * by inspecting [SequenceObjectRef.dialect].
+ * ([PostgresSequenceCurrentValueProbe] / [MysqlSequenceCurrentValueProbe]
+ * / [SqliteSequenceCurrentValueProbe]) by inspecting
+ * [SequenceObjectRef.dialect]. SQLite landed im 0.9.7-E.3-Folge-Slice — earlier slices
+ * returned `NotApplicable` here.
  *
  * Unlike the drift-check probe runner which keeps a single MySQL
  * pool open for an entire plan's worth of probes, this runner opens
@@ -57,7 +60,7 @@ internal object SequenceCurrentValueProbeRunner {
                     RenameProjectionDialect.MYSQL ->
                         MysqlSequenceCurrentValueProbe.probe(conn, sequenceRef)
                     RenameProjectionDialect.SQLITE ->
-                        SequenceCurrentValueProbeResult.NotApplicable
+                        SqliteSequenceCurrentValueProbe.probe(conn, sequenceRef)
                 }
             }
         }

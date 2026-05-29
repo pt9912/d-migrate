@@ -8,6 +8,7 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
+import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.MigrationBlockedReason
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationDdlResult
@@ -52,6 +53,8 @@ object SequencePreserveStage {
     private const val REQUIRES_DB_TARGET_CODE = PlannerBlockerClassifier.SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE
     private const val NOT_SUPPORTED_BY_DIALECT_CODE =
         PlannerBlockerClassifier.SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT_CODE
+    private const val OPT_IN_REQUIRED_CODE =
+        PlannerBlockerClassifier.SEQUENCE_PRESERVE_OPT_IN_REQUIRED_CODE
     private const val NOT_FOUND_INFO_CODE = "SEQUENCE_PRESERVE_NOT_FOUND"
     private const val NOT_RUN_POLICY_INFO_CODE = "SEQUENCE_PRESERVE_NOT_RUN_POLICY"
 
@@ -102,8 +105,30 @@ object SequencePreserveStage {
             return if (candidates.isEmpty()) Outcome.NotRun else requiresDbTargetBlocker(candidates, plan)
         }
         if (!request.execute) return Outcome.NotRun
-        if (dialect != DatabaseDialect.MYSQL && dialect != DatabaseDialect.POSTGRESQL) {
+        // Forward-compat dialect-allowlist guard. All three current
+        // dialects pass; the branch is exhaustive scaffolding for a
+        // future enum extension without a wired preserve flow.
+        if (dialect != DatabaseDialect.POSTGRESQL &&
+            dialect != DatabaseDialect.MYSQL &&
+            dialect != DatabaseDialect.SQLITE
+        ) {
             return blockUnsupportedDialect(plan, dialect)
+        }
+        // 0.9.7-E.3-Folge-Slice plan-doc §7.5: SQLite uses the helper-
+        // table emulation, which is opt-in via
+        // `--sqlite-named-sequences helper_table`. If the operator
+        // hasn't opted in, every preserve-candidate surfaces a
+        // structured blocker BEFORE the probe connection is opened.
+        // The diagnostic carries the explicit remedy in its message so
+        // the operator can flip the flag without consulting the
+        // dialect-routing matrix. The renderer enforces the same gate;
+        // the stage-side block keeps the surface specific instead of
+        // letting a generic MANUAL_ACTION_REQUIRED leak through.
+        if (dialect == DatabaseDialect.SQLITE && candidates.isNotEmpty()) {
+            val mode = request.sqliteNamedSequences?.let(SqliteNamedSequenceMode::fromCliName)
+            if (mode != SqliteNamedSequenceMode.HELPER_TABLE) {
+                return sqliteOptInRequiredBlocker(candidates, plan)
+            }
         }
         if (candidates.isEmpty()) return Outcome.NotRun
         if (probe == null) return notRunPolicy(candidates, plan)
@@ -112,6 +137,23 @@ object SequencePreserveStage {
         configInvalidIfMysqlNeedsIt(candidates, plan)?.let { return it }
 
         return runCandidates(candidates, probe, target, request.cliConfigPath, plan)
+    }
+
+    private fun sqliteOptInRequiredBlocker(
+        candidates: List<Candidate>,
+        plan: DiffResult,
+    ): Outcome.Failed {
+        val diagnostics = candidates.map { ctx ->
+            DiffDiagnostic(
+                code = OPT_IN_REQUIRED_CODE,
+                message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
+                    "`${ctx.applyRef.name}` requires SQLite's helper-table emulation; " +
+                    "rerun with `--sqlite-named-sequences helper_table` to opt in.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+                operationId = ctx.parentOp.id,
+            )
+        }
+        return Outcome.Failed(diagnostics = diagnostics, plan = plan)
     }
 
     /**
@@ -274,9 +316,11 @@ object SequencePreserveStage {
     // ── Skip-path helpers ──────────────────────────────────────────────
 
     private fun blockUnsupportedDialect(plan: DiffResult, dialect: DatabaseDialect): Outcome {
-        // §6.4.3: SQLite (or any other non-MySQL/PG dialect) with a
-        // candidate parent op surfaces NOT_SUPPORTED_BY_DIALECT. If
-        // there are no candidate ops at all the stage stays NotRun.
+        // §6.4.3: a dialect outside the allowlist (today: every
+        // non-PG/MySQL/SQLite dialect; the enum has none yet so the
+        // branch is forward-compat scaffolding) blocks per-candidate
+        // with NOT_SUPPORTED_BY_DIALECT. Without candidates the stage
+        // stays NotRun.
         val coreDialect = toCoreDialect(dialect)
         val candidates = collectCandidatesIgnoringDialect(plan, coreDialect)
         if (candidates.isEmpty()) return Outcome.NotRun
@@ -284,10 +328,7 @@ object SequencePreserveStage {
             DiffDiagnostic(
                 code = NOT_SUPPORTED_BY_DIALECT_CODE,
                 message = "preserveCurrentValue is not supported on ${dialect.name} for " +
-                    "${ctx.parentOp::class.simpleName} `${ctx.applyRef.name}`. SQLite has the " +
-                    "helper-table emulation since 0.9.7 (see done/sqlite-sequence-emulation-plan.md) " +
-                    "but needs both a `SequenceCurrentValueProbe` adapter and an allowlist update " +
-                    "in this stage before preserveCurrentValue can run.",
+                    "${ctx.parentOp::class.simpleName} `${ctx.applyRef.name}`.",
                 severity = DiffDiagnostic.Severity.BLOCKER,
                 operationId = ctx.parentOp.id,
             )

@@ -141,33 +141,43 @@ internal object SqliteDiffSequenceOps {
 
     fun renderAlterSequenceCurrentValue(op: DiffOperation.AlterSequenceCurrentValue, ctx: SqliteDiffRenderContext) {
         if (!ensureHelperMode(op, ctx)) return
-        val targetName = op.applySequenceRef.name
         when (ctx.direction) {
             SqliteRenderDirection.UP -> {
-                ctx.emit(
-                    op,
-                    """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "next_value" = ${op.currentValue} """ +
-                        """WHERE "name" = '${escapeLiteral(targetName)}';""",
-                )
+                // 0.9.7 SQLite preserve-current-value Folge-Slice: UP
+                // targets `applySequenceRef` (the new name after a
+                // rename; the same name as the parent op otherwise).
+                ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue))
             }
             SqliteRenderDirection.DOWN -> {
-                // Cross-dialect carve-out: the original `next_value`
-                // is not in the op (only the UP target value is). We
-                // skip with an INFO diagnostic so the report surfaces
-                // the gap and the operator can decide whether to
-                // accept the forward-only behaviour or roll the
-                // schema back to a pre-probe state manually.
-                ctx.skip(
-                    op,
-                    "AlterSequenceCurrentValue DOWN for '$targetName' is a no-op in SQLite — the pre-Up " +
-                        "`next_value` is not recorded in the op. The forward UP UPDATE is not reverted; " +
-                        "operators that need a strict rollback must restore the value manually or via a " +
-                        "follow-up `AlterSequence`/manual `UPDATE` step.",
-                    code = "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_NO_OP",
-                )
+                // 0.9.7 SQLite preserve-current-value Folge-Slice plan
+                // §7.3: Down restores against `probeSequenceRef`
+                // (the original name; for rename ops this is the
+                // pre-rename name that exists again once the rename
+                // Down has run). `restoreValue` is the canonical
+                // snapshot the planner captured at probe time. If it
+                // is null the op is intentionally non-rollbackable
+                // (CreateSequence without prior state) — surface that
+                // as a structured skip instead of emitting a
+                // silently-wrong UPDATE.
+                val restoreValue = op.restoreValue
+                if (restoreValue == null) {
+                    ctx.skip(
+                        op,
+                        "AlterSequenceCurrentValue DOWN for '${op.probeSequenceRef.name}' has no " +
+                            "deterministic restoreValue — current-value rollback is not possible " +
+                            "(${op.rollbackImpossibleReason ?: "rollbackImpossible = true"}).",
+                        code = "SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE",
+                    )
+                    return
+                }
+                ctx.emit(op, updateNextValueSql(op.probeSequenceRef.name, restoreValue))
             }
         }
     }
+
+    private fun updateNextValueSql(sequenceName: String, value: Long): String =
+        """UPDATE "${SqliteSequenceNaming.SUPPORT_TABLE}" SET "next_value" = $value """ +
+            """WHERE "name" = '${escapeLiteral(sequenceName)}';"""
 
     // ── helpers ────────────────────────────────────────────────────
 

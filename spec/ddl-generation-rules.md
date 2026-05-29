@@ -625,11 +625,22 @@ Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequ
 > `UPDATE name`+Trigger-Pair-Rebuild und `AlterSequenceCurrentValue`
 > ein `UPDATE next_value`. `AddColumn` mit `SequenceNextVal`
 > emittiert das Trigger-Paar gleich mit. `supportsCurrentValue-
-> Preserve` bleibt `false`, weil `SequencePreserveStage` einen
-> SQLite-`SequenceCurrentValueProbe` und eine Dialect-Allowlist-
-> Erweiterung braucht (separater Folge-Workstream). Details siehe
+> Preserve` ist im 0.9.7-E.3-Folge-Slice fuer SQLite auf `true` gesetzt: der
+> `SqliteSequenceCurrentValueProbe`-Adapter liest `dmg_sequences.next_value`
+> live, der `SequencePreserveStage` enthaelt SQLite in der Allowlist
+> und blockt ohne `--sqlite-named-sequences helper_table` mit
+> `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Mapper auf
+> `MANUAL_ACTION_REQUIRED`). Mit Opt-in emittiert
+> `AlterSequenceCurrentValue` Up ein `UPDATE dmg_sequences SET
+> next_value = <probedValue> WHERE name = '<applyRef>'` und Down ein
+> spiegelgleiches `UPDATE` gegen `probeSequenceRef.name` (bei Rename
+> der vor-Rename-Name). Ein fehlender `restoreValue` (typisch fuer
+> `CreateSequence` ohne deterministischen Vorzustand) surfaced als
+> `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip,
+> kein stiller `UPDATE`. Details siehe
 > [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
-> §6.2 und Phasen F/G.
+> §6.2 und Phasen F/G, plus den 0.9.7-E.3-Folge-Slice
+> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
 
 ---
 

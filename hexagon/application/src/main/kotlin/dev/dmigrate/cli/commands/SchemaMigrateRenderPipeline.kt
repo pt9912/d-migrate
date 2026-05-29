@@ -18,6 +18,7 @@ import dev.dmigrate.driver.RoutineCapabilityDefaults
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.driver.SqliteCatalogProbeMode
 import dev.dmigrate.driver.SqliteLiveCatalog
+import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import dev.dmigrate.driver.migration.MigrationBlocker
 import dev.dmigrate.driver.migration.MigrationBlockedReason
@@ -321,6 +322,17 @@ internal class SchemaMigrateRenderPipeline(
                     is SqliteCastPreflightStage.Outcome.Succeeded -> castPreflightOutcome.declarations
                     else -> preflightPlan.sqliteCastPreflights
                 },
+                // 0.9.7 SQLite preserve Folge-Slice: thread the
+                // `--sqlite-named-sequences` opt-in into the renderer
+                // so SqliteDiffSequenceOps.ensureHelperMode sees the
+                // operator-supplied choice. Unknown / null values
+                // default to ACTION_REQUIRED — the renderer keeps the
+                // existing block-with-MANUAL_ACTION_REQUIRED path for
+                // those, but the stage already issued a clearer
+                // SEQUENCE_PRESERVE_OPT_IN_REQUIRED upstream.
+                namedSequenceMode = request.sqliteNamedSequences
+                    ?.let(SqliteNamedSequenceMode::fromCliName)
+                    ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
             )
             DatabaseDialect.POSTGRESQL -> DdlDialectContext.None
         }

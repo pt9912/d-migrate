@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **0.9.7 SQLite-Sequence preserveCurrentValue Folge-Slice** *(2026-05-29)* —
+  schliesst die `SequencePreserveStage`-Lucke fuer SQLite-Targets aus
+  der 0.9.7-E.3-Erstscheibe. Neuer `SqliteSequenceCurrentValueProbe`-Adapter liest
+  `dmg_sequences.next_value` live; `SequenceCurrentValueProbeRunner`
+  dispatcht SQLite jetzt auf den neuen Adapter statt `NotApplicable`.
+  `SequencePreserveStage` listet SQLite in der Allowlist und blockt
+  ohne `--sqlite-named-sequences helper_table` mit
+  `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Classifier:
+  `MANUAL_ACTION_REQUIRED`) BEVOR die Probe-Connection geoeffnet
+  wird. `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue`
+  rendert Down jetzt deterministisch als `UPDATE dmg_sequences SET
+  next_value = <restoreValue> WHERE name = <probeSequenceRef.name>`;
+  ein fehlender `restoreValue` (CreateSequence ohne deterministischen
+  Vorzustand) surfaced als
+  `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip statt
+  als stillem No-Op. `SequenceCapabilityDefaults.SQLite.supportsCurrentValuePreserve`
+  von `false` auf `true` geflippt. Neue `--sqlite-named-sequences`-
+  Option auf `schema migrate` (parallel zu `schema generate`); wird
+  durch `SchemaMigrateRenderPipeline` als
+  `DdlDialectContext.Sqlite.namedSequenceMode` an die Renderer
+  durchgereicht.
+
+  Carve-out: Atomare Probe + Setval unter Lock bleibt out-of-scope
+  (siehe Plan-Doc §6 Risiken); langlaufende Apps muessen den
+  Schreibverkehr vor `--execute` weiterhin manuell anhalten.
+
+  Plan-Doc:
+  `docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
+
 ### Changed
 
 - **0.9.7 Port-Refactor — `DdlDialectContext`** *(2026-05-27)* —

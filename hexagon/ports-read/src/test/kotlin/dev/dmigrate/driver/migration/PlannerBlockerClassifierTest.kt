@@ -87,6 +87,10 @@ class PlannerBlockerClassifierTest : FunSpec({
             PlannerBlockerClassifier.SEQUENCE_PRESERVE_PROBE_FAILED_CODE,
             PlannerBlockerClassifier.SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
             PlannerBlockerClassifier.SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE,
+            // 0.9.7 SQLite preserve Folge-Slice: opt-in-required is the
+            // SQLite-specific opt-in gate; it maps to MANUAL_ACTION_REQUIRED
+            // because the remedy is operator-side (flip the CLI flag).
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_OPT_IN_REQUIRED_CODE,
         ).forEach { code ->
             PlannerBlockerClassifier.classify(code) shouldBe
                 MigrationBlockedReason.MANUAL_ACTION_REQUIRED
