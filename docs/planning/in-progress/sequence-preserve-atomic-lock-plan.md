@@ -31,7 +31,8 @@ Mitigation in den vorhandenen Slices: dokumentiertes Maintenance-Fenster
 ("Schreibverkehr vor `--execute` stoppen"). Der Plan-Doc
 `ImpPlan-0.9.7-sequence-preserve-current-value.md` §3.2 markiert die
 atomare Variante explizit als Out-of-Scope und §9 listet sie als
-Folge-Thema; das eigene Plan-Dokument fehlt bisher.
+Folge-Thema. Dieses Dokument schließt diese Lücke und definiert den
+atomaren Execute-Time-Pfad.
 
 ## 2. Zielbild
 
@@ -57,8 +58,9 @@ Folge-Thema; das eigene Plan-Dokument fehlt bisher.
 
 ### 3.1 In Scope
 
-- Dialect-spezifische "atomic-probe-and-update"-Adapter, die Probe
-  und Restore in einer Transaktion ausführen.
+- Dialect-spezifische "atomic-lock-probe-execute-restore"-Executoren, die
+  Lock, Probe, geschützte Hauptoperation und Restore in einer Transaktion
+  ausführen.
 - Deterministisches Multi-Sequence-Order/Locking (name-sorted) pro Plan,
   inkl. all-or-nothing Verhalten.
 - Stage-/Runner-Anpassung: aus zwei separaten Phasen (Probe → Render →
@@ -69,6 +71,8 @@ Folge-Thema; das eigene Plan-Dokument fehlt bisher.
   Nebeneffekte auf nachgelagerte Statements im Pool entstehen.
 - Neuer Blocker-Code `SEQUENCE_PRESERVE_LOCK_TIMEOUT` und
   klassifikation auf `MANUAL_ACTION_REQUIRED`.
+- Neuer Blocker-Code `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, wenn Dialekt oder
+  Operationstyp die geforderte Execute-Time-Atomarität nicht garantieren kann.
 - Tests gegen Live-Container für jeden Dialekt mit echtem
   concurrent-writer-Pattern.
 
@@ -89,7 +93,7 @@ Folge-Thema; das eigene Plan-Dokument fehlt bisher.
 
 | Dialekt | Lock-Objekt | Lock-Modus / Scope | Timeout-Quelle | Blockiert |
 |---|---|---|---|---|
-| PostgreSQL | Sequenzrelation | `LOCK TABLE <seq> IN ACCESS EXCLUSIVE MODE` | `SET LOCAL lock_timeout` | `nextval` / `dmg_nextval` |
+| PostgreSQL | Sequenzrelation | `LOCK TABLE <quoted_seq_ref> IN ACCESS EXCLUSIVE MODE` | `SET LOCAL lock_timeout` | `nextval` / `dmg_nextval` |
 | MySQL | `dmg_sequences`-Zeile | `FOR UPDATE` | `SET SESSION innodb_lock_wait_timeout` | `dmg_nextval`-Update |
 | SQLite | komplette DB | `BEGIN IMMEDIATE` / `RESERVED`-Lock | `PRAGMA busy_timeout` | `INSERT`/`UPDATE` im Triggerpfad |
 
@@ -98,11 +102,11 @@ Folge-Thema; das eigene Plan-Dokument fehlt bisher.
 ```sql
 BEGIN;
 SET LOCAL lock_timeout = '5s';
-LOCK TABLE "<seq>" IN ACCESS EXCLUSIVE MODE;        -- (1) Lock
-SELECT last_value, is_called FROM "<seq>";          -- (2) Probe
+LOCK TABLE <quoted_seq_ref> IN ACCESS EXCLUSIVE MODE; -- (1) Lock
+SELECT last_value, is_called FROM <quoted_seq_ref>;    -- (2) Probe
 -- Geschützte sequenzverändernde Statements auf derselben Connection ausführen.
 -- Renderer komponiert SQL aus Probe-Ergebnis
-SELECT setval(format('%I.%I', '<seq_schema>', '<seq_name>')::regclass, <last_value>, <is_called>); -- (3) Restore
+SELECT setval(<regclass_seq_ref>, <last_value>, <is_called>); -- (3) Restore
 COMMIT;
 ```
 
@@ -110,8 +114,10 @@ COMMIT;
   nextval(...)`-Aufruf aus anderen Sessions, weil `nextval` einen
   impliziten `ROW EXCLUSIVE`-Lock auf die Sequenzrelation hält
   (PG-Doku: 13.3 "Explicit Locking", Tab. "Conflicting Lock Modes").
-  Renderer verwenden ausschließlich JDBC-Identifier-Quoting (nicht
-  naive String-Interpolation).
+  Renderer verwenden einen einzigen schemaqualifizierten Sequence-Ref-Vertrag:
+  `quoted_seq_ref` für Relation-SQL und `regclass_seq_ref` für `setval`.
+  Beide werden aus demselben `SequenceObjectRef` abgeleitet, damit Lock,
+  Probe und Restore dieselbe Relation treffen.
 - `lock_timeout = '5s'` wird per `SET LOCAL lock_timeout` am Anfang
   der Transaktion gesetzt; Timeout surfaced als `SQLSTATE 55P03`
   und mappt auf `SEQUENCE_PRESERVE_LOCK_TIMEOUT`.
@@ -151,7 +157,7 @@ SET SESSION innodb_lock_wait_timeout = @dmg_prev_lock_wait_timeout;
 ### 4.3 SQLite
 
 ```sql
--- Adapter liest vorherigen PRAGMA busy_timeout-Wert.
+-- Executor liest vorherigen PRAGMA busy_timeout-Wert.
 PRAGMA busy_timeout = 5000;
 BEGIN IMMEDIATE;
 SELECT "next_value", "managed_by", "format_version"
@@ -182,27 +188,44 @@ COMMIT;
 
 - Plan-Doc dokumentiert pro Dialekt die exakte Lock-Stufe, die Timeout-
   Quelle und das Mapping auf `SEQUENCE_PRESERVE_LOCK_TIMEOUT`.
-- Neuer Diagnostic-Code im `PlannerBlockerClassifier`.
+- Neue Diagnostic-Codes im `PlannerBlockerClassifier`.
+- Pflichtmatrix pro Dialekt und Operationstyp:
+  `supportsAtomicPreserve`, `supportsAtomicPreserveAllInPlan` und
+  `transactionalProtectedSequenceOperations`.
 
 **DoD A**
 
 - [ ] Per-Dialekt-Lock-Matrix dokumentiert.
-- [ ] Klassifier-Mapping für den neuen Code registriert.
+- [ ] Klassifier-Mapping für neue Codes registriert.
+- [ ] Operationstyp-Matrix dokumentiert und mit Blocker-Pfad verbunden.
 - [ ] Carve-Outs (kein cross-DB Lock, kein App-side Retry) dokumentiert.
 
-### Phase B — Port-Refactor: `AtomicSequencePreserveAdapter`
+### Phase B — Execute-Port + Batch-Vertrag
 
-- Neuer Port in `hexagon:ports-read`:
+- Neuer Execute-Port in `hexagon:ports-execute` (bewusst nicht in
+  `hexagon:ports-read`):
 
   ```kotlin
-  interface AtomicSequencePreserveAdapter {
+  interface AtomicSequencePreserveExecutor {
       fun execute(
           connection: Connection,
-          requests: List<AtomicSequencePreserveRequest>,
+          batch: AtomicSequencePreserveBatch,
           lockTimeoutMillis: Long,
-          executeProtectedOperations: (Connection) -> AtomicProtectedExecutionResult,
+          executeProtectedOperations: (
+              Connection,
+              List<ProtectedOperationId>,
+          ) -> AtomicProtectedExecutionResult,
       ): AtomicSequencePreserveResult
   }
+
+  data class AtomicSequencePreserveBatch(
+      val requests: List<AtomicSequencePreserveRequest>,
+      val protectedOperationIds: List<ProtectedOperationId>,
+      val internalFollowUpIds: List<String>,
+  )
+
+  @JvmInline
+  value class ProtectedOperationId(val value: String)
   
   data class AtomicSequencePreserveRequest(
       val sequenceRef: SequenceObjectRef,
@@ -210,17 +233,17 @@ COMMIT;
   )
   ```
 
-  - Adapter erwartet eine dedizierte JDBC-Connection (einziger Owner), die
+  - Executor erwartet eine dedizierte JDBC-Connection (einziger Owner), die
     nicht in einer fremden Transaktion läuft.
   - `executeProtectedOperations` führt die eigentlichen sequenzverändernden
     Statements auf derselben Verbindung aus und läuft nach Lock+Probe, aber
     vor dem Restore.
-  - `AtomicProtectedExecutionResult` ist die bestehende Execute-Result-
+  - `AtomicProtectedExecutionResult` ist eine neue runner-interne
     Zusammenfassung für die geschützten Statements; Exceptions propagieren in
     `AtomicSequencePreserveResult.Failed`.
   - `renderRestore` wird mit dem Probe-Ergebnis pro Sequenz aufgerufen und gibt
     die SQL-Statements für den Restore zurück.
-  - Der Adapter wickelt `BEGIN ...; Lock+Probe; executeProtectedOperations;
+  - Der Executor wickelt `BEGIN ...; Lock+Probe; executeProtectedOperations;
     renderRestore+Restore; COMMIT;` atomar ab und rollt bei Fehler zurück.
   - `AtomicSequencePreserveResult` ist eine sealed class
   (`Applied`/`NotFound`/`LockTimeout`/`Failed`) und löst den heutigen
@@ -235,9 +258,10 @@ COMMIT;
 
 **DoD B**
 
-- [ ] Port und Result-Klasse existieren in `hexagon:ports-read`.
-- [ ] PG-/MySQL-/SQLite-Adapter implementiert.
-- [ ] Adapter-Tests mit echten Live-Containern (Lock-Race-Reproduktion) für
+- [ ] Execute-Port, Batch-Typ und Result-Klassen existieren in
+      `hexagon:ports-execute`.
+- [ ] PG-/MySQL-/SQLite-Executoren implementiert.
+- [ ] Executor-Tests mit echten Live-Containern (Lock-Race-Reproduktion) für
       Single-Seq und Multi-Seq Batch inkl. Timeout-Leckageprüfung.
 
 ### Phase C — Stage-/Runner-Refactor: atomare Execute-Time-Orchestrierung
@@ -245,25 +269,38 @@ COMMIT;
 - `SequencePreserveStage` führt keine Datenbank-Schreiboperation aus. Sie
   identifiziert Preserve-Kandidaten, baut `AtomicSequencePreserveRequest`s
   und markiert die betroffenen Plan-Segmente für den Atomic-Runner.
-- Der Execute-Runner ruft den neuen Adapter mit allen Kandidaten in stabiler
-  Reihenfolge auf (Plan-Atomarität). Der Runner übergibt die eigentlichen
-  sequenzverändernden Statements als `executeProtectedOperations`.
+- Die Render-Pipeline erzeugt neben dem heutigen SQL-String eine
+  runner-interne Segmentliste:
+  `PlainSqlSegment` für normale Statements und `AtomicPreserveSegment` für
+  die geschützte Gruppe aus Sequenzoperationen und internen Restore-Follow-ups.
+- Der Execute-Runner nutzt für `--execute` die Segmentliste statt den
+  kombinierten SQL-String. `PlainSqlSegment`s laufen wie bisher; ein
+  `AtomicPreserveSegment` ruft den neuen Executor mit allen Kandidaten in
+  stabiler Reihenfolge auf (Plan-Atomarität).
+- SQL-Artefakte für `--plan-only`, Reports und Rollback bleiben weiterhin aus
+  dem Renderer ableitbar. Die Segmentliste ist Runner-Metadaten und wird nicht
+  als neue öffentliche Plan-Dateiform eingeführt.
 - Der Restore-Renderer bleibt pro Dialekt verantwortlich: PG rendert
   `setval`, MySQL/SQLite rendern `UPDATE`.
 - `AlterSequenceCurrentValue`-Follow-up bleibt im augmentierten Plan als
-  deklaratives Audit-Artefakt und erhält `executionMode=ATOMIC_PRESERVE_INTERNAL`.
-  Es wird nicht als eigenständiges SQL-Statement gerendert und nicht vor dem
-  Commit als `alreadyApplied` markiert.
+  deklaratives Audit-Artefakt. Der Core-`DiffOperation`-Typ erhält kein
+  neues `executionMode`-Feld; die Zuordnung zu `AtomicPreserveSegment` liegt
+  in einem runner-internen Metadata-Index anhand der Operation-ID.
+- Interne Restore-Follow-ups werden im Live-Execute-Pfad nicht als
+  Standalone-SQL gerendert und nicht vor dem Commit als `alreadyApplied`
+  markiert.
 - Nach erfolgreichem Commit schreibt der Runner den Ausführungsstatus in das
   normale Execution-Result; bei Rollback bleibt der Plan wiederholbar.
 
 **DoD C**
 
 - [ ] Stage markiert Kandidaten und erzeugt Requests ohne DB-Schreibzugriff.
-- [ ] Execute-Runner ruft Adapter atomar auf und führt die geschützten
+- [ ] Render-Pipeline erzeugt runner-interne `ExecutableSegment`s zusätzlich
+      zum heutigen SQL-Artefakt.
+- [ ] Execute-Runner ruft Executor atomar auf und führt die geschützten
       Sequenzoperationen zwischen Probe und Restore auf derselben Connection aus.
 - [ ] Augmentierter Plan enthält den Follow-up weiterhin (für Audit /
-      Plan-Artefakt), markiert ihn aber als `ATOMIC_PRESERVE_INTERNAL`.
+      Plan-Artefakt), ohne neue Felder am Core-`DiffOperation`-Typ.
 - [ ] Execution-Engine rendert interne Follow-ups nicht als Standalone-SQL.
 
 ### Phase D — Multi-Sequence-Atomicity
@@ -273,23 +310,29 @@ COMMIT;
 - Lock-Reihenfolge deterministisch über `SequenceObjectRef.name`
   sortieren (ggf. zusätzlich schema), um Deadlock-Diamanten zwischen
   parallelen Migrationen auszuschließen.
-- Fallback-Verhalten: wenn ein Dialekt die Batch-Modus-Eigenschaft
-  `supportsAtomicPreserveAllInPlan` nicht unterstützt, erfolgt ein
-  kontrollierter Single-Seq-Batch mit klarer Warnung im Plan-Log.
+- Kein Silent-Degrade: wenn ein Dialekt die Batch-Modus-Eigenschaft
+  `supportsAtomicPreserveAllInPlan` nicht unterstützt oder ein geschützter
+  Operationstyp nicht transaktional ausführbar ist, blockt der Lauf mit
+  `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`.
 
 **DoD D**
 
-- [ ] Multi-Sequence-Transaktion in den Adapter-Implementierungen
+- [ ] Multi-Sequence-Transaktion in den Executor-Implementierungen
       wirklich atomar (Commit vs. Rollback all-or-nothing).
 - [ ] Deadlock-Test mit zwei parallelen `schema migrate`-Aufrufen
       über dieselben Sequenzen.
 - [ ] Deterministische Lock-Sortierung (Schema+Name) wird in CI getestet.
+- [ ] Fehlender Batch-/Operation-Support führt zu Blocker statt Warn-Fallback.
 
 ### Phase E — Capability-Flags + Docs
 
 - Neue `SequenceCapability.supportsAtomicPreserve` (Default `false`).
 - Neue `SequenceCapability.supportsAtomicPreserveAllInPlan` (Default `false`)
   für Batch-Atomarität über alle Preserve-Kandidaten.
+- Neue Operation-Capability-Matrix
+  `SequenceCapability.transactionalProtectedSequenceOperations` (Default leer)
+  für Operationstypen, die innerhalb des Atomic-Runners keine impliziten
+  Commits auslösen dürfen.
 - KDoc-Update auf `SequenceCurrentValueProbe` und
   `SequencePreserveStage` mit Hinweis auf den atomaren Pfad.
 - User-Guide-Eintrag: "preserveCurrentValue ist seit 0.X.Y atomar
@@ -308,7 +351,8 @@ COMMIT;
    `BEGIN IMMEDIATE`-Pattern hält den `RESERVED`-Lock auf die ganze
    DB. Längere Renderer-Sequenzen verlängern das Fenster, in dem
    App-Schreiber blocken. Mitigation: Lock-Timeout strikt
-   (Default 5 s), Renderer-Lambda darf keinen Netzwerk-I/O machen.
+   (Default 5 s), `executeProtectedOperations` und `renderRestore` dürfen
+   keinen Netzwerk-I/O außerhalb der Datenbankverbindung machen.
 2. **Lock-Timeout in Production**: bei stark beanspruchten DBs kann
    selbst der kurze atomare Pfad zu Timeouts führen. Mitigation:
    `SEQUENCE_PRESERVE_LOCK_TIMEOUT`-Blocker statt stiller Reset; der
@@ -332,10 +376,10 @@ COMMIT;
    Mitigation: kein vorab gesetztes `alreadyApplied` im Plan; Retry-Semantik
    folgt dem bestehenden Migration-Journal und wird separat getestet.
 8. **Nichttransaktionale DDL / implizite Commits**: Falls ein Dialekt die
-   geschützte sequenzverändernde Operation nicht innerhalb der Adapter-
+   geschützte sequenzverändernde Operation nicht innerhalb der Executor-
    Transaktion ausführen kann (z. B. impliziter Commit), ist all-or-none nicht
    garantiert. Mitigation: Capability für diesen Operationstyp auf `false`
-   setzen und stattdessen Blocker/Warnpfad verwenden.
+   setzen und stattdessen Blocker verwenden.
 
 ## 7. Out-of-Scope / Folge-Themen
 
