@@ -53,11 +53,23 @@
 > `false` bis Phase E einen `SqliteDiffSequenceOps` mit
 > `UPDATE dmg_sequences SET next_value = …`-Renderer liefert,
 > `supportsOwnedBy` bleibt `false` (SQLite kennt kein
-> Ownership-Konzept). Offen: C (Tests + Golden-Master für
-> `helper_table`-Pfad), D (Reverse — inkl. W120 modified-body
-> und W124 Reverse-Trigger-Reihenfolge), E (Compare + Stabilisierung);
-> W123 (Attached-DB-Rollback-Gate, §5.2) bleibt ausserhalb von B,
-> da es Live-DB-Probing im Rollback-Pfad erfordert.
+> Ownership-Konzept). Phase C (Tests + Golden-Master für
+> `helper_table`-Pfad) abgeschlossen 2026-05-29: Golden-Master-
+> Fixtures `full-featured.sqlite.helper-table{,.pre-data,.post-data}.sql`
+> via DdlGoldenMasterTest verdrahtet (plus Substring-Smoke gegen
+> `sequence-emulation.yaml`); `SchemaGenerateRunnerErrorTest` deckt
+> jetzt auch `--sqlite-named-sequences foobar` mit Exit 2; neuer
+> `SqliteSequenceHelperTableIntegrationTest` in
+> `test/integration-sqlite/` mit 9 Tests gegen `:memory:`-SQLite —
+> Fall 1/2/3/4 INSERT-Semantik, Multi-Sequence-Disjunktion,
+> negativer Increment, Cycle-Reset, RAISE(ABORT)-Erschöpfung,
+> RAISE(ABORT)-fehlende-Zeile. `make docker-check` und
+> `make integration INTEGRATION_TASKS="-PintegrationTests
+> :test:integration-sqlite:test"` beide grün. Offen: D (Reverse —
+> inkl. W120 modified-body und W124 Reverse-Trigger-Reihenfolge),
+> E (Compare + Stabilisierung); W123 (Attached-DB-Rollback-Gate,
+> §5.2) bleibt ausserhalb von B, da es Live-DB-Probing im
+> Rollback-Pfad erfordert.
 >
 > Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender
 > Projekt-Floor); `DefaultValue.SequenceNextVal` ist in

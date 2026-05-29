@@ -629,6 +629,17 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.stderr.joined() shouldContain "--sqlite-named-sequences is only valid with --target sqlite"
     }
 
+    test("Exit 2: --sqlite-named-sequences with unknown value") {
+        val h = harness()
+        h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)
+        h.runner().execute(
+            request(target = "sqlite", sqliteNamedSequences = "foobar")
+        ) shouldBe 2
+        h.stderr.joined() shouldContain "Unknown --sqlite-named-sequences value 'foobar'"
+        h.stderr.joined() shouldContain "action_required"
+        h.stderr.joined() shouldContain "helper_table"
+    }
+
     test("JSON output for SQLite includes sqlite_named_sequences field") {
         val h = harness()
         h.generator = FakeGenerator(dialect = DatabaseDialect.SQLITE)

@@ -198,6 +198,87 @@ class DdlGoldenMasterTest : FunSpec({
         stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
     }
 
+    // ── SQLite helper_table Golden Masters for full-featured (0.9.7 Phase C) ──
+
+    test("full-featured sqlite helper_table generates correct DDL (golden master)") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.sql")
+        val actual = generator.generate(input, opts).render()
+        stripHeader(actual) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured sqlite helper_table: pre-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.pre-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.PRE_DATA)) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured sqlite helper_table: post-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.post-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
+    }
+
+    test("sequence-emulation sqlite helper_table generates support objects") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val result = generator.generate(input, opts)
+        val ddl = result.render()
+        ddl shouldContain "CREATE TABLE IF NOT EXISTS \"dmg_sequences\""
+        ddl shouldContain "INSERT INTO \"dmg_sequences\""
+        ddl shouldContain "'invoice_seq'"
+        ddl shouldContain "BEFORE INSERT ON \"invoices\""
+        ddl shouldContain "AFTER INSERT ON \"invoices\""
+        ddl shouldContain "WHEN NEW.\"invoice_number\" IS NULL"
+    }
+
+    test("sequence-emulation sqlite helper_table: pre-data has support table + user table, post-data has trigger pair") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val result = generator.generate(input, opts)
+        val preData = result.renderPhase(DdlPhase.PRE_DATA)
+        val postData = result.renderPhase(DdlPhase.POST_DATA)
+
+        preData shouldContain "CREATE TABLE IF NOT EXISTS \"dmg_sequences\""
+        preData shouldContain "INSERT INTO \"dmg_sequences\""
+        preData shouldContain "CREATE TABLE \"invoices\""
+        preData shouldNotContain "CREATE TRIGGER"
+
+        postData shouldContain "BEFORE INSERT ON \"invoices\""
+        postData shouldContain "AFTER INSERT ON \"invoices\""
+        postData shouldNotContain "CREATE TABLE"
+    }
+
     // ── MySQL helper_table Golden Master (LF-003 / LF-004) ──────────────
 
     test("sequence-emulation mysql helper_table generates support objects") {
