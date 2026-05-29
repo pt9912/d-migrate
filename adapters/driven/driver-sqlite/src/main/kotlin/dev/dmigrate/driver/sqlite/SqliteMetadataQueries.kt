@@ -117,6 +117,21 @@ object SqliteMetadataQueries {
         )
     }
 
+    /**
+     * 0.9.7 SQLite-Sequence Phase D: trigger list including the
+     * sqlite_master ROWID as the implicit creation-order key. Used
+     * by `SqliteSequenceReverseSupport` to detect the W124
+     * "user-defined BEFORE INSERT trigger created before the
+     * sequence-support trigger" masking risk (Plan §5.1 line
+     * 1397–1402).
+     */
+    fun listTriggersWithRowid(session: JdbcMetadataSession): List<Map<String, Any?>> {
+        return session.queryList(
+            "SELECT rowid, name, tbl_name, sql FROM sqlite_master " +
+                "WHERE type = 'trigger' ORDER BY rowid"
+        )
+    }
+
     /** Get the CREATE TABLE SQL for a table. */
     fun getCreateSql(session: JdbcMetadataSession, table: String): String? {
         val row = session.querySingle(
@@ -124,4 +139,67 @@ object SqliteMetadataQueries {
         )
         return row?.get("sql") as? String
     }
+
+    /**
+     * 0.9.7 SQLite-Sequence Phase D: existence probe for the
+     * `dmg_sequences` helper table. Returns `true` if the table is
+     * present, `false` if absent, `null` if the query fails (e.g.
+     * lack of read privileges on `sqlite_master` — practically
+     * impossible for SQLite, but kept symmetric with the MySQL
+     * snapshot's `NOT_ACCESSIBLE` state).
+     */
+    fun checkDmgSequencesTableExists(session: JdbcMetadataSession): Boolean? = try {
+        val row = session.querySingle(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'dmg_sequences'",
+        )
+        row != null
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * 0.9.7 SQLite-Sequence Phase D: shape check for `dmg_sequences`.
+     * The reverse path only accepts the table if it carries the
+     * canonical column set from Plan §3.2 — `managed_by`,
+     * `format_version`, `name`, `next_value`, `last_returned_value`,
+     * `exhausted`, `increment_by`, `min_value`, `max_value`,
+     * `cycle_enabled`, `cache_size`. Extra columns are tolerated
+     * (a future emulation-format bump may add fields); missing
+     * canonical columns trigger `INVALID_SHAPE`.
+     */
+    fun checkDmgSequencesShape(session: JdbcMetadataSession): Boolean {
+        val cols = listColumns(session, "dmg_sequences").map { it.name }.toSet()
+        return REQUIRED_DMG_SEQUENCES_COLUMNS.all { it in cols }
+    }
+
+    /**
+     * 0.9.7 SQLite-Sequence Phase D: scan the helper-table rows.
+     * Filters by `managed_by IN (...)` and `format_version IN (...)`
+     * so operator-inserted rows (test fixtures, manual bookkeeping)
+     * are not mistaken for canonical d-migrate sequences.
+     */
+    fun listDmgSequencesRows(session: JdbcMetadataSession): List<Map<String, Any?>> =
+        session.queryList(
+            "SELECT \"managed_by\", \"format_version\", \"name\", \"next_value\", " +
+                "\"last_returned_value\", \"exhausted\", \"increment_by\", " +
+                "\"min_value\", \"max_value\", \"cycle_enabled\", \"cache_size\" " +
+                "FROM \"dmg_sequences\" " +
+                "WHERE \"managed_by\" = 'd-migrate' " +
+                "AND \"format_version\" = 'sqlite-sequence-v1' " +
+                "ORDER BY \"name\"",
+        )
+
+    private val REQUIRED_DMG_SEQUENCES_COLUMNS = setOf(
+        "managed_by",
+        "format_version",
+        "name",
+        "next_value",
+        "last_returned_value",
+        "exhausted",
+        "increment_by",
+        "min_value",
+        "max_value",
+        "cycle_enabled",
+        "cache_size",
+    )
 }

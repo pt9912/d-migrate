@@ -65,8 +65,23 @@
 > negativer Increment, Cycle-Reset, RAISE(ABORT)-Erschöpfung,
 > RAISE(ABORT)-fehlende-Zeile. `make docker-check` und
 > `make integration INTEGRATION_TASKS="-PintegrationTests
-> :test:integration-sqlite:test"` beide grün. Offen: D (Reverse —
-> inkl. W120 modified-body und W124 Reverse-Trigger-Reihenfolge),
+> :test:integration-sqlite:test"` beide grün. Phase D Reverse
+> (Sub-Slices D.1-D.6) abgeschlossen 2026-05-29:
+> `SqliteSequenceReverseSupport` mit Marker-Parser
+> (`SqliteSequenceMarkerParser`) und Token-Body-Scanner
+> (`SqliteIdentifierTokenScanner`), wired in `SqliteSchemaReader`.
+> dmg_sequences-Erkennung über Existenz + Shape-Check + Row-Read,
+> Trigger-Paar-Klassifikation primary/secondary/user, W116
+> degraded-secondary, W120 body-modified, W124 user-trigger-before-
+> bi (Reverse-Reihenfolge via sqlite_master.rowid). dmg_sequences-
+> Tabelle und Support-Trigger werden aus dem neutralen Schema
+> gefiltert; sequence-getragene Spalten erhalten
+> `DefaultValue.SequenceNextVal`. Unit-Tests
+> (SqliteSequenceMarkerParserTest 8 Tests, Sqlite-
+> IdentifierTokenScannerTest 11 Tests, SqliteSequenceReverseSupport-
+> Test 10 Tests) plus 3 Round-Trip-Integrationstests (canonical
+> happy-path, W120 body rewrite, W116 marker stripped).
+> `make docker-check` und `make integration` beide grün. Offen:
 > E (Compare + Stabilisierung); W123 (Attached-DB-Rollback-Gate,
 > §5.2) bleibt ausserhalb von B, da es Live-DB-Probing im
 > Rollback-Pfad erfordert.

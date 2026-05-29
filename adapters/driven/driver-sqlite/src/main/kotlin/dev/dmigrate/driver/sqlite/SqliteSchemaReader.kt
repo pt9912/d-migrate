@@ -18,6 +18,8 @@ import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
  */
 class SqliteSchemaReader : SchemaReader {
 
+    private val sequenceSupport = SqliteSequenceReverseSupport()
+
     override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
         val skipped = mutableListOf<SkippedObject>()
@@ -53,15 +55,26 @@ class SqliteSchemaReader : SchemaReader {
             // Views
             val views = if (options.includeViews) readViews(session) else emptyMap()
 
-            // Triggers
+            // 0.9.7 Phase D: sequence-support reverse runs unconditionally
+            // (Plan §6.1 line 1669: "Sequence-Reverse darf nicht von
+            // includeTriggers abhaengen").
+            val supportSnapshot = sequenceSupport.scanSequenceSupport(session)
+            val sequences = sequenceSupport.materializeSequences(supportSnapshot)
+            val enrichedTables = sequenceSupport.materializeSequenceDefaults(supportSnapshot, tables)
+            val filteredTables = sequenceSupport.filterSupportTable(enrichedTables, supportSnapshot)
+            notes += sequenceSupport.aggregateNotes(supportSnapshot)
+
+            // Triggers (filtered against the canonical sequence-support pairs)
             val triggers = if (options.includeTriggers) readTriggers(session, notes) else emptyMap()
+            val filteredTriggers = sequenceSupport.filterSupportTriggers(triggers, supportSnapshot)
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.sqliteName(schema),
                 version = ReverseScopeCodec.REVERSE_VERSION,
-                tables = tables,
+                tables = filteredTables,
                 views = views,
-                triggers = triggers,
+                triggers = filteredTriggers,
+                sequences = sequences,
             )
 
             return SchemaReadResult(
