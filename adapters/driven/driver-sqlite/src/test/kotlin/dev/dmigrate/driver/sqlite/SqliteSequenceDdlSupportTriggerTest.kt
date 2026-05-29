@@ -519,6 +519,71 @@ class SqliteSequenceDdlSupportTriggerTest : FunSpec({
         result.notes.none { it.code == "W122" } shouldBe true
     }
 
+    test("HELPER_TABLE — BEFORE UPDATE trigger on host table raises W122 (timing-insensitive)") {
+        // Plan §3.4 line 619: BEFORE/AFTER UPDATE-Trigger feuern beide
+        // bei recursive_triggers=ON. Code-Detektion ist deshalb
+        // timing-insensitive (event == UPDATE genuegt).
+        val schema = schemaWith(
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Integer, required = true),
+                        "order_number" to seqColumn(),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+            sequences = mapOf("order_seq" to SequenceDefinition()),
+            triggers = mapOf(
+                "trg_pre_update" to TriggerDefinition(
+                    timing = TriggerTiming.BEFORE,
+                    event = TriggerEvent.UPDATE,
+                    table = "orders",
+                    body = "-- user BEFORE UPDATE trigger",
+                ),
+            ),
+        )
+
+        val result = SqliteDdlGenerator().generate(schema, helperTableOptions)
+
+        result.notes.any { it.code == "W122" && it.objectName == "orders.order_number" } shouldBe true
+    }
+
+    test("HELPER_TABLE — two sequence columns + one UPDATE trigger emit two W122 notes") {
+        // One W122 per sequence column, regardless of how many UPDATE
+        // triggers there are on the table.
+        val schema = schemaWith(
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Integer, required = true),
+                        "order_number" to seqColumn("order_seq"),
+                        "invoice_number" to seqColumn("invoice_seq"),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+            sequences = mapOf(
+                "order_seq" to SequenceDefinition(),
+                "invoice_seq" to SequenceDefinition(),
+            ),
+            triggers = mapOf(
+                "trg_audit_update" to TriggerDefinition(
+                    timing = TriggerTiming.AFTER,
+                    event = TriggerEvent.UPDATE,
+                    table = "orders",
+                    body = "-- user UPDATE trigger",
+                ),
+            ),
+        )
+
+        val result = SqliteDdlGenerator().generate(schema, helperTableOptions)
+
+        result.notes.count { it.code == "W122" } shouldBe 2
+        result.notes.any { it.code == "W122" && it.objectName == "orders.order_number" } shouldBe true
+        result.notes.any { it.code == "W122" && it.objectName == "orders.invoice_number" } shouldBe true
+    }
+
     test("HELPER_TABLE — UPDATE trigger on a different table does not raise W122") {
         val schema = schemaWith(
             tables = mapOf(

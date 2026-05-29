@@ -32,7 +32,18 @@
 > auf der Zieltabelle triggert W122", da das neutrale Modell kein
 > `UPDATE OF collist`-Feingranularität trägt) ebenfalls am
 > 2026-05-29 nachgezogen mit 4 zusätzlichen Tests in
-> `SqliteSequenceDdlSupportTriggerTest`. Offen: B.4
+> `SqliteSequenceDdlSupportTriggerTest`. Zweiter Review-Pass am
+> 2026-05-29 (Commit-Followup) fixiert: ASCII-only `normalize` mit
+> Raw-Identifier-Hash gegen Non-ASCII-Kollisionen (Major 2);
+> Plan-Doc-Drift §3.4 W122-Feinmatrix als B.3-Carve-out annotiert,
+> §5.1 "Position 5/8"-Prosa auf POST_DATA-Anlage-Reihenfolge
+> umformuliert (Major 1); `pendingSequenceNotes.clear()` als
+> Defense-in-Depth am Anfang von `generateTable`; Variable
+> `suppressedNotNullColumns` → `sequenceBackedColumns` umbenannt;
+> `recordNotNullSuppressionNote` mit `require`-Pre-Assertion gegen
+> Aufruf vor Spalten-Registration; aiName-only-Collision-Test,
+> Non-ASCII-Naming-Tests, BEFORE-UPDATE-Trigger-Test, Multi-Sequence
+> + 1-Update-Trigger = 2× W122-Test. Offen: B.4
 > (`SequenceCapability`-Defaults flippen), C (Tests + Golden-Master
 > für `helper_table`-Pfad), D (Reverse — inkl. W120 modified-body
 > und W124 Reverse-Trigger-Reihenfolge), E (Compare + Stabilisierung);
@@ -636,8 +647,10 @@ Die Trigger-Ausfuehrung im `helper_table`-Modus hat zwei Ebenen:
 1. **INSERT-Ebene (deterministisch)**: Die Reihenfolge der BEFORE
    INSERT (`_bi`) und AFTER INSERT (`_ai`) Trigger relativ zu
    nutzerdefinierten INSERT-Triggern ist durch die DDL-
-   Erzeugungsreihenfolge festgelegt (Position 5 vs. 8). Dieses
-   Verhalten ist **unabhaengig** von `recursive_triggers`.
+   Erzeugungsreihenfolge festgelegt (Drift-Korrektur 2026-05-29:
+   beide in POST_DATA, Support-Trigger vor User-Triggern in der
+   `generateTriggers`-Rueckgabeliste). Dieses Verhalten ist
+   **unabhaengig** von `recursive_triggers`.
 
 2. **UPDATE-Nebenweg (rekursionsabhaengig)**: Ob das `_ai`-UPDATE
    weitere UPDATE-Trigger ausloest, haengt von `recursive_triggers`
@@ -672,6 +685,23 @@ die durch das `_ai`-UPDATE tatsaechlich feuern **koennten**:
   emittiert (der Trigger feuert bei jedem UPDATE auf der Tabelle)
 - Schweregrad: immer `NoteType.WARNING` wenn die obigen Kriterien
   zutreffen
+
+> Hinweis Drift-Korrektur (B.3-Review-2, 2026-05-29): die
+> `UPDATE OF collist`- und `WHEN`-Feingranularität ist derzeit
+> **nicht** implementiert, weil das neutrale `TriggerDefinition`
+> kein `updateOf: List<String>`-Feld trägt; nur die
+> `condition: String?`-Bedingung waere statisch greifbar, lieferte
+> aber ohne `OF`-Information keinen brauchbaren Filter. Der
+> Generator implementiert deshalb die Regel "ohne OF-Einschraenkung
+> → immer W122" pauschal: jeder `event == UPDATE` Trigger auf der
+> Zieltabelle triggert W122, unabhaengig von `condition` oder
+> `timing`. Konservativ Plan-konform (Bullet vier oben), aber mit
+> hoeherer False-Positive-Quote als die OF/WHEN-Feinmatrix
+> verspricht. Die Feinmatrix wird aktiviert, sobald das neutrale
+> Modell `UPDATE OF collist` traegt — voraussichtlich in der Phase,
+> in der `SqliteSchemaReader` das Feld aus existing Triggern
+> rueckliest (Phase D Reverse), denn vorher fehlt der
+> Round-Trip-Vertrag.
 
 Begruendung:
 
@@ -1357,9 +1387,14 @@ Interaktion mit nutzerdefinierten BEFORE INSERT-Triggern:
 
 SQLite fuehrt BEFORE INSERT-Trigger in der Reihenfolge ihrer
 Erzeugung aus. Im generierten DDL stehen Sequence-Support-Trigger
-(Position 5) **vor** nutzerdefinierten Triggern (Position 8). Damit
-feuern Sequence-Trigger zuerst, und nutzerdefinierte Trigger sehen
-den Zustand **nach** der Sequence-Reservierung.
+**vor** nutzerdefinierten Triggern in der `generateTriggers`-
+Rueckgabeliste (Drift-Korrektur 2026-05-29: gemeinsame POST_DATA-
+Phase, Position 7+8 statt der frueher genannten "Position 5 vs. 8";
+die Anlage-Reihenfolge im DDL-Stream bleibt deterministisch, weil
+der Generator die Support-Trigger explizit vor den User-Triggern
+emittiert). Damit feuern Sequence-Trigger zuerst, und
+nutzerdefinierte Trigger sehen den Zustand **nach** der
+Sequence-Reservierung.
 
 Moegliche Interferenz:
 
@@ -1396,10 +1431,12 @@ Vertrag:
 Interaktion mit nutzerdefinierten AFTER INSERT-Triggern:
 
 Dieselbe Reihenfolgelogik gilt fuer AFTER INSERT-Trigger: die
-generierten `_ai`-Trigger stehen in Position 5, nutzerdefinierte
-AFTER INSERT-Trigger in Position 8. Damit feuert der `_ai`-Trigger
-(der den Sequence-Wert per UPDATE in die Zeile schreibt) **vor**
-nutzerdefinierten AFTER INSERT-Triggern.
+generierten `_ai`-Trigger stehen ebenfalls vor den nutzerdefinierten
+AFTER INSERT-Triggern in der `generateTriggers`-Rueckgabeliste
+(Drift-Korrektur 2026-05-29: gemeinsame POST_DATA-Phase, Position
+7+8). Damit feuert der `_ai`-Trigger (der den Sequence-Wert per
+UPDATE in die Zeile schreibt) **vor** nutzerdefinierten AFTER
+INSERT-Triggern.
 
 - nutzerdefinierte AFTER INSERT-Trigger sehen die Zeile **mit** dem
   gesetzten Sequence-Wert (weil der `_ai`-Trigger bereits lief)

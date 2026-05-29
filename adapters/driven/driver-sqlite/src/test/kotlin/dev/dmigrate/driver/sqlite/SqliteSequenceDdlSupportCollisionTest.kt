@@ -235,6 +235,68 @@ class SqliteSequenceDdlSupportCollisionTest : FunSpec({
         ) shouldBe false
     }
 
+    test("normalize — ASCII-only filter drops Unicode letters and digits") {
+        // Plan §3.3 ASCII-only contract: non-ASCII characters collapse to
+        // their ASCII residue so the resulting trigger name passes
+        // CANONICAL_TRIGGER_PATTERN.
+        SqliteSequenceNaming.normalize("Ä_orders") shouldBe "_orders"
+        SqliteSequenceNaming.normalize("日付") shouldBe ""
+        SqliteSequenceNaming.normalize("Ordër²_42") shouldBe "ordr_42"
+        SqliteSequenceNaming.normalize("Plain_Name") shouldBe "plain_name"
+    }
+
+    test("trigger naming — non-ASCII identifiers produce canonical-shape names") {
+        // The trigger name must still pass isCanonicalSupportTriggerName
+        // even when one of the inputs collapses to an empty / minimal
+        // ASCII residue, otherwise the collision scanner would miss
+        // collisions against names the generator itself produced.
+        val name = SqliteSequenceNaming.beforeInsertTriggerName("Ä_orders", "ordër", "seq")
+        SqliteSequenceNaming.isCanonicalSupportTriggerName(name) shouldBe true
+        name.startsWith("dmg_seq_") shouldBe true
+        name.endsWith("_bi") shouldBe true
+    }
+
+    test("trigger naming — non-ASCII inputs whose normalised form collides still hash to distinct names") {
+        // `Ä_orders` and `__orders` both normalise to `_orders`; the
+        // hash deliberately uses the RAW identifiers so the two trigger
+        // names remain distinct even when the ASCII residue collapses.
+        val a = SqliteSequenceNaming.beforeInsertTriggerName("Ä_orders", "col", "seq")
+        val b = SqliteSequenceNaming.beforeInsertTriggerName("__orders", "col", "seq")
+        a shouldNotBe b
+    }
+
+    test("HELPER_TABLE — user-defined trigger with AFTER-collision (only aiName) emits E124") {
+        // Defensive coverage of the aiName-only branch of the user-
+        // trigger collision check in generateSupportTriggers.
+        val aiName = SqliteSequenceNaming.afterInsertTriggerName("orders", "order_number", "order_seq")
+        val schema = schemaWith(
+            tables = mapOf(
+                "orders" to TableDefinition(
+                    columns = mapOf(
+                        "id" to ColumnDefinition(type = NeutralType.Integer, required = true),
+                        "order_number" to seqColumn(),
+                    ),
+                    primaryKey = listOf("id"),
+                ),
+            ),
+            sequences = mapOf("order_seq" to SequenceDefinition()),
+            triggers = mapOf(
+                aiName to TriggerDefinition(
+                    timing = TriggerTiming.AFTER,
+                    event = TriggerEvent.INSERT,
+                    table = "orders",
+                    body = "-- user-defined AFTER INSERT trigger",
+                ),
+            ),
+        )
+
+        val result = SqliteDdlGenerator().generate(schema, helperTableOptions)
+
+        result.notes.any {
+            it.code == "E124" && it.objectName == aiName
+        } shouldBe true
+    }
+
     // ── rollback inversion ─────────────────────────────────────────
 
     test("HELPER_TABLE — rollback drops trigger pair and dmg_sequences in reverse order") {

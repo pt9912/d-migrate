@@ -251,6 +251,23 @@ class SqliteSequenceDdlSupportTest : FunSpec({
         result.notes.none { it.code == "W117" } shouldBe true
     }
 
+    test("recordNotNullSuppressionNote refuses to fire for a column that was not registered") {
+        // Defensive: the helper must reject callers that bypass
+        // shouldSuppressNotNull / resolveSequenceDefault, otherwise a
+        // future caller could emit a stray W119 for a non-sequence
+        // column.
+        val support = SqliteSequenceDdlSupport()
+        support.beginRun(
+            schema = schemaWith(),
+            options = helperTableOptions,
+        )
+
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            support.recordNotNullSuppressionNote("orders", "missing_col")
+        }
+        ex.message!! shouldContain "before resolveSequenceDefault registered it"
+    }
+
     test("ACTION_REQUIRED skipped entries are tracked with the canonical type+name tuple") {
         val schema = schemaWith(
             sequences = mapOf(

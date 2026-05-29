@@ -33,8 +33,13 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         if (!sequenceSupport.shouldSuppressNotNull(tableName, col)) {
             return super.columnSql(tableName, colName, col, schema)
         }
+        // super.columnSql runs `resolveSequenceDefault` which registers
+        // the column in `sequenceBackedColumns`; only after that
+        // registration may `recordNotNullSuppressionNote` fire (its
+        // require-guard insists on the registration).
+        val rendered = super.columnSql(tableName, colName, col.copy(required = false), schema)
         sequenceSupport.recordNotNullSuppressionNote(tableName, colName)
-        return super.columnSql(tableName, colName, col.copy(required = false), schema)
+        return rendered
     }
 
     override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =

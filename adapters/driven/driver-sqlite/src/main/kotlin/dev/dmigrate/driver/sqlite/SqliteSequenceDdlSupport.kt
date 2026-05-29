@@ -39,7 +39,7 @@ internal class SqliteSequenceDdlSupport {
     private var supportObjectsBlocked = false
     private val pendingSupportTriggerSpecs = mutableListOf<SqliteSequenceTriggerSpec>()
     private val pendingSequenceNotes = mutableListOf<TransformationNote>()
-    private val suppressedNotNullColumns = mutableSetOf<TableColumnKey>()
+    private val sequenceBackedColumns = mutableSetOf<TableColumnKey>()
     private val w119EmittedColumns = mutableSetOf<TableColumnKey>()
 
     private val isHelperTable: Boolean
@@ -51,7 +51,7 @@ internal class SqliteSequenceDdlSupport {
         supportObjectsBlocked = false
         pendingSupportTriggerSpecs.clear()
         pendingSequenceNotes.clear()
-        suppressedNotNullColumns.clear()
+        sequenceBackedColumns.clear()
         w119EmittedColumns.clear()
     }
 
@@ -177,7 +177,7 @@ internal class SqliteSequenceDdlSupport {
                 hint = "Under the SQLite default (recursive_triggers = OFF) this warning is moot.",
             )
         }
-        suppressedNotNullColumns += TableColumnKey(tableName, columnName)
+        sequenceBackedColumns += TableColumnKey(tableName, columnName)
         return null
     }
 
@@ -190,6 +190,11 @@ internal class SqliteSequenceDdlSupport {
      */
     fun recordNotNullSuppressionNote(tableName: String, columnName: String) {
         val key = TableColumnKey(tableName, columnName)
+        require(key in sequenceBackedColumns) {
+            "recordNotNullSuppressionNote called for '$tableName.$columnName' before " +
+                "resolveSequenceDefault registered it as sequence-backed; check the columnSql " +
+                "override's call order."
+        }
         if (!w119EmittedColumns.add(key)) return
         pendingSequenceNotes += TransformationNote(
             type = NoteType.WARNING,
@@ -208,10 +213,10 @@ internal class SqliteSequenceDdlSupport {
      * trigger gets a chance to run.
      *
      * Pure decision — no side effects. The matching W119 note is
-     * emitted exactly once per affected column in
-     * [resolveSequenceDefault] so the suppression hook can be
-     * consulted from any number of [SqliteDdlGenerator.columnSql]
-     * invocations without producing duplicate notes.
+     * emitted by [recordNotNullSuppressionNote] (dedupe-aware via
+     * `w119EmittedColumns`); the suppression hook can be consulted
+     * from any number of [SqliteDdlGenerator.columnSql] invocations
+     * without producing duplicate notes.
      *
      * The decision is order-independent: it keys off the column's
      * own `DefaultValue.SequenceNextVal` (so `AbstractDdlGenerator.
@@ -249,8 +254,8 @@ internal class SqliteSequenceDdlSupport {
      */
     fun shouldSuppressCheckConstraint(tableName: String, expression: String): Boolean {
         if (!isHelperTable) return false
-        if (suppressedNotNullColumns.none { it.tableName == tableName }) return false
-        val referencedSequenceColumn = suppressedNotNullColumns
+        if (sequenceBackedColumns.none { it.tableName == tableName }) return false
+        val referencedSequenceColumn = sequenceBackedColumns
             .filter { it.tableName == tableName }
             .firstOrNull { isPureIsNotNullCheck(expression, it.columnName) }
             ?: return false

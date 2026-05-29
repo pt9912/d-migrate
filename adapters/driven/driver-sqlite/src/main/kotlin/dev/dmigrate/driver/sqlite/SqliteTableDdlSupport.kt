@@ -17,6 +17,14 @@ internal class SqliteTableDdlSupport(
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
+        // Defensive: drop any sequence-support notes that survived the
+        // previous `generateTable` call (e.g. through a future early
+        // return that bypasses the end-of-method drain). Pre-existing
+        // notes belong to the previous table and would be wrong to
+        // attach here; the contract is "every `generateTable` start
+        // begins from a clean note slate".
+        sequenceSupport.drainPendingNotes()
+
         val geometryColumns = table.columns.filter { it.value.type is NeutralType.Geometry }
         val isSpatiaLite = geometryColumns.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE
 
