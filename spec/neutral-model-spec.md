@@ -791,7 +791,7 @@ aus dem Live-Target übernimmt:
 |---|---|---|
 | PostgreSQL | `SELECT setval('<seq>', <last_value>, <is_called>);` | `SELECT last_value, is_called FROM <seq>` |
 | MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
-| SQLite | — *(Blocker `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`)* | — |
+| SQLite (HELPER_TABLE-Mode, seit 0.9.7-E.3-Folge-Slice) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
 
 **Voraussetzungen** (gemäß
 `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
@@ -799,6 +799,9 @@ aus dem Live-Target übernimmt:
 - `--execute` mit DB-Target. Die Probe braucht eine offene
   Connection; File-Mode emittiert `SEQUENCE_PRESERVE_NOT_RUN_POLICY`
   als INFO ohne Follow-up.
+- Für SQLite ist zusätzlich `--sqlite-named-sequences helper_table`
+  Pflicht (sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`,
+  `primaryBlockedReason = MANUAL_ACTION_REQUIRED`).
 - Auf `AlterSequence` / `RenameSequence` muss das Live-Target die
   Sequenz bereits kennen — sonst blockt der Plan mit
   `SEQUENCE_PRESERVE_PROBE_FAILED` (kein deterministischer
@@ -823,27 +826,34 @@ gerendert, welches blockt, welches emittiert nur eine Warnung?".
 Die Defaults sind die unterste Präzedenz-Schicht; eine spätere
 Tranche kann Overlay-/CLI-Overrides ergänzen.
 
-| Attribut | PG | MySQL (Emul.) | SQLite (heute / `helper_table` geplant) | Cross-Dialect-Verhalten |
+| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | Cross-Dialect-Verhalten |
 |---|---|---|---|---|
-| `name` | nativ | `dmg_sequences.name` | heute nicht gerendert (`E056` / Diff-Blocker); geplant: `dmg_sequences.name` | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
-| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | heute n.g.; geplant: Seed via `next_value` | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
-| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | heute n.g.; geplant: `dmg_sequences.increment_by` | Verlustfrei zwischen PG/MySQL |
-| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | heute n.g.; geplant: `dmg_sequences.min_value` | Verlustfrei in `helper_table` |
-| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | heute n.g.; geplant: `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
-| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | heute n.g.; geplant: `dmg_sequences.cycle_enabled` | Verlustfrei in `helper_table` |
-| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | heute n.g.; geplant: `dmg_sequences.cache_size` (Metadatum) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Beide Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
-| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | nicht abbildbar (`SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`) | Execute-only; siehe §9.1 |
+| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
+| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen allen drei Dialekten |
+| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | Verlustfrei in `helper_table` |
+| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | Verlustfrei in `helper_table` |
+| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
+| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(seit 0.9.7-E.3-Folge-Slice; opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | Execute-only; siehe §9.1 |
 | `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
 
-**SQLite-Defaults (Reality-First)**: solange
-`docs/planning/done/sqlite-sequence-emulation-plan.md` nicht
-implementiert ist, melden die SQLite-Capability-Defaults
-`supportsNamedSequences = false`. Das ist konsistent mit
-`SqliteCapabilityDdlSupport.generateSequences` (`E056` im
-Full-Schema-Pfad) und `SqliteDiffDdlGenerator` (Sequence-Ops
-blockieren mit `DIALECT_UNSUPPORTED_OPERATION`). Per-Attribut-
-Mismatch via `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` wird erst
-relevant, wenn der Renderer named sequences aktiviert.
+**SQLite-Defaults (Reality-First, Stand 0.9.7)**: die
+SQLite-Sequence-Emulation aus
+`docs/planning/done/sqlite-sequence-emulation-plan.md` liefert seit
+0.9.7 (Phasen A–E) eine vollständige `helper_table`-Variante; der
+0.9.7-E.3-Folge-Slice
+(`docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
+ergänzt den `preserveCurrentValue`-Pfad. Damit melden die SQLite-
+Capability-Defaults `supportsNamedSequences = true` und
+`supportsCurrentValuePreserve = true`. Der Default-Mode bleibt
+`action_required` (`E056`-Skip im Full-Schema-Pfad,
+`SEQUENCE_PRESERVE_OPT_IN_REQUIRED` im Diff-Pfad); erst
+`--sqlite-named-sequences helper_table` aktiviert die Emulation und
+den Preserve-Probe. Per-Attribut-Mismatch via
+`SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` ist reservierte
+Forward-Compat-Diagnose und greift nur, wenn ein zukünftiges
+Capability-Subset ein einzelnes Attribut ausschliessen muss.
 
 ---
 

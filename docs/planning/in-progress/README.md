@@ -9,7 +9,12 @@ Zwei Typen leben hier:
      0.9.7-Workstream-Aggregator
 2. **Per-Feature-Umbrella-Pläne**, die einen mehrphasigen Slice
    tragen, bei dem mindestens ein Commit den Plan referenziert:
-   - [`sqlite-sequence-emulation-plan.md`](sqlite-sequence-emulation-plan.md)
+   - [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md)
+     — 0.9.7-E.3-Folge-Slice, schliesst die SQLite-`preserveCurrentValue`-Lücke
+     aus dem `ImpPlan-0.9.7-sequence-preserve-current-value.md`-Plan in `done/`.
+   - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
+     — Draft für den dialektübergreifenden Atomic-Probe-und-Restore-Pfad
+     (Folge-Slice der bestehenden `preserveCurrentValue`-Workstreams).
    - [`refactoring-cli-testability.md`](refactoring-cli-testability.md)
 
 Lebenszyklus und Verzeichnisstruktur sind in

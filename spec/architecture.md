@@ -838,7 +838,10 @@ plan(initial)
         PG  → SELECT setval('<seq>', <value>, <is_called>);
         MySQL → UPDATE dmg_sequences SET next_value = <v>
                  WHERE name = <key> AND managed_by IN (...) AND format_version IN (...);
-        SQLite → DIALECT_UNSUPPORTED_OPERATION (kein helper-table-Emulationsplan landet)
+        SQLite (helper_table opt-in via --sqlite-named-sequences)
+              → UPDATE "dmg_sequences" SET "next_value" = <v>
+                 WHERE "name" = <key>;
+              (ohne Opt-in: BLOCKER SEQUENCE_PRESERVE_OPT_IN_REQUIRED → MANUAL_ACTION_REQUIRED)
 ```
 
 Schluesselkomponenten:
@@ -853,17 +856,28 @@ Schluesselkomponenten:
   `restoreValue?`/`restoreIsCalled?`/`rollbackImpossible`/
   `rollbackImpossibleReason?`/`revertAfterRename`.
 - **Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
-  (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL).
+  (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL),
+  `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` (SQLite —
+  seit 0.9.7-E.3-Folge-Slice: Up auf `applySequenceRef`, Down auf
+  `probeSequenceRef` mit `restoreValue`; `restoreValue == null` ⇒
+  Skip mit `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`).
 - **JDBC-Adapter**: `PostgresSequenceCurrentValueProbe` (SQLSTATE
   42P01/42501-Mapping), `MysqlSequenceCurrentValueProbe`
   (Error-Code 1146/1142 + `managed_by`/`format_version`-Set-Validation
   ueber `MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY` /
-  `SUPPORTED_FORMAT_VERSIONS`).
+  `SUPPORTED_FORMAT_VERSIONS`), `SqliteSequenceCurrentValueProbe`
+  (no-such-table-Message → `NotFound`, SQLITE_PERM/SQLITE_AUTH →
+  `PROBE_PERMISSION_DENIED`; Validierung gegen
+  `SqliteSequenceNaming.MANAGED_BY` / `FORMAT_VERSION`).
 - **Stage**: `SequencePreserveStage` (`hexagon:application`) — Kandidaten-
-  Filter, file-Target-Priority-Blocker, Dialekt-Skip, Probe-Routing,
+  Filter, file-Target-Priority-Blocker, Dialekt-Allowlist
+  (PG/MySQL/SQLite), SQLite-`helper_table`-Opt-in-Gate
+  (`SEQUENCE_PRESERVE_OPT_IN_REQUIRED`), Probe-Routing,
   Plan-Augmentation.
 - **CLI**: `SequenceCurrentValueProbeRunner` dispatcht per
-  `SequenceObjectRef.dialect` an die PG/MySQL-Adapter.
+  `SequenceObjectRef.dialect` an die PG/MySQL/SQLite-Adapter.
+  `--sqlite-named-sequences helper_table` auf `schema migrate`
+  schaltet den SQLite-Probe-Pfad frei.
 
 `AlterSequenceCurrentValue`-Follow-ups landen **direkt hinter ihrer
 parent-Op** im augmentierten Plan und sind in `dependencies` auf die
@@ -883,10 +897,10 @@ konsistent bleibt:
 | Port (`hexagon:ports-read`) | `MysqlSequenceCanonicityProbe` | `SequenceCurrentValueProbe` |
 | Result-Typ | `MysqlSequenceCanonicityDeclaration` | sealed `SequenceCurrentValueProbeResult` |
 | Application-Layer Stage | `MysqlSequenceCanonicityStage` | `SequencePreserveStage` |
-| JDBC-Adapter | `MysqlSequenceCanonicityProbeAdapter` | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe` |
+| JDBC-Adapter | `MysqlSequenceCanonicityProbeAdapter` | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe`, `SqliteSequenceCurrentValueProbe` |
 | CLI-Runner | `MysqlSequenceCanonicityProbeRunner` | `SequenceCurrentValueProbeRunner` |
 | Renderer-Anbindung | `MysqlDiffSequenceOps.canonicityBlocks` | Stage augmentiert Plan; Renderer emittiert Follow-up |
-| Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_*` → `MANUAL_ACTION_REQUIRED`/`DIALECT_UNSUPPORTED_OPERATION` |
+| Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_PROBE_FAILED` / `_CONFIG_INVALID` / `_REQUIRES_DB_TARGET` / `_OPT_IN_REQUIRED` → `MANUAL_ACTION_REQUIRED`; `_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION` |
 
 ### 3.10 Reverse-Read-Treue fuer Programmability-Objekte
 
