@@ -39,7 +39,7 @@ class SequenceCapabilityTest : FunSpec({
         )
     }
 
-    test("SQLite default: helper-table emulation since B.3, cache_size metadata only (W114), preserve still false until Phase E") {
+    test("SQLite default: helper-table emulation, cache_size metadata only (W114), preserveCurrentValue via SqliteDiffSequenceOps (F2)") {
         SequenceCapabilityDefaults.forDialect(DatabaseDialect.SQLITE) shouldBe SequenceCapability(
             supportsNamedSequences = true,
             supportsStart = true,
@@ -47,7 +47,7 @@ class SequenceCapabilityTest : FunSpec({
             supportsCycle = true,
             supportsCache = true,
             emitsCachePreallocationWarning = true,
-            supportsCurrentValuePreserve = false,
+            supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
         )
     }

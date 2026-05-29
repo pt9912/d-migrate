@@ -20,6 +20,25 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         return sequenceSupport.finalizeResult(super.generate(schema, options))
     }
 
+    /**
+     * 0.9.7 Phase F1: Plan §5.2 — Rollback runs a preflight before
+     * any DROP touches `dmg_sequences`. If external objects reference
+     * the helper table (E058) or the connection has ATTACHed
+     * databases (E060), the preflight aborts the entire stream via
+     * `SELECT RAISE(ABORT, …)`. Only emitted in `helper_table` mode
+     * and only when the forward pass actually produced support
+     * objects — otherwise there is nothing to drop and the preflight
+     * would be no-op noise.
+     */
+    override fun generateRollback(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        val downResult = super.generateRollback(schema, options)
+        if (!sequenceSupport.helperTableModeActive()) return downResult
+        if (!sequenceSupport.helperTableProducedSupportObjects(schema)) return downResult
+        val preflight = SqliteSequenceEmulationTemplates.rollbackPreflightSqls()
+            .map { DdlStatement(it) }
+        return DdlResult(preflight + downResult.statements, downResult.skippedObjects)
+    }
+
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
 
     override fun resolveSequenceDefault(

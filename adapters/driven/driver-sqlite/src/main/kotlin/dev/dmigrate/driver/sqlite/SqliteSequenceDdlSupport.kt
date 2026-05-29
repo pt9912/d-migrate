@@ -45,6 +45,26 @@ internal class SqliteSequenceDdlSupport {
     private val isHelperTable: Boolean
         get() = currentOptions.sqliteContext?.namedSequenceMode == SqliteNamedSequenceMode.HELPER_TABLE
 
+    /**
+     * 0.9.7 Phase F1: lets [SqliteDdlGenerator.generateRollback]
+     * decide whether the helper-table mode is active without going
+     * through [DdlGenerationOptions.sqliteContext] itself.
+     */
+    fun helperTableModeActive(): Boolean = isHelperTable
+
+    /**
+     * 0.9.7 Phase F1: returns `true` if the helper-table forward
+     * pass against [schema] would have produced support objects
+     * (`dmg_sequences` + at least one seed/trigger). If `false`,
+     * the rollback has nothing to drop and the preflight check
+     * would be noise.
+     */
+    fun helperTableProducedSupportObjects(schema: SchemaDefinition): Boolean {
+        if (!isHelperTable) return false
+        if (schema.sequences.isNotEmpty()) return true
+        return hasSequenceBackedColumns(schema)
+    }
+
     fun beginRun(schema: SchemaDefinition, options: DdlGenerationOptions) {
         currentOptions = options
         currentSchema = schema

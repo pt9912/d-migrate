@@ -222,6 +222,88 @@ internal object SqliteSequenceEmulationTemplates {
     }
 
     /**
+     * 0.9.7 Phase F1: Rollback preflight (Plan §5.2 lines 1494–1546).
+     *
+     * Emits a multi-statement preamble that aborts the rollback
+     * stream **before** any DROP runs if external objects reference
+     * `dmg_sequences` (E058) or ATTACHed databases are present
+     * (E060).
+     *
+     * Mechanik: SQLite verbietet `RAISE()` außerhalb von Triggern,
+     * deshalb fahren wir den Abbruch über eine CHECK-Constraint mit
+     * sprechendem Constraint-**Namen**. Bei externer Referenz
+     * inserten wir den Wert `1`, der die CHECK verletzt. Die JDBC-
+     * Fehlermeldung enthält den Constraint-Namen
+     * (`E058_external_dmg_sequences_refs`), so dass der Code im
+     * Fehlertext nachweisbar bleibt.
+     *
+     * Pragmatische Abweichung von Plan §5.2 lines 1485–1490: der
+     * token-basierte Literal-/Comment-Strip-Scan aus der Reverse-
+     * Pipeline ist in reinem SQL nicht portabel; der Preflight nutzt
+     * einen **liberalen** `LIKE`-Filter, der die gängigen Quoting-
+     * Formen erwischt und auf Whitespace-Grenzen fällt. Konsequenzen:
+     * gelegentliche False Positives (eine `dmg_sequences`-Erwähnung
+     * in einem unbeteiligten Trigger-Body kann den Rollback blocken)
+     * — false Negatives sind unmöglich.
+     */
+    fun rollbackPreflightSqls(): List<String> =
+        e058CheckSqls() + e060CheckSqls()
+
+    private fun e058CheckSqls(): List<String> {
+        val tbl = SqliteSequenceNaming.SUPPORT_TABLE
+        val constraintName = "E058_external_${tbl}_refs"
+        return listOf(
+            """
+                CREATE TEMP TABLE "_dmg_pf_e058" (
+                    "x" INTEGER NOT NULL,
+                    CONSTRAINT "$constraintName" CHECK ("x" = 0)
+                );
+            """.trimIndent(),
+            """
+                INSERT INTO "_dmg_pf_e058" ("x")
+                    SELECT CASE WHEN EXISTS (
+                        SELECT 1 FROM sqlite_master
+                            WHERE type IN ('view', 'trigger', 'index', 'table')
+                            AND name != '$tbl'
+                            AND name NOT GLOB 'dmg_seq_*_bi'
+                            AND name NOT GLOB 'dmg_seq_*_ai'
+                            AND sql IS NOT NULL
+                            AND (
+                                lower(sql) LIKE '%"$tbl"%'
+                                OR lower(sql) LIKE '%`$tbl`%'
+                                OR lower(sql) LIKE '% $tbl %'
+                                OR lower(sql) LIKE '%($tbl %'
+                                OR lower(sql) LIKE '%($tbl)%'
+                                OR lower(sql) LIKE '% $tbl(%'
+                                OR lower(sql) LIKE '%.$tbl%'
+                            )
+                    ) THEN 1 ELSE 0 END;
+            """.trimIndent(),
+            """DROP TABLE "_dmg_pf_e058";""",
+        )
+    }
+
+    private fun e060CheckSqls(): List<String> {
+        val constraintName = "E060_attached_databases_detected"
+        return listOf(
+            """
+                CREATE TEMP TABLE "_dmg_pf_e060" (
+                    "x" INTEGER NOT NULL,
+                    CONSTRAINT "$constraintName" CHECK ("x" = 0)
+                );
+            """.trimIndent(),
+            """
+                INSERT INTO "_dmg_pf_e060" ("x")
+                    SELECT CASE WHEN (
+                        SELECT count(*) FROM pragma_database_list
+                            WHERE name NOT IN ('main', 'temp')
+                    ) > 0 THEN 1 ELSE 0 END;
+            """.trimIndent(),
+            """DROP TABLE "_dmg_pf_e060";""",
+        )
+    }
+
+    /**
      * Plan §3.3 lines 271–303: percent-encode any character outside
      * `[A-Za-z0-9_.-]` ∪ Unicode-category `L` (letters). Digits in
      * Unicode-category `N` other than `Decimal_Number` (e.g. `²`,

@@ -378,22 +378,19 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
         r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
     }
 
-    test("Out-of-matrix Sequence is DIALECT_UNSUPPORTED") {
+    test("Sequence in action_required mode is blocked with MANUAL_ACTION_REQUIRED (opt-in to helper_table)") {
+        // 0.9.7 Phase F2: SQLite now supports sequence diff-migration in
+        // helper_table mode. Without the opt-in the renderer surfaces
+        // SQLITE_NAMED_SEQUENCES_OPT_IN_REQUIRED and a
+        // MANUAL_ACTION_REQUIRED blocker so the operator knows the path
+        // exists but needs `--sqlite-named-sequences helper_table` to
+        // emit DDL.
         val seq = dev.dmigrate.core.model.SequenceDefinition(start = 1)
         val r = planAndUp(SchemaDiff(sequencesAdded = listOf(dev.dmigrate.core.diff.NamedSequence("s", seq))))
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
     }
 
-    test("AlterSequenceCurrentValue is permanently DIALECT_UNSUPPORTED on SQLite") {
-        // SQLite carves out the entire sequence workstream (see file-
-        // level KDoc "Out of first matrix entirely"). The 0.9.7
-        // preserve-current-value Sub-Slice A follow-up adds
-        // AlterSequenceCurrentValue to the DiffOperation hierarchy;
-        // SQLite must keep routing it to DIALECT_UNSUPPORTED_OPERATION
-        // as a permanent end state. This changes ONLY when (and if)
-        // `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
-        // lands a SQLite emulation. Until then any routing change
-        // fails this test loudly.
+    test("AlterSequenceCurrentValue in action_required mode is blocked with MANUAL_ACTION_REQUIRED") {
         val acv = dev.dmigrate.core.diff.migration.DiffOperation.AlterSequenceCurrentValue(
             id = "acv-1",
             objectRef = dev.dmigrate.core.diff.migration.DiffObjectRef(
@@ -420,7 +417,7 @@ class SqliteDiffDdlGeneratorTest : FunSpec({
             operations = listOf(acv),
         )
         val r = gen.generateUp(synthetic, DdlGenerationOptions())
-        r.primaryBlockedReason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.primaryBlockedReason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
     }
 
     test("Empty diff yields empty result") {

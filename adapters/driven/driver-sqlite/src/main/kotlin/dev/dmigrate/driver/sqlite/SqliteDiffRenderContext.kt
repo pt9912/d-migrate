@@ -36,6 +36,15 @@ internal class SqliteDiffRenderContext(
 ) {
     private val statements = mutableListOf<MigrationDdlStatement>()
     private val rendered = mutableSetOf<String>()
+
+    /**
+     * 0.9.7 Phase F2: `SqliteDiffSequenceOps` flips this to `true`
+     * once the first `CREATE TABLE IF NOT EXISTS dmg_sequences`
+     * bootstrap has been emitted in the current direction, so
+     * subsequent `CreateSequence` / `DropSequence` (DOWN) ops don't
+     * re-emit the bootstrap statement.
+     */
+    var bootstrapEmitted: Boolean = false
     private val skipped = mutableSetOf<String>()
     private val manualActions = mutableSetOf<String>()
     private val destructive = mutableSetOf<String>()

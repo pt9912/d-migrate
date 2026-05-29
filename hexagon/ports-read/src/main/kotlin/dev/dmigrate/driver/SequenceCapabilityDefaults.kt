@@ -67,7 +67,9 @@ object SequenceCapabilityDefaults {
         supportsCycle = true,
         supportsCache = true,
         emitsCachePreallocationWarning = true,
-        supportsCurrentValuePreserve = false,
+        // 0.9.7 Phase F2: SqliteDiffSequenceOps.renderAlterSequenceCurrentValue
+        // emits `UPDATE dmg_sequences SET next_value = …` analog to MySQL.
+        supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
     )
 

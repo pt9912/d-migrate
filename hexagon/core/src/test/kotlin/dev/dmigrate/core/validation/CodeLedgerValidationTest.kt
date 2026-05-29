@@ -2,6 +2,7 @@ package dev.dmigrate.core.validation
 
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContain as shouldContainElement
 import io.kotest.matchers.collections.shouldNotBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -395,6 +396,60 @@ class CodeLedgerValidationTest : FunSpec({
 
     test("0.9.7 error ledger: active entries have test_path + evidence_paths and the referenced files exist") {
         val content = readLedger("error-code-ledger-0.9.7.yaml")
+        val activeCodes = extractCodes(content).filter { code ->
+            extractField(content, code, "status") == "active"
+        }
+        for (code in activeCodes) {
+            val testPath = extractField(content, code, "test_path")
+            testPath shouldNotBe null
+            File(repoRoot, testPath!!).exists() shouldBe true
+            hasEvidencePaths(content, code) shouldBe true
+            for (src in extractEvidenceSources(content, code)) {
+                File(repoRoot, src).exists() shouldBe true
+            }
+            for (pt in extractPathTypes(content, code)) {
+                (pt in allowedPathTypes) shouldBe true
+            }
+        }
+    }
+
+    // ─── 0.9.7 Warning Ledger Validation ────────────────────────
+
+    test("0.9.7 warning ledger exists with version 0.9.7") {
+        val content = readLedger("warn-code-ledger-0.9.7.yaml")
+        content shouldNotBe ""
+        content shouldContain "version: \"0.9.7\""
+    }
+
+    test("0.9.7 warning ledger covers the new SQLite helper_table codes") {
+        val content = readLedger("warn-code-ledger-0.9.7.yaml")
+        val codes = extractCodes(content).toSet()
+        // SQLite helper_table additions.
+        codes.shouldContainElement("W119")
+        codes.shouldContainElement("W120")
+        codes.shouldContainElement("W121")
+        codes.shouldContainElement("W122")
+        codes.shouldContainElement("W124")
+    }
+
+    test("0.9.7 warning ledger: every entry has valid level, entry_type, and status") {
+        val content = readLedger("warn-code-ledger-0.9.7.yaml")
+        val invalid = extractCodes(content).filter { code ->
+            extractField(content, code, "level") !in allowedLevels ||
+                extractField(content, code, "entry_type") !in allowedEntryTypes ||
+                extractField(content, code, "status") !in allowedStatuses
+        }
+        invalid.shouldBeEmpty()
+    }
+
+    test("0.9.7 warning ledger has no duplicate codes") {
+        val content = readLedger("warn-code-ledger-0.9.7.yaml")
+        val codes = extractCodes(content)
+        codes.size shouldBe codes.toSet().size
+    }
+
+    test("0.9.7 warning ledger: active entries have test_path + evidence_paths and the referenced files exist") {
+        val content = readLedger("warn-code-ledger-0.9.7.yaml")
         val activeCodes = extractCodes(content).filter { code ->
             extractField(content, code, "status") == "active"
         }

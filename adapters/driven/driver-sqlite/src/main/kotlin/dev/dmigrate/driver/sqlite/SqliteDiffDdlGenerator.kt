@@ -208,8 +208,21 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
             OpCategory.SIMPLE -> renderInlineSimpleOp(op, ctx)
             OpCategory.REBUILD -> ctx.deferToRebuild(op)
             OpCategory.TRIGGER -> renderTriggerOp(op, ctx)
+            OpCategory.SEQUENCE -> renderSequenceOp(op, ctx)
             OpCategory.MATERIALIZED_VIEW -> blockMaterializedView(op, ctx)
             OpCategory.UNSUPPORTED -> markUnsupported(op, ctx)
+        }
+    }
+
+    private fun renderSequenceOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
+        when (op) {
+            is DiffOperation.CreateSequence -> SqliteDiffSequenceOps.renderCreateSequence(op, ctx)
+            is DiffOperation.AlterSequence -> SqliteDiffSequenceOps.renderAlterSequence(op, ctx)
+            is DiffOperation.DropSequence -> SqliteDiffSequenceOps.renderDropSequence(op, ctx)
+            is DiffOperation.RenameSequence -> SqliteDiffSequenceOps.renderRenameSequence(op, ctx)
+            is DiffOperation.AlterSequenceCurrentValue ->
+                SqliteDiffSequenceOps.renderAlterSequenceCurrentValue(op, ctx)
+            else -> error("Op ${op::class.simpleName} is categorised SEQUENCE but renderSequenceOp does not handle it")
         }
     }
 
@@ -269,9 +282,6 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.CreateCustomType,
         is DiffOperation.AlterCustomType,
         is DiffOperation.DropCustomType,
-        is DiffOperation.CreateSequence,
-        is DiffOperation.AlterSequence,
-        is DiffOperation.DropSequence,
         is DiffOperation.CreateFunction,
         is DiffOperation.ReplaceFunction,
         is DiffOperation.DropFunction,
@@ -282,18 +292,18 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         is DiffOperation.RenameTrigger,
         is DiffOperation.RenameFunction,
         is DiffOperation.RenameProcedure,
-        is DiffOperation.RenameSequence,
-        // SQLite has no sequence concept (the dialect was carved out
-        // of the entire E.3 sequence workstream — see file-level
-        // KDoc "Out of first matrix entirely"). Every sequence-related
-        // op — including 0.9.7's `AlterSequenceCurrentValue`
-        // preserve-current-value follow-up — is permanently routed
-        // to UNSUPPORTED. This will change only when (and if)
-        // `docs/planning/in-progress/sqlite-sequence-emulation-plan.md`
-        // lands a SQLite emulation; until then `DIALECT_UNSUPPORTED_OPERATION`
-        // is the correct end state, not a placeholder.
-        is DiffOperation.AlterSequenceCurrentValue,
         -> OpCategory.UNSUPPORTED
+
+        // 0.9.7 Phase F2: SQLite-helper_table sequence diff-migration.
+        // Routes via SqliteDiffSequenceOps; gated on
+        // `--sqlite-named-sequences helper_table` (action_required
+        // mode hits the SQLITE_NAMED_SEQUENCES_OPT_IN_REQUIRED blocker).
+        is DiffOperation.CreateSequence,
+        is DiffOperation.AlterSequence,
+        is DiffOperation.DropSequence,
+        is DiffOperation.RenameSequence,
+        is DiffOperation.AlterSequenceCurrentValue,
+        -> OpCategory.SEQUENCE
     }
 
     private fun renderTriggerOp(op: DiffOperation, ctx: SqliteDiffRenderContext) {
@@ -445,5 +455,5 @@ class SqliteDiffDdlGenerator : DiffDdlGenerator {
         return true
     }
 
-    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, MATERIALIZED_VIEW, UNSUPPORTED }
+    private enum class OpCategory { SIMPLE, REBUILD, TRIGGER, SEQUENCE, MATERIALIZED_VIEW, UNSUPPORTED }
 }

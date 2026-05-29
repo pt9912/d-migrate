@@ -17,6 +17,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import java.sql.SQLException
 
 /**
@@ -61,6 +62,24 @@ class SqliteSequenceCompareIntegrationTest : FunSpec({
 
     fun reverse(pool: ConnectionPool): SchemaDefinition =
         SqliteSchemaReader().read(pool, SchemaReadOptions()).schema
+
+    fun simpleSequenceSchemaInline(): SchemaDefinition = SchemaDefinition(
+        name = "rb",
+        version = "1.0.0",
+        sequences = mapOf("order_seq" to SequenceDefinition()),
+        tables = mapOf(
+            "orders" to TableDefinition(
+                columns = linkedMapOf(
+                    "id" to ColumnDefinition(NeutralType.Integer, required = true),
+                    "order_number" to ColumnDefinition(
+                        type = NeutralType.BigInteger,
+                        default = DefaultValue.SequenceNextVal("order_seq"),
+                    ),
+                ),
+                primaryKey = listOf("id"),
+            ),
+        ),
+    )
 
     // ── 1. Round-trip stability ────────────────────────────────────
 
@@ -201,6 +220,46 @@ class SqliteSequenceCompareIntegrationTest : FunSpec({
 
     // ── 4. Shared sequence across multiple columns ────────────────
 
+    // ── 5. Rollback preflight (Phase F1) ──────────────────────────
+
+    test("rollback preflight — E058 aborts when an external object references dmg_sequences") {
+        val pool = newPool()
+        install(pool, simpleSequenceSchemaInline())
+        // Create a user view that mentions dmg_sequences — this is an
+        // external reference per Plan §5.2 and must block the rollback.
+        execDdl(pool, "CREATE VIEW \"audit_view\" AS SELECT next_value FROM \"dmg_sequences\"")
+
+        val rollback = SqliteDdlGenerator().generateRollback(simpleSequenceSchemaInline(), helperTableOptions())
+        val sqls = rollback.statements.map { it.sql.trim() }.filter { it.isNotEmpty() && !isCommentOnly(it) }
+
+        val ex = io.kotest.assertions.throwables.shouldThrow<java.sql.SQLException> {
+            execDdl(pool, *sqls.toTypedArray())
+        }
+        // Plan F1: the CHECK constraint name carries the code; xerial-sqlite-jdbc surfaces it in the message.
+        rootCauseMessage(ex) shouldContain "E058_external_dmg_sequences_refs"
+        // The user view is still there because the preflight aborted
+        // before the DROP stream ran.
+        readScalar<Long>(
+            pool,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'audit_view'",
+        ) shouldBe 1L
+    }
+
+    test("rollback preflight — succeeds when no external refs exist") {
+        val pool = newPool()
+        install(pool, simpleSequenceSchemaInline())
+
+        val rollback = SqliteDdlGenerator().generateRollback(simpleSequenceSchemaInline(), helperTableOptions())
+        val sqls = rollback.statements.map { it.sql.trim() }.filter { it.isNotEmpty() && !isCommentOnly(it) }
+        execDdl(pool, *sqls.toTypedArray())
+
+        // dmg_sequences is gone.
+        readScalar<Long>(
+            pool,
+            "SELECT count(*) FROM sqlite_master WHERE name = 'dmg_sequences'",
+        ) shouldBe 0L
+    }
+
     test("shared — one sequence drives two columns; reverse yields a single sequence definition") {
         val schema = SchemaDefinition(
             name = "shared",
@@ -260,4 +319,32 @@ private fun execDdl(pool: ConnectionPool, vararg sqls: String) {
             }
         }
     }
+}
+
+private inline fun <reified T> readScalar(pool: ConnectionPool, query: String): T {
+    pool.borrow().use { conn ->
+        conn.createStatement().use { stmt ->
+            stmt.executeQuery(query).use { rs ->
+                check(rs.next()) { "empty result for query: $query" }
+                @Suppress("UNCHECKED_CAST")
+                return when (T::class) {
+                    Long::class -> rs.getLong(1) as T
+                    Int::class -> rs.getInt(1) as T
+                    String::class -> rs.getString(1) as T
+                    else -> error("unsupported scalar type ${T::class}")
+                }
+            }
+        }
+    }
+}
+
+private fun rootCauseMessage(t: Throwable): String {
+    var cur: Throwable? = t
+    var deepest = t.message ?: ""
+    while (cur != null) {
+        val msg = cur.message
+        if (!msg.isNullOrBlank()) deepest = msg
+        cur = cur.cause
+    }
+    return deepest
 }
