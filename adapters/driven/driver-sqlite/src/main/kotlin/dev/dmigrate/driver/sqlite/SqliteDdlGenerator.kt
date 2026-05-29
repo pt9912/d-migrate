@@ -7,14 +7,35 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
 
     override val dialect = DatabaseDialect.SQLITE
 
+    private val sequenceSupport = SqliteSequenceDdlSupport()
     private val routineHelper = SqliteRoutineDdlHelper(::quoteIdentifier)
-    private val capabilitySupport = SqliteCapabilityDdlSupport(::quoteIdentifier)
+    private val capabilitySupport = SqliteCapabilityDdlSupport(::quoteIdentifier, sequenceSupport)
     private val columnConstraintHelper = SqliteColumnConstraintHelper(
-        ::quoteIdentifier, typeMapper, ::columnSql, ::referentialActionSql
+        ::quoteIdentifier, typeMapper, ::columnSql, ::referentialActionSql, sequenceSupport,
     )
-    private val tableSupport = SqliteTableDdlSupport(::quoteIdentifier, columnConstraintHelper)
+    private val tableSupport = SqliteTableDdlSupport(::quoteIdentifier, columnConstraintHelper, sequenceSupport)
+
+    override fun generate(schema: SchemaDefinition, options: DdlGenerationOptions): DdlResult {
+        sequenceSupport.beginRun(schema, options)
+        return sequenceSupport.finalizeResult(super.generate(schema, options))
+    }
 
     override fun quoteIdentifier(name: String): String = SqlIdentifiers.quoteIdentifier(name, dialect)
+
+    override fun resolveSequenceDefault(
+        tableName: String,
+        colName: String,
+        col: ColumnDefinition,
+        seqDefault: DefaultValue.SequenceNextVal,
+    ): String? = sequenceSupport.resolveSequenceDefault(tableName, colName, seqDefault)
+
+    override fun columnSql(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+        if (!sequenceSupport.shouldSuppressNotNull(tableName, col)) {
+            return super.columnSql(tableName, colName, col, schema)
+        }
+        sequenceSupport.recordNotNullSuppressionNote(tableName, colName)
+        return super.columnSql(tableName, colName, col.copy(required = false), schema)
+    }
 
     override fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> =
         capabilitySupport.generateCustomTypes(types)
@@ -64,7 +85,12 @@ class SqliteDdlGenerator : AbstractDdlGenerator(SqliteTypeMapper()) {
         triggers: Map<String, TriggerDefinition>,
         tables: Map<String, TableDefinition>,
         skipped: MutableList<SkippedObject>
-    ): List<DdlStatement> = routineHelper.generateTriggers(triggers, skipped)
+    ): List<DdlStatement> {
+        val statements = mutableListOf<DdlStatement>()
+        statements += sequenceSupport.generateSupportTriggers(triggers.keys, skipped)
+        statements += routineHelper.generateTriggers(triggers, skipped)
+        return statements
+    }
 
     override fun invertStatement(stmt: DdlStatement): DdlStatement? =
         capabilitySupport.invertStatement(stmt) ?: super.invertStatement(stmt)

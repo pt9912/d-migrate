@@ -1,6 +1,6 @@
 # Implementierungsplan: Vollständige SQLite-Sequence-Emulation
 
-> Status: In Progress (2026-05-28). Phase A § 11 Pre-Code-Klärungen
+> Status: In Progress (2026-05-29). Phase A § 11 Pre-Code-Klärungen
 > abgeschlossen; Phase B.0 (`DdlDialectContext`-Refactor, `48c7f01c`)
 > und Phase B.1 (`SqliteNamedSequenceMode` + CLI-Plumbing, `84ba7ab7`)
 > abgeschlossen 2026-05-27; Phase B.2 (Validator-Regeln) abgeschlossen
@@ -8,10 +8,36 @@
 > `E125`) im `SchemaSequenceValidationRules` (`25f59f73`) und der
 > SQLite-helper_table-PK-Gate (`E059`) über den neuen
 > `PreGenerationValidator`-Port plus `SqliteHelperTableSequenceValidator`
-> (`09068f79`). Offen: Phase B.3 (helper_table-DDL + `_bi`/`_ai`-
-> Trigger-Paar inkl. CHECK-`IS NOT NULL`-Auto-Suppression nach §3.4),
-> B.4 (`SequenceCapability`-Defaults flippen), C (Tests + Golden-
-> Master), D (Reverse), E (Compare + Stabilisierung).
+> (`09068f79`). Phase B.3 (helper_table-DDL + `_bi`/`_ai`-Trigger-Paar
+> inkl. CHECK-`IS NOT NULL`-Auto-Suppression nach §3.4) abgeschlossen
+> 2026-05-29 in einem Schnitt: `SqliteSequenceDdlSupport` mit
+> `dmg_sequences`-Tabelle + Seed-INSERTs, kanonisches `_bi`/`_ai`-
+> Trigger-Paar (overflow-sichere Boundary-Logik, `exhausted`-Flag),
+> NOT-NULL-Suppression (W119, dedupe-fähig) und CHECK-`IS NOT NULL`-
+> Whole-Expression-Suppression (W119), W114 cache-Metadaten-Warnung,
+> W115 lossy NULL, W117 transaction-bound globalNote, E057
+> WITHOUT-ROWID-Gate, E124 zentralisiert über `isReservedName`-Scan
+> (Tables/Views/Indices/Triggers + `dmg_seq_*`-Prefix-Pattern) plus
+> Intra-Run-Hash-Collision-Detection; SqliteCapabilityDdlSupport
+> delegiert, SqliteDdlGenerator wired `beginRun`/`finalizeResult`/
+> `columnSql`-override und ordnet Support-Trigger vor User-Triggern
+> an; golden masters `full-featured.sqlite{.sql,.pre-data.sql}` auf
+> die neuen ManualActionRequired-Texte gezogen. B.3 Review-Findings
+> 1/2/4/5a/5b/7/9/11/13 in einem Schnitt am 2026-05-29 nachgezogen
+> (Tests in 3 FunSpec-Klassen via `SqliteSequenceTestFixtures`-
+> Shared-Helper aufgesplittet, `make docker-check` grün). B.3
+> Scope-Carve-outs W121 (Conflict-Gap-INFO pro Sequence-Spalte,
+> §5.1 lines 1269–1290) und W122 (UPDATE-Trigger-Interferenz
+> WARNING, §3.4 lines 600–676 — konservativ "jeder UPDATE-Trigger
+> auf der Zieltabelle triggert W122", da das neutrale Modell kein
+> `UPDATE OF collist`-Feingranularität trägt) ebenfalls am
+> 2026-05-29 nachgezogen mit 4 zusätzlichen Tests in
+> `SqliteSequenceDdlSupportTriggerTest`. Offen: B.4
+> (`SequenceCapability`-Defaults flippen), C (Tests + Golden-Master
+> für `helper_table`-Pfad), D (Reverse — inkl. W120 modified-body
+> und W124 Reverse-Trigger-Reihenfolge), E (Compare + Stabilisierung);
+> W123 (Attached-DB-Rollback-Gate, §5.2) bleibt ausserhalb von B.3,
+> da es Live-DB-Probing im Rollback-Pfad erfordert.
 >
 > Phase-A-Abschluss (§ 11): Min-SQLite-Version = 3.35.0 (bestehender
 > Projekt-Floor); `DefaultValue.SequenceNextVal` ist in
@@ -1295,10 +1321,25 @@ Vorgeschlagene Reihenfolge:
 2. Custom Types (Kommentare)
 3. Sequence-Supportobjekte (`dmg_sequences` + Seeds)
 4. User-Tabellen
-5. Generierte Sequence-Support-Trigger
-6. Indizes
-7. Views
+5. Indizes
+6. Views
+7. Generierte Sequence-Support-Trigger
 8. Nutzerdefinierte Trigger
+
+> Hinweis Drift-Korrektur (B.3-Review, 2026-05-29): die Support-
+> Trigger wandern in den `POST_DATA`-Block, gemeinsam mit Views und
+> User-Triggern. Der frühere Vorschlag, sie nach Position 5
+> (PRE_DATA, zwischen Tabellen und Indizes) zu setzen, hat zwei
+> Nachteile: (a) ein `--split pre-post`-Export legt sie sonst in
+> `pre-data.sql`, wo sie während eines anschließenden Bulk-Data-
+> Loads bereits feuern könnten, obwohl der Loader die Sequence-
+> Werte typischerweise in den Eingabedaten mitliefert; (b)
+> SQLite-Trigger-Ausführungsreihenfolge hängt nicht von der
+> `DdlPhase`, sondern allein von der Anlage-Reihenfolge ab — die
+> Support-Trigger werden weiterhin **vor** den User-Triggern in
+> `generateTriggers` emittiert (Generator-interne Ordnung), feuern
+> also ebenso zuerst. Der semantische Vertrag bleibt; nur die
+> Phase-Tagung verschiebt sich.
 
 SQLite erlaubt mehrere Trigger mit gleichem Event und Timing auf
 derselben Tabelle, solange die Triggernamen verschieden sind. Die
@@ -1748,10 +1789,19 @@ Sequenz-Validierung in `SchemaValidator` (eigene Taskgruppe):
 - `isIncrementInRange(increment_by, min_value, max_value)` (§3.6)
 - PK + SequenceNextVal als `E059`
 - SequenceNextVal + expliziter DEFAULT als Validierungsfehler
-- CHECK-Constraint mit `IS NOT NULL` auf SequenceNextVal-Spalte
-  als Validierungsfehler (analog zu NOT NULL)
 - Unit-Tests fuer alle Validierungsregeln, insbesondere Grenzfaelle
   bei `Long.MIN_VALUE`, `Long.MAX_VALUE`, negativen Bereichen
+
+> Hinweis Drift-Korrektur (B.3-Review, 2026-05-29): die frühere
+> Bullet "CHECK-Constraint mit `IS NOT NULL` auf SequenceNextVal-
+> Spalte als Validierungsfehler" widersprach §3.4 lines 731–740,
+> wo der Generator den CHECK suppresst und ein `W119`-Lossy-
+> Mapping emittiert. Die §3.4-Semantik gilt; die Validator-Bullet
+> ist deshalb entfernt. Die Suppression matched **whole-expression
+> only** (`<col> IS NOT NULL` oder `NOT (<col> IS NULL)`); ein
+> kombinierter CHECK wie `<col> > 0 AND <col> IS NOT NULL` bleibt
+> erhalten und scheitert deterministisch am INSERT, damit die
+> andere Klausel nicht stillschweigend verschwindet.
 
 Generator und CLI:
 

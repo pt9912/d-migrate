@@ -12,13 +12,11 @@
 -- [I001] Domain type 'positive_amount' mapped to base type with inline CHECK constraint in SQLite.
 -- Domain type "positive_amount" is mapped to its base type with inline CHECK in SQLite
 
--- [E056] Sequence 'invoice_seq' is not supported in SQLite.
--- Hint: Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing.
--- Sequence "invoice_seq" is not supported in SQLite
+-- [E056] Sequence 'invoice_seq' is not supported in SQLite without helper_table mode.
+-- Hint: Add --sqlite-named-sequences helper_table to enable sequence emulation.
 
--- [E056] Sequence 'simple_seq' is not supported in SQLite.
--- Hint: Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing.
--- Sequence "simple_seq" is not supported in SQLite
+-- [E056] Sequence 'simple_seq' is not supported in SQLite without helper_table mode.
+-- Hint: Add --sqlite-named-sequences helper_table to enable sequence emulation.
 
 CREATE TABLE "customers" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,6 +27,8 @@ CREATE TABLE "customers" (
 -- Hint: Store as TEXT if exact decimal precision is required.
 -- [E055] Table partitioning is not supported in SQLite for table 'orders'.
 -- Hint: Partition data at the application level or use separate tables.
+-- [E056] Sequence-based default on 'invoice_number' requires --sqlite-named-sequences helper_table to generate support objects.
+-- Hint: Add --sqlite-named-sequences helper_table to enable sequence emulation.
 CREATE TABLE "orders" (
     "id" INTEGER PRIMARY KEY AUTOINCREMENT,
     "customer_id" INTEGER NOT NULL REFERENCES "customers"("id") ON DELETE CASCADE ON UPDATE NO ACTION,

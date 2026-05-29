@@ -6,6 +6,7 @@ import dev.dmigrate.driver.*
 internal class SqliteTableDdlSupport(
     private val quoteIdentifier: (String) -> String,
     private val columnConstraintHelper: SqliteColumnConstraintHelper,
+    private val sequenceSupport: SqliteSequenceDdlSupport,
 ) {
 
     fun generateTable(
@@ -38,6 +39,7 @@ internal class SqliteTableDdlSupport(
         }
 
         val tableSql = "CREATE TABLE ${quoteIdentifier(name)} (\n${columnLines.joinToString(",\n") { "    $it" }}\n);"
+        notes += sequenceSupport.drainPendingNotes()
         val statements = mutableListOf(DdlStatement(tableSql, notes))
         if (isSpatiaLite) statements += generateSpatiaLiteColumns(name, geometryColumns)
         return statements
@@ -95,7 +97,8 @@ internal class SqliteTableDdlSupport(
         }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
-            lines += columnConstraintHelper.generateConstraintClause(constraint, notes)
+            val clause = columnConstraintHelper.generateConstraintClause(constraint, notes, name)
+            if (clause != null) lines += clause
         }
         val skipPrimaryKey = table.primaryKey.size == 1 && table.primaryKey.all { primaryKey ->
             val column = table.columns[primaryKey]
