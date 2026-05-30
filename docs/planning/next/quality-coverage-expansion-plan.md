@@ -65,8 +65,10 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 - **Phase A — Performance-Baseline**: per-Hotpath ein Kotest-`PerfSpec`
   mit `kotest.tags=perf`, der wiederholbare Benchmark-Werte (Median,
   P95) für Render-Pipeline, Diff-Planner und Artefakt-Serialisierung
-  pinned. CI-Job läuft mit `-Dkotest.tags=perf` opt-in, nicht im
-  Standard-Test-Sweep.
+  pinned. Phase A schliesst zuerst die Gradle-Bruecke, damit ein explizites
+  `-Dkotest.tags=perf` in die forked Test-JVM weitergereicht wird; erst danach
+  gilt der CI-/Nightly-Job als nutzbar. Der Lauf bleibt opt-in, nicht Teil des
+  Standard-Test-Sweeps.
 - **Phase B — Cross-Dialekt-Regressionsmatrix als ausführbarer Sweep**:
   ein Top-Level-Test-Modul `test/cross-dialect-matrix/` mit
   `MatrixSweepTest`, das die §11.2-Kriterien (Positiv, Blocker, Report,
@@ -77,10 +79,13 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   `test/integration-concurrency/`-Modul, das das Sequence-Preserve-
   Race-Pattern (Probe → App-`nextval`/`dmg_nextval` → Restore) gegen
   PG/MySQL/SQLite reproduzierbar nachstellt. Dazu kommt ein MCP-E2E-
-  Szenario in `test:e2e-cli`, das denselben Live-DB-Pfad über
-  `mcp serve`/Job-/Artefakt-Status ausführt. Phase C beweist den
-  Carve-out aus `ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`
-  §6 und liefert die Baseline für den atomaren Folge-Slice.
+  Szenario in `test:e2e-cli`, das den bestehenden MCP-Job-Pfad
+  (`schema_reverse_start`/`schema_compare_start`) über `mcp serve`,
+  Live-DB-Connection-Refs, Job-Status und Artefakte ausführt. Phase C
+  beweist den Carve-out aus
+  `ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md` §6 und liefert
+  die Baseline für den atomaren Folge-Slice, ohne einen nicht existierenden
+  MCP-`schema_migrate`-Vertrag vorauszusetzen.
 - **Phase D — Large-Schema-Last-Tests**: synthetische Schemata mit
   N=100/1000/10000 Tabellen/Sequenzen/Views/Triggern; pinnt
   Render-Throughput und Memory-Footprint als Hash-of-Numbers im Report.
@@ -98,6 +103,9 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   `next/telemetry-observability-port.md`).
 - MCP-Server-Load-Tests (eigene Last-Strategie, gehört zu
   `mcp-server.md`-Vertrag).
+- Neues MCP-Migrate-Tool (`schema_migrate`/`schema_migrate_start`):
+  Produkt-/Contract-Scope, nicht QA-Nachruestung. Dieser Plan testet nur
+  heute registrierte MCP-Tools.
 - Produktive Cloud-DB-Benchmarks (Datenschutz, RDS-/Cloud-SQL-
   Kostenkontrolle); wir bleiben auf Testcontainers.
 - Mutation-Testing (PIT-/Stryker-Stil) — eigener Folge-Plan, sobald
@@ -113,7 +121,7 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 | §11 DoD a-e (Feature-Test-Pinning) | ✅ 2026-05-19 |
 | `make integration`-Pipeline pro Dialekt | ✅ (test/integration-*) |
 | Integration-Gating | ✅ strukturell via `-PintegrationTests`, nicht über Kotest-`integration`-Tags |
-| `kotest.tags=perf` als Filter-Konvention | ✅ (siehe `build.gradle.kts:91`) |
+| `kotest.tags=perf` als Filter-Konvention | ⚠️ Default-Exclude existiert; explizites Forwarding in die Test-JVM ist Phase-A-Arbeit |
 | Atomar-Lock-Plan für Concurrent-Writer-Pattern | ⚠️ Draft (`sequence-preserve-atomic-lock-plan.md`) |
 | Kover-`koverVerify` als CI-Gate | ✅ pro Modul `minBound(90)` |
 
@@ -125,16 +133,26 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 
 ```
 hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
-  @Tags("perf")
-  benchmark("SchemaMigrateRenderPipeline.run for 100-op plan") {
+  private val PerfTag = NamedTag("perf")
+
+  class SchemaMigrateRenderPipelinePerfSpec : FunSpec({
+    tags(PerfTag)
+
+    test("SchemaMigrateRenderPipeline.run for 100-op plan") {
       val plan = SyntheticDiffResultGenerator.buildAlterTable(opCount = 100, ...)
       val pipeline = SchemaMigrateRenderPipeline(...)
       measureTimedValue {
           pipeline.run(...)
       }.duration.toMillis() shouldBeLessThan budgetMillis
-  }
+    }
+  })
 ```
 
+- Vor dem ersten neuen `PerfSpec`: Root-`build.gradle.kts` so anpassen,
+  dass ein explizites `System.getProperty("kotest.tags")` nicht nur den
+  Default `!perf` unterdrueckt, sondern per
+  `systemProperty("kotest.tags", explicitKotestTags)` an die forked Test-JVM
+  weitergereicht wird.
 - Budget pro Hotpath als Konstante im Test (`RENDER_BUDGET_MS = 250`,
   `DIFF_BUDGET_MS = 100`). Bei Überschreitung Exit 1; jeder Bump muss
   durch Commit-Message dokumentiert sein.
@@ -142,7 +160,9 @@ hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
   Median+P95+P99 in `build/reports/perf/<hotpath>.json`.
 - CI-Job läuft tagsüber nicht im PR-Sweep, sondern als nightly
   via separater GitHub-Actions-Workflow oder als manueller
-  `make docker-perf`-Trigger.
+  `make docker-perf`-Trigger. Das Target muss den Tag-Filter nachweislich
+  aktivieren, z. B. ueber Dockerfile-`GRADLE_TASKS` mit
+  `-Dkotest.tags=perf`, und darf keine untagged Unit-Tests mitlaufen lassen.
 
 ### 5.2 Cross-Dialekt-Matrix (Phase B)
 
@@ -173,11 +193,16 @@ test/cross-dialect-matrix/
 ### 5.3 MCP-E2E- und Concurrent-Writer-Tests (Phase C)
 
 **MCP-E2E-Pfad:** `test:e2e-cli` bekommt ein Szenario, das `mcp serve`
-über den bestehenden Harness startet, eine Live-DB-Connection aus den
-Testcontainers-/SQLite-Fixtures registriert, `schema_migrate` aufruft und
-Job-Status plus Artefaktinhalt prüft. Damit ist der QA-Scope nicht nur auf
-CLI-/Renderer-Unit-Pfade beschränkt; der MCP-Pfad muss mindestens einen
-erfolgreichen Migrate-Lauf und einen Blocker-Lauf gegen Live-DB abdecken.
+über den bestehenden Harness startet und die heute registrierten
+Job-Start-Tools gegen Live-DB-Connection-Refs ausführt:
+`schema_reverse_start` liest aus einer Testcontainers-/SQLite-DB,
+`schema_compare_start` vergleicht zwei Live-DB-Refs oder eine Live-DB-Ref
+gegen ein registriertes Schema-Artefakt. Der Test prüft Job-Status,
+Audit-/Execution-Metadaten und erzeugte Artefakte. Damit ist der QA-Scope
+nicht nur auf CLI-/Renderer-Unit-Pfade beschränkt, ohne ein neues MCP-Tool
+zu erfinden. Ein MCP-Migrate-Tool (`schema_migrate` oder
+`schema_migrate_start`) wäre ein eigener Produkt-/Contract-Slice und ist
+keine Vorbedingung dieses QA-Plans.
 
 **Concurrent-Writer-Pfad:** Das neue Modul `test/integration-concurrency/`
 läuft strukturell wie die bestehenden `test:integration-*`-Module unter
@@ -208,27 +233,33 @@ test/integration-concurrency/
                writerFinished.countDown()
            }
 
-           val outcome = runMigrationPreserveAgainst(
+           val observation = runLegacyMigrationPreserveRaceAgainst(
                pg,
                sequenceCurrentValueProbe = gatedProbe,
            )
            writerThread.join()
            val finalValue = pg.queryOne<Long>("SELECT last_value FROM order_seq")
-           // Without atomic lock: finalValue is the probed value, NOT the
-           // post-writer maximum → reproducer for the documented race.
-           finalValue shouldBe outcome.observedProbeValue
+           // Legacy reproducer only: documents today's non-atomic gap.
+           // The atomic-lock slice must flip/remove this stale-restore
+           // assertion and require finalValue >= observation.postWriterMaximum.
+           observation.postWriterMaximum shouldBeGreaterThan observation.observedProbeValue
+           finalValue shouldBe observation.observedProbeValue
        }
 ```
 
-- Pro Dialekt ein Race-Test, der den dokumentierten Carve-out
-  reproduziert. PG/MySQL laufen über Testcontainers; SQLite nutzt eine
-  echte Datei-DB mit zwei Connections. Der Test muss den Writer per
-  Latches/Barrieren exakt im Probe→Restore-Fenster platzieren; ein
+- Pro Dialekt ein Race-Reproducer, der den dokumentierten Carve-out
+  reproduzierbar beobachtet, aber nicht als dauerhafter Korrektheitsvertrag
+  missverstanden werden darf. PG/MySQL laufen über Testcontainers; SQLite
+  nutzt eine echte Datei-DB mit zwei Connections. Der Test muss den Writer
+  per Latches/Barrieren exakt im Probe→Restore-Fenster platzieren; ein
   frei laufender Writer-Thread ist nicht zulässig, weil er nach dem Restore
   weiterdrehen und den stale-restore-Befund maskieren kann.
-- Wenn `sequence-preserve-atomic-lock-plan.md` landet,
-  ergänzen wir die Tests um „mit atomarem Pfad: finalValue ist
-  Post-Writer-Maximum".
+- Der Reproducer ist als Legacy-/Risk-Baseline markiert (z. B. Testname,
+  KDoc und Report-Feld `knownRace=true`). Sobald
+  `sequence-preserve-atomic-lock-plan.md` landet, ist die stale-restore-
+  Assertion aus dem Korrektheits-Gate zu entfernen oder zu invertieren; der
+  dann gueltige Gate-Test verlangt `finalValue >= postWriterMaximum`
+  („mit atomarem Pfad: finalValue ist mindestens Post-Writer-Maximum").
 - Marker-Tag `@Tags("concurrency")` dient nur der Lesbarkeit; die
   Ausführung wird über Gradle-Properties gegatet:
   `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`.
@@ -264,18 +295,33 @@ test/perf-large-schema/
 ### 5.5 Kover-Excludes-Konsolidierung (Phase E)
 
 - Neue Datei `docs/coverage/excludes-ledger.md` listet pro Modul jede
-  aktive `kover.excludes`-Klasse mit:
+  aktive Kover-Exclude-Klasse oder Wildcard aus allen
+  `build.gradle.kts`-Bloecken mit:
   - Datum, Begründung, Refactor-Plan-Verweis oder „permanent" + ADR-Ref.
-- Bestehende Excludes durchgehen:
+- Phase E startet mit einer generierten Vollinventur, nicht mit einer
+  handgepflegten Beispielmenge. Der Audit durchsucht alle
+  `kover { reports { filters { excludes { classes(...) } } } }`-Bloecke
+  und erzeugt daraus die Ledger-Checkliste. Beispiele fuer heute aktive
+  Kategorien:
+  - CLI-Command-Shells und JDBC-/Hikari-Wiring in `adapters:driving:cli`.
+  - Core-/Server-Core-DTOs und sealed Outcome-Typen in `hexagon:core`.
+  - Ports-Interfaces, DTOs und `$DefaultImpls` in `hexagon:ports-*`.
+  - Driver-/Format-Adapter-Excludes in `adapters:driven:*`.
+- Bestehende kritische Excludes mindestens explizit durchgehen:
   - `dev.dmigrate.driver.sqlite.SqliteSchemaReader` — heute als
     „edge cases requiring exotic real-world schemas" begründet; muss
     in einen Splittungs-Plan überführt werden, parallel zu Phase B
     Cross-Dialekt-Matrix.
+  - `dev.dmigrate.driver.postgresql.PostgresDataReader`,
+    `dev.dmigrate.driver.postgresql.PostgresDriver` — analog zu MySQL als
+    thin wrappers bewerten und ledgern.
   - `dev.dmigrate.driver.mysql.MysqlDataReader`,
     `dev.dmigrate.driver.mysql.MysqlDriver` — als „thin wrappers" gepinnt;
     bleiben permanent excluded, aber mit Ledger-Eintrag.
-- Verifikation: `make docker-coverage-gate` grün; neue Excludes brauchen
-  einen Commit, der gleichzeitig das Ledger pflegt (Hook prüft das).
+- Verifikation: `make docker-coverage-gate` grün; zusätzlich prüft ein
+  Repo-Script/CI-Hook, dass jede `classes(...)`-Exclude-Zeile aus den
+  Gradle-Dateien im Ledger vorkommt. Neue Excludes brauchen einen Commit,
+  der gleichzeitig das Ledger pflegt.
 
 ---
 
@@ -283,14 +329,14 @@ test/perf-large-schema/
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `PerfSpec`-Konvention + 1 Hotpath (`SchemaMigrateRenderPipeline.run`) + Budget-Konstante + nightly-Workflow-Skelett |
+| A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + 1 Hotpath (`SchemaMigrateRenderPipeline.run`) + Budget-Konstante + nightly-Workflow-/`make docker-perf`-Skelett |
 | B | `test/cross-dialect-matrix/`-Modul + Sweep-Fixture-Lader + erste 5 Workstreams |
 | B-Vervollständigung | restliche Workstreams + Carve-out-Registry |
-| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB: `schema_migrate`, Job-Status, Artefaktinhalt, je ein Erfolgs- und Blockerpfad |
+| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Job-Status, Artefaktinhalt, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad |
 | C | `test/integration-concurrency/`-Modul + PG/MySQL/SQLite-Race-Tests + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Budget |
 | D-N10k | N=10000-Scale-Test als nightly-only opt-in |
-| E | `docs/coverage/excludes-ledger.md` + Pre-commit-Hook-Skizze + Bestands-Audit |
+| E | `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
 | F | Roadmap-Status-Flip + Closing |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz; die
@@ -303,6 +349,9 @@ werden, ohne dass A/B/C/E darauf warten.
 
 - [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README in
       `test/perf-*`); mindestens 1 Hotpath mit Budget-Konstante pinned.
+- [ ] Root-Test-Konfiguration reicht explizites `-Dkotest.tags=perf` an
+      die forked Test-JVM weiter; ein Gegenlauf belegt, dass der Perf-Lauf
+      tagged Tests ausfuehrt und untagged Tests nicht versehentlich mitnimmt.
 - [ ] Nightly-Workflow (oder `make docker-perf`-Target) ist konfiguriert
       und läuft tagsüber **nicht** im PR-Sweep.
 - [ ] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
@@ -312,18 +361,24 @@ werden, ohne dass A/B/C/E darauf warten.
       ist im Modul (`fixtures/carve-outs.yaml` o. ä.) und in der
       Plan-Doc-Begründung verlinkt.
 - [ ] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
-      `schema_migrate` über `mcp serve` inklusive Job-Status und
-      Artefaktinhalt; mindestens ein Erfolgs- und ein Blockerpfad sind
-      gepinnt.
-- [ ] Concurrent-Writer-Test reproduziert den Sequence-Preserve-Race
-      pro Dialekt mit Barrieren im Probe→Restore-Fenster und ist mit
+      `schema_reverse_start`/`schema_compare_start` über `mcp serve`
+      inklusive Job-Status, Execution/Audit-Metadaten und Artefaktinhalt;
+      mindestens ein Erfolgs- und ein Validierungs-/Policy-Blockerpfad sind
+      gepinnt. Kein Akzeptanzkriterium referenziert ein nicht registriertes
+      `schema_migrate`-Tool.
+- [ ] Concurrent-Writer-Reproducer beobachtet den heutigen
+      Sequence-Preserve-Race pro Dialekt mit Barrieren im
+      Probe→Restore-Fenster, markiert ihn explizit als Legacy-/Risk-Baseline
+      und dokumentiert das Flip-Kriterium fuer den atomaren Folge-Slice. Er
+      ist mit
       `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`
       opt-in lauffähig.
 - [ ] Large-Schema-Scale-Tests für N=100 und N=1000 sind grün; N=10000
       ist nightly opt-in.
 - [ ] `docs/coverage/excludes-ledger.md` listet jede aktive
-      Kover-Exclude-Klasse mit Begründung + Refactor-Plan oder
-      „permanent + ADR-Ref".
+      Kover-Exclude-Klasse/Wildcard aus allen `build.gradle.kts`-Dateien
+      mit Begründung + Refactor-Plan oder „permanent + ADR-Ref"; ein
+      Repo-Script/CI-Hook vergleicht Gradle-Excludes gegen das Ledger.
 - [ ] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
       Status `✅ erledigt (<datum>)`.
 
@@ -358,6 +413,8 @@ werden, ohne dass A/B/C/E darauf warten.
   `next/telemetry-observability-port.md`.
 - **MCP-Server-Last-Tests** — Vertrag liegt in `spec/mcp-server.md`,
   Last-Strategie als separater Folge-Slice.
+- **MCP-Migrate-Tool** (`schema_migrate`/`schema_migrate_start`) — neues
+  Produkt-/Contract-Thema; dieser QA-Plan darf es nicht implizit voraussetzen.
 - **App-Layer-Replay** (für Concurrent-Writer-Tests in der Anwendung)
   — Anwendungssache, nicht d-migrate-Scope.
 - **Atomic-Probe + Restore** unter Lock — eigener Plan
