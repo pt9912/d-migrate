@@ -39,14 +39,24 @@ COVERAGE_MODULES_HTML_TASKS ?= \
 MODULES ?=
 DOCKER_TAG ?= $(IMAGE):dev-targeted
 
+# docker-perf gating. PERF_GATE=true turns the per-hotpath baseline
+# assertion in PerfSpec into a hard failure (consumed via the
+# `perfGate` Gradle project property by the spec). Default false so
+# shared-CI runs only the runaway-Smoke guard and reports baseline
+# drift as diagnostic, per
+# `docs/planning/in-progress/quality-coverage-expansion-plan.md` §5.1.
+PERF_GATE ?= false
+PERF_GATE_ARG = $(if $(filter true,$(PERF_GATE)),-PperfGate=true,)
+
 # Build the gradle task list for docker-check / docker-test from MODULES.
 # Falls back to the full repo task when MODULES is empty.
 docker_check_tasks = $(if $(strip $(MODULES)),$(addsuffix :check,$(MODULES)),check)
 docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
+docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -72,6 +82,7 @@ help:
 		'  make docker-coverage-modules  Build per-module Kover report image' \
 		'  make docker-coverage-modules-html  Extract selected per-module Kover HTML reports' \
 		'  make docker-coverage-modules-summary  Print per-module Kover summary inside Docker' \
+		'  make docker-perf      Run `perf`-tagged Kotest specs (opt-in, nightly)' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
@@ -85,7 +96,8 @@ help:
 		'  RELEASE_VERSION=0.9.7' \
 		'  ARGS="schema validate --source schema.yaml"' \
 		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"' \
-		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test)' \
+		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test / docker-perf)' \
+		'  PERF_GATE=true (docker-perf: turn baseline budget into a hard gate)' \
 		'  DOCKER_TAG=d-migrate:dev-targeted'
 
 dev:
@@ -209,6 +221,24 @@ docker-coverage-modules-summary:
 	@$(DOCKER) run --rm $(IMAGE):coverage-modules-summary \
 	  --threshold $(COVERAGE_MODULES_THRESHOLD) \
 	  --top $(COVERAGE_MODULES_TOP) || true
+
+# Opt-in performance run for `perf`-tagged Kotest specs (Phase A of
+# the Quality-/Coverage-Expansion plan). Defaults to all modules; scope
+# via MODULES to a single hotpath. Uses the Dockerfile `build` stage so
+# the same compile/test toolchain is exercised as in CI, and forwards
+# `-Dkotest.tags=perf` so untagged specs are skipped and tagged specs
+# run.
+#
+#   make docker-perf                                  # every module
+#   make docker-perf MODULES=":hexagon:application"   # one hotpath
+#   make docker-perf PERF_GATE=true                   # baseline = hard gate
+#
+# Not part of `make ci` / `make gates` — runs nightly or on demand,
+# per quality-coverage-expansion-plan §5.1.
+docker-perf:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="-Dkotest.tags=perf $(PERF_GATE_ARG) $(strip $(docker_perf_tasks))" \
+	  -t $(IMAGE):perf .
 
 # Regenerate pinned JSON-Schema golden snapshots without volume mounts.
 # Builds the `golden-update` Docker stage (which runs the goldenness tests
