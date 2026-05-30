@@ -43,3 +43,7 @@ include("test:consumer-read-probe")
 // Cross-dialect regression matrix (file-mode sweep, no Testcontainers).
 // See docs/planning/in-progress/quality-coverage-expansion-plan.md §5.2.
 include("test:cross-dialect-matrix")
+
+// Sequence-Preserve race reproducers (Testcontainers PG/MySQL + file SQLite).
+// See docs/planning/in-progress/quality-coverage-expansion-plan.md §5.3.
+include("test:integration-concurrency")
