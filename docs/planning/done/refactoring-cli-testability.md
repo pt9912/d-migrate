@@ -69,6 +69,8 @@ Bereits geschrieben:
   Factory-Port (`wiring: add schema reverse factory port`).
 - `SchemaCompareWiring` nutzt seit der Folge-Tranche einen injizierbaren
   Factory-Port (`wiring: add schema compare factory port`).
+- `SchemaGenerateWiring` nutzt seit der Folge-Tranche einen injizierbaren
+  Factory-Port (`wiring: add schema generate factory port`).
 
 Offen (eigene Tranche):
 - Factory-Port-Schnitt fuer die verbleibenden Wirings analog zu McpServeWiring /

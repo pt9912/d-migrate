@@ -125,9 +125,11 @@ Exit-Code-Verzweigung.
 - Bundle trägt: `connectionResolver`, `dialectResolver`,
   `poolFactory`, `adapterLookup` (3 Profiling-Adapter-Tripel),
   `reportWriter`.
-- DoD: ≥ 75% `koverVerify`; Fakes für Profiling-Adapter
-  + In-Memory-Pool; 5–8 Test-Fälle (Happy-Path pro Dialekt,
-  Pool-Construction-Fehler, leere Tabellen-Liste).
+- DoD:
+  - [x] ≥ 75% `koverVerify` auf `DataProfileWiring`
+  - [x] Fakes für Profiling-Adapter + In-Memory-Pool im Test-Bundle
+  - [x] 5–8 Test-Fälle: Happy-Path pro Dialekt, Pool-Construction-
+        Fehler, leere Tabellen-Liste
 
 ### Phase B — `ToolExportWiring`
 
@@ -140,8 +142,10 @@ Exit-Code-Verzweigung.
 - Bundle: `schemaReader`, `generatorLookup`,
   `preGenerationValidatorLookup`, `exporterLookup`,
   `existingPathsScanner`.
-- DoD: ≥ 75% `koverVerify`; ein Fake-Exporter pro Tool +
-  In-Memory-Dateisystem für `existingPaths`.
+- DoD:
+  - [x] ≥ 75% `koverVerify` auf `ToolExportWiring`
+  - [x] Ein Fake-Exporter pro `MigrationTool`-Wert
+  - [x] In-Memory-Dateisystem fuer `existingPaths`-Scanner
 
 ### Phase C — `SchemaReverseWiring`
 
@@ -152,8 +156,10 @@ Exit-Code-Verzweigung.
 - Bundle: `sourceResolver`, `urlParser`, `poolFactory`,
   `driverLookup`, `schemaWriter`, `reportWriter`, `sidecarPath`,
   `formatValidator`, `urlScrubber`, `printError`.
-- DoD: ≥ 75% `koverVerify`; 6–8 Fälle (Format-Validation, Sidecar-
-  Default, `--include-all`, Driver-Lookup-Fehler).
+- DoD:
+  - [x] ≥ 75% `koverVerify` auf `SchemaReverseWiring`
+  - [x] 6–8 Test-Faelle: Format-Validation, Sidecar-Default,
+        `--include-all`, Driver-Lookup-Fehler
 
 ### Phase D — `SchemaCompareWiring`
 
@@ -165,20 +171,28 @@ Exit-Code-Verzweigung.
   einer der wertvollsten Pfade.
 - Bundle muss `fileLoader` + `dbLoader` separat führen, damit Tests
   beide Pfade ohne Live-DB pinnen können.
-- DoD: ≥ 80% (höhere Latte wegen Exit-Code-Verzweigung);
-  Phase-1-Block (Config-Resolve-Fehler → Exit 7), Phase-2-Block
-  (Connection-Fehler → Exit 4), File-/File-, File-/DB-,
-  DB-/DB-Permutationen.
+- DoD:
+  - [x] ≥ 80% `koverVerify` auf `SchemaCompareWiring`
+        (hoehere Latte wegen Exit-Code-Verzweigung)
+  - [x] Phase-1-Block: Config-Resolve-Fehler → Exit 7
+  - [x] Phase-2-Block: Connection-Fehler → Exit 4
+  - [x] File-/File-, File-/DB- und DB-/DB-Permutationen gepinnt
 
 ### Phase E — `SchemaGenerateWiring`
+
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add schema generate factory port` (Phase-E-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`.
 
 - Bundle: `schemaReader`, `generatorLookup`,
   `preGenerationValidatorLookup`, `reportWriter`, plus
   `formatJsonOutput`/`sidecarPath`/`rollbackPath`/`splitPath`
   Method-Refs (bleiben statisch, weil reine Pfad-Berechnungen).
-- DoD: ≥ 75%; Coverage-Branchen: `--split pre-post` vs `single`,
-  `--generate-rollback`, `--deterministic`,
-  `--mysql-named-sequences`, `--sqlite-named-sequences`.
+- DoD:
+  - [x] ≥ 75% `koverVerify` auf `SchemaGenerateWiring`
+  - [x] Coverage-Branchen gepinnt: `--split pre-post` vs `single`,
+        `--generate-rollback`, `--deterministic`,
+        `--mysql-named-sequences`, `--sqlite-named-sequences`
 
 ### Phase F — `DataImportWiring`
 
@@ -190,23 +204,35 @@ Exit-Code-Verzweigung.
   `(SchemaCodec) -> DataImportSchemaPreflight`, `importExecutor`,
   `progressReporter`, `checkpointStoreFactory`,
   `checkpointConfigResolver`.
-- DoD: ≥ 75%. Wiring-Testbarkeit (gehört in diese Tranche):
-  Factory-Injection-Pfade, Default-Konstruktor-Pin,
-  Preflight-Construction mit Fake-Codec. Runner-Verhalten
-  (`--target` ohne Default, Preflight-Fehler-Exit-Codes, Stdin +
-  `--resume`-Block) ist bereits durch `DataImportRunnerTest` in
+- DoD:
+  - [ ] ≥ 75% `koverVerify` auf `DataImportWiring`
+  - [ ] Factory-Injection-Pfade gepinnt (Bundle-Felder werden vom
+        Wiring tatsaechlich konsumiert)
+  - [ ] Default-Konstruktor-Pin: `DataImportWiring()` ohne Argumente
+        ruft `DefaultDataImportFactory()` auf
+  - [ ] Preflight-Construction mit Fake-Codec ohne Live-DB lauffaehig
+
+  Runner-Verhalten (`--target` ohne Default, Preflight-Fehler-Exit-Codes,
+  Stdin + `--resume`-Block) ist bereits durch `DataImportRunnerTest` in
   `application`/`cli` abgedeckt — wird hier nicht dupliziert.
 
-## 5. DoD pro Phase
+## 5. DoD pro Phase (phasenuebergreifender Closing-Vertrag)
 
-- `make docker-coverage-gate` (root `koverVerify` ≥ 90%) bleibt
-  grün — keine Regression in fremden Modulen.
-- Per-Modul-Coverage des CLI-Moduls steigt um den jeweiligen
-  Wiring-Beitrag (heute laut Kover-HTML 0% pro Wiring außer
-  Filter-Pfade in DataExport/DataTransfer).
-- Coverage-Tabelle in
-  `docs/planning/done/refactoring-cli-testability.md` Closure-
-  Sektion wird pro Phase nachgezogen.
+Jede gelandete Phase muss die folgenden Kriterien erfuellen; der
+Closing-Haken sitzt auf der jeweiligen Phase und wird beim Phase-
+Commit gesetzt. Die Plan-Ebene schliesst, wenn alle Phasen abgehakt
+sind und die drei Querschnitts-Kriterien fuer den Gesamtstand gelten:
+
+- [ ] `make docker-coverage-gate` (root `koverVerify` ≥ 90%) bleibt
+      nach allen Phasen grün — keine Regression in fremden Modulen.
+- [ ] Per-Modul-Coverage des CLI-Moduls ist nach Phase F um den
+      Summen-Beitrag aller sechs Wirings gestiegen (Ausgangslage
+      laut Kover-HTML 0% pro Wiring ausser Filter-Pfade in
+      DataExport/DataTransfer).
+- [ ] Coverage-Tabelle in
+      `docs/planning/done/refactoring-cli-testability.md` Closure-
+      Sektion wurde pro Phase nachgezogen und spiegelt zum
+      Plan-Close den finalen Stand.
 
 ## 6. Risiken
 
