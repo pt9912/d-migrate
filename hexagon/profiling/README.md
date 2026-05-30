@@ -12,8 +12,22 @@ Plan-Doc: [quality-coverage-expansion-plan.md](../../docs/planning/in-progress/q
 `PerfMeasure` / `PerfReport` (under `dev.dmigrate.profiling.perf`) are
 the contract every opt-in performance spec in the repo must use. The
 Bestands-Specs in `adapters:driven:formats` and `adapters:driven:streaming`
-migrate to this contract during A-Vervollständigung; net-new PerfSpecs
-go straight to it.
+were migrated to this contract during A-Vervollständigung; net-new
+PerfSpecs go straight to it.
+
+**Hotpaths in use** (per Phase A + A-Vervollständigung):
+
+| Hotpath slug                    | Spec                                       | Modul                  |
+| ------------------------------- | ------------------------------------------ | ---------------------- |
+| `schema-migrate-render-pipeline` | `SchemaMigrateRenderPipelinePerfSpec`       | `hexagon:application`  |
+| `diff-planner`                  | `DiffPlannerPerfSpec`                       | `hexagon:core`         |
+| `rollback-artefact-round-trip`  | `RollbackArtefactRoundTripPerfSpec`         | `hexagon:application`  |
+| `large-json-pull-spike`         | `LargeJsonPullSpikePerfTest` (migriert)     | `adapters/driven/formats` |
+| `streaming-importer-reorder`    | `StreamingImporterReorderPerfTest` (migriert) | `adapters/driven/streaming` |
+| `large-schema-render-n100`      | `LargeSchemaScaleSpec` (Phase D, N=100)     | `test/perf-large-schema` |
+| `large-schema-render-n1000`     | `LargeSchemaScaleSpec` (Phase D, N=1000)    | `test/perf-large-schema` |
+
+Each writes its trend record to `<module>/build/reports/perf/<slug>.json`.
 
 ### Tagging
 

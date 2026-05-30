@@ -1,6 +1,11 @@
 # Implementierungsplan: Quality- und Coverage-Expansion (Perf / Last / E2E)
 
-> Status: In Progress (2026-05-30)
+> Status: In Progress — Phasen A + A-Vervollständigung + Review-Fixes
+> (`af59567d`/`2e62370c`/`9c369d94`), B + B-Vervollständigung
+> (`3545b646`/`3ae1bb20`), C + C-MCP (`a2195313`/`1bea5bed`), D
+> N=100/1000 (`67d93ef8`) alle gelandet 2026-05-30. Phase E (Kover-
+> Excludes-Konsolidierung), D-N10k (Nightly-Only) und F (Closing)
+> noch offen.
 > Workstream: Roadmap-Eintrag „Coverage/QA" über §11 DoD hinaus
 > Vorbedingungen:
 > - `docs/planning/in-progress/diffresult-migration-plan-2.md` §11 (DoD a/b/c/d/e
@@ -571,18 +576,19 @@ test/perf-large-schema/
 
 ## 6. Sub-Slice-Schnitt
 
-| Sub-Slice | Inhalt |
-|---|---|
-| A | `PerfMeasure`/`PerfReport`-Lib **neu** in `hexagon:profiling` (`minBound(90)`) + `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath `SchemaMigrateRenderPipeline.run` (Spec in `hexagon/application/src/test/.../perf/`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
-| A-Vervollständigung | Diff-Planner-PerfSpec (`hexagon/core/src/test/.../perf/`) + Artefakt-Serialisierungs-PerfSpec ueber `RollbackArtefactBuilder`+`RollbackArtefactParser`-Round-Trip (`hexagon/application/src/test/.../perf/`) mit denselben Smoke-/Baseline-Vertraegen + Migration der Bestands-PerfSpecs in `adapters/driven/formats` und `adapters/driven/streaming` auf `PerfMeasure`/`PerfReport`; Phase A ist erst nach allen drei Hotpaths plus Bestands-Migration schliessbar |
-| B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + Carve-out-Registry-Mechanik (`fixtures/carve-outs.yaml` + `MATRIX_GAP`-Diagnose) + erste 5 Workstreams gepinnt, restliche Workstreams provisorisch als Carve-out registriert, damit der Sweep schon ab B aktiv laufen kann ohne 17 noch nicht gepinnte Workstreams hart zu blocken |
-| B-Vervollständigung | provisorische Carve-out-Eintraege fuer die restlichen Workstreams in echtes Pinning konvertieren oder als dauerhaften Carve-out mit Plan-Doc-Verweis stehen lassen — am Ende ist jeder zum Annahme-Zeitpunkt bestehende Workstream entweder gepinnt oder hat einen begruendeten dauerhaften Carve-out. **Neue Workstreams nach B-Vervollständigung** sind Pflicht-Pinning des einfuehrenden Slices (im jeweiligen Plan-Doc), nicht von B oder F; das `fixtures/carve-outs.yaml` traegt sie nur dann nach, wenn der einfuehrende Slice eine `MATRIX_GAP`-Diagnose abklingen muss |
-| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness-Variante (komponiert `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))` und uebergibt sie als `components`-Override in `McpServerBootstrap.startStdio`/`startHttp`; **nicht** ueber CLI-seitiges `McpServeWiring`) statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
-| C | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
-| D | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
-| D-N10k | N=10000-Scale-Test als nightly-only opt-in |
-| E | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + `scripts/verify-kover-excludes-ledger.py`/`make coverage-excludes-check` + Bestands-Audit |
-| F | Roadmap-Status-Flip + Closing |
+| Sub-Slice | Status | Inhalt |
+|---|---|---|
+| A | ✅ erledigt (2026-05-30, `af59567d`) | `PerfMeasure`/`PerfReport`-Lib **neu** in `hexagon:profiling` (`minBound(90)`) + `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath `SchemaMigrateRenderPipeline.run` (Spec in `hexagon/application/src/test/.../perf/`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
+| A-Vervollständigung | ✅ erledigt (2026-05-30, `2e62370c`) | Diff-Planner-PerfSpec (`hexagon/core/src/test/.../perf/`) + Artefakt-Serialisierungs-PerfSpec ueber `RollbackArtefactBuilder`+`RollbackArtefactParser`-Round-Trip (`hexagon/application/src/test/.../perf/`) mit denselben Smoke-/Baseline-Vertraegen + Migration der Bestands-PerfSpecs in `adapters/driven/formats` und `adapters/driven/streaming` auf `PerfMeasure`/`PerfReport`; Phase A ist erst nach allen drei Hotpaths plus Bestands-Migration schliessbar |
+| A-Review-Fixes | ✅ erledigt (2026-05-30, `9c369d94`) | `/code-review`-Befunde adressiert: `PERF_GATE`-Forwarding (`d-migrate.perf.gate` SystemProperty), Streaming-Spec GC-Window-Alignment, `iterations==1`-Guard in formats/streaming, `Sink.consume(null)` im finally, atomare `Files.move(ATOMIC_MOVE)` in `PerfReport.write`, `%.9f`-Precision, KDoc-Notes zu Iteration=1-/n&lt;100-Percentile-Kollaps, `generateRollback=true` in Render-Pipeline-Spec |
+| B | ✅ erledigt (2026-05-30, `3545b646`) | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + Carve-out-Registry-Mechanik (`fixtures/carve-outs.yaml` + `MATRIX_GAP`-Diagnose) + erste 5 Workstreams gepinnt, restliche Workstreams provisorisch als Carve-out registriert, damit der Sweep schon ab B aktiv laufen kann ohne 17 noch nicht gepinnte Workstreams hart zu blocken |
+| B-Vervollständigung | ✅ erledigt (2026-05-30, `3ae1bb20`) | provisorische Carve-out-Eintraege fuer die restlichen Workstreams in echtes Pinning konvertieren oder als dauerhaften Carve-out mit Plan-Doc-Verweis stehen lassen — am Ende ist jeder zum Annahme-Zeitpunkt bestehende Workstream entweder gepinnt oder hat einen begruendeten dauerhaften Carve-out. **Neue Workstreams nach B-Vervollständigung** sind Pflicht-Pinning des einfuehrenden Slices (im jeweiligen Plan-Doc), nicht von B oder F; das `fixtures/carve-outs.yaml` traegt sie nur dann nach, wenn der einfuehrende Slice eine `MATRIX_GAP`-Diagnose abklingen muss. Stand: 7 Workstreams gepinnt (G.1/G.2/G.3/A.1/F.5/D.3/E.2), 17 Workstreams + 6 Dialect-spezifische Cells als `permanent: true` mit `ownerTests`-Pfaden zu real existierenden Tests; MatrixSweepTest verifiziert die Pfade gegen den Repo-Baum |
+| C-MCP | ✅ erledigt (2026-05-30, `1bea5bed`) | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness-Variante (komponiert `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))` und uebergibt sie als `components`-Override in `McpServerBootstrap.startStdio`/`startHttp`; **nicht** ueber CLI-seitiges `McpServeWiring`) statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
+| C | ✅ erledigt (2026-05-30, `a2195313`) | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
+| D | ✅ erledigt (2026-05-30, `67d93ef8`) | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
+| D-N10k | offen | N=10000-Scale-Test als nightly-only opt-in |
+| E | offen | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + `scripts/verify-kover-excludes-ledger.py`/`make coverage-excludes-check` + Bestands-Audit |
+| F | offen | Roadmap-Status-Flip + Closing |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
 Vervollstaendigungs-Slices duerfen nach dem jeweiligen Start-Slice landen,
