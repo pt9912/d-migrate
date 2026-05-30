@@ -22,6 +22,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.streaming.StreamingImporter
@@ -145,6 +146,7 @@ class DataImportCommand : CliktCommand(name = "import") {
             DatabaseDriverRegistry.get(dialect).dataWriter()
         }
         val readerFactory = DefaultDataChunkReaderFactory()
+        val preflight = DataImportSchemaPreflight(YamlSchemaCodec())
         val request = DataImportRequest(
             target = target,
             source = source,
@@ -184,8 +186,8 @@ class DataImportCommand : CliktCommand(name = "import") {
             urlParser = ConnectionUrlParser::parse,
             poolFactory = HikariConnectionPoolFactory::create,
             writerLookup = writerLookup,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
-            schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
+            schemaPreflight = preflight::prepare,
+            schemaTargetValidator = preflight::validateTargetTable,
             importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                 val importer = StreamingImporter(
                     readerFactory = readerFactory,

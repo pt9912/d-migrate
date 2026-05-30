@@ -3,8 +3,8 @@ package dev.dmigrate.cli.commands
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.driver.data.TargetColumn
+import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DataExportFormat
-import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.streaming.ImportInput
 import java.nio.file.Files
 import java.nio.file.Path
@@ -14,8 +14,11 @@ import java.nio.file.Path
  * reads and validates the schema file, then delegates to
  * [ImportDirectoryResolver] for table ordering and
  * [ImportTableValidator] for per-table compatibility checks.
+ *
+ * The concrete [SchemaCodec] is injected by the composition root (CLI / MCP),
+ * keeping this class free of the `adapters/driven/formats` dependency.
  */
-object DataImportSchemaPreflight {
+class DataImportSchemaPreflight(private val schemaCodec: SchemaCodec) {
 
     fun prepare(
         schemaPath: Path,
@@ -54,7 +57,7 @@ object DataImportSchemaPreflight {
 
         return try {
             Files.newInputStream(schemaPath).use { input ->
-                YamlSchemaCodec().read(input)
+                schemaCodec.read(input)
             }
         } catch (t: Throwable) {
             throw ImportPreflightException(

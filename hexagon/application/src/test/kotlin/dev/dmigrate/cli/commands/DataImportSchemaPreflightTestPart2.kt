@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
@@ -19,6 +20,8 @@ import java.nio.file.Path
 import java.sql.Types
 
 class DataImportSchemaPreflightTestPart2 : FunSpec({
+
+    val preflight = DataImportSchemaPreflight(YamlSchemaCodec())
 
     fun writeSchemaFile(content: String): Path =
         Files.createTempFile("dmigrate-preflight-schema-", ".yaml").also {
@@ -91,7 +94,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
         writeImportFile(importDir, "users.json")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir),
                 format = DataExportFormat.JSON,
@@ -112,7 +115,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
         writeImportFile(importDir, "public.users.json")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir),
                 format = DataExportFormat.JSON,
@@ -132,7 +135,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
         writeImportFile(importDir, "users.yml", "id: 1\n")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir, tableFilter = listOf("users")),
                 format = DataExportFormat.YAML,
@@ -153,7 +156,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
         writeImportFile(importDir, "users.yml", "id: 1\n")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir),
                 format = DataExportFormat.YAML,
@@ -185,14 +188,14 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
                     required: true
             """.trimIndent()
         )
-        val schema = DataImportSchemaPreflight.prepare(
+        val schema = preflight.prepare(
             schemaPath = schemaFile,
             input = ImportInput.SingleFile("users", dataFile),
             format = DataExportFormat.JSON,
         ).schema!!
 
         val ex = shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "users",
                 targetColumns = listOf(
@@ -212,7 +215,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
     test("validateTargetTable accepts supported neutral type matrix") {
         shouldNotThrowAny {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = compatibilitySchema(),
                 table = "compat",
                 targetColumns = listOf(
@@ -252,7 +255,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=UUID, target=JSONB → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Uuid),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
@@ -261,7 +264,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=UUID, target=custom enum → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Uuid),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
@@ -270,7 +273,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=JSON, target=UUID → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Json),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
@@ -279,7 +282,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=Enum, target=UUID → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Enum(values = listOf("A", "B"))),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
@@ -288,7 +291,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=Enum, target=JSONB → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Enum(values = listOf("A", "B"))),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
@@ -297,7 +300,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=XML, target=UUID → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Xml),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
@@ -306,7 +309,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=UUID, target=UUID (Types.OTHER) → must still accept
         shouldNotThrowAny {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Uuid),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "uuid")),
@@ -315,7 +318,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=JSON, target=JSONB (Types.OTHER) → must still accept
         shouldNotThrowAny {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Json),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "jsonb")),
@@ -324,7 +327,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // Schema=Enum (custom PG type), target=mood (Types.OTHER) → must accept
         shouldNotThrowAny {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schemaWith("col", NeutralType.Enum(values = listOf("happy", "sad"))),
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
@@ -346,7 +349,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // refType=status, target sqlTypeName=mood → must reject
         shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "mood")),
@@ -355,7 +358,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
         // refType=status, target sqlTypeName=status → must accept
         shouldNotThrowAny {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "t",
                 targetColumns = listOf(TargetColumn("col", true, Types.OTHER, "status")),
@@ -365,7 +368,7 @@ class DataImportSchemaPreflightTestPart2 : FunSpec({
 
     test("validateTargetTable reports broad type mismatches across neutral types") {
         val ex = shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = compatibilitySchema(),
                 table = "compat",
                 targetColumns = listOf(

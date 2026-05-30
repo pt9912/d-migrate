@@ -17,6 +17,7 @@ import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.FailedFinishInfo
 import dev.dmigrate.driver.data.TriggerMode
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -455,7 +456,7 @@ class DataImportRunnerHappyPathTest : FunSpec({
                 targetResolverInvoked = true
                 "sqlite:///tmp/should-not-be-used.db"
             },
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
         )
         assertExit(runner.execute(request(schema = schemaFile)), 3, stderr)
         targetResolverInvoked shouldBe false

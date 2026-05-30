@@ -8,6 +8,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.TableDefinition
 import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.assertions.throwables.shouldNotThrowAny
 import io.kotest.assertions.throwables.shouldThrow
@@ -19,6 +20,8 @@ import java.nio.file.Path
 import java.sql.Types
 
 class DataImportSchemaPreflightTest : FunSpec({
+
+    val preflight = DataImportSchemaPreflight(YamlSchemaCodec())
 
     fun writeSchemaFile(content: String): Path =
         Files.createTempFile("dmigrate-preflight-schema-", ".yaml").also {
@@ -103,7 +106,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val input = ImportInput.SingleFile("users", dataFile)
-        val result = DataImportSchemaPreflight.prepare(
+        val result = preflight.prepare(
             schemaPath = schemaFile,
             input = input,
             format = DataExportFormat.JSON,
@@ -158,7 +161,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir),
                 format = DataExportFormat.JSON,
@@ -194,7 +197,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(sourceFile),
                 format = DataExportFormat.JSON,
@@ -226,7 +229,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir, tableFilter = listOf("orders")),
                 format = DataExportFormat.JSON,
@@ -249,7 +252,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "orders",
                 targetColumns = emptyList(),
@@ -270,7 +273,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "users",
                 targetColumns = emptyList(),
@@ -296,7 +299,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         )
 
         val ex = shouldThrow<ImportSchemaMismatchException> {
-            DataImportSchemaPreflight.validateTargetTable(
+            preflight.validateTargetTable(
                 schema = schema,
                 table = "users",
                 targetColumns = listOf(
@@ -316,7 +319,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         Files.writeString(dataFile, """[{"id":1}]""")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = missingSchema,
                 input = ImportInput.SingleFile("users", dataFile),
                 format = DataExportFormat.JSON,
@@ -333,7 +336,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         Files.writeString(dataFile, """[{"id":1}]""")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaDir,
                 input = ImportInput.SingleFile("users", dataFile),
                 format = DataExportFormat.JSON,
@@ -357,7 +360,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         Files.writeString(dataFile, """[{"id":1}]""")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.SingleFile("users", dataFile),
                 format = DataExportFormat.JSON,
@@ -374,7 +377,7 @@ class DataImportSchemaPreflightTest : FunSpec({
         writeImportFile(importDir, "orders.json")
 
         val ex = shouldThrow<ImportPreflightException> {
-            DataImportSchemaPreflight.prepare(
+            preflight.prepare(
                 schemaPath = schemaFile,
                 input = ImportInput.Directory(importDir),
                 format = DataExportFormat.JSON,
