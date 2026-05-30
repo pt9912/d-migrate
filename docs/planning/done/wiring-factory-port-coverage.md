@@ -100,11 +100,14 @@ internal fun interface ServerStateFactory {
 }
 ```
 
-Das Pattern jedes Wirings adoptiert — Namensvorbild bleibt McpServe
-(kein „Infrastructure"-Suffix):
+Das Pattern jedes Wirings adoptiert — Bundle und Factory bekommen
+einheitlich das `Wiring`-Präfix der Wiring-Klasse, damit die sechs
+neuen Tranchen-Typen optisch zusammenhalten (McpServe behält die
+domain-spezifischen Namen `ServerStateBundle`/`ServerStateFactory`,
+weil dort der Zustand explizit „Server-State" heisst):
 
-- `<Name>Bundle` — die Aggregat-Klasse mit den konstruierten
-  Adaptern/Pools (Beispiel: `DataProfileBundle`).
+- `<Name>WiringBundle` — die Aggregat-Klasse mit den konstruierten
+  Adaptern/Pools (Beispiel: `DataProfileWiringBundle`).
 - `<Name>WiringFactory` (`fun interface`) — die Injection-Surface fuer
   `execute(..., factory = ...)`.
 - `Default<Name>WiringFactory` — Production-Default, konstruiert Hikari +
