@@ -1,0 +1,18 @@
+schema_format: "1.0"
+name: "matrix-F5-desired"
+version: "1.0.0"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      amount:
+        type: integer
+        required: true
+    primary_key: [id]
+    constraints:
+      - name: chk_amount_nonneg
+        type: check
+        expression: "amount >= 0"

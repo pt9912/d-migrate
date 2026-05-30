@@ -1,0 +1,27 @@
+schema_format: "1.0"
+name: "matrix-E2-desired"
+version: "1.0.0"
+
+tables:
+  events:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      payload:
+        type: text
+        required: true
+    primary_key: [id]
+
+triggers:
+  trg_events_audit:
+    description: "Stamp insertion source"
+    table: events
+    event: insert
+    timing: before
+    for_each: row
+    body: |
+      NEW.payload = NEW.payload;
+    dependencies:
+      tables: [events]
+    source_dialect: postgresql

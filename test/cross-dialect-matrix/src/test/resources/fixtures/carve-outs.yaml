@@ -1,0 +1,203 @@
+# Cross-dialect matrix carve-outs (Sub-Slice B)
+#
+# Plan-Doc: docs/planning/in-progress/quality-coverage-expansion-plan.md
+# §5.2, §6 (Sub-Slice B carve-out-registry-mechanik).
+#
+# Each entry documents a (workstream × dialect × kind) cell that is
+# intentionally NOT pinned in this slice, with a reason and a
+# plan-doc reference. Wildcards `dialect: "*"` and `kind: "*"`
+# cover all dialects / kinds respectively for the workstream so
+# unpinned workstreams stay compact.
+#
+# B-Vervollständigung will either promote each carve-out to a pinned
+# fixture pair or accept it as a permanent carve-out with stronger
+# justification (an explicit ADR-/spec-link). Carve-outs without a
+# planRef are rejected at registry load time.
+
+carve_outs:
+  # ── BLOCKER kind across the five PINNED workstreams ────────────
+  #
+  # Sub-Slice B pins POSITIVE fixtures only; every BLOCKER cell for
+  # the pinned workstreams becomes a provisional carve-out so the
+  # sweep can run today without 30 missing fixture pairs. The
+  # diffresult-migration-plan-2.md DoD §11.2 already requires per-
+  # workstream blocker tests, and those exist in the integration /
+  # application test suites — the matrix slice just defers the
+  # cross-dialect surfacing to B-Vervollständigung.
+
+  - workstream: G.1
+    dialect: "*"
+    kind: blocker
+    reason: "B-Vervollständigung-Folge: G.1 blocker cells (RUNNER_OWNED autocommit mismatch) need a dedicated fixture pair per dialect."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+  - workstream: G.2
+    dialect: "*"
+    kind: blocker
+    reason: "B-Vervollständigung-Folge: NOT_REVERSIBLE blocker fixtures will be added once rollback-artefact fixture builder supports synthetic non-reversible ops."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+  - workstream: F.5
+    dialect: "*"
+    kind: blocker
+    reason: "B-Vervollständigung-Folge: CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED fixture follows once the cross-table heuristic is documented as a pinning rather than a renderer-internal probe."
+    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+  - workstream: D.3
+    dialect: "*"
+    kind: blocker
+    reason: "B-Vervollständigung-Folge: MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT-blocker fixture per dialect; PG side is the natural POSITIVE today."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+  - workstream: E.2
+    dialect: "*"
+    kind: blocker
+    reason: "B-Vervollständigung-Folge: strict-gap trigger blocker (SQLite REPLACE without OR REPLACE) needs --strict-gap-operations wiring in the sweep request."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+
+  # ── E.2 POSITIVE on PostgreSQL / SQLite ────────────────────────
+  #
+  # The shared E.2 trigger fixture uses an inline body that the
+  # MySQL renderer accepts but PostgreSQL refuses (PG triggers
+  # need a `[schema.]identifier(args)` function reference, not an
+  # inline PL/pgSQL body — TRIGGER_BODY_NOT_FUNCTION_REFERENCE)
+  # and SQLite refuses across `sourceDialect=postgresql`
+  # (SQLITE_TRIGGER_BODY_NOT_RENDERABLE). A truly cross-dialect
+  # trigger fixture needs per-dialect bodies; that's
+  # B-Vervollständigung material.
+
+  - workstream: E.2
+    dialect: postgresql
+    kind: positive
+    reason: "Inline trigger body blocks PG with TRIGGER_BODY_NOT_FUNCTION_REFERENCE; a function-reference fixture is B-Vervollständigung work."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+  - workstream: E.2
+    dialect: sqlite
+    kind: positive
+    reason: "Shared trigger fixture's sourceDialect blocks SQLite with SQLITE_TRIGGER_BODY_NOT_RENDERABLE; B-Vervollst will add per-dialect bodies."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+
+  # ── F.5 POSITIVE on MySQL ──────────────────────────────────────
+  #
+  # MySQL CHECK rendering needs --mysql-server-version (>= 8.0.16 /
+  # MariaDB 10.2.1) before the renderer will emit DDL — without a
+  # version the renderer blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN.
+  # File-mode pinning that satisfies this needs the request-level
+  # mysql-server-version flag wired into the sweep runner, which is
+  # B-Vervollst material.
+
+  - workstream: F.5
+    dialect: mysql
+    kind: positive
+    reason: "MySQL CHECK rendering blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN without --mysql-server-version; sweep runner needs the request-level flag (B-Vervollst)."
+    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+
+  # ── D.3 POSITIVE on MySQL / SQLite ─────────────────────────────
+  #
+  # The POSITIVE fixture adds a MATERIALIZED VIEW. PG renders it
+  # successfully; MySQL and SQLite have no MV support and the
+  # renderer surfaces MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT
+  # → exit 8. Those cells are conceptually BLOCKERs and will be
+  # promoted with explicit fixture pairs in B-Vervollständigung.
+
+  - workstream: D.3
+    dialect: mysql
+    kind: positive
+    reason: "MySQL has no native MATERIALIZED VIEW; D.3b renderer blocks with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT. Promote to BLOCKER cell in B-Vervollständigung."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+  - workstream: D.3
+    dialect: sqlite
+    kind: positive
+    reason: "SQLite has no MATERIALIZED VIEW; D.3b renderer blocks with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT. Promote to BLOCKER cell in B-Vervollständigung."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+
+  # ── 17 unpinned workstreams (full wildcard) ─────────────────────
+  #
+  # Each entry below is provisional: the workstream IS covered by
+  # dedicated unit/integration tests elsewhere (see plan-doc §11.2),
+  # but the cross-dialect matrix surface waits for B-Vervollständigung.
+  # Promotion criteria: file-mode reproducibility AND a stable
+  # blocker code AND a fixture pair small enough to live in the
+  # matrix resources tree.
+
+  - workstream: G.3
+    dialect: "*"
+    kind: "*"
+    reason: "Execution-status report contract is exercised in SchemaMigrateRunnerExecuteTest; matrix pinning follows in B-Vervollst."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+  - workstream: A.1
+    dialect: "*"
+    kind: "*"
+    reason: "Locking/transactional-DDL hints surface through DialectExecutionHints; covered in driver-specific tests, matrix wiring follows."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+  - workstream: A.2
+    dialect: "*"
+    kind: "*"
+    reason: "SQLite live sqlite_master probe is a live-DB workstream; file-mode matrix pinning requires a stub probe seam (B-Vervollst)."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.2
+  - workstream: B.1
+    dialect: "*"
+    kind: "*"
+    reason: "PostgreSQL USING-conversions covered in PostgresDiffSqlBuildersTest; matrix surfacing follows once overlay-USING fixtures are de-duped from the live-DB path."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.1
+  - workstream: B.2
+    dialect: "*"
+    kind: "*"
+    reason: "SQLite live-DB cast-preflight is live-DB-only; matrix needs a stub-probe seam (B-Vervollst)."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.2
+  - workstream: C.1
+    dialect: "*"
+    kind: "*"
+    reason: "Extension dependency install-policy is covered in PostgresExtensionTests; matrix promotion needs the conservative install-policy file-mode fixture."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.1
+  - workstream: C.2
+    dialect: "*"
+    kind: "*"
+    reason: "Spatial migration surface is covered in driver-postgresql Spatial-Profile tests; cross-dialect matrix follows once spatial fixtures are dialect-neutral."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.2
+  - workstream: D.1
+    dialect: "*"
+    kind: "*"
+    reason: "View visible-signature-compatibility covered in PostgresViewRendererTest; matrix promotion follows."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.1
+  - workstream: D.2
+    dialect: "*"
+    kind: "*"
+    reason: "MySQL VIEW_ROUTINE_USAGE privilege-preflight is live-DB; matrix needs a stub-probe seam (B-Vervollst)."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.2
+  - workstream: E.1
+    dialect: "*"
+    kind: "*"
+    reason: "Routine migration body-normalisation is covered in routine-migration tests; matrix promotion follows once routine fixtures are dialect-neutral."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.1
+  - workstream: E.3
+    dialect: "*"
+    kind: "*"
+    reason: "Sequence migration cross-dialect surface is large (PG/MySQL/SQLite helper_table emulation); promotion to matrix requires dedicated fixture pairs per emulation flag."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.3
+  - workstream: F.0
+    dialect: "*"
+    kind: "*"
+    reason: "Versioned migration-overlay grundvertrag covered in MigrationOverlayPreflightTest; matrix surface follows."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.0
+  - workstream: F.1
+    dialect: "*"
+    kind: "*"
+    reason: "Automated data transformations are not yet implemented (Phase 1.x); carve-out until F.1 lands."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.1
+  - workstream: F.2
+    dialect: "*"
+    kind: "*"
+    reason: "Versioned plan-artefacts already covered by MigrationPlanArtifactBuilderTest + Compatibility tests; matrix promotion follows once artefact-emission can be exercised file-mode."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.2
+  - workstream: F.3
+    dialect: "*"
+    kind: "*"
+    reason: "Partial rollback surface needs a multi-statement Down fixture; promote after F.3 fixture seam is documented."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.3
+  - workstream: F.4
+    dialect: "*"
+    kind: "*"
+    reason: "Rename mappings + cli-inline-overlay covered in InlineRenameOverlayBuilderTest; matrix promotion follows."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.4
+  - workstream: F.4-renderer-blocker-bridge
+    dialect: "*"
+    kind: "*"
+    reason: "Internal renderer-blocker classifier slice covered by PlannerBlockerClassifierTest; matrix exposure not yet meaningful."
+    planRef: docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
