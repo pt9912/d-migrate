@@ -371,7 +371,7 @@ Mindestens erforderlich:
 Hinweis: Echte CLI-Tests ueber `DMigrate.parse(...)` fuer `data profile`
 erfordern eine aufloesbare `--source` und sind in 0.7.5 ueber Runner-Tests
 und Help-Tests abgedeckt. Die vollstaendige Clikt-Pfad-Testbarkeit ist als
-separates Refactoring dokumentiert (`docs/planning/in-progress/refactoring-cli-testability.md`).
+separates Refactoring dokumentiert (`docs/planning/done/refactoring-cli-testability.md`).
 
 Ziel:
 

@@ -15,7 +15,6 @@ Zwei Typen leben hier:
    - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
      — Draft für den dialektübergreifenden Atomic-Probe-und-Restore-Pfad
      (Folge-Slice der bestehenden `preserveCurrentValue`-Workstreams).
-   - [`refactoring-cli-testability.md`](refactoring-cli-testability.md)
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)

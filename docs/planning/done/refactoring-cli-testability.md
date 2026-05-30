@@ -1,9 +1,67 @@
 # Refactoring: CLI-Command-Testbarkeit
 
-> **Status**: Teilweise umgesetzt (McpServeCommand)
+> **Status**: Strukturell abgeschlossen 2026-05-30
 > **Prioritaet**: Mittel
 > **Erstellt**: 2026-04-15
-> **Aktualisiert**: 2026-05-09 (Erkenntnisse aus McpServeCommand-Refactor)
+> **Aktualisiert**: 2026-05-30 (alle Commands der „Betroffene Commands"-Liste umgesetzt)
+
+## Stand 2026-05-30
+
+Alle in „Betroffene Commands" gelisteten Commands tragen jetzt das
+Drei-Schicht-Modell `Command (Clikt) → Wiring (Clikt-frei, internal) →
+Runner (Logik)` aus dem McpServe-Praezedenzfall:
+
+| Command | Wiring-Datei | Commit |
+| --- | --- | --- |
+| `McpServeCommand` | `McpServeWiring.kt` | (vor dieser Tranche) |
+| `DataExportCommand` | `DataExportWiring.kt` | `4476acca` |
+| `DataImportCommand` | `DataImportWiring.kt` | `bc092096` |
+| `DataProfileCommand` | `DataProfileWiring.kt` | `bc092096` |
+| `DataTransferCommand` | `DataTransferWiring.kt` | `741f6ad7` |
+| `SchemaReverseCommand` | `SchemaReverseWiring.kt` | `acae00f0` |
+| `SchemaCompareCommand` | `SchemaCompareWiring.kt` | `acae00f0` |
+| `SchemaGenerateCommand` | `SchemaGenerateWiring.kt` | `acae00f0` |
+| `ExportFlyway/Liquibase/Django/Knex` | `ToolExportWiring.kt` (shared) | `2541b48a` |
+
+Vorarbeit:
+- `SchemaCodec`-Port (war vor der Tranche vorhanden).
+- `DataImportSchemaPreflight` von `adapters/driving/cli` nach
+  `hexagon:application` migriert (`88c813f6`); Hex-Boundary zu
+  `YamlSchemaCodec` damit geschlossen.
+
+Lessons-Learned-Pruefung (gegen §2–§7 unten):
+- §2 Internal-Sichtbarkeit: alle 7 neuen `*Options` + `*Wiring`
+  Typen sind `internal`.
+- §3 Exit-Code statt `ProgramResult`: jedes Wiring liefert `Int`,
+  die Commands wandeln `Int != 0` in `throw ProgramResult(exit)`.
+- §6 Hidden-Adapter-Trap: ueber `DataImportSchemaPreflight`-Klassen-
+  Variante mit injiziertem `SchemaCodec` geschlossen.
+- §7 UseRequire-Trigger: drei `throw IllegalArgumentException(...)`-
+  Stellen in DataExport/Import/Profile-Wirings sind Re-throws im
+  `catch` (vom Detekt-Regelumfang nicht erfasst).
+
+## Folge-Tranche: §11-style Coverage fuer die sechs eager-konstruierten Wirings
+
+Die sechs Wirings `DataImport`, `DataProfile`, `ToolExport`,
+`SchemaCompare`, `SchemaGenerate`, `SchemaReverse` konstruieren
+Hikari-Pools + Adapter eager im `execute()`. Sie sind via `internal`
+sichtbar, aber nicht ohne lebende JDBC-Endpunkte unit-testbar.
+
+Bereits geschrieben:
+- `DataExportWiringTest` + `DataTransferWiringTest` decken die
+  Pre-Runner-Pfade (blank filter, unparseable filter → Exit 2)
+  vollstaendig ab, weil beide Wirings vor jeder JDBC-Konstruktion
+  zurueckkehren.
+
+Offen (eigene Tranche):
+- Factory-Port-Schnitt pro Wiring analog zu McpServeWiring /
+  `ServerStateFactory`: Hikari- + Adapter-Lookup wandern hinter eine
+  injizierbare Factory; Default-Impl bleibt im Wiring, Tests
+  substituieren in-memory / Fake-Pool-Variante.
+- Erwartungs-Coverage: 75–88% pro Wiring, analog §11-Tabelle.
+- Risiko: jede Wiring-Factory bringt neue Adapter-Aggregat-Klassen
+  und Test-Boilerplate; lohnt sich erst, wenn ein konkreter Bedarf
+  (z.B. ein Bug-Class, der nur in der Wiring sitzt) auftritt.
 
 ---
 
