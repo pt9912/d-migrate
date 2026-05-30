@@ -9,13 +9,17 @@
 >   `4476acca`, `bc092096`, `2541b48a`, `acae00f0`, `741f6ad7`).
 > - `DataImportSchemaPreflight`-Hex-Boundary geschlossen
 >   (`88c813f6`).
+> - Kover-Snapshot des CLI-Moduls vor Start der ersten Phase
+>   dokumentieren, damit „Vor Refactor"-Werte in §1 nicht geraten
+>   sind.
 > Referenzen:
 > - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/McpServeWiring.kt`
 >   (Vorbild: `ServerStateFactory`/`ServerStateBundle`-Pattern)
 > - `adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/commands/{DataImport,DataProfile,ToolExport,SchemaCompare,SchemaGenerate,SchemaReverse}Wiring.kt`
 > - `adapters/driving/cli/src/test/kotlin/dev/dmigrate/cli/commands/{DataExport,DataTransfer}WiringTest.kt`
->   (Pre-Runner-Pfad-Pin als Coverage-Untergrund)
-> - `spec/lastenheft-d-migrate.md` LN-045 (Coverage ≥ 80%)
+>   (Pre-Runner-Pfad-Pin als Coverage-Referenz für die zwei nicht
+>   adressierten Wirings)
+> - `spec/lastenheft-d-migrate.md` LN-045 (Coverage messbar/überprüfbar)
 
 ---
 
@@ -26,11 +30,9 @@ Die sechs eager-konstruierten CLI-Wirings (`DataImport`, `DataProfile`,
 75–88% Modul-isolierte Coverage heben, analog zur Plan-Lessons-§11-
 Tabelle aus `refactoring-cli-testability.md`:
 
-| Klasse | Vor Refactor | Ziel nach Folge-Tranche |
+| Klasse | Vor Refactor (zu messen) | Ziel nach Folge-Tranche |
 | --- | --- | --- |
 | `McpServeWiring` | 88% | — (bereits abgehakt) |
-| `DataExportWiring` | nur Filter-Pfade ~30% | 75–80% |
-| `DataTransferWiring` | nur Filter-Pfade ~30% | 75–80% |
 | `DataImportWiring` | unerreichbar (eager Hikari) | 75–80% |
 | `DataProfileWiring` | unerreichbar | 75–80% |
 | `ToolExportWiring` | unerreichbar | 75–80% |
@@ -38,11 +40,16 @@ Tabelle aus `refactoring-cli-testability.md`:
 | `SchemaGenerateWiring` | unerreichbar | 75–80% |
 | `SchemaReverseWiring` | unerreichbar | 75–80% |
 
-Heute scheitert jede Wiring-Unit-Coverage über die Filter-Validation
-hinaus, weil `execute()` direkt `HikariConnectionPoolFactory.create(...)`
-+ `DatabaseDriverRegistry.get(...).<dataReader/dataWriter/…>()`
-aufruft — ohne lebenden JDBC-Endpunkt schlägt der Konstruktor (Hikari
-eager-connect, siehe Lessons §9) sofort fehl.
+Die „Vor Refactor"-Spalte ist vor Phase A aus dem aktuellen Kover-HTML
+zu befüllen — heute liegt sie nicht vor. Klassifizierung „unerreichbar"
+bedeutet: jede `execute()`-Probe ohne Live-DB schlägt am ersten
+`HikariConnectionPoolFactory.create(...)` oder
+`DatabaseDriverRegistry.get(...).<dataReader/dataWriter/…>()` fehl
+(Hikari eager-connect, siehe Lessons §9).
+
+`DataExportWiring` und `DataTransferWiring` sind nicht Teil dieser
+Tranche — ihre Filter-Pfade sind in `741f6ad7` gepinnt, die
+Hikari-Konstruktion ist eigene Folge-Tranche (siehe §7).
 
 ## 2. In-/Out-of-Scope
 
@@ -64,13 +71,13 @@ eager-connect, siehe Lessons §9) sofort fehl.
 
 ### 2.2 Out of Scope
 
-- `DataExportWiring` + `DataTransferWiring` als zweistufige Phase: die
-  Filter-Pfade liegen schon, der Hikari-Teil folgt mit demselben
-  Pattern. Keine Sonderrolle.
 - Integration-Tests gegen Live-DB — bleiben bei `make integration`
   und sind nicht Teil der pro-Wiring-Coverage-Ziele.
 - `McpServeCommand` / `McpServeWiring` — bereits 88% per
   `ServerStateFactory`-Pattern, kein Re-Refactor.
+- `DataExportWiring` / `DataTransferWiring` Hikari-Anteil — Filter-
+  Pfade existieren, Pool-Construction ist eigene Folge-Tranche
+  (siehe §7).
 - `SchemaMigrateCommand`, `SchemaRollbackCommand`,
   `SchemaValidateCommand` — nicht Teil der ursprünglichen
   „Betroffene Commands"-Liste; eigene Bewertung in einer späteren
@@ -93,19 +100,20 @@ internal fun interface ServerStateFactory {
 }
 ```
 
-Das Pattern jedes Wirings adoptiert:
+Das Pattern jedes Wirings adoptiert — Namensvorbild bleibt McpServe
+(kein „Infrastructure"-Suffix):
 
-- `<Name>InfrastructureBundle` — die Aggregat-Klasse mit den
-  konstruierten Adaptern/Pools.
-- `<Name>InfrastructureFactory` (`fun interface`) — die
-  Konstruktor-Injection-Surface.
-- `Default<Name>InfrastructureFactory` — Production-Default,
-  konstruiert Hikari + Registry-Lookups identisch zur heutigen
-  Inline-Logik.
+- `<Name>Bundle` — die Aggregat-Klasse mit den konstruierten
+  Adaptern/Pools (Beispiel: `DataProfileBundle`).
+- `<Name>Factory` (`fun interface`) — die Konstruktor-Injection-Surface.
+- `Default<Name>Factory` — Production-Default, konstruiert Hikari +
+  Registry-Lookups identisch zur heutigen Inline-Logik.
 
 ## 4. Phasen (1 Slice pro Wiring)
 
-Reihenfolge nach steigender Komplexität:
+Reihenfolge nach steigender Komplexität: Phase A setzt das Pattern,
+B–F kopieren es; D zieht die höhere Coverage-Latte wegen
+Exit-Code-Verzweigung.
 
 ### Phase A — `DataProfileWiring`
 
@@ -160,21 +168,18 @@ Reihenfolge nach steigender Komplexität:
 
 - Größtes Wiring (Hikari + Preflight + Streaming-Importer).
 - Bundle: `targetResolver`, `urlParser`, `poolFactory`,
-  `writerLookup`, `schemaPreflight`-Funktionsreferenz,
-  `schemaTargetValidator`, `importExecutor`, `progressReporter`,
-  `checkpointStoreFactory`, `checkpointConfigResolver`.
-- DoD: ≥ 75%; Pflicht-Pin: `--target` ohne Default → `CliUsageException`,
-  Preflight-Fehler → Exit 3, Stdin-Source + `--resume` → Exit 2.
-
-### Phase G — `DataExportWiring` + `DataTransferWiring` Hikari-Teil
-
-- Filter-Pfade sind bereits gepinnt (`DataExportWiringTest`,
-  `DataTransferWiringTest` aus Commit `741f6ad7`).
-- Diese Tranche hebt nur den Runner-Block (Pool-Construction,
-  Reader-/Lister-Lookup, ProgressRenderer-Integration) hinter die
-  Factory.
-- DoD: ≥ 75% für beide Wirings; existierende Filter-Tests
-  durchläufig halten, neue Runner-Pfad-Tests ergänzen.
+  `writerLookup`, `schemaCodec` (heute inline
+  `YamlSchemaCodec()` an `DataImportSchemaPreflight` übergeben —
+  ins Bundle anheben), `preflightFactory` als Funktions-Hülle für
+  `(SchemaCodec) -> DataImportSchemaPreflight`, `importExecutor`,
+  `progressReporter`, `checkpointStoreFactory`,
+  `checkpointConfigResolver`.
+- DoD: ≥ 75%. Wiring-Testbarkeit (gehört in diese Tranche):
+  Factory-Injection-Pfade, Default-Konstruktor-Pin,
+  Preflight-Construction mit Fake-Codec. Runner-Verhalten
+  (`--target` ohne Default, Preflight-Fehler-Exit-Codes, Stdin +
+  `--resume`-Block) ist bereits durch `DataImportRunnerTest` in
+  `application`/`cli` abgedeckt — wird hier nicht dupliziert.
 
 ## 5. DoD pro Phase
 
@@ -182,7 +187,7 @@ Reihenfolge nach steigender Komplexität:
   grün — keine Regression in fremden Modulen.
 - Per-Modul-Coverage des CLI-Moduls steigt um den jeweiligen
   Wiring-Beitrag (heute laut Kover-HTML 0% pro Wiring außer
-  Filter-Pfade).
+  Filter-Pfade in DataExport/DataTransfer).
 - Coverage-Tabelle in
   `docs/planning/done/refactoring-cli-testability.md` Closure-
   Sektion wird pro Phase nachgezogen.
@@ -203,16 +208,17 @@ Reihenfolge nach steigender Komplexität:
    im Bundle steckt oder nicht), wird das Pattern undurchsichtig.
    Mitigation: Phase A (DataProfile) setzt das Pattern; nachfolgende
    Phasen kopieren wörtlich.
-4. **Coverage-Gate-Flake** (siehe Memory `feedback_kover_ci_flake`):
-   `:adapters:driving:cli:koverVerify` kann knapp unter 90%
-   flaken. Mitigation: lokale Verifikation vor Push, dann CI rerun.
+4. **Coverage-Gate-Flake an der 90%-Grenze**:
+   `:adapters:driving:cli:koverVerify` kann knapp unter 90% flaken,
+   wenn neue Wiring-Klassen knapp unterhalb der Schwelle liegen.
+   Mitigation: lokale Verifikation vor Push, dann CI rerun.
 
 ## 7. Out-of-Scope / Folge-Themen
 
-- **Coverage-Tabelle für `SchemaMigrate`/`SchemaRollback`/
-  `SchemaValidate`**: diese drei Commands waren nicht in der
-  ursprünglichen „Betroffene Commands"-Liste. Eigene Bewertung +
-  ggf. Plan-Doc nach Abschluss dieser Tranche.
+- **`DataExportWiring` / `DataTransferWiring` Hikari-Coverage**:
+  Filter-Pfade sind in `741f6ad7` gepinnt; die Pool-/Adapter-/
+  Resolver-Konstruktion folgt mit demselben Factory-Port-Pattern,
+  ist aber eine eigene Tranche und nicht in den sechs Phasen oben.
 - **Integration-Test-Verschiebung**: die heutigen `CliData*Test`-
   Integrations-Pfade gegen SQLite bleiben, sie ergänzen die
   Wiring-Unit-Tests und ersetzen sie nicht.
@@ -224,7 +230,7 @@ Reihenfolge nach steigender Komplexität:
 
 Phase A (DataProfile) zuerst, weil sie das Pattern etabliert und
 am kleinsten ist. Danach Phase B (ToolExport) für die geteilte
-Wiring-Erfahrung, dann nach steigender Komplexität C → D → E → F → G.
+Wiring-Erfahrung, dann nach steigender Komplexität C → D → E → F.
 Jede Phase ist ein eigener Commit mit eigenem `make docker-check`-
 Gate; bei Pattern-Drift wird die jeweilige Phase rückgängig gemacht
 und Phase A als Template neu konsultiert.
