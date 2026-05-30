@@ -27,7 +27,7 @@ Test, Exit-Codes, Rollback-Verträge). Was fehlt:
 2. **Tatsächlich ausgeführte Cross-Dialekt-Regressionsmatrix** statt nur
    eines Kriterienkatalogs in §11.2. Heute existieren die Einzeltests,
    aber kein wiederkehrender Matrix-Sweep, der per CI „grün/rot" sagt.
-3. **End-to-End-Szenarien gegen Live-Container** auf MCP-Pfad,
+3. **End-to-End-Szenarien gegen Live-DB/Testcontainers** auf MCP-Pfad,
    Concurrent-Writer-Pattern (Sequence-Preserve-Race), Large-Schema-Skalen
    (1000+ Tabellen / Sequenzen).
 4. **Kover-Coverage-Hygiene**: per-Modul-`excludes`-Listen
@@ -46,7 +46,7 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   „§11 DoD ist damit komplett (a/b/c/d/e alle abgehakt)", aber den
   Status `teilerledigt`. Die Diskrepanz reflektiert, dass §11 DoD eng
   auf Feature-Pinning beschränkt ist; alle Quality-Themen ausserhalb
-  davon (Perf, Last, E2E gegen echte Container) sind nicht vergeben.
+  davon (Perf, Last, E2E gegen Live-DB/Testcontainers) sind nicht vergeben.
 - Die `diffresult-migration-plan-2.md` §11.2 listet Cross-Dialekt-
   Regressionskriterien, aber keinen ausführbaren Matrix-Lauf. Ein
   Operator kann heute nicht „grün" für die Matrix sagen — nur
@@ -75,16 +75,18 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   als strukturierte Diagnose, nicht als stille Auslassung.
 - **Phase C — Concurrent-Writer-Regressionen**: ein
   `test/integration-concurrency/`-Modul, das das Sequence-Preserve-
-  Race-Pattern (Probe → App-`nextval` → Restore) gegen PG/MySQL/SQLite-
-  Container reproduzierbar nachstellt. Beweist den Carve-out aus
-  `ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md` §6 und
-  liefert die Baseline für den atomaren Folge-Slice.
+  Race-Pattern (Probe → App-`nextval`/`dmg_nextval` → Restore) gegen
+  PG/MySQL/SQLite reproduzierbar nachstellt. Dazu kommt ein MCP-E2E-
+  Szenario in `test:e2e-cli`, das denselben Live-DB-Pfad über
+  `mcp serve`/Job-/Artefakt-Status ausführt. Phase C beweist den
+  Carve-out aus `ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`
+  §6 und liefert die Baseline für den atomaren Folge-Slice.
 - **Phase D — Large-Schema-Last-Tests**: synthetische Schemata mit
   N=100/1000/10000 Tabellen/Sequenzen/Views/Triggern; pinnt
   Render-Throughput und Memory-Footprint als Hash-of-Numbers im Report.
 - **Phase E — Kover-Excludes-Konsolidierung**: jede aktive
   `kover.excludes`-Klasse braucht eine Begründungs-Zeile in einer
-  zentralen `docs/excludes-ledger.md` (ADR-light), mit Referenz auf
+  zentralen `docs/coverage/excludes-ledger.md` (ADR-light), mit Referenz auf
   Refactor-Plan oder explizitem „permanent excluded weil X"-Beleg.
   Memory-Note `feedback_no_suppress_for_size` analog.
 - **Phase F — Schliessen**: alle Phasen-DoDs erfüllt; Roadmap-Status
@@ -110,6 +112,7 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 |---|---|
 | §11 DoD a-e (Feature-Test-Pinning) | ✅ 2026-05-19 |
 | `make integration`-Pipeline pro Dialekt | ✅ (test/integration-*) |
+| Integration-Gating | ✅ strukturell via `-PintegrationTests`, nicht über Kotest-`integration`-Tags |
 | `kotest.tags=perf` als Filter-Konvention | ✅ (siehe `build.gradle.kts:91`) |
 | Atomar-Lock-Plan für Concurrent-Writer-Pattern | ⚠️ Draft (`sequence-preserve-atomic-lock-plan.md`) |
 | Kover-`koverVerify` als CI-Gate | ✅ pro Modul `minBound(90)` |
@@ -167,18 +170,48 @@ test/cross-dialect-matrix/
   (siehe F.5 Vollscheibe) — das Carve-out-File listet den Verzicht
   mit Plan-Doc-Verweis.
 
-### 5.3 Concurrent-Writer-Tests (Phase C)
+### 5.3 MCP-E2E- und Concurrent-Writer-Tests (Phase C)
+
+**MCP-E2E-Pfad:** `test:e2e-cli` bekommt ein Szenario, das `mcp serve`
+über den bestehenden Harness startet, eine Live-DB-Connection aus den
+Testcontainers-/SQLite-Fixtures registriert, `schema_migrate` aufruft und
+Job-Status plus Artefaktinhalt prüft. Damit ist der QA-Scope nicht nur auf
+CLI-/Renderer-Unit-Pfade beschränkt; der MCP-Pfad muss mindestens einen
+erfolgreichen Migrate-Lauf und einen Blocker-Lauf gegen Live-DB abdecken.
+
+**Concurrent-Writer-Pfad:** Das neue Modul `test/integration-concurrency/`
+läuft strukturell wie die bestehenden `test:integration-*`-Module unter
+`-PintegrationTests`, aber zusätzlich nur mit `-PconcurrencyTests`. Das
+Modul setzt in seinem `build.gradle.kts` ein zweites `onlyIf`, damit der
+normale Integration-Sweep die Race-Tests nicht entdeckt oder startet.
 
 ```
 test/integration-concurrency/
   └─ SequencePreserveRaceTest.kt
-       test("PG: nextval-during-probe surfacees a stale UPDATE") {
+       test("PG: nextval between probe and restore surfaces stale UPDATE") {
            val pg = postgresContainer.start()
            pg.exec("CREATE SEQUENCE order_seq")
            pg.exec("SELECT nextval('order_seq')") // brings it to 1
-           // run preserve probe in one thread
-           val writerThread = thread { repeat(50) { pg.exec("SELECT nextval('order_seq')") } }
-           val outcome = runMigrationPreserveAgainst(pg, ...)
+           val probeObserved = CountDownLatch(1)
+           val writerFinished = CountDownLatch(1)
+
+           val gatedProbe = SequenceCurrentValueProbeFn { pool, ref ->
+               val read = realProbe(pool, ref)
+               probeObserved.countDown()
+               writerFinished.await(5, SECONDS) shouldBe true
+               read
+           }
+
+           val writerThread = thread {
+               probeObserved.await(5, SECONDS) shouldBe true
+               repeat(50) { pg.exec("SELECT nextval('order_seq')") }
+               writerFinished.countDown()
+           }
+
+           val outcome = runMigrationPreserveAgainst(
+               pg,
+               sequenceCurrentValueProbe = gatedProbe,
+           )
            writerThread.join()
            val finalValue = pg.queryOne<Long>("SELECT last_value FROM order_seq")
            // Without atomic lock: finalValue is the probed value, NOT the
@@ -188,13 +221,20 @@ test/integration-concurrency/
 ```
 
 - Pro Dialekt ein Race-Test, der den dokumentierten Carve-out
-  reproduziert. Wenn `sequence-preserve-atomic-lock-plan.md` landet,
+  reproduziert. PG/MySQL laufen über Testcontainers; SQLite nutzt eine
+  echte Datei-DB mit zwei Connections. Der Test muss den Writer per
+  Latches/Barrieren exakt im Probe→Restore-Fenster platzieren; ein
+  frei laufender Writer-Thread ist nicht zulässig, weil er nach dem Restore
+  weiterdrehen und den stale-restore-Befund maskieren kann.
+- Wenn `sequence-preserve-atomic-lock-plan.md` landet,
   ergänzen wir die Tests um „mit atomarem Pfad: finalValue ist
   Post-Writer-Maximum".
-- Marker-Tag `@Tags("integration", "concurrency")`, läuft nur in
-  `make integration INTEGRATION_TASKS="-PconcurrencyTests"` opt-in,
-  damit der Standard-Integration-Sweep nicht durch flaky-Race-Tests
-  beeinträchtigt wird.
+- Marker-Tag `@Tags("concurrency")` dient nur der Lesbarkeit; die
+  Ausführung wird über Gradle-Properties gegatet:
+  `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`.
+  `-PconcurrencyTests` allein ist kein gültiger Lauf, weil das
+  Integrations-Gating des Root-Builds weiterhin `-PintegrationTests`
+  verlangt.
 
 ### 5.4 Large-Schema-Last-Tests (Phase D)
 
@@ -246,7 +286,8 @@ test/perf-large-schema/
 | A | `PerfSpec`-Konvention + 1 Hotpath (`SchemaMigrateRenderPipeline.run`) + Budget-Konstante + nightly-Workflow-Skelett |
 | B | `test/cross-dialect-matrix/`-Modul + Sweep-Fixture-Lader + erste 5 Workstreams |
 | B-Vervollständigung | restliche Workstreams + Carve-out-Registry |
-| C | `test/integration-concurrency/`-Modul + PG/MySQL/SQLite-Race-Tests + Marker-Tag |
+| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB: `schema_migrate`, Job-Status, Artefaktinhalt, je ein Erfolgs- und Blockerpfad |
+| C | `test/integration-concurrency/`-Modul + PG/MySQL/SQLite-Race-Tests + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Budget |
 | D-N10k | N=10000-Scale-Test als nightly-only opt-in |
 | E | `docs/coverage/excludes-ledger.md` + Pre-commit-Hook-Skizze + Bestands-Audit |
@@ -270,8 +311,14 @@ werden, ohne dass A/B/C/E darauf warten.
 - [ ] Carve-out-Registry für nicht-pinnbare Workstream-Dialekt-Paare
       ist im Modul (`fixtures/carve-outs.yaml` o. ä.) und in der
       Plan-Doc-Begründung verlinkt.
+- [ ] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
+      `schema_migrate` über `mcp serve` inklusive Job-Status und
+      Artefaktinhalt; mindestens ein Erfolgs- und ein Blockerpfad sind
+      gepinnt.
 - [ ] Concurrent-Writer-Test reproduziert den Sequence-Preserve-Race
-      pro Dialekt und ist im Integration-Sweep opt-in lauffähig.
+      pro Dialekt mit Barrieren im Probe→Restore-Fenster und ist mit
+      `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`
+      opt-in lauffähig.
 - [ ] Large-Schema-Scale-Tests für N=100 und N=1000 sind grün; N=10000
       ist nightly opt-in.
 - [ ] `docs/coverage/excludes-ledger.md` listet jede aktive
@@ -291,8 +338,10 @@ werden, ohne dass A/B/C/E darauf warten.
    nachgepflegt werden. Mitigation: Sweep blockt bei Lücken (siehe
    `MATRIX_GAP`-Diagnose) und zwingt zu expliziter Carve-out-Eintragung.
 3. **Concurrent-Writer-Tests sind inhärent flaky**: Race-Reproduzierbar-
-   keit ist nicht garantiert. Mitigation: hohe Iterationszahl + Marker-
-   Tag „concurrency" + opt-in-Lauf statt PR-Standard.
+   keit ist nur garantiert, wenn der Test den Writer exakt zwischen Probe
+   und Restore platziert. Mitigation: CountDownLatch-/Barrier-Harness,
+   keine frei laufenden Writer-Threads, `-PconcurrencyTests`-Opt-in statt
+   PR-Standard.
 4. **Large-Schema-Generator zieht JVM-OOM**: N=10000 sprengt evtl. die
    CI-Runner. Mitigation: nightly-only, dedizierter Runner mit -Xmx4g,
    N als CLI-Parameter.
