@@ -11,13 +11,6 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.cli.output.OutputFormatter
-import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.driver.mysqlContext
-import dev.dmigrate.driver.sqliteContext
-import dev.dmigrate.format.SchemaFileResolver
-import dev.dmigrate.format.report.TransformationReportWriter
-import dev.dmigrate.text.icu.IcuUnicodeTextService
 
 /**
  * `d-migrate schema generate` — dünne Clikt-Schale über [SchemaGenerateRunner].
@@ -59,52 +52,21 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
-        val splitMode = if (split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
-        val request = SchemaGenerateRequest(
-            source = source,
-            target = target,
-            spatialProfile = spatialProfile,
-            output = output,
-            report = report,
-            generateRollback = generateRollback,
-            outputFormat = ctx.outputFormat,
-            verbose = ctx.verbose,
-            quiet = ctx.quiet,
-            splitMode = splitMode,
-            mysqlNamedSequences = mysqlNamedSequences,
-            sqliteNamedSequences = sqliteNamedSequences,
-            deterministic = deterministic,
+        val exitCode = SchemaGenerateWiring.execute(
+            SchemaGenerateOptions(
+                source = source,
+                target = target,
+                output = output,
+                report = report,
+                generateRollback = generateRollback,
+                deterministic = deterministic,
+                spatialProfile = spatialProfile,
+                split = split,
+                mysqlNamedSequences = mysqlNamedSequences,
+                sqliteNamedSequences = sqliteNamedSequences,
+                cliContext = root?.cliContext() ?: CliContext(),
+            )
         )
-        val runner = SchemaGenerateRunner(
-            schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
-            generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            preGenerationValidatorLookup = { DatabaseDriverRegistry.get(it).preGenerationValidator() },
-            reportWriter = { path, result, schema, dialect, src, splitModeStr, options ->
-                TransformationReportWriter().write(
-                    path,
-                    result,
-                    schema,
-                    dialect,
-                    src,
-                    splitModeStr,
-                    options.mysqlContext?.namedSequenceMode,
-                    options.generatedAt,
-                    options.deterministic,
-                    options.sqliteContext?.namedSequenceMode,
-                )
-            },
-            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
-            sidecarPath = SchemaGenerateHelpers::sidecarPath,
-            rollbackPath = SchemaGenerateHelpers::rollbackPath,
-            splitPath = SchemaGenerateHelpers::splitPath,
-            printError = { msg, src -> formatter.printError(msg, src) },
-            printValidationResult = { result, schema, src ->
-                formatter.printValidationResult(result, schema, src)
-            },
-        )
-        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }
