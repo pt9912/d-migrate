@@ -6,6 +6,8 @@ import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.sqlite.SqliteDataWriter
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.profiling.perf.PerfMeasure
+import dev.dmigrate.profiling.perf.PerfReport
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -79,21 +81,31 @@ class StreamingImporterReorderPerfTest : FunSpec({
             usedHeapBytes()
             val heapBefore = usedHeapBytes()
 
-            val startNanos = System.nanoTime()
-
+            // Quality-Coverage-Expansion Sub-Slice A-Vervollständigung
+            // (2026-05-30): replace the hand-rolled `System.nanoTime`
+            // delta with PerfMeasure so the wall-clock measurement
+            // shares the canonical contract used by the three Phase-A
+            // hotpath specs. Single-iteration / no warmup matches the
+            // existing perf-spike semantics; medianMs == single-run
+            // elapsed-ms for `iterations = 1`.
             val writer = SqliteDataWriter()
             val importer = StreamingImporter(
                 readerFactory = DefaultDataChunkReaderFactory(),
                 writerLookup = { writer },
             )
 
-            val result = importer.import(
-                pool = pool,
-                input = ImportInput.SingleFile("perf_users", jsonFile),
-                format = DataExportFormat.JSON,
-            )
-
-            val elapsedMs = (System.nanoTime() - startNanos) / 1_000_000
+            var capturedResult: ImportResult? = null
+            val sample = PerfMeasure.run(warmup = 0, iterations = 1) {
+                val outcome = importer.import(
+                    pool = pool,
+                    input = ImportInput.SingleFile("perf_users", jsonFile),
+                    format = DataExportFormat.JSON,
+                )
+                capturedResult = outcome
+                outcome
+            }
+            val importResult = checkNotNull(capturedResult) { "importer.import() must have produced a result" }
+            val elapsedMs = sample.medianMs.roundToLong()
 
             val allocAfter = allocationBean?.getThreadAllocatedBytes(Thread.currentThread().threadId())
             val allocatedBytes = if (allocBefore != null && allocAfter != null) allocAfter - allocBefore else null
@@ -104,7 +116,18 @@ class StreamingImporterReorderPerfTest : FunSpec({
             val gcCountAfter = gcBeans.sumOf { it.collectionCount }
             val gcTimeAfter = gcBeans.sumOf { it.collectionTime }
 
-            result.totalRowsInserted shouldBe rows
+            importResult.totalRowsInserted shouldBe rows
+
+            // Trend-tracking: surface the single-iteration wall-clock
+            // alongside the existing stdout summary so the nightly
+            // perf dashboard can chart import-time drift even when the
+            // optional allocation/GC gate is disabled.
+            PerfReport.write(
+                hotpath = "streaming-importer-reorder",
+                sample = sample,
+                smokeMaxMs = 120_000.0,
+                baselineMs = 20_000.0,
+            )
 
             println(
                 """

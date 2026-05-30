@@ -9,6 +9,13 @@ plugins {
 
 dependencies {
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+
+    // Quality-Coverage-Expansion Phase A: PerfMeasure/PerfReport for the
+    // opt-in `perf`-tagged DiffPlanner hotpath spec (Sub-Slice A-
+    // Vervollständigung). Test-only dep — hexagon:profiling already
+    // depends on hexagon:core, but the inverse arrow is confined to
+    // test sourcesets so no production cycle is introduced.
+    testImplementation(project(":hexagon:profiling"))
 }
 
 kover {

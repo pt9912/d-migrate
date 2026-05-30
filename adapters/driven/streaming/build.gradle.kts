@@ -20,6 +20,13 @@ dependencies {
 
     testImplementation(project(":adapters:driven:driver-sqlite"))
 
+    // Quality-Coverage-Expansion Phase A: PerfMeasure/PerfReport for the
+    // migrated StreamingImporterReorderPerfTest (Sub-Slice A-
+    // Vervollständigung). formats's profiling dep is `implementation`
+    // and not transitively exposed, so streaming declares its own
+    // test-time dep on the lib.
+    testImplementation(project(":hexagon:profiling"))
+
     // LN-011: cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
 }
