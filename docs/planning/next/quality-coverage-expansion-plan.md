@@ -130,11 +130,32 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 | Integration-Gating | ✅ strukturell via `-PintegrationTests`, nicht über Kotest-`integration`-Tags |
 | `kotest.tags=perf` als Filter-Konvention | ⚠️ Default-Exclude existiert; explizites Forwarding in die Test-JVM ist Phase-A-Arbeit |
 | Atomar-Lock-Plan für Concurrent-Writer-Pattern | ⚠️ Draft (`sequence-preserve-atomic-lock-plan.md`) |
-| Kover-`koverVerify` als CI-Gate | ✅ pro Modul `minBound(90)` |
+| Kover-`koverVerify` als CI-Gate | ✅ Produktionsmodule `minBound(90)`; reine Test-/Runner-Module muessen explizit `minBound(0)` setzen oder begruendet aus dem Aggregat bleiben |
 
 ---
 
 ## 5. Architektur
+
+### 5.0 Gemeinsame Build-/CI-Regel fuer neue Testmodule
+
+Jedes neue Top-Level-Testmodul in diesem Plan (`test/cross-dialect-matrix`,
+`test/integration-concurrency`, `test/perf-large-schema`) aktualisiert im
+selben Sub-Slice alle Build-Einstiegspunkte:
+
+- `settings.gradle.kts`-`include(...)`.
+- Dockerfile-`deps`-Stage mit explizitem `COPY --chown=gradle:gradle
+  <modul>/build.gradle.kts ...`, weil der Dependency-Warmup-Stage keine
+  rekursive Gradle-Dateisuche nutzt.
+- Root-Kover-Aggregat, Coverage-Modules-Listen und Modul-`kover { verify }`
+  bewusst entscheiden: Produktionscode bleibt `minBound(90)`, reine
+  Test-/Runner-Module setzen `minBound(0)` oder werden mit Begruendung nicht
+  in das Aggregat aufgenommen.
+- Make-/CI-Einstieg mit einem konkreten Opt-in-Befehl, wenn der Lauf nicht
+  Teil des Standard-PR-Sweeps ist.
+
+Ein Sub-Slice gilt nicht als abgeschlossen, solange ein neues Modul nur lokal
+ueber `settings.gradle.kts` laeuft, aber Docker-/CI-Pfade durch fehlende
+Gradle-Dateien oder unklare Coverage-Einbindung brechen koennen.
 
 ### 5.1 Performance-Benchmarks (Phase A)
 
@@ -211,6 +232,10 @@ test/cross-dialect-matrix/
 - Carve-out-Beispiel: PG `EXCLUDE` hat keinen MySQL-/SQLite-Positivpfad
   (siehe F.5 Vollscheibe) — das Carve-out-File listet den Verzicht
   mit Plan-Doc-Verweis.
+- Modulregistrierung folgt §5.0. Da `test/cross-dialect-matrix` ein reines
+  Test-/Sweep-Modul ist, muss sein `build.gradle.kts` die Coverage-Pflicht
+  explizit als `minBound(0)` oder als begruendeten Aggregate-Carve-out
+  dokumentieren.
 
 ### 5.3 MCP-E2E- und Concurrent-Writer-Tests (Phase C)
 
@@ -223,8 +248,16 @@ gegen ein registriertes Schema-Artefakt. Der bestehende
 ist die fachliche E2E-Pflicht nicht „nur Job anlegen", sondern ein
 explizites Production-Worker-Wiring:
 
+- Der heutige `test:e2e-cli`-In-Process-Harness reicht nicht aus, solange
+  `StdioHarness`/`HttpHarness` nur `McpRuntimeWiring` an
+  `McpServerBootstrap.startStdio`/`startHttp` uebergeben. Phase C-MCP baut
+  eine Operational-Harness-Variante oder startet ueber `McpServeWiring`, die
+  `components = AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
+  in den Bootstrap gibt.
 - `OperationalMcpWiring` nutzt `McpCoreJobWorkerFactory`, nicht den
-  `PassthroughJobWorkerFactory`.
+  `PassthroughJobWorkerFactory`. Der Test muss beweisen, dass ein Worker
+  Artefakte publiziert und der Job terminal wird; ein nur angelegter
+  `QUEUED`-Job reicht nicht.
 - Die Test-Fixtures registrieren echte `ConnectionReference`-Eintraege
   und einen Test-`ConnectionSecretResolver`, der deren `credentialRef`
   deterministisch auf Testcontainers-/SQLite-JDBC-URLs materialisiert.
@@ -235,6 +268,9 @@ explizites Production-Worker-Wiring:
   `mcp serve --transport stdio` den echten CLI-/Bootstrap-/StateDir-
   Lifecycle startet. Fachliche Artefakt-Assertions duerfen in-process
   laufen, solange sie ueber dieselbe Tool-/Resource-Oberflaeche gehen.
+- Der opt-in Nachweis laeuft mindestens ueber
+  `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
+  oder einen engeren `--tests`-Filter fuer das neue Live-DB-Szenario.
 
 Damit ist der QA-Scope nicht nur auf CLI-/Renderer-Unit-Pfade beschränkt,
 ohne ein neues MCP-Tool zu erfinden. Ein MCP-Migrate-Tool (`schema_migrate`
@@ -390,11 +426,11 @@ test/perf-large-schema/
 | Sub-Slice | Inhalt |
 |---|---|
 | A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + 1 Hotpath (`SchemaMigrateRenderPipeline.run`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
-| B | `test/cross-dialect-matrix/`-Modul + Sweep-Fixture-Lader + erste 5 Workstreams |
+| B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + erste 5 Workstreams |
 | B-Vervollständigung | restliche Workstreams + Carve-out-Registry |
-| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad |
-| C | `test/integration-concurrency/`-Modul + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
-| D | `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
+| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness oder `McpServeWiring` statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
+| C | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
+| D | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
 | D-N10k | N=10000-Scale-Test als nightly-only opt-in |
 | E | `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (`classes`, `packages`, Wildcards, unbekannte Selector-Typen fail-closed) + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
 | F | Roadmap-Status-Flip + Closing |
@@ -417,6 +453,10 @@ werden, ohne dass A/B/C/E darauf warten.
       tagged Tests ausfuehrt und untagged Tests nicht versehentlich mitnimmt.
 - [ ] Nightly-Workflow (oder `make docker-perf`-Target) ist konfiguriert
       und läuft tagsüber **nicht** im PR-Sweep.
+- [ ] Jedes neue Testmodul aus diesem Plan ist voll in den Build eingebunden:
+      `settings.gradle.kts`, Dockerfile-`deps`-`COPY`-Liste, Make-/CI-Opt-in
+      und Kover-Entscheidung (`minBound(0)` fuer reine Testmodule oder
+      begruendeter Ausschluss aus Aggregate-/Coverage-Modules-Listen).
 - [ ] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
       und der Sweep-Test deckt alle 22 Workstreams aus
       `diffresult-migration-plan-2.md` §11.2.
@@ -425,14 +465,20 @@ werden, ohne dass A/B/C/E darauf warten.
       Plan-Doc-Begründung verlinkt.
 - [ ] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
       `schema_reverse_start`/`schema_compare_start` ueber die
-      MCP-Client-Oberflaeche mit `McpCoreJobWorkerFactory`,
-      testbarem `ConnectionSecretResolver` und echten Testcontainers-/
-      SQLite-JDBC-URLs. Der Test wartet auf terminalen Job-Status und
-      prueft Execution/Audit-Metadaten sowie Artefaktinhalt. Ein separater
-      Subprocess-Smoke pinnt den echten `mcp serve`-Lifecycle;
-      mindestens ein Erfolgs- und ein Validierungs-/Policy-Blockerpfad sind
-      gepinnt. Kein Akzeptanzkriterium referenziert ein nicht registriertes
-      `schema_migrate`-Tool.
+      MCP-Client-Oberflaeche mit Operational-Harness oder `McpServeWiring`,
+      nicht mit einem Runtime-only Harness. `OperationalMcpWiring` gibt
+      `AiMcpRegistries.defaultComponents(...)` in den Bootstrap und nutzt
+      `McpCoreJobWorkerFactory` plus testbaren `ConnectionSecretResolver`
+      mit echten Testcontainers-/SQLite-JDBC-URLs. Der Test wartet auf
+      terminalen Job-Status und prueft Execution/Audit-Metadaten sowie
+      Artefaktinhalt ueber `job_status_get`, `resources/read` und bei
+      Bedarf `artifact_chunk_get`; ein nur erzeugter `QUEUED`-Job ist kein
+      Erfolg. Ein separater Subprocess-Smoke pinnt den echten
+      `mcp serve`-Lifecycle; mindestens ein Erfolgs- und ein
+      Validierungs-/Policy-Blockerpfad sind gepinnt. Der opt-in Nachweis ist
+      mit `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
+      oder engerem `--tests`-Filter dokumentiert. Kein Akzeptanzkriterium
+      referenziert ein nicht registriertes `schema_migrate`-Tool.
 - [ ] Concurrent-Writer-Coverage hat genau ein aktives Korrektheits-Gate
       passend zum Implementierungszustand: vor dem Atomic-Slice beobachtet
       ein opt-in Legacy-Reproducer den heutigen Sequence-Preserve-Race pro
@@ -447,7 +493,8 @@ werden, ohne dass A/B/C/E darauf warten.
       Standard-Opt-in gegen die Smoke-Guards grün und schreiben
       Baseline-Werte in den Report; Baseline-Gates laufen nur auf
       dedizierten Perf-Runnern oder Nightly-Konfigurationen. N=10000 ist
-      nightly opt-in.
+      nightly opt-in. Das Modul ist als reines Perf-/Testmodul mit
+      `minBound(0)` oder begruendetem Kover-Aggregate-Carve-out markiert.
 - [ ] `docs/coverage/excludes-ledger.md` listet jede aktive
       Kover-Exclude-Regel aus allen `build.gradle.kts`-Dateien mit
       Selector-Typ (`classes`, `packages`, Wildcard; weitere Selector-Typen
@@ -481,6 +528,10 @@ werden, ohne dass A/B/C/E darauf warten.
    Kover-Exclude-Selectoren (`classes`, `packages`, Wildcards, kuenftige
    Selector-Typen) gegen das Ledger prueft und unbekannte Selector-Typen
    fail-closed behandelt.
+6. **Neue Testmodule brechen Docker-Dependency-Warmup**: der Dockerfile-
+   `deps`-Stage kopiert Gradle-Dateien explizit. Mitigation: §5.0 macht
+   Dockerfile-`COPY`-Pflege, Kover-Entscheidung und Make-/CI-Opt-in zum
+   Abschlusskriterium jedes Modul-Slices.
 
 ---
 
