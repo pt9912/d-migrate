@@ -502,8 +502,8 @@ test/perf-large-schema/
 
 ### 5.5 Kover-Excludes-Konsolidierung (Phase E)
 
-- Neues Verzeichnis `docs/coverage/` (existiert heute nicht — Sub-Slice E
-  legt es zusammen mit dem Ledger an). Die neue Datei
+- Neues Verzeichnis `docs/coverage/` existiert seit der initialen
+  Phase-E-Inventur. Die Datei
   `docs/coverage/excludes-ledger.md` listet pro Modul jede
   aktive Kover-Exclude-Regel aus allen
   `build.gradle.kts`-Bloecken mit:
@@ -513,7 +513,8 @@ test/perf-large-schema/
     Modulpfad.
   - Datum, Begründung, Refactor-Plan-Verweis oder „permanent" + ADR-Ref.
 - Phase E startet mit einer generierten Vollinventur, nicht mit einer
-  handgepflegten Beispielmenge. Der Audit durchsucht alle
+  handgepflegten Beispielmenge. `scripts/verify-kover-excludes-ledger.py`
+  durchsucht alle
   `kover { reports { filters { excludes { ... } } } }`-Bloecke und
   extrahiert mindestens `classes(...)` und `packages(...)`-Eintraege
   (Pattern werden 1:1 uebernommen, Wildcards bleiben Teil des Patterns);
@@ -542,8 +543,9 @@ test/perf-large-schema/
     Begruendung neu pruefen; sie bleiben nur dann permanent excluded, wenn der
     Ledger einen expliziten ADR-/Permanent-Beleg traegt, sonst folgt ein
     Refactor-/Fixture-Plan.
-- Verifikation: `make docker-coverage-gate` grün; zusätzlich prüft ein
-  Repo-Script/CI-Hook, dass jede Kover-Exclude-Regel aus den
+- Verifikation: `make docker-coverage-gate` grün; zusätzlich prüft
+  `make coverage-excludes-check` (und damit `make docs-check`), dass
+  jede Kover-Exclude-Regel aus den
   Gradle-Dateien im Ledger vorkommt — `classes(...)` und `packages(...)`
   als heutige Selector-Typen, jeweils mit ihrem vollstaendigen Pattern
   (Wildcards sind Teil des Patterns). Neue Excludes brauchen einen
@@ -579,7 +581,7 @@ test/perf-large-schema/
 | C | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
 | D-N10k | N=10000-Scale-Test als nightly-only opt-in |
-| E | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
+| E | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + `scripts/verify-kover-excludes-ledger.py`/`make coverage-excludes-check` + Bestands-Audit |
 | F | Roadmap-Status-Flip + Closing |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
@@ -591,8 +593,9 @@ Standard-Opt-in laufen.
 
 **Closing-Vertrag fuer Phase E** (damit F nicht stillschweigend auf
 Bestands-Refactors mit offenem Aufwand blockt): "Phase E erfuellt"
-bedeutet `docs/coverage/excludes-ledger.md` committed, Repo-Script/CI-Hook
-aktiv, Bestandsaudit (inkl. Aggregat-Asymmetrie) durchgefuehrt und alle
+bedeutet `docs/coverage/excludes-ledger.md` committed,
+`make coverage-excludes-check`/`make docs-check` aktiv, Bestandsaudit
+(inkl. Aggregat-Asymmetrie) durchgefuehrt und alle
 heute aktiven Excludes im Ledger verbucht. Tatsaechliche Refactors fuer
 heute pauschal exkludierte Klassen (`SqliteSchemaReader`,
 `PostgresDataReader/Driver` etc.) sind eigene Plan-Docs und kein
@@ -617,9 +620,10 @@ Umsetzung folgt ausserhalb dieses Plans.
       `*_SMOKE_MAX_MS`-Runaway-Guard und `*_BASELINE_MS`-Reportwert
       gepinnt. Das Dokument benennt, welche Werte auf Shared-CI nur
       Diagnose sind und welche auf dedizierten Perf-Runnern als Gate gelten.
-- [ ] Root-Test-Konfiguration reicht explizites `-Dkotest.tags=perf` an
-      die forked Test-JVM weiter; ein Gegenlauf belegt, dass der Perf-Lauf
-      tagged Tests ausfuehrt und untagged Tests nicht versehentlich mitnimmt.
+- [x] Root-Test-Konfiguration reicht explizites `-Dkotest.tags=perf` an
+      die forked Test-JVM weiter (`build.gradle.kts`).
+- [ ] Phase-A-Gegenlauf belegt, dass der Perf-Lauf tagged Tests ausfuehrt
+      und untagged Tests nicht versehentlich mitnimmt.
 - [ ] Nightly-Workflow (oder `make docker-perf`-Target) ist konfiguriert
       und läuft tagsüber **nicht** im PR-Sweep.
 - [ ] Jedes neue Testmodul aus diesem Plan ist voll in den Build eingebunden:
@@ -681,14 +685,15 @@ Umsetzung folgt ausserhalb dieses Plans.
       async-profiler nur mit Begruendung). Reset-Verhalten pro Scale-Run,
       Snapshot-Punkte und gewaehlte Strategie sind im Commit oder in
       `test/perf-large-schema/README.md` dokumentiert.
-- [ ] `docs/coverage/excludes-ledger.md` listet jede aktive
+- [x] `docs/coverage/excludes-ledger.md` listet jede aktive
       Kover-Exclude-Regel aus allen `build.gradle.kts`-Dateien mit
       Selector-Typ (`classes(...)` oder `packages(...)`; Wildcards sind
       Glob-Pattern innerhalb dieser Selector-Typen, kein eigener Typ;
       kuenftige Kover-Selector-Typen werden fail-closed behandelt), Pattern,
       Modul, Begründung + Refactor-Plan oder „permanent + ADR-Ref"; ein
-      Repo-Script/CI-Hook vergleicht alle Gradle-Excludes gegen das Ledger
-      und blockt bisher unbekannte Selector-Typen.
+      Repo-Script/Make-Hook vergleicht alle Gradle-Excludes gegen das Ledger
+      und blockt bisher unbekannte Selector-Typen
+      (`scripts/verify-kover-excludes-ledger.py`, `make coverage-excludes-check`).
 - [ ] Alle bestehenden und neuen `:test:*`-Module mit Kover-Bezug haben eine
       explizite Coverage-Entscheidung: `minBound(0)` fuer reine Runner,
       `minBound(90)` wenn produktiver Code im Modul lebt, oder einen
@@ -751,11 +756,10 @@ Umsetzung folgt ausserhalb dieses Plans.
    CI-Runner. Mitigation: nightly-only, dedizierter Runner mit -Xmx4g,
    N als CLI-Parameter.
 5. **Excludes-Ledger driftet vom Code ab**: ohne Hook bleibt das Ledger
-   stale. Mitigation: Pre-commit-/CI-Hook im Plan-Phase-E-Scope, der alle
-   Kover-Exclude-Eintraege (Selector-Typen `classes(...)`/`packages(...)`
-   inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns) gegen
-   das Ledger prueft und bisher unbekannte Selector-Typen fail-closed
-   behandelt.
+   stale. Mitigation: `make coverage-excludes-check` ist in `make docs-check`
+   verdrahtet und prueft alle Kover-Exclude-Eintraege (Selector-Typen
+   `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards
+   sind Teil des Patterns) gegen das Ledger.
 6. **Neue Testmodule brechen Docker-Dependency-Warmup**: der Dockerfile-
    `deps`-Stage kopiert Gradle-Dateien explizit. Mitigation: §5.0 macht
    Dockerfile-`COPY`-Pflege, Kover-Entscheidung und Make-/CI-Opt-in zum

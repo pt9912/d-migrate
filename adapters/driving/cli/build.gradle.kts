@@ -169,8 +169,8 @@ kover {
     reports {
         filters {
             excludes {
-                // Thin Clikt command shells — all logic is in the Runners
-                // (tested via *RunnerTest). Commands only parse flags and
+                // Thin Clikt command shells — all logic is in Runners and/or
+                // Clikt-free Wiring objects. Commands only parse flags and
                 // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
                 classes(
                     "dev.dmigrate.cli.commands.DataProfileCommand*",

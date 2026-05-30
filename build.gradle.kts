@@ -98,6 +98,8 @@ subprojects {
         // ausgefuehrt (siehe oben).
         if (explicitKotestTags == null) {
             systemProperty("kotest.tags", "!perf")
+        } else {
+            systemProperty("kotest.tags", explicitKotestTags)
         }
 
         // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen

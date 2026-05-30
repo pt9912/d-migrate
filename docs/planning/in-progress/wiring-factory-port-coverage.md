@@ -1,6 +1,6 @@
 # Implementierungsplan: Factory-Port-Schnitt für die sechs eager-konstruierten CLI-Wirings
 
-> Status: Entwurf (2026-05-30)
+> Status: In Progress (2026-05-30)
 > Workstream: Folge-Tranche zu
 > `docs/planning/done/refactoring-cli-testability.md` Closure-Sektion
 > „Folge-Tranche: §11-style Coverage"
@@ -79,9 +79,9 @@ Hikari-Konstruktion ist eigene Folge-Tranche (siehe §7).
   Pfade existieren, Pool-Construction ist eigene Folge-Tranche
   (siehe §7).
 - `SchemaMigrateCommand`, `SchemaRollbackCommand`,
-  `SchemaValidateCommand` — nicht Teil der ursprünglichen
-  „Betroffene Commands"-Liste; eigene Bewertung in einer späteren
-  Tranche.
+  `SchemaValidateCommand` — in der CLI-Testability-Nacharbeit bereits
+  als `Schema*Migrate/Rollback/ValidateWiring`-Schnitt entkoppelt;
+  keine Factory-Port-Phase in diesem Plan.
 
 ## 3. Vorbild: `ServerStateFactory` in `McpServeWiring`
 

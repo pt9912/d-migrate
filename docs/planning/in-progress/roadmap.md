@@ -507,17 +507,17 @@ und die weiterhin offenen Restpunkte zusammen.
 Entscheidungsvorlage fuer eine spaetere Vollumsetzung. Dies ist bewusst
 keine Lakehouse-Implementierung — Iceberg/Delta/Hudi bleiben ausserhalb
 des Scopes (siehe
-[`parquet-export-import-evaluation.md`](../open/parquet-export-import-evaluation.md) §3.2).
+[`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md) §3.2).
 (2) Object-Storage-ArtifactStore-Plan erstellt einen minimalen
 `ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
 plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
 Artifact-Refs (siehe
-[`object-storage-artifact-store.md`](../open/object-storage-artifact-store.md)).
+[`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)).
 (3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
 komponierbaren Analytics-Stack mit PostgreSQL, Metabase und MinIO als
 gemeinsamem Object-Storage-Endpunkt — als reproduzierbares Beispiel,
 nicht als Enterprise-BI-Plattform (siehe
-[`bi-demo-compose.md`](../open/bi-demo-compose.md)).
+[`bi-demo-compose.md`](../next/bi-demo-compose.md)).
 
 > Hinweis: Positive Parquet-Evaluierung fuehrt zu einem Folge-
 > Implementierungsmilestone in Phase 4 (vermutlich neben 1.6.0 Metadata
@@ -652,9 +652,9 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 
 | Bereich     | Aufgabe                                                                                         | LF-Ref |
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
-| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../open/profiling-data-quality-export.md) | —      |
-| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../open/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../open/bi-demo-compose.md) | —      |
+| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md) | —      |
+| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../next/orchestrator-examples.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../next/bi-demo-compose.md) | —      |
 
 ### Milestone 1.5.5 — KI-Integration
 

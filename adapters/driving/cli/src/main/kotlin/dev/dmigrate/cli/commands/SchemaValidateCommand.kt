@@ -8,10 +8,6 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.cli.output.OutputFormatter
-import dev.dmigrate.core.validation.SchemaValidator
-import dev.dmigrate.format.SchemaFileResolver
-import dev.dmigrate.text.icu.IcuUnicodeTextService
 
 class SchemaValidateCommand : CliktCommand(name = "validate") {
     override fun help(context: Context) = "Validate a schema definition"
@@ -22,21 +18,12 @@ class SchemaValidateCommand : CliktCommand(name = "validate") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx, IcuUnicodeTextService())
-
-        val schema = try {
-            SchemaFileResolver.codecForPath(source).read(source)
-        } catch (e: Exception) {
-            formatter.printError("Failed to parse schema file: ${e.message}", source.toString())
-            throw ProgramResult(7)
-        }
-
-        val result = SchemaValidator().validate(schema)
-        formatter.printValidationResult(result, schema, source.toString())
-
-        if (!result.isValid) {
-            throw ProgramResult(3)
-        }
+        val exitCode = SchemaValidateWiring.execute(
+            SchemaValidateOptions(
+                source = source,
+                cliContext = root?.cliContext() ?: CliContext(),
+            )
+        )
+        if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }

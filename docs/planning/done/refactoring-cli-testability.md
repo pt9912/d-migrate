@@ -9,7 +9,8 @@
 
 Alle in „Betroffene Commands" gelisteten Commands tragen jetzt das
 Drei-Schicht-Modell `Command (Clikt) → Wiring (Clikt-frei, internal) →
-Runner (Logik)` aus dem McpServe-Praezedenzfall:
+Runner (Logik)`. `McpServeCommand` bleibt der Praezedenzfall fuer die
+komplexere Reihenfolge `Command → Runner → Wiring → Factory-Port`:
 
 | Command | Wiring-Datei | Commit |
 | --- | --- | --- |
@@ -23,6 +24,14 @@ Runner (Logik)` aus dem McpServe-Praezedenzfall:
 | `SchemaGenerateCommand` | `SchemaGenerateWiring.kt` | `acae00f0` |
 | `ExportFlyway/Liquibase/Django/Knex` | `ToolExportWiring.kt` (shared) | `2541b48a` |
 
+Nachlauf im Rahmen der Quality-Coverage-Auditierung:
+
+| Command | Wiring-Datei | Grund |
+| --- | --- | --- |
+| `SchemaValidateCommand` | `SchemaValidateWiring.kt` | CLI-Shell von Validierungs-/Formatierungslogik getrennt |
+| `SchemaRollbackCommand` | `SchemaRollbackWiring.kt` | DB-Loader/Hikari-Wiring aus `run()` entfernt |
+| `SchemaMigrateCommand` | `SchemaMigrateWiring.kt` | Overlay-/Routine-/Runner-Wiring aus `run()` entfernt |
+
 Vorarbeit:
 - `SchemaCodec`-Port (war vor der Tranche vorhanden).
 - `DataImportSchemaPreflight` von `adapters/driving/cli` nach
@@ -30,8 +39,8 @@ Vorarbeit:
   `YamlSchemaCodec` damit geschlossen.
 
 Lessons-Learned-Pruefung (gegen §2–§7 unten):
-- §2 Internal-Sichtbarkeit: alle 7 neuen `*Options` + `*Wiring`
-  Typen sind `internal`.
+- §2 Internal-Sichtbarkeit: alle `*Options` + `*Wiring` Typen der
+  Tabelle und der Nachlauf-Tranche sind `internal`.
 - §3 Exit-Code statt `ProgramResult`: jedes Wiring liefert `Int`,
   die Commands wandeln `Int != 0` in `throw ProgramResult(exit)`.
 - §6 Hidden-Adapter-Trap: ueber `DataImportSchemaPreflight`-Klassen-
@@ -331,7 +340,10 @@ Integrationstests, nicht in Unit-Tests.
 
 ## Abgrenzung
 
-Dieses Refactoring ist kein Teil von Milestone 0.7.5. Es betrifft die
-gesamte CLI-Schicht und sollte als eigener Scope behandelt werden.
-McpServeCommand wurde als Vorbild im Rahmen der 0.9.7-Coverage-Arbeit
-umgesetzt; die uebrigen Commands stehen weiter offen.
+Dieses Refactoring ist kein Teil von Milestone 0.7.5. Der hier
+abgeschlossene Scope betrifft die oben gelisteten Commands plus die
+Quality-Coverage-Nacharbeit fuer `SchemaMigrateCommand`,
+`SchemaRollbackCommand` und `SchemaValidateCommand`. Die verbleibende
+Coverage-Folgearbeit ist die Factory-Port-Tranche fuer eager
+konstruierte Wirings unter
+`docs/planning/in-progress/wiring-factory-port-coverage.md`.

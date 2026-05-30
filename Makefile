@@ -46,7 +46,7 @@ docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
@@ -54,7 +54,7 @@ help:
 		'  make dev              Install the local CLI distribution and run --help' \
 		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
 		'  make integration      Run Docker-backed integration tests' \
-		'  make docs-check       Verify Markdown links in docs/' \
+		'  make docs-check       Verify Markdown links and coverage docs' \
 		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
@@ -104,8 +104,11 @@ docker-coverage-modules-html:
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-docs-check:
+docs-check: coverage-excludes-check
 	./scripts/verify-doc-refs.sh
+
+coverage-excludes-check:
+	python3 ./scripts/verify-kover-excludes-ledger.py
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
