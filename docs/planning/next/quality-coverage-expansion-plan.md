@@ -52,9 +52,11 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   Operator kann heute nicht „grün" für die Matrix sagen — nur
   „die Einzelpunkte sind irgendwo gepinnt".
 - Mehrere Module tragen Kover-`excludes` ohne Refactor-Plan
-  (`SqliteSchemaReader`, `MysqlDataReader`, `MysqlDriver`, etc.). Die
-  Memory-Note `feedback_test_coverage` pinnt explizit „90% pro Modul
-  als Ziel; I/O-Glue-Ausreden nicht akzeptieren".
+  (`SqliteSchemaReader`, `MysqlDataReader`, `MysqlDriver`, etc.).
+  `spec/profiling.md` pinnt fuer neue Profiling-/Adapterarbeit explizit
+  „>= 90% Testabdeckung pro Modul" und „I/O-Glue-Code wird ueber Port-
+  Abstraktion testbar gemacht, nicht von der Coverage ausgenommen";
+  `docs/user/quality.md` dokumentiert das Root-Gate mit `minBound(90)`.
 
 ---
 
@@ -71,7 +73,9 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   zuerst die Gradle-Bruecke, damit ein explizites
   `-Dkotest.tags=perf` in die forked Test-JVM weitergereicht wird; erst danach
   gilt der CI-/Nightly-Job als nutzbar. Der Lauf bleibt opt-in, nicht Teil des
-  Standard-Test-Sweeps.
+  Standard-Test-Sweeps. Phase A darf inkrementell starten, ist aber erst
+  abgeschlossen, wenn alle drei Hotpaths jeweils einen Smoke-Guard und
+  einen Baseline-Reportwert haben.
 - **Phase B — Cross-Dialekt-Regressionsmatrix als ausführbarer Sweep**:
   ein Top-Level-Test-Modul `test/cross-dialect-matrix/` mit
   `MatrixSweepTest`, das die §11.2-Kriterien (Positiv, Blocker, Report,
@@ -100,7 +104,9 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   weitere Selector-Typen) braucht eine Begründungs-Zeile in einer
   zentralen `docs/coverage/excludes-ledger.md` (ADR-light), mit Referenz auf
   Refactor-Plan oder explizitem „permanent excluded weil X"-Beleg.
-  Memory-Note `feedback_no_suppress_for_size` analog.
+  Groesse, I/O-Naehe oder „thin wrapper" sind keine ausreichende
+  Begruendung ohne konkreten Port-/Fixture-/Refactor-Check; permanente
+  Ausnahmen brauchen einen expliziten ADR-/Ledger-Beleg.
 - **Phase F — Schliessen**: alle Phasen-DoDs erfüllt; Roadmap-Status
   von `teilerledigt` auf `✅ erledigt` ziehen.
 
@@ -191,8 +197,10 @@ hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
   weitergereicht wird.
 - Budget pro Hotpath als zwei getrennte Grenzen:
   - `*_SMOKE_MAX_MS` ist ein grosszuegiger runaway guard und darf in jedem
-    opt-in Perf-Lauf failen, wenn Median **und** P95 nach Warmup deutlich
-    ausserhalb der erwarteten Groessenordnung liegen.
+    opt-in Perf-Lauf failen, wenn Median **oder** P95 nach Warmup deutlich
+    ausserhalb der erwarteten Groessenordnung liegen. Beide Kennzahlen werden
+    separat reported; ein Smoke-Guard-Bruch in einer von beiden ist ein
+    Runaway-Signal.
   - `*_BASELINE_MS` ist ein Nightly-/dedicated-runner-Wert im JSON-Report.
     Er blockt nur auf Runnern mit explizitem `-PperfGate=true` oder
     Workflow-Label `perf-stable-runner`; auf Shared-Container-CI wird er
@@ -364,7 +372,13 @@ test/perf-large-schema/
            Scale(n = 1000,  renderSmokeMaxMs = 5000,  renderBaselineMs = 2500,  maxHeapMb = 512),
            Scale(n = 10000, renderSmokeMaxMs = 60000, renderBaselineMs = 30000, maxHeapMb = 2048),
        ) { scale ->
-           val schema = LargeSchemaGenerator.tables(scale.n)
+           val schema = LargeSchemaGenerator.mixedSchema(
+               tables = scale.n,
+               sequences = scale.n,
+               views = scale.n,
+               triggers = scale.n,
+               seed = "large-schema-${scale.n}",
+           )
            val budget = HeapBudget.start(scale.maxHeapMb)
            val duration = measureTimedValue { runMigratePipeline(schema) }.duration
            duration.toMillis() shouldBeLessThan scale.renderSmokeMaxMs
@@ -374,6 +388,9 @@ test/perf-large-schema/
 ```
 
 - Synthetische Schema-Generator-Library, deterministisch (Seed-basiert).
+  Der Standard-Generator fuer diesen Plan erzeugt nicht nur Tabellen, sondern
+  pro Scale auch Sequenzen, Views und Trigger. Ein reiner Tabellen-Generator
+  darf nur als zusaetzlicher Diagnosefall laufen, nicht als Phase-D-DoD.
 - Runs gegen JVM-`-XX:+HeapDumpOnOutOfMemoryError`, damit bei Über-
   schreitung ein analysierbarer Heap-Dump entsteht.
 - Carve-out: N=10000 ist optional (sehr lange Laufzeit; nur in nightly).
@@ -418,6 +435,12 @@ test/perf-large-schema/
   `packages(...)` und Wildcards. Neue Excludes brauchen einen Commit, der
   gleichzeitig das Ledger pflegt; unbekannte Selector-Typen blocken den
   Hook, statt still ignoriert zu werden.
+- Phase E normalisiert ausserdem die bestehende `:test:*`-Modul-Landschaft:
+  jedes Test-/Runner-Modul, das im Root-Kover-Aggregat oder in
+  Coverage-Modules-Listen auftaucht, bekommt eine explizite Entscheidung
+  (`minBound(0)`, produktionscodehaltiges 90%-Gate oder begruendeter
+  Aggregate-Carve-out). Das gilt fuer Bestandsmodule und neue Module
+  gleichermassen, damit §5.0 nicht nur zukuenftige Dateien regelt.
 
 ---
 
@@ -425,7 +448,8 @@ test/perf-large-schema/
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + 1 Hotpath (`SchemaMigrateRenderPipeline.run`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
+| A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath (`SchemaMigrateRenderPipeline.run`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
+| A-Vervollständigung | Diff-Planner- und Artefakt-Serialisierungs-PerfSpecs mit denselben Smoke-/Baseline-Vertraegen; Phase A ist erst nach allen drei Hotpaths schliessbar |
 | B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + erste 5 Workstreams |
 | B-Vervollständigung | restliche Workstreams + Carve-out-Registry |
 | C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness oder `McpServeWiring` statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
@@ -435,16 +459,20 @@ test/perf-large-schema/
 | E | `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (`classes`, `packages`, Wildcards, unbekannte Selector-Typen fail-closed) + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
 | F | Roadmap-Status-Flip + Closing |
 
-Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz; die
-Sweep-Sub-Slices (B-Vervollständigung, D-N10k) dürfen nachgereicht
-werden, ohne dass A/B/C/E darauf warten.
+Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
+Vervollstaendigungs-Slices duerfen nach dem jeweiligen Start-Slice landen,
+ohne parallele Phasen zu blockieren; Sub-Slice F darf aber erst schliessen,
+wenn A-Vervollständigung, B-Vervollständigung, C/C-MCP, D fuer N=100/1000
+und E erfuellt sind. D-N10k bleibt nightly-only opt-in und muss nicht im
+Standard-Opt-in laufen.
 
 ---
 
 ## 7. Akzeptanzkriterien
 
 - [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README in
-      `test/perf-*`); mindestens 1 Hotpath mit getrenntem
+      `test/perf-*`); Render-Pipeline, Diff-Planner und
+      Artefakt-Serialisierung sind jeweils mit getrenntem
       `*_SMOKE_MAX_MS`-Runaway-Guard und `*_BASELINE_MS`-Reportwert
       gepinnt. Das Dokument benennt, welche Werte auf Shared-CI nur
       Diagnose sind und welche auf dedizierten Perf-Runnern als Gate gelten.
@@ -490,7 +518,8 @@ werden, ohne dass A/B/C/E darauf warten.
       `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`
       opt-in lauffähig.
 - [ ] Large-Schema-Scale-Tests für N=100 und N=1000 sind im
-      Standard-Opt-in gegen die Smoke-Guards grün und schreiben
+      Standard-Opt-in gegen die Smoke-Guards grün, erzeugen pro Scale
+      Tabellen, Sequenzen, Views und Trigger und schreiben
       Baseline-Werte in den Report; Baseline-Gates laufen nur auf
       dedizierten Perf-Runnern oder Nightly-Konfigurationen. N=10000 ist
       nightly opt-in. Das Modul ist als reines Perf-/Testmodul mit
@@ -501,6 +530,10 @@ werden, ohne dass A/B/C/E darauf warten.
       analog), Wert, Modul, Begründung + Refactor-Plan oder
       „permanent + ADR-Ref"; ein Repo-Script/CI-Hook vergleicht alle
       Gradle-Excludes gegen das Ledger und blockt unbekannte Selector-Typen.
+- [ ] Alle bestehenden und neuen `:test:*`-Module mit Kover-Bezug haben eine
+      explizite Coverage-Entscheidung: `minBound(0)` fuer reine Runner,
+      `minBound(90)` wenn produktiver Code im Modul lebt, oder einen
+      dokumentierten Aggregate-/Coverage-Modules-Carve-out.
 - [ ] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
       Status `✅ erledigt (<datum>)`.
 
