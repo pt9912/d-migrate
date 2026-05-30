@@ -11,12 +11,6 @@ import com.github.ajalt.clikt.parameters.options.split
 import com.github.ajalt.clikt.parameters.types.int
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.cli.config.NamedConnectionResolver
-import dev.dmigrate.cli.output.MessageResolver
-import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.driver.connection.ConnectionUrlParser
-import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.connection.LogScrubber
 
 class DataTransferCommand : CliktCommand(name = "transfer") {
     override fun help(context: Context) = "Transfer data directly between databases"
@@ -42,49 +36,22 @@ class DataTransferCommand : CliktCommand(name = "transfer") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        if (filter != null && filter!!.isBlank()) {
-            System.err.println("Error: --filter must not be empty or whitespace-only. Omit the flag to transfer without a filter.")
-            throw ProgramResult(2)
-        }
-        val parsedFilter = try {
-            parseFilter(filter)
-        } catch (e: FilterParseException) {
-            val err = e.parseError
-            val posHint = if (err.index != null) " (at position ${err.index})" else ""
-            System.err.println("Error: Invalid --filter expression${posHint}: ${err.message}")
-            throw ProgramResult(2)
-        }
-        val request = DataTransferRequest(
-            source = source,
-            target = target,
-            tables = tables,
-            filter = parsedFilter,
-            sinceColumn = sinceColumn,
-            since = since,
-            onConflict = onConflict,
-            triggerMode = triggerMode,
-            truncate = truncate,
-            chunkSize = chunkSize,
-            cliConfigPath = root?.config,
-            quiet = ctx.quiet,
-            noProgress = ctx.noProgress,
+        val exitCode = DataTransferWiring.execute(
+            DataTransferOptions(
+                source = source,
+                target = target,
+                tables = tables,
+                filter = filter,
+                sinceColumn = sinceColumn,
+                since = since,
+                onConflict = onConflict,
+                triggerMode = triggerMode,
+                truncate = truncate,
+                chunkSize = chunkSize,
+                cliContext = root?.cliContext() ?: CliContext(),
+                configPath = root?.config,
+            )
         )
-        val runner = DataTransferRunner(
-            sourceResolver = { src, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(src) },
-            targetResolver = { tgt, cfgPath -> NamedConnectionResolver(configPathFromCli = cfgPath).resolve(tgt) },
-            urlParser = { url -> ConnectionUrlParser.parse(url) },
-            poolFactory = { config -> HikariConnectionPoolFactory.create(config) },
-            driverLookup = { dialect -> DatabaseDriverRegistry.get(dialect) },
-            urlScrubber = LogScrubber::maskUrl,
-            // data transfer uses plain stderr for errors — no structured
-            // json/yaml error envelope via OutputFormatter (see LF-012 / LN-016)
-            printError = { msg, src ->
-                val msgs = MessageResolver(ctx.locale)
-                System.err.println(msgs.text("cli.error.source_format", src, msg))
-            },
-        )
-        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }
