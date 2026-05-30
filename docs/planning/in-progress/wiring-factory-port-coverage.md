@@ -145,6 +145,10 @@ Exit-Code-Verzweigung.
 
 ### Phase C — `SchemaReverseWiring`
 
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add schema reverse factory port` (Phase-C-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`.
+
 - Bundle: `sourceResolver`, `urlParser`, `poolFactory`,
   `driverLookup`, `schemaWriter`, `reportWriter`, `sidecarPath`,
   `formatValidator`, `urlScrubber`, `printError`.

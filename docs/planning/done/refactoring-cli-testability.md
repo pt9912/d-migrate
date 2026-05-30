@@ -65,6 +65,8 @@ Bereits geschrieben:
   Factory-Port (`wiring: add data profile factory port`).
 - `ToolExportWiring` nutzt seit der Folge-Tranche einen injizierbaren
   Factory-Port (`wiring: add tool export factory port`).
+- `SchemaReverseWiring` nutzt seit der Folge-Tranche einen injizierbaren
+  Factory-Port (`wiring: add schema reverse factory port`).
 
 Offen (eigene Tranche):
 - Factory-Port-Schnitt fuer die verbleibenden Wirings analog zu McpServeWiring /
