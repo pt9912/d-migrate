@@ -61,9 +61,13 @@ Bereits geschrieben:
   Pre-Runner-Pfade (blank filter, unparseable filter → Exit 2)
   vollstaendig ab, weil beide Wirings vor jeder JDBC-Konstruktion
   zurueckkehren.
+- `DataProfileWiring` nutzt seit der Folge-Tranche einen injizierbaren
+  Factory-Port (`wiring: add data profile factory port`).
+- `ToolExportWiring` nutzt seit der Folge-Tranche einen injizierbaren
+  Factory-Port (`wiring: add tool export factory port`).
 
 Offen (eigene Tranche):
-- Factory-Port-Schnitt pro Wiring analog zu McpServeWiring /
+- Factory-Port-Schnitt fuer die verbleibenden Wirings analog zu McpServeWiring /
   `ServerStateFactory`: Hikari- + Adapter-Lookup wandern hinter eine
   injizierbare Factory; Default-Impl bleibt im Wiring, Tests
   substituieren in-memory / Fake-Pool-Variante.

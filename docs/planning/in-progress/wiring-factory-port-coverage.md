@@ -131,6 +131,10 @@ Exit-Code-Verzweigung.
 
 ### Phase B — `ToolExportWiring`
 
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add tool export factory port` (Phase-B-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`.
+
 - Vier Subcommands teilen sich das Wiring; Tests durchlaufen jeden
   `MigrationTool`-Wert.
 - Bundle: `schemaReader`, `generatorLookup`,
