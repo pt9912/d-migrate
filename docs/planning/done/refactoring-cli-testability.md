@@ -71,16 +71,21 @@ Bereits geschrieben:
   Factory-Port (`wiring: add schema compare factory port`).
 - `SchemaGenerateWiring` nutzt seit der Folge-Tranche einen injizierbaren
   Factory-Port (`wiring: add schema generate factory port`).
+- `DataImportWiring` nutzt seit der Folge-Tranche einen injizierbaren
+  Factory-Port (`wiring: add data import factory port`).
 
-Offen (eigene Tranche):
-- Factory-Port-Schnitt fuer die verbleibenden Wirings analog zu McpServeWiring /
-  `ServerStateFactory`: Hikari- + Adapter-Lookup wandern hinter eine
-  injizierbare Factory; Default-Impl bleibt im Wiring, Tests
-  substituieren in-memory / Fake-Pool-Variante.
+Abgeschlossen (eigene Tranche):
+- Factory-Port-Schnitt fuer die sechs eager-konstruierten Wirings analog
+  zu McpServeWiring / `ServerStateFactory`: Hikari- + Adapter-Lookup
+  liegen hinter injizierbaren Factories; Default-Impl bleibt im Wiring,
+  Tests substituieren in-memory / Fake-Pool-Varianten.
 - Erwartungs-Coverage: 75–88% pro Wiring, analog §11-Tabelle.
-- Risiko: jede Wiring-Factory bringt neue Adapter-Aggregat-Klassen
-  und Test-Boilerplate; lohnt sich erst, wenn ein konkreter Bedarf
-  (z.B. ein Bug-Class, der nur in der Wiring sitzt) auftritt.
+- Abschluss-Nachweis: `make docker-coverage-gate`.
+
+Offen ausserhalb dieser Tranche:
+- `DataExportWiring` / `DataTransferWiring` Hikari-Anteil; die
+  Pre-Runner-Pfade sind gepinnt, Pool-/Adapter-Konstruktion ist ein
+  separater Folge-Slice.
 
 ---
 
@@ -353,7 +358,7 @@ Integrationstests, nicht in Unit-Tests.
 Dieses Refactoring ist kein Teil von Milestone 0.7.5. Der hier
 abgeschlossene Scope betrifft die oben gelisteten Commands plus die
 Quality-Coverage-Nacharbeit fuer `SchemaMigrateCommand`,
-`SchemaRollbackCommand` und `SchemaValidateCommand`. Die verbleibende
-Coverage-Folgearbeit ist die Factory-Port-Tranche fuer eager
-konstruierte Wirings unter
-`docs/planning/in-progress/wiring-factory-port-coverage.md`.
+`SchemaRollbackCommand` und `SchemaValidateCommand`. Die anschliessende
+Coverage-Folgearbeit fuer eager konstruierte Wirings ist als
+Factory-Port-Tranche unter
+`docs/planning/done/wiring-factory-port-coverage.md` abgeschlossen.

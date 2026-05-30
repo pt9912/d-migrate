@@ -9,12 +9,18 @@ import dev.dmigrate.cli.output.MessageResolver
 import dev.dmigrate.cli.output.ProgressRenderer
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DatabaseDriverRegistry
+import dev.dmigrate.driver.connection.ConnectionConfig
+import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.DataWriter
+import dev.dmigrate.format.SchemaCodec
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
 import dev.dmigrate.format.yaml.YamlSchemaCodec
+import dev.dmigrate.streaming.CheckpointConfig
+import dev.dmigrate.streaming.ProgressReporter
 import dev.dmigrate.streaming.StreamingImporter
+import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.FileCheckpointStore
 import java.nio.file.Path
 
@@ -41,14 +47,88 @@ internal data class DataImportOptions(
     val configPath: Path?,
 )
 
-internal object DataImportWiring {
+internal data class DataImportWiringBundle(
+    val targetResolver: (String?, Path?) -> String,
+    val urlParser: (String) -> ConnectionConfig,
+    val poolFactory: (ConnectionConfig) -> ConnectionPool,
+    val writerLookup: (DatabaseDialect) -> DataWriter,
+    val schemaCodec: SchemaCodec,
+    val preflightFactory: (SchemaCodec) -> DataImportSchemaPreflight,
+    val importExecutor: ImportExecutor,
+    val progressReporter: ProgressReporter,
+    val checkpointStoreFactory: ((Path) -> CheckpointStore)?,
+    val checkpointConfigResolver: (Path?) -> CheckpointConfig?,
+)
 
-    fun execute(options: DataImportOptions): Int {
+internal fun interface DataImportWiringFactory {
+    fun build(cliContext: CliContext): DataImportWiringBundle
+}
+
+internal object DefaultDataImportWiringFactory : DataImportWiringFactory {
+
+    override fun build(cliContext: CliContext): DataImportWiringBundle {
         val writerLookup: (DatabaseDialect) -> DataWriter = { dialect ->
             DatabaseDriverRegistry.get(dialect).dataWriter()
         }
         val readerFactory = DefaultDataChunkReaderFactory()
-        val preflight = DataImportSchemaPreflight(YamlSchemaCodec())
+        return DataImportWiringBundle(
+            targetResolver = { target, configPath ->
+                try {
+                    NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
+                } catch (e: ConfigMissingDefaultException) {
+                    throw CliUsageException(
+                        "--target is required when database.default_target is not set.",
+                        e,
+                    )
+                } catch (e: ConfigResolveException) {
+                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
+                }
+            },
+            urlParser = ConnectionUrlParser::parse,
+            poolFactory = HikariConnectionPoolFactory::create,
+            writerLookup = writerLookup,
+            schemaCodec = YamlSchemaCodec(),
+            preflightFactory = ::DataImportSchemaPreflight,
+            importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
+                val importer = StreamingImporter(
+                    readerFactory = readerFactory,
+                    writerLookup = writerLookup,
+                    onTableOpened = callbacks.onTableOpened,
+                )
+                importer.import(
+                    pool = ctx.pool,
+                    input = ctx.input,
+                    format = opts.format,
+                    options = opts.options,
+                    readOptions = opts.readOptions,
+                    config = opts.config,
+                    progressReporter = callbacks.progressReporter,
+                    operationId = resume.operationId,
+                    resuming = resume.resuming,
+                    skippedTables = resume.skippedTables,
+                    resumeStateByTable = resume.resumeStateByTable,
+                    onChunkCommitted = callbacks.onChunkCommitted,
+                    onTableCompleted = callbacks.onTableCompleted,
+                    cancellationToken = ctx.cancellationToken,
+                )
+            },
+            progressReporter = ProgressRenderer(messages = MessageResolver(cliContext.locale)),
+            checkpointStoreFactory = { dir -> FileCheckpointStore(dir) },
+            checkpointConfigResolver = { cliCfg ->
+                PipelineCheckpointResolver(configPathFromCli = cliCfg).resolve()
+            },
+        )
+    }
+}
+
+internal object DataImportWiring {
+
+    fun execute(
+        options: DataImportOptions,
+        factory: DataImportWiringFactory = DefaultDataImportWiringFactory,
+    ): Int {
+        val bundle = factory.build(options.cliContext)
+        val preflight = bundle.preflightFactory(bundle.schemaCodec)
         val request = DataImportRequest(
             target = options.target,
             source = options.source,
@@ -73,51 +153,16 @@ internal object DataImportWiring {
             checkpointDir = options.checkpointDir,
         )
         val runner = DataImportRunner(
-            targetResolver = { target, configPath ->
-                try {
-                    NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
-                } catch (e: ConfigMissingDefaultException) {
-                    throw CliUsageException(
-                        "--target is required when database.default_target is not set.",
-                        e,
-                    )
-                } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
-                }
-            },
-            urlParser = ConnectionUrlParser::parse,
-            poolFactory = HikariConnectionPoolFactory::create,
-            writerLookup = writerLookup,
+            targetResolver = bundle.targetResolver,
+            urlParser = bundle.urlParser,
+            poolFactory = bundle.poolFactory,
+            writerLookup = bundle.writerLookup,
             schemaPreflight = preflight::prepare,
             schemaTargetValidator = preflight::validateTargetTable,
-            importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
-                val importer = StreamingImporter(
-                    readerFactory = readerFactory,
-                    writerLookup = writerLookup,
-                    onTableOpened = callbacks.onTableOpened,
-                )
-                importer.import(
-                    pool = ctx.pool,
-                    input = ctx.input,
-                    format = opts.format,
-                    options = opts.options,
-                    readOptions = opts.readOptions,
-                    config = opts.config,
-                    progressReporter = callbacks.progressReporter,
-                    operationId = resume.operationId,
-                    resuming = resume.resuming,
-                    skippedTables = resume.skippedTables,
-                    resumeStateByTable = resume.resumeStateByTable,
-                    onChunkCommitted = callbacks.onChunkCommitted,
-                    onTableCompleted = callbacks.onTableCompleted,
-                    cancellationToken = ctx.cancellationToken,
-                )
-            },
-            progressReporter = ProgressRenderer(messages = MessageResolver(options.cliContext.locale)),
-            checkpointStoreFactory = { dir -> FileCheckpointStore(dir) },
-            checkpointConfigResolver = { cliCfg ->
-                PipelineCheckpointResolver(configPathFromCli = cliCfg).resolve()
-            },
+            importExecutor = bundle.importExecutor,
+            progressReporter = bundle.progressReporter,
+            checkpointStoreFactory = bundle.checkpointStoreFactory,
+            checkpointConfigResolver = bundle.checkpointConfigResolver,
         )
         return runner.execute(request)
     }

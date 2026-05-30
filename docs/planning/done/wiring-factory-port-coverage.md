@@ -1,6 +1,6 @@
 # Implementierungsplan: Factory-Port-Schnitt für die sechs eager-konstruierten CLI-Wirings
 
-> Status: In Progress (2026-05-30)
+> Status: Done (2026-05-30)
 > Workstream: Folge-Tranche zu
 > `docs/planning/done/refactoring-cli-testability.md` Closure-Sektion
 > „Folge-Tranche: §11-style Coverage"
@@ -196,6 +196,11 @@ Exit-Code-Verzweigung.
 
 ### Phase F — `DataImportWiring`
 
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add data import factory port` (Phase-F-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`;
+> Closing-Nachweis: `make docker-coverage-gate`.
+
 - Größtes Wiring (Hikari + Preflight + Streaming-Importer).
 - Bundle: `targetResolver`, `urlParser`, `poolFactory`,
   `writerLookup`, `schemaCodec` (heute inline
@@ -205,12 +210,12 @@ Exit-Code-Verzweigung.
   `progressReporter`, `checkpointStoreFactory`,
   `checkpointConfigResolver`.
 - DoD:
-  - [ ] ≥ 75% `koverVerify` auf `DataImportWiring`
-  - [ ] Factory-Injection-Pfade gepinnt (Bundle-Felder werden vom
+  - [x] ≥ 75% `koverVerify` auf `DataImportWiring`
+  - [x] Factory-Injection-Pfade gepinnt (Bundle-Felder werden vom
         Wiring tatsaechlich konsumiert)
-  - [ ] Default-Konstruktor-Pin: `DataImportWiring()` ohne Argumente
-        ruft `DefaultDataImportFactory()` auf
-  - [ ] Preflight-Construction mit Fake-Codec ohne Live-DB lauffaehig
+  - [x] Default-Factory-Pin: `DataImportWiring.execute(...)` ohne
+        Factory-Argument nutzt `DefaultDataImportWiringFactory`
+  - [x] Preflight-Construction mit Fake-Codec ohne Live-DB lauffaehig
 
   Runner-Verhalten (`--target` ohne Default, Preflight-Fehler-Exit-Codes,
   Stdin + `--resume`-Block) ist bereits durch `DataImportRunnerTest` in
@@ -223,13 +228,13 @@ Closing-Haken sitzt auf der jeweiligen Phase und wird beim Phase-
 Commit gesetzt. Die Plan-Ebene schliesst, wenn alle Phasen abgehakt
 sind und die drei Querschnitts-Kriterien fuer den Gesamtstand gelten:
 
-- [ ] `make docker-coverage-gate` (root `koverVerify` ≥ 90%) bleibt
+- [x] `make docker-coverage-gate` (root `koverVerify` ≥ 90%) bleibt
       nach allen Phasen grün — keine Regression in fremden Modulen.
-- [ ] Per-Modul-Coverage des CLI-Moduls ist nach Phase F um den
+- [x] Per-Modul-Coverage des CLI-Moduls ist nach Phase F um den
       Summen-Beitrag aller sechs Wirings gestiegen (Ausgangslage
       laut Kover-HTML 0% pro Wiring ausser Filter-Pfade in
       DataExport/DataTransfer).
-- [ ] Coverage-Tabelle in
+- [x] Coverage-Tabelle in
       `docs/planning/done/refactoring-cli-testability.md` Closure-
       Sektion wurde pro Phase nachgezogen und spiegelt zum
       Plan-Close den finalen Stand.
@@ -276,3 +281,24 @@ Wiring-Erfahrung, dann nach steigender Komplexität C → D → E → F.
 Jede Phase ist ein eigener Commit mit eigenem `make docker-check`-
 Gate; bei Pattern-Drift wird die jeweilige Phase rückgängig gemacht
 und Phase A als Template neu konsultiert.
+
+## Closure
+
+Abgeschlossen am 2026-05-30. Alle sechs eager-konstruierten CLI-Wirings
+haben einen `internal` Factory-Port mit testbarem Bundle:
+
+- `DataProfileWiring`
+- `ToolExportWiring`
+- `SchemaReverseWiring`
+- `SchemaCompareWiring`
+- `SchemaGenerateWiring`
+- `DataImportWiring`
+
+Nachweise:
+- `make docker-check MODULES=":adapters:driving:cli"` je Phase
+- `make docker-coverage-gate` zum Plan-Close
+- `make docs-check` im Phase-F-Closure-Commit
+
+Ausserhalb dieses Plans bleibt der Hikari-Anteil von `DataExportWiring`
+und `DataTransferWiring`; deren Pre-Runner-Filterpfade sind bereits
+gepinnt, die Pool-Konstruktion ist eine separate Folge-Tranche.
