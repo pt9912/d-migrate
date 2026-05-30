@@ -1,6 +1,8 @@
 # d-migrate
 
-**Datenbankunabhängiges CLI-Tool für Schema-Migration und Datenmanagement.**
+**Database-agnostic tool for schema migration and data management.**
+
+> 🇩🇪 [Deutsche Version](README.de.md)
 
 <!-- Badges -->
 ![Build](https://github.com/pt9912/d-migrate/actions/workflows/build.yml/badge.svg)
@@ -9,245 +11,233 @@
 
 ---
 
-## Was ist d-migrate?
+## What is d-migrate?
 
-d-migrate ist ein Kommandozeilenwerkzeug für datenbankunabhängige Schema-Migration und Datenmanagement. Du definierst dein Schema einmalig in einem neutralen Format (YAML) und kannst es für PostgreSQL, MySQL und SQLite validieren, vergleichen und als DDL generieren. Darüber hinaus unterstützt d-migrate Reverse-Engineering bestehender Datenbanken, streaming-basierten Datenexport/-import/-transfer zwischen Datenbanken sowie die Integration in bestehende Migrations-Toolchains (Flyway, Liquibase, Django, Knex).
+d-migrate is a database-agnostic tool for schema migration and data management — usable through a CLI **and** as an MCP server (`mcp serve --transport stdio|http`, MCP 2025-11-25). You define your schema once in a neutral format (YAML) and can then validate, compare and generate DDL for PostgreSQL, MySQL and SQLite. Beyond that, d-migrate supports reverse engineering of existing databases, streaming-based data export/import/transfer between databases, and integration with existing migration toolchains (Flyway, Liquibase, Django, Knex).
 
-**Aktuelle Fähigkeiten:**
-- Phasenbezogene DDL-Ausgabe mit `--split pre-post` fuer importfreundliche Schema-Artefakte (pre-data/post-data)
-- Neutrales Schemamodell mit 18 integrierten Typen plus Spatial Geometry
-- YAML-basierte Schemadefinition und -parsing
-- Schemagültigkeitsprüfung mit 18+ Fehlercodes (E001-E018, E120/E121)
-- Schema-Vergleich mit `schema compare` (file/file, file/db, db/db)
-- Reverse-Engineering bestehender Datenbanken mit `schema reverse` (PostgreSQL, MySQL, SQLite)
-- DDL-Generierung für PostgreSQL, MySQL und SQLite
-- Spatial-DDL: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`)
-- Transformation von View-Queries (17 SQL-Funktionen)
-- Transformationsberichte (YAML-Seitenschatten)
-- Streaming-Datenexport (JSON, YAML, CSV) mit benannten Verbindungen
-- Transaktionaler Datenimport mit UPSERT, Truncate, Trigger-Handling und Reseeding
-- Direkter DB-zu-DB-Datentransfer mit `data transfer`
-- Inkrementeller Export über `--since-column` / `--since`
-- Line-orientierte Fortschrittsanzeige für `data export`, `data import` und `data transfer`
-- CLI mit `schema validate`, `schema generate`, `schema compare`, `schema reverse`, `schema migrate`, `schema rollback`, `data export`, `data import`, `data transfer` und `data profile`
-- Diff-basierte Migrationen mit `schema migrate` und `schema rollback`: Plan → Render → Execute → Post-Compare → optionales Rollback-Artefakt; signiertes `migration-plan.v1`-Artefakt per `--plan-artefact`
-- Live-DB-Probes für MySQL-Sequence-Migrationen: Drift-Check der `dmg_sequences`-Helper-Table-Emulation gegen die kanonische Form (`E124_MYSQL_SEQUENCE_DRIFT_*` Diagnostik) und opt-in `preserveCurrentValue` auf Sequence-Definitionen, das den runtime-Wert (PG `last_value`, MySQL/SQLite `dmg_sequences.next_value`) über `CREATE`/`ALTER`/`RENAME SEQUENCE`-Migrationen rettet (SQLite seit 0.9.7-E.3-Folge-Slice, opt-in via `--sqlite-named-sequences helper_table`; ohne Opt-in `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)
-- Volle Reverse-Read-Treue für SQLite-Trigger (token-basierter Parser für `sqlite_master.sql`): WHEN-Klausel, INSTEAD OF, FOR EACH ROW und Multi-Statement-Body werden korrekt extrahiert; Schema-qualifizierte Namen werden mit `R212`-ACTION_REQUIRED ausgeschlossen, `UPDATE OF cols` mit `R213`-WARNING gemeldet. File-zu-DB- und DB-zu-DB-Diffs gegen SQLite-Trigger emittieren keine spurious Replaces mehr.
-- MySQL-Routinen-Identity-Reverse-Read: `SQL SECURITY DEFINER/INVOKER`, `DEFINER`-Spec und `sql_mode`-Snapshot werden jetzt aus `information_schema.routines` projiziert; file-zu-DB-Diffs gegen MySQL-Functions/Procedures mit expliziten Identity-Attributen produzieren keine spurious-Replace-Diagnose mehr.
-- MCP-Server (`d-migrate mcp serve --transport stdio|http`) per MCP 2025-11-25 mit Transport, Auth (JWT-JWKS, JWT-Introspection, stdio-Token-Registry), Discovery (`tools/list`, `resources/list`, `resources/templates/list`), JSON-Schema-Vertrag und produktiven MCP-Tool-Handlern inklusive kontrollierter Start-Tools
-- Internationalisierte CLI-Ausgabe (EN/DE) mit ResourceBundle-Fallback, ICU4J-Unicode-Utilities, expliziter Zeitzonen-/Temporal-Policy und konsolidiertem CSV-/BOM-Encoding-Vertrag
-- OCI-Image für die Nutzung mit Docker
+**Current capabilities:**
+- **Schema model**: neutral YAML schema with 19 types + Spatial Geometry; validator with 35+ error codes
+- **Schema operations**: `validate`, `generate`, `compare`, `reverse`, `migrate`, `rollback` for PostgreSQL, MySQL, SQLite — file/file, file/db, db/db
+- **Diff migrations**: tables, columns, indexes, constraints incl. CHECK/EXCLUDE with live-data preflight, foreign keys, sequences, views, materialized views (PG), triggers, functions/procedures; signed `migration-plan.v1` artefact via `--plan-artefact`
+- **Renames** for tables, columns, views, triggers, functions, procedures, sequences — native `RENAME` DDL or Drop+Create fallback depending on dialect; CLI shortcuts `--rename-table` / `--rename-column` or file overlay `--migration-overlay`
+- **Sequence pipeline**: MySQL helper-table emulation (`dmg_sequences`) with live drift check; opt-in `preserveCurrentValue` for PG/MySQL/SQLite; SQLite sequence emulation via `--sqlite-named-sequences helper_table`
+- **Spatial DDL**: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`); view-query transformation across dialects
+- **Data operations**: streaming `data export` / `import` / `transfer` (JSON/YAML/CSV) with named connections, UPSERT, truncate, trigger handling, reseeding, incremental export (`--since-column` / `--since`); `data profile` for data statistics
+- **Integrations**: `d-migrate export flyway|liquibase|django|knex`
+- **MCP server** (`mcp serve --transport stdio|http`): MCP 2025-11-25 with auth (JWT-JWKS/introspection, stdio token registry), discovery and JSON schema contract
+- **CLI UX**: i18n EN/DE with ICU4J, explicit time-zone/temporal policy, CSV/BOM encoding contract, phased DDL via `--split pre-post`
+- **OCI image** for Docker usage
 
-## Schnellstart
+## Quick start
 
-### Voraussetzungen
+### Prerequisites
 
 - Docker
-- Optional fuer lokale Entwicklung ohne Container: **JDK 21** oder neuer
+- Optional for local development without containers: **JDK 21** or newer
 
 ### Installation
 
-#### GitHub Release Assets
+#### GitHub Release assets
 
-Für veröffentlichte Releases stehen ZIP, TAR und Fat JAR auf der
-[Releases-Seite](https://github.com/pt9912/d-migrate/releases) bereit.
+Published releases ship ZIP, TAR and a fat JAR on the
+[Releases page](https://github.com/pt9912/d-migrate/releases).
 
 ```bash
-# Launcher-basierte Distribution entpacken
+# Unpack the launcher-based distribution
 tar -xf d-migrate-<version>.tar
 ./d-migrate-<version>/bin/d-migrate --help
 
-# Alternativ das Fat JAR direkt ausführen
+# Or run the fat JAR directly
 java -jar d-migrate-<version>-all.jar --help
 ```
 
-Hinweis: Die Homebrew-Formula wird in 0.5.0 im Repository mitgeführt, ist aber
-noch kein vollautomatischer Standard-Installationspfad.
+Note: The Homebrew formula is maintained in the repository starting with 0.5.0
+but is not yet a fully automated default install path.
 
-#### Aus Quellcode bauen
+#### Build from source
 
 ```bash
 make ci-build
 ```
 
-#### Makefile-Komfortziele
+#### Makefile convenience targets
 
-Das Top-Level-[`Makefile`](Makefile) ist ein duenner Wrapper um die
-kanonischen Gradle-, Docker- und Script-Einstiegspunkte. Die verfuegbaren
-Kurzbefehle zeigt:
+The top-level [`Makefile`](Makefile) is a thin wrapper around the canonical
+Gradle, Docker and script entrypoints. The available shortcuts are shown by:
 
 ```bash
 make help
 ```
 
-Haeufige Ziele:
+Common targets:
 
 ```bash
-make ci-build             # Build/Test/Coverage-Gate in der Dockerfile-Build-Stage
-make docker-resolve-deps  # Gradle-Dependencies in der Dockerfile-Deps-Stage vorwaermen
-make docker-check         # Gradle check in der Dockerfile-Build-Stage
-make docker-test          # Gradle test in der Dockerfile-Build-Stage
-make docker-detekt        # Detekt in der Dockerfile-Detekt-Stage
-make docker-coverage-gate  # Kover-Gate in der Dockerfile-Coverage-Stage
-make gates             # Docker-Check, Docker-Coverage-Gate und docs-check
-make ci                # Docker-CI-Build plus docs-check
-make docker-smoke      # Docker-Runtime-Image bauen und --version/--help pruefen
-make integration       # Testcontainers-Integrationstests via Docker-Script
-make docs-check        # Markdown-Linkziele in docs/ pruefen
-make docker-gates      # Docker-Runtime-Build, Coverage-Gate und Runtime-Smoke
-make docker-full-gates # docker-gates plus Docker-Integrationstests
-make release-assets    # ZIP, TAR, Fat JAR und SHA256 via Dockerfile bauen
-make docker-oci-build  # Jib-OCI-Image via Dockerfile bauen und docker load ausfuehren
+make ci-build             # Build/Test/Coverage gate in the Dockerfile build stage
+make docker-resolve-deps  # Pre-warm Gradle dependencies in the Dockerfile deps stage
+make docker-check         # Gradle check in the Dockerfile build stage
+make docker-test          # Gradle test in the Dockerfile build stage
+make docker-detekt        # Detekt in the Dockerfile detekt stage
+make docker-coverage-gate  # Kover gate in the Dockerfile coverage stage
+make gates             # Docker check, Docker coverage gate and docs-check
+make ci                # Docker CI build plus docs-check
+make docker-smoke      # Build the Docker runtime image and verify --version/--help
+make integration       # Testcontainers integration tests via Docker script
+make docs-check        # Validate Markdown link targets in docs/
+make docker-gates      # Docker runtime build, coverage gate and runtime smoke
+make docker-full-gates # docker-gates plus Docker integration tests
+make release-assets    # Build ZIP, TAR, fat JAR and SHA256 via Dockerfile
+make docker-oci-build  # Build the Jib OCI image via Dockerfile and run docker load
 ```
 
-#### Release-Assets lokal bauen
+#### Build release assets locally
 
 ```bash
 make release-assets
 ls -1 adapters/driving/cli/build/release
 ```
 
-### CLI ausführen
+### Run the CLI
 
 ```bash
-# Einmal lokal bauen
+# Build locally once
 make docker-build
 
-# Schema validieren
+# Validate a schema
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 
-# Zwei Schemas vergleichen
+# Compare two schemas
 docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source /work/schema.yaml --target /work/schema-new.yaml
 
-# PostgreSQL-DDL generieren
+# Generate PostgreSQL DDL
 docker run --rm -v $(pwd):/work d-migrate:dev schema generate --source /work/schema.yaml --target postgresql
 
-# MySQL-DDL mit Rollback generieren
+# Generate MySQL DDL with a rollback script
 docker run --rm -v $(pwd):/work d-migrate:dev schema generate --source /work/schema.yaml --target mysql --generate-rollback
 
-# Schema aus bestehender Datenbank extrahieren
+# Extract a schema from an existing database
 docker run --rm -v $(pwd):/work d-migrate:dev schema reverse --source mydb --output /work/reverse.yaml --report /work/reverse.report.yaml
 
-# DB-basierter Schema-Vergleich
+# DB-based schema comparison
 docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source file:/work/schema.yaml --target db:mydb
 
-# DB-zu-DB Datentransfer
+# DB-to-DB data transfer
 docker run --rm -v $(pwd):/work d-migrate:dev data transfer --source sourcedb --target targetdb --tables users,orders
 ```
 
 ### Docker
 
-#### Veröffentlichtes Image nutzen
+#### Use the published image
 
-Kein lokales JDK erforderlich — einfach Image ziehen und ausführen:
+No local JDK required — pull the image and run it:
 
 ```bash
-# Validierung
+# Validation
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema validate --source /work/schema.yaml
 
 # Compare (file/file)
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema compare --source file:/work/schema.yaml --target file:/work/schema-new.yaml
 
-# DDL generieren
+# Generate DDL
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest schema generate --source /work/schema.yaml --target postgresql
 
-# Reverse-Engineering
+# Reverse engineering
 docker run --rm -v $(pwd):/work ghcr.io/pt9912/d-migrate:latest \
   --config /work/.d-migrate.yaml schema reverse --source mydb --output /work/reverse.yaml
 ```
 
-#### Mit Dockerfile lokal bauen und testen
+#### Build and test locally with the Dockerfile
 
-Das Repository liefert ein Multi-Stage [`Dockerfile`](Dockerfile), das das Projekt im Container baut
-und testet und danach die CLI-Distribution in ein schlankes JRE-Laufzeitimage verpackt. Das ist der einfachste Weg,
-den vollständigen Build ohne lokale JDK-Installation auszuführen.
+The repository ships a multi-stage [`Dockerfile`](Dockerfile) that builds and
+tests the project inside the container and then packages the CLI distribution
+into a slim JRE runtime image. This is the simplest way to run the full build
+without installing a local JDK.
 
 ```bash
-# Vollständiger Build inkl. Tests und Coverage-Validierung (Standard)
+# Full build incl. tests and coverage validation (default)
 docker build -t d-migrate:dev .
 
-# Erzwungener vollständiger Test/Coverage-Lauf (Docker-Layer-Cache UND Gradle-Cache werden umgangen)
+# Force a full test/coverage run (bypasses both the Docker layer cache and the Gradle cache)
 docker build --no-cache \
   --progress=plain \
   --build-arg GRADLE_TASKS="build :adapters:driving:cli:installDist --rerun-tasks" \
   -t d-migrate:dev .
 
-# Aggregierten Kover-HTML-Report bauen und lokal im Browser ansehen
+# Build the aggregated Kover HTML report and view it locally in a browser
 docker build --target coverage -t d-migrate:coverage .
 docker run --rm -p 8080:8080 d-migrate:coverage
-# dann http://localhost:8080 im Browser öffnen
+# then open http://localhost:8080 in a browser
 
-# Aggregierten Kover-JSON-Report direkt auf stdout ausgeben
+# Stream the aggregated Kover JSON report directly to stdout
 docker build --target coverage-json -t d-migrate:coverage-json .
 docker run --rm d-migrate:coverage-json > coverage.json
 
-# Optional den 90%-Kover-Gate wie in CI hart prüfen
+# Optionally enforce the 90% Kover gate just like CI does
 docker build --target coverage-verify -t d-migrate:coverage-verify .
 
-# Tests überspringen — nur CLI-Distribution erstellen
+# Skip tests — build only the CLI distribution
 docker build --build-arg GRADLE_TASKS="assemble :adapters:driving:cli:installDist" \
   -t d-migrate:dev .
 
-# Nur einen Build-Stage-Teil ausführen, ohne finales Runtime-Image zu erzeugen
+# Run only part of the build stage without producing the final runtime image
 docker build --target build \
   --build-arg GRADLE_TASKS=":hexagon:core:test :adapters:driven:driver-common:test" \
   -t d-migrate:phase-a .
 
-# Lokal gebaute CLI ausführen
+# Run the locally built CLI
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 
-# Testcontainers-basierte Integrationssuite ausführen
+# Run the testcontainers-based integration suite
 ./scripts/test-integration-docker.sh
 
-# Oder nur eine Teilmenge der Integrationstests ausführen
+# Or run just a subset of the integration tests
 ./scripts/test-integration-docker.sh :adapters:driven:driver-postgresql:test
 ```
 
-### Dockerfile-Workflows (schneller Überblick)
+### Dockerfile workflows (quick overview)
 
 <details>
-<summary>Build- und Runtime-Stages</summary>
+<summary>Build and runtime stages</summary>
 
-- Build-Stage: `gradle:8.12-jdk21`
-- Runtime-Stage: `eclipse-temurin:21-jre-noble` (wie beim offiziellen Jib-OCI-Image)
-- Gradle-Dependencies werden in einer eigenen `deps`-Stage vorgewärmt.
-- Vollständiger `docker build` landet immer in der `runtime`-Stage.
-- Bei `GRADLE_TASKS`-Überschreibung ergänzen: `:adapters:driving:cli:installDist`
-- Für reinen Build/Test ohne Runtime-Image: `--target build`
+- Build stage: `gradle:8.12-jdk21`
+- Runtime stage: `eclipse-temurin:21-jre-noble` (same as the official Jib OCI image)
+- Gradle dependencies are pre-warmed in a dedicated `deps` stage.
+- A plain `docker build` always lands in the `runtime` stage.
+- When overriding `GRADLE_TASKS`, append: `:adapters:driving:cli:installDist`
+- For build/test only without the runtime image: `--target build`
 
 </details>
 
 <details>
-<summary>Coverage-Stages</summary>
+<summary>Coverage stages</summary>
 
-- `coverage`: `test koverHtmlReport koverXmlReport` + HTTP-Server auf Port `8080` für Root-Kover-HTML.
-- `coverage`: HTML-Report wird auch bei unterschrittenem 90%-Gate erzeugt.
-- `coverage-json`: identischer Root-Kover-Report als JaCoCo-ähnliches JSON auf `stdout` (via `ENTRYPOINT`).
-- `coverage-verify`: hartes `koverVerify`; Build-Target bricht bei nicht erfülltem Mindestwert mit Fehler ab.
-- `docker-coverage-modules-html`: per-Modul-Kover-HTML-Reports als Tar-Stream fuer `make docker-coverage-modules-html`.
-
-</details>
-
-<details>
-<summary>Release- und OCI-Stages</summary>
-
-- `release-assets`: baut ZIP, TAR, Fat JAR und SHA256 und streamt `adapters/driving/cli/build/release` als Tar fuer `make release-assets`.
-- `jib-image-tar`: baut das Jib-OCI-Image als Tar, inklusive Jib-Labels; `make docker-oci-build` laedt es danach per `docker load`.
+- `coverage`: `test koverHtmlReport koverXmlReport` + HTTP server on port `8080` for the root Kover HTML.
+- `coverage`: the HTML report is produced even when the 90% gate is missed.
+- `coverage-json`: identical root Kover report as JaCoCo-like JSON on `stdout` (via `ENTRYPOINT`).
+- `coverage-verify`: hard `koverVerify`; the build target fails if the minimum coverage is not met.
+- `docker-coverage-modules-html`: per-module Kover HTML reports as a tar stream for `make docker-coverage-modules-html`.
 
 </details>
 
 <details>
-<summary>Dokumente und Integrationstests</summary>
+<summary>Release and OCI stages</summary>
 
-- `scripts/verify-doc-refs.sh` validiert Links in `docs/`, `spec/`, `README.md`, `CHANGELOG.md` gegen das Dateisystem.
-- Externe HTTP-Links werden ignoriert; kaputte interne Links liefern Exit-Code `1`.
-- Testcontainers-Jobs nicht im `docker build` laufen lassen.
-- Dafür nutze stattdessen [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh), der den Host-Docker-Socket in einen JDK-Container mountet.
+- `release-assets`: builds ZIP, TAR, fat JAR and SHA256 and streams `adapters/driving/cli/build/release` as a tar for `make release-assets`.
+- `jib-image-tar`: builds the Jib OCI image as a tar, including Jib labels; `make docker-oci-build` then loads it via `docker load`.
 
 </details>
 
 <details>
-<summary>Build-Artefakte aus der Build-Stage exportieren</summary>
+<summary>Documentation and integration tests</summary>
+
+- `scripts/verify-doc-refs.sh` validates links in `docs/`, `spec/`, `README.md`, `CHANGELOG.md` against the file system.
+- External HTTP links are ignored; broken internal links return exit code `1`.
+- Do not run testcontainers jobs inside `docker build`.
+- Use [`scripts/test-integration-docker.sh`](scripts/test-integration-docker.sh) instead — it mounts the host Docker socket into a JDK container.
+
+</details>
+
+<details>
+<summary>Export build artefacts from the build stage</summary>
 
 ```bash
 docker build --target build -t d-migrate:build .
@@ -258,9 +248,9 @@ docker rm d-migrate-tmp
 
 </details>
 
-### Minimales Schema-Beispiel
+### Minimal schema example
 
-Lege eine Datei namens `schema.yaml` an:
+Create a file called `schema.yaml`:
 
 ```yaml
 schema_format: "1.0"
@@ -284,86 +274,86 @@ tables:
     primary_key: [id]
 ```
 
-Dann validierst du es so:
+Validate it like this:
 
 ```bash
 make docker-build
 docker run --rm -v $(pwd):/work d-migrate:dev schema validate --source /work/schema.yaml
 ```
 
-Und vergleichst zwei Versionen so:
+And compare two versions like this:
 
 ```bash
 docker run --rm -v $(pwd):/work d-migrate:dev schema compare --source /work/schema.yaml --target /work/schema-v2.yaml
 ```
 
-## Aktueller Stand
+## Current status
 
-Aktuelles Release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)**
+Current release: **[v0.9.6](https://github.com/pt9912/d-migrate/releases/tag/v0.9.6)**
 
-MCP-Server:
+MCP server:
 
-- Laufzeit als **Model Context Protocol v1 Server** (`stdio`, Streamable HTTP)
-- Asynchrone Jobs
-- Idempotenz
-- Policy/Approval
+- Runtime as a **Model Context Protocol v1 server** (`stdio`, Streamable HTTP)
+- Asynchronous jobs
+- Idempotency
+- Policy/approval
 - Quotas
-- JDBC-Persistenz
-- File-backed Artifact-Stores
-- Bundle-Import
-- KI-nahe Tools (`procedure_transform_*`, `testdata_*`)
+- JDBC persistence
+- File-backed artifact stores
+- Bundle import
+- AI-adjacent tools (`procedure_transform_*`, `testdata_*`)
 
-Weitere Verbesserungen:
+Further improvements:
 
-- Deterministische DDL-Generierung (`--deterministic` / `SOURCE_DATE_EPOCH`)
-- BigInt Identity-Columns für PostgreSQL/MySQL
-- Partial Index-Predicates
-- Index-Sortierung pro Spalte
-- Robusterer `schema reverse`-Pfad mit `--split=pre-post`
+- Deterministic DDL generation (`--deterministic` / `SOURCE_DATE_EPOCH`)
+- BigInt identity columns for PostgreSQL/MySQL
+- Partial index predicates
+- Per-column index ordering
+- More robust `schema reverse` path with `--split=pre-post`
 
-Alle Releases und Details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
+All releases and details: [CHANGELOG.md](CHANGELOG.md) | [GitHub Releases](https://github.com/pt9912/d-migrate/releases)
 
-## Unterstützte Datenbanken
+## Supported databases
 
-| Datenbank  | Status                                                              |
+| Database   | Status                                                              |
 | ---------- | ------------------------------------------------------------------- |
-| PostgreSQL | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| MySQL      | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| SQLite     | DDL-Generierung, Reverse-Engineering, Datenexport/-import/-transfer |
-| Oracle     | Geplant                                                             |
-| MSSQL      | Geplant                                                             |
+| PostgreSQL | DDL generation, reverse engineering, data export/import/transfer    |
+| MySQL      | DDL generation, reverse engineering, data export/import/transfer    |
+| SQLite     | DDL generation, reverse engineering, data export/import/transfer    |
+| Oracle     | Planned                                                             |
+| MSSQL      | Planned                                                             |
 
 ## Roadmap
 
-Die vollständige Roadmap und den Meilensteinplan findest du in
+You'll find the full roadmap and milestone plan in
 [docs/planning/roadmap.md](docs/planning/in-progress/roadmap.md).
 
-## Dokumentation
+## Documentation
 
-Detaillierte Dokumentation findest du in [docs/](docs/) und [spec/](spec/):
+Detailed documentation lives in [docs/](docs/) and [spec/](spec/):
 
-- [Quick Start Guide (Deutsch)](docs/user/guide.md)
-- [Entwurf](spec/design.md) / [Architektur](spec/architecture.md)
-- [Schema-YAML-Referenz](spec/schema-reference.md)
-- [Spezifikation des neutralen Modells](spec/neutral-model-spec.md)
-- [CLI-Spezifikation](spec/cli-spec.md)
-- [MCP-Server (`d-migrate mcp serve`)](spec/mcp-server.md)
-- [Regeln zur DDL-Generierung](spec/ddl-generation-rules.md)
-- [Verbindungs- und Konfigurationsspezifikation](spec/connection-config-spec.md)
+- [Quick Start Guide (German)](docs/user/guide.md)
+- [Design](spec/design.md) / [Architecture](spec/architecture.md)
+- [Schema YAML reference](spec/schema-reference.md)
+- [Neutral model specification](spec/neutral-model-spec.md)
+- [CLI specification](spec/cli-spec.md)
+- [MCP server (`d-migrate mcp serve`)](spec/mcp-server.md)
+- [DDL generation rules](spec/ddl-generation-rules.md)
+- [Connection and configuration specification](spec/connection-config-spec.md)
 - [Roadmap](docs/planning/in-progress/roadmap.md)
-- [Release-Leitfaden](docs/user/releasing.md)
-- [Lastenheft (Deutsch)](spec/lastenheft-d-migrate.md)
+- [Release guide](docs/user/releasing.md)
+- [Requirements document (German)](spec/lastenheft-d-migrate.md)
 
-## Mitmachen
+## Contributing
 
-Beiträge sind willkommen! Bitte erstelle ein Issue oder einen Pull Request auf [GitHub](https://github.com/pt9912/d-migrate).
+Contributions are welcome! Please open an issue or a pull request on [GitHub](https://github.com/pt9912/d-migrate).
 
-1. Forke das Repository
-2. Erstelle einen Feature-Branch von `develop`
-3. Schreibe Tests für deine Änderungen
-4. Stelle sicher, dass die Docker-CI-Gates laufen (`make ci`)
-5. Reiche einen Pull Request gegen `develop` ein
+1. Fork the repository
+2. Create a feature branch off `develop`
+3. Write tests for your changes
+4. Make sure the Docker CI gates pass (`make ci`)
+5. Submit a pull request against `develop`
 
-## Lizenz
+## License
 
-Dieses Projekt ist unter der [MIT-Lizenz](LICENSE) lizenziert.
+This project is licensed under the [MIT License](LICENSE).
