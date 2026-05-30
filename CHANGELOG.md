@@ -38,27 +38,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Plan-Doc:
   `docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
 
-### Changed
-
-- **0.9.7 Port-Refactor — `DdlDialectContext`** *(2026-05-27)* —
-  `DdlGenerationOptions` trug bislang nullable `mysql*` /
-  `sqlite*`-Felder parallel am Top-Level (`mysqlNamedSequenceMode`,
-  `mysqlServerVersion`, `mysqlSequenceCanonicity`, `routineCapability`
-  mit MySQL-flavored Default, `liveSqliteCatalog`,
-  `sqliteCastPreflights`, `catalogProbeMode`). Diese sind jetzt in
-  einen sealed `DdlDialectContext` mit Varianten `None`, `MySql(...)`,
-  `Sqlite(...)` gewandert. Renderer/Tests greifen über die neuen
-  Extension-Properties `options.mysqlContext` / `options.sqliteContext`
-  zu. Dialekt-neutrale Felder (`spatialProfile`, `executionMode`,
-  `checkPreflights`, `extension*`, `strictGapOperations`,
-  `generatedAt`, `deterministic`, `deferForeignKeys`) bleiben am
-  Top-Level. 30 Files migriert, semantisch identisch.
-
-  Plan-Doc: `docs/planning/done/sqlite-sequence-emulation-plan.md`
-  Phase B.0; Memory-Pin: `feedback_hexagon_dialect_context`.
-
-### Added
-
 - **0.9.7 SQLite-Sequence-Emulation Phase B.2 — Validator-Regeln**
   *(2026-05-28)* — zwei zusammengehörige Validator-Schichten, die
   laut Plan-Doc §3.4 / §3.6 / §7 Phase B vor dem `helper_table`-
@@ -189,171 +168,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Plan-Doc:
   `docs/planning/done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`.
-
-### Changed
-
-- **0.9.7 E.2 Folge-Slice — SQLite Trigger Reverse-Read
-  (Sub-Slices A–E)** *(2026-05-22)* — neuer token-basierter
-  `SqliteTriggerSqlParser` ersetzt den regex-/substring-basierten
-  `SqliteTypeMapping.parseTriggerSql`. Reverse-Read aus
-  `sqlite_master.sql` populiert jetzt `forEach`, `condition`
-  (WHEN-Klausel) und einen Round-Trip-symmetrischen `body` (genau
-  ein trailing `;` vor `END` wird gestrippt, weil der Renderer
-  unconditional `;\nEND;` anhängt — sonst driften Bodies nach
-  ein paar Cycles zu `...;;`).
-
-  Diagnostics:
-    - `R210` / `R211` werden zu `ACTION_REQUIRED` (vorher `WARNING`),
-      wenn die `CREATE TRIGGER`-Grammatik nicht parsebar ist.
-    - Neu: `R212` (`ACTION_REQUIRED`) für schema-qualifizierte
-      Trigger-Namen oder Target-Tabellen (`main.trg`, `aux.t`).
-      Betroffene Trigger werden aus dem Reverse-Read-Ergebnis
-      ausgeschlossen, kein `TriggerDefinition` wird gebaut.
-    - Neu: `R213` (`WARNING`) für `UPDATE OF <cols>`-Spaltenliste —
-      das neutrale Modell behandelt UPDATE als whole-row.
-
-  Auswirkung: `schema compare` zwischen zwei SQLite-Live-DBs mit
-  identischen WHEN-getragenen Triggern emittiert keine spurious
-  False-Positive-Diffs mehr; `schema migrate` (file-to-DB) gegen
-  SQLite triggert keinen `Drop+Create`-Replace mehr, wenn das
-  Source-File und das Live-DB-Trigger semantisch übereinstimmen.
-
-  **Breaking-Change-Note**: alte Live-DBs mit unparseable
-  Trigger-DDL surfen jetzt als `ACTION_REQUIRED` statt `WARNING`.
-  Tooling, das `notes.severity` filtert, sollte beide Severities
-  akzeptieren, bevor 0.9.7 ausgerollt wird.
-
-  Plan-Doc:
-  `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`.
-
-### Fixed
-
-- **0.9.7 F.4 Renderer-Blocker-Bridge — preserve `OBJECT_RENAME_UNSUPPORTED`
-  as `primaryBlockedReason`** *(2026-05-19)* — `PostgresDiffRenderContext`,
-  `MysqlDiffRenderContext` and `SqliteDiffRenderContext` used to wrap
-  every planner-emitted BLOCKER diagnostic into a single
-  `MigrationBlocker(reason = DIALECT_UNSUPPORTED_OPERATION)`,
-  collapsing the F.4-specific
-  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` reason that the
-  Mapper / Planner had set per F.4 plan-doc §5.2.
-
-  The fix introduces a `PlannerBlockerClassifier` in
-  `hexagon:ports-read` that maps `DiffDiagnostic.code →
-  MigrationBlockedReason` with the initial entry
-  `"OBJECT_RENAME_UNSUPPORTED" →
-  MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` and a
-  conservative default to `DIALECT_UNSUPPORTED_OPERATION` so legacy
-  codes (`CONSTRAINT_NOT_DIFFABLE`,
-  `MATERIALIZED_VIEW_DIFF_UNSUPPORTED`, etc.) keep their pre-F.4
-  contract. The three render contexts now group planner-blockers
-  by classified reason and emit one `MigrationBlocker` per reason,
-  so a Materialized-View-Rename / body-drift / missing-body rename
-  candidate surfaces `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`
-  end-to-end while a co-existing `CONSTRAINT_NOT_DIFFABLE` keeps its
-  legacy `DIALECT_UNSUPPORTED_OPERATION` reason.
-
-  **Breaking-change-note for downstream consumers**: the report
-  field `summary.primaryBlockedReason` for F.4
-  materialized-view-rename and body-drift routine/trigger
-  scenarios now reads `OBJECT_RENAME_UNSUPPORTED` instead of
-  `DIALECT_UNSUPPORTED_OPERATION`. Existing tooling that pinned
-  the old reason as primary for these scenarios needs to widen its
-  expectation. The H.3 audit found no in-tree consumer that did so,
-  and the enum value
-  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` has existed
-  since F.4 A.1 (2026-05-18) — only the wiring through the
-  renderer wrap was missing.
-
-  New tests:
-    - `PlannerBlockerClassifierTest` (`hexagon:ports-read`) pins the
-      mapping + the public `OBJECT_RENAME_UNSUPPORTED_CODE`
-      constant.
-    - `PostgresDiffObjectRenameTest` / `MysqlDiffObjectRenameTest` /
-      `SqliteDiffObjectRenameTest` each get a sibling case that
-      drives the full `planner.plan(...) → gen.generateUp(...)`
-      pipeline through a mapper-only-block scenario
-      (materialized-view rename on PG, trigger-body-drift on
-      MySQL / SQLite — both surface
-      `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`).
-    - `SchemaMigrateRunnerTest` gets an end-to-end pin that the
-      report-emit pipeline carries the new primary reason through
-      to stdout.
-
-  §11 DoD Box (b) Carve-out (committed in `ffc6970e`) is resolved.
-  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
-
-### Fixed
-
-- **0.9.7 E.3 Folge-Slice — MySQL Sequence Drift-Check
-  Plan-Compliance-Fixes** *(2026-05-20)* — zwei Verhaltensabwei-
-  chungen zwischen Plan-Doc und Implementierung des Drift-Checks
-  korrigiert:
-  - `MysqlSequenceCanonicityGate` routet jetzt
-    `MISSING + DROP` für `SEQUENCE_ROW` und `SUPPORT_TABLE` als
-    Block (`E124_MYSQL_SEQUENCE_MISSING_FOR_DROP` →
-    `MANUAL_ACTION_REQUIRED`). Plan-Doc §3.1 hatte das schon
-    immer als "Missing → UPDATE/DELETE-Path: Block"
-    deklariert; Renderer war auf `OpIntent.DROP` schon korrekt
-    verdrahtet, das Gate hat es aber durchgewunken. Routinen
-    und Column-Trigger fallen weiterhin auf Proceed durch, weil
-    das `DELETE FROM dmg_sequences` sie nicht braucht und das
-    column-trigger-Drop ohnehin idempotent ist.
-  - `MysqlSequenceCanonicityProbeAdapter` verifiziert
-    Routine- und Trigger-Bodies jetzt jenseits des
-    Marker-Substrings: der Body zwischen `BEGIN` und letztem
-    `END` wird normalisiert (backticks raus, lowercase,
-    whitespace kollabiert) und gegen die kanonische Form aus
-    `MysqlSequenceEmulationTemplates` verglichen. Driftet ein
-    operator-bearbeiteter Routine-/Trigger-Body bei intaktem
-    Marker → `body_signature`-Drift mit Preview im Report.
-    Für Trigger zusätzlich `sequence_reference`-Check: der
-    tatsächliche `dmg_nextval('…')`-Call muss den Sequence-
-    Namen referenzieren, den der Plan erwartet — ein
-    operator-verschobener Trigger (Marker stehen lassen, Call
-    auf andere Sequence umbiegen) bricht jetzt sichtbar.
-
-- **0.9.7 E.3 Folge-Slice — Drift-Check Trigger-Gate für reine
-  Column-Default-Migrationen + Naming-Lift** *(2026-05-20)* —
-  Lücke geschlossen, in der `AddColumn` /
-  `AlterColumnDefault` mit `SequenceNextVal`-Default ihren
-  `DROP + CREATE TRIGGER`-Block ohne Probe-Konsultation
-  ausführten, weil `MysqlSequenceCanonicityStage` auf
-  `!hasSequenceOps(plan)` short-circuitete: ein
-  operator-modifizierter Trigger wurde stillschweigend
-  überschrieben. `hasSequenceOps` → `hasSequenceRelatedOps`
-  zählt jetzt auch Column-Ops mit `SequenceNextVal`-Default;
-  `MigrationPreflightPlanner` emittiert pro solcher Column-Op
-  eine SUPPORT_TRIGGER `NOT_RUN_*`-Declaration; der
-  Stage-Failure-Stamping pflegt SUPPORT_TRIGGER-Declarations mit
-  kanonischem Trigger-Namen. `MysqlSequenceSupportNaming` wurde
-  nach `hexagon/ports-read` gehoben, sodass Stage (application),
-  Renderer (driver-mysql) und Probe-Runner (driving/cli)
-  dieselbe Naming-Quelle verwenden; das driver-side
-  `MysqlSequenceNaming` ist nun Facade darüber.
-
-- **0.9.7 E.3 Folge-Slice — Report-Renderer + BLOCKER-
-  Diagnostic-Symmetrie** *(2026-05-20)* —
-  `SchemaMigrateReportRenderer` emittierte
-  `mysqlSequenceCanonicity` weder in JSON noch in YAML, obwohl
-  das DTO befüllt wurde — Operatoren sahen den
-  Plan-dokumentierten Feldnamen, aber nie die tatsächlichen
-  Declarations. Beide Renderer geben das Feld jetzt aus
-  (JSON-Projection in eigenem
-  `SchemaMigratePreflightRenderers`-Object, damit der
-  Main-Renderer unter Detekt's `TooManyFunctions`-Budget bleibt).
-  Zusätzlich trägt der Trigger-Drift-Block im
-  `AddColumn`/`AlterColumnDefault`-Pfad jetzt einen
-  BLOCKER-severity `DiffDiagnostic` (vorher WARNING ohne
-  Blocker-Attach), der direkt am `MigrationBlocker.diagnostics`
-  hängt — gleiche Report-Semantik wie die Sequence-Op-Pfade.
-  `MysqlDiffRenderContext.addBlocker(reason, opIds,
-  diagnostics)` und `recordDiagnostic(...)` neu (letzteres
-  schreibt in den Diagnostic-Stream ohne `rendered`/`skipped` zu
-  berühren, sodass die `rendered ∩ skipped = ∅`-Invariante des
-  `MigrationDdlResult` bei vorab emittierter Column-DDL nicht
-  verletzt wird).
-
-### Added
 
 - **0.9.7 E.3 Folge-Slice — Sequence preserveCurrentValue
   (Sub-Slices A–E)** *(2026-05-21)* — neue, opt-in pro Sequenz
@@ -1313,86 +1127,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   across all five object classes, and the engine-verified
   down-body recovery now ship together.
 
-### Changed
-
-- **0.9.7 E.2 Trigger-Rendering — data-class extensions on
-  published types**: `OperationRisk` (hexagon:core) gains a new
-  `hasGap: Boolean = false` field; `MigrationBlockedReason`
-  (hexagon:ports-read) appends two enum values at the tail
-  (`TRIGGER_NAME_COLLISION`, `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`).
-  Source-compatible for callers that use named arguments; **callers
-  that use positional `OperationRisk(...)` constructors or
-  positional `.copy(...)` must migrate to named arguments** because
-  the `hasGap` field sits before the trailing
-  `notes: List<DiffDiagnostic>` field. Existing enum ordinals stay
-  stable per the documented append-at-end convention; the
-  `MigrationDdlResultTest` enum-order pin (`RENAME_MAPPING_INVALID`
-  ordinal = 7) was extended to assert the new entries at indices 8
-  and 9. The
-  `SqliteDiffSqlBuilders.createTriggerSql(...)` builder — shared
-  between the new standalone trigger renderer and the existing
-  Phase H.3a rebuild-pipeline trigger-recreation path — now
-  normalises a trailing `;` out of the body before wrapping in
-  `BEGIN..END;`. Rebuild-pipeline output stays bit-identical to the
-  standalone renderer; goldenness fixtures that asserted via
-  `startsWith("CREATE TRIGGER ...")` are not affected, but any
-  fixture that pinned an embedded trailing-`;` body will see one
-  less terminator.
-
-- **E.1 Routine-Migration Slice F.11** — MySQL-family routine
-  capability is now vendor-aware. The neutral `MYSQL` dialect
-  defaults to Oracle MySQL semantics, where stored routines do not
-  support `CREATE OR REPLACE`; file-to-file MySQL routine replaces
-  therefore use the existing dependency-guarded `DROP` + `CREATE`
-  fallback instead of emitting invalid Oracle MySQL SQL. Live
-  MariaDB targets are detected through `MysqlServerVersion.vendor`
-  (`SELECT VERSION()` values such as `10.11.6-MariaDB`) and keep
-  `CREATE OR REPLACE` enabled. `DdlGenerationOptions` defaults to
-  the conservative Oracle MySQL capability so direct renderer calls
-  are safe unless tests or future config explicitly opt into the
-  MariaDB capability.
-
-- **E.1 Routine-Migration Slice D.4** — `DependencyGuardEvaluator`
-  body now drives the SAFE / UNSAFE decision from the real
-  dependency-edge graph populated by Slices D.1 / D.2 / D.3
-  instead of the Slice-C.3 "any co-resident op == UNSAFE"
-  stub heuristic. An op is `SAFE` when no other op in the plan
-  has a declared incoming or outgoing edge to it; any declared
-  edge in either direction flips it to `UNSAFE`. Cross-plan
-  edge ids (already dropped by the topological sorter as
-  unresolvable) are ignored. The public signature
-  `evaluate(plan, op)` is unchanged, so the MySQL renderer's
-  consult sites compile without edits.
-
-  The MySQL renderer's INFO-severity guard annotation switches
-  from `DEPENDENCY_GUARD_HEURISTIC` to
-  `DEPENDENCY_GUARD_TOPOLOGY` to reflect that the bewertung is
-  no longer a stub. `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`
-  stays active — implicit-commit atomicity is orthogonal to
-  the evaluator change.
-
-  Practical consequence: the Slice-C.3 test that pinned
-  "ReplaceFunction blocks when ANY co-resident op is in the
-  plan" no longer makes sense — the stub was the only reason
-  that path blocked. It is replaced by two D.4 tests:
-   * one constructs a true `dependencies.tables` edge from the
-     routine to a co-resident `CreateTable` and pins that the
-     evaluator finds the edge, returns UNSAFE, and the renderer
-     blocks with `ROUTINE_CAPABILITY_DISABLED`;
-   * the other keeps the same plan shape but removes the
-     declared edge, pins that the evaluator returns SAFE, and
-     the renderer falls back to `DROP + CREATE` with the
-     non-atomicity warning.
-
-  `DependencyGuardEvaluatorTest` is rewritten end-to-end:
-  isolated → SAFE, co-resident-without-edges → SAFE,
-  outgoing-edge → UNSAFE, incoming-edge → UNSAFE,
-  cross-plan-edge-id → ignored, mixed-routine-kind without
-  edges → SAFE. Plan-2 §9 E.1 status updated to mark D.4
-  landed.
-
-### Added
-
 - **E.1 Routine-Migration Slice D.3** — MySQL trigger reader now
   surfaces the owning-table edge into `DependencyInfo` so the
   Slice-D.1 `RoutineDependencyAnalyzer` can build the
@@ -1513,25 +1247,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   render pipeline thread the version through to
   `DdlGenerationOptions`. PostgreSQL renderers and tests stay
   byte-identical.
-
-### Changed
-
-- **E.1 Routine-Migration Slice C.1.b** — PostgreSQL function and
-  procedure renderers emit the canonical `ROUTINE_DOWN_BODY_UNKNOWN`
-  diagnostic code instead of the older Replace-specific
-  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` when `--generate-rollback`
-  blocks because the prior routine body is unknown. The change is
-  diagnostic-only: blocker reason (`ROLLBACK_NOT_POSSIBLE`),
-  message text, and SQL output stay identical. Test pins in
-  `PostgresDiffFunctionOpsTest` / `PostgresDiffProcedureOpsTest`
-  and the `--generate-rollback` row in `spec/cli-spec.md` §6.1
-  follow. The Replace-Up variant `ROUTINE_REPLACE_UP_BODY_UNKNOWN`
-  stays as-is — a missing after-body on Replace is structurally
-  different from a missing rollback target. Plan §1 sees the
-  generic code as authoritative; MySQL slices (C.2+) will emit
-  only the generic code from the start.
-
-### Added
 
 - **E.1 Routine-Migration Slice C.1.a** — Capability + Debug-Body
   infrastructure for the upcoming MySQL routine renderer (Slice C.2).
@@ -1694,6 +1409,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **0.9.7 Port-Refactor — `DdlDialectContext`** *(2026-05-27)* —
+  `DdlGenerationOptions` trug bislang nullable `mysql*` /
+  `sqlite*`-Felder parallel am Top-Level (`mysqlNamedSequenceMode`,
+  `mysqlServerVersion`, `mysqlSequenceCanonicity`, `routineCapability`
+  mit MySQL-flavored Default, `liveSqliteCatalog`,
+  `sqliteCastPreflights`, `catalogProbeMode`). Diese sind jetzt in
+  einen sealed `DdlDialectContext` mit Varianten `None`, `MySql(...)`,
+  `Sqlite(...)` gewandert. Renderer/Tests greifen über die neuen
+  Extension-Properties `options.mysqlContext` / `options.sqliteContext`
+  zu. Dialekt-neutrale Felder (`spatialProfile`, `executionMode`,
+  `checkPreflights`, `extension*`, `strictGapOperations`,
+  `generatedAt`, `deterministic`, `deferForeignKeys`) bleiben am
+  Top-Level. 30 Files migriert, semantisch identisch.
+
+  Plan-Doc: `docs/planning/done/sqlite-sequence-emulation-plan.md`
+  Phase B.0; Memory-Pin: `feedback_hexagon_dialect_context`.
+
+- **0.9.7 E.2 Folge-Slice — SQLite Trigger Reverse-Read
+  (Sub-Slices A–E)** *(2026-05-22)* — neuer token-basierter
+  `SqliteTriggerSqlParser` ersetzt den regex-/substring-basierten
+  `SqliteTypeMapping.parseTriggerSql`. Reverse-Read aus
+  `sqlite_master.sql` populiert jetzt `forEach`, `condition`
+  (WHEN-Klausel) und einen Round-Trip-symmetrischen `body` (genau
+  ein trailing `;` vor `END` wird gestrippt, weil der Renderer
+  unconditional `;\nEND;` anhängt — sonst driften Bodies nach
+  ein paar Cycles zu `...;;`).
+
+  Diagnostics:
+    - `R210` / `R211` werden zu `ACTION_REQUIRED` (vorher `WARNING`),
+      wenn die `CREATE TRIGGER`-Grammatik nicht parsebar ist.
+    - Neu: `R212` (`ACTION_REQUIRED`) für schema-qualifizierte
+      Trigger-Namen oder Target-Tabellen (`main.trg`, `aux.t`).
+      Betroffene Trigger werden aus dem Reverse-Read-Ergebnis
+      ausgeschlossen, kein `TriggerDefinition` wird gebaut.
+    - Neu: `R213` (`WARNING`) für `UPDATE OF <cols>`-Spaltenliste —
+      das neutrale Modell behandelt UPDATE als whole-row.
+
+  Auswirkung: `schema compare` zwischen zwei SQLite-Live-DBs mit
+  identischen WHEN-getragenen Triggern emittiert keine spurious
+  False-Positive-Diffs mehr; `schema migrate` (file-to-DB) gegen
+  SQLite triggert keinen `Drop+Create`-Replace mehr, wenn das
+  Source-File und das Live-DB-Trigger semantisch übereinstimmen.
+
+  **Breaking-Change-Note**: alte Live-DBs mit unparseable
+  Trigger-DDL surfen jetzt als `ACTION_REQUIRED` statt `WARNING`.
+  Tooling, das `notes.severity` filtert, sollte beide Severities
+  akzeptieren, bevor 0.9.7 ausgerollt wird.
+
+  Plan-Doc:
+  `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`.
+
+- **0.9.7 E.2 Trigger-Rendering — data-class extensions on
+  published types**: `OperationRisk` (hexagon:core) gains a new
+  `hasGap: Boolean = false` field; `MigrationBlockedReason`
+  (hexagon:ports-read) appends two enum values at the tail
+  (`TRIGGER_NAME_COLLISION`, `TRIGGER_BODY_NOT_FUNCTION_REFERENCE`).
+  Source-compatible for callers that use named arguments; **callers
+  that use positional `OperationRisk(...)` constructors or
+  positional `.copy(...)` must migrate to named arguments** because
+  the `hasGap` field sits before the trailing
+  `notes: List<DiffDiagnostic>` field. Existing enum ordinals stay
+  stable per the documented append-at-end convention; the
+  `MigrationDdlResultTest` enum-order pin (`RENAME_MAPPING_INVALID`
+  ordinal = 7) was extended to assert the new entries at indices 8
+  and 9. The
+  `SqliteDiffSqlBuilders.createTriggerSql(...)` builder — shared
+  between the new standalone trigger renderer and the existing
+  Phase H.3a rebuild-pipeline trigger-recreation path — now
+  normalises a trailing `;` out of the body before wrapping in
+  `BEGIN..END;`. Rebuild-pipeline output stays bit-identical to the
+  standalone renderer; goldenness fixtures that asserted via
+  `startsWith("CREATE TRIGGER ...")` are not affected, but any
+  fixture that pinned an embedded trailing-`;` body will see one
+  less terminator.
+
+- **E.1 Routine-Migration Slice F.11** — MySQL-family routine
+  capability is now vendor-aware. The neutral `MYSQL` dialect
+  defaults to Oracle MySQL semantics, where stored routines do not
+  support `CREATE OR REPLACE`; file-to-file MySQL routine replaces
+  therefore use the existing dependency-guarded `DROP` + `CREATE`
+  fallback instead of emitting invalid Oracle MySQL SQL. Live
+  MariaDB targets are detected through `MysqlServerVersion.vendor`
+  (`SELECT VERSION()` values such as `10.11.6-MariaDB`) and keep
+  `CREATE OR REPLACE` enabled. `DdlGenerationOptions` defaults to
+  the conservative Oracle MySQL capability so direct renderer calls
+  are safe unless tests or future config explicitly opt into the
+  MariaDB capability.
+
+- **E.1 Routine-Migration Slice D.4** — `DependencyGuardEvaluator`
+  body now drives the SAFE / UNSAFE decision from the real
+  dependency-edge graph populated by Slices D.1 / D.2 / D.3
+  instead of the Slice-C.3 "any co-resident op == UNSAFE"
+  stub heuristic. An op is `SAFE` when no other op in the plan
+  has a declared incoming or outgoing edge to it; any declared
+  edge in either direction flips it to `UNSAFE`. Cross-plan
+  edge ids (already dropped by the topological sorter as
+  unresolvable) are ignored. The public signature
+  `evaluate(plan, op)` is unchanged, so the MySQL renderer's
+  consult sites compile without edits.
+
+  The MySQL renderer's INFO-severity guard annotation switches
+  from `DEPENDENCY_GUARD_HEURISTIC` to
+  `DEPENDENCY_GUARD_TOPOLOGY` to reflect that the bewertung is
+  no longer a stub. `MYSQL_ROUTINE_DROP_CREATE_NON_ATOMIC`
+  stays active — implicit-commit atomicity is orthogonal to
+  the evaluator change.
+
+  Practical consequence: the Slice-C.3 test that pinned
+  "ReplaceFunction blocks when ANY co-resident op is in the
+  plan" no longer makes sense — the stub was the only reason
+  that path blocked. It is replaced by two D.4 tests:
+   * one constructs a true `dependencies.tables` edge from the
+     routine to a co-resident `CreateTable` and pins that the
+     evaluator finds the edge, returns UNSAFE, and the renderer
+     blocks with `ROUTINE_CAPABILITY_DISABLED`;
+   * the other keeps the same plan shape but removes the
+     declared edge, pins that the evaluator returns SAFE, and
+     the renderer falls back to `DROP + CREATE` with the
+     non-atomicity warning.
+
+  `DependencyGuardEvaluatorTest` is rewritten end-to-end:
+  isolated → SAFE, co-resident-without-edges → SAFE,
+  outgoing-edge → UNSAFE, incoming-edge → UNSAFE,
+  cross-plan-edge-id → ignored, mixed-routine-kind without
+  edges → SAFE. Plan-2 §9 E.1 status updated to mark D.4
+  landed.
+
+- **E.1 Routine-Migration Slice C.1.b** — PostgreSQL function and
+  procedure renderers emit the canonical `ROUTINE_DOWN_BODY_UNKNOWN`
+  diagnostic code instead of the older Replace-specific
+  `ROUTINE_REPLACE_DOWN_BODY_UNKNOWN` when `--generate-rollback`
+  blocks because the prior routine body is unknown. The change is
+  diagnostic-only: blocker reason (`ROLLBACK_NOT_POSSIBLE`),
+  message text, and SQL output stay identical. Test pins in
+  `PostgresDiffFunctionOpsTest` / `PostgresDiffProcedureOpsTest`
+  and the `--generate-rollback` row in `spec/cli-spec.md` §6.1
+  follow. The Replace-Up variant `ROUTINE_REPLACE_UP_BODY_UNKNOWN`
+  stays as-is — a missing after-body on Replace is structurally
+  different from a missing rollback target. Plan §1 sees the
+  generic code as authoritative; MySQL slices (C.2+) will emit
+  only the generic code from the start.
+
 - **`JsonCanonicalizer`**: converted from `internal object` to
   `internal class JsonCanonicalizer(unicodeText: UnicodeTextService)`
   so JCS NFC normalization runs through the port instead of a
@@ -1705,7 +1562,130 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **0.9.7 F.4 Renderer-Blocker-Bridge — preserve `OBJECT_RENAME_UNSUPPORTED`
+  as `primaryBlockedReason`** *(2026-05-19)* — `PostgresDiffRenderContext`,
+  `MysqlDiffRenderContext` and `SqliteDiffRenderContext` used to wrap
+  every planner-emitted BLOCKER diagnostic into a single
+  `MigrationBlocker(reason = DIALECT_UNSUPPORTED_OPERATION)`,
+  collapsing the F.4-specific
+  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` reason that the
+  Mapper / Planner had set per F.4 plan-doc §5.2.
 
+  The fix introduces a `PlannerBlockerClassifier` in
+  `hexagon:ports-read` that maps `DiffDiagnostic.code →
+  MigrationBlockedReason` with the initial entry
+  `"OBJECT_RENAME_UNSUPPORTED" →
+  MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` and a
+  conservative default to `DIALECT_UNSUPPORTED_OPERATION` so legacy
+  codes (`CONSTRAINT_NOT_DIFFABLE`,
+  `MATERIALIZED_VIEW_DIFF_UNSUPPORTED`, etc.) keep their pre-F.4
+  contract. The three render contexts now group planner-blockers
+  by classified reason and emit one `MigrationBlocker` per reason,
+  so a Materialized-View-Rename / body-drift / missing-body rename
+  candidate surfaces `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`
+  end-to-end while a co-existing `CONSTRAINT_NOT_DIFFABLE` keeps its
+  legacy `DIALECT_UNSUPPORTED_OPERATION` reason.
+
+  **Breaking-change-note for downstream consumers**: the report
+  field `summary.primaryBlockedReason` for F.4
+  materialized-view-rename and body-drift routine/trigger
+  scenarios now reads `OBJECT_RENAME_UNSUPPORTED` instead of
+  `DIALECT_UNSUPPORTED_OPERATION`. Existing tooling that pinned
+  the old reason as primary for these scenarios needs to widen its
+  expectation. The H.3 audit found no in-tree consumer that did so,
+  and the enum value
+  `MigrationBlockedReason.OBJECT_RENAME_UNSUPPORTED` has existed
+  since F.4 A.1 (2026-05-18) — only the wiring through the
+  renderer wrap was missing.
+
+  New tests:
+    - `PlannerBlockerClassifierTest` (`hexagon:ports-read`) pins the
+      mapping + the public `OBJECT_RENAME_UNSUPPORTED_CODE`
+      constant.
+    - `PostgresDiffObjectRenameTest` / `MysqlDiffObjectRenameTest` /
+      `SqliteDiffObjectRenameTest` each get a sibling case that
+      drives the full `planner.plan(...) → gen.generateUp(...)`
+      pipeline through a mapper-only-block scenario
+      (materialized-view rename on PG, trigger-body-drift on
+      MySQL / SQLite — both surface
+      `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED`).
+    - `SchemaMigrateRunnerTest` gets an end-to-end pin that the
+      report-emit pipeline carries the new primary reason through
+      to stdout.
+
+  §11 DoD Box (b) Carve-out (committed in `ffc6970e`) is resolved.
+  Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`.
+
+- **0.9.7 E.3 Folge-Slice — MySQL Sequence Drift-Check
+  Plan-Compliance-Fixes** *(2026-05-20)* — zwei Verhaltensabwei-
+  chungen zwischen Plan-Doc und Implementierung des Drift-Checks
+  korrigiert:
+  - `MysqlSequenceCanonicityGate` routet jetzt
+    `MISSING + DROP` für `SEQUENCE_ROW` und `SUPPORT_TABLE` als
+    Block (`E124_MYSQL_SEQUENCE_MISSING_FOR_DROP` →
+    `MANUAL_ACTION_REQUIRED`). Plan-Doc §3.1 hatte das schon
+    immer als "Missing → UPDATE/DELETE-Path: Block"
+    deklariert; Renderer war auf `OpIntent.DROP` schon korrekt
+    verdrahtet, das Gate hat es aber durchgewunken. Routinen
+    und Column-Trigger fallen weiterhin auf Proceed durch, weil
+    das `DELETE FROM dmg_sequences` sie nicht braucht und das
+    column-trigger-Drop ohnehin idempotent ist.
+  - `MysqlSequenceCanonicityProbeAdapter` verifiziert
+    Routine- und Trigger-Bodies jetzt jenseits des
+    Marker-Substrings: der Body zwischen `BEGIN` und letztem
+    `END` wird normalisiert (backticks raus, lowercase,
+    whitespace kollabiert) und gegen die kanonische Form aus
+    `MysqlSequenceEmulationTemplates` verglichen. Driftet ein
+    operator-bearbeiteter Routine-/Trigger-Body bei intaktem
+    Marker → `body_signature`-Drift mit Preview im Report.
+    Für Trigger zusätzlich `sequence_reference`-Check: der
+    tatsächliche `dmg_nextval('…')`-Call muss den Sequence-
+    Namen referenzieren, den der Plan erwartet — ein
+    operator-verschobener Trigger (Marker stehen lassen, Call
+    auf andere Sequence umbiegen) bricht jetzt sichtbar.
+
+- **0.9.7 E.3 Folge-Slice — Drift-Check Trigger-Gate für reine
+  Column-Default-Migrationen + Naming-Lift** *(2026-05-20)* —
+  Lücke geschlossen, in der `AddColumn` /
+  `AlterColumnDefault` mit `SequenceNextVal`-Default ihren
+  `DROP + CREATE TRIGGER`-Block ohne Probe-Konsultation
+  ausführten, weil `MysqlSequenceCanonicityStage` auf
+  `!hasSequenceOps(plan)` short-circuitete: ein
+  operator-modifizierter Trigger wurde stillschweigend
+  überschrieben. `hasSequenceOps` → `hasSequenceRelatedOps`
+  zählt jetzt auch Column-Ops mit `SequenceNextVal`-Default;
+  `MigrationPreflightPlanner` emittiert pro solcher Column-Op
+  eine SUPPORT_TRIGGER `NOT_RUN_*`-Declaration; der
+  Stage-Failure-Stamping pflegt SUPPORT_TRIGGER-Declarations mit
+  kanonischem Trigger-Namen. `MysqlSequenceSupportNaming` wurde
+  nach `hexagon/ports-read` gehoben, sodass Stage (application),
+  Renderer (driver-mysql) und Probe-Runner (driving/cli)
+  dieselbe Naming-Quelle verwenden; das driver-side
+  `MysqlSequenceNaming` ist nun Facade darüber.
+
+- **0.9.7 E.3 Folge-Slice — Report-Renderer + BLOCKER-
+  Diagnostic-Symmetrie** *(2026-05-20)* —
+  `SchemaMigrateReportRenderer` emittierte
+  `mysqlSequenceCanonicity` weder in JSON noch in YAML, obwohl
+  das DTO befüllt wurde — Operatoren sahen den
+  Plan-dokumentierten Feldnamen, aber nie die tatsächlichen
+  Declarations. Beide Renderer geben das Feld jetzt aus
+  (JSON-Projection in eigenem
+  `SchemaMigratePreflightRenderers`-Object, damit der
+  Main-Renderer unter Detekt's `TooManyFunctions`-Budget bleibt).
+  Zusätzlich trägt der Trigger-Drift-Block im
+  `AddColumn`/`AlterColumnDefault`-Pfad jetzt einen
+  BLOCKER-severity `DiffDiagnostic` (vorher WARNING ohne
+  Blocker-Attach), der direkt am `MigrationBlocker.diagnostics`
+  hängt — gleiche Report-Semantik wie die Sequence-Op-Pfade.
+  `MysqlDiffRenderContext.addBlocker(reason, opIds,
+  diagnostics)` und `recordDiagnostic(...)` neu (letzteres
+  schreibt in den Diagnostic-Stream ohne `rendered`/`skipped` zu
+  berühren, sodass die `rendered ∩ skipped = ∅`-Invariante des
+  `MigrationDdlResult` bei vorab emittierter Column-DDL nicht
+  verletzt wird).
+
+## [0.9.6] - 2026-05-08
 
 ### Added
 
