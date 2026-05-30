@@ -184,11 +184,28 @@ internal class StdioHarness(
          * collapse to typed outcomes too; tests should pattern-match
          * on the sealed [StartOutcome].
          */
+        /**
+         * @param wiringBundleOverride pre-built wiring + audit sink
+         *   used by `OperationalHarness` so the caller can compose
+         *   `OperationalMcpWiring + AiMcpWiring + components` AGAINST
+         *   the same runtime wiring the bootstrap sees. When `null`,
+         *   the integration default ([IntegrationFixtures.integrationWiring])
+         *   is used as before.
+         * @param componentsOverride C-MCP per plan-doc §5.3 explicitly
+         *   requires the AI-composed components to be passed to
+         *   `McpServerBootstrap.startStdio(components = …)`. The default
+         *   bootstrap path computes them from `runtimeWiring` via
+         *   `McpRuntimeRegistries.defaultComponents` and would miss the
+         *   `McpCoreJobWorkerFactory` + AI-registry wiring. When
+         *   `null`, the bootstrap default applies (E1 harness path).
+         */
         @Suppress("LongMethod")
         fun tryStart(
             stateDir: Path,
             principal: PrincipalContext,
             limits: dev.dmigrate.mcp.server.McpLimitsConfig = dev.dmigrate.mcp.server.McpLimitsConfig(),
+            wiringBundleOverride: IntegrationFixtures.IntegrationWiring? = null,
+            componentsOverride: dev.dmigrate.mcp.registry.McpRuntimeRegistries.McpServiceComponents? = null,
         ): StartOutcome {
             // §6.24 + §6.21: acquire the advisory lock BEFORE any
             // wiring or pipe construction so a conflicting start
@@ -200,7 +217,8 @@ internal class StdioHarness(
                 is McpStateDirLock.AcquireOutcome.Failed -> return StartOutcome.LockFailed(r.message)
             }
 
-            val wiringBundle = IntegrationFixtures.integrationWiring(stateDir, limits = limits)
+            val wiringBundle = wiringBundleOverride
+                ?: IntegrationFixtures.integrationWiring(stateDir, limits = limits)
             val clientOut = PipedOutputStream()
             val serverIn = PipedInputStream(clientOut, PIPE_BUFFER_BYTES)
             val serverOut = PipedOutputStream()
@@ -233,6 +251,11 @@ internal class StdioHarness(
             )
             val token = "it-test-token-${java.util.UUID.randomUUID()}"
             val tokenStore = StubStdioTokenStore.forPrincipal(principal, token)
+            val bootstrapComponents = componentsOverride
+                ?: dev.dmigrate.mcp.registry.McpRuntimeRegistries.defaultComponents(
+                    wiringBundle.wiring,
+                    config.scopeMapping,
+                )
             val outcome = McpServerBootstrap.startStdio(
                 config = config,
                 input = serverIn,
@@ -240,6 +263,7 @@ internal class StdioHarness(
                 runtimeWiring = wiringBundle.wiring,
                 tokenStoreOverride = tokenStore,
                 tokenSupplier = { token },
+                components = bootstrapComponents,
             )
             val handle = when (outcome) {
                 is McpStartOutcome.Started -> outcome.handle
