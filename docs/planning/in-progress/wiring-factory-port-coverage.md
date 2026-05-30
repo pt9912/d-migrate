@@ -157,6 +157,10 @@ Exit-Code-Verzweigung.
 
 ### Phase D — `SchemaCompareWiring`
 
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add schema compare factory port` (Phase-D-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`.
+
 - Wegen `dbLoader`-Inline-Lambda mit Phase-1/2-Exception-Routing
   einer der wertvollsten Pfade.
 - Bundle muss `fileLoader` + `dbLoader` separat führen, damit Tests
