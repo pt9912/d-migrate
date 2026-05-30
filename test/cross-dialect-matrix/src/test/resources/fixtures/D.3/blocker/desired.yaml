@@ -1,0 +1,25 @@
+schema_format: "1.0"
+name: "matrix-D3-desired"
+version: "1.0.0"
+
+tables:
+  orders:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      status:
+        type: text
+        max_length: 32
+        required: true
+    primary_key: [id]
+
+views:
+  order_count:
+    description: "Materialized count of all orders"
+    materialized: true
+    query: |
+      SELECT COUNT(*) AS total FROM orders
+    dependencies:
+      tables: [orders]
+    source_dialect: postgresql

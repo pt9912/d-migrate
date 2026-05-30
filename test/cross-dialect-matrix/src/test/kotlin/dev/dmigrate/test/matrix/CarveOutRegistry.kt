@@ -53,6 +53,15 @@ internal class CarveOutRegistry private constructor(
      * the entire cross-product for a workstream. Wildcards keep the
      * carve-out YAML manageable when 17 unpinned workstreams each
      * contribute 6 cells.
+     *
+     * **Permanent vs provisional** — Sub-Slice B-Vervollständigung
+     * (plan-doc §6) requires every carve-out to declare whether the
+     * cells are permanently outside the matrix surface
+     * (`permanent: true` + non-empty [ownerTests] pointing to where
+     * the actual coverage lives) or provisional follow-up work
+     * (`permanent: false`, deferred to a later slice). The sweep
+     * test rejects permanent entries without `ownerTests` so a
+     * carve-out cannot quietly become a coverage hole.
      */
     data class Entry(
         val workstream: String,
@@ -62,6 +71,24 @@ internal class CarveOutRegistry private constructor(
         val kind: MatrixCell.Kind?,
         val reason: String,
         val planRef: String,
+        /**
+         * `true` — the cell is intentionally outside the matrix
+         * surface and the listed [ownerTests] are the authoritative
+         * coverage. `false` — provisional carve-out, follow-up
+         * pinning is expected in a later slice. Defaults to `false`
+         * for backwards compatibility with the pre-B-Vervollst
+         * YAML format.
+         */
+        val permanent: Boolean,
+        /**
+         * Test-module paths that cover the workstream when
+         * `permanent = true`. Required to be non-empty for permanent
+         * entries; empty list for provisional carve-outs. The paths
+         * are informational (no auto-link verification today) but
+         * must reference real source locations so a future maintainer
+         * can trace from the carve-out to the coverage.
+         */
+        val ownerTests: List<String>,
     ) {
         fun matches(cell: MatrixCell): Boolean =
             workstream == cell.workstream &&
@@ -93,12 +120,27 @@ internal class CarveOutRegistry private constructor(
             return CarveOutRegistry(entries)
         }
 
+        @Suppress("UNCHECKED_CAST")
         private fun parseEntry(idx: Int, item: Map<String, Any?>): Entry {
             val workstream = requireString(item, "workstream", idx)
             val dialectSlug = requireString(item, "dialect", idx)
             val kindSlug = requireString(item, "kind", idx)
             val reason = requireString(item, "reason", idx)
             val planRef = requireString(item, "planRef", idx)
+            val permanent = item["permanent"] as? Boolean ?: false
+            val ownerTestsRaw = item["ownerTests"] as? List<Any?> ?: emptyList()
+            val ownerTests = ownerTestsRaw.map {
+                val s = it?.toString()?.trim().orEmpty()
+                require(s.isNotEmpty()) {
+                    "carve-outs.yaml entry #$idx: ownerTests entries must be non-blank strings"
+                }
+                s
+            }
+            if (permanent) {
+                require(ownerTests.isNotEmpty()) {
+                    "carve-outs.yaml entry #$idx (workstream=$workstream): permanent=true requires a non-empty ownerTests list."
+                }
+            }
             val dialect = if (dialectSlug == WILDCARD) null else {
                 DatabaseDialect.values().firstOrNull { it.name.lowercase() == dialectSlug.lowercase() }
                     ?: error("carve-outs.yaml entry #$idx: unknown dialect '$dialectSlug'")
@@ -113,6 +155,8 @@ internal class CarveOutRegistry private constructor(
                 kind = kind,
                 reason = reason,
                 planRef = planRef,
+                permanent = permanent,
+                ownerTests = ownerTests,
             )
         }
 

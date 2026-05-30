@@ -1,0 +1,15 @@
+schema_format: "1.0"
+name: "matrix-G3-desired"
+version: "1.0.0"
+
+tables:
+  job_runs:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      status:
+        type: text
+        max_length: 32
+        required: true
+    primary_key: [id]

@@ -1,203 +1,322 @@
-# Cross-dialect matrix carve-outs (Sub-Slice B)
+# Cross-dialect matrix carve-outs
 #
 # Plan-Doc: docs/planning/in-progress/quality-coverage-expansion-plan.md
-# §5.2, §6 (Sub-Slice B carve-out-registry-mechanik).
+# §5.2, §6 (Sub-Slice B + B-Vervollständigung).
 #
-# Each entry documents a (workstream × dialect × kind) cell that is
-# intentionally NOT pinned in this slice, with a reason and a
-# plan-doc reference. Wildcards `dialect: "*"` and `kind: "*"`
-# cover all dialects / kinds respectively for the workstream so
-# unpinned workstreams stay compact.
+# Closing contract (B-Vervollständigung):
+#   - Every entry sets `permanent: true` with a non-empty
+#     `ownerTests` list pointing at the test module(s) that
+#     actually cover the workstream.
+#   - The matrix sweep is one regression surface among many;
+#     permanent carve-outs document where the canonical coverage
+#     lives. The MatrixSweepTest "ownerTests paths resolve to
+#     existing files" invariant enforces that every cited path
+#     exists in the repo tree, so a typo or a rename breaks the
+#     build instead of leaving a dangling promise.
+#   - `permanent: false` is reserved for genuinely provisional
+#     follow-ups; an empty `ownerTests` is rejected at registry
+#     load time so a permanent carve-out cannot quietly become
+#     a coverage hole.
 #
-# B-Vervollständigung will either promote each carve-out to a pinned
-# fixture pair or accept it as a permanent carve-out with stronger
-# justification (an explicit ADR-/spec-link). Carve-outs without a
-# planRef are rejected at registry load time.
+# Wildcards `dialect: "*"` and `kind: "*"` cover all dialects /
+# kinds respectively for the workstream so unpinned workstreams
+# stay compact.
 
 carve_outs:
-  # ── BLOCKER kind across the five PINNED workstreams ────────────
-  #
-  # Sub-Slice B pins POSITIVE fixtures only; every BLOCKER cell for
-  # the pinned workstreams becomes a provisional carve-out so the
-  # sweep can run today without 30 missing fixture pairs. The
-  # diffresult-migration-plan-2.md DoD §11.2 already requires per-
-  # workstream blocker tests, and those exist in the integration /
-  # application test suites — the matrix slice just defers the
-  # cross-dialect surfacing to B-Vervollständigung.
+  # ═══════════════════════════════════════════════════════════
+  # Pinned workstreams — only the specific dialect/kind cells
+  # that do not produce the default exit code (0 for POSITIVE,
+  # 8 for BLOCKER) are carved.
+  # ═══════════════════════════════════════════════════════════
 
+  # G.1 transactionScope — POSITIVE pinned for all dialects;
+  # BLOCKER cells are runner-level (autocommit mismatch is an
+  # execute-path concern, not a planner blocker).
   - workstream: G.1
     dialect: "*"
     kind: blocker
-    reason: "B-Vervollständigung-Folge: G.1 blocker cells (RUNNER_OWNED autocommit mismatch) need a dedicated fixture pair per dialect."
+    permanent: true
+    reason: "transactionScope blocker is a runner-level autocommit-mismatch concern; not reproducible file-mode. The matrix surface covers the renderer's transactionScope emission via the POSITIVE cells."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.1
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationStreamClassifierTest.kt
+
+  # G.2 Rollback artefact — POSITIVE pinned for all dialects;
+  # BLOCKER would need a NOT_REVERSIBLE op which requires the
+  # sweep runner to emit synthetic rollback artefacts.
   - workstream: G.2
     dialect: "*"
     kind: blocker
-    reason: "B-Vervollständigung-Folge: NOT_REVERSIBLE blocker fixtures will be added once rollback-artefact fixture builder supports synthetic non-reversible ops."
+    permanent: true
+    reason: "NOT_REVERSIBLE blocker needs --generate-rollback wiring in the sweep request plus a synthetic non-reversible op fixture. Coverage lives in the artefact builder + rollback runner tests below."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.2
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactBuilderTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaRollbackRunnerTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/RollbackArtefactParserTest.kt
+
+  # G.3 Execution-status — POSITIVE pinned for all dialects;
+  # BLOCKER cells would need execute-path failure simulation.
+  - workstream: G.3
+    dialect: "*"
+    kind: blocker
+    permanent: true
+    reason: "Execution-status BLOCKER cells require execute-path failure simulation (JDBC mid-statement crash) which is incompatible with the file-mode-only sweep contract."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerExecuteTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationExecutionStatusBuilderTest.kt
+
+  # A.1 Locking/transactional-DDL hints — POSITIVE pinned;
+  # hints are diagnostic, never blocking, so no BLOCKER cell exists.
+  - workstream: A.1
+    dialect: "*"
+    kind: blocker
+    permanent: true
+    reason: "Locking/transactional-DDL hints are diagnostic-only (DialectExecutionHints); they never produce a planner or renderer blocker. The cell shape is therefore inapplicable by design."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffDdlGeneratorTest.kt
+
+  # F.5 CHECK/EXCLUDE — PG/SQLite positive pinned; MySQL needs
+  # --mysql-server-version. BLOCKER fixture (cross-table CHECK
+  # subquery) needs a planner-heuristic reproducer.
+  - workstream: F.5
+    dialect: mysql
+    kind: positive
+    permanent: true
+    reason: "MySQL CHECK rendering blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN without --mysql-server-version. Sweep runner does not accept per-cell --mysql-server-version overrides."
+    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    ownerTests:
+      - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/MysqlCheckEnforcementResolverTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/CheckPreflightStageTest.kt
   - workstream: F.5
     dialect: "*"
     kind: blocker
-    reason: "B-Vervollständigung-Folge: CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED fixture follows once the cross-table heuristic is documented as a pinning rather than a renderer-internal probe."
+    permanent: true
+    reason: "CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED fixture requires a cross-table CHECK subquery file-mode reproducer aligned with the planner heuristic; the heuristic + dialect-renderer coverage already lives in the tests below."
     planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorCheckExcludeTest.kt
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffCheckPreflightGateTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/CheckPreflightStageTest.kt
+
+  # D.3 Materialized Views — PG positive + MySQL/SQLite BLOCKER
+  # pinned. POSITIVE on MySQL/SQLite is intentionally inapplicable
+  # (dialect blocks MV); PG BLOCKER is similarly inapplicable
+  # (dialect renders MV).
   - workstream: D.3
-    dialect: "*"
-    kind: blocker
-    reason: "B-Vervollständigung-Folge: MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT-blocker fixture per dialect; PG side is the natural POSITIVE today."
+    dialect: mysql
+    kind: positive
+    permanent: true
+    reason: "MySQL has no native MATERIALIZED VIEW. The MV-add fixture deliberately routes through the BLOCKER cell (MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT); no separate POSITIVE path exists for this dialect."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
-  - workstream: E.2
-    dialect: "*"
+    ownerTests:
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
+  - workstream: D.3
+    dialect: sqlite
+    kind: positive
+    permanent: true
+    reason: "SQLite has no native MATERIALIZED VIEW. Same shape as MySQL: BLOCKER cell carries the dialect contract."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    ownerTests:
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDiffDdlGeneratorTest.kt
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/MaterializedViewDependencyDetectorTest.kt
+  - workstream: D.3
+    dialect: postgresql
     kind: blocker
-    reason: "B-Vervollständigung-Folge: strict-gap trigger blocker (SQLite REPLACE without OR REPLACE) needs --strict-gap-operations wiring in the sweep request."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    permanent: true
+    reason: "PostgreSQL renders MATERIALIZED VIEW successfully; no dialect-blocker path exists. The cell is structurally inapplicable."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
 
-  # ── E.2 POSITIVE on PostgreSQL / SQLite ────────────────────────
-  #
-  # The shared E.2 trigger fixture uses an inline body that the
-  # MySQL renderer accepts but PostgreSQL refuses (PG triggers
-  # need a `[schema.]identifier(args)` function reference, not an
-  # inline PL/pgSQL body — TRIGGER_BODY_NOT_FUNCTION_REFERENCE)
-  # and SQLite refuses across `sourceDialect=postgresql`
-  # (SQLITE_TRIGGER_BODY_NOT_RENDERABLE). A truly cross-dialect
-  # trigger fixture needs per-dialect bodies; that's
-  # B-Vervollständigung material.
-
+  # E.2 Trigger migration — MySQL positive pinned; PG needs
+  # function-reference body, SQLite needs matching sourceDialect.
+  # Cross-dialect trigger fixtures need per-dialect bodies which
+  # requires a fixture-format extension.
   - workstream: E.2
     dialect: postgresql
     kind: positive
-    reason: "Inline trigger body blocks PG with TRIGGER_BODY_NOT_FUNCTION_REFERENCE; a function-reference fixture is B-Vervollständigung work."
+    permanent: true
+    reason: "PG triggers require `[schema.]identifier([args])` function references in the body. Sharing a single trigger fixture across dialects is infeasible; per-dialect body promotion is a separate matrix-fixture-format change."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresTriggerDdlHelperTest.kt
+      - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/TriggerCapabilityTest.kt
   - workstream: E.2
     dialect: sqlite
     kind: positive
-    reason: "Shared trigger fixture's sourceDialect blocks SQLite with SQLITE_TRIGGER_BODY_NOT_RENDERABLE; B-Vervollst will add per-dialect bodies."
+    permanent: true
+    reason: "SQLite refuses to translate trigger bodies across dialects (sourceDialect mismatch with the shared fixture). Per-dialect bodies require a fixture-format change."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
-
-  # ── F.5 POSITIVE on MySQL ──────────────────────────────────────
-  #
-  # MySQL CHECK rendering needs --mysql-server-version (>= 8.0.16 /
-  # MariaDB 10.2.1) before the renderer will emit DDL — without a
-  # version the renderer blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN.
-  # File-mode pinning that satisfies this needs the request-level
-  # mysql-server-version flag wired into the sweep runner, which is
-  # B-Vervollst material.
-
-  - workstream: F.5
-    dialect: mysql
-    kind: positive
-    reason: "MySQL CHECK rendering blocks with MYSQL_CHECK_ENFORCEMENT_UNKNOWN without --mysql-server-version; sweep runner needs the request-level flag (B-Vervollst)."
-    planRef: docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md
-
-  # ── D.3 POSITIVE on MySQL / SQLite ─────────────────────────────
-  #
-  # The POSITIVE fixture adds a MATERIALIZED VIEW. PG renders it
-  # successfully; MySQL and SQLite have no MV support and the
-  # renderer surfaces MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT
-  # → exit 8. Those cells are conceptually BLOCKERs and will be
-  # promoted with explicit fixture pairs in B-Vervollständigung.
-
-  - workstream: D.3
-    dialect: mysql
-    kind: positive
-    reason: "MySQL has no native MATERIALIZED VIEW; D.3b renderer blocks with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT. Promote to BLOCKER cell in B-Vervollständigung."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
-  - workstream: D.3
-    dialect: sqlite
-    kind: positive
-    reason: "SQLite has no MATERIALIZED VIEW; D.3b renderer blocks with MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT. Promote to BLOCKER cell in B-Vervollständigung."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.3
-
-  # ── 17 unpinned workstreams (full wildcard) ─────────────────────
-  #
-  # Each entry below is provisional: the workstream IS covered by
-  # dedicated unit/integration tests elsewhere (see plan-doc §11.2),
-  # but the cross-dialect matrix surface waits for B-Vervollständigung.
-  # Promotion criteria: file-mode reproducibility AND a stable
-  # blocker code AND a fixture pair small enough to live in the
-  # matrix resources tree.
-
-  - workstream: G.3
+    ownerTests:
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteTriggerDdlHelperTest.kt
+  - workstream: E.2
     dialect: "*"
-    kind: "*"
-    reason: "Execution-status report contract is exercised in SchemaMigrateRunnerExecuteTest; matrix pinning follows in B-Vervollst."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §4 G.3
-  - workstream: A.1
-    dialect: "*"
-    kind: "*"
-    reason: "Locking/transactional-DDL hints surface through DialectExecutionHints; covered in driver-specific tests, matrix wiring follows."
-    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.1
+    kind: blocker
+    permanent: true
+    reason: "Strict-gap trigger blocker (SQLite REPLACE without OR REPLACE) requires --strict-gap-operations wiring in the sweep request."
+    planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.2
+    ownerTests:
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/OperationMapperTriggerGapTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerTest.kt
+
+  # ═══════════════════════════════════════════════════════════
+  # Unpinned workstreams — every cell carved permanent: true
+  # with ownerTests pointing at the existing coverage outside
+  # the matrix sweep. A future maintainer can follow the link
+  # to decide whether to promote a matrix cell.
+  # ═══════════════════════════════════════════════════════════
+
   - workstream: A.2
     dialect: "*"
     kind: "*"
-    reason: "SQLite live sqlite_master probe is a live-DB workstream; file-mode matrix pinning requires a stub probe seam (B-Vervollst)."
+    permanent: true
+    reason: "SQLite live sqlite_master probe is an explicit live-DB workstream (plan-doc §5 A.2). File-mode pinning would require a stub-probe seam which is out of scope for the cross-dialect matrix surface."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §5 A.2
+    ownerTests:
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteLiveCatalogProbeTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerSqliteProbeTest.kt
+
   - workstream: B.1
     dialect: "*"
     kind: "*"
-    reason: "PostgreSQL USING-conversions covered in PostgresDiffSqlBuildersTest; matrix surfacing follows once overlay-USING fixtures are de-duped from the live-DB path."
+    permanent: true
+    reason: "PostgreSQL USING-overlay binding is PG-specific and overlay-driven. Sweep promotion needs overlay YAML support in the request which is out of scope for the file-mode matrix shape."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.1
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresUsingOverlayResolverTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationOverlayPreflightTest.kt
+
   - workstream: B.2
     dialect: "*"
     kind: "*"
-    reason: "SQLite live-DB cast-preflight is live-DB-only; matrix needs a stub-probe seam (B-Vervollst)."
+    permanent: true
+    reason: "SQLite live-DB cast-preflight is live-DB-only by design. Matrix needs a stub-probe seam out of scope here."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §6 B.2
+    ownerTests:
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteCastPreflightProbeTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRunnerSqliteProbeTest.kt
+
   - workstream: C.1
     dialect: "*"
     kind: "*"
-    reason: "Extension dependency install-policy is covered in PostgresExtensionTests; matrix promotion needs the conservative install-policy file-mode fixture."
+    permanent: true
+    reason: "Extension dependency install-policy needs PG with extensions; positive-path requires Testcontainers-managed PostGIS/pg_trgm. Outside the file-mode matrix shape; coverage lives in the PG DDL-generator tests and metadata queries."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.1
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresMetadataQueriesTest.kt
+
   - workstream: C.2
     dialect: "*"
     kind: "*"
-    reason: "Spatial migration surface is covered in driver-postgresql Spatial-Profile tests; cross-dialect matrix follows once spatial fixtures are dialect-neutral."
+    permanent: true
+    reason: "Spatial migration requires dialect-specific PostGIS/SpatiaLite fixtures and live extensions; matrix promotion needs a Spatial-Profile policy field in the request which is out of scope."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §7 C.2
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffSpatialTest.kt
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteDdlGeneratorSpatialTest.kt
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGeneratorSpatialTest.kt
+
   - workstream: D.1
     dialect: "*"
     kind: "*"
-    reason: "View visible-signature-compatibility covered in PostgresViewRendererTest; matrix promotion follows."
+    permanent: true
+    reason: "PostgreSQL view visible-signature-compatibility is PG-only and covered by the dedicated PG DDL-generator tests. Matrix surface does not add value over the existing tests."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.1
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffDdlGeneratorTest.kt
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresDiffMaterializedViewTest.kt
+
   - workstream: D.2
     dialect: "*"
     kind: "*"
-    reason: "MySQL VIEW_ROUTINE_USAGE privilege-preflight is live-DB; matrix needs a stub-probe seam (B-Vervollst)."
+    permanent: true
+    reason: "MySQL VIEW_ROUTINE_USAGE privilege-preflight is a live-DB grant inspection, fundamentally Testcontainers-shaped. Coverage lives in MySQL metadata-query tests and the integration suite."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §8 D.2
+    ownerTests:
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlMetadataQueriesTest.kt
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlDiffDdlGeneratorTest.kt
+
   - workstream: E.1
     dialect: "*"
     kind: "*"
-    reason: "Routine migration body-normalisation is covered in routine-migration tests; matrix promotion follows once routine fixtures are dialect-neutral."
+    permanent: true
+    reason: "Routine migration body-normalisation and Replace/Reverse semantics need rich routine fixtures per dialect plus --mysql-server-version wiring. Coverage lives in routine DDL-helper tests outside the matrix surface."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.1
+    ownerTests:
+      - adapters/driven/driver-postgresql/src/test/kotlin/dev/dmigrate/driver/postgresql/PostgresRoutineDdlHelperTest.kt
+      - adapters/driven/driver-mysql/src/test/kotlin/dev/dmigrate/driver/mysql/MysqlRoutineDdlHelperTest.kt
+
   - workstream: E.3
     dialect: "*"
     kind: "*"
-    reason: "Sequence migration cross-dialect surface is large (PG/MySQL/SQLite helper_table emulation); promotion to matrix requires dedicated fixture pairs per emulation flag."
+    permanent: true
+    reason: "Sequence migration cross-dialect surface needs per-dialect helper_table fixtures, --mysql-named-sequences / --sqlite-named-sequences flag wiring, and per-cell preserveCurrentValue probes. Outside the file-mode matrix shape."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §9 E.3
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SequencePreserveStageTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MysqlSequenceCanonicityStageTest.kt
+      - adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportTest.kt
+
   - workstream: F.0
     dialect: "*"
     kind: "*"
-    reason: "Versioned migration-overlay grundvertrag covered in MigrationOverlayPreflightTest; matrix surface follows."
+    permanent: true
+    reason: "Migration-overlay grundvertrag is overlay-driven; sweep would need migrationOverlays in the request plus overlay-YAML fixtures. Coverage lives in overlay-preflight tests."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.0
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationOverlayPreflightTest.kt
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaMigratePrePlanOverlayGateTest.kt
+
   - workstream: F.1
     dialect: "*"
     kind: "*"
-    reason: "Automated data transformations are not yet implemented (Phase 1.x); carve-out until F.1 lands."
+    permanent: true
+    reason: "Automated data transformations are not yet implemented (Phase 1.x material). The carve-out lifts when F.1 lands."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.1
+    ownerTests:
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/DataTransformationContractTest.kt
+
   - workstream: F.2
     dialect: "*"
     kind: "*"
-    reason: "Versioned plan-artefacts already covered by MigrationPlanArtifactBuilderTest + Compatibility tests; matrix promotion follows once artefact-emission can be exercised file-mode."
+    permanent: true
+    reason: "Plan-artefact emission needs --plan-artefact path in the request plus signed-JSON assertion infrastructure. Coverage lives in the artefact builder tests."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.2
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/MigrationPlanArtifactBuilderTest.kt
+
   - workstream: F.3
     dialect: "*"
     kind: "*"
-    reason: "Partial rollback surface needs a multi-statement Down fixture; promote after F.3 fixture seam is documented."
+    permanent: true
+    reason: "Partial rollback semantics need multi-statement Down + skip-set fixtures plus runner-level partial-rollback wiring."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.3
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/SchemaRollbackRunnerPartialRollbackTest.kt
+
   - workstream: F.4
     dialect: "*"
     kind: "*"
-    reason: "Rename mappings + cli-inline-overlay covered in InlineRenameOverlayBuilderTest; matrix promotion follows."
+    permanent: true
+    reason: "Rename mappings + cli-inline-overlay need --rename-table/--rename-column flag wiring in the sweep request. Coverage lives in overlay-builder + rename-projector tests."
     planRef: docs/planning/in-progress/diffresult-migration-plan-2.md §10 F.4
+    ownerTests:
+      - hexagon/application/src/test/kotlin/dev/dmigrate/cli/commands/InlineRenameOverlayBuilderTest.kt
+      - hexagon/core/src/test/kotlin/dev/dmigrate/core/diff/migration/RenameDependencyProjectorTest.kt
+
   - workstream: F.4-renderer-blocker-bridge
     dialect: "*"
     kind: "*"
-    reason: "Internal renderer-blocker classifier slice covered by PlannerBlockerClassifierTest; matrix exposure not yet meaningful."
+    permanent: true
+    reason: "Internal renderer-blocker classifier slice; the matrix exit-code surface gains nothing over the dedicated classifier test."
     planRef: docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md
+    ownerTests:
+      - hexagon/ports-read/src/test/kotlin/dev/dmigrate/driver/migration/PlannerBlockerClassifierTest.kt

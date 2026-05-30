@@ -77,6 +77,52 @@ class MatrixSweepTest : FunSpec({
         }
     }
 
+    test("permanent carve-outs carry a non-empty ownerTests reference") {
+        // B-Vervollst closing rule (plan-doc §6): every permanent
+        // carve-out must point at the test module(s) that actually
+        // cover the workstream. The parser already enforces this on
+        // load; this test surfaces the invariant explicitly so a
+        // future regression in the YAML schema lands here, not
+        // hidden in an opaque parser failure.
+        val violations = registry.all
+            .filter { it.permanent && it.ownerTests.isEmpty() }
+            .map { it.workstream }
+        if (violations.isNotEmpty()) {
+            error(
+                "Permanent carve-outs without ownerTests: ${violations.joinToString(", ")}. " +
+                    "Either supply ownerTests (test-module paths) or flip permanent: false."
+            )
+        }
+    }
+
+    test("ownerTests paths resolve to existing files in the repository tree") {
+        // Closing invariant: a permanent carve-out's ownerTests
+        // entries must point at real test files. Otherwise a typo or
+        // a rename leaves the carve-out as a dangling promise and
+        // the coverage claim drifts silently. We walk up from the
+        // forked test JVM's working dir to find the repo root (the
+        // directory containing settings.gradle.kts) and resolve each
+        // path against it. Missing files surface as a single batch
+        // error so the operator sees the full list to fix at once.
+        val repoRoot = findRepoRoot()
+        val missing = registry.all.flatMap { entry ->
+            entry.ownerTests.mapNotNull { path ->
+                val resolved = repoRoot.resolve(path)
+                if (java.nio.file.Files.exists(resolved)) null
+                else "${entry.workstream}: $path"
+            }
+        }
+        if (missing.isNotEmpty()) {
+            error(
+                "Carve-out ownerTests reference non-existent files:\n" +
+                    missing.joinToString("\n") { "  - $it" } +
+                    "\nResolve these paths against $repoRoot or update carve-outs.yaml " +
+                    "to point at the real test file. Run `find . -name '<expected-name>'` " +
+                    "from the repo root to locate the correct path."
+            )
+        }
+    }
+
     // ── Executable cells ────────────────────────────────────────────
     //
     // Each pinned (workstream, dialect, kind) triple becomes one
@@ -130,4 +176,21 @@ private inline fun withClueCell(cell: MatrixCell, outcome: MatrixSweepRunner.Out
 private fun defaultExitCodeFor(kind: MatrixCell.Kind): Int = when (kind) {
     MatrixCell.Kind.POSITIVE -> 0
     MatrixCell.Kind.BLOCKER -> 8
+}
+
+/**
+ * Walk up from the test JVM's working directory until a
+ * `settings.gradle.kts` is found. Gradle's default working dir for
+ * `test` is the project dir, so the walk-up terminates at the repo
+ * root after one or two iterations.
+ */
+private fun findRepoRoot(): java.nio.file.Path {
+    var current: java.nio.file.Path? = java.nio.file.Paths.get("").toAbsolutePath()
+    while (current != null) {
+        if (java.nio.file.Files.exists(current.resolve("settings.gradle.kts"))) {
+            return current
+        }
+        current = current.parent
+    }
+    error("Could not locate repo root (no settings.gradle.kts on the walk-up).")
 }

@@ -62,24 +62,54 @@ by the runner (`SchemaMigrateRequest.dialect`), and any dialect-
 specific blocker (e.g. MV on MySQL/SQLite) is registered as a
 per-dialect carve-out rather than as a separate fixture.
 
-## Sub-Slice B pinning
+## Pinned workstreams
 
-Five workstreams are pinned with POSITIVE fixtures:
+After B-Vervollständigung, seven workstreams carry executable
+fixtures:
 
-| Workstream | What it covers |
-| ---------- | -------------- |
-| G.1        | `transactionScope` happy path (empty → CREATE TABLE) |
-| G.2        | Rollback-artefact emission (separate fixture so renderer divergence surfaces) |
-| F.5        | CHECK constraint diffbarkeit (positive add) |
-| D.3        | Materialized View positive (PG-only; MySQL/SQLite carved out) |
-| E.2        | Trigger create-event |
+| Workstream | POSITIVE | BLOCKER | Cross-dialect notes |
+| ---------- | -------- | ------- | ------------------- |
+| G.1        | all 3    | carved  | transactionScope hint emission |
+| G.2        | all 3    | carved  | Rollback artefact build/parse roundtrip |
+| G.3        | all 3    | carved  | Execution-status report shape |
+| A.1        | all 3    | carved  | Locking / transactional-DDL hints |
+| F.5        | PG/SQLite | carved | MySQL needs `--mysql-server-version` |
+| D.3        | PG       | MySQL/SQLite | Materialized View (PG renders; MySQL/SQLite blocked) |
+| E.2        | MySQL    | carved  | PG/SQLite need per-dialect trigger bodies |
 
-BLOCKER cells across all five workstreams are provisional carve-outs
-in `fixtures/carve-outs.yaml`; B-Vervollständigung promotes them to
-real fixture pairs. The remaining 17 workstreams from the
-diff-migration plan-doc are full-wildcard carve-outs with `reason` +
-`planRef` so any future maintainer who removes the carve-out without
-adding a fixture lands a `MATRIX_GAP` diagnostic immediately.
+Every carved cell points at the test module(s) that *do* cover the
+behaviour via the `ownerTests` field in `fixtures/carve-outs.yaml`.
+The `MatrixSweepTest` verifies that every `ownerTests` path resolves
+to a real file in the repo tree — a typo, rename, or stale carve-out
+breaks the build instead of leaving a dangling promise.
+
+## Permanent vs provisional carve-outs
+
+The B-Vervollständigung closing rule (plan-doc §6) requires every
+carve-out to declare `permanent: true/false`:
+
+- **`permanent: true`** — the cell is intentionally outside the matrix
+  surface. Requires a non-empty `ownerTests` list documenting where
+  the workstream's coverage actually lives. The full Sub-Slice B
+  catalogue ships as permanent carve-outs.
+- **`permanent: false`** — provisional follow-up. Allowed but not used
+  in the closing catalogue; reserved for future tranches that need
+  to defer a cell explicitly.
+
+The 17 unpinned workstreams (A.2, B.1, B.2, C.1, C.2, D.1, D.2, E.1,
+E.3, F.0–F.4, F.4-renderer-blocker-bridge) are full-wildcard
+`permanent: true` carve-outs with `ownerTests` pointing at their
+dedicated test suites. Promotion to a pinned matrix cell is a
+deliberate decision that adds value only when:
+
+1. The workstream's file-mode reproduction is stable enough not to
+   flap on shared-CI; **and**
+2. The matrix surface adds signal beyond the existing tests (e.g.
+   exposes a cross-dialect inconsistency not otherwise visible).
+
+Both conditions are non-trivial — most workstreams stay permanently
+carved because their canonical coverage already lives in a more
+specific test surface.
 
 ## Running
 

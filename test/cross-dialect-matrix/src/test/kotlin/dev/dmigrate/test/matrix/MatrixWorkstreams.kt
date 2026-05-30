@@ -20,19 +20,23 @@ package dev.dmigrate.test.matrix
 internal object MatrixWorkstreams {
 
     /**
-     * The five workstreams pinned in Sub-Slice B. Each has fixture
-     * pairs under `fixtures/<workstream>/<dialect>/<kind>/`.
+     * Pinned workstreams across Sub-Slice B and B-Vervollständigung.
+     * Each has at least one fixture pair under
+     * `fixtures/<workstream>/<kind>/`; dialect-specific deviations
+     * are handled via per-cell carve-outs (permanent or provisional).
      *
      * Selection criteria: workstreams whose file-mode behaviour is
      * stable enough that a pinning today is unlikely to flap, and
      * whose blocker path has a documented cross-dialect reason.
      */
     val PINNED: List<String> = listOf(
-        "G.1",  // transactionScope: positive create-table across PG/MySQL/SQLite, blocker on MySQL DDL-in-tx
-        "G.2",  // Rollback artefact: positive with --generate-rollback, blocker on NOT_REVERSIBLE op
-        "F.5",  // CHECK/EXCLUDE diff: positive add CHECK, blocker on cross-table-subquery CHECK
-        "D.3",  // Materialized Views: positive PG, blocker MySQL/SQLite (MV not supported)
-        "E.2",  // Trigger migration: positive add trigger, blocker SQLite REPLACE-without-OR-REPLACE gap
+        "G.1",  // transactionScope: positive create-table across PG/MySQL/SQLite
+        "G.2",  // Rollback artefact: positive with --generate-rollback emission
+        "G.3",  // Execution-status report: positive emits status surface for stable report shape
+        "A.1",  // Locking/transactional-DDL hints: positive surfaces dialect-specific hints in the report
+        "F.5",  // CHECK/EXCLUDE diff: positive add CHECK (PG/SQLite); MySQL needs server-version (carved)
+        "D.3",  // Materialized Views: positive PG, BLOCKER MySQL/SQLite (MV not supported by dialect)
+        "E.2",  // Trigger migration: positive add trigger (MySQL); PG/SQLite need per-dialect bodies (carved)
     )
 
     /**
