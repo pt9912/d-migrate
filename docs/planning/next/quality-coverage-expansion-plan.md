@@ -393,31 +393,38 @@ test/integration-concurrency/
 ```
 test/perf-large-schema/
   └─ LargeSchemaScaleSpec.kt
-       @Tags("perf", "large-schema")
-       data class Scale(
-           val n: Int,
-           val renderSmokeMaxMs: Long,
-           val renderBaselineMs: Long,
-           val maxHeapMb: Long,
-       )
-       forAll(
-           Scale(n = 100,   renderSmokeMaxMs = 500,   renderBaselineMs = 250,   maxHeapMb = 256),
-           Scale(n = 1000,  renderSmokeMaxMs = 5000,  renderBaselineMs = 2500,  maxHeapMb = 512),
-           Scale(n = 10000, renderSmokeMaxMs = 60000, renderBaselineMs = 30000, maxHeapMb = 2048),
-       ) { scale ->
-           val schema = LargeSchemaGenerator.mixedSchema(
-               tables = scale.n,
-               sequences = scale.n,
-               views = scale.n,
-               triggers = scale.n,
-               seed = "large-schema-${scale.n}",
+       private val PerfTag = NamedTag("perf")
+       private val LargeSchemaTag = NamedTag("large-schema")
+
+       class LargeSchemaScaleSpec : FunSpec({
+           tags(PerfTag, LargeSchemaTag)
+
+           data class Scale(
+               val n: Int,
+               val renderSmokeMaxMs: Long,
+               val renderBaselineMs: Long,
+               val maxHeapMb: Long,
            )
-           val budget = HeapBudget.start(scale.maxHeapMb)
-           val duration = measureTimedValue { runMigratePipeline(schema) }.duration
-           duration.toMillis() shouldBeLessThan scale.renderSmokeMaxMs
-           budget.peakUsedMb shouldBeLessThan scale.maxHeapMb
-           LargeSchemaPerfReport.write(scale, duration, budget.peakUsedMb)
-       }
+
+           forAll(
+               Scale(n = 100,   renderSmokeMaxMs = 500,   renderBaselineMs = 250,   maxHeapMb = 256),
+               Scale(n = 1000,  renderSmokeMaxMs = 5000,  renderBaselineMs = 2500,  maxHeapMb = 512),
+               Scale(n = 10000, renderSmokeMaxMs = 60000, renderBaselineMs = 30000, maxHeapMb = 2048),
+           ) { scale ->
+               val schema = LargeSchemaGenerator.mixedSchema(
+                   tables = scale.n,
+                   sequences = scale.n,
+                   views = scale.n,
+                   triggers = scale.n,
+                   seed = "large-schema-${scale.n}",
+               )
+               val budget = HeapBudget.start(scale.maxHeapMb)
+               val duration = measureTimedValue { runMigratePipeline(schema) }.duration
+               duration.toMillis() shouldBeLessThan scale.renderSmokeMaxMs
+               budget.peakUsedMb shouldBeLessThan scale.maxHeapMb
+               LargeSchemaPerfReport.write(scale, duration, budget.peakUsedMb)
+           }
+       })
 ```
 
 - Synthetische Schema-Generator-Library, deterministisch (Seed-basiert).
@@ -466,10 +473,13 @@ test/perf-large-schema/
     Cross-Dialekt-Matrix.
   - `dev.dmigrate.driver.postgresql.PostgresDataReader`,
     `dev.dmigrate.driver.postgresql.PostgresDriver` — analog zu MySQL als
-    thin wrappers bewerten und ledgern.
+    thin wrappers bewerten, aber nicht allein deshalb dauerhaft ausschliessen;
+    entweder Port-/Fixture-Coverage oder ein permanenter ADR-/Ledger-Beleg.
   - `dev.dmigrate.driver.mysql.MysqlDataReader`,
-    `dev.dmigrate.driver.mysql.MysqlDriver` — als „thin wrappers" gepinnt;
-    bleiben permanent excluded, aber mit Ledger-Eintrag.
+    `dev.dmigrate.driver.mysql.MysqlDriver` — heutige „thin wrappers"-
+    Begruendung neu pruefen; sie bleiben nur dann permanent excluded, wenn der
+    Ledger einen expliziten ADR-/Permanent-Beleg traegt, sonst folgt ein
+    Refactor-/Fixture-Plan.
 - Verifikation: `make docker-coverage-gate` grün; zusätzlich prüft ein
   Repo-Script/CI-Hook, dass jede Kover-Exclude-Regel aus den
   Gradle-Dateien im Ledger vorkommt, inklusive `classes(...)`,
@@ -530,9 +540,10 @@ Umsetzung folgt ausserhalb dieses Plans.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README in
-      `test/perf-*`); Render-Pipeline, Diff-Planner und
-      Artefakt-Serialisierung sind jeweils mit getrenntem
+- [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README im jeweiligen
+      Modul: Phase-A-Hotpaths in `hexagon/*` bzw. bestehenden Adaptermodulen,
+      Phase D zusaetzlich in `test/perf-large-schema`); Render-Pipeline,
+      Diff-Planner und Artefakt-Serialisierung sind jeweils mit getrenntem
       `*_SMOKE_MAX_MS`-Runaway-Guard und `*_BASELINE_MS`-Reportwert
       gepinnt. Das Dokument benennt, welche Werte auf Shared-CI nur
       Diagnose sind und welche auf dedizierten Perf-Runnern als Gate gelten.
