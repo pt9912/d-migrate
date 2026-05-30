@@ -117,6 +117,10 @@ Exit-Code-Verzweigung.
 
 ### Phase A — `DataProfileWiring`
 
+> Status: umgesetzt (2026-05-30). Commit-Hinweis:
+> `wiring: add data profile factory port` (Phase-A-Commit).
+> Nachweis: `make docker-check MODULES=":adapters:driving:cli"`.
+
 - Kleinster Wiring-Block; gute Vorlage für das Pattern.
 - Bundle trägt: `connectionResolver`, `dialectResolver`,
   `poolFactory`, `adapterLookup` (3 Profiling-Adapter-Tripel),

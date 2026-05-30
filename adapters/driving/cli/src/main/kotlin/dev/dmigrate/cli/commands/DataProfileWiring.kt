@@ -4,6 +4,7 @@ import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.mysql.profiling.MysqlLogicalTypeResolver
@@ -17,6 +18,7 @@ import dev.dmigrate.driver.sqlite.profiling.SqliteProfilingDataAdapter
 import dev.dmigrate.driver.sqlite.profiling.SqliteSchemaIntrospectionAdapter
 import dev.dmigrate.format.report.ProfileReportWriter
 import dev.dmigrate.profiling.ProfilingAdapterSet
+import dev.dmigrate.profiling.model.DatabaseProfile
 import java.nio.file.Path
 
 internal data class DataProfileOptions(
@@ -30,10 +32,69 @@ internal data class DataProfileOptions(
     val configPath: Path?,
 )
 
+internal data class DataProfileWiringBundle(
+    val connectionResolver: (String) -> String,
+    val dialectResolver: (String) -> DatabaseDialect,
+    val poolFactory: (String, DatabaseDialect) -> ConnectionPool,
+    val adapterLookup: (DatabaseDialect) -> ProfilingAdapterSet,
+    val databaseProduct: (AutoCloseable) -> String = { "unknown" },
+    val databaseVersion: (AutoCloseable) -> String? = { null },
+    val reportWriter: (DatabaseProfile, String, Path?) -> Unit,
+)
+
+internal fun interface DataProfileWiringFactory {
+    fun build(configPath: Path?): DataProfileWiringBundle
+}
+
+internal object DefaultDataProfileWiringFactory : DataProfileWiringFactory {
+
+    override fun build(configPath: Path?): DataProfileWiringBundle {
+        val writer = ProfileReportWriter()
+        val resolver = NamedConnectionResolver(configPathFromCli = configPath)
+        return DataProfileWiringBundle(
+            connectionResolver = { src ->
+                try {
+                    resolver.resolve(src)
+                } catch (e: ConfigResolveException) {
+                    throw IllegalArgumentException(e.message, e)
+                }
+            },
+            dialectResolver = { url -> ConnectionUrlParser.parse(url).dialect },
+            poolFactory = { url, _ ->
+                val config = ConnectionUrlParser.parse(url)
+                HikariConnectionPoolFactory.create(config)
+            },
+            adapterLookup = ::profilingAdaptersFor,
+            reportWriter = { profile, fmt, out -> writer.write(profile, fmt, out) },
+        )
+    }
+
+    private fun profilingAdaptersFor(dialect: DatabaseDialect) = when (dialect) {
+        DatabaseDialect.POSTGRESQL -> ProfilingAdapterSet(
+            PostgresSchemaIntrospectionAdapter(),
+            PostgresProfilingDataAdapter(),
+            PostgresLogicalTypeResolver(),
+        )
+        DatabaseDialect.MYSQL -> ProfilingAdapterSet(
+            MysqlSchemaIntrospectionAdapter(),
+            MysqlProfilingDataAdapter(),
+            MysqlLogicalTypeResolver(),
+        )
+        DatabaseDialect.SQLITE -> ProfilingAdapterSet(
+            SqliteSchemaIntrospectionAdapter(),
+            SqliteProfilingDataAdapter(),
+            SqliteLogicalTypeResolver(),
+        )
+    }
+}
+
 internal object DataProfileWiring {
 
-    fun execute(options: DataProfileOptions): Int {
-        val writer = ProfileReportWriter()
+    fun execute(
+        options: DataProfileOptions,
+        factory: DataProfileWiringFactory = DefaultDataProfileWiringFactory,
+    ): Int {
+        val bundle = factory.build(options.configPath)
         val request = DataProfileRequest(
             source = options.source,
             tables = options.tables,
@@ -44,38 +105,13 @@ internal object DataProfileWiring {
             quiet = options.cliContext.quiet,
         )
         val runner = DataProfileRunner(
-            connectionResolver = { src ->
-                try {
-                    NamedConnectionResolver(configPathFromCli = options.configPath).resolve(src)
-                } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message, e)
-                }
-            },
-            dialectResolver = { url -> ConnectionUrlParser.parse(url).dialect },
-            poolFactory = { url, _ ->
-                val config = ConnectionUrlParser.parse(url)
-                HikariConnectionPoolFactory.create(config)
-            },
-            adapterLookup = { dialect ->
-                when (dialect) {
-                    DatabaseDialect.POSTGRESQL -> ProfilingAdapterSet(
-                        PostgresSchemaIntrospectionAdapter(),
-                        PostgresProfilingDataAdapter(),
-                        PostgresLogicalTypeResolver(),
-                    )
-                    DatabaseDialect.MYSQL -> ProfilingAdapterSet(
-                        MysqlSchemaIntrospectionAdapter(),
-                        MysqlProfilingDataAdapter(),
-                        MysqlLogicalTypeResolver(),
-                    )
-                    DatabaseDialect.SQLITE -> ProfilingAdapterSet(
-                        SqliteSchemaIntrospectionAdapter(),
-                        SqliteProfilingDataAdapter(),
-                        SqliteLogicalTypeResolver(),
-                    )
-                }
-            },
-            reportWriter = { profile, fmt, out -> writer.write(profile, fmt, out) },
+            connectionResolver = bundle.connectionResolver,
+            dialectResolver = bundle.dialectResolver,
+            poolFactory = bundle.poolFactory,
+            adapterLookup = bundle.adapterLookup,
+            databaseProduct = bundle.databaseProduct,
+            databaseVersion = bundle.databaseVersion,
+            reportWriter = bundle.reportWriter,
             stderr = { msg ->
                 if (msg.startsWith("[ERROR]") || !options.cliContext.quiet) System.err.println(msg)
             },
