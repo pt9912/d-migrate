@@ -1,6 +1,6 @@
 # Implementierungsplan: Quality- und Coverage-Expansion (Perf / Last / E2E)
 
-> Status: Entwurf (2026-05-29)
+> Status: Entwurf (2026-05-30)
 > Workstream: Roadmap-Eintrag „Coverage/QA" über §11 DoD hinaus
 > Vorbedingungen:
 > - `docs/planning/in-progress/diffresult-migration-plan-2.md` §11 (DoD a/b/c/d/e
@@ -67,15 +67,21 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 - **Phase A — Performance-Baseline**: per-Hotpath ein Kotest-`PerfSpec`
   mit `kotest.tags=perf`, der wiederholbare Benchmark-Werte (Median,
   P95) für Render-Pipeline, Diff-Planner und Artefakt-Serialisierung
-  erfasst. Harte Failure-Budgets gelten nur fuer runaway-Smoke-Grenzen
-  oder dedizierte Perf-Runner; normale Nightly-Laeufe schreiben Trend-
-  Reports und blocken PRs nicht wegen Container-Timing. Phase A schliesst
-  zuerst die Gradle-Bruecke, damit ein explizites
-  `-Dkotest.tags=perf` in die forked Test-JVM weitergereicht wird; erst danach
-  gilt der CI-/Nightly-Job als nutzbar. Der Lauf bleibt opt-in, nicht Teil des
-  Standard-Test-Sweeps. Phase A darf inkrementell starten, ist aber erst
-  abgeschlossen, wenn alle drei Hotpaths jeweils einen Smoke-Guard und
-  einen Baseline-Reportwert haben.
+  erfasst. Das `NamedTag("perf")`-Pattern existiert bereits in
+  `adapters/driven/formats/.../perf/*PerfTest.kt` und
+  `adapters/driven/streaming/.../StreamingImporterReorderPerfTest.kt`;
+  Phase A extrahiert daraus eine gemeinsame Helper-Bibliothek
+  (`PerfMeasure`, `PerfReport`) statt parallele Strukturen zu bauen, und
+  verallgemeinert das Pattern auf die drei neuen Hotpaths. Harte
+  Failure-Budgets gelten nur fuer runaway-Smoke-Grenzen oder dedizierte
+  Perf-Runner; normale Nightly-Laeufe schreiben Trend-Reports und blocken
+  PRs nicht wegen Container-Timing. Phase A schliesst zuerst die
+  Gradle-Bruecke, damit ein explizites `-Dkotest.tags=perf` in die forked
+  Test-JVM weitergereicht wird (siehe §5.1 für den exakten Patch); erst
+  danach gilt der CI-/Nightly-Job als nutzbar. Der Lauf bleibt opt-in,
+  nicht Teil des Standard-Test-Sweeps. Phase A darf inkrementell starten,
+  ist aber erst abgeschlossen, wenn alle drei Hotpaths jeweils einen
+  Smoke-Guard und einen Baseline-Reportwert haben.
 - **Phase B — Cross-Dialekt-Regressionsmatrix als ausführbarer Sweep**:
   ein Top-Level-Test-Modul `test/cross-dialect-matrix/` mit
   `MatrixSweepTest`, das die §11.2-Kriterien (Positiv, Blocker, Report,
@@ -134,7 +140,8 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 | §11 DoD a-e (Feature-Test-Pinning) | ✅ 2026-05-19 |
 | `make integration`-Pipeline pro Dialekt | ✅ (test/integration-*) |
 | Integration-Gating | ✅ strukturell via `-PintegrationTests`, nicht über Kotest-`integration`-Tags |
-| `kotest.tags=perf` als Filter-Konvention | ⚠️ Default-Exclude existiert; explizites Forwarding in die Test-JVM ist Phase-A-Arbeit |
+| `kotest.tags=perf` als Filter-Konvention | ⚠️ Default-Exclude `!perf` existiert in `build.gradle.kts:99-101`, aber der else-Zweig fehlt — explizit gesetzte Tags landen nicht in der forked Test-JVM; Phase-A-Patch siehe §5.1 |
+| `NamedTag("perf")`-Pattern in Bestands-PerfSpecs | ✅ in `adapters/driven/formats` und `adapters/driven/streaming` etabliert; Phase A extrahiert daraus die gemeinsame Helper-Lib |
 | Atomar-Lock-Plan für Concurrent-Writer-Pattern | ⚠️ Draft (`sequence-preserve-atomic-lock-plan.md`) |
 | Kover-`koverVerify` als CI-Gate | ✅ Produktionsmodule `minBound(90)`; reine Test-/Runner-Module muessen explizit `minBound(0)` setzen oder begruendet aus dem Aggregat bleiben |
 
@@ -190,11 +197,28 @@ hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
   })
 ```
 
-- Vor dem ersten neuen `PerfSpec`: Root-`build.gradle.kts` so anpassen,
-  dass ein explizites `System.getProperty("kotest.tags")` nicht nur den
-  Default `!perf` unterdrueckt, sondern per
-  `systemProperty("kotest.tags", explicitKotestTags)` an die forked Test-JVM
-  weitergereicht wird.
+- Vor dem ersten neuen `PerfSpec`: Root-`build.gradle.kts:99` so
+  anpassen, dass ein explizites `System.getProperty("kotest.tags")` nicht
+  nur den Default `!perf` unterdrueckt, sondern auch tatsaechlich in der
+  forked Test-JVM landet. Heute fehlt der else-Zweig komplett — Kotest
+  bekommt im Forked-Prozess gar kein Tag und laeuft alles, was nur
+  zufaellig fuer `=perf` funktioniert. Konkreter Patch:
+
+  ```kotlin
+  if (explicitKotestTags == null) {
+      systemProperty("kotest.tags", "!perf")
+  } else {
+      systemProperty("kotest.tags", explicitKotestTags)
+  }
+  ```
+
+  Gegenlauf-Pflicht: `-Dkotest.tags=perf` darf nur tagged Specs starten,
+  `-Dkotest.tags=!perf` muss untagged Specs identisch zum heutigen
+  Default laufen lassen, und ein willkuerliches Drittfilter
+  (`-Dkotest.tags=integration` o. ae.) darf keine untagged Tests
+  durchlassen. Erst nach diesem Patch ist der Tag-Filter
+  vertragsverlaesslich; alle Phasen, die opt-in via `-Dkotest.tags=...`
+  arbeiten, setzen das implizit voraus.
 - Budget pro Hotpath als zwei getrennte Grenzen:
   - `*_SMOKE_MAX_MS` ist ein grosszuegiger runaway guard und darf in jedem
     opt-in Perf-Lauf failen, wenn Median **oder** P95 nach Warmup deutlich
@@ -238,8 +262,9 @@ test/cross-dialect-matrix/
 - Fixtures liegen in `test/cross-dialect-matrix/fixtures/` als
   YAML-Schema-Paare; der Sweep lädt sie deterministisch.
 - Carve-out-Beispiel: PG `EXCLUDE` hat keinen MySQL-/SQLite-Positivpfad
-  (siehe F.5 Vollscheibe) — das Carve-out-File listet den Verzicht
-  mit Plan-Doc-Verweis.
+  (siehe `diffresult-migration-plan-2.md §11.2 Workstream F.5`
+  Vollscheibe) — das Carve-out-File listet den Verzicht mit
+  Plan-Doc-Verweis.
 - Modulregistrierung folgt §5.0. Da `test/cross-dialect-matrix` ein reines
   Test-/Sweep-Modul ist, muss sein `build.gradle.kts` die Coverage-Pflicht
   explizit als `minBound(0)` oder als begruendeten Aggregate-Carve-out
@@ -279,6 +304,12 @@ explizites Production-Worker-Wiring:
 - Der opt-in Nachweis laeuft mindestens ueber
   `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
   oder einen engeren `--tests`-Filter fuer das neue Live-DB-Szenario.
+  Hinweis: `-PintegrationTests` muss explizit in `INTEGRATION_TASKS`
+  bleiben, weil `scripts/test-integration-docker.sh` den Default
+  `-PintegrationTests test` vollstaendig mit der Nutzereingabe
+  ersetzt; ein Weglassen entzieht dem Lauf das Integration-Gating der
+  betroffenen Sub-Projekte und der Test-Task wird per `onlyIf`
+  uebersprungen.
 
 Damit ist der QA-Scope nicht nur auf CLI-/Renderer-Unit-Pfade beschränkt,
 ohne ein neues MCP-Tool zu erfinden. Ein MCP-Migrate-Tool (`schema_migrate`
@@ -353,7 +384,9 @@ test/integration-concurrency/
   `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`.
   `-PconcurrencyTests` allein ist kein gültiger Lauf, weil das
   Integrations-Gating des Root-Builds weiterhin `-PintegrationTests`
-  verlangt.
+  verlangt. Beide Properties bleiben aus dem oben in §5.3 genannten
+  Grund (Default-Override in `scripts/test-integration-docker.sh`)
+  explizit in `INTEGRATION_TASKS`.
 
 ### 5.4 Large-Schema-Last-Tests (Phase D)
 
@@ -393,6 +426,14 @@ test/perf-large-schema/
   darf nur als zusaetzlicher Diagnosefall laufen, nicht als Phase-D-DoD.
 - Runs gegen JVM-`-XX:+HeapDumpOnOutOfMemoryError`, damit bei Über-
   schreitung ein analysierbarer Heap-Dump entsteht.
+- Heap-Mess-Strategie: `HeapBudget` ist Skizze, nicht API-Vertrag. Die
+  konkrete Implementierung waehlt der erste Phase-D-Sub-Slice. Erste
+  Wahl: `MemoryPoolMXBean.peakUsage` ueber alle Heap-Pools mit
+  explizitem `resetPeakUsage()` vor jedem Scale-Run und einem
+  GC-induzierten Snapshot direkt vor und nach dem Lauf. Alternativen
+  (JFR-Recording, async-profiler) sind zulaessig, muessen aber vor der
+  Implementierung im Sub-Slice begruendet werden — Smoke-Guard bleibt
+  konservativ, bis die Mess-Strategie pinned ist.
 - Carve-out: N=10000 ist optional (sehr lange Laufzeit; nur in nightly).
 
 ### 5.5 Kover-Excludes-Konsolidierung (Phase E)
@@ -441,6 +482,15 @@ test/perf-large-schema/
   (`minBound(0)`, produktionscodehaltiges 90%-Gate oder begruendeter
   Aggregate-Carve-out). Das gilt fuer Bestandsmodule und neue Module
   gleichermassen, damit §5.0 nicht nur zukuenftige Dateien regelt.
+- Bestandsaudit der heutigen Asymmetrie: das Root-Aggregat
+  (`build.gradle.kts:184-187`) listet `:test:integration-postgresql`,
+  `:test:integration-mysql`, `:test:integration-server-state`,
+  `:test:consumer-read-probe`. **Nicht** aggregiert sind heute
+  `:test:integration-sqlite`, `:test:integration-integrations`,
+  `:test:integration-persistence-jdbc`, `:test:e2e-cli`. Phase E
+  entscheidet pro Modul explizit (Aggregat ja/nein, Begruendung) und
+  schliesst die Asymmetrie oder pinnt sie als bewusste Auslassung im
+  Excludes-Ledger.
 
 ---
 
@@ -450,8 +500,8 @@ test/perf-large-schema/
 |---|---|
 | A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath (`SchemaMigrateRenderPipeline.run`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
 | A-Vervollständigung | Diff-Planner- und Artefakt-Serialisierungs-PerfSpecs mit denselben Smoke-/Baseline-Vertraegen; Phase A ist erst nach allen drei Hotpaths schliessbar |
-| B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + erste 5 Workstreams |
-| B-Vervollständigung | restliche Workstreams + Carve-out-Registry |
+| B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + Carve-out-Registry-Mechanik (`fixtures/carve-outs.yaml` + `MATRIX_GAP`-Diagnose) + erste 5 Workstreams gepinnt, restliche Workstreams provisorisch als Carve-out registriert, damit der Sweep schon ab B aktiv laufen kann ohne 17 noch nicht gepinnte Workstreams hart zu blocken |
+| B-Vervollständigung | provisorische Carve-out-Eintraege fuer die restlichen Workstreams in echtes Pinning konvertieren oder als dauerhaften Carve-out mit Plan-Doc-Verweis stehen lassen — am Ende ist jeder Workstream entweder gepinnt oder hat einen begruendeten dauerhaften Carve-out |
 | C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness oder `McpServeWiring` statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
 | C | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
@@ -465,6 +515,16 @@ ohne parallele Phasen zu blockieren; Sub-Slice F darf aber erst schliessen,
 wenn A-Vervollständigung, B-Vervollständigung, C/C-MCP, D fuer N=100/1000
 und E erfuellt sind. D-N10k bleibt nightly-only opt-in und muss nicht im
 Standard-Opt-in laufen.
+
+**Closing-Vertrag fuer Phase E** (damit F nicht stillschweigend auf
+Bestands-Refactors mit offenem Aufwand blockt): "Phase E erfuellt"
+bedeutet `docs/coverage/excludes-ledger.md` committed, Repo-Script/CI-Hook
+aktiv, Bestandsaudit (inkl. Aggregat-Asymmetrie) durchgefuehrt und alle
+heute aktiven Excludes im Ledger verbucht. Tatsaechliche Refactors fuer
+heute pauschal exkludierte Klassen (`SqliteSchemaReader`,
+`PostgresDataReader/Driver` etc.) sind eigene Plan-Docs und kein
+F-Blocker — sie werden im Ledger als `refactor-plan:` referenziert, die
+Umsetzung folgt ausserhalb dieses Plans.
 
 ---
 
@@ -486,8 +546,10 @@ Standard-Opt-in laufen.
       und Kover-Entscheidung (`minBound(0)` fuer reine Testmodule oder
       begruendeter Ausschluss aus Aggregate-/Coverage-Modules-Listen).
 - [ ] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
-      und der Sweep-Test deckt alle 22 Workstreams aus
-      `diffresult-migration-plan-2.md` §11.2.
+      und der Sweep-Test deckt alle in `diffresult-migration-plan-2.md`
+      §11.2 zum Zeitpunkt der Sub-Slice-F-Annahme gelisteten Workstreams
+      (heute 22; die Zahl wird bei Annahme im Commit gepinnt, damit ein
+      spaeterer Zuwachs §11.2 nicht stillschweigend das Gate aufweicht).
 - [ ] Carve-out-Registry für nicht-pinnbare Workstream-Dialekt-Paare
       ist im Modul (`fixtures/carve-outs.yaml` o. ä.) und in der
       Plan-Doc-Begründung verlinkt.
@@ -534,6 +596,28 @@ Standard-Opt-in laufen.
       explizite Coverage-Entscheidung: `minBound(0)` fuer reine Runner,
       `minBound(90)` wenn produktiver Code im Modul lebt, oder einen
       dokumentierten Aggregate-/Coverage-Modules-Carve-out.
+- [ ] Bestandsaudit der heutigen Aggregat-Asymmetrie ist abgeschlossen:
+      `:test:integration-sqlite`, `:test:integration-integrations`,
+      `:test:integration-persistence-jdbc` und `:test:e2e-cli` haben pro
+      Modul eine Entscheidung (in Root-`build.gradle.kts:184-187`
+      aufgenommen ODER mit Begruendung im Excludes-Ledger als
+      Aggregate-Carve-out gepinnt).
+- [ ] Produktionsnahe Helper-Coverage: nicht-trivialer Helper-Code aus
+      den neuen Test-Modulen (Schema-Generator, Perf-Helper,
+      Sequence-Probe-Adapter, Sweep-Fixtures) lebt — wo fachlich
+      sinnvoll — in einem Hexagon-Modul (z. B. `hexagon:profiling`,
+      `hexagon:core`) unter `minBound(90)`, nicht im `test/*-Modul` mit
+      `minBound(0)`. Reine Test-Wiring- und Fixture-Glue-Code bleibt im
+      `test/*-Modul`; pro Phase wird die Trennlinie im Sub-Slice
+      dokumentiert. Damit verschiebt §5.5 keine Coverage-Luecken in neue
+      Test-Module (siehe `feedback_test_coverage`).
+- [ ] Flake-SOP fuer Perf-/Concurrency-Smoke-Brueche ist dokumentiert:
+      Smoke-Bruch ist immer Bug, Quarantine via `@Suppress` ist
+      unzulaessig (siehe `feedback_no_suppress_for_size`). Der erste
+      Smoke-Flake fuehrt zu Root-Cause-Analyse — entweder Mess-Strategie
+      wird gehaertet, Budget bewusst neu kalibriert (mit Commit-Eintrag
+      alter/neuer Wert), oder der Test wird strukturell anders
+      geschnitten.
 - [ ] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
       Status `✅ erledigt (<datum>)`.
 
