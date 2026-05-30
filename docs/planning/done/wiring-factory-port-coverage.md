@@ -30,7 +30,7 @@ Die sechs eager-konstruierten CLI-Wirings (`DataImport`, `DataProfile`,
 75–88% Modul-isolierte Coverage heben, analog zur Plan-Lessons-§11-
 Tabelle aus `refactoring-cli-testability.md`:
 
-| Klasse | Vor Refactor (zu messen) | Ziel nach Folge-Tranche |
+| Klasse | Ausgangslage vor Refactor | Ziel nach Folge-Tranche |
 | --- | --- | --- |
 | `McpServeWiring` | 88% | — (bereits abgehakt) |
 | `DataImportWiring` | unerreichbar (eager Hikari) | 75–80% |
@@ -40,9 +40,9 @@ Tabelle aus `refactoring-cli-testability.md`:
 | `SchemaGenerateWiring` | unerreichbar | 75–80% |
 | `SchemaReverseWiring` | unerreichbar | 75–80% |
 
-Die „Vor Refactor"-Spalte ist vor Phase A aus dem aktuellen Kover-HTML
-zu befüllen — heute liegt sie nicht vor. Klassifizierung „unerreichbar"
-bedeutet: jede `execute()`-Probe ohne Live-DB schlägt am ersten
+Die Ausgangslage-Spalte dokumentiert den Zustand vor Phase A.
+Klassifizierung „unerreichbar" bedeutet: jede `execute()`-Probe ohne
+Live-DB schlug vor dieser Tranche am ersten
 `HikariConnectionPoolFactory.create(...)` oder
 `DatabaseDriverRegistry.get(...).<dataReader/dataWriter/…>()` fehl
 (Hikari eager-connect, siehe Lessons §9).
@@ -57,10 +57,10 @@ Hikari-Konstruktion ist eigene Folge-Tranche (siehe §7).
 
 - Factory-Interface pro Wiring, das die Pool-/Adapter-/Resolver-
   Konstruktion bündelt. Default-Impl bleibt im Wiring-File
-  (`internal class Default<Name>Factory`) und reproduziert das
+  (`internal object Default<Name>WiringFactory`) und reproduziert das
   heutige Verhalten 1:1.
-- Konstruktor-Injection der Factory in das Wiring; Default-
-  Konstruktor ruft `Default<Name>Factory()` auf, sodass die
+- Factory-Injection ueber `execute(..., factory = ...)`; der
+  Default-Parameter nutzt `Default<Name>WiringFactory`, sodass die
   Production-Aufrufer (`<Name>Command`) unverändert bleiben.
 - Tests substituieren die Factory mit einem Fake-Bundle (analog
   `ServerStateBundle`), das in-memory-Adapter und einen No-Op-Pool
@@ -105,8 +105,9 @@ Das Pattern jedes Wirings adoptiert — Namensvorbild bleibt McpServe
 
 - `<Name>Bundle` — die Aggregat-Klasse mit den konstruierten
   Adaptern/Pools (Beispiel: `DataProfileBundle`).
-- `<Name>Factory` (`fun interface`) — die Konstruktor-Injection-Surface.
-- `Default<Name>Factory` — Production-Default, konstruiert Hikari +
+- `<Name>WiringFactory` (`fun interface`) — die Injection-Surface fuer
+  `execute(..., factory = ...)`.
+- `Default<Name>WiringFactory` — Production-Default, konstruiert Hikari +
   Registry-Lookups identisch zur heutigen Inline-Logik.
 
 ## 4. Phasen (1 Slice pro Wiring)

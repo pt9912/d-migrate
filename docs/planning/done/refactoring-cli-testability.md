@@ -51,10 +51,11 @@ Lessons-Learned-Pruefung (gegen §2–§7 unten):
 
 ## Folge-Tranche: §11-style Coverage fuer die sechs eager-konstruierten Wirings
 
-Die sechs Wirings `DataImport`, `DataProfile`, `ToolExport`,
-`SchemaCompare`, `SchemaGenerate`, `SchemaReverse` konstruieren
-Hikari-Pools + Adapter eager im `execute()`. Sie sind via `internal`
-sichtbar, aber nicht ohne lebende JDBC-Endpunkte unit-testbar.
+Ausgangslage dieser Folge-Tranche: Die sechs Wirings `DataImport`,
+`DataProfile`, `ToolExport`, `SchemaCompare`, `SchemaGenerate`,
+`SchemaReverse` konstruierten Hikari-Pools + Adapter eager im
+`execute()`. Sie waren via `internal` sichtbar, aber nicht ohne
+lebende JDBC-Endpunkte unit-testbar.
 
 Bereits geschrieben:
 - `DataExportWiringTest` + `DataTransferWiringTest` decken die
