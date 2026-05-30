@@ -79,6 +79,34 @@ class PerfMeasureTest : FunSpec({
         PerfMeasure.toMillis(0L) shouldBeExactlyClose 0.0
         PerfMeasure.toMillis(1L) shouldBeExactlyClose 1e-6
     }
+
+    test("run clears the Sink after returning (review finding #4)") {
+        // The Sink retains the last consumed value as a singleton field
+        // and used to keep that reference reachable for the entire test
+        // JVM lifetime — polluting heapBefore in a subsequent spec. The
+        // try/finally cleanup in PerfMeasure.run replaces it with null
+        // so the prior return value can be garbage-collected before
+        // the next spec starts.
+        class HeavyReturn { val payload = ByteArray(1024 * 1024) }
+        var refSnapshot: java.lang.ref.WeakReference<HeavyReturn>? = null
+        PerfMeasure.run(warmup = 0, iterations = 1) {
+            val heavy = HeavyReturn()
+            refSnapshot = java.lang.ref.WeakReference(heavy)
+            heavy
+        }
+        // Best-effort GC nudge; if Sink still strong-references the
+        // HeavyReturn it survives all of these. Multiple System.gc()
+        // calls plus an allocation pressure step matches the pattern
+        // the LargeJsonFixture.usedHeapBytes() helper relies on.
+        repeat(5) {
+            System.gc()
+            try { Thread.sleep(10) } catch (_: InterruptedException) {}
+        }
+        check(refSnapshot!!.get() == null) {
+            "PerfMeasure.Sink still strongly references the last consumed value " +
+                "after run() returned — finding #4 cleanup is not effective."
+        }
+    }
 })
 
 private infix fun Double.shouldBeExactlyClose(expected: Double) {

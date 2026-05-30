@@ -51,6 +51,15 @@ data class PerfSample(
          * container jitter — nearest-rank keeps the contract trivial
          * to reason about in cross-team review and matches what the
          * existing ad-hoc helpers in `LargeJsonFixture` do.
+         *
+         * **Caveat for small samples**: nearest-rank with the default
+         * iterations=20 gives `p99 == max` (`ceil(20 * 0.99) = 20`,
+         * sorted[19]) and `p95 == second-worst` (sorted[18]). Below
+         * n=100 the `p99Ms` field in [PerfSample] and the trend
+         * report is structurally identical to `maxMs` — treat it as
+         * an extra max channel, not as an independent tail signal.
+         * For iterations=1 (single-shot specs) all five fields
+         * collapse to the same value.
          */
         private fun percentile(sorted: LongArray, q: Double): Long {
             require(q in 0.0..1.0) { "q must be in [0,1], was $q" }

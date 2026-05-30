@@ -34,11 +34,17 @@ private val PerfTag = NamedTag("perf")
  * 100-op `CreateTable` plan, file-mode operand, PostgreSQL dialect.
  *
  * **Plan-Doc**: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
- * §5.1 / §7 first checklist box. This is the first consumer of the new
- * [PerfMeasure] / [PerfReport] library and pins the two-budget
- * contract that A-Vervollständigung will replicate for the
- * `DiffPlanner` and `RollbackArtefactBuilder`↔`RollbackArtefactParser`
- * round-trip.
+ * §5.1 / §7 first checklist box. First consumer of the new
+ * [PerfMeasure] / [PerfReport] library; A-Vervollständigung mirrors
+ * the same two-budget contract for `DiffPlanner` and the
+ * `RollbackArtefactBuilder`↔`RollbackArtefactParser` round-trip.
+ *
+ * **Measured surface**: the request sets `generateRollback = true`,
+ * so the pipeline runs the full path — probe + preflight-plan +
+ * sequence-preserve + cast/check preflight + render Up + destructive
+ * guard + render Down + merge + transactionScope guard. Review
+ * finding #5 (without `generateRollback = true` the down render +
+ * merge are skipped and the spec under-reports orchestration cost).
  *
  * **Two budgets per hotpath**:
  * - [RENDER_SMOKE_MAX_MS] is the runaway guard; asserted against
@@ -46,11 +52,11 @@ private val PerfTag = NamedTag("perf")
  *   enough to fail. Calibrated generously so shared-container CI
  *   jitter does not flap.
  * - [RENDER_BASELINE_MS] is the nightly / `perf-stable-runner`
- *   expectation. Written into the JSON report via
- *   [PerfReport.write] but **not** asserted here. The runner profile
- *   (`-PperfGate=true` plus the `perf-stable-runner` label) decides
- *   whether the baseline becomes a hard gate; on shared-CI it stays a
- *   diagnostic.
+ *   expectation. Diagnostic on shared-CI; hard gate when
+ *   `make docker-perf PERF_GATE=true` forwards `-PperfGate=true`,
+ *   which the root `build.gradle.kts` translates into the system
+ *   property `d-migrate.perf.gate=true` that [PerfReport.write]
+ *   consults.
  *
  * Run opt-in only:
  * ```
@@ -83,6 +89,12 @@ class SchemaMigrateRenderPipelinePerfSpec : FunSpec({
             target = "file:target.yaml",
             dialect = DatabaseDialect.POSTGRESQL,
             planOnly = true,
+            // Review finding #5: exercise the Down render + merge path.
+            // Without this the pipeline's renderer.generateDown call and
+            // the mergeDownIntoUp branch (RenderPipeline.run:134-143) are
+            // skipped, so a regression in the Down generator or the
+            // merge orchestration never moves this hotpath's budget.
+            generateRollback = true,
         )
         val targetOp: CompareOperand = CompareOperand.File(Path.of("target.yaml"))
         val renderer = SyntheticDiffDdlGenerator(DatabaseDialect.POSTGRESQL)
@@ -167,9 +179,17 @@ private object SyntheticPlans {
  * Renders one synthetic statement per operation. The body string is
  * intentionally short so the spec measures *pipeline orchestration*
  * cost — stage dispatch, options assembly, destructive guard,
- * combined-stream merge — rather than dialect-specific DDL
- * generation. A realistic dialect renderer is tracked separately
- * under A-Vervollständigung once the orchestration baseline is in place.
+ * Down render, combined-stream merge, transactionScope guard — rather
+ * than dialect-specific DDL generation. A realistic dialect renderer
+ * is tracked separately once the orchestration baseline is in place.
+ *
+ * Review finding #10: [generateDown] deliberately delegates to
+ * [generateUp]. The pipeline does not require the down stream to be
+ * the semantic inverse of the up stream — it only walks the operations
+ * to build statements and feeds them into [mergeDownIntoUp]. A
+ * symmetric renderer is therefore the cheapest way to keep both
+ * sides realistic in shape; correctness of the down direction is the
+ * concern of the real dialect renderers, covered by their own tests.
  */
 private class SyntheticDiffDdlGenerator(
     override val dialect: DatabaseDialect,

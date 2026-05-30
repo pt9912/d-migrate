@@ -49,20 +49,31 @@ object PerfMeasure {
         require(warmup >= 0) { "warmup must be >= 0, was $warmup" }
         require(iterations > 0) { "iterations must be > 0, was $iterations" }
 
-        repeat(warmup) {
-            Sink.consume(block())
-        }
+        try {
+            repeat(warmup) {
+                Sink.consume(block())
+            }
 
-        val timingsNanos = LongArray(iterations)
-        for (i in 0 until iterations) {
-            val start = System.nanoTime()
-            val result = block()
-            val end = System.nanoTime()
-            Sink.consume(result)
-            timingsNanos[i] = end - start
-        }
+            val timingsNanos = LongArray(iterations)
+            for (i in 0 until iterations) {
+                val start = System.nanoTime()
+                val result = block()
+                val end = System.nanoTime()
+                Sink.consume(result)
+                timingsNanos[i] = end - start
+            }
 
-        return PerfSample.of(timingsNanos)
+            return PerfSample.of(timingsNanos)
+        } finally {
+            // Release the last consumed reference so it cannot keep a
+            // spec's heavy return value (e.g. ImportResult, DiffResult)
+            // strongly reachable for the rest of the test JVM lifetime
+            // and pollute heapBefore in a later perf spec running in
+            // the same fork. The volatile write at runtime still
+            // defeats JIT DCE; clearing after the measurement window
+            // does not. Review finding #4.
+            Sink.consume(null)
+        }
     }
 
     /**

@@ -126,6 +126,17 @@ subprojects {
             systemProperty("UPDATE_GOLDEN", updateGolden)
         }
 
+        // Quality-Coverage-Expansion Phase A: forward the `perfGate`
+        // Gradle project property (from `make docker-perf PERF_GATE=true`
+        // / `-PperfGate=true`) into the forked test JVM as the system
+        // property `d-migrate.perf.gate`. PerfReport.write reads this
+        // property and turns baselineMs into a hard assertion. Without
+        // this bridge the operator-visible PERF_GATE switch is a
+        // silent no-op — review finding #1.
+        if (project.hasProperty("perfGate")) {
+            systemProperty("d-migrate.perf.gate", project.property("perfGate").toString())
+        }
+
         // Surface full assertion messages on failure across every test
         // task in the project. Default Gradle test logging only prints
         // "AssertionFailedError at File.kt:NN" without the message,

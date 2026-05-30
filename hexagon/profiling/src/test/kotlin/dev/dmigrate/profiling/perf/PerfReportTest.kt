@@ -136,6 +136,17 @@ class PerfReportTest : FunSpec({
         PerfReport.formatDouble(2.125) shouldBe "2.125"
     }
 
+    test("formatDouble preserves nanosecond precision (review finding #11)") {
+        // 1 ns = 1e-6 ms. With the 6-digit format we previously had,
+        // sub-microsecond values collapsed to "0.0", hiding 3x
+        // regressions of the same kind. 9 fractional digits = ns
+        // resolution and round-trips through %.9f cleanly.
+        PerfReport.formatDouble(0.0000003) shouldBe "0.0000003"
+        PerfReport.formatDouble(0.0000009) shouldBe "0.0000009"
+        PerfReport.formatDouble(0.000001) shouldBe "0.000001"
+        PerfReport.formatDouble(0.001) shouldBe "0.001"
+    }
+
     test("formatDouble rejects NaN and infinities") {
         shouldThrow<IllegalArgumentException> { PerfReport.formatDouble(Double.NaN) }
         shouldThrow<IllegalArgumentException> { PerfReport.formatDouble(Double.POSITIVE_INFINITY) }
@@ -162,5 +173,73 @@ class PerfReportTest : FunSpec({
             "medianMs", "p95Ms", "p99Ms", "minMs", "maxMs",
             "smokeMaxMs", "baselineMs",
         )
+    }
+
+    test("write removes the staging file on success (atomic write, review finding #9)") {
+        val root = tempReportRoot()
+        PerfReport.write(
+            hotpath = "atomic",
+            sample = PerfSample.of(longArrayOf(1_000_000L)),
+            smokeMaxMs = 1.0,
+            baselineMs = 0.5,
+            reportRoot = root,
+        )
+        Files.exists(root.resolve("atomic.json")) shouldBe true
+        // The atomic-rename strategy stages to <slug>.json.tmp and then
+        // moves it onto <slug>.json — no .tmp file should remain after
+        // a successful write, otherwise the stage path is leaking on
+        // every run.
+        Files.exists(root.resolve("atomic.json.tmp")) shouldBe false
+    }
+
+    test("baseline gate (review finding #1): inactive by default — no exception even when median exceeds baseline") {
+        val root = tempReportRoot()
+        PerfReport.write(
+            hotpath = "gate-off",
+            sample = PerfSample.of(longArrayOf(10_000_000L)), // medianMs = 10
+            smokeMaxMs = 100.0,
+            baselineMs = 1.0,
+            reportRoot = root,
+        )
+        Files.exists(root.resolve("gate-off.json")) shouldBe true
+    }
+
+    test("baseline gate: active when d-migrate.perf.gate=true and median exceeds baseline → AssertionError") {
+        val root = tempReportRoot()
+        val prev = System.getProperty("d-migrate.perf.gate")
+        System.setProperty("d-migrate.perf.gate", "true")
+        try {
+            val ex = shouldThrow<IllegalStateException> {
+                PerfReport.write(
+                    hotpath = "gate-on",
+                    sample = PerfSample.of(longArrayOf(10_000_000L)), // medianMs = 10
+                    smokeMaxMs = 100.0,
+                    baselineMs = 1.0,
+                    reportRoot = root,
+                )
+            }
+            ex.message!!.shouldContain("perfGate")
+            ex.message!!.shouldContain("gate-on")
+        } finally {
+            if (prev == null) System.clearProperty("d-migrate.perf.gate") else System.setProperty("d-migrate.perf.gate", prev)
+        }
+    }
+
+    test("baseline gate: active and sample below baseline → no exception, file written") {
+        val root = tempReportRoot()
+        val prev = System.getProperty("d-migrate.perf.gate")
+        System.setProperty("d-migrate.perf.gate", "true")
+        try {
+            PerfReport.write(
+                hotpath = "gate-pass",
+                sample = PerfSample.of(longArrayOf(500_000L)), // medianMs = 0.5
+                smokeMaxMs = 100.0,
+                baselineMs = 1.0,
+                reportRoot = root,
+            )
+            Files.exists(root.resolve("gate-pass.json")) shouldBe true
+        } finally {
+            if (prev == null) System.clearProperty("d-migrate.perf.gate") else System.setProperty("d-migrate.perf.gate", prev)
+        }
     }
 })

@@ -71,23 +71,22 @@ class StreamingImporterReorderPerfTest : FunSpec({
             generateReorderFixture(jsonFile, rows)
 
             val gcBeans = ManagementFactory.getGarbageCollectorMXBeans()
-            val gcCountBefore = gcBeans.sumOf { it.collectionCount }
-            val gcTimeBefore = gcBeans.sumOf { it.collectionTime }
-
             val threadMxBean = ManagementFactory.getThreadMXBean()
             val allocationBean = threadMxBean as? com.sun.management.ThreadMXBean
-            val allocBefore = allocationBean?.getThreadAllocatedBytes(Thread.currentThread().threadId())
 
             usedHeapBytes()
             val heapBefore = usedHeapBytes()
 
             // Quality-Coverage-Expansion Sub-Slice A-Vervollständigung
-            // (2026-05-30): replace the hand-rolled `System.nanoTime`
-            // delta with PerfMeasure so the wall-clock measurement
-            // shares the canonical contract used by the three Phase-A
-            // hotpath specs. Single-iteration / no warmup matches the
-            // existing perf-spike semantics; medianMs == single-run
-            // elapsed-ms for `iterations = 1`.
+            // (2026-05-30) + review finding #2: drive the wall-clock
+            // through PerfMeasure (the canonical contract used by the
+            // three Phase-A hotpath specs) AND keep the GC / allocation
+            // window identical to it. Old code captured GC counters
+            // before/after the inner `System.nanoTime()` delta; new
+            // code keeps both windows aligned by reading the MX-bean
+            // snapshots inside the PerfMeasure block, so the
+            // enforceOptionalPerfGate `gcRatio = gcTimeMs / elapsedMs`
+            // measures the same wall-clock on both sides.
             val writer = SqliteDataWriter()
             val importer = StreamingImporter(
                 readerFactory = DefaultDataChunkReaderFactory(),
@@ -95,26 +94,51 @@ class StreamingImporterReorderPerfTest : FunSpec({
             )
 
             var capturedResult: ImportResult? = null
+            var capturedAllocatedBytes: Long? = null
+            var capturedGcCountDelta: Long = 0
+            var capturedGcTimeDelta: Long = 0
             val sample = PerfMeasure.run(warmup = 0, iterations = 1) {
+                val gcCountBefore = gcBeans.sumOf { it.collectionCount }
+                val gcTimeBefore = gcBeans.sumOf { it.collectionTime }
+                val allocBefore = allocationBean
+                    ?.getThreadAllocatedBytes(Thread.currentThread().threadId())
+
                 val outcome = importer.import(
                     pool = pool,
                     input = ImportInput.SingleFile("perf_users", jsonFile),
                     format = DataExportFormat.JSON,
                 )
+
+                val gcCountAfter = gcBeans.sumOf { it.collectionCount }
+                val gcTimeAfter = gcBeans.sumOf { it.collectionTime }
+                val allocAfter = allocationBean
+                    ?.getThreadAllocatedBytes(Thread.currentThread().threadId())
+
                 capturedResult = outcome
+                capturedAllocatedBytes =
+                    if (allocBefore != null && allocAfter != null) allocAfter - allocBefore else null
+                capturedGcCountDelta = gcCountAfter - gcCountBefore
+                capturedGcTimeDelta = gcTimeAfter - gcTimeBefore
                 outcome
             }
+            // Review finding #3: the closure-captured locals above only
+            // produce coherent measurements at iterations == 1. Catch a
+            // future maintainer who bumps iterations without redesigning
+            // the captures (each iteration would overwrite the deltas;
+            // PK collisions on perf_users would mask the actual perf
+            // signal).
+            require(sample.iterations == 1) {
+                "StreamingImporterReorderPerfTest requires iterations == 1; the single-fixture " +
+                    "SQLite target and var-captured GC/alloc deltas need redesigning before bumping " +
+                    "the sample size."
+            }
             val importResult = checkNotNull(capturedResult) { "importer.import() must have produced a result" }
-            val elapsedMs = sample.medianMs.roundToLong()
-
-            val allocAfter = allocationBean?.getThreadAllocatedBytes(Thread.currentThread().threadId())
-            val allocatedBytes = if (allocBefore != null && allocAfter != null) allocAfter - allocBefore else null
+            val allocatedBytes = capturedAllocatedBytes
+            val gcCountDelta = capturedGcCountDelta
+            val gcTimeDelta = capturedGcTimeDelta
 
             usedHeapBytes()
             val heapAfter = usedHeapBytes()
-
-            val gcCountAfter = gcBeans.sumOf { it.collectionCount }
-            val gcTimeAfter = gcBeans.sumOf { it.collectionTime }
 
             importResult.totalRowsInserted shouldBe rows
 
@@ -129,16 +153,21 @@ class StreamingImporterReorderPerfTest : FunSpec({
                 baselineMs = 20_000.0,
             )
 
+            // Review finding #12: surface the full-precision median in
+            // both the println summary and the JSON report. Old code
+            // rounded to whole milliseconds for stdout; the dashboard
+            // and the eyeballs now agree.
+            val elapsedMs = sample.medianMs
             println(
                 """
                 |
                 |--- Reorder Perf Gate ---
                 |Rows:               ${"%,d".format(rows)}
-                |Total import time:  ${"%,d".format(elapsedMs)} ms
+                |Total import time:  ${"%,.3f".format(elapsedMs)} ms
                 |Allocated bytes:    ${allocatedBytes?.let { "%,d".format(it / (1024 * 1024)) } ?: "<nicht unterstützt>"} MB
                 |Per-row allocation: ${allocatedBytes?.let { "%,d".format(it / rows) } ?: "<nicht unterstützt>"} bytes/row
-                |GC count:           ${gcCountAfter - gcCountBefore}
-                |GC time:            ${gcTimeAfter - gcTimeBefore} ms
+                |GC count:           $gcCountDelta
+                |GC time:            $gcTimeDelta ms
                 |Heap before:        ${"%,d".format(heapBefore / (1024 * 1024))} MB
                 |Heap after:         ${"%,d".format(heapAfter / (1024 * 1024))} MB
                 |-------------------------
@@ -147,10 +176,10 @@ class StreamingImporterReorderPerfTest : FunSpec({
             )
 
             enforceOptionalPerfGate(
-                elapsedMs = elapsedMs,
+                elapsedMs = elapsedMs.roundToLong(),
                 allocatedBytes = allocatedBytes,
                 rows = rows,
-                gcTimeMs = gcTimeAfter - gcTimeBefore,
+                gcTimeMs = gcTimeDelta,
             )
         } finally {
             kotlin.runCatching { pool.close() }

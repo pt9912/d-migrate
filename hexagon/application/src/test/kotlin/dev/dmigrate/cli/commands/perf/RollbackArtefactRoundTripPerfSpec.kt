@@ -12,7 +12,6 @@ import dev.dmigrate.profiling.perf.PerfReport
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.doubles.shouldBeLessThan
-import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 private val PerfTag = NamedTag("perf")
@@ -53,16 +52,26 @@ class RollbackArtefactRoundTripPerfSpec : FunSpec({
         val warmupResult = RollbackArtefactParser.parse(warmupArtefact)
         warmupResult.shouldBeInstanceOf<RollbackArtefactParser.Result.Success>()
 
+        // Review finding #6: assert on each iteration's freshly-built
+        // artefact (not on warmupArtefact). A regression in
+        // canonicalBody that drops a statement under specific Input
+        // permutations would only manifest in-loop; an
+        // out-of-loop assertion on warmupArtefact misses it.
         val sample = PerfMeasure.run(warmup = WARMUP, iterations = ITERATIONS) {
             val artefact = RollbackArtefactBuilder.build(input)
             val parsed = RollbackArtefactParser.parse(artefact)
             check(parsed is RollbackArtefactParser.Result.Success) {
                 "Perf round-trip must produce Success, got ${(parsed as RollbackArtefactParser.Result.Failure).code}"
             }
-            // Return the artefact length so the JIT cannot eliminate
-            // the build → parse chain — [PerfMeasure.Sink] keeps the
-            // return value alive.
-            artefact.length
+            val rebuilt = parsed.parsed.statementsFromIndex()
+            check(rebuilt.size == OP_COUNT) {
+                "Perf round-trip dropped statements: expected $OP_COUNT, got ${rebuilt.size}"
+            }
+            // Return the Result.Success itself: it is an object, not a
+            // primitive, so the JIT cannot dead-code-eliminate the
+            // build → parse chain and the [PerfMeasure.Sink] does not
+            // autobox a primitive return on every iteration.
+            parsed
         }
 
         sample.medianMs shouldBeLessThan ARTEFACT_SMOKE_MAX_MS
@@ -74,13 +83,6 @@ class RollbackArtefactRoundTripPerfSpec : FunSpec({
             smokeMaxMs = ARTEFACT_SMOKE_MAX_MS,
             baselineMs = ARTEFACT_BASELINE_MS,
         )
-
-        // Belt-and-braces: assert the round-trip preserves the
-        // canonical statement count after the loop, so a regression
-        // that silently drops statements during canonicalisation
-        // still fails the spec rather than just shifting the timing.
-        val parsed = (RollbackArtefactParser.parse(warmupArtefact) as RollbackArtefactParser.Result.Success).parsed
-        parsed.statementsFromIndex().size shouldBe OP_COUNT
     }
 }) {
     companion object {

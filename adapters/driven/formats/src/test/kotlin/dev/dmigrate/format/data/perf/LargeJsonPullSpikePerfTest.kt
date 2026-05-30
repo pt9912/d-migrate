@@ -88,7 +88,22 @@ class LargeJsonPullSpikePerfTest : FunSpec({
                     }
                 }
             }
-            rowsSeen
+            // Returns the per-block working set (small object) so the
+            // PerfMeasure.Sink keeps it alive without autoboxing the
+            // primitive rowsSeen counter on every measured iteration —
+            // not a concern at iterations=1 (the `require` below
+            // enforces that), but keeps the pattern transferable.
+            ProbeRow().apply { id = lastId }
+        }
+
+        // Review finding #3: the var-capture pattern above (rowsSeen,
+        // firstId, …, maxRetainedHeap) only produces correct invariants
+        // for iterations == 1. Catching a future maintainer who bumps
+        // iterations without redesigning the captures.
+        require(sample.iterations == 1) {
+            "LargeJsonPullSpikePerfTest requires iterations == 1; refactor the var-captured " +
+                "rowsSeen / firstId / lastId / maxRetainedHeap into per-iteration scope before " +
+                "bumping the sample size."
         }
 
         val heapAfter = LargeJsonFixture.usedHeapBytes()
