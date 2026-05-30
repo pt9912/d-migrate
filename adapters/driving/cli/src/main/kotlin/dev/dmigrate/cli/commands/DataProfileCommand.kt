@@ -12,20 +12,6 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.connection.ConnectionUrlParser
-import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.mysql.profiling.MysqlLogicalTypeResolver
-import dev.dmigrate.driver.mysql.profiling.MysqlProfilingDataAdapter
-import dev.dmigrate.driver.mysql.profiling.MysqlSchemaIntrospectionAdapter
-import dev.dmigrate.driver.postgresql.profiling.PostgresLogicalTypeResolver
-import dev.dmigrate.driver.postgresql.profiling.PostgresProfilingDataAdapter
-import dev.dmigrate.driver.postgresql.profiling.PostgresSchemaIntrospectionAdapter
-import dev.dmigrate.driver.sqlite.profiling.SqliteLogicalTypeResolver
-import dev.dmigrate.driver.sqlite.profiling.SqliteProfilingDataAdapter
-import dev.dmigrate.driver.sqlite.profiling.SqliteSchemaIntrospectionAdapter
-import dev.dmigrate.format.report.ProfileReportWriter
-import dev.dmigrate.profiling.ProfilingAdapterSet
 
 /**
  * `d-migrate data profile` — thin Clikt shell over [DataProfileRunner].
@@ -48,66 +34,18 @@ class DataProfileCommand : CliktCommand(name = "profile") {
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-
-        val writer = ProfileReportWriter()
-
-        val request = DataProfileRequest(
-            source = source,
-            tables = tables,
-            schema = schema,
-            topN = topN,
-            format = format,
-            output = output,
-            quiet = ctx.quiet,
+        val exitCode = DataProfileWiring.execute(
+            DataProfileOptions(
+                source = source,
+                tables = tables,
+                schema = schema,
+                topN = topN,
+                format = format,
+                output = output,
+                cliContext = root?.cliContext() ?: CliContext(),
+                configPath = root?.config,
+            )
         )
-
-        val configPath = root?.config
-
-        val runner = DataProfileRunner(
-            connectionResolver = { src ->
-                try {
-                    dev.dmigrate.cli.config.NamedConnectionResolver(
-                        configPathFromCli = configPath
-                    ).resolve(src)
-                } catch (e: dev.dmigrate.cli.config.ConfigResolveException) {
-                    throw IllegalArgumentException(e.message, e)
-                }
-            },
-            dialectResolver = { url ->
-                ConnectionUrlParser.parse(url).dialect
-            },
-            poolFactory = { url, _ ->
-                val config = ConnectionUrlParser.parse(url)
-                HikariConnectionPoolFactory.create(config)
-            },
-            adapterLookup = { dialect ->
-                when (dialect) {
-                    DatabaseDialect.POSTGRESQL -> ProfilingAdapterSet(
-                        PostgresSchemaIntrospectionAdapter(),
-                        PostgresProfilingDataAdapter(),
-                        PostgresLogicalTypeResolver(),
-                    )
-                    DatabaseDialect.MYSQL -> ProfilingAdapterSet(
-                        MysqlSchemaIntrospectionAdapter(),
-                        MysqlProfilingDataAdapter(),
-                        MysqlLogicalTypeResolver(),
-                    )
-                    DatabaseDialect.SQLITE -> ProfilingAdapterSet(
-                        SqliteSchemaIntrospectionAdapter(),
-                        SqliteProfilingDataAdapter(),
-                        SqliteLogicalTypeResolver(),
-                    )
-                }
-            },
-            reportWriter = { profile, fmt, out -> writer.write(profile, fmt, out) },
-            // Errors ([ERROR]) always show; status messages respect --quiet
-            stderr = { msg ->
-                if (msg.startsWith("[ERROR]") || !ctx.quiet) System.err.println(msg)
-            },
-        )
-
-        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }
