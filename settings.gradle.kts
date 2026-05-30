@@ -47,3 +47,7 @@ include("test:cross-dialect-matrix")
 // Sequence-Preserve race reproducers (Testcontainers PG/MySQL + file SQLite).
 // See docs/planning/in-progress/quality-coverage-expansion-plan.md §5.3.
 include("test:integration-concurrency")
+
+// Large-schema scale tests for the SchemaMigrateRenderPipeline.
+// See docs/planning/in-progress/quality-coverage-expansion-plan.md §5.4.
+include("test:perf-large-schema")

@@ -98,6 +98,7 @@ COPY --chown=gradle:gradle test/e2e-cli/build.gradle.kts test/e2e-cli/build.grad
 COPY --chown=gradle:gradle test/consumer-read-probe/build.gradle.kts test/consumer-read-probe/build.gradle.kts
 COPY --chown=gradle:gradle test/cross-dialect-matrix/build.gradle.kts test/cross-dialect-matrix/build.gradle.kts
 COPY --chown=gradle:gradle test/integration-concurrency/build.gradle.kts test/integration-concurrency/build.gradle.kts
+COPY --chown=gradle:gradle test/perf-large-schema/build.gradle.kts test/perf-large-schema/build.gradle.kts
 
 RUN gradle --no-daemon resolveAllDependencies
 
