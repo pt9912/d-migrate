@@ -1,6 +1,6 @@
 # Implementierungsplan: Quality- und Coverage-Expansion (Perf / Last / E2E)
 
-> Status: Entwurf (2026-05-30)
+> Status: In Progress (2026-05-30)
 > Workstream: Roadmap-Eintrag „Coverage/QA" über §11 DoD hinaus
 > Vorbedingungen:
 > - `docs/planning/in-progress/diffresult-migration-plan-2.md` §11 (DoD a/b/c/d/e
@@ -66,13 +66,31 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 
 - **Phase A — Performance-Baseline**: per-Hotpath ein Kotest-`PerfSpec`
   mit `kotest.tags=perf`, der wiederholbare Benchmark-Werte (Median,
-  P95) für Render-Pipeline, Diff-Planner und Artefakt-Serialisierung
-  erfasst. Das `NamedTag("perf")`-Pattern existiert bereits in
+  P95) für drei konkret verortete Hotpaths erfasst:
+  - `SchemaMigrateRenderPipeline` →
+    `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/SchemaMigrateRenderPipeline.kt`
+    (Spec in `hexagon/application/src/test/.../perf/`)
+  - `DiffPlanner` →
+    `hexagon/core/src/main/kotlin/dev/dmigrate/core/diff/migration/DiffPlanner.kt`
+    (Spec in `hexagon/core/src/test/.../perf/`)
+  - Artefakt-Serialisierung → `RollbackArtefactBuilder` +
+    `RollbackArtefactParser` (Round-Trip-Pfad, beide in
+    `hexagon/application/src/main/kotlin/dev/dmigrate/cli/commands/`; Spec
+    in `hexagon/application/src/test/.../perf/`)
+
+  Das `NamedTag("perf")`-Pattern existiert bereits in
   `adapters/driven/formats/.../perf/*PerfTest.kt` und
-  `adapters/driven/streaming/.../StreamingImporterReorderPerfTest.kt`;
-  Phase A extrahiert daraus eine gemeinsame Helper-Bibliothek
-  (`PerfMeasure`, `PerfReport`) statt parallele Strukturen zu bauen, und
-  verallgemeinert das Pattern auf die drei neuen Hotpaths. Harte
+  `adapters/driven/streaming/.../StreamingImporterReorderPerfTest.kt`,
+  aber die dort verwendeten Mess-/Heap-Helfer (`LargeJsonFixture.usedHeapBytes`,
+  `ManagementFactory`-Snapshots, ad-hoc Median-Berechnung) sind heute pro
+  Spec dupliziert — eine gemeinsame `PerfMeasure`/`PerfReport`-Lib
+  existiert noch nicht (`grep -rn "PerfMeasure\|PerfReport"` → keine
+  Treffer). Phase A muss diese Lib daher **neu anlegen** (nicht „aus
+  Bestand extrahieren"). Sie lebt unter `hexagon:profiling` mit dem
+  Standard-`minBound(90)`-Gate; die drei Hotpath-Specs sind ihre ersten
+  Konsumenten, die Bestands-PerfSpecs in `formats`/`streaming` werden im
+  selben Sub-Slice auf die Lib migriert, damit kein Parallel-Pattern
+  bleibt. Harte
   Failure-Budgets gelten nur fuer runaway-Smoke-Grenzen oder dedizierte
   Perf-Runner; normale Nightly-Laeufe schreiben Trend-Reports und blocken
   PRs nicht wegen Container-Timing. Phase A schliesst zuerst die
@@ -106,10 +124,12 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
   sowie Memory-Footprint als Hash-of-Numbers in den Report. Scharfe
   Scale-Budgets sind dedizierten Nightly-/Perf-Runnern vorbehalten.
 - **Phase E — Kover-Excludes-Konsolidierung**: jede aktive
-  Kover-Exclude-Regel (`classes`, `packages`, Wildcards und kuenftige
-  weitere Selector-Typen) braucht eine Begründungs-Zeile in einer
-  zentralen `docs/coverage/excludes-ledger.md` (ADR-light), mit Referenz auf
-  Refactor-Plan oder explizitem „permanent excluded weil X"-Beleg.
+  Kover-Exclude-Regel (Selector-Typen sind heute `classes(...)` und
+  `packages(...)`; Wildcards/Glob-Pattern sind Pattern-Form innerhalb
+  dieser Selector-Typen, kein eigener Typ; kuenftige Kover-Selector-Typen
+  werden vom Parser fail-closed behandelt) braucht eine Begründungs-Zeile
+  in einer zentralen `docs/coverage/excludes-ledger.md` (ADR-light), mit
+  Referenz auf Refactor-Plan oder explizitem „permanent excluded weil X"-Beleg.
   Groesse, I/O-Naehe oder „thin wrapper" sind keine ausreichende
   Begruendung ohne konkreten Port-/Fixture-/Refactor-Check; permanente
   Ausnahmen brauchen einen expliziten ADR-/Ledger-Beleg.
@@ -140,8 +160,8 @@ gegen Cloud-Datenbanken (datenschutzkritisch), App-Layer-Replay (siehe
 | §11 DoD a-e (Feature-Test-Pinning) | ✅ 2026-05-19 |
 | `make integration`-Pipeline pro Dialekt | ✅ (test/integration-*) |
 | Integration-Gating | ✅ strukturell via `-PintegrationTests`, nicht über Kotest-`integration`-Tags |
-| `kotest.tags=perf` als Filter-Konvention | ⚠️ Default-Exclude `!perf` existiert in `build.gradle.kts:99-101`, aber der else-Zweig fehlt — explizit gesetzte Tags landen nicht in der forked Test-JVM; Phase-A-Patch siehe §5.1 |
-| `NamedTag("perf")`-Pattern in Bestands-PerfSpecs | ✅ in `adapters/driven/formats` und `adapters/driven/streaming` etabliert; Phase A extrahiert daraus die gemeinsame Helper-Lib |
+| `kotest.tags=perf` als Filter-Konvention | ✅ Default-Exclude `!perf` und explizites Forwarding in die forked Test-JVM sind in `build.gradle.kts:89-102` verdrahtet; Gegenlauf bleibt Akzeptanzkriterium fuer Phase A |
+| `NamedTag("perf")`-Pattern in Bestands-PerfSpecs | ✅ in `adapters/driven/formats` und `adapters/driven/streaming` etabliert; gemeinsame `PerfMeasure`/`PerfReport`-Lib existiert noch nicht (Phase A legt sie neu in `hexagon:profiling` an und migriert die Bestands-Specs darauf) |
 | Atomar-Lock-Plan für Concurrent-Writer-Pattern | ⚠️ Draft (`sequence-preserve-atomic-lock-plan.md`) |
 | Kover-`koverVerify` als CI-Gate | ✅ Produktionsmodule `minBound(90)`; reine Test-/Runner-Module muessen explizit `minBound(0)` setzen oder begruendet aus dem Aggregat bleiben |
 
@@ -197,12 +217,10 @@ hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
   })
 ```
 
-- Vor dem ersten neuen `PerfSpec`: Root-`build.gradle.kts:99` so
-  anpassen, dass ein explizites `System.getProperty("kotest.tags")` nicht
-  nur den Default `!perf` unterdrueckt, sondern auch tatsaechlich in der
-  forked Test-JVM landet. Heute fehlt der else-Zweig komplett — Kotest
-  bekommt im Forked-Prozess gar kein Tag und laeuft alles, was nur
-  zufaellig fuer `=perf` funktioniert. Konkreter Patch:
+- Vor dem ersten neuen `PerfSpec`: Root-`build.gradle.kts` muss ein
+  explizites `System.getProperty("kotest.tags")` nicht nur den Default
+  `!perf` unterdruecken lassen, sondern auch in die forked Test-JVM
+  weiterreichen. Dieser Vertrag ist inzwischen so verdrahtet:
 
   ```kotlin
   if (explicitKotestTags == null) {
@@ -228,7 +246,15 @@ hexagon/<modul>/src/test/kotlin/...PerfSpec.kt
   - `*_BASELINE_MS` ist ein Nightly-/dedicated-runner-Wert im JSON-Report.
     Er blockt nur auf Runnern mit explizitem `-PperfGate=true` oder
     Workflow-Label `perf-stable-runner`; auf Shared-Container-CI wird er
-    als Regression-Diagnose reported, nicht als PR-Gate.
+    als Regression-Diagnose reported, nicht als PR-Gate. Phase A liefert
+    das CI-/Make-Skelett (Bulletpoint „CI-Job laeuft tagsueber nicht im
+    PR-Sweep …" unten) inklusive `-PperfGate=true`-Schalter im
+    `make docker-perf`-Target; die tatsaechliche Bereitstellung des
+    `perf-stable-runner`-Labels (Self-Hosted-Runner oder dedizierter
+    GitHub-Hosted-Runner-Pool) ist Infrastruktur-Aufgabe und bleibt
+    Out-of-Scope dieses Plans (siehe §9). Bis der Runner steht, laufen
+    Baseline-Gates ausschliesslich lokal ueber
+    `make docker-perf PERF_GATE=true`.
   Jeder Baseline-Bump muss den alten/neuen Median+P95 im Commit oder PR
   dokumentieren.
 - Pro Lauf: 5 Warmup + 20 Mess-Iterationen; Report-Output
@@ -259,11 +285,24 @@ test/cross-dialect-matrix/
   → durchgängige Tabelle. Lücken sind als `MATRIX_GAP`-Diagnose markiert
   und blocken den Sweep, bis der Workstream das Pinning nachholt ODER
   einen expliziten Carve-out registriert.
-- Fixtures liegen in `test/cross-dialect-matrix/fixtures/` als
-  YAML-Schema-Paare; der Sweep lädt sie deterministisch.
+- Fixture-Re-Use-Vertrag: bestehende Schema-Fixtures aus
+  `test/integration-postgresql/`, `…-mysql/`, `…-sqlite/`,
+  `…-integrations/` und `test/e2e-cli/` werden **nicht** dupliziert.
+  Stattdessen lebt der gemeinsame Fixture-Bestand in
+  `test/cross-dialect-matrix/fixtures/` als kanonische Quelle; die
+  bisherigen Konsumenten greifen via shared sourceset (Gradle-`test`-
+  `resources`-Verzeichnis aus dem Matrix-Modul wiederverwenden) oder via
+  Symlink/`processResources`-Kopie auf denselben Stand zu. Eine pro
+  Sub-Slice B-Commit gepflegte Fixture-Migrationsliste
+  (`test/cross-dialect-matrix/README.md`) dokumentiert, welche
+  Fixtures aus welchen Bestandsmodulen umgezogen wurden, damit kein
+  stiller Drift entsteht. Der Sweep lädt die Fixtures deterministisch
+  aus `test/cross-dialect-matrix/fixtures/`.
 - Carve-out-Beispiel: PG `EXCLUDE` hat keinen MySQL-/SQLite-Positivpfad
-  (siehe `diffresult-migration-plan-2.md §11.2 Workstream F.5`
-  Vollscheibe) — das Carve-out-File listet den Verzicht mit
+  (siehe `diffresult-migration-plan-2.md §10 F.5` zur Constraint-
+  Diffbarkeit; §11.2 listet nur die generischen Pflichtkriterien, die
+  Workstream-spezifischen Carve-outs leben im jeweiligen Workstream-
+  Abschnitt) — das Carve-out-File listet den Verzicht mit
   Plan-Doc-Verweis.
 - Modulregistrierung folgt §5.0. Da `test/cross-dialect-matrix` ein reines
   Test-/Sweep-Modul ist, muss sein `build.gradle.kts` die Coverage-Pflicht
@@ -284,13 +323,21 @@ explizites Production-Worker-Wiring:
 - Der heutige `test:e2e-cli`-In-Process-Harness reicht nicht aus, solange
   `StdioHarness`/`HttpHarness` nur `McpRuntimeWiring` an
   `McpServerBootstrap.startStdio`/`startHttp` uebergeben. Phase C-MCP baut
-  eine Operational-Harness-Variante oder startet ueber `McpServeWiring`, die
+  eine **Operational-Harness-Variante** auf demselben Bootstrap-Pfad. Die
+  Harness komponiert direkt
   `components = AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
-  in den Bootstrap gibt.
+  und uebergibt sie als `components`-Override in
+  `McpServerBootstrap.startStdio`/`startHttp`. Bewusst **nicht** ueber
+  `McpServeWiring` aus dem CLI-Adapter (`adapters/driving/cli`):
+  `McpServeWiring` lebt im CLI-Modul und ist mit `McpServeRunner`
+  verschraenkt (StateDirOwner, McpStateDirLock, CursorKeyring,
+  ApprovalGrantsFile, …). Diese CLI-Optik gehoert nicht in den
+  In-Process-Test; sie wird vom separaten Subprocess-Smoke (siehe unten)
+  ueber den echten `mcp serve`-Pfad abgedeckt.
 - `OperationalMcpWiring` nutzt `McpCoreJobWorkerFactory`, nicht den
-  `PassthroughJobWorkerFactory`. Der Test muss beweisen, dass ein Worker
-  Artefakte publiziert und der Job terminal wird; ein nur angelegter
-  `QUEUED`-Job reicht nicht.
+  Fallback `PassthroughJobWorkerFactory`. Der Test muss beweisen, dass
+  ein Worker Artefakte publiziert und der Job terminal wird; ein nur
+  angelegter `QUEUED`-Job reicht nicht.
 - Die Test-Fixtures registrieren echte `ConnectionReference`-Eintraege
   und einen Test-`ConnectionSecretResolver`, der deren `credentialRef`
   deterministisch auf Testcontainers-/SQLite-JDBC-URLs materialisiert.
@@ -301,6 +348,16 @@ explizites Production-Worker-Wiring:
   `mcp serve --transport stdio` den echten CLI-/Bootstrap-/StateDir-
   Lifecycle startet. Fachliche Artefakt-Assertions duerfen in-process
   laufen, solange sie ueber dieselbe Tool-/Resource-Oberflaeche gehen.
+- Gating: das neue Live-DB-Szenario laeuft im Standard-`-PintegrationTests`-
+  Sweep von `:test:e2e-cli` mit — ohne zusaetzliches Property — weil die
+  Aussagekraft (Live-DB-Job-Worker bis terminalem Status + Artefakt-Read)
+  zum E2E-CLI-Vertrag gehoert. Laufzeit-Budget: das Szenario darf den
+  bestehenden `:test:e2e-cli`-Lauf nicht mehr als ~60 s verlaengern; wird
+  das gerissen, hat Sub-Slice C-MCP zwei Optionen, die im Commit
+  benannt werden: (a) das Szenario hinter ein zusaetzliches Property
+  `-Pe2eLiveDb` umziehen und im Standard-`-PintegrationTests`-Sweep nur
+  einen Minimal-Smoke lassen, oder (b) das Szenario in einen schlankeren
+  Pfad refaktorieren. Default-Erwartung ist (b).
 - Der opt-in Nachweis laeuft mindestens ueber
   `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
   oder einen engeren `--tests`-Filter fuer das neue Live-DB-Szenario.
@@ -445,18 +502,23 @@ test/perf-large-schema/
 
 ### 5.5 Kover-Excludes-Konsolidierung (Phase E)
 
-- Neue Datei `docs/coverage/excludes-ledger.md` listet pro Modul jede
+- Neues Verzeichnis `docs/coverage/` (existiert heute nicht — Sub-Slice E
+  legt es zusammen mit dem Ledger an). Die neue Datei
+  `docs/coverage/excludes-ledger.md` listet pro Modul jede
   aktive Kover-Exclude-Regel aus allen
   `build.gradle.kts`-Bloecken mit:
-  - Selector-Typ (`classes`, `packages`, Wildcard-Pattern; spaetere
-    Kover-Selectoren analog), Wert und Modulpfad.
+  - Selector-Typ (`classes(...)` oder `packages(...)`; das konkrete
+    Pattern kann Glob-Wildcards enthalten — die Wildcards sind
+    Pattern-Form und kein eigener Selector-Typ), Pattern-Wert und
+    Modulpfad.
   - Datum, Begründung, Refactor-Plan-Verweis oder „permanent" + ADR-Ref.
 - Phase E startet mit einer generierten Vollinventur, nicht mit einer
   handgepflegten Beispielmenge. Der Audit durchsucht alle
   `kover { reports { filters { excludes { ... } } } }`-Bloecke und
-  extrahiert mindestens `classes(...)` und `packages(...)`; der Parser
-  failt geschlossen, wenn er einen unbekannten Exclude-Selector findet,
-  bis der Ledger-Vertrag um diesen Selector erweitert ist. Beispiele fuer
+  extrahiert mindestens `classes(...)` und `packages(...)`-Eintraege
+  (Pattern werden 1:1 uebernommen, Wildcards bleiben Teil des Patterns);
+  der Parser failt geschlossen, wenn er einen unbekannten Exclude-
+  Selector-Typ findet, bis der Ledger-Vertrag um diesen Selector erweitert ist. Beispiele fuer
   heute aktive Kategorien:
   - CLI-Command-Shells und JDBC-/Hikari-Wiring in `adapters:driving:cli`.
   - Core-/Server-Core-DTOs und sealed Outcome-Typen in `hexagon:core`.
@@ -482,10 +544,11 @@ test/perf-large-schema/
     Refactor-/Fixture-Plan.
 - Verifikation: `make docker-coverage-gate` grün; zusätzlich prüft ein
   Repo-Script/CI-Hook, dass jede Kover-Exclude-Regel aus den
-  Gradle-Dateien im Ledger vorkommt, inklusive `classes(...)`,
-  `packages(...)` und Wildcards. Neue Excludes brauchen einen Commit, der
-  gleichzeitig das Ledger pflegt; unbekannte Selector-Typen blocken den
-  Hook, statt still ignoriert zu werden.
+  Gradle-Dateien im Ledger vorkommt — `classes(...)` und `packages(...)`
+  als heutige Selector-Typen, jeweils mit ihrem vollstaendigen Pattern
+  (Wildcards sind Teil des Patterns). Neue Excludes brauchen einen
+  Commit, der gleichzeitig das Ledger pflegt; bisher unbekannte
+  Selector-Typen blocken den Hook, statt still ignoriert zu werden.
 - Phase E normalisiert ausserdem die bestehende `:test:*`-Modul-Landschaft:
   jedes Test-/Runner-Modul, das im Root-Kover-Aggregat oder in
   Coverage-Modules-Listen auftaucht, bekommt eine explizite Entscheidung
@@ -508,15 +571,15 @@ test/perf-large-schema/
 
 | Sub-Slice | Inhalt |
 |---|---|
-| A | `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath (`SchemaMigrateRenderPipeline.run`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
-| A-Vervollständigung | Diff-Planner- und Artefakt-Serialisierungs-PerfSpecs mit denselben Smoke-/Baseline-Vertraegen; Phase A ist erst nach allen drei Hotpaths schliessbar |
+| A | `PerfMeasure`/`PerfReport`-Lib **neu** in `hexagon:profiling` (`minBound(90)`) + `PerfSpec`-Konvention + Root-Forwarding fuer explizites `kotest.tags` + erster Hotpath `SchemaMigrateRenderPipeline.run` (Spec in `hexagon/application/src/test/.../perf/`) + getrennte Smoke-/Baseline-Budgets + nightly-Workflow-/`make docker-perf`-Skelett |
+| A-Vervollständigung | Diff-Planner-PerfSpec (`hexagon/core/src/test/.../perf/`) + Artefakt-Serialisierungs-PerfSpec ueber `RollbackArtefactBuilder`+`RollbackArtefactParser`-Round-Trip (`hexagon/application/src/test/.../perf/`) mit denselben Smoke-/Baseline-Vertraegen + Migration der Bestands-PerfSpecs in `adapters/driven/formats` und `adapters/driven/streaming` auf `PerfMeasure`/`PerfReport`; Phase A ist erst nach allen drei Hotpaths plus Bestands-Migration schliessbar |
 | B | `test/cross-dialect-matrix/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + Sweep-Fixture-Lader + Carve-out-Registry-Mechanik (`fixtures/carve-outs.yaml` + `MATRIX_GAP`-Diagnose) + erste 5 Workstreams gepinnt, restliche Workstreams provisorisch als Carve-out registriert, damit der Sweep schon ab B aktiv laufen kann ohne 17 noch nicht gepinnte Workstreams hart zu blocken |
-| B-Vervollständigung | provisorische Carve-out-Eintraege fuer die restlichen Workstreams in echtes Pinning konvertieren oder als dauerhaften Carve-out mit Plan-Doc-Verweis stehen lassen — am Ende ist jeder Workstream entweder gepinnt oder hat einen begruendeten dauerhaften Carve-out |
-| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness oder `McpServeWiring` statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
+| B-Vervollständigung | provisorische Carve-out-Eintraege fuer die restlichen Workstreams in echtes Pinning konvertieren oder als dauerhaften Carve-out mit Plan-Doc-Verweis stehen lassen — am Ende ist jeder zum Annahme-Zeitpunkt bestehende Workstream entweder gepinnt oder hat einen begruendeten dauerhaften Carve-out. **Neue Workstreams nach B-Vervollständigung** sind Pflicht-Pinning des einfuehrenden Slices (im jeweiligen Plan-Doc), nicht von B oder F; das `fixtures/carve-outs.yaml` traegt sie nur dann nach, wenn der einfuehrende Slice eine `MATRIX_GAP`-Diagnose abklingen muss |
+| C-MCP | `test:e2e-cli`-MCP-Szenario gegen Live-DB mit bestehenden Tools: `schema_reverse_start`/`schema_compare_start`, Operational-Harness-Variante (komponiert `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))` und uebergibt sie als `components`-Override in `McpServerBootstrap.startStdio`/`startHttp`; **nicht** ueber CLI-seitiges `McpServeWiring`) statt Runtime-only Harness, `McpCoreJobWorkerFactory`, testbarem `ConnectionSecretResolver`, terminalem Job-Status, Artefaktinhalt, separatem `mcp serve`-Subprocess-Smoke, je ein Erfolgs- und Validierungs-/Policy-Blockerpfad, konkretem `make integration ... :test:e2e-cli:test`-Nachweis |
 | C | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
 | D-N10k | N=10000-Scale-Test als nightly-only opt-in |
-| E | `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (`classes`, `packages`, Wildcards, unbekannte Selector-Typen fail-closed) + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
+| E | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + Repo-Script/CI-Hook-Skizze + Bestands-Audit |
 | F | Roadmap-Status-Flip + Closing |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
@@ -540,10 +603,17 @@ Umsetzung folgt ausserhalb dieses Plans.
 
 ## 7. Akzeptanzkriterien
 
+- [ ] `PerfMeasure`/`PerfReport`-Lib lebt in `hexagon:profiling` unter
+      `minBound(90)`; bestehende `*PerfTest`-Specs in
+      `adapters/driven/formats` und `adapters/driven/streaming` sind auf
+      die Lib migriert, sodass kein Parallel-Pattern bleibt.
 - [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README im jeweiligen
-      Modul: Phase-A-Hotpaths in `hexagon/*` bzw. bestehenden Adaptermodulen,
-      Phase D zusaetzlich in `test/perf-large-schema`); Render-Pipeline,
-      Diff-Planner und Artefakt-Serialisierung sind jeweils mit getrenntem
+      Modul). Die drei Phase-A-Hotpaths sind konkret verortet:
+      `SchemaMigrateRenderPipeline` (`hexagon:application`),
+      `DiffPlanner` (`hexagon:core`) und Rollback-Artefakt-Round-Trip
+      `RollbackArtefactBuilder`↔`RollbackArtefactParser`
+      (`hexagon:application`); Phase D zusaetzlich in
+      `test/perf-large-schema`. Alle drei sind mit getrenntem
       `*_SMOKE_MAX_MS`-Runaway-Guard und `*_BASELINE_MS`-Reportwert
       gepinnt. Das Dokument benennt, welche Werte auf Shared-CI nur
       Diagnose sind und welche auf dedizierten Perf-Runnern als Gate gelten.
@@ -557,18 +627,25 @@ Umsetzung folgt ausserhalb dieses Plans.
       und Kover-Entscheidung (`minBound(0)` fuer reine Testmodule oder
       begruendeter Ausschluss aus Aggregate-/Coverage-Modules-Listen).
 - [ ] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
-      und der Sweep-Test deckt alle in `diffresult-migration-plan-2.md`
-      §11.2 zum Zeitpunkt der Sub-Slice-F-Annahme gelisteten Workstreams
-      (heute 22; die Zahl wird bei Annahme im Commit gepinnt, damit ein
-      spaeterer Zuwachs §11.2 nicht stillschweigend das Gate aufweicht).
+      und der Sweep-Test deckt alle zum Zeitpunkt der
+      Sub-Slice-B-Vervollständigung in `diffresult-migration-plan-2.md`
+      gelisteten Workstreams (heute 22; die Zahl wird beim
+      B-Vervollständigung-Commit gepinnt, damit ein spaeterer Zuwachs nicht
+      stillschweigend das Gate aufweicht). Workstreams, die *nach*
+      B-Vervollständigung neu eingefuehrt werden, pinnt der jeweilige
+      einfuehrende Slice direkt im Matrix-Modul; B-Vervollständigung und F
+      bleiben davon unberuehrt.
 - [ ] Carve-out-Registry für nicht-pinnbare Workstream-Dialekt-Paare
       ist im Modul (`fixtures/carve-outs.yaml` o. ä.) und in der
       Plan-Doc-Begründung verlinkt.
 - [ ] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
       `schema_reverse_start`/`schema_compare_start` ueber die
-      MCP-Client-Oberflaeche mit Operational-Harness oder `McpServeWiring`,
-      nicht mit einem Runtime-only Harness. `OperationalMcpWiring` gibt
-      `AiMcpRegistries.defaultComponents(...)` in den Bootstrap und nutzt
+      MCP-Client-Oberflaeche mit einer **Operational-Harness-Variante**
+      (komponiert `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
+      und uebergibt diese als `components`-Override in
+      `McpServerBootstrap.startStdio`/`startHttp`), nicht mit dem
+      heutigen Runtime-only Harness und **nicht** ueber das CLI-seitige
+      `McpServeWiring`. Die Operational-Variante nutzt
       `McpCoreJobWorkerFactory` plus testbaren `ConnectionSecretResolver`
       mit echten Testcontainers-/SQLite-JDBC-URLs. Der Test wartet auf
       terminalen Job-Status und prueft Execution/Audit-Metadaten sowie
@@ -597,12 +674,21 @@ Umsetzung folgt ausserhalb dieses Plans.
       dedizierten Perf-Runnern oder Nightly-Konfigurationen. N=10000 ist
       nightly opt-in. Das Modul ist als reines Perf-/Testmodul mit
       `minBound(0)` oder begruendetem Kover-Aggregate-Carve-out markiert.
+- [ ] Heap-Mess-Strategie fuer `test/perf-large-schema` ist im
+      Sub-Slice-D-Commit benannt (Default: `MemoryPoolMXBean.peakUsage`
+      ueber alle Heap-Pools mit `resetPeakUsage()` vor jedem Scale-Run
+      und GC-induziertem Snapshot vor/nach dem Lauf; Alternativen JFR,
+      async-profiler nur mit Begruendung). Reset-Verhalten pro Scale-Run,
+      Snapshot-Punkte und gewaehlte Strategie sind im Commit oder in
+      `test/perf-large-schema/README.md` dokumentiert.
 - [ ] `docs/coverage/excludes-ledger.md` listet jede aktive
       Kover-Exclude-Regel aus allen `build.gradle.kts`-Dateien mit
-      Selector-Typ (`classes`, `packages`, Wildcard; weitere Selector-Typen
-      analog), Wert, Modul, Begründung + Refactor-Plan oder
-      „permanent + ADR-Ref"; ein Repo-Script/CI-Hook vergleicht alle
-      Gradle-Excludes gegen das Ledger und blockt unbekannte Selector-Typen.
+      Selector-Typ (`classes(...)` oder `packages(...)`; Wildcards sind
+      Glob-Pattern innerhalb dieser Selector-Typen, kein eigener Typ;
+      kuenftige Kover-Selector-Typen werden fail-closed behandelt), Pattern,
+      Modul, Begründung + Refactor-Plan oder „permanent + ADR-Ref"; ein
+      Repo-Script/CI-Hook vergleicht alle Gradle-Excludes gegen das Ledger
+      und blockt bisher unbekannte Selector-Typen.
 - [ ] Alle bestehenden und neuen `:test:*`-Module mit Kover-Bezug haben eine
       explizite Coverage-Entscheidung: `minBound(0)` fuer reine Runner,
       `minBound(90)` wenn produktiver Code im Modul lebt, oder einen
@@ -618,17 +704,30 @@ Umsetzung folgt ausserhalb dieses Plans.
       Sequence-Probe-Adapter, Sweep-Fixtures) lebt — wo fachlich
       sinnvoll — in einem Hexagon-Modul (z. B. `hexagon:profiling`,
       `hexagon:core`) unter `minBound(90)`, nicht im `test/*-Modul` mit
-      `minBound(0)`. Reine Test-Wiring- und Fixture-Glue-Code bleibt im
-      `test/*-Modul`; pro Phase wird die Trennlinie im Sub-Slice
-      dokumentiert. Damit verschiebt §5.5 keine Coverage-Luecken in neue
-      Test-Module (siehe `feedback_test_coverage`).
+      `minBound(0)`. **Grenze:** ein Helper wandert nach `hexagon/*` nur
+      dann, wenn entweder (a) ein produktiver Konsument absehbar ist (z. B.
+      `PerfMeasure` wird vom kuenftigen Profiling-CLI verwendet) oder
+      (b) der Helper fachlich zur Hexagon-Schicht gehoert (z. B.
+      `LargeSchemaGenerator` als deterministischer Schema-Generator
+      koennte in `hexagon:core` Fixtures fuer mehrere Test-Module liefern).
+      Helper, die ausschliesslich von genau einem Test-Modul konsumiert
+      werden und keinen Produktbezug haben, bleiben im `test/*-Modul`
+      und tragen das `minBound(0)`-Gate des Modul mit. Reine Test-Wiring-
+      und Fixture-Glue-Code bleibt immer im `test/*-Modul`. Pro Phase
+      wird die Trennlinie im Sub-Slice dokumentiert. Damit verschiebt
+      §5.5 keine Coverage-Luecken in neue Test-Module
+      (siehe `feedback_test_coverage`), ohne den Hexagon-Baum mit reinen
+      Test-Helfern zu verwaessern.
 - [ ] Flake-SOP fuer Perf-/Concurrency-Smoke-Brueche ist dokumentiert:
-      Smoke-Bruch ist immer Bug, Quarantine via `@Suppress` ist
-      unzulaessig (siehe `feedback_no_suppress_for_size`). Der erste
-      Smoke-Flake fuehrt zu Root-Cause-Analyse — entweder Mess-Strategie
-      wird gehaertet, Budget bewusst neu kalibriert (mit Commit-Eintrag
-      alter/neuer Wert), oder der Test wird strukturell anders
-      geschnitten.
+      jeder Smoke-Bruch loest Root-Cause-Analyse aus und endet in genau
+      einem von drei Outcomes — (a) Code-Fix, wenn die Regression real
+      ist; (b) Mess-Strategie-Haertung, wenn das Mess-Setup das eigentliche
+      Problem ist; (c) dokumentierte Grenz-Re-Kalibrierung mit
+      Commit-Eintrag alter/neuer Wert, wenn der Smoke-Guard zu eng
+      kalibriert war und Container-Variabilitaet realistischer Grund ist.
+      `@Suppress`/Quarantine sind nie zulaessig
+      (siehe `feedback_no_suppress_for_size`); ein vierter „einfach
+      ignorieren"-Pfad existiert nicht.
 - [ ] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
       Status `✅ erledigt (<datum>)`.
 
@@ -653,9 +752,10 @@ Umsetzung folgt ausserhalb dieses Plans.
    N als CLI-Parameter.
 5. **Excludes-Ledger driftet vom Code ab**: ohne Hook bleibt das Ledger
    stale. Mitigation: Pre-commit-/CI-Hook im Plan-Phase-E-Scope, der alle
-   Kover-Exclude-Selectoren (`classes`, `packages`, Wildcards, kuenftige
-   Selector-Typen) gegen das Ledger prueft und unbekannte Selector-Typen
-   fail-closed behandelt.
+   Kover-Exclude-Eintraege (Selector-Typen `classes(...)`/`packages(...)`
+   inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns) gegen
+   das Ledger prueft und bisher unbekannte Selector-Typen fail-closed
+   behandelt.
 6. **Neue Testmodule brechen Docker-Dependency-Warmup**: der Dockerfile-
    `deps`-Stage kopiert Gradle-Dateien explizit. Mitigation: §5.0 macht
    Dockerfile-`COPY`-Pflege, Kover-Entscheidung und Make-/CI-Opt-in zum
@@ -680,3 +780,21 @@ Umsetzung folgt ausserhalb dieses Plans.
   Plans pinnt vor diesem Slice nur die heute beobachtbare Race als
   Legacy-/Risk-Baseline und wechselt nach Landung des Atomic-Slice auf
   das aktive Korrektheits-Gate `finalValue >= postWriterMaximum`.
+- **Dockerfile-`deps`-Stage rekursiv machen** — heute kopiert
+  `Dockerfile:60-89` jeden `build.gradle.kts` Zeile fuer Zeile (siehe
+  §5.0, Risiko #6); §5.0 + Akzeptanzkriterium „neues Testmodul"
+  konservieren das. Folge-Thema: den Stage so umbauen, dass er rekursiv
+  `**/build.gradle.kts` plus `**/settings.gradle.kts` warmt (z. B. ueber
+  ein vorgelagertes `find … -print | tar -cf-`-COPY-Pattern), damit
+  neue Module den Dependency-Warmup nicht mehr aktiv anpassen muessen.
+  Bleibt Folge-Plan, weil die Aenderung den Build-Cache und CI-Hit-Rate
+  betrifft und ihren eigenen Verifikations-Sweep braucht.
+- **`perf-stable-runner`-Bereitstellung** — Phase A liefert nur das
+  Workflow-/Make-Skelett (`-PperfGate=true`, `make docker-perf
+  PERF_GATE=true`). Die tatsaechliche Runner-Hardware bzw. das
+  GitHub-Actions-Label (Self-Hosted oder dedizierter Pool) ist
+  Infrastruktur und Out-of-Scope dieses Plans.
+- **`PerfMeasure`/`PerfReport`-Konsumenten ausserhalb Tests** — die Lib
+  lebt in `hexagon:profiling` und ist heute fuer Test-Specs gedacht. Ein
+  produktiver Konsument (CLI-Subcommand fuer Hotpath-Diagnose, MCP-Tool
+  fuer Profiling-Reports) ist eigener Slice und nicht Teil dieses Plans.

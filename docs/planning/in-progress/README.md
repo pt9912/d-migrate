@@ -15,6 +15,15 @@ Zwei Typen leben hier:
    - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
      — Draft für den dialektübergreifenden Atomic-Probe-und-Restore-Pfad
      (Folge-Slice der bestehenden `preserveCurrentValue`-Workstreams).
+   - [`quality-coverage-expansion-plan.md`](quality-coverage-expansion-plan.md)
+     — QA-/Coverage-Erweiterung über §11 DoD hinaus: Perf-Baseline
+     (`PerfMeasure`/`PerfReport`-Lib + drei Hotpaths), Cross-Dialekt-
+     Matrix-Sweep, Concurrent-Writer-Race-Reproducer, Large-Schema-Last-
+     Tests und Kover-Excludes-Ledger.
+   - [`wiring-factory-port-coverage.md`](wiring-factory-port-coverage.md)
+     — Folge-Tranche fuer die CLI-Wirings mit eager Hikari-/Adapter-
+     Konstruktion; fuehrt Factory-Ports und Fake-Bundles fuer
+     modul-isolierte Wiring-Coverage ein.
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)
