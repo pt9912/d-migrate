@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Schreibverkehr vor `--execute` weiterhin manuell anhalten.
 
   Plan-Doc:
-  `docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
+  `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`.
 
 - **0.9.7 SQLite-Sequence-Emulation Phase B.2 — Validator-Regeln**
   *(2026-05-28)* — zwei zusammengehörige Validator-Schichten, die

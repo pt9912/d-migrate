@@ -5,7 +5,7 @@
 > Vorarbeit:
 > - `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md` §3.2
 >   und §9 (Out-of-Scope), §10 Risiken
-> - `docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`
+> - `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`
 >   §6 Risiken Nr. 1
 
 ## 1. Ausgangslage

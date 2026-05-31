@@ -640,7 +640,7 @@ Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequ
 > kein stiller `UPDATE`. Details siehe
 > [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
 > §6.2 und Phasen F/G, plus den 0.9.7-E.3-Folge-Slice
-> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
+> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
 
 ---
 

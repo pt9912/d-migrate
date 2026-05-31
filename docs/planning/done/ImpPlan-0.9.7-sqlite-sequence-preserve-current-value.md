@@ -1,6 +1,13 @@
 # Implementierungsplan: SQLite Sequence Current-Value Preserve (0.9.7 E.3-Folge-Slice)
 
-> Status: In Progress (2026-05-29)
+> Status: ✅ erledigt (2026-05-29, `ff9fcc71` + Doc-Sync `5530137a`).
+> Implementierung in einem Commit gelandet — alle Phasen A–F mit
+> Tests, Capability-Flip, CLI-Option, Renderer-Down-Pfad und User-Doku
+> (`docs/user/guide.md` §„preserveCurrentValue auf SQLite") sowie
+> Changelog-Eintrag (`CHANGELOG.md` §„0.9.7 SQLite-Sequence
+> preserveCurrentValue Folge-Slice"). Plan-Doc verlaesst
+> `in-progress/` mit dem Closing-Commit, der die DoD-Checkboxen
+> rueckwirkend gegen die ausgelieferten Artefakte gespiegelt hat.
 > Workstream: E.3 Folge-Slice für SQLite `supportsCurrentValuePreserve`
 > Vorarbeit:
 > - `docs/planning/done/sqlite-sequence-emulation-plan.md`
@@ -89,10 +96,10 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD A**
 
-- [ ] Probe-Matrix dokumentiert (Plan oder KDoc).
-- [ ] `helper_table` als harte Vorbedingung im Preserve-Kontext dokumentiert.
-- [ ] Nicht-`helper_table` blockiert vor Live-Probe deterministisch.
-- [ ] Rename-Restore nutzt `probeSequenceRef`.
+- [x] Probe-Matrix dokumentiert (Plan oder KDoc).
+- [x] `helper_table` als harte Vorbedingung im Preserve-Kontext dokumentiert.
+- [x] Nicht-`helper_table` blockiert vor Live-Probe deterministisch.
+- [x] Rename-Restore nutzt `probeSequenceRef`.
 
 ### Phase B – SQLite-Probe-Adapter implementieren
 
@@ -104,10 +111,10 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD B**
 
-- [ ] Adapter existiert und implementiert das Probe-Interface.
-- [ ] Happy-Path liefert `Read(value)`.
-- [ ] `NotFound` deckt fehlende Tabelle und fehlende Zeile ab.
-- [ ] Mindestanforderung Fehlerszenarien ist getestet (unmanaged, format, permissions/ambiguous, query-fail).
+- [x] Adapter existiert und implementiert das Probe-Interface.
+- [x] Happy-Path liefert `Read(value)`.
+- [x] `NotFound` deckt fehlende Tabelle und fehlende Zeile ab.
+- [x] Mindestanforderung Fehlerszenarien ist getestet (unmanaged, format, permissions/ambiguous, query-fail).
 
 ### Phase C – Runner- und Stage-Wiring + Kontextfluss
 
@@ -126,11 +133,11 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD C**
 
-- [ ] SQLite-Kandidaten erreichen bei DB-Execute den Probe-Flow.
-- [ ] `helper_table`-Opt-in ist Pflicht und wird vor Probe geprüft.
-- [ ] `probe == null` bleibt kontrollierter NotRun-Pfad.
-- [ ] Alte SQLite-unsupprted-Blocker-Tests ersetzt/angepasst.
-- [ ] PG/MySQL-Verhalten unverändert.
+- [x] SQLite-Kandidaten erreichen bei DB-Execute den Probe-Flow.
+- [x] `helper_table`-Opt-in ist Pflicht und wird vor Probe geprüft.
+- [x] `probe == null` bleibt kontrollierter NotRun-Pfad.
+- [x] Alte SQLite-unsupprted-Blocker-Tests ersetzt/angepasst.
+- [x] PG/MySQL-Verhalten unverändert.
 
 ### Phase D – Down-Rendering fertigstellen
 
@@ -141,9 +148,9 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD D**
 
-- [ ] Up-/Down-Restore sind in Tests explizit sichtbar.
-- [ ] Kein impliziter Skip im normalen Preserve-Down-Case.
-- [ ] Rename-Fall ist korrekt aufgelöst.
+- [x] Up-/Down-Restore sind in Tests explizit sichtbar.
+- [x] Kein impliziter Skip im normalen Preserve-Down-Case.
+- [x] Rename-Fall ist korrekt aufgelöst.
 
 ### Phase E – Capability, Docs, Aktivierung
 
@@ -158,9 +165,9 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD E**
 
-- [ ] Capability ist erst nach komplettem technischen Abschluss aktiv.
-- [ ] Dokumentation enthält den Opt-in- und Blockierpfad.
-- [ ] Changelog-Eintrag vorhanden.
+- [x] Capability ist erst nach komplettem technischen Abschluss aktiv.
+- [x] Dokumentation enthält den Opt-in- und Blockierpfad.
+- [x] Changelog-Eintrag vorhanden.
 
 ### Phase F – Abschlussabnahme
 
@@ -172,9 +179,9 @@ Ziel ist, das bisher implizite Gap kontrolliert zu schließen: Probe → Follow-
 
 **DoD F**
 
-- [ ] Kein Dialekt-Unsupprt-Block mehr im gültigen SQLite-Preserve-Flow.
-- [ ] Up- und Down-Statements enthalten deterministische `dmg_sequences.next_value`-Updates.
-- [ ] Fehler-/Block-Pfade sind deterministisch und dokumentiert.
+- [x] Kein Dialekt-Unsupprt-Block mehr im gültigen SQLite-Preserve-Flow.
+- [x] Up- und Down-Statements enthalten deterministische `dmg_sequences.next_value`-Updates.
+- [x] Fehler-/Block-Pfade sind deterministisch und dokumentiert.
 
 ## 6. Risiken
 
@@ -240,3 +247,29 @@ Reihenfolge der Skip-/Block-Pfade in `SequencePreserveStage.run(...)`:
 `--sqlite-named-sequences helper_table`; deutlich verschieden von
 `NOT_SUPPORTED_BY_DIALECT`, weil die Capability vorhanden ist und
 nur der Opt-in fehlt.
+
+---
+
+## Closure (2026-05-31)
+
+Alle Phasen A–F geliefert; Plan-Doc verlaesst `in-progress/` und
+wandert nach `done/`. Die Umsetzung lag in einem einzigen Feature-
+Commit, die DoD-Checkboxen sind rueckwirkend gegen die ausgelieferten
+Artefakte gespiegelt — kein Sub-Slice-Commit pro Phase.
+
+| Bereich | Commit | Resultat |
+|---|---|---|
+| Implementation | `ff9fcc71` | `SqliteSequenceCurrentValueProbe` (Adapter + `dmg_sequences.next_value`-Read mit `managed_by`/`format_version`-Guard), Runner-Dispatch von SQLite auf den neuen Probe-Adapter (statt `NotApplicable`), `SequencePreserveStage`-Allowlist + Pre-Probe-Blocker `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Classifier `MANUAL_ACTION_REQUIRED`), `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` Down deterministisches `UPDATE dmg_sequences SET next_value = <restoreValue> WHERE name = <probeRef>` (mit `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip bei `null`-restoreValue), `SequenceCapabilityDefaults.SQLite.supportsCurrentValuePreserve` von `false` auf `true` geflippt, neue `--sqlite-named-sequences`-Option auf `schema migrate`, `DdlDialectContext.Sqlite` reicht den Modus durch. |
+| Test-Coverage | `ff9fcc71` | `SqliteSequenceCurrentValueProbeTest` (Adapter), `SequencePreserveStageTest` (Stage), `SchemaMigrateRunnerSequencePreserveTest` (Runner), `SqliteDiffSequenceOpsTest` (Down-Renderer), `PlannerBlockerClassifierTest` (neuer Code → Classifier). |
+| Doku/Doc-Sync | `5530137a` | `docs/user/guide.md` §„preserveCurrentValue auf SQLite (0.9.7-E.3-Folge-Slice)", `CHANGELOG.md` §„0.9.7 SQLite-Sequence preserveCurrentValue Folge-Slice", Roadmap-Eintrag, `spec/cli-spec.md`/`spec/ddl-generation-rules.md`/`spec/neutral-model-spec.md` mit Plan-Doc-Verweis. |
+| Closing (dieser Commit) | — | 22 DoD-Checkboxen retroaktiv auf `[x]`, Header-Status auf `✅`, Plan-Doc-Move nach `done/`, 7 Cross-Refs (Roadmap, in-progress/README, CHANGELOG, drei Specs, `sequence-preserve-atomic-lock-plan`, `quality-coverage-expansion-plan`) auf den `done/`-Pfad nachgezogen. |
+
+**Aktiv offene Folge-Themen** (nicht F-Blocker, ausserhalb dieses
+Plans):
+
+- **Atomare Probe + Restore unter Lock** — die Probe→Restore-Lücke
+  bleibt nicht-atomar; eigener Draft-Plan in
+  [`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`](../in-progress/sequence-preserve-atomic-lock-plan.md).
+- **W123 (Attached-DB-Rollback-Gate)** bleibt plan-uebergreifend
+  offen und ist in der SQLite-Sequence-Emulation-Roadmap als
+  Carve-out notiert.

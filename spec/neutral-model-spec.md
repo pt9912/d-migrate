@@ -843,7 +843,7 @@ SQLite-Sequence-Emulation aus
 `docs/planning/done/sqlite-sequence-emulation-plan.md` liefert seit
 0.9.7 (Phasen A–E) eine vollständige `helper_table`-Variante; der
 0.9.7-E.3-Folge-Slice
-(`docs/planning/in-progress/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
+(`docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
 ergänzt den `preserveCurrentValue`-Pfad. Damit melden die SQLite-
 Capability-Defaults `supportsNamedSequences = true` und
 `supportsCurrentValuePreserve = true`. Der Default-Mode bleibt
