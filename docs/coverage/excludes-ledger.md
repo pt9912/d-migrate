@@ -55,26 +55,26 @@ Permanent reference tokens:
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.IndexProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.PrimaryKeyProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
 | `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.TableRef` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
-| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDataReader` | `refactor-plan: TBD` | Live JDBC adapter; covered through integration paths. |
-| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDriver` | `refactor-plan: TBD` | Driver composition shell; covered through integration paths. |
-| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDataReader` | `refactor-plan: TBD` | Live JDBC adapter; covered through integration paths. |
-| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDriver` | `refactor-plan: TBD` | Driver composition shell; covered through integration paths. |
-| `:adapters:driven:driver-sqlite` | `classes` | `dev.dmigrate.driver.sqlite.SqliteSchemaReader` | `refactor-plan: TBD` | Live JDBC schema reader; covered through integration paths. |
-| `:adapters:driven:formats` | `classes` | `dev.dmigrate.format.data.yaml.StreamDataWriterAdapter` | `refactor-plan: TBD` | Streaming adapter glue; covered via format integration paths. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore*` | `refactor-plan: TBD` | Postgres-only JDBC adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction*` | `refactor-plan: TBD` | Postgres-only JDBC transaction composition; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore*` | `refactor-plan: TBD` | Postgres-only JDBC adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner*` | `refactor-plan: TBD` | Flyway/Postgres wrapper; covered by integration tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `packages` | `dev.dmigrate.server.persistence.jdbc.quota` | `refactor-plan: TBD` | Postgres-only quota stack; covered by integration contract tests. |
+| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDataReader` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC adapter; covered through integration paths. |
+| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDriver` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Driver composition shell; covered through integration paths. |
+| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDataReader` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC adapter; covered through integration paths. |
+| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDriver` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Driver composition shell; covered through integration paths. |
+| `:adapters:driven:driver-sqlite` | `classes` | `dev.dmigrate.driver.sqlite.SqliteSchemaReader` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC schema reader; covered through integration paths. |
+| `:adapters:driven:formats` | `classes` | `dev.dmigrate.format.data.yaml.StreamDataWriterAdapter` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Streaming adapter glue; covered via format integration paths. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only JDBC adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only JDBC transaction composition; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only JDBC adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Flyway/Postgres wrapper; covered by integration tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `packages` | `dev.dmigrate.server.persistence.jdbc.quota` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Postgres-only quota stack; covered by integration contract tests. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataProfileCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataTransferCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultServerStateFactory*` | `refactor-plan: TBD` | Hikari/Flyway/Postgres default factory; covered via integration and fake factory unit paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultServerStateFactory*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Hikari/Flyway/Postgres default factory; covered via integration and fake factory unit paths. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommandsKt*` | `permanent: cli-command-shell-pattern` | Command helper shell for Clikt dispatch. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportDjangoCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
@@ -82,7 +82,7 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportKnexCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportLiquibaseCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportParams*` | `permanent: cli-command-shell-pattern` | Private parameter carrier for excluded command shell. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.JdbcMigrationExecutor*` | `refactor-plan: TBD` | JDBC execution helper; integration-bound. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.JdbcMigrationExecutor*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | JDBC execution helper; integration-bound. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.MigrateRendererRegistry*` | `permanent: thin-dispatch-table` | Thin renderer dispatch table. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCompareCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
@@ -91,9 +91,9 @@ Permanent reference tokens:
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaReverseCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaRollbackCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
 | `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaValidateCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe dispatcher; covered by integration paths. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe; covered by integration paths. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe; covered by integration paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC/Hikari probe dispatcher; covered by integration paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC/Hikari probe; covered by integration paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*` | `refactor-plan: docs/planning/open/adapter-coverage-uplift.md` | Live JDBC/Hikari probe; covered by integration paths. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedCustomType` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedFunction` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedProcedure` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
