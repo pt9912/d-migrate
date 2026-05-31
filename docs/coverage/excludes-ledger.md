@@ -1,249 +1,278 @@
 # Kover Excludes Ledger
 
-> Status: Initial inventory (2026-05-30)
+> Status: Disposition column added (E.1, 2026-05-31)
 > Verification: `make coverage-excludes-check`
 
 This ledger lists every active Kover exclude from `build.gradle.kts`.
-The first inventory keeps the rationale concise and points at the
-module-local Gradle comments where the technical context lives. Phase E
-of `docs/planning/in-progress/quality-coverage-expansion-plan.md`
-audits which entries are temporary refactor debt and which are permanent
-contract/DTO exclusions.
+Each row carries a `Disposition` that classifies the exclude according
+to Phase E of
+`docs/planning/in-progress/quality-coverage-expansion-plan.md`.
 
-| Module | Selector | Pattern | Rationale |
-| --- | --- | --- | --- |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.DdlGenerator` | Port/interface contract; no executable adapter logic. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.TypeMapper` | Port/interface contract; no executable adapter logic. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.connection.PoolSettings` | Pure configuration carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.DataWriter` | Port/interface contract; no executable adapter logic. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.SchemaSync` | Port/interface contract; no executable adapter logic. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.SequenceAdjustment` | Pure result/configuration carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.TableImportSession` | Port/interface contract; no executable adapter logic. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.UnsupportedTriggerModeException` | Thin exception type. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ColumnProjection` | Pure metadata carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ConstraintProjection` | Pure metadata carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ForeignKeyProjection` | Pure metadata carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.IndexProjection` | Pure metadata carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.PrimaryKeyProjection` | Pure metadata carrier. |
-| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.TableRef` | Pure metadata carrier. |
-| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDataReader` | Live JDBC adapter; covered through integration paths. |
-| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDriver` | Driver composition shell; covered through integration paths. |
-| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDataReader` | Live JDBC adapter; covered through integration paths. |
-| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDriver` | Driver composition shell; covered through integration paths. |
-| `:adapters:driven:driver-sqlite` | `classes` | `dev.dmigrate.driver.sqlite.SqliteSchemaReader` | Live JDBC schema reader; covered through integration paths. |
-| `:adapters:driven:formats` | `classes` | `dev.dmigrate.format.data.yaml.StreamDataWriterAdapter` | Streaming adapter glue; covered via format integration paths. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore*` | Postgres-only JDBC adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction*` | Postgres-only JDBC transaction composition; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore*` | Postgres-only JDBC adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner*` | Flyway/Postgres wrapper; covered by integration tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*` | Postgres-only quota adapter; covered by integration contract tests. |
-| `:adapters:driven:persistence-jdbc` | `packages` | `dev.dmigrate.server.persistence.jdbc.quota` | Postgres-only quota stack; covered by integration contract tests. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataCommand*` | Thin Clikt command shell. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataExportCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataProfileCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataTransferCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultServerStateFactory*` | Hikari/Flyway/Postgres default factory; covered via integration and fake factory unit paths. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommand*` | Thin Clikt command shell. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommandsKt*` | Command helper shell for Clikt dispatch. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportDjangoCommand*` | Thin Clikt command shell; logic lives in shared wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportFlywayCommand*` | Thin Clikt command shell; logic lives in shared wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportKnexCommand*` | Thin Clikt command shell; logic lives in shared wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportLiquibaseCommand*` | Thin Clikt command shell; logic lives in shared wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportParams*` | Private parameter carrier for excluded command shell. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.JdbcMigrationExecutor*` | JDBC execution helper; integration-bound. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.MigrateRendererRegistry*` | Thin renderer dispatch table. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCommand*` | Thin Clikt command shell. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCompareCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaGenerateCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaMigrateCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaReverseCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaRollbackCommand*` | Thin Clikt command shell; logic lives in wiring/runner. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaValidateCommand*` | Thin Clikt command shell; logic lives in wiring. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*` | Live JDBC/Hikari probe dispatcher; covered by integration paths. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*` | Live JDBC/Hikari probe; covered by integration paths. |
-| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*` | Live JDBC/Hikari probe; covered by integration paths. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedCustomType` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedFunction` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedProcedure` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedSequence` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedTable` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedTrigger` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedView` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.ValueChange` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ColumnDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintReferenceDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.CustomTypeDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.FunctionDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.IndexDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ParameterDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.PartitionConfig` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.PartitionDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ProcedureDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ReferenceDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ReturnType` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.SchemaDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.SequenceDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TableDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TableMetadata` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TriggerDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ViewDefinition` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.core.validation.ValidationWarning` | Pure DTO/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.artifact.ManagedArtifact` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.connection.ConnectionReference` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.error.ToolErrorDetail` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.error.ToolErrorEnvelope` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.execution.ExecutionMeta` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome$*` | Sealed outcome subtype data carriers. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyKey` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome$*` | Sealed outcome subtype data carriers. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyScope` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyState` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeOutcome$*` | Sealed outcome subtype data carriers. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeScope` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome$*` | Sealed outcome subtype data carriers. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectScope` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobCancelRequest` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobError` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobProgress` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.ManagedJob` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.pagination.PageRequest` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.pagination.PageResult` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.PrincipalContext` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.PrincipalId` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.TenantId` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.resource.ServerResourceUri` | Pure server-core value carrier. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.upload.UploadSegment` | Pure server-core DTO. |
-| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.upload.UploadSession` | Pure server-core DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.TypeMapper` | Port/interface contract; no executable adapter logic. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.ConnectionConfig` | Pure configuration carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.ConnectionPool` | Port/interface contract; no executable adapter logic. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.JdbcUrlBuilder` | Port/interface contract; no executable adapter logic. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.JdbcUrlBuilder$DefaultImpls` | Kotlin default-impl helper for interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.PoolSettings` | Pure configuration carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.data.ResumeMarker` | Pure data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.data.ResumeMarker$Position` | Pure data carrier subtype. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec` | Port/interface contract; no executable adapter logic. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec$DefaultImpls` | Kotlin default-impl helper for interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ApprovalGrantStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactContentStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactStore$DefaultImpls` | Kotlin default-impl helper for interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.AuditSink` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ConnectionReferenceStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.DiffIndexEntry` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.DiffStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.IdempotencyStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransaction` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome$Committed` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome$IdempotencyNotEligible` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStore$DefaultImpls` | Kotlin default-impl helper for interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$Applied` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$IllegalTransition` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$NotFound` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ProfileIndexEntry` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ProfileStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SchemaIndexEntry` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SchemaStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome$NotFound` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome$Signaled` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.StdioTokenGrant` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.StdioTokenStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SyncEffectIdempotencyStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$Applied` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$IllegalTransition` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$NotFound` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSegmentStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSessionStore` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSessionStore$DefaultImpls` | Kotlin default-impl helper for interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WorkerHandleRegistry` | Server port/interface contract. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$AlreadyExists` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$Conflict` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$SizeMismatch` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$Stored` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$AlreadyStored` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$Conflict` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$SizeMismatch` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$Stored` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaCounter` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaDimension` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaKey` | Pure server-port DTO. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome` | Sealed outcome marker/data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$Granted` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$RateLimited` | Sealed outcome subtype data carrier. |
-| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaStore` | Server port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `*$DefaultImpls` | Kotlin default-impl helpers for interface contracts. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | Pure DTO/data carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyProjectionStatus` | Pure DTO/data carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.ViewColumnDefinition` | Pure DTO/data carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.ViewDefinition` | Pure DTO/data carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlGenerationOptions` | Pure options carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlGenerator` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlPhase` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlResult` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlStatement` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionAvailabilityDeclaration` | Pure declaration carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionAvailabilityStatus` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionDependencyReport` | Pure report carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionInstallPolicy` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ManualActionRequired` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.MysqlNamedSequenceMode` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.NoteType` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ReverseSourceKind` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ReverseSourceRef` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadNote` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadOptions` | Pure options carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadReportInput` | Pure report carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadResult` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadSeverity` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReader` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SkippedObject` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfile` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy` | Policy contract; behavior covered by core/driver tests. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy$Result` | Sealed result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy$Result$*` | Sealed result subtype carriers. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteCastPreflightDeclaration` | Pure declaration carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteCastPreflightStatus` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteLiveCatalog` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.TransformationNote` | Pure note carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.ChunkSequence` | Port/result contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.DataReader` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.TableLister` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.DiffDdlGenerator` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationBlockedReason` | Pure enum/value carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationBlocker` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationDdlStatement` | Pure result carrier. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.DataChunkReader` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.DataChunkReaderFactory` | Port/interface contract. |
-| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.FormatReadOptions` | Pure options carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.DataWriter` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.ImportOptions` | Pure options carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.SchemaSync` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.SequenceAdjustment` | Pure result carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.TableImportSession` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.TargetColumn` | Pure result carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.UnsupportedTriggerModeException` | Thin exception type. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.WriteResult` | Pure result carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.DataChunkWriter` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.DataChunkWriterFactory` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.ExportOptions` | Pure options carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.ArtifactRelativePath` | Pure value carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.MigrationIdentity` | Pure value carrier. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.ToolMigrationExporter` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.ProgressReporter` | Port/interface contract. |
-| `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.checkpoint.CheckpointStore` | Port/interface contract. |
+## Disposition vocabulary
+
+The verifier (`scripts/verify-kover-excludes-ledger.py`) fails closed if
+the `Disposition` cell is missing, empty, or carries an unknown prefix.
+Allowed prefixes are exactly three:
+
+- `permanent: <ref>` — the exclude reflects a structural reason that
+  will not be refactored away. The `<ref>` is a short keyword from the
+  list below (one of `port-contract`, `dto-or-value-carrier`,
+  `sealed-outcome`, `cli-command-shell-pattern`, `thin-dispatch-table`)
+  **or** an ADR path (`docs/adr/NNNN-*.md`) when a class needs a
+  case-specific justification.
+- `refactor-plan: <pfad>` — the exclude is acknowledged technical debt;
+  `<pfad>` is either a planning document under `docs/planning/` that
+  drives the refactor, or the placeholder `TBD` until Sub-Slice E.2
+  promotes the entry to a concrete plan or to `permanent:`.
+- `aggregate-carveout: <ref>` — reserved for Sub-Slice E.3; used for
+  per-module ledger rows (not class/package excludes) where a
+  `:test:*`-module is intentionally not part of the root Kover
+  aggregate.
+
+Permanent reference tokens:
+
+| Token | Meaning |
+| --- | --- |
+| `port-contract` | Port/interface contract (or its Kotlin `$DefaultImpls` helper); behaviour is covered indirectly via adapter and core tests. |
+| `dto-or-value-carrier` | Pure data carriers — DTOs, value classes, options/config/metadata/result/note/declaration/enum carriers, thin exception types. |
+| `sealed-outcome` | Sealed outcome / sealed result hierarchies and their subtype data carriers. |
+| `cli-command-shell-pattern` | Thin Clikt command shells and their private parameter carriers; logic lives in Runner/Wiring (see `feedback_cli_command_refactor_pattern`). |
+| `thin-dispatch-table` | Thin dispatch table without executable branches (e.g. `MigrateRendererRegistry`). |
+
+| Module | Selector | Pattern | Disposition | Rationale |
+| --- | --- | --- | --- | --- |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.DdlGenerator` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.TypeMapper` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.connection.PoolSettings` | `permanent: dto-or-value-carrier` | Pure configuration carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.DataWriter` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.SchemaSync` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.SequenceAdjustment` | `permanent: dto-or-value-carrier` | Pure result/configuration carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.TableImportSession` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.data.UnsupportedTriggerModeException` | `permanent: dto-or-value-carrier` | Thin exception type. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ColumnProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ConstraintProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.ForeignKeyProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.IndexProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.PrimaryKeyProjection` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-common` | `classes` | `dev.dmigrate.driver.metadata.TableRef` | `permanent: dto-or-value-carrier` | Pure metadata carrier. |
+| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDataReader` | `refactor-plan: TBD` | Live JDBC adapter; covered through integration paths. |
+| `:adapters:driven:driver-mysql` | `classes` | `dev.dmigrate.driver.mysql.MysqlDriver` | `refactor-plan: TBD` | Driver composition shell; covered through integration paths. |
+| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDataReader` | `refactor-plan: TBD` | Live JDBC adapter; covered through integration paths. |
+| `:adapters:driven:driver-postgresql` | `classes` | `dev.dmigrate.driver.postgresql.PostgresDriver` | `refactor-plan: TBD` | Driver composition shell; covered through integration paths. |
+| `:adapters:driven:driver-sqlite` | `classes` | `dev.dmigrate.driver.sqlite.SqliteSchemaReader` | `refactor-plan: TBD` | Live JDBC schema reader; covered through integration paths. |
+| `:adapters:driven:formats` | `classes` | `dev.dmigrate.format.data.yaml.StreamDataWriterAdapter` | `refactor-plan: TBD` | Streaming adapter glue; covered via format integration paths. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.idempotency.JdbcIdempotencyStore*` | `refactor-plan: TBD` | Postgres-only JDBC adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStartTransaction*` | `refactor-plan: TBD` | Postgres-only JDBC transaction composition; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.job.JdbcJobStore*` | `refactor-plan: TBD` | Postgres-only JDBC adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner*` | `refactor-plan: TBD` | Flyway/Postgres wrapper; covered by integration tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `classes` | `dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore*` | `refactor-plan: TBD` | Postgres-only quota adapter; covered by integration contract tests. |
+| `:adapters:driven:persistence-jdbc` | `packages` | `dev.dmigrate.server.persistence.jdbc.quota` | `refactor-plan: TBD` | Postgres-only quota stack; covered by integration contract tests. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataImportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataProfileCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DataTransferCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.DefaultServerStateFactory*` | `refactor-plan: TBD` | Hikari/Flyway/Postgres default factory; covered via integration and fake factory unit paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportCommandsKt*` | `permanent: cli-command-shell-pattern` | Command helper shell for Clikt dispatch. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportDjangoCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportFlywayCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportKnexCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportLiquibaseCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in shared wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.ExportParams*` | `permanent: cli-command-shell-pattern` | Private parameter carrier for excluded command shell. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.JdbcMigrationExecutor*` | `refactor-plan: TBD` | JDBC execution helper; integration-bound. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.MigrateRendererRegistry*` | `permanent: thin-dispatch-table` | Thin renderer dispatch table. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaCompareCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaGenerateCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaMigrateCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaReverseCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaRollbackCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring/runner. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SchemaValidateCommand*` | `permanent: cli-command-shell-pattern` | Thin Clikt command shell; logic lives in wiring. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe dispatcher; covered by integration paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe; covered by integration paths. |
+| `:adapters:driving:cli` | `classes` | `dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*` | `refactor-plan: TBD` | Live JDBC/Hikari probe; covered by integration paths. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedCustomType` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedFunction` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedProcedure` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedSequence` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedTable` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedTrigger` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.NamedView` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.diff.ValueChange` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ColumnDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ConstraintReferenceDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.CustomTypeDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.FunctionDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.IndexDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ParameterDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.PartitionConfig` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.PartitionDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ProcedureDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ReferenceDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ReturnType` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.SchemaDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.SequenceDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TableDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TableMetadata` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.TriggerDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.model.ViewDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.core.validation.ValidationWarning` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.artifact.ManagedArtifact` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.connection.ConnectionReference` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.error.ToolErrorDetail` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.error.ToolErrorEnvelope` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.execution.ExecutionMeta` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyClaimOutcome$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyKey` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyReserveOutcome$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyScope` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.IdempotencyState` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeOutcome$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.InitResumeScope` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.idempotency.SyncEffectScope` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobCancelRequest` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobError` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.JobProgress` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.job.ManagedJob` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.pagination.PageRequest` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.pagination.PageResult` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.PrincipalContext` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.PrincipalId` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.principal.TenantId` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.resource.ServerResourceUri` | `permanent: dto-or-value-carrier` | Pure server-core value carrier. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.upload.UploadSegment` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:core` | `classes` | `dev.dmigrate.server.core.upload.UploadSession` | `permanent: dto-or-value-carrier` | Pure server-core DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.TypeMapper` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.ConnectionConfig` | `permanent: dto-or-value-carrier` | Pure configuration carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.ConnectionPool` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.JdbcUrlBuilder` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.JdbcUrlBuilder$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.connection.PoolSettings` | `permanent: dto-or-value-carrier` | Pure configuration carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.data.ResumeMarker` | `permanent: dto-or-value-carrier` | Pure data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.driver.data.ResumeMarker$Position` | `permanent: dto-or-value-carrier` | Pure data carrier subtype. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.format.SchemaCodec$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ApprovalGrantStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactContentStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ArtifactStore$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.AuditSink` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ConnectionReferenceStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.DiffIndexEntry` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.DiffStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.IdempotencyStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransaction` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome$Committed` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStartTransactionOutcome$IdempotencyNotEligible` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobStore$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$Applied` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$IllegalTransition` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.JobTransitionOutcome$NotFound` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ProfileIndexEntry` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.ProfileStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SchemaIndexEntry` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SchemaStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome$NotFound` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SignalOutcome$Signaled` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.StdioTokenGrant` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.StdioTokenStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.SyncEffectIdempotencyStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$Applied` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$IllegalTransition` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.TransitionOutcome$NotFound` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSegmentStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSessionStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.UploadSessionStore$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helper for interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WorkerHandleRegistry` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$AlreadyExists` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$Conflict` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$SizeMismatch` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteArtifactOutcome$Stored` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$AlreadyStored` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$Conflict` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$SizeMismatch` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.WriteSegmentOutcome$Stored` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaCounter` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaDimension` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaKey` | `permanent: dto-or-value-carrier` | Pure server-port DTO. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome` | `permanent: sealed-outcome` | Sealed outcome marker/data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$Granted` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$RateLimited` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
+| `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `*$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helpers for interface contracts. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyProjectionStatus` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.ViewColumnDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.ViewDefinition` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlGenerationOptions` | `permanent: dto-or-value-carrier` | Pure options carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlGenerator` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlPhase` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlResult` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.DdlStatement` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionAvailabilityDeclaration` | `permanent: dto-or-value-carrier` | Pure declaration carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionAvailabilityStatus` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionDependencyReport` | `permanent: dto-or-value-carrier` | Pure report carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ExtensionInstallPolicy` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ManualActionRequired` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.MysqlNamedSequenceMode` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.NoteType` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ReverseSourceKind` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.ReverseSourceRef` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadNote` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadOptions` | `permanent: dto-or-value-carrier` | Pure options carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadReportInput` | `permanent: dto-or-value-carrier` | Pure report carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadResult` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReadSeverity` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SchemaReader` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SkippedObject` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfile` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy` | `permanent: port-contract` | Policy contract; behavior covered by core/driver tests. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy$Result` | `permanent: sealed-outcome` | Sealed result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SpatialProfilePolicy$Result$*` | `permanent: sealed-outcome` | Sealed result subtype carriers. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteCastPreflightDeclaration` | `permanent: dto-or-value-carrier` | Pure declaration carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteCastPreflightStatus` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.SqliteLiveCatalog` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.TransformationNote` | `permanent: dto-or-value-carrier` | Pure note carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.ChunkSequence` | `permanent: port-contract` | Port/result contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.DataReader` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.data.TableLister` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.DiffDdlGenerator` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationBlockedReason` | `permanent: dto-or-value-carrier` | Pure enum/value carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationBlocker` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.driver.migration.MigrationDdlStatement` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.DataChunkReader` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.DataChunkReaderFactory` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-read` | `classes` | `dev.dmigrate.format.data.FormatReadOptions` | `permanent: dto-or-value-carrier` | Pure options carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.DataWriter` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.ImportOptions` | `permanent: dto-or-value-carrier` | Pure options carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.SchemaSync` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.SequenceAdjustment` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.TableImportSession` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.TargetColumn` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.UnsupportedTriggerModeException` | `permanent: dto-or-value-carrier` | Thin exception type. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.driver.data.WriteResult` | `permanent: dto-or-value-carrier` | Pure result carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.DataChunkWriter` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.DataChunkWriterFactory` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.format.data.ExportOptions` | `permanent: dto-or-value-carrier` | Pure options carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.ArtifactRelativePath` | `permanent: dto-or-value-carrier` | Pure value carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.MigrationIdentity` | `permanent: dto-or-value-carrier` | Pure value carrier. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.ToolMigrationExporter` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.ProgressReporter` | `permanent: port-contract` | Port/interface contract. |
+| `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.checkpoint.CheckpointStore` | `permanent: port-contract` | Port/interface contract. |

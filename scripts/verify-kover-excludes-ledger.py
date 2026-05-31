@@ -17,6 +17,28 @@ class ExcludeEntry:
     pattern: str
 
 
+# Permitted disposition prefixes per excludes-ledger.md "Disposition vocabulary".
+DISPOSITION_PREFIXES: tuple[str, ...] = (
+    "permanent:",
+    "refactor-plan:",
+    "aggregate-carveout:",
+)
+
+# Permitted permanent reference tokens (one-word "category" form). Free-form
+# ADR-style references like "docs/adr/0001-...md" are also allowed and pass
+# the prefix check above; this set is only enumerated so the verifier can
+# point at typos in the short-form vocabulary.
+PERMANENT_TOKENS: frozenset[str] = frozenset(
+    {
+        "port-contract",
+        "dto-or-value-carrier",
+        "sealed-outcome",
+        "cli-command-shell-pattern",
+        "thin-dispatch-table",
+    }
+)
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -182,19 +204,67 @@ def extract_gradle_entries(root: Path) -> set[ExcludeEntry]:
     return entries
 
 
-LEDGER_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|")
+LEDGER_ROW = re.compile(
+    r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|"
+)
+LEDGER_ROW_LEGACY = re.compile(
+    r"^\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|"
+)
 
 
-def extract_ledger_entries(ledger: Path) -> set[ExcludeEntry]:
+def disposition_error(module: str, selector: str, pattern: str, disposition: str) -> str | None:
+    """Return None if the disposition is well-formed, else an error message."""
+    text = disposition.strip()
+    if not text:
+        return "empty Disposition"
+    prefix_hit = next((p for p in DISPOSITION_PREFIXES if text.startswith(p)), None)
+    if prefix_hit is None:
+        return (
+            f"unknown Disposition prefix {text!r} (expected one of: "
+            + ", ".join(DISPOSITION_PREFIXES)
+            + ")"
+        )
+    remainder = text[len(prefix_hit):].strip()
+    if not remainder:
+        return f"empty reference after {prefix_hit!r}"
+    if prefix_hit == "permanent:":
+        # Either a known short token, or a path-like / ADR-style reference.
+        if remainder not in PERMANENT_TOKENS and "/" not in remainder and not remainder.startswith("docs/"):
+            return (
+                f"unknown 'permanent:' token {remainder!r} (allowed short tokens: "
+                + ", ".join(sorted(PERMANENT_TOKENS))
+                + "; or use an ADR path like 'docs/adr/NNNN-...md')"
+            )
+    return None
+
+
+def extract_ledger_entries(
+    ledger: Path,
+) -> tuple[set[ExcludeEntry], list[str]]:
     entries: set[ExcludeEntry] = set()
-    for line in ledger.read_text().splitlines():
+    errors: list[str] = []
+    for lineno, line in enumerate(ledger.read_text().splitlines(), start=1):
         match = LEDGER_ROW.match(line)
         if not match:
+            legacy = LEDGER_ROW_LEGACY.match(line)
+            if legacy:
+                module, selector, pattern = legacy.groups()
+                if selector in {"classes", "packages"}:
+                    errors.append(
+                        f"{ledger.name}:{lineno}: row for {module} {selector} `{pattern}`"
+                        " is missing the Disposition column"
+                    )
             continue
-        module, selector, pattern = match.groups()
-        if selector in {"classes", "packages"}:
-            entries.add(ExcludeEntry(module, selector, pattern))
-    return entries
+        module, selector, pattern, disposition = match.groups()
+        if selector not in {"classes", "packages"}:
+            continue
+        err = disposition_error(module, selector, pattern, disposition)
+        if err is not None:
+            errors.append(
+                f"{ledger.name}:{lineno}: {module} {selector} `{pattern}`: {err}"
+            )
+        entries.add(ExcludeEntry(module, selector, pattern))
+    return entries, errors
 
 
 def main() -> int:
@@ -205,11 +275,11 @@ def main() -> int:
         return 2
 
     gradle_entries = extract_gradle_entries(root)
-    ledger_entries = extract_ledger_entries(ledger)
+    ledger_entries, ledger_errors = extract_ledger_entries(ledger)
     missing = sorted(gradle_entries - ledger_entries)
     stale = sorted(ledger_entries - gradle_entries)
 
-    if missing or stale:
+    if missing or stale or ledger_errors:
         if missing:
             print("Missing Kover exclude ledger entries:")
             for entry in missing:
@@ -218,6 +288,10 @@ def main() -> int:
             print("Stale Kover exclude ledger entries:")
             for entry in stale:
                 print(f"  {entry.module} {entry.selector} {entry.pattern}")
+        if ledger_errors:
+            print("Disposition errors:")
+            for err in ledger_errors:
+                print(f"  {err}")
         return 1
 
     print(f"All {len(gradle_entries)} Kover exclude entries are documented.")
