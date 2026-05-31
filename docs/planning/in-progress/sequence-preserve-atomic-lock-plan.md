@@ -1,6 +1,7 @@
 # Implementierungsplan: Atomare Sequence-Preserve Probe + Restore unter Lock
 
-> Status: Draft (2026-05-29)
+> Status: In Progress (2026-05-31) — Phase A erledigt (Vertraege +
+> Classifier + Capability-Defaults). Phasen B–E offen.
 > Workstream: E.3 Folge-Slice für `preserveCurrentValue`-Atomicity
 > Vorarbeit:
 > - `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md` §3.2
@@ -193,12 +194,29 @@ COMMIT;
   `supportsAtomicPreserve`, `supportsAtomicPreserveAllInPlan` und
   `transactionalProtectedSequenceOperations`.
 
-**DoD A**
+**DoD A** *(erledigt 2026-05-31)*
 
-- [ ] Per-Dialekt-Lock-Matrix dokumentiert.
-- [ ] Klassifier-Mapping für neue Codes registriert.
-- [ ] Operationstyp-Matrix dokumentiert und mit Blocker-Pfad verbunden.
-- [ ] Carve-Outs (kein cross-DB Lock, kein App-side Retry) dokumentiert.
+- [x] Per-Dialekt-Lock-Matrix dokumentiert. *(§4.0 Tabelle plus
+      per-Dialekt-KDoc-Begruendung in
+      `SequenceCapabilityDefaults.kt`.)*
+- [x] Klassifier-Mapping für neue Codes registriert.
+      *(`PlannerBlockerClassifier.SEQUENCE_PRESERVE_LOCK_TIMEOUT_CODE`
+      und `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED_CODE` →
+      `MANUAL_ACTION_REQUIRED`, Test
+      `PlannerBlockerClassifierTest`-Block „Atomic-Preserve Phase A
+      codes classify to MANUAL_ACTION_REQUIRED".)*
+- [x] Operationstyp-Matrix dokumentiert und mit Blocker-Pfad
+      verbunden. *(`SequenceCapability.
+      transactionalProtectedSequenceOperations: Set<String>` mit
+      `emptySet()`-Default pro Dialekt; Blocker-Pfad ist
+      `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` aus dem Classifier.
+      Phase B refactort `Set<String>` zu
+      `Set<ProtectedOperationId>`, sobald der Executor-Vertrag
+      existiert.)*
+- [x] Carve-Outs (kein cross-DB Lock, kein App-side Retry)
+      dokumentiert. *(§3.2 unveraendert plus expliziter
+      KDoc-Verweis in `SequenceCapability` auf den Out-of-Scope-
+      Block.)*
 
 ### Phase B — Execute-Port + Batch-Vertrag
 

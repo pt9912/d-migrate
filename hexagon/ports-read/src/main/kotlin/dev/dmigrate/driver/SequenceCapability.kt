@@ -45,6 +45,29 @@ package dev.dmigrate.driver
  *   `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` based on this
  *   flag. The code is reserved for a later neutral-model extension
  *   that introduces an ownership field.
+ * - [supportsAtomicPreserve]: dialect can execute Probe + Restore
+ *   plus the protected sequence-bearing operations in a single
+ *   transaction on one JDBC connection. Atomic-Preserve Phase A
+ *   wires the capability field and the
+ *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker; Phase B/C land
+ *   the per-dialect executor implementations that actually flip the
+ *   flag to `true`. Until then every dialect stays `false` and the
+ *   stage continues with the documented two-transaction fallback.
+ * - [supportsAtomicPreserveAllInPlan]: dialect can hold the lock
+ *   across **every** preserve candidate in one plan, not just one
+ *   sequence at a time. `false` ⇒ the runner is forced to issue a
+ *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker when a plan
+ *   carries more than one preserve candidate. Default `false`
+ *   until Phase D lands batch-atomicity.
+ * - [transactionalProtectedSequenceOperations]: opaque identifiers
+ *   for operation kinds the dialect can execute **inside** the
+ *   atomic-runner transaction without triggering an implicit
+ *   commit. The empty default conservatively rejects every protected
+ *   operation — Phase B/C populate the set with dialect-known-safe
+ *   identifiers. The identifier shape is intentionally `String` for
+ *   Phase A; Phase B refactors to a `value class
+ *   ProtectedOperationId` once the executor wiring exists and the
+ *   identifier surface has a real consumer.
  */
 data class SequenceCapability(
     val supportsNamedSequences: Boolean,
@@ -55,4 +78,7 @@ data class SequenceCapability(
     val emitsCachePreallocationWarning: Boolean,
     val supportsCurrentValuePreserve: Boolean,
     val supportsOwnedBy: Boolean,
+    val supportsAtomicPreserve: Boolean = false,
+    val supportsAtomicPreserveAllInPlan: Boolean = false,
+    val transactionalProtectedSequenceOperations: Set<String> = emptySet(),
 )

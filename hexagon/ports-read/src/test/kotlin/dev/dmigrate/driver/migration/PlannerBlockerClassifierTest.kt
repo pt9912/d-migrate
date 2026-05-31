@@ -117,6 +117,25 @@ class PlannerBlockerClassifierTest : FunSpec({
         }
     }
 
+    test("Atomic-Preserve Phase A codes classify to MANUAL_ACTION_REQUIRED") {
+        // sequence-preserve-atomic-lock-plan Phase A (2026-05-31):
+        // the two new blocker codes reserved for the upcoming
+        // execute-time atomic Probe + Restore pipeline. Phases B/C/D
+        // wire emission; Phase A only registers the codes + classifier
+        // routing so a downstream renderer can start emitting without
+        // rewriting the routing table. Both classify to MANUAL_ACTION_
+        // REQUIRED because the operator has a concrete remedy (raise
+        // lock_timeout / change schedule for LOCK_TIMEOUT; swap dialect
+        // / operation form for ATOMIC_UNSUPPORTED).
+        listOf(
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_LOCK_TIMEOUT_CODE,
+            PlannerBlockerClassifier.SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED_CODE,
+        ).forEach { code ->
+            PlannerBlockerClassifier.classify(code) shouldBe
+                MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        }
+    }
+
     test("INFO codes (SEQUENCE_PRESERVE_NOT_FOUND / NOT_RUN_POLICY) are NOT in the blocker mapping table") {
         // §6.4.5 / §6.4.3: info-only codes flow into the
         // `MigrationDdlResult.diagnostics` stream without classifier

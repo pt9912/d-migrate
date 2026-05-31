@@ -44,6 +44,14 @@ package dev.dmigrate.driver
  */
 object SequenceCapabilityDefaults {
 
+    // Atomic-Preserve Phase A (2026-05-31): every dialect declares the
+    // three new capability fields explicitly even though the defaults
+    // all evaluate to `false` / `emptySet()` today. Forcing the
+    // declaration makes the per-dialect matrix legible at a glance and
+    // pins the contract that Phases B/C will flip; an implicit
+    // data-class-default would let a future dialect-renderer commit
+    // appear to support the atomic path without anyone updating the
+    // capability table.
     private val PostgreSQL = SequenceCapability(
         supportsNamedSequences = true,
         supportsStart = true,
@@ -53,6 +61,14 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = true,
+        // Atomic-Preserve Phase A: PG's lock strategy
+        // (`LOCK TABLE <seq> IN ACCESS EXCLUSIVE MODE` + `SET LOCAL
+        // lock_timeout`) is documented in
+        // `sequence-preserve-atomic-lock-plan.md` §4.1 but the
+        // executor (Phase B) is not wired yet — keep `false`.
+        supportsAtomicPreserve = false,
+        supportsAtomicPreserveAllInPlan = false,
+        transactionalProtectedSequenceOperations = emptySet(),
     )
 
     private val MySQL = SequenceCapability(
@@ -64,6 +80,18 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = true,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
+        // Atomic-Preserve Phase A: MySQL's lock strategy
+        // (`SELECT … FOR UPDATE` on `dmg_sequences` +
+        // `SET SESSION innodb_lock_wait_timeout`) is documented in
+        // `sequence-preserve-atomic-lock-plan.md` §4.2. Several DDL
+        // statements (`ALTER TABLE`, `CREATE INDEX`) issue implicit
+        // commits on MySQL and therefore cannot live inside the
+        // atomic transaction — the empty
+        // `transactionalProtectedSequenceOperations` set Phase A
+        // commits to becoming a positive allowlist filled in Phase B.
+        supportsAtomicPreserve = false,
+        supportsAtomicPreserveAllInPlan = false,
+        transactionalProtectedSequenceOperations = emptySet(),
     )
 
     private val SQLite = SequenceCapability(
@@ -84,6 +112,17 @@ object SequenceCapabilityDefaults {
         // currently selected.
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
+        // Atomic-Preserve Phase A: SQLite's `BEGIN IMMEDIATE` plus
+        // `PRAGMA busy_timeout` strategy is documented in
+        // `sequence-preserve-atomic-lock-plan.md` §4.3. RESERVED-lock
+        // semantics mean SQLite blocks every concurrent writer for
+        // the entire transaction window — the executor (Phase B) has
+        // to keep the protected operation list tight or the operator
+        // will see app-wide write stalls. `false` until Phase B
+        // delivers that discipline.
+        supportsAtomicPreserve = false,
+        supportsAtomicPreserveAllInPlan = false,
+        transactionalProtectedSequenceOperations = emptySet(),
     )
 
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {

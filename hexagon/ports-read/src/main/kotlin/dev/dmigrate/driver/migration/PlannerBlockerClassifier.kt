@@ -185,6 +185,37 @@ object PlannerBlockerClassifier {
         "SEQUENCE_PRESERVE_OPT_IN_REQUIRED"
 
     /**
+     * Atomic-Preserve Phase A (2026-05-31): two BLOCKER codes
+     * reserved for the upcoming execute-time atomic Probe + Restore
+     * pipeline (Plan-Doc
+     * `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+     * §3.1). Both classify as `MANUAL_ACTION_REQUIRED` because the
+     * operator has a concrete remedy:
+     *
+     * - `SEQUENCE_PRESERVE_LOCK_TIMEOUT` — the per-dialect lock
+     *   (`LOCK TABLE` on PG, `SELECT … FOR UPDATE` on MySQL,
+     *   `BEGIN IMMEDIATE` on SQLite) did not acquire within the
+     *   configured `lockTimeoutMillis` window. Operator can raise
+     *   the timeout, schedule the run in a quieter window, or pin
+     *   the cause via the test-side concurrency reproducer.
+     * - `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` — the dialect or
+     *   protected operation type lacks the
+     *   `supportsAtomicPreserve` / `supportsAtomicPreserveAllInPlan`
+     *   / `transactionalProtectedSequenceOperations` capability the
+     *   atomic-runner requires. Operator's remedy is either to swap
+     *   target dialect / operation form, or to wait for the dialect
+     *   to ship the capability.
+     *
+     * Phase A only registers the codes + classifier mapping.
+     * Phases B/C/D land the executor + stage refactor that actually
+     * emits them.
+     */
+    const val SEQUENCE_PRESERVE_LOCK_TIMEOUT_CODE: String =
+        "SEQUENCE_PRESERVE_LOCK_TIMEOUT"
+    const val SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED_CODE: String =
+        "SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED"
+
+    /**
      * 0.9.7 Cross-Dialect-Sequencing Sub-Slice B: two BLOCKER codes
      * reserved for per-attribute and ownership-related sequence
      * mismatches across dialects. Both map to
@@ -233,6 +264,8 @@ object PlannerBlockerClassifier {
         SEQUENCE_PRESERVE_CONFIG_INVALID_CODE,
         SEQUENCE_PRESERVE_REQUIRES_DB_TARGET_CODE,
         SEQUENCE_PRESERVE_OPT_IN_REQUIRED_CODE,
+        SEQUENCE_PRESERVE_LOCK_TIMEOUT_CODE,
+        SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED_CODE,
         SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT_CODE,
         SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT_CODE ->
             MigrationBlockedReason.MANUAL_ACTION_REQUIRED
