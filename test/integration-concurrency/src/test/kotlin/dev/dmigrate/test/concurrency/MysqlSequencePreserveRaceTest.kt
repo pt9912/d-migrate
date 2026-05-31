@@ -17,7 +17,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  * the same shape: probe reads `next_value`, writer increments it
  * concurrently, restore overwrites the writer's progress.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.3.
  *
  * **knownRace = true**: legacy reproducer. Flip after the

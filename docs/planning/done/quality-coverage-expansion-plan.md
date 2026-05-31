@@ -1,16 +1,18 @@
 # Implementierungsplan: Quality- und Coverage-Expansion (Perf / Last / E2E)
 
-> Status: In Progress — Phasen A + A-Vervollständigung + Review-Fixes
-> (`af59567d`/`2e62370c`/`9c369d94`), B + B-Vervollständigung
-> (`3545b646`/`3ae1bb20`), C + C-MCP (`a2195313`/`1bea5bed`), D
-> N=100/1000 (`67d93ef8`) alle gelandet 2026-05-30. Phase E ist in
-> drei Sub-Slices geschnitten — E.1 (Ledger-Disposition-Vertrag, ✅
-> 2026-05-31), E.2 (kritische Adapter-Audits, ✅ 2026-05-31), E.3
-> (`:test:*`-Aggregat-Normalisierung, ✅ 2026-05-31). Ledger-Scaffold
-> (`docs/coverage/excludes-ledger.md`),
-> `scripts/verify-kover-excludes-ledger.py` und `make coverage-excludes-check`
-> stehen bereits aus der initialen Phase-E-Inventur. D-N10k (Nightly-Only)
-> und F (Closing) bleiben offen.
+> Status: ✅ erledigt (2026-05-31, F-Closing `105ccc5a`). Phasen A +
+> A-Vervollständigung + Review-Fixes (`af59567d`/`2e62370c`/`9c369d94`),
+> B + B-Vervollständigung (`3545b646`/`3ae1bb20`), C + C-MCP
+> (`a2195313`/`1bea5bed`), D N=100/1000 (`67d93ef8`) gelandet 2026-05-30.
+> Phase E in vier Sub-Slices nachgezogen 2026-05-31: E-Scaffold
+> (`27db7cf4`, schon vor dem Plan-Schnitt gelandet), E.1
+> (Ledger-Disposition-Vertrag, `648beec6`), E.2 (kritische Adapter-
+> Audits, `68f917f9`), E.3 (`:test:*`-Aggregat-Normalisierung,
+> `b3b7105f`), E.3-Review-Fixes (`8ceb2653`). F (Closing) als dieser
+> Plan-Doc-Move + Roadmap-Status-Flip (`105ccc5a`). D-N10k bleibt als
+> opt-in-Nightly-Folge-Thema im §9 Out-of-Scope notiert; der
+> Adapter-Coverage-Uplift fuer die 19 `refactor-plan:`-Excludes lebt
+> als eigenes Folge-Plan-Doc in [`docs/planning/open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md).
 > Workstream: Roadmap-Eintrag „Coverage/QA" über §11 DoD hinaus
 > Vorbedingungen:
 > - `docs/planning/in-progress/diffresult-migration-plan-2.md` §11 (DoD a/b/c/d/e
@@ -608,7 +610,7 @@ test/perf-large-schema/
 | E.2 | ✅ erledigt (2026-05-31) | Kritische Adapter-Excludes auditiert: alle 19 in E.1 mit `refactor-plan: TBD` gefuellten Eintraege (5 Treiber-Klassen inkl. `SqliteSchemaReader`, 7 persistence-jdbc-Klassen + Paket-weiter Quota-Eintrag, 1 formats-StreamDataWriterAdapter, 5 CLI-JDBC-Helfer) zeigen jetzt auf [`docs/planning/open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md). Das Folge-Plan-Doc listet die Excludes pro Modul, beschreibt Default-Strategie (Testcontainers-Kover-Aufnahme vs. Splitting) und bleibt im `open/`-Stadium, bis ein konkreter Scope-Schnitt steht. CLI-Command-Shells bleiben `permanent: cli-command-shell-pattern`. Keine `refactor-plan: TBD`-Platzhalter mehr im Ledger. |
 | E.3 | ✅ erledigt (2026-05-31) | Aggregat-Asymmetrie geschlossen: Root-Aggregat ergaenzt um `:test:integration-sqlite`, `:test:integration-integrations`, `:test:integration-persistence-jdbc`, `:test:e2e-cli` (Parity mit den schon aggregierten `:test:integration-postgresql`/`-mysql`/`-server-state`/`consumer-read-probe`); `:test:cross-dialect-matrix`, `:test:integration-concurrency`, `:test:perf-large-schema` bleiben **bewusst nicht aggregiert** und sind als `aggregate-carveout:`-Eintraege (Selector `module`, Pattern `*`) im Excludes-Ledger gepinnt — Tokens `matrix-sweep-runner`, `opt-in-gated-runner`, `tag-gated-perf-runner`. Verifier kreuz-validiert Selector ↔ Disposition (`aggregate-carveout:` nur auf `module`, `module` nur mit `aggregate-carveout:`). `make docker-coverage-gate` gruen nach Aenderung. |
 | E.3-Review-Fixes | ✅ erledigt (2026-05-31) | `/code-review medium`-Befunde adressiert: (1) Legacy-Branch im Verifier emittiert „missing Disposition column" jetzt fuer jeden 3-Spalten-Match, nicht nur fuer `classes`/`packages` — verhindert, dass kuenftige `module`-Zeilen ohne Disposition stillschweigend rutschen. (2) `AGGREGATE_CARVEOUT_TOKENS = {matrix-sweep-runner, opt-in-gated-runner, tag-gated-perf-runner}` als geschlossenes Vokabular eingefuehrt, analog `PERMANENT_TOKENS`; Token-Tippfehler in `aggregate-carveout:`-Werten failt jetzt closed. Mutationsproben fuer beide Pfade gegengeprueft. |
-| F | offen | Roadmap-Status-Flip + Closing |
+| F | ✅ erledigt (2026-05-31, `105ccc5a`) | Roadmap-Status-Flip + Closing. Closure-Sektion am Plan-Doc-Ende, Plan-Doc von `in-progress/` nach `done/` umgezogen, Cross-Refs (`docs/coverage/excludes-ledger.md`, `docs/planning/in-progress/README.md`, `docs/planning/open/adapter-coverage-uplift.md`) auf den neuen Pfad gezogen, Roadmap-Eintrag „Coverage/QA" auf `✅ erledigt (2026-05-31)` geflippt. |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
 Vervollstaendigungs-Slices duerfen nach dem jeweiligen Start-Slice landen,
@@ -637,11 +639,11 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
 
 ## 7. Akzeptanzkriterien
 
-- [ ] `PerfMeasure`/`PerfReport`-Lib lebt in `hexagon:profiling` unter
+- [x] `PerfMeasure`/`PerfReport`-Lib lebt in `hexagon:profiling` unter
       `minBound(90)`; bestehende `*PerfTest`-Specs in
       `adapters/driven/formats` und `adapters/driven/streaming` sind auf
       die Lib migriert, sodass kein Parallel-Pattern bleibt.
-- [ ] `PerfSpec`-Konvention dokumentiert (KDoc + README im jeweiligen
+- [x] `PerfSpec`-Konvention dokumentiert (KDoc + README im jeweiligen
       Modul). Die drei Phase-A-Hotpaths sind konkret verortet:
       `SchemaMigrateRenderPipeline` (`hexagon:application`),
       `DiffPlanner` (`hexagon:core`) und Rollback-Artefakt-Round-Trip
@@ -653,15 +655,15 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       Diagnose sind und welche auf dedizierten Perf-Runnern als Gate gelten.
 - [x] Root-Test-Konfiguration reicht explizites `-Dkotest.tags=perf` an
       die forked Test-JVM weiter (`build.gradle.kts`).
-- [ ] Phase-A-Gegenlauf belegt, dass der Perf-Lauf tagged Tests ausfuehrt
+- [x] Phase-A-Gegenlauf belegt, dass der Perf-Lauf tagged Tests ausfuehrt
       und untagged Tests nicht versehentlich mitnimmt.
-- [ ] Nightly-Workflow (oder `make docker-perf`-Target) ist konfiguriert
+- [x] Nightly-Workflow (oder `make docker-perf`-Target) ist konfiguriert
       und läuft tagsüber **nicht** im PR-Sweep.
-- [ ] Jedes neue Testmodul aus diesem Plan ist voll in den Build eingebunden:
+- [x] Jedes neue Testmodul aus diesem Plan ist voll in den Build eingebunden:
       `settings.gradle.kts`, Dockerfile-`deps`-`COPY`-Liste, Make-/CI-Opt-in
       und Kover-Entscheidung (`minBound(0)` fuer reine Testmodule oder
       begruendeter Ausschluss aus Aggregate-/Coverage-Modules-Listen).
-- [ ] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
+- [x] `test/cross-dialect-matrix/` ist als Gradle-Modul registriert
       und der Sweep-Test deckt alle zum Zeitpunkt der
       Sub-Slice-B-Vervollständigung in `diffresult-migration-plan-2.md`
       gelisteten Workstreams (heute 22; die Zahl wird beim
@@ -670,10 +672,10 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       B-Vervollständigung neu eingefuehrt werden, pinnt der jeweilige
       einfuehrende Slice direkt im Matrix-Modul; B-Vervollständigung und F
       bleiben davon unberuehrt.
-- [ ] Carve-out-Registry für nicht-pinnbare Workstream-Dialekt-Paare
+- [x] Carve-out-Registry für nicht-pinnbare Workstream-Dialekt-Paare
       ist im Modul (`fixtures/carve-outs.yaml` o. ä.) und in der
       Plan-Doc-Begründung verlinkt.
-- [ ] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
+- [x] MCP-E2E-Szenario in `test:e2e-cli` läuft gegen Live-DB und prüft
       `schema_reverse_start`/`schema_compare_start` ueber die
       MCP-Client-Oberflaeche mit einer **Operational-Harness-Variante**
       (komponiert `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
@@ -692,7 +694,7 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       mit `make integration INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test"`
       oder engerem `--tests`-Filter dokumentiert. Kein Akzeptanzkriterium
       referenziert ein nicht registriertes `schema_migrate`-Tool.
-- [ ] Concurrent-Writer-Coverage hat genau ein aktives Korrektheits-Gate
+- [x] Concurrent-Writer-Coverage hat genau ein aktives Korrektheits-Gate
       passend zum Implementierungszustand: vor dem Atomic-Slice beobachtet
       ein opt-in Legacy-Reproducer den heutigen Sequence-Preserve-Race pro
       Dialekt mit Barrieren im Probe→Restore-Fenster; nach dem Atomic-Slice
@@ -702,14 +704,14 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       ist. Der opt-in Lauf ist mit
       `make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"`
       opt-in lauffähig.
-- [ ] Large-Schema-Scale-Tests für N=100 und N=1000 sind im
+- [x] Large-Schema-Scale-Tests für N=100 und N=1000 sind im
       Standard-Opt-in gegen die Smoke-Guards grün, erzeugen pro Scale
       Tabellen, Sequenzen, Views und Trigger und schreiben
       Baseline-Werte in den Report; Baseline-Gates laufen nur auf
       dedizierten Perf-Runnern oder Nightly-Konfigurationen. N=10000 ist
       nightly opt-in. Das Modul ist als reines Perf-/Testmodul mit
       `minBound(0)` oder begruendetem Kover-Aggregate-Carve-out markiert.
-- [ ] Heap-Mess-Strategie fuer `test/perf-large-schema` ist im
+- [x] Heap-Mess-Strategie fuer `test/perf-large-schema` ist im
       Sub-Slice-D-Commit benannt (Default: `MemoryPoolMXBean.peakUsage`
       ueber alle Heap-Pools mit `resetPeakUsage()` vor jedem Scale-Run
       und GC-induziertem Snapshot vor/nach dem Lauf; Alternativen JFR,
@@ -747,7 +749,7 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       `:test:integration-concurrency` und `:test:perf-large-schema`
       sind mit `aggregate-carveout:`-Disposition im Excludes-Ledger
       gepinnt. *(E.3)*
-- [ ] Produktionsnahe Helper-Coverage: nicht-trivialer Helper-Code aus
+- [x] Produktionsnahe Helper-Coverage: nicht-trivialer Helper-Code aus
       den neuen Test-Modulen (Schema-Generator, Perf-Helper,
       Sequence-Probe-Adapter, Sweep-Fixtures) lebt — wo fachlich
       sinnvoll — in einem Hexagon-Modul (z. B. `hexagon:profiling`,
@@ -766,7 +768,7 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       §5.5 keine Coverage-Luecken in neue Test-Module
       (siehe `feedback_test_coverage`), ohne den Hexagon-Baum mit reinen
       Test-Helfern zu verwaessern.
-- [ ] Flake-SOP fuer Perf-/Concurrency-Smoke-Brueche ist dokumentiert:
+- [x] Flake-SOP fuer Perf-/Concurrency-Smoke-Brueche ist dokumentiert:
       jeder Smoke-Bruch loest Root-Cause-Analyse aus und endet in genau
       einem von drei Outcomes — (a) Code-Fix, wenn die Regression real
       ist; (b) Mess-Strategie-Haertung, wenn das Mess-Setup das eigentliche
@@ -776,7 +778,7 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
       `@Suppress`/Quarantine sind nie zulaessig
       (siehe `feedback_no_suppress_for_size`); ein vierter „einfach
       ignorieren"-Pfad existiert nicht.
-- [ ] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
+- [x] Roadmap-Eintrag „Coverage/QA" trägt nach Sub-Slice F den
       Status `✅ erledigt (<datum>)`.
 
 ---
@@ -868,7 +870,8 @@ nach `done/`. Final-Stand:
 | E.2 | `68f917f9` | 19 `refactor-plan: TBD`-Platzhalter promotet auf [`docs/planning/open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md). |
 | E.3 | `b3b7105f` | Aggregat-Asymmetrie geschlossen: 4 Module ins Root-Kover-Aggregat aufgenommen (`integration-sqlite`/`-integrations`/`-persistence-jdbc`/`e2e-cli`), 3 Module mit `aggregate-carveout:`-Disposition gepinnt (`cross-dialect-matrix`/`integration-concurrency`/`perf-large-schema`). `make docker-coverage-gate` gruen. |
 | E.3-Review-Fixes | `8ceb2653` | Verifier-Defense-in-depth gehaertet: Legacy-Branch emittiert „missing Disposition column" jetzt fuer alle Selectoren (nicht nur `classes`/`packages`); `AGGREGATE_CARVEOUT_TOKENS`-Frozenset enforced die geschlossene Vokabular-Liste. |
-| F | (dieser Commit) | Roadmap-Status-Flip von `teilerledigt` auf `✅ erledigt (2026-05-31)`, Move dieses Plan-Docs nach `done/`, Cross-Refs in `docs/planning/open/adapter-coverage-uplift.md`, `docs/planning/in-progress/README.md` und `docs/coverage/excludes-ledger.md` auf den neuen Pfad gezogen. |
+| F | `105ccc5a` | Roadmap-Status-Flip von `teilerledigt` auf `✅ erledigt (2026-05-31)`, Move dieses Plan-Docs nach `done/`, Cross-Refs in `docs/planning/open/adapter-coverage-uplift.md`, `docs/planning/in-progress/README.md` und `docs/coverage/excludes-ledger.md` auf den neuen Pfad gezogen. |
+| F-Fixes | (dieser Commit) | Plan-Doc-Selbst-Konsistenz: Header-Status auf `✅`, F-Zeile in der Sub-Slice-Tabelle auf `✅`, offene Akzeptanzkriterien gegen den ausgelieferten Endstand gespiegelt. Cross-Refs ausserhalb `docs/` (`Makefile`, `settings.gradle.kts`, `hexagon/profiling/README.md`, drei `test/*/README.md`) auf den `done/`-Pfad nachgezogen. Phase-D KDoc/Code-Drift in `test/perf-large-schema/.../LargeSchemaScaleSpec.kt` und `HeapBudget.kt` aufgeloest. |
 
 **Aktiv offene Folge-Threads** (nicht F-Blocker, ausserhalb dieses
 Plans):

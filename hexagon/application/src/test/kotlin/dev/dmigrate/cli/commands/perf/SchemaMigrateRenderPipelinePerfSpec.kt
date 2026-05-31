@@ -33,7 +33,7 @@ private val PerfTag = NamedTag("perf")
  * Phase A hotpath: [SchemaMigrateRenderPipeline.run] for a synthetic
  * 100-op `CreateTable` plan, file-mode operand, PostgreSQL dialect.
  *
- * **Plan-Doc**: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * **Plan-Doc**: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.1 / §7 first checklist box. First consumer of the new
  * [PerfMeasure] / [PerfReport] library; A-Vervollständigung mirrors
  * the same two-budget contract for `DiffPlanner` and the

@@ -31,7 +31,7 @@ import org.snakeyaml.engine.v2.api.LoadSettings
  * to a pinned cell. Missing fields surface as a hard failure during
  * registry load — silent carve-outs are not allowed.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.2 (carve-out-registry-mechanik).
  */
 internal class CarveOutRegistry private constructor(

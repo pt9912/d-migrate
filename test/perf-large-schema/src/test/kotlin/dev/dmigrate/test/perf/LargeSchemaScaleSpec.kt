@@ -20,7 +20,7 @@ private val LargeSchemaTag = NamedTag("large-schema")
 /**
  * Phase D large-schema scale spec.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.4 (Sub-Slice D).
  *
  * For each [Scale] the spec builds a synthetic mixed schema
@@ -37,7 +37,7 @@ private val LargeSchemaTag = NamedTag("large-schema")
  *
  * Scales pinned in Sub-Slice D:
  *   - N=100  (renderSmokeMaxMs = 30 s, maxHeapMb = 256)
- *   - N=1000 (renderSmokeMaxMs = 120 s, maxHeapMb = 512)
+ *   - N=1000 (renderSmokeMaxMs = 120 s, maxHeapMb = 1024)
  *
  * N=10000 is deferred to Sub-Slice D-N10k as a nightly-only
  * opt-in (separate spec class so the standard `make docker-perf`

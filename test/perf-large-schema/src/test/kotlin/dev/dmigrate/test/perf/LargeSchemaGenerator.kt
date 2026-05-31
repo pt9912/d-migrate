@@ -17,7 +17,7 @@ import dev.dmigrate.core.model.ViewDefinition
  * Deterministic synthetic [SchemaDefinition] generator for the
  * Phase D large-schema scale tests.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.4.
  *
  * The generator produces a **mixed** schema: tables, sequences,

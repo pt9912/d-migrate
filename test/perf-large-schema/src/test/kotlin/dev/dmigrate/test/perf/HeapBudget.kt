@@ -6,7 +6,7 @@ import java.lang.management.MemoryType
 /**
  * Heap-peak budget for the large-schema scale tests.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.4 — "Erste Wahl: `MemoryPoolMXBean.peakUsage` ueber alle
  * Heap-Pools mit explizitem `resetPeakUsage()` vor jedem Scale-Run
  * und einem GC-induzierten Snapshot direkt vor und nach dem Lauf."
@@ -30,16 +30,20 @@ import java.lang.management.MemoryType
  * 3. Returns a `HeapBudget` instance the spec uses to read the
  *    post-block peak.
  *
- * The peak is the MAXIMUM observed `peakUsage.used` across all
- * heap pools, converted to MB. Non-heap pools (metaspace, code
- * cache) are deliberately excluded — they reflect JVM lifecycle
- * costs, not workload-driven heap pressure.
+ * The peak is the SUM of `peakUsage.used` across all heap-typed
+ * `MemoryPoolMXBean`s (Eden + Survivor + Old in HotSpot,
+ * equivalents on other JVMs), converted to MiB. Summing across
+ * pools approximates the total heap working-set peak; a per-pool
+ * max would understate the load when Eden and Old peak at
+ * overlapping times. Non-heap pools (metaspace, code cache) are
+ * deliberately excluded — they reflect JVM lifecycle costs, not
+ * workload-driven heap pressure.
  */
 internal class HeapBudget private constructor() {
 
     /**
-     * Heap-pool peak usage in mebibytes (1 MiB = 1024 * 1024
-     * bytes) since the most recent [start] call.
+     * Sum of heap-pool `peakUsage.used` in mebibytes (1 MiB =
+     * 1024 * 1024 bytes) since the most recent [start] call.
      */
     fun peakUsedMb(): Long {
         val peakBytes = ManagementFactory.getMemoryPoolMXBeans()

@@ -1,7 +1,7 @@
 // test:perf-large-schema — Large-Schema scale tests for the
 // SchemaMigrateRenderPipeline.
 //
-// Plan-Doc: docs/planning/in-progress/quality-coverage-expansion-plan.md
+// Plan-Doc: docs/planning/done/quality-coverage-expansion-plan.md
 // §5.4 (Sub-Slice D).
 //
 // Pinned scales:

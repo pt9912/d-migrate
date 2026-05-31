@@ -6,7 +6,7 @@
 // Diff-Renderern (PG/MySQL/SQLite) und prueft pro
 // (Workstream × Dialekt × Kind)-Zelle den Exit-Code gegen das Pinning.
 //
-// Plan-Doc: docs/planning/in-progress/quality-coverage-expansion-plan.md
+// Plan-Doc: docs/planning/done/quality-coverage-expansion-plan.md
 // §5.0, §5.2, §6 (Sub-Slice B).
 
 dependencies {

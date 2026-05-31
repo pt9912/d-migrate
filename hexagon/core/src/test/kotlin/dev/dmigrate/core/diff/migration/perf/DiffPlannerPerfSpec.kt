@@ -19,7 +19,7 @@ private val PerfTag = NamedTag("perf")
  * Phase A hotpath: [DiffPlanner.plan] for a synthetic 100-table
  * CreateTable plan, no overlays, no rename projection.
  *
- * **Plan-Doc**: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * **Plan-Doc**: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.1 / §6 (Sub-Slice A-Vervollständigung). Second consumer of
  * [PerfMeasure] / [PerfReport]; the SchemaComparator step runs once
  * outside the loop so the measurement isolates the planner cost

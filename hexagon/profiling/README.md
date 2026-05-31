@@ -6,7 +6,7 @@ introduced in 0.9.7 Quality-/Coverage-Expansion Sub-Slice A.
 
 ## PerfSpec convention
 
-Plan-Doc: [quality-coverage-expansion-plan.md](../../docs/planning/in-progress/quality-coverage-expansion-plan.md)
+Plan-Doc: [quality-coverage-expansion-plan.md](../../docs/planning/done/quality-coverage-expansion-plan.md)
 §5.1, §7 (Phase A).
 
 `PerfMeasure` / `PerfReport` (under `dev.dmigrate.profiling.perf`) are

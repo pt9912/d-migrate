@@ -1,7 +1,7 @@
 // test:integration-concurrency — Concurrent-Writer race reproducers
 // for the SequencePreserveStage probe→restore window.
 //
-// Plan-Doc: docs/planning/in-progress/quality-coverage-expansion-plan.md
+// Plan-Doc: docs/planning/done/quality-coverage-expansion-plan.md
 // §5.3 (Sub-Slice C).
 //
 // Two gates:

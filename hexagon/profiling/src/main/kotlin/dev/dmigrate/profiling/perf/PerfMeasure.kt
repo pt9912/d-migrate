@@ -3,7 +3,7 @@ package dev.dmigrate.profiling.perf
 /**
  * Reusable micro-benchmark harness for opt-in `perf`-tagged Kotest specs.
  *
- * **Plan-Doc**: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * **Plan-Doc**: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.1 (Phase A). Sub-Slice A introduces this lib so the existing ad-hoc
  * percentile math under `adapters/driven/formats/...perf/...PerfTest.kt`
  * and `adapters/driven/streaming/...StreamingImporterReorderPerfTest.kt`

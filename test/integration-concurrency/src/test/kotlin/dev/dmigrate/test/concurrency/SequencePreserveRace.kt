@@ -8,7 +8,7 @@ import kotlin.concurrent.thread
  * Reusable Probe → Writer → Restore race harness for the three
  * dialect-specific race reproducers in this module.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.3 (Sub-Slice C).
  *
  * **Pattern**:

@@ -4,7 +4,7 @@ Concurrent-Writer race reproducers for the `SequencePreserveStage`
 probe→restore window across PostgreSQL, MySQL and SQLite.
 
 Plan-Doc:
-[quality-coverage-expansion-plan.md](../../docs/planning/in-progress/quality-coverage-expansion-plan.md)
+[quality-coverage-expansion-plan.md](../../docs/planning/done/quality-coverage-expansion-plan.md)
 §5.3 (Sub-Slice C).
 
 Atomic-lock follow-up plan:

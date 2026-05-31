@@ -25,7 +25,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  * `docs/planning/done/sqlite-sequence-emulation-plan.md`) faces in
  * production.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.3.
  *
  * **knownRace = true**: legacy reproducer. Flip after the

@@ -14,7 +14,7 @@ private val ConcurrencyTag = NamedTag("concurrency")
  * PostgreSQL reproducer for the SequencePreserveStage probe→restore
  * race window.
  *
- * Plan-Doc: `docs/planning/in-progress/quality-coverage-expansion-plan.md`
+ * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
  * §5.3.
  *
  * **knownRace = true**: the assertion at the bottom of the spec
