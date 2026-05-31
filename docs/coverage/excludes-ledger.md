@@ -24,10 +24,14 @@ Allowed prefixes are exactly three:
   `<pfad>` is either a planning document under `docs/planning/` that
   drives the refactor, or the placeholder `TBD` until Sub-Slice E.2
   promotes the entry to a concrete plan or to `permanent:`.
-- `aggregate-carveout: <ref>` — reserved for Sub-Slice E.3; used for
-  per-module ledger rows (not class/package excludes) where a
-  `:test:*`-module is intentionally not part of the root Kover
-  aggregate.
+- `aggregate-carveout: <ref>` — used for per-module ledger rows
+  (selector `module`, pattern `*`) where a `:test:*`-module is
+  intentionally not part of the root Kover aggregate. Allowed `<ref>`
+  tokens are `matrix-sweep-runner`, `opt-in-gated-runner` and
+  `tag-gated-perf-runner` (one row per current carve-out — extend the
+  vocabulary by adding both the row and the token together). The
+  verifier rejects `aggregate-carveout:` on `classes`/`packages`
+  selectors and rejects any other prefix on selector `module`.
 
 Permanent reference tokens:
 
@@ -276,3 +280,18 @@ Permanent reference tokens:
 | `:hexagon:ports-write` | `classes` | `dev.dmigrate.migration.ToolMigrationExporter` | `permanent: port-contract` | Port/interface contract. |
 | `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.ProgressReporter` | `permanent: port-contract` | Port/interface contract. |
 | `:hexagon:ports-write` | `classes` | `dev.dmigrate.streaming.checkpoint.CheckpointStore` | `permanent: port-contract` | Port/interface contract. |
+
+## Aggregate carve-outs (Sub-Slice E.3)
+
+These rows track `:test:*`-modules that are intentionally **not** part
+of the root Kover aggregate in `build.gradle.kts`. Each row uses
+selector `module` and disposition prefix `aggregate-carveout:` — the
+verifier cross-validates that pairing. Pattern `*` is a placeholder
+that signals "the whole module" (matching Kover's wildcard
+convention).
+
+| Module | Selector | Pattern | Disposition | Rationale |
+| --- | --- | --- | --- | --- |
+| `:test:cross-dialect-matrix` | `module` | `*` | `aggregate-carveout: matrix-sweep-runner` | File-mode regression sweep over `SchemaMigrateRunner` across PG/MySQL/SQLite; the runner's production paths are already covered by `hexagon:application` unit specs. Aggregating would add no new coverage. |
+| `:test:integration-concurrency` | `module` | `*` | `aggregate-carveout: opt-in-gated-runner` | Concurrent-writer race reproducer gated under `-PintegrationTests -PconcurrencyTests`. Probe→restore production paths are covered by driver-module unit tests; the reproducer only fires under explicit opt-in and would leave the aggregate empty in the default flow. |
+| `:test:perf-large-schema` | `module` | `*` | `aggregate-carveout: tag-gated-perf-runner` | Large-schema scale tests gated under `kotest.tags=perf`; never executed in the default coverage flow. Render-pipeline production paths are covered by `hexagon:application`'s `SchemaMigrateRenderPipelinePerfSpec` and unit specs. |

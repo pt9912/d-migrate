@@ -227,6 +227,16 @@ def disposition_error(module: str, selector: str, pattern: str, disposition: str
     remainder = text[len(prefix_hit):].strip()
     if not remainder:
         return f"empty reference after {prefix_hit!r}"
+    # Cross-validation between selector and disposition prefix.
+    if selector == "module" and prefix_hit != "aggregate-carveout:":
+        return (
+            f"selector 'module' requires disposition prefix 'aggregate-carveout:', got {prefix_hit!r}"
+        )
+    if selector in {"classes", "packages"} and prefix_hit == "aggregate-carveout:":
+        return (
+            "'aggregate-carveout:' is only valid for selector 'module', "
+            f"not {selector!r}"
+        )
     if prefix_hit == "permanent:":
         # Either a known short token, or a path-like / ADR-style reference.
         if remainder not in PERMANENT_TOKENS and "/" not in remainder and not remainder.startswith("docs/"):
@@ -256,14 +266,22 @@ def extract_ledger_entries(
                     )
             continue
         module, selector, pattern, disposition = match.groups()
-        if selector not in {"classes", "packages"}:
+        if selector not in {"classes", "packages", "module"}:
+            errors.append(
+                f"{ledger.name}:{lineno}: {module} `{selector}` `{pattern}`: "
+                "unknown selector (expected one of: classes, packages, module)"
+            )
             continue
         err = disposition_error(module, selector, pattern, disposition)
         if err is not None:
             errors.append(
                 f"{ledger.name}:{lineno}: {module} {selector} `{pattern}`: {err}"
             )
-        entries.add(ExcludeEntry(module, selector, pattern))
+        # Only classes/packages entries take part in the gradle-vs-ledger
+        # set comparison; module-level rows are pure documentation of
+        # aggregate-carveout decisions.
+        if selector in {"classes", "packages"}:
+            entries.add(ExcludeEntry(module, selector, pattern))
     return entries, errors
 
 

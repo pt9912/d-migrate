@@ -196,8 +196,19 @@ dependencies {
     kover(project(":adapters:driving:mcp"))
     kover(project(":test:integration-postgresql"))
     kover(project(":test:integration-mysql"))
+    kover(project(":test:integration-sqlite"))
     kover(project(":test:integration-server-state"))
+    kover(project(":test:integration-persistence-jdbc"))
+    kover(project(":test:integration-integrations"))
     kover(project(":test:consumer-read-probe"))
+    kover(project(":test:e2e-cli"))
+    // Quality-Coverage-Expansion Sub-Slice E.3:
+    // :test:cross-dialect-matrix, :test:integration-concurrency und
+    // :test:perf-large-schema sind bewusst NICHT aggregiert
+    // (file-mode sweep / opt-in concurrency / tag-gated perf — kein
+    // produktiver Code, nur Regressions-/Reproducer-Pfade). Begruendung
+    // im `aggregate-carveout:`-Block von
+    // `docs/coverage/excludes-ledger.md`.
 }
 
 tasks.register("resolveAllDependencies") {
