@@ -47,6 +47,39 @@ data class MatrixCell(
          * concrete planner/renderer blocker, not a validation error.
          */
         BLOCKER("blocker"),
+
+        /**
+         * Report-/Exit-Code-Abdeckung per §11.2 of
+         * `diffresult-migration-plan-2.md`: same fixture shape as
+         * POSITIVE / BLOCKER, but the cell pins a report-structural
+         * property (e.g. `primaryBlockedReason`, blocker shape) in
+         * addition to the exit code. The current sweep runner already
+         * captures the rendered report; future ROLLBACK promotions
+         * extend the assertion. Default exit 0; per-workstream
+         * blockers override.
+         */
+        REPORT("report"),
+
+        /**
+         * Rollback-Verhalten per §11.2: the cell runs with
+         * `generateRollback = true` and pins either the produced
+         * rollback artefact's canonical shape OR the
+         * `ROLLBACK_NOT_POSSIBLE` / `NOT_REVERSIBLE` blocker for
+         * structurally-non-reversible operations. Default exit 0;
+         * non-reversible workstreams use exit 8.
+         */
+        ROLLBACK("rollback"),
+
+        /**
+         * Datei-zu-Datei-Verhalten per §11.2 — pins how a workstream
+         * that legitimately needs Live-DB knowledge degrades in
+         * file-mode. The cell shares POSITIVE / BLOCKER fixtures but
+         * asserts that the file-mode-only path produces a sensible
+         * non-probe result (e.g. A.2 SQLite catalog probe → file-mode
+         * path returns the file-supplied schema unchanged). Default
+         * exit 0.
+         */
+        FILE_MODE("file-mode"),
     }
 
     companion object {

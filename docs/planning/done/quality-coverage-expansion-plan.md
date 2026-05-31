@@ -905,11 +905,24 @@ Folge-Themen festgehalten sind:
   Diff-Artefakt-URI verifiziert. `make integration
   INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test --tests
   dev.dmigrate.cli.integration.McpOperationalScenarioTest"` gruen.
-- **[`cross-dialect-matrix-kind-expansion.md`](../open/cross-dialect-matrix-kind-expansion.md)** —
-  `MatrixCell.Kind` enthaelt nur `POSITIVE` und `BLOCKER`, der Plan
-  §5.2 nennt fuenf Test-Arten (Positiv/Blocker/Report/Rollback/
-  File-Mode). Sweep laeuft `planOnly = true`, also ohne Rollback-
-  und Report-Zellen.
+- ~~`cross-dialect-matrix-kind-expansion.md`~~ — **gefixt durch
+  F2-Followup-Commit**: `MatrixCell.Kind` traegt jetzt alle fuenf
+  in §5.2/§11.2 gelisteten Test-Arten — `POSITIVE`, `BLOCKER`,
+  `REPORT` ("report"), `ROLLBACK` ("rollback"), `FILE_MODE`
+  ("file-mode"). `MatrixSweepRunner` setzt `generateRollback=true`
+  fuer `ROLLBACK`-Zellen und faengt das emittierte
+  `.rollback.sql`-Artefakt via `atomicWriter`-Hook im `Outcome.
+  rollbackBody`; REPORT/FILE_MODE teilen heute die POSITIVE-
+  Request-Shape und reservieren die Zellen-spezifische Assertion
+  fuer kuenftige Pinning-Commits. `defaultExitCodeFor` mappt die
+  drei neuen Kinds auf `0` (positive-aequivalent). Carve-out-
+  Registry um 21 Eintraege erweitert (7 gepinnte Workstreams ×
+  3 neue Kinds mit `dialect: "*"`), jeweils mit `ownerTests`-
+  Verweis auf die existierende detaillierte Coverage ausserhalb
+  des Matrix-Surface. Die 17 unpinned Workstreams sind durch ihre
+  bestehenden `dialect: "*", kind: "*"`-Wildcards automatisch
+  gedeckt. `make docker-check` (inkl. `:test:cross-dialect-matrix:
+  test`) gruen — keine MATRIX_GAP-Diagnose.
 - ~~`formats-perfmeasure-migration.md`~~ — **gefixt durch
   F3-Followup-Commit**: `JsonChunkReaderPerfTest` und
   `YamlChunkReaderPerfTest` (`adapters/driven/formats`) wickeln den

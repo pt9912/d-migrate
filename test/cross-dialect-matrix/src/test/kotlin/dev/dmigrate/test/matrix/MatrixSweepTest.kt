@@ -176,6 +176,15 @@ private inline fun withClueCell(cell: MatrixCell, outcome: MatrixSweepRunner.Out
 private fun defaultExitCodeFor(kind: MatrixCell.Kind): Int = when (kind) {
     MatrixCell.Kind.POSITIVE -> 0
     MatrixCell.Kind.BLOCKER -> 8
+    // REPORT / FILE_MODE share POSITIVE semantics: the workstream is
+    // expected to succeed and the cell pins a *property* of the report
+    // (e.g. primaryBlockedReason absent) or of the file-mode path
+    // (probe not invoked). ROLLBACK defaults to a successful round-trip
+    // (exit 0 with a rollback artefact emitted); structurally non-
+    // reversible workstreams override via the carve-out registry.
+    MatrixCell.Kind.REPORT -> 0
+    MatrixCell.Kind.ROLLBACK -> 0
+    MatrixCell.Kind.FILE_MODE -> 0
 }
 
 /**

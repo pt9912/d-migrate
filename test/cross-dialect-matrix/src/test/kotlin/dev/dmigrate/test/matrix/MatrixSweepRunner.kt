@@ -74,11 +74,19 @@ internal class MatrixSweepRunner {
         val exitCode: Int,
         val stdout: String,
         val stderr: String,
+        /**
+         * Body of the emitted `*.rollback.sql` artefact; `null` for
+         * non-ROLLBACK cells or when the runner did not produce a
+         * rollback artefact (e.g. ROLLBACK_NOT_POSSIBLE blocker
+         * surfaced before render).
+         */
+        val rollbackBody: String? = null,
     )
 
     private fun runOnce(cell: MatrixCell, sourcePath: Path, targetPath: Path): Outcome {
         val capturedStdout = StringBuilder()
         val capturedStderr = StringBuilder()
+        var capturedRollback: String? = null
 
         val runner = SchemaMigrateRunner(
             fileLoader = { op ->
@@ -91,7 +99,14 @@ internal class MatrixSweepRunner {
             },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
             rendererFor = rendererFor,
-            atomicWriter = { _, _ -> /* discard — file-mode artefacts not asserted */ },
+            // POSITIVE / BLOCKER / REPORT / FILE_MODE never inspect the
+            // emitted artefacts; ROLLBACK captures the rollback artefact
+            // body so a future cell-level assertion can pin its shape.
+            atomicWriter = { path, body ->
+                if (path.toString().endsWith(".rollback.sql")) {
+                    capturedRollback = body
+                }
+            },
             renderReport = { report, _ ->
                 // Minimal report rendering, but include enough
                 // diagnostic surface (blockers + primaryBlockedReason)
@@ -120,11 +135,21 @@ internal class MatrixSweepRunner {
             stderr = { capturedStderr.append(it).append('\n') },
         )
 
+        // Kind-specific request shaping. POSITIVE / BLOCKER stay
+        // plan-only; REPORT inherits POSITIVE shape (the cell-side
+        // assertion shifts to report fields, not request flags);
+        // ROLLBACK flips `generateRollback` so the runner emits the
+        // rollback artefact and the captured body becomes assertable;
+        // FILE_MODE inherits POSITIVE shape (the axis label
+        // documents intent — live-DB-shaped workstreams behave
+        // benignly in file-mode — without changing the runner flags).
+        val generateRollback = cell.kind == MatrixCell.Kind.ROLLBACK
         val request = SchemaMigrateRequest(
             source = sourcePath.toString(),
             target = targetPath.toString(),
             dialect = cell.dialect,
             planOnly = true,
+            generateRollback = generateRollback,
         )
 
         val exit = runner.execute(request)
@@ -132,6 +157,7 @@ internal class MatrixSweepRunner {
             exitCode = exit,
             stdout = capturedStdout.toString(),
             stderr = capturedStderr.toString(),
+            rollbackBody = capturedRollback,
         )
     }
 
