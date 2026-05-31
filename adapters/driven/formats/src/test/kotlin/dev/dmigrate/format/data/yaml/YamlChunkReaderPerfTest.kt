@@ -1,6 +1,8 @@
 package dev.dmigrate.format.data.yaml
 
 import dev.dmigrate.format.data.perf.LargeJsonFixture
+import dev.dmigrate.profiling.perf.PerfMeasure
+import dev.dmigrate.profiling.perf.PerfReport
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -20,6 +22,11 @@ private val PerfTag = NamedTag("perf")
  * Liest eine deterministische 100k-Row-YAML-Datei aus `build/perf-fixtures`
  * und prüft, dass der Reader den Input ohne Speicherwachstum proportional
  * zur Dateigröße verarbeiten kann.
+ *
+ * Quality-Coverage-Expansion Phase-A-Vervollstaendigung +
+ * F3-Followup (2026-05-31): wall-clock laeuft jetzt durch
+ * [PerfMeasure]/[PerfReport]; das Heap-Budget bleibt separat
+ * gemessen.
  */
 class YamlChunkReaderPerfTest : FunSpec({
 
@@ -42,31 +49,38 @@ class YamlChunkReaderPerfTest : FunSpec({
         var lastId: Any? = null
         var maxRetainedHeap = heapBefore
 
-        Files.newInputStream(fixture).use { input ->
-            YamlChunkReader(input, "perf", chunkSize).use { reader ->
-                reader.headerColumns() shouldBe listOf("id", "email", "score", "active", "tag")
+        val sample = PerfMeasure.run(warmup = 0, iterations = 1) {
+            Files.newInputStream(fixture).use { input ->
+                YamlChunkReader(input, "perf", chunkSize).use { reader ->
+                    reader.headerColumns() shouldBe listOf("id", "email", "score", "active", "tag")
 
-                var chunk = reader.nextChunk()
-                while (chunk != null) {
-                    for (row in chunk.rows) {
-                        if (rowsSeen == 0L) {
-                            firstId = row[0]
-                            firstScore = row[2]
+                    var chunk = reader.nextChunk()
+                    while (chunk != null) {
+                        for (row in chunk.rows) {
+                            if (rowsSeen == 0L) {
+                                firstId = row[0]
+                                firstScore = row[2]
+                            }
+                            lastId = row[0]
+                            rowsSeen++
                         }
-                        lastId = row[0]
-                        rowsSeen++
-                    }
 
-                    if (rowsSeen % 10_000L == 0L) {
-                        val retained = LargeJsonFixture.usedHeapBytes()
-                        if (retained > maxRetainedHeap) {
-                            maxRetainedHeap = retained
+                        if (rowsSeen % 10_000L == 0L) {
+                            val retained = LargeJsonFixture.usedHeapBytes()
+                            if (retained > maxRetainedHeap) {
+                                maxRetainedHeap = retained
+                            }
                         }
-                    }
 
-                    chunk = reader.nextChunk()
+                        chunk = reader.nextChunk()
+                    }
+                    rowsSeen
                 }
             }
+        }
+        require(sample.iterations == 1) {
+            "YamlChunkReaderPerfTest requires iterations == 1; closure-captured " +
+                "rowsSeen/firstId/firstScore/lastId deltas would accumulate across iterations."
         }
 
         val heapAfter = LargeJsonFixture.usedHeapBytes()
@@ -84,6 +98,13 @@ class YamlChunkReaderPerfTest : FunSpec({
 
         val retainedGrowth = maxRetainedHeap - heapBefore
         retainedGrowth shouldBeLessThan (32L * 1024L * 1024L)
+
+        PerfReport.write(
+            hotpath = "format-yaml-chunk-reader-100k",
+            sample = sample,
+            smokeMaxMs = 30_000.0,
+            baselineMs = 5_000.0,
+        )
     }
 })
 

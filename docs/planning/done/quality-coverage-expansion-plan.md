@@ -903,12 +903,15 @@ Folge-Themen festgehalten sind:
   §5.2 nennt fuenf Test-Arten (Positiv/Blocker/Report/Rollback/
   File-Mode). Sweep laeuft `planOnly = true`, also ohne Rollback-
   und Report-Zellen.
-- **[`formats-perfmeasure-migration.md`](../open/formats-perfmeasure-migration.md)** —
-  `JsonChunkReaderPerfTest` und `YamlChunkReaderPerfTest` in
-  `adapters/driven/formats` sind noch nicht auf
-  `PerfMeasure`/`PerfReport` migriert; die DoD §7 Z. 642 verbietet
-  Parallel-Pattern. Streaming-Adapter ist migriert, Formats nur
-  teilweise.
+- ~~`formats-perfmeasure-migration.md`~~ — **gefixt durch
+  F3-Followup-Commit**: `JsonChunkReaderPerfTest` und
+  `YamlChunkReaderPerfTest` (`adapters/driven/formats`) wickeln den
+  Streaming-Read-Loop jetzt in `PerfMeasure.run(warmup = 0,
+  iterations = 1) { ... }` und schreiben den Wall-clock-Sample ueber
+  `PerfReport.write(...)` (Hotpaths `format-json-chunk-reader-100mb`,
+  `format-yaml-chunk-reader-100k`). `iterations == 1`-Guard wegen
+  closure-captured Iterations-Locals. Heap-Budget bleibt orthogonal
+  (Constant-Memory-Vertrag misst Retention, nicht Latenz).
 - ~~`kover-excludes-selector-typesafe.md`~~ — **gefixt durch
   F4-Followup-Commit**: `verify-kover-excludes-ledger.py` lokalisiert
   jetzt `kover { ... excludes { ... } }`-Bloecke per
