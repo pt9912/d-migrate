@@ -9,7 +9,10 @@ Plan-Doc:
 
 Atomic-lock follow-up plan:
 [sequence-preserve-atomic-lock-plan.md](../../docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md)
-(Draft).
+(In Progress 2026-05-31 — Phase A + B abgeschlossen, Phasen C–E
+offen: Stage-/Runner-Refactor, Multi-Sequence-Deadlock-Test und
+Capability-Flag-Flip stehen aus; bis dahin bleibt der
+`knownRace = true`-Vertrag in diesem Modul aktiv).
 
 ## Why this module exists
 
@@ -25,13 +28,24 @@ observation and asserts the stale-restore shape. The reproducer is
 the canonical evidence the race exists today; it is **not** a
 correctness vow. The atomic-lock slice will:
 
-1. Implement an atomic probe + restore (likely `SELECT … FOR UPDATE`
-   plus a lock-scoped restore) so the writer cannot land inside the
-   probe→restore window.
+1. Implement an atomic probe + restore so the writer cannot land
+   inside the probe→restore window. Phase B of the atomic-lock plan
+   (2026-05-31) has landed the three per-dialect executors
+   (`PostgresAtomicSequencePreserveExecutor` with
+   `pg_advisory_xact_lock`, `MysqlAtomicSequencePreserveExecutor`
+   with `SELECT FOR UPDATE` on `dmg_sequences`,
+   `SqliteAtomicSequencePreserveExecutor` with `BEGIN IMMEDIATE`).
+   They are **not yet wired into `SequencePreserveStage`** —
+   Phase C of the atomic-lock plan ties the runner-side refactor
+   that actually invokes them.
 2. Flip the assertion in each spec from
    `finalValue shouldBe observedProbeValue` (stale) to
    `finalValue shouldBe(GreaterThanOrEqual) postWriterMaximum`
-   (writer's progress preserved).
+   (writer's progress preserved). For PG the atomic-lock plan §6
+   Risk 8 documents that the residual app-side `nextval` race is
+   unaffected by the new executor — the PG flip will need to keep
+   the legacy reproducer as `knownRace = true` until app-side
+   advisory-lock cooperation is documented.
 3. Either remove the legacy assertion, mark the spec as
    `knownRace = false` for the new gate, or keep the legacy
    reproducer in a quarantine list as historical documentation.

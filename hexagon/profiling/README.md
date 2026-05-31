@@ -15,7 +15,7 @@ Bestands-Specs in `adapters:driven:formats` and `adapters:driven:streaming`
 were migrated to this contract during A-Vervollständigung; net-new
 PerfSpecs go straight to it.
 
-**Hotpaths in use** (per Phase A + A-Vervollständigung):
+**Hotpaths in use** (per Phase A + A-Vervollständigung + F3-Followup):
 
 | Hotpath slug                    | Spec                                       | Modul                  |
 | ------------------------------- | ------------------------------------------ | ---------------------- |
@@ -23,6 +23,8 @@ PerfSpecs go straight to it.
 | `diff-planner`                  | `DiffPlannerPerfSpec`                       | `hexagon:core`         |
 | `rollback-artefact-round-trip`  | `RollbackArtefactRoundTripPerfSpec`         | `hexagon:application`  |
 | `large-json-pull-spike`         | `LargeJsonPullSpikePerfTest` (migriert)     | `adapters/driven/formats` |
+| `format-json-chunk-reader-100mb` | `JsonChunkReaderPerfTest` (F3-Followup-Migration 2026-05-31) | `adapters/driven/formats` |
+| `format-yaml-chunk-reader-100k` | `YamlChunkReaderPerfTest` (F3-Followup-Migration 2026-05-31) | `adapters/driven/formats` |
 | `streaming-importer-reorder`    | `StreamingImporterReorderPerfTest` (migriert) | `adapters/driven/streaming` |
 | `large-schema-render-n100`      | `LargeSchemaScaleSpec` (Phase D, N=100)     | `test/perf-large-schema` |
 | `large-schema-render-n1000`     | `LargeSchemaScaleSpec` (Phase D, N=1000)    | `test/perf-large-schema` |

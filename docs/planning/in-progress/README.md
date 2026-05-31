@@ -10,8 +10,11 @@ Zwei Typen leben hier:
 2. **Per-Feature-Umbrella-Pläne**, die einen mehrphasigen Slice
    tragen, bei dem mindestens ein Commit den Plan referenziert:
    - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
-     — Draft für den dialektübergreifenden Atomic-Probe-und-Restore-Pfad
-     (Folge-Slice der bestehenden `preserveCurrentValue`-Workstreams).
+     — In Progress (Stand 2026-05-31): Phase A (Vertraege + Klassifier-
+     Mapping + Capability-Defaults) und Phase B (`hexagon:ports-execute`-
+     Modul + PG/MySQL/SQLite-Executoren mit je 5 Live-Tests) sind
+     gelandet; Phasen C (Stage-/Runner-Refactor), D (Multi-Sequence-
+     Deadlock-Test) und E (Capability-Flag-Flip + Doku) bleiben offen.
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)

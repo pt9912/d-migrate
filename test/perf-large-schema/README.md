@@ -53,6 +53,21 @@ Wahl"). Alternatives (JFR recording, async-profiler) are valid
 follow-ups but require a per-scale-Sub-Slice commit note before
 the implementation is changed.
 
+The KDoc earlier described the heap-pool value as `MAXIMUM
+observed peakUsage.used`; F-Fixes (2026-05-31) re-aligned the
+docstring with the actual `.sumOf { ... }` implementation — the
+peak is the **sum** of every heap-typed pool's `peakUsage.used`,
+which approximates the total heap working-set peak. A per-pool
+max would under-state load when Eden and Old peak at overlapping
+times.
+
+F5-Followup (2026-05-31) added `-XX:+HeapDumpOnOutOfMemoryError`
+plus `-XX:HeapDumpPath=build/test-heap-dumps/` as module-local
+test-`jvmArgs`. On OOM the operator gets a forensic `hprof` under
+`build/test-heap-dumps/`; the flag is intentionally module-local
+so unit-spec OOMs in unrelated modules do not fill `build/` with
+multi-GB heap dumps.
+
 ## Running
 
 The scale tests carry the `perf` Kotest tag and the additional

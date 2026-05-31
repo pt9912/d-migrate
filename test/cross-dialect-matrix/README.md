@@ -30,7 +30,19 @@ The sweep:
    either pinning a fixture or registering a justified carve-out.
 4. Runs the pinned, non-carved cells through `SchemaMigrateRunner`
    in file-mode with the real dialect renderers and asserts the
-   exit code.
+   exit code. ROLLBACK cells additionally flip
+   `generateRollback = true` so the runner emits a `.rollback.sql`
+   artefact the test can pin.
+
+The Kind axis carries the five §11.2 test-arts: **POSITIVE**
+(happy-path, exit 0), **BLOCKER** (planner/renderer block, exit 8),
+**REPORT** (asserts a report-shape property — same fixture as POSITIVE
+by default), **ROLLBACK** (runs with `generateRollback = true`), and
+**FILE_MODE** (axis label for live-DB-shaped workstreams in file-mode;
+shares the POSITIVE request shape). F2-Followup (2026-05-31) added
+REPORT/ROLLBACK/FILE_MODE to `MatrixCell.Kind`; the seven pinned
+workstreams carve all three new kinds with `dialect: "*"` and point
+at the existing detailed test coverage outside the matrix.
 
 ## Layout
 
