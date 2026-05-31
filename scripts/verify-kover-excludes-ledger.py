@@ -38,6 +38,18 @@ PERMANENT_TOKENS: frozenset[str] = frozenset(
     }
 )
 
+# Permitted aggregate-carveout reference tokens. Closed vocabulary — adding a
+# new module-level carve-out requires extending this set together with the
+# matching ledger row, so the ledger header's vocabulary list stays
+# machine-enforced and not just documentation.
+AGGREGATE_CARVEOUT_TOKENS: frozenset[str] = frozenset(
+    {
+        "matrix-sweep-runner",
+        "opt-in-gated-runner",
+        "tag-gated-perf-runner",
+    }
+)
+
 
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
@@ -245,6 +257,15 @@ def disposition_error(module: str, selector: str, pattern: str, disposition: str
                 + ", ".join(sorted(PERMANENT_TOKENS))
                 + "; or use an ADR path like 'docs/adr/NNNN-...md')"
             )
+    if prefix_hit == "aggregate-carveout:":
+        # Closed vocabulary — extend AGGREGATE_CARVEOUT_TOKENS together with
+        # any new aggregate-carveout row in the ledger.
+        if remainder not in AGGREGATE_CARVEOUT_TOKENS:
+            return (
+                f"unknown 'aggregate-carveout:' token {remainder!r} (allowed: "
+                + ", ".join(sorted(AGGREGATE_CARVEOUT_TOKENS))
+                + ")"
+            )
     return None
 
 
@@ -258,12 +279,16 @@ def extract_ledger_entries(
         if not match:
             legacy = LEDGER_ROW_LEGACY.match(line)
             if legacy:
+                # Any row that matches the 3-field legacy regex is a data row
+                # written without the post-E.1 Disposition column. The
+                # selector is whatever the author wrote; defer selector
+                # validation to the missing-column report so the operator
+                # sees a single actionable error per row.
                 module, selector, pattern = legacy.groups()
-                if selector in {"classes", "packages"}:
-                    errors.append(
-                        f"{ledger.name}:{lineno}: row for {module} {selector} `{pattern}`"
-                        " is missing the Disposition column"
-                    )
+                errors.append(
+                    f"{ledger.name}:{lineno}: row for {module} {selector} `{pattern}`"
+                    " is missing the Disposition column"
+                )
             continue
         module, selector, pattern, disposition = match.groups()
         if selector not in {"classes", "packages", "module"}:
