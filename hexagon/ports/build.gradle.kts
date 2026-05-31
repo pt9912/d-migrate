@@ -17,6 +17,7 @@ dependencies {
     api(project(":hexagon:ports-common"))
     api(project(":hexagon:ports-read"))
     api(project(":hexagon:ports-write"))
+    api(project(":hexagon:ports-execute"))
 }
 
 kover {

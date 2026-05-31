@@ -103,28 +103,52 @@ atomaren Execute-Time-Pfad.
 ```sql
 BEGIN;
 SET LOCAL lock_timeout = '5s';
-LOCK TABLE <quoted_seq_ref> IN ACCESS EXCLUSIVE MODE; -- (1) Lock
-SELECT last_value, is_called FROM <quoted_seq_ref>;    -- (2) Probe
+SELECT pg_advisory_xact_lock(<stable_hash(sequence_ref)>); -- (1) Lock
+SELECT last_value, is_called FROM <quoted_seq_ref>;        -- (2) Probe
 -- Geschützte sequenzverändernde Statements auf derselben Connection ausführen.
--- Renderer komponiert SQL aus Probe-Ergebnis
 SELECT setval(<regclass_seq_ref>, <last_value>, <is_called>); -- (3) Restore
 COMMIT;
 ```
 
-- `LOCK TABLE ... ACCESS EXCLUSIVE` blockt jeden `SELECT
-  nextval(...)`-Aufruf aus anderen Sessions, weil `nextval` einen
-  impliziten `ROW EXCLUSIVE`-Lock auf die Sequenzrelation hält
-  (PG-Doku: 13.3 "Explicit Locking", Tab. "Conflicting Lock Modes").
-  Renderer verwenden einen einzigen schemaqualifizierten Sequence-Ref-Vertrag:
-  `quoted_seq_ref` für Relation-SQL und `regclass_seq_ref` für `setval`.
-  Beide werden aus demselben `SequenceObjectRef` abgeleitet, damit Lock,
-  Probe und Restore dieselbe Relation treffen.
-- `lock_timeout = '5s'` wird per `SET LOCAL lock_timeout` am Anfang
-  der Transaktion gesetzt; Timeout surfaced als `SQLSTATE 55P03`
-  und mappt auf `SEQUENCE_PRESERVE_LOCK_TIMEOUT`.
-- Die konkrete Konfliktauflösung von `nextval` gegenüber
-  `LOCK TABLE ... ACCESS EXCLUSIVE` ist über integrierte
-  Concurrent-Writer-Tests pro PostgreSQL-Version zu validieren.
+**Korrektur (2026-05-31, Phase B.2):** Die ursprüngliche Plan-Version
+empfahl `LOCK TABLE <seq> IN ACCESS EXCLUSIVE MODE`. PG akzeptiert
+diesen Statement gegen eine Sequenzrelation jedoch nicht
+(`ERROR: cannot lock relation … / Detail: This operation is not
+supported for sequences.`), und `nextval` ist in PG by-design
+lock-free — es gibt keine Sperre, die ein `nextval` aus einer
+parallelen Session blockt. Phase B.2 setzt deshalb auf
+`pg_advisory_xact_lock` als realistische, ehrliche Alternative.
+
+- `pg_advisory_xact_lock(key)` serialisiert **parallele d-migrate-
+  Läufe**, die denselben Sequenz-Hash beanspruchen. Die App-seitige
+  `nextval`-Race bleibt prinzipbedingt offen — sie wird aber
+  deutlich kleiner als beim heutigen Zwei-Transaktionen-Pfad, weil
+  Probe + Restore jetzt in **einer** Transaktion auf **einer**
+  Connection passieren. Plan-Doc-Risiko Nr. 6 (siehe §6) erfasst die
+  verbleibende App-`nextval`-Race ausdrücklich.
+- Der Lock-Key ist ein deterministischer `bigint`-Hash über
+  `(schema, name)` plus einem Namespace-Präfix (z. B.
+  `hashtext("d-migrate:seq:" || schema || "." || name)::bigint`),
+  damit der Lock dialect-übergreifend kollisionsfrei bleibt.
+  Advisory locks sind transaktionsskopiert (`xact_lock`), brauchen
+  also kein explizites `pg_advisory_unlock` — `COMMIT`/`ROLLBACK`
+  gibt sie frei.
+- `lock_timeout = '5s'` wirkt weiterhin: `pg_advisory_xact_lock`
+  blockiert bis der konfliktäre Halter freigibt; SQLSTATE `55P03`
+  (`lock_not_available`) auf Timeout. Mapping auf
+  `SEQUENCE_PRESERVE_LOCK_TIMEOUT` bleibt.
+- Renderer verwenden einen einzigen schemaqualifizierten Sequence-Ref-
+  Vertrag: `quoted_seq_ref` für Relation-SQL und `regclass_seq_ref`
+  für `setval`. Beide werden aus demselben `SequenceObjectRef`
+  abgeleitet, damit Probe und Restore dieselbe Relation treffen.
+- Die Konfliktauflösung wird in Phase B.2 durch zwei Live-Container-
+  Tests gepinnt: (a) Happy-Path-Probe+Restore committet atomar;
+  (b) ein konkurrierender `pg_advisory_xact_lock`-Halter triggert
+  SQLSTATE 55P03 nach `lockTimeoutMillis`. Ein dritter Test gegen
+  app-seitiges `nextval` (Race-Smoke) gehört dokumentiert in das
+  bestehende `:test:integration-concurrency`-Modul, **nicht** in
+  diesen Executor-Slice — die Race ist plan-bewusst und nicht durch
+  diesen Executor lösbar.
 
 ### 4.2 MySQL
 
@@ -380,9 +404,16 @@ COMMIT;
    `dmg_nextval`-Routine muss kompatibel mit `SELECT ... FOR UPDATE`
    sein und denselben Schlüsselpfad verwenden. Mitigation: Regressionstest
    gegen produktive Trigger-Routine aus 0.9.4.
-4. **PG-Sequenz-Lock semantik**: `LOCK TABLE seq IN ACCESS EXCLUSIVE
-   MODE` wird als harte Erwartung verwendet und muss per
-   Live-Integrationstest für jede Ziel-PG-Version validiert werden.
+4. **PG-Sequenz-Lock semantik (KORRIGIERT 2026-05-31)**: Die
+   ursprüngliche Annahme `LOCK TABLE seq IN ACCESS EXCLUSIVE MODE`
+   hat sich beim Phase-B.2-Lauf als nicht-haltbar erwiesen — PG
+   lehnt das Statement gegen eine Sequenzrelation hart ab
+   („This operation is not supported for sequences."), und
+   `nextval` ist in PG by-design lock-free. Phase B.2 nutzt
+   `pg_advisory_xact_lock(stable_hash(ref))` als realistische
+   Alternative: parallele d-migrate-Läufe werden serialisiert, eine
+   app-seitige `nextval`-Race bleibt prinzipiell offen. Risiko Nr. 6
+   (neu) erfasst die App-Race explizit.
 5. **Multi-Sequence-Deadlock**: ohne Sortierung der Lock-Reihenfolge
    können zwei parallele Migrationen sich gegenseitig blockieren.
    Mitigation: sortierte Reihenfolge + Timeout-Behandlung.
@@ -393,6 +424,20 @@ COMMIT;
    Persistierung des Execution-Results kann zu Wiederanlauf-Sonderfällen führen.
    Mitigation: kein vorab gesetztes `alreadyApplied` im Plan; Retry-Semantik
    folgt dem bestehenden Migration-Journal und wird separat getestet.
+8. **PG-App-`nextval`-Race (NEU 2026-05-31)**: Weil PG-Sequenzen
+   lock-free sind, kann eine App-Session zwischen unserem
+   Probe-Statement und unserem Restore-`setval` ein `nextval`
+   einschieben. Der atomare Executor verkleinert das Race-Fenster
+   gegenüber dem Zwei-Transaktionen-Pfad (Probe + Restore liegen
+   jetzt in einer Connection-Transaktion ms-eng beieinander), kann
+   die Race aber nicht eliminieren. Mitigation: dokumentiert in
+   `docs/user/guide.md` als „PG atomic-preserve serialisiert
+   parallele d-migrate-Läufe und verkleinert das App-Race-Fenster;
+   für Null-Race-Garantie weiterhin Maintenance-Fenster nötig."
+   `:test:integration-concurrency` deckt die Race im
+   `PostgresSequencePreserveRaceTest` weiterhin als `knownRace=true`-
+   Reproducer ab; Phase E könnte einen kontrollierten App-side
+   Advisory-Lock-Vertrag dokumentieren.
 8. **Nichttransaktionale DDL / implizite Commits**: Falls ein Dialekt die
    geschützte sequenzverändernde Operation nicht innerhalb der Executor-
    Transaktion ausführen kann (z. B. impliziter Commit), ist all-or-none nicht
