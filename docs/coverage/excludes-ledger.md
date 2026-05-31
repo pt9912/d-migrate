@@ -10,9 +10,21 @@ to Phase E of
 
 ## Disposition vocabulary
 
-The verifier (`scripts/verify-kover-excludes-ledger.py`) fails closed if
-the `Disposition` cell is missing, empty, or carries an unknown prefix.
-Allowed prefixes are exactly three:
+The verifier (`scripts/verify-kover-excludes-ledger.py`) fails closed
+on two layers:
+
+1. **Gradle-side** — every `kover { ... excludes { ... } }` block in
+   every `build.gradle.kts` is parsed for selector calls; selectors
+   outside `ALLOWED_GRADLE_SELECTORS = {classes, packages}` (e.g. a
+   future `annotatedBy(...)` or `inheritedFrom(...)`) surface as an
+   explicit unknown-selector error. Adding a new Kover selector
+   means extending both the script's allowlist **and** the ledger
+   schema below in the same commit.
+2. **Ledger-side** — every row's `Disposition` cell must be present,
+   non-empty, and carry one of the three allowed prefixes. Missing/
+   empty/unknown values are reported with the offending line.
+
+Allowed Disposition prefixes are exactly three:
 
 - `permanent: <ref>` — the exclude reflects a structural reason that
   will not be refactored away. The `<ref>` is a short keyword from the

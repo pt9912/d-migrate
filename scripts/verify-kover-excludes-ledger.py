@@ -24,6 +24,13 @@ DISPOSITION_PREFIXES: tuple[str, ...] = (
     "aggregate-carveout:",
 )
 
+# Kover selector tokens that the ledger schema knows how to represent. A new
+# Kover selector type (e.g. `annotatedBy(...)` or `inheritedFrom(...)`) appearing
+# inside any `kover { ... excludes { ... } }` block must extend both this set and
+# the ledger schema together — otherwise the verifier fails closed, surfacing
+# the unknown selector to the operator.
+ALLOWED_GRADLE_SELECTORS: frozenset[str] = frozenset({"classes", "packages"})
+
 # Permitted permanent reference tokens (one-word "category" form). Free-form
 # ADR-style references like "docs/adr/0001-...md" are also allowed and pass
 # the prefix check above; this set is only enumerated so the verifier can
@@ -111,8 +118,16 @@ def strip_line_comments(text: str) -> str:
 
 
 def parse_call_body(text: str, open_paren: int) -> tuple[str, int]:
+    return _parse_balanced(text, open_paren, opener="(", closer=")")
+
+
+def parse_brace_body(text: str, open_brace: int) -> tuple[str, int]:
+    return _parse_balanced(text, open_brace, opener="{", closer="}")
+
+
+def _parse_balanced(text: str, open_pos: int, opener: str, closer: str) -> tuple[str, int]:
     depth = 1
-    i = open_paren + 1
+    i = open_pos + 1
     in_string = False
     escaped = False
     body: list[str] = []
@@ -131,10 +146,10 @@ def parse_call_body(text: str, open_paren: int) -> tuple[str, int]:
         if ch == '"':
             in_string = True
             body.append(ch)
-        elif ch == "(":
+        elif ch == opener:
             depth += 1
             body.append(ch)
-        elif ch == ")":
+        elif ch == closer:
             depth -= 1
             if depth == 0:
                 return "".join(body), i + 1
@@ -142,7 +157,7 @@ def parse_call_body(text: str, open_paren: int) -> tuple[str, int]:
         else:
             body.append(ch)
         i += 1
-    raise ValueError("unclosed call body")
+    raise ValueError(f"unclosed {opener}{closer} body")
 
 
 def kotlin_string_value(raw: str) -> str:
@@ -195,25 +210,79 @@ def extract_strings(body: str) -> list[str]:
     return values
 
 
-def extract_gradle_entries(root: Path) -> set[ExcludeEntry]:
+_EXCLUDES_BLOCK_OPEN = re.compile(r"\bexcludes\s*\{")
+_SELECTOR_CALL = re.compile(r"\b([A-Za-z_]\w*)\s*\(")
+
+
+def extract_gradle_entries(root: Path) -> tuple[set[ExcludeEntry], list[str]]:
+    """Walk every `kover { ... excludes { ... } }` block in every build file
+    and collect both the (selector, pattern) entries and any fail-closed
+    errors for selectors outside `ALLOWED_GRADLE_SELECTORS`.
+
+    Locating `excludes { ... }` blocks specifically (instead of grepping
+    `classes(` / `packages(` calls across the whole file) is what makes
+    the scanner fail-closed: a future Kover selector like
+    `annotatedBy("Generated")` inside an excludes block surfaces as an
+    explicit unknown-selector error instead of being silently ignored.
+    """
+
     entries: set[ExcludeEntry] = set()
+    errors: list[str] = []
     for build_file in gradle_files(root):
         text = strip_line_comments(build_file.read_text())
-        i = 0
-        while i < len(text):
-            match = re.search(r"\b(classes|packages)\s*\(", text[i:])
-            if not match:
+        rel_path = build_file.relative_to(root).as_posix()
+        pos = 0
+        while True:
+            block_match = _EXCLUDES_BLOCK_OPEN.search(text, pos)
+            if not block_match:
                 break
-            selector = match.group(1)
-            open_paren = i + match.end() - 1
+            brace_index = block_match.end() - 1  # position of `{`
             try:
-                body, next_index = parse_call_body(text, open_paren)
+                body, next_index = parse_brace_body(text, brace_index)
             except ValueError as exc:
                 raise RuntimeError(f"{build_file}: {exc}") from exc
-            for pattern in extract_strings(body):
-                entries.add(ExcludeEntry(module_name(root, build_file), selector, pattern))
-            i = next_index
-    return entries
+            _scan_excludes_block(
+                module=module_name(root, build_file),
+                rel_path=rel_path,
+                body=body,
+                entries=entries,
+                errors=errors,
+            )
+            pos = next_index
+    return entries, errors
+
+
+def _scan_excludes_block(
+    *,
+    module: str,
+    rel_path: str,
+    body: str,
+    entries: set[ExcludeEntry],
+    errors: list[str],
+) -> None:
+    pos = 0
+    while True:
+        match = _SELECTOR_CALL.search(body, pos)
+        if not match:
+            break
+        selector = match.group(1)
+        open_paren = match.end() - 1
+        try:
+            call_body, next_index = parse_call_body(body, open_paren)
+        except ValueError as exc:
+            raise RuntimeError(f"{rel_path} (excludes block): {exc}") from exc
+        if selector in ALLOWED_GRADLE_SELECTORS:
+            for pattern in extract_strings(call_body):
+                entries.add(ExcludeEntry(module, selector, pattern))
+        else:
+            errors.append(
+                f"{rel_path}: unknown Kover exclude selector "
+                f"{selector!r} in an `excludes {{ ... }}` block "
+                "— extend ALLOWED_GRADLE_SELECTORS in "
+                "scripts/verify-kover-excludes-ledger.py together with "
+                "the ledger schema in docs/coverage/excludes-ledger.md."
+            )
+        pos = next_index
 
 
 LEDGER_ROW = re.compile(
@@ -317,12 +386,16 @@ def main() -> int:
         print(f"ERROR: missing {ledger.relative_to(root)}", file=sys.stderr)
         return 2
 
-    gradle_entries = extract_gradle_entries(root)
+    gradle_entries, gradle_errors = extract_gradle_entries(root)
     ledger_entries, ledger_errors = extract_ledger_entries(ledger)
     missing = sorted(gradle_entries - ledger_entries)
     stale = sorted(ledger_entries - gradle_entries)
 
-    if missing or stale or ledger_errors:
+    if missing or stale or ledger_errors or gradle_errors:
+        if gradle_errors:
+            print("Unknown Kover exclude selectors in build.gradle.kts:")
+            for err in gradle_errors:
+                print(f"  {err}")
         if missing:
             print("Missing Kover exclude ledger entries:")
             for entry in missing:

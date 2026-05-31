@@ -909,13 +909,15 @@ Folge-Themen festgehalten sind:
   `PerfMeasure`/`PerfReport` migriert; die DoD §7 Z. 642 verbietet
   Parallel-Pattern. Streaming-Adapter ist migriert, Formats nur
   teilweise.
-- **[`kover-excludes-selector-typesafe.md`](../open/kover-excludes-selector-typesafe.md)** —
-  Der Gradle-Side-Scanner in `verify-kover-excludes-ledger.py`
-  match nur `\b(classes|packages)\s*\(`; ein neuer Kover-Selector
-  wuerde stillschweigend uebersehen, obwohl Plan §7 Z. 721
-  fail-closed gegen „bisher unbekannte Selector-Typen" verlangt.
-  Die Ledger-Seite ist fail-closed, der Gradle-Seiten-Scanner
-  nicht.
+- ~~`kover-excludes-selector-typesafe.md`~~ — **gefixt durch
+  F4-Followup-Commit**: `verify-kover-excludes-ledger.py` lokalisiert
+  jetzt `kover { ... excludes { ... } }`-Bloecke per
+  `parse_brace_body` und scannt darin per `[A-Za-z_]\w*\(` jeden
+  Selector-Identifier; alles ausserhalb der Allowlist
+  `ALLOWED_GRADLE_SELECTORS = {classes, packages}` failt closed mit
+  einem operator-lesbaren Hinweis. Mutationsprobe mit
+  `annotatedBy("Generated")` in `hexagon/ports-common/build.gradle.kts`
+  liefert Exit 1; clean state bleibt Exit 0.
 - ~~`perf-large-schema-heap-dump.md`~~ — **gefixt durch F5-Followup-Commit**:
   `test/perf-large-schema/build.gradle.kts` setzt jetzt
   `-XX:+HeapDumpOnOutOfMemoryError` plus
