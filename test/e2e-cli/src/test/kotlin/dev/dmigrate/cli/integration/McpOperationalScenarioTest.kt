@@ -13,29 +13,38 @@ import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.DriverManager
+import java.util.UUID
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteIfExists
 
 /**
- * C-MCP scenario: drive `schema_reverse_start` through the
- * [OperationalHarness] against a real file-backed SQLite database
- * and assert the job reaches terminal status with the artefact
- * surface populated. Mirrors the production composition
+ * C-MCP scenario: drive `schema_reverse_start` **and**
+ * `schema_compare_start` through the [OperationalHarness] against a
+ * real file-backed SQLite database and assert the jobs reach terminal
+ * status with the artefact surface populated. Mirrors the production
+ * composition
  * `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`
- * — review finding C-MCP from
- * `quality-coverage-expansion-plan.md` §5.3.
+ * — Plan-Doc `docs/planning/done/quality-coverage-expansion-plan.md`
+ * §5.3 (Sub-Slice C-MCP).
  *
- * Two cells:
+ * Three cells:
  *
- * 1. **Success** — register a SQLite ConnectionReference, run
- *    `schema_reverse_start` via the in-process MCP stdio transport,
- *    assert the response envelope (jobId + resourceUri), then
- *    `job_status_get` and assert terminal status with a
- *    schemaRef artefact.
- * 2. **Validation blocker** — call `schema_reverse_start` with a
- *    free JDBC URL (per `McpJobStartScenarioTest`-pinned contract,
- *    the handler rejects this with `VALIDATION_ERROR` before any
- *    worker dispatch).
+ * 1. **Reverse success + resources/read** — register a SQLite
+ *    ConnectionReference, run `schema_reverse_start` via the
+ *    in-process MCP stdio transport, assert the response envelope
+ *    (jobId + resourceUri), `job_status_get` for terminal status with
+ *    a schemaRef artefact, then list resources via MCP `resources/list`
+ *    and read the resulting schema entry via MCP `resources/read`
+ *    (no direct `schemaStore.list` access — every assertion goes
+ *    through the MCP client surface).
+ * 2. **Compare success** — second `schema_reverse_start` against the
+ *    same SQLite file (different idempotency key) followed by
+ *    `schema_compare_start` with both schema URIs; assert the
+ *    compare job reaches terminal SUCCEEDED with a published diff
+ *    artefact.
+ * 3. **Validation/policy blocker** — call `schema_reverse_start` under
+ *    the default fail-closed policy; the handler rejects with
+ *    `POLICY_DENIED` before any worker dispatch.
  *
  * Run:
  * ```
@@ -136,12 +145,101 @@ class McpOperationalScenarioTest : FunSpec({
                     artifacts.size() shouldBe 1
                     artifacts.get(0).asString shouldContain "/artifacts/"
                 }
-                withClue("schema store must carry the reverse-engineered schema entry") {
-                    val page = harness.runtimeWiring().schemaStore.list(
-                        tenantId,
-                        dev.dmigrate.server.core.pagination.PageRequest(pageSize = 10),
-                    )
-                    page.items.size shouldBe 1
+                // Plan-Doc §5.3 requires that the operational scenario
+                // reads schema content through the MCP client surface
+                // (`resources/read`), not through a side-channel
+                // schemaStore.list(...) call. The schemaStore handle is
+                // still legitimately used for *test-time staging*
+                // (connectionStore.save above), but observation of the
+                // reverse worker's published artefact goes through MCP.
+                val schemaUriA = singleSchemaResourceUri(harness)
+                val schemaContent = readJsonContent(harness, schemaUriA)
+                // ResourceProjector.projectContent(SchemaIndexEntry) shape:
+                // uri / tenantId / schemaId / displayName / artifactRef /
+                // createdAt / expiresAt / jobRef / labels. The schemaId is
+                // the stable handle; the actual schema definition sits
+                // behind artifactRef and is reachable via a follow-up
+                // resources/read on that artifact URI.
+                withClue("resources/read on schemas/* must echo the requested URI") {
+                    schemaContent.get("uri").asString shouldBe schemaUriA
+                }
+                withClue("resources/read on schemas/* must carry a non-empty schemaId") {
+                    schemaContent.get("schemaId").asString.isNotEmpty() shouldBe true
+                }
+                withClue("resources/read on schemas/* must carry the tenant of the calling principal") {
+                    schemaContent.get("tenantId").asString shouldBe tenantId.value
+                }
+
+                // --- Compare phase ---
+                // Second reverse against the same SQLite file with a
+                // fresh idempotency key. Produces a second schema in the
+                // store; content is structurally identical (same DB) so
+                // the compare worker writes an empty diff artefact —
+                // sufficient to pin the full schema_compare_start path
+                // through the MCP client (jobs/start → executor →
+                // publisher → resources/read).
+                val args2 = JsonObject().apply {
+                    addProperty("connectionId", resourceUri.render())
+                    addProperty("idempotencyKey", "k-operational-${UUID.randomUUID()}")
+                }
+                val reverse2 = harness.toolsCall("schema_reverse_start", args2)
+                withClue("second schema_reverse_start envelope must succeed; body=${reverse2.content.firstOrNull()?.text}") {
+                    reverse2.isError shouldBe false
+                }
+                val reverse2Response = JsonParser
+                    .parseString(reverse2.content.firstOrNull()?.text ?: error("no text"))
+                    .asJsonObject
+                val jobId2 = reverse2Response.get("jobId").asString
+                val status2Raw = harness.toolsCall(
+                    "job_status_get",
+                    JsonObject().apply { addProperty("jobId", jobId2) },
+                )
+                val status2Text = status2Raw.content.firstOrNull()?.text
+                    ?: error("job_status_get had no text content")
+                val status2Json = JsonParser.parseString(status2Text).asJsonObject
+                withClue("second reverse job must reach terminal SUCCEEDED; body=$status2Text") {
+                    status2Json.get("status").asString shouldBe "SUCCEEDED"
+                    status2Json.get("terminal").asBoolean shouldBe true
+                }
+
+                // Two schemas now staged — discover both URIs via MCP.
+                val schemaUris = listSchemaResourceUris(harness)
+                withClue("after the second reverse, resources/list must report exactly two schemas") {
+                    schemaUris.size shouldBe 2
+                }
+                schemaUris shouldContainSchemaUri schemaUriA
+                val schemaUriB = (schemaUris - schemaUriA).single()
+
+                val compareArgs = JsonObject().apply {
+                    addProperty("sourceUri", schemaUriA)
+                    addProperty("targetUri", schemaUriB)
+                    addProperty("idempotencyKey", "k-compare-${UUID.randomUUID()}")
+                }
+                val compareResult = harness.toolsCall("schema_compare_start", compareArgs)
+                val compareBody = compareResult.content.firstOrNull()?.text ?: "<no text>"
+                withClue("schema_compare_start envelope must be a success projection; body=$compareBody") {
+                    compareResult.isError shouldBe false
+                }
+                val compareResponse = JsonParser.parseString(compareBody).asJsonObject
+                withClue("schema_compare_start envelope must carry a jobId") {
+                    compareResponse.has("jobId") shouldBe true
+                }
+                val compareJobId = compareResponse.get("jobId").asString
+                val compareStatusRaw = harness.toolsCall(
+                    "job_status_get",
+                    JsonObject().apply { addProperty("jobId", compareJobId) },
+                )
+                val compareStatusText = compareStatusRaw.content.firstOrNull()?.text
+                    ?: error("job_status_get had no text content")
+                val compareStatusJson = JsonParser.parseString(compareStatusText).asJsonObject
+                withClue("compare job must reach terminal SUCCEEDED; body=$compareStatusText") {
+                    compareStatusJson.get("status").asString shouldBe "SUCCEEDED"
+                    compareStatusJson.get("terminal").asBoolean shouldBe true
+                }
+                withClue("compare job must surface one diff artefact; body=$compareStatusText") {
+                    val artifacts = compareStatusJson.getAsJsonArray("artifacts")
+                    artifacts.size() shouldBe 1
+                    artifacts.get(0).asString shouldContain "/artifacts/"
                 }
             } finally {
                 harness.close()
@@ -231,3 +329,55 @@ private fun seedSqlite(path: Path) {
 }
 
 private fun StdioHarness.runtimeWiring() = wiring
+
+/**
+ * MCP `resources/list` → filter to entries whose `uri` carries a
+ * `/schemas/` path segment → return them as a list. Uses the
+ * MCP-client surface; no direct SchemaStore access. The operational
+ * scenario consistently checks via this path so a regression in the
+ * schemas-resource projection (e.g. ACL filter break) surfaces here
+ * instead of in a silent side-channel.
+ */
+private fun listSchemaResourceUris(harness: StdioHarness): List<String> {
+    val raw = harness.resourcesListRaw(cursor = null)
+    val result = raw.result?.asJsonObject
+        ?: error("resources/list errored: ${raw.error}")
+    val resources = result.getAsJsonArray("resources")
+    return resources.mapNotNull { entry ->
+        val obj = entry.asJsonObject
+        val uri = obj.get("uri")?.asString ?: return@mapNotNull null
+        uri.takeIf { it.contains("/schemas/") }
+    }
+}
+
+private fun singleSchemaResourceUri(harness: StdioHarness): String {
+    val uris = listSchemaResourceUris(harness)
+    require(uris.size == 1) {
+        "expected exactly one schemas/* resource, got ${uris.size}: $uris"
+    }
+    return uris.single()
+}
+
+/**
+ * Issue `resources/read` against [uri] and return the inline JSON
+ * body. The MCP envelope is `{ contents: [{ uri, mimeType, text }] }`;
+ * the operational scenario reads exactly one inline content slice.
+ */
+private fun readJsonContent(harness: StdioHarness, uri: String): JsonObject {
+    val raw = harness.resourcesReadRaw(uri)
+    val result = raw.result?.asJsonObject
+        ?: error("resources/read errored for $uri: ${raw.error}")
+    val contents = result.getAsJsonArray("contents")
+    require(contents.size() == 1) {
+        "expected exactly one content slice, got ${contents.size()} for $uri"
+    }
+    val text = contents.get(0).asJsonObject.get("text")?.asString
+        ?: error("content slice missing 'text' for $uri")
+    return JsonParser.parseString(text).asJsonObject
+}
+
+private infix fun List<String>.shouldContainSchemaUri(expected: String) {
+    withClue("expected schema URI $expected to appear in $this") {
+        contains(expected) shouldBe true
+    }
+}

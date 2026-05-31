@@ -892,12 +892,19 @@ gefunden, die nicht den Closing-Vertrag brechen (D-N10k-aehnlich:
 nachgelagerte Verbesserung, kein DoD-Bruch), aber als
 Folge-Themen festgehalten sind:
 
-- **[`c-mcp-coverage-expansion.md`](../open/c-mcp-coverage-expansion.md)** —
-  `McpOperationalScenarioTest` deckt heute nur `schema_reverse_start`,
-  nicht `schema_compare_start`; Artefakt-Pruefung laeuft direkt ueber
-  `schemaStore.list(...)` statt ueber MCP `resources/read`.
-  Akzeptanzkriterium §7 hatte beide Tools und `resources/read` als
-  Pflichtpfad benannt — das Operational-Szenario ist halbiert.
+- ~~`c-mcp-coverage-expansion.md`~~ — **gefixt durch F1-Followup-Commit**:
+  `McpOperationalScenarioTest` exerziert jetzt den vollen
+  C-MCP-Vertrag in einer einzigen Erfolgszelle — `schema_reverse_start`
+  zweimal hintereinander (verschiedene Idempotency-Keys, gleiches
+  Live-SQLite-File, zwei distinkte Schema-Eintraege), Artefakt-
+  Verifikation ueber MCP `resources/list` + `resources/read` (kein
+  direkter `schemaStore.list`-Side-Channel mehr; nur das Connection-
+  Staging laeuft weiter ueber den `connectionStore`-Handle, weil
+  das vor dem Tool-Call passiert), dann `schema_compare_start` mit
+  beiden Schema-URIs, `job_status_get` auf SUCCEEDED, gepublishtes
+  Diff-Artefakt-URI verifiziert. `make integration
+  INTEGRATION_TASKS="-PintegrationTests :test:e2e-cli:test --tests
+  dev.dmigrate.cli.integration.McpOperationalScenarioTest"` gruen.
 - **[`cross-dialect-matrix-kind-expansion.md`](../open/cross-dialect-matrix-kind-expansion.md)** —
   `MatrixCell.Kind` enthaelt nur `POSITIVE` und `BLOCKER`, der Plan
   §5.2 nennt fuenf Test-Arten (Positiv/Blocker/Report/Rollback/
