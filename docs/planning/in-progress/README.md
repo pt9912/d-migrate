@@ -15,11 +15,6 @@ Zwei Typen leben hier:
    - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
      — Draft für den dialektübergreifenden Atomic-Probe-und-Restore-Pfad
      (Folge-Slice der bestehenden `preserveCurrentValue`-Workstreams).
-   - [`quality-coverage-expansion-plan.md`](quality-coverage-expansion-plan.md)
-     — QA-/Coverage-Erweiterung über §11 DoD hinaus: Perf-Baseline
-     (`PerfMeasure`/`PerfReport`-Lib + drei Hotpaths), Cross-Dialekt-
-     Matrix-Sweep, Concurrent-Writer-Race-Reproducer, Large-Schema-Last-
-     Tests und Kover-Excludes-Ledger.
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)

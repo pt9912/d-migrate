@@ -845,3 +845,42 @@ Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
   lebt in `hexagon:profiling` und ist heute fuer Test-Specs gedacht. Ein
   produktiver Konsument (CLI-Subcommand fuer Hotpath-Diagnose, MCP-Tool
   fuer Profiling-Reports) ist eigener Slice und nicht Teil dieses Plans.
+
+---
+
+## Closure (2026-05-31)
+
+Alle Phasen geliefert, Plan-Doc verlaesst `in-progress/` und wandert
+nach `done/`. Final-Stand:
+
+| Sub-Slice | Commit | Resultat |
+|---|---|---|
+| A | `af59567d` | `PerfMeasure`/`PerfReport`-Lib in `hexagon:profiling` + erster Hotpath `SchemaMigrateRenderPipeline.run`-Spec + `kotest.tags=perf`-Forwarding + `make docker-perf`-/Nightly-Skelett. |
+| A-Vervollständigung | `2e62370c` | `DiffPlanner`-PerfSpec, `RollbackArtefactBuilder`↔`RollbackArtefactParser`-Round-Trip-PerfSpec, Bestands-PerfSpecs `formats`/`streaming` auf die Lib migriert. |
+| A-Review-Fixes | `9c369d94` | `/code-review`-Befunde: `PERF_GATE`-SystemProperty-Forwarding, `iterations==1`-Guards, atomare `Files.move(ATOMIC_MOVE)`, `%.9f`-Precision, KDoc-Notes, `generateRollback=true` im Render-Pipeline-Spec. |
+| B | `3545b646` | `test/cross-dialect-matrix/`-Modul mit Sweep-Fixture-Lader + `MATRIX_GAP`-Diagnose + 5 gepinnte Workstreams. |
+| B-Vervollständigung | `3ae1bb20` | 7 Workstreams gepinnt + 17 Workstreams + 6 Dialect-Cells als `permanent: true` mit `ownerTests`-Pfaden gegen den Repo-Baum verifiziert. |
+| C-MCP | `1bea5bed` | `:test:e2e-cli`-Operational-Harness gegen Live-DB via `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`-Override mit terminalem Job-Status + Artefaktinhalt + separatem Subprocess-Smoke + Erfolgs-/Validierungs-/Policy-Blockerpfad. |
+| C | `a2195313` | `test/integration-concurrency/`-Modul mit PG/MySQL/SQLite-Concurrency-Coverage + `knownRace=true`-Legacy-Gate vor dem Atomic-Slice. |
+| D | `67d93ef8` | `test/perf-large-schema/`-Modul mit `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report. |
+| E-Scaffold | `27db7cf4` | `docs/coverage/excludes-ledger.md` + `scripts/verify-kover-excludes-ledger.py` + `make coverage-excludes-check` in `make docs-check`. |
+| E.1 | `648beec6` | Pflichtspalte `Disposition` mit drei zulaessigen Werten (`permanent:`/`refactor-plan:`/`aggregate-carveout:`); 216 Bestands-Eintraege auf `permanent:`-Tokens klassifiziert, 19 auf `refactor-plan: TBD`; Verifier failt closed bei fehlender/leerer/unbekannter Disposition. |
+| E.2 | `68f917f9` | 19 `refactor-plan: TBD`-Platzhalter promotet auf [`docs/planning/open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md). |
+| E.3 | `b3b7105f` | Aggregat-Asymmetrie geschlossen: 4 Module ins Root-Kover-Aggregat aufgenommen (`integration-sqlite`/`-integrations`/`-persistence-jdbc`/`e2e-cli`), 3 Module mit `aggregate-carveout:`-Disposition gepinnt (`cross-dialect-matrix`/`integration-concurrency`/`perf-large-schema`). `make docker-coverage-gate` gruen. |
+| E.3-Review-Fixes | `8ceb2653` | Verifier-Defense-in-depth gehaertet: Legacy-Branch emittiert „missing Disposition column" jetzt fuer alle Selectoren (nicht nur `classes`/`packages`); `AGGREGATE_CARVEOUT_TOKENS`-Frozenset enforced die geschlossene Vokabular-Liste. |
+| F | (dieser Commit) | Roadmap-Status-Flip von `teilerledigt` auf `✅ erledigt (2026-05-31)`, Move dieses Plan-Docs nach `done/`, Cross-Refs in `docs/planning/open/adapter-coverage-uplift.md`, `docs/planning/in-progress/README.md` und `docs/coverage/excludes-ledger.md` auf den neuen Pfad gezogen. |
+
+**Aktiv offene Folge-Threads** (nicht F-Blocker, ausserhalb dieses
+Plans):
+
+- **D-N10k** (Nightly-Only) — N=10000-Scale-Test als nightly-opt-in,
+  bleibt im Plan-Doc-Eintrag dokumentiert, aber nicht
+  closing-relevant.
+- **`docs/planning/open/adapter-coverage-uplift.md`** — Folge-Plan
+  fuer den eigentlichen Coverage-Uplift der 19 in E.2 mit
+  `refactor-plan:` markierten Excludes. Bleibt im `open/`-Stadium,
+  bis ein konkreter Scope-Schnitt steht.
+
+Wird der Plan reaktiviert (z. B. ein nachtraeglicher Slice E.4), zieht
+das Doc nicht zurueck nach `in-progress/`; stattdessen entsteht ein
+neues `ImpPlan-<version>-E.4-...`-Per-Slice-Closure-Doc.
