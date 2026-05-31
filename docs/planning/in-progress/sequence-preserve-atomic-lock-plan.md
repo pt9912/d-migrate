@@ -1,7 +1,9 @@
 # Implementierungsplan: Atomare Sequence-Preserve Probe + Restore unter Lock
 
 > Status: In Progress (2026-05-31) — Phase A erledigt (Vertraege +
-> Classifier + Capability-Defaults). Phasen B–E offen.
+> Classifier + Capability-Defaults); Phase B erledigt (Executor-Port
+> in `hexagon:ports-execute` plus PG/MySQL/SQLite-Executoren mit
+> Live-Container-/in-process-Tests). Phasen C–E offen.
 > Workstream: E.3 Folge-Slice für `preserveCurrentValue`-Atomicity
 > Vorarbeit:
 > - `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md` §3.2
@@ -298,13 +300,36 @@ COMMIT;
   - Für MySQL/SQLite werden Timeout-/Busy-Settings nach Ausführung im
     `finally` auf Voreinstellung zurückgesetzt.
 
-**DoD B**
+**DoD B** *(erledigt 2026-05-31)*
 
-- [ ] Execute-Port, Batch-Typ und Result-Klassen existieren in
-      `hexagon:ports-execute`.
-- [ ] PG-/MySQL-/SQLite-Executoren implementiert.
-- [ ] Executor-Tests mit echten Live-Containern (Lock-Race-Reproduktion) für
-      Single-Seq und Multi-Seq Batch inkl. Timeout-Leckageprüfung.
+- [x] Execute-Port, Batch-Typ und Result-Klassen existieren in
+      `hexagon:ports-execute`. *(B.1: `AtomicSequencePreserveExecutor`
+      + `AtomicSequencePreserveBatch` + `AtomicSequencePreserveRequest`
+      + sealed `AtomicSequencePreserveResult`
+      (`Applied`/`NotFound`/`LockTimeout`/`Failed`) +
+      `AtomicProtectedExecutionResult`.)*
+- [x] PG-/MySQL-/SQLite-Executoren implementiert. *(B.2
+      `PostgresAtomicSequencePreserveExecutor` mit
+      `pg_advisory_xact_lock(hashtext(...))` — die ursprüngliche
+      `LOCK TABLE`-Strategie aus §4.1 wurde live als nicht-haltbar
+      erkannt und im Plan-Doc auf advisory-Lock korrigiert; B.3
+      `MysqlAtomicSequencePreserveExecutor` mit
+      `SELECT 1 FROM dmg_sequences WHERE name=? FOR UPDATE` +
+      `SET SESSION innodb_lock_wait_timeout`; B.4
+      `SqliteAtomicSequencePreserveExecutor` mit `BEGIN IMMEDIATE`
+      + `PRAGMA busy_timeout` über autocommit=true und expliziten
+      `BEGIN IMMEDIATE`/`COMMIT`/`ROLLBACK`-SQL-Statements.)*
+- [x] Executor-Tests mit echten Live-Containern (Lock-Race-Reproduktion)
+      für Single-Seq und Multi-Seq Batch inkl. Timeout-Leckageprüfung.
+      *(B.2: `PostgresAtomicSequencePreserveExecutorIntegrationTest`
+      mit Applied/Multi-Seq-Sort/NotFound/LockTimeout/Autocommit-Restore
+      gegen Testcontainers-PG; B.3:
+      `MysqlAtomicSequencePreserveExecutorIntegrationTest`
+      mit Applied/NotFound/LockTimeout/SessionTimeout-Restore gegen
+      Testcontainers-MySQL; B.4:
+      `SqliteAtomicSequencePreserveExecutorIntegrationTest`
+      mit Applied/Multi-Seq-Sort/NotFound/LockTimeout/SessionTimeout-
+      Restore gegen file-backed in-process SQLite.)*
 
 ### Phase C — Stage-/Runner-Refactor: atomare Execute-Time-Orchestrierung
 
