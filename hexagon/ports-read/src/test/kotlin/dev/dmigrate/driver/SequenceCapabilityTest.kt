@@ -66,7 +66,7 @@ class SequenceCapabilityTest : FunSpec({
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
             capability.supportsAtomicPreserve shouldBe false
             capability.supportsAtomicPreserveAllInPlan shouldBe false
-            capability.transactionalProtectedSequenceOperations shouldBe emptySet<String>()
+            capability.transactionalProtectedSequenceOperations shouldBe emptySet<ProtectedOperationId>()
         }
     }
 })

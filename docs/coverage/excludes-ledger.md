@@ -232,6 +232,13 @@ Permanent reference tokens:
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$Granted` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaOutcome$RateLimited` | `permanent: sealed-outcome` | Sealed outcome subtype data carrier. |
 | `:hexagon:ports-common` | `classes` | `dev.dmigrate.server.ports.quota.QuotaStore` | `permanent: port-contract` | Server port/interface contract. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult` | `permanent: sealed-outcome` | Sealed outcome marker for the runner-internal protected-execution callback. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch` | `permanent: dto-or-value-carrier` | Pure batch data carrier (requests + protected op IDs + internal follow-up IDs). |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor` | `permanent: port-contract` | Port/interface contract; no executable adapter logic. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest` | `permanent: dto-or-value-carrier` | Pure per-sequence preserve-request carrier (ref + render-restore callback). |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult` | `permanent: sealed-outcome` | Sealed outcome marker for the execute-time atomic preserve result. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers (Applied/NotFound/LockTimeout/Failed). |
 | `:hexagon:ports-read` | `classes` | `*$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helpers for interface contracts. |
 | `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyProjectionStatus` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |

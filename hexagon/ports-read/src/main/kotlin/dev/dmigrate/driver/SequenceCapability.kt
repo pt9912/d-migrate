@@ -59,15 +59,12 @@ package dev.dmigrate.driver
  *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker when a plan
  *   carries more than one preserve candidate. Default `false`
  *   until Phase D lands batch-atomicity.
- * - [transactionalProtectedSequenceOperations]: opaque identifiers
- *   for operation kinds the dialect can execute **inside** the
- *   atomic-runner transaction without triggering an implicit
- *   commit. The empty default conservatively rejects every protected
- *   operation — Phase B/C populate the set with dialect-known-safe
- *   identifiers. The identifier shape is intentionally `String` for
- *   Phase A; Phase B refactors to a `value class
- *   ProtectedOperationId` once the executor wiring exists and the
- *   identifier surface has a real consumer.
+ * - [transactionalProtectedSequenceOperations]: opaque
+ *   [ProtectedOperationId] values for operation kinds the dialect
+ *   can execute **inside** the atomic-runner transaction without
+ *   triggering an implicit commit. The empty default conservatively
+ *   rejects every protected operation — Phase B's per-dialect
+ *   executors populate the set with dialect-known-safe identifiers.
  */
 data class SequenceCapability(
     val supportsNamedSequences: Boolean,
@@ -80,5 +77,5 @@ data class SequenceCapability(
     val supportsOwnedBy: Boolean,
     val supportsAtomicPreserve: Boolean = false,
     val supportsAtomicPreserveAllInPlan: Boolean = false,
-    val transactionalProtectedSequenceOperations: Set<String> = emptySet(),
+    val transactionalProtectedSequenceOperations: Set<ProtectedOperationId> = emptySet(),
 )

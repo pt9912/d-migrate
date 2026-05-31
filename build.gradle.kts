@@ -175,6 +175,7 @@ dependencies {
     kover(project(":hexagon:ports-common"))
     kover(project(":hexagon:ports-read"))
     kover(project(":hexagon:ports-write"))
+    kover(project(":hexagon:ports-execute"))
     kover(project(":hexagon:ports"))
     kover(project(":hexagon:application"))
     kover(project(":hexagon:core"))

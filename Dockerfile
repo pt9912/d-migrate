@@ -67,6 +67,7 @@ COPY --chown=gradle:gradle gradle/ gradle/
 COPY --chown=gradle:gradle hexagon/ports-common/build.gradle.kts hexagon/ports-common/build.gradle.kts
 COPY --chown=gradle:gradle hexagon/ports-read/build.gradle.kts hexagon/ports-read/build.gradle.kts
 COPY --chown=gradle:gradle hexagon/ports-write/build.gradle.kts hexagon/ports-write/build.gradle.kts
+COPY --chown=gradle:gradle hexagon/ports-execute/build.gradle.kts hexagon/ports-execute/build.gradle.kts
 COPY --chown=gradle:gradle hexagon/ports/build.gradle.kts hexagon/ports/build.gradle.kts
 COPY --chown=gradle:gradle hexagon/application/build.gradle.kts hexagon/application/build.gradle.kts
 COPY --chown=gradle:gradle hexagon/core/build.gradle.kts hexagon/core/build.gradle.kts
@@ -190,6 +191,7 @@ ARG COVERAGE_MODULES_HTML_TASKS="\
 :hexagon:ports-common:koverHtmlReport \
 :hexagon:ports-read:koverHtmlReport \
 :hexagon:ports-write:koverHtmlReport \
+:hexagon:ports-execute:koverHtmlReport \
 :hexagon:application:koverHtmlReport \
 :hexagon:profiling:koverHtmlReport \
 :adapters:driven:driver-common:koverHtmlReport \
@@ -324,6 +326,7 @@ ARG COVERAGE_MODULES_TASKS="\
 :hexagon:ports-common:koverXmlReport \
 :hexagon:ports-read:koverXmlReport \
 :hexagon:ports-write:koverXmlReport \
+:hexagon:ports-execute:koverXmlReport \
 :adapters:driven:driver-common:koverXmlReport \
 :adapters:driven:driver-postgresql:koverXmlReport \
 :adapters:driven:driver-postgresql-profiling:koverXmlReport \
