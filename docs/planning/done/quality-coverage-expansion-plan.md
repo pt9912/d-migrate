@@ -916,11 +916,12 @@ Folge-Themen festgehalten sind:
   fail-closed gegen „bisher unbekannte Selector-Typen" verlangt.
   Die Ledger-Seite ist fail-closed, der Gradle-Seiten-Scanner
   nicht.
-- **[`perf-large-schema-heap-dump.md`](../open/perf-large-schema-heap-dump.md)** —
-  Plan §5.4 nennt `-XX:+HeapDumpOnOutOfMemoryError` als
-  Mitigation gegen OOM-Verluste in N=10000-Runs; weder Modul-
-  noch root-level Test-`jvmArgs` setzen das heute. Soll-Wert, kein
-  DoD-Bruch.
+- ~~`perf-large-schema-heap-dump.md`~~ — **gefixt durch F5-Followup-Commit**:
+  `test/perf-large-schema/build.gradle.kts` setzt jetzt
+  `-XX:+HeapDumpOnOutOfMemoryError` plus
+  `-XX:HeapDumpPath=build/test-heap-dumps/` als modul-lokale
+  Test-`jvmArgs` (nicht global, um Unit-Spec-OOM-Heap-Dumps zu
+  vermeiden).
 
 Wird der Plan reaktiviert (z. B. ein nachtraeglicher Slice E.4), zieht
 das Doc nicht zurueck nach `in-progress/`; stattdessen entsteht ein

@@ -25,6 +25,18 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-postgresql"))
 }
 
+// Plan-Doc §5.4: large-schema scale runs sit at the edge of what the
+// shared-CI JVM heap budget tolerates. If a future N=10000-style scale
+// trips OOM, the operator needs the heap dump for forensics. Setting
+// the flag here rather than globally keeps unit-spec OOMs (almost
+// always local code bugs) from filling build/ with multi-GB hprofs.
+tasks.named<Test>("test") {
+    jvmArgs(
+        "-XX:+HeapDumpOnOutOfMemoryError",
+        "-XX:HeapDumpPath=${layout.buildDirectory.dir("test-heap-dumps").get().asFile.absolutePath}",
+    )
+}
+
 kover {
     reports {
         verify {
