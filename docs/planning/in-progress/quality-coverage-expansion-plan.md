@@ -3,9 +3,13 @@
 > Status: In Progress — Phasen A + A-Vervollständigung + Review-Fixes
 > (`af59567d`/`2e62370c`/`9c369d94`), B + B-Vervollständigung
 > (`3545b646`/`3ae1bb20`), C + C-MCP (`a2195313`/`1bea5bed`), D
-> N=100/1000 (`67d93ef8`) alle gelandet 2026-05-30. Phase E (Kover-
-> Excludes-Konsolidierung), D-N10k (Nightly-Only) und F (Closing)
-> noch offen.
+> N=100/1000 (`67d93ef8`) alle gelandet 2026-05-30. Phase E ist in
+> drei Sub-Slices geschnitten — E.1 (Ledger-Disposition-Vertrag),
+> E.2 (kritische Adapter-Audits), E.3 (`:test:*`-Aggregat-Normalisierung).
+> Ledger-Scaffold (`docs/coverage/excludes-ledger.md`),
+> `scripts/verify-kover-excludes-ledger.py` und `make coverage-excludes-check`
+> stehen bereits aus der initialen Phase-E-Inventur. D-N10k (Nightly-Only)
+> und F (Closing) bleiben offen.
 > Workstream: Roadmap-Eintrag „Coverage/QA" über §11 DoD hinaus
 > Vorbedingungen:
 > - `docs/planning/in-progress/diffresult-migration-plan-2.md` §11 (DoD a/b/c/d/e
@@ -508,7 +512,7 @@ test/perf-large-schema/
 ### 5.5 Kover-Excludes-Konsolidierung (Phase E)
 
 - Neues Verzeichnis `docs/coverage/` existiert seit der initialen
-  Phase-E-Inventur. Die Datei
+  Phase-E-Inventur (E-Scaffold, ✅). Die Datei
   `docs/coverage/excludes-ledger.md` listet pro Modul jede
   aktive Kover-Exclude-Regel aus allen
   `build.gradle.kts`-Bloecken mit:
@@ -516,7 +520,15 @@ test/perf-large-schema/
     Pattern kann Glob-Wildcards enthalten — die Wildcards sind
     Pattern-Form und kein eigener Selector-Typ), Pattern-Wert und
     Modulpfad.
-  - Datum, Begründung, Refactor-Plan-Verweis oder „permanent" + ADR-Ref.
+  - Begründung **und** einer Pflichtspalte `Disposition` aus dem
+    zulaessigen Vokabular `permanent: <ref>` (DTO/Port/sealed Outcome),
+    `refactor-plan: <pfad-zum-plan-doc>` (Adapter mit Coverage-Schuld)
+    oder `aggregate-carveout: <ref>` (`:test:*`-Module, die bewusst nicht
+    im Root-Kover-Aggregat haengen). Sub-Slice E.1 fuehrt den
+    Disposition-Vertrag ein und backfillt alle Bestands-Eintraege; E.2
+    ersetzt verbleibende `refactor-plan: TBD` durch echte Plan-Doc-
+    Verweise fuer die kritischen Adapter; E.3 ergaenzt den
+    `aggregate-carveout`-Block fuer `:test:*`-Module.
 - Phase E startet mit einer generierten Vollinventur, nicht mit einer
   handgepflegten Beispielmenge. `scripts/verify-kover-excludes-ledger.py`
   durchsucht alle
@@ -562,15 +574,18 @@ test/perf-large-schema/
   (`minBound(0)`, produktionscodehaltiges 90%-Gate oder begruendeter
   Aggregate-Carve-out). Das gilt fuer Bestandsmodule und neue Module
   gleichermassen, damit §5.0 nicht nur zukuenftige Dateien regelt.
-- Bestandsaudit der heutigen Asymmetrie: das Root-Aggregat
-  (`build.gradle.kts:184-187`) listet `:test:integration-postgresql`,
+- Bestandsaudit der heutigen Asymmetrie (E.3): das Root-Aggregat
+  (`build.gradle.kts:174-201`) listet `:test:integration-postgresql`,
   `:test:integration-mysql`, `:test:integration-server-state`,
   `:test:consumer-read-probe`. **Nicht** aggregiert sind heute
   `:test:integration-sqlite`, `:test:integration-integrations`,
-  `:test:integration-persistence-jdbc`, `:test:e2e-cli`. Phase E
-  entscheidet pro Modul explizit (Aggregat ja/nein, Begruendung) und
-  schliesst die Asymmetrie oder pinnt sie als bewusste Auslassung im
-  Excludes-Ledger.
+  `:test:integration-persistence-jdbc`, `:test:e2e-cli` (historisch) sowie
+  `:test:cross-dialect-matrix`, `:test:integration-concurrency`,
+  `:test:perf-large-schema` (Sub-Slices B/C/D — modul-eigenes
+  `minBound(0)` ist gesetzt, Aggregat-Entscheidung steht aus). Sub-Slice
+  E.3 entscheidet pro Modul explizit (Aggregat ja/nein, Begruendung)
+  und schliesst die Asymmetrie oder pinnt sie mit
+  `aggregate-carveout:`-Disposition im Excludes-Ledger.
 
 ---
 
@@ -587,26 +602,34 @@ test/perf-large-schema/
 | C | ✅ erledigt (2026-05-30, `a2195313`) | `test/integration-concurrency/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + PG/MySQL/SQLite-Concurrency-Coverage mit genau einem aktiven Gate passend zum Implementierungszustand (Legacy-`knownRace=true` vor Atomic-Slice, `finalValue >= postWriterMaximum` nach Atomic-Slice) + `-PintegrationTests -PconcurrencyTests`-Gating |
 | D | ✅ erledigt (2026-05-30, `67d93ef8`) | `test/perf-large-schema/`-Modul + §5.0-Build-/Docker-/Kover-Einbindung + `LargeSchemaGenerator` + N=100/1000-Scale-Tests + Heap-Smoke-Guard + Baseline-Report |
 | D-N10k | offen | N=10000-Scale-Test als nightly-only opt-in |
-| E | offen | `docs/coverage/`-Verzeichnis + `docs/coverage/excludes-ledger.md` + generierte Vollinventur aller Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed) + `scripts/verify-kover-excludes-ledger.py`/`make coverage-excludes-check` + Bestands-Audit |
+| E-Scaffold | ✅ erledigt (2026-05-30, `27db7cf4`) | `docs/coverage/excludes-ledger.md` als generierte Vollinventur aller heutigen Gradle-Excludes (Selector-Typen `classes(...)`/`packages(...)` inkl. vollstaendigem Pattern; Wildcards sind Teil des Patterns; bisher unbekannte Selector-Typen fail-closed), `scripts/verify-kover-excludes-ledger.py` + `make coverage-excludes-check` in `make docs-check` verdrahtet |
+| E.1 | offen | Ledger erhält Pflichtspalte `Disposition` mit drei zulaessigen Werten — `permanent: <ref>` (DTO/Port/sealed Outcome), `refactor-plan: <pfad>` (Adapter mit Coverage-Schuld) oder `aggregate-carveout: <ref>` (`:test:*`-Module ausserhalb des Root-Kover-Aggregats; **kommt erst in E.3 zum Einsatz**, das Vokabular wird aber schon in E.1 verdrahtet, damit der Verifier-Vertrag in E.3 nicht erneut angefasst werden muss). `scripts/verify-kover-excludes-ledger.py` failt closed bei fehlender, leerer oder unbekannter Disposition. Alle Bestands-Eintraege bekommen eine konkrete Disposition: DTOs/Ports/sealed Outcome-Typen → `permanent:` mit Hexagon-Konvention; Adapter, JDBC-Shells und CLI-Command-Shells → `refactor-plan: TBD` (Detail-Refactor-Pfade folgen in E.2 bzw. eigenen Folge-Plan-Docs). |
+| E.2 | offen | Kritische Adapter-Excludes auditiert: `SqliteSchemaReader`, `PostgresDataReader`/`PostgresDriver`, `MysqlDataReader`/`MysqlDriver` und `packages("dev.dmigrate.server.persistence.jdbc.quota")` haben jeweils entweder einen `refactor-plan:`-Eintrag mit verlinktem Plan-Doc oder einen `permanent:`-Eintrag mit ADR-/Inline-Begruendung. CLI-Command-Shells (`SchemaCompareCommand` etc.) bleiben `permanent: cli-command-shell-pattern` mit Verweis auf `feedback_cli_command_refactor_pattern`. Keine `refactor-plan: TBD`-Platzhalter mehr im Ledger. |
+| E.3 | offen | Aggregat-Asymmetrie geschlossen: Root-`build.gradle.kts:174-201` enthaelt entweder die heute fehlenden `:test:integration-sqlite`, `:test:integration-integrations`, `:test:integration-persistence-jdbc`, `:test:e2e-cli`, `:test:cross-dialect-matrix`, `:test:integration-concurrency`, `:test:perf-large-schema` als `kover(project(...))`-Eintraege (mit modul-eigenem `minBound(0)` oder `minBound(90)` je nach Charakter) **oder** jedes nicht-aggregierte Modul ist im Ledger als `aggregate-carveout:`-Disposition mit Begruendung gepinnt. `make docker-coverage-modules-summary` listet pro Modul die getroffene Entscheidung. |
 | F | offen | Roadmap-Status-Flip + Closing |
 
 Jeder Sub-Slice landet als eigener Commit mit Plan-Doc-Referenz. Die
 Vervollstaendigungs-Slices duerfen nach dem jeweiligen Start-Slice landen,
 ohne parallele Phasen zu blockieren; Sub-Slice F darf aber erst schliessen,
 wenn A-Vervollständigung, B-Vervollständigung, C/C-MCP, D fuer N=100/1000
-und E erfuellt sind. D-N10k bleibt nightly-only opt-in und muss nicht im
-Standard-Opt-in laufen.
+und E (= E-Scaffold + E.1 + E.2 + E.3) erfuellt sind. D-N10k bleibt
+nightly-only opt-in und muss nicht im Standard-Opt-in laufen.
 
 **Closing-Vertrag fuer Phase E** (damit F nicht stillschweigend auf
 Bestands-Refactors mit offenem Aufwand blockt): "Phase E erfuellt"
-bedeutet `docs/coverage/excludes-ledger.md` committed,
-`make coverage-excludes-check`/`make docs-check` aktiv, Bestandsaudit
-(inkl. Aggregat-Asymmetrie) durchgefuehrt und alle
-heute aktiven Excludes im Ledger verbucht. Tatsaechliche Refactors fuer
-heute pauschal exkludierte Klassen (`SqliteSchemaReader`,
-`PostgresDataReader/Driver` etc.) sind eigene Plan-Docs und kein
-F-Blocker — sie werden im Ledger als `refactor-plan:` referenziert, die
-Umsetzung folgt ausserhalb dieses Plans.
+bedeutet (a) `docs/coverage/excludes-ledger.md` committed,
+`make coverage-excludes-check`/`make docs-check` aktiv und alle
+heute aktiven Excludes im Ledger verbucht (E-Scaffold, ✅); (b) jeder
+Ledger-Eintrag traegt eine `Disposition` aus dem zulaessigen Vokabular
+`permanent: <ref>`, `refactor-plan: <pfad>` oder `aggregate-carveout: <ref>`
+(E.1); (c) die in §5.5 namentlich benannten kritischen Adapter-Excludes
+(`SqliteSchemaReader`, `PostgresDataReader/Driver`,
+`MysqlDataReader/Driver`, `packages("...quota")`) haben jeweils eine
+nicht-`TBD`-Disposition (E.2); (d) Aggregat-Asymmetrie ist geschlossen,
+jedes `:test:*`-Modul hat eine explizite Aggregat-Entscheidung (E.3).
+Tatsaechliche Refactors fuer als `refactor-plan:` markierte Klassen
+laufen als eigene Plan-Docs und sind kein F-Blocker — der `refactor-plan:`-
+Verweis ist die Schnittstelle zwischen Ledger und Folge-Plan.
 
 ---
 
@@ -696,20 +719,33 @@ Umsetzung folgt ausserhalb dieses Plans.
       Selector-Typ (`classes(...)` oder `packages(...)`; Wildcards sind
       Glob-Pattern innerhalb dieser Selector-Typen, kein eigener Typ;
       kuenftige Kover-Selector-Typen werden fail-closed behandelt), Pattern,
-      Modul, Begründung + Refactor-Plan oder „permanent + ADR-Ref"; ein
-      Repo-Script/Make-Hook vergleicht alle Gradle-Excludes gegen das Ledger
-      und blockt bisher unbekannte Selector-Typen
-      (`scripts/verify-kover-excludes-ledger.py`, `make coverage-excludes-check`).
+      Modul, Begründung; ein Repo-Script/Make-Hook vergleicht alle
+      Gradle-Excludes gegen das Ledger und blockt bisher unbekannte
+      Selector-Typen (`scripts/verify-kover-excludes-ledger.py`,
+      `make coverage-excludes-check`). *(E-Scaffold)*
+- [ ] Jeder Ledger-Eintrag traegt eine `Disposition` aus dem zulaessigen
+      Vokabular `permanent: <ref>`, `refactor-plan: <pfad>` oder
+      `aggregate-carveout: <ref>`; `verify-kover-excludes-ledger.py` failt
+      closed bei fehlender, leerer oder unbekannter Disposition. *(E.1)*
+- [ ] Kritische Adapter-Excludes haben eine nicht-`TBD`-Disposition:
+      `SqliteSchemaReader`, `PostgresDataReader`/`PostgresDriver`,
+      `MysqlDataReader`/`MysqlDriver` und
+      `packages("dev.dmigrate.server.persistence.jdbc.quota")` zeigen
+      jeweils auf ein konkretes Folge-Plan-Doc unter `docs/planning/`
+      (Disposition `refactor-plan:`) oder auf einen ADR-/Begruendungs-
+      Anchor (Disposition `permanent:`). *(E.2)*
 - [ ] Alle bestehenden und neuen `:test:*`-Module mit Kover-Bezug haben eine
       explizite Coverage-Entscheidung: `minBound(0)` fuer reine Runner,
       `minBound(90)` wenn produktiver Code im Modul lebt, oder einen
-      dokumentierten Aggregate-/Coverage-Modules-Carve-out.
+      dokumentierten Aggregate-/Coverage-Modules-Carve-out. *(E.3)*
 - [ ] Bestandsaudit der heutigen Aggregat-Asymmetrie ist abgeschlossen:
       `:test:integration-sqlite`, `:test:integration-integrations`,
-      `:test:integration-persistence-jdbc` und `:test:e2e-cli` haben pro
-      Modul eine Entscheidung (in Root-`build.gradle.kts:184-187`
-      aufgenommen ODER mit Begruendung im Excludes-Ledger als
-      Aggregate-Carve-out gepinnt).
+      `:test:integration-persistence-jdbc`, `:test:e2e-cli`,
+      `:test:cross-dialect-matrix`, `:test:integration-concurrency` und
+      `:test:perf-large-schema` haben pro Modul eine Entscheidung (im
+      Root-Aggregat `build.gradle.kts:174-201` aufgenommen ODER mit
+      `aggregate-carveout:`-Disposition im Excludes-Ledger gepinnt).
+      *(E.3)*
 - [ ] Produktionsnahe Helper-Coverage: nicht-trivialer Helper-Code aus
       den neuen Test-Modulen (Schema-Generator, Perf-Helper,
       Sequence-Probe-Adapter, Sweep-Fixtures) lebt — wo fachlich
