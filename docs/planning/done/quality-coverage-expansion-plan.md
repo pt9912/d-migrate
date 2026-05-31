@@ -879,10 +879,48 @@ Plans):
 - **D-N10k** (Nightly-Only) — N=10000-Scale-Test als nightly-opt-in,
   bleibt im Plan-Doc-Eintrag dokumentiert, aber nicht
   closing-relevant.
-- **`docs/planning/open/adapter-coverage-uplift.md`** — Folge-Plan
-  fuer den eigentlichen Coverage-Uplift der 19 in E.2 mit
+- **[`docs/planning/open/adapter-coverage-uplift.md`](../open/adapter-coverage-uplift.md)** —
+  Folge-Plan fuer den eigentlichen Coverage-Uplift der 19 in E.2 mit
   `refactor-plan:` markierten Excludes. Bleibt im `open/`-Stadium,
   bis ein konkreter Scope-Schnitt steht.
+
+### Post-Closure-Review-Befunde (2026-05-31)
+
+Ein nachgereichter Lese-Review nach dem F-Closing-Commit hat fuenf
+Inkonsistenzen zwischen Plan-Wortlaut und ausgeliefertem Stand
+gefunden, die nicht den Closing-Vertrag brechen (D-N10k-aehnlich:
+nachgelagerte Verbesserung, kein DoD-Bruch), aber als
+Folge-Themen festgehalten sind:
+
+- **[`c-mcp-coverage-expansion.md`](../open/c-mcp-coverage-expansion.md)** —
+  `McpOperationalScenarioTest` deckt heute nur `schema_reverse_start`,
+  nicht `schema_compare_start`; Artefakt-Pruefung laeuft direkt ueber
+  `schemaStore.list(...)` statt ueber MCP `resources/read`.
+  Akzeptanzkriterium §7 hatte beide Tools und `resources/read` als
+  Pflichtpfad benannt — das Operational-Szenario ist halbiert.
+- **[`cross-dialect-matrix-kind-expansion.md`](../open/cross-dialect-matrix-kind-expansion.md)** —
+  `MatrixCell.Kind` enthaelt nur `POSITIVE` und `BLOCKER`, der Plan
+  §5.2 nennt fuenf Test-Arten (Positiv/Blocker/Report/Rollback/
+  File-Mode). Sweep laeuft `planOnly = true`, also ohne Rollback-
+  und Report-Zellen.
+- **[`formats-perfmeasure-migration.md`](../open/formats-perfmeasure-migration.md)** —
+  `JsonChunkReaderPerfTest` und `YamlChunkReaderPerfTest` in
+  `adapters/driven/formats` sind noch nicht auf
+  `PerfMeasure`/`PerfReport` migriert; die DoD §7 Z. 642 verbietet
+  Parallel-Pattern. Streaming-Adapter ist migriert, Formats nur
+  teilweise.
+- **[`kover-excludes-selector-typesafe.md`](../open/kover-excludes-selector-typesafe.md)** —
+  Der Gradle-Side-Scanner in `verify-kover-excludes-ledger.py`
+  match nur `\b(classes|packages)\s*\(`; ein neuer Kover-Selector
+  wuerde stillschweigend uebersehen, obwohl Plan §7 Z. 721
+  fail-closed gegen „bisher unbekannte Selector-Typen" verlangt.
+  Die Ledger-Seite ist fail-closed, der Gradle-Seiten-Scanner
+  nicht.
+- **[`perf-large-schema-heap-dump.md`](../open/perf-large-schema-heap-dump.md)** —
+  Plan §5.4 nennt `-XX:+HeapDumpOnOutOfMemoryError` als
+  Mitigation gegen OOM-Verluste in N=10000-Runs; weder Modul-
+  noch root-level Test-`jvmArgs` setzen das heute. Soll-Wert, kein
+  DoD-Bruch.
 
 Wird der Plan reaktiviert (z. B. ein nachtraeglicher Slice E.4), zieht
 das Doc nicht zurueck nach `in-progress/`; stattdessen entsteht ein
