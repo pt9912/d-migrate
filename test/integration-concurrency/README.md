@@ -1,127 +1,92 @@
 # test:integration-concurrency
 
-Concurrent-Writer race reproducers for the `SequencePreserveStage`
-probe→restore window across PostgreSQL, MySQL and SQLite.
+Per-Dialekt-Race-Reproducer für die `SequencePreserveStage`-Probe →
+Restore-Sequenz unter Concurrent Writers, alle gegen die produktiven
+`{Postgres,Mysql,Sqlite}AtomicSequencePreserveExecutor`-Adapter.
 
-Plan-Doc:
-[quality-coverage-expansion-plan.md](../../docs/planning/done/quality-coverage-expansion-plan.md)
-§5.3 (Sub-Slice C).
+Plan-Docs:
+- Atomic-Preserve-Refactor:
+  [`sequence-preserve-atomic-lock-plan.md`](../../docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md)
+  (Phasen A + B + C + D + E komplett 2026-06-01; in-progress bis
+  zum 0.9.7-Release-Tag).
+- Ursprüngliche Coverage-Initiative:
+  [`quality-coverage-expansion-plan.md`](../../docs/planning/done/quality-coverage-expansion-plan.md)
+  §5.3 (Sub-Slice C).
 
-Atomic-lock follow-up plan:
-[sequence-preserve-atomic-lock-plan.md](../../docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md)
-(In Progress 2026-05-31 — Phase A + B abgeschlossen, Phasen C–E
-offen: Stage-/Runner-Refactor, Multi-Sequence-Deadlock-Test und
-Capability-Flag-Flip stehen aus; bis dahin bleibt der
-`knownRace = true`-Vertrag in diesem Modul aktiv).
+## Status pro Dialekt *(seit 2026-06-01)*
 
-## Why this module exists
+| Dialekt | Lock-Strategie | Race-Outcome | Test |
+|---|---|---|---|
+| PostgreSQL | `pg_advisory_xact_lock(hashtext(...))` | **knownRace = true** — Advisory-Lock blockiert App-`nextval` **nicht** (Plan §6 Risiko 8). Der Test pinnt die residuelle Race als Vertrag: Writer macht Forward-Progress während des Lock-Fensters, der Restore überschreibt diese Advances mit dem geprobten Wert. | `PostgresSequencePreserveRaceTest` |
+| MySQL | `SELECT … FOR UPDATE` auf `dmg_sequences`-Helper-Row | **race closed** — die Row-Lock blockiert App-`UPDATE`s für die gesamte Dauer des Lock-Fensters. Test pinnt zwei Invarianten: `finalValue >= initial + writerAdvances` UND während des 500 ms-Lock-Fensters macht der Writer ZERO Advances. | `MysqlSequencePreserveRaceTest` |
+| SQLite | `BEGIN IMMEDIATE` (DB-weite RESERVED-Lock) | **race closed** — gleiches Vertragsmodell wie MySQL; die RESERVED-Lock ist DB-weit, blockiert also auch Concurrent-Writer auf der `dmg_sequences`-Tabelle. | `SqliteSequencePreserveRaceTest` |
 
-`SequencePreserveStage` reads a sequence's current value (probe),
-later writes that value back (restore). The two operations are not
-in a single transaction; any writer that advances the sequence
-between probe and restore has its advance overwritten by the stale
-restore.
+Per Lesart α (No-Carveouts) sind die alten `SequencePreserveRace`-
+Harness und die Legacy-Reproducer-Variante mit stalem
+`finalValue shouldBe observedProbeValue` **entfernt**. Wer den
+historischen Stand sehen will, findet ihn in `git log` vor Commit
+`35bfa328`.
 
-This module pins that behaviour as the **legacy race baseline**:
-every spec sets `knownRace = true` on its [SequencePreserveRace]
-observation and asserts the stale-restore shape. The reproducer is
-the canonical evidence the race exists today; it is **not** a
-correctness vow. The atomic-lock slice will:
+## Test-Skelett
 
-1. Implement an atomic probe + restore so the writer cannot land
-   inside the probe→restore window. Phase B of the atomic-lock plan
-   (2026-05-31) has landed the three per-dialect executors
-   (`PostgresAtomicSequencePreserveExecutor` with
-   `pg_advisory_xact_lock`, `MysqlAtomicSequencePreserveExecutor`
-   with `SELECT FOR UPDATE` on `dmg_sequences`,
-   `SqliteAtomicSequencePreserveExecutor` with `BEGIN IMMEDIATE`).
-   They are **not yet wired into `SequencePreserveStage`** —
-   Phase C of the atomic-lock plan ties the runner-side refactor
-   that actually invokes them.
-2. Flip the assertion in each spec from
-   `finalValue shouldBe observedProbeValue` (stale) to
-   `finalValue shouldBe(GreaterThanOrEqual) postWriterMaximum`
-   (writer's progress preserved). For PG the atomic-lock plan §6
-   Risk 8 documents that the residual app-side `nextval` race is
-   unaffected by the new executor — the PG flip will need to keep
-   the legacy reproducer as `knownRace = true` until app-side
-   advisory-lock cooperation is documented.
-3. Either remove the legacy assertion, mark the spec as
-   `knownRace = false` for the new gate, or keep the legacy
-   reproducer in a quarantine list as historical documentation.
-
-The plan-doc forbids both assertions being active simultaneously,
-so the flip is mechanical: change the assertion line, change the
-`knownRace` field. Until then the legacy gate is the active gate.
-
-## Pattern
-
-The shared [SequencePreserveRace] harness uses two `CountDownLatch`
-instances to position the writer thread exactly inside the probe→
-restore window:
+Beide race-closed-Tests (MySQL + SQLite) folgen demselben Muster:
 
 ```
-probe-thread                          writer-thread
-============                          =============
-read currentValue                     wait for probeObserved
-signal probeObserved          ──►     run nextval × N
-wait for writerFinished       ◄──     signal writerFinished
-restore(currentValue)
-read finalValue
+writer-thread                     atomic-executor (on conn A)
+=============                     ===========================
+wait for writerStart latch
+                                  open transaction + take lock
+                                  probe(seqRef)            ──┐
+                                  call protected callback:    │
+   countDown writerStart  ──►       capture writerCount       │
+   start N UPDATE iterations        Thread.sleep(500ms)       │ Lock window:
+   each UPDATE blocks               capture writerCount       │ writer makes 0 advances
+   on the row/db lock             render restore SQL          │
+                                  run restore                 │
+                                  commit                    ──┘
+                                                              ▼
+                                                          lock released
+   UPDATEs resume serially
+   advance next_value 1, 2, …, N
+   finishes
 ```
 
-A free-running writer (no latches) is forbidden: it could advance
-the sequence before the probe (the probe sees the advanced value
-and the restore is harmless) or after the restore (the post-restore
-writer hides whether the restore actually overwrote anything). The
-race is real only inside the bounded window; the test must reproduce
-that bound precisely.
+Assertions:
+1. `finalValue >= initial + writerAdvances` — die N Writer-
+   Advances sind im Endergebnis sichtbar.
+2. `advancesAtLockEnd - advancesAtLockStart == 0` — während der
+   500 ms-Sleep-Phase im protected callback konnte der Writer
+   keine UPDATE-Statement abschließen (Row-/RESERVED-Lock-Beweis;
+   Finding #5).
 
-## Per-dialect adapters
-
-| Dialect    | Storage                              | Probe                                  | Advance                                  | Restore                                          |
-| ---------- | ------------------------------------ | -------------------------------------- | ---------------------------------------- | ------------------------------------------------ |
-| PostgreSQL | native `CREATE SEQUENCE`             | `SELECT last_value FROM <seq>`         | `SELECT nextval('<seq>')`                | `SELECT setval('<seq>', value, false)`           |
-| MySQL      | `dmg_sequences` helper table         | `SELECT next_value FROM dmg_sequences` | `UPDATE … SET next_value = next_value+1` | `UPDATE dmg_sequences SET next_value = value`    |
-| SQLite     | file-backed `dmg_sequences` table    | `SELECT next_value FROM dmg_sequences` | `UPDATE … SET next_value = next_value+1` | `UPDATE dmg_sequences SET next_value = value`    |
-
-Each adapter opens a fresh autocommit connection per call so
-visibility across threads matches what `SequencePreserveStage` sees
-in production (no shared transaction snapshot).
+Der PostgreSQL-Test ist die **inverse** Form derselben Topologie:
+er verwendet den `PostgresAtomicSequencePreserveExecutor` und
+asserts, dass der Writer Forward-Progress macht (Advisory-Lock ist
+app-blind), während der Atomic-Restore die Advances überschreibt —
+genau das Plan-§6-Risiko-8-Verhalten in Vertragsform.
 
 ## Running
 
-The module sits under `:test:integration-*` and inherits the
-`-PintegrationTests` gate from the root build. It additionally
-requires `-PconcurrencyTests` so the normal integration sweep does
-not pick up the race tests:
+Das Modul sitzt unter `:test:integration-*` und erbt das
+`-PintegrationTests`-Gate aus dem Root-Build. Zusätzlich braucht
+es `-PconcurrencyTests`, damit der normale Integration-Sweep die
+Race-Tests nicht mit einsammelt:
 
 ```
 make integration INTEGRATION_TASKS="-PintegrationTests -PconcurrencyTests :test:integration-concurrency:test"
 ```
 
-Without `-PconcurrencyTests`, the test task is `onlyIf`-skipped at
-the module level. Without `-PintegrationTests`, it is skipped at
-the root build level. Both gates must be active.
+Ohne `-PconcurrencyTests` wird die Task auf Modul-Ebene
+`onlyIf`-geskipped. Ohne `-PintegrationTests` wird sie bereits
+auf Root-Build-Ebene geskipped. Beide Gates müssen aktiv sein.
 
-## Flipping after the atomic-lock slice
+## Cross-Plan-Deadlock-Tests
 
-When [sequence-preserve-atomic-lock-plan.md](../../docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md)
-lands, each of the three specs needs exactly two changes:
-
-1. Replace
-   ```kotlin
-   observation.finalValue shouldBe observation.observedProbeValue
-   observation.knownRace shouldBe true
-   ```
-   with
-   ```kotlin
-   observation.finalValue shouldBeGreaterThanOrEqual observation.postWriterMaximum
-   observation.knownRace shouldBe false
-   ```
-2. Flip the `knownRace` constant in
-   [SequencePreserveRace.runAgainst] (or in the per-spec
-   adapter call) so the observation reflects the new contract.
-
-Both changes belong in the same commit as the atomic-lock
-implementation so the gate transition is visible in one place.
+Zusätzlich zu den per-Dialekt-Race-Tests gibt es seit Phase D drei
+Cross-Plan-Deadlock-Tests, die zwei parallele `schema migrate`-
+Aufrufe gegen überlappende Sequenzen fahren und beweisen, dass
+die deterministische Lock-Reihenfolge keine Diamant-Deadlocks
+zulässt. Diese leben in den dialekt-spezifischen IT-Modulen
+(`test/integration-{postgresql,mysql,sqlite}`), nicht hier, weil
+sie produktive Adapter-Wiring testen statt der reinen
+Race-Reproduktion.

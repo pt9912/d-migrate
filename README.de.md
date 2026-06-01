@@ -20,7 +20,7 @@ d-migrate ist ein datenbankunabhängiges Werkzeug für Schema-Migration und Date
 - **Schema-Operationen**: `validate`, `generate`, `compare`, `reverse`, `migrate`, `rollback` für PostgreSQL, MySQL, SQLite — file/file, file/db, db/db
 - **Diff-Migrationen**: Tabellen, Spalten, Indizes, Constraints inkl. CHECK/EXCLUDE mit Live-Data-Preflight, Foreign Keys, Sequenzen, Views, Materialized Views (PG), Trigger, Functions/Procedures; signiertes `migration-plan.v1`-Artefakt via `--plan-artefact`
 - **Renames** für Tabellen, Spalten, Views, Trigger, Functions, Procedures, Sequenzen — native `RENAME`-DDL oder Drop+Create-Fallback je nach Dialekt; CLI-Shortcuts `--rename-table` / `--rename-column` oder File-Overlay `--migration-overlay`
-- **Sequenzen-Pipeline**: MySQL-Helper-Table-Emulation (`dmg_sequences`) mit Live-Drift-Check; opt-in `preserveCurrentValue` für PG/MySQL/SQLite; SQLite-Sequence-Emulation via `--sqlite-named-sequences helper_table`
+- **Sequenzen-Pipeline**: MySQL-Helper-Table-Emulation (`dmg_sequences`) mit Live-Drift-Check; opt-in `preserveCurrentValue` für PG/MySQL/SQLite (Probe + Restore seit 0.9.7 in einer einzigen Transaktion unter Per-Dialekt-Lock — `pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`); SQLite-Sequence-Emulation via `--sqlite-named-sequences helper_table`
 - **Spatial-DDL**: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`); View-Query-Transformation über Dialekte hinweg
 - **Daten-Operationen**: Streaming `data export` / `import` / `transfer` (JSON/YAML/CSV) mit benannten Verbindungen, UPSERT, Truncate, Trigger-Handling, Reseeding, inkrementeller Export (`--since-column` / `--since`); `data profile` für Datenstatistiken
 - **Integrationen**: `d-migrate export flyway|liquibase|django|knex`

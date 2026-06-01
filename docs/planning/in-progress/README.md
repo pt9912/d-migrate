@@ -10,11 +10,19 @@ Zwei Typen leben hier:
 2. **Per-Feature-Umbrella-Pläne**, die einen mehrphasigen Slice
    tragen, bei dem mindestens ein Commit den Plan referenziert:
    - [`sequence-preserve-atomic-lock-plan.md`](sequence-preserve-atomic-lock-plan.md)
-     — In Progress (Stand 2026-05-31): Phase A (Vertraege + Klassifier-
-     Mapping + Capability-Defaults) und Phase B (`hexagon:ports-execute`-
-     Modul + PG/MySQL/SQLite-Executoren mit je 5 Live-Tests) sind
-     gelandet; Phasen C (Stage-/Runner-Refactor), D (Multi-Sequence-
-     Deadlock-Test) und E (Capability-Flag-Flip + Doku) bleiben offen.
+     — In Progress (Stand 2026-06-01): Phasen A + B + C + D + E
+     komplett (atomarer Probe + Restore unter Per-Dialekt-Lock,
+     Cross-Plan-Deadlock-Tests, AllInPlan-Flag-Flip,
+     Docs-/KDoc-Sync). Umzug nach `../done/` ist mit dem 0.9.7-
+     Release-Tag geplant; bis dahin bleibt der Plan-Doc als
+     in-progress sichtbar, weil
+     [`atomic-preserve-followups.md`](atomic-preserve-followups.md)
+     als Backlog-Tracker noch im Lebenszyklus läuft (alle Sub-
+     Slices abgehakt, wartet auf Release-Tag).
+   - [`atomic-preserve-followups.md`](atomic-preserve-followups.md)
+     — In Progress (Stand 2026-06-01): Backlog-Tracker für die
+     6 Code-Review-Findings + Dead-Code-Cleanup. Alle Punkte
+     abgehakt; Umzug nach `../done/` mit dem 0.9.7-Release-Tag.
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)

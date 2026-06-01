@@ -20,7 +20,7 @@ d-migrate is a database-agnostic tool for schema migration and data management �
 - **Schema operations**: `validate`, `generate`, `compare`, `reverse`, `migrate`, `rollback` for PostgreSQL, MySQL, SQLite — file/file, file/db, db/db
 - **Diff migrations**: tables, columns, indexes, constraints incl. CHECK/EXCLUDE with live-data preflight, foreign keys, sequences, views, materialized views (PG), triggers, functions/procedures; signed `migration-plan.v1` artefact via `--plan-artefact`
 - **Renames** for tables, columns, views, triggers, functions, procedures, sequences — native `RENAME` DDL or Drop+Create fallback depending on dialect; CLI shortcuts `--rename-table` / `--rename-column` or file overlay `--migration-overlay`
-- **Sequence pipeline**: MySQL helper-table emulation (`dmg_sequences`) with live drift check; opt-in `preserveCurrentValue` for PG/MySQL/SQLite; SQLite sequence emulation via `--sqlite-named-sequences helper_table`
+- **Sequence pipeline**: MySQL helper-table emulation (`dmg_sequences`) with live drift check; opt-in `preserveCurrentValue` for PG/MySQL/SQLite (probe + restore folded into a single transaction under per-dialect lock since 0.9.7 — `pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`); SQLite sequence emulation via `--sqlite-named-sequences helper_table`
 - **Spatial DDL**: PostGIS, MySQL native, SpatiaLite (`--spatial-profile`); view-query transformation across dialects
 - **Data operations**: streaming `data export` / `import` / `transfer` (JSON/YAML/CSV) with named connections, UPSERT, truncate, trigger handling, reseeding, incremental export (`--since-column` / `--since`); `data profile` for data statistics
 - **Integrations**: `d-migrate export flyway|liquibase|django|knex`
