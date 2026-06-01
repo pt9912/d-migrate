@@ -94,14 +94,7 @@ internal object SchemaMigrateWiring {
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
             rendererFor = MigrateRendererRegistry::forDialect,
-            executor = { target, configPath, segments, lockTimeoutMillis ->
-                SegmentAwareMigrationExecutor.execute(
-                    target = target,
-                    configPath = configPath,
-                    segments = segments,
-                    lockTimeoutMillis = lockTimeoutMillis,
-                )
-            },
+            executor = SegmentAwareMigrationExecutor::executeWithDefaults,
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
             sqliteCastPreflightPlanner = SqliteCastPreflightProbeRunner::planNotRun,
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,

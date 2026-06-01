@@ -204,4 +204,25 @@ internal object SegmentAwareMigrationExecutor {
         executeProtectedOperations = executeProtectedOperations,
         lockTimeoutMillis = lockTimeoutMillis,
     )
+
+    /**
+     * Production [SegmentAwareExecutorFn] entry point — exposes [execute]
+     * with production-default `plainExecutor` and `atomicRunner` via a
+     * 4-arg signature that matches the typealias directly (method
+     * reference compatible). [SchemaMigrateWiring] uses
+     * `SegmentAwareMigrationExecutor::executeWithDefaults` instead of an
+     * inline lambda so the wiring stays one method-reference line and
+     * the delegate is unit-testable on its own.
+     */
+    fun executeWithDefaults(
+        target: CompareOperand.Database,
+        configPath: Path?,
+        segments: List<ExecutableSegment>,
+        lockTimeoutMillis: Long,
+    ): ExecutionTrace = execute(
+        target = target,
+        configPath = configPath,
+        segments = segments,
+        lockTimeoutMillis = lockTimeoutMillis,
+    )
 }

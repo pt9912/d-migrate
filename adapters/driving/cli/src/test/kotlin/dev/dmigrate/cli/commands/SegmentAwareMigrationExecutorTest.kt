@@ -16,6 +16,7 @@ import dev.dmigrate.driver.migration.preserve.ExecutableSegment
 import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
@@ -326,6 +327,55 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             },
         )
         capturedTimeout shouldBe AtomicSequencePreserveRunner.DEFAULT_LOCK_TIMEOUT_MILLIS
+    }
+
+    test("executeWithDefaults forwards args to execute with production-default plainExecutor + atomicRunner") {
+        // SchemaMigrateWiring uses
+        // SegmentAwareMigrationExecutor::executeWithDefaults as the
+        // executor method reference. The thin wrapper delegates to
+        // execute(...) with production defaults; here we cover its body
+        // by invoking it directly. The bogus alias triggers the
+        // default atomicRunner's CompareConfigException path, which is
+        // sufficient evidence the wrapper called through.
+        val segment = AtomicPreserveSegment(
+            batch = batch(),
+            statements = listOf(stmt("AlterSequence")),
+        )
+        io.kotest.assertions.throwables.shouldThrow<CompareConfigException> {
+            SegmentAwareMigrationExecutor.executeWithDefaults(
+                target = CompareOperand.Database("unknown-alias-executeWithDefaults"),
+                configPath = null,
+                segments = listOf(segment),
+                lockTimeoutMillis = AtomicSequencePreserveRunner.DEFAULT_LOCK_TIMEOUT_MILLIS,
+            )
+        }
+    }
+
+    test("default atomicRunner delegates to AtomicSequencePreserveRunner (production wiring)") {
+        // Coverage gap: the `atomicRunner` default `::defaultAtomicRunner`
+        // wraps AtomicSequencePreserveRunner.execute. Tests that always
+        // override atomicRunner leave this private function uncovered.
+        // Here we exercise the default by omitting the override; the
+        // bogus target source surfaces as CompareConfigException via the
+        // production-default acquireConnection path.
+        val segment = AtomicPreserveSegment(
+            batch = batch(),
+            statements = listOf(stmt("AlterSequence")),
+        )
+        val ex = io.kotest.assertions.throwables.shouldThrow<CompareConfigException> {
+            SegmentAwareMigrationExecutor.execute(
+                target = CompareOperand.Database("unknown-alias-for-default-atomic-runner-test"),
+                configPath = null,
+                segments = listOf(segment),
+                plainExecutor = { _, _, _ -> error("must not be called") },
+                // Note: NO atomicRunner override — uses defaultAtomicRunner.
+            )
+        }
+        // The CompareConfigException originates from
+        // AtomicSequencePreserveRunner.defaultAcquireConnection
+        // (NamedConnectionResolver failure). Mere presence proves the
+        // default atomicRunner ran (otherwise no exception would surface).
+        ex.message shouldNotBe null
     }
 
     test("custom lockTimeoutMillis is propagated to the atomic runner") {

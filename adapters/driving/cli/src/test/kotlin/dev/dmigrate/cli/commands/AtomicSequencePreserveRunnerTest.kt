@@ -186,4 +186,62 @@ class AtomicSequencePreserveRunnerTest : FunSpec({
         verify(exactly = 1) { acquired.pool.close() }
         verify(exactly = 1) { conn.close() }
     }
+
+    // ── defaultAcquireConnection production glue ───────────────────────
+
+    test("default acquireConnection surfaces NamedConnectionResolver failure as CompareConfigException") {
+        // Unknown alias with no config file: NamedConnectionResolver
+        // looks up an alias that doesn't exist → throws.
+        // AtomicSequencePreserveRunner catches the resolution failure
+        // and rethrows as CompareConfigException (CLI exit 7), matching
+        // SequenceCurrentValueProbeRunner / MysqlSequenceCanonicityProbeRunner.
+        shouldThrow<CompareConfigException> {
+            AtomicSequencePreserveRunner.execute(
+                target = CompareOperand.Database("unknown-alias-that-does-not-exist"),
+                configPath = null,
+                batch = AtomicSequencePreserveBatch(
+                    requests = listOf(
+                        dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest(
+                            sequenceRef = dev.dmigrate.core.diff.migration.SequenceObjectRef(
+                                name = "seq",
+                                dialect = dev.dmigrate.core.diff.migration.RenameProjectionDialect.POSTGRESQL,
+                            ),
+                            renderRestore = { _ -> emptyList() },
+                        ),
+                    ),
+                    protectedOperationIds = emptyList(),
+                    internalFollowUpIds = emptyList(),
+                ),
+                executeProtectedOperations = noopExecuteProtectedOps,
+                // No dispatcher / acquireConnection overrides — exercise
+                // the production default.
+            )
+        }
+    }
+
+    test("default acquireConnection surfaces ConnectionUrlParser failure as CompareConfigException") {
+        // A `db:` operand whose source resolves to a malformed JDBC URL
+        // routes through the parse-catch branch. The simplest reproducer
+        // uses a raw URL with an unknown JDBC scheme.
+        shouldThrow<CompareConfigException> {
+            AtomicSequencePreserveRunner.execute(
+                target = CompareOperand.Database("jdbc:no-such-driver-scheme://nowhere/db"),
+                configPath = null,
+                batch = AtomicSequencePreserveBatch(
+                    requests = listOf(
+                        dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest(
+                            sequenceRef = dev.dmigrate.core.diff.migration.SequenceObjectRef(
+                                name = "seq",
+                                dialect = dev.dmigrate.core.diff.migration.RenameProjectionDialect.POSTGRESQL,
+                            ),
+                            renderRestore = { _ -> emptyList() },
+                        ),
+                    ),
+                    protectedOperationIds = emptyList(),
+                    internalFollowUpIds = emptyList(),
+                ),
+                executeProtectedOperations = noopExecuteProtectedOps,
+            )
+        }
+    }
 })
