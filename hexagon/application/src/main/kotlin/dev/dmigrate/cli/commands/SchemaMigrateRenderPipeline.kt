@@ -310,6 +310,16 @@ internal class SchemaMigrateRenderPipeline(
                 routineCapability = routineCapability,
                 serverVersion = mysqlServerVersion,
                 sequenceCanonicity = mysqlSequenceDeclarations,
+                // C.5 follow-up: thread `--mysql-named-sequences`
+                // opt-in into the renderer so MysqlDiffSequenceOps.
+                // ensureHelperMode sees the operator-supplied choice.
+                // Null / unknown values stay on the default
+                // ACTION_REQUIRED branch where the renderer blocks with
+                // MANUAL_ACTION_REQUIRED — symmetric to the SQLite
+                // namedSequenceMode plumbing below.
+                namedSequenceMode = request.mysqlNamedSequences
+                    ?.let(dev.dmigrate.driver.MysqlNamedSequenceMode::fromCliName)
+                    ?: dev.dmigrate.driver.MysqlNamedSequenceMode.ACTION_REQUIRED,
             )
             DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
                 liveCatalog = (probeOutcome as? SqliteProbeStage.Outcome.Succeeded)?.catalog,

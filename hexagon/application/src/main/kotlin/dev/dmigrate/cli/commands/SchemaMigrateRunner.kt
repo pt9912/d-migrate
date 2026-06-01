@@ -541,6 +541,15 @@ data class SchemaMigrateRequest(
      * `--sqlite-named-sequences` flag on `schema generate`.
      */
     val sqliteNamedSequences: String? = null,
+    /**
+     * Atomic-Preserve Phase C.5 follow-up (2026-06-01): MySQL
+     * `--mysql-named-sequences` opt-in flag. The MySQL renderer's
+     * `ensureHelperMode` guard blocks sequence-related render
+     * operations with `MANUAL_ACTION_REQUIRED` unless the value
+     * resolves to [dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE].
+     * Mirror of [sqliteNamedSequences]; same plumbing pattern.
+     */
+    val mysqlNamedSequences: String? = null,
 )
 
 /**

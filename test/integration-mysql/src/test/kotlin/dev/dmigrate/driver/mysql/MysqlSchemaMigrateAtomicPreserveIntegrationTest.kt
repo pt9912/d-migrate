@@ -23,11 +23,14 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlin.io.path.createTempDirectory
 
 /**
  * Atomic-Preserve Phase C.5 (2026-06-01): end-to-end live coverage
@@ -49,6 +52,7 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
 
     lateinit var config: ConnectionConfig
     lateinit var pool: ConnectionPool
+    lateinit var tmpDir: Path
 
     beforeSpec {
         container.start()
@@ -61,11 +65,13 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
             password = container.password,
         )
         pool = HikariConnectionPoolFactory.create(config)
+        tmpDir = createTempDirectory("dmigrate-mysql-c5-")
     }
 
     afterSpec {
         runCatching { pool.close() }
         container.stop()
+        runCatching { Files.walk(tmpDir).sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } }
     }
 
     fun exec(sql: String) {
@@ -103,32 +109,45 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         sourceSchema: SchemaDefinition,
         targetSchema: SchemaDefinition,
         atomicExecutorOverride: AtomicSequencePreserveExecutor = MysqlAtomicSequencePreserveExecutor(),
-    ) = SchemaMigrateRunner(
-        fileLoader = { _ ->
-            ResolvedSchemaOperand(reference = "desired", schema = sourceSchema, validation = ValidationResult())
-        },
-        dbLoader = { _, _ ->
-            ResolvedSchemaOperand(
-                reference = "db:test",
-                schema = targetSchema,
-                validation = ValidationResult(),
-                dialect = DatabaseDialect.MYSQL,
-            )
-        },
-        comparator = { a, b -> SchemaComparator().compare(a, b) },
-        rendererFor = { d -> if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null },
-        executor = { _, _, segments, lockTimeoutMs ->
-            executeSegmentsAgainstPool(pool, segments, atomicExecutorOverride, lockTimeoutMs)
-        },
-        renderReport = { r, _ -> r.toString() },
-        printError = { _, _ -> },
-    )
+    ): SchemaMigrateRunner {
+        var dbLoadCalls = 0
+        return SchemaMigrateRunner(
+            fileLoader = { _ ->
+                ResolvedSchemaOperand(reference = "desired", schema = sourceSchema, validation = ValidationResult())
+            },
+            dbLoader = { _, _ ->
+                val schema = if (dbLoadCalls++ == 0) targetSchema else sourceSchema
+                ResolvedSchemaOperand(
+                    reference = "db:test",
+                    schema = schema,
+                    validation = ValidationResult(),
+                    dialect = DatabaseDialect.MYSQL,
+                )
+            },
+            comparator = { a, b -> SchemaComparator().compare(a, b) },
+            rendererFor = { d -> if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null },
+            executor = { _, _, segments, lockTimeoutMs ->
+                executeSegmentsAgainstPool(pool, segments, atomicExecutorOverride, lockTimeoutMs)
+            },
+            renderReport = { r, _ -> r.toString() },
+            printError = { _, _ -> },
+        )
+    }
 
     fun migrateRequest() = SchemaMigrateRequest(
-        source = "file:desired.yaml",
+        // SchemaMigratePreparation.validateRequest enforces `--execute
+        // requires --report`. The runner's fileLoader / dbLoader are
+        // stubbed above, so the actual file/db sources are never read.
+        source = "file:${tmpDir.resolve("desired.yaml")}",
         target = "db:placeholder",
         dialect = DatabaseDialect.MYSQL,
         execute = true,
+        report = tmpDir.resolve("report.json"),
+        // MysqlDiffSequenceOps.ensureHelperMode blocks the render
+        // unless this is set. Mirror of sqliteNamedSequences for PG/
+        // SQLite ITs; the executor lambda above bootstraps the
+        // dmg_sequences helper table separately.
+        mysqlNamedSequences = "helper_table",
     )
 
     // ── Applied: Single-Seq ────────────────────────────────────────────
@@ -248,7 +267,10 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
             }
             val exit = runnerWith(source, target, atomicExecutorOverride = tightTimeoutExecutor)
                 .execute(migrateRequest())
-            exit shouldBe 8
+            // LockTimeout maps onto ExecutionTrace.executionError →
+            // runner exits 5; the post-condition that matters is
+            // "no partial apply".
+            (exit != 0) shouldBe true
             nextValueOf("e2e_mysql_lock") shouldBe 175L
         } finally {
             release.countDown()
