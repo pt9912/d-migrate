@@ -17,9 +17,10 @@ Die 0.9.7-Erstscheibe und der SQLite-Folge-Slice implementieren
 `preserveCurrentValue` als zweistufigen Ablauf:
 
 1. **Probe (Read)** — `SequencePreserveStage.run` ruft pro Kandidaten-Op
-   einen dialect-spezifischen Probe-Adapter auf, der den aktuellen
-   `last_value`/`next_value` liest. Die Connection wird sofort
-   wieder freigegeben.
+   einen dialect-spezifischen Probe-Adapter auf, der den
+   dialektspezifischen aktuellen Stand liest (PG: `last_value` auf der
+   Sequenzrelation; MySQL/SQLite: `dmg_sequences.next_value` auf der
+   Helper-Tabelle). Die Connection wird sofort wieder freigegeben.
 2. **Render + Execute (Write)** — Renderer hängt einen
    `AlterSequenceCurrentValue`-Follow-up an, der zur Execute-Zeit den
    geprobten Wert per `setval`/`UPDATE` zurückschreibt.
@@ -66,9 +67,11 @@ atomaren Execute-Time-Pfad.
   ausführen.
 - Deterministisches Multi-Sequence-Order/Locking (name-sorted) pro Plan,
   inkl. all-or-nothing Verhalten.
-- Stage-/Runner-Anpassung: aus zwei separaten Phasen (Probe → Render →
-  Execute) wird ein Execute-Time-Runner, der Lock, Probe, geschützte
-  Hauptoperation und Restore in einer Transaktion ausführt.
+- Stage-/Runner-Anpassung: die heutige Drei-Phasen-Abfolge
+  (Probe-in-Stage → Render → Execute) verliert ihre eigenständige Probe-
+  Phase; Render bleibt erhalten, Probe und Restore wandern in einen
+  Execute-Time-Runner, der Lock, Probe, geschützte Hauptoperation und
+  Restore in einer Transaktion ausführt.
 - Lock-Timeout-Konfiguration (Per-Connection-Setting; Default 5 s).
 - Timeout-Set/Restore als Teil des gleichen Connectionscopes, damit keine
   Nebeneffekte auf nachgelagerte Statements im Pool entstehen.
@@ -96,9 +99,9 @@ atomaren Execute-Time-Pfad.
 
 | Dialekt | Lock-Objekt | Lock-Modus / Scope | Timeout-Quelle | Blockiert |
 |---|---|---|---|---|
-| PostgreSQL | Sequenzrelation | `LOCK TABLE <quoted_seq_ref> IN ACCESS EXCLUSIVE MODE` | `SET LOCAL lock_timeout` | `nextval` / `dmg_nextval` |
-| MySQL | `dmg_sequences`-Zeile | `FOR UPDATE` | `SET SESSION innodb_lock_wait_timeout` | `dmg_nextval`-Update |
-| SQLite | komplette DB | `BEGIN IMMEDIATE` / `RESERVED`-Lock | `PRAGMA busy_timeout` | `INSERT`/`UPDATE` im Triggerpfad |
+| PostgreSQL | Advisory-Lock-Key über `(schema, name)` | `pg_advisory_xact_lock(hashtext(...))` | `SET LOCAL lock_timeout` (SQLSTATE 55P03) | parallele d-migrate-Läufe (App-`nextval` ist PG-seitig lock-free; siehe §4.1 Korrektur und Risiko Nr. 8) |
+| MySQL | `dmg_sequences`-Zeile | `SELECT … FOR UPDATE` (Row-Lock) | `SET SESSION innodb_lock_wait_timeout` (Errorcode 1205) | App-seitige `dmg_nextval`-Updates auf derselben Zeile |
+| SQLite | komplette DB | `BEGIN IMMEDIATE` / `RESERVED`-Lock | `PRAGMA busy_timeout` (Errorcode `SQLITE_BUSY`) | jeden App-Schreiber (DB-weit), Reader bleiben funktional |
 
 ### 4.1 PostgreSQL
 
@@ -139,10 +142,11 @@ parallelen Session blockt. Phase B.2 setzt deshalb auf
   blockiert bis der konfliktäre Halter freigibt; SQLSTATE `55P03`
   (`lock_not_available`) auf Timeout. Mapping auf
   `SEQUENCE_PRESERVE_LOCK_TIMEOUT` bleibt.
-- Renderer verwenden einen einzigen schemaqualifizierten Sequence-Ref-
-  Vertrag: `quoted_seq_ref` für Relation-SQL und `regclass_seq_ref`
-  für `setval`. Beide werden aus demselben `SequenceObjectRef`
-  abgeleitet, damit Probe und Restore dieselbe Relation treffen.
+- Nach der Advisory-Lock-Korrektur braucht nur der Restore-Renderer
+  einen schemaqualifizierten Sequence-Ref (`regclass_seq_ref` für
+  `setval`); der Lock arbeitet rein auf dem deterministischen
+  `bigint`-Hash. Der Probe liest `last_value` über denselben
+  `regclass_seq_ref`, damit Probe und Restore dieselbe Relation treffen.
 - Die Konfliktauflösung wird in Phase B.2 durch zwei Live-Container-
   Tests gepinnt: (a) Happy-Path-Probe+Restore committet atomar;
   (b) ein konkurrierender `pg_advisory_xact_lock`-Halter triggert
@@ -359,57 +363,388 @@ COMMIT;
 - Nach erfolgreichem Commit schreibt der Runner den Ausführungsstatus in das
   normale Execution-Result; bei Rollback bleibt der Plan wiederholbar.
 
-**DoD C**
+#### Sub-Slice-Aufteilung Phase C
 
-- [ ] Stage markiert Kandidaten und erzeugt Requests ohne DB-Schreibzugriff.
+Phase C wird in fünf Slices zerlegt. Die Slice-Namen folgen der logischen
+Architektur-Schicht (C.1=Stage, C.2=Render, C.3=Runner, C.4=Wiring,
+C.5=Live-IT), die **Ausführungsreihenfolge** ist aber bewusst eine andere:
+
+> **C.2 → C.4 → C.3 → C.1 → C.5**
+
+Begründung *(Re-Cut 2026-06-01)*: C.1 ist der einzige Slice, der das Verhalten
+der Live-Preserve-IT verändert — alle anderen Slices sind additiv und
+master-grün. Würde C.1 zuerst landen, wäre master für die Lebensdauer
+mehrerer Commits rot, oder Stage müsste eine Dual-Emission tragen
+(`probe-driven follow-up + atomicBatch` parallel) — genau der Stopgap, den
+[[feedback_no_carveouts]] verbietet. Der Re-Cut dreht die Reihenfolge um:
+zuerst die additiven Consumer (C.2/C.4/C.3), dann der aktivierende Producer
+(C.1), dann der E2E-Beweis (C.5). Die Stage-Änderung in C.1 entfernt damit
+in einem Commit den alten Pfad und aktiviert gleichzeitig den neuen — kein
+Flag, kein Shim, kein toter Code.
+
+Eingaben für C.2/C.3 sind die in Phase B fertiggestellten Typen
+(`AtomicSequencePreserveBatch`, `ProtectedOperationId`, der Executor-Port) —
+nicht Stage-Output. Damit ist die Abhängigkeitskette stabil unter dieser
+Reihenfolge.
+
+Pro Slice der erwartete Master-Status:
+
+| Slice | Master-Build | Live-Preserve-IT | Was passiert |
+|---|---|---|---|
+| C.2 | grün | unverändert (heutiger Pfad) | Render-Pipeline emittiert zusätzlich `List<ExecutableSegment>`. Ohne `atomicBatch` aus Stage degeneriert sie zu `PlainSqlSegment`-only. SQL-String-Output bytemäßig identisch. |
+| C.4 | grün | unverändert | `SchemaMigrateWiring` löst pro Dialekt den Atomic-Executor auf (Phase-B-Code). DI-Slot belegt, niemand ruft. Capability-Flag-Flip + `transactionalProtectedSequenceOperations`-Sets aus C.4 sind reine Daten — Stage liest sie noch nicht (das macht erst C.1). |
+| C.3 | grün | unverändert | `JdbcMigrationExecutor` konsumiert `List<ExecutableSegment>`. `AtomicPreserveSegment`-Branch existiert und ist per Konstruktor-DI mit dem Executor verbunden — wird aber nie betreten, weil Stage noch keinen Batch liefert. Fake-Executor-Tests decken den Branch ab. |
+| C.1 | grün | flippt auf atomaren Pfad | Stage stoppt den Probe-Aufruf, produziert `AtomicSequencePreserveBatch` + `internalFollowUpIds`. Ab diesem Commit routet die C.2-Segmentierung die geschützten Ops + Restore-Renderer in den `AtomicPreserveSegment`-Pfad. Toter Probe-Wiring-Pfad wird in derselben Tranche entfernt. |
+| C.5 | grün | beweist den Flip | End-to-End Live-IT pro Dialekt (Applied/Multi-Seq/LockTimeout/Failed). |
+
+##### C.1 — Stage-Refactor: Requests + ProtectedOperationIds
+
+- `SequencePreserveStage` (`:hexagon:application/.../SequencePreserveStage.kt`)
+  ruft `SequenceCurrentValueProbe` nicht mehr direkt auf. Stattdessen baut sie
+  pro Kandidat einen `AtomicSequencePreserveRequest` mit einem
+  `renderRestore`-Closure, der das spätere Probe-Result über den
+  dialect-spezifischen Restore-Renderer (PG `setval`, MySQL/SQLite `UPDATE`)
+  in SQL übersetzt.
+- Stage berechnet pro Kandidat die zugehörigen `ProtectedOperationId`s der
+  sequenzverändernden Hauptoperationen anhand der Operation-Capability-Matrix
+  `SequenceCapability.transactionalProtectedSequenceOperations`. Operationstypen,
+  die nicht in der Matrix stehen, sind nicht atomar abdeckbar — Stage emittiert
+  dafür `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` als Blocker (kein stiller
+  Fallback auf den nicht-atomaren Pfad).
+- `Outcome.Succeeded` erhält ein neues Feld `atomicBatch:
+  AtomicSequencePreserveBatch?`. `null` bedeutet: keine zu schützenden
+  Sequenzen. Non-null wird in C.3 vom Runner konsumiert.
+- Stage selbst macht weiterhin keinen DB-Schreibzugriff — und ab C.1 auch keinen
+  DB-Read mehr.
+
+**DoD C.1**
+
+- [ ] `SequencePreserveStage.run` ruft `SequenceCurrentValueProbe` nicht mehr auf.
+- [ ] Stage erzeugt `AtomicSequencePreserveBatch` mit `requests`,
+      `protectedOperationIds` und `internalFollowUpIds` korrekt für Single- und
+      Multi-Seq-Pläne.
+- [ ] Operationstyp ohne Eintrag in `transactionalProtectedSequenceOperations`
+      → `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` Blocker (Test im erweiterten
+      `SequencePreserveStageTest`).
+- [ ] `AlterSequenceCurrentValue`-Follow-ups werden weiterhin in den
+      augmentierten Plan eingehängt (Audit-Artefakt), aber nicht mit einem
+      Probe-Wert gefüllt — sie bleiben Marker für Renderer und Runner.
+- [ ] Tote Probe-Wiring-Pfade (inkl. `SequenceCurrentValueProbeRunner`-
+      Dispatcher und `sequenceCurrentValueProbe`-Slot in
+      `SchemaMigrateWiring`) entfernt — kein `@Deprecated`-Shim, kein
+      Re-Export. Diese Tranche flippt den master-Pfad: in einem Commit
+      wird der alte Pfad entfernt und der atomare aktiviert.
+
+##### C.2 — Render-Pipeline → `ExecutableSegment`-Sicht
+
+- Neuer Vertragstyp in `:hexagon:ports-execute` (neben
+  `AtomicSequencePreserveBatch`) — der Typ formt den Runner-Vertrag mit
+  und gehört daher in dieselbe Schicht wie die Atomic-Executor-Port-Typen,
+  nicht in das CLI-/Application-Modul:
+
+  ```kotlin
+  sealed interface ExecutableSegment
+  data class PlainSqlSegment(
+      val statements: List<MigrationExecutionStatement>,
+  ) : ExecutableSegment
+  data class AtomicPreserveSegment(
+      val batch: AtomicSequencePreserveBatch,
+      val protectedStatements: List<MigrationExecutionStatement>,
+  ) : ExecutableSegment
+  ```
+
+- Renderer-Output bleibt für `--plan-only`, Reports und Rollback unverändert
+  (heutige SQL-String-Liste). Zusätzlich erzeugt die Pipeline für den
+  `--execute`-Pfad eine `List<ExecutableSegment>`-Sicht. **Beide Artefakte
+  werden aus einer einzigen runner-internen Operation-Liste abgeleitet** —
+  die SQL-String-Liste ist eine `map`-Projektion derselben Quelle, die
+  Segmentliste eine `groupBy(role)`-Projektion. Es gibt keinen Render-
+  Doppelpfad, der divergieren könnte.
+- `AlterSequenceCurrentValue`-Follow-ups erscheinen in der Plan-Only-/Report-/
+  Rollback-SQL weiterhin als Standalone-Statements (Audit). Im
+  `--execute`-Segment-Output landen sie **nicht** als `PlainSqlSegment`-
+  Statements; ihre Ausführung gehört in den Restore-Schritt innerhalb von
+  `AtomicSequencePreserveExecutor.execute`.
+- Geschützte Hauptoperationen erscheinen ausschließlich im
+  `AtomicPreserveSegment.protectedStatements` (nicht zusätzlich in einem
+  benachbarten `PlainSqlSegment`).
+
+**DoD C.2**
+
+- [ ] `ExecutableSegment`-Hierarchie liegt in `:hexagon:ports-execute`
+      (Coupling-Test gepflegt; kein Re-Export aus `:hexagon:application`).
+- [ ] Tests decken das Mapping von Plan + AtomicBatch auf Segmentliste ab.
+- [ ] Plan-Only-/Report-/Rollback-SQL ist bytemäßig unverändert (Golden-
+      Master-Vergleich gegen Pre-C.2-Snapshot).
+- [ ] Property-Test: jedes Plan-Statement aus der internen Operation-Liste
+      ist im SQL-String-Output **genau einmal** vertreten und in der
+      Segmentliste **genau einmal** in **genau einem** Segment (Audit-
+      Follow-ups erscheinen in beiden Outputs einheitlich; geschützte Ops
+      nur als `AtomicPreserveSegment.protectedStatements`).
+- [ ] Live-Execute-Segmentliste enthält interne Restore-Follow-ups **nicht**
+      als Standalone-Statements.
+- [ ] Master-grün-Invariante: solange Stage keinen `atomicBatch` liefert
+      (Pre-C.1-Zustand), ist die Segmentliste degeneriert (alles
+      `PlainSqlSegment`); die heutige Live-Preserve-IT bleibt ohne
+      weitere Code-Änderungen grün und nutzt unverändert den
+      Probe-in-Stage-Pfad.
+
+##### C.3 — Execute-Runner: Segment-aware, Connection-Owned
+
+- `JdbcMigrationExecutor` (`:cli/.../JdbcMigrationExecutor.kt`) — oder ein
+  neuer Adapter darüber — konsumiert `List<ExecutableSegment>` statt einer
+  flachen `List<MigrationExecutionStatement>`.
+- `PlainSqlSegment` läuft wie heute (HikariCP-Pool, Connection pro Statement
+  oder pro Segment, je nach aktueller Semantik — keine Verhaltensänderung).
+- `AtomicPreserveSegment`:
+  - holt eine dedizierte Connection aus dem Pool, prüft den Connection-Owner-
+    Vertrag aus dem Atomic-Executor-Port (siehe DoD unten) und setzt
+    `autoCommit=false` (PG/MySQL) bzw. erfüllt die SQLite-Spezial-
+    Anforderung aus Phase B.4 (autocommit=true + explizite
+    `BEGIN IMMEDIATE`),
+  - übergibt sie an `AtomicSequencePreserveExecutor.execute(...)` mit
+    `executeProtectedOperations`-Closure, die `protectedStatements` auf
+    derselben Connection ausführt,
+  - übersetzt die zurückgelieferte
+    `AtomicSequencePreserveResult`-Sealed-Class in `ExecutionTrace`-
+    Einträge: `Applied` → Erfolgs-Status pro betroffener Sequenz,
+    `NotFound` → Warn-Diagnostic, `LockTimeout` →
+    `SEQUENCE_PRESERVE_LOCK_TIMEOUT` Blocker (Driver-spezifisches Mapping:
+    PG SQLSTATE `55P03`, MySQL Errorcode `1205`/`ER_LOCK_WAIT_TIMEOUT`,
+    SQLite Errorcode `5`/`SQLITE_BUSY` — siehe §4.1/§4.2/§4.3), `Failed`
+    → Fehler-Status + Abbruch des restlichen Plans.
+- Nach `AtomicPreserveSegment` läuft der restliche Plan (folgende
+  `PlainSqlSegment`s) weiter, sofern kein Blocker geworfen wurde.
+
+**Vertragsklarstellung Connection-Owner**: Der Port-KDoc von
+`AtomicSequencePreserveExecutor` sagt heute „executor refuses connections
+already in an enclosing transaction", ohne die Mechanik festzulegen. C.3
+pinnt sie: der Executor prüft `connection.getAutoCommit()` (PG/MySQL) bzw.
+liest den `transaction_state` (SQLite) zum Eintritt und wirft eine
+`IllegalStateException` mit dem Fehlertext `"AtomicSequencePreserveExecutor
+requires an owned, non-enclosed connection"` — der Runner fängt diese
+Exception **nicht**; der Fehler ist ein Wiring-Bug, kein Laufzeit-
+Diagnostic. Damit landet die Verantwortung im Composition Root (C.4), nicht
+im Result-Mapping.
+
+**DoD C.3**
+
+- [ ] Runner konsumiert `List<ExecutableSegment>`; `PlainSqlSegment`-
+      Verhalten ist regressionsfrei (bestehende Live-IT-Suite grün).
+- [ ] `AtomicPreserveSegment`-Pfad ruft Atomic-Executor mit einer einzigen,
+      über `lock+probe+protected+restore+commit` gehaltenen Connection auf.
+- [ ] Connection-Owner-Vertrag in `AtomicSequencePreserveExecutor.execute`
+      durchsetzt: enclosing transaction → `IllegalStateException` (kein
+      `AtomicSequencePreserveResult.Failed`-Routing). Unit-Test im Port-
+      Modul deckt den Vertrag pro Dialekt ab.
+- [ ] Result-Mapping deckt alle vier `AtomicSequencePreserveResult`-Cases
+      auf `ExecutionTrace` / Diagnostics ab (Unit-Test mit Fake-Executor).
+- [ ] `LockTimeout` → `SEQUENCE_PRESERVE_LOCK_TIMEOUT` Blocker; Driver-
+      Mapping (PG `55P03`, MySQL `1205`, SQLite `SQLITE_BUSY`) im Phase-B-
+      Executor verifiziert, im Runner-Mapping nur durchgereicht. `Failed` →
+      Plan-Abbruch mit Rollback der Atomic-Transaktion (Phase B-Executor
+      übernimmt den Rollback selbst).
+- [ ] Master-grün-Invariante: Executor-Dependency wird per Konstruktor-DI
+      durchgereicht und ist optional aufruflastig — solange Stage keinen
+      `atomicBatch` liefert (Pre-C.1), wird der `AtomicPreserveSegment`-
+      Branch nie betreten und die Live-Preserve-IT bleibt auf dem heutigen
+      Probe-in-Stage-Pfad. Fake-Executor-Tests beweisen den Branch
+      eigenständig, ohne den Produktivpfad zu berühren.
+
+##### C.4 — Wiring im Composition Root + Capability-Flag-Flip
+
+- `SchemaMigrateWiring` (`:cli/.../SchemaMigrateWiring.kt`) instantiiert
+  pro Dialekt den passenden `AtomicSequencePreserveExecutor` analog zum
+  bestehenden `SequenceCurrentValueProbeRunner`-Dispatcher: PG →
+  `PostgresAtomicSequencePreserveExecutor`, MySQL →
+  `MysqlAtomicSequencePreserveExecutor`, SQLite →
+  `SqliteAtomicSequencePreserveExecutor`.
+- Der Lock-Timeout (Default 5 s, siehe §4.0) wird hier konfigurierbar
+  durchgereicht — kein hard-coded Wert im Runner.
+- **Capability-Defaults werden in C.4 gesetzt** (Lesart α, siehe unten):
+  - `supportsAtomicPreserve = true` für PG/MySQL/SQLite.
+  - `transactionalProtectedSequenceOperations` wird pro Dialekt mit den
+    `ProtectedOperationId`-Werten befüllt, die der jeweilige Phase-B-
+    Executor als sicher (`d.h. ohne impliziten Commit innerhalb der
+    Atomic-Transaktion ausführbar`) deklariert hat. Quelle der IDs ist
+    eine pro-Dialekt-Konstante neben dem Executor (z. B.
+    `PostgresAtomicSequencePreserveExecutor.SAFE_PROTECTED_OPERATIONS`).
+  - `supportsAtomicPreserveAllInPlan` bleibt in C.4 noch `false`; das
+    Flag flippt erst in Phase D nach erfolgreicher Cross-Plan-Deadlock-
+    Verifikation.
+- Aufruf von `AtomicSequencePreserveExecutor.execute` erfolgt nur mit
+  Connections, deren Owner-Vertrag aus C.3 erfüllt ist (autocommit-State
+  gemäß Dialekt-Vorgabe, keine umschließende Transaktion). C.4 ist die
+  einzige Stelle, an der Connections für Atomic-Segments allokiert
+  werden.
+- Das bestehende Probe-Wiring
+  (`sequenceCurrentValueProbe = ...probe`,
+  `SequenceCurrentValueProbeRunner`-Dispatcher) bleibt in C.4 **bestehen**
+  — bis C.1 den Probe-Aufruf in Stage entfernt, ist dieser Pfad noch
+  produktiv aktiv. Das Aufräumen erfolgt erst in C.1 in derselben
+  Tranche, in der der Probe-Aufruf wegfällt.
+
+**DoD C.4**
+
+- [ ] `SchemaMigrateWiring` löst pro `DatabaseDialect` den richtigen
+      Atomic-Executor auf (Unit-Test mit allen drei Dialekten).
+- [ ] Lock-Timeout-Setting ist konfigurierbar und wird im Atomic-Executor-
+      Aufruf verwendet (Default 5000 ms).
+- [ ] `SequenceCapabilityDefaults` für PG/MySQL/SQLite hat
+      `supportsAtomicPreserve = true` und befüllte
+      `transactionalProtectedSequenceOperations`-Sets.
+- [ ] `SequenceCapability.kt`-KDoc auf
+      `transactionalProtectedSequenceOperations` referenziert C.4 als
+      Source-of-Truth (heute steht dort fälschlich „Phase B's per-
+      dialect executors populate the set").
+- [ ] Connection-Allokation für `AtomicPreserveSegment` ausschließlich
+      über `SchemaMigrateWiring`; Acceptance-Test verifiziert, dass der
+      Owner-Vertrag aus C.3 eingehalten wird.
+- [ ] Master-grün-Invariante: Probe-Wiring bleibt in C.4 bestehen; das
+      Aufräumen erfolgt erst in C.1. Capability-Flag-Flip allein ändert
+      die Live-Preserve-IT noch nicht, weil Stage die Capability noch
+      nicht liest.
+
+##### C.5 — Live-IT End-to-End pro Dialekt
+
+- Neue Live-Integration-Tests, die den vollen Pfad
+  `Stage → Render → Wiring → Runner → AtomicSequencePreserveExecutor →
+  Container` fahren — ohne das Stage-Probe-Verhalten zu fakten, ohne
+  Renderer-Output zu mocken.
+- Pro Dialekt mindestens:
+  - Single-Seq Applied (Happy Path mit echtem Plan mit
+    `preserveCurrentValue` + sequenzverändernder Hauptop).
+  - Multi-Seq Applied (zwei Sequenzen, deterministische Sortierung
+    überprüft).
+  - LockTimeout-Pfad (zweite Session hält Lock → Blocker
+    `SEQUENCE_PRESERVE_LOCK_TIMEOUT`, kein partielles Apply).
+  - Failed-Pfad (geschützte Op wirft Exception → Rollback,
+    Sequenzzustand unverändert in der DB messbar).
+- Tests laufen im jeweiligen `integration-postgresql` / `integration-mysql` /
+  `integration-sqlite` Source-Set (Testcontainers bzw. file-backed SQLite,
+  wie in Phase B etabliert).
+
+**DoD C.5**
+
+- [ ] Jeder Dialekt hat eine Live-IT, die den vollen Pfad ohne Fakes fährt.
+- [ ] Applied/Multi-Seq/LockTimeout/Failed-Pfade verifiziert pro Dialekt.
+- [ ] Bestehende `integration-concurrency`-Tests für den heutigen Probe-in-
+      Stage-Pfad sind auf den Atomic-Runner migriert (kein nicht-atomarer
+      Pfad bleibt im Repo, vgl. Lesart α). Der bestehende
+      `PostgresSequencePreserveRaceTest` als `knownRace=true`-Reproducer
+      bleibt — er beschreibt PG's App-`nextval`-Race (Risiko Nr. 8), die
+      auch im Atomic-Pfad existiert.
+
+#### Designentscheidung: Hard-Replace (Lesart α), 2026-06-01
+
+Im Review-Durchlauf 2026-06-01 wurde die Coexistenz-Frage zwischen heutigem
+nicht-atomarem Pfad (Probe-in-Stage → Standalone-Render → Execute) und neuem
+Atomic-Runner zugunsten **Lesart α (Hard-Replace)** entschieden.
+
+- Phase C ersetzt den nicht-atomaren Pfad vollständig. Es gibt nach C.5
+  keinen Probe-in-Stage-Codepfad mehr im Repo, keinen
+  `SequenceCurrentValueProbeRunner`-Dispatcher und keinen Standalone-
+  Render von `AlterSequenceCurrentValue` im `--execute`-Pfad.
+- Das Capability-Flag `supportsAtomicPreserve` wird in C.4 für alle drei
+  Dialekte auf `true` gesetzt. Die `transactionalProtectedSequenceOperations`-
+  Sets werden in C.4 mit den vom Phase-B-Executor deklarierten sicheren
+  IDs befüllt.
+- Phase E reduziert sich damit auf User-Guide + CHANGELOG + KDoc-
+  Synchronisation. Keine Flag-Flip-Stopgap-Semantik („wird in Phase E
+  scharfgeschaltet") — das wäre genau das Muster, das
+  [[feedback_no_carveouts]] verbietet.
+
+Begründung (kompakt):
+
+- Phase B hat alle drei Dialekt-Executoren mit Live-IT-Suite grün
+  geliefert. Die Atomik ist nicht spekulativ.
+- β würde zwei Codepfade dauerhaft im Repo halten und die Test-Matrix
+  verdoppeln — Wartungskosten ohne realen operativen Gegenwert.
+- Bugfix-Rückfallebene aus β ist schwach: bei einem akuten Atomic-Bug
+  bleibt das dokumentierte Maintenance-Fenster („Schreibverkehr vor
+  `--execute` stoppen") aus den 0.9.7-Slices operativ verfügbar.
+
+**DoD C** *(Aggregat — wird durch C.1–C.5 erfüllt)*
+
+- [ ] Stage markiert Kandidaten und erzeugt Requests ohne DB-Schreibzugriff. *(C.1)*
 - [ ] Render-Pipeline erzeugt runner-interne `ExecutableSegment`s zusätzlich
-      zum heutigen SQL-Artefakt.
+      zum heutigen SQL-Artefakt. *(C.2)*
 - [ ] Execute-Runner ruft Executor atomar auf und führt die geschützten
-      Sequenzoperationen zwischen Probe und Restore auf derselben Connection aus.
+      Sequenzoperationen zwischen Probe und Restore auf derselben Connection aus. *(C.3, C.4)*
 - [ ] Augmentierter Plan enthält den Follow-up weiterhin (für Audit /
-      Plan-Artefakt), ohne neue Felder am Core-`DiffOperation`-Typ.
-- [ ] Execution-Engine rendert interne Follow-ups nicht als Standalone-SQL.
+      Plan-Artefakt), ohne neue Felder am Core-`DiffOperation`-Typ. *(C.1, C.2)*
+- [ ] Execution-Engine rendert interne Follow-ups nicht als Standalone-SQL. *(C.2)*
+- [ ] `SequenceCapabilityDefaults.supportsAtomicPreserve = true` und
+      befüllte `transactionalProtectedSequenceOperations`-Sets für PG/MySQL/
+      SQLite (Lesart α). *(C.4)*
+- [ ] Nicht-atomarer Pfad ist aus dem Repo entfernt — kein
+      `SequenceCurrentValueProbeRunner`, kein Probe-in-Stage-Aufruf, kein
+      Standalone-Render von `AlterSequenceCurrentValue` im
+      `--execute`-Pfad. *(C.1, C.4)*
+- [ ] End-to-End-Live-IT pro Dialekt grün. *(C.5)*
 
-### Phase D — Multi-Sequence-Atomicity
+### Phase D — Cross-Plan-Deadlock + AllInPlan-Flag
 
-- Bei mehreren Preserve-Kandidaten in einem Plan: alle Probes +
-  Restores in einer einzelnen Transaktion bündeln.
-- Lock-Reihenfolge deterministisch über `SequenceObjectRef.name`
-  sortieren (ggf. zusätzlich schema), um Deadlock-Diamanten zwischen
-  parallelen Migrationen auszuschließen.
-- Kein Silent-Degrade: wenn ein Dialekt die Batch-Modus-Eigenschaft
-  `supportsAtomicPreserveAllInPlan` nicht unterstützt oder ein geschützter
-  Operationstyp nicht transaktional ausführbar ist, blockt der Lauf mit
-  `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`.
+**Abgrenzung zu Phase B/C** *(Review 2026-06-01)*: Phase B liefert pro
+Dialekt einen Executor, der bereits Multi-Sequence-Batches in einer
+Transaktion atomar abwickelt und deterministisch nach
+`SequenceObjectRef.name` sortiert (siehe B.2-Multi-Seq-Sort-Test). Phase C
+wickelt einen Planlauf in einer einzigen Atomic-Connection ab und blockt
+unbekannte Operationstypen via C.1-UNSUPPORTED-Gate. Phase D fügt nur die
+beiden Bausteine hinzu, die B/C strukturell **nicht** erschlagen können:
+
+- **Cross-Plan-Deadlock-Beweis**: zwei parallel laufende
+  `schema migrate`-Aufrufe gegen dieselben Sequenzen — Stresstest, der
+  validiert, dass die sortierte Lock-Reihenfolge auch zwischen Prozessen
+  greift und kein Diamant entstehen kann. B/C-Tests fahren immer nur
+  einen Plan.
+- **`supportsAtomicPreserveAllInPlan`-Flag-Check im Stage**: solange das
+  Flag pro Dialekt `false` ist (Default nach C.4), blockt ein Multi-
+  Seq-Plan mit `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`. Phase D flippt
+  das Flag pro Dialekt nach erfolgreichem Cross-Plan-Stresstest und
+  fügt den Stage-seitigen Gate-Check hinzu.
 
 **DoD D**
 
-- [ ] Multi-Sequence-Transaktion in den Executor-Implementierungen
-      wirklich atomar (Commit vs. Rollback all-or-nothing).
-- [ ] Deadlock-Test mit zwei parallelen `schema migrate`-Aufrufen
-      über dieselben Sequenzen.
-- [ ] Deterministische Lock-Sortierung (Schema+Name) wird in CI getestet.
-- [ ] Fehlender Batch-/Operation-Support führt zu Blocker statt Warn-Fallback.
+- [ ] Cross-Plan-Deadlock-Test im `:test:integration-concurrency` pro
+      Dialekt: zwei parallele `schema migrate`-Läufe über überlappende
+      Sequenzen committen ohne Deadlock; bei künstlich invertierter
+      Sortierung schlägt der Test reproduzierbar fehl (negativer Smoke).
+- [ ] `SequenceCapabilityDefaults.supportsAtomicPreserveAllInPlan = true`
+      pro Dialekt nach grünem Stresstest.
+- [ ] Stage emittiert `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, wenn ein
+      Plan ≥ 2 Preserve-Kandidaten enthält und der Dialekt das Flag auf
+      `false` hat (Unit-Test mit synthetischer Capability-Override).
 
-### Phase E — Capability-Flags + Docs
+### Phase E — Docs-only (KDoc + User-Guide + CHANGELOG)
 
-- Neue `SequenceCapability.supportsAtomicPreserve` (Default `false`).
-- Neue `SequenceCapability.supportsAtomicPreserveAllInPlan` (Default `false`)
-  für Batch-Atomarität über alle Preserve-Kandidaten.
-- Neue Operation-Capability-Matrix
-  `SequenceCapability.transactionalProtectedSequenceOperations` (Default leer)
-  für Operationstypen, die innerhalb des Atomic-Runners keine impliziten
-  Commits auslösen dürfen.
-- KDoc-Update auf `SequenceCurrentValueProbe` und
-  `SequencePreserveStage` mit Hinweis auf den atomaren Pfad.
-- User-Guide-Eintrag: "preserveCurrentValue ist seit 0.X.Y atomar
-  unter Lock; keine Maintenance-Fenster mehr nötig."
+**Abgrenzung** *(Review 2026-06-01, Lesart α)*: Die Capability-Flag-Felder
+selbst (`supportsAtomicPreserve`, `supportsAtomicPreserveAllInPlan`,
+`transactionalProtectedSequenceOperations`) wurden in Phase A im
+`SequenceCapability`-Datenmodell eingeführt. Phase C.4 flippt
+`supportsAtomicPreserve` und befüllt
+`transactionalProtectedSequenceOperations`; Phase D flippt
+`supportsAtomicPreserveAllInPlan`. Phase E enthält damit **keine**
+Capability-Code-Änderungen mehr — sie ist reine Dokumentationsarbeit auf
+KDocs, User-Guide und CHANGELOG.
+
+- KDoc-Update auf `SequenceCurrentValueProbe` und `SequencePreserveStage`
+  mit Hinweis auf den atomaren Pfad (sofern `SequenceCurrentValueProbe`
+  nach C.4 noch existiert; andernfalls Hinweis auf die Entfernung).
+- KDoc-Update auf `SequenceCapability.transactionalProtectedSequenceOperations`
+  ersetzt den Phase-B-Wortlaut durch den korrekten C.4-Verweis.
+- User-Guide-Eintrag: „preserveCurrentValue ist seit 0.X.Y atomar unter
+  Lock; keine Maintenance-Fenster mehr nötig (PG-App-`nextval`-Race
+  bleibt; siehe §6 Risiko Nr. 8)."
+- CHANGELOG-Eintrag mit Breaking-Change-Markierung, falls Probe-Port
+  oder Stage-Outcome-API in C.1/C.4 strukturell verändert wurden.
 
 **DoD E**
 
-- [ ] Capability-Flags in `SequenceCapabilityDefaults` pro Dialekt
-      gesetzt.
-- [ ] User-Guide-Eintrag.
+- [ ] KDoc auf `SequenceCapability.transactionalProtectedSequenceOperations`
+      verweist auf C.4 als Source-of-Truth (kein „Phase B populates"
+      mehr).
+- [ ] User-Guide-Eintrag mit PG-`nextval`-Race-Hinweis.
 - [ ] CHANGELOG-Eintrag.
 
 ## 6. Risiken
@@ -463,7 +798,7 @@ COMMIT;
    `PostgresSequencePreserveRaceTest` weiterhin als `knownRace=true`-
    Reproducer ab; Phase E könnte einen kontrollierten App-side
    Advisory-Lock-Vertrag dokumentieren.
-8. **Nichttransaktionale DDL / implizite Commits**: Falls ein Dialekt die
+9. **Nichttransaktionale DDL / implizite Commits**: Falls ein Dialekt die
    geschützte sequenzverändernde Operation nicht innerhalb der Executor-
    Transaktion ausführen kann (z. B. impliziter Commit), ist all-or-none nicht
    garantiert. Mitigation: Capability für diesen Operationstyp auf `false`

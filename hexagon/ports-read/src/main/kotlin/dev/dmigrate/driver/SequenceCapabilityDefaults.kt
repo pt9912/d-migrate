@@ -61,11 +61,17 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = true,
-        // Atomic-Preserve Phase A: PG's lock strategy
-        // (`LOCK TABLE <seq> IN ACCESS EXCLUSIVE MODE` + `SET LOCAL
-        // lock_timeout`) is documented in
-        // `sequence-preserve-atomic-lock-plan.md` §4.1 but the
-        // executor (Phase B) is not wired yet — keep `false`.
+        // Atomic-Preserve Phase A/B: PG's actual lock strategy is
+        // `pg_advisory_xact_lock(hashtext(...))` plus `SET LOCAL
+        // lock_timeout` — the original plan-doc proposal `LOCK TABLE
+        // <seq> IN ACCESS EXCLUSIVE MODE` proved un-implementable in
+        // Phase B.2 (PG refuses the statement against sequence
+        // relations and `nextval` is by-design lock-free). See
+        // `sequence-preserve-atomic-lock-plan.md` §4.1 Korrektur.
+        // The executor (`PostgresAtomicSequencePreserveExecutor`)
+        // exists since Phase B.2 but is not yet wired into the
+        // SchemaMigrate pipeline — Phase C.4 will flip this flag to
+        // `true` and populate `transactionalProtectedSequenceOperations`.
         supportsAtomicPreserve = false,
         supportsAtomicPreserveAllInPlan = false,
         transactionalProtectedSequenceOperations = emptySet(),
@@ -80,15 +86,17 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = true,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        // Atomic-Preserve Phase A: MySQL's lock strategy
+        // Atomic-Preserve Phase A/B: MySQL's lock strategy
         // (`SELECT … FOR UPDATE` on `dmg_sequences` +
         // `SET SESSION innodb_lock_wait_timeout`) is documented in
         // `sequence-preserve-atomic-lock-plan.md` §4.2. Several DDL
         // statements (`ALTER TABLE`, `CREATE INDEX`) issue implicit
         // commits on MySQL and therefore cannot live inside the
         // atomic transaction — the empty
-        // `transactionalProtectedSequenceOperations` set Phase A
-        // commits to becoming a positive allowlist filled in Phase B.
+        // `transactionalProtectedSequenceOperations` set is a positive
+        // allowlist that Phase C.4 wiring fills with the IDs the
+        // `MysqlAtomicSequencePreserveExecutor` declares as
+        // implicit-commit-safe.
         supportsAtomicPreserve = false,
         supportsAtomicPreserveAllInPlan = false,
         transactionalProtectedSequenceOperations = emptySet(),
@@ -112,14 +120,15 @@ object SequenceCapabilityDefaults {
         // currently selected.
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        // Atomic-Preserve Phase A: SQLite's `BEGIN IMMEDIATE` plus
+        // Atomic-Preserve Phase A/B: SQLite's `BEGIN IMMEDIATE` plus
         // `PRAGMA busy_timeout` strategy is documented in
         // `sequence-preserve-atomic-lock-plan.md` §4.3. RESERVED-lock
         // semantics mean SQLite blocks every concurrent writer for
-        // the entire transaction window — the executor (Phase B) has
-        // to keep the protected operation list tight or the operator
-        // will see app-wide write stalls. `false` until Phase B
-        // delivers that discipline.
+        // the entire transaction window — the
+        // `SqliteAtomicSequencePreserveExecutor` (Phase B.4) keeps
+        // the protected-operation surface tight; Phase C.4 wiring
+        // declares which `ProtectedOperationId`s are safe inside the
+        // RESERVED window. `false` until C.4 lands.
         supportsAtomicPreserve = false,
         supportsAtomicPreserveAllInPlan = false,
         transactionalProtectedSequenceOperations = emptySet(),

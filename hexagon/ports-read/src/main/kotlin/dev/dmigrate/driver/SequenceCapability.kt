@@ -49,22 +49,26 @@ package dev.dmigrate.driver
  *   plus the protected sequence-bearing operations in a single
  *   transaction on one JDBC connection. Atomic-Preserve Phase A
  *   wires the capability field and the
- *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker; Phase B/C land
- *   the per-dialect executor implementations that actually flip the
- *   flag to `true`. Until then every dialect stays `false` and the
- *   stage continues with the documented two-transaction fallback.
+ *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker; Phase B lands
+ *   the per-dialect executor implementations and Phase C.4
+ *   (SchemaMigrate wiring) flips this flag to `true` per dialect.
+ *   Until C.4 lands every dialect stays `false` and the stage
+ *   continues with the documented two-transaction fallback.
  * - [supportsAtomicPreserveAllInPlan]: dialect can hold the lock
  *   across **every** preserve candidate in one plan, not just one
  *   sequence at a time. `false` ⇒ the runner is forced to issue a
  *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker when a plan
  *   carries more than one preserve candidate. Default `false`
- *   until Phase D lands batch-atomicity.
+ *   until Phase D lands cross-plan deadlock proofs and flips the
+ *   flag per dialect.
  * - [transactionalProtectedSequenceOperations]: opaque
  *   [ProtectedOperationId] values for operation kinds the dialect
  *   can execute **inside** the atomic-runner transaction without
  *   triggering an implicit commit. The empty default conservatively
- *   rejects every protected operation — Phase B's per-dialect
- *   executors populate the set with dialect-known-safe identifiers.
+ *   rejects every protected operation; Phase C.4 (SchemaMigrate
+ *   wiring) populates the set from a per-dialect allowlist that the
+ *   matching `AtomicSequencePreserveExecutor` declares as
+ *   implicit-commit-safe.
  */
 data class SequenceCapability(
     val supportsNamedSequences: Boolean,

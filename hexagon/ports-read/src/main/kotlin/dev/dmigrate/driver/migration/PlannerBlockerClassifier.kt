@@ -193,11 +193,12 @@ object PlannerBlockerClassifier {
      * operator has a concrete remedy:
      *
      * - `SEQUENCE_PRESERVE_LOCK_TIMEOUT` — the per-dialect lock
-     *   (`LOCK TABLE` on PG, `SELECT … FOR UPDATE` on MySQL,
-     *   `BEGIN IMMEDIATE` on SQLite) did not acquire within the
-     *   configured `lockTimeoutMillis` window. Operator can raise
-     *   the timeout, schedule the run in a quieter window, or pin
-     *   the cause via the test-side concurrency reproducer.
+     *   (`pg_advisory_xact_lock(hashtext(...))` on PG since Phase B.2,
+     *   `SELECT … FOR UPDATE` on MySQL, `BEGIN IMMEDIATE` on SQLite)
+     *   did not acquire within the configured `lockTimeoutMillis`
+     *   window. Operator can raise the timeout, schedule the run in
+     *   a quieter window, or pin the cause via the test-side
+     *   concurrency reproducer.
      * - `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` — the dialect or
      *   protected operation type lacks the
      *   `supportsAtomicPreserve` / `supportsAtomicPreserveAllInPlan`
