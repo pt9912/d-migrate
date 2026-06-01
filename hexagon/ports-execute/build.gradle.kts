@@ -31,6 +31,10 @@ kover {
                     // Sealed result + subtype carriers
                     "dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult",
                     "dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult$*",
+                    // Phase C.2 segment carriers (sealed + data classes only)
+                    "dev.dmigrate.driver.migration.preserve.ExecutableSegment",
+                    "dev.dmigrate.driver.migration.preserve.PlainSqlSegment",
+                    "dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment",
                 )
             }
         }
