@@ -39,6 +39,12 @@ dependencies {
     // dep is required because Gradle's testFixtures source set does not
     // inherit `implementation` deps' transitive `api` exports automatically.
     testFixturesApi(project(":hexagon:ports-read"))
+    // Atomic-Preserve Phase C.5: `executeSegmentsAgainstPool` test-helper
+    // signature uses ExecutableSegment, AtomicSequencePreserveBatch,
+    // AtomicSequencePreserveExecutor, and AtomicSequencePreserveResult
+    // from ports-execute. Same testFixtures gradle-quirk as ports-read
+    // above.
+    testFixturesApi(project(":hexagon:ports-execute"))
     testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
 }

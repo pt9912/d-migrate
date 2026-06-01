@@ -2,8 +2,16 @@ package dev.dmigrate.cli.commands.testing
 
 import dev.dmigrate.cli.commands.ExecutionTrace
 import dev.dmigrate.cli.commands.MigrationStreamClassifier
+import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment
+import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveExecutor
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.migration.preserve.ExecutableSegment
+import dev.dmigrate.driver.migration.preserve.PlainSqlSegment
 import java.sql.Connection
 import java.sql.SQLException
 
@@ -176,5 +184,143 @@ private fun rollbackTrace(
         transactionRolledBack = rolledBack,
         sideEffectsPossible = sideEffects,
         executionError = cause.message ?: cause::class.simpleName,
+    )
+}
+
+/**
+ * Atomic-Preserve Phase C.5 (2026-06-01) test-fixture mirror of
+ * `SegmentAwareMigrationExecutor.execute` for the live-IT modules
+ * (`:test:integration-postgresql` / `-mysql` / `-sqlite`).
+ *
+ * Why this duplicate exists: same architectural constraint as
+ * [executeAgainstPool] — `SegmentAwareMigrationExecutor` is
+ * `internal` to `:adapters:driving:cli` (CLI ↔ application boundary).
+ * IT modules already have a [ConnectionPool] against their
+ * Testcontainer / file-backed DB and only need the **routing** side
+ * of the contract: PlainSqlSegment → [executeAgainstPool],
+ * AtomicPreserveSegment → caller-supplied [atomicExecutor] on a
+ * pool-borrowed connection.
+ *
+ * Contract MUST stay byte-identical to
+ * `SegmentAwareMigrationExecutor.execute`. If the production routing
+ * changes (e.g. multi-AtomicPreserveSegment per plan in Phase D),
+ * mirror the change here so the live-IT continues to exercise the
+ * same path.
+ *
+ * [atomicExecutor] is the dialect-specific Phase-B
+ * [AtomicSequencePreserveExecutor] the IT module instantiates
+ * (`PostgresAtomicSequencePreserveExecutor()`, etc.). The helper does
+ * NOT dispatch by dialect — that is the IT's responsibility, because
+ * the IT modules don't depend on each other's adapter modules.
+ */
+fun executeSegmentsAgainstPool(
+    pool: ConnectionPool,
+    segments: List<ExecutableSegment>,
+    atomicExecutor: AtomicSequencePreserveExecutor,
+    lockTimeoutMillis: Long = 5_000L,
+): ExecutionTrace {
+    if (segments.isEmpty()) {
+        return ExecutionTrace(
+            executionStarted = true,
+            executionCompleted = true,
+            statementsAttempted = 0,
+        )
+    }
+    var attempted = 0
+    var lastOpIds: Set<String> = emptySet()
+    for (segment in segments) {
+        val segmentTrace = when (segment) {
+            is PlainSqlSegment -> executeAgainstPool(pool, segment.statements)
+            is AtomicPreserveSegment -> runAtomicSegmentAgainstPool(
+                pool = pool,
+                segment = segment,
+                atomicExecutor = atomicExecutor,
+                lockTimeoutMillis = lockTimeoutMillis,
+            )
+        }
+        attempted += segmentTrace.statementsAttempted
+        if (segmentTrace.lastStatementOperationIds.isNotEmpty()) {
+            lastOpIds = segmentTrace.lastStatementOperationIds
+        }
+        if (segmentTrace.transactionRolledBack || segmentTrace.executionError != null) {
+            return ExecutionTrace(
+                executionStarted = true,
+                executionCompleted = false,
+                statementsAttempted = attempted,
+                lastStatementOperationIds = lastOpIds,
+                transactionRolledBack = segmentTrace.transactionRolledBack,
+                sideEffectsPossible = segmentTrace.sideEffectsPossible,
+                executionError = segmentTrace.executionError,
+                recoverability = segmentTrace.recoverability,
+            )
+        }
+    }
+    return ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = true,
+        statementsAttempted = attempted,
+        lastStatementOperationIds = lastOpIds,
+    )
+}
+
+private fun runAtomicSegmentAgainstPool(
+    pool: ConnectionPool,
+    segment: AtomicPreserveSegment,
+    atomicExecutor: AtomicSequencePreserveExecutor,
+    lockTimeoutMillis: Long,
+): ExecutionTrace {
+    val followUpIds: Set<String> = segment.batch.internalFollowUpIds.toSet()
+    val protectedStatements = segment.statements.filter { stmt ->
+        stmt.operationIds.none { it in followUpIds }
+    }
+    val executeProtectedOps: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult =
+        { connection, _ ->
+            for (stmt in protectedStatements) {
+                connection.createStatement().use { it.execute(stmt.sql) }
+            }
+            AtomicProtectedExecutionResult.Succeeded(statementsExecuted = protectedStatements.size)
+        }
+    val result = pool.borrow().use { conn ->
+        atomicExecutor.execute(conn, segment.batch, lockTimeoutMillis, executeProtectedOps)
+    }
+    return mapAtomicResultToTrace(result, segment)
+}
+
+private fun mapAtomicResultToTrace(
+    result: AtomicSequencePreserveResult,
+    segment: AtomicPreserveSegment,
+): ExecutionTrace = when (result) {
+    is AtomicSequencePreserveResult.Applied -> ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = true,
+        statementsAttempted = segment.statements.size,
+        lastStatementOperationIds = segment.statements.lastOrNull()?.operationIds ?: emptySet(),
+    )
+    is AtomicSequencePreserveResult.NotFound -> ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = false,
+        statementsAttempted = 0,
+        transactionRolledBack = true,
+        executionError = "Atomic preserve aborted — sequence(s) not found: " +
+            result.refs.joinToString(", ") { it.name },
+        recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
+    )
+    is AtomicSequencePreserveResult.LockTimeout -> ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = false,
+        statementsAttempted = 0,
+        transactionRolledBack = true,
+        executionError = "SEQUENCE_PRESERVE_LOCK_TIMEOUT for: " +
+            result.refs.joinToString(", ") { it.name },
+        recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
+    )
+    is AtomicSequencePreserveResult.Failed -> ExecutionTrace(
+        executionStarted = true,
+        executionCompleted = false,
+        statementsAttempted = 0,
+        transactionRolledBack = true,
+        executionError = "Atomic preserve failed for ${result.ref.name}: " +
+            (result.cause.message ?: result.cause::class.java.simpleName),
+        recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
     )
 }

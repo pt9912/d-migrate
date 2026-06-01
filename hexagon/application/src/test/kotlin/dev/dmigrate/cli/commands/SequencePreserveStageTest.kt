@@ -298,7 +298,7 @@ class SequencePreserveStageTest : FunSpec({
 
     // ── Atomic batch shape ─────────────────────────────────────────────
 
-    test("multi-sequence plan → batch carries one request + protectedOperationId per kind + followUpId per op") {
+    test("multi-sequence plan: batch carries requests + parent-instance protectedIds + :preserve followUpIds") {
         val plan = synthesisePlan(
             listOf(
                 alterSeqOp(name = "seq_a"),
@@ -315,14 +315,13 @@ class SequencePreserveStageTest : FunSpec({
         )
         val succeeded = outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
         succeeded.atomicBatch.requests.map { it.sequenceRef.name } shouldBe listOf("seq_a", "seq_b", "seq_c")
-        succeeded.atomicBatch.protectedOperationIds.map { it.value } shouldContain "AlterSequence"
-        succeeded.atomicBatch.protectedOperationIds.map { it.value } shouldContain "CreateSequence"
-        succeeded.atomicBatch.protectedOperationIds.map { it.value }.size shouldBe 2
-        succeeded.atomicBatch.internalFollowUpIds.size shouldBe 3
-        // Each follow-up op-id ends in :preserve and references the parent op-id.
-        succeeded.atomicBatch.internalFollowUpIds.forEach { id ->
-            id.endsWith(":preserve") shouldBe true
-        }
+        // protectedOperationIds carry the parent ops' INSTANCE ids so
+        // segmentForExecute routes the rendered parent statements into
+        // AtomicPreserveSegment.
+        succeeded.atomicBatch.protectedOperationIds.map { it.value } shouldBe
+            listOf("alter:seq_a", "alter:seq_b", "create:seq_c")
+        succeeded.atomicBatch.internalFollowUpIds shouldBe
+            listOf("alter:seq_a:preserve", "alter:seq_b:preserve", "create:seq_c:preserve")
     }
 
     test("augmented plan inserts AlterSequenceCurrentValue follow-up directly behind each parent op") {

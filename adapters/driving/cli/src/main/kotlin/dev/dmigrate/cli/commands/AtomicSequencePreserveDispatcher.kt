@@ -12,12 +12,10 @@ import dev.dmigrate.driver.sqlite.SqliteAtomicSequencePreserveExecutor
  * implementation from the Phase-B adapter modules.
  *
  * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
- * §5 Phase C / Sub-Slice C.4. The dispatcher mirrors the existing
- * [SequenceCurrentValueProbeRunner] dispatcher pattern. Executor
- * implementations are stateless and reusable across plan runs, so
- * one instance per dialect lives statically inside this object —
- * a fresh JDBC [java.sql.Connection] is the per-call requirement,
- * not a fresh executor.
+ * §5 Phase C / Sub-Slice C.4. Executor implementations are stateless
+ * and reusable across plan runs, so one instance per dialect lives
+ * statically inside this object — a fresh JDBC [java.sql.Connection]
+ * is the per-call requirement, not a fresh executor.
  *
  * Test seam: callers can pass `AtomicSequencePreserveDispatcher::executorFor`
  * directly or override it via [AtomicSequencePreserveRunner]'s

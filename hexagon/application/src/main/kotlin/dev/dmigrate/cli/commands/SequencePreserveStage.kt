@@ -365,22 +365,23 @@ object SequencePreserveStage {
                 },
             )
         }
-        // The batch's protectedOperationIds carry the operation KIND
-        // names — the same vocabulary the capability allowlist uses
-        // (CreateSequence / AlterSequence / RenameSequence). Phase B's
-        // executors hand these IDs verbatim to the
-        // `executeProtectedOperations` callback for diagnostic
-        // purposes; SegmentAwareMigrationExecutor uses
-        // `internalFollowUpIds` (instance IDs) to filter the audit
-        // markers out of the protected-statements list.
-        val protectedKindIds = candidates
-            .map { ProtectedOperationId(it.parentOp::class.simpleName ?: "Unknown") }
-            .distinct()
+        // The batch's protectedOperationIds carry the **instance** IDs
+        // of the protected parent ops (CreateSequence / AlterSequence /
+        // RenameSequence). `segmentForExecute` matches them against
+        // `MigrationDdlStatement.operationIds` (also instance IDs) to
+        // route parent statements into the AtomicPreserveSegment;
+        // the kind-name allowlist on
+        // `SequenceCapability.transactionalProtectedSequenceOperations`
+        // is checked separately by [unsupportedKindsBlocker] above —
+        // same `ProtectedOperationId` type, different namespace
+        // (kind names in the capability, instance IDs in the batch).
+        val protectedInstanceIds = candidates
+            .map { ProtectedOperationId(it.parentOp.id) }
         val followUps = candidates.map { ctx -> ctx to buildAuditFollowUp(ctx) }
         val followUpInstanceIds = followUps.map { (_, op) -> op.id }
         val batch = AtomicSequencePreserveBatch(
             requests = requests,
-            protectedOperationIds = protectedKindIds,
+            protectedOperationIds = protectedInstanceIds,
             internalFollowUpIds = followUpInstanceIds,
         )
         val augmentedPlan = augmentPlan(plan, followUps)

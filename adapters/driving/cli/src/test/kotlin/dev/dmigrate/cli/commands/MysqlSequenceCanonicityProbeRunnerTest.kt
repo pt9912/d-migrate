@@ -39,7 +39,7 @@ import java.nio.file.Files
  *    [MysqlSequenceCanonicityProbeAdapter] into `collect`. We exercise
  *    only the two `CompareConfigException` branches here; the Hikari +
  *    real-MySQL path lives in `:test:integration-mysql` per project
- *    precedent (`SqliteCastPreflightProbeRunner` / `SequenceCurrentValueProbeRunner`).
+ *    precedent (`SqliteCastPreflightProbeRunner`).
  */
 class MysqlSequenceCanonicityProbeRunnerTest : FunSpec({
 

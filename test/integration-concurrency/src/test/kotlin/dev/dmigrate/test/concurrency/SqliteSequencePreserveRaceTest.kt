@@ -1,140 +1,138 @@
 package dev.dmigrate.test.concurrency
 
+import dev.dmigrate.core.diff.migration.RenameProjectionDialect
+import dev.dmigrate.core.diff.migration.SequenceObjectRef
+import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.migration.preserve.AtomicProtectedExecutionResult
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult
+import dev.dmigrate.driver.sqlite.SqliteAtomicSequencePreserveExecutor
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.longs.shouldBeGreaterThan
+import io.kotest.matchers.longs.shouldBeGreaterThanOrEqual
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.file.Files
 import java.nio.file.Path
 import java.sql.Connection
 import java.sql.DriverManager
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.concurrent.thread
 import kotlin.io.path.absolutePathString
 import kotlin.io.path.deleteIfExists
 
 private val ConcurrencyTag = NamedTag("concurrency")
 
 /**
- * SQLite reproducer for the SequencePreserveStage probe→restore
- * race window.
+ * Atomic-Preserve Phase C.5 (2026-06-01) migration of the legacy
+ * SQLite race reproducer onto the atomic-preserve path. Companion
+ * to [MysqlSequencePreserveRaceTest]; SQLite's `BEGIN IMMEDIATE`
+ * holds a database-wide `RESERVED` lock which blocks every concurrent
+ * writer for the duration of the atomic probe+restore window.
  *
- * SQLite serialises writes within a single connection, so this
- * reproducer uses a real **file-backed** database and opens a fresh
- * connection per operation. Each connection sees the others'
- * committed effects via the file-system back-end — exactly what
- * SQLite emulation (`dmg_sequences` + helper triggers, see
- * `docs/planning/done/sqlite-sequence-emulation-plan.md`) faces in
- * production.
- *
- * Plan-Doc: `docs/planning/done/quality-coverage-expansion-plan.md`
- * §5.3.
- *
- * **knownRace = true**: legacy reproducer. Flip after the
- * atomic-lock slice lands.
+ * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
+ * §5 Phase C / Sub-Slice C.5.
  */
 class SqliteSequencePreserveRaceTest : FunSpec({
 
     tags(ConcurrencyTag)
 
-    val sequenceName = "order_seq"
+    val sequenceName = "race_atomic_sqlite"
     val tmpDbFile: Path = Files.createTempFile("dmigrate-concurrency-sqlite-", ".db")
 
     beforeSpec {
         tmpDbFile.deleteIfExists()
         Files.createFile(tmpDbFile)
-        val url = jdbcUrl(tmpDbFile)
-        openConnection(url).use { setup ->
+        openConnection(jdbcUrl(tmpDbFile)).use { setup ->
             setup.autoCommit = true
             setup.createStatement().use { stmt ->
                 stmt.execute(
                     """
-                    CREATE TABLE IF NOT EXISTS dmg_sequences (
-                        name TEXT PRIMARY KEY,
-                        next_value INTEGER NOT NULL
+                    CREATE TABLE IF NOT EXISTS "dmg_sequences" (
+                        "name" TEXT PRIMARY KEY NOT NULL,
+                        "next_value" INTEGER NOT NULL,
+                        "managed_by" TEXT NOT NULL DEFAULT 'd-migrate',
+                        "format_version" TEXT NOT NULL DEFAULT 'sqlite-sequence-v1'
                     )
-                    """.trimIndent()
+                    """.trimIndent(),
                 )
-                stmt.execute("DELETE FROM dmg_sequences WHERE name = '$sequenceName'")
-                stmt.execute("INSERT INTO dmg_sequences (name, next_value) VALUES ('$sequenceName', 1)")
+                stmt.execute("DELETE FROM \"dmg_sequences\" WHERE \"name\" = '$sequenceName'")
+                stmt.execute(
+                    "INSERT INTO \"dmg_sequences\" (\"name\", \"next_value\") VALUES ('$sequenceName', 100)",
+                )
             }
         }
     }
 
-    afterSpec {
-        tmpDbFile.deleteIfExists()
-    }
+    afterSpec { tmpDbFile.deleteIfExists() }
 
-    test("SQLite: nextval between probe and restore surfaces stale UPDATE (knownRace=true)") {
-        val observation = SequencePreserveRace.runAgainst(
-            SqliteAdapter(jdbcUrl(tmpDbFile), sequenceName),
-        )
+    test("SQLite atomic-preserve serializes concurrent writers — no stale restore (race closed)") {
+        val initial = 100L
+        val writerAdvances = 50
+        val url = jdbcUrl(tmpDbFile)
 
-        withClue(observation) {
-            observation.observedProbeValue shouldBe 1L
-            observation.postWriterMaximum shouldBeGreaterThan observation.observedProbeValue
-            observation.finalValue shouldBe observation.observedProbeValue
-            observation.knownRace shouldBe true
+        val writerStart = CountDownLatch(1)
+        val writerThread = thread(start = true, name = "sqlite-race-writer") {
+            writerStart.await(10, TimeUnit.SECONDS)
+            repeat(writerAdvances) {
+                openConnection(url).use { c ->
+                    c.prepareStatement(
+                        "UPDATE \"dmg_sequences\" SET \"next_value\" = \"next_value\" + 1 WHERE \"name\" = ?",
+                    ).use { stmt ->
+                        stmt.setString(1, sequenceName)
+                        stmt.executeUpdate()
+                    }
+                }
+                Thread.sleep(2)
+            }
         }
+
+        val executor = SqliteAtomicSequencePreserveExecutor()
+        val ref = SequenceObjectRef(sequenceName, null, RenameProjectionDialect.SQLITE)
+        val batch = AtomicSequencePreserveBatch(
+            requests = listOf(
+                AtomicSequencePreserveRequest(ref) { probe ->
+                    listOf(
+                        "UPDATE \"dmg_sequences\" SET \"next_value\" = ${probe.value} " +
+                            "WHERE \"name\" = '$sequenceName'",
+                    )
+                },
+            ),
+            protectedOperationIds = listOf(ProtectedOperationId("atomic-preserve-protected-op")),
+            internalFollowUpIds = listOf("atomic-preserve-followup-op"),
+        )
+        writerStart.countDown()
+
+        openConnection(url).use { atomicConn ->
+            val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
+                AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
+            }
+            result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
+        }
+
+        writerThread.join(TimeUnit.SECONDS.toMillis(30))
+        writerThread.isAlive shouldBe false
+
+        val finalValue = openConnection(url).use { c ->
+            c.prepareStatement(
+                "SELECT \"next_value\" FROM \"dmg_sequences\" WHERE \"name\" = ?",
+            ).use { stmt ->
+                stmt.setString(1, sequenceName)
+                stmt.executeQuery().use { rs ->
+                    check(rs.next())
+                    rs.getLong(1)
+                }
+            }
+        }
+        finalValue shouldBeGreaterThanOrEqual (initial + writerAdvances)
     }
 })
 
 private fun jdbcUrl(path: Path): String = "jdbc:sqlite:${path.absolutePathString()}"
 
-private inline fun withClue(observation: SequencePreserveRace.Observation, block: () -> Unit) {
-    try {
-        block()
-    } catch (t: AssertionError) {
-        throw AssertionError("race observation=$observation: ${t.message}", t)
-    }
-}
-
 private fun openConnection(url: String): Connection {
     Class.forName("org.sqlite.JDBC")
     return DriverManager.getConnection(url).apply { autoCommit = true }
-}
-
-private class SqliteAdapter(
-    private val url: String,
-    private val sequenceName: String,
-) : SequencePreserveRace.Adapter {
-
-    override fun readCurrentValue(): Long = openConnection(url).use { conn ->
-        conn.prepareStatement("SELECT next_value FROM dmg_sequences WHERE name = ?").use { stmt ->
-            stmt.setString(1, sequenceName)
-            stmt.executeQuery().use { rs ->
-                check(rs.next()) { "expected one row for sequence $sequenceName" }
-                rs.getLong(1)
-            }
-        }
-    }
-
-    override fun advance(): Long = openConnection(url).use { conn ->
-        // SQLite's xerial driver applies setQueryTimeout as a lock-
-        // wait timeout (see memory: Driver-Timeout-Quirks). The
-        // file-DB + per-op connection pattern avoids the SQLite
-        // single-writer serialisation issue and gives the writer
-        // thread a chance to run between the probe's read and the
-        // probe's restore.
-        conn.prepareStatement(
-            "UPDATE dmg_sequences SET next_value = next_value + 1 WHERE name = ?"
-        ).use { stmt ->
-            stmt.setString(1, sequenceName)
-            stmt.executeUpdate()
-        }
-        conn.prepareStatement("SELECT next_value FROM dmg_sequences WHERE name = ?").use { stmt ->
-            stmt.setString(1, sequenceName)
-            stmt.executeQuery().use { rs ->
-                check(rs.next()) { "expected one row after UPDATE" }
-                rs.getLong(1)
-            }
-        }
-    }
-
-    override fun restore(value: Long) = openConnection(url).use { conn ->
-        conn.prepareStatement("UPDATE dmg_sequences SET next_value = ? WHERE name = ?").use { stmt ->
-            stmt.setLong(1, value)
-            stmt.setString(2, sequenceName)
-            stmt.executeUpdate()
-        }
-        Unit
-    }
 }

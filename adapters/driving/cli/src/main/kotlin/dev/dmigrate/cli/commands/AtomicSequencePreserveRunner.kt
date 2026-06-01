@@ -78,11 +78,12 @@ internal object AtomicSequencePreserveRunner {
 
     /**
      * Production [acquireConnection]: resolves the named connection
-     * from CLI config, parses the JDBC URL, and opens a Hikari pool.
-     * Mirrors [SequenceCurrentValueProbeRunner]'s acquisition path —
+     * from CLI config, parses the JDBC URL, and opens a Hikari pool —
      * one pool per `execute(...)` call. Config-side failures surface
      * as [CompareConfigException] (CLI exit 7), identical to the
-     * probe runner.
+     * other CLI-side dispatcher runners (e.g.
+     * `MysqlSequenceCanonicityProbeRunner`,
+     * `SqliteCastPreflightProbeRunner`).
      */
     private fun defaultAcquireConnection(
         target: CompareOperand.Database,
