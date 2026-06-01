@@ -227,4 +227,34 @@ class SchemaMigrateRunnerCliExitCodeTest : FunSpec({
         // operand-parse error is reported against the raw source ref
         capture["error:db:"] shouldContain "Invalid operand"
     }
+
+    test("Finding #4: unknown --mysql-named-sequences value yields exit 2 with allowed-list hint") {
+        // Atomic-Preserve follow-up (2026-06-01): mirrors
+        // SchemaGenerateRunner's parseability check. Without this,
+        // a typo falls through silently and only surfaces later as a
+        // misleading SEQUENCE_PRESERVE_* blocker.
+        val (runner, capture) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            mysqlNamedSequences = "helpr_table",
+        )
+        runner.execute(request) shouldBe 2
+        capture["error:${sourcePath}"] shouldContain "Unknown --mysql-named-sequences value"
+        capture["error:${sourcePath}"] shouldContain "action_required, helper_table"
+    }
+
+    test("Finding #4: unknown --sqlite-named-sequences value yields exit 2 with allowed-list hint") {
+        val (runner, capture) = captureRunner()
+        val request = SchemaMigrateRequest(
+            source = sourcePath.toString(),
+            target = targetPath.toString(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            sqliteNamedSequences = "wrong",
+        )
+        runner.execute(request) shouldBe 2
+        capture["error:${sourcePath}"] shouldContain "Unknown --sqlite-named-sequences value"
+        capture["error:${sourcePath}"] shouldContain "action_required, helper_table"
+    }
 })

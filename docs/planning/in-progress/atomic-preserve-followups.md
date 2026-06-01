@@ -118,44 +118,56 @@ Vollständige DoD im Quelldokument §5 Phase D.
       synthetischer Capability-Override in
       `SequencePreserveStageTest`.
 
-### 4.2 Dead-Code-Cleanup Probe-Adapter
+### 4.2 Dead-Code-Cleanup Probe-Interface — **erledigt 2026-06-01**
 
-Aus C.1: `SequenceCurrentValueProbe`-Port + die drei dialekt-
-spezifischen Probe-Adapter-Implementierungen (+ ihre Tests) werden
-nach C.1 nicht mehr referenziert. `SequenceCurrentValueProbeResult`
-selbst bleibt **erhalten**, weil die `Read`-Variante als
-Restore-Vertrag im Atomic-Executor weiterlebt.
+Aus C.1: Der `SequenceCurrentValueProbe`-Port war strukturell tot —
+die Atomic-Executoren rufen die drei dialekt-spezifischen
+Singleton-Adapter (`{Postgres,Mysql,Sqlite}SequenceCurrentValueProbe`)
+direkt auf, ohne über die Interface-Dispatch zu gehen. Bei der
+Analyse für diesen Slice hat sich gezeigt, dass die ursprüngliche
+DoD-Formulierung („Adapter-Klassen + Tests löschen") **falsch** war —
+die Adapter sind aktive Executor-Dependencies und ihre Tests
+pinnen weiterhin lebendes Verhalten.
 
-**DoD F2**
+**DoD F2** *(erledigt — korrigierter Scope)*
 
-- [ ] `SequenceCurrentValueProbe`-Interface gelöscht.
-- [ ] `Postgres*ProbeAdapter`, `Mysql*ProbeAdapter`,
-      `Sqlite*ProbeAdapter` (Driver-Adapter-Klassen) gelöscht.
-- [ ] Adapter-Tests gelöscht.
-- [ ] `SequenceCurrentValueProbeResult` bleibt; KDoc aktualisiert
-      auf den neuen Use-Case.
-- [ ] `make docker-verify` grün; Coverage-Schwelle 90 % pro Modul
-      bleibt erfüllt.
+- [x] `SequenceCurrentValueProbe`-Interface gelöscht
+      (hexagon/ports-read).
+- [x] `: SequenceCurrentValueProbe` und `override`-Modifier von den
+      drei Adapter-Singletons entfernt — sie bleiben als
+      `object`-Singletons live und werden weiterhin von den
+      Atomic-Executoren verwendet.
+- [x] Adapter-Klassen + ihre Unit-/IT-Tests **bleiben** (waren nie
+      dead-code; die ursprüngliche DoD-Formulierung war auf einer
+      Fehlinterpretation des C.1-Refactors aufgebaut).
+- [x] `SequenceCurrentValueProbeResult` bleibt; KDoc aktualisiert
+      mit der korrekten Historie (port deleted, adapters live).
+- [x] KDoc-Verweise auf das gelöschte Interface in
+      `SequenceCapability`, `SequenceCapabilityDefaults`,
+      `SequenceDefinition`, `SequenceObjectRef`, `DiffOperation`
+      und `SequenceObjectRefTest` auf
+      `{Postgres,Mysql,Sqlite}SequenceCurrentValueProbe`
+      aktualisiert.
+- [x] `make ci` grün.
 
-### 4.3 Findings #2–6 *(mittel/niedrig)*
+### 4.3 Findings #2–6 *(mittel/niedrig)* — **erledigt 2026-06-01**
 
-Finding #3 wurde mit dem Phase-D-Slice mitgefixt (2026-06-01); die
-übrigen vier bleiben offen.
+Alle fünf Code-Review-Findings wurden zusammen mit dem
+Dead-Code-Cleanup adressiert.
 
 | # | Severity | Datei / Stelle | Status | Kurzbeschreibung |
 |---|---|---|---|---|
-| 2 | mittel | `AlterSequenceCurrentValue`-Render (PG-Codec) | offen | Sentinel `0L` rendert wörtlich `setval('seq', 0, true)` in plan-only/report-Output. Lösung: Render-Filter für Sentinel-Werte oder explizite Markierung im Report. |
-| 3 | mittel | `SegmentAwareMigrationExecutor.mapAtomicResultToTrace` | **erledigt 2026-06-01** | `statementsAttempted` zählte interne Follow-ups mit (Diagnostic-Überzählung). Fix: `mapAtomicResultToTrace` bekommt `protectedStatements`-Parameter und meldet nur deren Anzahl im `Applied`-Branch. |
-| 4 | niedrig | `SchemaMigrateRequest`-Validierung | offen | Stummer Fallback bei unbekanntem `--mysql/sqlite-named-sequences`-Wert; asymmetrisch zur `generate`-Validierung. Lösung: gleiches Validierungsverhalten wie bei `generate`. |
-| 5 | mittel | `Mysql/SqliteSequencePreserveRaceTest` | offen | Assertion `finalValue >= initial + writerAdvances` beweist nicht eindeutig, dass der Lock die Race geschlossen hat. Lösung: zusätzlich exakte Trace-Reihenfolge oder Lock-Wait-Counter prüfen. |
-| 6 | niedrig | LockTimeout-Decorator | offen | `lockTimeoutMillis` hardcodet; Test-only Issue. Lösung: Parameter aus Test-Setup durchreichen. |
+| 2 | mittel | `{Postgres,Mysql,Sqlite}DiffSequenceOps.renderAlterSequenceCurrentValue` | **erledigt 2026-06-01** | Sentinel `0L` (ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) rendert jetzt einen `-- atomic-preserve audit:`-Kommentar im UP-Pfad statt `setval('seq', 0, true)` / `UPDATE next_value = 0`. Unit-Tests pro Dialekt. |
+| 3 | mittel | `SegmentAwareMigrationExecutor.mapAtomicResultToTrace` | **erledigt 2026-06-01** | `statementsAttempted` zählte interne Follow-ups mit. Fix: `protectedStatements`-Parameter; `Applied`-Branch meldet nur deren Anzahl. |
+| 4 | niedrig | `SchemaMigratePreparation.validateRequest` | **erledigt 2026-06-01** | Stummer Fallback bei unbekanntem `--mysql/sqlite-named-sequences`-Wert. Fix: Exit-2 mit erwartetem Allowed-List-Hint analog zu `schema generate`; zusätzlich Dialekt-Kontext-Check nach `resolveDialect` (Flag nur valide für entsprechenden Target-Dialekt). Zwei neue Unit-Tests in `SchemaMigrateRunnerCliExitCodeTest`. |
+| 5 | mittel | `Mysql/SqliteSequencePreserveRaceTest` | **erledigt 2026-06-01** | Assertion `finalValue >= initial + writerAdvances` verstärkt um „während des 500 ms-Lock-Fensters macht der Writer ZERO Advances" (Counter-Snapshot inside protected callback). Pinnt den Row-Lock- (MySQL) bzw. RESERVED-Lock-Vertrag (SQLite) direkt. |
+| 6 | niedrig | `{Mysql,Sqlite}SchemaMigrateAtomicPreserveIntegrationTest` | **erledigt 2026-06-01** | MySQL: anonymous `tightTimeoutExecutor`-Decorator entfernt (war redundant — `runnerWith` nimmt `lockTimeoutMillis` bereits als Parameter). SQLite: `freshConnExecutor` (xerial-Pool-Workaround) in `freshConnExecutorWithTimeout(budgetMillis)` umgewandelt; Hardcode-Timeout durch Konstruktor-Parameter ersetzt. |
 
-**DoD F3** *(verbleibend nach Finding-#3-Fix)*
+**DoD F3** *(erledigt)*
 
-- [ ] Findings 2 + 5 gefixt (mittel-Severity).
-- [ ] Findings 4 + 6 gefixt oder explizit als „won't fix" mit
-      Begründung dokumentiert.
-- [ ] Keine Regression in den Atomic-Preserve-ITs.
+- [x] Findings 2, 3, 5 gefixt (mittel-Severity).
+- [x] Findings 4, 6 gefixt.
+- [x] Keine Regression in den Atomic-Preserve-ITs (`make ci` grün).
 
 ---
 
@@ -171,23 +183,31 @@ Finding #3 wurde mit dem Phase-D-Slice mitgefixt (2026-06-01); die
 
 ---
 
-## 6. Offene Fragen
+## 6. Offene Fragen *(geschlossen 2026-06-01)*
 
-- Soll Finding #1 als hotfix-Patch direkt nach 0.9.7 möglich
-  bleiben, falls er nicht mehr pre-Release reinpasst?
-- Wird der Dead-Code-Cleanup §4.2 vor oder nach dem Release
-  gemacht? (Wirkt sich auf die KDoc-Formulierung von
-  `SequenceCurrentValueProbe` in §3.2 aus.)
-- Phase D §4.1: reicht der heutige `:test:integration-concurrency`-
-  Aufbau für den Cross-Process-Stresstest, oder braucht es einen
-  zweiten echten JVM-Prozess via ProcessBuilder?
+- ~~Soll Finding #1 als hotfix-Patch direkt nach 0.9.7 möglich~~
+  ~~bleiben, falls er nicht mehr pre-Release reinpasst?~~ — Finding
+  #1 vor 0.9.7-Release gefixt.
+- ~~Wird der Dead-Code-Cleanup §4.2 vor oder nach dem Release~~
+  ~~gemacht?~~ — Cleanup ist Teil dieses Slices; Adapter-Klassen
+  bleiben live (DoD wurde während der Umsetzung korrigiert, siehe
+  §4.2).
+- ~~Phase D §4.1: reicht der heutige~~
+  ~~`:test:integration-concurrency`-Aufbau für den Cross-Process-~~
+  ~~Stresstest~~ — die drei
+  `{Postgres,Mysql,Sqlite}AtomicPreserveCrossPlanDeadlockTest`s
+  fahren zwei parallele Atomic-Executor-Calls in zwei Threads
+  innerhalb derselben JVM; das deckt den heute relevanten
+  Single-Process-Stresstest ab. Ein echter Cross-JVM-Stresstest
+  (ProcessBuilder mit zwei `schema migrate`-Subprozessen) bleibt
+  out-of-scope; das advisory-Lock-Verhalten ist dasselbe, der
+  zusätzliche Aufbau lohnt nicht.
 
 ---
 
 ## 7. Lebenszyklus
 
-Bei erstem Implementierungs-Commit eines Slice wandert dieser Slice
-(z. B. §3.1) aus diesem Dokument in einen eigenen Eintrag unter
-`../in-progress/` oder direkt ins Quelldokument als neuer Sub-
-Abschnitt. Nach Abschluss des kompletten Backlogs landet dieses
-Dokument in `../done/`.
+Mit dem Abschluss aller Slices (§3.1 + §3.2 + §4.1 + §4.2 + §4.3)
+am 2026-06-01 ist dieses Dokument vollständig abgearbeitet. Beim
+nächsten Roadmap-Sync (oder zum 0.9.7-Release-Tag) wandert es nach
+`../done/`.

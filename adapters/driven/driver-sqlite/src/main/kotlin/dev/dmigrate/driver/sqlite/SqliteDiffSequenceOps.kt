@@ -146,7 +146,24 @@ internal object SqliteDiffSequenceOps {
                 // 0.9.7 SQLite preserve-current-value Folge-Slice: UP
                 // targets `applySequenceRef` (the new name after a
                 // rename; the same name as the parent op otherwise).
-                ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue))
+                //
+                // Atomic-Preserve follow-up (Finding #2, 2026-06-01):
+                // the sentinel current-value (0L) marks the op as
+                // runtime-probed by `SqliteAtomicSequencePreserveExecutor`.
+                // Emit an audit comment instead of an `UPDATE` that
+                // would set `next_value = 0` if copy-pasted out of a
+                // report.
+                if (op.currentValue == DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) {
+                    ctx.emit(
+                        op,
+                        "-- atomic-preserve audit: UPDATE dmg_sequences for " +
+                            "${op.applySequenceRef.name} is probed + restored at " +
+                            "execute time inside the lock " +
+                            "(value not yet known at render time).",
+                    )
+                } else {
+                    ctx.emit(op, updateNextValueSql(op.applySequenceRef.name, op.currentValue))
+                }
             }
             SqliteRenderDirection.DOWN -> {
                 // 0.9.7 SQLite preserve-current-value Folge-Slice plan

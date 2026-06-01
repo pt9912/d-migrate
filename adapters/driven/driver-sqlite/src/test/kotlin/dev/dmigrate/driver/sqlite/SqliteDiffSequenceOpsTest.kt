@@ -285,6 +285,36 @@ class SqliteDiffSequenceOpsTest : FunSpec({
         sql shouldContain "WHERE \"name\" = 'old_seq'"
     }
 
+    test("AlterSequenceCurrentValue UP with ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE — emits audit comment, not UPDATE next_value = 0") {
+        // Atomic-Preserve follow-up (Finding #2, 2026-06-01): the
+        // sentinel current-value (0L) marks a follow-up as runtime-
+        // probed by `SqliteAtomicSequencePreserveExecutor`. The
+        // renderer MUST NOT emit `UPDATE dmg_sequences SET next_value
+        // = 0` for that op — that would reset the sequence
+        // destructively if anyone copy-pasted the plan SQL.
+        val op = DiffOperation.AlterSequenceCurrentValue(
+            id = "acv-sentinel",
+            objectRef = seqRef("s"),
+            pairId = "alter:s",
+            probeSequenceRef = seqObjRef("s"),
+            applySequenceRef = seqObjRef("s"),
+            currentValue = DiffOperation.AlterSequenceCurrentValue
+                .ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE,
+        )
+        val result = runUp(listOf(op))
+        val sql = result.statements.first().sql
+        sql shouldContain "atomic-preserve audit"
+        sql shouldContain "s"
+        // The avoided destructive form — `UPDATE ... SET next_value = 0`
+        // — must not appear as executable SQL. The audit comment text
+        // itself names UPDATE descriptively, which is fine; only the
+        // executable SQL shape must be absent.
+        result.statements.none { it.sql.contains("\"next_value\" = 0") } shouldBe true
+        result.statements.none { it.sql.contains("SET ") } shouldBe true
+        // And the line must be entirely a comment.
+        sql.trim().startsWith("-- ") shouldBe true
+    }
+
     test("AlterSequenceCurrentValue DOWN — rollbackImpossible (no restoreValue) emits skip") {
         val op = DiffOperation.AlterSequenceCurrentValue(
             id = "acv-create",

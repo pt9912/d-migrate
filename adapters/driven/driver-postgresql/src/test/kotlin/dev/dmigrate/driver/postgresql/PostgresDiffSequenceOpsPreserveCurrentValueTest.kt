@@ -136,4 +136,27 @@ class PostgresDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
         )
         up.statements.single().sql shouldBe "SELECT setval('weird''name', 42, true);"
     }
+
+    test("Up with ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE renders audit comment, not setval(0)") {
+        // Atomic-Preserve follow-up (Finding #2, 2026-06-01): a
+        // follow-up carrying the sentinel current-value (0L) must NOT
+        // render as `SELECT setval('seq', 0, true)` — that would be
+        // a destructive sequence-reset if copy-pasted out of a plan
+        // artefact. The renderer emits an audit comment instead;
+        // the executor probes + restores the real value at runtime.
+        val up = gen.generateUp(
+            synthesiseDiff(
+                preserveOp(
+                    currentValue = DiffOperation.AlterSequenceCurrentValue
+                        .ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE,
+                ),
+            ),
+            DdlGenerationOptions(),
+        )
+        val sql = up.statements.single().sql
+        sql.shouldContain("atomic-preserve audit")
+        sql.shouldContain("order_seq")
+        sql.shouldNotContain("setval(")
+        sql.shouldNotContain(", 0, ")
+    }
 })

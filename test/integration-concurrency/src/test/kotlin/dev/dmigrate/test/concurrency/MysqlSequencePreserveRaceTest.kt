@@ -115,12 +115,14 @@ class MysqlSequencePreserveRaceTest : FunSpec({
         val seqName = "race_atomic_mysql"
         val initial = 100L
         val writerAdvances = 50
+        val lockWindowSleepMillis = 500L
         bootstrap(seqName, initial)
 
         // Writer thread: 50 concurrent advances. Each advance is a
         // self-contained transaction so the atomic-preserve executor
         // can interleave its lock+probe+restore on the same row.
         val writerStart = CountDownLatch(1)
+        val writerAdvancesDone = java.util.concurrent.atomic.AtomicInteger(0)
         val writerThread = thread(start = true, name = "mysql-race-writer") {
             writerStart.await(10, TimeUnit.SECONDS)
             repeat(writerAdvances) {
@@ -132,6 +134,7 @@ class MysqlSequencePreserveRaceTest : FunSpec({
                         stmt.executeUpdate()
                     }
                 }
+                writerAdvancesDone.incrementAndGet()
                 // Brief pause so the atomic executor below has a
                 // realistic chance to interleave its lock window
                 // somewhere in the middle of the writer's loop.
@@ -162,12 +165,28 @@ class MysqlSequencePreserveRaceTest : FunSpec({
         )
         writerStart.countDown()
 
+        // Finding #5 (2026-06-01): capture writer-advance counters at
+        // the start and end of the lock window so the test can prove
+        // the lock actually blocked the writer for the duration of
+        // the protected callback. The plain
+        // `finalValue >= initial + writerAdvances` assertion below
+        // would pass even with a zero-length lock — it only proves
+        // the writer's progress survived, not that the lock did its
+        // job. The strengthened assertion below pins the row-lock
+        // contract directly.
+        val advancesAtLockStart = java.util.concurrent.atomic.AtomicInteger(-1)
+        val advancesAtLockEnd = java.util.concurrent.atomic.AtomicInteger(-1)
+
         openConnection().use { atomicConn ->
             val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
-                // No-op protected callback. The race-closure proof
-                // does not depend on what runs inside the protected
-                // window — it depends on the row lock blocking the
-                // writer for the duration of probe+restore.
+                // The MySQL executor has already taken `SELECT ...
+                // FOR UPDATE` on the row before this callback runs.
+                // Snapshot writer-state, hold the lock for a fixed
+                // window, snapshot again. The row lock must keep the
+                // writer's UPDATE blocked for the entire window.
+                advancesAtLockStart.set(writerAdvancesDone.get())
+                Thread.sleep(lockWindowSleepMillis)
+                advancesAtLockEnd.set(writerAdvancesDone.get())
                 AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -176,10 +195,19 @@ class MysqlSequencePreserveRaceTest : FunSpec({
         writerThread.join(TimeUnit.SECONDS.toMillis(30))
         writerThread.isAlive shouldBe false
 
-        // Race closed: the writer's advances are preserved. In the
-        // legacy non-atomic path the final value would equal
-        // `initial` (stale restore overwrote all writer progress).
+        // (1) Race closed: the writer's advances are preserved. In
+        //     the legacy non-atomic path the final value would equal
+        //     `initial` (stale restore overwrote all writer progress).
         val finalValue = nextValueOf(seqName)
         finalValue shouldBeGreaterThanOrEqual (initial + writerAdvances)
+
+        // (2) Finding #5 strengthening: during the lock window the
+        //     writer made ZERO additional advances. Without the row
+        //     lock, a writer with 2 ms sleeps would have slipped
+        //     ~250 advances through a 500 ms window. Zero is the
+        //     only passing observation — anything > 0 means a writer
+        //     UPDATE completed while the executor was holding the
+        //     row lock, contradicting the FOR UPDATE contract.
+        (advancesAtLockEnd.get() - advancesAtLockStart.get()) shouldBe 0
     }
 })

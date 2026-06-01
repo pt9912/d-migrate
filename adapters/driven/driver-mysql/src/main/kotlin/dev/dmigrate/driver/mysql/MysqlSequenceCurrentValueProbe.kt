@@ -2,7 +2,6 @@ package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
-import dev.dmigrate.driver.SequenceCurrentValueProbe
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import java.sql.Connection
 import java.sql.SQLException
@@ -65,7 +64,7 @@ import java.sql.SQLException
  * The probe never throws — every failure path produces a typed
  * outcome the Sub-Slice D planner-side gate consumes uniformly.
  */
-object MysqlSequenceCurrentValueProbe : SequenceCurrentValueProbe {
+object MysqlSequenceCurrentValueProbe {
 
     /** MySQL error code for "Base table or view not found". */
     const val MYSQL_ERR_NO_SUCH_TABLE: Int = 1146
@@ -88,7 +87,7 @@ object MysqlSequenceCurrentValueProbe : SequenceCurrentValueProbe {
     /** Diagnostic code for every other [SQLException]. */
     const val CODE_QUERY_FAILED: String = "PROBE_QUERY_FAILED"
 
-    override fun probe(
+    fun probe(
         connection: Connection,
         sequenceRef: SequenceObjectRef,
     ): SequenceCurrentValueProbeResult {

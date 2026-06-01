@@ -2,7 +2,6 @@ package dev.dmigrate.driver.postgresql
 
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.SequenceCurrentValueProbe
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import dev.dmigrate.driver.SqlIdentifiers
 import java.sql.Connection
@@ -10,8 +9,7 @@ import java.sql.SQLException
 
 /**
  * 0.9.7 preserve-current-value Sub-Slice B (2026-05-21): PostgreSQL
- * implementation of [SequenceCurrentValueProbe]. Reads the runtime
- * state of a single sequence via:
+ * sequence probe. Reads the runtime state of a single sequence via:
  *
  * ```sql
  * SELECT last_value, is_called FROM "<schema>"."<name>"
@@ -46,7 +44,7 @@ import java.sql.SQLException
  * The probe never throws — every exception path produces a typed
  * outcome the planner-side gate consumes uniformly.
  */
-object PostgresSequenceCurrentValueProbe : SequenceCurrentValueProbe {
+object PostgresSequenceCurrentValueProbe {
 
     /** SQLSTATE for an undefined relation (PG manual §52.5). */
     const val SQLSTATE_UNDEFINED_TABLE: String = "42P01"
@@ -60,7 +58,7 @@ object PostgresSequenceCurrentValueProbe : SequenceCurrentValueProbe {
     /** Diagnostic code stamped on every other `Failed` outcome. */
     const val CODE_QUERY_FAILED: String = "PROBE_QUERY_FAILED"
 
-    override fun probe(
+    fun probe(
         connection: Connection,
         sequenceRef: SequenceObjectRef,
     ): SequenceCurrentValueProbeResult {

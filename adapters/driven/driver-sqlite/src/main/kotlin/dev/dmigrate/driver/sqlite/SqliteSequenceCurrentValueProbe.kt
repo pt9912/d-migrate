@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.sqlite
 
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
-import dev.dmigrate.driver.SequenceCurrentValueProbe
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
 import java.sql.Connection
 import java.sql.SQLException
@@ -52,7 +51,7 @@ import java.sql.SQLException
  * Outcome, das die [SequencePreserveStage]-Routing-Tabelle uniform
  * konsumiert.
  */
-object SqliteSequenceCurrentValueProbe : SequenceCurrentValueProbe {
+object SqliteSequenceCurrentValueProbe {
 
     /** SQLite-Fehlercode `SQLITE_PERM` — Zugriff verweigert. */
     const val SQLITE_ERR_PERM: Int = 3
@@ -81,7 +80,7 @@ object SqliteSequenceCurrentValueProbe : SequenceCurrentValueProbe {
     /** Managed-by-Wert, der eine d-migrate-managed Zeile signalisiert. */
     private const val SUPPORTED_MANAGED_BY: String = SqliteSequenceNaming.MANAGED_BY
 
-    override fun probe(
+    fun probe(
         connection: Connection,
         sequenceRef: SequenceObjectRef,
     ): SequenceCurrentValueProbeResult {

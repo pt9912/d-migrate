@@ -8,8 +8,9 @@ import io.kotest.matchers.shouldNotBe
  * 0.9.7 preserve-current-value Sub-Slice A: pins the
  * [SequenceObjectRef] value contract that
  * [DiffOperation.AlterSequenceCurrentValue] and the dialect-side
- * `SequenceCurrentValueProbe` adapters depend on. Pure data-class
- * test — equality, default-`schema = null`, and dialect-branching.
+ * `{Postgres,Mysql,Sqlite}SequenceCurrentValueProbe` adapters depend
+ * on. Pure data-class test — equality, default-`schema = null`, and
+ * dialect-branching.
  */
 class SequenceObjectRefTest : FunSpec({
 

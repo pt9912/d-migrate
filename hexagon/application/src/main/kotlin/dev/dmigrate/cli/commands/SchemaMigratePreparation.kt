@@ -1,6 +1,8 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.migration.DiffDdlGenerator
 import java.nio.file.Path
 
@@ -90,6 +92,30 @@ internal class SchemaMigratePreparation(
         val effectiveDialect = resolveDialect(request, targetResolved)
             ?: return SchemaMigratePreparationResult.ExitEarly(2)
 
+        // Atomic-Preserve follow-up (Finding #4, 2026-06-01): mirror
+        // `schema generate`'s dialect-context check. A
+        // `--mysql-named-sequences` set against a non-MySQL target (or
+        // `--sqlite-named-sequences` against a non-SQLite target) is
+        // a structurally meaningless combination — surface it as an
+        // Exit-2 validation error so the operator doesn't think the
+        // flag was applied.
+        if (request.mysqlNamedSequences != null && effectiveDialect != DatabaseDialect.MYSQL) {
+            printError(
+                "--mysql-named-sequences is only valid with a MySQL target, " +
+                    "not ${effectiveDialect.name.lowercase()}.",
+                request.source,
+            )
+            return SchemaMigratePreparationResult.ExitEarly(2)
+        }
+        if (request.sqliteNamedSequences != null && effectiveDialect != DatabaseDialect.SQLITE) {
+            printError(
+                "--sqlite-named-sequences is only valid with a SQLite target, " +
+                    "not ${effectiveDialect.name.lowercase()}.",
+                request.source,
+            )
+            return SchemaMigratePreparationResult.ExitEarly(2)
+        }
+
         val renderer = rendererFor(effectiveDialect)
         if (renderer == null) {
             printError("No renderer registered for dialect ${effectiveDialect.name}", request.source)
@@ -169,6 +195,35 @@ internal class SchemaMigratePreparation(
         }
         if (!request.generateRollback && request.rollbackOutput != null) {
             printError("--rollback-output requires --generate-rollback.", request.source)
+            return 2
+        }
+        // Atomic-Preserve follow-up (Finding #4, 2026-06-01): mirror
+        // `schema generate`'s parseability check for the named-sequences
+        // flags. Without this, a typo like
+        // `--sqlite-named-sequences helpr_table` falls through silently
+        // because `SqliteNamedSequenceMode.fromCliName(...)` returns
+        // null and the downstream `SequencePreserveStage` skips its
+        // helper-table-mode branch — the operator only finds out via
+        // a `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` blocker that doesn't
+        // surface the typo.
+        if (request.mysqlNamedSequences != null &&
+            MysqlNamedSequenceMode.fromCliName(request.mysqlNamedSequences) == null
+        ) {
+            printError(
+                "Unknown --mysql-named-sequences value '${request.mysqlNamedSequences}'. " +
+                    "Allowed: action_required, helper_table",
+                request.source,
+            )
+            return 2
+        }
+        if (request.sqliteNamedSequences != null &&
+            SqliteNamedSequenceMode.fromCliName(request.sqliteNamedSequences) == null
+        ) {
+            printError(
+                "Unknown --sqlite-named-sequences value '${request.sqliteNamedSequences}'. " +
+                    "Allowed: action_required, helper_table",
+                request.source,
+            )
             return 2
         }
         return null

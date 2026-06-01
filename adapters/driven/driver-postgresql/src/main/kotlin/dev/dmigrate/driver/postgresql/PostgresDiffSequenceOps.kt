@@ -82,6 +82,26 @@ internal object PostgresDiffSequenceOps {
         ctx: PostgresDiffRenderContext,
     ) {
         if (ctx.direction == PostgresRenderDirection.UP) {
+            // Atomic-Preserve follow-up (Finding #2, 2026-06-01): a
+            // [currentValue] of [ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE]
+            // (0L) is a marker indicating the value will be probed at
+            // execute time by `PostgresAtomicSequencePreserveExecutor`,
+            // not the real runtime `last_value`. Rendering a literal
+            // `setval('seq', 0, true)` would mis-describe the operation
+            // in plan-only / report artefacts and execute as a
+            // destructive sequence-reset if anyone copy-pasted it. We
+            // emit an audit comment instead — the live-execute path
+            // already filters this op out via `internalFollowUpIds`.
+            if (op.currentValue == DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE) {
+                ctx.emit(
+                    op,
+                    "-- atomic-preserve audit: setval for ${op.applySequenceRef.name} is " +
+                        "probed + restored at execute time inside the lock " +
+                        "(value not yet known at render time).",
+                    PostgresDiffRenderContext.POSTGRES_METADATA_HINTS,
+                )
+                return
+            }
             renderSetval(
                 op = op,
                 ctx = ctx,

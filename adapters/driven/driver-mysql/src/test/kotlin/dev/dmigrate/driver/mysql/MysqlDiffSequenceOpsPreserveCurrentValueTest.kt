@@ -163,4 +163,34 @@ class MysqlDiffSequenceOpsPreserveCurrentValueTest : FunSpec({
         val ref = mysqlRef("order_seq")
         MysqlSequenceSupportNaming.lookupKey(ref) shouldBe "order_seq"
     }
+
+    test("Up with ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE renders audit comment, not UPDATE next_value = 0") {
+        // Atomic-Preserve follow-up (Finding #2, 2026-06-01): the
+        // sentinel current-value (0L) marks a follow-up as runtime-
+        // probed by `MysqlAtomicSequencePreserveExecutor`. The
+        // renderer MUST NOT emit `UPDATE dmg_sequences SET next_value
+        // = 0` for that op — copy-pasting the rendered SQL from a
+        // plan artefact would reset the sequence destructively. The
+        // executor handles the real probe + restore at execute time.
+        val up = gen.generateUp(
+            synthesiseDiff(
+                preserveOp(
+                    currentValue = DiffOperation.AlterSequenceCurrentValue
+                        .ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE,
+                ),
+            ),
+            helperOptions,
+        )
+        val sql = up.statements.single().sql
+        sql.shouldContain("atomic-preserve audit")
+        sql.shouldContain("order_seq")
+        // The avoided destructive forms — `UPDATE ... SET next_value = 0`
+        // — must not appear as executable SQL. The audit comment text
+        // itself names them descriptively, which is fine; only the
+        // executable SQL shape must be absent.
+        sql.shouldNotContain("`next_value` = 0")
+        sql.shouldNotContain("SET ")
+        // And the line must be entirely a comment (starts with `-- `).
+        sql.trim().startsWith("-- ") shouldBe true
+    }
 })

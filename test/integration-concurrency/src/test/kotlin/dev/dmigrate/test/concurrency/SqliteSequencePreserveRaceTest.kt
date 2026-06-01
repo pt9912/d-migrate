@@ -71,9 +71,11 @@ class SqliteSequencePreserveRaceTest : FunSpec({
     test("SQLite atomic-preserve serializes concurrent writers — no stale restore (race closed)") {
         val initial = 100L
         val writerAdvances = 50
+        val lockWindowSleepMillis = 500L
         val url = jdbcUrl(tmpDbFile)
 
         val writerStart = CountDownLatch(1)
+        val writerAdvancesDone = java.util.concurrent.atomic.AtomicInteger(0)
         val writerThread = thread(start = true, name = "sqlite-race-writer") {
             writerStart.await(10, TimeUnit.SECONDS)
             repeat(writerAdvances) {
@@ -85,6 +87,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
                         stmt.executeUpdate()
                     }
                 }
+                writerAdvancesDone.incrementAndGet()
                 Thread.sleep(2)
             }
         }
@@ -105,8 +108,23 @@ class SqliteSequencePreserveRaceTest : FunSpec({
         )
         writerStart.countDown()
 
+        // Finding #5 (2026-06-01): capture writer-advance counters at
+        // the start and end of the lock window so the test can prove
+        // SQLite's RESERVED lock (acquired by BEGIN IMMEDIATE) blocks
+        // the writer for the duration of the protected callback.
+        val advancesAtLockStart = java.util.concurrent.atomic.AtomicInteger(-1)
+        val advancesAtLockEnd = java.util.concurrent.atomic.AtomicInteger(-1)
+
         openConnection(url).use { atomicConn ->
             val result = executor.execute(atomicConn, batch, lockTimeoutMillis = 30_000L) { _, _ ->
+                // The SQLite executor has already issued BEGIN
+                // IMMEDIATE before this callback runs; the RESERVED
+                // lock is held until commit. Any writer UPDATE on a
+                // different connection blocks until the lock
+                // releases.
+                advancesAtLockStart.set(writerAdvancesDone.get())
+                Thread.sleep(lockWindowSleepMillis)
+                advancesAtLockEnd.set(writerAdvancesDone.get())
                 AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 0)
             }
             result.shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
@@ -115,6 +133,7 @@ class SqliteSequencePreserveRaceTest : FunSpec({
         writerThread.join(TimeUnit.SECONDS.toMillis(30))
         writerThread.isAlive shouldBe false
 
+        // (1) Race closed: the writer's advances are preserved.
         val finalValue = openConnection(url).use { c ->
             c.prepareStatement(
                 "SELECT \"next_value\" FROM \"dmg_sequences\" WHERE \"name\" = ?",
@@ -127,6 +146,13 @@ class SqliteSequencePreserveRaceTest : FunSpec({
             }
         }
         finalValue shouldBeGreaterThanOrEqual (initial + writerAdvances)
+
+        // (2) Finding #5 strengthening: during the 500 ms RESERVED
+        //     lock window the writer made ZERO additional advances.
+        //     Without the lock, a 2 ms-pause writer would slip ~250
+        //     UPDATEs through a 500 ms window. Zero is the only
+        //     passing observation.
+        (advancesAtLockEnd.get() - advancesAtLockStart.get()) shouldBe 0
     }
 })
 

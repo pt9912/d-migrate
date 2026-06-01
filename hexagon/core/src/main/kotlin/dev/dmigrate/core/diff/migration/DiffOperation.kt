@@ -843,11 +843,13 @@ sealed interface DiffOperation {
      * 0.9.7 preserve-current-value Sub-Slice A: follow-up operation
      * the planner emits **after** a `CreateSequence` / `AlterSequence` /
      * `RenameSequence` whose `SequenceDefinition.preserveCurrentValue`
-     * is `true`. Carries the live `currentValue` from the
-     * `SequenceCurrentValueProbe` plus all reversibility metadata —
-     * the renderer-side translation is dialect-specific
+     * is `true`. Carries the live `currentValue` from the dialect-
+     * specific probe adapter
+     * (`{Postgres,Mysql,Sqlite}SequenceCurrentValueProbe`, invoked
+     * inside the atomic-preserve lock) plus all reversibility metadata
+     * — the renderer-side translation is dialect-specific
      * (`SELECT setval(...)` for PG, `UPDATE dmg_sequences SET
-     * next_value = ...` for MySQL).
+     * next_value = ...` for MySQL / SQLite).
      *
      * Why a dedicated subtype rather than reusing `AlterSequence`:
      * the render contract is fundamentally different. `AlterSequence`

@@ -128,6 +128,38 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
     fun rawConnection(): Connection =
         DriverManager.getConnection("jdbc:sqlite:${dbPath.absolutePathString()}")
 
+    /**
+     * Atomic-Preserve follow-up (Finding #6, 2026-06-01): decorator
+     * that runs the real SQLite executor against a fresh
+     * DriverManager connection (xerial-sqlite Hikari-pool quirk: the
+     * pooled `BEGIN IMMEDIATE` does not observe a holder's RESERVED
+     * lock that was acquired via raw DriverManager — Phase B's
+     * standalone IT works because it uses TWO DriverManager
+     * connections without a pool). The lock-timeout budget is the
+     * factory's [budgetMillis] parameter so the test setup, not the
+     * decorator body, is the source of truth.
+     */
+    fun freshConnExecutorWithTimeout(
+        budgetMillis: Long,
+    ): AtomicSequencePreserveExecutor = object : AtomicSequencePreserveExecutor {
+        private val real = SqliteAtomicSequencePreserveExecutor()
+        override fun execute(
+            connection: Connection,
+            batch: AtomicSequencePreserveBatch,
+            lockTimeoutMillis: Long,
+            executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+        ): AtomicSequencePreserveResult =
+            rawConnection().use { freshConn ->
+                freshConn.autoCommit = true
+                real.execute(
+                    connection = freshConn,
+                    batch = batch,
+                    lockTimeoutMillis = budgetMillis,
+                    executeProtectedOperations = executeProtectedOperations,
+                )
+            }
+    }
+
     fun runnerWith(
         sourceSchema: SchemaDefinition,
         targetSchema: SchemaDefinition,
@@ -271,24 +303,13 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
             // pool). Mirror that: open a fresh DriverManager connection
             // for the atomic transaction so the test sees the same
             // contention path Phase B exercises.
-            val freshConnExecutor = object : AtomicSequencePreserveExecutor {
-                private val real = SqliteAtomicSequencePreserveExecutor()
-                override fun execute(
-                    connection: Connection,
-                    batch: AtomicSequencePreserveBatch,
-                    lockTimeoutMillis: Long,
-                    executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
-                ): AtomicSequencePreserveResult =
-                    rawConnection().use { freshConn ->
-                        freshConn.autoCommit = true
-                        real.execute(
-                            connection = freshConn,
-                            batch = batch,
-                            lockTimeoutMillis = 500L,
-                            executeProtectedOperations = executeProtectedOperations,
-                        )
-                    }
-            }
+            // Atomic-Preserve follow-up (Finding #6, 2026-06-01): the
+            // decorator's reason for existing is the raw-connection
+            // bypass (xerial-sqlite pool quirk documented above), not
+            // the lock timeout. Hoist the timeout into the caller so
+            // the test setup is the single source of truth for the
+            // budget.
+            val freshConnExecutor = freshConnExecutorWithTimeout(budgetMillis = 500L)
             val exit = runnerWith(source, target, atomicExecutorOverride = freshConnExecutor)
                 .execute(migrateRequest())
             // LockTimeout maps onto ExecutionTrace.executionError →

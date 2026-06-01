@@ -105,6 +105,32 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         }
     }
 
+    /**
+     * Atomic-Preserve follow-up (Finding #6, 2026-06-01): decorator
+     * that takes a parametric MySQL `lockTimeoutMillis` override
+     * instead of hardcoding it inside the executor body.
+     * `SchemaMigrateRunner` itself does not yet expose
+     * `lockTimeoutMillis` (it's pinned to
+     * `SchemaMigrateExecutionStage.DEFAULT_LOCK_TIMEOUT_MILLIS = 5_000L`),
+     * so a tighter budget for the LockTimeout test has to come in via
+     * a wrapping atomic executor.
+     */
+    fun tightTimeoutExecutor(budgetMillis: Long): AtomicSequencePreserveExecutor =
+        object : AtomicSequencePreserveExecutor {
+            private val real = MysqlAtomicSequencePreserveExecutor()
+            override fun execute(
+                connection: Connection,
+                batch: AtomicSequencePreserveBatch,
+                lockTimeoutMillis: Long,
+                executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
+            ): AtomicSequencePreserveResult = real.execute(
+                connection = connection,
+                batch = batch,
+                lockTimeoutMillis = budgetMillis,
+                executeProtectedOperations = executeProtectedOperations,
+            )
+        }
+
     fun runnerWith(
         sourceSchema: SchemaDefinition,
         targetSchema: SchemaDefinition,
@@ -245,28 +271,18 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
                     "e2e_mysql_lock" to SequenceDefinition(start = 100L, increment = 1L, preserveCurrentValue = true),
                 ),
             )
-            // Use the executor directly with a tight lockTimeoutMillis via
-            // a wrapper that pins it. The lock timeout flows through
-            // SchemaMigrateExecutionStage's default (5s); we want a
-            // faster timeout. Wrap the real executor in a decorator
-            // that forces the timeout to 1s.
-            val tightTimeoutExecutor = object : AtomicSequencePreserveExecutor {
-                private val real = MysqlAtomicSequencePreserveExecutor()
-                override fun execute(
-                    connection: Connection,
-                    batch: AtomicSequencePreserveBatch,
-                    lockTimeoutMillis: Long,
-                    executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
-                ): AtomicSequencePreserveResult = real.execute(
-                    connection = connection,
-                    batch = batch,
-                    // override to 1s
-                    lockTimeoutMillis = 1_000L,
-                    executeProtectedOperations = executeProtectedOperations,
-                )
-            }
-            val exit = runnerWith(source, target, atomicExecutorOverride = tightTimeoutExecutor)
-                .execute(migrateRequest())
+            // Atomic-Preserve follow-up (Finding #6, 2026-06-01): the
+            // production pipeline doesn't expose `lockTimeoutMillis`
+            // through `SchemaMigrateRunner`, so the IT has to inject
+            // a tighter budget via a decorator. The previous slice
+            // hardcoded `1_000L` inside the decorator body; the
+            // factory `tightTimeoutExecutor(budgetMillis)` below
+            // hoists that into a constructor parameter so the test
+            // call site is the single source of truth.
+            val exit = runnerWith(
+                source, target,
+                atomicExecutorOverride = tightTimeoutExecutor(budgetMillis = 1_000L),
+            ).execute(migrateRequest())
             // LockTimeout maps onto ExecutionTrace.executionError →
             // runner exits 5; the post-condition that matters is
             // "no partial apply".

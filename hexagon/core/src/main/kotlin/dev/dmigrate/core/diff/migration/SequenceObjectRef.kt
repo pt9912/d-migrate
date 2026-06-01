@@ -2,12 +2,13 @@ package dev.dmigrate.core.diff.migration
 
 /**
  * 0.9.7 preserve-current-value Sub-Slice A: dialect-aware reference to
- * a named sequence object. Carries enough information for a
- * `SequenceCurrentValueProbe` adapter (PG, MySQL) to resolve the
- * dialect-specific lookup key — `SELECT last_value FROM <schema>.<name>`
- * for PG, `SELECT next_value FROM dmg_sequences WHERE name = <key>`
- * for MySQL — without having to re-derive dialect routing at the port
- * boundary.
+ * a named sequence object. Carries enough information for the
+ * dialect-specific probe adapter
+ * (`{Postgres,Mysql,Sqlite}SequenceCurrentValueProbe`) to resolve the
+ * lookup key — `SELECT last_value FROM <schema>.<name>` for PG,
+ * `SELECT next_value FROM dmg_sequences WHERE name = <key>` for
+ * MySQL / SQLite — without having to re-derive dialect routing at
+ * the port boundary.
  *
  * Lives in `hexagon:core` because [DiffOperation.AlterSequenceCurrentValue]
  * carries it as a structural field. `hexagon:core` cannot depend on
