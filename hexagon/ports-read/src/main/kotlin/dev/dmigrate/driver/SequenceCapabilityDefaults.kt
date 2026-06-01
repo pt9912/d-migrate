@@ -61,20 +61,26 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = false,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = true,
-        // Atomic-Preserve Phase A/B: PG's actual lock strategy is
+        // Atomic-Preserve Phase C.4: PG's lock strategy is
         // `pg_advisory_xact_lock(hashtext(...))` plus `SET LOCAL
-        // lock_timeout` — the original plan-doc proposal `LOCK TABLE
-        // <seq> IN ACCESS EXCLUSIVE MODE` proved un-implementable in
-        // Phase B.2 (PG refuses the statement against sequence
-        // relations and `nextval` is by-design lock-free). See
-        // `sequence-preserve-atomic-lock-plan.md` §4.1 Korrektur.
-        // The executor (`PostgresAtomicSequencePreserveExecutor`)
-        // exists since Phase B.2 but is not yet wired into the
-        // SchemaMigrate pipeline — Phase C.4 will flip this flag to
-        // `true` and populate `transactionalProtectedSequenceOperations`.
-        supportsAtomicPreserve = false,
+        // lock_timeout` (§4.1 Korrektur). The
+        // `PostgresAtomicSequencePreserveExecutor` is wired into the
+        // SchemaMigrate pipeline via `AtomicSequencePreserveRunner`
+        // and `AtomicSequencePreserveDispatcher`; capability flip is
+        // safe even before C.1 because Stage does not yet read the
+        // flag (master-grün invariant). `supportsAtomicPreserveAllInPlan`
+        // stays `false` until Phase D ships the cross-plan deadlock
+        // proof. The protected-operation allowlist mirrors today's
+        // Stage candidates (CreateSequence / AlterSequence /
+        // RenameSequence); PG executes all three without implicit
+        // commit, so all three are inside the atomic window.
+        supportsAtomicPreserve = true,
         supportsAtomicPreserveAllInPlan = false,
-        transactionalProtectedSequenceOperations = emptySet(),
+        transactionalProtectedSequenceOperations = setOf(
+            ProtectedOperationId("CreateSequence"),
+            ProtectedOperationId("AlterSequence"),
+            ProtectedOperationId("RenameSequence"),
+        ),
     )
 
     private val MySQL = SequenceCapability(
@@ -86,20 +92,23 @@ object SequenceCapabilityDefaults {
         emitsCachePreallocationWarning = true,
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        // Atomic-Preserve Phase A/B: MySQL's lock strategy
+        // Atomic-Preserve Phase C.4: MySQL's lock strategy
         // (`SELECT … FOR UPDATE` on `dmg_sequences` +
-        // `SET SESSION innodb_lock_wait_timeout`) is documented in
-        // `sequence-preserve-atomic-lock-plan.md` §4.2. Several DDL
+        // `SET SESSION innodb_lock_wait_timeout`, §4.2). Several DDL
         // statements (`ALTER TABLE`, `CREATE INDEX`) issue implicit
         // commits on MySQL and therefore cannot live inside the
-        // atomic transaction — the empty
-        // `transactionalProtectedSequenceOperations` set is a positive
-        // allowlist that Phase C.4 wiring fills with the IDs the
-        // `MysqlAtomicSequencePreserveExecutor` declares as
-        // implicit-commit-safe.
-        supportsAtomicPreserve = false,
+        // atomic transaction. The allowlist below covers only the
+        // sequence-bearing DiffOperation kinds whose rendered SQL is
+        // `INSERT`/`UPDATE` against the `dmg_sequences` helper table
+        // — those run cleanly inside `START TRANSACTION` without
+        // implicit commit.
+        supportsAtomicPreserve = true,
         supportsAtomicPreserveAllInPlan = false,
-        transactionalProtectedSequenceOperations = emptySet(),
+        transactionalProtectedSequenceOperations = setOf(
+            ProtectedOperationId("CreateSequence"),
+            ProtectedOperationId("AlterSequence"),
+            ProtectedOperationId("RenameSequence"),
+        ),
     )
 
     private val SQLite = SequenceCapability(
@@ -120,18 +129,23 @@ object SequenceCapabilityDefaults {
         // currently selected.
         supportsCurrentValuePreserve = true,
         supportsOwnedBy = false,
-        // Atomic-Preserve Phase A/B: SQLite's `BEGIN IMMEDIATE` plus
-        // `PRAGMA busy_timeout` strategy is documented in
-        // `sequence-preserve-atomic-lock-plan.md` §4.3. RESERVED-lock
-        // semantics mean SQLite blocks every concurrent writer for
-        // the entire transaction window — the
-        // `SqliteAtomicSequencePreserveExecutor` (Phase B.4) keeps
-        // the protected-operation surface tight; Phase C.4 wiring
-        // declares which `ProtectedOperationId`s are safe inside the
-        // RESERVED window. `false` until C.4 lands.
-        supportsAtomicPreserve = false,
+        // Atomic-Preserve Phase C.4: SQLite's `BEGIN IMMEDIATE` plus
+        // `PRAGMA busy_timeout` strategy (§4.3). RESERVED-lock
+        // semantics block every concurrent writer for the entire
+        // transaction window, so the allowlist intentionally stays
+        // tight: only the three sequence-bearing kinds whose SQL is
+        // `INSERT`/`UPDATE` against the `dmg_sequences` helper table.
+        // Anything broader (table rebuilds, ALTER TABLE … RENAME)
+        // would extend the RESERVED window and is excluded by
+        // omission, surfacing as `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
+        // when Stage classifies a candidate of that kind.
+        supportsAtomicPreserve = true,
         supportsAtomicPreserveAllInPlan = false,
-        transactionalProtectedSequenceOperations = emptySet(),
+        transactionalProtectedSequenceOperations = setOf(
+            ProtectedOperationId("CreateSequence"),
+            ProtectedOperationId("AlterSequence"),
+            ProtectedOperationId("RenameSequence"),
+        ),
     )
 
     fun forDialect(dialect: DatabaseDialect): SequenceCapability = when (dialect) {

@@ -13,6 +13,21 @@ import io.kotest.matchers.shouldBe
  */
 class SequenceCapabilityTest : FunSpec({
 
+    // Atomic-Preserve Phase C.4 (2026-06-01): the per-dialect
+    // defaults flipped `supportsAtomicPreserve` to `true` for
+    // PG/MySQL/SQLite once the executor + dispatcher wiring landed.
+    // `supportsAtomicPreserveAllInPlan` stays `false` until Phase D
+    // ships the cross-plan deadlock proof. The protected-operation
+    // allowlist mirrors today's Stage candidates (CreateSequence /
+    // AlterSequence / RenameSequence). The per-dialect tests below
+    // pin every field explicitly so a future drift in any flag has
+    // to come through this test.
+    val atomicPreserveAllowlist: Set<ProtectedOperationId> = setOf(
+        ProtectedOperationId("CreateSequence"),
+        ProtectedOperationId("AlterSequence"),
+        ProtectedOperationId("RenameSequence"),
+    )
+
     test("PostgreSQL default: full support, cache has runtime preallocation (no W114)") {
         SequenceCapabilityDefaults.forDialect(DatabaseDialect.POSTGRESQL) shouldBe SequenceCapability(
             supportsNamedSequences = true,
@@ -23,6 +38,9 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = false,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = true,
+            supportsAtomicPreserve = true,
+            supportsAtomicPreserveAllInPlan = false,
+            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
@@ -36,6 +54,9 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
+            supportsAtomicPreserve = true,
+            supportsAtomicPreserveAllInPlan = false,
+            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
@@ -49,24 +70,25 @@ class SequenceCapabilityTest : FunSpec({
             emitsCachePreallocationWarning = true,
             supportsCurrentValuePreserve = true,
             supportsOwnedBy = false,
+            supportsAtomicPreserve = true,
+            supportsAtomicPreserveAllInPlan = false,
+            transactionalProtectedSequenceOperations = atomicPreserveAllowlist,
         )
     }
 
-    test("Atomic-Preserve Phase A: all dialects default to non-atomic (capability fields documented, executor not wired yet)") {
-        // sequence-preserve-atomic-lock-plan.md Phase A: the
-        // capability matrix is committed (supportsAtomicPreserve,
-        // supportsAtomicPreserveAllInPlan,
-        // transactionalProtectedSequenceOperations) but every dialect
-        // still routes through the two-transaction fallback. Phase B
-        // adds the executor implementations that flip these flags per
-        // dialect — when that lands, this test breaks deliberately so
-        // the Phase-B commit cannot ship without an explicit capability
-        // update.
+    test("Atomic-Preserve Phase C.4: every dialect supports atomic preserve with the kind allowlist") {
+        // sequence-preserve-atomic-lock-plan.md Phase C.4: capability
+        // flag flip + populated allowlist landed once
+        // SchemaMigrateWiring instantiates the executor dispatcher.
+        // Stage (C.1) still reads neither flag nor allowlist — the
+        // master-grün invariant means the heutige Probe-in-Stage path
+        // continues until C.1 lands. `supportsAtomicPreserveAllInPlan`
+        // stays `false` until Phase D's deadlock proof flips it.
         DatabaseDialect.values().forEach { dialect ->
             val capability = SequenceCapabilityDefaults.forDialect(dialect)
-            capability.supportsAtomicPreserve shouldBe false
+            capability.supportsAtomicPreserve shouldBe true
             capability.supportsAtomicPreserveAllInPlan shouldBe false
-            capability.transactionalProtectedSequenceOperations shouldBe emptySet<ProtectedOperationId>()
+            capability.transactionalProtectedSequenceOperations shouldBe atomicPreserveAllowlist
         }
     }
 })
