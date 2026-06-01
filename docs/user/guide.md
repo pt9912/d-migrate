@@ -657,9 +657,22 @@ markiert ist, faltet `schema migrate --execute` den laufenden Wert-Lese-
 Schritt (Probe), die geschuetzten DDL-Statements
 (`CreateSequence`/`AlterSequence`/`RenameSequence`) und den
 Restore-Schritt in eine einzige Transaktion unter Per-Dialekt-Lock.
-Manueller `UPDATE dmg_sequences`-Schritt entfaellt; ein gleichzeitig
-laufender App-`nextval` kann zwischen Probe und Restore keine Luecke
-mehr reissen.
+Manueller `UPDATE dmg_sequences`-Schritt entfaellt.
+
+Wie weit der Lock reicht, ist **dialektabhaengig** — Restrisiken siehe
+unten:
+
+- **MySQL / SQLite**: der Lock blockiert auch App-seitige
+  `dmg_nextval`-Aufrufe (MySQL via `SELECT ... FOR UPDATE` auf die
+  helper-Row; SQLite via DB-weite `BEGIN IMMEDIATE`-RESERVED-Lock).
+  Eine gleichzeitig laufende App kann zwischen Probe und Restore
+  keine Luecke mehr reissen.
+- **PostgreSQL**: `pg_advisory_xact_lock` blockiert nur andere
+  `schema migrate`-Aufrufe gegen dieselbe Sequenz. App-seitige
+  `nextval(...)`-Aufrufe sind dadurch **nicht** blockiert (PG-
+  Sequenzen sind by-design lock-free). Der Lock schliesst hier nur
+  die Race zwischen zwei Migrationen, nicht zwischen Migration und
+  App — siehe Restrisiko unten.
 
 **Per-Dialekt-Lock-Strategie:**
 

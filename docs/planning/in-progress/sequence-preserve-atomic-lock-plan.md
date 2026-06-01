@@ -763,13 +763,19 @@ Begründung (kompakt):
   Cleanup ist eigener Folge-Slice (User-Scope-Entscheidung).
 - 6 dokumentierte Findings aus `/code-review` (commit-range
   `9d6dcba3..d72e572f`):
-  1. *high*: `SchemaMigrateExecutionStage.kt:79` ruft `segmentForExecute`
-     außerhalb der try-catch — `IllegalStateException` (contiguity
-     violation) propagiert unhandled. Mini-Folge-Slice.
+  1. *high* **— erledigt 2026-06-01**: `SchemaMigrateExecutionStage`
+     rief `segmentForExecute` außerhalb der try-catch —
+     `IllegalStateException` propagierte unhandled. Fix: Aufruf in
+     den try-Block verschoben, `IllegalStateException` mapped zu
+     strukturiertem `ExecutionTrace` mit `executionStarted = false`,
+     `transactionRolledBack = true`, `sideEffectsPossible = false`.
+     Unit-Test `SchemaMigrateExecutionStagePlanShapeTest`.
   2. *mittel*: `AlterSequenceCurrentValue`-Sentinel rendert wörtlich
      `setval('seq', 0, true)` in plan-only/report-Output.
-  3. *mittel*: `SegmentAwareMigrationExecutor.kt:162` zählt Follow-ups
-     in `statementsAttempted` mit (Diagnostic-Überzählung).
+  3. *mittel* **— erledigt 2026-06-01**: `SegmentAwareMigrationExecutor.mapAtomicResultToTrace`
+     zählte Follow-ups in `statementsAttempted` mit. Fix:
+     `protectedStatements`-Parameter; `Applied`-Branch meldet nur
+     deren Count.
   4. *niedrig*: stummer Fallback bei unbekanntem `--mysql/sqlite-named-
      sequences`-Wert (asymmetrisch zur Generate-Validierung).
   5. *mittel*: Race-Test-Assertion `finalValue >= initial + writerAdvances`
@@ -858,7 +864,7 @@ KDocs, User-Guide und CHANGELOG.
 - [x] KDoc auf `SequenceCurrentValueProbe`: Status-Header eingefügt,
       der den Port als dead-code seit Phase C markiert und auf den
       Dead-Code-Cleanup-Slice in
-      `docs/planning/next/atomic-preserve-followups.md` §4.2
+      `docs/planning/in-progress/atomic-preserve-followups.md` §4.2
       verweist.
 - [x] User-Guide-Eintrag aktualisiert: alte „kein Lock — Maintenance-
       Fenster nötig"-Carve-out durch atomare-Lock-Beschreibung pro

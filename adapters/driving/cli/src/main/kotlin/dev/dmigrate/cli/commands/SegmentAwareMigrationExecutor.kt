@@ -149,18 +149,27 @@ internal object SegmentAwareMigrationExecutor {
             executeProtectedOps,
             lockTimeoutMillis,
         )
-        return mapAtomicResultToTrace(result = result, segment = segment)
+        return mapAtomicResultToTrace(
+            result = result,
+            protectedStatements = protectedStatements,
+        )
     }
 
     private fun mapAtomicResultToTrace(
         result: AtomicSequencePreserveResult,
-        segment: AtomicPreserveSegment,
+        protectedStatements: List<MigrationDdlStatement>,
     ): ExecutionTrace = when (result) {
+        // Phase D follow-up (Finding #3, 2026-06-01): `statementsAttempted`
+        // must count only the statements the atomic executor actually
+        // issued — the audit follow-up markers stay in `segment.statements`
+        // for plan-only / report artefacts but never reach the JDBC
+        // connection, so they must NOT inflate the trace's diagnostic
+        // counter.
         is AtomicSequencePreserveResult.Applied -> ExecutionTrace(
             executionStarted = true,
             executionCompleted = true,
-            statementsAttempted = segment.statements.size,
-            lastStatementOperationIds = segment.statements.lastOrNull()?.operationIds ?: emptySet(),
+            statementsAttempted = protectedStatements.size,
+            lastStatementOperationIds = protectedStatements.lastOrNull()?.operationIds ?: emptySet(),
         )
         is AtomicSequencePreserveResult.NotFound -> ExecutionTrace(
             executionStarted = true,

@@ -137,13 +137,17 @@ class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({
         plan2Result.get().shouldBeInstanceOf<AtomicSequencePreserveResult.Applied>()
     }
 
-    test("Negative smoke: two threads acquire advisory locks in inverted order — lock_timeout fires") {
+    test("Negative smoke: two threads acquire advisory locks in inverted order — deadlock_detected or lock_timeout fires") {
         // The executor always sorts; this test bypasses it to show
         // the primitive WILL deadlock if the caller doesn't sort.
         // Thread A: lock("seq_x") then lock("seq_y").
         // Thread B: lock("seq_y") then lock("seq_x").
-        // With lock_timeout = 1s, the deadlocked acquisition fires
-        // SQLSTATE 55P03 on at least one thread.
+        // PG's default `deadlock_timeout = 1s` runs the deadlock
+        // detector before our `lock_timeout = 2s` fires, so the
+        // primary outcome is SQLSTATE 40P01 (deadlock_detected) on
+        // the loser; 55P03 (lock_not_available) is accepted as a
+        // fallback if a timing edge-case keeps the detector from
+        // firing.
         val lockKey = { name: String -> "d-migrate:seq:.$name" }
 
         val aFirstAcquired = CountDownLatch(1)
@@ -204,10 +208,11 @@ class PostgresAtomicPreserveCrossPlanDeadlockTest : FunSpec({
             pool.awaitTermination(5, TimeUnit.SECONDS)
         }
 
-        // At least one thread must hit SQLSTATE 55P03 (lock_not_available)
-        // — the inverted acquisition order is the textbook deadlock
-        // that the executor's name-sort closes.
+        // At least one thread must hit SQLSTATE 40P01
+        // (deadlock_detected) or 55P03 (lock_not_available) — the
+        // inverted acquisition order is the textbook deadlock that
+        // the executor's name-sort closes.
         val outcomes = listOf(aResult.get(), bResult.get())
-        outcomes.any { it == "55P03" } shouldBe true
+        outcomes.any { it == "40P01" || it == "55P03" } shouldBe true
     }
 })

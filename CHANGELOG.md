@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **0.9.7 Atomic-Sequence-Preserve Phasen A + B + C** *(2026-06-01)* —
+- **0.9.7 Atomic-Sequence-Preserve Phasen A + B + C + D + E** *(2026-06-01)* —
   Schließt die Race zwischen `SequencePreserveStage`-Probe und dem
   späteren `setval`/`UPDATE` während des Live-`schema migrate`-Laufs.
   Bisher las die Stage `current_value` in einer eigenen Connection,
@@ -69,17 +69,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     migriert und beweisen jetzt „keine Race möglich" statt
     „Race-Toleranz".
 
+  **Phase D — Cross-Plan-Deadlock-Beweis + AllInPlan-Flag-Flip**
+  *(Commit folgt)*: drei Cross-Plan-Deadlock-Integration-Tests
+  (`PostgresAtomicPreserveCrossPlanDeadlockTest`,
+  `MysqlAtomicPreserveCrossPlanDeadlockTest`,
+  `SqliteAtomicPreserveCrossPlanDeadlockTest`). PG + MySQL haben
+  positiven (zwei parallele Runs committen) und negativen Smoke
+  (manuell invertierte Lock-Order → SQLSTATE 40P01/55P03 bzw.
+  ER_LOCK_DEADLOCK/WAIT_TIMEOUT). SQLite hat nur den positiven
+  Beweis — die DB-weite RESERVED-Lock macht das Deadlock-Diamant
+  konstruktiv unmöglich.
+  `SequenceCapabilityDefaults.supportsAtomicPreserveAllInPlan = true`
+  pro Dialekt; `SequencePreserveStage.allInPlanBlocker` emittiert
+  `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, wenn ein Plan ≥ 2 Preserve-
+  Kandidaten enthält und das Flag pro Dialekt auf `false` steht
+  (greift heute nur für synthetische Capability-Overrides — alle
+  produktiven Dialekte sind nach D auf `true`). Finding #1 aus dem
+  Code-Review (Contiguity-Crash in `SchemaMigrateExecutionStage`)
+  ist mit demselben Slice gefixt: `segmentForExecute(...)` läuft
+  jetzt innerhalb des try-Blocks, eine `IllegalStateException`
+  mapped zu einem strukturierten `ExecutionTrace` mit
+  `transactionRolledBack = true`, `sideEffectsPossible = false` und
+  einem „Atomic-preserve plan shape invalid"-Hinweis statt
+  unhandled durchzureichen. Finding #3 (Diagnostic-Überzählung in
+  `SegmentAwareMigrationExecutor.mapAtomicResultToTrace`) ebenfalls
+  gefixt: `statementsAttempted` zählt nach `Applied` nur noch die
+  protected statements (Audit-Follow-ups bleiben im Plan-Artefakt,
+  inflationieren aber den Trace-Counter nicht mehr).
+
+  **Phase E — Docs-Sync** *(Commit folgt)*: dieser CHANGELOG-
+  Eintrag selbst, User-Guide-Update („preserveCurrentValue atomar
+  seit 0.9.7" inkl. dialekt-spezifischer App-`nextval`-Race-
+  Aufklärung), KDoc-Sync auf `SequencePreserveStage` (Restrictions-
+  Block), `SequenceCapability` (C.4-Verweis korrigiert + §3.2-Out-
+  of-Scope-Block + AllInPlan-Update) und `SequenceCurrentValueProbe`
+  (dead-code-Status-Header — Cleanup eigener Slice).
+
   **Carve-Outs:**
-  - Cross-Plan-Deadlock-Beweis + Flag-Flip auf
-    `supportsAtomicPreserveAllInPlan` bleiben für Phase D
-    (Multi-Sequence-Pläne lehnt der Stage-Gate bis dahin mit
-    `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` ab — kommt mit Phase D).
   - Cross-Database-Locks, App-side Retry/Backpressure und globaler
     Schema-Lock bleiben permanent out-of-scope (Plan-Doc §3.2).
-  - 6 Code-Review-Findings vom 2026-06-01 sind in
-    `docs/planning/next/atomic-preserve-followups.md` als Folge-
-    Slices erfasst; das höchste (Contiguity-Crash in
-    `SchemaMigrateExecutionStage`) wird vor 0.9.7-Tag adressiert.
+  - Auf PostgreSQL bleibt `pg_advisory_xact_lock` per Design app-
+    nextval-blind: der Lock schliesst die Race zwischen zwei
+    Migrationen, nicht zwischen Migration und App. Plan-Doc §6
+    Risiko Nr. 8 / User-Guide-Restrisiko dokumentieren dies.
+  - 5 verbleibende Code-Review-Findings (Mittel/Niedrig: Sentinel-
+    Render, --mysql/sqlite-named-sequences-Fallback, Race-Test-
+    Assertion, LockTimeout-Decorator) in
+    `docs/planning/in-progress/atomic-preserve-followups.md` als Post-
+    Release-Slices erfasst.
   - Dead-Code-Cleanup der ungenutzten Probe-Adapter-Klassen ist
     eigener Folge-Slice.
 

@@ -70,16 +70,36 @@ internal class SchemaMigrateExecutionStage(
             ?: error("validateRequest must reject --execute with non-DB target before reaching the executor.")
         cancellationToken.throwIfCancellationRequested()
         val statementGroups = MigrationExecutionStatusBuilder.statementGroups(combined.statements)
-        // Phase C.1: derive the segment-list view from the rendered
-        // statements + the optional atomic-preserve batch (null when
-        // no preserve candidates were classified). When the batch is
-        // null the list degenerates to a single PlainSqlSegment and
-        // the segment-aware executor's PG/MySQL/SQLite path runs
-        // identically to the heutige JdbcMigrationExecutor flow.
-        val segments = segmentForExecute(combined.statements, atomicBatch)
         return try {
+            // Phase C.1: derive the segment-list view from the rendered
+            // statements + the optional atomic-preserve batch (null when
+            // no preserve candidates were classified). When the batch is
+            // null the list degenerates to a single PlainSqlSegment and
+            // the segment-aware executor's PG/MySQL/SQLite path runs
+            // identically to the heutige JdbcMigrationExecutor flow.
+            //
+            // Phase D follow-up (Finding #1, 2026-06-01): the call is
+            // INSIDE the try so a non-contiguous atomic-preserve block
+            // (planner-shape bug) surfaces as a structured
+            // ExecutionTrace via the `IllegalStateException` catch below
+            // instead of crashing the CLI with an uncaught exception.
+            val segments = segmentForExecute(combined.statements, atomicBatch)
             exec(dbOperand, request.cliConfigPath, segments, lockTimeoutMillis)
                 .withG3Defaults(statementGroups)
+        } catch (e: IllegalStateException) {
+            // `segmentForExecute` contract violation — the atomic-
+            // preserve block in the rendered statement list is non-
+            // contiguous. No statements ran, no DB I/O happened, so
+            // the trace must NOT claim sideEffectsPossible.
+            ExecutionTrace(
+                executionStarted = false,
+                executionCompleted = false,
+                statementsAttempted = 0,
+                transactionRolledBack = true,
+                sideEffectsPossible = false,
+                executionError = "Atomic-preserve plan shape invalid: " +
+                    (e.message ?: "contiguity violation"),
+            ).withG3Defaults(statementGroups)
         } catch (e: Exception) {
             // E.1 Slice F.1: JDBC driver exception messages frequently
             // quote a fragment of the failing SQL (e.g. PostgreSQL

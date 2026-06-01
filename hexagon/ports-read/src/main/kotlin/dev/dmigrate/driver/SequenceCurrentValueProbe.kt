@@ -17,7 +17,7 @@ import java.sql.Connection
  * are dead code from Phase C.1 onwards. They are kept temporarily so
  * the diff stays minimal; cleanup is the responsibility of the
  * Dead-Code-Cleanup slice in
- * `docs/planning/next/atomic-preserve-followups.md` §4.2.
+ * `docs/planning/in-progress/atomic-preserve-followups.md` §4.2.
  * [SequenceCurrentValueProbeResult] itself stays in the codebase
  * because the `Read`-variant continues to live in the
  * `AtomicSequencePreserveRequest.renderRestore` callback signature.
