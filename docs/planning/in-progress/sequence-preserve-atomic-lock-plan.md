@@ -1,7 +1,7 @@
 # Implementierungsplan: Atomare Sequence-Preserve Probe + Restore unter Lock
 
-> Status: In Progress (2026-06-01) — Phasen A + B + C erledigt;
-> Phasen D + E offen.
+> Status: In Progress (2026-06-01) — Phasen A + B + C + D + E erledigt;
+> 0.9.7-Release vorbereitet.
 > - **Phase A** (2026-05-31): Vertraege + Classifier + Capability-Defaults.
 > - **Phase B** (2026-05-31): `hexagon:ports-execute`-Modul +
 >   PG/MySQL/SQLite-Executoren mit Live-Container-/in-process-Tests.
@@ -13,9 +13,18 @@
 >   `sequenceCurrentValueProbe`-Slot mehr im Repo (Probe-Adapter
 >   selbst bleiben als toter Code — Dead-Code-Cleanup ist eigener
 >   Folge-Slice).
-> - **Phase D**: Cross-Plan-Deadlock-Beweis + `supportsAtomicPreserveAllInPlan`-
->   Flag-Flip — offen.
-> - **Phase E**: User-Guide + CHANGELOG + KDoc-Sync (Docs-only) — offen.
+> - **Phase D** (2026-06-01): Cross-Plan-Deadlock-Tests pro Dialekt
+>   (`PostgresAtomicPreserveCrossPlanDeadlockTest`,
+>   `MysqlAtomicPreserveCrossPlanDeadlockTest`,
+>   `SqliteAtomicPreserveCrossPlanDeadlockTest`),
+>   `supportsAtomicPreserveAllInPlan = true` pro Dialekt geflippt,
+>   Stage emittiert `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` für
+>   synthetisch auf `false` gesetzte Capability-Overrides (Unit-Test
+>   in `SequencePreserveStageTest`).
+> - **Phase E** (2026-06-01): User-Guide + CHANGELOG-Entry + KDoc-Sync
+>   auf `SequencePreserveStage`, `SequenceCapability` (inkl. neuem
+>   §3.2-Out-of-Scope-Verweis) und `SequenceCurrentValueProbe`
+>   (Status-Header: dead-code seit Phase C, Cleanup eigener Slice).
 > Workstream: E.3 Folge-Slice für `preserveCurrentValue`-Atomicity
 > Vorarbeit:
 > - `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md` §3.2
@@ -790,17 +799,27 @@ beiden Bausteine hinzu, die B/C strukturell **nicht** erschlagen können:
   das Flag pro Dialekt nach erfolgreichem Cross-Plan-Stresstest und
   fügt den Stage-seitigen Gate-Check hinzu.
 
-**DoD D**
+**DoD D** *(erledigt 2026-06-01)*
 
-- [ ] Cross-Plan-Deadlock-Test im `:test:integration-concurrency` pro
-      Dialekt: zwei parallele `schema migrate`-Läufe über überlappende
-      Sequenzen committen ohne Deadlock; bei künstlich invertierter
-      Sortierung schlägt der Test reproduzierbar fehl (negativer Smoke).
-- [ ] `SequenceCapabilityDefaults.supportsAtomicPreserveAllInPlan = true`
-      pro Dialekt nach grünem Stresstest.
-- [ ] Stage emittiert `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, wenn ein
-      Plan ≥ 2 Preserve-Kandidaten enthält und der Dialekt das Flag auf
-      `false` hat (Unit-Test mit synthetischer Capability-Override).
+- [x] Cross-Plan-Deadlock-Test pro Dialekt:
+      `PostgresAtomicPreserveCrossPlanDeadlockTest` /
+      `MysqlAtomicPreserveCrossPlanDeadlockTest` /
+      `SqliteAtomicPreserveCrossPlanDeadlockTest`. PG + MySQL haben
+      positiven (zwei parallele Runs committen) und negativen Smoke
+      (manuell invertierte Lock-Order → SQLSTATE 55P03 bzw.
+      ER_LOCK_DEADLOCK/WAIT_TIMEOUT). SQLite hat nur den positiven
+      Beweis — die DB-weite RESERVED-Lock macht das Deadlock-Diamant
+      konstruktiv unmöglich; der negative Smoke fällt damit weg
+      (Carve-Out im IT-KDoc dokumentiert).
+- [x] `SequenceCapabilityDefaults.supportsAtomicPreserveAllInPlan = true`
+      für PG / MySQL / SQLite nach grünem Cross-Plan-Test.
+      Begleitende KDoc auf `SequenceCapability` aktualisiert.
+- [x] Stage emittiert `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`, wenn ein
+      Plan ≥ 2 Preserve-Kandidaten enthält und der Dialekt das Flag
+      auf `false` hat. Unit-Test in `SequencePreserveStageTest`
+      (Phase-D-Gate-Block) mit synthetischer Capability-Override; ein
+      separater Single-Sequence-Test pinnt, dass die Gate-Logik
+      unterhalb der Multi-Seq-Schwelle nicht feuert.
 
 ### Phase E — Docs-only (KDoc + User-Guide + CHANGELOG)
 
@@ -825,13 +844,27 @@ KDocs, User-Guide und CHANGELOG.
 - CHANGELOG-Eintrag mit Breaking-Change-Markierung, falls Probe-Port
   oder Stage-Outcome-API in C.1/C.4 strukturell verändert wurden.
 
-**DoD E**
+**DoD E** *(erledigt 2026-06-01)*
 
-- [ ] KDoc auf `SequenceCapability.transactionalProtectedSequenceOperations`
-      verweist auf C.4 als Source-of-Truth (kein „Phase B populates"
-      mehr).
-- [ ] User-Guide-Eintrag mit PG-`nextval`-Race-Hinweis.
-- [ ] CHANGELOG-Eintrag.
+- [x] KDoc auf `SequenceCapability.transactionalProtectedSequenceOperations`
+      verweist auf C.4 als Source-of-Truth (Phase-B-Wortlaut ersetzt
+      durch korrekten C.4-Verweis inkl. Commit-Hash `11d04e57`).
+- [x] KDoc-Block auf `SequenceCapability` mit explizitem Verweis auf
+      §3.2 Out-of-Scope (cross-DB-Lock, App-Retry, globaler Schema-
+      Lock) — beantwortet die Carve-Out-Frage im Code statt nur im
+      Plan-Doc.
+- [x] KDoc auf `SequencePreserveStage`: Restrictions-Block (AllInPlan-
+      Gate ist Phase D; §3.2 für Out-of-Scope) ergänzt.
+- [x] KDoc auf `SequenceCurrentValueProbe`: Status-Header eingefügt,
+      der den Port als dead-code seit Phase C markiert und auf den
+      Dead-Code-Cleanup-Slice in
+      `docs/planning/next/atomic-preserve-followups.md` §4.2
+      verweist.
+- [x] User-Guide-Eintrag aktualisiert: alte „kein Lock — Maintenance-
+      Fenster nötig"-Carve-out durch atomare-Lock-Beschreibung pro
+      Dialekt + PG-`nextval`-Race-Restrisiko ersetzt.
+- [x] CHANGELOG-Entry für 0.9.7 mit allen drei Sub-Phasen (A + B + C)
+      und expliziter Carve-Out-Sektion.
 
 ## 6. Risiken
 

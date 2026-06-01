@@ -4,6 +4,26 @@ import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import java.sql.Connection
 
 /**
+ * **Status (since Atomic-Preserve Phase C, 2026-06-01)**: this port is
+ * no longer referenced by the live-execute path. `SequencePreserveStage`
+ * builds an `AtomicSequencePreserveBatch` directly, and the per-dialect
+ * `AtomicSequencePreserveExecutor` probes the runtime value **inside**
+ * the lock at execute time — folding probe + restore + protected DDL
+ * into a single transaction. The legacy "Out-of-scope: atomic probe +
+ * setval under table lock" carve-out below has therefore become
+ * in-scope of the atomic executor, not of this port.
+ *
+ * The port + the three dialect adapter implementations + their tests
+ * are dead code from Phase C.1 onwards. They are kept temporarily so
+ * the diff stays minimal; cleanup is the responsibility of the
+ * Dead-Code-Cleanup slice in
+ * `docs/planning/next/atomic-preserve-followups.md` §4.2.
+ * [SequenceCurrentValueProbeResult] itself stays in the codebase
+ * because the `Read`-variant continues to live in the
+ * `AtomicSequencePreserveRequest.renderRestore` callback signature.
+ *
+ * ---
+ *
  * 0.9.7 preserve-current-value Sub-Slice A: live-DB probe port for the
  * runtime value of a named sequence. Implementations live in the
  * dialect adapters:

@@ -451,4 +451,74 @@ class SequencePreserveStageTest : FunSpec({
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
     }
+
+    // ── Phase D AllInPlan gate ────────────────────────────────────────
+
+    test("Phase D gate: multi-sequence plan + supportsAtomicPreserveAllInPlan=false blocks all candidates") {
+        // Production defaults flip the flag to `true` per dialect
+        // after Phase D (2026-06-01); the gate is exercised here via
+        // a synthetic capability overlay that forces `false`. The
+        // contract: ≥ 2 candidates AND `false` flag ⇒ every
+        // candidate surfaces SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED.
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b"))),
+            capabilityResolver = { dialect ->
+                SequenceCapabilityDefaults.forDialect(dialect).copy(
+                    supportsAtomicPreserveAllInPlan = false,
+                )
+            },
+        )
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
+        outcome.diagnostics.size shouldBe 2
+        outcome.diagnostics.all { it.code == "SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED" } shouldBe true
+        outcome.diagnostics.all { it.message.contains("multi-sequence plan") } shouldBe true
+    }
+
+    test("Phase D gate: single-sequence plan + supportsAtomicPreserveAllInPlan=false still proceeds") {
+        // A single-candidate plan is structurally a no-op for the
+        // AllInPlan gate: the executor holds the lock across one
+        // sequence by construction in every supported dialect, so
+        // the gate must NOT fire below the multi-seq threshold.
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(listOf(alterSeqOp(name = "only"))),
+            capabilityResolver = { dialect ->
+                SequenceCapabilityDefaults.forDialect(dialect).copy(
+                    supportsAtomicPreserveAllInPlan = false,
+                )
+            },
+        )
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+    }
+
+    test("Phase D: production defaults allow multi-sequence plans on PG/MySQL/SQLite") {
+        // After Phase D landed (2026-06-01) the three production
+        // dialects all carry `supportsAtomicPreserveAllInPlan = true`,
+        // so a multi-sequence plan must surface as Succeeded with no
+        // AllInPlan blocker. This guards against an accidental flip
+        // back to `false` in the defaults file.
+        for (dialect in listOf(DatabaseDialect.POSTGRESQL, DatabaseDialect.MYSQL)) {
+            val outcome = SequencePreserveStage.run(
+                request = executeRequest(),
+                target = dbTarget(),
+                dialect = dialect,
+                plan = synthesisePlan(
+                    listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b")),
+                ),
+            )
+            outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        }
+        val sqliteOutcome = SequencePreserveStage.run(
+            request = executeRequest(sqliteNamedSequences = "helper_table"),
+            target = dbTarget(),
+            dialect = DatabaseDialect.SQLITE,
+            plan = synthesisePlan(listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b"))),
+        )
+        sqliteOutcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+    }
 })

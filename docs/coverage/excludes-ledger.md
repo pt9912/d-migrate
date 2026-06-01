@@ -241,6 +241,9 @@ Permanent reference tokens:
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest` | `permanent: dto-or-value-carrier` | Pure per-sequence preserve-request carrier (ref + render-restore callback). |
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult` | `permanent: sealed-outcome` | Sealed outcome marker for the execute-time atomic preserve result. |
 | `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveResult$*` | `permanent: sealed-outcome` | Sealed outcome subtype data carriers (Applied/NotFound/LockTimeout/Failed). |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment` | `permanent: dto-or-value-carrier` | Pure data carrier for the atomic-preserve execute segment (Phase C.2). |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.ExecutableSegment` | `permanent: sealed-outcome` | Sealed segment marker — distinguishes plain-SQL vs. atomic-preserve segments in the segment-aware executor. |
+| `:hexagon:ports-execute` | `classes` | `dev.dmigrate.driver.migration.preserve.PlainSqlSegment` | `permanent: dto-or-value-carrier` | Pure data carrier for the plain-SQL execute segment (Phase C.2). |
 | `:hexagon:ports-read` | `classes` | `*$DefaultImpls` | `permanent: port-contract` | Kotlin default-impl helpers for interface contracts. |
 | `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyInfo` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |
 | `:hexagon:ports-read` | `classes` | `dev.dmigrate.core.model.DependencyProjectionStatus` | `permanent: dto-or-value-carrier` | Pure DTO/data carrier. |

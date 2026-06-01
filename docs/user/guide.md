@@ -650,15 +650,26 @@ Diagnose sichtbar, beeinflusst aber den Exit-Code nicht.
 > Sequence-Parameter ausschliesslich im neutralen Schema und generieren Sie
 > neu."
 
-### preserveCurrentValue auf SQLite (0.9.7-E.3-Folge-Slice)
+### preserveCurrentValue (atomar unter Lock seit 0.9.7)
 
 Wenn deine Sequence im neutralen Schema mit `preserve_current_value: true`
-markiert ist, kann `schema migrate --execute` den laufenden `next_value` aus
-der Ziel-DB lesen und nach `CreateSequence`/`AlterSequence`/`RenameSequence`
-deterministisch wiederherstellen — kein manueller `UPDATE
-dmg_sequences`-Schritt mehr nach der Migration.
+markiert ist, faltet `schema migrate --execute` den laufenden Wert-Lese-
+Schritt (Probe), die geschuetzten DDL-Statements
+(`CreateSequence`/`AlterSequence`/`RenameSequence`) und den
+Restore-Schritt in eine einzige Transaktion unter Per-Dialekt-Lock.
+Manueller `UPDATE dmg_sequences`-Schritt entfaellt; ein gleichzeitig
+laufender App-`nextval` kann zwischen Probe und Restore keine Luecke
+mehr reissen.
 
-Voraussetzung:
+**Per-Dialekt-Lock-Strategie:**
+
+- PostgreSQL: `pg_advisory_xact_lock(hashtext(<sequence>))` pro Sequenz,
+  innerhalb einer `BEGIN`/`COMMIT`-Klammer.
+- MySQL: `SELECT ... FOR UPDATE` auf der `dmg_sequences`-Helper-Row.
+- SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
+  Lock-Wait per `setQueryTimeout`).
+
+SQLite-Voraussetzung (`helper_table`-Modus):
 
 ```bash
 d-migrate schema migrate \
@@ -667,17 +678,28 @@ d-migrate schema migrate \
   --sqlite-named-sequences helper_table
 ```
 
-Ohne `--sqlite-named-sequences helper_table` blockt der Plan pro Kandidat
-mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Exit 8). Die Diagnose enthaelt
-den Opt-in-Hinweis explizit; Capability und Renderer sind verdrahtet, nur
-der Opt-in fehlt.
+Ohne `--sqlite-named-sequences helper_table` blockt der Plan pro
+Kandidat mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Exit 8). Der
+PG-/MySQL-Pfad benoetigt keinen Opt-in — der atomare Pfad ist Default.
 
-Carve-out: Probe und nachgelagerter `UPDATE` laufen ohne Lock — laenger
-laufende Apps muessen den Schreibverkehr vor `--execute` stoppen.
-Mehrfache parallele `dmg_nextval`-Aufrufe zwischen Probe-Read und
-Restore-Write koennen die Sequence in einen ueberholten Zustand
-zuruecksetzen. Eine atomare `BEGIN; SELECT FOR UPDATE; UPDATE; COMMIT`-
-Variante ist ein eigener Folge-Slice.
+**Verbleibende Restrisiken** *(nicht atomar geschuetzt)*:
+
+- Auf PostgreSQL erhoeht `nextval(...)` aus einer App-Connection den
+  Sequence-Zaehler ausserhalb jeder MVCC-Sichtbarkeit. Falls eine App
+  zwischen Probe und Lock-Erwerb ein `nextval` ausfuehrt, sieht der
+  Atomic-Pfad den neuen Wert nicht — der Lock schliesst hier eine
+  Race zwischen *zwei Migrationen*, nicht zwischen Migration und App.
+  Solche Apps muessen Schreibverkehr weiterhin vor `--execute`
+  pausieren oder ueber Quota-Reserve-Logik den `nextval`-Aufruf
+  blockieren.
+- Cross-Database-Locks (z.B. Multi-Process-Migrationen ueber dieselbe
+  Sequenz) sind out-of-scope. Ein Single-Process-`schema migrate`
+  fuehrt deterministisch sortierte Locks; Cross-Plan-Deadlock-
+  Beweise sind Phase D des Atomic-Preserve-Refactors.
+
+Plan-Doc:
+`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md` §3.2
+und §6 fuer die vollstaendige Carve-Out-Liste.
 
 ## Neutrales Typsystem
 

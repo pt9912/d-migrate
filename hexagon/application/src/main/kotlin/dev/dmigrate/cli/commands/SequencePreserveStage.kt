@@ -49,9 +49,20 @@ import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveRequest
  *    rather than a probed value — the live-execute path filters them
  *    out via `internalFollowUpIds` (see `SegmentAwareMigrationExecutor`).
  *
+ * **Restrictions** *(not addressed by this stage)*:
+ *
+ * - Multi-sequence plans on a dialect where
+ *   `SequenceCapability.supportsAtomicPreserveAllInPlan == false` are
+ *   handled by a separate execution-stage gate (Phase D) — this stage
+ *   builds the batch unconditionally, the gate downstream decides
+ *   whether to run it.
+ * - Cross-database locks, App-side retry/backpressure and a global
+ *   schema-lock are permanently out-of-scope; see the plan-doc §3.2
+ *   for the full carve-out list.
+ *
  * Plan-Doc: `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
  * §5 Phase C / Sub-Slice C.1 (re-cut ausführungs-letzter aktivierender
- * Commit).
+ * Commit); §3.2 for out-of-scope, §5 Phase D for the AllInPlan-Flag.
  */
 object SequencePreserveStage {
 
@@ -130,6 +141,16 @@ object SequencePreserveStage {
         val capability = capabilityResolver(dialect)
         unsupportedKindsBlocker(candidates, capability, plan)?.let { return it }
 
+        // Phase D gate: a dialect whose
+        // `supportsAtomicPreserveAllInPlan == false` cannot hold the
+        // lock across multiple sequences in the same plan. Plan §5
+        // Phase D pins this gate so a future dialect that lands
+        // single-sequence atomic-preserve before its cross-plan
+        // deadlock proof still surfaces a structured blocker for
+        // multi-sequence plans. PG/MySQL/SQLite all default to
+        // `true` after Phase D landed (2026-06-01).
+        allInPlanBlocker(candidates, capability, plan)?.let { return it }
+
         return buildBatch(candidates, dialect, plan)
     }
 
@@ -162,6 +183,38 @@ object SequencePreserveStage {
                 message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
                     "`${ctx.applyRef.name}` requires SQLite's helper-table emulation; " +
                     "rerun with `--sqlite-named-sequences helper_table` to opt in.",
+                severity = DiffDiagnostic.Severity.BLOCKER,
+                operationId = ctx.parentOp.id,
+            )
+        }
+        return Outcome.Failed(diagnostics = diagnostics, plan = plan)
+    }
+
+    /**
+     * Phase D gate: if a plan carries ≥ 2 preserve candidates and the
+     * dialect's `supportsAtomicPreserveAllInPlan` is `false`, block
+     * every candidate with `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`.
+     *
+     * The gate runs **after** [unsupportedKindsBlocker] so a kind-
+     * mismatch always surfaces first (more actionable diagnostic).
+     * Single-candidate plans bypass this gate even when the flag is
+     * `false` — the lock window holds across one sequence by
+     * construction in every supported dialect.
+     */
+    private fun allInPlanBlocker(
+        candidates: List<Candidate>,
+        capability: SequenceCapability,
+        plan: DiffResult,
+    ): Outcome.Failed? {
+        if (candidates.size < 2) return null
+        if (capability.supportsAtomicPreserveAllInPlan) return null
+        val diagnostics = candidates.map { ctx ->
+            DiffDiagnostic(
+                code = ATOMIC_UNSUPPORTED_CODE,
+                message = "preserveCurrentValue on ${ctx.parentOp::class.simpleName} " +
+                    "`${ctx.applyRef.name}` cannot run in a multi-sequence plan: the " +
+                    "dialect's atomic-preserve runner does not yet hold the lock across " +
+                    "every preserve candidate in one plan (supportsAtomicPreserveAllInPlan = false).",
                 severity = DiffDiagnostic.Severity.BLOCKER,
                 operationId = ctx.parentOp.id,
             )

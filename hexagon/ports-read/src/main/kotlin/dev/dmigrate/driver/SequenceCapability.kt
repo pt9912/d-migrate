@@ -47,28 +47,48 @@ package dev.dmigrate.driver
  *   that introduces an ownership field.
  * - [supportsAtomicPreserve]: dialect can execute Probe + Restore
  *   plus the protected sequence-bearing operations in a single
- *   transaction on one JDBC connection. Atomic-Preserve Phase A
- *   wires the capability field and the
- *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker; Phase B lands
- *   the per-dialect executor implementations and Phase C.4
- *   (SchemaMigrate wiring) flips this flag to `true` per dialect.
- *   Until C.4 lands every dialect stays `false` and the stage
- *   continues with the documented two-transaction fallback.
+ *   transaction on one JDBC connection. Atomic-Preserve Phase C.4
+ *   flipped this flag to `true` for PG / MySQL / SQLite (commit
+ *   `11d04e57`). A dialect with `false` cannot run the atomic
+ *   preserve path and surfaces `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT`
+ *   from the stage; there is no longer a non-atomic fallback path.
  * - [supportsAtomicPreserveAllInPlan]: dialect can hold the lock
  *   across **every** preserve candidate in one plan, not just one
- *   sequence at a time. `false` ⇒ the runner is forced to issue a
+ *   sequence at a time. `false` ⇒ the stage emits a
  *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` blocker when a plan
- *   carries more than one preserve candidate. Default `false`
- *   until Phase D lands cross-plan deadlock proofs and flips the
- *   flag per dialect.
+ *   carries more than one preserve candidate. Atomic-Preserve
+ *   Phase D (2026-06-01) flipped this flag to `true` for PG /
+ *   MySQL / SQLite after the Cross-Plan-Deadlock-Tests proved that
+ *   the name-sorted lock acquisition closes the diamond between
+ *   parallel runs.
  * - [transactionalProtectedSequenceOperations]: opaque
  *   [ProtectedOperationId] values for operation kinds the dialect
  *   can execute **inside** the atomic-runner transaction without
  *   triggering an implicit commit. The empty default conservatively
- *   rejects every protected operation; Phase C.4 (SchemaMigrate
- *   wiring) populates the set from a per-dialect allowlist that the
- *   matching `AtomicSequencePreserveExecutor` declares as
- *   implicit-commit-safe.
+ *   rejects every protected operation; Atomic-Preserve Phase C.4
+ *   (commit `11d04e57`) populates the set from a per-dialect
+ *   allowlist that the matching `AtomicSequencePreserveExecutor`
+ *   declares as implicit-commit-safe.
+ *
+ * **Atomic-Preserve out-of-scope (carve-outs)** *(plan-doc §3.2)*:
+ * The atomic-preserve capability fields above intentionally do **not**
+ * cover:
+ *
+ * - Cross-database / cross-process locks (e.g. PG `pg_advisory_lock`
+ *   on a cross-cluster ID) — single-process Migrationen only.
+ * - App-side backpressure or retry hints — the consuming app is
+ *   responsible for pausing writes during a `--execute` window.
+ * - A global schema-lock (e.g. SQLite `BEGIN EXCLUSIVE` on the whole
+ *   database) — would lock app readers, not just sequence writers.
+ *
+ * A missing or `false` capability flag therefore means "outside the
+ * documented atomic-preserve contract", not "TODO" — see plan-doc
+ * §3.2 for the full out-of-scope list and §6 Risiko Nr. 8 for the
+ * PG-App-`nextval`-Race that the per-sequence advisory lock
+ * deliberately does not close.
+ *
+ * Plan-Doc:
+ * `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
  */
 data class SequenceCapability(
     val supportsNamedSequences: Boolean,

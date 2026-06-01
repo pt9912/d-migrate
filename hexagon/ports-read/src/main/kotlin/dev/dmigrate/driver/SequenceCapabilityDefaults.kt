@@ -68,14 +68,17 @@ object SequenceCapabilityDefaults {
         // SchemaMigrate pipeline via `AtomicSequencePreserveRunner`
         // and `AtomicSequencePreserveDispatcher`; capability flip is
         // safe even before C.1 because Stage does not yet read the
-        // flag (master-grün invariant). `supportsAtomicPreserveAllInPlan`
-        // stays `false` until Phase D ships the cross-plan deadlock
-        // proof. The protected-operation allowlist mirrors today's
-        // Stage candidates (CreateSequence / AlterSequence /
-        // RenameSequence); PG executes all three without implicit
-        // commit, so all three are inside the atomic window.
+        // flag (master-grün invariant). Phase D (2026-06-01) flips
+        // `supportsAtomicPreserveAllInPlan` to `true` after the
+        // [PostgresAtomicPreserveCrossPlanDeadlockTest] proves that
+        // the name-sorted advisory-lock acquisition closes the
+        // diamond between parallel runs. The protected-operation
+        // allowlist mirrors today's Stage candidates (CreateSequence
+        // / AlterSequence / RenameSequence); PG executes all three
+        // without implicit commit, so all three are inside the
+        // atomic window.
         supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = false,
+        supportsAtomicPreserveAllInPlan = true,
         transactionalProtectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
@@ -101,9 +104,13 @@ object SequenceCapabilityDefaults {
         // sequence-bearing DiffOperation kinds whose rendered SQL is
         // `INSERT`/`UPDATE` against the `dmg_sequences` helper table
         // — those run cleanly inside `START TRANSACTION` without
-        // implicit commit.
+        // implicit commit. Phase D (2026-06-01) flips
+        // `supportsAtomicPreserveAllInPlan` to `true` after the
+        // [MysqlAtomicPreserveCrossPlanDeadlockTest] verifies that
+        // name-sorted `FOR UPDATE` acquisitions serialise without
+        // ER_LOCK_DEADLOCK.
         supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = false,
+        supportsAtomicPreserveAllInPlan = true,
         transactionalProtectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),
@@ -139,8 +146,13 @@ object SequenceCapabilityDefaults {
         // would extend the RESERVED window and is excluded by
         // omission, surfacing as `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`
         // when Stage classifies a candidate of that kind.
+        // Phase D (2026-06-01) flips `supportsAtomicPreserveAllInPlan`
+        // to `true`; for SQLite the cross-plan deadlock-diamond is
+        // impossible by construction (the RESERVED lock is database-
+        // wide, not per-row), so parallel runs serialise rather than
+        // deadlock — see [SqliteAtomicPreserveCrossPlanDeadlockTest].
         supportsAtomicPreserve = true,
-        supportsAtomicPreserveAllInPlan = false,
+        supportsAtomicPreserveAllInPlan = true,
         transactionalProtectedSequenceOperations = setOf(
             ProtectedOperationId("CreateSequence"),
             ProtectedOperationId("AlterSequence"),

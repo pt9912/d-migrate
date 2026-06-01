@@ -9,6 +9,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **0.9.7 Atomic-Sequence-Preserve Phasen A + B + C** *(2026-06-01)* —
+  Schließt die Race zwischen `SequencePreserveStage`-Probe und dem
+  späteren `setval`/`UPDATE` während des Live-`schema migrate`-Laufs.
+  Bisher las die Stage `current_value` in einer eigenen Connection,
+  ließ den Renderer einen Restore-Statement-Block bauen und führte
+  diesen außerhalb jeder Sperre aus — eine gleichzeitig laufende App-
+  `nextval`-Sequenz konnte zwischen Probe und Restore eine Lücke
+  reißen. Der neue Pfad faltet Probe + Restore + die geschützten
+  DDL-Statements in eine einzige Transaktion unter Per-Dialect-Lock.
+
+  **Phase A — Datenmodell + Ports** *(Commit `174c3891`)*: Neue
+  Operation `AlterSequenceCurrentValue` in `core:diff`, neue Sealed-
+  Hierarchie `AtomicSequencePreserveBatch` /
+  `AtomicSequencePreserveRequest` /
+  `AtomicSequencePreserveResult` in
+  `hexagon:ports-execute`; Sentinel-Konstante
+  `ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE = 0L` markiert den noch
+  unbekannten Probe-Wert in plan-only-Artefakten.
+  `SequenceCapability` lernt die Felder `supportsAtomicPreserve`,
+  `supportsAtomicPreserveAllInPlan` und
+  `transactionalProtectedSequenceOperations` (in Phase A nur
+  Datenmodell, Defaults bleiben `false` bzw. leer).
+
+  **Phase B — Per-Dialect-Executor** *(Commits `dc6d2ad6`,
+  `24eb6e17`, `e882bcb1`)*: Drei neue
+  `AtomicSequencePreserveExecutor`-Implementierungen, deterministisch
+  nach `SequenceObjectRef.name` sortiert:
+  - PostgreSQL: `pg_advisory_xact_lock(hashtext(seq_name))` pro
+    Sequenz; Probe + protected statements + `setval` in einer
+    `BEGIN`/`COMMIT`-Klammer.
+  - MySQL: `SELECT … FOR UPDATE` auf der `dmg_sequences`-Helper-Row
+    mit `MAX_EXECUTION_TIME`-Exempt-Pfad für SLEEP/BENCHMARK
+    (Driver-Quirk).
+  - SQLite: `BEGIN IMMEDIATE` + xerial-spezifischer
+    `setQueryTimeout`-Lock-Wait; Hikari-Pool umgangen, weil die
+    xerial-Connection-Pool-Interaktion den Lock auf eine andere
+    Connection wandern lässt.
+
+  **Phase C — Stage- + Executor-Integration** *(Commits `833d1796`,
+  `1c09147d`, `8c2e0a07`, `11d04e57`, `b4f548b0`, `39bcaa29`,
+  `d72e572f`)*:
+  - Neues `hexagon:ports-execute`-Modul + Sealed-Interface
+    `ExecutableSegment` mit `PlainSqlSegment` und
+    `AtomicPreserveSegment` (C.2).
+  - `SegmentAwareMigrationExecutor` ersetzt den bisherigen direkten
+    `JdbcMigrationExecutor`-Aufruf in `SchemaMigrateWiring` und
+    routet pro Segment zum passenden Executor (C.3).
+  - `SequenceCapabilityDefaults.supportsAtomicPreserve = true` für
+    PG/MySQL/SQLite; `transactionalProtectedSequenceOperations`
+    befüllt (C.4).
+  - `SequencePreserveStage` baut den `AtomicSequencePreserveBatch`
+    direkt im Stage-Pfad — kein Vorab-Probe-Call mehr — und reicht
+    ihn über die Render-Pipeline an den Segment-Executor (C.1).
+  - Neue Atomic-Preserve-Integration-Tests pro Dialekt in
+    `:test:integration-postgresql/-mysql/-sqlite` (C.5); die
+    bestehenden `SequencePreserveRaceTest`-Suites in
+    `:test:integration-concurrency` wurden auf den atomaren Pfad
+    migriert und beweisen jetzt „keine Race möglich" statt
+    „Race-Toleranz".
+
+  **Carve-Outs:**
+  - Cross-Plan-Deadlock-Beweis + Flag-Flip auf
+    `supportsAtomicPreserveAllInPlan` bleiben für Phase D
+    (Multi-Sequence-Pläne lehnt der Stage-Gate bis dahin mit
+    `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` ab — kommt mit Phase D).
+  - Cross-Database-Locks, App-side Retry/Backpressure und globaler
+    Schema-Lock bleiben permanent out-of-scope (Plan-Doc §3.2).
+  - 6 Code-Review-Findings vom 2026-06-01 sind in
+    `docs/planning/next/atomic-preserve-followups.md` als Folge-
+    Slices erfasst; das höchste (Contiguity-Crash in
+    `SchemaMigrateExecutionStage`) wird vor 0.9.7-Tag adressiert.
+  - Dead-Code-Cleanup der ungenutzten Probe-Adapter-Klassen ist
+    eigener Folge-Slice.
+
+  Plan-Doc:
+  `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`.
+
 - **0.9.7 SQLite-Sequence preserveCurrentValue Folge-Slice** *(2026-05-29)* —
   schliesst die `SequencePreserveStage`-Lucke fuer SQLite-Targets aus
   der 0.9.7-E.3-Erstscheibe. Neuer `SqliteSequenceCurrentValueProbe`-Adapter liest
