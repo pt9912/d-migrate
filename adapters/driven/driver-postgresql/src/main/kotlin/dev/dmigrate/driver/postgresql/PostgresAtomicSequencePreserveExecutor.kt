@@ -68,9 +68,11 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         if (sortedRequests.isEmpty()) {
             // Empty batch is a no-op success — the runner gets a
             // canonical Applied with no refs, the transaction is
-            // never opened.
+            // never opened. The owner-vertrag check runs only when
+            // the executor actually touches the connection.
             return AtomicSequencePreserveResult.Applied(emptyList())
         }
+        AtomicSequencePreserveExecutor.requireOwnedConnection(connection)
 
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false

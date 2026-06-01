@@ -69,6 +69,7 @@ class SqliteAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         if (sortedRequests.isEmpty()) {
             return AtomicSequencePreserveResult.Applied(emptyList())
         }
+        AtomicSequencePreserveExecutor.requireOwnedConnection(connection)
 
         val previousAutoCommit = connection.autoCommit
         val previousBusyTimeout = readBusyTimeout(connection)

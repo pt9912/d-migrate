@@ -52,6 +52,33 @@ interface AtomicSequencePreserveExecutor {
         lockTimeoutMillis: Long,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult
+
+    companion object {
+
+        /**
+         * Atomic-Preserve Phase C.3 (2026-06-01): connection-owner
+         * contract check. Every [execute] implementation MUST call
+         * this helper at entry so a wiring bug — passing a
+         * connection that already lives in an enclosing transaction
+         * (autoCommit=false) — surfaces as
+         * [IllegalStateException] **before** any lock or probe runs.
+         *
+         * Throwing here is intentional and is NOT routed through
+         * [AtomicSequencePreserveResult.Failed]: the failure is a
+         * composition-root bug (the runner allocated a non-owned
+         * connection) rather than a runtime fault. Surfacing it as
+         * `Failed` would let the runner translate it into a planner
+         * blocker, masking the real wiring problem.
+         */
+        fun requireOwnedConnection(connection: Connection) {
+            check(connection.autoCommit) {
+                "AtomicSequencePreserveExecutor requires an owned, " +
+                    "non-enclosed connection (autoCommit=true at " +
+                    "entry; got autoCommit=false meaning an " +
+                    "enclosing transaction)."
+            }
+        }
+    }
 }
 
 /**

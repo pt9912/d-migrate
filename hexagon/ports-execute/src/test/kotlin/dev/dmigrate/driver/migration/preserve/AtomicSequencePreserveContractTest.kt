@@ -3,9 +3,12 @@ package dev.dmigrate.driver.migration.preserve
 import dev.dmigrate.core.diff.migration.RenameProjectionDialect
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
+import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeInstanceOf
+import io.mockk.every
+import io.mockk.mockk
 
 /**
  * Atomic-Preserve Phase B (2026-05-31): Phase-B-side contract pin
@@ -81,5 +84,22 @@ class AtomicSequencePreserveContractTest : FunSpec({
     test("AtomicProtectedExecutionResult.Succeeded carries the statements-executed count") {
         val succeeded = AtomicProtectedExecutionResult.Succeeded(statementsExecuted = 7)
         succeeded.statementsExecuted shouldBe 7
+    }
+
+    test("requireOwnedConnection accepts an autocommit=true connection") {
+        val owned = mockk<java.sql.Connection>(relaxed = true)
+        every { owned.autoCommit } returns true
+        // Should not throw.
+        AtomicSequencePreserveExecutor.requireOwnedConnection(owned)
+    }
+
+    test("requireOwnedConnection throws IllegalStateException for an enclosing transaction") {
+        val enclosed = mockk<java.sql.Connection>(relaxed = true)
+        every { enclosed.autoCommit } returns false
+        val ex = shouldThrow<IllegalStateException> {
+            AtomicSequencePreserveExecutor.requireOwnedConnection(enclosed)
+        }
+        ex.message!!.contains("requires an owned, non-enclosed connection") shouldBe true
+        ex.message!!.contains("autoCommit=true at entry") shouldBe true
     }
 })
