@@ -666,8 +666,15 @@ im Result-Mapping.
       `:adapters:driving:cli`-internals zugreifen können.
 - [x] MySQL + SQLite `integration-concurrency`-Race-Tests auf Atomic-Runner
       migriert (positive Beweis: `finalValue >= initial + writerAdvances`
-      mit 50 concurrent writers). PG-Race bleibt `knownRace=true`-Reproducer
-      (advisory_xact_lock blockt App-`nextval` nicht — Risiko Nr. 8).
+      mit 50 concurrent writers). PG-Race ebenfalls auf den
+      `PostgresAtomicSequencePreserveExecutor` migriert (Phase-D-Follow-up
+      2026-06-01) und dokumentiert das dort verbleibende residuelle
+      App-`nextval`-Risiko (Risiko Nr. 8) als negativen Vertragstest:
+      `finalLastValue shouldBe 1L` plus Beweis, dass der Writer während
+      des Lock-Fensters Forward-Progress machen konnte
+      (`writerObservedMax >= 1L + writerAdvances`). Die legacy
+      `SequencePreserveRace`-Harness ist damit Dead-Code und wurde
+      gelöscht.
 
 ##### C.5-Follow-up CI-Fixes (commits `39bcaa29` + `d72e572f`)
 
@@ -919,10 +926,15 @@ KDocs, User-Guide und CHANGELOG.
    `docs/user/guide.md` als „PG atomic-preserve serialisiert
    parallele d-migrate-Läufe und verkleinert das App-Race-Fenster;
    für Null-Race-Garantie weiterhin Maintenance-Fenster nötig."
-   `:test:integration-concurrency` deckt die Race im
-   `PostgresSequencePreserveRaceTest` weiterhin als `knownRace=true`-
-   Reproducer ab; Phase E könnte einen kontrollierten App-side
-   Advisory-Lock-Vertrag dokumentieren.
+   `:test:integration-concurrency/PostgresSequencePreserveRaceTest`
+   ist seit dem Phase-D-Follow-up (2026-06-01) auf den
+   `PostgresAtomicSequencePreserveExecutor` migriert und pinnt die
+   Residual-Race als Vertragstest: der Writer beobachtet während
+   des Lock-Fensters Forward-Progress, der Atomic-Executor's Restore
+   überschreibt diese Advances aber wieder mit dem ursprünglich
+   geprobten `last_value`. Phase E hat den dazugehörigen User-Guide-
+   Eintrag dialekt-spezifisch formuliert; ein kontrollierter App-
+   side Advisory-Lock-Vertrag bleibt eigener Folge-Slice.
 9. **Nichttransaktionale DDL / implizite Commits**: Falls ein Dialekt die
    geschützte sequenzverändernde Operation nicht innerhalb der Executor-
    Transaktion ausführen kann (z. B. impliziter Commit), ist all-or-none nicht
