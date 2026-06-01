@@ -924,5 +924,29 @@ sealed interface DiffOperation {
     ) : DiffOperation {
         override fun withDependencies(dependencies: Set<String>): DiffOperation = copy(dependencies = dependencies)
         override fun withId(id: String): DiffOperation = copy(id = id)
+
+        companion object {
+            /**
+             * Atomic-Preserve Phase C.1 (2026-06-01): sentinel value
+             * carried in [currentValue] when the follow-up is emitted
+             * by [SequencePreserveStage] for an atomic-preserve plan.
+             *
+             * The atomic executor probes the live sequence value
+             * **inside** the lock at execute time and uses the probed
+             * value for the restore SQL — the follow-up's
+             * [currentValue] field is **not** read by the live-execute
+             * path (see `SegmentAwareMigrationExecutor` which filters
+             * the follow-up out via `internalFollowUpIds`). The
+             * sentinel exists so the follow-up remains a renderable
+             * audit artefact in plan-only / report / rollback outputs
+             * without needing a nullable [currentValue] (which would
+             * be a breaking change on the core DiffOperation).
+             *
+             * Anyone reading [currentValue] from a follow-up should
+             * cross-check against this sentinel before treating the
+             * value as a real probed reading.
+             */
+            const val ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE: Long = 0L
+        }
     }
 }

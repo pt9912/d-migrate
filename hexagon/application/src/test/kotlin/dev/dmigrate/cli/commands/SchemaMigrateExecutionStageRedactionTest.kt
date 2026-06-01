@@ -26,7 +26,7 @@ import io.kotest.matchers.string.shouldNotContain
  */
 class SchemaMigrateExecutionStageRedactionTest : FunSpec({
 
-    fun stage(executor: ExecutorFn?) = SchemaMigrateExecutionStage(
+    fun stage(executor: SegmentAwareExecutorFn?) = SchemaMigrateExecutionStage(
         executor = executor,
         dbLoader = null,
         normalizer = { it },
@@ -61,7 +61,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
         // includes a credential-shaped literal. RoutineBodyLogRedactor
         // delegates to RoutineBodyScrubber which masks password=' ... '
         // patterns.
-        val executor: ExecutorFn = { _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
             throw RuntimeException(
                 "ERROR: syntax error at \"BEGIN\" in CREATE FUNCTION login() " +
                     "AS \$\$ password = 'hunter2-very-secret' \$\$",
@@ -71,6 +71,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
             request = request(debugBody = false),
             target = target,
             combined = rendered(),
+            atomicBatch = null,
             cancellationToken = CancellationTokenSource.create().token,
         )
         trace shouldNotBe null
@@ -84,7 +85,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
     }
 
     test("--debug-body bypasses redaction and emits raw driver message") {
-        val executor: ExecutorFn = { _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
             throw RuntimeException(
                 "ERROR in CREATE FUNCTION: password = 'hunter2-very-secret' invalid",
             )
@@ -93,6 +94,7 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
             request = request(debugBody = true),
             target = target,
             combined = rendered(),
+            atomicBatch = null,
             cancellationToken = CancellationTokenSource.create().token,
         )
         trace shouldNotBe null
@@ -101,13 +103,14 @@ class SchemaMigrateExecutionStageRedactionTest : FunSpec({
     }
 
     test("non-execute request returns null without touching the executor") {
-        val executor: ExecutorFn = { _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
             throw IllegalStateException("must not be called")
         }
         val trace = stage(executor).maybeExecute(
             request = request(debugBody = false).copy(execute = false),
             target = target,
             combined = rendered(),
+            atomicBatch = null,
             cancellationToken = CancellationTokenSource.create().token,
         )
         trace shouldBe null

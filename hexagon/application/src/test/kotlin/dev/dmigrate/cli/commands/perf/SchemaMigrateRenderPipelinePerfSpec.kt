@@ -82,7 +82,6 @@ class SchemaMigrateRenderPipelinePerfSpec : FunSpec({
             sqliteCastPreflightProbe = null,
             checkPreflightProbe = null,
             mysqlSequenceCanonicityProbe = null,
-            sequenceCurrentValueProbe = null,
         )
         val request = SchemaMigrateRequest(
             source = "file:source.yaml",

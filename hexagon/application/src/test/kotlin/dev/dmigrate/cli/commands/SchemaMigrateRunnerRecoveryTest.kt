@@ -91,7 +91,8 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, statements, _ ->
+            executor = { _, _, segments, _ ->
+                val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -147,7 +148,8 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, statements, _ ->
+            executor = { _, _, segments, _ ->
+                val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -207,7 +209,7 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -276,7 +278,7 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -361,7 +363,7 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -447,7 +449,7 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c ->
@@ -536,7 +538,7 @@ class SchemaMigrateRunnerRecoveryTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c ->

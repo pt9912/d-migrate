@@ -5,6 +5,8 @@ import dev.dmigrate.core.diff.routine.RoutineBodyLogRedactor
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.driver.RoutineBodyDisplay
 import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch
+import dev.dmigrate.driver.migration.preserve.segmentForExecute
 import java.nio.file.Path
 
 /**
@@ -20,12 +22,23 @@ import java.nio.file.Path
  * state is exclusively the injected ports.
  */
 internal class SchemaMigrateExecutionStage(
-    private val executor: ExecutorFn?,
+    private val executor: SegmentAwareExecutorFn?,
     private val dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)?,
     private val normalizer: (ResolvedSchemaOperand) -> ResolvedSchemaOperand,
     private val fingerprint: (SchemaDefinition) -> String,
     private val printError: (message: String, source: String) -> Unit,
+    private val lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
 ) {
+
+    companion object {
+        /**
+         * Atomic-Preserve Phase C.1 default — mirrors §4.0 of the
+         * lock-matrix and `AtomicSequencePreserveRunner.DEFAULT_LOCK_TIMEOUT_MILLIS`.
+         * A future CLI / request slot may flow a per-call override
+         * down into the executor.
+         */
+        const val DEFAULT_LOCK_TIMEOUT_MILLIS: Long = 5_000L
+    }
 
     /**
      * Execute the rendered Up-SQL via the injected executor when
@@ -39,6 +52,7 @@ internal class SchemaMigrateExecutionStage(
         request: SchemaMigrateRequest,
         target: CompareOperand,
         combined: MigrationDdlResult,
+        atomicBatch: AtomicSequencePreserveBatch?,
         cancellationToken: CancellationToken,
     ): ExecutionTrace? {
         if (!request.execute) return null
@@ -56,8 +70,15 @@ internal class SchemaMigrateExecutionStage(
             ?: error("validateRequest must reject --execute with non-DB target before reaching the executor.")
         cancellationToken.throwIfCancellationRequested()
         val statementGroups = MigrationExecutionStatusBuilder.statementGroups(combined.statements)
+        // Phase C.1: derive the segment-list view from the rendered
+        // statements + the optional atomic-preserve batch (null when
+        // no preserve candidates were classified). When the batch is
+        // null the list degenerates to a single PlainSqlSegment and
+        // the segment-aware executor's PG/MySQL/SQLite path runs
+        // identically to the heutige JdbcMigrationExecutor flow.
+        val segments = segmentForExecute(combined.statements, atomicBatch)
         return try {
-            exec(dbOperand, combined.statements, request.cliConfigPath)
+            exec(dbOperand, request.cliConfigPath, segments, lockTimeoutMillis)
                 .withG3Defaults(statementGroups)
         } catch (e: Exception) {
             // E.1 Slice F.1: JDBC driver exception messages frequently

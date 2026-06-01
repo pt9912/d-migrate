@@ -48,6 +48,17 @@ internal data class SchemaMigrateRenderResult(
      * artefact reflects every op that will actually execute (§6.4.7).
      */
     val augmentedPlan: DiffResult,
+    /**
+     * Atomic-Preserve Phase C.1 (2026-06-01): the
+     * [dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch]
+     * Stage built when its [SequencePreserveStage.Outcome.Succeeded]
+     * fired. Null when Stage returned `NotRun` or `Failed`. The
+     * execution stage (Sub-Slice C.3 runner) consumes it to derive
+     * the [dev.dmigrate.driver.migration.preserve.ExecutableSegment]
+     * view via `segmentForExecute` and routes the live-execute path
+     * to the atomic runner.
+     */
+    val atomicBatch: dev.dmigrate.driver.migration.preserve.AtomicSequencePreserveBatch? = null,
 )
 
 /**
@@ -81,17 +92,6 @@ internal class SchemaMigrateRenderPipeline(
      * [MigrationPreflightPlanner.plan] still flow through.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
-    /**
-     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): per-op
-     * sequence runtime-state probe (PG `SELECT last_value, is_called`,
-     * MySQL `SELECT next_value, managed_by, format_version FROM
-     * dmg_sequences`). Wired by the driving CLI to a dialect-dispatcher
-     * that routes by [SequenceObjectRef.dialect]; null for unit-test
-     * paths. The stage short-circuits to `NotRun` when this is null
-     * (per-candidate `SEQUENCE_PRESERVE_NOT_RUN_POLICY` INFO) or no
-     * preserveCurrentValue=true sequence op is in the plan.
-     */
-    private val sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null,
 ) {
 
     fun run(
@@ -149,6 +149,7 @@ internal class SchemaMigrateRenderPipeline(
             executableCombined = executableCombined,
             catalogProbeMode = renderOptions.sqliteContext?.catalogProbeMode ?: SqliteCatalogProbeMode.SCHEMA_ONLY,
             augmentedPlan = effectivePlan,
+            atomicBatch = (preserveOutcome as? SequencePreserveStage.Outcome.Succeeded)?.atomicBatch,
         )
     }
 
@@ -220,11 +221,10 @@ internal class SchemaMigrateRenderPipeline(
         SequencePreserveStage.Outcome.NotRun
     } else {
         SequencePreserveStage.run(
-            sequenceCurrentValueProbe,
-            request,
-            targetOp,
-            dialect,
-            plan,
+            request = request,
+            target = targetOp,
+            dialect = dialect,
+            plan = plan,
         )
     }
 

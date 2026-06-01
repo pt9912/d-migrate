@@ -146,7 +146,7 @@ class MysqlMigrateRoundTripIntegrationTest : FunSpec({
                 rendererFor = { d ->
                     if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null
                 },
-                executor = { _, statements, _ -> executeAgainstPool(pool, statements) },
+                executor = { _, _, segments, _ -> executeAgainstPool(pool, segments.flatMap { it.statements }) },
                 renderReport = { r, _ -> r.toString() },
                 printError = { msg, src -> System.err.println("[$src] $msg") },
             )

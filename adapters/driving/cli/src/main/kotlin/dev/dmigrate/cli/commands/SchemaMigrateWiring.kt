@@ -94,13 +94,19 @@ internal object SchemaMigrateWiring {
             dbLoader = { op, cfgPath -> loadFromDb(op, cfgPath, validator) },
             comparator = { left, right -> SchemaComparator().compare(left, right) },
             rendererFor = MigrateRendererRegistry::forDialect,
-            executor = JdbcMigrationExecutor::execute,
+            executor = { target, configPath, segments, lockTimeoutMillis ->
+                SegmentAwareMigrationExecutor.execute(
+                    target = target,
+                    configPath = configPath,
+                    segments = segments,
+                    lockTimeoutMillis = lockTimeoutMillis,
+                )
+            },
             sqliteLiveCatalogProbe = SqliteLiveCatalogProbeRunner::probe,
             sqliteCastPreflightPlanner = SqliteCastPreflightProbeRunner::planNotRun,
             sqliteCastPreflightProbe = SqliteCastPreflightProbeRunner::probe,
             checkPreflightProbe = CheckPreflightProbeRunner::probe,
             mysqlSequenceCanonicityProbe = MysqlSequenceCanonicityProbeRunner::probe,
-            sequenceCurrentValueProbe = SequenceCurrentValueProbeRunner::probe,
             urlScrubber = LogScrubber::maskUrl,
             renderReport = SchemaMigrateReportRenderer::render,
             printError = { msg, src -> formatter.printError(msg, src) },

@@ -61,7 +61,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
 
     fun simpleRunner(
         dbLoader: ((CompareOperand.Database, Path?) -> ResolvedSchemaOperand)? = null,
-        executor: ExecutorFn? = null,
+        executor: SegmentAwareExecutorFn? = null,
         capture: MutableMap<String, String> = mutableMapOf(),
         sourceSchema: SchemaDefinition = schemaWithTable("orders"),
     ): Pair<SchemaMigrateRunner, MutableMap<String, String>> {
@@ -194,7 +194,8 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, statements, _ ->
+            executor = { _, _, segments, _ ->
+                val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -244,7 +245,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -323,7 +324,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -409,7 +410,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 ExecutionTrace(executionStarted = true, executionCompleted = true, statementsAttempted = 1)
             },
             atomicWriter = { p, c -> capture["wrote:$p"] = c; Files.writeString(p, c) },
@@ -476,7 +477,7 @@ class SchemaMigrateRunnerExecuteTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 executorCalled = true
                 ExecutionTrace(executionStarted = true, executionCompleted = true)
             },

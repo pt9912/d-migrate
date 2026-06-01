@@ -7,38 +7,54 @@ import dev.dmigrate.core.diff.migration.DiffObjectRef
 import dev.dmigrate.core.diff.migration.DiffObjectType
 import dev.dmigrate.core.diff.migration.DiffOperation
 import dev.dmigrate.core.diff.migration.DiffResult
-import dev.dmigrate.core.diff.migration.RenameProjectionDialect
+import dev.dmigrate.core.diff.migration.RenameProvenance
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.model.SequenceDefinition
 import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.SequenceCurrentValueProbeResult
-import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.ProtectedOperationId
+import dev.dmigrate.driver.SequenceCapability
+import dev.dmigrate.driver.SequenceCapabilityDefaults
 import io.kotest.core.spec.style.FunSpec
-import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
-import io.kotest.matchers.shouldNotBe
 import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 import java.nio.file.Path
 
 /**
- * 0.9.7 preserve-current-value Sub-Slice D: pins
- * [SequencePreserveStage]'s dispatch logic — skip paths, candidate
- * filter, probe routing, and plan augmentation. Probe adapters are
- * mocked via the [SequenceCurrentValueProbeFn] typealias so this
- * test stays driver-free.
+ * Atomic-Preserve Phase C.1 (2026-06-01): pins the atomic-batch-
+ * building behaviour of [SequencePreserveStage]. Probe-driven test
+ * cases from the 0.9.7 path are gone — the atomic executor runs the
+ * probe inside the lock at execute time, not at Stage time.
+ *
+ * Test buckets:
+ *
+ * - **Skip paths**: file-target, non-DB target, !execute,
+ *   dialect-not-allowlisted, SQLite-without-helper_table.
+ * - **Candidate classification**: CreateSequence-with-renameProvenance,
+ *   AlterSequence (either side opts in), RenameSequence (source opts
+ *   in), DropSequence intentionally not a candidate.
+ * - **Atomic batch**: requests carry the [SequenceObjectRef]s,
+ *   protectedOperationIds carry the kind names,
+ *   internalFollowUpIds carry the synthetic follow-up op IDs.
+ * - **Audit follow-up**: [DiffOperation.AlterSequenceCurrentValue] is
+ *   appended behind each parent op with the sentinel current-value
+ *   + rollbackImpossible=true.
+ * - **Capability gate**: a candidate kind outside the dialect's
+ *   `transactionalProtectedSequenceOperations` set blocks with
+ *   `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` — verified via a synthetic
+ *   capability overlay (default allowlist accepts all three kinds).
  */
 class SequencePreserveStageTest : FunSpec({
 
     fun emptySchema() = SchemaDefinition(name = "App", version = "1")
 
-    fun schemaWithSequence(preserve: Boolean = true) = SchemaDefinition(
+    fun schemaWithSequence(name: String = "order_seq", preserve: Boolean = true) = SchemaDefinition(
         name = "App",
         version = "1",
         sequences = mapOf(
-            "order_seq" to SequenceDefinition(start = 1L, increment = 1L, preserveCurrentValue = preserve),
+            name to SequenceDefinition(start = 1L, increment = 1L, preserveCurrentValue = preserve),
         ),
     )
 
@@ -60,7 +76,7 @@ class SequencePreserveStageTest : FunSpec({
             id = "create:$name",
             objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf(name)),
             sequence = SequenceDefinition(start = 1L, increment = 1L, preserveCurrentValue = preserve),
-            renameProvenance = dev.dmigrate.core.diff.migration.RenameProvenance(
+            renameProvenance = RenameProvenance(
                 candidateId = "test-$name",
                 objectType = DiffObjectType.SEQUENCE,
                 fromPath = listOf("old_$name"),
@@ -101,10 +117,11 @@ class SequencePreserveStageTest : FunSpec({
             overlayHash = null,
         )
 
-    fun executeRequest() = SchemaMigrateRequest(
+    fun executeRequest(sqliteNamedSequences: String? = null) = SchemaMigrateRequest(
         source = "desired.yaml",
         target = "db:mysql://x",
         execute = true,
+        sqliteNamedSequences = sqliteNamedSequences,
     )
 
     fun planOnlyRequest() = SchemaMigrateRequest(
@@ -114,26 +131,12 @@ class SequencePreserveStageTest : FunSpec({
     )
 
     fun dbTarget() = CompareOperand.Database("mysql://x")
-
     fun fileTarget() = CompareOperand.File(Path.of("current.yaml"))
 
-    fun probe(result: SequenceCurrentValueProbeResult): SequenceCurrentValueProbeFn =
-        { _, _, _ -> result }
+    // ── Skip-paths ─────────────────────────────────────────────────────
 
-    fun probeByRef(map: Map<String, SequenceCurrentValueProbeResult>): SequenceCurrentValueProbeFn =
-        { _, _, ref -> map[ref.name] ?: error("no probe result for ${ref.name}") }
-
-    // ── Skip-paths (§6.4.3) ────────────────────────────────────────────
-
-    test("file target with preserve candidates → REQUIRES_DB_TARGET regardless of execute flag") {
-        // §6.4.3 priority blocker — Plan-Doc §3.1 calls it out:
-        // file source/target plus preserve=true means the probe can't
-        // run; emitting a plan that silently misses the setval/UPDATE
-        // follow-ups would lie. Block per-candidate so the operator
-        // sees the structured diagnostic.
-        var probeCalls = 0
+    test("file target with preserve candidates → REQUIRES_DB_TARGET blocker") {
         val outcome = SequencePreserveStage.run(
-            probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
             request = planOnlyRequest(),
             target = fileTarget(),
             dialect = DatabaseDialect.MYSQL,
@@ -142,12 +145,10 @@ class SequencePreserveStageTest : FunSpec({
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
         outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET"
         outcome.diagnostics.single().severity shouldBe DiffDiagnostic.Severity.BLOCKER
-        probeCalls shouldBe 0
     }
 
     test("file target without preserve candidates → NotRun (no noise)") {
         SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = planOnlyRequest(),
             target = fileTarget(),
             dialect = DatabaseDialect.MYSQL,
@@ -155,31 +156,11 @@ class SequencePreserveStageTest : FunSpec({
         ) shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    test("REQUIRES_DB_TARGET wins over dialect-specific blockers for SQLite + file target") {
-        // Plan-Doc §3.1: file-target blocker has priority over
-        // dialect-specific blockers (OPT_IN_REQUIRED, NOT_SUPPORTED_BY_DIALECT).
+    test("DB target + !request.execute → NotRun regardless of candidates") {
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotApplicable),
-            request = planOnlyRequest(),
-            target = fileTarget(),
-            dialect = DatabaseDialect.SQLITE,
-            plan = synthesisePlan(listOf(alterSeqOp())),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_REQUIRES_DB_TARGET"
-    }
-
-    test("DB target + !request.execute → NotRun (plan-only against DB skips probe)") {
-        // Plan-only against a DB target stays NotRun: probing would
-        // open a connection without operator intent. The drift-check
-        // stage uses the same pattern.
-        var probeCalls = 0
-        val outcome = SequencePreserveStage.run(
-            probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
             request = SchemaMigrateRequest(
                 source = "desired.yaml",
                 target = "db:mysql://x",
-                execute = false,
                 planOnly = true,
             ),
             target = dbTarget(),
@@ -187,99 +168,70 @@ class SequencePreserveStageTest : FunSpec({
             plan = synthesisePlan(listOf(alterSeqOp())),
         )
         outcome shouldBe SequencePreserveStage.Outcome.NotRun
-        probeCalls shouldBe 0
     }
 
-    test("SQLite with preserve candidates + no helper_table opt-in → Failed(OPT_IN_REQUIRED) per candidate, no probe") {
-        // 0.9.7 Folge-Slice: SQLite is now in the allowlist, but the
-        // operator must opt into the helper-table emulation via
-        // `--sqlite-named-sequences helper_table`. Without it, the
-        // stage emits the new SEQUENCE_PRESERVE_OPT_IN_REQUIRED code
-        // (NOT the legacy NOT_SUPPORTED_BY_DIALECT one).
-        var probeCalls = 0
-        val outcome = SequencePreserveStage.run(
-            probe = { _, _, _ -> probeCalls++; SequenceCurrentValueProbeResult.NotFound },
-            request = executeRequest(),
-            target = dbTarget(),
-            dialect = DatabaseDialect.SQLITE,
-            plan = synthesisePlan(listOf(alterSeqOp())),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe
-            "SEQUENCE_PRESERVE_OPT_IN_REQUIRED"
-        outcome.diagnostics.single().severity shouldBe DiffDiagnostic.Severity.BLOCKER
-        outcome.diagnostics.single().message shouldContain "--sqlite-named-sequences helper_table"
-        probeCalls shouldBe 0
-    }
-
-    test("SQLite with preserve candidates + helper_table opt-in → probe runs, augmented plan emitted") {
-        var probeCalls = 0
-        val outcome = SequencePreserveStage.run(
-            probe = { _, _, _ ->
-                probeCalls++
-                SequenceCurrentValueProbeResult.Read(value = 99L)
-            },
-            request = executeRequest().copy(sqliteNamedSequences = "helper_table"),
-            target = dbTarget(),
-            dialect = DatabaseDialect.SQLITE,
-            plan = synthesisePlan(listOf(alterSeqOp())),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        probeCalls shouldBe 1
-        val followUp = outcome.augmentedPlan.operations
-            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
-            .single()
-        followUp.currentValue shouldBe 99L
-        followUp.isCalled shouldBe null
-        followUp.probeSequenceRef.dialect shouldBe RenameProjectionDialect.SQLITE
-    }
-
-    test("SQLite without preserve candidates → NotRun (no per-op blocker noise)") {
+    test("DB target + execute + no candidates → NotRun (no follow-ups, no batch)") {
         SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = executeRequest(),
             target = dbTarget(),
-            dialect = DatabaseDialect.SQLITE,
+            dialect = DatabaseDialect.MYSQL,
             plan = synthesisePlan(listOf(alterSeqOp(beforePreserve = false, afterPreserve = false))),
         ) shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    test("probe == null → Succeeded with NOT_RUN_POLICY INFO per candidate; plan unchanged") {
-        val plan = synthesisePlan(listOf(alterSeqOp()))
+    test("SQLite without --sqlite-named-sequences helper_table → OPT_IN_REQUIRED blocker") {
         val outcome = SequencePreserveStage.run(
-            probe = null,
-            request = executeRequest(),
+            request = executeRequest(sqliteNamedSequences = null),
             target = dbTarget(),
-            dialect = DatabaseDialect.MYSQL,
-            plan = plan,
+            dialect = DatabaseDialect.SQLITE,
+            plan = synthesisePlan(
+                listOf(alterSeqOp()),
+                currentSchema = schemaWithSequence(),
+            ),
         )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        outcome.augmentedPlan shouldBe plan
-        outcome.infoDiagnostics.single().code shouldBe "SEQUENCE_PRESERVE_NOT_RUN_POLICY"
-        outcome.infoDiagnostics.single().severity shouldBe DiffDiagnostic.Severity.INFO
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
+        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_OPT_IN_REQUIRED"
     }
 
-    test("plan without preserve candidates → NotRun (filter rejects DropSequence and preserve=false)") {
-        val drop = DiffOperation.DropSequence(
-            id = "drop:x",
-            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("x")),
-            sequence = SequenceDefinition(start = 1L, preserveCurrentValue = true),
+    test("SQLite with --sqlite-named-sequences helper_table → batch is built") {
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(sqliteNamedSequences = "helper_table"),
+            target = dbTarget(),
+            dialect = DatabaseDialect.SQLITE,
+            plan = synthesisePlan(
+                listOf(alterSeqOp()),
+                currentSchema = schemaWithSequence(),
+            ),
         )
-        val alter = alterSeqOp(beforePreserve = false, afterPreserve = false)
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        outcome.atomicBatch.requests.size shouldBe 1
+    }
+
+    // ── Candidate classification ───────────────────────────────────────
+
+    test("DropSequence is never a candidate (§6.4.1)") {
         SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(listOf(drop, alter)),
+            plan = synthesisePlan(
+                listOf(
+                    DiffOperation.DropSequence(
+                        id = "drop:order_seq",
+                        objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("order_seq")),
+                        sequence = SequenceDefinition(
+                            start = 1L,
+                            increment = 1L,
+                            preserveCurrentValue = true,
+                        ),
+                    ),
+                ),
+            ),
         ) shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    // ── Candidate filter (§6.4.1) ──────────────────────────────────────
-
-    test("CreateSequence without renameProvenance → not a probe candidate (NotRun if alone)") {
+    test("CreateSequence without renameProvenance is not a candidate") {
         SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.MYSQL,
@@ -287,257 +239,217 @@ class SequencePreserveStageTest : FunSpec({
         ) shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    test("RenameSequence: source sequence preserve=true → candidate") {
-        val rename = renameSeqOp("old_seq", "new_seq")
+    test("CreateSequence with renameProvenance is a candidate") {
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 100L)),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(
-                listOf(rename),
-                currentSchema = SchemaDefinition(
-                    name = "App", version = "1",
-                    sequences = mapOf("old_seq" to SequenceDefinition(preserveCurrentValue = true)),
-                ),
-            ),
+            plan = synthesisePlan(listOf(createSeqOp())),
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        val followUp = outcome.augmentedPlan.operations
-            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
-            .single()
-        followUp.probeSequenceRef.name shouldBe "old_seq"
-        followUp.applySequenceRef.name shouldBe "new_seq"
-        followUp.revertAfterRename shouldBe true
-        followUp.pairId shouldBe "rename:${rename.id}"
+        outcome.atomicBatch.requests.size shouldBe 1
     }
 
-    test("RenameSequence: source sequence preserve=false → not a candidate") {
-        SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 1L)),
+    test("AlterSequence is a candidate when EITHER side has preserveCurrentValue=true") {
+        listOf(
+            alterSeqOp(beforePreserve = true, afterPreserve = false) to true,
+            alterSeqOp(beforePreserve = false, afterPreserve = true) to true,
+            alterSeqOp(beforePreserve = false, afterPreserve = false) to false,
+        ).forEach { (op, expectCandidate) ->
+            val outcome = SequencePreserveStage.run(
+                request = executeRequest(),
+                target = dbTarget(),
+                dialect = DatabaseDialect.MYSQL,
+                plan = synthesisePlan(listOf(op)),
+            )
+            if (expectCandidate) {
+                outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+            } else {
+                outcome shouldBe SequencePreserveStage.Outcome.NotRun
+            }
+        }
+    }
+
+    test("RenameSequence is a candidate only when the SOURCE sequence carries preserveCurrentValue=true") {
+        val opPreserve = renameSeqOp(from = "old_seq", to = "new_seq")
+        val outcomePreserve = SequencePreserveStage.run(
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.MYSQL,
             plan = synthesisePlan(
-                listOf(renameSeqOp("old_seq", "new_seq")),
-                currentSchema = SchemaDefinition(
-                    name = "App", version = "1",
-                    sequences = mapOf("old_seq" to SequenceDefinition(preserveCurrentValue = false)),
-                ),
+                listOf(opPreserve),
+                currentSchema = schemaWithSequence(name = "old_seq", preserve = true),
             ),
-        ) shouldBe SequencePreserveStage.Outcome.NotRun
+        )
+        outcomePreserve.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        outcomePreserve.atomicBatch.requests.single().sequenceRef.name shouldBe "new_seq"
+
+        val outcomeNoPreserve = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.MYSQL,
+            plan = synthesisePlan(
+                listOf(renameSeqOp(from = "old_seq2", to = "new_seq2")),
+                currentSchema = schemaWithSequence(name = "old_seq2", preserve = false),
+            ),
+        )
+        outcomeNoPreserve shouldBe SequencePreserveStage.Outcome.NotRun
     }
 
-    // ── Routing (§6.4.5) ───────────────────────────────────────────────
+    // ── Atomic batch shape ─────────────────────────────────────────────
 
-    test("AlterSequence + Read → FollowUp with currentValue from probe, dependencies on parent") {
-        val alter = alterSeqOp()
+    test("multi-sequence plan → batch carries one request + protectedOperationId per kind + followUpId per op") {
+        val plan = synthesisePlan(
+            listOf(
+                alterSeqOp(name = "seq_a"),
+                alterSeqOp(name = "seq_b"),
+                createSeqOp(name = "seq_c"),
+            ),
+            currentSchema = schemaWithSequence("seq_a"),
+        )
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 42L, isCalled = true)),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
-            plan = synthesisePlan(listOf(alter)),
+            plan = plan,
         )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        val followUp = outcome.augmentedPlan.operations
-            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
-            .single()
-        followUp.currentValue shouldBe 42L
-        followUp.isCalled shouldBe true // PG → propagated
-        followUp.restoreValue shouldBe 42L
-        followUp.restoreIsCalled shouldBe true
-        followUp.rollbackImpossible shouldBe false
-        followUp.dependencies shouldBe setOf(alter.id)
+        val succeeded = outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        succeeded.atomicBatch.requests.map { it.sequenceRef.name } shouldBe listOf("seq_a", "seq_b", "seq_c")
+        succeeded.atomicBatch.protectedOperationIds.map { it.value } shouldContain "AlterSequence"
+        succeeded.atomicBatch.protectedOperationIds.map { it.value } shouldContain "CreateSequence"
+        succeeded.atomicBatch.protectedOperationIds.map { it.value }.size shouldBe 2
+        succeeded.atomicBatch.internalFollowUpIds.size shouldBe 3
+        // Each follow-up op-id ends in :preserve and references the parent op-id.
+        succeeded.atomicBatch.internalFollowUpIds.forEach { id ->
+            id.endsWith(":preserve") shouldBe true
+        }
     }
 
-    test("AlterSequence + Read MySQL → isCalled = null (MySQL helper-table encodes the equivalent)") {
+    test("augmented plan inserts AlterSequenceCurrentValue follow-up directly behind each parent op") {
+        val parentOps = listOf(alterSeqOp(name = "x"), alterSeqOp(name = "y"))
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 42L, isCalled = null)),
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(parentOps),
+        )
+        val succeeded = outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        val ops = succeeded.augmentedPlan.operations
+        ops.size shouldBe 4
+        ops[0].id shouldBe "alter:x"
+        ops[1].id shouldBe "alter:x:preserve"
+        ops[2].id shouldBe "alter:y"
+        ops[3].id shouldBe "alter:y:preserve"
+    }
+
+    test("audit follow-up carries the sentinel current-value and rollbackImpossible=true") {
+        val outcome = SequencePreserveStage.run(
+            request = executeRequest(),
+            target = dbTarget(),
+            dialect = DatabaseDialect.POSTGRESQL,
+            plan = synthesisePlan(listOf(alterSeqOp())),
+        )
+        val succeeded = outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
+        val followUp = succeeded.augmentedPlan.operations
+            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
+            .single()
+        followUp.currentValue shouldBe
+            DiffOperation.AlterSequenceCurrentValue.ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE
+        followUp.isCalled shouldBe true // PG safety default
+        followUp.restoreValue shouldBe null
+        followUp.rollbackImpossible shouldBe true
+        followUp.rollbackImpossibleReason!! shouldContain "Atomic-preserve"
+    }
+
+    test("audit follow-up on MySQL leaves isCalled null (MySQL helper-table semantics do not carry is_called)") {
+        val outcome = SequencePreserveStage.run(
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.MYSQL,
             plan = synthesisePlan(listOf(alterSeqOp())),
         )
-        val followUp = (outcome as SequencePreserveStage.Outcome.Succeeded)
-            .augmentedPlan.operations
+        val followUp = (outcome as SequencePreserveStage.Outcome.Succeeded).augmentedPlan.operations
             .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
             .single()
         followUp.isCalled shouldBe null
-        followUp.restoreIsCalled shouldBe null
     }
 
-    test("AlterSequence + Read with matchedRows != 1 → Block(PROBE_FAILED)") {
+    test("renderRestore closure builds dialect-correct SQL when invoked with a probe result") {
+        // Stage doesn't probe at Stage time, but it stores
+        // renderRestore closures the atomic executor calls inside the
+        // lock. Exercising the closure here pins the SQL shape per
+        // dialect without standing up a real DB.
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 1L, matchedRows = 2)),
-            request = executeRequest(),
-            target = dbTarget(),
-            dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(listOf(alterSeqOp())),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_PROBE_FAILED"
-        outcome.diagnostics.single().message shouldContain "2 rows"
-    }
-
-    test("AlterSequence + NotFound → Block (deterministic prior state required)") {
-        val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
-            plan = synthesisePlan(listOf(alterSeqOp())),
+            plan = synthesisePlan(listOf(alterSeqOp(name = "users_id_seq"))),
         )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_PROBE_FAILED"
-        outcome.diagnostics.single().message shouldContain "NotFound"
+        val request = (outcome as SequencePreserveStage.Outcome.Succeeded).atomicBatch.requests.single()
+        val sql = request.renderRestore(
+            dev.dmigrate.driver.SequenceCurrentValueProbeResult.Read(value = 99L, isCalled = true),
+        )
+        sql.size shouldBe 1
+        sql.single() shouldContain "setval('users_id_seq', 99, true)"
     }
 
-    test("CreateSequence + NotFound → Info (no blocker, current-value remains declarative)") {
+    // ── Capability gate ────────────────────────────────────────────────
+
+    test("candidate kind outside the dialect's allowlist → SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED blocker") {
+        // Inject a synthetic capability that only allows `AlterSequence`
+        // — a `CreateSequence` candidate must then surface
+        // SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED instead of silently
+        // skipping or falling through to a non-atomic path.
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.NotFound),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
             plan = synthesisePlan(listOf(createSeqOp())),
+            capabilityResolver = { dialect ->
+                SequenceCapabilityDefaults.forDialect(dialect).copy(
+                    transactionalProtectedSequenceOperations = setOf(
+                        ProtectedOperationId("AlterSequence"),
+                    ),
+                )
+            },
         )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        outcome.infoDiagnostics.single().code shouldBe "SEQUENCE_PRESERVE_NOT_FOUND"
-        outcome.infoDiagnostics.single().message shouldContain "ROLLBACK_NOT_POSSIBLE"
-        outcome.augmentedPlan.operations
-            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
-            .shouldBeEmpty()
+        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
+        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED"
+        outcome.diagnostics.single().severity shouldBe DiffDiagnostic.Severity.BLOCKER
+        outcome.diagnostics.single().message shouldContain "CreateSequence"
     }
 
-    test("CreateSequence + Read → FollowUp with rollbackImpossible=true (no pre-Up state)") {
+    test("empty allowlist blocks every candidate") {
         val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 50L, isCalled = true)),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
-            plan = synthesisePlan(listOf(createSeqOp())),
-        )
-        val followUp = (outcome as SequencePreserveStage.Outcome.Succeeded)
-            .augmentedPlan.operations
-            .filterIsInstance<DiffOperation.AlterSequenceCurrentValue>()
-            .single()
-        followUp.rollbackImpossible shouldBe true
-        followUp.rollbackImpossibleReason shouldNotBe null
-        followUp.restoreValue shouldBe null
-        followUp.restoreIsCalled shouldBe null
-        followUp.currentValue shouldBe 50L
-    }
-
-    test("Failed probe result → Block(PROBE_FAILED) with propagated code in message") {
-        val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Failed("PROBE_PERMISSION_DENIED", "no rights")),
-            request = executeRequest(),
-            target = dbTarget(),
-            dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(listOf(alterSeqOp())),
+            plan = synthesisePlan(listOf(alterSeqOp(name = "a"), alterSeqOp(name = "b"))),
+            capabilityResolver = { dialect ->
+                SequenceCapabilityDefaults.forDialect(dialect).copy(
+                    transactionalProtectedSequenceOperations = emptySet<ProtectedOperationId>(),
+                )
+            },
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_PROBE_FAILED"
-        outcome.diagnostics.single().message shouldContain "PROBE_PERMISSION_DENIED"
-        outcome.diagnostics.single().message shouldContain "no rights"
+        outcome.diagnostics.size shouldBe 2
+        outcome.diagnostics.all { it.code == "SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED" } shouldBe true
     }
 
-    test("Probe throws → Block(PROBE_FAILED) with exception class + message") {
+    test("default capability resolver accepts the three Stage candidate kinds (no gate blocker on production allowlist)") {
         val outcome = SequencePreserveStage.run(
-            probe = { _, _, _ -> error("connection refused") },
-            request = executeRequest(),
-            target = dbTarget(),
-            dialect = DatabaseDialect.MYSQL,
-            plan = synthesisePlan(listOf(alterSeqOp())),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Failed>()
-        outcome.diagnostics.single().code shouldBe "SEQUENCE_PRESERVE_PROBE_FAILED"
-        outcome.diagnostics.single().message shouldContain "connection refused"
-    }
-
-    // ── Plan augmentation (§6.4.6) ─────────────────────────────────────
-
-    test("Follow-up landet direkt hinter parent-Op im operations stream") {
-        // Parent ops: createSeqA (rename-provenance) + an unrelated
-        // AddColumn → followup must sit between them.
-        val createA = createSeqOp("seq_a")
-        val unrelated = DiffOperation.CreateSequence(
-            id = "create:unrelated",
-            objectRef = DiffObjectRef(DiffObjectType.SEQUENCE, listOf("unrelated")),
-            sequence = SequenceDefinition(preserveCurrentValue = false),
-        )
-        val outcome = SequencePreserveStage.run(
-            probe = probe(SequenceCurrentValueProbeResult.Read(value = 7L, isCalled = true)),
             request = executeRequest(),
             target = dbTarget(),
             dialect = DatabaseDialect.POSTGRESQL,
-            plan = synthesisePlan(listOf(createA, unrelated)),
-        )
-        outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        val ops = outcome.augmentedPlan.operations
-        ops.map { it::class.simpleName } shouldBe listOf(
-            "CreateSequence",
-            "AlterSequenceCurrentValue",
-            "CreateSequence",
-        )
-        ops[1].dependencies shouldBe setOf(createA.id)
-    }
-
-    test("Multiple preserve candidates each get their own follow-up positioned behind the parent") {
-        val alter = alterSeqOp("seq_a")
-        val create = createSeqOp("seq_b")
-        val outcome = SequencePreserveStage.run(
-            probe = probeByRef(
-                mapOf(
-                    "seq_a" to SequenceCurrentValueProbeResult.Read(value = 10L, isCalled = true),
-                    "seq_b" to SequenceCurrentValueProbeResult.Read(value = 20L, isCalled = false),
+            plan = synthesisePlan(
+                listOf(
+                    alterSeqOp(name = "a"),
+                    createSeqOp(name = "b"),
+                    renameSeqOp(from = "c_from", to = "c_to"),
                 ),
+                currentSchema = schemaWithSequence(name = "c_from"),
             ),
-            request = executeRequest(),
-            target = dbTarget(),
-            dialect = DatabaseDialect.POSTGRESQL,
-            plan = synthesisePlan(listOf(alter, create)),
         )
         outcome.shouldBeInstanceOf<SequencePreserveStage.Outcome.Succeeded>()
-        outcome.augmentedPlan.operations.map { it::class.simpleName } shouldBe listOf(
-            "AlterSequence",
-            "AlterSequenceCurrentValue",
-            "CreateSequence",
-            "AlterSequenceCurrentValue",
-        )
-        outcome.augmentedPlan.operations[1].dependencies shouldBe setOf(alter.id)
-        outcome.augmentedPlan.operations[3].dependencies shouldBe setOf(create.id)
-    }
-
-    // ── buildFailureResult ─────────────────────────────────────────────
-
-    test("buildFailureResult groups blockers by classified reason and surfaces them in MigrationDdlResult") {
-        val diags = listOf(
-            DiffDiagnostic(
-                code = "SEQUENCE_PRESERVE_PROBE_FAILED",
-                message = "x",
-                severity = DiffDiagnostic.Severity.BLOCKER,
-            ),
-            DiffDiagnostic(
-                code = "SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT",
-                message = "y",
-                severity = DiffDiagnostic.Severity.BLOCKER,
-            ),
-            DiffDiagnostic(
-                code = "SEQUENCE_PRESERVE_NOT_FOUND",
-                message = "info — not a blocker",
-                severity = DiffDiagnostic.Severity.INFO,
-            ),
-        )
-        val result = SequencePreserveStage.buildFailureResult(diags)
-        result.isBlocked shouldBe true
-        // Diagnostics flow through unchanged (INFO + BLOCKER).
-        result.diagnostics shouldBe diags
-        // Blockers grouped by reason: MANUAL_ACTION_REQUIRED +
-        // DIALECT_UNSUPPORTED_OPERATION.
-        result.blockers.map { it.reason }.toSet() shouldBe setOf(
-            MigrationBlockedReason.MANUAL_ACTION_REQUIRED,
-            MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION,
-        )
     }
 })

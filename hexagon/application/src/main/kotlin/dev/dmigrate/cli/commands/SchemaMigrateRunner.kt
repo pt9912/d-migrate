@@ -65,7 +65,7 @@ class SchemaMigrateRunner(
     private val comparator: (SchemaDefinition, SchemaDefinition) -> SchemaDiff,
     private val planner: DiffPlanner = DiffPlanner(),
     private val rendererFor: (DatabaseDialect) -> DiffDdlGenerator?,
-    private val executor: ExecutorFn? = null,
+    private val executor: SegmentAwareExecutorFn? = null,
     private val sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)? = null,
     private val sqliteCastPreflightPlanner: SqliteCastPreflightPlannerFn? = null,
     private val sqliteCastPreflightProbe: SqliteCastPreflightProbeFn? = null,
@@ -78,16 +78,6 @@ class SchemaMigrateRunner(
      * [MysqlSequenceCanonicityStage] for skip semantics.
      */
     private val mysqlSequenceCanonicityProbe: MysqlSequenceCanonicityProbeFn? = null,
-    /**
-     * 0.9.7 preserve-current-value Sub-Slice D (2026-05-21): per-op
-     * runtime-state probe for sequences with
-     * `preserveCurrentValue = true`. The driving CLI wires this to a
-     * dialect-dispatcher that resolves PG vs MySQL by the
-     * [SequenceObjectRef.dialect] field; unit-test paths leave it
-     * `null` so [SequencePreserveStage] emits per-candidate
-     * `SEQUENCE_PRESERVE_NOT_RUN_POLICY` INFO instead of probing.
-     */
-    private val sequenceCurrentValueProbe: SequenceCurrentValueProbeFn? = null,
     private val urlScrubber: (String) -> String = { it },
     private val ensureParentDirectories: (Path) -> Unit = { it.parent?.toFile()?.mkdirs() },
     private val atomicWriter: (Path, String) -> Unit = ::defaultAtomicWriter,
@@ -131,7 +121,6 @@ class SchemaMigrateRunner(
         sqliteCastPreflightProbe = sqliteCastPreflightProbe,
         checkPreflightProbe = checkPreflightProbe,
         mysqlSequenceCanonicityProbe = mysqlSequenceCanonicityProbe,
-        sequenceCurrentValueProbe = sequenceCurrentValueProbe,
     )
 
     private val executionStage = SchemaMigrateExecutionStage(
@@ -215,7 +204,7 @@ class SchemaMigrateRunner(
         val effectivePlan = render.augmentedPlan
 
         val executionTrace = executionStage.maybeExecute(
-            request, prepared.targetOp, render.executableCombined, cancellationToken,
+            request, prepared.targetOp, render.executableCombined, render.atomicBatch, cancellationToken,
         )
         val withExecution = executionStage.applyExecutionTrace(render.executableCombined, executionTrace)
         val postCompareOutcome = if (executionTrace != null && executionTrace.executionError == null) {
@@ -873,14 +862,36 @@ data class SchemaMigrateMysqlSequenceCanonicityView(
 )
 
 /**
- * Function type alias for the executor port. Bundled into a typealias
- * so the [SchemaMigrateRunner] constructor stays under Detekt's
- * MaxLineLength budget.
+ * Function type alias for the legacy non-segment executor port. Used by
+ * [SchemaRollbackRunner] and by [SegmentAwareMigrationExecutor]'s
+ * internal `PlainSqlSegment` delegate. Bundled into a typealias so
+ * constructor lines stay under Detekt's MaxLineLength budget.
  */
 typealias ExecutorFn = (
     target: CompareOperand.Database,
     statements: List<dev.dmigrate.driver.migration.MigrationDdlStatement>,
     configPath: Path?,
+) -> ExecutionTrace
+
+/**
+ * Atomic-Preserve Phase C.1 (2026-06-01) function-type alias for the
+ * segment-aware executor port. Wired by the driving CLI to
+ * `SegmentAwareMigrationExecutor::execute` (via a lambda that pins the
+ * default dispatcher + plain-executor + atomic-runner parameters).
+ *
+ * Receives the rendered plan as a `List<ExecutableSegment>` derived
+ * from the [SchemaMigrateRenderResult.executableCombined] statements
+ * plus the optional [SchemaMigrateRenderResult.atomicBatch]; the
+ * executor routes [dev.dmigrate.driver.migration.preserve.PlainSqlSegment]
+ * to the legacy [ExecutorFn] path and
+ * [dev.dmigrate.driver.migration.preserve.AtomicPreserveSegment] to
+ * the atomic runner.
+ */
+typealias SegmentAwareExecutorFn = (
+    target: CompareOperand.Database,
+    configPath: Path?,
+    segments: List<dev.dmigrate.driver.migration.preserve.ExecutableSegment>,
+    lockTimeoutMillis: Long,
 ) -> ExecutionTrace
 
 /**

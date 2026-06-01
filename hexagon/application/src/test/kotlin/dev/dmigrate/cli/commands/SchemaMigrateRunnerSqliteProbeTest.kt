@@ -68,7 +68,7 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
     fun runnerWith(
         dialect: DatabaseDialect,
         sqliteLiveCatalogProbe: ((CompareOperand.Database, Path?) -> SqliteLiveCatalog)? = null,
-        executor: ExecutorFn? = null,
+        executor: SegmentAwareExecutorFn? = null,
         capturedOptions: AtomicRef<DdlGenerationOptions?> = AtomicRef(null),
         capturedReport: AtomicRef<SchemaMigrateReport?> = AtomicRef(null),
     ): SchemaMigrateRunner {
@@ -132,7 +132,8 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
         val runner = runnerWith(
             dialect = DatabaseDialect.SQLITE,
             sqliteLiveCatalogProbe = { _, _ -> probedCatalog },
-            executor = { _, statements, _ ->
+            executor = { _, _, segments, _ ->
+                val statements = segments.flatMap { it.statements }
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,
@@ -162,7 +163,7 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
         val runner = runnerWith(
             dialect = DatabaseDialect.SQLITE,
             sqliteLiveCatalogProbe = { _, _ -> error("simulated probe failure") },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 executorCalls++
                 ExecutionTrace(executionStarted = true, executionCompleted = true)
             },
@@ -220,7 +221,7 @@ class SchemaMigrateRunnerSqliteProbeTest : FunSpec({
                 probeInvocations++
                 SqliteLiveCatalog()
             },
-            executor = { _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
+            executor = { _, _, _, _ -> ExecutionTrace(executionStarted = true, executionCompleted = true) },
             capturedOptions = capturedOptions,
             capturedReport = capturedReport,
         )

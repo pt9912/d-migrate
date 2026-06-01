@@ -128,7 +128,7 @@ class SchemaMigratePrePlanOverlayGateTest : FunSpec({
                         MigrationDdlResult(statements = emptyList(), operationsRendered = emptySet())
                 }
             },
-            executor = { _, _, _ ->
+            executor = { _, _, _, _ ->
                 executorCallCount[0]++
                 ExecutionTrace(executionStarted = true, executionCompleted = true)
             },
