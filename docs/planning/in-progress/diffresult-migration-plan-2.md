@@ -1,17 +1,19 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12, Refresh 2026-05-28).
-> Praktisch alle Workstreams sind abgeschlossen: G.1-G.3 (Artefakt/
+> Status: In Progress (seit 2026-05-12, Refresh 2026-06-02).
+> Alle Workstreams sind inhaltlich abgeschlossen: G.1-G.3 (Artefakt/
 > Runner), A.1/A.2 (Locking, SQLite-Live-Catalog), B.1/B.2 (PG-`USING`,
 > SQLite-Cast-Preflight), C.1/C.2 (Extensions, Spatial), D.1/D.2/D.3a/
 > D.3b (Views + Materialized Views), E.1 (Routine), E.2 (Trigger),
 > E.3 (PG-Sequence + MySQL-helper_table + preserveCurrentValue +
-> Cross-Dialect-Sequencing-Schirm 2026-05-27), F.0-F.4 (Overlays/
+> Cross-Dialect-Sequencing-Schirm 2026-05-27 + SQLite-Sequence-
+> Emulation Phasen A-E komplett 2026-05-29 + atomic-preserve
+> Folge-Slice Phasen A+B+C+D+E komplett 2026-06-01), F.0-F.4 (Overlays/
 > Plan-Artefakte/Partial-Rollback/Rename-Mappings) und F.5 Vollscheibe
-> (CHECK/EXCLUDE). Einzig offen: SQLite-Sequence-Emulation als
-> ausgelagerter Folge-Plan (`docs/planning/done/sqlite-sequence-emulation-plan.md`,
-> Phase A + B.0 + B.1 + B.2 abgeschlossen, B.3-E offen). Die per-
-> Workstream-Status-Bloecke in §4-§10 sind individuell aktualisiert.
+> (CHECK/EXCLUDE). Das Dokument bleibt als 0.9.7-Workstream-
+> Aggregator dauerhaft in `in-progress/` (siehe `README.md`); die
+> per-Workstream-Status-Bloecke in §4-§10 sind individuell
+> aktualisiert.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -1190,27 +1192,40 @@ E.2-Implementierungs-Carve-outs (umgesetzt 2026-05-18):
 > Status: PostgreSQL-Erstscheibe implementiert (2026-05-12); MySQL-
 > helper_table-Diff (2026-05-20), preserveCurrentValue (2026-05-21),
 > Cross-Dialect-Sequencing-Schirm (2026-05-27, ADR-0003), SQLite-
-> Sequence Phase A + B.0 + B.1 (2026-05-27) und Phase B.2 Validator-
-> Regeln (2026-05-28, `25f59f73` SequenceDefinition-internal `E125` +
-> `09068f79` helper_table-PK-Gate `E059` über neuen
-> `PreGenerationValidator`-Port) abgeschlossen. SQLite blockt
-> diff-basierte Sequence-Ops weiterhin mit
-> `DIALECT_UNSUPPORTED_OPERATION`, bis Phase B.3 des SQLite-Sequence-
-> Plans (`docs/planning/done/sqlite-sequence-emulation-plan.md`) den
-> `helper_table`-Renderer + Trigger-Paar emittiert. Der aktuelle
-> Sequence-Wert wird über die preserveCurrentValue-Policy migriert
-> (Up: `setval(...)` PG / `UPDATE dmg_sequences` MySQL;
+> Sequence-Emulation komplett (Phasen A + B.0 + B.1 + B.2 + B.3 +
+> B.4 + C + D + E, 2026-05-29; Plan-Doc
+> `docs/planning/done/sqlite-sequence-emulation-plan.md`,
+> Capability-Flip `SequenceCapabilityDefaults.SQLite` mit
+> NamedSequences/Start/MinMaxValue/Cycle/Cache auf `true`);
+> SQLite-preserveCurrentValue (2026-05-29, commit `ff9fcc71`); und
+> atomare Probe+Restore unter Per-Dialekt-Lock als Folge-Slice
+> Phasen A + B + C + D + E komplett (2026-06-01, Plan-Doc
+> `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`).
+> SQLite rendert diff-basierte Sequence-Ops jetzt im
+> `helper_table`-Modus (Trigger-Paar `_bi`/`_ai` mit RAISE-Cycle-
+> Gate). Der aktuelle Sequence-Wert wird über die
+> preserveCurrentValue-Policy migriert (Up: atomar via
+> `AtomicSequencePreserveExecutor`, je Dialekt anders gelockt —
+> PG `pg_advisory_xact_lock`, MySQL `SELECT FOR UPDATE` auf
+> `dmg_sequences`, SQLite `BEGIN IMMEDIATE` + `PRAGMA busy_timeout`;
 > Down: `ROLLBACK_NOT_POSSIBLE` wenn ohne Probe).
 
-Nicht in der ersten Matrix:
+Nicht in der ersten Matrix (Stand 2026-06-02 alles geliefert):
 
-- MySQL-Sequence-Emulation-Migration
-- SQLite-Sequence-Emulation-Migration
-- Nutzung von Sequences in Defaults und deren Reverse-/Compare-Stabilisierung
+- MySQL-Sequence-Emulation-Migration ✅ (2026-05-20, Sub-Slices A-E;
+  Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`)
+- SQLite-Sequence-Emulation-Migration ✅ (2026-05-29, Phasen A-E;
+  Plan-Doc `docs/planning/done/sqlite-sequence-emulation-plan.md`)
+- Nutzung von Sequences in Defaults und deren Reverse-/Compare-
+  Stabilisierung ✅ (SQLite-Trigger-Reverse-Read 2026-05-22,
+  Plan-Doc `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`;
+  SQLite-Sequence Phase D Reverse + Phase E Compare 2026-05-29)
 
 Verweis:
 
 - `docs/planning/done/sqlite-sequence-emulation-plan.md`
+- `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`
+- `docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`
 
 Entscheidung:
 
@@ -1268,9 +1283,10 @@ DoD:
   filter; Renderer hat keine eigene Filterlogik.)*
 - [x] Jede freigeschaltete Objektklasse hat Positiv-, Blocker- und
   Rollback-Tests. *(Tabellen/Spalten/Views/Trigger ueber alle drei Dialekte;
-  Routinen PG/MySQL freigeschaltet, SQLite Blocker-Test; Sequences PG
-  freigeschaltet, MySQL/SQLite Blocker-Test. Status 2026-05-19 nach F.4
-  Vollscheibe.)*
+  Routinen PG/MySQL freigeschaltet, SQLite Blocker-Test; Sequences PG +
+  MySQL + SQLite freigeschaltet inkl. atomarem preserveCurrentValue mit
+  Per-Dialekt-Lock und Cross-Plan-Deadlock-Tests. Status 2026-06-01 nach
+  atomic-preserve A+B+C+D+E komplett.)*
 
 ---
 
