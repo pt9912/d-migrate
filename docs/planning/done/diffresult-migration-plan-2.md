@@ -1,19 +1,12 @@
 # Implementierungsplan: DiffResult-Migrationen 0.9.7, Teil 2
 
-> Status: In Progress (seit 2026-05-12, Refresh 2026-06-02).
-> Alle Workstreams sind inhaltlich abgeschlossen: G.1-G.3 (Artefakt/
-> Runner), A.1/A.2 (Locking, SQLite-Live-Catalog), B.1/B.2 (PG-`USING`,
-> SQLite-Cast-Preflight), C.1/C.2 (Extensions, Spatial), D.1/D.2/D.3a/
-> D.3b (Views + Materialized Views), E.1 (Routine), E.2 (Trigger),
-> E.3 (PG-Sequence + MySQL-helper_table + preserveCurrentValue +
-> Cross-Dialect-Sequencing-Schirm 2026-05-27 + SQLite-Sequence-
-> Emulation Phasen A-E komplett 2026-05-29 + atomic-preserve
-> Folge-Slice Phasen A+B+C+D+E komplett 2026-06-01), F.0-F.4 (Overlays/
-> Plan-Artefakte/Partial-Rollback/Rename-Mappings) und F.5 Vollscheibe
-> (CHECK/EXCLUDE). Das Dokument bleibt als 0.9.7-Workstream-
-> Aggregator dauerhaft in `in-progress/` (siehe `README.md`); die
-> per-Workstream-Status-Bloecke in §4-§10 sind individuell
-> aktualisiert.
+> Status: Closure (2026-06-02) — alle Workstreams G/A/B/C/D/E/F sind
+> code- und test-seitig geliefert (Detail-Audit in §14 Closure mit
+> Code-Belegen pro Workstream). Das Dokument folgt damit dem ersten
+> 0.9.7-Plan-Doc (`docs/planning/done/diffresult-migration-plan.md`)
+> nach `done/`. Die per-Workstream-Status-Bloecke in §4-§10 enthalten
+> teils historischen „Offen bleibt …"-Text; der maßgebliche
+> Endzustand steht in **§14 Closure**.
 >
 > Zweck: Folgeplan fuer die offenen Punkte und Carve-outs aus dem ersten
 > `DiffResult`-Slice. Dieses Dokument sammelt nur Themen, die fuer 0.9.7
@@ -2137,3 +2130,88 @@ Ein Punkt darf erst aus diesem Dokument in `in-progress` wandern, wenn er einen
 kleinen, separat testbaren Slice bildet. Grosse Sammel-Slices fuer mehrere
 Objektklassen sind zu vermeiden, weil sie die Rollback- und Report-Vertraege
 sonst gleichzeitig veraendern.
+
+---
+
+## 14. Closure (2026-06-02)
+
+Stand 2026-06-02 ist 0.9.7 inhaltlich abgeschlossen. Alle in §4-§10
+behandelten Workstreams sind im Code umgesetzt und mit Tests pinned.
+Wo §-Texte noch „Offen bleibt …" / „Nicht im ersten 0.9.7-Plan
+abgedeckt:" schreiben, ist das **historischer Stand vor Implementierung**;
+der tatsaechliche Endzustand ist nachfolgend mit Code-Belegen
+festgehalten.
+
+### 14.1 Per-Workstream Endzustand
+
+| Workstream | Endzustand | Code-Belege | Closure-Plan-Doc(s) in `done/` |
+| ---------- | ---------- | ----------- | ------------------------------ |
+| G.1 transactionScope | implementiert 2026-05-12 | `TransactionScope`-Enum + Carrier in Migration-Plan-Artefakt | — |
+| G.2 Statement-Serialisierung | implementiert 2026-05-12 | strukturierter Metadatenblock in `schema migrate --generate-rollback`; `RollbackArtefactParserTest` | — |
+| G.3 Execution-Status | implementiert 2026-05-12 | `MigrationExecutionStatusBuilder` + `MigrationStreamClassifier` | — |
+| A.1 Locking/Tx-Hints | implementiert 2026-05-12 | `TransactionBehavior` + `SchemaMigrateReportBuilderHintsTest` | — |
+| A.2 SQLite-Live-Catalog | implementiert 2026-05-12 | `SchemaMigrateRunnerSqliteProbeTest` mit `LIVE_SQLITE_MASTER`-Mode + `SQLITE_LIVE_CATALOG_PROBE_FAILED`-Blocker | — |
+| B.1 PG `USING`-Overlays | implementiert 2026-05-13 | `PostgresUsingOverlayResolver.kt` + `PostgresUsingOverlayResolverTest.kt`; `PG_USING_OVERLAY_MISSING`-Blocker + `expressionSource`-Allowlist | — |
+| B.2 SQLite-Cast-Preflight | implementiert 2026-05-13 | `SqliteCastPreflight.kt` (Port), `SqliteCastPreflightStage.kt`, `SqliteCastPreflightProbe.kt`, `SqliteCastPreflightProbeRunner.kt`; strukturierte `sqliteCastPreflights` im Report | — |
+| C.1 Extension-Policy | implementiert 2026-05-13 | `EXTENSION_DEPENDENCY_MISSING/UNKNOWN`, `EXTENSION_INSTALL_PRIVILEGE_MISSING/UNVERIFIED` in `PostgresDiffRenderContext.kt`; PG-Reverse trennt `R400`/`R401` | — |
+| C.2 Spatial-Migrationen | implementiert 2026-05-13 | `PostgresDiffSpatialTest`: GIST-Whitelist + Non-GIST-Blocker + PostGIS-Install-Vertrag | — |
+| D.1 PG View Visible-Signature | implementiert 2026-05-12 | `ViewDefinition.columns` + `VIEW_SIGNATURE_UNKNOWN/INCOMPATIBLE`-Blocker | — |
+| D.2 MySQL `VIEW_ROUTINE_USAGE` | implementiert 2026-05-12 | `DependencyInfo` + `DiffPlannerG2Test` | — |
+| D.3a Materialized-View-Guard | implementiert 2026-05-12 | PostgreSQL, MySQL und SQLite blockieren `materialized=true` ueber separate Pfade | — |
+| D.3b Materialized-View-Vollscheibe | implementiert 2026-05-17 (Sub-Slices A/B/C) | PG rendert Create/Replace/Drop diff-basiert; MySQL/SQLite blocken mit `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT` | `ImpPlan-0.9.7-d.3b-materialized-views.md` |
+| E.1 Routine-Migration | implementiert 2026-05-15/16 + MySQL-Routine-Identity-Reverse-Read 2026-05-22 | `RoutineBodyNormalizer.kt`, `RoutineBodyScrubber.kt`, `FunctionDefinition.kt`; PG/MySQL Replace mit `ROUTINE_DOWN_BODY_UNKNOWN`-Blocker | `ImpPlan-0.9.7-E.1-routine-migration.md`, `ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`, `ImpPlan-0.9.7-routine-capability-configurable-source.md` |
+| E.2 Trigger-Migration | implementiert 2026-05-18 (Vollscheibe A.1-A.3) | `PostgresTriggerDdlHelperTest`; Strict-Gap-Wiring + SQLite-Rebuild-Klassifikation | `ImpPlan-0.9.7-E.2-trigger-rendering.md`, `ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md` |
+| E.3 Sequence-Migrationen (PG/MySQL/SQLite) | komplett 2026-06-01 inkl. atomic-preserve | siehe §E.3-Statusblock; `AtomicSequencePreserveExecutor`-Port + 3 Dialekt-Adapter; 12/12 E2E-Live-IT pro Dialekt | `ImpPlan-0.9.7-cross-dialect-sequencing.md`, `ImpPlan-0.9.7-mysql-sequence-diff-migration.md`, `ImpPlan-0.9.7-mysql-sequence-drift-check.md`, `ImpPlan-0.9.7-sequence-preserve-current-value.md`, `ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`, `ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`, `sqlite-sequence-emulation-plan.md`; Folge-Plan `sequence-preserve-atomic-lock-plan.md` (Move nach `done/` mit 0.9.7-Release-Tag) |
+| F.0 Overlay-Grundvertrag | implementiert | `MigrationOverlay.kt`, `MigrationOverlayValidator.kt`, `MigrationOverlayCanonicalJson.kt`, `MigrationOverlayContractTest.kt` | — |
+| F.1 DataTransformationContract | implementiert | `DataTransformationContractTest.kt`, `OperationRisks.kt`; Default `NONE` | — |
+| F.2 Plan-Artefakt v1 | implementiert | `MigrationPlanArtifactBuilder.kt`, `SchemaMigrateArtefactSink.kt`, `MigrationPlanArtifactContractTest`; `migration-plan.v1` mit kanonischem JSON + ausserhalb-Signatur-Hash | — |
+| F.3 Partial Rollback v2 | implementiert | `SchemaRollbackRunnerPartialRollbackTest`, `RollbackArtefactBuilder/Parser.kt`; explicit allow flag erforderlich | — |
+| F.4 Rename-Mappings | implementiert 2026-05-19 (FK + View/Trigger/Index/Default + alle Objektklassen) | `RenameOverlayMapperTest`, `RenameOverlayMapperT4Test`, `RenameDependencyProjector`, `OBJECT_RENAME_UNSUPPORTED` | `ImpPlan-0.9.7-F.4-cli-inline-overlay.md`, `ImpPlan-0.9.7-F.4-dependency-projection.md`, `ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md`, `ImpPlan-0.9.7-F.4-rename-mapping-invalid-enum.md`, `ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`, `ImpPlan-0.9.7-F.4-rendering.md`, `ImpPlan-0.9.7-F.4-routine-trigger-view-renames.md` |
+| F.5 CHECK/EXCLUDE-Vollscheibe | implementiert 2026-05-20 (Sub-Slices A-G) | `CheckPreflightGate.kt`, `MysqlCheckEnforcementCapability.kt`, `ExcludeOperatorClassGate.kt`, `SqliteDiffCheckPreflightGateTest`; PG/MySQL/SQLite-Renderer + Live-Daten-Preflight | `ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md` |
+| §11.1 MySQL `AlterColumnNullability` | bewusster Blocker umgesetzt | siehe Roadmap-Tabelle 0.9.7 „Coverage/QA" | — |
+| §11.2 Cross-Dialekt-Regressionsmatrix | implementiert | `test/cross-dialect-matrix/src` mit `MatrixSweepTest` + Carve-Out-Registry; Quality-Coverage-Expansion Phase B `3545b646`/`3ae1bb20` | `quality-coverage-expansion-plan.md` |
+| §11.3 Artifact-/Overlay-Compatibility | implementiert (G-Slices) | `UNKNOWN_FORMAT_VERSION` / `HASH_MISMATCH` / Secret-Scrubbing-Tests pinned | — |
+
+### 14.2 §11 DoD-Vollstaendigkeit
+
+Die Definition of Done aus §11 ist mit allen vier Boxen abgehakt
+(Status laut Roadmap §0.9.7 Coverage/QA-Zeile):
+
+- **Box (a)** Positiv+Blocker pro Workstream — 22 Workstreams audit-sweep
+  abgehakt (2026-05-19).
+- **Box (b)** Report-/Exit-Code-Erwartungen — alle sieben CLI-spec-Exit-Codes
+  (0/2/3/4/5/7/8) pinned plus alle sieben `primaryBlockedReason`-Werte
+  (inkl. `OBJECT_RENAME_UNSUPPORTED` nach `PlannerBlockerClassifier`-Bridge,
+  Plan-Doc `ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md`).
+- **Box (c)** Rollback-Tests pro Workstream — 15 Positiv-Down-Pfade +
+  5 NOT_REVERSIBLE-/ROLLBACK_NOT_POSSIBLE-Blocker-Pfade +
+  5 strukturelle Carve-outs.
+- **Box (d/e)** komplett.
+
+### 14.3 Carve-outs und Folge-Themen
+
+- **Atomare Probe + Restore unter Per-Dialekt-Lock** als E.3-Folge-Slice
+  (`sequence-preserve-atomic-lock-plan.md` in `in-progress/`,
+  Phasen A+B+C+D+E komplett 2026-06-01). Wandert mit dem
+  0.9.7-Release-Tag selbst nach `done/`.
+- **Atomic-Preserve-Followups** (Code-Review-Findings #1-6 +
+  Dead-Code-Cleanup Probe-Adapter) — Backlog-Tracker
+  `atomic-preserve-followups.md` in `in-progress/`, alle Punkte
+  abgehakt 2026-06-01. Wandert mit dem 0.9.7-Release-Tag nach
+  `done/`.
+- **Phase H aus dem ersten Plan-Doc** (SQLite-Rebuild-Vertrag) —
+  bewusst nicht hier dupliziert, formal abgeschlossen in
+  `done/diffresult-migration-plan.md`.
+- **`D-N10k`** (N=10000 Cross-Dialekt-Perf-Sweep, Nightly-Only) —
+  bleibt opt-in Folge-Thema in `quality-coverage-expansion-plan.md`.
+- **`adapter-coverage-uplift`** — als Folge-Plan-Doc nach `open/`
+  promoted (Phase-E.2 Disposition-Vertrag, 2026-05-31).
+
+### 14.4 Release-Bezug
+
+Die Inhalte dieses Dokuments sind Teil von **Milestone 0.9.7**
+(siehe Roadmap §0.9.7). Das 0.9.7-Release-Tag steht zum Zeitpunkt
+der Closure noch aus; sobald es gesetzt ist, wandern auch die
+beiden verbliebenen `in-progress/`-Dokumente
+(`sequence-preserve-atomic-lock-plan.md` +
+`atomic-preserve-followups.md`) nach `done/`.
