@@ -1,7 +1,10 @@
 # Implementierungsplan: Atomare Sequence-Preserve Probe + Restore unter Lock
 
-> Status: In Progress (2026-06-01) — Phasen A + B + C + D + E erledigt;
-> 0.9.7-Release vorbereitet.
+> Status: Closure (2026-06-02) — Phasen A + B + C + D + E erledigt;
+> Code-, Test- und Doku-Verifikation am 2026-06-02 abgeschlossen
+> (siehe §8 Closure). Plan-Doc wandert nach `done/` analog zum
+> 0.9.7-Workstream-Aggregator
+> `done/diffresult-migration-plan-2.md`.
 > - **Phase A** (2026-05-31): Vertraege + Classifier + Capability-Defaults.
 > - **Phase B** (2026-05-31): `hexagon:ports-execute`-Modul +
 >   PG/MySQL/SQLite-Executoren mit Live-Container-/in-process-Tests.
@@ -951,3 +954,40 @@ KDocs, User-Guide und CHANGELOG.
 - SQLite WAL-Mode-spezifische Verbesserungen (`BEGIN CONCURRENT`-
   Vorschlag aus SQLite 3.42+). Kommt mit der nächsten SQLite-Floor-
   Hebung.
+
+---
+
+## 8. Closure (2026-06-02)
+
+### 8.1 Per-Phase Endzustand mit Code-Belegen
+
+| Phase | Endzustand | Code-/Test-Belege |
+| ----- | ---------- | ----------------- |
+| **A** Verträge + Capability-Defaults (2026-05-31, `6fa67e45`) | implementiert | `SequenceCapabilityDefaults.kt` (PG/MySQL/SQLite mit `supportsAtomicPreserve`/`supportsAtomicPreserveAllInPlan`/`transactionalProtectedSequenceOperations`); `PlannerBlockerClassifier` mit `SEQUENCE_PRESERVE_LOCK_TIMEOUT_CODE` + `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED_CODE` → `MANUAL_ACTION_REQUIRED`; `PlannerBlockerClassifierTest`-Block „Atomic-Preserve Phase A codes classify to MANUAL_ACTION_REQUIRED" |
+| **B** Executor-Port + Dialekt-Adapter (2026-05-31, `833d1796`/`dc6d2ad6`/`24eb6e17`/`e882bcb1`) | implementiert | `hexagon/ports-execute/.../AtomicSequencePreserveExecutor.kt` (Port), `.../AtomicSequencePreserveResult.kt` (sealed `Applied`/`NotFound`/`LockTimeout`/`Failed`), `.../ProtectedOperationId.kt`; PG-Adapter mit `pg_advisory_xact_lock(hashtext(...))`; MySQL-Adapter mit `SELECT 1 FROM dmg_sequences WHERE name=? FOR UPDATE` + `SET SESSION innodb_lock_wait_timeout`; SQLite-Adapter mit `BEGIN IMMEDIATE` + `PRAGMA busy_timeout`; Live-IT: `{Postgres,Mysql,Sqlite}AtomicSequencePreserveExecutorIntegrationTest` (je 5 Cases: Applied/Multi-Seq-Sort/NotFound/LockTimeout/Session-Timeout-Restore) |
+| **C** Stage + Render + Runner (2026-06-01, Sub-Slices C.2→C.4→C.3→C.1→C.5 + CI-Fix `39bcaa29` + Coverage-Puffer `d72e572f`) | implementiert | `ExecutableSegment.kt`+`ExecutableSegments.kt` in `hexagon:ports-execute` + 12-Cases `ExecutableSegmentsTest`; `SegmentAwareMigrationExecutor.kt` + Test; `AtomicSequencePreserveDispatcher.kt` + Test; `AtomicSequencePreserveRunner.kt` + Test; `SequencePreserveStage` baut `AtomicSequencePreserveBatch`; `SequenceCurrentValueProbeRunner`-Dispatcher entfernt (Probe-Adapter selbst bleiben als toter Code, Cleanup in Followups §4.2); `SchemaMigrateRequest.mysqlNamedSequences` plumbed; End-to-End Live-IT pro Dialekt: `{Postgres,Mysql,Sqlite}SchemaMigrateAtomicPreserveIntegrationTest` (12/12 grün im GH-CI Job `26756099781`); PG-Race-Test auf Atomic-Executor migriert (pinnt residuelle App-`nextval`-Race als negativen Vertragstest gegen Risiko Nr. 8) |
+| **D** Cross-Plan-Deadlock + AllInPlan-Flag (2026-06-01) | implementiert | `PostgresAtomicPreserveCrossPlanDeadlockTest.kt` (positiver + negativer Smoke via invertierter Lock-Order → SQLSTATE 55P03); `MysqlAtomicPreserveCrossPlanDeadlockTest.kt` (positiver + negativer Smoke → ER_LOCK_DEADLOCK/WAIT_TIMEOUT); `SqliteAtomicPreserveCrossPlanDeadlockTest.kt` (nur positiv, DB-weite RESERVED-Lock macht Deadlock-Diamant konstruktiv unmöglich, Carve-Out im IT-KDoc); `supportsAtomicPreserveAllInPlan = true` für PG/MySQL/SQLite in `SequenceCapabilityDefaults.kt`; Stage-AllInPlan-Gate-Block in `SequencePreserveStageTest` |
+| **E** Docs (KDoc + User-Guide + CHANGELOG, 2026-06-01) | implementiert | CHANGELOG-Entry „0.9.7 Atomic-Sequence-Preserve Phasen A + B + C + D + E" (`CHANGELOG.md` Z. 12); User-Guide-Eintrag §„preserveCurrentValue (atomar unter Lock seit 0.9.7)" (`docs/user/guide.md` Z. 653) inkl. PG-`nextval`-Race-Restrisiko; KDoc-Sync auf `SequencePreserveStage` (Restrictions-Block), `SequenceCapability` (C.4-Verweis + §3.2-Out-of-Scope-Block + Phase-D-AllInPlan-Update), `SequenceCurrentValueProbe` (Status-Header: dead-code seit Phase C, Cleanup in Followups §4.2) |
+
+### 8.2 Carve-outs / Folge-Themen
+
+- **Atomic-Preserve-Followups** (Code-Review-Findings #1-6 +
+  Dead-Code-Cleanup Probe-Adapter): Backlog-Tracker
+  `docs/planning/in-progress/atomic-preserve-followups.md`. Stand
+  2026-06-02 alle Punkte abgehakt; wandert separat nach `done/`.
+- **Residuelle PG-App-`nextval`-Race** (Risiko Nr. 8, §6): bewusste
+  Plan-Carve-Out — `pg_advisory_xact_lock(hashtext(...))` blockt
+  parallele App-`nextval`-Aufrufe nicht, weil PG-Sequenzen
+  by-design lock-free sind. Restrisiko ist als negativer
+  Vertragstest in `PostgresSequencePreserveRaceTest` gepinnt und
+  im User-Guide dokumentiert.
+- **Cross-Process-/Cross-DB-Lock, App-Retry, SQLite-WAL
+  `BEGIN CONCURRENT`**: §7 oben, alle reserviert für spätere
+  Tranchen.
+
+### 8.3 Release-Bezug
+
+Die Inhalte sind Teil von **Milestone 0.9.7 §E.3** (siehe
+Roadmap §0.9.7 + `done/diffresult-migration-plan-2.md` §14.1
+E.3-Zeile). Move nach `done/` erfolgt unabhängig vom
+0.9.7-Release-Tag, analog zum 0.9.7-Workstream-Aggregator.
