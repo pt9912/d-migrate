@@ -24,6 +24,19 @@
 >   `SchemaMigrateRequest.lockTimeoutMillis`-Per-Request-Override,
 >   CLI-Flag `--lock-timeout-ms`, Validation [10, 60_000] mit Exit 2,
 >   Test-Decorator-Workaround entfernt (MySQL+SQLite).
+> - **E** (Cancellation-Token im Executor-Port) — implementiert
+>   2026-06-02 (commit `7e6f39ae`):
+>   `AtomicSequencePreserveExecutor.execute(...)` lernt optionalen
+>   `cancellationToken`-Parameter (Default
+>   `CancellationToken.none()`); `AtomicSequencePreserveResult.Cancelled`
+>   neuer Sealed-Variant; drei Cancel-Checkpoints pro Dialekt
+>   (pre-BEGIN, post-probe/pre-protected, post-protected/
+>   pre-restore); Lambda-Plumbing durch
+>   `SegmentAwareExecutorFn` /
+>   `SegmentAwareMigrationExecutor` /
+>   `AtomicSequencePreserveRunner` bis zum Dialekt-Adapter;
+>   IT-Cancel-Tests pro Dialekt pinnen Cancelled-Outcome +
+>   Rollback-Vertrag.
 > - **B** (Idempotency-Hook) — `Deferred — gefaltet in F`. Code-Audit
 >   2026-06-02 ergab: CLI-Pfad hat keinen echten Replay-Wert
 >   (single-shot JVM-Prozess; `InMemoryIdempotencyStore` überlebt
@@ -40,9 +53,9 @@
 >   bleibt damit als Teil von F: wenn der `schema_migrate_start`-
 >   Handler in F gebaut wird, hängt er den bestehenden Store
 >   analog `data_transfer_start` ein — ohne neue Port-Schicht.
-> - **C/D/E/F** — `Geplant`. E ist der nächste eigenständige
->   Kandidat (Cancellation-Token im Executor-Port; hilft auch dem
->   CLI bei Operator-Ctrl-C).
+> - **C/D/F** — `Geplant`. C/D warten auf den externen Trigger
+>   (MCP/REST/gRPC); F hängt am Produkt-Vertrag für das
+>   `schema_migrate`-Tool.
 >
 > Vorbedingung: keine. Die Sub-Slices komponieren bestehende Ports
 > (HikariConnectionPoolFactory, JobCancelHandler, QuotaStore,
