@@ -129,19 +129,22 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         DriverManager.getConnection("jdbc:sqlite:${dbPath.absolutePathString()}")
 
     /**
-     * Atomic-Preserve follow-up (Finding #6, 2026-06-01): decorator
-     * that runs the real SQLite executor against a fresh
-     * DriverManager connection (xerial-sqlite Hikari-pool quirk: the
-     * pooled `BEGIN IMMEDIATE` does not observe a holder's RESERVED
-     * lock that was acquired via raw DriverManager — Phase B's
-     * standalone IT works because it uses TWO DriverManager
-     * connections without a pool). The lock-timeout budget is the
-     * factory's [budgetMillis] parameter so the test setup, not the
-     * decorator body, is the source of truth.
+     * Atomic-Preserve follow-up (Finding #6, 2026-06-01; revised by
+     * Service-Mode Sub-Slice A, 2026-06-02): decorator that runs
+     * the real SQLite executor against a fresh DriverManager
+     * connection (xerial-sqlite Hikari-pool quirk: the pooled
+     * `BEGIN IMMEDIATE` does not observe a holder's RESERVED lock
+     * acquired via raw DriverManager — Phase B's standalone IT
+     * works because it uses TWO DriverManager connections without
+     * a pool).
+     *
+     * Sub-Slice A removed the previous timeout-override responsibility
+     * from this factory; the lock-timeout budget now flows via
+     * `SchemaMigrateRequest.lockTimeoutMillis` → ExecutionStage →
+     * executor lambda → the `lockTimeoutMillis` parameter passed in
+     * here. The decorator only relays it untouched.
      */
-    fun freshConnExecutorWithTimeout(
-        budgetMillis: Long,
-    ): AtomicSequencePreserveExecutor = object : AtomicSequencePreserveExecutor {
+    fun freshConnExecutor(): AtomicSequencePreserveExecutor = object : AtomicSequencePreserveExecutor {
         private val real = SqliteAtomicSequencePreserveExecutor()
         override fun execute(
             connection: Connection,
@@ -154,7 +157,7 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
                 real.execute(
                     connection = freshConn,
                     batch = batch,
-                    lockTimeoutMillis = budgetMillis,
+                    lockTimeoutMillis = lockTimeoutMillis,
                     executeProtectedOperations = executeProtectedOperations,
                 )
             }
@@ -189,7 +192,7 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         )
     }
 
-    fun migrateRequest() = SchemaMigrateRequest(
+    fun migrateRequest(lockTimeoutMillis: Long? = null) = SchemaMigrateRequest(
         // SchemaMigratePreparation.validateRequest enforces `--execute
         // requires --report`. The runner's fileLoader / dbLoader are
         // stubbed above, so the actual file/db sources are never read.
@@ -199,6 +202,7 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
         execute = true,
         sqliteNamedSequences = "helper_table",
         report = dbDir.resolve("report.json"),
+        lockTimeoutMillis = lockTimeoutMillis,
     )
 
     // ── Applied: Single-Seq ────────────────────────────────────────────
@@ -303,15 +307,14 @@ class SqliteSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
             // pool). Mirror that: open a fresh DriverManager connection
             // for the atomic transaction so the test sees the same
             // contention path Phase B exercises.
-            // Atomic-Preserve follow-up (Finding #6, 2026-06-01): the
-            // decorator's reason for existing is the raw-connection
-            // bypass (xerial-sqlite pool quirk documented above), not
-            // the lock timeout. Hoist the timeout into the caller so
-            // the test setup is the single source of truth for the
-            // budget.
-            val freshConnExecutor = freshConnExecutorWithTimeout(budgetMillis = 500L)
-            val exit = runnerWith(source, target, atomicExecutorOverride = freshConnExecutor)
-                .execute(migrateRequest())
+            // Atomic-Preserve Service-Mode Sub-Slice A (2026-06-02):
+            // the lock-timeout budget flows via
+            // `SchemaMigrateRequest.lockTimeoutMillis`. The
+            // freshConnExecutor decorator stays for the xerial-sqlite
+            // Hikari-pool quirk (documented above) but no longer
+            // overrides the timeout.
+            val exit = runnerWith(source, target, atomicExecutorOverride = freshConnExecutor())
+                .execute(migrateRequest(lockTimeoutMillis = 500L))
             // LockTimeout maps onto ExecutionTrace.executionError →
             // runner exits 5; the post-condition that matters is
             // "no partial apply".

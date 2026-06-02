@@ -9,6 +9,7 @@ import com.github.ajalt.clikt.parameters.options.multiple
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.choice
+import com.github.ajalt.clikt.parameters.types.long
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
@@ -91,6 +92,12 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
             "targets — without it, candidate sequence ops block with " +
             "SEQUENCE_PRESERVE_OPT_IN_REQUIRED.",
     ).choice("action_required", "helper_table")
+    val lockTimeoutMs by option(
+        "--lock-timeout-ms",
+        help = "Atomic-preserve lock-timeout budget in milliseconds. Optional; defaults to " +
+            "the server's per-dialect default (CLI: 5000). Valid range [10, 60000]. Out-of-range " +
+            "values exit 2 before the pipeline runs.",
+    ).long()
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val exitCode = SchemaMigrateWiring.execute(
@@ -116,6 +123,7 @@ class SchemaMigrateCommand : CliktCommand(name = "migrate") {
                 routineCapabilityFlags = routineCapabilityFlags,
                 strictGapOperations = strictGapOperations,
                 sqliteNamedSequences = sqliteNamedSequences,
+                lockTimeoutMs = lockTimeoutMs,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

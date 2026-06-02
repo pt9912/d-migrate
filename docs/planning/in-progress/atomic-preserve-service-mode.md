@@ -1,15 +1,27 @@
 # Plan: Atomic-Preserve Service-Mode (MCP / REST / gRPC)
 
-> Status: Entwurf (2026-06-02) — Vorzieh-Entscheidung trotz nicht
-> erfüllter externer Aktivierungsbedingungen (MCP-Migrate-Tool,
-> gRPC 1.1.8, REST 1.2.0). Begründung: die Sub-Slices A/B/E haben
-> eigenständigen Wert (Refactor-Schulden + Test-Hygiene + Port-
-> Erweiterung), unabhängig davon ob das `schema_migrate`-Tool
+> Status: In Progress (2026-06-02) — Vorzieh-Entscheidung trotz
+> nicht erfüllter externer Aktivierungsbedingungen (MCP-Migrate-
+> Tool, gRPC 1.1.8, REST 1.2.0). Begründung: die Sub-Slices A/B/E
+> haben eigenständigen Wert (Refactor-Schulden + Test-Hygiene +
+> Port-Erweiterung), unabhängig davon ob das `schema_migrate`-Tool
 > jemals exponiert wird.
 >
-> Ableitung aus open/-Vorabklärung
-> (commits `7ae4114a` Initial + `98ca9ff1` Verfeinerung) durch
-> Promote nach `next/`.
+> Lifecycle:
+> - open/-Vorabklärung (commits `7ae4114a` Initial + `98ca9ff1`
+>   Verfeinerung).
+> - Promote nach next/ mit Sub-Slice-Ausarbeitung A-F
+>   (commit `0e9d2a1a`).
+> - Promote nach in-progress/ mit Sub-Slice A Start
+>   (2026-06-02).
+>
+> Sub-Slice Status:
+> - **A** (Lock-Timeout-Refactor) — implementiert 2026-06-02:
+>   `SchemaMigrateRunner.lockTimeoutMillis`-Konstruktor-Parameter,
+>   `SchemaMigrateRequest.lockTimeoutMillis`-Per-Request-Override,
+>   CLI-Flag `--lock-timeout-ms`, Validation [10, 60_000] mit Exit 2,
+>   Test-Decorator-Workaround entfernt (MySQL+SQLite).
+> - **B-F** — `Geplant`.
 >
 > Vorbedingung: keine. Die Sub-Slices komponieren bestehende Ports
 > (HikariConnectionPoolFactory, JobCancelHandler, QuotaStore,
