@@ -236,14 +236,14 @@ rm -rf "${SMOKE_DIR}"
 
 #### Tool-Export-Smoke
 
-Fixture-Schema: `adapters/driven/integrations/src/test/resources/fixtures/export-test-schema.yaml`
+Fixture-Schema: `test/integration-integrations/src/test/resources/fixtures/export-test-schema.yaml`
 
 ```bash
 SMOKE_OUT="$(mktemp -d)"
 
 # Flyway
 docker run --rm \
-  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "$(pwd)/test/integration-integrations/src/test/resources/fixtures:/work:ro" \
   -v "${SMOKE_OUT}:/out" \
   d-migrate:pre-release \
   export flyway --source /work/export-test-schema.yaml --target postgresql --version 1 --output /out/flyway
@@ -251,7 +251,7 @@ docker run --rm \
 
 # Flyway mit Rollback
 docker run --rm \
-  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "$(pwd)/test/integration-integrations/src/test/resources/fixtures:/work:ro" \
   -v "${SMOKE_OUT}:/out" \
   d-migrate:pre-release \
   export flyway --source /work/export-test-schema.yaml --target postgresql --version 2 --output /out/flyway-rb --generate-rollback
@@ -259,7 +259,7 @@ docker run --rm \
 
 # Liquibase
 docker run --rm \
-  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "$(pwd)/test/integration-integrations/src/test/resources/fixtures:/work:ro" \
   -v "${SMOKE_OUT}:/out" \
   d-migrate:pre-release \
   export liquibase --source /work/export-test-schema.yaml --target mysql --version 1.0 --output /out/liquibase --generate-rollback
@@ -267,7 +267,7 @@ docker run --rm \
 
 # Django
 docker run --rm \
-  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "$(pwd)/test/integration-integrations/src/test/resources/fixtures:/work:ro" \
   -v "${SMOKE_OUT}:/out" \
   d-migrate:pre-release \
   export django --source /work/export-test-schema.yaml --target sqlite --version 0001 --output /out/django
@@ -275,7 +275,7 @@ docker run --rm \
 
 # Knex
 docker run --rm \
-  -v "$(pwd)/adapters/driven/integrations/src/test/resources/fixtures:/work:ro" \
+  -v "$(pwd)/test/integration-integrations/src/test/resources/fixtures:/work:ro" \
   -v "${SMOKE_OUT}:/out" \
   d-migrate:pre-release \
   export knex --source /work/export-test-schema.yaml --target sqlite --version 20260414120000 --output /out/knex
