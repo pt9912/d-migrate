@@ -46,8 +46,8 @@ hinweg gemeinsam ist.
 ## Was kann ich heute laufen lassen?
 
 d-migrate ist ein produktiv nutzbares Werkzeug in Version
-**0.9.6** (stabil; [0.9.7 schließt 2026-06-02](#status)). Die
-aktuellen Fähigkeiten:
+**0.9.7** (stabil, veröffentlicht 2026-06-02). Die aktuellen
+Fähigkeiten:
 
 - **Schema-Modell**: neutrales YAML-Schema mit 19 Typen +
   Spatial-Geometry; Validator mit 35+ Fehlercodes.
@@ -176,8 +176,8 @@ Stand **2026-06-02**:
   mit JWT-JWKS-Auth, Idempotency, Policy-Gates, JDBC-Persistenz,
   Artefakt-Stores, KI-naher Tools.
 - **0.9.7 Refactoring + Diff-basierte Migrationen +
-  SQLite-Sequence-Emulation + Atomic-Preserve** · `Schließt
-  2026-06-02`: 22 Workstreams ✅, alle Closure-Plan-Docs in
+  SQLite-Sequence-Emulation + Atomic-Preserve** · `Released`
+  (2026-06-02): 22 Workstreams ✅, alle Closure-Plan-Docs in
   [`docs/planning/done/`](docs/planning/done/). Headline-
   Capabilities: atomares `preserveCurrentValue` unter
   Per-Dialekt-Lock (PG / MySQL / SQLite),

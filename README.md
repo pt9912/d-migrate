@@ -42,8 +42,8 @@ stacks.
 
 ## What can I run today?
 
-d-migrate is a working production tool at version **0.9.6** (stable;
-[0.9.7 closing 2026-06-02](#status)). The current capabilities:
+d-migrate is a working production tool at version **0.9.7**
+(stable, released 2026-06-02). The current capabilities:
 
 - **Schema model**: neutral YAML schema with 19 types + Spatial
   Geometry; validator with 35+ error codes.
@@ -164,7 +164,7 @@ As of **2026-06-02**:
   with JWT-JWKS auth, idempotency, policy gates, JDBC persistence,
   artefact stores, AI-adjacent tools.
 - **0.9.7 Refactoring + diff-based migration + SQLite-sequence
-  emulation + atomic-preserve** · `Closing 2026-06-02`: 22
+  emulation + atomic-preserve** · `Released` (2026-06-02): 22
   workstreams ✅, all closure plan-docs in
   [`docs/planning/done/`](docs/planning/done/). Headline
   capabilities: atomic `preserveCurrentValue` under per-dialect
