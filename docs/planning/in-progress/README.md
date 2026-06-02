@@ -8,15 +8,9 @@ Zwei Typen leben hier:
      aktiv)
 2. **Per-Feature-Umbrella-Pläne**, die einen mehrphasigen Slice
    tragen, bei dem mindestens ein Commit den Plan referenziert:
-   - [`atomic-preserve-followups.md`](atomic-preserve-followups.md)
-     — In Progress (Stand 2026-06-01): Backlog-Tracker für die
-     6 Code-Review-Findings + Dead-Code-Cleanup zum
-     atomic-preserve-Slice
-     ([`../done/sequence-preserve-atomic-lock-plan.md`](../done/sequence-preserve-atomic-lock-plan.md),
-     geschlossen 2026-06-02). Alle Punkte abgehakt; wandert separat
-     nach `../done/`, sobald der Dead-Code-Cleanup-Folge-Slice
-     (Probe-Adapter-Entfernung) entweder geliefert oder formal
-     verworfen ist.
+   *(keine aktiven Umbrella-Pläne — der 0.9.7-Atomic-Preserve-
+   Slice und seine Followups sind am 2026-06-02 als Ganzes nach
+   `../done/` migriert.)*
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)
