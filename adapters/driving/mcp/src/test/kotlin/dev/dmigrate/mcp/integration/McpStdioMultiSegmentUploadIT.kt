@@ -150,7 +150,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         // 4. NDJSON-Frames fuer initialize + drei artifact_upload-Aufrufe + 1 chunk_get.
         fun initFrame(): String =
             """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25",""" +
-                """"clientInfo":{"name":"stdio-it","version":"0.9.6"},"capabilities":{}}}"""
+                """"clientInfo":{"name":"stdio-it","version":"0.9.7"},"capabilities":{}}}"""
         fun uploadFrame(id: Int, segIndex: Int, segOffset: Int, isFinal: Boolean, segSha: String, bytes: ByteArray): String {
             val body = """{"uploadSessionId":"$sessionId","segmentIndex":$segIndex,"segmentOffset":$segOffset,""" +
                 """"segmentTotal":3,"isFinalSegment":$isFinal,"segmentSha256":"$segSha",""" +
@@ -170,7 +170,7 @@ class McpStdioMultiSegmentUploadIT : FunSpec({
         val input = ByteArrayInputStream(ndjson.toByteArray(StandardCharsets.UTF_8))
         val output = ByteArrayOutputStream()
         val service = McpServiceImpl(
-            serverVersion = "0.9.6-it",
+            serverVersion = "0.9.7-it",
             toolRegistry = registry,
             initialPrincipal = principal,
         )

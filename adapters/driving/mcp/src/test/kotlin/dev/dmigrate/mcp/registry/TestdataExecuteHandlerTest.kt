@@ -155,7 +155,7 @@ class TestdataExecuteHandlerTest : FunSpec({
                     provenance = provenance,
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     outputFingerprint = "a".repeat(64),
                     createdAt = now,
                 ),
@@ -531,7 +531,7 @@ class TestdataExecuteHandlerTest : FunSpec({
                 providerMeta = dev.dmigrate.server.application.ai.ProviderMeta(
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     requestId = null,
                 ),
             )

@@ -117,7 +117,7 @@ class McpAiStdioE2EIT : FunSpec({
         val gWiring = aiWiring()
         val registry = AiMcpRegistries.defaultToolRegistry(gWiring)
         val service = McpServiceImpl(
-            serverVersion = "0.9.6-it",
+            serverVersion = "0.9.7-it",
             toolRegistry = registry,
             initialPrincipal = principal(),
             promptRegistry = DefaultPromptRegistry.mandatory(),
@@ -148,7 +148,7 @@ class McpAiStdioE2EIT : FunSpec({
 
     fun initFrame(id: Int = 1): String =
         """{"jsonrpc":"2.0","id":$id,"method":"initialize","params":""" +
-            """{"protocolVersion":"2025-11-25","clientInfo":{"name":"g9-it","version":"0.9.6"},"capabilities":{}}}"""
+            """{"protocolVersion":"2025-11-25","clientInfo":{"name":"g9-it","version":"0.9.7"},"capabilities":{}}}"""
 
     test("LF-017 / LF-024 / LN-030 / LN-031: initialize advertised capabilities.prompts neben tools + resources") {
         val resp = runStdioRoundtrip(listOf(initFrame()))

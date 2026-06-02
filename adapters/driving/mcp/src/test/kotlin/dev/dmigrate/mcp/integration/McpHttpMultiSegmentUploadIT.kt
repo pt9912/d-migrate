@@ -51,7 +51,7 @@ import java.util.Base64
  * mehrsegmentigen `artifact_upload`-Pfad ueber `contentBase64`.
  *
  * Pin't, dass das streambare HTTP-Transport keinen separaten
- * binaeren Upload-Body braucht (LF-012 / LN-038isclaimer 0.9.6: alle
+ * binaeren Upload-Body braucht (LF-012 / LN-038isclaimer 0.9.7: alle
  * Segmentbytes fliessen ueber JSON-RPC-`contentBase64`). Die
  * MCP-Session bleibt zwischen den Segment-POSTs persistent
  * (`MCP-Session-Id`-Header), und die finale Wirkung
@@ -159,7 +159,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
                     config = cfg,
                     serviceFactory = {
                         McpServiceImpl(
-                            serverVersion = "0.9.6-it",
+                            serverVersion = "0.9.7-it",
                             toolRegistry = registry,
                             initialPrincipal = principal,
                         )
@@ -170,7 +170,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
 
             // 1. Initialize -> erhaelt MCP-Session-Id + MCP-Protocol-Version.
             val initBody = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":""" +
-                """{"protocolVersion":"2025-11-25","clientInfo":{"name":"http-it","version":"0.9.6"},"capabilities":{}}}"""
+                """{"protocolVersion":"2025-11-25","clientInfo":{"name":"http-it","version":"0.9.7"},"capabilities":{}}}"""
             val initResp = client.post("/mcp") {
                 mcpAccept()
                 setBody(initBody)
@@ -182,7 +182,7 @@ class McpHttpMultiSegmentUploadIT : FunSpec({
 
             // 2. Drei artifact_upload-POSTs mit demselben Session-Id-Header.
             //    `contentBase64` ist der einzige Bytetransport — kein
-            //    binaerer Body, kein Multipart (LF-012 / LN-038isclaimer 0.9.6).
+            //    binaerer Body, kein Multipart (LF-012 / LN-038isclaimer 0.9.7).
             fun uploadCall(id: Int, segIndex: Int, segOffset: Int, isFinal: Boolean, segSha: String, bytes: ByteArray): String {
                 val args = """{"uploadSessionId":"$sessionId","segmentIndex":$segIndex,"segmentOffset":$segOffset,""" +
                     """"segmentTotal":3,"isFinalSegment":$isFinal,"segmentSha256":"$segSha",""" +

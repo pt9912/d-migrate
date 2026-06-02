@@ -82,7 +82,7 @@ class NoOpAiProvider(
 
     companion object {
         const val DEFAULT_PROVIDER_NAME: String = "noop"
-        const val DEFAULT_MODEL_VERSION: String = "0.9.6"
+        const val DEFAULT_MODEL_VERSION: String = "0.9.7"
         private const val SHORT_FP_LENGTH: Int = 16
     }
 }

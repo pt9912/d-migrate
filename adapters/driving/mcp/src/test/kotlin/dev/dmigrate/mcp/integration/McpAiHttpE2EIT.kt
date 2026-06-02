@@ -130,7 +130,7 @@ class McpAiHttpE2EIT : FunSpec({
             .asJsonObject
 
     val initBody = """{"jsonrpc":"2.0","id":1,"method":"initialize","params":""" +
-        """{"protocolVersion":"2025-11-25","clientInfo":{"name":"g9-http-it","version":"0.9.6"},"capabilities":{}}}"""
+        """{"protocolVersion":"2025-11-25","clientInfo":{"name":"g9-http-it","version":"0.9.7"},"capabilities":{}}}"""
 
     val cfg = McpServerConfig(authMode = AuthMode.DISABLED)
 
@@ -141,7 +141,7 @@ class McpAiHttpE2EIT : FunSpec({
     fun serviceFactory(): () -> McpServiceImpl = {
         val gWiring = aiWiring()
         McpServiceImpl(
-            serverVersion = "0.9.6-it",
+            serverVersion = "0.9.7-it",
             toolRegistry = AiMcpRegistries.defaultToolRegistry(gWiring),
             initialPrincipal = principal,
             promptRegistry = DefaultPromptRegistry.mandatory(),

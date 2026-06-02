@@ -503,7 +503,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
                 providerMeta = dev.dmigrate.server.application.ai.ProviderMeta(
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     requestId = null,
                 ),
             )

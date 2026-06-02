@@ -166,7 +166,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
                     provenance = provenance,
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     outputFingerprint = "a".repeat(64),
                     createdAt = now,
                 ),

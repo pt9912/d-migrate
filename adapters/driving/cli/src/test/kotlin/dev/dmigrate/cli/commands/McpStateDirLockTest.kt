@@ -17,14 +17,14 @@ class McpStateDirLockTest : FunSpec({
         try {
             val outcome = McpStateDirLock.tryAcquire(
                 stateDir = dir,
-                version = "0.9.6-test",
+                version = "0.9.7-test",
                 pidProvider = { 42L },
             )
             val acquired = outcome.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>()
 
             val payload = Files.readString(dir.resolve(McpStateDirLock.LOCKFILE_NAME), StandardCharsets.UTF_8)
             payload shouldContain "\"pid\":42"
-            payload shouldContain "\"version\":\"0.9.6-test\""
+            payload shouldContain "\"version\":\"0.9.7-test\""
             payload shouldContain "\"instance\":\"${acquired.lock.instanceId}\""
             payload shouldContain "\"startedAt\":\""
 
@@ -124,10 +124,10 @@ class McpStateDirLockTest : FunSpec({
             pid = 7L,
             startedAt = "2026-05-03T10:00:00Z",
             instance = "in\"st",
-            version = """0.9.6"-dirty\with\backslash""",
+            version = """0.9.7"-dirty\with\backslash""",
         )
         rendered shouldContain "\"instance\":\"in\\\"st\""
-        rendered shouldContain "\"version\":\"0.9.6\\\"-dirty\\\\with\\\\backslash\""
+        rendered shouldContain "\"version\":\"0.9.7\\\"-dirty\\\\with\\\\backslash\""
     }
 
     test("acquire diagnostic stays informative when the existing payload is unreadable garbage") {

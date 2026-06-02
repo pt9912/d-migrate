@@ -50,7 +50,7 @@ class TransformationReportWriter {
         appendLine("target:")
         appendLine("  dialect: $dialect")
         if (!deterministic) appendLine("  generated_at: \"${generatedAt ?: Instant.now()}\"")
-        appendLine("  generator: \"d-migrate 0.9.6\"")
+        appendLine("  generator: \"d-migrate 0.9.7\"")
         if (mysqlNamedSequenceMode != null) appendLine("  mysql_named_sequences: ${mysqlNamedSequenceMode.cliName}")
         if (sqliteNamedSequenceMode != null) appendLine("  sqlite_named_sequences: ${sqliteNamedSequenceMode.cliName}")
         if (splitMode != null) appendLine("  split_mode: $splitMode")

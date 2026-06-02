@@ -662,9 +662,9 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.stdout.joined() shouldNotContain "sqlite_named_sequences"
     }
 
-    test("JSON output includes generator version 0.9.6") {
+    test("JSON output includes generator version 0.9.7") {
         val h = harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
-        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.6\""
+        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.7\""
     }
 })
