@@ -2,10 +2,12 @@
 
 > Status: In Progress (2026-06-02) — Vorzieh-Entscheidung trotz
 > nicht erfüllter externer Aktivierungsbedingungen (MCP-Migrate-
-> Tool, gRPC 1.1.8, REST 1.2.0). Begründung: die Sub-Slices A/B/E
+> Tool, gRPC 1.1.8, REST 1.2.0). Begründung: die Sub-Slices A/E
 > haben eigenständigen Wert (Refactor-Schulden + Test-Hygiene +
 > Port-Erweiterung), unabhängig davon ob das `schema_migrate`-Tool
-> jemals exponiert wird.
+> jemals exponiert wird. **B** (Idempotency-Hook) ist nach
+> Code-Audit 2026-06-02 als eigenständiger Slice deferred — siehe
+> Sub-Slice-Status unten.
 >
 > Lifecycle:
 > - open/-Vorabklärung (commits `7ae4114a` Initial + `98ca9ff1`
@@ -16,12 +18,31 @@
 >   (2026-06-02).
 >
 > Sub-Slice Status:
-> - **A** (Lock-Timeout-Refactor) — implementiert 2026-06-02:
+> - **A** (Lock-Timeout-Refactor) — implementiert 2026-06-02
+>   (commit `2fcb3846`):
 >   `SchemaMigrateRunner.lockTimeoutMillis`-Konstruktor-Parameter,
 >   `SchemaMigrateRequest.lockTimeoutMillis`-Per-Request-Override,
 >   CLI-Flag `--lock-timeout-ms`, Validation [10, 60_000] mit Exit 2,
 >   Test-Decorator-Workaround entfernt (MySQL+SQLite).
-> - **B-F** — `Geplant`.
+> - **B** (Idempotency-Hook) — `Deferred — gefaltet in F`. Code-Audit
+>   2026-06-02 ergab: CLI-Pfad hat keinen echten Replay-Wert
+>   (single-shot JVM-Prozess; `InMemoryIdempotencyStore` überlebt
+>   Prozess-Ende nicht). Der bestehende `IdempotencyStore`
+>   ([`hexagon/ports-common/.../IdempotencyStore.kt:28`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt)
+>   plus
+>   [`JdbcIdempotencyStore`](../../../adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/idempotency/JdbcIdempotencyStore.kt)
+>   und MCP-Wiring in
+>   [`OperationalMcpRegistries`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/OperationalMcpRegistries.kt))
+>   wird natürlich vom MCP-Job-Start-Kontext konsumiert; `resultRef`
+>   ist dort eine Job-ID, nicht der `ExecutionTrace` (der lebt am
+>   Job-/Artifact-/Status-Pfad). Ein eigenständiger CLI-Pfad-Hook
+>   ohne MCP-Job-Worker wäre eine zweite parallele Architektur. B
+>   bleibt damit als Teil von F: wenn der `schema_migrate_start`-
+>   Handler in F gebaut wird, hängt er den bestehenden Store
+>   analog `data_transfer_start` ein — ohne neue Port-Schicht.
+> - **C/D/E/F** — `Geplant`. E ist der nächste eigenständige
+>   Kandidat (Cancellation-Token im Executor-Port; hilft auch dem
+>   CLI bei Operator-Ctrl-C).
 >
 > Vorbedingung: keine. Die Sub-Slices komponieren bestehende Ports
 > (HikariConnectionPoolFactory, JobCancelHandler, QuotaStore,
@@ -167,9 +188,11 @@ optional / no-op.
 
 ### 4.4 Sub-Slice-Reihenfolge folgt Wertschöpfung, nicht Zwang
 
-A, B, E können einzeln, sofort, ohne Service-Mode-Kontext
-landen und liefern Wert auch wenn F nie kommt. C/D/F warten auf
-den externen Trigger.
+A und E können einzeln, sofort, ohne Service-Mode-Kontext landen
+und liefern Wert auch wenn F nie kommt. C/D/F warten auf den
+externen Trigger. **B** ist nach Code-Audit (2026-06-02) als
+eigenständiger Slice deferred und mit F gefaltet (siehe §5
+Sub-Slice B).
 
 ---
 
@@ -219,47 +242,54 @@ Default bleibt 5_000 ms.
 
 ---
 
-### Sub-Slice B — Idempotency-Hook auf Schema-Migrate-Pfad
+### Sub-Slice B — Idempotency-Hook — `Deferred / gefaltet in F`
 
-**Ziel**: `schema migrate --execute` kann mit einem
-`--idempotency-key <key>` aufgerufen werden; eine wiederholte
-Ausführung mit demselben Key + demselben Schema-Fingerprint
-liefert den Original-`ExecutionTrace` zurück (Replay).
+**Code-Audit 2026-06-02 ergab drei Probleme mit B als
+eigenständigem Slice:**
 
-**Akzeptanzkriterien**:
-- [ ] `SchemaMigrateRequest` lernt
-  `idempotencyKey: String? = null`.
-- [ ] `SchemaMigrateExecutionStage` ruft (falls Key gesetzt)
-  `IdempotencyStore.reserve(scope = IdempotencyScope("schema_migrate",
-  targetRef), payloadFingerprint = MigrationFingerprint.compute(targetSchema),
-  now)` **vor** der Pipeline.
-- [ ] Replay-Detect → Stage gibt den persistierten
-  `ExecutionTrace` zurück + Report-Feld
-  `replayFromIdempotencyKey: <key>`.
-- [ ] Default-Adapter: `InMemoryIdempotencyStore` für den
-  CLI-Pfad (kein JDBC-Store erforderlich, weil CLI-Prozess
-  flüchtig ist und Idempotency-Replay nur innerhalb desselben
-  Aufrufs Sinn macht — der Server-Pfad wird in F den
-  `JdbcIdempotencyStore` einhängen).
-- [ ] CLI-Option `--idempotency-key <key>` (optional).
-- [ ] Vertragstest analog
-  `IdempotencyStoreContractTests`: First-Call-Reserves,
-  Second-Call-Returns-Replay, Different-Fingerprint-Conflicts.
-- [ ] `make ci` grün.
+1. **CLI-Pfad hat keinen echten Replay-Wert.** `schema migrate
+   --execute` läuft in einem single-shot JVM-Prozess. Ein
+   In-Memory-Store überlebt das Prozess-Ende nicht; nur ein
+   persistenter Store (File/JDBC) würde CLI-Retry-Safety
+   liefern. Das ist deutlich größerer Scope als ursprünglich
+   angenommen.
+2. **Der bestehende `IdempotencyStore` ist Job-Start-orientiert,
+   nicht ExecutionTrace-Storage.** Konkret:
+   - Port:
+     [`hexagon/ports-common/.../IdempotencyStore.kt:28`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt).
+   - JDBC-Adapter:
+     [`adapters/driven/persistence-jdbc/.../JdbcIdempotencyStore.kt:20`](../../../adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/idempotency/JdbcIdempotencyStore.kt).
+   - MCP-Wiring an Job-Start-Orchestrator:
+     [`adapters/driving/mcp/.../OperationalMcpRegistries.kt:21`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/OperationalMcpRegistries.kt).
+   - `commit(resultRef: String, …)` speichert eine **Job-Ref**,
+     nicht den `ExecutionTrace`. Bei MCP-Start-Tools lebt der
+     Trace/Report am Job-/Artifact-/Status-Pfad, getrennt vom
+     Idempotency-Eintrag.
+3. **Ein CLI-Pfad-Hook ohne MCP-Job-Worker wäre eine zweite
+   parallele Idempotency-Architektur**, mit der Gefahr, dass sie
+   beim Promote nach F (das den bestehenden Store sinnvoll
+   konsumiert) wieder umgebaut werden muss.
 
-**Betroffene Dateien**:
-- `hexagon/application/.../cli/commands/SchemaMigrateRequest.kt`
-- `hexagon/application/.../cli/commands/SchemaMigrateExecutionStage.kt`
-- `hexagon/application/.../cli/commands/SchemaMigrateReport.kt` (neues Feld)
-- `adapters/driving/cli/.../SchemaMigrateCommand.kt`
-- Neue Tests:
-  `hexagon/application/.../cli/commands/SchemaMigrateIdempotencyTest.kt`
+**Konsequenz**: B verschwindet als eigenständiger Slice aus
+dieser Tabelle. Wenn F (`schema_migrate_start`-Handler-Skeleton)
+gebaut wird, hängt der Handler **direkt** den bestehenden
+`IdempotencyStore` analog `data_transfer_start` ein — siehe
+§5 Sub-Slice F „Wiring".
 
-**Dependencies**: keine.
+**Was vom ursprünglichen B übrig bleibt** (in F mit-zu-tun):
+- MCP-Tool-Schema-Parameter `idempotencyKey?` in
+  `McpToolSchemas.kt`.
+- `IdempotencyScope("schema_migrate", targetRef)` als Scope-
+  Konvention.
+- `payloadFingerprint = MigrationFingerprint.compute(targetSchema)`
+  als Fingerprint-Berechnung.
+- Replay-Outcome-Mapping: `AlreadyCommitted` → MCP-Antwort mit
+  `replay: true` + Original-Job-Ref.
 
-**Risiken**: niedrig-mittel. `MigrationFingerprint.compute`
-muss deterministisch sein (ist es per Plan-Artefakt-Vertrag).
-Replay-Window-Default abstimmen (z. B. 24 h).
+**Nicht** in F übernommen (war Theater): CLI-Flag
+`--idempotency-key`, `SchemaMigrateRequest.idempotencyKey`-Feld,
+`SchemaMigrateIdempotencyTest`. Wenn ein CLI-Replay-Wert je
+nötig wird, wird er separat im File-Store-Slice geplant.
 
 ---
 
@@ -428,11 +458,14 @@ komponiert und an den `SchemaMigrateRunner` durchreicht.
 - Neuer E2E-Test:
   `adapters/driving/mcp/.../integration/McpSchemaMigrateStartScenarioTest.kt`
 
-**Dependencies**: A + B + C + D + E (alle).
+**Dependencies**: A + C + D + E. **B** ist in F gefaltet
+(Idempotency-Wiring direkt am Handler analog
+`data_transfer_start`, ohne neue Port-Schicht — siehe §5
+Sub-Slice B Deferral-Notiz).
 
 **Risiken**: hoch. Hängt am echten externen Trigger
 (`schema_migrate`-Tool als Produkt-Entscheidung). Wenn die
-Produkt-Entscheidung nicht kommt, ist F never-built; A/B/E
+Produkt-Entscheidung nicht kommt, ist F never-built; A/E
 liefern aber trotzdem Wert.
 
 ---
@@ -441,21 +474,23 @@ liefern aber trotzdem Wert.
 
 ```
 A (Lock-Timeout-Refactor)        ──┐
-B (Idempotency-Hook)             ──┤
-C (Connection-Sub-Pool)          ──┼──► F (schema_migrate-Handler)
-D (Quota-Plumbing) ──depends─►C ──┤
-E (Cancellation-Token)           ──┘
+C (Connection-Sub-Pool)          ──┤
+D (Quota-Plumbing) ──depends─►C ──┼──► F (schema_migrate-Handler
+                                  │     inkl. Idempotency-Wiring,
+E (Cancellation-Token)           ──┘     ehemals Sub-Slice B)
 ```
 
-- A, B, C, E sind unabhängig und können in beliebiger
-  Reihenfolge / parallel landen.
+- A, C, E sind unabhängig und können in beliebiger Reihenfolge
+  / parallel landen.
 - D braucht C.
-- F braucht alle fünf.
+- F braucht A + C + D + E plus die deferred-B-Wiring-Logik
+  (bestehender `IdempotencyStore` ohne neue Port-Schicht).
 
-Empfohlene Schubrichtung (falls externer Trigger nicht zeitnah
-feuert): **A vor B vor E**, weil A reiner Schulden-Abbau ist und
-die Test-Suite bereinigt, B und E Vertrags-Erweiterungen sind,
-die für sich genommen den CLI-Pfad robuster machen.
+Empfohlene Schubrichtung (Stand 2026-06-02 nach B-Deferral):
+**A** ist erledigt (commit `2fcb3846`). **E** ist der nächste
+eigenständige Kandidat — Vertrags-Erweiterung im Executor-Port,
+hilft auch dem CLI bei Operator-Ctrl-C. C/D/F warten auf den
+externen Trigger.
 
 ---
 
