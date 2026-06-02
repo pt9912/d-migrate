@@ -17,14 +17,14 @@ class McpStateDirLockTest : FunSpec({
         try {
             val outcome = McpStateDirLock.tryAcquire(
                 stateDir = dir,
-                version = "0.9.6-test",
+                version = "0.9.7-test",
                 pidProvider = { 42L },
             )
             val acquired = outcome.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>()
 
             val payload = Files.readString(dir.resolve(McpStateDirLock.LOCKFILE_NAME), StandardCharsets.UTF_8)
             payload shouldContain "\"pid\":42"
-            payload shouldContain "\"version\":\"0.9.6-test\""
+            payload shouldContain "\"version\":\"0.9.7-test\""
             payload shouldContain "\"instance\":\"${acquired.lock.instanceId}\""
             payload shouldContain "\"startedAt\":\""
 
@@ -124,10 +124,10 @@ class McpStateDirLockTest : FunSpec({
             pid = 7L,
             startedAt = "2026-05-03T10:00:00Z",
             instance = "in\"st",
-            version = """0.9.6"-dirty\with\backslash""",
+            version = """0.9.7"-dirty\with\backslash""",
         )
         rendered shouldContain "\"instance\":\"in\\\"st\""
-        rendered shouldContain "\"version\":\"0.9.6\\\"-dirty\\\\with\\\\backslash\""
+        rendered shouldContain "\"version\":\"0.9.7\\\"-dirty\\\\with\\\\backslash\""
     }
 
     test("acquire diagnostic stays informative when the existing payload is unreadable garbage") {
@@ -149,6 +149,51 @@ class McpStateDirLockTest : FunSpec({
                 val conflict = second.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Conflict>()
                 conflict.diagnostic shouldContain dir.toString()
                 conflict.diagnostic.contains("<<not-json>>").shouldBeTrue()
+            } finally {
+                first.lock.close()
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("tryAcquire returns Failed when the lockfile parent cannot host a file") {
+        // Use a temp *file* as the supposed stateDir — FileChannel.open
+        // sees the parent-of-lockfile as a regular file, not a directory,
+        // and raises IOException, which the catch maps to Failed.
+        val fileNotDir = Files.createTempFile("dmigrate-mcp-lock-notadir-", ".tmp")
+        try {
+            val outcome = McpStateDirLock.tryAcquire(fileNotDir, "v")
+            val failed = outcome.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Failed>()
+            failed.message shouldContain "could not open lockfile"
+            failed.message shouldContain fileNotDir.toString()
+        } finally {
+            Files.deleteIfExists(fileNotDir)
+        }
+    }
+
+    test("Conflict diagnostic reports 'lockfile payload unreadable' when readBestEffort returns null") {
+        // readBestEffort returns null when the file is empty (the
+        // `.takeIf { it.isNotEmpty() }` filter trips). Empty the lockfile
+        // while the first lock is held, then attempt the second acquire.
+        val dir = Files.createTempDirectory("dmigrate-mcp-lock-empty-payload-")
+        try {
+            val first = McpStateDirLock.tryAcquire(dir, "v1")
+                .shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Acquired>()
+            try {
+                // Truncate the payload to zero bytes while the OS lock is
+                // still held; the second tryAcquire's readBestEffort
+                // returns null and the diagnostic falls through to the
+                // "unreadable" branch.
+                Files.writeString(
+                    dir.resolve(McpStateDirLock.LOCKFILE_NAME),
+                    "",
+                    StandardCharsets.UTF_8,
+                )
+
+                val second = McpStateDirLock.tryAcquire(dir, "v2")
+                val conflict = second.shouldBeInstanceOf<McpStateDirLock.AcquireOutcome.Conflict>()
+                conflict.diagnostic shouldContain "(lockfile payload unreadable)"
             } finally {
                 first.lock.close()
             }

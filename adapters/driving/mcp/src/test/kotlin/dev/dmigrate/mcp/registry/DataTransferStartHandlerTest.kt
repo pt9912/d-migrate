@@ -8,6 +8,7 @@ import dev.dmigrate.server.application.error.ResourceNotFoundException
 import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -34,8 +35,8 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase F § 6.2 + § 8.8 (F.8 2/4) — Pre-Idempotency-Validation +
- * Phase-E-Pipeline-Integration des `data_transfer_start`-Handlers.
+ * LF-010 / LF-013 / LN-009 / LN-011 — Pre-Idempotency-Validation +
+ * LF-012 / LN-011 / LN-017 / LN-027-Pipeline-Integration des `data_transfer_start`-Handlers.
  *
  * Pin't:
  *
@@ -81,7 +82,7 @@ class DataTransferStartHandlerTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyDefault),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
         val handler = DataTransferStartHandler(orchestrator, connectionStore, clock)
@@ -210,7 +211,7 @@ class DataTransferStartHandlerTest : FunSpec({
         }
     }
 
-    test("chunkSize=10000 (Plan-Maximum) ist zulaessig") {
+    test("chunkSize=10000 (Vertragsmaximum) ist zulaessig") {
         val fx = Fixture(policyDefault = PolicyEffect.Allow)
         val result = fx.handler.handle(ctx(args(chunkSize = 10_000)))
         result.shouldBeInstanceOf<ToolCallOutcome.Success>()
@@ -331,7 +332,7 @@ class DataTransferStartHandlerTest : FunSpec({
     }
 
     // ──────────────────────────────────────────────────────────────
-    // F.8 (3/4) — ConnectionRef-Resolution + Transfer-Fingerprint.
+    // LF-010 / LF-013 / LN-009 / LN-011 — ConnectionRef-Resolution + Transfer-Fingerprint.
     // ──────────────────────────────────────────────────────────────
 
     test("sourceConnectionRef ohne Eintrag im Store -> RESOURCE_NOT_FOUND") {
@@ -382,7 +383,7 @@ class DataTransferStartHandlerTest : FunSpec({
         )
         first.shouldBeInstanceOf<ToolCallOutcome.Success>()
 
-        // Plan § 8.8: "abweichende Transfer-Option mit gleichem
+        // LF-012 / LN-011 / LN-017 / LN-027: "abweichende Transfer-Option mit gleichem
         // idempotencyKey -> IDEMPOTENCY_CONFLICT".
         shouldThrow<dev.dmigrate.server.application.error.IdempotencyConflictException> {
             fx.handler.handle(

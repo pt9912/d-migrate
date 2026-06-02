@@ -25,9 +25,9 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase E0.3 propagation guard: a token passed to [StreamingImporter.import]
+ * LN-010 / LN-011 propagation guard: a token passed to [StreamingImporter.import]
  * must reach the chunk-loop boundary as [TableImportParams.cancellationToken]
- * — not be lost at the runner facade. Phase E0.5 will use the same field
+ * — not be lost at the runner facade. LN-010 / LN-011 will use the same field
  * inside [TableImporter.import] to gate side effects.
  */
 class StreamingImporterCancelPropagationTest : FunSpec({

@@ -8,7 +8,7 @@ import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 
 /**
  * JSON-Codec fuer [ApprovalChallenge] zur Persistierung in der
- * `idempotency_reservations.challenge`-JSONB-Spalte (Plan § 4.1 + § 6.3).
+ * `idempotency_reservations.challenge`-JSONB-Spalte (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Format-Stabilitaet: Schema-Version 1 — die fuenf Felder spiegeln das
  * Kotlin-DTO eins-zu-eins. Erweiterungen brauchen einen neuen Migration-

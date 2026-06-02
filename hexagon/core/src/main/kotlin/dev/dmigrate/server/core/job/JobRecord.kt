@@ -15,8 +15,7 @@ data class JobRecord(
     val resourceUri: ServerResourceUri,
     val adminScope: String? = null,
     /**
-     * Phase E §7.9 quota-Reservation-Owner-Bindung. Wenn der
-     * JobStartOrchestrator vor der Job-Commit eine Quota-Reservierung
+     * LF-012 / LN-011 / LN-017 / LN-027     * JobStartOrchestrator vor der Job-Commit eine Quota-Reservierung
      * registriert hat, traegt dieses Feld die zugehoerige
      * `ownerId` (typischerweise aus dem IdempotencyScope abgeleitet),
      * sodass JobDispatcher und JobCancelService den Slot beim
@@ -24,7 +23,7 @@ data class JobRecord(
      * freigeben koennen.
      *
      * `null` bedeutet "kein Owner-Tracking" (z.B. fuer Bestands-Tests
-     * oder Pfade, die nicht durch den Phase-E-Orchestrator laufen).
+     * oder Pfade, die nicht durch den server-state orchestrator laufen).
      */
     val quotaReservationOwnerId: String? = null,
 ) {

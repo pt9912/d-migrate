@@ -46,7 +46,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * Follow-up AP 3 — Acceptance-Tests für [TestdataExecuteHandler].
+ * LF-017 / LF-024 / LN-030 / LN-031 — Acceptance-Tests für [TestdataExecuteHandler].
  */
 class TestdataExecuteHandlerTest : FunSpec({
 
@@ -155,7 +155,7 @@ class TestdataExecuteHandlerTest : FunSpec({
                     provenance = provenance,
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     outputFingerprint = "a".repeat(64),
                     createdAt = now,
                 ),
@@ -491,7 +491,7 @@ class TestdataExecuteHandlerTest : FunSpec({
             .envelope.code shouldBe ToolErrorCode.POLICY_DENIED
     }
 
-    test("PolicyChallenge -> POLICY_REQUIRED mit aggregierten Details (Follow-up AP 1)") {
+    test("PolicyChallenge -> POLICY_REQUIRED mit aggregierten Details (LF-017 / LF-024 / LN-030 / LN-031)") {
         val fx = Fixture(
             policyDefault = PolicyEffect.Challenge(
                 requiredScopes = setOf("ai.execute"),
@@ -531,7 +531,7 @@ class TestdataExecuteHandlerTest : FunSpec({
                 providerMeta = dev.dmigrate.server.application.ai.ProviderMeta(
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     requestId = null,
                 ),
             )

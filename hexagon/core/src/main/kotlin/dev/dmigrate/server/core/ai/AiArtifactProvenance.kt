@@ -3,10 +3,10 @@ package dev.dmigrate.server.core.ai
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase G § 5.4 + § 5.5 + § 5.6 (G.6.b) — operationsspezifische
+ * LF-017 / LF-024 / LN-030 / LN-031— operationsspezifische
  * Provenance für ein KI-Artefakt.
  *
- * Drei Varianten, weil Plan §5.4 explizit zwischen Plan-,
+ * Drei Varianten, weil LF-017 / LF-024 / LN-030 / LN-031 explizit zwischen Plan-,
  * Execute- und Testdaten-Plan-Artefakten unterscheidet — jeder
  * trägt eigene Fingerprint-Felder, damit Replay und
  * Idempotenz-Checks scharf bleiben:
@@ -32,9 +32,9 @@ sealed interface AiArtifactProvenance {
     val payloadFingerprint: String
 
     /**
-     * Plan §5.4: Provenance für `procedure_transform_plan`-
+     * LF-017 / LF-024 / LN-030 / LN-031: Provenance für `procedure_transform_plan`-
      * Artefakte. Plan-Artefakte sind self-contained — keine
-     * Plan-Ref, keine Output-Bindung, weil der Plan selbst das
+     * LF-012 / LN-011 / LN-017 / LN-027 Ref, keine Output-Bindung, weil der Plan selbst das
      * Output ist.
      */
     data class Plan(
@@ -52,7 +52,7 @@ sealed interface AiArtifactProvenance {
     }
 
     /**
-     * Plan §5.5 Z. 779-792: Provenance für
+     * LF-017 / LF-024 / LN-030 / LN-031: Provenance für
      * `procedure_transform_execute`-Zielartefakte. **Pflicht-
      * Bindung an das Plan-Artefakt** — der Execute-Aufruf bringt
      * keine eigenen Source-Refs mit; sie werden ausschliesslich
@@ -86,7 +86,7 @@ sealed interface AiArtifactProvenance {
     }
 
     /**
-     * Plan §5.6: Provenance für `testdata_plan`-Artefakte.
+     * LF-017 / LF-024 / LN-030 / LN-031: Provenance für `testdata_plan`-Artefakte.
      * Self-contained wie [Plan]; die Source-Refs (`schemaRef`,
      * optional `profileRef`) liegen in [AiArtifactMetadata.sourceRefs].
      */
@@ -105,7 +105,7 @@ sealed interface AiArtifactProvenance {
     }
 
     /**
-     * Follow-up AP 3 (Plan §5): Provenance für `testdata_execute`-
+     * Follow-up AP 3 (LF-017 / LF-024 / LN-030 / LN-031): Provenance für `testdata_execute`-
      * Datenartefakte. **Pflicht-Bindung an das Testdata-Plan-Artefakt**
      * (analog zu [Execute]). Der Execute-Aufruf bringt keine eigenen
      * Source-Refs mit; Tabellenbindung und Schema-Provenance kommen

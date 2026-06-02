@@ -7,7 +7,8 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
 /**
  * MySQL [dev.dmigrate.driver.data.DataReader].
  *
- * MySQL-Spezifika (siehe Plan §3.3 + §6.13):
+ * LF-008 / LN-009 / LN-010: MySQL-Spezifika fuer verlustfreies,
+ * konsistentes Export-Streaming:
  * - **Streaming-Strategie**: serverseitiger Cursor via `useCursorFetch=true`
  *   (gesetzt in [dev.dmigrate.driver.connection.HikariConnectionPoolFactory]
  *   als Default in der JDBC-URL) + realer `fetchSize`. Bewusste Wahl gegen
@@ -20,7 +21,8 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  *   der serverseitige Cursor steht für sich. Wir lassen es auf `false`,
  *   damit ein evtl. konsistenter Snapshot über den Stream hinweg möglich ist.
  *
- * Tests laufen im `@Tag("integration")`-Workflow gegen einen Testcontainers-
+ * Tests fuer den Live-DB-Pfad leben in `:test:integration-mysql`
+ * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
  * MySQL — siehe `.github/workflows/integration.yml`.
  */
 class MysqlDataReader : AbstractJdbcDataReader() {
@@ -30,7 +32,7 @@ class MysqlDataReader : AbstractJdbcDataReader() {
     override fun quoteIdentifier(name: String): String =
         SqlIdentifiers.quoteIdentifier(name, dialect)
 
-    /** Tuning für serverseitigen Cursor — siehe Plan §6.13. */
+    /** LF-008 / LN-010: Tuning fuer serverseitigen Cursor. */
     override val fetchSize: Int = 1_000
 
     /** Konsistenter Snapshot über den Stream hinweg. */

@@ -42,15 +42,24 @@ neuen Version.
 |---------|-----------|
 | E001 - E020 | Schema-Validierung (SchemaValidator) |
 | E052 - E056 | Dialekt-Inkompatibilitaeten (Composite, Routine, Sequence) |
-| E060 | Split-Diagnostik (Phasenkonflikt) |
+| E057 | Multi-Dialekt action_required: MySQL Partial-Index-Predicate, SQLite-helper_table `WITHOUT ROWID` + `SequenceNextVal` (ab 0.9.7) |
+| E058 | SQLite-helper_table: externe Objekte referenzieren `dmg_sequences`; Rollback-Preflight bricht ab (ab 0.9.7) |
+| E059 | SQLite-helper_table: Sequence-backed column im PRIMARY KEY (ab 0.9.7) |
+| E060 | Split-Diagnostik (Phasenkonflikt); SQLite-helper_table-Rollback zusätzlich: ATTACHed Datenbanken detektiert (ab 0.9.7) |
 | E120 - E121 | Erweiterte Validierung (Trigger, Views) |
 | E122 - E123 | Sequence-Default-Validierung (ab 0.9.3) |
 | E124 | Support-Namenskollision (ab 0.9.3) |
+| E125 | Sequence-internal-Validierung (Inkrement/Bereich, ab 0.9.7) |
 | W001 | Float-fuer-Geldbetraege-Warnung |
 | W100 - W112 | Dialekt-Warnungen (Typ-Mapping, Index-Konvertierung) |
 | W113 | Circular-FK-Warnung |
-| W114 - W117 | Sequence-Emulation-Warnungen (ab 0.9.3) |
-| W120 | SRID-Kommentar-Hinweis (MySQL) |
+| W114 - W117 | Sequence-Emulation-Warnungen (MySQL ab 0.9.3, SQLite ab 0.9.7) |
+| W119 | SQLite-helper_table: NOT-NULL- und CHECK-`IS NOT NULL`-Suppression auf sequence-getragener Spalte (ab 0.9.7) |
+| W120 | Multi-Dialekt: MySQL SRID-Hinweis, SQLite-helper_table-Reverse Trigger-Body-modifiziert (ab 0.9.7) |
+| W121 | SQLite-helper_table: Conflict-Gap-INFO (ab 0.9.7) |
+| W122 | SQLite-helper_table: AFTER-INSERT-Sequence-Trigger feuert UPDATE auf Zieltabelle (ab 0.9.7) |
+| W123 | SQLite-helper_table-Rollback: ATTACHed Datenbanken detektiert (ab 0.9.7) |
+| W124 | SQLite-helper_table-Reverse: User-BEFORE-INSERT-Trigger maskiert kanonisches `_bi`-Paar (ab 0.9.7) |
 
 Neue Codes werden am Ende des jeweiligen Bereichs angefuegt.
 Luecken (z.B. E021-E051) sind reservierte Bereiche fuer kuenftige

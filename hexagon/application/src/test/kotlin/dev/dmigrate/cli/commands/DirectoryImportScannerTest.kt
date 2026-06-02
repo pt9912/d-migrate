@@ -9,7 +9,7 @@ import io.kotest.matchers.string.shouldContain
 import java.nio.file.Files
 
 /**
- * 0.9.0 Phase D.4 (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4): Unit-Tests
+ * LF-010 / LF-013 / LN-009: Unit-Tests
  * fuer den Directory-Scanner. Dieselbe Auswahl-Semantik wie im
  * privaten `StreamingImporter.resolveDirectoryInputs`, aber ohne
  * Streaming-Abhaengigkeit, damit der Runner-Preflight sie vor dem

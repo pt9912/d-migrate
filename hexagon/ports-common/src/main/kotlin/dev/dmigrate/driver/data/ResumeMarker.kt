@@ -1,8 +1,8 @@
 package dev.dmigrate.driver.data
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.1):
- * Composite-Marker-Oberflaeche fuer Mid-Table-Resume. Der Reader
+ * LF-013 / LN-006 / LN-012: Composite-Marker-Oberflaeche fuer
+ * Mid-Table-Resume. Der Reader
  * schneidet eine bereits angefangene Tabelle ab dem zuletzt **chunk-
  * bestaetigten** Wertepaar `(markerColumn, tieBreakers...)` ab und
  * haelt die Sortierung invariant fuer Wiederholbarkeit.
@@ -43,8 +43,8 @@ data class ResumeMarker(
     /**
      * PK-Spalten in stabiler Reihenfolge; leere Liste heisst, dass
      * kein Tie-Breaker vorhanden ist. Der Runner sollte in diesem Fall
-     * den Mid-Table-Resume-Pfad gar nicht anstossen (Phase C.2 §4.1
-     * Fall 2: konservativer C.1-Fallback).
+     * den Mid-Table-Resume-Pfad gar nicht anstossen und konservativ auf
+     * table-granulares Resume zurueckfallen.
      */
     val tieBreakerColumns: List<String>,
     /**
@@ -88,7 +88,8 @@ data class ResumeMarker(
          * Zuletzt chunk-bestaetigter Marker-Wert. `null`-Werte sind
          * nominal erlaubt, produzieren aber in `> ?`-Vergleichen
          * dreiwertiges UNKNOWN — nullable Marker-Spalten sind eine
-         * dokumentierte Nutzereinschraenkung (Phase C.2 §8.2).
+         * dokumentierte Nutzereinschraenkung fuer reproduzierbare
+         * inkrementelle Wiederaufnahme.
          */
         val lastMarkerValue: Any?,
         /**

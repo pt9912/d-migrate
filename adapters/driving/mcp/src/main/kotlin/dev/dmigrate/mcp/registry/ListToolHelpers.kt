@@ -11,7 +11,7 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 
 /**
- * Phase-D §10.6 shared helpers for the five `*_list` discovery
+ * LF-012 / LN-038 shared helpers for the five `*_list` discovery
  * handlers. Pulled into a dedicated object so the per-tool
  * handlers stay thin — they parse their resource-specific
  * filters, hand them off to the store, and project the results.
@@ -26,7 +26,7 @@ internal object ListToolHelpers {
     /**
      * Default page size when `pageSize` is omitted. Modest on
      * purpose — multi-page navigation lands with the cursor
-     * wiring in AP D8.
+     * wiring in LF-012 / LN-038.
      */
     const val DEFAULT_PAGE_SIZE: Int = 50
 
@@ -138,7 +138,7 @@ internal object ListToolHelpers {
 }
 
 /**
- * AP D6: typed helper that reads `tools/call` arguments as a
+ * LF-012 / LN-038: typed helper that reads `tools/call` arguments as a
  * JsonObject (or `null` when the client omitted them). Centralises
  * the cast so individual handlers don't repeat the `isJsonObject`
  * defensive code.

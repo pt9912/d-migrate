@@ -39,18 +39,18 @@ import java.util.Locale
 import java.util.UUID
 
 /**
- * AP 6.7: `artifact_upload_init` for the read-only schema-staging
- * path per `ImpPlan-0.9.6-C.md` §5.3 + §6.7.
+ * LF-012 / LN-027 / LN-028 / LN-038: `artifact_upload_init` for the read-only schema-staging
+ * path per LF-012 / LN-027 / LN-028 / LN-038.
  *
- * Phase C accepts only `uploadIntent=schema_staging_readonly`. Every
+ * LF-012 / LN-038 accepts only `uploadIntent=schema_staging_readonly`. Every
  * other intent surfaces as `POLICY_REQUIRED` so clients understand
- * the future policy gate (AP 6.13+) is not yet open. The handler
+ * the future policy gate (LF-012 / LN-027 / LN-028 / LN-038) is not yet open. The handler
  * does NOT consult an approval store — read-only schema staging is
  * policy-free per §4.4.
  *
  * Quota policy: reserves one slot in `ACTIVE_UPLOAD_SESSIONS` AND
  * `expectedSizeBytes` in `UPLOAD_BYTES`. The session reservation is
- * released on abort/expiry/finalisation (AP 6.9+); the byte
+ * released on abort/expiry/finalisation (LF-012 / LN-027 / LN-028 / LN-038); the byte
  * reservation likewise. If either reservation is rate-limited, the
  * session is not created and the byte reservation is rolled back via
  * [QuotaService.release] before throwing.
@@ -65,7 +65,7 @@ internal class ArtifactUploadInitHandler(
     private val limits: McpLimitsConfig,
     private val options: Options,
     /**
-     * Phase F § 5.1 + § 8.3 (F.3 4/4): wenn gesetzt, faengt der Handler
+     * LF-010 / LF-013 / LN-009 / LN-011: wenn gesetzt, faengt der Handler
      * `uploadIntent=job_input` und delegiert an den
      * [dev.dmigrate.server.application.upload.UploadInitOrchestrator].
      * Registry-Defaults wiren den Orchestrator; `null` bleibt nur fuer
@@ -77,20 +77,47 @@ internal class ArtifactUploadInitHandler(
     private val gson = GsonBuilder().disableHtmlEscaping().create()
 
     override fun handle(context: ToolCallContext): ToolCallOutcome {
-        // Phase F § 5.1 (F.3 4/4): policy-pflichtige Intents werden vor
-        // dem Phase-C Read-only-Pfad abgefangen. Wenn ein
+        // LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtige Intents werden vor
+        // dem LF-012 / LN-038 Read-only-Pfad abgefangen. Wenn ein
         // `UploadInitOrchestrator` gewired ist, geht `uploadIntent=
-        // job_input` durch die F.3-Pipeline.
+        // job_input` durch die LF-010 / LF-013 / LN-009 / LN-011-Pipeline.
         if (uploadInitOrchestrator != null) {
             policyInitOutcomeOrNull(context)?.let { return it }
         }
 
-        // TODO(AP 6.13): idempotency key per ImpPlan-0.9.6-B §5.3.5
-        // — read-only staging is not user-state-changing on retry,
-        // but a same-checksum replay should ideally hit the existing
-        // session instead of minting a new one and burning quota.
         val args = parseArguments(context.arguments)
         val tenantId = context.principal.effectiveTenantId
+
+        // AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`: same-checksum replay
+        // for the read-only `schema_staging_readonly` intent. Returns
+        // the live ACTIVE session and skips a fresh quota reservation
+        // — read-only staging is not user-state-changing on retry,
+        // and reservation-replay would burn an extra session-slot
+        // plus the byte budget for every retry.
+        //
+        // Stale-lease guard: a session within `MIN_REPLAY_TTL_SECONDS`
+        // of `absoluteLeaseExpiresAt` is too short to actually finish
+        // an upload through the segment+finalize round-trip — replay
+        // would hand the client a useless TTL. Treat it as a miss
+        // and let the new-session path mint a fresh lease.
+        //
+        // TODO(0.9.8): COMPLETED-state match should surface a typed
+        // `ALREADY_COMPLETED` envelope with the existing
+        // `finalisedSchemaRef`, instead of falling through to a
+        // duplicate upload (port currently restricted to
+        // state == ACTIVE). Out of scope for this commit.
+        sessionStore.findActiveSchemaStagingByChecksum(
+            tenantId = tenantId,
+            ownerPrincipalId = context.principal.principalId,
+            checksumSha256 = args.checksumSha256,
+            sizeBytes = args.expectedSizeBytes,
+        )?.let { existing ->
+            val ttlNow = effectiveTtlSeconds(options.clock.instant(), existing.absoluteLeaseExpiresAt)
+            if (ttlNow >= MIN_REPLAY_TTL_SECONDS) {
+                return idempotentReplay(context, existing)
+            }
+        }
+
         val sessionsKey = QuotaKey(tenantId, QuotaDimension.ACTIVE_UPLOAD_SESSIONS, context.principal.principalId)
         val bytesKey = QuotaKey(tenantId, QuotaDimension.UPLOAD_BYTES, context.principal.principalId)
         val sessionsReservation = QuotaReservation(sessionsKey, amount = 1)
@@ -113,16 +140,9 @@ internal class ArtifactUploadInitHandler(
 
         val now = options.clock.instant()
         val absoluteExpiresAt = now.plus(options.absoluteLeaseDuration)
-        val session = newSession(context, args, now, absoluteExpiresAt)
-        // Phase F § 8.9 (F.9 3/3): durable AuditFields-Population.
-        // Plan-Akzeptanz "Audit enthaelt keine rohen Uploadbytes oder
-        // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
-        // erfuellt; hier wird der `resourceRefs`-Slot mit der
-        // tenant-scoped Session-URI gefuellt, sodass Audit-Konsumenten
-        // den Upload-Context tracen koennen.
-        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
-        try {
-            sessionStore.save(session)
+        val candidate = newSession(context, args, now, absoluteExpiresAt)
+        val saved = try {
+            sessionStore.saveOrFindActiveSchemaStaging(candidate)
         } catch (e: RuntimeException) {
             // Defence in depth: if the store throws (e.g. a future
             // unique-id collision contract), roll the reservations
@@ -131,6 +151,23 @@ internal class ArtifactUploadInitHandler(
             quotaService.refund(sessionsReservation)
             throw e
         }
+        if (saved.uploadSessionId != candidate.uploadSessionId) {
+            // AP 6.13 race-loss: a concurrent caller saved the
+            // matching session first. Refund our reservations and
+            // surface the existing session via the replay path —
+            // same observable behaviour as if we had hit the cheap
+            // lookup at the top of the handler.
+            quotaService.refund(bytesReservation)
+            quotaService.refund(sessionsReservation)
+            return idempotentReplay(context, saved)
+        }
+        // LF-010 / LF-013 / LN-009 / LN-011: durable AuditFields-Population.
+        // Anforderungsakzeptanz "Audit enthaelt keine rohen Uploadbytes oder
+        // Approval-Tokens" wird strukturell durch das AuditEvent-Schema
+        // erfuellt; hier wird der `resourceRefs`-Slot mit der
+        // tenant-scoped Session-URI gefuellt, sodass Audit-Konsumenten
+        // den Upload-Context tracen koennen.
+        context.auditFields.resourceRefs = listOf(saved.resourceUri.render())
         // Commit hooks run on success per QuotaService.kt:11-17 —
         // counters stay reserved, audit hook fires.
         quotaService.commit(sessionsReservation)
@@ -146,7 +183,7 @@ internal class ArtifactUploadInitHandler(
         // to repeat it here.
         val ttlSeconds = effectiveTtlSeconds(now, absoluteExpiresAt)
         val payload = mapOf(
-            "uploadSessionId" to session.uploadSessionId,
+            "uploadSessionId" to saved.uploadSessionId,
             "uploadSessionTtlSeconds" to ttlSeconds,
             "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
             "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
@@ -164,7 +201,62 @@ internal class ArtifactUploadInitHandler(
     }
 
     /**
-     * Phase F § 5.1 + § 8.3 (F.3 4/4) — Policy-Init-Pfad fuer
+     * AP 6.13 / `ImpPlan-0.9.6-B §5.3.5` — Idempotent replay for
+     * read-only schema-staging uploads. Returns the existing
+     * session's contract payload without touching quota. The audit
+     * `resourceRefs` slot is still populated so the trace shows the
+     * client touched the upload-init tool. `executionMeta.idempotentReplay
+     * = true` lets clients distinguish a replay from a fresh init.
+     *
+     * The TTL is computed against the existing
+     * `absoluteLeaseExpiresAt` (no lease extension on replay). The
+     * caller already gated the entry on a TTL >= MIN_REPLAY_TTL_SECONDS.
+     *
+     * Resumability hint: `executionMeta.bytesReceived` carries the
+     * server-side received-bytes counter so resume-aware clients can
+     * compute their next-segment offset locally. The first-segment
+     * fields stay at the spec defaults (`FIRST_SEGMENT_INDEX` /
+     * `FIRST_SEGMENT_OFFSET`) for backwards compatibility with
+     * non-resumable clients — those clients restart from segment 1
+     * and the server's segment-store contract will dedupe by
+     * `(sessionId, segmentIndex, segmentSha256)`.
+     */
+    private fun idempotentReplay(
+        context: ToolCallContext,
+        session: UploadSession,
+    ): ToolCallOutcome {
+        // TODO(0.9.8): surface `idempotentReplay = true` via
+        // `AuditFields` once the audit schema gains a generic
+        // metadata slot. Today the replay/fresh distinction lives
+        // only on the wire (`executionMeta.idempotentReplay`); audit
+        // consumers that need it must join on `requestId` with the
+        // wire-log until the audit-schema extension lands.
+        context.auditFields.resourceRefs = listOf(session.resourceUri.render())
+        val ttlSeconds = effectiveTtlSeconds(options.clock.instant(), session.absoluteLeaseExpiresAt)
+        val payload = mapOf(
+            "uploadSessionId" to session.uploadSessionId,
+            "uploadSessionTtlSeconds" to ttlSeconds,
+            "expectedFirstSegmentIndex" to FIRST_SEGMENT_INDEX,
+            "expectedFirstSegmentOffset" to FIRST_SEGMENT_OFFSET,
+            "executionMeta" to mapOf(
+                "requestId" to context.requestId,
+                "idempotentReplay" to true,
+                "bytesReceived" to session.bytesReceived,
+            ),
+        )
+        return ToolCallOutcome.Success(
+            content = listOf(
+                ToolContent(
+                    type = "text",
+                    text = gson.toJson(payload),
+                    mimeType = "application/json",
+                ),
+            ),
+        )
+    }
+
+    /**
+     * LF-010 / LF-013 / LN-009 / LN-011 — Policy-Init-Pfad fuer
      * `uploadIntent=job_input`. Retourniert `null` wenn der Intent
      * nicht zum Policy-Pfad gehoert (Legacy-Pfad uebernimmt) oder wenn
      * der `uploadIntent` ueberhaupt fehlt (Legacy-Pfad emittiert die
@@ -186,13 +278,13 @@ internal class ArtifactUploadInitHandler(
         val mimeType = raw.optString("mimeType") ?: DEFAULT_POLICY_MIME_TYPE
         val artifactKind = parseArtifactKind(raw)
         val targetTable = raw.optString("targetTable")
-        // Follow-up AP 2: Bundle-Init-Vertrag (Plan §4). bundleFormat ist
+        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Init-Vertrag. bundleFormat ist
         // pflicht, sobald tables gesetzt ist; targetTable und tables sind
         // gegenseitig exklusiv.
         val bundleHints = parseBundleInitHints(raw, targetTable)
-        // Phase F § 8.4 (F.4 2/3): `sizeBytes=0` ist nur fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: `sizeBytes=0` ist nur fuer
         // nicht-Schema-`job_input` als Single-Empty-Segment gueltig
-        // (Plan: "leeres finales Segment + Empty-SHA"). Schema-Artefakte
+        // (Vertrag: "leeres finales Segment + Empty-SHA"). Schema-Artefakte
         // muessen Bytes haben — ein leeres Schema-Dokument ist kein
         // valider DDL-/Schema-JSON-Inhalt.
         if (sizeBytes == 0L && artifactKind == ArtifactKind.SCHEMA) {
@@ -255,7 +347,7 @@ internal class ArtifactUploadInitHandler(
                 listOf(ValidationViolation("sizeBytes", "must be >= 0")),
             )
         }
-        // Plan § 8.3: Legacy-Alias additiv, widersprechende Doppelwerte ->
+        // LF-012 / LN-011 / LN-017 / LN-027: Legacy-Alias additiv, widersprechende Doppelwerte ->
         // VALIDATION_ERROR.
         if (canonical != null && alias != null) {
             val aliasSize = sizeAsLong(alias, fieldName = "expectedSizeBytes")
@@ -320,7 +412,7 @@ internal class ArtifactUploadInitHandler(
         artifactKind: ArtifactKind,
         bundleHints: BundleInitHints? = null,
     ): String {
-        // Follow-up AP 2: Bundle-Uploads bekommen einen separaten
+        // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Uploads bekommen einen separaten
         // Wire-Marker, damit `data_import_start` Bundle- vs. Single-File-
         // Artefakte ohne metadata-Schnüffeln unterscheiden kann.
         if (bundleHints != null) return WIRE_KIND_SEED_DATA_BUNDLE
@@ -335,9 +427,9 @@ internal class ArtifactUploadInitHandler(
     }
 
     /**
-     * Follow-up AP 2 — Bundle-Init-Vertrag.
+     * LF-010 / LF-013 / LN-009 / LN-011 — Bundle-Init-Vertrag.
      *
-     * Plan §4 wortlaut:
+     * LF-010 / LF-013 / LN-009 / LN-011 wortlaut:
      *
      * - `tables`: nicht-leere Liste von Tabellen.
      * - `bundleFormat`: Pflicht, wenn `tables` gesetzt ist.
@@ -411,7 +503,7 @@ internal class ArtifactUploadInitHandler(
     )
 
     /**
-     * Phase F § 8.3: `sizeBytes=0` ist fuer `job_input` ein gueltiger
+     * LF-010 / LF-013 / LN-009 / LN-011: `sizeBytes=0` ist fuer `job_input` ein gueltiger
      * Single-Empty-Segment-Upload. `segmentCountFor` rundet 0 / N auf 0,
      * der Orchestrator-Vertrag erwartet aber ein finales Segment.
      */
@@ -533,7 +625,7 @@ internal class ArtifactUploadInitHandler(
                 listOf(ValidationViolation("uploadIntent", "is required")),
             )
         if (intent != INTENT_SCHEMA_STAGING_READONLY) {
-            // Phase C is the read-only window: policy-pflichtige
+            // LF-012 / LN-038 is the read-only window: policy-pflichtige
             // intents like job_input/data_import surface as the
             // typed POLICY_REQUIRED envelope. The policy name is
             // synthesised from the intent so the wire detail is
@@ -611,23 +703,32 @@ internal class ArtifactUploadInitHandler(
 
         const val INTENT_SCHEMA_STAGING_READONLY: String = "schema_staging_readonly"
 
-        /** Phase F § 8.3 (F.3 4/4): policy-pflichtiger Init-Intent. */
+        /** LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger Init-Intent. */
         const val INTENT_JOB_INPUT: String = "job_input"
+
+        /**
+         * AP 6.13 stale-lease guard: a replay returning a TTL below
+         * this threshold is treated as a miss so the client gets a
+         * fresh lease instead of a useless one. 60s is the smallest
+         * window that comfortably covers a single segment+finalize
+         * round-trip.
+         */
+        const val MIN_REPLAY_TTL_SECONDS: Long = 60L
 
         private const val SCOPE_ARTIFACT_UPLOAD: String = "dmigrate:artifact:upload"
 
         /**
-         * Follow-up AP 2 — Wire-Marker für Bundle-/Mehrtabellen-Uploads.
+         * LF-010 / LF-013 / LN-009 / LN-011 — Wire-Marker für Bundle-/Mehrtabellen-Uploads.
          * `data_import_start` akzeptiert dieses Wire-Kind als Bundle-
          * Quelle; Single-File-Uploads behalten `seed-data`.
          */
         const val WIRE_KIND_SEED_DATA_BUNDLE: String = "seed-data-bundle"
 
         /**
-         * Phase F § 8.3 (F.3 4/4): Default-MIME-Type fuer den
+         * LF-010 / LF-013 / LN-009 / LN-011: Default-MIME-Type fuer den
          * Policy-Init-Pfad, wenn der Caller keinen `mimeType` angibt.
          * Schliesst die Luecke zwischen Approval-Fingerprint
-         * (`mimeType` floss in den Plan-§-4.2-Fingerprint ein) und
+         * (`mimeType` floss in den LF-010 / LF-013 / LN-009 / LN-011-Fingerprint ein) und
          * Wire-Optionalitaet — der Default ist eine deterministische,
          * dem Spec entsprechende Wahl, sodass abweichende
          * `mimeType`-Folgeretries via Idempotency-Conflict abgewiesen

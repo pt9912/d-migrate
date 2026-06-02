@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.TransformationNote
 import dev.dmigrate.integration.FlywayMigrationExporter
 import dev.dmigrate.migration.MigrationTool
@@ -46,6 +47,7 @@ class ToolExportRunnerTest : FunSpec({
     fun runner(
         schemaReader: (Path) -> SchemaDefinition = { schema },
         validator: (SchemaDefinition) -> ValidationResult = { ValidationResult(emptyList(), emptyList()) },
+        preGenerationValidator: PreGenerationValidator = PreGenerationValidator.NoOp,
         existingPaths: (Path) -> Set<String> = { emptySet() },
         exporterLookup: (MigrationTool) -> ToolMigrationExporter = { FlywayMigrationExporter() },
         reportWriter: (Path, ToolExportReportData) -> Unit = { path, data ->
@@ -55,6 +57,7 @@ class ToolExportRunnerTest : FunSpec({
         schemaReader = schemaReader,
         validator = validator,
         generatorLookup = { fakeGenerator },
+        preGenerationValidatorLookup = { preGenerationValidator },
         exporterLookup = exporterLookup,
         fileWriter = { path, content -> writtenFiles[path.toString()] = content },
         reportWriter = reportWriter,
@@ -137,6 +140,49 @@ class ToolExportRunnerTest : FunSpec({
         )
         val exit = runner(validator = { invalid }).execute(request())
         exit shouldBe 3
+    }
+
+    // ── Exit 3: PreGenerationValidator (symmetric to SchemaGenerateRunner) ─
+
+    test("pre-generation validator errors return exit 3 with code + path in stderr") {
+        val preGen = object : PreGenerationValidator {
+            override fun validate(
+                schema: SchemaDefinition,
+                options: DdlGenerationOptions,
+            ) = listOf(
+                ValidationError("E059", "PK + SequenceNextVal forbidden", "tables.orders.columns.id"),
+            )
+        }
+        val exit = runner(preGenerationValidator = preGen).execute(request())
+        exit shouldBe 3
+        // The renderer surfaces code, path and message so the operator can locate the offender
+        // without needing a full ValidationResult JSON.
+        stderrLines.any { it.contains("E059") } shouldBe true
+        stderrLines.any { it.contains("tables.orders.columns.id") } shouldBe true
+    }
+
+    test("pre-generation validator runs AFTER the dialect-agnostic validator (validator-failure short-circuits)") {
+        var preGenCalls = 0
+        val preGen = object : PreGenerationValidator {
+            override fun validate(
+                schema: SchemaDefinition,
+                options: DdlGenerationOptions,
+            ): List<ValidationError> {
+                preGenCalls++
+                return emptyList()
+            }
+        }
+        val invalid = ValidationResult(
+            listOf(ValidationError("E001", "structural", "tables.users")),
+            emptyList(),
+        )
+        runner(validator = { invalid }, preGenerationValidator = preGen).execute(request()) shouldBe 3
+        preGenCalls shouldBe 0
+    }
+
+    test("pre-generation validator NoOp lets export proceed") {
+        // preGenerationValidator defaults to NoOp; export should succeed normally.
+        runner().execute(request()) shouldBe 0
     }
 
     // ── Exit 7: parse/I/O/collision errors ───────────────────

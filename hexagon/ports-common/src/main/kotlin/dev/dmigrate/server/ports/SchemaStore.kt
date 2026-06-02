@@ -22,32 +22,32 @@ data class SchemaIndexEntry(
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
     /**
-     * Plan-D §6.4 mindestfeld for `schema_list`: serialised
+     * LF-012 / LN-038 mindestfeld for `schema_list`: serialised
      * format hint (`json`, `yaml`, ...). Null means "not yet
-     * recorded by the producer" — Phase-E start tools fill it
+     * recorded by the producer" — LF-012 / LN-011 / LN-017 / LN-027 start tools fill it
      * when staging.
      */
     val format: String? = null,
     /**
-     * Plan-D §6.4: lineage tag — typically `schema_generate`,
-     * `schema_reverse_start` (Phase E), `upload`, or another
+     * LF-012 / LN-038: lineage tag — typically `schema_generate`,
+     * `schema_reverse_start` (LF-012 / LN-011 / LN-017 / LN-027), `upload`, or another
      * canonical operation id the producer used.
      */
     val origin: String? = null,
     /**
-     * Plan-D §6.4: serialised payload byte length. Null when
+     * LF-012 / LN-038: serialised payload byte length. Null when
      * the producer did not capture it.
      */
     val sizeBytes: Long? = null,
     /**
-     * Plan-D §6.4 optional hash hint (typically the sha256 of
+     * LF-012 / LN-038 optional hash hint (typically the sha256 of
      * the underlying artefact bytes, hex-lowercase).
      */
     val hash: String? = null,
 )
 
 /**
- * Phase-D §6.3 + §10.4 filter for `schema_list`. `jobRef` matches
+ * LF-012 / LN-038 filter for `schema_list`. `jobRef` matches
  * `SchemaIndexEntry.jobRef`; time window inclusive at both ends.
  */
 data class SchemaListFilter(
@@ -65,7 +65,7 @@ interface SchemaStore {
     fun list(tenantId: TenantId, page: PageRequest): PageResult<SchemaIndexEntry>
 
     /**
-     * Phase-D filtered list. Default sort:
+     * LF-012 / LN-038 filtered list. Default sort:
      *   1. `createdAt` DESC
      *   2. `schemaId` ASC (stable id tiebreaker)
      */
@@ -78,7 +78,7 @@ interface SchemaStore {
     fun deleteExpired(now: Instant): Int
 
     /**
-     * AP 6.22: idempotent registration for the deterministic
+     * LF-010 / LF-013 / LN-009 / LN-011: idempotent registration for the deterministic
      * [SchemaIndexEntry.schemaId] derived from tenant +
      * uploadSessionId + payload SHA + format. Same id with the
      * same `(tenantId, artifactRef)` is a no-op that returns the

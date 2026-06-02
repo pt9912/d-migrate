@@ -1,6 +1,6 @@
 package dev.dmigrate.cli.config
 
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -279,11 +279,11 @@ class I18nSettingsResolverTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.1 / §4.2):
+    // LF-006 / LN-022 / LN-023:
     // explizites `--lang` hat hoechste Prioritaet und strenge Validierung.
     // ────────────────────────────────────────────────────────────────
 
-    context("Phase A §4.1 — --lang hat hoechste Prioritaet") {
+    context("LF-006 / LF-007 / LN-022 / LN-023 — --lang hat hoechste Prioritaet") {
 
         test("--lang de gewinnt gegen alle Env-/Config-/System-Quellen") {
             val cfg = tempConfig("i18n:\n  default_locale: en_US\n")
@@ -331,7 +331,7 @@ class I18nSettingsResolverTest : FunSpec({
         }
     }
 
-    context("Phase A §4.2 — --lang strikter als allgemeiner Locale-Pfad") {
+    context("LF-006 / LF-007 / LN-022 / LN-023 — --lang strikter als allgemeiner Locale-Pfad") {
 
         test("unsupported --lang (fr) wirft UnsupportedLanguageException") {
             val resolver = I18nSettingsResolver(

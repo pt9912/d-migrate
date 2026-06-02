@@ -84,20 +84,20 @@ class MessageResolverTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────────
-    // 0.8.0 Phase G R4 (docs/ImpPlan-0.8.0-G.md §2.2 / §6):
+    // LF-006 / LN-022 / LN-023:
     // Direkter Nachweis, dass ein Key, der NUR im Root-Bundle liegt und
     // im DE-Bundle absichtlich fehlt, unter Locale.GERMAN ueber den
     // ResourceBundle-Parent-Chain-Fallback den englischen Wert liefert.
     //
     // Wir pruefen das gegen ein eigenes Test-Bundle-Paar
-    // (test-messages-phase-g/phasegmsg[ _de ].properties), damit der Test
+    // (test-messages-ai/aimsg[ _de ].properties), damit der Test
     // ein echtes Lueckenszenario modelliert — die produktiven Bundles
     // sind absichtlich schluesselgleich und koennen den Fall so nicht
     // zeigen.
     // ────────────────────────────────────────────────────────────────
 
-    context("Phase G R4: DE-only missing key → Root-Fallback") {
-        val baseName = "test-messages-phase-g.phasegmsg"
+    context("LF-017 / LF-024 / LN-030 / LN-031 R4: DE-only missing key → Root-Fallback") {
+        val baseName = "test-messages-ai.aimsg"
 
         test("shared key: German bundle liefert DE-Uebersetzung") {
             val de = ResourceBundle.getBundle(baseName, Locale.GERMAN)
@@ -106,8 +106,8 @@ class MessageResolverTest : FunSpec({
 
         test("root-only key: German bundle faellt auf Root-Bundle zurueck") {
             val de = ResourceBundle.getBundle(baseName, Locale.GERMAN)
-            // Der Key existiert nur in phasegmsg.properties, nicht in
-            // phasegmsg_de.properties. Java's ResourceBundle-Parent-Chain
+            // Der Key existiert nur in aimsg.properties, nicht in
+            // aimsg_de.properties. Java's ResourceBundle-Parent-Chain
             // laedt ihn trotzdem ohne MissingResourceException aus dem
             // Root-Bundle.
             de.getString("root.only.key") shouldBe "Only in root"

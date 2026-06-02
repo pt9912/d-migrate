@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.transport.http
 
 /**
- * Origin allowlist matcher per `ImpPlan-0.9.6-B.md` §12.6.
+ * Origin allowlist matcher per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Match semantics:
  * - exact origin: `http://app.example` matches itself, no other.

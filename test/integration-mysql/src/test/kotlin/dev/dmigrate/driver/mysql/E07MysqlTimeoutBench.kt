@@ -6,7 +6,6 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.PoolSettings
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.longs.shouldBeLessThan
@@ -14,18 +13,17 @@ import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 import java.sql.SQLException
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E0.7.4 Bench-Test: belegt empirisch das Cancel-Reaktions-Budget
+ * LF-012 / LN-011 / LN-017 / LN-027 Bench-Test: belegt empirisch das Cancel-Reaktions-Budget
  * für langlaufende MySQL-SELECT-Queries.
  *
  * Wichtige MySQL-Spezifika:
- * - `MAX_EXECUTION_TIME` (per `connectionInitSql` aus E0.7.2) greift nur
+ * - `MAX_EXECUTION_TIME` (per `connectionInitSql` aus LF-012 / LN-011 / LN-017 / LN-027) greift nur
  *   für read-only SELECTs, **nicht** für SELECTs mit Built-in-Funktionen
  *   wie `SLEEP()` oder `BENCHMARK()`. Wir können diese als Long-Query
  *   nicht verwenden.
- * - `Statement.setQueryTimeout(s)` (per E0.7.3 `TimeoutDecoratedConnection`)
+ * - `Statement.setQueryTimeout(s)` (per LF-012 / LN-011 / LN-017 / LN-027 `TimeoutDecoratedConnection`)
  *   wird via TimerTask + `KILL QUERY` umgesetzt und greift auf jeder
  *   Query-Art, sofern der Connection-User entsprechende Privilegien hat.
  *
@@ -36,7 +34,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class E07MysqlTimeoutBench : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

@@ -6,9 +6,9 @@ import com.google.gson.stream.JsonToken
 import com.google.gson.stream.JsonWriter
 
 /**
- * Plan-D §5.3 + §10.7 strict deserialiser for [ReadResourceParams].
+ * LF-012 / LN-038 + strict deserialiser for [ReadResourceParams].
  *
- * Phase-D rejects any `resources/read` request that carries a field
+ * LF-012 / LN-038 rejects any `resources/read` request that carries a field
  * other than `uri`: chunking, range-reads and similar extensions
  * MUST NOT ride in on `resources/read` because their natural place
  * is `artifact_chunk_get` (cursor-bound) or a chunk-URI follow-up.

@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 /**
  * Port: row-streaming aus einer Tabelle.
  *
- * Connection-Ownership (siehe docs/archive/implementation-plan-0.3.0.md §6.18):
+ * Connection-Ownership (LF-008 / LN-010):
  * - Der Reader bekommt einen [ConnectionPool], NICHT eine fertige Connection.
  * - Pro [streamTable]-Aufruf borgt der Reader sich eine eigene Connection
  *   aus dem Pool, hält sie für die Lifetime der zurückgegebenen
@@ -44,8 +44,8 @@ interface DataReader {
     ): ChunkSequence
 
     /**
-     * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.1):
-     * Mid-Table-Resume-Variante. Startet den Stream ab dem letzten
+     * LF-013 / LN-006 / LN-012: Mid-Table-Resume-Variante. Startet
+     * den Stream ab dem letzten
      * chunk-bestaetigten Composite-Marker und sortiert deterministisch
      * nach `(markerColumn, tieBreakers)`.
      *
@@ -54,7 +54,8 @@ interface DataReader {
      * Mid-Table-Pfad nicht umsetzen, koennen diese Default-Impl
      * unveraendert erben — dann greift fuer jeden Caller mit gesetztem
      * [resumeMarker] der `UnsupportedOperationException`-Pfad; der
-     * Runner faengt das ab und faellt auf den C.1-Kontrakt zurueck.
+     * Runner faengt das ab und faellt auf table-granulares Resume
+     * zurueck.
      *
      * Vertragliche Ergaenzungen gegenueber der Basis-Variante:
      *

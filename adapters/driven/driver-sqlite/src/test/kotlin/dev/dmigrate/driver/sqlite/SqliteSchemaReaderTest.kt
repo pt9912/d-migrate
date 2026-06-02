@@ -303,6 +303,148 @@ class SqliteSchemaReaderTest : FunSpec({
         }
     }
 
+    // ── Trigger reverse-read fidelity (parser-routed) ──────────
+
+    test("trigger reverse-read populates timing, event, body without trailing semi") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY)",
+            "CREATE TRIGGER trg AFTER INSERT ON t BEGIN SELECT 1; END",
+        ) { pool ->
+            val triggers = reader.read(pool, SchemaReadOptions(includeTriggers = true)).schema.triggers
+            val trg = triggers.values.single()
+            trg.timing shouldBe TriggerTiming.AFTER
+            trg.event shouldBe TriggerEvent.INSERT
+            trg.table shouldBe "t"
+            // Renderer always appends `;\nEND;`, so the parser must not store
+            // the trailing `;` of its own — otherwise round-trip render
+            // would double the terminator.
+            trg.body shouldBe "SELECT 1"
+        }
+    }
+
+    test("trigger reverse-read populates WHEN clause as condition") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)",
+            """
+            CREATE TRIGGER trg AFTER UPDATE ON t
+              FOR EACH ROW WHEN NEW.name <> OLD.name
+            BEGIN
+              SELECT 1;
+            END
+            """.trimIndent(),
+        ) { pool ->
+            val triggers = reader.read(pool, SchemaReadOptions(includeTriggers = true)).schema.triggers
+            val trg = triggers.values.single()
+            trg.condition shouldBe "NEW.name <> OLD.name"
+        }
+    }
+
+    test("INSTEAD OF trigger on view is parsed as INSTEAD_OF") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY)",
+            "CREATE VIEW v AS SELECT id FROM t",
+            "CREATE TRIGGER trg INSTEAD OF DELETE ON v BEGIN SELECT 1; END",
+        ) { pool ->
+            val triggers = reader.read(pool, SchemaReadOptions(includeTriggers = true)).schema.triggers
+            triggers.values.single().timing shouldBe TriggerTiming.INSTEAD_OF
+        }
+    }
+
+    test("UPDATE OF cols emits R213 WARNING and reverse-reads as plain UPDATE") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, a TEXT, b TEXT)",
+            "CREATE TRIGGER trg AFTER UPDATE OF a, b ON t BEGIN SELECT 1; END",
+        ) { pool ->
+            val result = reader.read(pool, SchemaReadOptions(includeTriggers = true))
+            result.schema.triggers.values.single().event shouldBe TriggerEvent.UPDATE
+            val r213 = result.notes.single { it.code == "R213" }
+            r213.severity shouldBe SchemaReadSeverity.WARNING
+            r213.objectName shouldBe "trg"
+        }
+    }
+
+    test("multi-statement trigger body preserves inner `;` separators") {
+        withDb(
+            "CREATE TABLE t (id INTEGER PRIMARY KEY)",
+            "CREATE TABLE log (id INTEGER, ts TEXT)",
+            """
+            CREATE TRIGGER trg AFTER INSERT ON t
+            BEGIN
+              INSERT INTO log (id) VALUES (NEW.id);
+              UPDATE log SET ts = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END
+            """.trimIndent(),
+        ) { pool ->
+            val trg = reader.read(pool, SchemaReadOptions(includeTriggers = true))
+                .schema.triggers.values.single()
+            // Inner `;` separators stay, only the trailing one before END
+            // is stripped; outer whitespace is trimmed so the body starts
+            // with the first statement.
+            trg.body shouldBe "INSERT INTO log (id) VALUES (NEW.id);\n" +
+                "  UPDATE log SET ts = CURRENT_TIMESTAMP WHERE id = NEW.id"
+        }
+    }
+
+    test("trigger round-trip: read -> render -> apply -> read is bit-identical") {
+        // Reverse → File-Write → Reverse with a real SQLite file. The
+        // renderer writes the body back with `;\nEND;`; the parser must
+        // not regrow a trailing `;` on the second read, otherwise round-
+        // trip drifts to `SELECT 1;;` after a few cycles.
+        //
+        // File-based DB because SqliteSchemaReader.read closes the
+        // borrowed connection via `.use`, and `:memory:` lives only on
+        // the connection — a second read would see an empty DB.
+        val tmp = java.nio.file.Files.createTempFile("sqlite-trigger-roundtrip", ".db")
+        try {
+            val url = "jdbc:sqlite:${tmp.toAbsolutePath()}"
+            val filePool = object : ConnectionPool {
+                override val dialect = DatabaseDialect.SQLITE
+                override fun borrow(): Connection = DriverManager.getConnection(url)
+                override fun activeConnections(): Int = 0
+                override fun close() {}
+            }
+            DriverManager.getConnection(url).use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+                    stmt.execute("CREATE TABLE log (id INTEGER, ts TEXT)")
+                    stmt.execute(
+                        """
+                        CREATE TRIGGER trg_audit AFTER UPDATE ON t
+                          FOR EACH ROW WHEN NEW.name <> OLD.name
+                        BEGIN
+                          UPDATE log SET ts = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                        END
+                        """.trimIndent(),
+                    )
+                }
+            }
+
+            val first = reader.read(filePool, SchemaReadOptions(includeTriggers = true))
+                .schema.triggers.values.single()
+
+            // Render the parsed trigger back to DDL using the production
+            // renderer-side builder. This is the "file-write" leg of the
+            // round-trip — what the YAML schema codec would persist.
+            val rendered = SqliteDiffSqlBuilders().createTriggerSql("trg_audit", first)!!
+
+            // Re-apply: drop the original and recreate from the renderer
+            // output. This proves the parser-renderer pair converges.
+            DriverManager.getConnection(url).use { conn ->
+                conn.createStatement().use { stmt ->
+                    stmt.execute("DROP TRIGGER trg_audit")
+                    stmt.execute(rendered)
+                }
+            }
+
+            val second = reader.read(filePool, SchemaReadOptions(includeTriggers = true))
+                .schema.triggers.values.single()
+            second shouldBe first
+        } finally {
+            java.nio.file.Files.deleteIfExists(tmp)
+        }
+    }
+
+
     // ── Unknown type produces note ──────────────
 
     test("unknown column type produces warning note") {

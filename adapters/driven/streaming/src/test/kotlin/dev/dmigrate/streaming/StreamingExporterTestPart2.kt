@@ -54,8 +54,7 @@ class StreamingExporterTestPart2 : FunSpec({
 
     val pool = NoopConnectionPool
 
-    // ─── 0.9.0 Phase C.2: Mid-Table-Resume-Pfad ─────────────────
-    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ─── LF-013 / LN-006 / LN-012: Mid-Table-Resume-Pfad ─────────
     // ────────────────────────────────────────────────────────────
 
 
@@ -304,7 +303,7 @@ internal class FakeDataReader(
     var lastFilter: DataFilter? = null
     var lastChunkSize: Int = -1
     /**
-     * 0.9.0 Phase C.2 Test-Support: wurden per-table Resume-Marker
+     * LF-013 / LN-006 / LN-012 Test-Support: wurden per-table Resume-Marker
      * reingereicht? `null` = 4-Param-Pfad; non-null = 5-Param-Pfad.
      */
     val lastResumeMarkers: MutableMap<String, dev.dmigrate.driver.data.ResumeMarker?> = mutableMapOf()
@@ -434,7 +433,7 @@ internal class SpyOutputStream : OutputStream() {
 
 /**
  * Realistischer DataChunkWriter, der seinen [OutputStream] in `close()`
- * tatsächlich schließt — wie es echte JSON/YAML/CSV-Writer aus Phase D
+ * tatsächlich schließt — wie es echte JSON/YAML/CSV-Writer aus streaming
  * tun werden. Für F23-Tests, um sicherzustellen, dass der StreamingExporter
  * den Stdout-Stream NICHT zerstört.
  */

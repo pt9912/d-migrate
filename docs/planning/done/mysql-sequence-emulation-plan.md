@@ -33,12 +33,16 @@
 >
 > Referenzen:
 > - `spec/ddl-generation-rules.md` §7
-> - `spec/neutral-model-spec.md` §9
+> - `spec/neutral-model-spec.md` §9 (Sequence-Sektion inkl. §9.2
+>   Cross-Dialect-Capability-Matrix, nachträglich)
 > - `hexagon/core/src/main/kotlin/dev/dmigrate/core/model/SequenceDefinition.kt`
 > - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlDdlGenerator.kt`
 > - `adapters/driven/driver-mysql/src/main/kotlin/dev/dmigrate/driver/mysql/MysqlSchemaReader.kt`
 > - MySQL 8.0 Reference Manual, "Data Type Default Values"
 > - MySQL 8.0 Reference Manual, "CREATE TRIGGER Statement"
+> - ADR-0003 (`docs/adr/0003-cross-dialect-sequencing.md`) bindet
+>   die hier eingeführte W114/W116/W117-Familie nachträglich an
+>   den Cross-Dialect-Capability-Vertrag (0.9.7 Schirm).
 
 ---
 

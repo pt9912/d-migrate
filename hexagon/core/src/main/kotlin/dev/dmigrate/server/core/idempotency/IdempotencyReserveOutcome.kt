@@ -20,7 +20,7 @@ sealed interface IdempotencyReserveOutcome {
         override val scope: IdempotencyScope,
         val expiresAt: Instant,
         /**
-         * Phase E §5.5 (Review-Fix Blocker #3): durable Challenge,
+         * LF-012 / LN-011 / LN-017 / LN-027: durable Challenge,
          * die beim Statuswechsel nach AWAITING_APPROVAL persistiert
          * wurde. `null` fuer Bestands-Stores ohne Challenge-Support
          * (backward compat).
@@ -40,7 +40,7 @@ sealed interface IdempotencyReserveOutcome {
     ) : IdempotencyReserveOutcome
 
     /**
-     * Phase E §5.2 / §7.3: endgültige, nicht-retrybare Reservierung
+     * LF-012 / LN-011 / LN-017 / LN-027: endgültige, nicht-retrybare Reservierung
      * ohne Job. Identische Retries liefern deterministisch dasselbe
      * Outcome bis [expiresAt]; danach kann ein neuer Versuch laufen.
      */

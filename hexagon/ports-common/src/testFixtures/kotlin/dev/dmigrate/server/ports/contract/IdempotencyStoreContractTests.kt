@@ -245,7 +245,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         removed shouldBe 3
     }
 
-    // ── Phase E §7.3: FAILED state ───────────────────────────────
+    // ── LF-012 / LN-011 / LN-017 / LN-027: FAILED state ───────────────────────────────
 
     test("markFailed transitions PENDING to FAILED and reserve returns Failed with reason") {
         val store = factory()
@@ -332,7 +332,7 @@ abstract class IdempotencyStoreContractTests(factory: () -> IdempotencyStore) : 
         store.markAwaitingApproval(s, Fixtures.NOW)
         // Far past the awaiting-approval expiry.
         val outcome = store.reserve(s, "fp", Fixtures.NOW.plusSeconds(10_000))
-        // Plan §5.2: expired AWAITING_APPROVAL is recoverable, not FAILED.
+        // LF-012 / LN-011 / LN-017 / LN-027: expired AWAITING_APPROVAL is recoverable, not FAILED.
         // The implementation may return Reserved (recovery), or AwaitingApproval
         // (renewed). Both satisfy the contract — but it MUST NOT be Failed.
         (outcome is IdempotencyReserveOutcome.Failed) shouldBe false

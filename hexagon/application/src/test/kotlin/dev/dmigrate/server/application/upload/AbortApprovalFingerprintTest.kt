@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSessionState
@@ -10,7 +11,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
 
 /**
- * Phase F § 5.3 (F.6 2/3) — Pin't Determinismus + Field-Isolation
+ * LF-010 / LF-013 / LN-009 / LN-011— Pin't Determinismus + Field-Isolation
  * fuer den Pre-Abort-Fingerprint. Plan-Wortlaut "andere Session,
  * anderer Owner, anderer Pre-Abort-Status, anderer Caller oder
  * anderer reason liefern IDEMPOTENCY_CONFLICT" wird durch
@@ -18,7 +19,7 @@ import io.kotest.matchers.string.shouldHaveLength
  */
 class AbortApprovalFingerprintTest : FunSpec({
 
-    val service = AbortApprovalFingerprint(DefaultPayloadFingerprintService())
+    val service = AbortApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
 
     fun base() = AbortApprovalAttempt(
         callerTenantId = TenantId("acme"),
@@ -61,8 +62,8 @@ class AbortApprovalFingerprintTest : FunSpec({
         (service.fingerprint(base().copy(callerId = PrincipalId("admin-2"))) == baseFp) shouldBe false
     }
 
-    test("Carve-out F.6 (3/3): preAbortState gehoert NICHT in den Fingerprint (Idempotenz-Vertrag)") {
-        // Plan § 5.3 listet preAbortState als Material, aber Plan-
+    test("Carve-out LF-010 / LF-013 / LN-009 / LN-011 (3/3): preAbortState gehoert NICHT in den Fingerprint (Idempotenz-Vertrag)") {
+        // LF-010 / LF-013 / LN-009 / LN-011 listet preAbortState als Material, aber Plan-
         // gleichzeitig fordert idempotenten Replay. Ein zweiter Call
         // sieht ABORTED-State und kann den ACTIVE-Fingerprint nicht
         // mehr reproduzieren -> SyncEffect-Conflict statt Replay.
@@ -73,7 +74,7 @@ class AbortApprovalFingerprintTest : FunSpec({
         finalizingFp shouldBe baseFp
     }
 
-    test("Carve-out F.6 (3/3): preAbortBytes gehoert ebenfalls NICHT in den Fingerprint") {
+    test("Carve-out LF-010 / LF-013 / LN-009 / LN-011 (3/3): preAbortBytes gehoert ebenfalls NICHT in den Fingerprint") {
         // Cleanup-Implementoren koennten `bytesReceived` beim Abort
         // zuruecksetzen — daher gleiche Argumentation wie preAbortState.
         val baseFp = service.fingerprint(base())
@@ -101,11 +102,11 @@ class AbortApprovalFingerprintTest : FunSpec({
     }
 
     test("Init- und Abort-Fingerprint unterscheiden sich auch bei sonst gleichem Material") {
-        // Plan § 5.3: "keinen separaten Abort-Claim-Key" — toolName
+        // LF-010 / LF-013 / LN-009 / LN-011: "keinen separaten Abort-Claim-Key" — toolName
         // im BindContext muss daher zwischen Init und Abort
         // unterscheiden, sonst wuerden parallele Init/Abort-Calls
         // im selben Scope kollidieren.
-        val initService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val initService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         val initFp = initService.fingerprint(
             UploadInitApprovalAttempt(
                 tenantId = TenantId("acme"),

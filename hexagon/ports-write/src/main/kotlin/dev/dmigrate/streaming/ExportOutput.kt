@@ -7,8 +7,9 @@ import java.nio.file.Path
 /**
  * Sealed class für die Output-Sinks des [StreamingExporter].
  *
- * Plan §6.9 — Auflösung der CLI-Flags `--output × --split-files × --tables`
- * in eine konkrete ExportOutput-Variante:
+ * LF-008 / LF-009: Auflösung der CLI-Flags
+ * `--output × --split-files × --tables` in eine konkrete
+ * ExportOutput-Variante:
  *
  * ```
  * --output | --split-files | --tables   | Resultat
@@ -37,7 +38,7 @@ sealed class ExportOutput {
 
     /**
      * Schreibt jede Tabelle in eine eigene Datei
-     * `<directory>/<schema>.<table>.<format>` (siehe Plan §6.9). Schema-
+     * `<directory>/<schema>.<table>.<format>`. Schema-
      * qualifizierte Tabellen werden segment-by-segment in den Dateinamen
      * übernommen, was Kollisionen zwischen z.B. `public.orders` und
      * `reporting.orders` ausschließt.
@@ -89,7 +90,7 @@ sealed class ExportOutput {
         /**
          * Baut den Dateinamen für eine Tabelle in der [FilePerTable]-Variante.
          * Schema-qualifizierte Tabellen werden 1:1 übernommen, sodass z.B.
-         * `public.orders` zu `public.orders.json` wird (Plan §6.9).
+         * `public.orders` zu `public.orders.json` wird.
          */
         fun fileNameFor(table: String, format: DataExportFormat): String =
             "$table.${format.cliName}"

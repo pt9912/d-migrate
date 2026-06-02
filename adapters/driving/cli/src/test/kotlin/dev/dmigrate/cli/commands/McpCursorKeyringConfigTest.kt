@@ -1,5 +1,7 @@
 package dev.dmigrate.cli.commands
 
+import com.github.ajalt.clikt.core.ProgramResult
+import com.github.ajalt.clikt.core.parse
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -70,6 +72,38 @@ class McpCursorKeyringConfigTest : FunSpec({
             val keyring = McpCursorKeyringConfig.load(file)
 
             keyring.signing.kid shouldBe "cursor-generated"
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("generate command accepts kid and renders a keyring") {
+        McpCursorKeyGenerateCommand().parse(listOf("--kid", "cursor-cli-generated"))
+    }
+
+    test("validate command accepts a loadable keyring file") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-cursor-keyring-cli-valid-")
+        try {
+            val file = dir.resolve("cursor-keyring.yaml")
+            Files.writeString(file, McpCursorKeyringConfig.renderSingleKeyFile("cursor-cli-valid"))
+
+            McpCursorKeyValidateCommand().parse(listOf("--cursor-keyring-file", file.toString()))
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    test("validate command exits 2 for an invalid keyring file") {
+        val dir = Files.createTempDirectory("dmigrate-mcp-cursor-keyring-cli-invalid-")
+        try {
+            val file = dir.resolve("cursor-keyring.yaml")
+            Files.writeString(file, "validation: []\n")
+
+            val exit = shouldThrow<ProgramResult> {
+                McpCursorKeyValidateCommand().parse(listOf("--cursor-keyring-file", file.toString()))
+            }
+
+            exit.statusCode shouldBe 2
         } finally {
             dir.deleteRecursively()
         }

@@ -13,8 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Bounded-Async-Pool fuer Phase-E Job-Worker (Plan §3.2 + §6.1 in
- * `ImpPlan-0.9.6-E3.md`). Wrappt einen [ThreadPoolExecutor] mit fixer
+ * Bounded-Async-Pool fuer LF-012 / LN-011 / LN-017 / LN-027 Job-Worker. Wrappt einen [ThreadPoolExecutor] mit fixer
  * Pool-Groesse, bounded [ArrayBlockingQueue] und benannten
  * Daemon-Threads. Backpressure laeuft ueber das vorgelagerte
  * [BoundedAsyncJobDispatchAdmission]-Gate VOR dem Job-Commit; ein
@@ -91,7 +90,7 @@ class BoundedAsyncJobExecutor(
  * Spezialisierte [RejectedExecutionException] fuer Saturation-/Shutdown-
  * Rejects. Der Orchestrator nutzt den Typ als Diskriminator gegenueber
  * generischen RejectedExecutionExceptions, die von einem fremden
- * [Executor] kommen koennten (Plan §6.5).
+ * [Executor] kommen koennten (LF-012 / LN-011 / LN-017 / LN-027).
  */
 class ExecutorClosedException(message: String) : RejectedExecutionException(message)
 
@@ -99,7 +98,7 @@ class ExecutorClosedException(message: String) : RejectedExecutionException(mess
  * Lifecycle-Wrapper, der Admission und Pool zusammen schliesst (Plan
  * §3.3): admission-close vor pool-shutdown verhindert neue
  * Permit-Acquires waehrend des Drain. Bei Timeout eskaliert der
- * Lifecycle gemaess Plan §7 per [BoundedAsyncJobExecutor.shutdownNow],
+ * Lifecycle gemaess LF-012 / LN-011 / LN-017 / LN-027 per [BoundedAsyncJobExecutor.shutdownNow],
  * damit lang laufende Worker ein Interrupt-Signal bekommen.
  */
 class BoundedAsyncJobExecutorLifecycle(

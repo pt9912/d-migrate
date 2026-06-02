@@ -116,7 +116,7 @@ class ResourceProjectorTest : FunSpec({
             ),
             providerName = "noop",
             model = "noop:default",
-            modelVersion = "0.9.6",
+            modelVersion = "0.9.7",
             outputFingerprint = "d".repeat(64),
             createdAt = NOW,
         )
@@ -168,7 +168,7 @@ class ResourceProjectorTest : FunSpec({
             ),
             providerName = "noop",
             model = "noop:default",
-            modelVersion = "0.9.6",
+            modelVersion = "0.9.7",
             outputFingerprint = "2".repeat(64),
             createdAt = NOW,
         )

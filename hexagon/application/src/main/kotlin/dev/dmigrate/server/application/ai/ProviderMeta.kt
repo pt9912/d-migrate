@@ -1,21 +1,21 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.1 — Provider-/Modell-Identität für Audit und KI-
+ * LF-017 / LF-024 / LN-030 / LN-031— Provider-/Modell-Identität für Audit und KI-
  * Artefakt-Provenance.
  *
  * Wird durch den Provider-Adapter beim erfolgreichen Aufruf
  * gefüllt; der Tool-Handler legt [providerName], [model] und
  * [modelVersion] in `AiArtifactMetadata` ab und schreibt sie ins
- * Audit-Event (`AuditFields.providerMeta`-Slot in G.8).
+ * Audit-Event (`AuditFields.providerMeta`-Slot in LF-017 / LF-024 / LN-030 / LN-031).
  *
  * **Verboten in jedem Feld**: Endpunkt-URLs, API-Keys,
  * `secretRef`-Werte, Tenant-/Principal-IDs, freie SQL-Strings.
- * Plan §4.8: Audit speichert Fingerprints, keine Secrets.
+ * LF-017 / LF-024 / LN-030 / LN-031: Audit speichert Fingerprints, keine Secrets.
  *
  * @param providerName stabile Provider-Identität wie `noop`,
  *   `ollama`, `lm-studio`, `openai`, `anthropic`. Passt zum
- *   `AiProviderRegistry`-Schlüssel aus G.3.
+ *   `AiProviderRegistry`-Schlüssel aus LF-017 / LF-024 / LN-030 / LN-031.
  * @param model logische Modellbezeichnung wie `llama3.1:8b`,
  *   `claude-opus-4-7`, `gpt-4o`. Direkt aus [AiProviderRequest.model].
  * @param modelVersion optional eine Provider-spezifische

@@ -26,6 +26,8 @@ build/
 
 # Test coverage
 coverage/
+!docs/coverage/
+!docs/coverage/excludes-ledger.md
 *.coverage
 
 # Temporary files
@@ -49,3 +51,4 @@ release-assets/
 
 #
 coverage.json
+scripts/__pycache__/

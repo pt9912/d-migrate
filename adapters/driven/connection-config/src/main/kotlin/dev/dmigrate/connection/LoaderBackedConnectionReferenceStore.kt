@@ -10,9 +10,9 @@ import dev.dmigrate.server.ports.ConnectionReferenceStore
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Plan-D §10.10 production-grade [ConnectionReferenceStore] that
+ * LF-012 / LN-038 production-grade [ConnectionReferenceStore] that
  * eager-loads from a [ConnectionReferenceConfigLoader] at
- * construction time and serves Phase-D discovery requests from an
+ * construction time and serves LF-012 / LN-038 discovery requests from an
  * in-memory map.
  *
  * The loader is consulted exactly ONCE — the discovery surface

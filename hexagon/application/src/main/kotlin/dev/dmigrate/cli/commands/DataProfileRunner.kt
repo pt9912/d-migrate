@@ -114,7 +114,7 @@ class DataProfileRunner(
             if (!request.quiet) stderr("Profiling complete: ${profile.tables.size} table(s)")
             0
         } catch (_: OperationCancelledException) {
-            // Plan §4.5: Cancel maps to CLI exit 130, not the generic 5 path.
+            // LF-008 / LF-009 / LF-013: Cancel maps to CLI exit 130, not the generic 5 path.
             CANCELLED_EXIT_CODE
         } catch (e: ProfilingException) {
             stderr("[ERROR] Profiling failed: ${e.message}")

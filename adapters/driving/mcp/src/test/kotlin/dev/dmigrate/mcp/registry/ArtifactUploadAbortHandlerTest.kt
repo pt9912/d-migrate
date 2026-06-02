@@ -248,8 +248,8 @@ class ArtifactUploadAbortHandlerTest : FunSpec({
         }
     }
 
-    test("abort releases ACTIVE_UPLOAD_SESSIONS and UPLOAD_BYTES quotas (AP 6.7 commitments are reversed)") {
-        // Pre-charge the quota counters as if AP-6.7 had committed
+    test("abort releases ACTIVE_UPLOAD_SESSIONS and UPLOAD_BYTES quotas (LF-012 / LN-027 / LN-028 / LN-038 commitments are reversed)") {
+        // Pre-charge the quota counters as if LF-012 / LN-027 / LN-028 / LN-038 had committed
         // them for this session, then verify the abort releases
         // both back to zero.
         val f = fixture()

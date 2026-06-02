@@ -128,7 +128,8 @@ internal object PostgresTypeMapping {
                 severity = SchemaReadSeverity.INFO,
                 code = "R401",
                 objectName = "$tableName.$colName",
-                message = "PostGIS geometry column — requires PostGIS extension in target database",
+                message = "PostGIS geometry column uses the PostGIS extension",
+                hint = "Extension installation is reported separately by reverse note R400",
             ),
         )
         return MappingResult(NeutralType.Enum(refType = udtName))

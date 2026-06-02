@@ -1,19 +1,17 @@
 package dev.dmigrate.mcp.registry
 
 /**
- * Transport-neutral tool registry per `ImpPlan-0.9.6-B.md` §4.7 +
- * §6.8.
+ * LF-012 / LN-038: transport-neutral tool registry.
  *
- * Both stdio and HTTP MUST share the same registry instance — see
- * §6.8 acceptance ("stdio und HTTP nutzen dieselben Registry-
- * Instanzen"). The bootstrap creates it once via [PhaseBRegistries]
+ * Both stdio and HTTP MUST share the same registry instance. The
+ * bootstrap creates it once via [McpContractRegistries]
  * and threads it into every `McpServiceImpl`.
  *
  * The registry is intentionally read-only after construction: handler
- * registration in 0.9.6 is static (Phase C/D will swap in real
- * handlers via configuration, not via runtime registration).
+ * registration is static and supplied via configuration, not via
+ * runtime mutation.
  *
- * Lookup semantics (§6.8 + §12.8):
+ * Lookup semantics:
  * - [find] returns `null` for unknown names; the caller maps that to
  *   JSON-RPC `-32601` "Method not found".
  * - [findHandler] returns the registered handler — including

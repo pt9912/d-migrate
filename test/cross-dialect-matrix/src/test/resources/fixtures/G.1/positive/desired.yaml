@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "matrix-G1-desired"
+version: "1.0.0"
+
+tables:
+  events:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      payload:
+        type: text
+        required: true
+    primary_key: [id]

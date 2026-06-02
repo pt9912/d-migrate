@@ -15,10 +15,10 @@ import java.nio.file.Files
 import java.sql.Connection
 
 /**
- * Phase E0.5: Cancel inside the import runner must surface as exit 130 —
+ * LF-012 / LN-011 / LN-017 / LN-027: Cancel inside the import runner must surface as exit 130 —
  * never as the generic 5 (import failure) path that
  * [ImportStreamingInvoker]'s `catch (e: Throwable)` block would otherwise
- * produce. Plan §4.5 requires this filter to be deterministic.
+ * produce. LF-012 / LN-011 / LN-017 / LN-027 requires this filter to be deterministic.
  */
 class DataImportRunnerCancelCheckpointTest : FunSpec({
 

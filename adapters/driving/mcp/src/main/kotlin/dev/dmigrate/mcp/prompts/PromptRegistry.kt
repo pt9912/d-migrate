@@ -3,9 +3,9 @@ package dev.dmigrate.mcp.prompts
 import dev.dmigrate.mcp.protocol.PromptListEntry
 
 /**
- * Phase G § 5.7 + § 6 G.7 — Server-seitige Prompt-Registry.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Server-seitige Prompt-Registry.
  *
- * Plan §5.7 Z. 858-864 verbindlich: drei Pflichtprompts.
+ * LF-017 / LF-024 / LN-030 / LN-031 Z. 858-864 verbindlich: drei Pflichtprompts.
  * [DefaultPromptRegistry] verdrahtet sie; Tests können einen
  * leeren oder minimalen Registry-Stub nutzen.
  *
@@ -50,7 +50,7 @@ class DefaultPromptRegistry(prompts: List<PromptDescriptor>) : PromptRegistry {
 
     companion object {
         /**
-         * Plan §5.7: drei Pflichtprompts. Test-Pfade erlaubterweise
+         * LF-017 / LF-024 / LN-030 / LN-031: drei Pflichtprompts. Test-Pfade erlaubterweise
          * leer; Default-Server-Wiring nutzt diese Instanz.
          */
         fun mandatory(): DefaultPromptRegistry = DefaultPromptRegistry(

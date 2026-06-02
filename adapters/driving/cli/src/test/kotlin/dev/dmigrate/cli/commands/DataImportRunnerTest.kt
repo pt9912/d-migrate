@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -19,6 +17,7 @@ import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.FailedFinishInfo
 import dev.dmigrate.driver.data.TriggerMode
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -37,7 +36,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerTest : FunSpec({
 
@@ -147,16 +146,18 @@ class DataImportRunnerTest : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedTargetResolver(target: String?, configPath: Path?): String {
-        if (target != null) {
-            val resolver = NamedConnectionResolver(
-                configPathFromCli = configPath,
-                envLookup = { null },
-                defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-            )
-            return resolver.resolve(target)
-        }
-        throw ConfigResolveException("--target was not provided and no default_target configured.")
+    fun isolatedTargetResolver(target: String?, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+
+
+        require(target != null) { "--target was not provided and no default_target configured." }
+
+
+        if ("://" in target) return target
+
+
+        throw IllegalArgumentException("Connection name '$target' not resolvable in test context")
+
+
     }
 
     class StderrCapture {
@@ -303,11 +304,7 @@ class DataImportRunnerTest : FunSpec({
         val runner = newRunner(
             stderr,
             targetResolver = { _, configPath ->
-                val resolver = NamedConnectionResolver(
-                    configPathFromCli = configPath,
-                    envLookup = { null },
-                )
-                resolver.resolve("staging")
+                throw IllegalArgumentException("Config file not found: $configPath")
             },
         )
         runner.execute(
@@ -504,7 +501,7 @@ class DataImportRunnerTest : FunSpec({
                 targetResolverInvoked = true
                 "sqlite:///tmp/should-not-be-used.db"
             },
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
         )
         assertExit(runner.execute(request(schema = schemaFile)), 3, stderr)
         targetResolverInvoked shouldBe false
@@ -553,7 +550,7 @@ class DataImportRunnerTest : FunSpec({
                 targetResolverInvoked = true
                 "sqlite:///tmp/should-not-be-used.db"
             },
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
             importExecutor = ImportExecutor { _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")

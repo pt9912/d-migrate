@@ -49,7 +49,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase G § 6 G.6 (G.6.d) — Akzeptanztests fuer den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests fuer den
  * `procedure_transform_plan`-Handler.
  */
 class ProcedureTransformPlanHandlerTest : FunSpec({
@@ -159,7 +159,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         auditFields = auditFields,
     )
 
-    test("Plan §6 G.5: gueltiger Minimalaufruf -> Success-Envelope mit planRef + providerMeta + executionMeta") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: gueltiger Minimalaufruf -> Success-Envelope mit planRef + providerMeta + executionMeta") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(
@@ -190,7 +190,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         md.targetDialect shouldBe "POSTGRESQL"
     }
 
-    test("Plan §6 G.5: fehlender approvalKey -> VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender approvalKey -> VALIDATION_ERROR") {
         val fx = Fixture()
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(
@@ -201,7 +201,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         }.violations.first().field shouldBe "approvalKey"
     }
 
-    test("Plan §6 G.5: fehlende Source-Variante -> VALIDATION_ERROR(source)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlende Source-Variante -> VALIDATION_ERROR(source)") {
         val fx = Fixture()
         val ex = shouldThrow<ValidationErrorException> {
             fx.handler.handle(ctx("""{"approvalKey":"k","targetDialect":"POSTGRESQL"}"""))
@@ -209,7 +209,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         ex.violations.first().field shouldBe "source"
     }
 
-    test("Plan §6 G.5: mehrere Source-Varianten -> VALIDATION_ERROR(source)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: mehrere Source-Varianten -> VALIDATION_ERROR(source)") {
         val fx = Fixture()
         val ex = shouldThrow<ValidationErrorException> {
             fx.handler.handle(
@@ -252,7 +252,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         ex.violations.first().field shouldBe "artifactRef"
     }
 
-    test("Plan §6 G.6: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val readOnlyPrincipal = principal.copy(scopes = setOf("dmigrate:read"))
@@ -292,7 +292,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.RESOURCE_NOT_FOUND
     }
 
-    test("Plan §6 G.6: PolicyDenied -> POLICY_DENIED Wire-Envelope") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyDenied -> POLICY_DENIED Wire-Envelope") {
         val fx = Fixture(policyDefault = PolicyEffect.Deny("policy:tool-blocked"))
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(
@@ -306,13 +306,13 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.message shouldContain "policy:tool-blocked"
     }
 
-    test("Follow-up AP 1: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
         // Provider darf bei POLICY_REQUIRED nicht aufgerufen werden — Provider-,
         // Quota- und Artefakt-Schritte folgen erst nach Policy-Allow/Grant.
         val providerCalls = AtomicInteger(0)
         val countingProvider = AiProviderPort {
             providerCalls.incrementAndGet()
-            // Defensiv: ein Provider-Aufruf wäre AP-1-Fehler.
+            // Defensiv: ein Provider-Aufruf wäre LF-017 / LF-024 / LN-030 / LN-031-Fehler.
             error("provider must not be invoked when POLICY_REQUIRED")
         }
         val fx = Fixture(
@@ -335,7 +335,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         details["approvalRequestId"].isNullOrBlank() shouldBe false
         details["correlationKind"] shouldBe ApprovalCorrelationKind.APPROVAL_KEY.name
         details["correlationKey"] shouldBe "k"
-        // Follow-up AP 1: aggregierte Felder analog Job-/Upload-Pfade.
+        // LF-017 / LF-024 / LN-030 / LN-031: aggregierte Felder analog Job-/Upload-Pfade.
         details["requiredScopes"] shouldBe "ai.execute,artifact.read"
         details["reasons"] shouldBe "policy:manual-review|policy:audit-required"
         // Keine wiederholten Singular-Schlüssel.
@@ -345,7 +345,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         providerCalls.get() shouldBe 0
     }
 
-    test("Plan §6 G.6: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
         val fx = Fixture(policyDefault = PolicyEffect.Challenge(setOf("ai.execute")))
         fx.seedSchema("schema-1")
         val args = """{"approvalKey":"k-approved","targetDialect":"POSTGRESQL",""" +
@@ -405,7 +405,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.VALIDATION_ERROR
     }
 
-    test("Plan §6 G.6: idempotenter Retry mit gleichem approvalKey + Payload -> selber planRef (Replay)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: idempotenter Retry mit gleichem approvalKey + Payload -> selber planRef (Replay)") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val args = """{"approvalKey":"k-replay","targetDialect":"POSTGRESQL",""" +
@@ -420,7 +420,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         summaryTwo shouldBe "replayed plan"
     }
 
-    test("Plan §6 G.6: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         fx.seedSchema("schema-2")
@@ -494,7 +494,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.FORBIDDEN_PRINCIPAL
     }
 
-    test("Plan §7.4 Output-Hygiene: Provider liefert API-Key-Pattern -> PROMPT_HYGIENE_BLOCKED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Output-Hygiene: Provider liefert API-Key-Pattern -> PROMPT_HYGIENE_BLOCKED") {
         val maliciousProvider = AiProviderPort {
             // Ein bösartiger Provider, der einen api_key ins Output einschleust.
             AiProviderResult.Success(
@@ -503,7 +503,7 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
                 providerMeta = dev.dmigrate.server.application.ai.ProviderMeta(
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     requestId = null,
                 ),
             )
@@ -518,11 +518,11 @@ class ProcedureTransformPlanHandlerTest : FunSpec({
         )
         val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
         err.envelope.code shouldBe ToolErrorCode.PROMPT_HYGIENE_BLOCKED
-        // Plan §6 G.4 Akzeptanz: Fehlerdetails enthalten KEINE Secrets.
+        // LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Fehlerdetails enthalten KEINE Secrets.
         err.envelope.message shouldContain "provider output blocked"
     }
 
-    test("Plan §7.4 Input-Hygiene scannt verschachtelte rules im Payload") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Input-Hygiene scannt verschachtelte rules im Payload") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(

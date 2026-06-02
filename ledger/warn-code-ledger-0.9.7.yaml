@@ -1,0 +1,46 @@
+version: "0.9.7"
+entries:
+  - code: W119
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportTriggerTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupport.kt"
+        path_type: production
+
+  - code: W120
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "test/integration-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceRoundTripIntegrationTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceReverseSupport.kt"
+        path_type: production
+
+  - code: W121
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportTriggerTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupport.kt"
+        path_type: production
+
+  - code: W122
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupportTriggerTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceDdlSupport.kt"
+        path_type: production
+
+  - code: W124
+    level: warning
+    status: active
+    entry_type: standard
+    test_path: "adapters/driven/driver-sqlite/src/test/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceReverseSupportTest.kt"
+    evidence_paths:
+      - source: "adapters/driven/driver-sqlite/src/main/kotlin/dev/dmigrate/driver/sqlite/SqliteSequenceReverseSupport.kt"
+        path_type: production

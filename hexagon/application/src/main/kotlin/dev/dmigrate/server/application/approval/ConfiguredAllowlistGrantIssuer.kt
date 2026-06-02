@@ -7,11 +7,10 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Phase E §7.4 produktiver Grant-Aussteller mit deklarativer Allowlist.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Wertet [rules] in Reihenfolge aus; erste passende Regel gewinnt. Wenn
  * keine Regel matcht, gibt [NotIssuable("policy:not-on-allowlist")][GrantIssuance.NotIssuable]
- * zurueck — fail-closed gemaess Plan §7.4 ("Reine lokale Policy-Allowlist
+ * zurueck — fail-closed gemaess LF-012 / LN-011 / LN-017 / LN-027 ("Reine lokale Policy-Allowlist
  * ohne GrantIssuer-Modus darf nur direkte ALLOW-Entscheidungen liefern").
  *
  * Beim Match werden gleichermassen [tokenFactory] (raw token, nur in

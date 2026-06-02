@@ -22,7 +22,7 @@ class YamlConnectionReferenceLoaderTest : FunSpec({
         return path
     }
 
-    test("loads a single Phase-D connection record with all metadata") {
+    test("loads a single LF-012 / LN-038 connection record with all metadata") {
         val yaml = """
             database:
               connections:
@@ -55,8 +55,8 @@ class YamlConnectionReferenceLoaderTest : FunSpec({
         ref.resourceUri.id shouldBe "pg-prod"
     }
 
-    test("string-form connection (Phase-C compat) is silently dropped from Phase-D discovery") {
-        // Plan-D §3.7: bare URLs MUST NOT materialise into the
+    test("string-form connection (legacy compat) is silently dropped from LF-012 / LN-038 discovery") {
+        // LF-012 / LN-038: bare URLs MUST NOT materialise into the
         // discovery surface. The loader returns an empty list so
         // CLI flows that still hold bare-URL entries don't pollute
         // `resources/list`.
@@ -70,7 +70,7 @@ class YamlConnectionReferenceLoaderTest : FunSpec({
     }
 
     test("env-var placeholder in credentialRef is captured verbatim, NOT expanded") {
-        // Plan-D §10.10 acceptance: "ENV-Platzhalter wird im
+        // LF-012 / LN-038 acceptance: "ENV-Platzhalter wird im
         // Discovery-Pfad nicht expandiert". Pin that the loader
         // never reaches for `System.getenv`.
         val yaml = """
@@ -87,7 +87,7 @@ class YamlConnectionReferenceLoaderTest : FunSpec({
     }
 
     test("missing config file returns an empty list (no hard failure)") {
-        // Plan-D §10.10: a deployment without a project YAML
+        // LF-012 / LN-038: a deployment without a project YAML
         // should still bootstrap — the discovery surface just
         // shows zero connections.
         val absent = Path.of("/tmp/definitely-does-not-exist-${'$'}{System.nanoTime()}.yaml")
@@ -101,7 +101,7 @@ class YamlConnectionReferenceLoaderTest : FunSpec({
     }
 
     test("missing required field surfaces ConnectionReferenceConfigException") {
-        // displayName is required; a Phase-D record without it is
+        // displayName is required; a LF-012 / LN-038 record without it is
         // a misconfiguration that must fail loud at bootstrap.
         val yaml = """
             database:

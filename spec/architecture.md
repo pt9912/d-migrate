@@ -4,7 +4,10 @@
 
 > Dokumenttyp: Architektur-Spezifikation
 >
-> Die Module unter `hexagon/` und `adapters/` sind seit Milestone 0.4.0 in der hexagonalen Verzeichnisstruktur implementiert (siehe §1.2 / §2.1). Weitere Module (integrations, ai, testdata, docs) beschreiben den geplanten Soll-Zustand fuer spaetere Milestones; die 0.8.0-I18n-Basis wird bewusst ohne separates Top-Level-`i18n`-Modul eingefuehrt.
+> Die Module unter `hexagon/` und `adapters/` bilden die hexagonale
+> Verzeichnisstruktur ab (siehe §1.2 / §2.1). Weitere Module wie `ai`,
+> `testdata` und `docs` beschreiben geplante Erweiterungen. I18n bleibt ohne
+> separates Top-Level-`i18n`-Modul in die bestehenden Modulgrenzen integriert.
 
 ---
 
@@ -91,6 +94,7 @@ d-migrate/
 | Driven Adapter  | `adapters:driven:formats`           | Serialisierung/Deserialisierung (JSON, YAML, CSV)                                                                                    |
 | Driven Adapter  | `adapters:driven:integrations`      | Tool-Exporter (Flyway, Liquibase, Django, Knex)                                                                                      |
 | Driven Adapter  | `adapters:driven:streaming`         | Streaming-Pipeline (`StreamingExporter`, `StreamingImporter`, `TableExporter`, `TableImporter`)                                       |
+| Driven Adapter  | `adapters:driven:text-icu`          | ICU4J-basierte `UnicodeTextService`-Implementierung (`IcuUnicodeTextService`); haelt ICU4J aus dem Application-Layer fern             |
 
 ```
               adapters:driving:cli  (Clikt)
@@ -140,11 +144,11 @@ d-migrate/
 Die Module `hexagon:core`, `hexagon:ports-common`, `hexagon:ports-read`,
 `hexagon:ports-write`, `hexagon:ports` (Aggregator), `hexagon:application`,
 `hexagon:profiling` sowie die Adapter-Module unter `adapters/` sind
-implementiert. Seit 0.9.1 ist `hexagon:ports` in drei Teilmodule zerlegt;
-der Aggregator re-exportiert alle drei für bestehende Consumer. Die
-Profiling-Adapter liegen in optionalen `driver-*-profiling`-Modulen.
+implementiert. `hexagon:ports` ist in drei Teilmodule zerlegt; der Aggregator
+re-exportiert alle drei für bestehende Consumer. Die Profiling-Adapter liegen
+in optionalen `driver-*-profiling`-Modulen.
 Weitere Module (ai, testdata) beschreiben den geplanten Soll-Zustand
-für spätere Milestones.
+für geplante Erweiterungen.
 
 ```
 d-migrate/
@@ -235,7 +239,7 @@ d-migrate/
 │               └── StreamingExporter.kt
 ```
 
-> Seit 0.7.0 implementiert: `integrations/` (Flyway, Liquibase, Django, Knex).
+> Zielbild-Erweiterung: `integrations/` (Flyway, Liquibase, Django, Knex).
 > Geplante, noch nicht implementierte Module: `ai/` (Ollama, LM Studio, OpenAI,
 > Anthropic, …), `testdata/` (Faker, KI-gestuetzt) — siehe Roadmap.
 
@@ -256,7 +260,8 @@ adapters:driving:cli
 ├── adapters:driven:driver-*-profiling ──▶ driver-*, hexagon:profiling (optional)
 ├── adapters:driven:formats ──▶ ports-read, ports-write, Jackson, DSL-JSON, SnakeYAML, Univocity
 ├── adapters:driven:integrations ──▶ hexagon:ports, driver-common
-└── adapters:driven:streaming ──▶ ports-read, ports-write
+├── adapters:driven:streaming ──▶ ports-read, ports-write
+└── adapters:driven:text-icu ──▶ hexagon:ports-common, ICU4J
 ```
 
 **Regel**: `hexagon:core` hat KEINE Abhängigkeit auf andere Module. `ports-common` hängt nur von `core` ab. `ports-read` nur von `ports-common`. `ports-write` von `ports-common` und `ports-read`. `hexagon:application` hängt nur vom Hexagon-Inneren ab, nie von Adaptern. Driven Adapters dürfen in main nicht voneinander abhängen (Ausnahme: Driver-Module → `driver-common`). Treiber-Kernmodule hängen nicht von `hexagon:profiling` ab.
@@ -267,9 +272,9 @@ adapters:driving:cli
 
 ### 3.1 Database Driver (Port & Adapter)
 
-#### Ist-Stand (bis 0.5.x)
+#### Driver-Fassade
 
-Das produktive `DatabaseDriver`-Interface exponiert heute folgende Ports:
+Das `DatabaseDriver`-Interface exponiert folgende Ports:
 
 ```kotlin
 /**
@@ -291,15 +296,15 @@ interface DatabaseDriver {
 Datenexport genutzt. `TypeMapper` ist kein exponierter Port — er ist internes
 Implementierungsdetail von `DdlGenerator` (via `AbstractDdlGenerator`).
 
-#### `schemaReader()` (0.6.0)
+#### `schemaReader()`
 
-`DatabaseDriver` wurde in 0.6.0 um `schemaReader()` erweitert — implementiert
-für PostgreSQL, MySQL und SQLite:
+`schemaReader()` ist Teil der Driver-Fassade und wird von PostgreSQL, MySQL
+und SQLite bereitgestellt:
 
 ```kotlin
 interface DatabaseDriver {
     // … bestehende Ports …
-    fun schemaReader(): SchemaReader        // 0.6.0
+    fun schemaReader(): SchemaReader
 }
 ```
 
@@ -328,7 +333,7 @@ Wichtig:
   sichtbar und wird nicht still aus der Architektur gestrichen.
 - `SchemaWriter` (DDL-Generierung via neutrales Modell) wird in der
   bestehenden Codebasis durch `DdlGenerator` abgedeckt. Ein separates
-  `SchemaWriter`-Interface ist für spätere Milestones vorgesehen.
+  `SchemaWriter`-Interface bleibt ein optionaler Erweiterungspfad.
 
 #### Weitere Port-Interfaces
 
@@ -364,8 +369,7 @@ data class FormatOptions(
     val bomMode: BomMode = BomMode.AUTO,
     // Optional; wenn gesetzt, wird die Zone in expliziten Konvertierungen
     // via TemporalFormatPolicy.toZoned(...) eingesetzt. Der Caller leitet
-    // sie typischerweise aus ResolvedI18nSettings.timezone ab, nicht aus
-    // einem blanket-UTC-Default (siehe docs/planning/ImpPlan-0.8.0-E.md).
+    // sie typischerweise aus ResolvedI18nSettings.timezone ab.
     val timezone: ZoneId? = null
 )
 ```
@@ -517,7 +521,7 @@ true)`. 64-bit `bigserial`/`bigint identity` wird bewusst als
 64-bit-Identity-Vertrag wird als separates Spaltenmetadatum
 `ColumnGeneration.Identity` modelliert, nicht als weiterer `NeutralType`.
 
-### 3.5 Generator-Options-Pfad und Spatial-Profil (0.5.5)
+### 3.5 Generator-Options-Pfad und Spatial-Profil
 
 #### Datenfluss
 
@@ -584,18 +588,22 @@ Ein Schema, das E120 oder E121 erzeugt, wird von `schema validate` zurueckgewies
 `schema generate` ruft `schema validate` implizit auf und bricht bei
 Validierungsfehlern ab (Exit-Code 3), bevor irgendwelche DDL erzeugt wird.
 
-Die Typsystem-Erweiterung in 0.5.5 (`geometry`, `geometry_type`, `srid`,
-`GeneratorOptions`) ist Voraussetzung fuer die Reverse-Engineering- und
-Daten-Transfer-Funktionalitaet in 0.6.0: `schema reverse` muss Spatial-Spalten
-in das neutrale Modell zurueckfuehren koennen, und `schema compare` muss
-Geometry-Spalten korrekt vergleichen. Ohne die in 0.5.5 geschaffene Modell- und
-Validierungsbasis waere das nicht typsicher moeglich.
+Die Spatial-Typsystem-Basis (`geometry`, `geometry_type`, `srid`,
+`GeneratorOptions`) ist Voraussetzung fuer Reverse Engineering und
+Daten-Transfer: `schema reverse` muss Spatial-Spalten in das neutrale Modell
+zurueckfuehren koennen, und `schema compare` muss Geometry-Spalten korrekt
+vergleichen. Ohne diese Modell- und Validierungsbasis waere das nicht
+typsicher moeglich.
 
-### 3.6 Tool-Export-Pfad (0.7.0)
+### 3.6 Tool-Export-Pfad
 
-0.7.0 fuehrt einen dedizierten Exportpfad fuer externe Migrationstools ein.
-Der Pfad folgt der hexagonalen Architektur und fuehrt weder neue Pflicht-
-Laufzeitabhaengigkeiten ein noch mutiert er bestehende Tool-Projektdateien.
+Der Tool-Export-Pfad stellt externe Migrationstools als Driven Adapter bereit.
+Im Hexagon bleibt er ein tool-neutraler Generate-Use-Case: Die Application
+erzeugt aus neutralem Schema, validierter Generator-Konfiguration und
+DDL-Ergebnis ein `MigrationBundle`; die Integrations-Adapter rendern daraus
+tool-spezifische Artefakte. Der Pfad fuehrt keine Pflicht-
+Laufzeitabhaengigkeiten auf Tool-Runtimes ein und mutiert keine bestehenden
+Tool-Projektdateien.
 
 #### Port-Vertrag (`hexagon:ports`)
 
@@ -645,16 +653,16 @@ Abhaengigkeiten ein.
 
 #### Runtime-Validierung (Test)
 
-Die fokussierte 0.7.0-Matrix (Flyway→PostgreSQL, Liquibase→PostgreSQL,
+Die fokussierte Runtime-Matrix (Flyway→PostgreSQL, Liquibase→PostgreSQL,
 Django→SQLite, Knex→SQLite) wird als Integrations-Tests in
 `adapters:driven:integrations` ausgefuehrt, markiert mit
 `NamedTag("integration")` und steuerbar ueber `-PintegrationTests`.
 
-### 3.7 Daten-Profiling (0.7.5)
+### 3.7 Daten-Profiling
 
-0.7.5 fuehrt ein dediziertes Profiling-Modul ein, das Spaltenstatistiken,
-Qualitaetswarnungen und Zieltyp-Kompatibilitaet fuer bestehende Datenbanken
-liefert.
+Daten-Profiling liegt in einem dedizierten Profiling-Modul, das
+Spaltenstatistiken, Qualitaetswarnungen und Zieltyp-Kompatibilitaet fuer
+bestehende Datenbanken liefert.
 
 #### Modul `hexagon:profiling`
 
@@ -697,12 +705,12 @@ PostgreSQL, MySQL und SQLite implementieren je:
 Der Default-Report ist byte-reproduzierbar: stabile Tabellen-/Spaltenreihenfolge,
 stabile `topValues`-Sortierung, kein laufzeitvariables `generatedAt`.
 
-### 3.8 Phasenbezogenes DDL-Modell (0.9.2)
+### 3.8 Phasenbezogenes DDL-Modell
 
-0.9.2 fuehrt ein Phasenmodell ein, das DDL-Statements in `PRE_DATA` und
-`POST_DATA` klassifiziert. Damit kann `schema generate --split pre-post`
-importfreundliche Artefakte erzeugen, bei denen Trigger erst nach einem
-Datenimport aktiviert werden.
+Das phasenbezogene DDL-Modell klassifiziert DDL-Statements in `PRE_DATA` und
+`POST_DATA`. Damit kann `schema generate --split pre-post` importfreundliche
+Artefakte erzeugen, bei denen Trigger erst nach einem Datenimport aktiviert
+werden.
 
 #### Modell (`hexagon:ports-read`)
 
@@ -764,6 +772,199 @@ DdlResult
 Der Default-Modus `SINGLE` bleibt rueckwaertskompatibel — alle Statements
 werden in einer Datei ausgegeben, die Phase-Information wird ignoriert.
 
+### 3.9 Live-DB-Probes fuer Sequence-Migrationen
+
+`schema migrate --execute` gegen MySQL/PostgreSQL-Targets traegt zwei
+unabhaengige Live-DB-Probe-Stages im Render-Pfad — beide folgen dem
+F.5 `CheckPreflightProbe`-Adapter-Muster: stateless Port in
+`hexagon:ports-read`, JDBC-Adapter im Driver-Modul, Application-Layer-
+Stage entscheidet ueber Skip/Probe/Block, CLI-Wiring im `:adapters:driving:cli`-
+Modul.
+
+#### 3.9.1 Drift-Check fuer die MySQL-Helper-Table-Emulation
+
+Vor jedem Sequence-/`SequenceNextVal`-Render verifiziert die Pipeline,
+dass die `dmg_sequences`-Helper-Table (Tabelle + `dmg_nextval`/`dmg_setval`-
+Routinen + per-Sequenz-Zeile + spaltenbezogener `dmg_seq_…_bi`-Trigger)
+der kanonischen Form entspricht. Drift wird mit
+`E124_MYSQL_SEQUENCE_DRIFT_TABLE`/`_ROUTINE`/`_ROW`/`_TRIGGER` (alle
+`MANUAL_ACTION_REQUIRED`) geblockt; PK-Verlust und Body-Signatur-
+Vergleich (nicht nur Marker-Substring) sind Teil des Vertrags.
+
+```
+plan
+  → MysqlSequenceCanonicityStage.run(probe, request, target, dialect, plan)
+        → fuer jede Sequence-Op + jede AddColumn/AlterColumnDefault mit SequenceNextVal:
+              SUPPORT_TABLE + NEXTVAL_ROUTINE + SETVAL_ROUTINE + SEQUENCE_ROW + SUPPORT_TRIGGER
+              → Declarations (CANONICAL/DRIFT/MISSING/NOT_RUN_*/PROBE_RUNTIME_ERROR)
+  → DdlGenerationOptions.dialectContext (MySql.sequenceCanonicity)
+  → MysqlDiffSequenceOps.canonicityBlocks(op, intent, ctx) gated Create/Alter/Drop/Rename
+  → MigrationDdlResult.mysqlSequenceCanonicity → SchemaMigrateReport
+```
+
+Schluesselkomponenten:
+
+- **Port**: `MysqlSequenceCanonicityProbe` + sealed `MysqlSequenceCanonicityKind`
+  (`SUPPORT_TABLE`/`NEXTVAL_ROUTINE`/`SETVAL_ROUTINE`/`SEQUENCE_ROW`/
+  `SUPPORT_TRIGGER`) + `MysqlSequenceCanonicityStatus`.
+- **Gate**: `MysqlSequenceCanonicityGate.decide(declaration, intent)` routet
+  per `(status × OpIntent)`-Matrix; `MISSING + DROP` fuer `SEQUENCE_ROW`/
+  `SUPPORT_TABLE` blockt mit `E124_MYSQL_SEQUENCE_MISSING_FOR_DROP`.
+- **Adapter**: `MysqlSequenceCanonicityProbeAdapter` (`driver-mysql`) nutzt
+  `INFORMATION_SCHEMA.COLUMNS` + `SHOW CREATE FUNCTION/TRIGGER`; 1305/1360
+  MySQL-Errors → `MISSING`.
+- **Stage**: `MysqlSequenceCanonicityStage` (`hexagon:application`) im Render-
+  Pipeline-Flow.
+
+#### 3.9.2 preserveCurrentValue — runtime-state-Migration
+
+Per Default verliert eine Sequenz ihren runtime-Wert beim Migrieren —
+`CREATE SEQUENCE … START WITH 1` setzt `nextval` auf `1`, auch wenn das
+Live-Target bereits bei `5000` stand. `preserveCurrentValue: true` auf
+`SequenceDefinition` aktiviert opt-in pro Sequenz einen Follow-up-Pfad,
+der den geprobten `last_value`/`next_value` ueber die Migration rettet.
+
+```
+plan(initial)
+  → SequencePreserveStage.run(probe, request, target, dialect, plan)
+        → fuer jede Create/Alter/RenameSequence mit preserveCurrentValue=true:
+              SequenceCurrentValueProbe(target, ref) → Read/NotFound/Failed/NotApplicable
+              → AlterSequenceCurrentValue-FollowUp direkt hinter der parent-Op
+                  (dependencies = setOf(parent.id))
+              | INFO SEQUENCE_PRESERVE_NOT_FOUND (CreateSequence ohne Vorzustand)
+              | BLOCKER SEQUENCE_PRESERVE_PROBE_FAILED/REQUIRES_DB_TARGET/NOT_SUPPORTED_BY_DIALECT/CONFIG_INVALID
+  → augmentierter Plan ersetzt das Original (auch fuer migration-plan.v1-Artefakt!)
+  → Renderer:
+        PG  → SELECT setval('<seq>', <value>, <is_called>);
+        MySQL → UPDATE dmg_sequences SET next_value = <v>
+                 WHERE name = <key> AND managed_by IN (...) AND format_version IN (...);
+        SQLite (helper_table opt-in via --sqlite-named-sequences)
+              → UPDATE "dmg_sequences" SET "next_value" = <v>
+                 WHERE "name" = <key>;
+              (ohne Opt-in: BLOCKER SEQUENCE_PRESERVE_OPT_IN_REQUIRED → MANUAL_ACTION_REQUIRED)
+```
+
+Schluesselkomponenten:
+
+- **Port**: `SequenceCurrentValueProbe` + sealed `SequenceCurrentValueProbeResult`
+  (`Read{value, matchedRows, isCalled?, managedBy?, formatVersion?}`,
+  `Failed{code, message}`, `NotFound`, `NotApplicable`).
+- **Werttyp**: `SequenceObjectRef(name, schema, dialect: RenameProjectionDialect)`
+  als Probe-Eingabe.
+- **DiffOp-Subtyp**: `DiffOperation.AlterSequenceCurrentValue` mit
+  `pairId`/`probeSequenceRef`/`applySequenceRef`/`currentValue`/`isCalled?`/
+  `restoreValue?`/`restoreIsCalled?`/`rollbackImpossible`/
+  `rollbackImpossibleReason?`/`revertAfterRename`.
+- **Renderer**: `PostgresDiffSequenceOps.renderAlterSequenceCurrentValue`
+  (PG), `MysqlDiffSequenceOps.renderAlterSequenceCurrentValue` (MySQL),
+  `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` (SQLite —
+  seit 0.9.7-E.3-Folge-Slice: Up auf `applySequenceRef`, Down auf
+  `probeSequenceRef` mit `restoreValue`; `restoreValue == null` ⇒
+  Skip mit `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`).
+- **JDBC-Adapter**: `PostgresSequenceCurrentValueProbe` (SQLSTATE
+  42P01/42501-Mapping), `MysqlSequenceCurrentValueProbe`
+  (Error-Code 1146/1142 + `managed_by`/`format_version`-Set-Validation
+  ueber `MysqlSequenceSupportNaming.SUPPORTED_MANAGED_BY` /
+  `SUPPORTED_FORMAT_VERSIONS`), `SqliteSequenceCurrentValueProbe`
+  (no-such-table-Message → `NotFound`, SQLITE_PERM/SQLITE_AUTH →
+  `PROBE_PERMISSION_DENIED`; Validierung gegen
+  `SqliteSequenceNaming.MANAGED_BY` / `FORMAT_VERSION`).
+- **Stage**: `SequencePreserveStage` (`hexagon:application`) — Kandidaten-
+  Filter, file-Target-Priority-Blocker, Dialekt-Allowlist
+  (PG/MySQL/SQLite), SQLite-`helper_table`-Opt-in-Gate
+  (`SEQUENCE_PRESERVE_OPT_IN_REQUIRED`), Probe-Routing,
+  Plan-Augmentation.
+- **CLI**: `SequenceCurrentValueProbeRunner` dispatcht per
+  `SequenceObjectRef.dialect` an die PG/MySQL/SQLite-Adapter.
+  `--sqlite-named-sequences helper_table` auf `schema migrate`
+  schaltet den SQLite-Probe-Pfad frei.
+
+`AlterSequenceCurrentValue`-Follow-ups landen **direkt hinter ihrer
+parent-Op** im augmentierten Plan und sind in `dependencies` auf die
+parent-Op-ID gepinnt. Das signierte `migration-plan.v1`-Artefakt
+(`--plan-artefact`) erhaelt den augmentierten Plan — ein Operator,
+der nur das Artefakt liest, sieht das `setval`/`UPDATE`-Statement.
+
+#### 3.9.3 Gemeinsames Probe-Adapter-Pattern
+
+Beide Stages folgen dem gleichen Schichtschnitt — neue Live-DB-Probes
+(z.B. fuer CHECK-Constraints) folgen diesem Pattern, sodass
+`:hexagon:application` keine driver-spezifischen Importe sieht und CLI-Wiring
+konsistent bleibt:
+
+| Schicht | Drift-Check | preserveCurrentValue |
+|---|---|---|
+| Port (`hexagon:ports-read`) | `MysqlSequenceCanonicityProbe` | `SequenceCurrentValueProbe` |
+| Result-Typ | `MysqlSequenceCanonicityDeclaration` | sealed `SequenceCurrentValueProbeResult` |
+| Application-Layer Stage | `MysqlSequenceCanonicityStage` | `SequencePreserveStage` |
+| JDBC-Adapter | `MysqlSequenceCanonicityProbeAdapter` | `PostgresSequenceCurrentValueProbe`, `MysqlSequenceCurrentValueProbe`, `SqliteSequenceCurrentValueProbe` |
+| CLI-Runner | `MysqlSequenceCanonicityProbeRunner` | `SequenceCurrentValueProbeRunner` |
+| Renderer-Anbindung | `MysqlDiffSequenceOps.canonicityBlocks` | Stage augmentiert Plan; Renderer emittiert Follow-up |
+| Classifier-Codes | `E124_MYSQL_SEQUENCE_DRIFT_*` → `MANUAL_ACTION_REQUIRED` | `SEQUENCE_PRESERVE_PROBE_FAILED` / `_CONFIG_INVALID` / `_REQUIRES_DB_TARGET` / `_OPT_IN_REQUIRED` → `MANUAL_ACTION_REQUIRED`; `_NOT_SUPPORTED_BY_DIALECT` → `DIALECT_UNSUPPORTED_OPERATION` |
+
+### 3.10 Reverse-Read-Treue fuer Programmability-Objekte
+
+`schema reverse` und der DB-Operand in `schema compare` / `schema
+migrate` muessen pro Dialekt nicht nur Strukturobjekte (Tabellen,
+Indices, FKs) sondern auch Programmability-Objekte (Trigger,
+Stored-Functions, Procedures, Views, Sequences) mit allen
+Identity-Attributen korrekt aus dem Live-Katalog projizieren. Sonst
+emittiert ein anschliessender Compare gegen ein File-Schema mit
+identischen Werten spurious `Replace`-Diagnosen, die der Operator
+manuell wegsortieren muss.
+
+Fuer diese Treue gelten insbesondere zwei Reader-Vertraege:
+
+#### 3.10.1 SQLite-Trigger-Reverse-Read
+
+`sqlite_master` liefert Trigger als rohen `CREATE TRIGGER`-Text;
+der Reader muss den DDL-String parsen, da SQLite kein
+strukturiertes `information_schema` hat. Naive Substring-Suche ist
+nicht ausreichend, weil sie WHEN-Klauseln verlieren und `INSTEAD OF`
+mit `BEFORE` verwechseln kann.
+
+- **Parser**: `SqliteTriggerSqlParser` (token-basiert, string- und
+  comment-aware) extrahiert `timing` (BEFORE / AFTER / INSTEAD OF),
+  `event` (INSERT / UPDATE / DELETE), `forEach` (ROW), `condition`
+  (WHEN-Klausel inkl. Comment-Stripping) und `body` (Multi-Statement
+  zwischen `BEGIN` und letztem `END`, mit einem Trim des optionalen
+  trailing `;` fuer Renderer-Symmetrie).
+- **Reader-Routing**: `SqliteSchemaReader.readTriggers` ruft den
+  Parser; R212-rejected Trigger (schema-qualifizierte Namen wie
+  `main.trg`) werden aus der Trigger-Map ausgeschlossen, damit
+  downstream Object-Key-Kollisionen mit der `schema.table`-Form
+  ausgeschlossen sind.
+- **Diagnostics**: `R210` (timing missing) / `R211` (event missing)
+  sind jetzt `ACTION_REQUIRED` (vorher `WARNING`); `R212`
+  (schema-qualified, `ACTION_REQUIRED`) und `R213` (`UPDATE OF
+  cols`, `WARNING`) sind neu.
+- **Round-Trip-Vertrag**: Reverse → Renderer-DDL → DB → Reverse
+  bleibt bit-identisch (`body` ohne trailing `;` weil der Renderer
+  `;\nEND;` unconditional anhaengt); die YAML-Codec-Seite ist via
+  `SchemaNodeProgrammabilityTriggerRoundtripTest` separat gepinnt.
+
+#### 3.10.2 MySQL-Routine-Identity-Reverse-Read
+
+`information_schema.routines` liefert pro Routine ein
+`security_type`, einen `definer`-String (`'user'@'host'`) und einen
+`sql_mode`-Snapshot zur Erzeugungszeit. Der Reader projiziert diese
+Identity-Attribute, damit file-zu-DB-Diffs gegen ein File-Schema mit
+explizitem `SQL SECURITY DEFINER` oder `sql_mode` keine spurious-
+Replace-Diagnosen produzieren.
+
+- **MetadataQueries**: `listFunctions` / `listProcedures` projizieren
+  `security_type`, `definer`, `sql_mode` aus
+  `information_schema.routines`.
+- **Reader**: `readFunctions` / `readProcedures` populieren
+  `FunctionDefinition.security` / `definer` / `sqlMode` (analog auf
+  `ProcedureDefinition`). Leeres `sql_mode` wird zu `null`
+  normalisiert; unbekannte `security_type`-Werte (z.B. aelteres
+  MySQL oder eingeschraenkte `information_schema`-Sicht) fallen
+  ebenfalls auf `null` zurueck.
+- **Comparator-Symmetrie**: `RoutineIdentityNormalizer.normalizeMysqlSqlMode`
+  sortiert / dedupliziert die `sql_mode`-Liste, sodass Reihenfolge-Drift im
+  Live-Katalog keinen spurious-Replace ausloest.
+
 ---
 
 ## 4. Querschnittsthemen
@@ -819,12 +1020,12 @@ data class DocumentationConfig(
 )
 ```
 
-Architekturvertrag fuer 0.8.0:
+Architekturvertrag:
 
 - `defaultLocale` beschreibt den Produktdefault; Root-/Fallback-Bundle ist Englisch (`messages.properties`).
 - Die effektive I18n-Konfiguration wird ueber denselben Pfadvertrag wie die bestehende CLI-Konfiguration bestimmt: `--config` > `D_MIGRATE_CONFIG` > `./.d-migrate.yaml`.
-- `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift per Phase-E-Vertrag nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte (siehe `docs/planning/ImpPlan-0.8.0-E.md`).
-- Seit 0.9.0 ist `--lang` als CLI-Override produktiv: `--lang` hat Vorrang vor `D_MIGRATE_LANG` und ist strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt.
+- `defaultTimezone` ist optional und wird durch `I18nSettingsResolver` in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) zu einer `ZoneId` aufgeloest; die aufgeloeste Zone greift nur in expliziten Konvertierungen, nicht als Serialisierungs-Offset fuer lokale Werte.
+- `--lang` ist ein CLI-Override: `--lang` hat Vorrang vor `D_MIGRATE_LANG` und ist strikt auf gebundelte Produktsprachen (`de`, `en`) beschraenkt.
 
 ### 4.2 Logging und Observability
 
@@ -903,12 +1104,12 @@ suspend fun <T> withRetry(
 - Textbasierte Formate verwenden standardmaessig UTF-8.
 - Dateiimporte erkennen UTF-8/UTF-16 sowie BOM-Markierungen automatisch; weitere Encodings sind explizit konfigurierbar.
 - Exportformate erhalten Encoding-Metadaten, sofern das Zielformat diese transportieren kann; fuer CSV erfolgt dies optional ueber Sidecar-Dateien.
-- Temporale Werte folgen dem Phase-E-Vertrag (`docs/planning/ImpPlan-0.8.0-E.md`): ISO-8601-Profile fuer Serialisierung, `OffsetDateTime` bleibt offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC oder JVM-Zone. Die Default-Zeitzone wird in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) aufgeloest und greift nur in **expliziten** Konvertierungen ueber `TemporalFormatPolicy.toZoned(...)`.
+- Temporale Werte folgen stabilen ISO-8601-Profilen fuer Serialisierung; `OffsetDateTime` bleibt offsethaltig, `LocalDateTime` bleibt lokal ohne stille Umdeutung zu UTC oder JVM-Zone. Die Default-Zeitzone wird in der Reihenfolge `i18n.default_timezone` -> `ZoneId.systemDefault()` -> `UTC` (Error-/Leer-Fallback) aufgeloest und greift nur in **expliziten** Konvertierungen ueber `TemporalFormatPolicy.toZoned(...)`.
 - Locale-sensible Werte wie Zahlen- und Waehrungsdarstellungen werden an Ein-/Ausgabegrenzen normalisiert, damit interne Verarbeitung formatunabhaengig bleibt.
-- Unicode-Normalisierung dient fuer 0.8.0 als Utility fuer Vergleiche, Metadaten und Darstellungsstabilitaet; Nutzdatenpayloads werden dadurch nicht still umgeschrieben.
-- BOM-Erkennung und CSV-BOM-Verhalten bauen fuer 0.8.0 auf dem seit 0.4.0 vorhandenen Unterbau auf und werden als Vertragskonsolidierung dokumentiert, nicht als neu erfundenes Feature.
+- Unicode-Normalisierung dient als Utility fuer Vergleiche, Metadaten und Darstellungsstabilitaet; Nutzdatenpayloads werden dadurch nicht still umgeschrieben.
+- BOM-Erkennung und CSV-BOM-Verhalten nutzen den bestehenden Encoding-Unterbau und sind Teil des Formatvertrags.
 - Strukturierte JSON-/YAML-Ausgaben bleiben sprachstabil: Feldnamen, Codes und freie Fehlermeldungstexte bleiben englisch, lokalisiert werden nur menschenlesbare Plain-Text-Ausgaben.
-- Optionale Validierungsbausteine fuer E.164-Telefonnummern bleiben ein spaeterer Erweiterungspfad und gehoeren nicht zum 0.8.0-Mindestvertrag.
+- Optionale Validierungsbausteine fuer E.164-Telefonnummern bleiben ein Erweiterungspfad und gehoeren nicht zum Mindestvertrag.
 
 ---
 
@@ -929,7 +1130,7 @@ plugins {
 
 allprojects {
     group = "dev.dmigrate"
-    version = "0.1.0"
+    version = "<project-version>"
 }
 
 subprojects {
@@ -958,7 +1159,7 @@ subprojects {
 | MySQL Connector/J   | 9.x     | driver-mysql    | DB-Zugriff               |
 | SQLite JDBC         | 3.47.x  | driver-sqlite   | DB-Zugriff               |
 | HikariCP            | 6.x     | drivers         | Connection Pooling       |
-| ICU4J               | 76.x    | application/cli | Unicode-Verarbeitung     |
+| ICU4J               | 76.x    | adapters/driven/text-icu | Unicode-Verarbeitung (versteckt hinter `dev.dmigrate.text.UnicodeTextService` in `hexagon:ports-common`; Composition Root verdrahtet `IcuUnicodeTextService` in `adapters/driving/cli` und `adapters/driving/mcp`) |
 | Ktor Client         | 3.x     | ai              | HTTP für KI-APIs         |
 | SLF4J + Logback     | 2.x/1.5 | Alle            | Logging                  |
 | Kotest              | 5.9.x   | Test            | Test-Framework           |
@@ -970,7 +1171,7 @@ subprojects {
 ```
 Distribution-Formate:
 
-1. GitHub Release Assets (0.5.0-MVP)
+1. GitHub Release Assets
    → ZIP/TAR mit launcherbasiertem `bin/d-migrate`
    → Fat JAR für `java -jar d-migrate-<version>-all.jar`
    → Kanonischer Build: `:adapters:driving:cli:assembleReleaseAssets`
@@ -982,12 +1183,12 @@ Distribution-Formate:
    → Build: ./gradlew :adapters:driving:cli:jibDockerBuild (Jib, kein Dockerfile nötig)
    → Für CI/CD-Pipelines und Nutzer ohne JDK
 
-3. Homebrew-Basis (0.5.0-MVP)
+3. Homebrew-Basis
    → Formula im Repository unter `packaging/homebrew/d-migrate.rb`
    → Konsumiert das publizierte GitHub-Release-ZIP
    → Verifikation nach Publish via `brew install --formula`
 
-4. Zukunftspfade (nicht aktueller 0.5.0-Auslieferungsstand)
+4. Zukunftspfade
    → GraalVM Native Image
    → SDKMAN
    → Scoop
@@ -1052,7 +1253,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 │   ├── invalid-default.yaml          # → E009
 │   └── missing-decimal-precision.yaml # → E010
 │
-└── data/                             # Testdaten für Import/Export (ab 0.3.0)
+└── data/                             # Testdaten für Import/Export
     ├── customers.json
     ├── customers.csv
     └── customers.yaml
@@ -1117,7 +1318,7 @@ adapters/driven/formats/src/test/resources/fixtures/
 → Core bleibt unverändert
 ```
 
-### 8.4 Neuen Tool-Exporter hinzufügen (0.7.0)
+### 8.4 Neuen Tool-Exporter hinzufügen
 
 ```
 1. ToolMigrationExporter in adapters:driven:integrations implementieren
@@ -1168,7 +1369,7 @@ Entwickler-Maschine                    CI/CD-Pipeline
 - [CLI-Spezifikation](./cli-spec.md) — Exit-Codes, Ausgabeformate, Kommando-Referenz
 - [DDL-Generierungsregeln](./ddl-generation-rules.md) — Quoting, Statement-Ordering, Dialekt-Besonderheiten
 - [Connection- und Konfigurationsspezifikation](./connection-config-spec.md) — URL-Format, `.d-migrate.yaml`-Schema
-- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen, Milestones und Release-Planung
+- [Roadmap](../docs/planning/in-progress/roadmap.md) — Phasen und Release-Planung
 - [Beispiel: Stored Procedure Migration](../docs/planning/open/beispiel-stored-procedure-migration.md) — KI-gestützte Transformation PostgreSQL → MySQL
 
 ---
@@ -1201,4 +1402,4 @@ surface and compiles without write/CLI/profiling imports.
 
 **Version**: 1.8
 **Stand**: 2026-04-20
-**Status**: Milestone 0.1.0–0.9.2 implementiert; 0.9.2: phasenbezogenes DDL-Modell (`DdlPhase`), `--split pre-post` fuer importfreundliche Schema-Artefakte, `ViewPhaseClassifier` fuer Routinen-Abhaengigkeiten, Runner-Zerlegung, DDL-Interpolations-Haertung
+**Status**: Architektur-Zielbild mit implementierten Kernpfaden und markierten Erweiterungsbereichen

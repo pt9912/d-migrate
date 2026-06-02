@@ -5,6 +5,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.job.ApprovedRetryService
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.job.JobStartOrchestrator
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
@@ -47,7 +48,7 @@ class SchemaCompareStartHandlerTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = PolicyEffect.Allow),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_1" },
         )
         val handler = SchemaCompareStartHandler(orchestrator, clock)

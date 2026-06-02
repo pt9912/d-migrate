@@ -26,7 +26,7 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * AP D4 (`ImpPlan-0.9.6-D.md` §10.4) golden tests for the new
+ * LF-012 / LN-038 (LF-012 / LN-038) golden tests for the new
  * filter-based list APIs. Each store contract is pinned for:
  *  - tenant isolation
  *  - filter combinations (status / kind / jobRef / time-window /

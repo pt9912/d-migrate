@@ -1,28 +1,28 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.2 — Ergebnis einer [AiProviderRegistry.resolve]-
+ * LF-017 / LF-024 / LN-030 / LN-031— Ergebnis einer [AiProviderRegistry.resolve]-
  * Anfrage.
  *
- * Tool-Handler (G.6) mappen die Outcomes auf die Plan-§-7.2-
+ * Tool-Handler mappen die Outcomes auf die LF-017 / LF-024 / LN-030 / LN-031-
  * Fehlercodes:
  *
  * - [Resolved] → der Caller bekommt den Provider-Port; weitere
  *   Pflichten (Policy, Hygiene, Outcome-Reservation) liegen beim
  *   Handler.
  * - [NotConfigured] → Provider-ID existiert nicht in der Registry.
- *   Plan §6 G.3 Akzeptanz: Tool-Handler antwortet mit
+ *   LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Tool-Handler antwortet mit
  *   `FORBIDDEN_PRINCIPAL` (Caller darf den unbekannten Provider
  *   nicht nutzen) oder `POLICY_DENIED`.
  * - [Disabled] → Provider existiert, ist aber `enabled=false`.
  *   Mapping wie [NotConfigured] (von Caller-Seite nicht
- *   unterscheidbar — Plan §4.8: keine Server-Config-Details
+ *   unterscheidbar — LF-017 / LF-024 / LN-030 / LN-031: keine Server-Config-Details
  *   leaken).
  * - [UnknownModel] → Provider okay, Modell nicht in
- *   `allowedModels`. Plan §6 G.5: `VALIDATION_ERROR` mit
+ *   `allowedModels`. LF-017 / LF-024 / LN-030 / LN-031: `VALIDATION_ERROR` mit
  *   Feldverweis `model`.
  * - [ServerMisconfigured] → Default-Provider fehlt oder Registry
- *   wurde mit invalider Config gestartet. Plan §6 G.3 Akzeptanz:
+ *   wurde mit invalider Config gestartet. LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz:
  *   `INTERNAL_AGENT_ERROR`.
  */
 sealed interface AiProviderResolveOutcome {
@@ -42,7 +42,7 @@ sealed interface AiProviderResolveOutcome {
      *
      * @param allowedModels die in der Config eingetragenen Werte —
      *   der Tool-Handler darf sie an den Caller weiterreichen
-     *   (Plan §5.2: Modell-Whitelist ist serverseitiger
+     *   (LF-017 / LF-024 / LN-030 / LN-031: Modell-Whitelist ist serverseitiger
      *   Discovery-Inhalt, nicht geheim).
      */
     data class UnknownModel(

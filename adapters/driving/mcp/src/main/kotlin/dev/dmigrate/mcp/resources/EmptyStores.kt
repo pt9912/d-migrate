@@ -31,13 +31,13 @@ import java.time.Instant
 
 /**
  * No-op store implementations used by [ResourceStores.empty] and the
- * Phase B "transport-only" bootstrap default. Every list returns
+ * LF-012 / LN-038 "transport-only" bootstrap default. Every list returns
  * `PageResult(items=[], nextPageToken=null)`. Save/find/delete are
  * not used by `resources/list` and either return their argument or
  * `null`/`false` — the bootstrap never invokes them.
  *
  * These exist purely so the route/bootstrap can stand up without a
- * real backend; Phase C/D wires real stores at startup.
+ * real backend; LF-012 / LN-038 wires real stores at startup.
  */
 internal object EmptyJobStore : JobStore {
     override fun save(record: JobRecord): JobRecord = record

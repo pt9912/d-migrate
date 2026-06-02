@@ -12,8 +12,7 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.1): Port-Level-Tests
- * fuer [ResumeMarker] + den Default-Pfad der
+ * LF-013 / LN-006 / LN-012: Port-Level-Tests fuer [ResumeMarker] + den Default-Pfad der
  * [DataReader.streamTable]-Ueberladung. Treiber-spezifische Paging-
  * Semantik wird in `AbstractJdbcDataReaderTest` und den Dialekt-
  * Integrationstests gefahren; hier geht es nur um das Port-
@@ -129,8 +128,8 @@ private object DummyPool : ConnectionPool {
 
 /**
  * Minimal DataReader fake that only implements the 4-param overload and
- * otherwise relies on the port's default 5-param implementation — which
- * is exactly the contract Phase C.2 needs to verify.
+ * otherwise relies on the port's default 5-param implementation, which is
+ * exactly the LF-013 / LN-006 contract this test verifies.
  */
 private class FakeReader : DataReader {
     override val dialect: DatabaseDialect = DatabaseDialect.SQLITE

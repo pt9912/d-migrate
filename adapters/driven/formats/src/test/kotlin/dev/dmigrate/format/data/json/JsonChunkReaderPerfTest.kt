@@ -1,6 +1,8 @@
 package dev.dmigrate.format.data.json
 
 import dev.dmigrate.format.data.perf.LargeJsonFixture
+import dev.dmigrate.profiling.perf.PerfMeasure
+import dev.dmigrate.profiling.perf.PerfReport
 import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.booleans.shouldBeTrue
@@ -13,11 +15,17 @@ import kotlin.math.floor
 private val PerfTag = NamedTag("perf")
 
 /**
- * Phase B Schritt 7: Streaming-Test gegen das 100-MB-Fixture aus Phase A.
+ * LF-009 / LF-013 / LN-043: Streaming-Test gegen das 100-MB-Fixture.
  *
  * Verifiziert, dass [JsonChunkReader] das große Fixture mit konstantem
  * Speicherbudget lesen kann und die Integer-vs-Decimal-Diskriminierung
  * korrekt durch den Reader propagiert.
+ *
+ * Quality-Coverage-Expansion Phase-A-Vervollstaendigung +
+ * F3-Followup (2026-05-31): wall-clock laeuft jetzt durch
+ * [PerfMeasure]/[PerfReport] statt ad-hoc; das Heap-Budget bleibt
+ * separat gemessen (Constant-Memory-Vertrag liegt orthogonal zur
+ * Latenz-Trend-Erfassung).
  *
  * Opt-in via `-Dkotest.tags=perf`. Standard-CI führt diesen Test nicht aus.
  */
@@ -46,30 +54,40 @@ class JsonChunkReaderPerfTest : FunSpec({
         var firstScore: Any? = null
         var maxRetainedHeap = heapBefore
 
-        java.nio.file.Files.newInputStream(fixture).use { input ->
-            JsonChunkReader(input, "perf", chunkSize).use { reader ->
-                reader.headerColumns() shouldBe listOf("id", "email", "score", "active", "tag")
+        val sample = PerfMeasure.run(warmup = 0, iterations = 1) {
+            java.nio.file.Files.newInputStream(fixture).use { input ->
+                JsonChunkReader(input, "perf", chunkSize).use { reader ->
+                    reader.headerColumns() shouldBe listOf("id", "email", "score", "active", "tag")
 
-                var chunk = reader.nextChunk()
-                while (chunk != null) {
-                    for (row in chunk.rows) {
-                        if (rowsSeen == 0L) {
-                            firstId = row[0]
-                            firstScore = row[2]
+                    var chunk = reader.nextChunk()
+                    while (chunk != null) {
+                        for (row in chunk.rows) {
+                            if (rowsSeen == 0L) {
+                                firstId = row[0]
+                                firstScore = row[2]
+                            }
+                            rowsSeen++
                         }
-                        rowsSeen++
-                    }
 
-                    if (rowsSeen % 100_000L == 0L) {
-                        val retained = LargeJsonFixture.usedHeapBytes()
-                        if (retained > maxRetainedHeap) {
-                            maxRetainedHeap = retained
+                        if (rowsSeen % 100_000L == 0L) {
+                            val retained = LargeJsonFixture.usedHeapBytes()
+                            if (retained > maxRetainedHeap) {
+                                maxRetainedHeap = retained
+                            }
                         }
-                    }
 
-                    chunk = reader.nextChunk()
+                        chunk = reader.nextChunk()
+                    }
+                    rowsSeen
                 }
             }
+        }
+        // The closure-captured locals (rowsSeen, firstId, …) only produce
+        // coherent measurements at iterations == 1. Catch a future maintainer
+        // who bumps iterations without redesigning the captures.
+        require(sample.iterations == 1) {
+            "JsonChunkReaderPerfTest requires iterations == 1; closure-captured " +
+                "rowsSeen/firstId/firstScore deltas would accumulate across iterations."
         }
 
         val heapAfter = LargeJsonFixture.usedHeapBytes()
@@ -93,5 +111,16 @@ class JsonChunkReaderPerfTest : FunSpec({
         // Constant-memory gate: retained heap growth < 32 MiB
         val retainedGrowth = maxRetainedHeap - heapBefore
         retainedGrowth shouldBeLessThan (32L * 1024L * 1024L)
+
+        // Trend-tracking: write the single-iteration wall-clock to the
+        // shared perf report. Smoke budget is intentionally generous —
+        // 100 MB streaming reads on cold-CI JVMs tail past 30 s. Baseline
+        // is set near the observed local figure.
+        PerfReport.write(
+            hotpath = "format-json-chunk-reader-100mb",
+            sample = sample,
+            smokeMaxMs = 60_000.0,
+            baselineMs = 10_000.0,
+        )
     }
 })

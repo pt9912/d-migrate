@@ -76,7 +76,7 @@ abstract class JobStoreContractTests(factory: () -> JobStore) : FunSpec({
         store.findById(Fixtures.tenant("acme"), "job_keep") shouldNotBe null
     }
 
-    // ── Phase E §7.2: atomic status transitions ─────────────────
+    // ── LF-012 / LN-011 / LN-017 / LN-027: atomic status transitions ─────────────────
 
     test("transitionStatus applies the transformer when current status is allowed") {
         val store = factory()
@@ -146,7 +146,7 @@ abstract class JobStoreContractTests(factory: () -> JobStore) : FunSpec({
         outcome.currentStatus shouldBe JobStatus.SUCCEEDED
     }
 
-    // ── Phase E §7.2: durable cancel-request marker ─────────────
+    // ── LF-012 / LN-011 / LN-017 / LN-027: durable cancel-request marker ─────────────
 
     test("markCancelRequested applies on a running job and records all metadata") {
         val store = factory()
@@ -170,7 +170,7 @@ abstract class JobStoreContractTests(factory: () -> JobStore) : FunSpec({
         cancel.requestedReason shouldBe "user-requested"
         cancel.signalSource shouldBe "mcp:job_cancel"
         cancel.ackedAt shouldBe null
-        // Job-Status is unchanged — Phase E §7.2: cancel-request is durable
+        // Job-Status is unchanged — LF-012 / LN-011 / LN-017 / LN-027: cancel-request is durable
         // before the worker ack flips status to CANCELLED.
         outcome.record.managedJob.status shouldBe JobStatus.RUNNING
     }

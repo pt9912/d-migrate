@@ -7,7 +7,7 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 /**
- * AP D1 (`ImpPlan-0.9.6-D.md` §10.1) coverage:
+ * LF-012 / LN-038 (LF-012 / LN-038) coverage:
  *  - all eight readable resource families parse to the right ADT
  *    variant
  *  - chunk URI does not collapse into a TenantResourceUri with a
@@ -15,7 +15,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
  *  - `dmigrate://capabilities` is the only valid tenantless URI
  *  - all other tenantless URIs are rejected
  *  - upload-session URI parses but is callers' responsibility to
- *    classify as Phase-D-blocked (resolver layer in AP D2)
+ *    classify as LF-012 / LN-038-blocked (resolver layer in LF-012 / LN-038)
  */
 class McpResourceUriTest : FunSpec({
 
@@ -37,9 +37,9 @@ class McpResourceUriTest : FunSpec({
         }
     }
 
-    test("upload-sessions URI parses (but is Phase-D-blocked at resolver layer)") {
+    test("upload-sessions URI parses (but is LF-012 / LN-038-blocked at resolver layer)") {
         // §10.1: "Upload-Session-URI bleibt parsebar, aber nicht
-        // listbar/template-visible in Phase D". The parser MUST
+        // listbar/template-visible in LF-012 / LN-038". The parser MUST
         // succeed; classification as `VALIDATION_ERROR` lives at
         // the AP-D2 resolver, not here.
         val parsed = McpResourceUri.parse("dmigrate://tenants/acme/upload-sessions/upl-1")
@@ -172,8 +172,8 @@ class McpResourceUriTest : FunSpec({
     }
 
     test("legacy bridge: TenantResourceUri.toLegacy / fromLegacy preserve the data-class shape") {
-        // AP D1 keeps the legacy ServerResourceUri data class for
-        // Phase-B/-C call sites; the AP-D2 migration funnels through
+        // LF-012 / LN-038 keeps the legacy ServerResourceUri data class for
+        // LF-012 / LN-038 call sites; the AP-D2 migration funnels through
         // these bridge helpers. Round-trip pins they stay in sync.
         val legacy = ServerResourceUri(TenantId("acme"), ResourceKind.PROFILES, "profile-1")
         val migrated = TenantResourceUri.fromLegacy(legacy)

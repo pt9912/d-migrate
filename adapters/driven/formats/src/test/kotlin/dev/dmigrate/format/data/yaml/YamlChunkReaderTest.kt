@@ -13,7 +13,7 @@ import java.io.ByteArrayInputStream
 /**
  * Unit-Tests für [YamlChunkReader].
  *
- * Plan §4 Phase B Schritt 8: YamlChunkReader mit SnakeYAML Engine Event-API.
+ * LF-009 / LF-013: YamlChunkReader mit SnakeYAML Engine Event-API.
  * Tests spiegeln die JsonChunkReaderTest-Struktur für Konsistenz.
  */
 class YamlChunkReaderTest : FunSpec({
@@ -361,11 +361,11 @@ class YamlChunkReaderTest : FunSpec({
         }
     }
 
-    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // LF-009 / LF-013:
     // Der geteilte EncodingDetector wird auch auf dem YAML-Pfad mit
     // nicht-lateinischen Payloads abgesichert — §O2 Empfehlung.
 
-    test("Phase F §4.5: UTF-8 BOM + Unicode-YAML-Inhalt bleibt zeichenstabil") {
+    test("UTF-8 BOM + Unicode-YAML-Inhalt bleibt zeichenstabil") {
         val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
         val yaml = "- city: Москва\n  emoji: 🇯🇵".toByteArray(Charsets.UTF_8)
         val input = ByteArrayInputStream(bom + yaml)
@@ -376,7 +376,7 @@ class YamlChunkReaderTest : FunSpec({
         }
     }
 
-    test("Phase F §4.5: UTF-16 LE BOM + Unicode-YAML wird transcodiert") {
+    test("LF-009 / LF-013: UTF-16 LE BOM + Unicode-YAML wird transcodiert") {
         val bom = byteArrayOf(0xFF.toByte(), 0xFE.toByte())
         val yaml = "- name: 東京".toByteArray(Charsets.UTF_16LE)
         val input = ByteArrayInputStream(bom + yaml)

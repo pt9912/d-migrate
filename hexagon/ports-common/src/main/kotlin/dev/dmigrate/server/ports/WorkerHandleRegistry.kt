@@ -3,7 +3,7 @@ package dev.dmigrate.server.ports
 import dev.dmigrate.core.cancel.CancellationTokenSource
 
 /**
- * Phase E §7.2 / §6.4 runtime registry that maps a `jobId` to the
+ * LF-012 / LN-011 / LN-017 / LN-027 runtime registry that maps a `jobId` to the
  * [CancellationTokenSource] of the worker thread (or coroutine) that
  * is currently executing the job.
  *
@@ -13,7 +13,7 @@ import dev.dmigrate.core.cancel.CancellationTokenSource
  * survives restart and lets a recovering worker observe a pending
  * cancel via `cancelRequest.requested == true`.
  *
- * Plan §7.2 zweistufiges Cancel-Pattern:
+ * LF-012 / LN-011 / LN-017 / LN-027 zweistufiges Cancel-Pattern:
  *
  * 1. `JobStore.markCancelRequested(...)` setzt durabel
  *    `cancelRequest.requested = true` mit Reason und Metadaten.
@@ -56,7 +56,7 @@ sealed interface SignalOutcome {
     data object Signaled : SignalOutcome
 
     /**
-     * No active source registered for this jobId. The Phase E
+     * No active source registered for this jobId. The LF-012 / LN-011 / LN-017 / LN-027
      * `job_cancel`-Tool returns this from the in-process registry; the
      * durable cancel-request via [JobStore.markCancelRequested] still
      * applies and a recovering worker observes it.

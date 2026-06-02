@@ -28,7 +28,7 @@ kover {
                     "dev.dmigrate.driver.connection.PoolSettings",
                     "dev.dmigrate.driver.data.ResumeMarker",
                     "dev.dmigrate.driver.data.ResumeMarker\$Position",
-                    // Server-side store ports (0.9.6 phase A AP 6.2) — interfaces and DTOs
+                    // Server-side store ports (LF-012 / LN-011 / LN-017 / LN-027) — interfaces and DTOs
                     "dev.dmigrate.server.ports.JobStore",
                     "dev.dmigrate.server.ports.ArtifactStore",
                     "dev.dmigrate.server.ports.ArtifactContentStore",

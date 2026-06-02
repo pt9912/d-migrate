@@ -50,7 +50,7 @@ private fun handler(
     val schemaStore = InMemorySchemaStore()
     val artifactStore = InMemoryArtifactStore()
     val contentStore = InMemoryArtifactContentStore()
-    // AP 6.23: SchemaValidateHandler requires a non-null sink so the
+    // LF-012 / LN-027 / LN-028 / LN-038: SchemaValidateHandler requires a non-null sink so the
     // truncated → artifactRef schema coupling holds unconditionally.
     val sink = dev.dmigrate.mcp.registry.ArtifactSink(
         artifactStore,
@@ -202,7 +202,7 @@ class SchemaValidateHandlerTest : FunSpec({
         }
     }
 
-    test("AP 6.17: validator-produced message + path are scrubbed of Bearer tokens") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: validator-produced message + path are scrubbed of Bearer tokens") {
         // A schema whose object names contain a bearer-token literal
         // must not leak the literal via finding paths. Validator
         // rules use the object name in `path` and `message`, so
@@ -234,7 +234,7 @@ class SchemaValidateHandlerTest : FunSpec({
         content.mimeType shouldBe "application/json"
     }
 
-    test("AP 6.19: truncated findings spill to an artefact and the inline payload carries the artifactRef") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: truncated findings spill to an artefact and the inline payload carries the artifactRef") {
         // 10 empty-column tables produce 10 E001 errors; cap=3 trips
         // the truncation path. The wired ArtifactSink must persist
         // the FULL findings list while the inline payload stays
@@ -275,9 +275,9 @@ class SchemaValidateHandlerTest : FunSpec({
         storedJson.size() shouldBeGreaterThan 3
     }
 
-    // AP 6.23 retired the "no sink wired" path: SchemaValidateHandler's
+    // LF-012 / LN-027 / LN-028 / LN-038 retired the "no sink wired" path: SchemaValidateHandler's
     // ArtifactSink is now non-null, and the schema's `truncated → artifactRef`
     // if/then makes the truncate-only fallback structurally invalid.
     // The artifactRef-on-truncate behaviour is exercised in
-    // "AP 6.19: when findings exceed maxInline, persist them as an artefact".
+    // "LF-012 / LN-027 / LN-028 / LN-038: when findings exceed maxInline, persist them as an artefact".
 })

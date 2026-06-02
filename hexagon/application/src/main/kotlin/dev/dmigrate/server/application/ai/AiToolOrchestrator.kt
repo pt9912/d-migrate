@@ -7,10 +7,10 @@ import dev.dmigrate.server.ports.AiToolOutcomeStore
 import java.time.Duration
 
 /**
- * Phase G § 6 G.6 (G.6.c) — zentraler Single-Writer-Wrapper für
+ * LF-017 / LF-024 / LN-030 / LN-031— zentraler Single-Writer-Wrapper für
  * synchrone KI-nahe Tool-Aufrufe.
  *
- * Pflicht-Verträge aus Plan §6 G.6 (Z. 1080-1091), die hier
+ * Pflicht-Verträge aus LF-017 / LF-024 / LN-030 / LN-031 (Z. 1080-1091), die hier
  * eingelöst werden:
  *
  * - bestehende `AiToolOutcomeStore`-Outcomes (Succeeded /
@@ -32,7 +32,7 @@ import java.time.Duration
  *   Replay läuft beim nächsten Acquire).
  *
  * Was der Orchestrator NICHT macht (das bleibt bei den Tool-
- * Handlern in G.6.d/e/f):
+ * Handlern in LF-017 / LF-024 / LN-030 / LN-031/f):
  *
  * - Policy-Decision, Quota-Reservation, Hygiene-Prüfung,
  *   Provider-Aufruf, Output-Hygiene, Artefakt-Publish — alles
@@ -43,7 +43,7 @@ import java.time.Duration
  *   übersetzt [AiToolDispatchOutcome] in seinen Tool-Envelope.
  *
  * @param outcomeStore durable Outcome-Store mit
- *   Single-Writer-Lease (G.6.a).
+ *   Single-Writer-Lease (LF-017 / LF-024 / LN-030 / LN-031).
  * @param leaseDuration TTL für die Pending-Lease. Wird beim
  *   Acquire mitgegeben; Tests pinnen einen kleinen Wert, um
  *   Reclaim-Pfade zu treffen.
@@ -169,7 +169,7 @@ class AiToolOrchestrator(
                 reasons = result.reasons,
             )
         }
-        // Plan §6 G.6: ein `commit==false` (Lease wurde an einen
+        // LF-017 / LF-024 / LN-030 / LN-031: ein `commit==false` (Lease wurde an einen
         // anderen Reclaimer abgegeben) ist KEIN Fehler im
         // Wire-Pfad — der Caller bekommt sein Ergebnis weiter,
         // und der nächste Acquire findet die durable Version

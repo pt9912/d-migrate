@@ -69,8 +69,8 @@ class CancellationTokenTest : FunSpec({
         error.cause shouldBe rootCause
     }
 
-    test("OperationCancelledException defaults source to JOB_CANCEL (Plan §7.7)") {
-        // Phase E.7 (2/6): backward-compat default — Phase-E0-Caller, die
+    test("OperationCancelledException defaults source to JOB_CANCEL (LF-012 / LN-011 / LN-017 / LN-027)") {
+        // LF-012 / LN-011 / LN-017 / LN-027: backward-compat default — legacy cancel callers, die
         // den source-Parameter nicht setzen, landen auf der Cancel-Seite
         // (nicht auf RUNNER_TIMEOUT/Failed).
         OperationCancelledException("user-cancel").source shouldBe

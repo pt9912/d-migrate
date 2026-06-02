@@ -22,7 +22,7 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.5 (2/3) checkpoint guard for [TransferExecutor]. Plan §6.4
+ * LF-012 / LN-011 / LN-017 / LN-027 checkpoint guard for [TransferExecutor]. LF-010 / LF-013 / LN-009 / LN-011
  * acceptance: cancel before reader.streamTable, before writer.openTable,
  * between chunks, before write/commit, before finishTable, between
  * tables, before onTableTransferred — each must halt the next side

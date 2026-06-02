@@ -1,9 +1,9 @@
 package dev.dmigrate.core.model
 
 /**
- * Canonical value type for `geometry_type` in Spatial Phase 1.
+ * Canonical value type for `geometry_type` in LF-004.
  *
- * Design decisions (ImpPlan-0.5.5-B §4.1):
+ * Design decisions (LF-004):
  * - Known values are centrally defined via [KNOWN_VALUES] in lowercase
  * - [schemaName] is always stored in lowercase for case-insensitive matching
  * - Unknown values are preserved losslessly so that [SchemaValidator]
@@ -30,7 +30,7 @@ data class GeometryType(val schemaName: String) {
 
         /**
          * Factory that normalizes the input to lowercase. Used by the YAML
-         * codec (Phase C) to ensure case-insensitive matching against
+         * codec (LF-005 / LN-021) to ensure case-insensitive matching against
          * [KNOWN_VALUES]. Blank or null input defaults to [GEOMETRY].
          */
         fun of(name: String?): GeometryType =

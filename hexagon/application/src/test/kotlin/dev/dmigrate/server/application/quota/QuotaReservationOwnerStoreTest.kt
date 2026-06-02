@@ -1,7 +1,7 @@
 package dev.dmigrate.server.application.quota
 
 /**
- * Phase-E InMemoryQuotaReservationOwnerStore Contract-Test.
+ * LF-012 / LN-011 / LN-017 / LN-027 InMemoryQuotaReservationOwnerStore Contract-Test.
  *
  * Die gesamte Atomicity-/Lifecycle-Suite lebt in
  * [QuotaReservationOwnerStoreContractTests] und wird hier mit der
@@ -9,7 +9,7 @@ package dev.dmigrate.server.application.quota
  * JDBC) muessen denselben Contract durchlaufen — siehe
  * `spec/phase-e-port-atomicity.md` Abschnitt (5).
  *
- * Migration-Hinweis: bis zur Phase-E-Review-Bereinigung lebten die
+ * Migration-Hinweis: bis zur LF-012 / LN-011 / LN-017 / LN-027 Review-Bereinigung lebten die
  * Tests als FunSpec direkt in dieser Datei. Sie wurden nach
  * QuotaReservationOwnerStoreContractTests verschoben + um
  * Atomicity-Tests (parallele markX-/register-CAS) erweitert. Diese

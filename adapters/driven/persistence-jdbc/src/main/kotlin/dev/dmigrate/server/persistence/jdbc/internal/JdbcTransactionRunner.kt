@@ -13,11 +13,11 @@ import javax.sql.DataSource
  *
  * Nicht als Hexagon-Port exponiert — Cross-Port-Atomicity laeuft ueber
  * `JobStartTransaction` und die contract-test-gesicherten Adapter-Methoden,
- * die intern `inTransaction` nutzen. Plan-Ref: ImpPlan-0.9.6-E2.md § 3.5.
+ * die intern `inTransaction` nutzen. LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Sichtbarkeit: `public class` innerhalb des Adapter-Moduls
- * (Carve-out gegenueber Plan-§-3.5-Wortlaut „internal/package-private").
- * Begruendung: AP E2.6 (`JdbcJobStartTransaction`) komponiert den
+ * (Carve-out gegenueber LF-012 / LN-011 / LN-017 / LN-027-Wortlaut „internal/package-private").
+ * Begruendung: AP LF-012 / LN-011 / LN-017 / LN-027 (`JdbcJobStartTransaction`) komponiert den
  * Runner mit `JdbcIdempotencyStore` und `JdbcJobStore` ueber Modul-
  * grenzen (Bootstrap in `adapters:driving:mcp`); reine Modul-internal-
  * Sichtbarkeit wuerde den Aufbau eines `JobExecutorBundle`-Aequivalents

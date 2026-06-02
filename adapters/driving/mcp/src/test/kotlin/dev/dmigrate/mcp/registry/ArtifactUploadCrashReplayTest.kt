@@ -33,7 +33,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * AP 6.22 C7: crash, reclaim and replay scenarios on top of the
+ * LF-012 / LN-027 / LN-028 / LN-038 C7: crash, reclaim and replay scenarios on top of the
  * single-writer FINALIZING claim. These exercise paths that the
  * regular handler tests cannot easily reach without pre-staging a
  * session in `FINALIZING` with a hand-crafted lease.
@@ -195,7 +195,7 @@ class ArtifactUploadCrashReplayTest : FunSpec({
     }
 
     test("Reclaim during finaliser dispatch surfaces IdempotencyConflict on commitFinalization") {
-        // Race guard for the AP-6.22 review #3 + #B: while the
+        // Race guard for the LF-012 / LN-027 / LN-028 / LN-038 review #3 + #B: while the
         // original owner is inside finalizer.complete(), a second
         // caller reclaims the lease. The original owner's atomic
         // commitFinalization() (SUCCEEDED outcome + schemaRef +

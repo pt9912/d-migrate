@@ -10,18 +10,7 @@ import com.github.ajalt.clikt.parameters.options.required
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.format.SchemaFileResolver
-import dev.dmigrate.integration.DjangoMigrationExporter
-import dev.dmigrate.integration.FlywayMigrationExporter
-import dev.dmigrate.integration.KnexMigrationExporter
-import dev.dmigrate.integration.LiquibaseMigrationExporter
 import dev.dmigrate.migration.MigrationTool
-import java.nio.file.Files
-import java.nio.file.Path
-import kotlin.io.path.isDirectory
-import kotlin.io.path.isRegularFile
-import kotlin.io.path.relativeTo
 
 /**
  * `d-migrate export` — group command for tool-specific migration export.
@@ -41,67 +30,15 @@ class ExportCommand : CliktCommand(name = "export") {
     override fun run() = Unit
 }
 
-// ── Shared base for export subcommands ──────────────────────────
-
 private fun CliktCommand.resolveCliContext(): CliContext {
     // export → d-migrate (3 levels: tool → export → d-migrate)
     val root = currentContext.parent?.parent?.parent?.command as? DMigrate
     return root?.cliContext() ?: CliContext()
 }
 
-private data class ExportParams(
-    val tool: MigrationTool,
-    val source: Path,
-    val output: Path,
-    val target: String,
-    val version: String?,
-    val spatialProfile: String?,
-    val generateRollback: Boolean,
-    val report: Path?,
-)
-
-private fun CliktCommand.executeExport(params: ExportParams) {
-    val ctx = resolveCliContext()
-    val request = ToolExportRequest(
-        tool = params.tool,
-        source = params.source,
-        output = params.output,
-        target = params.target,
-        version = params.version,
-        spatialProfile = params.spatialProfile,
-        generateRollback = params.generateRollback,
-        report = params.report,
-        verbose = ctx.verbose,
-        quiet = ctx.quiet,
-    )
-    val runner = ToolExportRunner(
-        schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
-        generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-        exporterLookup = { migrationTool ->
-            when (migrationTool) {
-                MigrationTool.FLYWAY -> FlywayMigrationExporter()
-                MigrationTool.LIQUIBASE -> LiquibaseMigrationExporter()
-                MigrationTool.DJANGO -> DjangoMigrationExporter()
-                MigrationTool.KNEX -> KnexMigrationExporter()
-            }
-        },
-        existingPaths = { dir -> collectExistingPaths(dir) },
-    )
-    val exitCode = runner.execute(request)
+private fun CliktCommand.runToolExport(options: ToolExportOptions) {
+    val exitCode = ToolExportWiring.execute(options)
     if (exitCode != 0) throw ProgramResult(exitCode)
-}
-
-/**
- * Recursively collects relative paths of all regular files under [dir].
- */
-private fun collectExistingPaths(dir: Path): Set<String> {
-    if (!dir.isDirectory()) return emptySet()
-    return Files.walk(dir).use { stream ->
-        stream
-            .filter { it.isRegularFile() }
-            .map { it.relativeTo(dir).toString().replace('\\', '/') }
-            .collect(java.util.stream.Collectors.toSet())
-    }
 }
 
 // ── Flyway ──────────────────────────────────────────────────────
@@ -123,8 +60,19 @@ class ExportFlywayCommand : CliktCommand(name = "flyway") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(ExportParams(
-        MigrationTool.FLYWAY, source, output, target, version, spatialProfile, generateRollback, report))
+    override fun run() = runToolExport(
+        ToolExportOptions(
+            tool = MigrationTool.FLYWAY,
+            source = source,
+            output = output,
+            target = target,
+            version = version,
+            spatialProfile = spatialProfile,
+            generateRollback = generateRollback,
+            report = report,
+            cliContext = resolveCliContext(),
+        )
+    )
 }
 
 // ── Liquibase ───────────────────────────────────────────────────
@@ -146,8 +94,19 @@ class ExportLiquibaseCommand : CliktCommand(name = "liquibase") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(ExportParams(
-        MigrationTool.LIQUIBASE, source, output, target, version, spatialProfile, generateRollback, report))
+    override fun run() = runToolExport(
+        ToolExportOptions(
+            tool = MigrationTool.LIQUIBASE,
+            source = source,
+            output = output,
+            target = target,
+            version = version,
+            spatialProfile = spatialProfile,
+            generateRollback = generateRollback,
+            report = report,
+            cliContext = resolveCliContext(),
+        )
+    )
 }
 
 // ── Django ───────────────────────────────────────────────────────
@@ -170,8 +129,19 @@ class ExportDjangoCommand : CliktCommand(name = "django") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(ExportParams(
-        MigrationTool.DJANGO, source, output, target, version, spatialProfile, generateRollback, report))
+    override fun run() = runToolExport(
+        ToolExportOptions(
+            tool = MigrationTool.DJANGO,
+            source = source,
+            output = output,
+            target = target,
+            version = version,
+            spatialProfile = spatialProfile,
+            generateRollback = generateRollback,
+            report = report,
+            cliContext = resolveCliContext(),
+        )
+    )
 }
 
 // ── Knex ─────────────────────────────────────────────────────────
@@ -194,6 +164,17 @@ class ExportKnexCommand : CliktCommand(name = "knex") {
         .flag()
     val report by option("--report", help = "Report file path (YAML)").path()
 
-    override fun run() = executeExport(ExportParams(
-        MigrationTool.KNEX, source, output, target, version, spatialProfile, generateRollback, report))
+    override fun run() = runToolExport(
+        ToolExportOptions(
+            tool = MigrationTool.KNEX,
+            source = source,
+            output = output,
+            target = target,
+            version = version,
+            spatialProfile = spatialProfile,
+            generateRollback = generateRollback,
+            report = report,
+            cliContext = resolveCliContext(),
+        )
+    )
 }

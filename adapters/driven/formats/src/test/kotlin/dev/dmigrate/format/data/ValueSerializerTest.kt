@@ -22,7 +22,7 @@ import java.sql.Time as SqlTime
 
 /**
  * Verifiziert die §6.4.1 Java-Klasse → SerializedValue Mapping-Tabelle aus
- * dem docs/archive/implementation-plan-0.3.0.md zeilenweise.
+ * dem LF-009 / LF-013 zeilenweise.
  */
 class ValueSerializerTest : FunSpec({
 
@@ -102,10 +102,10 @@ class ValueSerializerTest : FunSpec({
         serializer.serialize("t", "c", odt) shouldBe SerializedValue.Text("2024-01-15T14:30:00+02:00")
     }
 
-    // 0.8.0 Phase E (docs/ImpPlan-0.8.0-E.md §4.2 / §8 R3):
+    // LF-006 / LN-022 / LN-023:
     // ZonedDateTime wird offsetbasiert serialisiert; die ZoneId ist in 0.8.0
     // nicht Teil des garantierten Vertrags — der Offset bleibt aber erhalten.
-    test("ZonedDateTime → ISO 8601 mit Offset, ZoneId-Region entfaellt (Phase E §4.2)") {
+    test("ZonedDateTime → ISO 8601 mit Offset, ZoneId-Region entfaellt") {
         val zdt = ZonedDateTime.of(
             LocalDateTime.of(2024, 1, 15, 14, 30, 0),
             ZoneId.of("Europe/Berlin"),
@@ -114,7 +114,7 @@ class ValueSerializerTest : FunSpec({
             SerializedValue.Text("2024-01-15T14:30:00+01:00")
     }
 
-    test("LocalDateTime bleibt ohne Offset (Phase E §4.3)") {
+    test("LocalDateTime bleibt ohne Offset (LF-006 / LN-022 / LN-023)") {
         val ldt = LocalDateTime.of(2024, 1, 15, 14, 30, 0)
         val result = serializer.serialize("t", "c", ldt) as SerializedValue.Text
         // Keine stille Zonierung zu UTC oder JVM-Lokalzeit.

@@ -4,14 +4,14 @@ import dev.dmigrate.mcp.protocol.PromptContent
 import dev.dmigrate.mcp.protocol.PromptMessage
 
 /**
- * Phase G § 5.7 (G.7) — Pflichtprompt `procedure_transformation`.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Pflichtprompt `procedure_transformation`.
  *
- * Plan §5.7 Z. 863:
+ * LF-017 / LF-024 / LN-030 / LN-031 Z. 863:
  * > Procedure-Transformation mit explizitem Policy-Hinweis
  * > Mindestargumente: planRef oder planArtifactId bzw. artifactRef
  * >   nur mit wireArtifactKind=procedure-transform-plan, targetDialect
  *
- * Plan §5.5 Z. 794-799: Execute-Pfad nimmt KEINE eigenen Source-Refs;
+ * LF-012 / LN-011 / LN-017 / LN-027 Z. 794-799: Execute-Pfad nimmt KEINE eigenen Source-Refs;
  * der Prompt referenziert nur den Plan.
  */
 internal object ProcedureTransformationPrompt {
@@ -50,7 +50,7 @@ internal object ProcedureTransformationPrompt {
         ),
         expectedTools = listOf("procedure_transform_execute"),
         hygieneRules = listOf(
-            "no source-refs in the prompt — they live in the plan provenance (Plan §5.5)",
+            "no source-refs in the prompt — they live in the plan provenance (LF-012 / LN-011 / LN-017 / LN-027)",
             "no inline plan content",
             "no executable target code",
         ),
@@ -71,7 +71,7 @@ internal object ProcedureTransformationPrompt {
 
         val text = buildString {
             append("Task: drive a procedure transformation against an approved plan.\n")
-            append("Plan: ").append(planLine).append('\n')
+            append("Vertrag: ").append(planLine).append('\n')
             append("Target dialect: ").append(targetDialect).append('\n')
             append("Policy reminder: this transformation requires explicit approval; the plan ")
             append("provenance dictates the source-refs — do not introduce new sources.\n")

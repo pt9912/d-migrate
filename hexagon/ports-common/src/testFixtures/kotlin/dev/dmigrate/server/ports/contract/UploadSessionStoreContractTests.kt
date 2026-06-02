@@ -449,4 +449,154 @@ abstract class UploadSessionStoreContractTests(factory: () -> UploadSessionStore
         store.findById(Fixtures.tenant("acme"), "stale")?.state shouldBe UploadSessionState.EXPIRED
         store.findById(Fixtures.tenant("acme"), "fresh")?.state shouldBe UploadSessionState.ACTIVE
     }
+
+    // ── AP 6.13: schema-staging idempotency contract ──────────────
+
+    test("findActiveSchemaStagingByChecksum returns matching ACTIVE session") {
+        val store = factory()
+        store.save(
+            Fixtures.uploadSession(
+                "u1",
+                uploadIntent = "schema_staging_readonly",
+                checksumSha256 = "deadbeef",
+                sizeBytes = 1024,
+            ),
+        )
+        val match = store.findActiveSchemaStagingByChecksum(
+            tenantId = Fixtures.tenant("acme"),
+            ownerPrincipalId = Fixtures.principal("alice"),
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        match.shouldNotBeNull()
+        match.uploadSessionId shouldBe "u1"
+    }
+
+    test("findActiveSchemaStagingByChecksum returns null for non-staging intent") {
+        val store = factory()
+        store.save(
+            Fixtures.uploadSession(
+                "u1",
+                uploadIntent = "schema_staging",  // not "_readonly"
+                checksumSha256 = "deadbeef",
+                sizeBytes = 1024,
+            ),
+        )
+        store.findActiveSchemaStagingByChecksum(
+            tenantId = Fixtures.tenant("acme"),
+            ownerPrincipalId = Fixtures.principal("alice"),
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        ) shouldBe null
+    }
+
+    test("findActiveSchemaStagingByChecksum returns null for non-ACTIVE state") {
+        val store = factory()
+        store.save(
+            Fixtures.uploadSession(
+                "u1",
+                uploadIntent = "schema_staging_readonly",
+                state = UploadSessionState.COMPLETED,
+                checksumSha256 = "deadbeef",
+                sizeBytes = 1024,
+            ),
+        )
+        store.findActiveSchemaStagingByChecksum(
+            tenantId = Fixtures.tenant("acme"),
+            ownerPrincipalId = Fixtures.principal("alice"),
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        ) shouldBe null
+    }
+
+    test("findActiveSchemaStagingByChecksum returns null across tenants") {
+        val store = factory()
+        store.save(
+            Fixtures.uploadSession(
+                "u1",
+                tenant = "acme",
+                uploadIntent = "schema_staging_readonly",
+                checksumSha256 = "deadbeef",
+                sizeBytes = 1024,
+            ),
+        )
+        store.findActiveSchemaStagingByChecksum(
+            tenantId = Fixtures.tenant("globex"),
+            ownerPrincipalId = Fixtures.principal("alice"),
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        ) shouldBe null
+    }
+
+    test("findActiveSchemaStagingByChecksum returns null across principals") {
+        val store = factory()
+        store.save(
+            Fixtures.uploadSession(
+                "u1",
+                owner = "alice",
+                uploadIntent = "schema_staging_readonly",
+                checksumSha256 = "deadbeef",
+                sizeBytes = 1024,
+            ),
+        )
+        store.findActiveSchemaStagingByChecksum(
+            tenantId = Fixtures.tenant("acme"),
+            ownerPrincipalId = Fixtures.principal("bob"),
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        ) shouldBe null
+    }
+
+    test("saveOrFindActiveSchemaStaging persists when no match exists") {
+        val store = factory()
+        val candidate = Fixtures.uploadSession(
+            "u1",
+            uploadIntent = "schema_staging_readonly",
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        val saved = store.saveOrFindActiveSchemaStaging(candidate)
+        saved.uploadSessionId shouldBe "u1"
+        store.findById(Fixtures.tenant("acme"), "u1") shouldBe candidate
+    }
+
+    test("saveOrFindActiveSchemaStaging returns existing session on tuple collision") {
+        val store = factory()
+        val first = Fixtures.uploadSession(
+            "u1",
+            uploadIntent = "schema_staging_readonly",
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        store.saveOrFindActiveSchemaStaging(first)
+        val second = Fixtures.uploadSession(
+            "u2",  // different sessionId, same tuple
+            uploadIntent = "schema_staging_readonly",
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        val resolved = store.saveOrFindActiveSchemaStaging(second)
+        resolved.uploadSessionId shouldBe "u1"
+        // u2 is NOT persisted on collision.
+        store.findById(Fixtures.tenant("acme"), "u2") shouldBe null
+    }
+
+    test("saveOrFindActiveSchemaStaging persists fresh session for non-staging intent (no idempotency)") {
+        val store = factory()
+        val first = Fixtures.uploadSession(
+            "u1",
+            uploadIntent = "schema_staging",  // not "_readonly"
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        store.save(first)
+        val second = Fixtures.uploadSession(
+            "u2",
+            uploadIntent = "schema_staging",
+            checksumSha256 = "deadbeef",
+            sizeBytes = 1024,
+        )
+        val saved = store.saveOrFindActiveSchemaStaging(second)
+        saved.uploadSessionId shouldBe "u2"
+    }
 })

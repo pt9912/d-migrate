@@ -84,7 +84,7 @@ class DdlModelTest : FunSpec({
         NoteType.entries.map { it.name } shouldBe listOf("INFO", "WARNING", "ACTION_REQUIRED")
     }
 
-    // ── DdlPhase model (0.9.2 AP 6.1) ──────────────────────────────
+    // ── LF-003 / LF-004 / LF-013: DdlPhase model ─────────────────
 
     test("DdlPhase has PRE_DATA and POST_DATA") {
         DdlPhase.entries.map { it.name } shouldBe listOf("PRE_DATA", "POST_DATA")

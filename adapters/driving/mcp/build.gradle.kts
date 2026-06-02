@@ -1,5 +1,5 @@
-// adapters:driving:mcp — MCP-v1-Server-Adapter (docs/ImpPlan-0.9.6-B.md §12).
-// Deps werden pro AP dazugenommen, sobald sie tatsaechlich benutzt werden.
+// adapters:driving:mcp — MCP-v1-Server-Adapter (LF-012 / LN-038).
+// Deps werden nach Bedarf dazugenommen, sobald sie tatsaechlich benutzt werden.
 dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:application"))
@@ -11,11 +11,11 @@ dependencies {
     // muessen auf dem Runtime-Classpath liegen, damit ServiceLoader
     // (RuntimeBootstrap.initialize) sie entdeckt. Compile-Zugriff auf
     // Driver-/Codec-/Streaming-APIs gibt es ueber transitive Reads
-    // (formats fuer SchemaFileResolver, streaming wenn Tool-Handler in
-    // Phase C/D Ports brauchen).
+    // (formats fuer SchemaFileResolver, streaming fuer Schema-/Data-Ports).
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:driver-common"))
+    implementation(project(":adapters:driven:text-icu"))
     runtimeOnly(project(":adapters:driven:driver-postgresql"))
     implementation(project(":adapters:driven:driver-postgresql-profiling"))
     runtimeOnly(project(":adapters:driven:driver-mysql"))

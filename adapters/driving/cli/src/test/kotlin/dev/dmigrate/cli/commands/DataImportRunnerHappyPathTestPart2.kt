@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -19,6 +17,7 @@ import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.FailedFinishInfo
 import dev.dmigrate.driver.data.TriggerMode
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -131,16 +130,18 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedTargetResolver(target: String?, configPath: Path?): String {
-        if (target != null) {
-            val resolver = NamedConnectionResolver(
-                configPathFromCli = configPath,
-                envLookup = { null },
-                defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-            )
-            return resolver.resolve(target)
-        }
-        throw ConfigResolveException("--target was not provided and no default_target configured.")
+    fun isolatedTargetResolver(target: String?, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+
+
+        require(target != null) { "--target was not provided and no default_target configured." }
+
+
+        if ("://" in target) return target
+
+
+        throw IllegalArgumentException("Connection name '$target' not resolvable in test context")
+
+
     }
 
     class StderrCapture {
@@ -237,7 +238,7 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
                 targetResolverInvoked = true
                 "sqlite:///tmp/should-not-be-used.db"
             },
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
             importExecutor = ImportExecutor { _, _, _, _ ->
                 executorInvoked = true
                 error("importExecutor must not be called when schema preflight fails")
@@ -423,7 +424,7 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
             importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                 seenInput = ctx.input
                 successExecutor.execute(
@@ -473,8 +474,8 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
-            schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
+            schemaTargetValidator = DataImportSchemaPreflight(YamlSchemaCodec())::validateTargetTable,
             importExecutor = ImportExecutor { ctx, _, _, callbacks ->
                 val tableName = when (val input = ctx.input) {
                     is ImportInput.Stdin -> input.table

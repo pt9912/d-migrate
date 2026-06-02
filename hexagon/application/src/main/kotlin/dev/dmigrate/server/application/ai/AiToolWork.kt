@@ -6,24 +6,24 @@ import dev.dmigrate.server.core.error.ToolErrorCode
 import dev.dmigrate.server.core.error.ToolErrorDetail
 
 /**
- * Phase G § 6 G.6 (G.6.c) — Tool-spezifischer Pipeline-Schritt,
+ * LF-017 / LF-024 / LN-030 / LN-031— Tool-spezifischer Pipeline-Schritt,
  * den der [AiToolOrchestrator] **nach** dem
  * Single-Writer-Acquire ausführt.
  *
  * Innerhalb von [perform] führt der Tool-Handler die Plan-
- * §-6-G.6-Pipeline-Schritte aus, die NICHT zur Idempotenz-
+ * §-6-LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Schritte aus, die NICHT zur Idempotenz-
  * Schicht gehören:
  *
  * 1. Scope-Check `dmigrate:ai:execute` (sollte schon im
  *    Wire-Dispatch passiert sein, aber belt-and-braces).
  * 2. Semantische Resource-/Artifact-/Connection-Resolution
- *    (Plan §6 G.6 Z. 1014: "erst nach Scope, Idempotency-/
+ *    (LF-017 / LF-024 / LN-030 / LN-031: "erst nach Scope, Idempotency-/
  *    Outcome-Replay und Policy").
  * 3. Policy-Decision.
  * 4. Quota-Reservation.
  * 5. [dev.dmigrate.server.application.audit.prompt.PromptHygieneService.sanitize].
  * 6. [AiProviderRegistry.resolve] + [AiProviderPort.invoke].
- * 7. Output-Hygiene über das Provider-Resultat (Plan §7.4).
+ * 7. Output-Hygiene über das Provider-Resultat (LF-017 / LF-024 / LN-030 / LN-031).
  * 8. Artefakt-Publish (`ArtifactStore.save` +
  *    `ArtifactContentStore.write` +
  *    [dev.dmigrate.server.ports.AiArtifactMetadataStore.save]).
@@ -45,7 +45,7 @@ fun interface AiToolWork {
 }
 
 /**
- * Phase G § 6 G.6 (G.6.c) — Ergebnis der tool-spezifischen
+ * LF-017 / LF-024 / LN-030 / LN-031— Ergebnis der tool-spezifischen
  * Pipeline. Wird vom Orchestrator in einen
  * [dev.dmigrate.server.core.ai.AiToolOutcome] verpackt und
  * committet.

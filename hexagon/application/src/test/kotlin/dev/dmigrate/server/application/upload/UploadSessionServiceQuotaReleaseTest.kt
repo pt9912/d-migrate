@@ -14,7 +14,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
 /**
- * Phase F § 8.6 (F.6 1/3) — pin't das Quota-Release-Verhalten des
+ * LF-010 / LF-013 / LN-009 / LN-011— pin't das Quota-Release-Verhalten des
  * `UploadSessionService.expireDue`-Pfads:
  *
  * - Mit gewireten [QuotaService]: TTL-/Idle-Expiry gibt die
@@ -64,7 +64,7 @@ class UploadSessionServiceQuotaReleaseTest : FunSpec({
         val expired = service.expireDue(Fixtures.NOW)
         expired.size shouldBe 1
 
-        // Plan § 8.6: Init-Quotas sind nach Expiry-Sweep wieder bei 0.
+        // LF-010 / LF-013 / LN-009 / LN-011: Init-Quotas sind nach Expiry-Sweep wieder bei 0.
         quotaStore.current(sessionsKey) shouldBe 0L
         quotaStore.current(bytesKey) shouldBe 0L
     }

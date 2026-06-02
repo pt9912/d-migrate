@@ -17,7 +17,9 @@ import dev.dmigrate.cli.config.ConfigResolveException
 import dev.dmigrate.cli.config.I18nSettingsResolver
 import dev.dmigrate.cli.config.UnsupportedLanguageException
 import dev.dmigrate.cli.i18n.ResolvedI18nSettings
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeTextService
+import dev.dmigrate.text.icu.IcuUnicodeTextService
 import dev.dmigrate.cli.commands.DataCommand
 import dev.dmigrate.cli.commands.ExportCommand
 import dev.dmigrate.cli.commands.McpCommand
@@ -83,6 +85,8 @@ class DMigrate(
         versionOption(cliVersion())
     }
 
+    private val unicodeText: UnicodeTextService = IcuUnicodeTextService()
+
     private var cachedCliContext: CliContext? = null
 
     override fun run() {
@@ -106,7 +110,7 @@ class DMigrate(
                 langFromCli = lang,
             ).resolve()
         } catch (e: UnsupportedLanguageException) {
-            // 0.9.0 Phase A §4.5: unsupported explicit --lang ist ein
+            // LF-006 / LN-022 / LN-023: unsupported explicit --lang ist ein
             // lokaler CLI-Validierungsfehler (Exit 2), kein Config-/
             // Checkpoint-Problem.
             printLocalError(e.message ?: "Unsupported --lang value", "--lang")
@@ -136,22 +140,23 @@ class DMigrate(
                 quiet = quiet,
                 noColor = noColor,
                 noProgress = noProgress,
-            )
+            ),
+            unicodeText,
         ).printError(message, source)
     }
 }
 
 /**
- * Bootstrap §6.18 / Phase E: Treiber registrieren ihre JdbcUrlBuilder,
+ * LF-003 / LF-004 / LF-008 / LF-010: Treiber registrieren ihre JdbcUrlBuilder,
  * DataReader und TableLister einmal beim Programmstart vor dem ersten
- * Command-Dispatch. Seit 0.9.6 Phase B (§6.3) delegiert die CLI auf
- * den gemeinsamen `RuntimeBootstrap`, damit MCP und CLI denselben
- * Pfad nutzen.
+ * Command-Dispatch. Die CLI delegiert auf den gemeinsamen
+ * `RuntimeBootstrap`, damit MCP und CLI denselben Pfad nutzen.
  *
- * `internal` für [Main.kt]-Tests, die die Bootstrap-Sequenz ohne
- * `exitProcess` ausführen wollen.
+ * Public, damit Cross-Module-E2E-Tests (:test:e2e-cli) die Bootstrap-
+ * Sequenz ohne `exitProcess` ausführen können — analog zum cli-internen
+ * `buildRootCommand`-Pfad. Production-Aufrufer bleiben `main`/`mainNoExit`.
  */
-internal fun registerDrivers() {
+fun registerDrivers() {
     RuntimeBootstrap.initialize()
 }
 

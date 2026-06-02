@@ -22,6 +22,8 @@ internal fun buildProcedures(
             procedureNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) procedureNode.put("source_dialect", definition.sourceDialect)
+        writeRoutineIdentityAttributes(mapper, procedureNode, definition.security, definition.definer,
+            definition.searchPath, definition.sqlMode)
         node.set<ObjectNode>(name, procedureNode)
     }
     return node
@@ -48,9 +50,30 @@ internal fun buildFunctions(
             functionNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) functionNode.put("source_dialect", definition.sourceDialect)
+        writeRoutineIdentityAttributes(mapper, functionNode, definition.security, definition.definer,
+            definition.searchPath, definition.sqlMode)
         node.set<ObjectNode>(name, functionNode)
     }
     return node
+}
+
+/**
+ * E.1 Routine-Migration Slice A: persist the new routine identity
+ * attributes only when set, so existing schema files without these
+ * keys keep their byte-for-byte shape after a roundtrip.
+ */
+private fun writeRoutineIdentityAttributes(
+    mapper: ObjectMapper,
+    target: ObjectNode,
+    security: RoutineSecurity?,
+    definer: String?,
+    searchPath: List<String>?,
+    sqlMode: String?,
+) {
+    if (security != null) target.put("security", security.name.lowercase())
+    if (definer != null) target.put("definer", definer)
+    if (searchPath != null) target.set<ArrayNode>("search_path", stringArray(mapper, searchPath))
+    if (sqlMode != null) target.put("sql_mode", sqlMode)
 }
 
 private fun buildParameters(
@@ -89,11 +112,26 @@ internal fun buildViews(
         if (definition.materialized) viewNode.put("materialized", true)
         if (definition.refresh != null) viewNode.put("refresh", definition.refresh)
         if (definition.query != null) viewNode.put("query", definition.query)
+        val columns = definition.columns
+        if (columns != null) {
+            viewNode.set<ArrayNode>("columns", buildViewColumns(mapper, columns))
+        }
         if (definition.dependencies != null) {
             viewNode.set<ObjectNode>("dependencies", buildDependencies(mapper, definition.dependencies!!))
         }
         if (definition.sourceDialect != null) viewNode.put("source_dialect", definition.sourceDialect)
         node.set<ObjectNode>(name, viewNode)
+    }
+    return node
+}
+
+private fun buildViewColumns(mapper: ObjectMapper, columns: List<ViewColumnDefinition>): ArrayNode {
+    val node = mapper.createArrayNode()
+    for (column in columns) {
+        val columnNode = mapper.createObjectNode()
+        columnNode.put("name", column.name)
+        if (column.type != null) columnNode.put("type", column.type)
+        node.add(columnNode)
     }
     return node
 }
@@ -137,6 +175,7 @@ internal fun buildSequences(
         if (definition.maxValue != null) sequenceNode.put("max_value", definition.maxValue!!)
         if (definition.cycle) sequenceNode.put("cycle", true)
         if (definition.cache != null) sequenceNode.put("cache", definition.cache!!)
+        if (definition.preserveCurrentValue) sequenceNode.put("preserve_current_value", true)
         node.set<ObjectNode>(name, sequenceNode)
     }
     return node
@@ -162,6 +201,35 @@ private fun buildDependencies(
     }
     if (dependencies.functions.isNotEmpty()) {
         node.set<ArrayNode>("functions", stringArray(mapper, dependencies.functions))
+    }
+    // E.1 Slice D.1: `sequences` is only emitted when non-empty so
+    // Slice-A/B-era schema files (which never declared the field)
+    // keep their byte-identical YAML roundtrip.
+    if (dependencies.sequences.isNotEmpty()) {
+        node.set<ArrayNode>("sequences", stringArray(mapper, dependencies.sequences))
+    }
+    // Phase G.2: only serialise `projection_complete` when it diverges
+    // from the default `true`. MySQL-introspected views with stille
+    // Unvollstaendigkeit (empty VIEW_TABLE_USAGE) get `false` written,
+    // so a downstream `schema load` + `schema diff` re-honours the
+    // planner's VIEW_DEPENDENCY_PROJECTION_INCOMPLETE block.
+    if (!dependencies.projectionComplete) {
+        node.put("projection_complete", false)
+    }
+    if (dependencies.tableProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("table_projection_status", dependencies.tableProjectionStatus.name.lowercase())
+    }
+    if (dependencies.columnProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("column_projection_status", dependencies.columnProjectionStatus.name.lowercase())
+    }
+    if (dependencies.routineProjectionStatus != DependencyProjectionStatus.COMPLETE) {
+        node.put("routine_projection_status", dependencies.routineProjectionStatus.name.lowercase())
+    }
+    if (dependencies.projectionSources.isNotEmpty()) {
+        node.set<ArrayNode>("projection_sources", stringArray(mapper, dependencies.projectionSources))
+    }
+    if (dependencies.projectionErrorClass != null) {
+        node.put("projection_error_class", dependencies.projectionErrorClass)
     }
     return node
 }

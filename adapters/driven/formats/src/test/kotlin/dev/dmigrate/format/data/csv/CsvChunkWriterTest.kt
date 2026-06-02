@@ -109,11 +109,11 @@ class CsvChunkWriterTest : FunSpec({
         bytes[2] shouldBe 0xBF.toByte()
     }
 
-    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.4 / Entscheidung D1):
+    // LF-009 / LF-013:
     // --csv-bom schreibt das BOM passend zum --encoding. Die drei UTF-BOMs
     // sind produktiv; Nicht-UTF-Encodings sind explizit No-op.
 
-    test("Phase F §4.4: --csv-bom + UTF-16 BE prefixes 0xFE 0xFF BOM bytes") {
+    test("--csv-bom + UTF-16 BE prefixes 0xFE 0xFF BOM bytes") {
         val out = ByteArrayOutputStream()
         CsvChunkWriter(
             out,
@@ -131,7 +131,7 @@ class CsvChunkWriterTest : FunSpec({
         content shouldContain "Ярослав"
     }
 
-    test("Phase F §4.4: --csv-bom + UTF-16 LE prefixes 0xFF 0xFE BOM bytes") {
+    test("LF-009 / LF-013: --csv-bom + UTF-16 LE prefixes 0xFF 0xFE BOM bytes") {
         val out = ByteArrayOutputStream()
         CsvChunkWriter(
             out,
@@ -148,7 +148,7 @@ class CsvChunkWriterTest : FunSpec({
         content shouldContain "中文测试"
     }
 
-    test("Phase F §4.4: --csv-bom + ISO-8859-1 ist No-op (kein BOM definiert)") {
+    test("LF-009 / LF-013: --csv-bom + ISO-8859-1 ist No-op (kein BOM definiert)") {
         val out = ByteArrayOutputStream()
         CsvChunkWriter(
             out,
@@ -166,7 +166,7 @@ class CsvChunkWriterTest : FunSpec({
         content shouldContain "café"
     }
 
-    test("Phase F §4.5: Unicode-Inhalte bleiben im UTF-8-Default byte- und zeichenstabil") {
+    test("LF-009 / LF-013: Unicode-Inhalte bleiben im UTF-8-Default byte- und zeichenstabil") {
         val out = ByteArrayOutputStream()
         CsvChunkWriter(out).use { w ->
             w.begin("users", cols)

@@ -5,6 +5,7 @@ include("hexagon:core")
 include("hexagon:ports-common")
 include("hexagon:ports-read")
 include("hexagon:ports-write")
+include("hexagon:ports-execute")
 include("hexagon:ports")
 include("hexagon:application")
 include("hexagon:profiling")
@@ -24,13 +25,30 @@ include("adapters:driven:integrations")
 include("adapters:driven:persistence-jdbc")
 include("adapters:driven:storage-file")
 include("adapters:driven:streaming")
+include("adapters:driven:text-icu")
 include("adapters:driving:cli")
 include("adapters:driving:mcp")
 
 // Integration test modules (Testcontainers, separated from driver unit tests)
 include("test:integration-postgresql")
 include("test:integration-mysql")
+include("test:integration-sqlite")
 include("test:integration-server-state")
+include("test:integration-integrations")
+include("test:integration-persistence-jdbc")
+include("test:e2e-cli")
 
 // Consumer integration probe (read-only surface verification)
 include("test:consumer-read-probe")
+
+// Cross-dialect regression matrix (file-mode sweep, no Testcontainers).
+// See docs/planning/done/quality-coverage-expansion-plan.md §5.2.
+include("test:cross-dialect-matrix")
+
+// Sequence-Preserve race reproducers (Testcontainers PG/MySQL + file SQLite).
+// See docs/planning/done/quality-coverage-expansion-plan.md §5.3.
+include("test:integration-concurrency")
+
+// Large-schema scale tests for the SchemaMigrateRenderPipeline.
+// See docs/planning/done/quality-coverage-expansion-plan.md §5.4.
+include("test:perf-large-schema")

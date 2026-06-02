@@ -19,7 +19,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase E §7.6 Helper-Funktionen, die alle drei Start-Tool-Handler
+ * LF-012 / LN-011 / LN-017 / LN-027 Helper-Funktionen, die alle drei Start-Tool-Handler
  * (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`)
  * teilen: JsonElement-zu-JsonValue-Konvertierung fuer den
  * PayloadFingerprint, Job-resourceUri-Render, Outcome-zu-ToolCallOutcome-
@@ -34,7 +34,7 @@ internal object JobStartHandlerSupport {
      * application-Layer-JsonValue, das [PayloadFingerprintService.fingerprint]
      * konsumiert. JSON-`null` wird zu [JsonValue.Null], Boolean/String/
      * Number-Primitives auf die jeweiligen Wrapper, Arrays/Objects
-     * rekursiv. Fractional Numbers werden auf Long gerundet — Phase-E-
+     * rekursiv. Fractional Numbers werden auf Long gerundet — LF-012 / LN-011 / LN-017 / LN-027-
      * Start-Tools nehmen keine Fliesskommazahlen entgegen, sodass die
      * Praezisionswarnung nicht relevant ist.
      */
@@ -107,7 +107,7 @@ internal object JobStartHandlerSupport {
      * Mapped die orchestrator-Antwort auf die MCP-`tools/call`-Outcome.
      *
      * - Started/AlreadyStarted -> Success-Envelope mit `{jobId,
-     *   resourceUri, executionMeta}` gemaess der E.6 (1/4)
+     *   resourceUri, executionMeta}` gemaess der LF-012 / LN-011 / LN-017 / LN-027
      *   Schema-Migration.
      * - PolicyRequired -> Error-Envelope `POLICY_REQUIRED` mit
      *   `approvalRequestId`, `correlationKey`, `requiredScopes`, `reasons`.
@@ -117,7 +117,7 @@ internal object JobStartHandlerSupport {
      * - ValidationError -> [ValidationErrorException] mit feldspezifischer
      *   Violation.
      * - Pending/Failed -> Error-Envelope `OPERATION_TIMEOUT` (defensiv;
-     *   AP E.9 verfeinert).
+     *   LF-012 / LN-011 / LN-017 / LN-027 verfeinert).
      */
     fun toToolCallOutcome(
         outcome: JobStartHandlerOutcome,
@@ -151,7 +151,7 @@ internal object JobStartHandlerSupport {
         is JobStartHandlerOutcome.ValidationError ->
             throw ValidationErrorException(toViolations(outcome.invalid))
         is JobStartHandlerOutcome.Pending ->
-            // Plan §5.2: aktive PENDING ohne gespeichertes Outcome ->
+            // LF-012 / LN-011 / LN-017 / LN-027: aktive PENDING ohne gespeichertes Outcome ->
             // OPERATION_TIMEOUT (retrybar). Das passt fuer den
             // Pending-Branch.
             ToolCallOutcome.Error(
@@ -164,7 +164,7 @@ internal object JobStartHandlerSupport {
             )
         is JobStartHandlerOutcome.Failed -> {
             // Review-Fix #6 + Re-Review B1: Failed ist ein gespeicherter
-            // Final-Failure-Replay (Plan §5.2 line 568-569), KEIN
+            // Final-Failure-Replay (LF-012 / LN-011 / LN-017 / LN-027 line 568-569), KEIN
             // Timeout. Der urspruengliche Wire-Code wird aus dem reason-
             // Praefix abgeleitet, damit der Caller dieselbe
             // Klassifikation bekommt wie beim ersten Failed-Outcome.
@@ -199,7 +199,7 @@ internal object JobStartHandlerSupport {
                 envelope = ToolErrorEnvelope(
                     code = ToolErrorCode.RATE_LIMITED,
                     message = "Rate limit exceeded",
-                    // Plan E3 § 3.5 / § 10 Q5: `reason` ist IMMER im Wire
+                    // LF-012 / LN-011 / LN-017 / LN-027: `reason` ist IMMER im Wire
                     // sichtbar — `ACTIVE_JOBS_QUOTA` fuer Tenant-Quota,
                     // `EXECUTOR_SATURATED` fuer Pool-Saturation.
                     details = listOf(

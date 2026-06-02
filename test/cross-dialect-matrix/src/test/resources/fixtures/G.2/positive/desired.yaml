@@ -1,0 +1,15 @@
+schema_format: "1.0"
+name: "matrix-G2-desired"
+version: "1.0.0"
+
+tables:
+  audits:
+    columns:
+      id:
+        type: identifier
+        auto_increment: true
+      action:
+        type: text
+        max_length: 64
+        required: true
+    primary_key: [id]

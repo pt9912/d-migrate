@@ -39,18 +39,18 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase G § 6 G.8 — Provider-Quota + Audit-Goldens.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Provider-Quota + Audit-Goldens.
  *
  * Pin't:
- * - Plan §6 G.8: Provider-Quota=0 -> RATE_LIMITED + Provider wird
+ * - LF-017 / LF-024 / LN-030 / LN-031: Provider-Quota=0 -> RATE_LIMITED + Provider wird
  *   NICHT aufgerufen (kein Provider-Client, kein Secret-Read).
- * - Plan §6 G.8: nach Quota-Verletzung kann ein nachgelagerter
+ * - LF-017 / LF-024 / LN-030 / LN-031: nach Quota-Verletzung kann ein nachgelagerter
  *   Aufruf mit Quota-Granted normal durchlaufen.
- * - Plan §6 G.8: Audit-Felder enthalten Provider-/Modell-Metadaten
+ * - LF-017 / LF-024 / LN-030 / LN-031: Audit-Felder enthalten Provider-/Modell-Metadaten
  *   im Erfolgsfall.
- * - Plan §6 G.8: Audit-Scrubbing ueber resourceRefs entfernt
+ * - LF-017 / LF-024 / LN-030 / LN-031: Audit-Scrubbing ueber resourceRefs entfernt
  *   bekannte Secret-Pattern (JDBC-Passwoerter, Bearer-Tokens).
- * - Plan §6 G.8: Hygiene-Block ist auditierbar (payloadFingerprint
+ * - LF-017 / LF-024 / LN-030 / LN-031: Hygiene-Block ist auditierbar (payloadFingerprint
  *   gesetzt, kein providerMeta in resourceRefs).
  */
 class AiToolQuotaAndAuditTest : FunSpec({
@@ -73,8 +73,8 @@ class AiToolQuotaAndAuditTest : FunSpec({
     )
 
     /**
-     * Spy-Provider, der zaehlt, wie oft er invoked wurde — Plan §6
-     * G.8 Akzeptanz: bei Quota-RATE_LIMITED muss der Counter 0
+     * Spy-Provider, der zaehlt, wie oft er invoked wurde — LF-017 / LF-024 / LN-030 / LN-031:
+     * LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: bei Quota-RATE_LIMITED muss der Counter 0
      * bleiben.
      */
     class CountingProvider : AiProviderPort {
@@ -161,7 +161,7 @@ class AiToolQuotaAndAuditTest : FunSpec({
         }
     """.trimIndent()
 
-    test("Plan §6 G.8 Akzeptanz: Provider-Quota=0 -> RATE_LIMITED, Provider-Counter 0") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Provider-Quota=0 -> RATE_LIMITED, Provider-Counter 0") {
         val spy = CountingProvider()
         val (h, _) = handler(spy, providerCallLimit = 0)
 
@@ -169,11 +169,11 @@ class AiToolQuotaAndAuditTest : FunSpec({
         val err = outcome.shouldBeInstanceOf<ToolCallOutcome.Error>()
         err.envelope.code shouldBe ToolErrorCode.RATE_LIMITED
         err.envelope.message shouldContain "provider quota exceeded"
-        // Plan §6 G.8: kein Provider-Aufruf bei Quota-Verletzung.
+        // LF-017 / LF-024 / LN-030 / LN-031: kein Provider-Aufruf bei Quota-Verletzung.
         spy.invokeCount.get() shouldBe 0
     }
 
-    test("Plan §6 G.8: Quota wird auf Erfolg released, naechster Aufruf laeuft durch") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Quota wird auf Erfolg released, naechster Aufruf laeuft durch") {
         val spy = CountingProvider()
         val (h, _) = handler(spy, providerCallLimit = 1)
         val first = h.handle(ctx(validArgs))
@@ -188,7 +188,7 @@ class AiToolQuotaAndAuditTest : FunSpec({
         spy.invokeCount.get() shouldBe 2
     }
 
-    test("Plan §6 G.8 Akzeptanz: Audit-Felder enthalten Provider-/Modell-Metadaten im Erfolgsfall") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Audit-Felder enthalten Provider-/Modell-Metadaten im Erfolgsfall") {
         val spy = CountingProvider()
         val auditFields = AuditFields()
         val (h, _) = handler(spy, providerCallLimit = Long.MAX_VALUE, auditFields = auditFields)
@@ -203,7 +203,7 @@ class AiToolQuotaAndAuditTest : FunSpec({
         refs.any { it.startsWith("providerRequestId:") } shouldBe true
     }
 
-    test("Plan §6 G.8 Akzeptanz: Audit-Scrubbing entfernt JDBC-Passwoerter aus resourceRefs") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Audit-Scrubbing entfernt JDBC-Passwoerter aus resourceRefs") {
         // SecretScrubber wird auf jede Audit-resourceRef-Eintrag im
         // AuditScope.buildEvent aufgerufen. Wir testen den Scrubber
         // direkt — der Tool-Handler legt Refs als Strings ab, der
@@ -222,12 +222,12 @@ class AiToolQuotaAndAuditTest : FunSpec({
         scrubbed[3] shouldBe "provider:noop"
     }
 
-    test("Plan §6 G.8 Akzeptanz: Hygiene-Block ist auditierbar (payloadFingerprint gesetzt)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Hygiene-Block ist auditierbar (payloadFingerprint gesetzt)") {
         val spy = CountingProvider()
         val auditFields = AuditFields()
         val (h, _) = handler(spy, providerCallLimit = Long.MAX_VALUE, auditFields = auditFields)
         // Argumente, die die Hygiene zwingen zu blocken — wir
-        // verwenden die Plan-§-6-G.4-Akzeptanz: der Prompt darf
+        // verwenden die LF-017 / LF-024 / LN-030 / LN-031-Akzeptanz: der Prompt darf
         // keine Refs ausserhalb der allowedRefs zitieren. Da der
         // Handler `procedureName` direkt im Prompt einfuegt, kann
         // ein procedureName mit api_key-Pattern den Hygiene-Block

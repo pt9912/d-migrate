@@ -1,0 +1,198 @@
+package dev.dmigrate.mcp.registry
+
+import dev.dmigrate.mcp.schema.SchemaStagingFinalizer
+import dev.dmigrate.mcp.server.McpLimitsConfig
+import dev.dmigrate.mcp.server.McpServerConfig
+import dev.dmigrate.server.application.quota.DefaultQuotaService
+import dev.dmigrate.server.ports.memory.InMemoryArtifactContentStore
+import dev.dmigrate.server.ports.memory.InMemoryArtifactStore
+import dev.dmigrate.server.ports.memory.InMemoryJobStore
+import dev.dmigrate.server.ports.memory.InMemoryQuotaStore
+import dev.dmigrate.server.ports.memory.InMemorySchemaStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSegmentStore
+import dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore
+import io.kotest.assertions.withClue
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.shouldNotBe
+import io.kotest.matchers.types.shouldBeInstanceOf
+import io.kotest.matchers.types.shouldNotBeInstanceOf
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
+
+private val FIXED_CLOCK: Clock = Clock.fixed(Instant.parse("2026-05-02T12:00:00Z"), ZoneOffset.UTC)
+
+private val RUNTIME_TOOLS: List<String> = listOf(
+    "capabilities_list",
+    "schema_validate",
+    "schema_generate",
+    "schema_compare",
+    "artifact_chunk_get",
+    "artifact_upload_init",
+    "artifact_upload",
+    "artifact_upload_abort",
+    "job_status_get",
+)
+
+private fun inMemoryWiring(
+    finalizer: SchemaStagingFinalizer? = null,
+): McpRuntimeWiring {
+    val artifactStore = InMemoryArtifactStore()
+    val artifactContentStore = InMemoryArtifactContentStore()
+    val schemaStore = InMemorySchemaStore()
+    val quotaStore = InMemoryQuotaStore()
+    return McpRuntimeWiring(
+        uploadSessionStore = InMemoryUploadSessionStore(),
+        uploadSegmentStore = InMemoryUploadSegmentStore(),
+        artifactStore = artifactStore,
+        artifactContentStore = artifactContentStore,
+        schemaStore = schemaStore,
+        jobStore = InMemoryJobStore(),
+        quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+        limits = McpLimitsConfig(),
+        clock = FIXED_CLOCK,
+        finalizer = finalizer ?: McpRuntimeWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = artifactStore,
+            artifactContentStore = artifactContentStore,
+            schemaStore = schemaStore,
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(quotaStore) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = FIXED_CLOCK,
+        ).finalizer,
+    )
+}
+
+class McpRuntimeWiringTest : FunSpec({
+
+    test("every runtime tool dispatches to a real handler (not UnsupportedToolHandler)") {
+        val registry = McpRuntimeRegistries.defaultToolRegistry(inMemoryWiring())
+        for (tool in RUNTIME_TOOLS) {
+            val handler = registry.findHandler(tool)
+            withClue("tool=$tool") {
+                handler shouldNotBe null
+                handler!!.shouldNotBeInstanceOf<UnsupportedToolHandler>()
+            }
+        }
+    }
+
+    test("contract default still keeps the unsupported-handler fallback for everything except capabilities_list") {
+        // Backwards-compat assertion: existing contract tests rely on
+        // the bare `toolRegistry()` returning UnsupportedToolHandler
+        // for every non-capabilities tool. Clients without a wiring keep the
+        // contract.
+        val contractRegistry = McpRuntimeRegistries.toolRegistry()
+        contractRegistry.findHandler("capabilities_list")!!
+            .shouldNotBeInstanceOf<UnsupportedToolHandler>()
+        for (tool in RUNTIME_TOOLS - "capabilities_list") {
+            withClue("tool=$tool") {
+                contractRegistry.findHandler(tool)!!.shouldBeInstanceOf<UnsupportedToolHandler>()
+            }
+        }
+    }
+
+    test("defaultToolRegistry honours a custom scopeMapping subset") {
+        // The wiring registers handlers via the underlying
+        // McpContractRegistries scope universe — a scope mapping that
+        // omits some runtime tools must still produce a working
+        // registry that contains exactly the supplied tools.
+        val custom = mapOf(
+            "capabilities_list" to setOf("dmigrate:read"),
+            "schema_validate" to setOf("dmigrate:read"),
+        )
+        val registry = McpRuntimeRegistries.defaultToolRegistry(
+            wiring = inMemoryWiring(),
+            scopeMapping = custom,
+        )
+        registry.findHandler("schema_validate")!!
+            .shouldNotBeInstanceOf<UnsupportedToolHandler>()
+        registry.find("schema_generate") shouldBe null
+        registry.find("artifact_upload_init") shouldBe null
+    }
+
+    test("LF-012 / LN-027 / LN-028 / LN-038: defaultToolRegistry threads the AssembledUploadPayloadFactory into ArtifactUploadHandler") {
+        // Regression guard for the LF-012 / LN-027 / LN-028 / LN-038 review: it is not enough
+        // for `McpRuntimeWiring.assembledUploadPayloadFactory` to hold the
+        // file-spool variant — the field must also reach the actual
+        // `ArtifactUploadHandler` constructed by `McpRuntimeRegistries`.
+        // A pin on the wiring DTO alone is a false-positive guard.
+        val customFactory = dev.dmigrate.server.core.upload.AssembledUploadPayloadFactory.inMemory()
+        val wiring = inMemoryWiring().copy(assembledUploadPayloadFactory = customFactory)
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
+        val handler = registry.findHandler("artifact_upload") as ArtifactUploadHandler
+        handler.payloadFactory shouldBe customFactory
+    }
+
+    test("LF-012 / LN-038 review: cursorKeyring default is the deterministic dev keyring (NOT a fresh random)") {
+        // A random per-process default makes integration tests
+        // and dev workflows non-reproducible — a cursor minted
+        // by one McpRuntimeWiring instance can't be verified by
+        // another. Pin that the default is the explicit
+        // dev keyring so the value is observable and stable.
+        val a = McpRuntimeWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = FIXED_CLOCK,
+        )
+        val b = McpRuntimeWiring(
+            uploadSessionStore = InMemoryUploadSessionStore(),
+            uploadSegmentStore = InMemoryUploadSegmentStore(),
+            artifactStore = InMemoryArtifactStore(),
+            artifactContentStore = InMemoryArtifactContentStore(),
+            schemaStore = InMemorySchemaStore(),
+            jobStore = InMemoryJobStore(),
+            quotaService = DefaultQuotaService(InMemoryQuotaStore()) { Long.MAX_VALUE },
+            limits = McpLimitsConfig(),
+            clock = FIXED_CLOCK,
+        )
+        a.cursorKeyring shouldBe b.cursorKeyring
+        a.cursorKeyring shouldBe McpRuntimeWiring.DEV_DEFAULT
+        a.cursorKeyring.signing.kid shouldBe "dev-default"
+    }
+
+    test("LF-012 / LN-038: randomCursorKeyring() opt-in produces unique key material per call") {
+        // Single-instance production deployments without a
+        // wired keyring file use this factory explicitly. Pin
+        // that two calls produce different `kid`s + secrets
+        // — proves the helper is actually random and not the
+        // shared dev default.
+        val a = McpRuntimeWiring.randomCursorKeyring()
+        val b = McpRuntimeWiring.randomCursorKeyring()
+        a.signing.kid shouldNotBe b.signing.kid
+    }
+
+    test("a custom finalizer in the wiring is honoured by the artifact_upload handler") {
+        // Defensive: the wiring exposes `finalizer` as a seam so
+        // tests / future deployments can swap in a different
+        // staging strategy. The default-registry must thread it
+        // through to ArtifactUploadHandler.
+        val recorded = mutableListOf<String>()
+        val stub = SchemaStagingFinalizer { session, _, _, _, _, _ ->
+            recorded += "complete=${session.uploadSessionId}"
+            dev.dmigrate.server.core.resource.ServerResourceUri(
+                session.tenantId,
+                dev.dmigrate.server.core.resource.ResourceKind.SCHEMAS,
+                "schema-stub",
+            )
+        }
+        val wiring = inMemoryWiring(finalizer = stub)
+        // Smoke-test only: the registry must still construct
+        // without errors when a custom finalizer is supplied.
+        val registry = McpRuntimeRegistries.defaultToolRegistry(wiring)
+        registry.findHandler("artifact_upload")!!
+            .shouldNotBeInstanceOf<UnsupportedToolHandler>()
+        // The recorder is only invoked when an upload completes —
+        // this assertion just pins that no eager invocation
+        // happens at registry-build time.
+        recorded shouldBe emptyList<String>()
+    }
+})

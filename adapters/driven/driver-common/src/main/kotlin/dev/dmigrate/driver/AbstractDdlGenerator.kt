@@ -172,7 +172,7 @@ abstract class AbstractDdlGenerator(
 
     // ── Shared logic ────────────────────────────
 
-    protected open fun getVersion(): String = "0.9.6"
+    protected open fun getVersion(): String = "0.9.7"
 
     protected fun generateHeader(schema: SchemaDefinition, options: DdlGenerationOptions): List<DdlStatement> {
         val header = buildString {
@@ -186,7 +186,7 @@ abstract class AbstractDdlGenerator(
         return listOf(DdlStatement(header))
     }
 
-    protected fun columnSql(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
+    protected open fun columnSql(tableName: String, colName: String, col: ColumnDefinition, schema: SchemaDefinition): String {
         val parts = mutableListOf<String>()
         parts += quoteIdentifier(colName)
         parts += typeMapper.toSql(col.type)

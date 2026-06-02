@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.core.artifact.ArtifactKind
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 import io.kotest.core.spec.style.FunSpec
@@ -9,12 +10,12 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldHaveLength
 
 /**
- * Phase F § 4.2 (F.3 1/4) — Pin't Determinismus, Field-Isolation und
+ * LF-010 / LF-013 / LN-009 / LN-011— Pin't Determinismus, Field-Isolation und
  * targetTable-Optionalitaet des Approval-Fingerprints.
  */
 class UploadInitApprovalFingerprintTest : FunSpec({
 
-    val service = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+    val service = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
 
     fun base() = UploadInitApprovalAttempt(
         tenantId = TenantId("acme"),
@@ -92,7 +93,7 @@ class UploadInitApprovalFingerprintTest : FunSpec({
     }
 
     test("targetTable=null vs targetTable=\"\" sind verschiedene Fingerprints") {
-        // Plan § 5.1: targetTable ist optional; ein leerer String ist
+        // LF-010 / LF-013 / LN-009 / LN-011: targetTable ist optional; ein leerer String ist
         // kein gueltiger CLI-Identifier. Trotzdem soll der Fingerprint
         // den semantischen Unterschied "Feld nicht gesetzt" vs "Feld
         // explizit leerstring" pinnen, damit Caller nicht stillschweigend

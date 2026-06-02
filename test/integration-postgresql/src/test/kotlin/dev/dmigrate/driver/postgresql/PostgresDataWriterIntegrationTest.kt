@@ -11,18 +11,15 @@ import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.OnConflict
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val WriterIntegrationTag = NamedTag("integration")
 
 class PostgresDataWriterIntegrationTest : FunSpec({
 
-    tags(WriterIntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_test")

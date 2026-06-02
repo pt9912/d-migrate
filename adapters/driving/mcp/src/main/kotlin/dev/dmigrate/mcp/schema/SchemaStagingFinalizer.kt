@@ -27,8 +27,8 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * AP 6.9 + AP 6.22: finalises a `FINALIZING` read-only schema-staging
- * session per `ImpPlan-0.9.6-C.md` §6.9 + §6.22.
+ * LF-012 / LN-027 / LN-028 / LN-038 + LF-010 / LF-013 / LN-009 / LN-011: finalises a `FINALIZING` read-only schema-staging
+ * session per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Called by `StreamingFinalizer` (the upload handler's claim-and-
  * finalise pipeline) after the streaming-assembly spool has produced
@@ -47,7 +47,7 @@ import java.time.Duration
  *    persists a sanitised [dev.dmigrate.server.core.upload.FinalizationOutcome]
  *    and rolls the session to `ABORTED`
  *
- * AP 6.22 idempotency: a replay carrying the same [artifactId] /
+ * LF-010 / LF-013 / LN-009 / LN-011 idempotency: a replay carrying the same [artifactId] /
  * [schemaId] (because the deterministic derivation produces the same
  * IDs for the same payload) is a no-op — `ArtifactContentStore.write`
  * returns `AlreadyExists` and `SchemaStore.register` returns
@@ -70,7 +70,7 @@ fun interface SchemaStagingFinalizer {
 
 /**
  * Production implementation: parses + validates with the existing
- * codecs and validator, then materialises through the Phase-A
+ * codecs and validator, then materialises through the base
  * artefact ports.
  *
  * The artefact-write path streams the payload through
@@ -83,7 +83,7 @@ fun interface SchemaStagingFinalizer {
  * complexity, not with the artefact size, and is acceptable
  * because schema payloads in this AP are bounded by
  * `maxArtifactUploadBytes` and never resemble the multi-GB
- * datasets that AP 6.22's streaming guarantee targets.
+ * datasets that LF-010 / LF-013 / LN-009 / LN-011's streaming guarantee targets.
  */
 class DefaultSchemaStagingFinalizer(
     private val artifactStore: ArtifactStore,
@@ -134,7 +134,7 @@ class DefaultSchemaStagingFinalizer(
     private fun readPayloadAsSchema(codec: SchemaCodec, payload: AssembledUploadPayload): SchemaDefinition = try {
         payload.openStream().use { codec.read(it) }
     } catch (e: IOException) {
-        // SwallowedException: same trust-boundary rule as AP 6.4 —
+        // SwallowedException: same trust-boundary rule as LF-012 / LN-027 / LN-028 / LN-038 —
         // never leak the raw codec stack across the wire.
         throw ValidationErrorException(
             listOf(ValidationViolation("schema", "failed to read schema content: ${e.message}")),
@@ -151,7 +151,7 @@ class DefaultSchemaStagingFinalizer(
         payload: AssembledUploadPayload,
         artifactId: String,
     ) {
-        // AP 6.22: idempotent — `AlreadyExists` is accepted only when
+        // LF-010 / LF-013 / LN-009 / LN-011: idempotent — `AlreadyExists` is accepted only when
         // the persisted SHA + size match the supplied payload (the
         // deterministic [artifactId] derivation guarantees the SHA
         // match, but a defensive size cross-check catches store
@@ -223,7 +223,7 @@ class DefaultSchemaStagingFinalizer(
         )
         return when (val outcome = schemaStore.register(entry)) {
             is SchemaRegisterOutcome.Registered -> outcome.entry.resourceUri
-            // AP 6.22: replay of the same deterministic schemaId with
+            // LF-010 / LF-013 / LN-009 / LN-011: replay of the same deterministic schemaId with
             // the same artefact is idempotent — return the previously
             // registered URI verbatim.
             is SchemaRegisterOutcome.AlreadyRegistered -> outcome.existing.resourceUri

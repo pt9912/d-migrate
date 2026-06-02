@@ -11,6 +11,7 @@ import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
+import dev.dmigrate.driver.PreGenerationValidator
 import dev.dmigrate.driver.SpatialProfilePolicy
 import dev.dmigrate.migration.MigrationBundle
 import dev.dmigrate.migration.MigrationRollback
@@ -53,6 +54,17 @@ class ToolExportRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
+    /**
+     * Driver-supplied pre-generation validator, symmetric to
+     * [SchemaGenerateRunner]. `tool export` does not pass any
+     * dialect-specific mode flags today, so the SQLite gate evaluates
+     * to a no-op; the hook is in place so a future mode-flag
+     * additions (e.g. `--mysql-named-sequences` on the tool-export
+     * path) cannot silently bypass the same blockers that
+     * `schema generate` enforces.
+     */
+    private val preGenerationValidatorLookup: (DatabaseDialect) -> PreGenerationValidator =
+        { PreGenerationValidator.NoOp },
     private val exporterLookup: (MigrationTool) -> ToolMigrationExporter,
     private val fileWriter: (Path, String) -> Unit =
         { path, content -> path.writeText(content) },
@@ -112,6 +124,19 @@ class ToolExportRunner(
         val validationResult = validator(schema)
         if (!validationResult.isValid) {
             stderr("[ERROR] Schema validation failed (${validationResult.errors.size} errors)")
+            return PreflightResult.Exit(3)
+        }
+
+        // Driver-supplied pre-generation gate (symmetric to
+        // SchemaGenerateRunner). Plan-doc §3.4 demands the rule fire
+        // "vor der DDL-Erzeugung im Validator"; `tool export` is also
+        // a DDL producer.
+        val preGenErrors = preGenerationValidatorLookup(dialect).validate(schema, options)
+        if (preGenErrors.isNotEmpty()) {
+            stderr("[ERROR] Schema validation failed (${preGenErrors.size} errors)")
+            for (err in preGenErrors) {
+                stderr("  ${err.code} ${err.objectPath}: ${err.message}")
+            }
             return PreflightResult.Exit(3)
         }
 

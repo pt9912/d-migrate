@@ -20,8 +20,8 @@ import java.math.BigInteger
 /**
  * Golden-Master-Round-Trip-Tests: Writer → Reader → Vergleich.
  *
- * Plan §4 Phase B Schritt 11 / §3.5.1: Für jedes Format (JSON, YAML, CSV)
- * wird verifiziert, dass die Phase-B-Reader den Output der 0.3.0-Writer
+ * LF-009 / LF-013: Für jedes Format (JSON, YAML, CSV)
+ * wird verifiziert, dass die format reader-Reader den Output der 0.3.0-Writer
  * korrekt zurücklesen können. Typbewusster Vergleich über
  * BigDecimal-Normalisierung (Int/Long/Double-Unterschiede zwischen
  * Original und Reader-Output sind erwartbar).

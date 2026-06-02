@@ -16,26 +16,25 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Phase E §7.8 `job_cancel`-Service.
- *
- * Verkapselt die kompletten Cancel-Regeln aus Plan §5.6 + §7.8 und
+ * LF-012 / LN-011 / LN-017 / LN-027 *
+ * Verkapselt die kompletten Cancel-Regeln aus LF-012 / LN-011 / LN-017 / LN-027 und
  * liefert ein sealed [JobCancelOutcome], das der MCP-Tool-Handler aus
- * AP E.8 (2/3) auf den `job_cancel`-Wire mappt. Dispatcher-Wechselwirkung:
+ * LF-012 / LN-011 / LN-017 / LN-027 (2/3) auf den `job_cancel`-Wire mappt. Dispatcher-Wechselwirkung:
  *
  * - QUEUED-Cancel ist eine atomare CAS `QUEUED -> CANCELLED` ohne
- *   Worker-Ack (Plan §7.8 line 1212-1216). Die Dispatcher-Barriere
- *   aus AP E.7 (1/6) (`transitionStatus(allowed=QUEUED)` schlaegt fuer
+ *   Worker-Ack (LF-012 / LN-011 / LN-017 / LN-027). Die Dispatcher-Barriere
+ *   aus LF-012 / LN-011 / LN-017 / LN-027 (1/6) (`transitionStatus(allowed=QUEUED)` schlaegt fuer
  *   bereits-terminale Jobs fehl) verhindert die spaetere Worker-
  *   Ausfuehrung automatisch.
- * - RUNNING-Cancel laeuft zweistufig (Plan §7.2): erst `markCancelRequested`
+ * - RUNNING-Cancel laeuft zweistufig (LF-012 / LN-011 / LN-017 / LN-027): erst `markCancelRequested`
  *   durabel, dann Worker-Handle-Signal. Antwort ist [AckPending] —
  *   die endgueltige Status-Transition `RUNNING -> CANCELLED` macht der
  *   Dispatcher beim Worker-Outcome.
- * - Reason wird scrubbed + laengenbegrenzt persistiert (Plan §7.8
+ * - Reason wird scrubbed + laengenbegrenzt persistiert (LF-012 / LN-011 / LN-017 / LN-027
  *   line 1223). Ein bereits durabel gespeicherter Reason wird nicht
- *   ueberschrieben (Plan §7.8 line 1224-1226 + §7.2-Idempotenz).
+ *   ueberschrieben (LF-012 / LN-011 / LN-017 / LN-027 + §7.2-Idempotenz).
  *
- * Identitaets-/Tenant-Aufloesung gemaess Plan §5.6:
+ * Identitaets-/Tenant-Aufloesung gemaess LF-012 / LN-011 / LN-017 / LN-027:
  *
  * - Tenant-scoped Job-`resourceUri`: Tenant aus URI; muss zu
  *   `effectiveTenantId` ODER `allowedTenantIds` passen, sonst
@@ -46,11 +45,11 @@ import java.time.Instant
  *
  * Bewusst NICHT in dieser AP-Stufe:
  *
- * - Worker-Ack-Polling mit `cancelAckTimeout` (Plan §7.8 line 1216-1217):
+ * - Worker-Ack-Polling mit `cancelAckTimeout` (LF-012 / LN-011 / LN-017 / LN-027):
  *   die aktuelle Antwort ist immer sofort [AckPending] mit
  *   [DEFAULT_RETRY_AFTER]. Polling-Variante kann in einer Folge-AP via
  *   optionalem `awaitAck`-Parameter nachgezogen werden.
- * - Audit-Event-Emission (Plan §7.8 "auditieren") landet in AP E.10.
+ * - Audit-Event-Emission (LF-012 / LN-011 / LN-017 / LN-027 "auditieren") landet in [AuditScope].
  */
 class JobCancelService(
     private val jobStore: JobStore,
@@ -59,10 +58,10 @@ class JobCancelService(
     private val maxReasonLength: Int = DEFAULT_MAX_REASON_LENGTH,
     private val ackPendingRetryAfter: Duration = DEFAULT_RETRY_AFTER,
     /**
-     * Phase E §7.9: optionaler owner-aware Quota-Service. Wird auf
+     * LF-012 / LN-011 / LN-017 / LN-027: optionaler owner-aware Quota-Service. Wird auf
      * `releaseForOwner` gerufen bei `QUEUED -> CANCELLED`-CAS, weil
      * der Dispatcher fuer queued-Jobs nie laeuft und somit kein
-     * Terminal-Release ausloest. Plan §7.9 line 1291-1292.
+     * Terminal-Release ausloest. LF-012 / LN-011 / LN-017 / LN-027.
      *
      * Fuer RUNNING-Cancel macht der Dispatcher den Release beim
      * Worker-Outcome — der Service hier ruft NICHT zusaetzlich, sonst
@@ -104,7 +103,7 @@ class JobCancelService(
     ): TargetResolution? {
         if (!jobIdOrUri.startsWith(URI_PREFIX)) {
             // Opake jobId: tenant-lokaler Lookup nur im effectiveTenantId
-            // (Plan §5.6 line 668-670).
+            // (LF-012 / LN-011 / LN-017 / LN-027).
             return TargetResolution.Resolved(principal.effectiveTenantId, jobIdOrUri)
         }
         return when (val parsed = ServerResourceUri.parse(jobIdOrUri)) {
@@ -157,7 +156,7 @@ class JobCancelService(
         }
         return when (outcome) {
             is JobTransitionOutcome.Applied -> {
-                // Plan §7.9 line 1291-1292: Slot freigeben — fuer
+                // LF-012 / LN-011 / LN-017 / LN-027: Slot freigeben — fuer
                 // queued-Cancel passiert das hier (Dispatcher laeuft nie).
                 outcome.record.quotaReservationOwnerId?.let { ownerId ->
                     quotaService?.releaseForOwner(ownerId, now)
@@ -180,7 +179,7 @@ class JobCancelService(
         signalSource: String,
         now: Instant,
     ): JobCancelOutcome {
-        // Plan §7.2: erst markCancelRequested durabel, dann Worker
+        // LF-012 / LN-011 / LN-017 / LN-027: erst markCancelRequested durabel, dann Worker
         // signalisieren. Idempotenz: der erste Reason gewinnt — der
         // Store ueberschreibt nicht.
         val markOutcome = jobStore.markCancelRequested(
@@ -196,7 +195,7 @@ class JobCancelService(
                 workerHandleRegistry.signal(record.managedJob.jobId, scrubbedReason)
                 // Antwort sofort als AckPending — die endgueltige
                 // Statustransition macht der Dispatcher beim Worker-
-                // Outcome (E.7 (1/6)).
+                // Outcome (LF-012 / LN-011 / LN-017 / LN-027 (1/6)).
                 JobCancelOutcome.AckPending(markOutcome.record, ackPendingRetryAfter)
             }
             is JobTransitionOutcome.IllegalTransition ->
@@ -235,8 +234,7 @@ class JobCancelService(
 }
 
 /**
- * Phase E §7.8 Job-Cancel-Outcome. Tool-Handler aus AP E.8 (2/3) mappt
- * jeden Branch auf den `job_cancel`-Wire (jobId, status, terminal,
+ * LF-012 / LN-011 / LN-017 / LN-027 * jeden Branch auf den `job_cancel`-Wire (jobId, status, terminal,
  * resourceUri, executionMeta) bzw. einen Error-Envelope.
  */
 sealed interface JobCancelOutcome {
@@ -249,7 +247,7 @@ sealed interface JobCancelOutcome {
     data class Cancelled(val record: JobRecord) : JobCancelOutcome
 
     /**
-     * Plan §5.6 / §7.8: Cancel ist durable angefordert, Worker hat
+     * LF-012 / LN-011 / LN-017 / LN-027: Cancel ist durable angefordert, Worker hat
      * (noch) nicht bestaetigt. Tool-Handler projiziert
      * `executionMeta.cancelRequested=true` + `cancelAckPending=true`
      * + `retryAfter` aus [retryAfter] in Sekunden.
@@ -262,7 +260,7 @@ sealed interface JobCancelOutcome {
     /**
      * No-oracle Fehler: unbekannte ID, cross-tenant `jobId`, oder URI
      * mit unbekanntem Job-Slot. Der Tool-Handler emittiert
-     * `RESOURCE_NOT_FOUND` ohne Disambiguierung (Plan §5.6 line 661-662).
+     * `RESOURCE_NOT_FOUND` ohne Disambiguierung (LF-012 / LN-011 / LN-017 / LN-027).
      */
     data class NotFound(val target: String) : JobCancelOutcome
 
@@ -273,7 +271,7 @@ sealed interface JobCancelOutcome {
     data class ForbiddenPrincipal(val record: JobRecord) : JobCancelOutcome
 
     /**
-     * Tenant-scoped URI ausserhalb `allowedTenantIds`. Plan §5.6 line
+     * Tenant-scoped URI ausserhalb `allowedTenantIds`. LF-012 / LN-011 / LN-017 / LN-027 line
      * 663-665 — `TENANT_SCOPE_DENIED`.
      */
     data class TenantScopeDenied(val targetTenant: TenantId) : JobCancelOutcome

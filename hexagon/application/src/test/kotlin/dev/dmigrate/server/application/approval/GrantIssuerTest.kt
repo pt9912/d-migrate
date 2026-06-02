@@ -106,7 +106,7 @@ class GrantIssuerTest : FunSpec({
 
         test("Regel mit grantedScopes Superset stellt mit erweiterten Scopes aus") {
             // Ausgestellte Scopes koennen mehr sein als verlangte — solange sie
-            // verlangte abdecken, ist das ok (Plan §5.5: containsAll-Check).
+            // verlangte abdecken, ist das ok (LF-012 / LN-011 / LN-017 / LN-027: containsAll-Check).
             val (svc, _) = issuer(
                 rules = listOf(
                     GrantIssuanceRule(
@@ -133,7 +133,7 @@ class GrantIssuerTest : FunSpec({
         }
 
         test("rohes Token ist nur in Issued, nicht im gespeicherten Grant") {
-            // Plan §7.4: rohe Tokens erscheinen nicht in Store oder Audit.
+            // LF-012 / LN-011 / LN-017 / LN-027: rohe Tokens erscheinen nicht in Store oder Audit.
             val (svc, store) = issuer(
                 rules = listOf(GrantIssuanceRule()),
             )

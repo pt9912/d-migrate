@@ -22,9 +22,9 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Phase E0.3 propagation guard: [ImportStreamingInvoker] must place the caller's
+ * LF-012 / LN-011 / LN-017 / LN-027 propagation guard: [ImportStreamingInvoker] must place the caller's
  * cancel token onto the [ImportExecutionContext] handed to the [ImportExecutor]
- * lambda. Phase E0.5 will use the same field at the chunk-loop boundary.
+ * lambda. LF-012 / LN-011 / LN-017 / LN-027 will use the same field at the chunk-loop boundary.
  */
 class ImportStreamingInvokerCancelPropagationTest : FunSpec({
 

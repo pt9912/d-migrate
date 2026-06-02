@@ -8,20 +8,18 @@ import java.sql.Statement
 /**
  * Connection-Wrapper, der jede via [createStatement]/[prepareStatement]/
  * [prepareCall] erzeugte JDBC-Statement-Instanz mit `setQueryTimeout(...)`
- * versieht. Implementiert die Cancel-Reaktions-Schwelle aus
- * implementation-plan-0.9.6 §4.1: jeder atomar-nicht-cancelbare
- * Driver-Aufruf bricht innerhalb des Budgets ab.
+ * versieht. LN-010: jeder atomar-nicht-cancelbare Driver-Aufruf bricht
+ * innerhalb des Budgets ab.
  *
  * Direkte Aufrufe an [getMetaData] (z.B. `conn.metaData.getPrimaryKeys`)
  * sind **nicht** durch diesen Decorator abgedeckt — sie gehen durch
  * Driver-Code unter Umgehung des [Statement]-Objekts. Sie werden
  * stattdessen durch die separat in `HikariConnectionPool.borrow()`
- * gesetzte [Connection.setNetworkTimeout] zeitlich begrenzt
- * (Plan §5.3, `DatabaseMetaData`-Quirk).
+ * gesetzte [Connection.setNetworkTimeout] zeitlich begrenzt.
  *
  * [queryTimeoutSeconds] `<= 0` bedeutet "nicht setzen" — der Treiber-
  * Default greift. [PoolSettings.statementTimeoutMs] = `0` ist der
- * dokumentierte Disable-Pfad (Plan §4.2).
+ * dokumentierte Disable-Pfad.
  *
  * Klasse ist `internal`, weil der einzige Konstruktions-Pfad über
  * [HikariConnectionPool.borrow] läuft. Tests im selben Modul können

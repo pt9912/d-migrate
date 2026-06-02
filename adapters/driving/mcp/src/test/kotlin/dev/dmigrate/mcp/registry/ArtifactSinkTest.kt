@@ -90,7 +90,7 @@ class ArtifactSinkTest : FunSpec({
 
     test("oversize content raises PAYLOAD_TOO_LARGE before any store call") {
         // Defensive: handlers pass `maxArtifactUploadBytes` so the
-        // sink rejects payloads that would otherwise blow past Phase-A
+        // sink rejects payloads that would otherwise blow past base
         // upload quotas. The store must NOT see the bytes.
         val (out, artifactStore, contentStore) = sink()
         val ex = shouldThrow<PayloadTooLargeException> {

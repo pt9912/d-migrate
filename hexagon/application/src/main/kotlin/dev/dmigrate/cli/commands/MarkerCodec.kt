@@ -5,8 +5,8 @@ import dev.dmigrate.driver.data.ResumeMarker
 import dev.dmigrate.streaming.checkpoint.CheckpointResumePosition
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.2):
- * Konvertiert zwischen der Runtime-Sicht ([ResumeMarker.Position]) und
+ * LF-013 / LN-006 / LN-012: Konvertiert zwischen der Runtime-Sicht
+ * ([ResumeMarker.Position]) und
  * der serialisierten Manifest-Sicht ([CheckpointResumePosition]).
  *
  * Design-Entscheidung:
@@ -21,8 +21,7 @@ import dev.dmigrate.streaming.checkpoint.CheckpointResumePosition
  *   Long, BigDecimal, String). Fuer Tie-Breaker gilt derselbe Vertrag.
  *
  * Begrenzung: unkonventionelle Marker-/PK-Typen (Blob, Array) werden
- * nicht unterstuetzt. Das ist in `docs/ImpPlan-0.9.0-C2.md` §8.2 bereits
- * als Nutzer-Einschraenkung dokumentiert.
+ * fuer reproduzierbare inkrementelle Wiederaufnahme nicht unterstuetzt.
  */
 internal object MarkerCodec {
 

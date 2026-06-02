@@ -3,15 +3,15 @@ package dev.dmigrate.streaming.checkpoint
 import java.time.Instant
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.2): versioniertes, persistier-
- * bares Manifest-Grundmodell fuer Export- und Import-Laeufe.
+ * LF-013 / LN-012 / LN-013: versioniertes, persistierbares
+ * Manifest-Grundmodell fuer Export- und Import-Laeufe.
  *
  * Das Manifest ist bewusst **klein und erweiterbar**: Grundfelder hier,
  * operationsspezifische Erweiterungen liegen unter [operationSpecific] als
- * typisiertes [CheckpointOperationSpecifics] und werden in den Phasen C/D
+ * typisiertes [CheckpointOperationSpecifics] und werden pro Operation
  * mit Inhalt gefuellt.
  *
- * Phase B fixiert:
+ * Der Manifest-Vertrag fixiert:
  * - Versionsfeld [schemaVersion] mit [CURRENT_SCHEMA_VERSION] als aktuellem
  *   Vertragsanker; inkompatible Versionen werfen
  *   [UnsupportedCheckpointVersionException] beim Laden.
@@ -21,14 +21,14 @@ import java.time.Instant
  * - Zeitstempel fuer Erstellung ([createdAt]) und letzte Fortschreibung
  *   ([updatedAt]) — wichtig fuer Support, Debugging und GC-Strategien in
  *   Folgereleases.
- * - [chunkSize] und [format] als Laufmetadaten, gegen die Phase C/D die
+ * - [chunkSize] und [format] als Laufmetadaten, gegen die die
  *   Wiederaufnahme validieren kann.
  * - [tableSlices] enthaelt den pro Tabelle/Input-Slice serialisierbaren
  *   Resume-Status (Fortschrittszaehler, Marker).
  * - [optionsFingerprint] ist ein kompakter Vergleichswert fuer die
- *   Phase-A-Oberflaeche (Tabellenmenge, Filter, `--since`, Encoding,
- *   on-conflict, ...) und wird in Phase C/D konkretisiert, um semantische
- *   Mismatches (Exit 3 aus Phase A §4.5) zu erkennen.
+ *   Request-Oberflaeche (Tabellenmenge, Filter, `--since`, Encoding,
+ *   on-conflict, ...) und wird operationsspezifisch konkretisiert, um
+ *   semantische Mismatches (Exit 3) zu erkennen.
  */
 data class CheckpointManifest(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
@@ -64,22 +64,22 @@ data class CheckpointManifest(
     }
 }
 
-/** 0.9.0 Phase B §4.2: trennt Export- und Import-Manifest-Auspraegungen. */
+/** LF-013: trennt Export- und Import-Manifest-Auspraegungen. */
 enum class CheckpointOperationType { EXPORT, IMPORT }
 
 /**
- * 0.9.0 Phase B §4.2: serialisierbarer Resume-Status pro Tabelle oder
+ * LF-013 / LN-012: serialisierbarer Resume-Status pro Tabelle oder
  * Input-Slice. `status` beschreibt den groben Zustand, `rowsProcessed`
  * und `chunksProcessed` erlauben einer Resume-Runtime, den Punkt der
  * Wiederaufnahme zu bestimmen. `lastMarker` ist eine freie, typisierte
  * Referenz fuer Export (`--since`-Marker, letzte PK-Seite) bzw. Import
  * (zuletzt comittete Chunk-Grenze). Das konkrete Marker-Schema legen
- * Phasen C/D fest.
+ * Export- und Import-Operationen fest.
  *
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.2):
- * [resumePosition] traegt die strukturierte Composite-Marker-Position
+ * LF-013 / LN-006: [resumePosition] traegt die strukturierte
+ * Composite-Marker-Position
  * fuer Mid-Table-Resume. `lastMarker` bleibt als bewusst ungenutztes
- * Legacy-Feld erhalten, damit Phase-B-Manifeste weiterhin geladen
+ * Legacy-Feld erhalten, damit alte Manifeste weiterhin geladen
  * werden koennen — neue Laeufe schreiben ausschliesslich
  * [resumePosition].
  */
@@ -91,13 +91,13 @@ data class CheckpointTableSlice(
     val lastMarker: String? = null,
     val resumePosition: CheckpointResumePosition? = null,
     /**
-     * 0.9.0 Phase D.4 (`docs/ImpPlan-0.9.0-D.md` §4.5 / §5.4):
-     * stabile `table -> inputFile`-Bindung fuer Directory-Importe.
+     * LF-010 / LF-013 / LN-009: stabile `table -> inputFile`-Bindung
+     * fuer Directory-Importe.
      * Wert ist der **relative** Dateiname innerhalb des Directory-
      * Roots (z.B. `users.json`), nicht der absolute Pfad — so bleibt
      * das Manifest unabhaengig davon, wo das Directory beim Erst-
      * bzw. Resume-Lauf liegt. `null` fuer Stdin-/SingleFile-Imports
-     * und fuer Phase-B/C-Manifeste vor D.4.
+     * und fuer alte Manifeste ohne Directory-Bindung.
      */
     val inputFile: String? = null,
 ) {
@@ -109,15 +109,15 @@ data class CheckpointTableSlice(
 }
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1 / §5.2):
- * serialisierbare Composite-Marker-Position fuer Mid-Table-Resume.
+ * LF-013 / LN-006 / LN-012: serialisierbare Composite-Marker-Position
+ * fuer Mid-Table-Resume.
  *
  * Alle Werte werden als Strings persistiert — der Runner kodiert beim
  * Schreiben ueber `Any?.toString()` und dekodiert beim Laden ueber den
  * vorhandenen `TemporalFormatPolicy.parseSinceLiteral`-Pfad, der die
  * gleiche Typ-Inferenz wie `--since`-CLI-Literale liefert. Damit
  * braucht das Manifest keinen zusaetzlichen Typ-Tag und bleibt
- * format-stabil gegenueber Phase-B-Laeufen.
+ * format-stabil gegenueber aelteren Manifesten.
  *
  * [markerColumn] und [tieBreakerColumns] sind **nicht** parallel zu
  * [tieBreakerValues] in der Marker-Spalte selbst — [markerValue]
@@ -149,9 +149,8 @@ data class CheckpointResumePosition(
 enum class CheckpointSliceStatus { PENDING, IN_PROGRESS, COMPLETED, FAILED }
 
 /**
- * 0.9.0 Phase B §4.2: Erweiterungspunkt fuer operationsspezifische
- * Felder. Phase B definiert das Grundmodell; Export- und Import-Resume
- * in Phasen C/D befuellen konkrete Unterklassen, ohne das Manifest-
+ * LF-013: Erweiterungspunkt fuer operationsspezifische Felder.
+ * Export- und Import-Resume befuellen konkrete Unterklassen, ohne das Manifest-
  * Kernmodell bei jedem Milestone neu aufzureissen.
  */
 sealed interface CheckpointOperationSpecifics

@@ -2,6 +2,7 @@ package dev.dmigrate.server.application.upload
 
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.approval.ApprovalGrantValidator
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.approval.ApprovalTokenFingerprint
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
@@ -26,7 +27,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase F § 5.1 + § 8.3 (F.3 3/4) — Pin't den policy-pflichtigen
+ * LF-010 / LF-013 / LN-009 / LN-011— Pin't den policy-pflichtigen
  * Init-Pfad ueber alle Pipeline-Branches.
  */
 class UploadInitOrchestratorTest : FunSpec({
@@ -43,7 +44,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val claimStore = InMemoryUploadInitClaimStore()
         val sessionStore = InMemoryUploadSessionStore()
         val grantStore = InMemoryApprovalGrantStore()
-        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService())
+        val fingerprintService = UploadInitApprovalFingerprint(DefaultPayloadFingerprintService(FakeUnicodeTextService()))
         private val sessionSeq = AtomicInteger(0)
         private val claimSeq = AtomicInteger(0)
         val orchestrator = UploadInitOrchestrator(
@@ -130,7 +131,7 @@ class UploadInitOrchestratorTest : FunSpec({
         val outcome = fx.orchestrator.init(fx.request(approvalKey = "key-policy"))
         val required = outcome.shouldBeInstanceOf<UploadInitOutcome.PolicyRequired>()
         required.requiredScopes shouldBe setOf("dmigrate:artifact:upload")
-        // Plan § 8.3: KEINE Session, KEINE aktive Berechtigung.
+        // LF-010 / LF-013 / LN-009 / LN-011: KEINE Session, KEINE aktive Berechtigung.
         fx.sessionStore.findById(tenant, "session-1").shouldBeNull()
         // Claim wurde freigegeben, sodass die naechste Approval-Replay-
         // Runde den Single-Writer-Cycle neu beginnen kann.

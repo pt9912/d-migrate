@@ -1,7 +1,7 @@
 package dev.dmigrate.mcp.transport.http
 
 /**
- * `Accept`-Header parser per `ImpPlan-0.9.6-B.md` §12.13.
+ * `Accept`-Header parser per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Streamable HTTP requires POST callers to advertise both response
  * shapes from MCP 2025-11-25: `application/json` and

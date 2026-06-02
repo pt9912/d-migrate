@@ -6,10 +6,10 @@ import dev.dmigrate.server.core.approval.ApprovalCorrelationKind
 import java.time.Instant
 
 /**
- * Phase G § 5.1 + § 6 G.6 — durabler Lebenszyklus eines synchronen
+ * LF-017 / LF-024 / LN-030 / LN-031— durabler Lebenszyklus eines synchronen
  * KI-Tool-Aufrufs.
  *
- * Plan-§-6-G.6-Vertrag (Z. 1080-1087):
+ * LF-017 / LF-024 / LN-030 / LN-031-Vertrag (Z. 1080-1087):
  *
  * - [Pending] — Single-Writer-Claim hält die Lease; parallele
  *   gleiche Caller bekommen `InProgress`-Outcome. Crashes werden
@@ -166,10 +166,10 @@ sealed interface AiToolOutcome {
 }
 
 /**
- * Phase G § 6 G.6 — Ergebnis eines
+ * LF-017 / LF-024 / LN-030 / LN-031— Ergebnis eines
  * [dev.dmigrate.server.ports.AiToolOutcomeStore.acquire]-Aufrufs.
  *
- * Plan-Mapping in den Tool-Handlern (G.6.d/e/f):
+ * Plan-Mapping in den Tool-Handlern (LF-017 / LF-024 / LN-030 / LN-031/f):
  *
  * | Outcome | Caller-Aktion |
  * |---|---|

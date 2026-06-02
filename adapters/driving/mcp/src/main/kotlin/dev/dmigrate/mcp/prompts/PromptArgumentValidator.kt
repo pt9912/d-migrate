@@ -5,13 +5,13 @@ import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase G § 5.7 + § 6 G.7 (G.7) — pure Argumentvalidierung gegen
+ * LF-017 / LF-024 / LN-030 / LN-031 — pure Argumentvalidierung gegen
  * [PromptArgumentSpec].
  *
  * Pure Funktion: keine IO, keine Lookups. Ressource-Refs werden
  * **strukturell** geprüft (URI-Form + ResourceKind-Match), nicht
  * gegen einen Store — der Store-Lookup folgt erst, wenn der Tool-
- * Pfad sie tatsächlich materialisiert (Plan §6 G.6 Z. 1014:
+ * Pfad sie tatsächlich materialisiert (LF-017 / LF-024 / LN-030 / LN-031 Z. 1014:
  * "semantische Resource-/Artifact-/Provider-Validierung erst
  * nach Scope, Idempotency-/Outcome-Replay und Policy").
  *
@@ -45,7 +45,7 @@ object PromptArgumentValidator {
         }
 
         // 2. additionalProperties=false-Äquivalent: unbekannte
-        // Argumente sind ein Validation-Fehler. Plan §6 G.7
+        // Argumente sind ein Validation-Fehler. LF-017 / LF-024 / LN-030 / LN-031
         // Akzeptanz: "ungueltige Argumente -> VALIDATION_ERROR".
         val knownNames = spec.arguments.map { it.name }.toSet()
         for ((suppliedName, _) in arguments) {

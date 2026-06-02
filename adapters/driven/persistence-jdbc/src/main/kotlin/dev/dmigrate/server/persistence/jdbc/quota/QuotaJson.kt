@@ -10,8 +10,8 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 
 /**
- * JSON-Codec fuer [QuotaKey] und [QuotaReservation] (Plan-Refs:
- * `ImpPlan-0.9.6-E2.md` § 4.3 + § 4.4 + § 6.8 + § 6.9).
+ * JSON-Codec fuer [QuotaKey] und [QuotaReservation] (LF-012 / LN-011 / LN-017 / LN-027 Refs:
+ * `LF-012 / LN-011 / LN-017 / LN-027` § 4.3 + § 4.4 + § 6.8 + § 6.9).
  *
  * - [QuotaKey] wird als TEXT-Schluessel in `quota_counters.quota_key`
  *   abgelegt; Field-Reihenfolge des Wire-DTO ist stabil, sodass identische

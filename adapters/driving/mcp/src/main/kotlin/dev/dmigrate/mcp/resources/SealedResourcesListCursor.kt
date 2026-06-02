@@ -10,23 +10,23 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Plan-D §4.2 + §10.8 wrapper that HMAC-seals the
- * `resources/list` cursor. Phase-B kept the cursor as
+ * LF-012 / LN-038 + wrapper that HMAC-seals the
+ * `resources/list` cursor. LF-012 / LN-038 kept the cursor as
  * Base64-of-JSON `(kind, innerToken)` — no signature, no tenant
- * binding, no expiry. Phase-D wraps that inner state inside an
+ * binding, no expiry. LF-012 / LN-038 wraps that inner state inside an
  * [McpCursorPayload] so a client cannot replay a cursor minted
  * for tenant A against a request scoped to tenant B, alter the
  * `pageSize`, or use an expired cursor to keep paging.
  *
  * Wire format: the outer [McpCursorCodec] sealed envelope; the
  * inner [ResourcesListCursor] travels through `resumeToken` as
- * the existing Base64-JSON string. `family` is a Phase-D constant
+ * the existing Base64-JSON string. `family` is a LF-012 / LN-038 constant
  * (`"resources/list-walk"`) because the resources/list walker
  * crosses kinds within a single response — the per-kind family
  * already lives inside `resumeToken` and the codec's family field
  * pins the operation, not the current walk position.
  *
- * The `null` codec path (Phase-B / tests / single-instance default
+ * The `null` codec path (LF-012 / LN-038 / tests / single-instance default
  * without keyring wiring) keeps the unsigned legacy cursor so the
  * existing test suite stays green; production wiring per
  * `McpServerBootstrap` always supplies a codec.
@@ -116,7 +116,7 @@ internal class SealedResourcesListCursor(
          */
         const val FAMILY_WALK: String = "resources/list-walk"
 
-        /** Plan-D §4.2 cursor TTL ceiling. */
+        /** LF-012 / LN-038 cursor TTL ceiling. */
         val DEFAULT_TTL: Duration = McpCursorCodec.DEFAULT_MAX_TTL
 
         const val DEFAULT_PAGE_SIZE: Int = 50

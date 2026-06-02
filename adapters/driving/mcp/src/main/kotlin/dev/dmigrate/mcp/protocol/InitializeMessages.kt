@@ -32,8 +32,8 @@ data class InitializeResult(
 
 /**
  * §5.3: capabilities reflect only what is actually implemented.
- * AP 6.4 ships none — `tools` lights up in AP 6.8, `resources` in AP 6.9.
- * Subscribe/listChanged stay absent until subscriptions arrive (Phase C+).
+ * LF-012 / LN-027 / LN-028 / LN-038 ships none — `tools` lights up in LF-012 / LN-027 / LN-028 / LN-038, `resources` in LF-012 / LN-027 / LN-028 / LN-038.
+ * Subscribe/listChanged stay absent until subscriptions arrive (LF-012 / LN-038).
  */
 data class ServerCapabilities(
     val tools: Map<String, Any>? = null,

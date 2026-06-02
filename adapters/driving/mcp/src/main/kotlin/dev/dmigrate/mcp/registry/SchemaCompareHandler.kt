@@ -23,19 +23,19 @@ import dev.dmigrate.server.core.artifact.ArtifactKind
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * AP 6.6: `schema_compare` per `ImpPlan-0.9.6-C.md` §5.3 + §6.6.
+ * LF-012 / LN-027 / LN-028 / LN-038: `schema_compare` per LF-012 / LN-027 / LN-028 / LN-038.
  *
- * Phase C is **schemaRef-only** — inline `schema` and `connectionRef`
+ * LF-012 / LN-038 is **schemaRef-only** — inline `schema` and `connectionRef`
  * are explicitly rejected:
  * - inline schema: comparing two large inline schemas would blow past
  *   `maxNonUploadToolRequestBytes`; clients stage them via the read-
  *   only upload flow first.
  * - `connectionRef`: connection-backed compares are async and live in
- *   `schema_compare_start` (Phase E). The error message points there.
+ *   `schema_compare_start` (LF-012 / LN-011 / LN-017 / LN-027). The error message points there.
  *
  * The handler delegates to the existing [SchemaComparator]; no
  * fachliche logic is duplicated. The `SchemaDiff` is projected into a
- * unified `findings` list using the AP-6.6.6 severity policy:
+ * unified `findings` list using the LF-012 / LN-027 / LN-028 / LN-038 severity policy:
  *
  * Top-level objects (tables / views / sequences / customTypes /
  * functions / procedures / triggers):
@@ -86,7 +86,7 @@ internal class SchemaCompareHandler(
         // per-finding shape as inline) so an agent reading
         // `diffArtifactRef` sees every change beyond `maxInlineFindings`.
         // Richer per-column structure stays in `SchemaDiff` and would
-        // require a stable wire projection — out of scope for AP 6.6.
+        // require a stable wire projection — out of scope for LF-012 / LN-027 / LN-028 / LN-038.
         val inlineDiffThreshold = limits.maxToolResponseBytes / 2
         val diffArtifactRef = if (!identical) {
             val diffBytes = gson.toJson(allFindings).toByteArray(Charsets.UTF_8)
@@ -261,7 +261,7 @@ internal class SchemaCompareHandler(
     }
 
     /**
-     * Builds a finding record. `details` is the AP-6.13 machine-
+     * Builds a finding record. `details` is the LF-012 / LN-027 / LN-028 / LN-038 machine-
      * readable supplement to `message`; both pass through
      * [SecretScrubber] before serialisation so connection URLs,
      * bearer tokens, and approval-token literals can't leak via the
@@ -286,7 +286,7 @@ internal class SchemaCompareHandler(
 
     /**
      * Standard `{ before, after }` shape for property-level changes.
-     * AP 6.23: the output schema rejects blanks / pure whitespace via
+     * LF-012 / LN-027 / LN-028 / LN-038: the output schema rejects blanks / pure whitespace via
      * `pattern: "\\S"` and demands at least one of the two fields
      * (`minProperties: 1`). Drop null / blank sides defensively so a
      * missing operand never lands as `"null"` or `""` in the wire

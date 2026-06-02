@@ -14,7 +14,7 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
  * JSON-Codec fuer [JobRecord] zur Persistierung in der
- * `jobs.managed_job`-JSONB-Spalte (Plan § 4.2 + § 6.7).
+ * `jobs.managed_job`-JSONB-Spalte (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Format-Stabilitaet: Schema-Version 1 — der Wire-Type spiegelt das
  * Domain-Modell (ManagedJob inklusive verschachtelter `cancelRequest`,
@@ -25,7 +25,7 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
  * sind extrahierte Kopien fuer Index-/Filter-Zwecke; die JSONB-Spalte
  * ist die Source-of-Truth.
  *
- * Bewusster Plan-Carve-out gegen § 4.2-Wortlaut „managed_job: ManagedJob
+ * Bewusster LF-010 / LF-013 / LN-009 / LN-011 Carve-out gegen § 4.2-Wortlaut „managed_job: ManagedJob
  * serialized": die Spalte traegt den vollstaendigen [JobRecord], nicht
  * nur den inneren [ManagedJob]. Begruendung: das Schema hat keine
  * dedizierten Spalten fuer ownerPrincipalId/visibility/resourceUri etc.,

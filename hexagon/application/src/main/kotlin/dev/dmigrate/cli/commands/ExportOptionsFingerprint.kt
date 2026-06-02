@@ -1,23 +1,23 @@
 package dev.dmigrate.cli.commands
 
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 
 /**
- * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §4.2 / §5.1):
- * deterministischer SHA-256-Fingerprint ueber die resume-relevanten
+ * LF-013 / LN-006 / LN-012: deterministischer SHA-256-Fingerprint
+ * ueber die resume-relevanten
  * Exportoptionen.
  *
  * Der Fingerprint wird in [dev.dmigrate.streaming.checkpoint.CheckpointManifest.optionsFingerprint]
  * gespeichert und vom [DataExportRunner]-Preflight gegen den aktuellen
- * Request verglichen. Ein Mismatch fuehrt zu Exit 3 (§4.5 Phase A).
+ * Request verglichen. Ein Mismatch fuehrt zu Exit 3.
  *
  * **Bewusst festgezogen**:
- * - Reihenfolge der Felder im Hash-Input ist in C.1 eingefroren; neue
- *   Optionen in 0.9.x-Folgereleases erfordern ein `schemaVersion`-Bump
+ * - Reihenfolge der Felder im Hash-Input ist als Resume-Vertrag
+ *   eingefroren; neue inkompatible Optionen erfordern ein `schemaVersion`-Bump
  *   (`CheckpointManifest.CURRENT_SCHEMA_VERSION`).
  * - Die Tabellenliste geht **in Reihenfolge** in den Hash ein
  *   (`--tables a,b` erzeugt einen anderen Hash als `--tables b,a`),
- *   weil der Ueberplan §4.3 „Tabellenmenge **und** Reihenfolge" als
+     *   weil LF-008 / LF-009 / LF-013 „Tabellenmenge **und** Reihenfolge" als
  *   Kompatibilitaetskriterium verlangt.
  * - `null`-Werte werden als eigener Marker (`<null>`) kodiert, damit
  *   `filter = null` und `filter = "<null>"` nicht dieselbe Signatur
@@ -40,14 +40,7 @@ object ExportOptionsFingerprint {
      *
      * @return 64-stelliger Hex-String in Kleinbuchstaben.
      */
-    fun compute(input: Input): String {
-        val canonical = canonicalForm(input)
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(canonical.toByteArray(Charsets.UTF_8))
-        return digest.joinToString(separator = "") { byte ->
-            "%02x".format(byte)
-        }
-    }
+    fun compute(input: Input): String = sha256Hex(canonicalForm(input))
 
     /**
      * Eingangsdaten fuer den Fingerprint. Wird vom [DataExportRunner]
@@ -73,8 +66,8 @@ object ExportOptionsFingerprint {
         val tables: List<String>,
         val outputMode: String,
         /**
-         * 0.9.0 Phase C.1 (`docs/ImpPlan-0.9.0-C1.md` §4.5): kanonischer
-         * Zielpfad als String. Fuer `file-per-table` ist das das
+         * LF-013 / LN-006: kanonischer Zielpfad als String. Fuer
+         * `file-per-table` ist das das
          * Ausgabe-Verzeichnis; fuer `single-file` der Dateipfad; fuer
          * `stdout` der literale String `"<stdout>"`. Damit erkennt der
          * Preflight, wenn sich das Ausgabeziel zwischen Laeufen
@@ -82,16 +75,16 @@ object ExportOptionsFingerprint {
          */
         val outputPath: String,
         /**
-         * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §4.1): PK-
-         * Spaltensignatur pro Tabelle in der Reihenfolge von `tables`.
+         * LF-013 / LN-006 / LN-012: PK-Spaltensignatur pro Tabelle
+         * in der Reihenfolge von `tables`.
          * Ein Wechsel des Primaerschluessels invalidiert den Resume-
-         * Marker (C.2 stuetzt sich auf den PK als Tie-Breaker). Leere
+         * Marker (Resume stuetzt sich auf den PK als Tie-Breaker). Leere
          * PK-Listen sind erlaubt: die Tabelle hat dann keinen
-         * Tie-Breaker und kann ohnehin nur C.1-granular resumen.
+         * Tie-Breaker und kann ohnehin nur LF-008 / LF-009 / LF-013-granular resumen.
          *
-         * Fuer Phase-C.1-Callsites, die noch keine PK-Kenntnis haben,
-         * bleibt der Default `emptyMap()` — der Fingerprint bleibt dann
-         * bytegleich zum Phase-C.1-Vertrag (Presence-Byte).
+         * Fuer Call-sites, die noch keine PK-Kenntnis haben, bleibt
+         * der Default `emptyMap()` — der Fingerprint bleibt dann
+         * bytegleich zum table-granularen Resume-Vertrag.
          */
         val primaryKeysByTable: Map<String, List<String>> = emptyMap(),
     )
@@ -109,10 +102,10 @@ object ExportOptionsFingerprint {
         appendField("tables", input.tables.joinToString(separator = LIST_SEPARATOR))
         appendField("outputMode", input.outputMode)
         appendField("outputPath", input.outputPath)
-        // 0.9.0 Phase C.2: PK-Signatur; Reihenfolge folgt `tables`, um
+        // LF-013 / LN-006: PK-Signatur; Reihenfolge folgt `tables`, um
         // gegen Umsortierungen stabil zu sein. Wenn `primaryKeysByTable`
-        // leer ist (Phase-C.1-Callsite), wird **nichts** angehaengt —
-        // der Hash bleibt bytegleich zum Phase-C.1-Vertrag.
+        // leer ist, wird **nichts** angehaengt — der Hash bleibt
+        // bytegleich zum table-granularen Resume-Vertrag.
         if (input.primaryKeysByTable.isNotEmpty()) {
             val pkSignature = input.tables.joinToString(separator = LIST_SEPARATOR) { table ->
                 val pk = input.primaryKeysByTable[table].orEmpty()

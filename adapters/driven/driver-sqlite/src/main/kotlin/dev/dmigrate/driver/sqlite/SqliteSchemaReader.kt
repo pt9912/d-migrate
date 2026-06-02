@@ -7,6 +7,7 @@ import dev.dmigrate.driver.*
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcMetadataSession
 import dev.dmigrate.driver.metadata.SchemaReaderUtils
+import dev.dmigrate.driver.sqlite.parser.SqliteTriggerSqlParser
 
 /**
  * SQLite [SchemaReader] implementation.
@@ -16,6 +17,8 @@ import dev.dmigrate.driver.metadata.SchemaReaderUtils
  * reverse notes rather than false precision.
  */
 class SqliteSchemaReader : SchemaReader {
+
+    private val sequenceSupport = SqliteSequenceReverseSupport()
 
     override fun read(pool: ConnectionPool, options: SchemaReadOptions): SchemaReadResult {
         val notes = mutableListOf<SchemaReadNote>()
@@ -52,15 +55,26 @@ class SqliteSchemaReader : SchemaReader {
             // Views
             val views = if (options.includeViews) readViews(session) else emptyMap()
 
-            // Triggers
+            // 0.9.7 Phase D: sequence-support reverse runs unconditionally
+            // (Plan §6.1 line 1669: "Sequence-Reverse darf nicht von
+            // includeTriggers abhaengen").
+            val supportSnapshot = sequenceSupport.scanSequenceSupport(session)
+            val sequences = sequenceSupport.materializeSequences(supportSnapshot)
+            val enrichedTables = sequenceSupport.materializeSequenceDefaults(supportSnapshot, tables)
+            val filteredTables = sequenceSupport.filterSupportTable(enrichedTables, supportSnapshot)
+            notes += sequenceSupport.aggregateNotes(supportSnapshot)
+
+            // Triggers (filtered against the canonical sequence-support pairs)
             val triggers = if (options.includeTriggers) readTriggers(session, notes) else emptyMap()
+            val filteredTriggers = sequenceSupport.filterSupportTriggers(triggers, supportSnapshot)
 
             val schemaDef = SchemaDefinition(
                 name = ReverseScopeCodec.sqliteName(schema),
                 version = ReverseScopeCodec.REVERSE_VERSION,
-                tables = tables,
+                tables = filteredTables,
                 views = views,
-                triggers = triggers,
+                triggers = filteredTriggers,
+                sequences = sequences,
             )
 
             return SchemaReadResult(
@@ -164,12 +178,22 @@ class SqliteSchemaReader : SchemaReader {
             val name = row["name"] as String
             val table = row["tbl_name"] as String
             val sql = row["sql"] as? String ?: continue
-            val parsed = SqliteTypeMapping.parseTriggerSql(sql, name)
+            val parsed = SqliteTriggerSqlParser.parse(sql, name)
             notes += parsed.notes
+            // Schema-qualified names (R212) are rejected — no TriggerDefinition
+            // is built, and no object key is written, so the downstream
+            // diff path cannot accidentally collide with `schema.table`
+            // keys produced for actual tables.
+            if (parsed.rejected) continue
             val key = ObjectKeyCodec.triggerKey(table, name)
             result[key] = TriggerDefinition(
-                table = table, event = parsed.event, timing = parsed.timing,
-                body = parsed.body, sourceDialect = "sqlite",
+                table = table,
+                event = parsed.event,
+                timing = parsed.timing,
+                forEach = parsed.forEach,
+                condition = parsed.condition,
+                body = parsed.body,
+                sourceDialect = "sqlite",
             )
         }
         return result

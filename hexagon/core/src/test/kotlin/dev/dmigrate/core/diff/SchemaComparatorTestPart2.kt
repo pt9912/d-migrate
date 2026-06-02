@@ -225,7 +225,7 @@ class SchemaComparatorTestPart2 : FunSpec({
     }
 
     // ===========================================
-    // Phase B: Extended object types
+    // LF-015: Extended object types
     // ===========================================
 
     test("domain custom type changed") {

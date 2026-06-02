@@ -11,6 +11,7 @@ import dev.dmigrate.driver.TransformationNote
 
 internal class SqliteCapabilityDdlSupport(
     private val quoteIdentifier: (String) -> String,
+    private val sequenceSupport: SqliteSequenceDdlSupport,
 ) {
 
     fun generateCustomTypes(types: Map<String, CustomTypeDefinition>): List<DdlStatement> {
@@ -42,25 +43,7 @@ internal class SqliteCapabilityDdlSupport(
     fun generateSequences(
         sequences: Map<String, SequenceDefinition>,
         skipped: MutableList<SkippedObject>,
-    ): List<DdlStatement> {
-        val statements = mutableListOf<DdlStatement>()
-        for ((name, _) in sequences) {
-            skipped += SkippedObject("sequence", name, "Sequences are not supported in SQLite")
-            statements += DdlStatement(
-                "-- Sequence ${quoteIdentifier(name)} is not supported in SQLite",
-                listOf(
-                    TransformationNote(
-                        type = NoteType.ACTION_REQUIRED,
-                        code = "E056",
-                        objectName = name,
-                        message = "Sequence '$name' is not supported in SQLite.",
-                        hint = "Use INTEGER PRIMARY KEY AUTOINCREMENT or application-level sequencing."
-                    )
-                )
-            )
-        }
-        return statements
-    }
+    ): List<DdlStatement> = sequenceSupport.generateSequences(sequences, skipped)
 
     fun handleCircularReferences(
         edges: List<CircularFkEdge>,

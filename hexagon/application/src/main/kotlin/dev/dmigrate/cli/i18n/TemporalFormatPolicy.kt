@@ -10,13 +10,13 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 /**
- * 0.8.0 Phase E — temporaler Format- und Zonen-Vertrag.
+ * LF-006 / LN-022 / LN-023: temporaler Format- und Zonen-Vertrag.
  *
- * Referenz: `docs/ImpPlan-0.8.0-E.md`. Dieser Typ ist der benannte Einstieg
- * in den Phase-E-Vertrag; er hat **keinen globalen Zustand** und liefert nur
+ * Dieser Typ ist der benannte Einstieg in den i18n-Formatvertrag; er hat
+ * **keinen globalen Zustand** und liefert nur
  * Konstanten und reine Funktionen.
  *
- * Verbindliche Regeln (siehe Plan §4):
+ * Verbindliche Regeln (siehe LF-008 / LF-009 / LF-013):
  *
  * - **§4.1 Nur kanonische erweiterte ISO-8601-Profile.**
  *   Der Vertrag bindet sich auf die JDK-Formatter
@@ -38,14 +38,14 @@ import java.time.format.DateTimeFormatter
  *   `LocalDateTime`/`LocalDate`/`LocalTime` tragen absichtlich keinen Offset.
  *   Kein Parser darf einen String mit Offset in `LocalDateTime` umdeuten.
  * - **§4.4 Default-Zeitzone ist nur ein expliziter Konvertierungsbaustein.**
- *   Die in Phase B aufgeloeste `ResolvedI18nSettings.timezone` darf nur dort
+ *   Die nach LF-006 / LF-007 aufgeloeste `ResolvedI18nSettings.timezone` darf nur dort
  *   gelesen werden, wo ein lokaler Input bewusst in einen zonierten Kontext
  *   ueberfuehrt werden soll (siehe [toZoned]).
  * - **§4.5 Ein Regelwerk fuer Export, Import und `--since`.**
  *   `ValueSerializer`/`ValueDeserializer` und
  *   `DataExportHelpers.parseSinceLiteral(...)` nutzen denselben begrifflichen
  *   Vertrag.
- * - **§4.6 Default-Zeitzone folgt der Phase-B-Resolve-Kette.**
+ * - **§4.6 Default-Zeitzone folgt der LF-006 / LF-007 / LN-022 / LN-023 Resolve-Kette.**
  *   Die aufgeloeste `ResolvedI18nSettings.timezone` kommt aus
  *   `i18n.default_timezone`, sonst `ZoneId.systemDefault()`, und faellt **nur**
  *   bei Leer-/Fehlerfall auf UTC zurueck. Die Zone greift nur in der
@@ -91,7 +91,7 @@ object TemporalFormatPolicy {
     /**
      * §4.2: `ZonedDateTime` im strukturierten Datenpfad offsetbasiert
      * serialisieren. Die `ZoneId` ist in 0.8.0 bewusst **nicht Teil** des
-     * garantierten Vertrags (siehe Plan §8 R3). Region-Transport ist ein
+     * garantierten Vertrags (siehe LF-006 / LF-007). Region-Transport ist ein
      * moeglicher spaeterer Ausbau.
      */
     fun formatZonedDateTime(value: ZonedDateTime): String = value.format(ISO_OFFSET_DATE_TIME)

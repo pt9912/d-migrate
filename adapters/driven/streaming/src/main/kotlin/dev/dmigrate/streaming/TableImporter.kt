@@ -218,7 +218,7 @@ internal open class TableImporter(
         if (offset <= 0L) return
         var skipped = 0L
         while (skipped < offset) {
-            // Plan §4.6: resume-skip must check before each potentially long
+            // LF-010 / LF-013 / LN-012: resume-skip must check before each potentially long
             // nextChunk read so a cancel during skip never persists a fake
             // progress checkpoint or starts a write.
             cancellationToken.throwIfCancellationRequested()

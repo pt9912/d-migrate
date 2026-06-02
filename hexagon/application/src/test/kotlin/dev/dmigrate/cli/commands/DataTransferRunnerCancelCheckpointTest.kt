@@ -23,9 +23,9 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.5 (2/3): Cancel inside the transfer pipeline must surface as
+ * LF-012 / LN-011 / LN-017 / LN-027: Cancel inside the transfer pipeline must surface as
  * exit 130 — never as the generic 4 (schema read), 3 (schema mismatch)
- * or 5 (transfer error) paths. Plan §4.5, §6.4.
+ * or 5 (transfer error) paths. LF-012 / LN-011 / LN-017 / LN-027, §6.4.
  */
 class DataTransferRunnerCancelCheckpointTest : FunSpec({
 

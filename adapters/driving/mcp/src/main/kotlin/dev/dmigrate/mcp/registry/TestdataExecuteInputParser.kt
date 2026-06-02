@@ -11,10 +11,10 @@ import dev.dmigrate.server.core.resource.ResourceUriParseResult
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Follow-up AP 3 — Eingabe-Parsing für `testdata_execute`.
+ * LF-017 / LF-024 / LN-030 / LN-031 — Eingabe-Parsing für `testdata_execute`.
  *
- * Aus dem Handler ausgelagert, weil die Plan-§-5-Validierungs-Regeln
- * (Plan-Quelle exclusiv, Zielbindung via `targetTable` oder `tables`+
+ * Aus dem Handler ausgelagert, weil die LF-017 / LF-024 / LN-030 / LN-031-Validierungs-Regeln
+ * (Planquelle exclusiv, Zielbindung via `targetTable` oder `tables`+
  * `bundleFormat`, output-Format-Default) sonst die LargeClass-/
  * TooManyFunctions-Schwellen sprengen.
  *

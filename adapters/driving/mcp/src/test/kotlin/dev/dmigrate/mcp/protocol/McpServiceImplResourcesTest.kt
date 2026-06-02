@@ -96,7 +96,7 @@ class McpServiceImplResourcesTest : FunSpec({
         err.code shouldBe ResponseErrorCode.InvalidParams.value
     }
 
-    test("ServerCapabilities advertises resources after AP 6.9") {
+    test("ServerCapabilities advertises resources after LF-012 / LN-027 / LN-028 / LN-038") {
         val sut = McpServiceImpl(serverVersion = "0.0.0", initialPrincipal = PRINCIPAL)
         val init = sut.initialize(InitializeParams(McpProtocol.MCP_PROTOCOL_VERSION)).get()
         init.capabilities.resources shouldNotBe null
@@ -157,7 +157,7 @@ class McpServiceImplResourcesTest : FunSpec({
     }
 
     test("HMAC-sealed cursor round-trips through resources/list when codec is wired") {
-        // AP D8: when McpServiceImpl receives a non-null cursorCodec,
+        // LF-012 / LN-038: when McpServiceImpl receives a non-null cursorCodec,
         // resources/list emits HMAC-sealed cursors and accepts them
         // back. Seed enough jobs to overflow the handler's default
         // 50-row page so the first response carries a non-null
@@ -221,7 +221,7 @@ class McpServiceImplResourcesTest : FunSpec({
     }
 
     test("tampered HMAC-sealed cursor fails with VALIDATION_ERROR") {
-        // AP D8: a cursor whose payload bytes have been altered must
+        // LF-012 / LN-038: a cursor whose payload bytes have been altered must
         // fail the HMAC check and surface as VALIDATION_ERROR with
         // dmigrateCode populated, NOT a silent rebind to a different
         // listing.

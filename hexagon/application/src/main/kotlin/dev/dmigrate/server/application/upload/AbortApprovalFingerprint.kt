@@ -10,24 +10,24 @@ import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.upload.UploadSessionState
 
 /**
- * Phase F § 5.3 + § 8.6 (F.6 2/3) — typsicherer Wrapper ueber
+ * LF-010 / LF-013 / LN-009 / LN-011— typsicherer Wrapper ueber
  * [PayloadFingerprintService] fuer den Pre-Abort-Approval-
  * Fingerprint des `artifact_upload_abort`-Tools.
  *
- * Der Plan § 5.3 fixiert das Fingerprint-Material wortlaeufig:
+ * Der LF-010 / LF-013 / LN-009 / LN-011 fixiert das Fingerprint-Material wortlaeufig:
  *
  * - Toolname `artifact_upload_abort`
  * - `uploadSessionId`
  * - Session-Tenant
  * - Session-Owner-Principal
  * - Admin-/Caller-Principal
- * - **Pre-Abort-Session-Status** (Plan-Carve-out F.6 3/3, siehe unten)
+ * - **Pre-Abort-Session-Status** (LF-010 / LF-013 / LN-009 / LN-011 Carve-out, siehe unten)
  * - `artifactKind`
  * - `uploadIntent`
- * - **Pre-Abort reservierte bzw. empfangene Bytes** (Plan-Carve-out)
+ * - **Pre-Abort reservierte bzw. empfangene Bytes** (LF-010 / LF-013 / LN-009 / LN-011 Carve-out)
  * - optionalen `reason`
  *
- * **Plan-Carve-out (F.6 3/3)**: `preAbortState` und `preAbortBytes`
+ * **LF-010 / LF-013 / LN-009 / LN-011 Carve-out**: `preAbortState` und `preAbortBytes`
  * werden im `AbortOutcome`-Record durabel gespeichert, fliessen aber
  * NICHT in den Fingerprint. Hintergrund: der Plan fordert gleichzeitig
  * "Retry desselben genehmigten Abbruchs ist idempotent". Wuerde der
@@ -38,7 +38,7 @@ import dev.dmigrate.server.core.upload.UploadSessionState
  * `SyncEffectIdempotencyStore.reserve` lieferte
  * `Conflict` statt `Existing(resultRef)`. Idempotenz und State-Bindung
  * sind daher gegensatzfrei nur erreichbar, wenn die im Verlauf
- * mutierenden Felder ausserhalb des Fingerprints leben (Plan § 5.3
+ * mutierenden Felder ausserhalb des Fingerprints leben (LF-010 / LF-013 / LN-009 / LN-011
  * Alternative B: "vor der Rueckgabe gegen den aktuellen Request-
  * Fingerprint vergleichen"). Der durable `AbortOutcome.preAbortState`
  * konserviert das Material fuer Audit und Debugging.
@@ -49,7 +49,7 @@ import dev.dmigrate.server.core.upload.UploadSessionState
  * AbortOutcome-Record.
  *
  * Verwendet die bestehende [FingerprintScope.UPLOAD_INIT]-Bindung —
- * fuer Phase F unterscheidet das `toolName`-Feld in `BindContext` den
+ * fuer LF-010 / LF-013 / LN-009 / LN-011 unterscheidet das `toolName`-Feld in `BindContext` den
  * Init- vom Abort-Fingerprint, sodass kein separater Scope eingefuehrt
  * werden muss (Plan: "keinen separaten Abort-Claim-Key").
  */
@@ -64,7 +64,7 @@ class AbortApprovalFingerprint(
             put("sessionOwnerPrincipalId", JsonValue.str(attempt.sessionOwnerPrincipalId.value))
             put("artifactKind", JsonValue.str(attempt.artifactKind.name))
             put("uploadIntent", JsonValue.str(attempt.uploadIntent))
-            // Plan § 5.3: optionaler `reason` muss in den Fingerprint —
+            // LF-010 / LF-013 / LN-009 / LN-011: optionaler `reason` muss in den Fingerprint —
             // sonst koennte ein zweiter Aufruf mit veraendertem
             // `reason` denselben Outcome zurueckbekommen, was die
             // "abweichende Wiederholung deterministisch ablehnen"-
@@ -91,7 +91,7 @@ class AbortApprovalFingerprint(
 
 /**
  * Eingabe fuer [AbortApprovalFingerprint]. Felder spiegeln den
- * Plan-§-5.3-Vertrag eins-zu-eins.
+ * LF-010 / LF-013 / LN-009 / LN-011-Vertrag eins-zu-eins.
  *
  * @property callerTenantId Tenant-Scope des Caller-Principals
  *   (kann von [sessionTenantId] abweichen, wenn ein Admin eine
@@ -106,7 +106,7 @@ class AbortApprovalFingerprint(
  * @property preAbortState Session-Status zum Zeitpunkt des
  *   Approval-Grants. **Wird durabel im AbortOutcome gespeichert,
  *   fliesst aber nicht in den Fingerprint** (siehe
- *   [AbortApprovalFingerprint] Plan-Carve-out F.6 3/3).
+ *   [AbortApprovalFingerprint] LF-010 / LF-013 / LN-009 / LN-011 Carve-out).
  * @property artifactKind, [uploadIntent] Session-Vertragsfelder.
  * @property preAbortBytes Pre-Abort reservierte / empfangene Bytes.
  *   **Wird im AbortOutcome gespeichert, fliesst NICHT in den

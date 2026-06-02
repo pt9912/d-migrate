@@ -114,7 +114,7 @@ class JobCancelServiceTest : FunSpec({
     }
 
     test("Opake jobId existiert NUR in fremdem Tenant → NotFound (kein Cross-Tenant-Probe)") {
-        // Plan §5.6 line 668-670: opake jobId erlaubt KEINEN globalen
+        // LF-012 / LN-011 / LN-017 / LN-027: opake jobId erlaubt KEINEN globalen
         // Lookup. Job existiert in "beta", Caller ist in "acme" → NotFound.
         val (store, registry) = fixture()
         seedJob(store, jobId = "j-beta", tenant = "beta")
@@ -197,7 +197,7 @@ class JobCancelServiceTest : FunSpec({
         outcome.record.managedJob.cancelRequest.requestedReason!!.startsWith("Bearer ***") shouldBe true
     }
 
-    test("Wiederholter cancel: erster Reason gewinnt (Plan §7.8 line 1224-1226)") {
+    test("Wiederholter cancel: erster Reason gewinnt (LF-012 / LN-011 / LN-017 / LN-027)") {
         val (store, registry) = fixture()
         seedJob(store, status = JobStatus.RUNNING)
         registry.register("j1", CancellationTokenSource.create())
@@ -215,13 +215,13 @@ class JobCancelServiceTest : FunSpec({
         )
         second.shouldBeInstanceOf<JobCancelOutcome.AckPending>()
         // Der Store-CONTRACT: markCancelRequested ueberschreibt den
-        // ersten Reason nicht (Plan §7.2 Idempotenz, in InMemoryJobStore
+        // ersten Reason nicht (LF-012 / LN-011 / LN-017 / LN-027 Idempotenz, in InMemoryJobStore
         // bereits eingehalten).
         second.record.managedJob.cancelRequest.requestedReason shouldBe "first-reason"
     }
 
     test("Crash/Retry-Replay: zweiter cancel mit gleichem Reason ist idempotent") {
-        // Plan §7.8 line 1252-1254: identischer Reason bleibt idempotent.
+        // LF-012 / LN-011 / LN-017 / LN-027: identischer Reason bleibt idempotent.
         val (store, registry) = fixture()
         seedJob(store, status = JobStatus.RUNNING)
         registry.register("j1", CancellationTokenSource.create())

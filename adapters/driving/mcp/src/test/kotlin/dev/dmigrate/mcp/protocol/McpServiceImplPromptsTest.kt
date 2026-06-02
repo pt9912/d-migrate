@@ -15,7 +15,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.time.Instant
 
 /**
- * Phase G § 6 G.7 — End-to-end Akzeptanz auf der McpServiceImpl-
+ * LF-017 / LF-024 / LN-030 / LN-031 — End-to-end Akzeptanz auf der McpServiceImpl-
  * Schicht: capabilities.prompts wird im initialize ausgewiesen,
  * prompts/list und prompts/get sind durch dmigrate:read gated und
  * mappen Fehler auf JSON-RPC + dmigrateCode.
@@ -51,7 +51,7 @@ class McpServiceImplPromptsTest : FunSpec({
             )
         }
 
-    test("Plan §6 G.7 Akzeptanz: initialize enthaelt capabilities.prompts wenn Registry gewired") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: initialize enthaelt capabilities.prompts wenn Registry gewired") {
         val svc = service(withPromptRegistry = true)
         val params = InitializeParams(
             protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION,
@@ -77,7 +77,7 @@ class McpServiceImplPromptsTest : FunSpec({
         )
     }
 
-    test("Plan §6 G.7: prompts/list ohne Registry-Wiring -> MethodNotFound") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/list ohne Registry-Wiring -> MethodNotFound") {
         val svc = service(withPromptRegistry = false)
         val ex = shouldThrow<Exception> {
             svc.promptsList(PromptsListParams()).get()
@@ -88,7 +88,7 @@ class McpServiceImplPromptsTest : FunSpec({
         rex.responseError.code shouldBe ResponseErrorCode.MethodNotFound.value
     }
 
-    test("Plan §6 G.7: unbekannter Prompt -> JSON-RPC mit dmigrateCode=RESOURCE_NOT_FOUND") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unbekannter Prompt -> JSON-RPC mit dmigrateCode=RESOURCE_NOT_FOUND") {
         val svc = service(withPromptRegistry = true)
         val ex = shouldThrow<Exception> {
             svc.promptsGet(PromptsGetParams(name = "no_such_prompt", arguments = null)).get()
@@ -100,7 +100,7 @@ class McpServiceImplPromptsTest : FunSpec({
         data["dmigrateCode"] shouldBe "RESOURCE_NOT_FOUND"
     }
 
-    test("Plan §6 G.7: ungueltige Argumente -> JSON-RPC mit dmigrateCode=VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: ungueltige Argumente -> JSON-RPC mit dmigrateCode=VALIDATION_ERROR") {
         val svc = service(withPromptRegistry = true)
         val ex = shouldThrow<Exception> {
             svc.promptsGet(
@@ -118,7 +118,7 @@ class McpServiceImplPromptsTest : FunSpec({
         rex.responseError.message shouldContain "schemaRef"
     }
 
-    test("Plan §6 G.7: Hygiene-Verletzung -> JSON-RPC mit dmigrateCode=PROMPT_HYGIENE_BLOCKED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Hygiene-Verletzung -> JSON-RPC mit dmigrateCode=PROMPT_HYGIENE_BLOCKED") {
         val svc = service(withPromptRegistry = true)
         val ex = shouldThrow<Exception> {
             svc.promptsGet(
@@ -136,11 +136,11 @@ class McpServiceImplPromptsTest : FunSpec({
         @Suppress("UNCHECKED_CAST")
         val data = rex.responseError.data as Map<String, Any?>
         data["dmigrateCode"] shouldBe "PROMPT_HYGIENE_BLOCKED"
-        // Plan §6 G.4 Akzeptanz: kein Secret im public message.
+        // LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: kein Secret im public message.
         rex.responseError.message.contains("AKIA") shouldBe false
     }
 
-    test("Plan §6 G.7: prompts/list/get verlangen dmigrate:read") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: prompts/list/get verlangen dmigrate:read") {
         val noScopePrincipal = readPrincipal.copy(scopes = emptySet())
         val svc = McpServiceImpl(
             serverVersion = "test",

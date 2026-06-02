@@ -169,7 +169,7 @@ class McpServerBootstrapTest : FunSpec({
         }
     }
 
-    test("startStdio wires optional Phase-G prompt registry into initialize capabilities") {
+    test("startStdio wires optional LF-017 / LF-024 / LN-030 / LN-031 prompt registry into initialize capabilities") {
         val frame = """
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"${dev.dmigrate.mcp.protocol.McpProtocol.MCP_PROTOCOL_VERSION}","clientInfo":{"name":"t","version":"1"},"capabilities":{}}}
         """.trimIndent() + "\n"

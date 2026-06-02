@@ -63,10 +63,10 @@ object HikariConnectionPoolFactory {
     /**
      * Konvertiert ein Millisekunden-Budget in das von
      * [java.sql.Statement.setQueryTimeout] verlangte Sekunden-Format und
-     * rundet sub-Sekunden-Werte AUF (Plan §5.3 — verhindert, dass `500ms`
+     * rundet sub-Sekunden-Werte AUF (LN-010 — verhindert, dass `500ms`
      * versehentlich zu `0` und damit zu "disabled" wird).
      *
-     * `<=0` bleibt `0` (Disable-Pfad aus Plan §4.2).
+     * `<=0` bleibt `0` (expliziter Disable-Pfad).
      *
      * `internal` für Tests.
      */
@@ -76,15 +76,15 @@ object HikariConnectionPoolFactory {
     }
 
     /**
-     * Erzeugt das driver-spezifische `connectionInitSql` aus dem
-     * Cancel-Reaktions-Budget aus implementation-plan-0.9.6 §4.1.
+     * LN-010: Erzeugt das driver-spezifische `connectionInitSql` aus dem
+     * Cancel-Reaktions-Budget.
      *
      * Pro Dialekt:
      * - PostgreSQL: `SET statement_timeout = $ms` — wirkt auf alle
      *   Statements (SELECT/INSERT/UPDATE/DDL) der jeweiligen Connection.
      * - MySQL: `SET SESSION MAX_EXECUTION_TIME = $ms` — wirkt **nur auf
      *   SELECTs** (MySQL-Quirk). Write-Pfade benötigen zusätzlich den
-     *   gemeinsamen JDBC-Timeout-Layer aus E0.7.3.
+     *   gemeinsamen JDBC-Timeout-Layer aus LF-012 / LN-011 / LN-017 / LN-027.
      * - SQLite: `PRAGMA busy_timeout = $ms` — Lock-Wait-Timeout. Lange
      *   Range-Scans benötigen zusätzlich `setQueryTimeout` aus dem
      *   gemeinsamen Layer.
@@ -161,7 +161,7 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
  * instanzieren.
  *
  * Wraps every borrowed [Connection] in a [TimeoutDecoratedConnection]
- * (Plan §5.3 Common-JDBC-Timeout-Layer) and applies
+ * (LN-010 Common-JDBC-Timeout-Layer) and applies
  * [Connection.setNetworkTimeout] for connection-level I/O bounds, sodass
  * insbesondere `DatabaseMetaData`-Direkt-Calls wie `getPrimaryKeys` aus
  * PostgreSQL/MySQL-Writer-Open nicht ungebunden bleiben.
@@ -169,7 +169,7 @@ internal class FallbackJdbcUrlBuilder(override val dialect: DatabaseDialect) : J
  * Drivers, die [Connection.setNetworkTimeout] nicht implementieren
  * (`SQLFeatureNotSupportedException`), fallen still auf den Statement-
  * Timeout-Pfad zurück; Statement-Level-Timeouts greifen weiterhin via
- * Decorator (Plan §4.3-Tabelle SQLite-Branch).
+ * Decorator.
  */
 private class HikariConnectionPool(
     override val dialect: DatabaseDialect,
@@ -186,7 +186,8 @@ private class HikariConnectionPool(
             } catch (_: SQLFeatureNotSupportedException) {
                 // Fall back silently: Statement-level timeouts via the
                 // TimeoutDecoratedConnection still bound query duration.
-                // See Plan §4.3 SQLite-Branch.
+                // SQLite and other drivers may not support network timeout;
+                // statement-level timeouts still bound query duration.
             }
         }
         return TimeoutDecoratedConnection(raw, statementTimeoutSeconds)

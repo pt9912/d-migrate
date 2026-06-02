@@ -9,7 +9,7 @@ import java.nio.charset.Charset
  *
  * Wird vom [JsonChunkWriter] verwendet, weil DSL-JSON intern immer
  * UTF-8-Bytes produziert. Wenn der User über `--encoding utf-16` oder
- * `iso-8859-1` ein anderes Output-Encoding verlangt (Plan §3.5 / §6.6 + F25),
+ * `iso-8859-1` ein anderes Output-Encoding verlangt (LF-009 / LF-013),
  * wandelt dieser Wrapper die UTF-8-Bytes Stück für Stück in das Ziel-Encoding
  * um.
  *

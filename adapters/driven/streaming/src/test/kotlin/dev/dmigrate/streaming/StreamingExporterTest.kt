@@ -54,11 +54,10 @@ class StreamingExporterTest : FunSpec({
 
     val pool = NoopConnectionPool
 
-    // ─── 0.9.0 Phase C.2: Mid-Table-Resume-Pfad ─────────────────
-    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ─── LF-013 / LN-006 / LN-012: Mid-Table-Resume-Pfad ─────────
     // ────────────────────────────────────────────────────────────
 
-    test("C.2: resumeMarkers triggers the 5-param streamTable overload") {
+    test("LF-008 / LF-009 / LF-013: resumeMarkers triggers the 5-param streamTable overload") {
         val reader = FakeDataReader(
             mapOf("users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))))
         )
@@ -80,7 +79,7 @@ class StreamingExporterTest : FunSpec({
         reader.lastResumeMarkers["users"] shouldBe marker
     }
 
-    test("C.2: onChunkProcessed emits position with last-row marker/tie-breaker values") {
+    test("LF-008 / LF-009 / LF-013: onChunkProcessed emits position with last-row marker/tie-breaker values") {
         val reader = FakeDataReader(
             mapOf("users" to listOf(
                 chunk(
@@ -117,7 +116,7 @@ class StreamingExporterTest : FunSpec({
         progressCalls[1].position.lastTieBreakerValues shouldContainExactly listOf<Any?>("carol")
     }
 
-    test("C.2: onChunkProcessed is NOT invoked for empty chunks") {
+    test("LF-008 / LF-009 / LF-013: onChunkProcessed is NOT invoked for empty chunks") {
         val reader = FakeDataReader(
             mapOf("users" to listOf(emptyChunk("users")))
         )
@@ -140,7 +139,7 @@ class StreamingExporterTest : FunSpec({
         progressCalls.shouldBeEmpty()
     }
 
-    test("C.2: failing onChunkProcessed emits one warning and export continues") {
+    test("LF-008 / LF-009 / LF-013: failing onChunkProcessed emits one warning and export continues") {
         val reader = FakeDataReader(
             mapOf("users" to listOf(
                 chunk("users", 0, arrayOf<Any?>(1, "alice"), arrayOf<Any?>(2, "bob")),
@@ -176,7 +175,7 @@ class StreamingExporterTest : FunSpec({
         }
     }
 
-    test("C.2: tables without resumeMarker take the legacy 4-param path") {
+    test("LF-008 / LF-009 / LF-013: tables without resumeMarker take the legacy 4-param path") {
         val reader = FakeDataReader(
             mapOf(
                 "users" to listOf(chunk("users", 0, arrayOf<Any?>(1, "alice"))),

@@ -19,8 +19,8 @@ data class UploadLimits(
 )
 
 /**
- * Per-tenant defaults from `ImpPlan-0.9.6-A.md` §14.2. Per-principal
- * and per-operation overrides are deliberately omitted in Phase A —
+ * Per-tenant defaults for LF-012 / LN-011 / LN-017 / LN-027. Per-principal
+ * and per-operation overrides are deliberately omitted in this LF-012 / LN-038 default —
  * `QuotaKey` already supports both at the store level, but no
  * default is configured here.
  */

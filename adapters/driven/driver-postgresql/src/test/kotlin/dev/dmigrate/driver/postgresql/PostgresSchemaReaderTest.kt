@@ -6,6 +6,7 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.metadata.JdbcOperations
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.maps.shouldContainKey
 import io.kotest.matchers.maps.shouldHaveSize as mapShouldHaveSize
@@ -53,11 +54,19 @@ class PostgresSchemaReaderTest : FunSpec({
         // Extensions
         every { jdbc.queryList(match { it.contains("pg_extension") }) } returns emptyList()
         // Views, view→function deps, functions, procedures, triggers
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("pg_depend") && it.contains("pg_proc") }, any(), any()) } returns emptyList()
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns emptyList()
         every { jdbc.queryList(match { it.contains("information_schema.triggers") }, any()) } returns emptyList()
+        // E.1 Slice D.2: trigger ↔ function edges via pg_trigger.tgfoid → pg_proc.oid.
+        every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns emptyList()
+        // E.1 Slice E: routine identity attributes from pg_proc.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns emptyList()
     }
 
     fun stubTableQueries(columns: List<Map<String, Any?>>, pkColumns: List<String>) {
@@ -159,12 +168,54 @@ class PostgresSchemaReaderTest : FunSpec({
         result.notes shouldHaveSize 1
         result.notes[0].code shouldBe "R400"
         result.notes[0].objectName shouldBe "uuid-ossp"
+        result.notes[0].hint shouldContain "installation only"
+    }
+
+    test("read distinguishes installed extensions from objects that use extensions") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("pg_extension") }) } returns listOf(
+            mapOf("extname" to "postgis"),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.tables") }, any()) } returns listOf(
+            mapOf("table_name" to "places", "table_schema" to "public", "table_type" to "BASE TABLE"),
+        )
+        stubTableQueries(
+            columns = listOf(
+                mapOf(
+                    "column_name" to "shape",
+                    "data_type" to "user-defined",
+                    "udt_name" to "geometry",
+                    "is_nullable" to "YES",
+                    "column_default" to null,
+                    "ordinal_position" to 1,
+                    "character_maximum_length" to null,
+                    "numeric_precision" to null,
+                    "numeric_scale" to null,
+                    "is_identity" to "NO",
+                    "identity_generation" to null,
+                    "generated_sequence_name" to null,
+                ),
+            ),
+            pkColumns = emptyList(),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeViews = false,
+            includeFunctions = false, includeProcedures = false, includeTriggers = false))
+
+        result.notes.map { it.code }.shouldContainExactlyInAnyOrder("R400", "R401")
+        result.notes.single { it.code == "R400" }.objectName shouldBe "postgis"
+        result.notes.single { it.code == "R401" }.objectName shouldBe "places.shape"
+        result.notes.single { it.code == "R401" }.message shouldContain "uses the PostGIS extension"
     }
 
     test("read includes views when enabled") {
         stubEmptyDefaults()
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
-            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active"),
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users",
+                "view_definition" to "SELECT * FROM users WHERE active",
+                "is_materialized" to false,
+            ),
         )
 
         val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
@@ -172,6 +223,43 @@ class PostgresSchemaReaderTest : FunSpec({
 
         result.schema.views.mapShouldHaveSize(1)
         result.schema.views["active_users"]!!.sourceDialect shouldBe "postgresql"
+    }
+
+    test("read includes PostgreSQL view relation dependencies and materialized flag") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users_mv",
+                "view_definition" to "SELECT id FROM users",
+                "is_materialized" to true,
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns listOf(
+            mapOf(
+                "view_name" to "active_users_mv",
+                "relation_name" to "users",
+                "relation_kind" to "r",
+                "column_name" to "id",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns listOf(
+            mapOf(
+                "view_name" to "active_users_mv",
+                "column_name" to "id",
+                "column_type" to "integer",
+                "ordinal_position" to 1,
+            ),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users_mv"]!!
+        view.materialized shouldBe true
+        view.columns!![0].name shouldBe "id"
+        view.columns!![0].type shouldBe "integer"
+        view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.columns shouldBe mapOf("users" to listOf("id"))
     }
 
     test("read includes functions with parameters") {
@@ -595,4 +683,5 @@ class PostgresSchemaReaderTest : FunSpec({
         seq.cycle shouldBe true
         seq.cache.shouldBeNull()
     }
+
 })

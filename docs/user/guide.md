@@ -502,6 +502,7 @@ d-migrate data import --source ./transfer --target mysql://localhost/target \
 | `--generate-rollback` | Zusätzlich Rollback-DDL erzeugen                          |
 | `--split`             | DDL-Ausgabemodus: `single` (Standard) oder `pre-post` fuer importfreundliche Trennung in `pre-data`/`post-data` |
 | `--mysql-named-sequences` | MySQL-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber Hilfsobjekte). Nur fuer `--target mysql`; bei PostgreSQL/SQLite Exit 2. |
+| `--sqlite-named-sequences` | SQLite-Sequence-Modus: `action_required` (Standard, E056-Skip) oder `helper_table` (Emulation ueber `dmg_sequences` + kanonisches `_bi`/`_ai`-Trigger-Paar). Nur fuer `--target sqlite`; bei PostgreSQL/MySQL Exit 2. |
 | `--spatial-profile`   | Spatial-Profil: `postgis`, `native`, `spatialite`, `none` |
 
 ### Optionen für `data export`
@@ -583,6 +584,135 @@ Operandseitiges `W116` (z.B. bei `schema compare --source file:schema.yaml
 den Exit-Code nicht: Exit 0 bei identischen Schemas, Exit 1 nur bei
 echten Schema-Unterschieden. In der JSON-/YAML-Ausgabe erscheint `W116`
 unter `target_operand.notes`, nicht als Diff-Eintrag.
+
+## SQLite-Sequence-Emulation: Reverse und Compare (0.9.7)
+
+Wenn du `schema generate --target sqlite --sqlite-named-sequences helper_table`
+verwendet hast, legt d-migrate kanonische Hilfsobjekte in der SQLite-Datenbank
+an (`dmg_sequences`-Tabelle und ein `_bi`/`_ai`-Trigger-Paar pro
+sequence-getragener Spalte). Anders als bei MySQL gibt es **keine** Stored
+Functions — SQLite kennt sie nicht; die Inkrement-Logik lebt komplett im
+`BEFORE INSERT`-Trigger, der `AFTER INSERT`-Trigger schreibt den reservierten
+Wert per `UPDATE ... WHERE ROWID = NEW.ROWID` in die eingefuegte Zeile.
+
+### Reverse-Engineering
+
+`schema reverse` erkennt die Hilfsobjekte automatisch und faltet sie zurueck
+auf native `sequences` und `default: { sequence_nextval: ... }` im neutralen
+Schema. Die `dmg_sequences`-Tabelle und die Sequence-Support-Trigger tauchen
+dabei nicht als normale Tabellen oder Trigger im Ergebnis auf.
+
+Voraussetzung: Die Hilfsobjekte muessen die kanonische Form und den
+d-migrate-Marker-Kommentar (`/* d-migrate:sqlite-sequence-v1 object=...
+sequence=... table=... column=... */`) tragen, so wie sie von
+`schema generate` erzeugt werden.
+
+**Warnung W116 — Degradiert**: Wenn der Marker-Kommentar fehlt, der Trigger
+aber dem kanonischen Namensschema (`dmg_seq_<table>_<column>_<hash>_{bi,ai}`)
+entspricht, greift ein sekundaeres Matching auf Basis von Name, WHEN-Klausel
+und Body-Tokens (`dmg_sequences`, ROWID). Erfuellt das Trigger-Paar alle
+fuenf Kriterien, wird die Sequence rekonstruiert — aber mit `W116`, weil die
+Identifikation nicht autoritativ war.
+
+**Warnung W120 — Body-modifiziert**: Wenn der Marker passt, aber der
+Trigger-Body wurde manuell veraendert (z.B. die `UPDATE "dmg_sequences"`-
+Klausel entfernt), bleibt die Sequence-Zuordnung erhalten — der Marker ist
+autoritativ —, der Trigger wird aber als **moeglicherweise nicht funktional**
+geflaggt. Vor einem vertrauenswuerdigen Round-Trip sollte der Trigger neu
+generiert werden.
+
+**Warnung W124 — Reverse-Reihenfolge-Maskierung**: SQLite fuert
+BEFORE INSERT-Trigger in ihrer `sqlite_master`-Anlage-Reihenfolge aus.
+Findet der Reader einen nutzerdefinierten BEFORE INSERT-Trigger auf der
+Zieltabelle mit einer kleineren `rowid` als der `_bi`-Trigger, emittiert er
+`W124`: der Nutzer-Trigger feuert zuerst und kann durch ein Setzen von
+`NEW.<column>` die WHEN-Klausel des Sequence-Triggers unterlaufen.
+
+### Compare-Verhalten
+
+`schema compare` arbeitet auf Neutralmodell-Ebene. Wenn beide Seiten dieselbe
+Sequence beschreiben — egal ob als Datei oder als reverse-te SQLite-DB —
+ergibt sich kein Diff. Driftet `dmg_sequences.next_value` zwischen zwei
+Reverse-Reads (z.B. weil die Sequence zwischenzeitlich Werte vergeben hat),
+erscheint genau ein `sequencesChanged`-Eintrag fuer die betroffene Sequence;
+die User-Tabellen bleiben unveraendert.
+
+Operandseitiges `W116`/`W120`/`W124` (z.B. bei `schema compare
+--source file:schema.yaml --target db:sqlite:///path/db.sqlite`) bleibt als
+Diagnose sichtbar, beeinflusst aber den Exit-Code nicht.
+
+### Round-Trip-Risiko
+
+> "Sequence-Support-Trigger sind generierte Infrastruktur. Das Entfernen des
+> Marker-Kommentars fuehrt zu degradierter Erkennung (W116). Das Aendern des
+> Trigger-Bodys fuehrt zu einer Body-Modified-Warnung (W120). Das Umbenennen
+> des Triggers fuehrt zum Verlust der Spaltenzuordnung. Aendern Sie
+> Sequence-Parameter ausschliesslich im neutralen Schema und generieren Sie
+> neu."
+
+### preserveCurrentValue (atomar unter Lock seit 0.9.7)
+
+Wenn deine Sequence im neutralen Schema mit `preserve_current_value: true`
+markiert ist, faltet `schema migrate --execute` den laufenden Wert-Lese-
+Schritt (Probe), die geschuetzten DDL-Statements
+(`CreateSequence`/`AlterSequence`/`RenameSequence`) und den
+Restore-Schritt in eine einzige Transaktion unter Per-Dialekt-Lock.
+Manueller `UPDATE dmg_sequences`-Schritt entfaellt.
+
+Wie weit der Lock reicht, ist **dialektabhaengig** — Restrisiken siehe
+unten:
+
+- **MySQL / SQLite**: der Lock blockiert auch App-seitige
+  `dmg_nextval`-Aufrufe (MySQL via `SELECT ... FOR UPDATE` auf die
+  helper-Row; SQLite via DB-weite `BEGIN IMMEDIATE`-RESERVED-Lock).
+  Eine gleichzeitig laufende App kann zwischen Probe und Restore
+  keine Luecke mehr reissen.
+- **PostgreSQL**: `pg_advisory_xact_lock` blockiert nur andere
+  `schema migrate`-Aufrufe gegen dieselbe Sequenz. App-seitige
+  `nextval(...)`-Aufrufe sind dadurch **nicht** blockiert (PG-
+  Sequenzen sind by-design lock-free). Der Lock schliesst hier nur
+  die Race zwischen zwei Migrationen, nicht zwischen Migration und
+  App — siehe Restrisiko unten.
+
+**Per-Dialekt-Lock-Strategie:**
+
+- PostgreSQL: `pg_advisory_xact_lock(hashtext(<sequence>))` pro Sequenz,
+  innerhalb einer `BEGIN`/`COMMIT`-Klammer.
+- MySQL: `SELECT ... FOR UPDATE` auf der `dmg_sequences`-Helper-Row.
+- SQLite: `BEGIN IMMEDIATE` (DB-weiter Write-Lock; xerial-spezifischer
+  Lock-Wait per `setQueryTimeout`).
+
+SQLite-Voraussetzung (`helper_table`-Modus):
+
+```bash
+d-migrate schema migrate \
+  --source desired.yaml --target db:sqlite:///path/db.sqlite \
+  --execute \
+  --sqlite-named-sequences helper_table
+```
+
+Ohne `--sqlite-named-sequences helper_table` blockt der Plan pro
+Kandidat mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Exit 8). Der
+PG-/MySQL-Pfad benoetigt keinen Opt-in — der atomare Pfad ist Default.
+
+**Verbleibende Restrisiken** *(nicht atomar geschuetzt)*:
+
+- Auf PostgreSQL erhoeht `nextval(...)` aus einer App-Connection den
+  Sequence-Zaehler ausserhalb jeder MVCC-Sichtbarkeit. Falls eine App
+  zwischen Probe und Lock-Erwerb ein `nextval` ausfuehrt, sieht der
+  Atomic-Pfad den neuen Wert nicht — der Lock schliesst hier eine
+  Race zwischen *zwei Migrationen*, nicht zwischen Migration und App.
+  Solche Apps muessen Schreibverkehr weiterhin vor `--execute`
+  pausieren oder ueber Quota-Reserve-Logik den `nextval`-Aufruf
+  blockieren.
+- Cross-Database-Locks (z.B. Multi-Process-Migrationen ueber dieselbe
+  Sequenz) sind out-of-scope. Ein Single-Process-`schema migrate`
+  fuehrt deterministisch sortierte Locks; Cross-Plan-Deadlock-
+  Beweise sind Phase D des Atomic-Preserve-Refactors.
+
+Plan-Doc:
+`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md` §3.2
+und §6 fuer die vollstaendige Carve-Out-Liste.
 
 ## Neutrales Typsystem
 

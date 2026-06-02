@@ -3,7 +3,7 @@ package dev.dmigrate.mcp.auth
 import dev.dmigrate.server.core.principal.PrincipalContext
 
 /**
- * Bearer-token validation result per `ImpPlan-0.9.6-B.md` §12.14.
+ * Bearer-token validation result per LF-012 / LN-027 / LN-028 / LN-038
  *
  * The validator does NOT decide on Scope sufficiency — that's the
  * caller's job (it knows the JSON-RPC method name and the

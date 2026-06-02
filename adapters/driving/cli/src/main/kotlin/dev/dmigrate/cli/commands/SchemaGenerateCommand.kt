@@ -11,10 +11,6 @@ import com.github.ajalt.clikt.parameters.types.choice
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.cli.output.OutputFormatter
-import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.format.SchemaFileResolver
-import dev.dmigrate.format.report.TransformationReportWriter
 
 /**
  * `d-migrate schema generate` — dünne Clikt-Schale über [SchemaGenerateRunner].
@@ -50,52 +46,27 @@ class SchemaGenerateCommand : CliktCommand(name = "generate") {
     val mysqlNamedSequences by option("--mysql-named-sequences",
         help = "MySQL named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
         .choice("action_required", "helper_table")
+    val sqliteNamedSequences by option("--sqlite-named-sequences",
+        help = "SQLite named-sequence strategy: 'action_required' (default) or 'helper_table' for emulation")
+        .choice("action_required", "helper_table")
 
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        val formatter = OutputFormatter(ctx)
-        val splitMode = if (split == "pre-post") SplitMode.PRE_POST else SplitMode.SINGLE
-        val request = SchemaGenerateRequest(
-            source = source,
-            target = target,
-            spatialProfile = spatialProfile,
-            output = output,
-            report = report,
-            generateRollback = generateRollback,
-            outputFormat = ctx.outputFormat,
-            verbose = ctx.verbose,
-            quiet = ctx.quiet,
-            splitMode = splitMode,
-            mysqlNamedSequences = mysqlNamedSequences,
-            deterministic = deterministic,
+        val exitCode = SchemaGenerateWiring.execute(
+            SchemaGenerateOptions(
+                source = source,
+                target = target,
+                output = output,
+                report = report,
+                generateRollback = generateRollback,
+                deterministic = deterministic,
+                spatialProfile = spatialProfile,
+                split = split,
+                mysqlNamedSequences = mysqlNamedSequences,
+                sqliteNamedSequences = sqliteNamedSequences,
+                cliContext = root?.cliContext() ?: CliContext(),
+            )
         )
-        val runner = SchemaGenerateRunner(
-            schemaReader = { path -> SchemaFileResolver.codecForPath(path).read(path) },
-            generatorLookup = { DatabaseDriverRegistry.get(it).ddlGenerator() },
-            reportWriter = { path, result, schema, dialect, src, splitModeStr, options ->
-                TransformationReportWriter().write(
-                    path,
-                    result,
-                    schema,
-                    dialect,
-                    src,
-                    splitModeStr,
-                    options.mysqlNamedSequenceMode,
-                    options.generatedAt,
-                    options.deterministic,
-                )
-            },
-            formatJsonOutput = SchemaGenerateHelpers::formatJsonOutput,
-            sidecarPath = SchemaGenerateHelpers::sidecarPath,
-            rollbackPath = SchemaGenerateHelpers::rollbackPath,
-            splitPath = SchemaGenerateHelpers::splitPath,
-            printError = { msg, src -> formatter.printError(msg, src) },
-            printValidationResult = { result, schema, src ->
-                formatter.printValidationResult(result, schema, src)
-            },
-        )
-        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }

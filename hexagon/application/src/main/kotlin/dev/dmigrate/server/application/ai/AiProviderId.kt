@@ -1,7 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.2 — typisierter Provider-Identifikator.
+ * LF-017 / LF-024 / LN-030 / LN-031— typisierter Provider-Identifikator.
  *
  * Stabile, scrub-sichere Provider-Identität (`noop`, `ollama`,
  * `lm-studio`, `openai`, `anthropic`, ...). Dient als Schlüssel im
@@ -32,10 +32,10 @@ value class AiProviderId(val value: String) {
         private val ALLOWED_CHARS: Set<Char> =
             ('a'..'z').toSet() + ('0'..'9').toSet() + setOf('-', '_', '.')
 
-        /** Plan §4.1 verbindlicher Default — immer verfügbar. */
+        /** LF-017 / LF-024 / LN-030 / LN-031 verbindlicher Default — immer verfügbar. */
         val NOOP: AiProviderId = AiProviderId("noop")
 
-        /** Plan §6 G.3: lokale Provider — Vorbereitung, kein Adapter in 0.9.6. */
+        /** LF-017 / LF-024 / LN-030 / LN-031: lokale Provider — Vorbereitung, kein Adapter in 0.9.6. */
         val OLLAMA: AiProviderId = AiProviderId("ollama")
         val LM_STUDIO: AiProviderId = AiProviderId("lm-studio")
     }

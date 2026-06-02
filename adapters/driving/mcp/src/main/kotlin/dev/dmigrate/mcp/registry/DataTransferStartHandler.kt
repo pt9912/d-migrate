@@ -24,12 +24,12 @@ import dev.dmigrate.server.ports.ConnectionReferenceStore
 import java.time.Clock
 
 /**
- * Phase F § 6.2 + § 8.8 (F.8 2/4) — `data_transfer_start`-Handler.
+ * LF-010 / LF-013 / LN-009 / LN-011 — `data_transfer_start`-Handler.
  *
- * Pre-Idempotency-Validation (Plan § 8.8 wortlaeufig "vor
+ * Pre-Idempotency-Validation (LF-012 / LN-027 / LN-028 / LN-038 wortlaeufig "vor
  * Idempotency ohne Store-Write"):
  *
- * - `idempotencyKey` Pflicht (vom Phase-E
+ * - `idempotencyKey` Pflicht (vom LF-012 / LN-011 / LN-017 / LN-027
  *   [dev.dmigrate.server.application.job.JobStartInputValidator]
  *   geprueft).
  * - `sourceConnectionRef` + `targetConnectionRef` als RefField mit
@@ -37,13 +37,13 @@ import java.time.Clock
  *   JDBC-URLs, ungueltige URI-Syntax und Tenant-Mismatch ab.
  * - `chunkSize` muss in [1, 10000] liegen.
  * - `sinceColumn` und `since` paarweise: beide fehlen ODER beide
- *   gesetzt (Plan § 8.8 wortlaeufig).
+ *   gesetzt (LF-012 / LN-027 / LN-028 / LN-038 wortlaeufig).
  * - `sinceColumn` muss CLI-Identifier-Format folgen (alphanumerisch
  *   plus `.` und `_`; konservativ).
- * - `filter` darf nicht blank sein (Plan: "blanke oder ungueltige
+ * - `filter` darf nicht blank sein (Vertrag: "blanke oder ungueltige
  *   Filter liefern VALIDATION_ERROR").
  *
- * Phase-E Job-Pipeline:
+ * LF-012 / LN-011 / LN-017 / LN-027 Job-Pipeline:
  *
  * - [JobStartOrchestrator] uebernimmt Idempotency-Reservierung,
  *   Policy-Decision, Quota-Reservierung und durable Job-Anlage.
@@ -73,13 +73,13 @@ internal class DataTransferStartHandler(
         validateSincePair(args)
 
         val tenantId = context.principal.effectiveTenantId
-        // Phase F § 8.8 (F.8 3/4): Existenz-/Tenant-Lookup VOR der
-        // Idempotency-Reservierung. Plan-Wortlaut: "ConnectionRef
+        // LF-010 / LF-013 / LN-009 / LN-011: Existenz-/Tenant-Lookup VOR der
+        // Idempotency-Reservierung. Vertragswortlaut: "ConnectionRef
         // ohne aufloesbare Secret-/Provider-Referenz oder Principal-
         // Berechtigung -> RESOURCE_NOT_FOUND". Beide Refs werden
         // separat geprueft, sodass der Caller den genauen Fehler-
         // Pfad sieht. ConnectionReferenceStore liefert KEINE
-        // materialisierten JDBC-URLs (Plan: "secret-frei").
+        // materialisierten JDBC-URLs (Vertrag: "secret-frei").
         resolveConnectionRef(sourceConnectionRef, tenantId, "sourceConnectionRef")
         resolveConnectionRef(targetConnectionRef, tenantId, "targetConnectionRef")
         val now = clock.instant()
@@ -136,9 +136,9 @@ internal class DataTransferStartHandler(
     }
 
     /**
-     * Plan § 6.2: `chunkSize` ist eine "positive Ganzzahl bis 10000".
+     * LF-010 / LF-013 / LN-009 / LN-011: `chunkSize` ist eine "positive Ganzzahl bis 10000".
      * Schema sichert `minimum=1`; die Obergrenze liegt im Handler
-     * als Defense in Depth (analog zu F.7 (2/5)).
+     * als Defense in Depth (analog zu LF-010 / LF-013 / LN-009 / LN-011).
      */
     private fun validateChunkSize(args: JsonObject) {
         val element = args.get("chunkSize")?.takeUnless { it.isJsonNull } ?: return
@@ -165,7 +165,7 @@ internal class DataTransferStartHandler(
     }
 
     /**
-     * Plan § 8.8: "blanker oder ungueltiger filter -> VALIDATION_ERROR".
+     * LF-012 / LN-027 / LN-028 / LN-038: "blanker oder ungueltiger filter -> VALIDATION_ERROR".
      * Der Rueckgabewert ist die kanonische Form fuer den
      * MCP-Transfer-Fingerprint; datenbankspezifisches SQL-/DSL-Binding
      * bleibt Runner-Aufgabe.
@@ -213,7 +213,7 @@ internal class DataTransferStartHandler(
     }
 
     /**
-     * Plan § 8.8: "sinceColumn und since paarweise validieren: beide
+     * LF-012 / LN-027 / LN-028 / LN-038: "sinceColumn und since paarweise validieren: beide
      * fehlen oder beide gesetzt." `sinceColumn` muss CLI-Identifier-
      * Format folgen — konservativ alphanumerisch plus `.` und `_`,
      * sodass `schema.column` und `column_name` zulaessig sind, aber
@@ -250,17 +250,17 @@ internal class DataTransferStartHandler(
     }
 
     /**
-     * Phase F § 8.8 (F.8 3/4): tenant-scoped ConnectionRef-Lookup
+     * LF-010 / LF-013 / LN-009 / LN-011: tenant-scoped ConnectionRef-Lookup
      * mit `field`-spezifischer Fehlerausgabe (sourceConnectionRef vs
      * targetConnectionRef), sodass der Caller den genauen Pfad sieht
      * statt einer generischen "Connection not found"-Antwort.
      *
-     * Plan § 8.8 wortlaeufig:
+     * LF-012 / LN-027 / LN-028 / LN-038 wortlaeufig:
      * - tenant-scoped Validierung der ConnectionRef-URI
      * - findById im [ConnectionReferenceStore] -> RESOURCE_NOT_FOUND
      * - keine Secret-/JDBC-Materialisierung im Tool-Pfad
      *
-     * MCP-Transfer-Fingerprint: der Plan-§-8.8-Fingerprint-Vertrag
+     * MCP-Transfer-Fingerprint: der LF-010 / LF-013 / LN-009 / LN-011-Fingerprint-Vertrag
      * (sourceConnectionRef, targetConnectionRef, kanonische
      * Filterform, normalisierte since-Optionen, weitere
      * normalisierte Transfer-Optionen, Tenant + Principal) wird durch
@@ -307,7 +307,7 @@ internal class DataTransferStartHandler(
         const val TOOL_NAME: String = "data_transfer_start"
         const val OPERATION: String = "data_transfer"
         const val DEFAULT_JOB_RETENTION_SECONDS: Long = 24 * 60 * 60
-        // Plan § 6.2: chunkSize "positive Ganzzahl bis 10000".
+        // LF-010 / LF-013 / LN-009 / LN-011: chunkSize "positive Ganzzahl bis 10000".
         const val MAX_CHUNK_SIZE: Long = 10_000
         // CLI-Identifier-konsistente Validierung — alphanumerisch
         // plus `.` (qualified columns) und `_` (snake_case).

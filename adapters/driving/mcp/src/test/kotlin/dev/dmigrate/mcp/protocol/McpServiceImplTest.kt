@@ -38,13 +38,13 @@ class McpServiceImplTest : FunSpec({
         sut.negotiatedProtocolVersion() shouldBe null
     }
 
-    test("AP 6.9 capabilities advertise tools and resources but no prompts") {
+    test("LF-012 / LN-027 / LN-028 / LN-038 capabilities advertise tools and resources but no prompts") {
         val sut = McpServiceImpl(serverVersion = "0.1.0")
         val result = sut.initialize(
             InitializeParams(protocolVersion = McpProtocol.MCP_PROTOCOL_VERSION),
         ).get()
-        // §5.3: capabilities reflect only what is implemented. AP 6.8
-        // turned on tools, AP 6.9 turns on resources. Both keep
+        // Capabilities reflect only what is implemented by the
+        // LF-012 / LN-027 / LN-028 / LN-038 registry. Both keep
         // listChanged=false until subscriptions ship; resources also
         // declares subscribe=false (no Resource subscription support).
         result.capabilities.tools shouldBe mapOf("listChanged" to false)

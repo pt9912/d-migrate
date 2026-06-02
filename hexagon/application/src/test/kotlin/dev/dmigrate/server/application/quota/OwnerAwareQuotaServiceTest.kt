@@ -72,7 +72,7 @@ class OwnerAwareQuotaServiceTest : FunSpec({
         delegate.reserve(key, 1L).shouldBeInstanceOf<QuotaOutcome.Granted>()
     }
 
-    test("refundForOwner nach commit ist no-op (Plan §7.9 line 1278: commit haelt den Slot)") {
+    test("refundForOwner nach commit ist no-op (LF-012 / LN-011 / LN-017 / LN-027: commit haelt den Slot)") {
         val (delegate, ownerStore, owned) = fixture(limit = 1L)
         owned.reserve(key, 1L, "o1", now.plusSeconds(60), now)
         owned.commitForOwner("o1", now.plusSeconds(5))

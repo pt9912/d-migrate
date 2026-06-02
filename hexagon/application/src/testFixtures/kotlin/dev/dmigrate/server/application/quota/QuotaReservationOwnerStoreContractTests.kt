@@ -12,7 +12,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E §7.9 / `spec/phase-e-port-atomicity.md` (5) Atomicity-
+ * LF-012 / LN-011 / LN-017 / LN-027) Atomicity-
  * Vertraege fuer [QuotaReservationOwnerStore]-Implementoren.
  *
  * Kritische Eigenschaften:
@@ -142,7 +142,7 @@ abstract class QuotaReservationOwnerStoreContractTests(
                 }
             }
             pool.invokeAll(tasks).forEach { it.get() }
-            // Plan §7.9 / Review-Fix #5: exactly-once.
+            // LF-012 / LN-011 / LN-017 / LN-027 / Review-Fix #5: exactly-once.
             winners.get() shouldBe 1
             store.findById("o-contended")!!.status shouldBe QuotaReservationStatus.RELEASED
         } finally {

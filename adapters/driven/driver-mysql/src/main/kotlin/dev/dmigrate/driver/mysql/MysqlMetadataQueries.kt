@@ -1,13 +1,17 @@
 package dev.dmigrate.driver.mysql
 
 import dev.dmigrate.core.model.IndexSortDirection
+import dev.dmigrate.driver.MysqlServerVersion
 import dev.dmigrate.driver.metadata.*
 
 /**
  * Shared JDBC metadata queries for MySQL.
  *
  * Operates on an already-borrowed connection via [JdbcOperations].
- * Uses `information_schema` with `lower_case_table_names`-aware lookups.
+ * Most queries hit `information_schema` with
+ * `lower_case_table_names`-aware lookups; a few server-state probes
+ * (e.g. [readServerVersion]) use built-in scalars when
+ * `information_schema` offers no advantage.
  */
 object MysqlMetadataQueries {
 
@@ -145,6 +149,40 @@ object MysqlMetadataQueries {
         )
     }
 
+    /**
+     * Project per-view table dependencies via
+     * `INFORMATION_SCHEMA.VIEW_TABLE_USAGE`. Returns a `view → tables`
+     * map; empty list / missing key means either "view has no table
+     * dependencies" or "introspecting user lacks SHOW VIEW privilege"
+     * — INFORMATION_SCHEMA projects only rows visible to the current
+     * user, so the two cases are indistinguishable from MySQL's side.
+     *
+     * `MysqlRoutineReader` interprets an empty list as projection-
+     * incomplete and signals it through
+     * `DependencyInfo.projectionComplete = false`. The exception
+     * branch covers MySQL versions where the table does not exist at
+     * all (analog `listViewRoutineUsage`).
+     */
+    fun listViewTableUsage(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
+        return try {
+            val rows = session.queryList(
+                """
+                SELECT VIEW_NAME AS view_name, TABLE_NAME AS table_name
+                FROM INFORMATION_SCHEMA.VIEW_TABLE_USAGE
+                WHERE VIEW_SCHEMA = ?
+                ORDER BY view_name, table_name
+                """.trimIndent(), schemaName,
+            )
+            rows.groupBy(
+                { it["view_name"] as String },
+                { it["table_name"] as String },
+            )
+        } catch (_: Exception) {
+            // VIEW_TABLE_USAGE may not exist on older MySQL versions
+            emptyMap()
+        }
+    }
+
     fun listViewRoutineUsage(session: JdbcOperations, schemaName: String): Map<String, List<String>> {
         return try {
             val rows = session.queryList(
@@ -170,7 +208,8 @@ object MysqlMetadataQueries {
             """
             SELECT routine_name, routine_type, data_type,
                    dtd_identifier, routine_definition,
-                   is_deterministic, routine_body
+                   is_deterministic, routine_body,
+                   security_type, definer, sql_mode
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'FUNCTION'
             ORDER BY routine_name
@@ -182,7 +221,8 @@ object MysqlMetadataQueries {
         return session.queryList(
             """
             SELECT routine_name, routine_type,
-                   routine_definition, routine_body
+                   routine_definition, routine_body,
+                   security_type, definer, sql_mode
             FROM information_schema.routines
             WHERE routine_schema = ? AND routine_type = 'PROCEDURE'
             ORDER BY routine_name
@@ -222,7 +262,7 @@ object MysqlMetadataQueries {
         )
     }
 
-    // ── Sequence-Support queries (0.9.4 AP 6.1) ──────────────
+    // ── LF-004 / LF-013: Sequence-Support queries ─────────────
 
     fun checkSupportTableExists(session: JdbcOperations, schemaName: String): Boolean? =
         MysqlSequenceSupportMetadataQueries.checkSupportTableExists(session, schemaName)
@@ -258,4 +298,24 @@ object MysqlMetadataQueries {
         schemaName: String,
     ): SupportTriggerScanResult =
         MysqlSequenceSupportMetadataQueries.listPotentialSupportTriggers(session, schemaName)
+
+    /**
+     * E.1 Routine-Migration Slice C.1.a: live MySQL/MariaDB server
+     * version probe via the built-in `VERSION()` scalar (not
+     * `information_schema` — deliberate, the alternative
+     * `information_schema.GLOBAL_VARIABLES` requires extra privileges
+     * on some MySQL/MariaDB configurations and offers no advantage
+     * for a single read).
+     *
+     * A later C.2 slice will plumb the result onto the renderer side
+     * so [dev.dmigrate.driver.RoutineKindCapability]'s
+     * `minServerVersion` can be resolved against the live target.
+     * Returns null when the server returns no row, a null `version`
+     * value, or an unparseable string.
+     */
+    fun readServerVersion(session: JdbcOperations): MysqlServerVersion? {
+        val row = session.querySingle("SELECT VERSION() AS version") ?: return null
+        val raw = row["version"] as? String ?: return null
+        return MysqlServerVersion.parse(raw)
+    }
 }

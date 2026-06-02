@@ -11,8 +11,8 @@ import java.nio.file.Path
 import java.time.Instant
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §6): Vertragstests fuer den
- * dateibasierten [FileCheckpointStore]. Phase B prueft vor allem:
+ * LF-013 / LN-012 / LN-013: Vertragstests fuer den dateibasierten
+ * [FileCheckpointStore]. Geprueft werden vor allem:
  *
  * - Roundtrip: gespeichertes Manifest laesst sich wieder laden und hat
  *   dieselben Felder
@@ -48,7 +48,7 @@ class FileCheckpointStoreTest : FunSpec({
         optionsFingerprint = "abc123",
     )
 
-    test("save then load roundtrips all Phase-B manifest fields") {
+    test("save then load roundtrips all format reader manifest fields") {
         val dir = Files.createTempDirectory("dmigrate-cp-roundtrip-")
         try {
             val store = FileCheckpointStore(dir)
@@ -394,11 +394,10 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    // ─── 0.9.0 Phase C.2: CheckpointResumePosition roundtrip ──────
-    // (`docs/ImpPlan-0.9.0-C2.md` §5.2)
+    // ─── LF-013 / LN-006 / LN-012: CheckpointResumePosition roundtrip ─
     // ──────────────────────────────────────────────────────────────
 
-    test("C.2: save + load roundtrips a slice with resumePosition + tie-breakers") {
+    test("LF-008 / LF-009 / LF-013: save + load roundtrips a slice with resumePosition + tie-breakers") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-")
         try {
             val original = CheckpointManifest(
@@ -438,7 +437,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: resumePosition is omitted when null (backward compatibility with Phase-B manifests)") {
+    test("LF-008 / LF-009 / LF-013: resumePosition is omitted when null (backward compatibility with format reader manifests)") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-null-")
         try {
             val original = sampleManifest("op-no-c2")
@@ -453,7 +452,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: load tolerates missing resumePosition field in pre-C.2 manifest files") {
+    test("LF-008 / LF-009 / LF-013: load tolerates missing resumePosition field in legacy manifest files") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-legacy-")
         try {
             val legacy = """
@@ -483,7 +482,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: load rejects resumePosition missing markerColumn") {
+    test("LF-008 / LF-009 / LF-013: load rejects resumePosition missing markerColumn") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-invalid-mc-")
         try {
             val yaml = """
@@ -512,7 +511,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: load rejects resumePosition with mismatched tie-breaker sizes") {
+    test("LF-008 / LF-009 / LF-013: load rejects resumePosition with mismatched tie-breaker sizes") {
         val dir = Files.createTempDirectory("dmigrate-cp-c2-mismatch-")
         try {
             val yaml = """
@@ -542,7 +541,7 @@ class FileCheckpointStoreTest : FunSpec({
         }
     }
 
-    test("C.2: save + load roundtrips a resumePosition with null markerValue") {
+    test("LF-008 / LF-009 / LF-013: save + load roundtrips a resumePosition with null markerValue") {
         // Rather than testing raw YAML null-literal parsing semantics
         // (which SnakeYAML-engine handles internally), we use the
         // save-path to produce a manifest whose `markerValue` is null,

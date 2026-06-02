@@ -14,7 +14,7 @@ interface RateLimiter {
 }
 
 /**
- * Phase A rate limiter: fixed minute window keyed by `(QuotaKey, minute)`.
+ * LF-012 / LN-011 / LN-017 / LN-027 rate limiter: fixed minute window keyed by `(QuotaKey, minute)`.
  * Buckets reset deterministically on the minute boundary. Sliding-window
  * or token-bucket implementations can replace this without changing the
  * interface.
@@ -23,7 +23,7 @@ class FixedWindowRateLimiter(private val clock: Clock) : RateLimiter {
 
     private data class WindowKey(val key: QuotaKey, val minuteEpoch: Long)
 
-    // Phase A: stale buckets (older than the current minute) accumulate
+    // LF-012 / LN-011 / LN-017 / LN-027: stale buckets (older than the current minute) accumulate
     // until process restart. With N tenants × M dimensions × 1 entry per
     // minute the in-memory footprint is bounded by uptime, not by load.
     // A scheduled `purgeStale()` hook lands together with the AP 6.6

@@ -4,14 +4,14 @@ import dev.dmigrate.server.core.principal.PrincipalId
 import dev.dmigrate.server.core.principal.TenantId
 
 /**
- * Phase G § 5.1 + § 6 G.6 — Korrelations-Schlüssel für synchrone
+ * LF-017 / LF-024 / LN-030 / LN-031— Korrelations-Schlüssel für synchrone
  * KI-nahe Tool-Aufrufe.
  *
  * Identisch zu [dev.dmigrate.server.core.idempotency.SyncEffectScope]
  * in der Form, aber als eigener Typ benannt, weil der zugehörige
  * [AiToolOutcome]-Lebenszyklus (Pending/Succeeded/FailedTerminal/
  * FailedRetryable mit Lease/Reclaim) reicher ist als die binäre
- * Reserved/Existing-Form aus Phase F. Plan §6 G.6 Z. 1083:
+ * Reserved/Existing-Form aus LF-010 / LF-013 / LN-009 / LN-011. LF-017 / LF-024 / LN-030 / LN-031:
  * Dedup-Key ist `(tenantId, callerId, toolName, approvalKey)` —
  * der `payloadFingerprint` wird beim `acquire` mitgegeben und im
  * Outcome persistiert.

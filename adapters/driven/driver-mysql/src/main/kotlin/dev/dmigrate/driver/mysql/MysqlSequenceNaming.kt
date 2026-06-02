@@ -1,7 +1,6 @@
 package dev.dmigrate.driver.mysql
 
-import java.security.MessageDigest
-import java.util.Locale
+import dev.dmigrate.driver.MysqlSequenceSupportNaming
 
 /**
  * Canonical naming for MySQL sequence emulation support objects (0.9.3).
@@ -9,38 +8,34 @@ import java.util.Locale
  * Trigger name format: `dmg_seq_<table16>_<column16>_<hash10>_bi`
  * - table16/column16: first 16 chars of normalized name
  * - hash10: first 10 lowercase hex chars of SHA-256 over
- *   `<tableNorm>\u0000<columnNorm>` (full normalized names, not truncated)
+ *   `<tableNorm><NUL><columnNorm>` (full normalized names, not truncated)
  *
- * This utility is intentionally a standalone object so it can be
- * reused by Reverse-Engineering in 0.9.4.
+ * Driver-side facade over [MysqlSequenceSupportNaming] in
+ * `hexagon:ports-read` (E.3 Sub-Slice F follow-up, 2026-05-20).
+ * Kept as a public driver object so existing callers
+ * (`MysqlDdlGenerator`, `MysqlSequenceReverseSupport`, integration
+ * tests) keep their imports stable while the drift-check stage in
+ * `hexagon:application` reuses the same naming logic without
+ * crossing a driver-internal module boundary.
  */
 object MysqlSequenceNaming {
 
-    const val SUPPORT_TABLE = "dmg_sequences"
-    const val NEXTVAL_ROUTINE = "dmg_nextval"
-    const val SETVAL_ROUTINE = "dmg_setval"
-    private const val TRIGGER_PREFIX = "dmg_seq_"
-    private const val TRIGGER_SUFFIX = "_bi"
-    private const val NAME_SEGMENT_LENGTH = 16
-    private const val HASH_LENGTH = 10
+    const val SUPPORT_TABLE: String = MysqlSequenceSupportNaming.SUPPORT_TABLE
+    const val NEXTVAL_ROUTINE: String = MysqlSequenceSupportNaming.NEXTVAL_ROUTINE
+    const val SETVAL_ROUTINE: String = MysqlSequenceSupportNaming.SETVAL_ROUTINE
 
     /**
      * Normalizes a SQL identifier for canonical naming:
      * ASCII-lowercase, non-alphanumeric characters except `_` removed.
      */
-    fun normalize(name: String): String =
-        name.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() || it == '_' }
+    fun normalize(name: String): String = MysqlSequenceSupportNaming.normalize(name)
 
     /**
      * Computes the first 10 lowercase hex characters of SHA-256
-     * over `<tableNorm>\u0000<columnNorm>`.
+     * over `<tableNorm><NUL><columnNorm>`.
      */
-    fun hash10(tableNorm: String, columnNorm: String): String {
-        val input = "$tableNorm\u0000$columnNorm"
-        val digest = MessageDigest.getInstance("SHA-256")
-            .digest(input.toByteArray(Charsets.UTF_8))
-        return digest.joinToString("") { "%02x".format(it) }.take(HASH_LENGTH)
-    }
+    fun hash10(tableNorm: String, columnNorm: String): String =
+        MysqlSequenceSupportNaming.hash10(tableNorm, columnNorm)
 
     /**
      * Builds the canonical BEFORE INSERT trigger name for a
@@ -50,14 +45,8 @@ object MysqlSequenceNaming {
      * `dmg_seq_` (8) + table16 (16) + `_` (1) + column16 (16) + `_` (1) +
      * hash10 (10) + `_bi` (3) = 55
      */
-    fun triggerName(tableName: String, columnName: String): String {
-        val tableNorm = normalize(tableName)
-        val colNorm = normalize(columnName)
-        val table16 = tableNorm.take(NAME_SEGMENT_LENGTH)
-        val col16 = colNorm.take(NAME_SEGMENT_LENGTH)
-        val h = hash10(tableNorm, colNorm)
-        return "${TRIGGER_PREFIX}${table16}_${col16}_${h}${TRIGGER_SUFFIX}"
-    }
+    fun triggerName(tableName: String, columnName: String): String =
+        MysqlSequenceSupportNaming.triggerName(tableName, columnName)
 
     /** All reserved support object names (for collision detection). */
     val reservedNames: Set<String> = setOf(SUPPORT_TABLE, NEXTVAL_ROUTINE, SETVAL_ROUTINE)

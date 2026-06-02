@@ -34,7 +34,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Follow-up AP 2 Part 2 — Tests für [McpDataImportJobWorker].
+ * LF-010 / LF-013 / LN-009 / LN-011 Part 2 — Tests für [McpDataImportJobWorker].
  *
  * Schwerpunkt: Bundle-Pfad-Erkennung über `_wireArtifactKind=seed-data-bundle`,
  * Spooling, Cleanup. Der eigentliche JDBC-Import schlägt fehl (Test-
@@ -47,7 +47,7 @@ import java.util.zip.ZipOutputStream
  *
  * Decken den Worker-Code, der vor dem JDBC-Aufruf liegt; alles
  * dahinter (echter SQL-Import, Cancellation, Resume-Pfade) wird durch
- * Phase-F-Integration-Tests gegen echte SQLite/PostgreSQL-DBs
+ * LF-010 / LF-013 / LN-009 / LN-011-Integration-Tests gegen echte SQLite/PostgreSQL-DBs
  * abgedeckt.
  */
 class McpDataImportJobWorkerTest : FunSpec({
@@ -167,7 +167,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Bundle-Pfad: unknown artifact -> MCP_ARTIFACT_NOT_FOUND") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = InMemoryConnectionReferenceStore(),
@@ -259,7 +259,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Single-File-Pfad: artefact wird gespoolt, Connection-Resolution-Failure -> Failed") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = stubConnectionStore(),
@@ -279,7 +279,7 @@ class McpDataImportJobWorkerTest : FunSpec({
     test("Single-File-Pfad: sourceArtifactRef anstelle artifactId wird ebenfalls aufgelöst") {
         val artifactStore = InMemoryArtifactStore()
         val contentStore = InMemoryArtifactContentStore()
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = stubConnectionStore(),
@@ -322,7 +322,7 @@ class McpDataImportJobWorkerTest : FunSpec({
                 allowedPrincipalIds = setOf(alice),
             ),
         )
-        val deps = PhaseFDataRunnerDependencies(
+        val deps = DataRunnerDependencies(
             artifactStore = artifactStore,
             artifactContentStore = contentStore,
             connectionStore = connectionStore,

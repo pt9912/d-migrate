@@ -15,6 +15,66 @@ interface UploadSessionStore {
 
     fun findById(tenantId: TenantId, uploadSessionId: String): UploadSession?
 
+    /**
+     * AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`: same-checksum replay for the
+     * read-only `schema_staging_readonly` upload-intent. Returns the
+     * existing ACTIVE session whose
+     * `(tenantId, ownerPrincipalId, uploadIntent="schema_staging_readonly",
+     * checksumSha256, sizeBytes)` tuple matches — or `null` when no
+     * such session exists.
+     *
+     * Used by [dev.dmigrate.mcp.registry.ArtifactUploadInitHandler] as
+     * the **cheap path** — most retries hit here without touching
+     * quota. Restricted to `uploadIntent = "schema_staging_readonly"`
+     * because the policy-pflichtige intents (`job_input`, …) own their
+     * own idempotency-key path through [UploadInitOrchestrator] and
+     * must not be replayed via this shortcut.
+     *
+     * Default implementation returns `null` so non-implementing
+     * stores (e.g. legacy fakes) stay safe — the worst case is "no
+     * idempotency", never "wrong session returned".
+     *
+     * Race protection lives in [saveOrFindActiveSchemaStaging] — see
+     * its contract for the linearizability requirement.
+     */
+    fun findActiveSchemaStagingByChecksum(
+        tenantId: TenantId,
+        ownerPrincipalId: PrincipalId,
+        checksumSha256: String,
+        sizeBytes: Long,
+    ): UploadSession? = null
+
+    /**
+     * AP 6.13 atomic find-or-save for the read-only schema-staging
+     * path. If an ACTIVE session whose
+     * `(tenantId, ownerPrincipalId, uploadIntent="schema_staging_readonly",
+     * checksumSha256, sizeBytes)` tuple matches [session] already
+     * exists, returns that existing session. Otherwise persists
+     * [session] and returns it.
+     *
+     * Callers compare the returned session's `uploadSessionId` against
+     * the candidate to detect the race-loss case and refund quota.
+     *
+     * **Concurrency contract (production implementations MUST honour)**:
+     * the find-and-save MUST be linearizable for the same tuple — two
+     * concurrent calls with matching tuples MUST both observe exactly
+     * one persisted session, and at most one caller MUST receive the
+     * "saved [session]"-result. Implementations choose between:
+     *
+     *  - a partial unique index on
+     *    `(tenant_id, owner_principal_id, upload_intent,
+     *    checksum_sha256, size_bytes) WHERE state = 'ACTIVE'` (JDBC),
+     *    catching the conflict from the second insert, OR
+     *  - in-process locking covering both the find and the save
+     *    ([dev.dmigrate.server.ports.memory.InMemoryUploadSessionStore]
+     *    holds a single mutex).
+     *
+     * Default implementation falls back to a plain [save] without
+     * any race protection — same "fail-soft, no idempotency"
+     * contract as [findActiveSchemaStagingByChecksum].
+     */
+    fun saveOrFindActiveSchemaStaging(session: UploadSession): UploadSession = save(session)
+
     fun list(
         tenantId: TenantId,
         page: PageRequest,
@@ -39,7 +99,7 @@ interface UploadSessionStore {
     fun expireDue(now: Instant): List<UploadSession>
 
     /**
-     * Phase F § 8.9 (F.9 2/3): findet alle `FINALIZING`-Sessions,
+     * LF-010 / LF-013 / LN-009 / LN-011: findet alle `FINALIZING`-Sessions,
      * deren `finalizingLeaseExpiresAt < [now]` ist. Liefert die
      * Sessions im pre-Transition-Zustand zurueck — der Aufrufer
      * (typisch [dev.dmigrate.server.application.upload.UploadSessionService.timeoutStaleFinalizingSessions])
@@ -52,13 +112,13 @@ interface UploadSessionStore {
      * (PG/SQLite) ihre Listen-API wiederverwenden koennen, ohne
      * eine neue indizierte Query zu bauen. Production-Implementoren
      * KOENNEN die Methode mit einer dedizierten Index-Query
-     * ueberschreiben (Plan-Akzeptanz: Sweeper-Cost ist O(stale-
+     * ueberschreiben (Anforderungsakzeptanz: Sweeper-Cost ist O(stale-
      * count), nicht O(total-finalizing-count)).
      */
     fun findStaleFinalizing(now: Instant): List<UploadSession> = emptyList()
 
     /**
-     * AP 6.22: atomic compare-and-set claim of an `ACTIVE` session
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic compare-and-set claim of an `ACTIVE` session
      * for finalisation. On success the session is moved to
      * `FINALIZING` with the supplied claim id and lease, and the
      * post-claim copy is returned in [ClaimOutcome.Acquired].
@@ -79,7 +139,7 @@ interface UploadSessionStore {
     ): ClaimOutcome
 
     /**
-     * AP 6.22: atomic compare-and-set reclaim of a `FINALIZING`
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic compare-and-set reclaim of a `FINALIZING`
      * session whose lease has expired (`finalizingLeaseExpiresAt <
      * [now]`). On success the existing claim is overwritten with the
      * supplied id and lease and the [UploadSession.state] stays
@@ -91,7 +151,7 @@ interface UploadSessionStore {
      * its own). [ClaimOutcome.WrongState] for any non-`FINALIZING`
      * state — explicitly including `COMPLETED`, where the
      * [FinalizationOutcome] / [UploadSession.finalisedSchemaRef] are
-     * authoritative and the AP 6.18 replay path should be used.
+     * authoritative and the LF-012 / LN-027 / LN-028 / LN-038 replay path should be used.
      */
     fun reclaimStaleFinalization(
         tenantId: TenantId,
@@ -103,7 +163,7 @@ interface UploadSessionStore {
     ): ClaimOutcome
 
     /**
-     * AP 6.22: persist (or overwrite) the [FinalizationOutcome] for a
+     * LF-010 / LF-013 / LN-009 / LN-011: persist (or overwrite) the [FinalizationOutcome] for a
      * `FINALIZING` session. The CAS-key is the active claim id —
      * a concurrent finaliser whose claim has been reclaimed must not
      * be able to overwrite the new owner's outcome.
@@ -126,7 +186,7 @@ interface UploadSessionStore {
     ): PersistOutcome
 
     /**
-     * AP 6.22: atomic commit of the successful finalisation — sets
+     * LF-010 / LF-013 / LN-009 / LN-011: atomic commit of the successful finalisation — sets
      * [FinalizationOutcome] (status = `SUCCEEDED`) AND
      * [UploadSession.finalisedSchemaRef] AND transitions the state
      * `FINALIZING → COMPLETED` in a single CAS step keyed on the

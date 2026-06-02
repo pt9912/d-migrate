@@ -11,11 +11,11 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * Phase F § 4.2 + § 5.1 (F.2) — Policy-Init-Metadaten auf
+ * LF-010 / LF-013 / LN-009 / LN-011 — Policy-Init-Metadaten auf
  * [UploadSession]. Pin't, dass die drei neuen Felder
  * `approvalKey`/`approvalFingerprint`/`targetTable` per Default-
  * Konstruktion `null` sind (Bestands-Compat: read-only Schema-
- * Staging und Phase-C-Session-Records ohne Policy-Pfad sind
+ * Staging und LF-012 / LN-038-Session-Records ohne Policy-Pfad sind
  * unveraendert konstruierbar) und dass die Policy-Pfad-Konstruktion
  * alle drei Werte durabel haelt.
  */

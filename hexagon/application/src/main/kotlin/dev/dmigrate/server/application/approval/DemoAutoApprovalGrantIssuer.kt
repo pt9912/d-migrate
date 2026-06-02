@@ -7,15 +7,14 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Phase E §7.4 / §3.1 **Demo-Auto-Approval-Modus**.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Stellt JEDEN [GrantRequest] ohne weitere Pruefung aus. Gedacht
  * ausschliesslich fuer lokale Entwickler-Demos ueber Loopback/stdio.
  *
  * **Sicherheitswarnung**: Dieser Issuer darf in produktiven Konfigurationen
  * nicht gewired werden. Die Transport-Bindung (loopback/stdio) wird vom
  * Bootstrap-Wiring durchgesetzt — der Issuer selbst kennt den Transport
- * nicht. Plan §7.4 verlangt:
+ * nicht. LF-012 / LN-011 / LN-017 / LN-027 verlangt:
  * - explizit aktivierte Konfiguration (Property-Gate)
  * - klare Audit-Markierung jedes Issue-Vorgangs ueber [grantSource]
  * - eindeutiger [issuerFingerprint], damit Audit-Trace und

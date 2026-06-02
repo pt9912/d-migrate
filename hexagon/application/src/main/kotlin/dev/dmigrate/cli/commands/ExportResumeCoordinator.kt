@@ -41,7 +41,7 @@ internal class ExportResumeCoordinator(
 
     /**
      * Memoized PK lookup across tables. Failures per table produce an
-     * empty list (Fall 2 → C.1 fallback).
+     * empty list (Fall 2 → LF-008 / LF-009 / LF-013 fallback).
      */
     fun resolvePrimaryKeys(
         pool: ConnectionPool,
@@ -56,7 +56,7 @@ internal class ExportResumeCoordinator(
     }
 
     /**
-     * Resolves per-table resume marker using 3-case logic (Phase C.2 §4.1):
+     * Resolves per-table resume marker using LF-008 / LF-009 / LF-013 logic:
      *
      * - Fall 1: no `--since-column`, no manifest position → `null`
      * - Fall 2: `--since-column` set, table without PK → `null` + stderr warning

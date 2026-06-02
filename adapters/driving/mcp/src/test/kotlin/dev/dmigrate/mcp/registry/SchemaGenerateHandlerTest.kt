@@ -9,6 +9,7 @@ import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.mysqlContext
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SkippedObject
 import dev.dmigrate.driver.SpatialProfile
@@ -106,7 +107,7 @@ private const val SIMPLE_SCHEMA: String =
 
 class SchemaGenerateHandlerTest : FunSpec({
 
-    test("inline schema produces inline DDL with structured note findings (AP 6.5)") {
+    test("inline schema produces inline DDL with structured note findings (LF-012 / LN-027 / LN-028 / LN-038)") {
         val ddl = DdlResult(
             statements = listOf(DdlStatement(sql = "CREATE TABLE t1 (id BIGINT);")),
             globalNotes = listOf(
@@ -162,8 +163,8 @@ class SchemaGenerateHandlerTest : FunSpec({
             .items.size shouldBe 1
     }
 
-    test("AP 6.23: DDL persisted as artefact is scrubbed (Bearer / approval-token / connection URL)") {
-        // Plan §6.23: DDL bytes flow through SecretScrubber before
+    test("LF-012 / LN-027 / LN-028 / LN-038: DDL persisted as artefact is scrubbed (Bearer / approval-token / connection URL)") {
+        // LF-012 / LN-027 / LN-028 / LN-038: DDL bytes flow through SecretScrubber before
         // any ArtifactSink write so a Bearer / approval-token / JDBC
         // URL accidentally landing in DEFAULTs / comments / quoted
         // identifiers cannot leak through the spilled artefact.
@@ -195,8 +196,8 @@ class SchemaGenerateHandlerTest : FunSpec({
         storedSql shouldNotContain "tok_helloworld_secret"
     }
 
-    test("AP 6.23: findings-only overflow (small DDL) still emits artifactRef with the full findings") {
-        // Plan §6.23: the truncated → artifactRef coupling no longer
+    test("LF-012 / LN-027 / LN-028 / LN-038: findings-only overflow (small DDL) still emits artifactRef with the full findings") {
+        // LF-012 / LN-027 / LN-028 / LN-038: the truncated → artifactRef coupling no longer
         // hangs on DDL size. Findings-only overflow with a small DDL
         // still produces an artefact (JSON list of all findings) and
         // sets artifactRef so the schema's if/then constraint holds.
@@ -258,7 +259,7 @@ class SchemaGenerateHandlerTest : FunSpec({
         severities shouldBe listOf("error", "info")
     }
 
-    test("skipped objects surface as error-severity findings (AP 6.5)") {
+    test("skipped objects surface as error-severity findings (LF-012 / LN-027 / LN-028 / LN-038)") {
         val ddl = DdlResult(
             statements = emptyList(),
             skippedObjects = listOf(
@@ -382,12 +383,12 @@ class SchemaGenerateHandlerTest : FunSpec({
                 PRINCIPAL,
             ),
         )
-        fake.lastOptions!!.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        fake.lastOptions!!.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
         // POSTGRESQL default for MYSQL is NATIVE.
         fake.lastOptions!!.spatialProfile shouldBe SpatialProfile.NATIVE
     }
 
-    test("AP 6.17: generator notes have message/path/hint scrubbed of Bearer tokens") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: generator notes have message/path/hint scrubbed of Bearer tokens") {
         // A note that carries an object name containing a bearer
         // token must not leak the literal across the wire.
         val ddl = DdlResult(
@@ -416,7 +417,7 @@ class SchemaGenerateHandlerTest : FunSpec({
         finding.assertNoBearerLeak("hint")
     }
 
-    test("AP 6.17: skipped object reason is scrubbed of Bearer tokens") {
+    test("LF-012 / LN-027 / LN-028 / LN-038: skipped object reason is scrubbed of Bearer tokens") {
         val ddl = DdlResult(
             statements = emptyList(),
             skippedObjects = listOf(

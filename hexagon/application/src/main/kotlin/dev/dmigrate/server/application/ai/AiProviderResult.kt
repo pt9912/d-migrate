@@ -1,11 +1,11 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.1 (G.2 3/4) — Provider-Antwort als sealed
+ * LF-017 / LF-024 / LN-030 / LN-031— Provider-Antwort als sealed
  * Success/Failure-Vertrag.
  *
  * Der Adapter normalisiert provider-spezifische Throwables in
- * [Failure] und reicht **nie** den Stacktrace weiter (Plan §4.8 +
+ * [Failure] und reicht **nie** den Stacktrace weiter (LF-017 / LF-024 / LN-030 / LN-031 +
  * §7.2: keine Secrets, keine Endpunkt-Hinweise im Audit/Wire-Pfad).
  */
 sealed interface AiProviderResult {
@@ -16,7 +16,7 @@ sealed interface AiProviderResult {
      * @param output Provider-Antwort als UTF-8-String. Bereits
      *   gegen `maxOutputBytes` aus [AiProviderRequest] geprüft.
      *   Der Tool-Handler ruft auf dieser Antwort die
-     *   Output-Hygiene auf (Plan §7.4) bevor er ein Artefakt
+     *   Output-Hygiene auf (LF-017 / LF-024 / LN-030 / LN-031) bevor er ein Artefakt
      *   publiziert.
      * @param outputFingerprint hex-codierter SHA-256 über
      *   [output] (UTF-8-Bytes). Geht in die KI-Artefakt-Provenance

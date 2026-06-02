@@ -6,9 +6,8 @@ import dev.dmigrate.format.data.yaml.YamlChunkWriter
 import java.io.OutputStream
 
 /**
- * Default-Implementierung der [DataChunkWriterFactory] mit den drei
- * Phase-D-Writern. Wird vom CLI in Phase E zentral instanziiert und an
- * den [dev.dmigrate.streaming.StreamingExporter] übergeben.
+ * LF-009 / LF-013: Default-Implementierung der [DataChunkWriterFactory]
+ * mit JSON-, YAML- und CSV-Writern.
  *
  * Optional kann ein [warningSink] übergeben werden, der pro
  * [ValueSerializer.Warning] aufgerufen wird (für Export-Reports).

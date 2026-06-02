@@ -63,7 +63,7 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
-    // ─── Split Golden Master file assertions (0.9.2 AP 6.7) ──────
+    // ─── Split Golden Master file assertions (LF-003 / LF-009) ──────
 
     val splitSchemas = listOf("full-featured", "view-function-deps")
 
@@ -157,13 +157,15 @@ class DdlGoldenMasterTest : FunSpec({
         }
     }
 
-    // ── MySQL helper_table Golden Masters for full-featured (AP 6.5) ──
+    // ── MySQL helper_table Golden Masters for full-featured (LF-003 / LF-004) ──
 
     test("full-featured mysql helper_table generates correct DDL (golden master)") {
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.sql")
         val actual = generator.generate(input, opts).render()
@@ -174,7 +176,9 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.pre-data.sql")
         val result = generator.generate(input, opts)
@@ -185,25 +189,110 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/full-featured.yaml")
         val generator = MysqlDdlGenerator()
         val opts = DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val expected = loadGoldenMaster("ddl/full-featured.mysql.helper-table.post-data.sql")
         val result = generator.generate(input, opts)
         stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
     }
 
-    // ── MySQL helper_table Golden Master (AP 6.4) ──────────────
+    // ── SQLite helper_table Golden Masters for full-featured (0.9.7 Phase C) ──
+
+    test("full-featured sqlite helper_table generates correct DDL (golden master)") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.sql")
+        val actual = generator.generate(input, opts).render()
+        stripHeader(actual) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured sqlite helper_table: pre-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.pre-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.PRE_DATA)) shouldBe stripHeader(expected)
+    }
+
+    test("full-featured sqlite helper_table: post-data golden master") {
+        val input = loadFixture("schemas/full-featured.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val expected = loadGoldenMaster("ddl/full-featured.sqlite.helper-table.post-data.sql")
+        val result = generator.generate(input, opts)
+        stripHeader(result.renderPhase(DdlPhase.POST_DATA)) shouldBe stripHeader(expected)
+    }
+
+    test("sequence-emulation sqlite helper_table generates support objects") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val result = generator.generate(input, opts)
+        val ddl = result.render()
+        ddl shouldContain "CREATE TABLE IF NOT EXISTS \"dmg_sequences\""
+        ddl shouldContain "INSERT INTO \"dmg_sequences\""
+        ddl shouldContain "'invoice_seq'"
+        ddl shouldContain "BEFORE INSERT ON \"invoices\""
+        ddl shouldContain "AFTER INSERT ON \"invoices\""
+        ddl shouldContain "WHEN NEW.\"invoice_number\" IS NULL"
+    }
+
+    test("sequence-emulation sqlite helper_table: pre-data has support table + user table, post-data has trigger pair") {
+        val input = loadFixture("schemas/sequence-emulation.yaml")
+        val generator = SqliteDdlGenerator()
+        val opts = DdlGenerationOptions(
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.Sqlite(
+                namedSequenceMode = dev.dmigrate.driver.SqliteNamedSequenceMode.HELPER_TABLE,
+            ),
+        )
+        val result = generator.generate(input, opts)
+        val preData = result.renderPhase(DdlPhase.PRE_DATA)
+        val postData = result.renderPhase(DdlPhase.POST_DATA)
+
+        preData shouldContain "CREATE TABLE IF NOT EXISTS \"dmg_sequences\""
+        preData shouldContain "INSERT INTO \"dmg_sequences\""
+        preData shouldContain "CREATE TABLE \"invoices\""
+        preData shouldNotContain "CREATE TRIGGER"
+
+        postData shouldContain "BEFORE INSERT ON \"invoices\""
+        postData shouldContain "AFTER INSERT ON \"invoices\""
+        postData shouldNotContain "CREATE TABLE"
+    }
+
+    // ── MySQL helper_table Golden Master (LF-003 / LF-004) ──────────────
 
     test("sequence-emulation mysql helper_table generates support objects") {
         val input = loadFixture("schemas/sequence-emulation.yaml")
         val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
         val opts = dev.dmigrate.driver.DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val result = generator.generate(input, opts)
         val ddl = result.render()
         // Verify key support objects are present
-        ddl shouldContain "CREATE TABLE `dmg_sequences`"
+        ddl shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         ddl shouldContain "CREATE FUNCTION `dmg_nextval`"
         ddl shouldContain "CREATE FUNCTION `dmg_setval`"
         ddl shouldContain "BEFORE INSERT ON `invoices`"
@@ -215,14 +304,16 @@ class DdlGoldenMasterTest : FunSpec({
         val input = loadFixture("schemas/sequence-emulation.yaml")
         val generator = dev.dmigrate.driver.mysql.MysqlDdlGenerator()
         val opts = dev.dmigrate.driver.DdlGenerationOptions(
-            mysqlNamedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            dialectContext = dev.dmigrate.driver.DdlDialectContext.MySql(
+                namedSequenceMode = dev.dmigrate.driver.MysqlNamedSequenceMode.HELPER_TABLE,
+            ),
         )
         val result = generator.generate(input, opts)
         val preData = result.renderPhase(dev.dmigrate.driver.DdlPhase.PRE_DATA)
         val postData = result.renderPhase(dev.dmigrate.driver.DdlPhase.POST_DATA)
 
         // PRE_DATA: support table + seed + user table
-        preData shouldContain "CREATE TABLE `dmg_sequences`"
+        preData shouldContain "CREATE TABLE IF NOT EXISTS `dmg_sequences`"
         preData shouldContain "INSERT INTO `dmg_sequences`"
         preData shouldContain "CREATE TABLE `invoices`"
         preData shouldNotContain "CREATE FUNCTION"

@@ -12,12 +12,12 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Plan-D §4.2 + §10.9 wrapper that HMAC-seals the
- * `artifact_chunk_get` continuation cursor. Phase-C used a naked
+ * LF-012 / LN-038 + wrapper that HMAC-seals the
+ * `artifact_chunk_get` continuation cursor. LF-012 / LN-038 used a naked
  * integer (`chunkId`) as both input and output — clients could
  * forge any chunk index to probe an artefact's content.
  *
- * Phase-D binds the cursor to (tenant, artifactId, chunkSize) so
+ * LF-012 / LN-038 binds the cursor to (tenant, artifactId, chunkSize) so
  * a cursor minted for artefact A in tenant X cannot be replayed
  * against artefact B or tenant Y, and a `chunkSize` change
  * invalidates the cursor — protects clients that paginate
@@ -25,12 +25,12 @@ import java.time.Instant
  * surreptitious server-side bump that would silently re-align
  * offsets mid-walk.
  *
- * Output rules from Plan-D §10.9:
+ * Output rules from LF-012 / LN-038:
  * - the response always carries `nextChunkCursor` (HMAC-sealed)
  *   when more chunks remain, alongside `nextChunkUri` (resource-
  *   URI form for the `resources/read` follow-up). On the last
  *   chunk both surface as `null`.
- * - the legacy naked `chunkId` input is still accepted (Phase-C
+ * - the legacy naked `chunkId` input is still accepted (LF-012 / LN-038
  *   compatibility) but is normalised internally; the handler
  *   does NOT emit a `nextChunkId` field on responses.
  */
@@ -125,7 +125,7 @@ internal class SealedChunkCursor(
         const val FAMILY: String = "artifact-chunks"
 
         /**
-         * Plan-D §10.9 review: chunk-cursor TTL is shorter than
+         * LF-012 / LN-038 review: chunk-cursor TTL is shorter than
          * the generic 15-minute `McpCursorCodec.DEFAULT_MAX_TTL`.
          * Five minutes matches the chunked-read interaction
          * pattern — clients walk an artefact serially and the

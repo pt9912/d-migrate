@@ -36,14 +36,16 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
+import dev.dmigrate.core.util.sha256Hex
+import dev.dmigrate.core.util.toHex
 
 /**
- * AP 6.22: drives the single-writer claim → streaming-assembly →
+ * LF-010 / LF-013 / LN-009 / LN-011: drives the single-writer claim → streaming-assembly →
  * deterministic-id derivation → FinalizationOutcome persistence →
  * finaliser dispatch sequence for the completing segment of an
  * `artifact_upload` call. Pulled out of [ArtifactUploadHandler] to
  * keep that class within the detekt size / function-count budget;
- * see `ImpPlan-0.9.6-C.md` §6.22 for the full sequence.
+ * see LF-012 / LN-027 / LN-028 / LN-038 for the full sequence.
  */
 internal class StreamingFinalizer(
     private val sessionStore: UploadSessionStore,
@@ -52,10 +54,10 @@ internal class StreamingFinalizer(
     private val payloadFactory: AssembledUploadPayloadFactory,
     private val finalizingLeaseTtl: Duration,
     /**
-     * Phase F § 8.6 (F.6 1/3): optionaler [QuotaService] fuer den
+     * LF-010 / LF-013 / LN-009 / LN-011: optionaler [QuotaService] fuer den
      * Failure-Pfad. Wenn gewired, gibt der Finaliser auf Validation-/
      * Parse-Fehler die Init-Quotas (`ACTIVE_UPLOAD_SESSIONS`,
-     * `UPLOAD_BYTES`) frei — analog zur F.4-(3/3)-oversize-Pipeline.
+     * `UPLOAD_BYTES`) frei — analog zur LF-010 / LF-013 / LN-009 / LN-011-oversize-Pipeline.
      * Default `null` haelt Bestands-Tests gruen.
      */
     private val quotaService: QuotaService? = null,
@@ -96,13 +98,13 @@ internal class StreamingFinalizer(
     )
 
     /**
-     * Phase F § 8.5 (F.5 2/3) — Pendant zu [finalise] fuer
+     * LF-010 / LF-013 / LN-009 / LN-011 — Pendant zu [finalise] fuer
      * `uploadIntent=job_input`. Faehrt dieselbe Claim-/Assembly-/
      * Outcome-/Commit-Pipeline, ueberlaesst aber die Bytes-
      * Materialisierung dem [JobInputFinalizer] (kein Schema-Parse,
      * keine `schemaRef`). Rueckgabe ist der gerenderte
      * `artifactRef`-URI; das Feld `UploadSession.finalisedSchemaRef`
-     * dient hier generisch als Final-Reference (siehe Plan § 8.5
+     * dient hier generisch als Final-Reference (siehe LF-012 / LN-027 / LN-028 / LN-038
      * "Upload-Metadaten sind nach Finalisierung persistent ...
      * lesbar"). `FinalizationOutcome.schemaId` bleibt `null` (Plan-
      * konform per KDoc).
@@ -170,7 +172,7 @@ internal class StreamingFinalizer(
                 format = format,
                 status = FinalizationOutcomeStatus.IN_PROGRESS,
             )
-            // AP 6.22: every claim-keyed CAS is checked. If we lose
+            // LF-010 / LF-013 / LN-009 / LN-011: every claim-keyed CAS is checked. If we lose
             // the claim mid-finalisation (Reclaim by another caller
             // after lease expiry), bail out before any further side
             // effect — the new owner drives the deterministic-id
@@ -187,7 +189,7 @@ internal class StreamingFinalizer(
             )
 
             val resultUri = try {
-                // AP 6.22 C5: pass the payload through directly so the
+                // LF-010 / LF-013 / LN-009 / LN-011 C5: pass the payload through directly so the
                 // finaliser parses + materialises via streams. The
                 // file-spool keeps `artifactContentStore.write` heap
                 // bounded; for schema staging the codec still loads
@@ -201,12 +203,12 @@ internal class StreamingFinalizer(
 
             val succeeded = inProgress.copy(status = FinalizationOutcomeStatus.SUCCEEDED)
             val rendered = resultUri.render()
-            // AP 6.22: atomic claim-keyed CAS that flips outcome,
+            // LF-010 / LF-013 / LN-009 / LN-011: atomic claim-keyed CAS that flips outcome,
             // persists the final-ref AND transitions to COMPLETED in
             // one shot. The split persist + save + transition flow
             // had a Reclaim race window between the steps; this call
             // gates all three writes on `finalizingClaimId == claimId`.
-            // Phase F (F.5 2/3): das Feld heisst `finalisedSchemaRef`,
+            // LF-010 / LF-013 / LN-009 / LN-011: das Feld heisst `finalisedSchemaRef`,
             // dient aber generisch als final-ref (artifactRef fuer
             // job_input).
             requirePersistOrConflict(
@@ -220,11 +222,11 @@ internal class StreamingFinalizer(
                     now = now,
                 ),
             )
-            // Phase F § 8.9 (F.9 1/3): Quota-Swap nach COMPLETED.
+            // LF-010 / LF-013 / LN-009 / LN-011: Quota-Swap nach COMPLETED.
             // Init-time reserved ACTIVE_UPLOAD_SESSIONS + UPLOAD_BYTES
             // werden freigegeben; die durabel persistierten
             // Artefaktbytes wandern in die STORED_ARTIFACT_BYTES-
-            // Dimension. Plan § 8.9 wortlaeufig: "COMPLETED bucht
+            // Dimension. LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig: "COMPLETED bucht
             // gespeicherte Artefaktbytes genau einmal und gibt
             // reservierte Upload-Bytes frei".
             bookSuccessfulFinalisation(claimedSession, payload.sizeBytes)
@@ -233,7 +235,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * Phase F § 8.9 (F.9 1/3): COMPLETED-Quota-Swap.
+     * LF-010 / LF-013 / LN-009 / LN-011: COMPLETED-Quota-Swap.
      *
      * - Release `ACTIVE_UPLOAD_SESSIONS` (1) — die Session ist nicht
      *   mehr aktiv.
@@ -241,10 +243,10 @@ internal class StreamingFinalizer(
      *   Zeit reserviert wurde).
      * - Reserve `STORED_ARTIFACT_BYTES` (`payloadSizeBytes` — die
      *   tatsaechlich materialisierten Bytes). Bei `RateLimited` wird
-     *   der Counter nicht hochgezaehlt — die Plan-Akzeptanz "buche
+     *   der Counter nicht hochgezaehlt — die Anforderungsakzeptanz "buche
      *   genau einmal" laesst den Caller in Ruhe (das Artefakt ist
      *   schon durabel; ein weiterer Reserve-Versuch beim
-     *   Retention-Tick ist Plan-konform). Ein Limit-Reached fuer
+     *   Retention-Tick ist vertragskonform). Ein Limit-Reached fuer
      *   diese Dimension ist eine Operator-Diagnose, kein
      *   Caller-Fehler — der Upload ist bereits committed.
      *
@@ -274,7 +276,7 @@ internal class StreamingFinalizer(
                 amount = session.sizeBytes,
             ),
         )
-        // Plan § 8.9: das Plan-Limit fuer STORED_ARTIFACT_BYTES ist
+        // LF-012 / LN-011 / LN-017 / LN-027: das Plan-Limit fuer STORED_ARTIFACT_BYTES ist
         // operator-konfiguriert; ein RateLimited-Outcome wird hier
         // bewusst geschluckt — das Artefakt ist bereits durabel.
         // Das Limit-Reached ist eine Operator-Diagnose und keine
@@ -291,7 +293,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * AP 6.22: maps a [PersistOutcome] returned by
+     * LF-010 / LF-013 / LN-009 / LN-011: maps a [PersistOutcome] returned by
      * [UploadSessionStore.persistFinalizationOutcome] to the typed
      * exception that matches the failure class. A `ClaimMismatch`
      * means our lease expired and another caller reclaimed, so we
@@ -309,7 +311,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * AP 6.22: a replay against an `ABORTED` session whose persisted
+     * LF-010 / LF-013 / LN-009 / LN-011: a replay against an `ABORTED` session whose persisted
      * [FinalizationOutcome] is `FAILED` re-throws the same sanitised
      * error class. Returns silently when no failed outcome was
      * persisted (the caller falls through to the normal Aborted
@@ -328,7 +330,7 @@ internal class StreamingFinalizer(
                 ),
             )
             "PAYLOAD_TOO_LARGE" -> throw PayloadTooLargeException(0, 0)
-            // Phase F § 8.9 (F.9 2/3): Upload-Finalisierungs-Timeout
+            // LF-010 / LF-013 / LN-009 / LN-011: Upload-Finalisierungs-Timeout
             // -> OPERATION_TIMEOUT. Der Sweeper aus
             // `UploadSessionService.timeoutStaleFinalizingSessions`
             // persistiert den Outcome; ein Replay-Call (z.B. erneuter
@@ -364,7 +366,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * AP 6.22: when [ClaimOutcome.AlreadyClaimed] comes back the
+     * LF-010 / LF-013 / LN-009 / LN-011: when [ClaimOutcome.AlreadyClaimed] comes back the
      * session is already in `FINALIZING`. If the existing lease is
      * still live, the second completing call surfaces a retryable
      * Conflict without side effects. If the lease has expired,
@@ -481,7 +483,7 @@ internal class StreamingFinalizer(
         when (persisted) {
             is PersistOutcome.Persisted -> {
                 transitionToAbortedBestEffort(session, now)
-                // Phase F § 8.6 (F.6 1/3): nach durablem ABORTED gibt
+                // LF-010 / LF-013 / LN-009 / LN-011: nach durablem ABORTED gibt
                 // der Finaliser die Init-Quotas frei, damit der Tenant
                 // nach einem Validation-/Parse-Fehler nicht in seinen
                 // Limits gebunden bleibt. Idempotent — nur der erste
@@ -504,7 +506,7 @@ internal class StreamingFinalizer(
     }
 
     /**
-     * Phase F § 8.6 (F.6 1/3): gibt die Init-time Quotas
+     * LF-010 / LF-013 / LN-009 / LN-011: gibt die Init-time Quotas
      * (`ACTIVE_UPLOAD_SESSIONS=1`, `UPLOAD_BYTES=session.sizeBytes`)
      * fuer den Session-Owner frei. Idempotent (`QuotaService.release`
      * ist no-op bei nicht-positivem aktuellem Counter). No-op wenn
@@ -567,7 +569,7 @@ internal class StreamingFinalizer(
                 written = streamSegmentInto(spool.output, digest, written, cap, session, segment, finalSegmentBytes)
             }
             verifyAssemblyTotals(session, written, digest)
-            return spool.publish(written, hexOf(digest.digest()))
+            return spool.publish(written, digest.digest().toHex())
         } catch (failure: Throwable) {
             spool.close()
             throw failure
@@ -612,7 +614,7 @@ internal class StreamingFinalizer(
     private fun verifyAssemblyTotals(session: UploadSession, written: Long, digest: MessageDigest) {
         // We need the digest output for the size check too — clone
         // to avoid double-finalising the MessageDigest.
-        val totalSha = hexOf(digest.clone().let { (it as MessageDigest).digest() })
+        val totalSha = digest.clone().let { (it as MessageDigest).digest() }.toHex()
         if (written != session.sizeBytes) {
             throw ValidationErrorException(
                 listOf(
@@ -667,17 +669,13 @@ internal class StreamingFinalizer(
         session: UploadSession,
         payloadSha: String,
         format: String,
-    ): String = "art-" + hexOf(
-        MessageDigest.getInstance("SHA-256").digest(idMaterial(session, payloadSha, format)),
-    ).take(DETERMINISTIC_ID_BYTES)
+    ): String = "art-" + sha256Hex(idMaterial(session, payloadSha, format)).take(DETERMINISTIC_ID_BYTES)
 
     private fun deterministicSchemaId(
         session: UploadSession,
         payloadSha: String,
         format: String,
-    ): String = "sch-" + hexOf(
-        MessageDigest.getInstance("SHA-256").digest(idMaterial(session, payloadSha, format)),
-    ).take(DETERMINISTIC_ID_BYTES)
+    ): String = "sch-" + sha256Hex(idMaterial(session, payloadSha, format)).take(DETERMINISTIC_ID_BYTES)
 
     private fun idMaterial(session: UploadSession, payloadSha: String, format: String): ByteArray =
         "${session.tenantId.value}|${session.uploadSessionId}|$payloadSha|$format".toByteArray(Charsets.UTF_8)
@@ -703,9 +701,6 @@ internal class StreamingFinalizer(
         is ValidationErrorException -> failure.message?.take(SANITIZED_MESSAGE_MAX_CHARS)
         else -> null
     }
-
-    private fun hexOf(bytes: ByteArray): String =
-        bytes.joinToString("") { "%02x".format(it) }
 
     private companion object {
         const val BUFFER_BYTES: Int = 64 * 1024

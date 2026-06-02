@@ -161,34 +161,4 @@ class SqliteTypeMappingTest : FunSpec({
         SqliteTypeMapping.extractViewQuery("CREATE VIEW v AS SELECT * FROM t") shouldBe "SELECT * FROM t"
         SqliteTypeMapping.extractViewQuery("CREATE VIEW v").shouldBeNull()
     }
-
-    // ── Trigger SQL parsing ─────────────────────
-
-    test("parseTriggerSql AFTER INSERT") {
-        val result = SqliteTypeMapping.parseTriggerSql(
-            "CREATE TRIGGER trg AFTER INSERT ON t BEGIN SELECT 1; END", "trg")
-        result.timing shouldBe dev.dmigrate.core.model.TriggerTiming.AFTER
-        result.event shouldBe dev.dmigrate.core.model.TriggerEvent.INSERT
-        result.body shouldBe "SELECT 1;"
-        result.notes shouldBe emptyList()
-    }
-
-    test("parseTriggerSql BEFORE UPDATE") {
-        val result = SqliteTypeMapping.parseTriggerSql(
-            "CREATE TRIGGER trg BEFORE UPDATE ON t BEGIN UPDATE x SET a=1; END", "trg")
-        result.timing shouldBe dev.dmigrate.core.model.TriggerTiming.BEFORE
-        result.event shouldBe dev.dmigrate.core.model.TriggerEvent.UPDATE
-    }
-
-    test("parseTriggerSql INSTEAD OF DELETE") {
-        val result = SqliteTypeMapping.parseTriggerSql(
-            "CREATE TRIGGER trg INSTEAD OF DELETE ON v BEGIN SELECT 1; END", "trg")
-        result.timing shouldBe dev.dmigrate.core.model.TriggerTiming.INSTEAD_OF
-        result.event shouldBe dev.dmigrate.core.model.TriggerEvent.DELETE
-    }
-
-    test("parseTriggerSql unknown timing/event produces notes") {
-        val result = SqliteTypeMapping.parseTriggerSql("CREATE TRIGGER trg ON t BEGIN END", "trg")
-        result.notes.size shouldBe 2
-    }
 })

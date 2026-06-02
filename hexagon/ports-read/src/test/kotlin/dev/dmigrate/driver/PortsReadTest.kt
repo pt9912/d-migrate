@@ -1,5 +1,6 @@
 package dev.dmigrate.driver
 
+import dev.dmigrate.core.model.SchemaDefinition
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -124,26 +125,59 @@ class PortsReadTest : FunSpec({
         MysqlNamedSequenceMode.HELPER_TABLE.cliName shouldBe "helper_table"
     }
 
-    test("DdlGenerationOptions carries mysqlNamedSequenceMode") {
-        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
-        opts.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+    test("DdlGenerationOptions carries mysql named-sequence mode via DdlDialectContext.MySql") {
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
+        opts.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
 
         val defaultOpts = DdlGenerationOptions()
-        defaultOpts.mysqlNamedSequenceMode shouldBe null
+        defaultOpts.mysqlContext shouldBe null
     }
 
-    test("DdlGenerationOptions copy and equality") {
-        val a = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED)
-        val b = a.copy(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+    test("DdlGenerationOptions copy and equality (with DialectContext.MySql)") {
+        val a = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.ACTION_REQUIRED),
+        )
+        val b = a.copy(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
         a shouldNotBe b
-        b.mysqlNamedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
+        b.mysqlContext?.namedSequenceMode shouldBe MysqlNamedSequenceMode.HELPER_TABLE
         a.copy() shouldBe a
     }
 
     test("DdlGenerationOptions toString contains class name") {
-        val opts = DdlGenerationOptions(mysqlNamedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE)
+        val opts = DdlGenerationOptions(
+            dialectContext = DdlDialectContext.MySql(namedSequenceMode = MysqlNamedSequenceMode.HELPER_TABLE),
+        )
         opts.toString() shouldContain "DdlGenerationOptions"
         opts.toString() shouldContain "HELPER_TABLE"
+    }
+
+    test("SqliteCastPreflightDeclaration bindingKey is stable") {
+        val declaration = SqliteCastPreflightDeclaration(
+            operationId = "op-1",
+            table = "orders",
+            column = "amount",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            status = SqliteCastPreflightStatus.PASSED,
+            sqlHash = "abc123",
+        )
+        val expected = listOf("op-1", "sqlite", "orders", "amount", "TEXT", "INTEGER", "abc123")
+            .joinToString("\u001f")
+
+        declaration.bindingKey shouldBe expected
+        SqliteCastPreflightDeclaration.bindingKey(
+            operationId = "op-1",
+            dialect = "sqlite",
+            table = "orders",
+            column = "amount",
+            sourceType = "TEXT",
+            targetType = "INTEGER",
+            sqlHash = "abc123",
+        ) shouldBe expected
     }
 
     test("SpatialProfilePolicy.resolve returns NotAllowedForDialect for spatialite on PostgreSQL") {
@@ -278,5 +312,61 @@ class PortsReadTest : FunSpec({
         rendered shouldContain "SELECT 1;"
         // hint line should NOT appear
         ("Hint" in rendered) shouldBe false
+    }
+
+    test("extension dependency declarations carry policy and availability state") {
+        ExtensionAvailabilityStatus.entries.map { it.name } shouldBe listOf(
+            "VERIFIED_PRESENT",
+            "MISSING",
+            "UNKNOWN",
+        )
+        ExtensionInstallPolicy.entries.map { it.name } shouldBe listOf("NEVER", "ALLOW_CREATE_IF_MISSING")
+        ExtensionInstallPrivilegeStatus.entries.map { it.name } shouldBe listOf("VERIFIED", "UNVERIFIED", "MISSING")
+
+        val availability = ExtensionAvailabilityDeclaration(
+            dialect = "postgresql",
+            extension = "postgis",
+            status = ExtensionAvailabilityStatus.MISSING,
+        )
+        val dependency = ExtensionDependencyReport(
+            dialect = availability.dialect,
+            extension = availability.extension,
+            status = availability.status,
+            operationIds = setOf("op-1"),
+            installStatement = "CREATE EXTENSION postgis",
+        )
+
+        dependency.status shouldBe ExtensionAvailabilityStatus.MISSING
+        dependency.operationIds shouldBe setOf("op-1")
+        dependency.installStatement shouldBe "CREATE EXTENSION postgis"
+    }
+
+    test("schema read envelopes carry options, notes, skipped objects and source ref") {
+        val schema = SchemaDefinition(name = "Shop", version = "1")
+        val note = SchemaReadNote(
+            severity = SchemaReadSeverity.WARNING,
+            code = "R001",
+            objectName = "orders",
+            message = "best effort",
+            hint = "inspect manually",
+        )
+        val skipped = SkippedObject("trigger", "orders_bi", "unsupported", "E055")
+        val result = SchemaReadResult(schema = schema, notes = listOf(note), skippedObjects = listOf(skipped))
+        val input = SchemaReadReportInput(ReverseSourceRef(ReverseSourceKind.URL, "jdbc:sqlite:file.db"), result)
+        val options = SchemaReadOptions(
+            includeViews = false,
+            includeProcedures = false,
+            includeFunctions = true,
+            includeTriggers = false,
+        )
+
+        input.result.schema shouldBe schema
+        input.result.notes.single().hint shouldBe "inspect manually"
+        input.result.skippedObjects.single().code shouldBe "E055"
+        input.source.kind shouldBe ReverseSourceKind.URL
+        options.includeViews shouldBe false
+        options.includeProcedures shouldBe false
+        options.includeFunctions shouldBe true
+        options.includeTriggers shouldBe false
     }
 })

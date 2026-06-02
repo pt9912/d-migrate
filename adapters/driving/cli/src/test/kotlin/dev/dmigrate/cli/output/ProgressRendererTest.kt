@@ -22,12 +22,12 @@ class ProgressRendererTest : FunSpec({
         line shouldBe "Importing 2 table(s)"
     }
 
-    // 0.9.0 Phase C.1 (docs/ImpPlan-0.9.0-C1.md §5.3):
+    // LF-012 / LF-013 / LN-017:
     // ProgressRenderer zeigt operationId + Starting/Resuming-Label, wenn
     // die ID im Event gesetzt ist. Bestehende Snapshot-Faelle bleiben
     // unveraendert (operationId defaultet auf null).
 
-    test("Phase C.1: RunStarted mit operationId und neuem Lauf → 'Starting run <id>:'") {
+    test("LF-008 / LF-009 / LF-013: RunStarted mit operationId und neuem Lauf → 'Starting run <id>:'") {
         val line = renderer.render(
             ProgressEvent.RunStarted(
                 operation = ProgressOperation.EXPORT,
@@ -40,7 +40,7 @@ class ProgressRendererTest : FunSpec({
         line shouldContain "Exporting 3 table(s)"
     }
 
-    test("Phase C.1: RunStarted mit operationId und resuming=true → 'Resuming run <id>:'") {
+    test("LF-008 / LF-009 / LF-013: RunStarted mit operationId und resuming=true → 'Resuming run <id>:'") {
         val line = renderer.render(
             ProgressEvent.RunStarted(
                 operation = ProgressOperation.EXPORT,
@@ -54,7 +54,7 @@ class ProgressRendererTest : FunSpec({
         line shouldNotContain "Starting"
     }
 
-    test("Phase C.1: RunStarted ohne operationId bleibt beim alten Snapshot") {
+    test("LF-008 / LF-009 / LF-013: RunStarted ohne operationId bleibt beim alten Snapshot") {
         val line = renderer.render(
             ProgressEvent.RunStarted(
                 operation = ProgressOperation.EXPORT,

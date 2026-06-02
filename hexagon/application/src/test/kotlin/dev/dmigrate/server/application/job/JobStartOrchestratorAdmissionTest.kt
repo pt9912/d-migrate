@@ -4,6 +4,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.policy.PolicyRule
@@ -26,7 +27,7 @@ import java.time.Instant
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E3 § 3.5 + § 6.2: Admission-Integration im
+ * LF-012 / LN-011 / LN-017 / LN-027: Admission-Integration im
  * [JobStartOrchestrator.commitJob]-Pfad.
  *
  * Sub-AP-Scope (3/4) — pre-commit Granted/Saturated/Closed-Pfade,
@@ -85,7 +86,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = policyService,
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
             jobDispatcher = dispatcher,
             jobWorkerFactory = factory,
@@ -139,7 +140,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
         fx.jobStore.findById(tenant, "job_1") shouldBe null
         fx.workerHandleRegistry.signal("job_1", "noop")
             .shouldBeInstanceOf<dev.dmigrate.server.ports.SignalOutcome.NotFound>()
-        // Plan E3 § 3.5 "Idempotency-Reservation expired regulaer": die
+        // LF-012 / LN-011 / LN-017 / LN-027 "Idempotency-Reservation expired regulaer": die
         // Saturated-Antwort markiert die Reservation NICHT terminal. Sie
         // bleibt in einem nicht-terminalen Zustand (PENDING) und expired
         // regulaer. Wir bestaetigen das negativ — kein Failed/Denied/
@@ -203,7 +204,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
 
     test("IdempotencyNotEligible nach Granted → Permit wird synchron geschlossen") {
         // Fake-Transaction immer IdempotencyNotEligible: simuliert die
-        // post-reserve / pre-commit race (Plan §7.9 line 1282-1284).
+        // post-reserve / pre-commit race (LF-012 / LN-011 / LN-017 / LN-027).
         val permit = CountingPermit()
         val admission = FixedAdmission.granted(permit)
         val jobStore = InMemoryJobStore()
@@ -233,7 +234,7 @@ class JobStartOrchestratorAdmissionTest : FunSpec({
             approvalGrantStore = grantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(emptyList(), PolicyEffect.Allow),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_x" },
             jobDispatcher = JobDispatcher(jobStore),
             jobWorkerFactory = PassthroughJobWorkerFactory,

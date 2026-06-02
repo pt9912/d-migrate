@@ -1,7 +1,5 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
 import dev.dmigrate.core.data.ImportSchemaMismatchException
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionConfig
@@ -19,6 +17,7 @@ import dev.dmigrate.streaming.ImportResult
 import dev.dmigrate.streaming.TableImportSummary
 import dev.dmigrate.streaming.FailedFinishInfo
 import dev.dmigrate.driver.data.TriggerMode
+import dev.dmigrate.format.yaml.YamlSchemaCodec
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.assertions.withClue
 import io.kotest.matchers.collections.shouldBeEmpty
@@ -37,7 +36,7 @@ import java.sql.Connection
  * Collaborators (targetResolver, URL-Parser, Pool-Factory,
  * WriterLookup, ImportExecutor).
  *
- * Deckt jeden Exit-Code-Pfad aus Plan §6.11 (0/1/2/3/4/5/7) ab.
+ * Deckt jeden Exit-Code-Pfad aus LF-010 / LF-013 / LN-009 / LN-011 ab.
  */
 class DataImportRunnerExitCodeTest : FunSpec({
 
@@ -144,16 +143,18 @@ class DataImportRunnerExitCodeTest : FunSpec({
         checkpointDir = checkpointDir,
     )
 
-    fun isolatedTargetResolver(target: String?, configPath: Path?): String {
-        if (target != null) {
-            val resolver = NamedConnectionResolver(
-                configPathFromCli = configPath,
-                envLookup = { null },
-                defaultConfigPath = Path.of("/tmp/d-migrate-nonexistent-default-config.yaml"),
-            )
-            return resolver.resolve(target)
-        }
-        throw ConfigResolveException("--target was not provided and no default_target configured.")
+    fun isolatedTargetResolver(target: String?, @Suppress("UNUSED_PARAMETER") configPath: Path?): String {
+
+
+        require(target != null) { "--target was not provided and no default_target configured." }
+
+
+        if ("://" in target) return target
+
+
+        throw IllegalArgumentException("Connection name '$target' not resolvable in test context")
+
+
     }
 
     class StderrCapture {
@@ -366,7 +367,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
             importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
                 seenInput = ctx.input
                 successExecutor.execute(
@@ -416,8 +417,8 @@ class DataImportRunnerExitCodeTest : FunSpec({
         val stderr = StderrCapture()
         val runner = newRunner(
             stderr,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
-            schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
+            schemaPreflight = DataImportSchemaPreflight(YamlSchemaCodec())::prepare,
+            schemaTargetValidator = DataImportSchemaPreflight(YamlSchemaCodec())::validateTargetTable,
             importExecutor = ImportExecutor { ctx, _, _, callbacks ->
                 val tableName = when (val input = ctx.input) {
                     is ImportInput.Stdin -> input.table
@@ -539,14 +540,13 @@ class DataImportRunnerExitCodeTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A / Phase D.1 (docs/ImpPlan-0.9.0-D.md §4.8):
+    // LF-010 / LF-013 / LN-012:
     // Resume-CLI-Preflight fuer Import. Stdin-Quelle (`source == "-"`)
-    // kann nicht wiederaufgenommen werden → Exit 2. Die Phase-A-
-    // Warning („accepted but ignored") ist in Phase D.1 entfernt; der
-    // Runner setzt den Resume-Vertrag jetzt aktiv um.
+    // kann nicht wiederaufgenommen werden -> Exit 2. Der Runner setzt den
+    // Resume-Vertrag aktiv um.
     // ────────────────────────────────────────────────────────────
 
-    test("Phase A §4.4: --resume mit stdin-Quelle endet mit Exit 2") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: --resume mit stdin-Quelle endet mit Exit 2") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(
@@ -557,7 +557,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
         stderr.joined() shouldContain "stdin"
     }
 
-    test("Phase D.1 §4.8: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
+    test("LF-010 / LF-013 / LN-009 / LN-011: --resume ohne konfiguriertes Checkpoint-Verzeichnis endet mit Exit 7") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         val exit = runner.execute(request(resume = "some-op-id"))
@@ -565,15 +565,14 @@ class DataImportRunnerExitCodeTest : FunSpec({
         stderr.joined() shouldContain "checkpoint directory"
     }
 
-    test("Phase A: leeres --resume wird als abwesend behandelt (kein Warning, Happy-Path)") {
+    test("LF-006 / LF-007: leeres --resume wird als abwesend behandelt (kein Warning, Happy-Path)") {
         val stderr = StderrCapture()
         val runner = newRunner(stderr)
         runner.execute(request(resume = ""))
         stderr.joined() shouldNotContain "Warning: --resume"
     }
 
-    // ─── 0.9.0 Phase D.1: Resume-Preflight + Manifest-Lifecycle ──
-    // (`docs/ImpPlan-0.9.0-D.md` §5.1)
+    // ─── LF-010 / LF-013 / LN-012: Resume-Preflight + Lifecycle ─────
     // ──────────────────────────────────────────────────────────────
 
 })

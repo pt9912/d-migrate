@@ -4,7 +4,7 @@ import dev.dmigrate.server.core.error.ToolErrorCode
 
 /**
  * Transport-neutral metadata for a single MCP tool per
- * `ImpPlan-0.9.6-B.md` §4.7 + §6.8.
+ * LF-012 / LN-027 / LN-028 / LN-038.
  *
  * The descriptor is stable across stdio and HTTP — the same instance
  * is read by both transports' `tools/list`. It does NOT carry the
@@ -22,10 +22,10 @@ import dev.dmigrate.server.core.error.ToolErrorCode
  *  the registry pins it on the descriptor so `capabilities_list` can
  *  project the scope table without re-reading the config.
  * @param inputSchema MCP `inputSchema` per JSON Schema 2020-12 (§5.6).
- *  AP 6.8 ships minimal stubs; AP 6.10 swaps in the real schemas with
+ *  LF-012 / LN-027 / LN-028 / LN-038 ships minimal stubs; LF-012 / LN-027 / LN-028 / LN-038 swaps in the real schemas with
  *  the golden-test contract.
  * @param outputSchema MCP `outputSchema` (optional in MCP spec, but
- *  Phase B treats it as required for stable client tooling).
+ *  LF-012 / LN-038 treats it as required for stable client tooling).
  * @param inlineLimits free-form hints about size limits — e.g.
  *  "max 1 MiB result, larger payloads via `artifact_chunk_get`".
  *  Surfaced through `capabilities_list` only (not on `tools/list`).

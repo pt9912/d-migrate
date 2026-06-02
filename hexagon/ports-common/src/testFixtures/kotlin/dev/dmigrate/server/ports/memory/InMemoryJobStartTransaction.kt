@@ -16,7 +16,7 @@ import java.time.Instant
  * idempotency entry without the matching job.
  *
  * Production adapters (SQL-backed multi-tenant store) MUST provide an
- * equivalent atomic primitive. Phase E §7.2 explicitly forbids
+ * equivalent atomic primitive. LF-012 / LN-011 / LN-017 / LN-027 explicitly forbids
  * Saga-style sequencing.
  */
 class InMemoryJobStartTransaction(
@@ -32,7 +32,7 @@ class InMemoryJobStartTransaction(
         now: Instant,
     ): JobStartTransactionOutcome {
         synchronized(lock) {
-            // Plan §7.2 verbietet "sichtbaren Job ohne Idempotency-
+            // LF-012 / LN-011 / LN-017 / LN-027 verbietet "sichtbaren Job ohne Idempotency-
             // Commit". Reihenfolge: erst Idempotency committen, dann
             // den Job speichern. Wenn die Idempotency-Transition nicht
             // greift (Scope unreserved oder bereits committed), wird

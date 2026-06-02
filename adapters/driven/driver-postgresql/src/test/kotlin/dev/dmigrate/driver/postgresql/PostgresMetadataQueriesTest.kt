@@ -303,12 +303,70 @@ class PostgresMetadataQueriesTest : FunSpec({
     // ── listViews ──────────────────────────────────
 
     test("listViews returns view maps") {
-        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
-            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active"),
+        every { jdbc.queryList(match { it.contains("pg_get_viewdef") }, any()) } returns listOf(
+            mapOf(
+                "table_name" to "active_users",
+                "view_definition" to "SELECT * FROM users WHERE active",
+                "is_materialized" to false,
+            ),
         )
         val result = PostgresMetadataQueries.listViews(jdbc, "public")
         result shouldHaveSize 1
         result[0]["table_name"] shouldBe "active_users"
+        result[0]["is_materialized"] shouldBe false
+    }
+
+    test("listViewRelationDependencies separates table, view and column dependencies") {
+        every { jdbc.queryList(match { it.contains("refobjsubid") }, any(), any()) } returns listOf(
+            mapOf(
+                "view_name" to "v_orders",
+                "relation_name" to "orders",
+                "relation_kind" to "r",
+                "column_name" to "id",
+            ),
+            mapOf(
+                "view_name" to "v_orders",
+                "relation_name" to "orders",
+                "relation_kind" to "r",
+                "column_name" to "status",
+            ),
+            mapOf(
+                "view_name" to "v_summary",
+                "relation_name" to "v_orders",
+                "relation_kind" to "v",
+                "column_name" to "id",
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listViewRelationDependencies(jdbc, "public")
+
+        result["v_orders"]!!.tables shouldBe listOf("orders")
+        result["v_orders"]!!.columns shouldBe mapOf("orders" to listOf("id", "status"))
+        result["v_summary"]!!.views shouldBe listOf("v_orders")
+    }
+
+    test("listViewColumns returns visible signature in ordinal order") {
+        every { jdbc.queryList(match { it.contains("view_name") && it.contains("format_type") }, any()) } returns listOf(
+            mapOf(
+                "view_name" to "v_orders",
+                "column_name" to "id",
+                "column_type" to "integer",
+                "ordinal_position" to 1,
+            ),
+            mapOf(
+                "view_name" to "v_orders",
+                "column_name" to "status",
+                "column_type" to "text",
+                "ordinal_position" to 2,
+            ),
+        )
+
+        val result = PostgresMetadataQueries.listViewColumns(jdbc, "public")
+
+        result["v_orders"]!![0].name shouldBe "id"
+        result["v_orders"]!![0].type shouldBe "integer"
+        result["v_orders"]!![1].name shouldBe "status"
+        result["v_orders"]!![1].type shouldBe "text"
     }
 
     // ── listViewFunctionDependencies ─────────────────
@@ -414,5 +472,202 @@ class PostgresMetadataQueriesTest : FunSpec({
     test("listForeignKeys returns empty list when no FKs") {
         every { jdbc.queryList(match { it.contains("pg_constraint") }, any(), any()) } returns emptyList()
         PostgresMetadataQueries.listForeignKeys(jdbc, "public", "t").shouldBeEmpty()
+    }
+
+    // ── listRoutineRelationDependencies (E.1 Slice D.2) ───────────
+
+    test("listRoutineRelationDependencies splits relation kinds into tables/views/sequences per overload") {
+        every {
+            jdbc.queryList(
+                match { it.contains("pg_proc") && it.contains("pg_depend") && it.contains("relkind") },
+                any(), any(),
+            )
+        } returns listOf(
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "orders", "relation_kind" to "r"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "audit_view", "relation_kind" to "v"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "audit_mat", "relation_kind" to "m"),
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "order_seq", "relation_kind" to "S"),
+            mapOf("routine_name" to "other_fn", "routine_key" to "2002_other_fn", "routine_oid" to 2002L,
+                "relation_name" to "customers", "relation_kind" to "p"),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies(jdbc, "public")
+        val fnDeps = result[RoutineKey(name = "fn", oid = 1001L)]
+        fnDeps?.tables shouldBe listOf("orders")
+        fnDeps?.views shouldBe listOf("audit_view", "audit_mat")
+        fnDeps?.sequences shouldBe listOf("order_seq")
+        val otherDeps = result[RoutineKey(name = "other_fn", oid = 2002L)]
+        otherDeps?.tables shouldBe listOf("customers")
+        otherDeps?.sequences shouldBe emptyList<String>()
+    }
+
+    test("listRoutineRelationDependencies keeps overloads with same name distinct") {
+        every {
+            jdbc.queryList(
+                match { it.contains("pg_proc") && it.contains("pg_depend") && it.contains("relkind") },
+                any(), any(),
+            )
+        } returns listOf(
+            mapOf("routine_name" to "fn", "routine_key" to "1001_fn", "routine_oid" to 1001L,
+                "relation_name" to "orders", "relation_kind" to "r"),
+            mapOf("routine_name" to "fn", "routine_key" to "1002_fn", "routine_oid" to 1002L,
+                "relation_name" to "customers", "relation_kind" to "r"),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 1001L)]?.tables shouldBe listOf("orders")
+        result[RoutineKey(name = "fn", oid = 1002L)]?.tables shouldBe listOf("customers")
+    }
+
+    test("listRoutineRelationDependencies returns empty map when no deps") {
+        every {
+            jdbc.queryList(
+                match { it.contains("pg_proc") && it.contains("pg_depend") && it.contains("relkind") },
+                any(), any(),
+            )
+        } returns emptyList()
+        PostgresProgrammabilityMetadataQueries.listRoutineRelationDependencies(jdbc, "public") shouldBe emptyMap()
+    }
+
+    // ── listTriggerFunctionDependencies (E.1 Slice D.2) ───────────
+
+    test("listTriggerFunctionDependencies groups by (table, trigger_name)") {
+        every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns listOf(
+            mapOf("table_name" to "orders", "trigger_name" to "audit_t", "function_name" to "audit_fn"),
+            mapOf("table_name" to "orders", "trigger_name" to "audit_t", "function_name" to "notify_fn"),
+            mapOf("table_name" to "customers", "trigger_name" to "audit_t", "function_name" to "audit_fn"),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listTriggerFunctionDependencies(jdbc, "public")
+        result[TriggerKey(table = "orders", name = "audit_t")] shouldBe listOf("audit_fn", "notify_fn")
+        result[TriggerKey(table = "customers", name = "audit_t")] shouldBe listOf("audit_fn")
+    }
+
+    test("listTriggerFunctionDependencies returns empty map when no trigger rows") {
+        every { jdbc.queryList(match { it.contains("pg_trigger") && it.contains("tgfoid") }, any()) } returns emptyList()
+        PostgresProgrammabilityMetadataQueries.listTriggerFunctionDependencies(jdbc, "public") shouldBe emptyMap()
+    }
+
+    // ── listRoutineIdentityAttributes (E.1 Slice E) ───────────────
+
+    test("listRoutineIdentityAttributes projects security/definer/searchPath per overload") {
+        every {
+            jdbc.queryList(
+                match { it.contains("prosecdef") && it.contains("proconfig") && it.contains("pg_roles") },
+                any(),
+            )
+        } returns listOf(
+            mapOf(
+                "routine_name" to "compute_total", "routine_oid" to 1001L,
+                "security_definer" to true, "definer" to "svc_app",
+                "config" to arrayOf("search_path=public,audit", "log_min_messages=warning"),
+            ),
+            mapOf(
+                "routine_name" to "other_fn", "routine_oid" to 2002L,
+                "security_definer" to false, "definer" to "postgres",
+                "config" to null,
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        val secured = result[RoutineKey(name = "compute_total", oid = 1001L)]
+        secured?.securityDefiner shouldBe true
+        secured?.definer shouldBe "svc_app"
+        secured?.searchPath shouldBe listOf("public", "audit")
+        val other = result[RoutineKey(name = "other_fn", oid = 2002L)]
+        other?.securityDefiner shouldBe false
+        other?.searchPath shouldBe null
+    }
+
+    test("listRoutineIdentityAttributes handles a java.sql.Array config payload") {
+        // Some JDBC drivers hand back text[] as java.sql.Array
+        // rather than a Kotlin Array<String>; the parser must
+        // accept both.
+        val sqlArray = mockk<java.sql.Array>()
+        every { sqlArray.array } returns arrayOf("search_path=public")
+        every {
+            jdbc.queryList(
+                match { it.contains("prosecdef") && it.contains("proconfig") },
+                any(),
+            )
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 5L,
+                "security_definer" to false, "definer" to "app_role",
+                "config" to sqlArray,
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 5L)]?.searchPath shouldBe listOf("public")
+    }
+
+    test("listRoutineIdentityAttributes returns empty map when no rows") {
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns emptyList()
+        PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public") shouldBe emptyMap()
+    }
+
+    test("listRoutineIdentityAttributes parses search_path with quoted comma-bearing segment") {
+        // Slice E follow-up: PG `proconfig` quotes segments that
+        // contain commas. The parser must split on un-quoted
+        // commas only AND strip the surrounding double quotes so
+        // the file-authored form (`weird,schema`) round-trips.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 1L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("search_path=\"weird,schema\",public"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 1L)]?.searchPath shouldBe listOf("weird,schema", "public")
+    }
+
+    test("listRoutineIdentityAttributes collapses escaped double-quote inside a quoted segment") {
+        // PG escapes a literal `"` inside a quoted segment as `""`.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 2L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("search_path=\"a\"\"b\",c"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 2L)]?.searchPath shouldBe listOf("a\"b", "c")
+    }
+
+    test("listRoutineIdentityAttributes proconfig without search_path entry yields null search_path") {
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 3L,
+                "security_definer" to false, "definer" to null,
+                "config" to arrayOf("log_min_messages=warning", "statement_timeout=1000"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 3L)]?.searchPath shouldBe null
+    }
+
+    test("listRoutineIdentityAttributes accepts a List<String> config payload") {
+        // Some test-fake JDBC drivers hand back text[] as a Kotlin
+        // List rather than an Array; toStringList must accept it.
+        every {
+            jdbc.queryList(match { it.contains("prosecdef") && it.contains("proconfig") }, any())
+        } returns listOf(
+            mapOf(
+                "routine_name" to "fn", "routine_oid" to 4L,
+                "security_definer" to false, "definer" to null,
+                "config" to listOf("search_path=public"),
+            ),
+        )
+        val result = PostgresProgrammabilityMetadataQueries.listRoutineIdentityAttributes(jdbc, "public")
+        result[RoutineKey(name = "fn", oid = 4L)]?.searchPath shouldBe listOf("public")
     }
 })

@@ -1,8 +1,8 @@
 package dev.dmigrate.mcp.schema
 
 /**
- * Low-level JSON-Schema primitives shared by [PhaseBToolSchemas]
- * and [PhaseDListToolSchemas]. Lives at top-level of the schema
+ * Low-level JSON-Schema primitives shared by [McpToolSchemas]
+ * and [McpListToolSchemas]. Lives at top-level of the schema
  * package so both schema registries can use the same builders
  * without one importing internal members of the other — keeps
  * each registry under the detekt LargeClass / TooManyFunctions
@@ -14,7 +14,7 @@ package dev.dmigrate.mcp.schema
  *   `inputSchema` slots.
  * - Closed-shape default: top-level `obj()` builders set
  *   `additionalProperties=false` so unknown keys fail
- *   JSON-Schema validation (Plan-D §6.1 strict-property
+ *   JSON-Schema validation (LF-012 / LN-038 strict-property
  *   contract).
  */
 
@@ -49,7 +49,7 @@ internal fun integerField(minimum: Int = 0): Map<String, Any> =
     mapOf("type" to "integer", "minimum" to minimum)
 
 /**
- * Plan-D §6.4 review: nullable integer field for size-bytes /
+ * LF-012 / LN-038 review: nullable integer field for size-bytes /
  * warning-count fields that the producer may not yet record.
  * Schema-validating clients see the slot as required+nullable.
  */
@@ -81,7 +81,7 @@ internal fun obj(vararg fields: Pair<String, Map<String, Any>>): SchemaBuilder =
 /**
  * Mutable builder for object-type schemas. [required] and [build]
  * are terminal — they return the assembled `Map<String, Any>`
- * directly. AP 6.23 adds [withAllOf] for cross-field constraints
+ * directly. LF-012 / LN-027 / LN-028 / LN-038 adds [withAllOf] for cross-field constraints
  * (e.g. `if truncated=true then artifactRef required`). Chain
  * `withAllOf(...)` before the terminal call:
  *
@@ -115,7 +115,7 @@ internal class SchemaBuilder(
 }
 
 /**
- * AP 6.23 shared resource-URI pattern for
+ * LF-012 / LN-027 / LN-028 / LN-038 shared resource-URI pattern for
  * `dmigrate://tenants/{tenantId}/artifacts/{artifactId}` — used by
  * `artifactRef`, `diffArtifactRef`, and the per-element shape
  * inside `job_status_get.artifacts[]`. Tenant- and artefact-id

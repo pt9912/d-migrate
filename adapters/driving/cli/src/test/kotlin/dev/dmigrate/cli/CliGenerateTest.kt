@@ -212,7 +212,7 @@ class CliGenerateTest : FunSpec({
         }
     }
 
-    // ─── Spatial Profile (Phase D) ──────────────────────────────
+    // ─── Spatial Profile (LF-004) ──────────────────────────────
 
     test("schema generate --spatial-profile is accepted for valid combo") {
         shouldNotThrowAny {

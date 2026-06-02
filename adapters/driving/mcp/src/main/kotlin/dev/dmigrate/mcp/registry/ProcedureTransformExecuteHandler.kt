@@ -47,25 +47,25 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
+import dev.dmigrate.core.util.sha256Hex
 
 /**
- * Phase G § 5.5 + § 6 G.6 (G.6.e) — Handler für
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für
  * `procedure_transform_execute`.
  *
- * Eigenarten gegenüber [ProcedureTransformPlanHandler] (G.6.d):
+ * Eigenarten gegenüber [ProcedureTransformPlanHandler]:
  *
  * - Genau eine Plan-Source: `planRef` ODER `planArtifactId`. Plan
  *   §5.5 Z. 770 — Schema listet beide, Handler erzwingt
  *   exactly-one.
- * - **Keine eigenen Source-Refs im Payload** (Plan §5.5 Z. 794-799
+ * - **Keine eigenen Source-Refs im Payload** (LF-012 / LN-011 / LN-017 / LN-027 Z. 794-799
  *   wortlaeufig): Source-Refs werden ausschliesslich aus der
  *   [AiArtifactProvenance.Plan]-Provenance des Plan-Artefakts
  *   uebernommen. Der Caller darf keine eigenen `schemaRef`/
  *   `procedureRef`-Felder mitbringen.
- * - Plan-Validierung gegen AiArtifactMetadata (Plan §5.5 Z. 783-792):
+ * - Plan-Validierung gegen AiArtifactMetadata (LF-012 / LN-011 / LN-017 / LN-027 Z. 783-792):
  *   `wireArtifactKind=procedure-transform-plan`,
  *   `aiIntent=procedure_transform_plan`, Tenant-Match,
  *   `targetDialect`-Match. Stale, fremde, manuell hochgeladene oder
@@ -75,10 +75,10 @@ import java.time.Duration
  *   [AiArtifactProvenance.Execute] mit Plan-Bindung
  *   (`planRef`, `planArtifactFingerprint`).
  * - Wire-Envelope: `targetArtifactId` + `targetResourceUri` als
- *   Pflichtfelder (statt `planRef` wie in G.6.d).
+ *   Pflichtfelder (statt `planRef` im Plan-Pfad).
  *
- * Wiederholt das G.6.d-Pipeline-Skelett — die Crosscutting-Logik
- * (Single-Writer-Acquire, Output-Hygiene Plan §7.4,
+ * Wiederholt das LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Skelett; die Crosscutting-Logik
+ * (Single-Writer-Acquire, Output-Hygiene LF-017 / LF-024 / LN-030 / LN-031,
  * Audit-Felder) ist identisch.
  */
 internal class ProcedureTransformExecuteHandler(
@@ -116,7 +116,7 @@ internal class ProcedureTransformExecuteHandler(
             performWork(parsed, context.principal, envelope, payloadFingerprint, claim)
         }
 
-        // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
+        // LF-017 / LF-024 / LN-030 / LN-031: Provider-/Modell-Metadaten ins Audit-Event;
         // sowohl bei live-call als auch beim Replay.
         if (dispatch is AiToolDispatchOutcome.WireSuccess) {
             context.auditFields.resourceRefs = context.auditFields.resourceRefs + listOf(
@@ -249,7 +249,7 @@ internal class ProcedureTransformExecuteHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, planResolution)
     }
 
-    @Suppress("ReturnCount", "LongParameterList")
+    @Suppress("ReturnCount")
     private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -301,7 +301,7 @@ internal class ProcedureTransformExecuteHandler(
                 "plan artifact metadata not found (orphaned ArtifactRecord)",
             )
 
-        // Plan §5.5 Z. 783-792: harte Provenance-Pruefungen.
+        // LF-012 / LN-011 / LN-017 / LN-027 Z. 783-792: harte Provenance-Pruefungen.
         if (metadata.wireArtifactKind != AiWireArtifactKind.PROCEDURE_TRANSFORM_PLAN) {
             throw PlanResolutionFailure(
                 ToolErrorCode.VALIDATION_ERROR,
@@ -381,9 +381,9 @@ internal class ProcedureTransformExecuteHandler(
                 "approval token supplied without a pending approval challenge",
             )
         }
-        // Plan §5.5: Policy sieht die aus dem Plan abgeleiteten
+        // LF-012 / LN-011 / LN-017 / LN-027: Policy sieht die aus dem Plan abgeleiteten
         // Source-Refs PLUS den planRef selbst. So kann eine
-        // Allowlist-Regel den Execute-Pfad gegen die Plan-Quelle
+        // Allowlist-Regel den Execute-Pfad gegen die Planquelle
         // entscheiden.
         val refs = (plan.planSourceRefs + plan.planResourceUri).map { it.render() }
         val decision = policyService.decide(
@@ -503,7 +503,7 @@ internal class ProcedureTransformExecuteHandler(
         } finally {
             quotaService.release(reservation)
         }
-        // Plan §7.4: Output-Hygiene über die Provider-Antwort.
+        // LF-017 / LF-024 / LN-030 / LN-031: Output-Hygiene über die Provider-Antwort.
         val outputCheck = hygieneService.sanitize(
             PromptHygieneRequest(
                 toolName = envelope.toolName + ":output",
@@ -563,7 +563,6 @@ internal class ProcedureTransformExecuteHandler(
 
     // ---- Publish ------------------------------------------------------
 
-    @Suppress("LongParameterList")
     private fun publishExecuteArtifact(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -610,9 +609,9 @@ internal class ProcedureTransformExecuteHandler(
                 originToolName = TOOL_NAME,
                 ownerPrincipalId = principal.principalId,
                 policyIntent = "ai.execute.$TOOL_NAME",
-                // Plan §5.5 Z. 794-799: Source-Refs werden aus der
+                // LF-012 / LN-011 / LN-017 / LN-027 Z. 794-799: Source-Refs werden aus der
                 // Plan-Provenance uebernommen (NICHT aus dem
-                // Execute-Payload), plus der Plan-Ref selbst.
+                // Execute-Payload), plus der LF-012 / LN-011 / LN-017 / LN-027 Ref selbst.
                 sourceRefs = plan.planSourceRefs + plan.planResourceUri,
                 targetDialect = parsed.targetDialect,
                 provenance = AiArtifactProvenance.Execute(
@@ -727,7 +726,6 @@ internal class ProcedureTransformExecuteHandler(
         )
     }
 
-    @Suppress("LongParameterList")
     private fun buildSuccessJson(
         resultRef: String,
         artifactId: String,
@@ -741,8 +739,8 @@ internal class ProcedureTransformExecuteHandler(
         append(if (replayed) "replayed transform output" else "transform output generated")
         append("\"")
         append(",\"findings\":[]")
-        // Plan §5.5: Output-Wire-Form heisst targetArtifactId +
-        // targetResourceUri (NICHT planRef wie bei G.6.d).
+        // LF-012 / LN-011 / LN-017 / LN-027: Output-Wire-Form heisst targetArtifactId +
+        // targetResourceUri (NICHT planRef wie im Plan-Pfad).
         append(",\"targetArtifactId\":\"").append(artifactId).append('"')
         append(",\"targetResourceUri\":\"").append(resultRef).append('"')
         append(",\"providerMeta\":{\"providerName\":\"").append(providerName).append('"')
@@ -761,9 +759,6 @@ internal class ProcedureTransformExecuteHandler(
 
     private fun escapeJson(text: String): String =
         text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     // ---- Parsed args + plan source -----------------------------------
 

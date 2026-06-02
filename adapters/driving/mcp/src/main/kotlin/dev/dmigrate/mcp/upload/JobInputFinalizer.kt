@@ -17,7 +17,7 @@ import java.time.Clock
 import java.time.Duration
 
 /**
- * Phase F § 8.5 (F.5 1/3) — Finaliser fuer policy-pflichtige
+ * LF-010 / LF-013 / LN-009 / LN-011 — Finaliser fuer policy-pflichtige
  * `uploadIntent=job_input`-Sessions.
  *
  * Aufgerufen vom [dev.dmigrate.mcp.registry.StreamingFinalizer] nach
@@ -34,11 +34,11 @@ import java.time.Duration
  *   (typischerweise `UPLOAD_INPUT`), `contentType = session.mimeType`,
  *   `filename` aus session+artifactId, sodass
  *   `artifact_chunk_get` / `artifact_list` die Bytes nach der
- *   Finalisierung lesen kann (Plan § 8.5: "Upload-Metadaten sind
+ *   Finalisierung lesen kann (LF-012 / LN-027 / LN-028 / LN-038: "Upload-Metadaten sind
  *   nach Finalisierung persistent aus dem Artifact-Store ...
  *   lesbar").
  *
- * Idempotenz-Vertrag entspricht AP 6.22:
+ * Idempotenz-Vertrag entspricht LF-010 / LF-013 / LN-009 / LN-011:
  * - `WriteArtifactOutcome.AlreadyExists` mit gleichem SHA + size ist
  *   ein No-Op-Replay (selber `artifactId` aus dem deterministischen
  *   Material).
@@ -62,7 +62,7 @@ fun interface JobInputFinalizer {
  *
  * Speichert keine Schema-Daten und ruft keinen Validator —
  * `job_input`-Bytes werden vom nachgelagerten Import-Worker
- * (F.7 / F.8) als opake Datenquelle interpretiert.
+ * (LF-010 / LF-013 / LN-009 / LN-011) als opake Datenquelle interpretiert.
  */
 class DefaultJobInputFinalizer(
     private val artifactStore: ArtifactStore,
@@ -140,7 +140,7 @@ class DefaultJobInputFinalizer(
                     contentType = session.mimeType,
                     format = inferFormat(session.mimeType),
                     targetTable = session.targetTable,
-                    // Follow-up AP 2: Bundle-Init-Hints aus der Session
+                    // LF-010 / LF-013 / LN-009 / LN-011: Bundle-Init-Hints aus der Session
                     // werden 1:1 in das persistente Artefakt-Metadatum
                     // uebertragen, sodass `data_import_start.tables`
                     // gegen den durable Init-Vertrag validiert wird.

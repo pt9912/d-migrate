@@ -1,8 +1,8 @@
 // adapters:driven:audit-logging: SLF4J-basierte AuditSink-Implementierung
-// (0.9.6 Phase A AP 6.8). Phase A liefert eine produktive
+// (LN-027). Liefert eine produktive
 // `LoggingAuditSink`, die jedes Audit-Event als JSON-Zeile in den
 // strukturierten Logger `dev.dmigrate.audit` schreibt. Persistente
-// Sinks (DB/Datei) sind Phase-B-Thema.
+// Sinks (DB/Datei) werden durch weitere Adapter ergaenzt.
 dependencies {
     api(project(":hexagon:ports-common"))
 

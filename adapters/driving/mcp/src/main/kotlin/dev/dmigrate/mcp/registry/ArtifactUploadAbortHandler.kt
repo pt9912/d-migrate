@@ -25,10 +25,10 @@ import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Clock
 
 /**
- * AP 6.10: `artifact_upload_abort` per `ImpPlan-0.9.6-C.md` §6.10
+ * LF-012 / LN-027 / LN-028 / LN-038: `artifact_upload_abort` per LF-012 / LN-027 / LN-028 / LN-038
  * and `spec/ki-mcp.md` §5.3 line 620-623.
  *
- * Phase C only allows the **session owner** to abort their own
+ * LF-012 / LN-038 only allows the **session owner** to abort their own
  * active staging session — administrative or cross-principal aborts
  * are policy-pflichtig and out of scope until later phases.
  *
@@ -44,7 +44,7 @@ import java.time.Clock
  * On a clean abort the handler:
  * 1. transitions the session to `ABORTED` via the store
  * 2. deletes every staged segment via [UploadSegmentStore.deleteAllForSession]
- * 3. releases the AP-6.7 quota reservations (`UPLOAD_BYTES` for
+ * 3. releases the LF-012 / LN-027 / LN-028 / LN-038 quota reservations (`UPLOAD_BYTES` for
  *    `session.sizeBytes` and `ACTIVE_UPLOAD_SESSIONS` for 1) so
  *    a tenant who aborts mid-upload doesn't keep the slot
  */
@@ -54,10 +54,10 @@ internal class ArtifactUploadAbortHandler(
     private val quotaService: QuotaService,
     private val clock: Clock,
     /**
-     * Phase F § 5.3 + § 8.6 (F.6 3/3): wenn gewired, faengt der
+     * LF-010 / LF-013 / LN-009 / LN-011: wenn gewired, faengt der
      * Handler administrative / fremde Abbrueche und delegiert an die
      * [AdministrativeAbortPipeline]. Default `null` haelt die
-     * Phase-C-Owner-only-Semantik unveraendert (Bestands-Tests
+     * LF-012 / LN-038-Owner-only-Semantik unveraendert (Bestands-Tests
      * gruen) — fremde Sessions liefern dann weiter
      * `FORBIDDEN_PRINCIPAL`.
      */
@@ -77,18 +77,18 @@ internal class ArtifactUploadAbortHandler(
                 ServerResourceUri(tenant, ResourceKind.UPLOAD_SESSIONS, uploadSessionId),
             )
 
-        // Phase F § 8.9 (F.9 3/3): AuditFields-Population fuer
-        // Around-/Finally-Audit (Plan: "Around-/Finally-Audit fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: AuditFields-Population fuer
+        // Around-/Finally-Audit (Vertrag: "Around-/Finally-Audit fuer
         // Init, Segment, Abort ... vervollstaendigen").
         context.auditFields.resourceRefs = listOf(session.resourceUri.render())
 
-        // Phase C: eigener Owner -> direkter Abort ohne Policy.
+        // LF-012 / LN-038: eigener Owner -> direkter Abort ohne Policy.
         if (session.ownerPrincipalId == context.principal.principalId) {
             return handleOwnerAbort(session, context, reason)
         }
 
-        // Phase F § 5.3: fremder Owner -> administrative Pipeline.
-        // Ohne gewirete Pipeline bleibt die Phase-C-Semantik
+        // LF-010 / LF-013 / LN-009 / LN-011: fremder Owner -> administrative Pipeline.
+        // Ohne gewirete Pipeline bleibt die LF-012 / LN-038-Semantik
         // (Forbidden) — Bestands-Caller-Tests unveraendert.
         val pipeline = administrativeAbortPipeline
             ?: throw ForbiddenPrincipalException(
@@ -177,7 +177,7 @@ internal class ArtifactUploadAbortHandler(
             UploadSessionState.COMPLETED -> throw IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
-            // AP 6.22 C1: an explicit abort while the session is being
+            // LF-010 / LF-013 / LN-009 / LN-011 C1: an explicit abort while the session is being
             // finalised is treated as a Conflict — the completing call
             // owns the FINALIZING claim and is about to land on
             // COMPLETED or ABORTED on its own. Retry sees the resolved

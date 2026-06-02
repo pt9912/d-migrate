@@ -7,13 +7,12 @@ import dev.dmigrate.server.application.quota.QuotaReservationSweeper
 import dev.dmigrate.server.application.quota.QuotaReservationStatus
 import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.persistence.jdbc.internal.JdbcTransactionRunner
-import dev.dmigrate.server.persistence.jdbc.migration.PhaseEMigrationRunner
+import dev.dmigrate.server.persistence.jdbc.migration.JdbcMigrationRunner
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcOwnerAwareQuotaService
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaReservationOwnerStore
 import dev.dmigrate.server.persistence.jdbc.quota.JdbcQuotaStore
 import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.postgresql.PostgreSQLContainer
@@ -23,7 +22,6 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicReference
 
-private val IntegrationTag = NamedTag("integration")
 
 private val sweeperTestContainer = PostgreSQLContainer("postgres:16-alpine")
     .withDatabaseName("dmigrate_state")
@@ -33,9 +31,9 @@ private val sweeperTestContainer = PostgreSQLContainer("postgres:16-alpine")
 private var sweeperTestDataSource: HikariDataSource? = null
 
 /**
- * Phase E2.8 — `QuotaReservationSweeper` exactly-once-Refund gegen
+ * LF-012 / LN-011 / LN-017 / LN-027 — `QuotaReservationSweeper` exactly-once-Refund gegen
  * Postgres (Plan-Akzeptanz: "Sweeper findet orphane Owner-Eintraege"
- * + Plan §7.9 line 1310).
+ * + LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Spiegelt das Bestands-`QuotaReservationSweeperTest` aber mit
  * `JdbcQuotaReservationOwnerStore` + echter PG-Persistenz statt
@@ -43,7 +41,6 @@ private var sweeperTestDataSource: HikariDataSource? = null
  */
 class QuotaReservationSweeperE2ETest : FunSpec({
 
-    tags(IntegrationTag)
 
     val key = QuotaKey(tenantId = TenantId("acme"), dimension = QuotaDimension.ACTIVE_JOBS)
 
@@ -57,7 +54,7 @@ class QuotaReservationSweeperE2ETest : FunSpec({
             poolName = "phase-e-sweeper-e2e"
         }
         sweeperTestDataSource = HikariDataSource(cfg)
-        PhaseEMigrationRunner(sweeperTestDataSource!!).migrate()
+        JdbcMigrationRunner(sweeperTestDataSource!!).migrate()
     }
 
     afterSpec {
@@ -121,7 +118,7 @@ class QuotaReservationSweeperE2ETest : FunSpec({
         fx.quotaStore.current(key) shouldBe 2L
     }
 
-    test("Sweeper laesst COMMITTED-Eintraege unangetastet (Plan §7.9 line 1311)") {
+    test("Sweeper laesst COMMITTED-Eintraege unangetastet (LF-012 / LN-011 / LN-017 / LN-027)") {
         val fx = freshFixture()
         val now0 = fx.initial
 

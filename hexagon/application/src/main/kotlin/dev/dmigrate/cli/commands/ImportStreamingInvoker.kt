@@ -55,7 +55,7 @@ internal class ImportStreamingInvoker(
             )
             StreamingResult.Ok(rawResult.copy(operationId = resumeContext.operationId))
         } catch (e: OperationCancelledException) {
-            // Plan §4.5: Cancel must travel through this catch-all boundary
+            // LF-008 / LF-009 / LF-013: Cancel must travel through this catch-all boundary
             // unmodified so the runner can map it to exit 130 instead of the
             // generic 5 (import failure) path.
             throw e

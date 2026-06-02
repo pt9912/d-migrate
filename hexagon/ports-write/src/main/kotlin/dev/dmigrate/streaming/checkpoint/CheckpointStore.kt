@@ -1,14 +1,10 @@
 package dev.dmigrate.streaming.checkpoint
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.1): expliziter Port fuer
- * Checkpoint-Persistenz. Runner und Streaming-Klassen sprechen ausschliess-
+ * LF-013 / LN-012 / LN-013: expliziter Port fuer Checkpoint-Persistenz.
+ * Runner und Streaming-Klassen sprechen ausschliess-
  * lich gegen diesen Port; die konkrete Speicherform (Dateisystem in 0.9.0,
  * spaeter ggf. andere Adapter) bleibt austauschbar.
- *
- * Phase B stellt den Vertrag und den dateibasierten Erstadapter bereit.
- * Der tatsaechliche Resume-Flow (Manifest-Fortschreibung waehrend des
- * Streams, Wiederaufnahme) ist Phasen C/D vorbehalten.
  */
 interface CheckpointStore {
 
@@ -18,7 +14,7 @@ interface CheckpointStore {
      *
      * @throws UnsupportedCheckpointVersionException wenn das gespeicherte
      *   Manifest eine nicht unterstuetzte [CheckpointManifest.schemaVersion]
-     *   traegt — Phase-A-Exit-Code-Vertrag §4.5 (Exit 7).
+     *   traegt — CLI-Exit 7.
      * @throws CheckpointStoreException fuer unlesbare/partielle Dateien
      *   (Exit 7 am CLI-Rand).
      */
@@ -27,8 +23,7 @@ interface CheckpointStore {
     /**
      * Persistiert das Manifest atomar. Der Adapter ersetzt die Zieldatei
      * entweder vollstaendig oder schlaegt mit [CheckpointStoreException]
-     * fehl (Phase B §4.6); partielle Ueberschreibungen sind nicht
-     * zulaessig.
+     * fehl; partielle Ueberschreibungen sind nicht zulaessig.
      */
     fun save(manifest: CheckpointManifest)
 
@@ -40,10 +35,9 @@ interface CheckpointStore {
     fun list(): List<CheckpointReference>
 
     /**
-     * Markiert einen Lauf als abgeschlossen. In 0.9.0 ist die Default-
-     * Umsetzung "Datei entfernen"; spaetere Milestones koennen das zu
-     * einem Archivierungsmodell erweitern (§4.6, Nicht-Ziel: endgueltiges
-     * Housekeeping).
+     * Markiert einen Lauf als abgeschlossen. Die Default-Umsetzung
+     * "Datei entfernen" kann spaeter durch ein Archivierungsmodell
+     * ersetzt werden.
      */
     fun complete(operationId: String)
 }
@@ -60,10 +54,10 @@ data class CheckpointReference(
 )
 
 /**
- * 0.9.0 Phase B §4.1 / §4.6: generischer Fehlerkanal des Ports.
+ * LF-013 / LN-012 / LN-013: generischer Fehlerkanal des Ports.
  * Adapter (z.B. der dateibasierte Store) werfen diesen Typ bei unlesbaren,
  * partiellen oder strukturell defekten Manifesten. Der CLI-Rand mappt das
- * in Phase C/D auf Exit 7 (Phase A §4.5 / Runner-KDoc).
+ * auf Exit 7.
  */
 class CheckpointStoreException(
     message: String,
@@ -71,7 +65,7 @@ class CheckpointStoreException(
 ) : RuntimeException(message, cause)
 
 /**
- * 0.9.0 Phase B §4.2: wird geworfen, wenn die gespeicherte
+ * LF-013 / LN-012: wird geworfen, wenn die gespeicherte
  * [CheckpointManifest.schemaVersion] nicht mit
  * [CheckpointManifest.CURRENT_SCHEMA_VERSION] kompatibel ist. Gedacht fuer
  * klare Fehlermeldungen beim Laden aelterer/neuerer Manifeste.

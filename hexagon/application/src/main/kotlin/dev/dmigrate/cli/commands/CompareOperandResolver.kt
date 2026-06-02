@@ -48,13 +48,17 @@ object CompareOperandParser {
  * Operates on each operand independently — a `file/db` compare where
  * only one side is reverse-generated will still be normalized correctly.
  *
- * Invalid markers (prefix present but set syntactically invalid) produce
- * an [IllegalStateException] rather than a silent fallback.
+ * The actual marker handling is delegated to
+ * [dev.dmigrate.core.diff.migration.ReverseMarkerNormalizer] so the
+ * `schema migrate` `DiffPlanner` and `schema compare` share the same
+ * contract per `docs/planning/done/diffresult-migration-plan.md §11.1`.
+ * This wrapper just lifts the normalisation onto the operand record
+ * so the operand's `reference` survives in error messages.
+ *
+ * Invalid markers (prefix present but set syntactically invalid)
+ * produce an [IllegalStateException] rather than a silent fallback.
  */
 object CompareOperandNormalizer {
-
-    private const val NORMALIZED_NAME = "__compare_normalized__"
-    private const val NORMALIZED_VERSION = "0.0.0"
 
     /**
      * If the operand's schema has valid reverse markers, replace
@@ -64,27 +68,20 @@ object CompareOperandNormalizer {
      *         reserved prefix but the marker set is incomplete or invalid
      */
     fun normalize(operand: ResolvedSchemaOperand): ResolvedSchemaOperand {
-        val name = operand.schema.name
-        val version = operand.schema.version
+        // Pass-through when the schema has no reverse marker — keep
+        // identity so the original operand instance is reused.
+        if (!operand.schema.name.startsWith(ReverseScopeCodec.PREFIX)) return operand
 
-        // Not a reverse-generated schema → pass through unchanged
-        if (!name.startsWith(ReverseScopeCodec.PREFIX)) return operand
-
-        // Has prefix → must be fully valid
-        if (!ReverseScopeCodec.isReverseGenerated(name, version)) {
+        val normalized = try {
+            dev.dmigrate.core.diff.migration.ReverseMarkerNormalizer.normalize(operand.schema)
+        } catch (failure: IllegalStateException) {
             throw IllegalStateException(
                 "Schema '${operand.reference}' uses reserved prefix " +
                     "'${ReverseScopeCodec.PREFIX}' but has invalid or " +
-                    "incomplete reverse marker set"
+                    "incomplete reverse marker set",
+                failure,
             )
         }
-
-        // Valid reverse markers → normalize to prevent fake diffs
-        return operand.copy(
-            schema = operand.schema.copy(
-                name = NORMALIZED_NAME,
-                version = NORMALIZED_VERSION,
-            ),
-        )
+        return operand.copy(schema = normalized)
     }
 }

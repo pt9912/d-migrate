@@ -5,7 +5,7 @@ import io.kotest.matchers.shouldBe
 
 /**
  * Shared bearer-token literal + leak-assertion helper for the
- * AP 6.13/6.17 `SecretScrubber` wire tests. The literal is opaque
+ * LF-012 / LN-027 / LN-028 / LN-038/6.17 `SecretScrubber` wire tests. The literal is opaque
  * to the scrubber's regex (the regex anchors on the `Bearer ` prefix
  * and a token-shaped tail) — matching the production pattern keeps
  * each handler's "is the scrub call wired?" test honest. The bare

@@ -4,7 +4,7 @@ import dev.dmigrate.core.validation.requirePositive
 import java.time.Duration
 
 /**
- * Passive Duration carrier for handler/runner timeouts. Phase A does
+ * Passive Duration carrier for handler/runner timeouts. LF-012 / LN-011 / LN-017 / LN-027 does
  * not enforce these — actual cancel-on-deadline lives in the handler
  * layer in later phases. Defaults are conservative; deployments can
  * override per operation.

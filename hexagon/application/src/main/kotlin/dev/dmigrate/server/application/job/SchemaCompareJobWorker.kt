@@ -9,12 +9,11 @@ import dev.dmigrate.server.ports.JobWorker
 import dev.dmigrate.server.ports.JobWorkerOutcome
 
 /**
- * Phase E §7.7 `schema_compare_start`-Worker mit zwei Schema-Eingaben.
- *
- * Plan §7.7-Pipeline (Compare-Materialisierung → Diff → Artefakt-
+ * LF-012 / LN-011 / LN-017 / LN-027 *
+ * LF-012 / LN-011 / LN-017 / LN-027-Pipeline (Compare-Materialisierung → Diff → Artefakt-
  * Publish) mit eigenen Cancel-Checkpoints zwischen jedem Schritt.
- * E.1 Compare-Cancel-Gate-Followup: dieser Worker ist die produktive
- * Antwort auf den E.1-Block "SchemaCompareRunner has no token wiring
+ * LF-012 / LN-011 / LN-017 / LN-027 Compare-Cancel-Gate-Followup: dieser Worker ist die produktive
+ * Antwort auf den LF-012 / LN-011 / LN-017 / LN-027-Block "SchemaCompareRunner has no token wiring
  * yet" — der CLI-`SchemaCompareRunner.execute(...)` bekommt einen
  * separaten Token-Parameter (siehe gleichnamiger Commit), der Worker
  * geht hier einen anderen Weg ueber [schemaLoader] statt ueber den
@@ -25,9 +24,9 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
  * - Connection-Refs (`dmigrate://tenants/<t>/connections/<id>`) gehen
  *   ueber [dev.dmigrate.server.application.connection.ConnectionMaterializer]
  *   + Reader; das Token wandert weiter durch die Treiber-Schichten
- *   (E0-Checkpoints).
+ *   (Cancel-Checkpoints).
  * - Schema-Refs (`dmigrate://tenants/<t>/schemas/<id>`) gehen ueber
- *   den `SchemaContentLoader`/-`Store` (Phase C) und sind bereits
+ *   den `SchemaContentLoader`/-`Store` (LF-012 / LN-038) und sind bereits
  *   secret-frei.
  *
  * Fuer den Worker ist das transparent — er kennt nur das Lambda und

@@ -10,29 +10,51 @@ dependencies {
     implementation(project(":hexagon:ports"))
     implementation(project(":hexagon:profiling"))
 
-    // Phase D (0.8.0): ICU4J for grapheme counting and Unicode normalization
-    implementation("com.ibm.icu:icu4j:76.1")
-
-    // Phase E3 (0.9.6): slf4j-Facade fuer Worker-Thread-Uncaught-Logging im
+    // LF-012 / LN-011 / LN-017 / LN-027: slf4j-Facade fuer Worker-Thread-Uncaught-Logging im
     // BoundedAsyncJobExecutor. No-op ohne Provider; Tests/Runtime ziehen
     // logback-classic (root build.gradle.kts subprojects-Block).
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
 
     testImplementation(project(":adapters:driven:integrations"))
+    testImplementation(project(":adapters:driven:formats"))
+    testImplementation(project(":adapters:driven:driver-common"))
+    testImplementation(project(":adapters:driven:streaming"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
 
-    // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
+    // LF-012 / LN-011 / LN-017 / LN-027 cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
 
-    // Phase E3.6: ILoggingEvent fuer LogbackCapture.events. Logback ist
+    // LF-012 / LN-011 / LN-017 / LN-027: ILoggingEvent fuer LogbackCapture.events. Logback ist
     // im subprojects-Block bereits testRuntimeOnly fuer alle Module —
     // hier erweitert auf testImplementation, damit der Test-Code den
     // Event-Typ direkt referenzieren kann.
     testImplementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
 
-    // Phase E2.7: Contract-Test-Fixture fuer QuotaReservationOwnerStore
+    // LF-012 / LN-011 / LN-017 / LN-027: Contract-Test-Fixture fuer QuotaReservationOwnerStore
     // braucht Kotest fuer abstract FunSpec-Definition.
     testFixturesApi(project(":hexagon:ports-common"))
+    // Migrate Phase F.2/F.3: `executeAgainstPool` test-helper signature uses
+    // ConnectionPool (ports-common, already above) + MigrationDdlStatement
+    // (ports-read), and returns ExecutionTrace (this module). The ports-read
+    // dep is required because Gradle's testFixtures source set does not
+    // inherit `implementation` deps' transitive `api` exports automatically.
+    testFixturesApi(project(":hexagon:ports-read"))
+    // Atomic-Preserve Phase C.5: `executeSegmentsAgainstPool` test-helper
+    // signature uses ExecutableSegment, AtomicSequencePreserveBatch,
+    // AtomicSequencePreserveExecutor, and AtomicSequencePreserveResult
+    // from ports-execute. Same testFixtures gradle-quirk as ports-read
+    // above.
+    testFixturesApi(project(":hexagon:ports-execute"))
     testFixturesApi("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+}
+
+kover {
+    reports {
+        verify {
+            rule {
+                minBound(90)
+            }
+        }
+    }
 }

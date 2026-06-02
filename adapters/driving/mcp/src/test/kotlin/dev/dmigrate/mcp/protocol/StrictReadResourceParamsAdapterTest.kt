@@ -6,7 +6,7 @@ import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 
 /**
- * Plan-D §5.3 / §10.7 unit coverage for
+ * LF-012 / LN-038 unit coverage for
  * [StrictReadResourceParamsAdapter]. The wire-level acceptance
  * (`resources/read` rejecting `cursor`/`range`/`chunkId` end-to-end
  * over stdio + HTTP) lands in AP D11; this spec pins the adapter

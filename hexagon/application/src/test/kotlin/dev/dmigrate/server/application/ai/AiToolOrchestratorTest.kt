@@ -36,7 +36,7 @@ class AiToolOrchestratorTest : FunSpec({
     /**
      * Test-Double: deterministischer In-Memory-Store mit
      * Hooks fuer manipulierte Acquire-Outcomes — hier brauchen wir
-     * KEINE komplette Lease-/Reclaim-Logik (die ist in G.6.a
+     * KEINE komplette Lease-/Reclaim-Logik (die ist in LF-017 / LF-024 / LN-030 / LN-031
      * abgedeckt). Wir prueffen das Orchestrator-Verhalten gegen
      * jeden Acquire-Outcome-Typ direkt.
      */
@@ -80,7 +80,7 @@ class AiToolOrchestratorTest : FunSpec({
         attemptCount = 1,
     )
 
-    test("Plan §6 G.6: Existing(Succeeded) -> WireSuccess(replayed=true), work() wird NICHT aufgerufen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Existing(Succeeded) -> WireSuccess(replayed=true), work() wird NICHT aufgerufen") {
         val existing = AiToolOutcome.Succeeded(
             scope = envelope().scope(),
             payloadFingerprint = payloadFp,
@@ -105,7 +105,7 @@ class AiToolOrchestratorTest : FunSpec({
         store.commitCalls shouldBe 0
     }
 
-    test("Plan §6 G.6: Existing(FailedTerminal) -> WireFailure(replayed=true), work() wird NICHT aufgerufen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Existing(FailedTerminal) -> WireFailure(replayed=true), work() wird NICHT aufgerufen") {
         val existing = AiToolOutcome.FailedTerminal(
             scope = envelope().scope(),
             payloadFingerprint = payloadFp,
@@ -127,7 +127,7 @@ class AiToolOrchestratorTest : FunSpec({
         workCalled.get() shouldBe 0
     }
 
-    test("Plan §6 G.6: ExistingRetryable -> WireFailure(replayed=true), work() wird NICHT aufgerufen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: ExistingRetryable -> WireFailure(replayed=true), work() wird NICHT aufgerufen") {
         val existing = AiToolOutcome.FailedRetryable(
             scope = envelope().scope(),
             payloadFingerprint = payloadFp,
@@ -150,7 +150,7 @@ class AiToolOrchestratorTest : FunSpec({
         workCalled.get() shouldBe 0
     }
 
-    test("Plan §6 G.6: InProgress -> WireFailure(OPERATION_TIMEOUT, retryable=true)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: InProgress -> WireFailure(OPERATION_TIMEOUT, retryable=true)") {
         val store = ScriptedStore(
             listOf(AiToolAcquireOutcome.InProgress(envelope().scope(), now.plusSeconds(60))),
         )
@@ -164,7 +164,7 @@ class AiToolOrchestratorTest : FunSpec({
         failure.replayed shouldBe false
     }
 
-    test("Plan §6 G.6: Conflict -> WireFailure(IDEMPOTENCY_CONFLICT, retryable=false)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Conflict -> WireFailure(IDEMPOTENCY_CONFLICT, retryable=false)") {
         val store = ScriptedStore(
             listOf(AiToolAcquireOutcome.Conflict(envelope().scope(), "1".repeat(64))),
         )
@@ -222,7 +222,7 @@ class AiToolOrchestratorTest : FunSpec({
         store.lastCommittedOutcome.shouldBeInstanceOf<AiToolOutcome.FailedRetryable>()
     }
 
-    test("Plan §6 G.6: work() throws -> catch + commit FailedTerminal(INTERNAL_AGENT_ERROR)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: work() throws -> catch + commit FailedTerminal(INTERNAL_AGENT_ERROR)") {
         val store = ScriptedStore(listOf(acquired()))
         val orchestrator = AiToolOrchestrator(store)
         val result = orchestrator.dispatch(envelope()) {
@@ -254,7 +254,7 @@ class AiToolOrchestratorTest : FunSpec({
         retryable.attemptCount shouldBe 3
     }
 
-    test("Plan §6 G.6 Crash-Pfad: commit==false (Lease verloren) blockiert das Wire-Ergebnis nicht") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Crash-Pfad: commit==false (Lease verloren) blockiert das Wire-Ergebnis nicht") {
         // Store, dessen commit() false zurueckgibt — simuliert
         // Lease-Verlust an einen Reclaimer.
         val store = object : AiToolOutcomeStore {

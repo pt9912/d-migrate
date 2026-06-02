@@ -32,7 +32,7 @@ import java.time.ZoneOffset
 import java.util.Base64
 
 /**
- * Phase F § 8.4 (F.4 3/3) — pin't den terminalen Failure-Pfad fuer
+ * LF-010 / LF-013 / LN-009 / LN-011 — pin't den terminalen Failure-Pfad fuer
  * oversize Segmente:
  *
  * - oversize -> Session terminal `ABORTED` mit FailureOutcome
@@ -170,7 +170,7 @@ class ArtifactUploadHandlerOversizeFailureTest : FunSpec({
             )
         }
 
-        // Plan § 8.4: beide Init-Quotas freigegeben.
+        // LF-012 / LN-011 / LN-017 / LN-027: beide Init-Quotas freigegeben.
         fx.quotaStore.current(fx.sessionsKey) shouldBe 0L
         fx.quotaStore.current(fx.bytesKey) shouldBe 0L
     }
@@ -236,7 +236,7 @@ class ArtifactUploadHandlerOversizeFailureTest : FunSpec({
     }
 
     test("oversize gefolgt von kleinerem Retry liefert weiter PayloadTooLargeException") {
-        // Plan § 8.4 "abweichende Wiederholung deterministisch
+        // LF-012 / LN-011 / LN-017 / LN-027 "abweichende Wiederholung deterministisch
         // ablehnen": ein Retry mit anderem (kleinerem) Segment darf
         // den FAILED-Outcome nicht ueberschreiben.
         val fx = Fixture()

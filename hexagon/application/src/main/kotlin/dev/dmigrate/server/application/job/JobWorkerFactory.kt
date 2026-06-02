@@ -4,7 +4,7 @@ import dev.dmigrate.server.core.job.JobRecord
 import dev.dmigrate.server.ports.JobWorker
 
 /**
- * Phase E §7.7 Auto-Dispatch-Hook: konstruiert pro frisch committed
+ * LF-012 / LN-011 / LN-017 / LN-027: konstruiert pro frisch committed
  * [JobRecord] den passenden [JobWorker]. Der [JobStartOrchestrator] ruft
  * die Factory unmittelbar nach erfolgreichem `JobStartTransaction.commit`,
  * konstruiert den Worker mit den Tool-Args aus dem [JobStartRequest] und

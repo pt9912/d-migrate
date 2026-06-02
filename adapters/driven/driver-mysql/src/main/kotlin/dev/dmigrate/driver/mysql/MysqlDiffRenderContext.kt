@@ -1,0 +1,303 @@
+package dev.dmigrate.driver.mysql
+
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.DiffResult
+import dev.dmigrate.core.diff.migration.OperationRisk
+import dev.dmigrate.core.diff.migration.Reversibility
+import dev.dmigrate.core.model.DefaultValue
+import dev.dmigrate.core.model.IndexDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.MigrationBlocker
+import dev.dmigrate.driver.migration.MigrationBlockedReason
+import dev.dmigrate.driver.migration.PlannerBlockerClassifier
+import dev.dmigrate.driver.migration.DialectExecutionHints
+import dev.dmigrate.driver.migration.LockBehavior
+import dev.dmigrate.driver.migration.MigrationDdlResult
+import dev.dmigrate.driver.migration.MigrationDdlStatement
+import dev.dmigrate.driver.migration.TransactionBehavior
+import dev.dmigrate.driver.migration.TransactionScope
+
+/** Rendering direction. */
+internal enum class MysqlRenderDirection { UP, DOWN }
+
+/**
+ * E.3 MySQL Sequence-Diff Sub-Slice B: which side of the diff the
+ * caller wants when looking up sequence-bound triggers. `CURRENT`
+ * = pre-Up state; `DESIRED` = post-Up state. The direction-based
+ * default works for `RenameSequence` (where the bound triggers
+ * live in `currentSchema` for UP and `desiredSchema` for DOWN)
+ * but NOT for `DropSequence`: both UP (drop triggers) and DOWN
+ * (re-create the same triggers) need `CURRENT`, the only schema
+ * that still contains the bindings.
+ */
+internal enum class SchemaSide { CURRENT, DESIRED }
+
+/** Mutable accumulator for one MySQL renderer invocation. Mirrors `PostgresDiffRenderContext`. */
+internal class MysqlDiffRenderContext(
+    val direction: MysqlRenderDirection,
+    val sql: MysqlDiffSqlBuilders,
+    val options: DdlGenerationOptions,
+    private val currentSchema: SchemaDefinition? = null,
+    private val desiredSchema: SchemaDefinition? = null,
+    /**
+     * E.1 Routine-Migration Slice C.3: the full plan is now exposed
+     * to the renderer so [MysqlDiffRoutineOps] can ask
+     * [dev.dmigrate.driver.DependencyGuardEvaluator] whether a
+     * routine operation is isolated enough to allow a
+     * `DROP + CREATE` fallback when capability is `Disabled`.
+     */
+    val plan: DiffResult? = null,
+) {
+    private val statements = mutableListOf<MigrationDdlStatement>()
+    private val rendered = mutableSetOf<String>()
+    private val skipped = mutableSetOf<String>()
+    private val manualActions = mutableSetOf<String>()
+    private val destructive = mutableSetOf<String>()
+    private val nonReversible = mutableSetOf<String>()
+    private val blockers = mutableListOf<MigrationBlocker>()
+    private val diagnostics = mutableListOf<DiffDiagnostic>()
+
+    fun emit(op: DiffOperation, sqlText: String) {
+        // E.2 Sub-Slice A.3 strict-mode lift: mirrors the
+        // PostgresDiffRenderContext guard. When the active-direction
+        // risk has `hasGap = true` and `strictGapOperations` is set,
+        // block before emitting any statement for this op. Subsequent
+        // emit() calls for the same op short-circuit on `isSkipped`.
+        if (options.strictGapOperations && riskFor(op).hasGap) {
+            if (!isSkipped(op)) {
+                skip(
+                    op,
+                    "Operation ${op.id} renders with a visibility gap (`hasGap = true`) and " +
+                        "`--strict-gap-operations` is set. The operator must split the change into a " +
+                        "manual maintenance window or accept the gap by removing the strict flag.",
+                    code = "OPERATION_HAS_GAP_STRICT_BLOCKED",
+                )
+                addBlocker(MigrationBlockedReason.MANUAL_ACTION_REQUIRED, operationIds = setOf(op.id))
+            }
+            return
+        }
+        // Plan-2 §G.1: MySQL DDL renders inside the runner-managed JDBC
+        // transaction at the dispatch layer (TransactionScope.RUNNER_OWNED),
+        // but Plan-2 §A.1 records the dialect-level caveat: every
+        // MySQL DDL implicitly commits surrounding work and is not
+        // rolled back on later failure, so the hints carry
+        // IMPLICIT_COMMIT + sideEffectsPossible=true. The implicit-
+        // commit caveat is surfaced in the migrate report's plan-level
+        // aggregation; it does not change executor dispatch.
+        // Online vs. copy ALTER cannot be determined offline, so
+        // requiresExclusiveAccess stays conservatively true and
+        // lockBehavior reports TABLE_EXCLUSIVE.
+        statements += MigrationDdlStatement(
+            sql = sqlText,
+            operationIds = setOf(op.id),
+            risk = riskFor(op),
+            phase = op.phase,
+            transactionScope = TransactionScope.RUNNER_OWNED,
+            hints = MYSQL_IMPLICIT_COMMIT_DDL_HINTS,
+        )
+        rendered += op.id
+        if (riskFor(op).destructive) destructive += op.id
+        if (op.reversibility == Reversibility.NOT_REVERSIBLE) nonReversible += op.id
+        if (riskFor(op).requiresManualConfirmation) manualActions += op.id
+    }
+
+    private fun riskFor(op: DiffOperation): OperationRisk =
+        if (direction == MysqlRenderDirection.UP) {
+            op.risks.up
+        } else {
+            op.risks.down ?: error(
+                "emit() called for op ${op.id} (reversibility=${op.reversibility}) in DOWN direction " +
+                    "but risks.down is null; the dispatcher should have skipped or blocked first.",
+            )
+        }
+
+    /**
+     * Mark [op] as skipped and emit a diagnostic. The default
+     * [severity] is `BLOCKER` (typical short-circuit-with-blocker
+     * pathway); callers that want to record the skip without a
+     * blocker — e.g. an `AlterSequence` whose delta only touches
+     * the runtime-state (`start` / `next_value`, deferred to the
+     * `preserveCurrentValue` Folge-Slice) — pass
+     * `severity = DiffDiagnostic.Severity.INFO` so the report
+     * still tracks the op without surfacing a Migration-Blocker.
+     */
+    fun skip(
+        op: DiffOperation,
+        message: String,
+        code: String = "MYSQL_RENDER_SKIP",
+        severity: DiffDiagnostic.Severity = DiffDiagnostic.Severity.BLOCKER,
+    ) {
+        skipped += op.id
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = severity,
+            operationId = op.id,
+        )
+    }
+
+    /**
+     * Whether [op] is already in the skipped set — used by multi-
+     * statement helpers (E.2 Sub-Slice B ReplaceTrigger Drop+Create)
+     * to suppress trailing diagnostics when the strict-gap guard
+     * short-circuited the first `emit()` call.
+     */
+    fun isSkipped(op: DiffOperation): Boolean = op.id in skipped
+
+    /**
+     * E.1 Routine-Migration Slice C.3: annotate an op with an
+     * INFO-level diagnostic that does not skip the op or contribute
+     * to a blocker. Used to flag stub bewertungen like
+     * `DEPENDENCY_GUARD_HEURISTIC` so reports document that the
+     * renderer relied on a heuristic, not a topology proof.
+     */
+    fun info(op: DiffOperation, message: String, code: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.INFO,
+            operationId = op.id,
+        )
+    }
+
+    /**
+     * E.1 Routine-Migration Slice C.3 follow-up: annotate an op
+     * with a WARNING-level diagnostic. Used to surface operational
+     * caveats that an operator must read but that do not block the
+     * render (e.g., MySQL routine `DROP + CREATE` is non-atomic
+     * across the implicit-commit boundary).
+     */
+    fun warning(op: DiffOperation, message: String, code: String) {
+        diagnostics += DiffDiagnostic(
+            code = code,
+            message = message,
+            severity = DiffDiagnostic.Severity.WARNING,
+            operationId = op.id,
+        )
+    }
+
+    fun addBlocker(
+        reason: MigrationBlockedReason,
+        operationIds: Set<String>,
+        diagnostics: List<DiffDiagnostic> = emptyList(),
+    ) {
+        blockers += MigrationBlocker(
+            reason = reason,
+            operationIds = operationIds,
+            diagnostics = diagnostics,
+        )
+    }
+
+    /**
+     * E.3 MySQL Sequence Drift-Check Sub-Slice F follow-up
+     * (2026-05-20): records a pre-built [DiffDiagnostic] in the
+     * context's diagnostic stream without touching the
+     * rendered/skipped sets. Used by `canonicityBlocksForTrigger`
+     * where the column op has already emitted DDL earlier in
+     * `MysqlDiffTableOps` and `ctx.skip` would violate the
+     * "rendered ∩ skipped = ∅"-invariant on `MigrationDdlResult`.
+     */
+    fun recordDiagnostic(diagnostic: DiffDiagnostic) {
+        diagnostics += diagnostic
+    }
+
+    fun indexTouchesGeometry(table: String, index: IndexDefinition): Boolean {
+        val schema = if (direction == MysqlRenderDirection.UP) desiredSchema else currentSchema
+        val columns = schema?.tables?.get(table)?.columns.orEmpty()
+        return index.columnNames.any { name -> columns[name]?.type is NeutralType.Geometry }
+    }
+
+    /**
+     * E.3 MySQL Sequence-Diff Sub-Slice B: bootstrap-once tracker for
+     * `dmg_sequences` + `dmg_nextval` / `dmg_setval` infrastructure
+     * emission. Lives on the per-direction render context so UP and
+     * DOWN passes each get a clean latch.
+     */
+    val sequenceMigration: MysqlSequenceMigrationContext = MysqlSequenceMigrationContext()
+
+    /**
+     * E.3 MySQL Sequence-Diff Sub-Slice B: discover all canonical
+     * support-trigger names that target [sequenceName] in the
+     * requested [side]. Caller picks the side explicitly because the
+     * "default by direction" heuristic only works for renames —
+     * `DropSequence` UP and DOWN both consult `CURRENT` (the only
+     * schema that still carries the bindings).
+     *
+     * Returns an empty list if the schema is unknown or no column
+     * carries a `SequenceNextVal` default pointing at the given
+     * sequence. Trigger names are derived deterministically via
+     * [MysqlSequenceNaming.triggerName] so re-running this against
+     * the same schema state always yields the same set.
+     */
+    fun triggersForSequence(
+        sequenceName: String,
+        side: SchemaSide,
+    ): List<MysqlSequenceTriggerSpec> {
+        val schema = when (side) {
+            SchemaSide.CURRENT -> currentSchema
+            SchemaSide.DESIRED -> desiredSchema
+        }
+        val tables = schema?.tables ?: return emptyList()
+        val result = mutableListOf<MysqlSequenceTriggerSpec>()
+        for ((tableName, table) in tables) {
+            for ((columnName, column) in table.columns) {
+                val def = column.default as? DefaultValue.SequenceNextVal ?: continue
+                if (def.sequenceName != sequenceName) continue
+                result += MysqlSequenceTriggerSpec(
+                    tableName = tableName,
+                    columnName = columnName,
+                    sequenceName = sequenceName,
+                )
+            }
+        }
+        return result
+    }
+
+    fun toResult(diff: DiffResult): MigrationDdlResult {
+        val plannerBlockers = diff.diagnostics.filter { it.severity == DiffDiagnostic.Severity.BLOCKER }
+        val combinedDiagnostics = plannerBlockers + diagnostics
+        // F.4 Renderer-Blocker-Bridge (2026-05-19): see
+        // `PostgresDiffRenderContext.toResult` for the contract — every
+        // planner-emitted BLOCKER diagnostic is classified via
+        // `PlannerBlockerClassifier.classify(diag.code)` and grouped
+        // into one MigrationBlocker per reason, so F.4 Mapper/Planner
+        // blockers surface as `OBJECT_RENAME_UNSUPPORTED` while the
+        // legacy `CONSTRAINT_NOT_DIFFABLE` etc. pathways keep
+        // `DIALECT_UNSUPPORTED_OPERATION`.
+        val effectiveBlockers = if (plannerBlockers.isEmpty()) {
+            blockers
+        } else {
+            blockers + plannerBlockers
+                .groupBy { PlannerBlockerClassifier.classify(it.code) }
+                .map { (reason, diags) -> MigrationBlocker(reason = reason, diagnostics = diags) }
+        }
+        val primary = effectiveBlockers.firstOrNull()?.reason
+        val requiresConfirmation = manualActions.isNotEmpty() || destructive.isNotEmpty()
+        return MigrationDdlResult(
+            statements = statements,
+            operationsRendered = rendered,
+            operationsSkipped = skipped,
+            manualActions = manualActions,
+            destructiveOperations = destructive,
+            nonReversibleOperations = nonReversible,
+            requiresConfirmation = requiresConfirmation,
+            blockers = effectiveBlockers,
+            primaryBlockedReason = primary,
+            diagnostics = combinedDiagnostics,
+            spatialProfile = options.spatialProfile.name,
+        )
+    }
+
+    private companion object {
+        private val MYSQL_IMPLICIT_COMMIT_DDL_HINTS = DialectExecutionHints(
+            transactionBehavior = TransactionBehavior.IMPLICIT_COMMIT,
+            lockBehavior = LockBehavior.TABLE_EXCLUSIVE,
+            implicitCommitPossible = true,
+            sideEffectsPossible = true,
+            requiresExclusiveAccess = true,
+        )
+    }
+}

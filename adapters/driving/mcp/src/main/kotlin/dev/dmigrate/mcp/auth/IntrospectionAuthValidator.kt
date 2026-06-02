@@ -6,15 +6,19 @@ import dev.dmigrate.mcp.server.McpServerConfig
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.forms.submitForm
+import io.ktor.client.request.headers
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.parameters
 import org.slf4j.LoggerFactory
+import java.net.URLEncoder
 import java.time.Instant
+import java.util.Base64
 
 /**
  * RFC 7662 Token-Introspection-backed [AuthValidator] for
- * `AuthMode.JWT_INTROSPECTION` per `ImpPlan-0.9.6-B.md` §12.14.
+ * `AuthMode.JWT_INTROSPECTION` per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Posts `token=<bearer>` (form-encoded) to the configured
  * introspection endpoint, parses the JSON response, and maps the
@@ -43,15 +47,44 @@ internal class IntrospectionAuthValidator(
     }
     private val clockSkew: java.time.Duration = config.clockSkew
 
+    /**
+     * Pre-built HTTP Basic header. Null when no client credentials
+     * are configured (loopback dev setups).
+     *
+     * Per RFC 6749 §2.3.1: components are first URL-encoded with
+     * `application/x-www-form-urlencoded` (Java's `URLEncoder.encode`
+     * delivers exactly this form: space → `+`, reserved chars
+     * percent-encoded), then joined by `:` and Base64-encoded.
+     * Verified interop with Keycloak / Okta / Auth0 / Azure AD.
+     *
+     * Tradeoff: the secret lives in the heap as a String for the
+     * lifetime of the validator. Rotation requires a server restart;
+     * acceptable for the LN-027/LN-028 deployment shape.
+     */
+    private val basicAuthHeader: String? = run {
+        val id = config.introspectionClientId
+        val secret = config.introspectionClientSecret
+        if (id != null && secret != null) {
+            val encodedId = URLEncoder.encode(id, Charsets.UTF_8)
+            val encodedSecret = URLEncoder.encode(secret, Charsets.UTF_8)
+            val token = Base64.getEncoder()
+                .encodeToString("$encodedId:$encodedSecret".toByteArray(Charsets.UTF_8))
+            "Basic $token"
+        } else {
+            null
+        }
+    }
+
     override suspend fun validate(token: String): BearerValidationResult {
         val body = try {
-            // TODO(0.9.7): RFC 7662 §2.1 client authentication. Phase B
-            // assumes a trusted internal Introspection endpoint; production
-            // setups with client_credentials need to add Authorization here.
             val response = httpClient.submitForm(
                 url = introspectionUrl,
                 formParameters = parameters { append("token", token) },
-            )
+            ) {
+                basicAuthHeader?.let {
+                    headers { append(HttpHeaders.Authorization, it) }
+                }
+            }
             if (response.status != HttpStatusCode.OK) {
                 LOG.warn("introspection endpoint returned {}", response.status.value)
                 return BearerValidationResult.Invalid("introspection endpoint returned ${response.status.value}")

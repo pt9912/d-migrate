@@ -8,7 +8,7 @@ import java.time.Instant
 
 /**
  * Pure mapping from a parsed JWT / introspection claim set to a
- * [PrincipalContext] per `ImpPlan-0.9.6-B.md` §12.14.
+ * [PrincipalContext] per LF-012 / LN-027 / LN-028 / LN-038
  *
  * The mapping is intentionally side-effect-free and decoupled from
  * Nimbus types so it can be reused by JWKS and Introspection
@@ -27,7 +27,7 @@ internal object ClaimsMapper {
      * - tenant id from `tenant_id`, fallback `tid` (Microsoft), then
      *   the [DEFAULT_TENANT] literal.
      * - `effectiveTenantId == homeTenantId` and
-     *   `allowedTenantIds == {homeTenantId}` for Phase B (no
+     *   `allowedTenantIds == {homeTenantId}` for LF-012 / LN-038 (no
      *   cross-tenant impersonation).
      * - `isAdmin` derived from membership of `dmigrate:admin` in the
      *   resolved scopes — never trust an `is_admin` claim directly.

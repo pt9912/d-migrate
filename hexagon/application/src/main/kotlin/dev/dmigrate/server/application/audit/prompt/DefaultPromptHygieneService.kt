@@ -1,11 +1,11 @@
 package dev.dmigrate.server.application.audit.prompt
 
+import dev.dmigrate.core.util.sha256Hex
 import dev.dmigrate.driver.connection.ConnectionSecretMasker
 import dev.dmigrate.server.core.resource.ServerResourceUri
-import java.security.MessageDigest
 
 /**
- * Phase G § 5.3 + § 6 G.4 — pattern-basierter Default-Hygiene-
+ * LF-017 / LF-024 / LN-030 / LN-031— pattern-basierter Default-Hygiene-
  * Service.
  *
  * Pipeline pro [PromptHygieneRequest]:
@@ -28,7 +28,7 @@ import java.security.MessageDigest
  *    (CR/LF → LF, Trim) und über UTF-8 SHA-256 zu Fingerprints
  *    gehasht.
  *
- * Plan §6 G.4 Akzeptanz: Fehlerdetails enthalten keine Secrets —
+ * LF-012 / LN-011 / LN-017 / LN-027 LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Fehlerdetails enthalten keine Secrets —
  * der `publicMessage`-Text in [PromptHygieneResult.Block] ist
  * generisch ("secret pattern detected"), die Pattern-Match-Werte
  * werden NIE ausgegeben.
@@ -123,7 +123,7 @@ class DefaultPromptHygieneService : PromptHygieneService {
     private fun scanSecrets(text: String): Set<DetectedSecretClass> {
         val found = mutableSetOf<DetectedSecretClass>()
 
-        // Plan §5.3: JDBC-/URL-Passwörter — ConnectionSecretMasker
+        // LF-012 / LN-011 / LN-017 / LN-027: JDBC-/URL-Passwörter — ConnectionSecretMasker
         // ist die kanonische Maskierungs-Logik. Wenn `mask` den
         // Text verändert, wissen wir, dass mindestens ein Secret-
         // Pattern gematcht hat.
@@ -186,11 +186,6 @@ class DefaultPromptHygieneService : PromptHygieneService {
     private fun normalize(text: String): String =
         text.replace("\r\n", "\n").replace('\r', '\n').trim()
 
-    private fun sha256Hex(bytes: ByteArray): String =
-        MessageDigest.getInstance("SHA-256")
-            .digest(bytes)
-            .joinToString("") { "%02x".format(it) }
-
     private companion object {
         // Sub-Pattern aus ConnectionSecretMasker — wir nutzen sie
         // nur zur **Klassen-Identifikation**, das eigentliche
@@ -202,7 +197,7 @@ class DefaultPromptHygieneService : PromptHygieneService {
         val QUERY_PARAM_API_KEY = Regex("""(?i)[?&;](api_key|api-key)=""")
         val QUERY_PARAM_TOKEN = Regex("""(?i)[?&;](token|access_token|access-token|secret)=""")
 
-        // Plan §5.3: zusätzliche Pattern.
+        // LF-012 / LN-011 / LN-017 / LN-027: zusätzliche Pattern.
         val BEARER_TOKEN = Regex("""(?i)\bbearer\s+[A-Za-z0-9._\-]{8,}""")
         val APPROVAL_TOKEN = Regex("""\btok_[A-Za-z0-9_\-]{8,}""")
         val AWS_ACCESS_KEY = Regex("""\bAKIA[0-9A-Z]{16}\b""")
@@ -216,7 +211,7 @@ class DefaultPromptHygieneService : PromptHygieneService {
         val SSH_PRIVATE_KEY = Regex("""-----BEGIN OPENSSH PRIVATE KEY-----""")
 
         // Externe URLs — alles, was http(s):// sagt, aber kein
-        // dmigrate://-Ref ist. Plan §4.6.
+        // dmigrate://-Ref ist. LF-012 / LN-011 / LN-017 / LN-027.
         val EXTERNAL_HTTP_URL = Regex("""\bhttps?://[^\s"'<>]+""")
         val DMIGRATE_REF = Regex("""dmigrate://[^\s"'<>)]+""")
 

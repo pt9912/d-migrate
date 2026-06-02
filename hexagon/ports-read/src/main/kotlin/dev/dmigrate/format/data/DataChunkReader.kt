@@ -5,7 +5,7 @@ import dev.dmigrate.core.data.DataChunk
 /**
  * Streaming-Reader für [DataChunk]s aus einem Input-Format.
  *
- * Plan: implementation-plan-0.4.0.md §3.5.1 / §6.2 / §6.4.
+ * LF-010 / LF-013: Import-Reader-Vertrag fuer JSON, YAML und CSV.
  *
  * **Vertrag** (spiegelbildlich zu [DataChunkWriter], aber mit
  * bewusster Asymmetrie für den Header-Pfad):
@@ -21,17 +21,17 @@ import dev.dmigrate.core.data.DataChunk
  *    Folgeaufrufe gespeichert. Das spiegelt die 0.3.0-Streaming-API
  *    (`PipelineConfig.chunkSize`) und verhindert Argument-Drift.
  *
- *    **Anders als der 0.3.0-Writer-Vertrag (§6.17)** gibt es hier KEINE
+ *    **Anders als beim Writer-Vertrag** gibt es hier KEINE
  *    Pflicht, einen "Empty-Chunk mit Spalten" zu emittieren: der
  *    Reader ist NICHT die autoritative Quelle für Spaltenmetadaten, die
- *    kommen aus dem Target-Schema (§6.4). Bei einer leeren Eingabe darf
+ *    kommen aus dem Target-Schema. Bei einer leeren Eingabe darf
  *    `nextChunk()` also sofort `null` zurückgeben.
  *
  * 2. [headerColumns] liefert — falls verfügbar — die file-derived
  *    Header-Spaltennamen. Der `StreamingImporter` nutzt sie, um ein
- *    Header-zu-Target-Mapping zu validieren (§6.4 Punkt 1). Spalten-
+ *    Header-zu-Target-Mapping zu validieren. Spalten-
  *    **Typen** kommen IMMER aus dem Ziel-JDBC-Schema, nie aus dem
- *    Reader (F43 / §3.5.2).
+ *    Reader.
  *
  *    Nach `create(...)` bzw. spätestens nach dem ersten
  *    [nextChunk]-Aufruf liefert die Methode einen deterministischen
@@ -50,7 +50,7 @@ import dev.dmigrate.core.data.DataChunk
  *    Ein `close()` ohne vorangegangene `nextChunk()`-Aufrufe ist
  *    erlaubt und gibt nur die Reader-Resourcen frei.
  *
- * Implementierungen kommen in Phase B: `JsonChunkReader` (DSL-JSON
+ * Implementierungen: `JsonChunkReader` (DSL-JSON
  * Pull-API), `YamlChunkReader` (SnakeYAML Engine Event-API),
  * `CsvChunkReader` (uniVocity `CsvParser`).
  */
@@ -63,7 +63,7 @@ interface DataChunkReader : AutoCloseable {
      * Der zurückgelieferte [DataChunk] hat `columns` als file-derived
      * Header-Namen (Typen sind immer `sqlTypeName = null`,
      * `jdbcType = null`). Der Importer normalisiert und reordert die
-     * `columns` vor dem Weiterreichen an den Writer (§6.4).
+     * `columns` vor dem Weiterreichen an den Writer.
      */
     fun nextChunk(): DataChunk?
 

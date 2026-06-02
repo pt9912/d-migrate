@@ -129,7 +129,7 @@ class JobCancelHandlerTest : FunSpec({
         val result = fx.handler.handle(ctx(argsObj(jobId = "j-missing")))
         result.shouldBeInstanceOf<ToolCallOutcome.Error>()
         result.envelope.code shouldBe ToolErrorCode.RESOURCE_NOT_FOUND
-        // No-oracle: keine details. Plan §5.6 line 661-662.
+        // No-oracle: keine details. LF-017 / LF-024 / LN-030 / LN-031 line 661-662.
         result.envelope.details shouldBe emptyList()
     }
 

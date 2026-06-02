@@ -6,7 +6,7 @@ import dev.dmigrate.server.core.resource.ResourceKind
 import java.util.Base64
 
 /**
- * Opaque cursor for `resources/list` per `ImpPlan-0.9.6-B.md` §6.9 +
+ * Opaque cursor for `resources/list` per LF-012 / LN-027 / LN-028 / LN-038
  * §12.17. The cursor encodes `(kind, innerToken)` so the server can
  * resume:
  * - `kind` — the resource family currently being walked.

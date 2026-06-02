@@ -13,7 +13,7 @@ import java.io.ByteArrayInputStream
 /**
  * Unit-Tests für [JsonChunkReader].
  *
- * Plan §4 Phase B Schritt 7: JsonChunkReader mit DSL-JSON Pull-Parser.
+ * LF-009 / LF-013: JsonChunkReader mit DSL-JSON Pull-Parser.
  * Tests verwenden In-Memory-JSON-Strings via [ByteArrayInputStream].
  */
 class JsonChunkReaderTest : FunSpec({
@@ -288,11 +288,11 @@ class JsonChunkReaderTest : FunSpec({
         }
     }
 
-    // 0.8.0 Phase F (docs/ImpPlan-0.8.0-F.md §4.5):
+    // LF-009 / LF-013:
     // Der geteilte EncodingDetector wird auch auf dem JSON-Pfad mit
     // nicht-lateinischen Payloads abgesichert.
 
-    test("Phase F §4.5: UTF-8 BOM + Unicode-JSON-Inhalt bleibt zeichenstabil") {
+    test("UTF-8 BOM + Unicode-JSON-Inhalt bleibt zeichenstabil") {
         val bom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte())
         val json = """[{"city": "Москва", "emoji": "🇯🇵"}]""".toByteArray(Charsets.UTF_8)
         val input = ByteArrayInputStream(bom + json)
@@ -303,7 +303,7 @@ class JsonChunkReaderTest : FunSpec({
         }
     }
 
-    test("Phase F §4.5: UTF-16 BE BOM + Unicode-JSON wird transcodiert und stabil") {
+    test("LF-009 / LF-013: UTF-16 BE BOM + Unicode-JSON wird transcodiert und stabil") {
         val bom = byteArrayOf(0xFE.toByte(), 0xFF.toByte())
         val json = """[{"name": "東京"}]""".toByteArray(Charsets.UTF_16BE)
         val input = ByteArrayInputStream(bom + json)

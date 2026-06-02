@@ -3,7 +3,7 @@ package dev.dmigrate.server.application.ai
 import java.time.Duration
 
 /**
- * Phase G § 5.1 (G.2 2/4) — eingehender Provider-Aufruf.
+ * LF-017 / LF-024 / LN-030 / LN-031— eingehender Provider-Aufruf.
  *
  * Der Aufruf trägt **nur das, was der Provider sehen darf**: das
  * bereits hygienisierte Prompt, eine erlaubte Modellbezeichnung
@@ -11,10 +11,10 @@ import java.time.Duration
  * `approvalToken`, Tool-Name, `idempotencyKey`, `requestId`,
  * `principal`-Refs, JDBC-/Connection-Strings) sind hier **nicht**
  * vorhanden — der Tool-Handler entfernt sie vor dem
- * Provider-Request-Building (Plan §6 G.6 Z. 1016-1019).
+ * Provider-Request-Building (LF-017 / LF-024 / LN-030 / LN-031).
  *
  * Die beiden Fingerprint-Felder werden vom Tool-Handler aus dem
- * Plan-§-5.4/§-5.5/§-5.6-Vertrag berechnet:
+ * LF-017 / LF-024 / LN-030 / LN-031-Vertrag berechnet:
  *
  * - [promptFingerprint] — über das hygienisierte `prompt` plus
  *   Modell-/Provider-/Limit-Metadaten. Stabil bei identischem
@@ -24,17 +24,17 @@ import java.time.Duration
  *   Control-Felder. Stabil bei identischem fachlichem Aufruf.
  *
  * @param prompt das bereits durch [PromptHygieneService] geprüfte
- *   und ggf. redigierte Prompt (siehe G.4). Enthält nie Secrets,
+ *   und ggf. redigierte Prompt (siehe LF-017 / LF-024 / LN-030 / LN-031). Enthält nie Secrets,
  *   freie JDBC-Strings oder Massendaten.
  * @param model die Provider-Modellbezeichnung. Muss aus der
  *   serverseitigen Provider-Konfiguration whitelisted sein
- *   (Plan §6 G.3); der Provider-Adapter validiert nicht — er
+ *   (LF-017 / LF-024 / LN-030 / LN-031); der Provider-Adapter validiert nicht — er
  *   leitet weiter.
  * @param promptFingerprint hex-codierter SHA-256 (64 Zeichen) über
  *   den hygienisierten Prompt + Modell + Limits.
  * @param payloadFingerprint hex-codierter SHA-256 über die
- *   normalisierten fachlichen Tool-Argumente (Plan §5.4 ff.).
- * @param timeout Plan §6 G.2: Provider-Timeout, der vom Adapter
+ *   normalisierten fachlichen Tool-Argumente (LF-017 / LF-024 / LN-030 / LN-031 ff.).
+ * @param timeout LF-017 / LF-024 / LN-030 / LN-031: Provider-Timeout, der vom Adapter
  *   honoriert werden muss. Überschreitung → [AiProviderError.TIMEOUT].
  * @param maxOutputBytes Provider-seitige Output-Cap. Adapter darf
  *   einen kleineren Wert erzwingen, aber nie einen größeren.

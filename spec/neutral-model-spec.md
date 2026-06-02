@@ -162,7 +162,7 @@ DDL generiert, sondern als `action_required` gemeldet.
 `BIGSERIAL` und `BIGINT GENERATED ... AS IDENTITY` werden nicht durch
 `NeutralType.BigInteger` allein ausgedrueckt; sie brauchen ein separates
 Spaltenmetadatum fuer Generation/Identity. Der Modell-Vertrag ist im
-Follow-up `docs/planning/in-progress/bigserial-neutral-identity-followup.md` als
+Follow-up `docs/planning/done/bigserial-neutral-identity-followup.md` als
 `ColumnGeneration.Identity` festgelegt. `biginteger` ohne dieses Metadatum
 bleibt im Forward-Generate `BIGINT`.
 
@@ -684,8 +684,16 @@ views:
       FROM orders o
       JOIN customers c ON o.customer_id = c.id
       WHERE o.status NOT IN ('delivered', 'cancelled')
+    columns:                         # optional: sichtbare View-Signatur
+      - name: id
+        type: integer
+      - name: customer_name
+        type: text
     dependencies:
       tables: [orders, customers]
+      table_projection_status: complete
+      column_projection_status: complete
+      routine_projection_status: empty_verified
     source_dialect: postgresql
 
   monthly_revenue:
@@ -707,11 +715,12 @@ views:
 ```
 
 **Transformationshinweise**:
-- Materialized Views werden in MySQL als reguläre Tabelle mit Trigger/Event-basiertem Refresh emuliert (Warnung wird erzeugt)
-- SQLite unterstützt keine Materialized Views; Fallback auf reguläre View mit Hinweis
+- Diff-basierte Migrationen blockieren Materialized Views bis zu einem eigenen Refresh-/Staleness-Vertrag; sie werden nicht als normale Views gerendert.
 - `DATE_TRUNC` wird pro Dialekt übersetzt (PostgreSQL: nativ, MySQL: `DATE_FORMAT`, SQLite: `strftime`)
 - `dependencies.tables` enthält bei Views die Basistabellen, die von der Query gelesen werden
 - `dependencies.views` enthält optionale Abhängigkeiten auf andere Views, die vor dieser View erzeugt werden müssen
+- `columns` enthaelt optional die sichtbare View-Signatur. PostgreSQL nutzt sie, um `CREATE OR REPLACE VIEW` nur bei kompatibler Spaltenanzahl, Reihenfolge, Namen und sichtbaren Typen zu rendern.
+- `table_projection_status`, `column_projection_status` und `routine_projection_status` koennen `complete`, `empty_verified`, `incomplete_privilege`, `incomplete_object_missing` oder `unknown` sein. Nicht verwendbare Status blockieren migrationskritische View-Operationen.
 - Generatoren dürfen zusätzliche View-Abhängigkeiten best effort aus der Query ableiten; deklarierte `dependencies.views` haben dabei Vorrang für die Emissionsreihenfolge
 
 ---
@@ -756,12 +765,95 @@ sequences:
     max_value: 99999999
     cycle: false                       # Neustart nach max_value?
     cache: 20                          # Anzahl vorausberechneter Werte
+    preserve_current_value: false      # 0.9.7: Runtime-Wert über Migration retten?
 ```
 
 **Generierung**:
 - PostgreSQL: `CREATE SEQUENCE ... START WITH ... INCREMENT BY ...`
 - MySQL: Emulation über dedizierte Sequenz-Tabelle oder generator-spezifische Hilfsstruktur
 - SQLite: Keine nativen benannten Sequenzen; Emulation nur über explizite Hilfstabelle/Trigger oder `action_required`
+
+### 9.1 `preserve_current_value` (0.9.7)
+
+Per Default verlieren Sequenzen ihren Laufzeit-Wert bei einer
+Migration: eine `CREATE SEQUENCE … START WITH 1` startet `nextval` bei
+1, auch wenn die existierende Sequenz auf dem Ziel bereits bei 5000
+stand. Das passt für Neu-Migrationen; für **bestehende Produktions-
+DBs mit befüllten Tabellen** führt es zu PK-Konflikten bei der
+ersten INSERT-Operation nach der Migration.
+
+`preserve_current_value: true` aktiviert das opt-in pro Sequence:
+nach jeder declarative `CREATE` / `ALTER` / `RENAME SEQUENCE`-Operation
+emittiert der Migrate-Pipeline einen Follow-up, der den runtime-Wert
+aus dem Live-Target übernimmt:
+
+| Dialekt | Renderer | Probe |
+|---|---|---|
+| PostgreSQL | `SELECT setval('<seq>', <last_value>, <is_called>);` | `SELECT last_value, is_called FROM <seq>` |
+| MySQL (HELPER_TABLE-Mode) | `UPDATE dmg_sequences SET next_value = <v> WHERE name = <key> AND managed_by IN (…) AND format_version IN (…);` | `SELECT next_value, managed_by, format_version FROM dmg_sequences WHERE name = <key>` |
+| SQLite (HELPER_TABLE-Mode, seit 0.9.7-E.3-Folge-Slice) | `UPDATE "dmg_sequences" SET "next_value" = <v> WHERE "name" = <key>;` (Up auf `applySequenceRef`, Down auf `probeSequenceRef`) | `SELECT "next_value", "managed_by", "format_version" FROM "dmg_sequences" WHERE "name" = <key>` |
+
+**Voraussetzungen** (gemäß
+`docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`):
+
+- `--execute` mit DB-Target. Die Probe braucht eine offene
+  Connection; File-Mode emittiert `SEQUENCE_PRESERVE_NOT_RUN_POLICY`
+  als INFO ohne Follow-up.
+- Für SQLite ist zusätzlich `--sqlite-named-sequences helper_table`
+  Pflicht (sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`,
+  `primaryBlockedReason = MANUAL_ACTION_REQUIRED`).
+- Auf `AlterSequence` / `RenameSequence` muss das Live-Target die
+  Sequenz bereits kennen — sonst blockt der Plan mit
+  `SEQUENCE_PRESERVE_PROBE_FAILED` (kein deterministischer
+  Vor-Zustand).
+- Für reine `CreateSequence`-Operationen (ohne Rename-Provenance)
+  emittiert die Pipeline `SEQUENCE_PRESERVE_NOT_FOUND` als INFO und
+  überspringt den Follow-up — der current-value-Restore wird im
+  Down-Pfad als `ROLLBACK_NOT_POSSIBLE` dokumentiert.
+
+**Default-Verhalten**: ohne `preserve_current_value` (oder mit
+explizitem `false`) bleibt die Migration unverändert — kein Probe,
+kein Follow-up, keine neuen Statements im Migrate-Output.
+
+### 9.2 Cross-Dialect-Capability-Matrix (0.9.7)
+
+`SequenceDefinition`-Attribute überleben den Cross-Dialect-Transfer
+unterschiedlich. Der Renderer pro Dialekt konsultiert
+`SequenceCapability` (definiert in `hexagon:ports-read`,
+Defaults in `SequenceCapabilityDefaults.forDialect(...)`) als
+einzige Wahrheits-Quelle für die Frage „welches Attribut wird wie
+gerendert, welches blockt, welches emittiert nur eine Warnung?".
+Die Defaults sind die unterste Präzedenz-Schicht; eine spätere
+Tranche kann Overlay-/CLI-Overrides ergänzen.
+
+| Attribut | PG | MySQL (Emul.) | SQLite (`helper_table`-Mode, opt-in via `--sqlite-named-sequences`) | Cross-Dialect-Verhalten |
+|---|---|---|---|---|
+| `name` | nativ | `dmg_sequences.name` | `dmg_sequences.name` (`E056`-Skip im Default `action_required`-Mode) | Source = neutral; verlustfrei sobald Target-Renderer Sequenzen aktiviert |
+| `start` | `START WITH` | `dmg_sequences.next_value` (Seed) | `dmg_sequences.next_value` (Seed) | Verlustfrei für frische Migrationen; SQLite-`helper_table` modelliert nur den Seed-Zustand |
+| `increment` | `INCREMENT BY` | `dmg_sequences.increment_by` | `dmg_sequences.increment_by` | Verlustfrei zwischen allen drei Dialekten |
+| `min_value` | `MINVALUE` | `dmg_sequences.min_value` | `dmg_sequences.min_value` | Verlustfrei in `helper_table` |
+| `max_value` | `MAXVALUE` | `dmg_sequences.max_value` | `dmg_sequences.max_value` | Verlustfrei in `helper_table` |
+| `cycle` | `CYCLE` / `NO CYCLE` | `dmg_sequences.cycle_enabled` (`TINYINT(1)`) | `dmg_sequences.cycle_enabled` (`INTEGER`) | Verlustfrei in `helper_table` |
+| `cache` | `CACHE n` (Runtime-Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | `dmg_sequences.cache_size` (Metadatum, keine Preallocation) | Renderer emittiert `W114` ohne Overlay, wenn der Wert als Metadatum gespeichert aber nicht als Runtime-Cache emuliert wird. Alle Render-Pfade (Full-Schema und Diff) konsumieren dieselbe Capability — siehe `SequenceCapability.emitsCachePreallocationWarning`. |
+| `preserve_current_value` | `setval(…, true)` | `UPDATE dmg_sequences SET next_value = …` | `UPDATE dmg_sequences SET next_value = …` *(seit 0.9.7-E.3-Folge-Slice; opt-in via `--sqlite-named-sequences helper_table`, sonst `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`)* | Execute-only; siehe §9.1 |
+| `OWNED BY <table>.<col>` (nur PG nativ) | nativ, aber nicht im neutralen Modell | nicht abbildbar | nicht abbildbar | Out of scope: PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`. Reserviert: `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` für eine spätere Neutralmodell-Erweiterung mit Ownership-Feld. |
+
+**SQLite-Defaults (Reality-First, Stand 0.9.7)**: die
+SQLite-Sequence-Emulation aus
+`docs/planning/done/sqlite-sequence-emulation-plan.md` liefert seit
+0.9.7 (Phasen A–E) eine vollständige `helper_table`-Variante; der
+0.9.7-E.3-Folge-Slice
+(`docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`)
+ergänzt den `preserveCurrentValue`-Pfad. Damit melden die SQLite-
+Capability-Defaults `supportsNamedSequences = true` und
+`supportsCurrentValuePreserve = true`. Der Default-Mode bleibt
+`action_required` (`E056`-Skip im Full-Schema-Pfad,
+`SEQUENCE_PRESERVE_OPT_IN_REQUIRED` im Diff-Pfad); erst
+`--sqlite-named-sequences helper_table` aktiviert die Emulation und
+den Preserve-Probe. Per-Attribut-Mismatch via
+`SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` ist reservierte
+Forward-Compat-Diagnose und greift nur, wenn ein zukünftiges
+Capability-Subset ein einzelnes Attribut ausschliessen muss.
 
 ---
 

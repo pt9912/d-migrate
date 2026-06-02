@@ -15,10 +15,10 @@ import java.sql.Types
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.5 checkpoint guard for the per-table import path:
+ * LN-010 / LN-011 checkpoint guard for the per-table import path:
  * cancel before reader/writer open, cancel during resume-skip, cancel
  * before each chunk write/commit/onChunkCommitted, cancel before
- * `finishTable`. Plan §6.3 acceptance.
+ * `finishTable`. LF-010 / LF-013 / LN-012 acceptance.
  */
 class TableImporterCancelCheckpointTest : FunSpec({
 

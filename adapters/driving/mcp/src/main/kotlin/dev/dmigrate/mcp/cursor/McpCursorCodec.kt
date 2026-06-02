@@ -13,7 +13,7 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * Phase-D §10.3: opaque, HMAC-sealed cursor for the public MCP
+ * LF-012 / LN-038: opaque, HMAC-sealed cursor for the public MCP
  * adapter. Clients treat the wire string as opaque bytes; the
  * codec verifies signature, key id, schema version, expiry and a
  * caller-supplied binding (tenant, family, filters, page size,
@@ -173,7 +173,7 @@ class McpCursorCodec(
 }
 
 /**
- * Cursor payload Phase-D pins per §10.3. Pure data; no behaviour.
+ * Cursor payload LF-012 / LN-038 pins per. Pure data; no behaviour.
  *
  * Versioning: [version] starts at [McpCursorCodec.SUPPORTED_VERSION].
  * A future schema change bumps the constant; old cursors decode
@@ -236,7 +236,7 @@ data class CursorKey(
 }
 
 /**
- * Phase-D §10.3 keyring: exactly one active signing key + zero or
+ * LF-012 / LN-038 keyring: exactly one active signing key + zero or
  * more validation-only keys for rotation. The rollout discipline
  * in §10.3 (validation-first → activate → keep old as validation
  * for `maxTtl + clockSkew`) is enforced by deployment, not by

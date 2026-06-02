@@ -25,7 +25,7 @@ open class TransferExecutor {
 
     open fun execute(context: TransferExecutionContext, onTableTransferred: (String) -> Unit) {
         for (table in context.tables) {
-            // Plan §6.4: cancel between tables must not start the next
+            // LF-010 / LF-013 / LN-009 / LN-011: cancel between tables must not start the next
             // table's reader/writer-open sequence.
             context.cancellationToken.throwIfCancellationRequested()
             transferTable(
@@ -41,7 +41,7 @@ open class TransferExecutor {
                     cancellationToken = context.cancellationToken,
                 )
             )
-            // Plan §4.6: completion-callback is a side effect — cancel here
+            // LF-008 / LF-009 / LF-013: completion-callback is a side effect — cancel here
             // must not emit a fake "table transferred" signal.
             context.cancellationToken.throwIfCancellationRequested()
             onTableTransferred(table)

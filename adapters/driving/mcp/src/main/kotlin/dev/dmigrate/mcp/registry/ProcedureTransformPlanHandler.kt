@@ -49,15 +49,15 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
 import java.time.Clock
 import java.time.Duration
+import dev.dmigrate.core.util.sha256Hex
 
 /**
- * Phase G § 5.4 + § 6 G.6 (G.6.d) — Handler für
+ * LF-017 / LF-024 / LN-030 / LN-031 — Handler für
  * `procedure_transform_plan`.
  *
- * Verbindet die Plan-§-6-G.6-Pipeline-Schritte:
+ * Verbindet die LF-017 / LF-024 / LN-030 / LN-031-Pipeline-Schritte:
  *
  * 1. Phase 1 (vor Scope, materialisierungsfrei): Form-Validation
  *    der JSON-Args, Required-Felder, Source-Exactly-One,
@@ -65,28 +65,28 @@ import java.time.Duration
  * 2. Scope-Check `dmigrate:ai:execute` (defensive — der
  *    Wire-Dispatch hat das schon erzwungen).
  * 3. Deterministischer `payloadFingerprint` über das
- *    Control-Field-stripped Payload (Plan §6 G.6 Z. 1016-1019).
+ *    Control-Field-stripped Payload (LF-017 / LF-024 / LN-030 / LN-031 Z. 1016-1019).
  * 4. [AiToolOrchestrator.dispatch] für Single-Writer-Acquire +
  *    Terminal-Outcome-Replay.
  * 5. work() (Phase 2, semantic, post-acquire):
  *    - Source-Resolution gegen [ArtifactStore] / [SchemaStore].
- *    - [PolicyService.decide] mit Plan-§-5.4-Source-Refs.
+ *    - [PolicyService.decide] mit LF-017 / LF-024 / LN-030 / LN-031-Source-Refs.
  *    - [PromptHygieneService.sanitize] über das gebaute Prompt.
  *    - [AiProviderRegistry.resolve] + [AiProviderPort.invoke].
- *    - Output-Hygiene über die Provider-Antwort (Plan §7.4).
+ *    - Output-Hygiene über die Provider-Antwort (LF-017 / LF-024 / LN-030 / LN-031).
  *    - Publish: Plan-Artefakt + Bytes + AiArtifactMetadata.
- * 6. Wire-Mapping aus [AiToolDispatchOutcome] in den Plan-§-5.4-
+ * 6. Wire-Mapping aus [AiToolDispatchOutcome] in den LF-017 / LF-024 / LN-030 / LN-031-
  *    Tool-Envelope (`summary`, `findings`, `planRef`,
  *    `planArtifactId`, `planResourceUri`, `providerMeta`,
  *    `executionMeta`).
  *
- * Plan-Carve-out für G.6.d (wird in G.6.e/f bzw. G.7-Folge-AP
- * geschlossen):
+ * Scope-Carve-out für LF-017 / LF-024 / LN-030 / LN-031 (wird mit den
+ * Execute-/Testdata-/Prompt-Pfaden geschlossen):
  *
  * - `PolicyDecision.RequiresApproval` wird als generisches
  *   `POLICY_REQUIRED` ohne Challenge-Felder (`approvalRequestId`,
  *   `requiredScopes`, `reasons`) projiziert. Volle Challenge-Form
- *   kommt mit dem AI-Approval-Flow im AP G.6.e/f.
+ *   kommt mit dem LF-017 / LF-024 / LN-030 / LN-031-Approval-Flow.
  */
 internal class ProcedureTransformPlanHandler(
     private val orchestrator: AiToolOrchestrator,
@@ -110,7 +110,7 @@ internal class ProcedureTransformPlanHandler(
 
         // Phase 2: scope check vor jedem Outcome-Store-Claim,
         // Policy, Quota, Provider-Konfig, Secret-Aufloesung
-        // (Plan §6 G.6 Z. 1020).
+        // (LF-017 / LF-024 / LN-030 / LN-031 Z. 1020).
         enforceScope(context.principal)
 
         val payloadFingerprint = computePayloadFingerprint(parsed)
@@ -123,7 +123,7 @@ internal class ProcedureTransformPlanHandler(
             now = clock.instant(),
         )
 
-        // Audit-Felder befuellen (Plan §4.8 + Phase E §7.10).
+        // Audit-Felder befuellen (LF-017 / LF-024 / LN-030 / LN-031 + LF-012 / LN-011 / LN-017 / LN-027).
         context.auditFields.payloadFingerprint = payloadFingerprint
         context.auditFields.resourceRefs = context.auditFields.resourceRefs + parsed.allResourceRefs()
 
@@ -131,7 +131,7 @@ internal class ProcedureTransformPlanHandler(
             performWork(parsed, context.principal, envelope, payloadFingerprint, claim)
         }
 
-        // Plan §6 G.8: Provider-/Modell-Metadaten ins Audit-Event;
+        // LF-017 / LF-024 / LN-030 / LN-031: Provider-/Modell-Metadaten ins Audit-Event;
         // gilt fuer Live-Aufrufe und Replay (orchestrator kopiert
         // die Werte beim Replay aus dem terminalen Outcome).
         if (dispatch is AiToolDispatchOutcome.WireSuccess) {
@@ -192,7 +192,7 @@ internal class ProcedureTransformPlanHandler(
         if (artifactRef != null) variants += SourceVariant.Artifact(artifactRef)
         if (schemaRef != null) {
             // procedureName-Pflichtcheck passiert weiter unten als
-            // strukturierter ValidationErrorException (Plan §6 G.5
+            // strukturierter ValidationErrorException (LF-017 / LF-024 / LN-030 / LN-031
             // erwartet feldname=procedureName).
             variants += SourceVariant.SchemaWithProcedure(schemaRef, procedureName ?: "")
         }
@@ -265,7 +265,7 @@ internal class ProcedureTransformPlanHandler(
     // ---- Fingerprint ---------------------------------------------------
 
     private fun computePayloadFingerprint(parsed: ParsedArgs): String {
-        // Plan §6 G.6 Z. 1016-1019: Control-Felder (approvalKey,
+        // LF-017 / LF-024 / LN-030 / LN-031 Z. 1016-1019: Control-Felder (approvalKey,
         // approvalToken) werden VOR dem Hashen entfernt. approvalKey
         // ist bereits Scope-Komponente (AiToolScope.approvalKey).
         val canonical = buildString {
@@ -302,7 +302,7 @@ internal class ProcedureTransformPlanHandler(
         return performAfterPolicy(parsed, principal, envelope, payloadFingerprint, sourceRefs)
     }
 
-    @Suppress("ReturnCount", "LongParameterList")
+    @Suppress("ReturnCount")
     private fun performAfterPolicy(
         parsed: ParsedArgs,
         principal: PrincipalContext,
@@ -465,7 +465,7 @@ internal class ProcedureTransformPlanHandler(
         } finally {
             quotaService.release(reservation)
         }
-        // Plan §7.4: Output-Hygiene über die Provider-Antwort.
+        // LF-017 / LF-024 / LN-030 / LN-031: Output-Hygiene über die Provider-Antwort.
         val outputCheck = hygieneService.sanitize(
             PromptHygieneRequest(
                 toolName = envelope.toolName + ":output",
@@ -498,7 +498,7 @@ internal class ProcedureTransformPlanHandler(
         sourceRefs: List<ServerResourceUri>,
         ok: ProviderInvocation.Success,
     ): AiToolWorkResult {
-        // Plan §5.4 Z. 748: atomar zusammen mit dem Artefakt-Publish.
+        // LF-017 / LF-024 / LN-030 / LN-031 Z. 748: atomar zusammen mit dem Artefakt-Publish.
         val artifactBytes = serializePlanArtifact(parsed, ok.success, ok.allow)
         val artifactSha = sha256Hex(artifactBytes)
         val artifactId = deterministicArtifactId(envelope, payloadFingerprint)
@@ -606,8 +606,8 @@ internal class ProcedureTransformPlanHandler(
         val refs = mutableListOf<ServerResourceUri>()
         when (val src = parsed.source) {
             is SourceVariant.Procedure -> {
-                // procedureRef ist ein freies String-Token (Plan §5.4 erlaubt
-                // tool-spezifische Identitaeten); fuer G.6.d MVP keine Lookup-
+                // procedureRef ist ein freies String-Token (LF-017 / LF-024 / LN-030 / LN-031 erlaubt
+                // tool-spezifische Identitaeten); im MVP keine Lookup-
                 // Pflicht — die Provenance haelt den Wert als Audit-Spur.
                 // Bei einem `dmigrate://`-Format-Wert zwingen wir Tenant-Bindung.
                 val parsedUri = ServerResourceUri.parse(src.value)
@@ -720,9 +720,9 @@ internal class ProcedureTransformPlanHandler(
                 details = outcome.details,
                 requestId = context.requestId,
                 // `retryable`-Hint wandert nicht in den
-                // ToolErrorEnvelope (Plan §5.4: Wire-Caller kann
+                // ToolErrorEnvelope (LF-017 / LF-024 / LN-030 / LN-031: Wire-Caller kann
                 // anhand des `code` ableiten — siehe ToolErrorCode-
-                // Tabelle in Plan §7.2). Audit hat den Hint via
+                // Tabelle in LF-012 / LN-011 / LN-017 / LN-027). Audit hat den Hint via
                 // AiToolOutcomeStore-Outcome.
             ),
         )
@@ -806,9 +806,6 @@ private fun buildSuccessJson(
 
 private fun escapeJson(text: String): String =
     text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
-
-private fun sha256Hex(bytes: ByteArray): String =
-    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 private data class ParsedArgs(
     val approvalKey: String,

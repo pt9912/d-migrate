@@ -390,6 +390,15 @@ CONSTRAINT `fk_orders_customer_id` FOREIGN KEY (`customer_id`)
 > **Trusted Input**: `constraint.expression` wird als Raw-SQL-Fragment direkt
 > in die DDL-Ausgabe interpoliert. Der Wert stammt aus der Schema-YAML-Datei,
 > die vom Schema-Autor kontrolliert wird. Keine Sanitization findet statt.
+>
+> **Diff-Migrationen (Plan-2 §F.5)**: `CHECK`- und `EXCLUDE`-Constraints
+> werden im Diff-Pfad nur konservativ per SQL-Text verglichen. Der Vergleich
+> normalisiert Zeilenenden auf LF und ignoriert umgebenden Whitespace, fuehrt
+> aber keine semantische SQL-Kanonisierung durch. Unveraenderte Constraints
+> blockieren andere Tabellenoperationen nicht. Hinzugefuegte, entfernte oder
+> geaenderte `CHECK`-/`EXCLUDE`-Constraints bleiben mit
+> `CONSTRAINT_NOT_DIFFABLE` blockierend, bis ein dialektspezifischer Render-,
+> Enforcement- und Daten-Preflight-Vertrag existiert.
 
 ```sql
 -- PostgreSQL
@@ -561,7 +570,77 @@ MySQL: Gesteuert ueber `--mysql-named-sequences` (seit 0.9.3):
 
 Details: [`mysql-sequence-emulation-plan.md`](../docs/planning/done/mysql-sequence-emulation-plan.md).
 
-SQLite: Keine nativen benannten Sequenzen. `action_required` (E056) wird erzeugt.
+SQLite: Keine nativen benannten Sequenzen. Standard ist `action_required`
+(E056-Skip). Mit `--sqlite-named-sequences helper_table` (0.9.7) wird die
+Emulation eingeschaltet:
+
+- `dmg_sequences`-Hilfstabelle (TEXT-/INTEGER-Spalten gemäß Plan §3.2:
+  `managed_by`, `format_version`, `name`, `next_value`,
+  `last_returned_value`, `exhausted`, `increment_by`, `min_value`,
+  `max_value`, `cycle_enabled`, `cache_size`)
+- Seed-INSERT pro `SequenceDefinition` (`managed_by = 'd-migrate'`,
+  `format_version = 'sqlite-sequence-v1'`)
+- kanonisches `BEFORE INSERT`/`AFTER INSERT`-Trigger-Paar
+  (`dmg_seq_<table16>_<col16>_<hash10>_{bi,ai}`) pro
+  `DefaultValue.SequenceNextVal`-Spalte: BEFORE INSERT reserviert und
+  inkrementiert atomar, AFTER INSERT schreibt den reservierten Wert per
+  `UPDATE … WHERE ROWID = NEW.ROWID` in die Zeile (`WITHOUT ROWID` →
+  `E057`-Skip)
+- Cache-Warnung `W114` (SQLite ist Single-Writer, keine echte
+  Preallocation; `cache_size` wird nur als Metadaten gespeichert)
+- W115 lossy-NULL-Semantik · W117 transaktions-bound · W119
+  NOT-NULL- und CHECK-`IS NOT NULL`-Suppression auf sequence-getragenen
+  Spalten · W121 Conflict-Gap-INFO (ON CONFLICT DO UPDATE/DO NOTHING,
+  INSERT OR IGNORE, INSERT OR FAIL multi-row) · W122 Warnung wenn auf
+  derselben Tabelle nutzerdefinierte UPDATE-Trigger existieren
+  (`recursive_triggers = ON`-Risiko)
+- Rollback-Inversion entfernt das Trigger-Paar und `dmg_sequences`
+- E058-Rollback-Preflight blockt den DROP wenn fremde Objekte
+  `dmg_sequences` referenzieren; E124 blockt die Generierung wenn das
+  neutrale Schema bereits Objekte mit reservierten Hilfsnamen
+  (`dmg_sequences` oder dem kanonischen `dmg_seq_*_{bi,ai}`-Pattern)
+  enthält
+- Reverse erkennt die Hilfsobjekte über den
+  `/* d-migrate:sqlite-sequence-v1 … */`-Marker (primär) oder über das
+  5-Kriterien-Sekundär-Matching (Name, Event/Timing, WHEN-Klausel,
+  Token-basierte Body-Prüfung) und faltet sie auf
+  `schema.sequences` + `DefaultValue.SequenceNextVal` zurück; degradierte
+  Fälle landen unter W116 (Sekundär-Match), W120 (Marker ok, Body
+  modifiziert) oder W124 (User-BEFORE-INSERT-Trigger maskiert das
+  Sequence-Trigger-Paar)
+
+Details: [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md).
+
+> **Diff-Migrationen (Plan-2 §E.3)**: PostgreSQL rendert im
+> diffbasierten Migrationspfad deklarative `CREATE SEQUENCE`,
+> `ALTER SEQUENCE` und `DROP SEQUENCE`-Operationen fuer die neutralen
+> Attribute `start`, `increment`, `minValue`, `maxValue`, `cycle` und
+> `cache`. `sequence_nextval`-Defaults werden im Plan nach einer im selben
+> Diff erzeugten Sequence sortiert. Der live aktuelle Sequence-Wert wird in
+> diesem Slice nicht uebernommen oder zurueckgesetzt; MySQL- und
+> SQLite-Sequence-Migrationen sind seit 0.9.7 im `helper_table`-Modus
+> live: `CreateSequence` emittiert einen `INSERT INTO dmg_sequences`,
+> `AlterSequence` ein `UPDATE`, `DropSequence` ein `DELETE` (mit
+> E058-Preflight + gebundenen Trigger-DROPs), `RenameSequence` ein
+> `UPDATE name`+Trigger-Pair-Rebuild und `AlterSequenceCurrentValue`
+> ein `UPDATE next_value`. `AddColumn` mit `SequenceNextVal`
+> emittiert das Trigger-Paar gleich mit. `supportsCurrentValue-
+> Preserve` ist im 0.9.7-E.3-Folge-Slice fuer SQLite auf `true` gesetzt: der
+> `SqliteSequenceCurrentValueProbe`-Adapter liest `dmg_sequences.next_value`
+> live, der `SequencePreserveStage` enthaelt SQLite in der Allowlist
+> und blockt ohne `--sqlite-named-sequences helper_table` mit
+> `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (Mapper auf
+> `MANUAL_ACTION_REQUIRED`). Mit Opt-in emittiert
+> `AlterSequenceCurrentValue` Up ein `UPDATE dmg_sequences SET
+> next_value = <probedValue> WHERE name = '<applyRef>'` und Down ein
+> spiegelgleiches `UPDATE` gegen `probeSequenceRef.name` (bei Rename
+> der vor-Rename-Name). Ein fehlender `restoreValue` (typisch fuer
+> `CreateSequence` ohne deterministischen Vorzustand) surfaced als
+> `SQLITE_SEQUENCE_CURRENT_VALUE_DOWN_ROLLBACK_IMPOSSIBLE`-Skip,
+> kein stiller `UPDATE`. Details siehe
+> [`sqlite-sequence-emulation-plan.md`](../docs/planning/done/sqlite-sequence-emulation-plan.md)
+> §6.2 und Phasen F/G, plus den 0.9.7-E.3-Folge-Slice
+> [`ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`](../docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md).
 
 ---
 
@@ -601,6 +680,15 @@ CREATE MATERIALIZED VIEW "monthly_revenue" AS
 
 -- MySQL/SQLite: Nicht unterstützt → Standard-View + W103
 ```
+
+Im diff-basierten `schema migrate`-Pfad werden Materialized Views nicht als
+normale Views gerendert. Operationen mit `materialized: true` blockieren, bis
+ein ausführbarer Refresh-/Staleness-Vertrag existiert. Der Migrationsreport
+weist diese Operationen als `MATERIALIZED_VIEW` aus und enthält unter
+`materializedViews[]` die Felder `stalenessAfterUp`, `refreshSteps`,
+`locking` und `rollback`; vor einem ausführbaren Vertrag steht
+`stalenessAfterUp` auf `UNKNOWN_BLOCKED` und der einzige geplante
+Refresh-Schritt ist `BLOCKED_REFRESH_CONTRACT_REQUIRED`.
 
 ### 8.3 View-Query-Transformation
 
@@ -847,6 +935,12 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 | `ALTER TABLE ADD CONSTRAINT "k"` | `ALTER TABLE DROP CONSTRAINT "k"` |
 | `ALTER TABLE ALTER COLUMN "c" TYPE t` | `ALTER TABLE ALTER COLUMN "c" TYPE <alter_typ>` |
 
+Execution-Reports gruppieren gerenderte Statements unabhängig vom SQL-Text:
+Jede Gruppe trägt eine stabile `statementGroupId`, Operation-IDs,
+Statement-Indexrange, `transactionScope` und `transactionBoundary`. Gemischte
+Transaction-Scope-Streams werden vor Ausführung blockiert; Renderer dürfen
+keine still gemischten Runner-/Stream-/No-Transaction-Statements erzeugen.
+
 **Nicht-reversible Operationen** erzeugen einen Kommentar:
 
 ```sql
@@ -854,6 +948,19 @@ Für jedes Up-Statement wird ein inverses Down-Statement erzeugt:
 -- Original column type was: VARCHAR(100)
 DROP COLUMN "legacy_field";
 ```
+
+Diff-basierte Rollback-Artefakte aus `schema migrate --generate-rollback`
+werden als ausführbarer SQL-Body plus `d-migrate rollback-sql v2`-
+Metadatenblock geschrieben. Der Body bleibt das einzige ausführbare SQL. Der
+Header enthält `statementIndex[]` mit UTF-8-Byte-Ranges, Statement-Hashes,
+Operation-IDs, Phase, Risiko und `transactionScope`. Zusätzlich bindet der
+Header `rollbackComplete`, `partialRollback` und `skippedOperationIds[]`.
+Partielle Rollback-Artefakte müssen `partialRollback=true`,
+`rollbackComplete=false` und mindestens eine ausgelassene Operation
+maschinenlesbar ausweisen. `schema rollback --execute` rekonstruiert
+Statements aus diesen validierten Body-Ranges; ein Split anhand leerer Zeilen
+ist für v2 verboten. `rollback-sql v1` wird nur als Legacy-Lesepfad
+unterstützt.
 
 ---
 
@@ -1174,9 +1281,15 @@ CREATE TABLE "places" (
 
 **Regeln**:
 
-- Phase 1 emittiert kein automatisches `CREATE EXTENSION IF NOT EXISTS postgis;`.
-  Stattdessen wird ein Info-Hinweis im Report aufgenommen, dass das Zielsystem
-  PostGIS bereitstellen muss.
+- Ohne explizite Extension-Install-Policy emittiert der Migrate-Pfad kein
+  automatisches `CREATE EXTENSION IF NOT EXISTS postgis;`. Stattdessen
+  blockieren extension-abhaengige Operationen, wenn die Zielverfuegbarkeit
+  nicht `VERIFIED_PRESENT` ist.
+- Mit `schema migrate --allow-extension-install` darf PostgreSQL vor der
+  ersten PostGIS-abhaengigen Operation `CREATE EXTENSION IF NOT EXISTS
+  "postgis";` rendern, auch wenn die Availability `MISSING` oder `UNKNOWN`
+  ist. Das Statement erscheint im Report unter `extensionInstallStatements`
+  und wird als Side-Effect mit manueller Bestaetigung markiert.
 - Rollback-Statement: `ALTER TABLE "<table>" DROP COLUMN "<column>";`
 
 ### 16.3 PostgreSQL / PostGIS (Profil: `none`)
@@ -1316,13 +1429,20 @@ entstehen bei `schema generate` (Generator-/Report-Regeln).
 | E054 | action_required | `schema generate` | Object type is not supported in the target dialect |
 | E055 | action_required | `schema generate` | Partitioning is not supported in the target dialect |
 | E056 | action_required | `schema generate` | Named sequence cannot be generated natively and needs emulation/manual handling |
-| E057 | action_required | `schema generate` | Partial index predicate cannot be generated in the target dialect |
+| E057 | action_required | `schema generate` | Feature combination not generable: MySQL — partial index predicate cannot be generated; SQLite (`helper_table`) — `WITHOUT ROWID` table with `SequenceNextVal` column (AFTER INSERT trigger requires ROWID) |
+| E058 | action_required | `schema rollback` | SQLite (`helper_table`): external objects reference `dmg_sequences`; rollback aborts before any DROP to avoid dangling references |
+| E060 | Diagnostik | `schema generate --split` / `schema rollback` | Phasenkonflikt im Split-Modus; SQLite zusätzlich: ATTACHed Datenbanken detektiert beim Rollback-Preflight |
 | W113 | Warnung | `schema generate` | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
-| W114 | Warnung | `schema generate` | Sequence cache value stored but not emulated as preallocation in MySQL helper-table mode |
-| W115 | Warnung | `schema generate` | SequenceNextVal uses lossy MySQL trigger semantics; explicit NULL is treated like omitted value |
-| W116 | Warnung | `schema reverse` | Sequence metadata reconstructed, but required support objects (routines/triggers) are missing |
-| W117 | Warnung | `schema generate` | Sequence values are transaction-bound in MySQL helper-table mode; rollback retracts increments |
-| W120 | Warnung | `schema generate` | SRID could not be fully transferred to target dialect |
+| W114 | Warnung | `schema generate` | Sequence cache value stored but not emulated as preallocation (MySQL + SQLite `helper_table`; SQLite ist Single-Writer und profitiert nicht von Caching) |
+| W115 | Warnung | `schema generate` | SequenceNextVal uses lossy trigger semantics (MySQL + SQLite `helper_table`); explicit NULL is treated like omitted value |
+| W116 | Warnung | `schema reverse` | Sequence metadata reconstructed, but required support objects (routines/triggers) are missing or degraded (MySQL + SQLite) |
+| W117 | Warnung | `schema generate` | Sequence values are transaction-bound in helper-table mode; rollback retracts increments (MySQL + SQLite) |
+| W119 | Warnung | `schema generate` | SQLite (`helper_table`): NOT NULL und CHECK-`IS NOT NULL` auf sequence-getragener Spalte werden unterdrückt, weil der `_bi`-Trigger NULL injizieren muss; Wert wird vom `_ai`-Trigger garantiert |
+| W120 | Warnung | `schema generate` / `schema reverse` | MySQL: SRID could not be fully transferred. SQLite (`helper_table`-Reverse): Marker stimmt, aber Trigger-Body wurde modifiziert; Sequence-Zuordnung bleibt, aber Emulation evtl. nicht funktional |
+| W121 | Info | `schema generate` | SQLite (`helper_table`): Conflict-Gap-INFO — `ON CONFLICT DO UPDATE`/`DO NOTHING`, `INSERT OR IGNORE`, `INSERT OR FAIL` (multi-row) verbrauchen einen Sequence-Wert ohne Insert |
+| W122 | Warnung | `schema generate` | SQLite (`helper_table`): AFTER INSERT-Sequence-Trigger führt `UPDATE` auf der Zieltabelle aus; bei `PRAGMA recursive_triggers = ON` feuern bestehende UPDATE-Trigger auf derselben Tabelle |
+| W123 | Warnung | `schema rollback` | SQLite (`helper_table`): ATTACHed Datenbanken detektiert; Rollback kann Abhängigkeiten über Schemen nicht prüfen — `--force-rollback` erforderlich |
+| W124 | Warnung | `schema reverse` | SQLite (`helper_table`): nutzerdefinierter BEFORE INSERT-Trigger auf der Zieltabelle ist vor dem kanonischen `_bi`-Trigger erzeugt worden; Sequence-Vergabe kann maskiert werden |
 
 **E120**: Wird erzeugt, wenn `geometry_type` einen Wert enthaelt, der nicht in
 der zulaessigen Wertemenge liegt: `geometry`, `point`, `linestring`, `polygon`,

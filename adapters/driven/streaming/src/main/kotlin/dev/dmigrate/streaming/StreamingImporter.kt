@@ -22,7 +22,7 @@ class StreamingImporter(
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {
 
-    /** Test seam (Phase E0.3): cancel-propagation tests swap this with a
+    /** Test seam: cancel-propagation tests swap this with a
      *  capturing override before invoking [import]. Production callers leave
      *  it at the default. */
     internal var tableImporter: TableImporter = TableImporter(readerFactory, onTableOpened)

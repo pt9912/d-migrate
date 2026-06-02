@@ -6,9 +6,8 @@ import dev.dmigrate.format.data.yaml.YamlChunkReader
 import java.io.InputStream
 
 /**
- * Default-Implementierung der [DataChunkReaderFactory] mit den drei
- * Phase-B-Readern. Wird vom CLI in Phase E zentral instanziiert und
- * an den [dev.dmigrate.streaming.StreamingImporter] übergeben.
+ * LF-010 / LF-013: Default-Implementierung der [DataChunkReaderFactory]
+ * mit JSON-, YAML- und CSV-Readern.
  */
 class DefaultDataChunkReaderFactory : DataChunkReaderFactory {
 

@@ -120,6 +120,150 @@ class MysqlSchemaReaderTest : FunSpec({
         result.schema.views["active_users"]!!.sourceDialect shouldBe "mysql"
     }
 
+    test("G.2 — view with empty VIEW_TABLE_USAGE projection flags projectionComplete=false") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active = 1"),
+        )
+        // VIEW_TABLE_USAGE returns no rows for the view — either the view has
+        // no table deps (rare) or the introspecting user lacks SHOW VIEW on
+        // referenced tables. The reader cannot distinguish and must flag.
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies.shouldNotBeNull()
+        view.dependencies!!.projectionComplete shouldBe false
+        view.dependencies!!.tables.shouldBeEmpty()
+    }
+
+    test("N-1 — constant-only view (`SELECT 1 AS x`) is NOT flagged as incomplete") {
+        // Pre-N-1: empty VIEW_TABLE_USAGE rows → projectionComplete=false
+        // unconditionally → false-positive BLOCKER for views like
+        // `SELECT 1 AS x` that genuinely have no table deps.
+        // N-1 adds a body-regex probe: no FROM/JOIN token →
+        // projectionComplete=true.
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "v_const", "view_definition" to "SELECT 1 AS x, 'foo' AS y"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["v_const"]!!
+        view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tables.shouldBeEmpty()
+    }
+
+    test("N-1 — view body with FROM token but empty VIEW_TABLE_USAGE still flags incomplete") {
+        // Body says `FROM users` → conservative posture: probe assumes
+        // tables and the empty VIEW_TABLE_USAGE is the silent privilege
+        // gap. projectionComplete=false.
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "v_hidden", "view_definition" to "SELECT id FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        result.schema.views["v_hidden"]!!.dependencies!!.projectionComplete shouldBe false
+    }
+
+    test("G.2 — view with populated VIEW_TABLE_USAGE rows flags projectionComplete=true") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT * FROM users WHERE active = 1"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies.shouldNotBeNull()
+        view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.tableProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+        view.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        view.dependencies!!.routineProjectionStatus shouldBe DependencyProjectionStatus.EMPTY_VERIFIED
+        view.dependencies!!.projectionSources shouldBe listOf(
+            "INFORMATION_SCHEMA.VIEW_TABLE_USAGE",
+            "INFORMATION_SCHEMA.VIEW_ROUTINE_USAGE",
+        )
+    }
+
+    test("D.2 — visible routine call with empty VIEW_ROUTINE_USAGE flags projectionComplete=false") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "is_active",
+                "routine_type" to "FUNCTION",
+                "data_type" to "int",
+                "dtd_identifier" to "int",
+                "routine_definition" to "RETURN 1;",
+                "is_deterministic" to "YES",
+                "routine_body" to "SQL",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT is_active(id) FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns emptyList()
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies!!.tables shouldBe listOf("users")
+        view.dependencies!!.functions.shouldBeEmpty()
+        view.dependencies!!.projectionComplete shouldBe false
+    }
+
+    test("D.2 — populated VIEW_ROUTINE_USAGE for visible routine keeps projectionComplete=true") {
+        stubEmptyDefaults()
+        every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
+            mapOf(
+                "routine_name" to "is_active",
+                "routine_type" to "FUNCTION",
+                "data_type" to "int",
+                "dtd_identifier" to "int",
+                "routine_definition" to "RETURN 1;",
+                "is_deterministic" to "YES",
+                "routine_body" to "SQL",
+            ),
+        )
+        every { jdbc.queryList(match { it.contains("information_schema.views") }, any()) } returns listOf(
+            mapOf("table_name" to "active_users", "view_definition" to "SELECT is_active(id) FROM users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_TABLE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "table_name" to "users"),
+        )
+        every { jdbc.queryList(match { it.contains("VIEW_ROUTINE_USAGE") }, any()) } returns listOf(
+            mapOf("view_name" to "active_users", "routine_name" to "is_active"),
+        )
+
+        val result = reader.read(pool, SchemaReadOptions(includeFunctions = false,
+            includeProcedures = false, includeTriggers = false))
+
+        val view = result.schema.views["active_users"]!!
+        view.dependencies!!.functions shouldBe listOf("is_active")
+        view.dependencies!!.projectionComplete shouldBe true
+        view.dependencies!!.tableProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+        view.dependencies!!.columnProjectionStatus shouldBe DependencyProjectionStatus.UNKNOWN
+        view.dependencies!!.routineProjectionStatus shouldBe DependencyProjectionStatus.COMPLETE
+    }
+
     test("read includes functions with parameters") {
         stubEmptyDefaults()
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
@@ -176,6 +320,10 @@ class MysqlSchemaReaderTest : FunSpec({
         trigger.event shouldBe TriggerEvent.UPDATE
         trigger.timing shouldBe TriggerTiming.BEFORE
         trigger.sourceDialect shouldBe "mysql"
+        // E.1 Slice D.3: the trigger's owning table is surfaced as
+        // a DependencyInfo edge so the RoutineDependencyAnalyzer
+        // can build DropTrigger → DropTable reverse-topology edges.
+        trigger.dependencies?.tables shouldBe listOf("users")
     }
 
     test("read table with bigint auto_increment maps identity generation") {

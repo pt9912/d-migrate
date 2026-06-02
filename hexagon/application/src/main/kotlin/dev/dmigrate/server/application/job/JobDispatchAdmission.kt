@@ -6,8 +6,8 @@ import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Phase-E Admission-Gate fuer den Job-Dispatch (Plan §3.3 + §3.5 in
- * `ImpPlan-0.9.6-E3.md`). Der Orchestrator fragt das Gate **vor**
+ * LF-012 / LN-011 / LN-017: Admission-Gate fuer den Job-Dispatch.
+ * Der Orchestrator fragt das Gate **vor**
  * `JobStartTransaction.commit`; bei [JobDispatchAdmissionOutcome.Saturated]
  * wird ohne Job-Eintrag mit `RATE_LIMITED` (`reason = EXECUTOR_SATURATED`)
  * geantwortet. Bei [JobDispatchAdmissionOutcome.Closed] (Shutdown-Race)
@@ -30,7 +30,7 @@ sealed interface JobDispatchAdmissionOutcome {
 }
 
 /**
- * Permit-Vertrag (Plan §3.3). [close] MUSS idempotent UND no-throw
+ * LF-012 / LN-011: Permit-Vertrag. [close] MUSS idempotent UND no-throw
  * sein — Implementierungen suppressen Release-Fehler, damit ein
  * defekter Permit-Release den primaeren Fehlerpfad im Orchestrator
  * nicht blockiert.
@@ -52,7 +52,7 @@ object SyncJobDispatchAdmission : JobDispatchAdmission {
 
 /**
  * Bounded-Async-Admission: Semaphore mit
- * `cfg.maxThreads + cfg.queueCapacity` Permits (Plan §3.5 + §6.1).
+ * `cfg.maxThreads + cfg.queueCapacity` Permits (LF-012 / LN-011 / LN-017).
  * Bei Shutdown wird [close] gerufen; ab dann liefert
  * [tryAcquire] [JobDispatchAdmissionOutcome.Closed]. Die Lifecycle-
  * Komposition (close-vor-Pool-Drain) lebt in
@@ -102,7 +102,7 @@ class BoundedAsyncJobDispatchAdmission(
                     // Permit-Vertrag: no-throw. Semaphore.release() wirft
                     // in der Praxis nicht; defensives Suppress verhindert,
                     // dass ein theoretischer Fehler den Caller-finally-
-                    // Pfad bricht (Plan §3.3).
+                    // Pfad bricht.
                 }
             }
         }

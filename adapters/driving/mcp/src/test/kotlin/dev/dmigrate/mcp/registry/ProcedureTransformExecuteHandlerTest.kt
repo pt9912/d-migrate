@@ -47,11 +47,11 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase G § 5.5 + § 6 G.6 (G.6.e) — Akzeptanztests fuer den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests fuer den
  * `procedure_transform_execute`-Handler.
  *
- * Schwerpunkt: Plan-Provenance-Validierung (Plan §5.5 Z. 783-799),
- * weil das die Pflicht ist, die G.6.e von G.6.d unterscheidet.
+ * Schwerpunkt: Plan-Provenance-Validierung (LF-017 / LF-024 / LN-030 / LN-031 Z. 783-799),
+ * weil das die Execute-spezifische Pflicht gegenüber dem Plan-Pfad ist.
  */
 class ProcedureTransformExecuteHandlerTest : FunSpec({
 
@@ -113,7 +113,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         /**
          * Seedet ein freigegebenes Plan-Artefakt mit der korrekten
          * `wireArtifactKind=procedure-transform-plan`-Provenance,
-         * sodass der Execute-Handler eine valide Plan-Quelle hat.
+         * sodass der Execute-Handler eine valide Planquelle hat.
          */
         fun seedPlanArtifact(
             artifactId: String = "art-plan-1",
@@ -166,7 +166,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
                     provenance = provenance,
                     providerName = "noop",
                     model = "noop:default",
-                    modelVersion = "0.9.6",
+                    modelVersion = "0.9.7",
                     outputFingerprint = "a".repeat(64),
                     createdAt = now,
                 ),
@@ -188,7 +188,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         auditFields = auditFields,
     )
 
-    test("Plan §5.5 happy path: planArtifactId zeigt auf gueltigen Plan -> Success mit targetArtifactId") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 happy path: planArtifactId zeigt auf gueltigen Plan -> Success mit targetArtifactId") {
         val fx = Fixture()
         fx.seedPlanArtifact(artifactId = "art-plan-1")
         val outcome = fx.handler.handle(
@@ -204,7 +204,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         )
         val success = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
         val json = JsonParser.parseString(success.content.single().text!!).asJsonObject
-        // Plan §5.5: Wire-Form heisst targetArtifactId (nicht planRef).
+        // LF-017 / LF-024 / LN-030 / LN-031: Wire-Form heisst targetArtifactId (nicht planRef).
         json.get("targetArtifactId").asString shouldStartWith "art-"
         json.get("targetResourceUri").asString shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
 
@@ -213,7 +213,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         val md = fx.metadataStore.findByArtifactId(tenant, targetId)!!
         md.wireArtifactKind shouldBe AiWireArtifactKind.PROCEDURE_TRANSFORM_OUTPUT
         md.aiIntent shouldBe AiIntent.PROCEDURE_TRANSFORM_EXECUTE
-        // Plan §5.5 Z. 794-799: Source-Refs werden aus Plan-Provenance
+        // LF-017 / LF-024 / LN-030 / LN-031 Z. 794-799: Source-Refs werden aus Plan-Provenance
         // uebernommen, plus planRef selbst.
         md.sourceRefs.size shouldBe 2
         md.sourceRefs.map { it.kind } shouldBe listOf(ResourceKind.SCHEMAS, ResourceKind.ARTIFACTS)
@@ -223,7 +223,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         executeProvenance.planArtifactFingerprint shouldBe "deadbeef".repeat(8)
     }
 
-    test("Plan §5.5: planRef (anstatt planArtifactId) -> Success") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: planRef (anstatt planArtifactId) -> Success") {
         val fx = Fixture()
         fx.seedPlanArtifact(artifactId = "art-plan-2")
         val outcome = fx.handler.handle(
@@ -240,7 +240,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
     }
 
-    test("Plan §6 G.5: fehlender approvalKey -> VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender approvalKey -> VALIDATION_ERROR") {
         val fx = Fixture()
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(
@@ -251,7 +251,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         }.violations.first().field shouldBe "approvalKey"
     }
 
-    test("Plan §6 G.5: fehlende Plan-Source -> VALIDATION_ERROR(plan)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlende Plan-Source -> VALIDATION_ERROR(plan)") {
         val fx = Fixture()
         val ex = shouldThrow<ValidationErrorException> {
             fx.handler.handle(ctx("""{"approvalKey":"k","targetDialect":"POSTGRESQL"}"""))
@@ -259,7 +259,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         ex.violations.first().field shouldBe "plan"
     }
 
-    test("Plan §6 G.5: planRef + planArtifactId zusammen -> VALIDATION_ERROR(plan)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: planRef + planArtifactId zusammen -> VALIDATION_ERROR(plan)") {
         val fx = Fixture()
         fx.seedPlanArtifact()
         val ex = shouldThrow<ValidationErrorException> {
@@ -303,7 +303,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         ex.violations.first().field shouldBe "planRef"
     }
 
-    test("Plan §6 G.6: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
         val fx = Fixture()
         fx.seedPlanArtifact()
         val readOnly = principal.copy(scopes = setOf("dmigrate:read"))
@@ -317,7 +317,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         }
     }
 
-    test("Plan §5.5: planRef mit fremdem Tenant -> TENANT_SCOPE_DENIED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: planRef mit fremdem Tenant -> TENANT_SCOPE_DENIED") {
         val fx = Fixture()
         fx.seedPlanArtifact()
         val outcome = fx.handler.handle(
@@ -342,7 +342,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.RESOURCE_NOT_FOUND
     }
 
-    test("Plan §5.5: ArtifactRecord ohne AiArtifactMetadata (orphaned) -> RESOURCE_NOT_FOUND") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: ArtifactRecord ohne AiArtifactMetadata (orphaned) -> RESOURCE_NOT_FOUND") {
         val fx = Fixture()
         // Nur den ArtifactRecord seeden — KEINE Metadata.
         fx.artifactStore.save(
@@ -372,7 +372,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.RESOURCE_NOT_FOUND
     }
 
-    test("Plan §5.5 Z. 794-797: falscher wireArtifactKind (z.B. testdata-plan) -> VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 Z. 794-797: falscher wireArtifactKind (z.B. testdata-plan) -> VALIDATION_ERROR") {
         val fx = Fixture()
         fx.seedPlanArtifact(
             wireArtifactKind = AiWireArtifactKind.TESTDATA_PLAN,
@@ -392,7 +392,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.message.contains("wireArtifactKind") shouldBe true
     }
 
-    test("Plan §5.5: targetDialect-Mismatch zu Plan-Provenance -> VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: targetDialect-Mismatch zu Plan-Provenance -> VALIDATION_ERROR") {
         val fx = Fixture()
         fx.seedPlanArtifact(targetDialect = "POSTGRESQL")
         val outcome = fx.handler.handle(
@@ -405,7 +405,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.message.contains("targetDialect") shouldBe true
     }
 
-    test("Plan §6 G.6: PolicyDenied -> POLICY_DENIED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyDenied -> POLICY_DENIED") {
         val fx = Fixture(policyDefault = PolicyEffect.Deny("policy:execute-blocked"))
         fx.seedPlanArtifact()
         val outcome = fx.handler.handle(
@@ -417,7 +417,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.POLICY_DENIED
     }
 
-    test("Plan §6 G.6: idempotenter Retry -> selber targetArtifactId (Replay)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: idempotenter Retry -> selber targetArtifactId (Replay)") {
         val fx = Fixture()
         fx.seedPlanArtifact()
         val args = """{"approvalKey":"k-replay","targetDialect":"POSTGRESQL","planArtifactId":"art-plan-1"}"""
@@ -433,7 +433,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         summaryTwo shouldBe "replayed transform output"
     }
 
-    test("Plan §6 G.6: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
         val fx = Fixture()
         fx.seedPlanArtifact(artifactId = "art-plan-1")
         fx.seedPlanArtifact(artifactId = "art-plan-2")
@@ -451,7 +451,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         err.envelope.code shouldBe ToolErrorCode.IDEMPOTENCY_CONFLICT
     }
 
-    test("Follow-up AP 1: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
         val providerCalls = AtomicInteger(0)
         val countingProvider = AiProviderPort {
             providerCalls.incrementAndGet()
@@ -484,7 +484,7 @@ class ProcedureTransformExecuteHandlerTest : FunSpec({
         providerCalls.get() shouldBe 0
     }
 
-    test("Follow-up AP 1: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
         val fx = Fixture(
             policyDefault = PolicyEffect.Challenge(setOf("ai.execute")),
         )

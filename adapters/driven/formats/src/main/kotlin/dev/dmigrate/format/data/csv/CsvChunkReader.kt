@@ -16,12 +16,12 @@ import java.nio.charset.Charset
 /**
  * CSV-Format-Reader mit uniVocity-parsers ([CsvParser]).
  *
- * Plan §3.5.1 / §6.2:
+ * LF-009 / LF-010 / LF-013:
  * - uniVocity `CsvParser` mit `beginParsing`/`parseNext` — nativ chunk-fähig
  * - Header-Zeile steuerbar via [FormatReadOptions.csvNoHeader]
  * - NULL-Sentinel via [FormatReadOptions.csvNullString] (Default: leerer String)
  * - Alle Werte bleiben String — Typ-Konvertierung erfolgt erst im
- *   `ValueDeserializer` anhand des JDBC-Typ-Hints (§3.5.2)
+ *   `ValueDeserializer` anhand des JDBC-Typ-Hints
  * - Keine stille Row-Normalisierung: Feldanzahlfehler bleiben Formatfehler
  *
  * **Encoding**: Anders als JSON/YAML (deren Libraries intern UTF-8 erwarten)

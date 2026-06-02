@@ -2,9 +2,9 @@ package dev.dmigrate.mcp.protocol
 
 /**
  * MCP `resources/list` request shape per the 2025-11-25 specification +
- * `ImpPlan-0.9.6-B.md` §6.9. `cursor` is the opaque continuation token
+ * LF-012 / LN-027 / LN-028 / LN-038`cursor` is the opaque continuation token
  * from a previous response; `null`/absent means "start from the
- * beginning". Phase B encodes the cursor as Base64-URL-safe JSON of
+ * beginning". LF-012 / LN-038 encodes the cursor as Base64-URL-safe JSON of
  * `{kind, innerToken}` (see `ResourcesListCursor`); clients treat it
  * as opaque.
  */
@@ -25,7 +25,7 @@ data class ResourcesListResult(
 
 /**
  * MCP `Resource` entry. `mimeType` is required by clients that
- * dispatch `resources/read` based on it; Phase B advertises
+ * dispatch `resources/read` based on it; LF-012 / LN-038 advertises
  * `application/json` for every projection.
  */
 data class Resource(
@@ -36,7 +36,7 @@ data class Resource(
 )
 
 /**
- * MCP `resources/templates/list` request shape. Phase B returns a
+ * MCP `resources/templates/list` request shape. LF-012 / LN-038 returns a
  * static list of 7 templates and ignores the cursor.
  */
 data class ResourcesTemplatesListParams(
@@ -49,7 +49,7 @@ data class ResourcesTemplatesListResult(
 )
 
 /**
- * MCP resource template per `ImpPlan-0.9.6-B.md` §5.5 + §6.9. The
+ * MCP resource template per LF-012 / LN-027 / LN-028 / LN-038. The
  * `uriTemplate` follows MCP-RFC-6570 — `{tenantId}` and friends are
  * placeholders the client substitutes before invoking
  * `resources/read`.
@@ -63,9 +63,9 @@ data class ResourceTemplate(
 
 /**
  * MCP `resources/read` request shape per the 2025-11-25 specification
- * + `ImpPlan-0.9.6-B.md` §5.5 + §6.9 + `ImpPlan-0.9.6-D.md` §5.3 + §10.7.
+ * + LF-012 / LN-027 / LN-028 / LN-038 + LF-012 / LN-038.
  *
- * `uri` MUST be a fully-resolved `dmigrate://...` URI. Plan-D §5.3
+ * `uri` MUST be a fully-resolved `dmigrate:/...` URI. LF-012 / LN-038
  * pins the request shape: `uri` is the ONLY accepted field —
  * `cursor`, `range`, `chunkId` and any other extension key are
  * rejected as `-32602 InvalidParams` with
@@ -84,7 +84,7 @@ data class ResourceTemplate(
 data class ReadResourceParams(
     val uri: String? = null,
     /**
-     * Plan-D §5.3: name of the first unexpected parameter the
+     * LF-012 / LN-038: name of the first unexpected parameter the
      * client carried. Non-null means the request is malformed and
      * the dispatcher MUST reject it before the URI even parses.
      */
@@ -94,7 +94,7 @@ data class ReadResourceParams(
 /**
  * MCP `resources/read` response. `contents` is a list because the
  * spec allows multi-part resources (e.g. metadata + binary blob);
- * Phase B always returns exactly one JSON projection.
+ * LF-012 / LN-038 always returns exactly one JSON projection.
  */
 data class ReadResourceResult(
     val contents: List<ResourceContents>,
@@ -103,7 +103,7 @@ data class ReadResourceResult(
 /**
  * One content slice of a `resources/read` response. Exactly one of
  * `text` (UTF-8 string) or `blob` (Base64-encoded bytes) MUST be
- * populated. Phase B always returns `text` with
+ * populated. LF-012 / LN-038 always returns `text` with
  * `mimeType=application/json`.
  */
 data class ResourceContents(

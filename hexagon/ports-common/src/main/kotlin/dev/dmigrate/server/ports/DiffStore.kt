@@ -12,14 +12,14 @@ data class DiffIndexEntry(
     val resourceUri: ServerResourceUri,
     val artifactRef: String,
     /**
-     * Plan-D §6.4 wire-name `leftSchemaId` (kept as
+     * LF-012 / LN-038 wire-name `leftSchemaId` (kept as
      * `sourceRef` here for backward-compatibility with existing
      * stage helpers; the projector renders it as
      * `leftSchemaId`).
      */
     val sourceRef: String,
     /**
-     * Plan-D §6.4 wire-name `rightSchemaId`. See [sourceRef].
+     * LF-012 / LN-038 wire-name `rightSchemaId`. See [sourceRef].
      */
     val targetRef: String,
     val displayName: String,
@@ -28,7 +28,7 @@ data class DiffIndexEntry(
     val jobRef: String? = null,
     val labels: Map<String, String> = emptyMap(),
     /**
-     * Plan-D §6.4 mindestfeld `statusSummary`: short canonical
+     * LF-012 / LN-038 mindestfeld `statusSummary`: short canonical
      * outcome label (e.g. `IDENTICAL`, `DIFF_PRESENT`,
      * `INCOMPATIBLE`). Null when the producer did not record
      * one.
@@ -37,9 +37,9 @@ data class DiffIndexEntry(
 )
 
 /**
- * Phase-D §6.3 + §10.4 filter for `diff_list`. `sourceRef` /
+ * LF-012 / LN-038 filter for `diff_list`. `sourceRef` /
  * `targetRef` match the `DiffIndexEntry.sourceRef` /
- * `DiffIndexEntry.targetRef` exactly so a Phase-D client can find
+ * `DiffIndexEntry.targetRef` exactly so a LF-012 / LN-038 client can find
  * every diff for a given schema pair; time window inclusive.
  */
 data class DiffListFilter(
@@ -59,7 +59,7 @@ interface DiffStore {
     fun list(tenantId: TenantId, page: PageRequest): PageResult<DiffIndexEntry>
 
     /**
-     * Phase-D filtered list. Default sort:
+     * LF-012 / LN-038 filtered list. Default sort:
      *   1. `createdAt` DESC
      *   2. `diffId` ASC
      */

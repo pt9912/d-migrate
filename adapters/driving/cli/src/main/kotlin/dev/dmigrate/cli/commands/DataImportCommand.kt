@@ -13,24 +13,12 @@ import com.github.ajalt.clikt.parameters.types.int
 import com.github.ajalt.clikt.parameters.types.path
 import dev.dmigrate.cli.CliContext
 import dev.dmigrate.cli.DMigrate
-import dev.dmigrate.cli.config.ConfigMissingDefaultException
-import dev.dmigrate.cli.config.ConfigResolveException
-import dev.dmigrate.cli.config.NamedConnectionResolver
-import dev.dmigrate.driver.DatabaseDialect
-import dev.dmigrate.driver.DatabaseDriverRegistry
-import dev.dmigrate.driver.connection.ConnectionUrlParser
-import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
-import dev.dmigrate.driver.data.DataWriter
-import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
-import dev.dmigrate.cli.output.MessageResolver
-import dev.dmigrate.cli.output.ProgressRenderer
-import dev.dmigrate.streaming.StreamingImporter
 
 /**
  * `d-migrate data import` — streamt Daten aus Dateien (json/yaml/csv) oder
  * stdin in eine Zieldatenbank.
  *
- * Plan §3.7.1 / §6.11. Analog zum `DataExportCommand` ist dieser Command
+ * LF-010 / LF-013 / LN-009 / LN-011. Analog zum `DataExportCommand` ist dieser Command
  * eine dünne Clikt-Schale: er sammelt die CLI-Argumente in einen
  * [DataImportRequest] und delegiert an [DataImportRunner], der die gesamte
  * Geschäftslogik hält.
@@ -120,10 +108,9 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Rows per chunk (streaming buffer size); default: 10 000",
     ).int().default(10_000)
 
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.3/§4.4): Resume-Oberflaeche.
-    // CLI-Vertrag ist in 0.9.0 Phase A definiert; die Resume-Runtime
-    // (Checkpoint-Port, Manifest, Streaming-Wiederaufnahme) folgt in
-    // Phase B bis D des Milestones.
+    // LF-010 / LF-013 / LN-012: Resume-Oberflaeche fuer Datei- und
+    // Directory-Importe. Stdin bleibt ausgeschlossen, weil kein
+    // stabiler Input-Pfad fuer Wiederaufnahme existiert.
     val resume by option(
         "--resume",
         help = "Resume an earlier import from a checkpoint reference " +
@@ -139,91 +126,31 @@ class DataImportCommand : CliktCommand(name = "import") {
     ).path()
 
     override fun run() {
-        // Hierarchie: d-migrate → data → import → ZWEI parent-hops nach oben
         val root = currentContext.parent?.parent?.command as? DMigrate
-        val ctx = root?.cliContext() ?: CliContext()
-        val writerLookup: (DatabaseDialect) -> DataWriter = { dialect ->
-            DatabaseDriverRegistry.get(dialect).dataWriter()
-        }
-        val readerFactory = DefaultDataChunkReaderFactory()
-        val request = DataImportRequest(
-            target = target,
-            source = source,
-            format = format,
-            schema = schema,
-            table = table,
-            tables = tables,
-            onError = onError,
-            onConflict = onConflict,
-            triggerMode = triggerMode,
-            truncate = truncate,
-            disableFkChecks = disableFkChecks,
-            reseedSequences = reseedSequences,
-            encoding = encoding,
-            csvNoHeader = csvNoHeader,
-            csvNullString = csvNullString,
-            chunkSize = chunkSize,
-            cliConfigPath = root?.config,
-            quiet = ctx.quiet,
-            noProgress = ctx.noProgress,
-            resume = resume,
-            checkpointDir = checkpointDir,
+        val exitCode = DataImportWiring.execute(
+            DataImportOptions(
+                target = target,
+                source = source,
+                format = format,
+                schema = schema,
+                table = table,
+                tables = tables,
+                onError = onError,
+                onConflict = onConflict,
+                triggerMode = triggerMode,
+                truncate = truncate,
+                disableFkChecks = disableFkChecks,
+                reseedSequences = reseedSequences,
+                encoding = encoding,
+                csvNoHeader = csvNoHeader,
+                csvNullString = csvNullString,
+                chunkSize = chunkSize,
+                resume = resume,
+                checkpointDir = checkpointDir,
+                cliContext = root?.cliContext() ?: CliContext(),
+                configPath = root?.config,
+            )
         )
-        val runner = DataImportRunner(
-            targetResolver = { target, configPath ->
-                try {
-                    NamedConnectionResolver(configPathFromCli = configPath).resolveTarget(target)
-                } catch (e: ConfigMissingDefaultException) {
-                    throw CliUsageException(
-                        "--target is required when database.default_target is not set.",
-                        e,
-                    )
-                } catch (e: ConfigResolveException) {
-                    throw IllegalArgumentException(e.message ?: "Failed to resolve --target.", e)
-                }
-            },
-            urlParser = ConnectionUrlParser::parse,
-            poolFactory = HikariConnectionPoolFactory::create,
-            writerLookup = writerLookup,
-            schemaPreflight = DataImportSchemaPreflight::prepare,
-            schemaTargetValidator = DataImportSchemaPreflight::validateTargetTable,
-            importExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
-                val importer = StreamingImporter(
-                    readerFactory = readerFactory,
-                    writerLookup = writerLookup,
-                    onTableOpened = callbacks.onTableOpened,
-                )
-                importer.import(
-                    pool = ctx.pool,
-                    input = ctx.input,
-                    format = opts.format,
-                    options = opts.options,
-                    readOptions = opts.readOptions,
-                    config = opts.config,
-                    progressReporter = callbacks.progressReporter,
-                    operationId = resume.operationId,
-                    resuming = resume.resuming,
-                    skippedTables = resume.skippedTables,
-                    resumeStateByTable = resume.resumeStateByTable,
-                    onChunkCommitted = callbacks.onChunkCommitted,
-                    onTableCompleted = callbacks.onTableCompleted,
-                    cancellationToken = ctx.cancellationToken,
-                )
-            },
-            progressReporter = ProgressRenderer(messages = MessageResolver(ctx.locale)),
-            // 0.9.0 Phase D.1 (docs/ImpPlan-0.9.0-D.md §5.1):
-            // dateibasierter CheckpointStore + Config-Resolver —
-            // symmetrisch zum Export-Pfad.
-            checkpointStoreFactory = { dir ->
-                dev.dmigrate.streaming.checkpoint.FileCheckpointStore(dir)
-            },
-            checkpointConfigResolver = { cliCfg ->
-                dev.dmigrate.cli.config.PipelineCheckpointResolver(
-                    configPathFromCli = cliCfg,
-                ).resolve()
-            },
-        )
-        val exitCode = runner.execute(request)
         if (exitCode != 0) throw ProgramResult(exitCode)
     }
 }

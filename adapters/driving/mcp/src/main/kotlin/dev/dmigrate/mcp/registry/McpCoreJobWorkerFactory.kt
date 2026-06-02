@@ -58,7 +58,7 @@ import java.util.UUID
 /**
  * Production worker factory for the 0.9.6 controlled read-side jobs.
  *
- * The Phase-E default [dev.dmigrate.server.application.job.PassthroughJobWorkerFactory]
+ * The LF-012 / LN-011 / LN-017 / LN-027 default [dev.dmigrate.server.application.job.PassthroughJobWorkerFactory]
  * only proves dispatch wiring. This factory binds the committed MCP job
  * request to the existing application runners/ports so `schema_reverse_start`,
  * `data_profile_start`, and `schema_compare_start` actually perform their

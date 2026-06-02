@@ -13,8 +13,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Single-writer advisory lock on `<stateDir>/.lock` per
- * `ImpPlan-0.9.6-C.md` §6.21.
+ * Single-writer advisory lock on `<stateDir>/.lock` per LF-012 / LN-038.
  *
  * The lock is OS-backed via [FileChannel.tryLock]: a crashed process
  * cannot poison the state dir because the kernel releases the lock
@@ -26,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * is intended for operator messages — never as a poor-man's
  * existence-based lock substitute.
  */
-internal class McpStateDirLock private constructor(
+class McpStateDirLock private constructor(
     private val channel: FileChannel,
     private val lock: FileLock,
     val instanceId: String,

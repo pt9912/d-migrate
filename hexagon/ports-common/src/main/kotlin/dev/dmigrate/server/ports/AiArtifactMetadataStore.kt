@@ -5,23 +5,23 @@ import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase G § 5.4 + § 6 G.6 (G.6.b) — durable Provenance-Store für
+ * LF-017 / LF-024 / LN-030 / LN-031 — durable Provenance-Store für
  * KI-Artefakte.
  *
- * Plan-§-5.4-Pfad-A (G.1-Bestandsaufnahme §3.2): wir bleiben bei
+ * LF-017 / LF-024 / LN-030 / LN-031-Pfad-A: wir bleiben bei
  * `ArtifactKind.OTHER` für KI-Artefakte und persistieren die
  * KI-Metadaten in diesem separaten Store. Vorteile:
  *
- * - kein Bloat im `ArtifactRecord`-Schema, das Phase A-F nicht
+ * - kein Bloat im `ArtifactRecord`-Schema, das non-AI artifact contracts nicht
  *   kennt;
  * - `ArtifactStore.list()` filtert weiterhin nach Core-`ArtifactKind`,
  *   während `findByArtifactId(...)` hier den KI-spezifischen
  *   Filter macht;
  * - Atomarität: der Tool-Handler schreibt
  *   `ArtifactStore.save(record)` und `AiArtifactMetadataStore.save(metadata)`
- *   im selben durable Commit (G.6.d/e/f).
+ *   im selben durable Commit (LF-017 / LF-024 / LN-030 / LN-031).
  *
- * Plan §5.4 Z. 748-752 Vertrag:
+ * LF-017 / LF-024 / LN-030 / LN-031 Z. 748-752 Vertrag:
  *
  * - `save` ist atomar zusammen mit dem Artefakt-Publish oder vor
  *   der Freigabe der `resultRef`.
@@ -45,8 +45,8 @@ interface AiArtifactMetadataStore {
     fun findByResourceUri(tenantId: TenantId, resourceUri: ServerResourceUri): AiArtifactMetadata?
 
     /**
-     * Plan §5.4 Z. 752: Cleanup-Hook, der mit dem Artefakt-Delete
-     * gebunden ist. Tool-Retention (Phase F's
+     * LF-017 / LF-024 / LN-030 / LN-031 Z. 752: Cleanup-Hook, der mit dem Artefakt-Delete
+     * gebunden ist. Tool-Retention (LF-010 / LF-013 / LN-009 / LN-011's
      * `ArtifactRetentionService`) ruft diese Methode auf, sobald
      * der zugehörige `ArtifactRecord` gelöscht wird, damit kein
      * orphaned Metadata zurückbleibt.
@@ -59,11 +59,11 @@ interface AiArtifactMetadataStore {
 }
 
 /**
- * Phase G § 5.4 + § 6 G.6 (G.6.b) — typed Save-Outcome.
+ * LF-017 / LF-024 / LN-030 / LN-031 — typed Save-Outcome.
  *
  * Unterscheidet zwischen idempotentem No-Op-Replay und einem
  * harten Konflikt zweier verschiedener Metadaten-Sätze unter
- * derselben `(tenantId, artifactId)`. Tool-Handler in G.6.d/e/f
+ * derselben `(tenantId, artifactId)`. Tool-Handler in LF-017 / LF-024 / LN-030 / LN-031
  * mappen [Conflict] auf `INTERNAL_AGENT_ERROR` (Server-State-
  * Drift, niemals Caller-Fehler — der Caller hat denselben
  * `approvalKey` benutzt, aber der Store sieht abweichende

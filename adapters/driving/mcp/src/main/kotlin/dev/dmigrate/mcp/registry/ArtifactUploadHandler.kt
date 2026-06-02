@@ -38,14 +38,14 @@ import dev.dmigrate.server.ports.quota.QuotaDimension
 import dev.dmigrate.server.ports.quota.QuotaKey
 import dev.dmigrate.server.ports.quota.QuotaOutcome
 import java.io.ByteArrayInputStream
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 
 /**
- * AP 6.8 + AP 6.22: `artifact_upload` per `ImpPlan-0.9.6-C.md` §6.8 +
+ * LF-012 / LN-027 / LN-028 / LN-038 + LF-010 / LF-013 / LN-009 / LN-011: `artifact_upload` per LF-012 / LN-027 / LN-028 / LN-038
  * §6.22 and `spec/ki-mcp.md` §5.3.
  *
  * Accepts one segment at a time for an active read-only schema-
@@ -59,16 +59,16 @@ import java.util.Base64
  * Idempotency / replay:
  * - same segment retried on `ACTIVE` → `deduplicated=true`
  * - completing-segment retry on `COMPLETED` → returns persisted
- *   `schemaRef` (AP 6.18)
+ *   `schemaRef` (LF-012 / LN-027 / LN-028 / LN-038)
  * - completing-segment retry on `ABORTED` whose outcome was `FAILED`
- *   → re-throws sanitised error class (AP 6.22)
+ *   → re-throws sanitised error class (LF-010 / LF-013 / LN-009 / LN-011)
  * - any retry against a live `FINALIZING` claim → retryable Conflict
  *   without side effects
  */
 /**
  * @property finalizer production wiring MUST inject a finaliser
- *   (Phase-C wiring defaults to [dev.dmigrate.mcp.schema.DefaultSchemaStagingFinalizer]).
- *   The `null` default is reserved for AP 6.7-6.8 standalone tests
+ *   (LF-012 / LN-038 wiring defaults to [dev.dmigrate.mcp.schema.DefaultSchemaStagingFinalizer]).
+ *   The `null` default is reserved for LF-012 / LN-027 / LN-028 / LN-038 standalone tests
  *   that exercise the segment-write path without producing a
  *   `schemaRef`. With `null`, the completing segment uses the
  *   legacy `ACTIVE → COMPLETED` shortcut WITHOUT a single-writer
@@ -84,12 +84,12 @@ internal class ArtifactUploadHandler(
 ) : ToolHandler {
 
     /**
-     * AP 6.22: exposed as `internal val` so wiring-end-to-end tests
+     * LF-010 / LF-013 / LN-009 / LN-011: exposed as `internal val` so wiring-end-to-end tests
      * in `:adapters:driving:mcp` can pin that the production CLI
      * threads `FileSpoolAssembledUploadPayloadFactory` all the way to
      * the handler — a guard against the original review-#1
      * regression where the file-spool factory only landed in the
-     * `PhaseCWiring` DTO but was substituted by the in-memory default
+     * `McpRuntimeWiring` DTO but was substituted by the in-memory default
      * during handler construction.
      */
     internal val payloadFactory: AssembledUploadPayloadFactory = options.payloadFactory
@@ -102,8 +102,8 @@ internal class ArtifactUploadHandler(
         limits = limits,
         payloadFactory = payloadFactory,
         finalizingLeaseTtl = options.finalizingLeaseTtl,
-        // Phase F § 8.6 (F.6 1/3): Init-Quotas auf Validation-/Parse-
-        // Failure freigeben (analog zur F.4-(3/3)-oversize-Pipeline).
+        // LF-010 / LF-013 / LN-009 / LN-011: Init-Quotas auf Validation-/Parse-
+        // Failure freigeben (analog zur LF-010 / LF-013 / LN-009 / LN-011-oversize-Pipeline).
         quotaService = quotaService,
     )
 
@@ -127,15 +127,15 @@ internal class ArtifactUploadHandler(
         }
         enforceIntentScope(session, context.principal)
         validateSessionSizeContract(session)
-        // Phase F § 8.9 (F.9 3/3): AuditFields-Population fuer
-        // Around-/Finally-Audit (Plan: "Around-/Finally-Audit fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: AuditFields-Population fuer
+        // Around-/Finally-Audit (Vertrag: "Around-/Finally-Audit fuer
         // Init, Segment, Abort ... vervollstaendigen").
         context.auditFields.resourceRefs = listOf(session.resourceUri.render())
         if (session.state == UploadSessionState.COMPLETED) {
             return handleReplayAfterCompleted(session, args, context.requestId)
         }
         if (session.state == UploadSessionState.ABORTED) {
-            // AP 6.22: if a sanitised FAILED outcome was persisted,
+            // LF-010 / LF-013 / LN-009 / LN-011: if a sanitised FAILED outcome was persisted,
             // re-throw the same error class so retries are
             // deterministic. Otherwise fall through to the regular
             // Aborted exception path.
@@ -178,9 +178,9 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * Phase F § 8.5 (F.5 2/3): dispatchet die finalisierung anhand
+     * LF-010 / LF-013 / LN-009 / LN-011: dispatchet die finalisierung anhand
      * des `session.uploadIntent`. `schema_staging_readonly` geht
-     * weiter durch den AP-6.22-Schema-Pfad ([SchemaStagingFinalizer]),
+     * weiter durch den LF-010 / LF-013 / LN-009 / LN-011-Schema-Pfad ([SchemaStagingFinalizer]),
      * `job_input` durch den neuen [JobInputFinalizer] (Bytes-only,
      * keine Schema-Validierung). Ohne passend gewireten Finaliser
      * faellt der Pfad auf den legacy `ACTIVE → COMPLETED`-Shortcut
@@ -231,7 +231,7 @@ internal class ArtifactUploadHandler(
         val finalizer = options.jobInputFinalizer
         return if (finalizer == null) {
             // Tests ohne JobInputFinalizer-Wiring: legacy COMPLETED-
-            // Transition; in Production muss F.5 (3/3) den Finaliser
+            // Transition; in Production muss LF-010 / LF-013 / LN-009 / LN-011 den Finaliser
             // wiren, sonst bleibt der Artefakt-Materialise-Schritt aus.
             sessionStore.transitionOrThrow(session, UploadSessionState.COMPLETED, now)
             null
@@ -248,9 +248,9 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * Phase F § 8.5 (F.5 2/3): leichter MIME-zu-Format-Mapper fuer
+     * LF-010 / LF-013 / LN-009 / LN-011: leichter MIME-zu-Format-Mapper fuer
      * den deterministischen `artifactId`-Material-String. Werte
-     * folgen [SchemaFileResolver]-/AP-6.22-Konventionen ("json",
+     * folgen [SchemaFileResolver]-/LF-010 / LF-013 / LN-009 / LN-011-Konventionen ("json",
      * "yaml") und fallen sonst auf "bin" zurueck. Der MIME-Type
      * selbst landet trotzdem 1:1 in `ArtifactRecord.contentType`,
      * sodass der Wire-Klient die volle Information sieht.
@@ -258,7 +258,7 @@ internal class ArtifactUploadHandler(
     private fun formatFromMimeType(mimeType: String): String = when {
         mimeType.equals("application/json", ignoreCase = true) ||
             mimeType.endsWith("+json", ignoreCase = true) -> "json"
-        // Phase F § 8.10 (F.10): CSV-Import-Artefakte werden in Phase F
+        // LF-010 / LF-013 / LN-009 / LN-011: CSV-Import-Artefakte werden vom Import-Pfad
         // erlaubt; beide Allowlist-Schreibweisen mappen auf dasselbe
         // Format, damit Caller mit `application/csv` denselben
         // deterministischen `art-...`-Id erhalten wie mit `text/csv`.
@@ -287,14 +287,14 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * Phase F § 8.4 (F.4 1/3): intent-abhaengiger Scope-Check nach
+     * LF-010 / LF-013 / LN-009 / LN-011: intent-abhaengiger Scope-Check nach
      * dem no-oracle Session-/Owner-Lookup. Dispatch erzwingt nur das
      * lockere `dmigrate:read`-Gate; der Handler erzwingt zusaetzlich
      * `dmigrate:artifact:upload` fuer policy-pflichtige
      * `job_input`-Sessions, sodass ein read-only Caller einen
      * `job_input`-Upload nicht ueberschreiben kann. Ein
      * `schema_staging_readonly`-Caller darf mit reinem
-     * `dmigrate:read` bleiben (Plan § 8.4 "session-scoped read-only
+     * `dmigrate:read` bleiben (LF-012 / LN-027 / LN-028 / LN-038 "session-scoped read-only
      * Upload-Berechtigung") — ein staerkerer Scope wie
      * `dmigrate:artifact:upload` reicht ebenfalls. Der Aufruf liegt
      * VOR jeder Segment-/Quota-/TTL-Mutation; ein gescheiterter
@@ -318,21 +318,21 @@ internal class ArtifactUploadHandler(
             // `dmigrate:artifact:upload` darf auch read-only stagen.
             SCOPE_READONLY_ACCEPTED
         ArtifactUploadInitHandler.INTENT_JOB_INPUT -> SCOPE_ARTIFACT_UPLOAD
-        // Fail-closed fuer unbekannte Intents. Phase-F erlaubt nur die
+        // Fail-closed fuer unbekannte Intents. LF-010 / LF-013 / LN-009 / LN-011 erlaubt nur die
         // beiden Werte; eine Session mit fremdem Intent waere ein
         // Server-Fehler in F-Tests.
         else -> SCOPE_ARTIFACT_UPLOAD
     }
 
     /**
-     * Phase F § 8.4 (F.4 3/3): terminale Failure-Pipeline fuer
-     * oversize Segmente. Plan: "zu grosses Segment setzt Session
+     * LF-010 / LF-013 / LN-009 / LN-011: terminale Failure-Pipeline fuer
+     * oversize Segmente. Vertrag: "zu grosses Segment setzt Session
      * terminal auf FAILED, speichert ein Failure-Outcome, startet
      * Cleanup und gibt Quotas frei". Reihenfolge ist wichtig — der
      * Outcome wird VOR der Transition gespeichert, sodass ein Retry
      * gegen die ABORTED-Session via
      * `replayFailedOutcomeIfAvailable` denselben sanitisierten
-     * Fehler bekommt (Plan-Wortlaut "abweichende Wiederholung
+     * Fehler bekommt (Vertragswortlaut "abweichende Wiederholung
      * deterministisch ablehnen").
      *
      * Cleanup laeuft best-effort: ein Fehler beim Loeschen der
@@ -404,9 +404,9 @@ internal class ArtifactUploadHandler(
     }
 
     /**
-     * Phase F § 8.4 (F.4 2/3): defensive Pruefung gegen Session-
+     * LF-010 / LF-013 / LN-009 / LN-011: defensive Pruefung gegen Session-
      * Misskonfiguration. `sizeBytes=0` ist nur fuer das Single-Empty-
-     * Segment in nicht-Schema-`job_input` zulaessig (Plan: "Null-Byte-
+     * Segment in nicht-Schema-`job_input` zulaessig (Vertrag: "Null-Byte-
      * Upload als ein finales leeres Segment modellieren"). Init blockt
      * die verbotenen Kombinationen bereits, aber Sessions koennten
      * theoretisch ueber Store-Manipulation entstehen — der Handler
@@ -561,7 +561,7 @@ internal class ArtifactUploadHandler(
             )
             UploadSessionState.ABORTED -> throw UploadSessionAbortedException(session.uploadSessionId)
             UploadSessionState.EXPIRED -> throw UploadSessionExpiredException(session.uploadSessionId)
-            // AP 6.22: a completing-segment retry against a FINALIZING
+            // LF-010 / LF-013 / LN-009 / LN-011: a completing-segment retry against a FINALIZING
             // session is a possible reclaim attempt — let it fall
             // through so StreamingFinalizer.claimOrThrow can decide
             // (live lease → Conflict, expired lease → reclaim). Non-
@@ -754,10 +754,10 @@ internal class ArtifactUploadHandler(
         val idleTimeout: Duration = ArtifactUploadInitHandler.DEFAULT_IDLE_TIMEOUT,
         val finalizer: SchemaStagingFinalizer? = null,
         /**
-         * Phase F § 8.5 (F.5 2/3): policy-pflichtiger
+         * LF-010 / LF-013 / LN-009 / LN-011: policy-pflichtiger
          * `uploadIntent=job_input`-Pfad. Default `null` haelt
          * Bestands-Tests gruen; Production wiring muss den Finaliser
-         * setzen, sonst materialisiert F.5 keine Artefaktbytes.
+         * setzen, sonst materialisiert LF-010 / LF-013 / LN-009 / LN-011 keine Artefaktbytes.
          */
         val jobInputFinalizer: JobInputFinalizer? = null,
         val payloadFactory: AssembledUploadPayloadFactory = AssembledUploadPayloadFactory.inMemory(),
@@ -769,14 +769,10 @@ internal class ArtifactUploadHandler(
         private val MAX_ABSOLUTE_LEASE: Duration = UploadSessionDefaults.ABSOLUTE_LEASE
         val DEFAULT_FINALIZING_LEASE_TTL: Duration = Duration.ofMinutes(5)
 
-        /** Phase F § 8.4 (F.4 1/3): Intent-zu-Scope-Mapping. */
+        /** LF-010 / LF-013 / LN-009 / LN-011: Intent-zu-Scope-Mapping. */
         private val SCOPE_ARTIFACT_UPLOAD: Set<String> = setOf("dmigrate:artifact:upload")
         private val SCOPE_READONLY_ACCEPTED: Set<String> =
             setOf("dmigrate:read", "dmigrate:artifact:upload")
 
-        private fun sha256Hex(bytes: ByteArray): String {
-            val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-            return digest.joinToString("") { "%02x".format(it) }
-        }
     }
 }

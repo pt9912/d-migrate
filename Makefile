@@ -3,10 +3,34 @@ DOCKER ?= docker
 
 IMAGE ?= d-migrate
 IMAGE_TAG ?= dev
+DOCKER_OCI_TAR_IMAGE ?= $(IMAGE):jib-image-tar
+DOCKER_OCI_TAR ?= build/docker/jib-image.tar
+DOCKER_COVERAGE_MODULES_HTML_IMAGE ?= $(IMAGE):coverage-modules-html
+RELEASE_ASSETS_IMAGE ?= $(IMAGE):release-assets
+RELEASE_VERSION ?= $(DMIGRATE_VERSION)
 CLI_PROJECT ?= :adapters:driving:cli
 CLI_BIN ?= adapters/driving/cli/build/install/d-migrate/bin/d-migrate
 ARGS ?= --help
 INTEGRATION_TASKS ?=
+CI_BUILD_TASKS ?= build koverVerify --no-build-cache
+COVERAGE_MODULES_HTML_TASKS ?= \
+	:hexagon:core:koverHtmlReport \
+	:hexagon:ports-common:koverHtmlReport \
+	:hexagon:ports-read:koverHtmlReport \
+	:hexagon:ports-write:koverHtmlReport \
+	:hexagon:application:koverHtmlReport \
+	:hexagon:profiling:koverHtmlReport \
+	:adapters:driven:driver-common:koverHtmlReport \
+	:adapters:driven:driver-postgresql:koverHtmlReport \
+	:adapters:driven:driver-postgresql-profiling:koverHtmlReport \
+	:adapters:driven:driver-mysql:koverHtmlReport \
+	:adapters:driven:driver-mysql-profiling:koverHtmlReport \
+	:adapters:driven:driver-sqlite:koverHtmlReport \
+	:adapters:driven:driver-sqlite-profiling:koverHtmlReport \
+	:adapters:driven:formats:koverHtmlReport \
+	:adapters:driven:integrations:koverHtmlReport \
+	:adapters:driven:streaming:koverHtmlReport \
+	:adapters:driving:cli:koverHtmlReport
 
 # Docker-targeted gradle runs (see docker-check / docker-test).
 # MODULES is a space-separated list of project paths, e.g.
@@ -15,32 +39,39 @@ INTEGRATION_TASKS ?=
 MODULES ?=
 DOCKER_TAG ?= $(IMAGE):dev-targeted
 
+# docker-perf gating. PERF_GATE=true turns the per-hotpath baseline
+# assertion in PerfSpec into a hard failure (consumed via the
+# `perfGate` Gradle project property by the spec). Default false so
+# shared-CI runs only the runaway-Smoke guard and reports baseline
+# drift as diagnostic, per
+# `docs/planning/done/quality-coverage-expansion-plan.md` §5.1.
+PERF_GATE ?= false
+PERF_GATE_ARG = $(if $(filter true,$(PERF_GATE)),-PperfGate=true,)
+
 # Build the gradle task list for docker-check / docker-test from MODULES.
 # Falls back to the full repo task when MODULES is empty.
 docker_check_tasks = $(if $(strip $(MODULES)),$(addsuffix :check,$(MODULES)),check)
 docker_test_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
+docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help resolve-deps dev run build test check lint coverage-gate coverage-report integration docs-check smoke gates ci release-assets docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean
 
 help:
 	@printf '%s\n' \
 		'Targets:' \
 		'  make dev              Install the local CLI distribution and run --help' \
 		'  make run ARGS="..."   Run the CLI through Gradle with custom arguments' \
-		'  make build            Run the full Gradle build' \
-		'  make test             Run unit tests' \
-		'  make check            Run Gradle check' \
-		'  make lint             Run Detekt across subprojects' \
-		'  make coverage-gate    Run tests and root Kover verification' \
-		'  make coverage-report  Generate Kover HTML/XML reports' \
 		'  make integration      Run Docker-backed integration tests' \
-		'  make docs-check       Verify Markdown links in docs/' \
-		'  make smoke            Build the CLI distribution and run --version/--help' \
-		'  make gates            Run check, coverage and docs gates' \
-		'  make ci               Run build, coverage and docs gates' \
+		'  make docs-check       Verify Markdown links and coverage docs' \
+		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
+		'  make gates            Run Docker check, coverage and docs gates' \
+		'  make ci               Run Docker build, coverage and docs gates' \
+		'  make ci-build         Run CI build tasks inside the Docker build stage' \
 		'  make release-assets   Build ZIP, TAR, fat JAR and SHA256 assets' \
+		'  make docker-resolve-deps  Warm Gradle dependencies in Docker' \
+		'  make docker-oci-build Build the Jib OCI image via the Dockerfile stage' \
 		'  make docker-build     Build the runtime Docker image' \
 		'  make docker-check     Run :check inside Docker, targeted via MODULES' \
 		'  make docker-test      Run :test inside Docker, targeted via MODULES' \
@@ -48,6 +79,10 @@ help:
 		'  make docker-coverage  Build Kover HTML coverage image' \
 		'  make docker-coverage-gate  Run Kover verification inside Docker' \
 		'  make docker-coverage-json  Build Kover JSON coverage image' \
+		'  make docker-coverage-modules  Build per-module Kover report image' \
+		'  make docker-coverage-modules-html  Extract selected per-module Kover HTML reports' \
+		'  make docker-coverage-modules-summary  Print per-module Kover summary inside Docker' \
+		'  make docker-perf      Run `perf`-tagged Kotest specs (opt-in, nightly)' \
 		'  make docker-smoke     Build and smoke-test the runtime Docker image' \
 		'  make docker-gates     Run Docker build, coverage and smoke gates' \
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
@@ -56,13 +91,14 @@ help:
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
+		'  DOCKER_OCI_TAR_IMAGE=d-migrate:jib-image-tar DOCKER_OCI_TAR=build/docker/jib-image.tar' \
+		'  DOCKER_COVERAGE_MODULES_HTML_IMAGE=d-migrate:coverage-modules-html RELEASE_ASSETS_IMAGE=d-migrate:release-assets' \
+		'  RELEASE_VERSION=0.9.7' \
 		'  ARGS="schema validate --source schema.yaml"' \
 		'  INTEGRATION_TASKS=":adapters:driven:driver-postgresql:test"' \
-		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test)' \
+		'  MODULES=":adapters:driving:mcp" (docker-check / docker-test / docker-perf)' \
+		'  PERF_GATE=true (docker-perf: turn baseline budget into a hard gate)' \
 		'  DOCKER_TAG=d-migrate:dev-targeted'
-
-resolve-deps:
-	$(GRADLE) resolveAllDependencies
 
 dev:
 	$(GRADLE) $(CLI_PROJECT):installDist
@@ -71,41 +107,47 @@ dev:
 run:
 	$(GRADLE) $(CLI_PROJECT):run --args="$(ARGS)"
 
-build:
-	$(GRADLE) build
-
-test:
-	$(GRADLE) test
-
-check:
-	$(GRADLE) check
-
-lint:
-	$(GRADLE) detekt
-
-coverage-gate:
-	$(GRADLE) test koverVerify
-
-coverage-report:
-	$(GRADLE) test koverHtmlReport koverXmlReport
+docker-coverage-modules-html:
+	$(DOCKER) build --target docker-coverage-modules-html \
+	  $(if $(strip $(COVERAGE_MODULES_HTML_TASKS)),--build-arg COVERAGE_MODULES_HTML_TASKS="$(COVERAGE_MODULES_HTML_TASKS)",) \
+	  -t $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) .
+	$(DOCKER) run --rm $(DOCKER_COVERAGE_MODULES_HTML_IMAGE) | tar xf -
 
 integration:
 	./scripts/test-integration-docker.sh $(INTEGRATION_TASKS)
 
-docs-check:
+docs-check: coverage-excludes-check
 	./scripts/verify-doc-refs.sh
 
-smoke:
-	$(GRADLE) $(CLI_PROJECT):installDist
-	$(CLI_BIN) --version
-	$(CLI_BIN) --help
+coverage-excludes-check:
+	python3 ./scripts/verify-kover-excludes-ledger.py
 
-gates: check coverage-gate docs-check
+solid-suppression-gate:
+	./scripts/solid-suppression-gate.sh
 
-ci: build coverage-gate docs-check
+gates: docker-check docker-coverage-gate docs-check
+
+ci: ci-build docs-check
+
+ci-build:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="$(strip $(CI_BUILD_TASKS))" \
+	  -t $(IMAGE):ci-build .
 
 release-assets:
-	$(GRADLE) $(CLI_PROJECT):assembleReleaseAssets
+	$(DOCKER) build --target release-assets \
+	  $(if $(strip $(RELEASE_VERSION)),--build-arg RELEASE_VERSION="$(RELEASE_VERSION)",) \
+	  -t $(RELEASE_ASSETS_IMAGE) .
+	$(DOCKER) run --rm $(RELEASE_ASSETS_IMAGE) | tar xf -
+
+docker-resolve-deps:
+	$(DOCKER) build --target deps -t $(IMAGE):deps .
+
+docker-oci-build:
+	$(DOCKER) build --target jib-image-tar -t $(DOCKER_OCI_TAR_IMAGE) .
+	mkdir -p $(dir $(DOCKER_OCI_TAR))
+	$(DOCKER) run --rm $(DOCKER_OCI_TAR_IMAGE) > $(DOCKER_OCI_TAR)
+	$(DOCKER) load -i $(DOCKER_OCI_TAR)
 
 docker-build:
 	$(DOCKER) build -t $(IMAGE):$(IMAGE_TAG) .
@@ -126,17 +168,77 @@ docker-test:
 	  --build-arg GRADLE_TASKS="$(strip $(docker_test_tasks))" \
 	  -t $(DOCKER_TAG) .
 
-docker-detekt:
+docker-detekt: solid-suppression-gate
 	$(DOCKER) build --target detekt -t $(IMAGE):detekt .
 
 docker-coverage:
 	$(DOCKER) build --target coverage -t $(IMAGE):coverage .
 
 docker-coverage-gate:
-	$(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .
+	@if ! $(DOCKER) build --target coverage-verify -t $(IMAGE):coverage-verify .; then \
+		echo ""; \
+		echo "=== docker-coverage-gate FAILED — building reports for diagnosis ==="; \
+		$(MAKE) docker-coverage; \
+		$(MAKE) docker-coverage-json; \
+		echo ""; \
+		echo "=== Packages below 90% line coverage ==="; \
+		$(DOCKER) run --rm $(IMAGE):coverage-json | \
+			jq -r '.report.packages[] | (.counters.LINE.covered / (.counters.LINE.covered + .counters.LINE.missed) * 100) as $$p | select($$p < 90) | "\($$p | floor)% \(.name) (covered=\(.counters.LINE.covered) missed=\(.counters.LINE.missed))"' | \
+			sort -n; \
+		echo ""; \
+		echo "Full HTML report: docker run --rm -p 8080:8080 $(IMAGE):coverage  # http://localhost:8080"; \
+		exit 1; \
+	fi
 
 docker-coverage-json:
 	$(DOCKER) build --target coverage-json -t $(IMAGE):coverage-json .
+
+# Per-module Kover reports — module-isolated view to surface modules whose
+# main code is covered only by cross-module tests. Aggregate verification
+# (docker-coverage-gate) can pass while individual modules sit below 90%.
+#
+# The Dockerfile `coverage-modules` stage builds an image containing
+# `<module>.xml` and `<module>.json` under `/reports`. Use
+# `docker-coverage-modules-summary` to print the summary from inside Docker
+# without local report extraction.
+#
+# Override the module list via:
+#   make docker-coverage-modules COVERAGE_MODULES_TASKS=":hexagon:application:koverXmlReport :adapters:driving:cli:koverXmlReport"
+COVERAGE_MODULES_TASKS ?=
+COVERAGE_MODULES_THRESHOLD ?= 90
+COVERAGE_MODULES_TOP ?= 10
+
+docker-coverage-modules:
+	@$(DOCKER) build --target coverage-modules \
+	  $(if $(strip $(COVERAGE_MODULES_TASKS)),--build-arg COVERAGE_MODULES_TASKS="$(COVERAGE_MODULES_TASKS)",) \
+	  -t $(IMAGE):coverage-modules .
+	@echo "Module reports are available inside $(IMAGE):coverage-modules at /reports"
+
+docker-coverage-modules-summary:
+	@$(DOCKER) build --target coverage-modules-summary \
+	  $(if $(strip $(COVERAGE_MODULES_TASKS)),--build-arg COVERAGE_MODULES_TASKS="$(COVERAGE_MODULES_TASKS)",) \
+	  -t $(IMAGE):coverage-modules-summary .
+	@$(DOCKER) run --rm $(IMAGE):coverage-modules-summary \
+	  --threshold $(COVERAGE_MODULES_THRESHOLD) \
+	  --top $(COVERAGE_MODULES_TOP) || true
+
+# Opt-in performance run for `perf`-tagged Kotest specs (Phase A of
+# the Quality-/Coverage-Expansion plan). Defaults to all modules; scope
+# via MODULES to a single hotpath. Uses the Dockerfile `build` stage so
+# the same compile/test toolchain is exercised as in CI, and forwards
+# `-Dkotest.tags=perf` so untagged specs are skipped and tagged specs
+# run.
+#
+#   make docker-perf                                  # every module
+#   make docker-perf MODULES=":hexagon:application"   # one hotpath
+#   make docker-perf PERF_GATE=true                   # baseline = hard gate
+#
+# Not part of `make ci` / `make gates` — runs nightly or on demand,
+# per quality-coverage-expansion-plan §5.1.
+docker-perf:
+	$(DOCKER) build --target build \
+	  --build-arg GRADLE_TASKS="-Dkotest.tags=perf $(PERF_GATE_ARG) $(strip $(docker_perf_tasks))" \
+	  -t $(IMAGE):perf .
 
 # Regenerate pinned JSON-Schema golden snapshots without volume mounts.
 # Builds the `golden-update` Docker stage (which runs the goldenness tests
@@ -150,7 +252,7 @@ docker-smoke: docker-build
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --version
 	$(DOCKER) run --rm $(IMAGE):$(IMAGE_TAG) --help
 
-docker-gates: docker-build docker-coverage-gate docker-smoke
+docker-gates: solid-suppression-gate docker-build docker-coverage-gate docker-smoke
 
 docker-full-gates: docker-gates integration
 

@@ -97,7 +97,7 @@ class SchemaComparatorFixtureTest : FunSpec({
             listOf("pending", "processing", "shipped", "delivered", "cancelled", "refunded")
     }
 
-    test("e-commerce CHECK constraint does not produce diff when removed") {
+    test("e-commerce CHECK constraint removal is visible to the diff") {
         val original = loadFixture("schemas/e-commerce.yaml")
         // Remove the CHECK constraint from orders
         val modified = original.copy(
@@ -109,8 +109,9 @@ class SchemaComparatorFixtureTest : FunSpec({
         )
 
         val diff = comparator.compare(original, modified)
-        // CHECK is not in MVP scope, so removing it should not produce a diff
-        diff.tablesChanged.shouldBeEmpty()
+        diff.tablesChanged shouldHaveSize 1
+        diff.tablesChanged[0].name shouldBe "orders"
+        diff.tablesChanged[0].constraintsRemoved.map { it.name } shouldBe listOf("chk_total_positive")
     }
 
     test("full-featured vs modified detects view changes") {

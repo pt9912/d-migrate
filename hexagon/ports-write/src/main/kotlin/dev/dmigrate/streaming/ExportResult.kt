@@ -4,7 +4,7 @@ import dev.dmigrate.driver.data.ResumeMarker
 
 /**
  * Statistik-Aggregat einer [StreamingExporter]-Operation. Wird vom CLI
- * zur stderr-Ausgabe als ProgressSummary verwendet (Plan §3.6).
+ * zur stderr-Ausgabe als ProgressSummary verwendet (LF-012 / LN-017).
  *
  * @property tables Pro-Tabelle-Statistiken in der Reihenfolge der Verarbeitung.
  * @property totalRows Summe aller Rows über alle Tabellen.
@@ -21,11 +21,9 @@ data class ExportResult(
     val totalBytes: Long,
     val durationMs: Long,
     /**
-     * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.5): stabile
-     * `operationId` des Laufs. Wird von Runnern gesetzt, damit
+     * LF-013 / LN-012: stabile `operationId` des Laufs. Wird von Runnern gesetzt, damit
      * stderr-Summary, Logs und Resume-Manifest auf denselben Lauf
-     * referenzieren. `null` bedeutet: Pre-Phase-B-Callsite hat keine
-     * ID geliefert.
+     * referenzieren. `null` bedeutet: Legacy-Callsite hat keine ID geliefert.
      */
     val operationId: String? = null,
 ) {
@@ -47,8 +45,8 @@ data class TableExportSummary(
 )
 
 /**
- * 0.9.0 Phase C.2 (`docs/ImpPlan-0.9.0-C2.md` §5.2): chunk-granularer
- * Fortschritts-Datensatz fuer das Mid-Table-Resume. Wird vom
+ * LF-013 / LN-006 / LN-012: chunk-granularer Fortschritts-Datensatz
+ * fuer das Mid-Table-Resume. Wird vom
  * Streaming-Exporter nur fuer Tabellen emittiert, die der Runner mit
  * einem [ResumeMarker] versorgt hat, und nur fuer nicht-leere Chunks.
  *

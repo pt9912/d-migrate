@@ -937,7 +937,7 @@ nutzbar). Diese Arbeit ist **dokumentierte Vorarbeit**; sie wird
 **nicht** als Phase-E-Produktivabnahme beansprucht. Begründung:
 
 - `data_import_start` und `data_transfer_start` sind Hauptplan §6.7 /
-  §3.1 explizit Phase F (`docs/planning/in-progress/ImpPlan-0.9.6-F.md`).
+  §3.1 explizit Phase F (`docs/planning/done/ImpPlan-0.9.6-F.md`).
 - Phase E aktiviert nur die drei Read-Start-Tools
   (`schema_reverse_start`, `data_profile_start`, `schema_compare_start`).
 - Phase F kann das E0.5-Vorarbeitsergebnis ohne weitere Cancel-

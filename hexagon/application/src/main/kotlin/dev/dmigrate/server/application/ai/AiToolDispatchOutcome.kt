@@ -4,10 +4,10 @@ import dev.dmigrate.server.core.error.ToolErrorCode
 import dev.dmigrate.server.core.error.ToolErrorDetail
 
 /**
- * Phase G § 6 G.6 (G.6.c) — Ergebnis von
+ * LF-017 / LF-024 / LN-030 / LN-031— Ergebnis von
  * [AiToolOrchestrator.dispatch].
  *
- * Tool-Handler (G.6.d/e/f) übersetzen das Outcome in den
+ * Tool-Handler (LF-017 / LF-024 / LN-030 / LN-031/f) übersetzen das Outcome in den
  * tool-spezifischen Wire-Envelope:
  *
  * - [WireSuccess] → `summary` + `findings` + `resultRef`-Slot

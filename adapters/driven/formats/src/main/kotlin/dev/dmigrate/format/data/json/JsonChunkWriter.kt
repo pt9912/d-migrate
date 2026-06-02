@@ -13,7 +13,7 @@ import java.io.OutputStream
 /**
  * JSON-Format-Writer mit DSL-JSON (low-level [JsonWriter]).
  *
- * Plan §3.5 / §6.4.1 / §6.5 / §6.17 / §11.5:
+ * LF-009 / LF-013:
  * - Array-of-Objects-Container: `[\n  {...},\n  {...}\n]`
  * - Empty-Table: `[]`
  * - NULL: `null`
@@ -125,7 +125,7 @@ class JsonChunkWriter(
                     writer.writeAscii(value.value.toString())
                 }
             }
-            // Plan §6.4.1: BigInteger und BigDecimal als JSON-String (Präzisionsschutz)
+            // LF-009 / LF-013: BigInteger und BigDecimal als JSON-String (Präzisionsschutz)
             is SerializedValue.PreciseInteger -> writer.writeString(value.value.toString())
             is SerializedValue.PreciseDecimal -> writer.writeString(value.value)
             is SerializedValue.Text -> writer.writeString(value.value)

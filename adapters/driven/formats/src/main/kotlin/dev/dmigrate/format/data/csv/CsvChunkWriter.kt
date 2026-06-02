@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets
 /**
  * CSV-Format-Writer mit uniVocity-parsers ([CsvWriter]).
  *
- * Plan §3.5 / §6.4.1 / §6.5 / §6.6 / §6.17 / §11.5:
+ * LF-009 / LF-013:
  * - Header-Zeile steuerbar via [ExportOptions.csvHeader] (Default: an)
  * - BOM-Bytes vor dem ersten geschriebenen Byte wenn [ExportOptions.csvBom]
  * - NULL via [ExportOptions.csvNullString] (Default leerer String)
@@ -40,9 +40,9 @@ class CsvChunkWriter(
     private var columnNames: List<String> = emptyList()
 
     /**
-     * F29: Wir tracken pro `(table, column)`-Tupel, ob wir bereits eine
+     * Wir tracken pro `(table, column)`-Tupel, ob wir bereits eine
      * W201-Warnung für eine Sequence in dieser Spalte gemeldet haben —
-     * Plan §6.4.1 sagt CSV unterstützt Arrays nicht und produziert eine
+     * LF-009 / LF-013: CSV unterstützt Arrays nicht und produziert eine
      * W201 + null. Die Warnung wird hier (nicht im ValueSerializer) erzeugt,
      * weil ValueSerializer formatübergreifend ist und nicht weiß, dass
      * der Output gerade CSV ist.
@@ -56,8 +56,7 @@ class CsvChunkWriter(
 
         // BOM-Bytes vor allem anderen schreiben (falls gewünscht).
         // uniVocity hat keine eingebaute BOM-Option — wir machen das selbst,
-        // damit wir die Hoheit über den ersten Byte-Output behalten (siehe
-        // Plan §6.6 / §10 Risikotabelle).
+        // damit wir die Hoheit über den ersten Byte-Output behalten.
         if (options.csvBom) {
             writeBomBytes()
         }
@@ -130,7 +129,7 @@ class CsvChunkWriter(
     }
 
     private fun writeBomBytes() {
-        // 0.8.0 Phase F (`docs/ImpPlan-0.8.0-F.md` §4.4 / Entscheidung D1):
+        // LF-009 / LF-013:
         // `--csv-bom` schreibt das BOM, das zum ausgewaehlten `--encoding`
         // passt. Fuer Encodings ohne definiertes BOM (ISO-8859-1,
         // Windows-1252, ...) ist das Flag ein No-op — das BOM-Konzept

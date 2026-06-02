@@ -4,12 +4,17 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.SchemaValidator
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.driver.DatabaseDialect
+import dev.dmigrate.driver.DdlDialectContext
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlGenerationOptions
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.MysqlNamedSequenceMode
+import dev.dmigrate.driver.PreGenerationValidator
+import dev.dmigrate.driver.SqliteNamedSequenceMode
 import dev.dmigrate.driver.NoteType
 import dev.dmigrate.driver.SpatialProfilePolicy
+import dev.dmigrate.driver.mysqlContext
+import dev.dmigrate.driver.sqliteContext
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.DateTimeException
@@ -39,6 +44,7 @@ data class SchemaGenerateRequest(
     val quiet: Boolean,
     val splitMode: SplitMode = SplitMode.SINGLE,
     val mysqlNamedSequences: String? = null,
+    val sqliteNamedSequences: String? = null,
     val deterministic: Boolean = false,
 )
 
@@ -47,7 +53,7 @@ data class SchemaGenerateRequest(
  * are constructor-injected so every branch is unit-testable without a
  * CLI framework, filesystem, or real DDL generator.
  *
- * Exit codes (Plan §6.10):
+ * Exit codes (LF-008 / LF-009 / LF-013 / LN-012):
  * - 0 success
  * - 2 invalid --target, invalid spatial profile, or invalid --split combination
  * - 3 validation failure
@@ -58,13 +64,31 @@ class SchemaGenerateRunner(
     private val validator: (SchemaDefinition) -> ValidationResult =
         { SchemaValidator().validate(it) },
     private val generatorLookup: (DatabaseDialect) -> DdlGenerator,
+    /**
+     * Driver-supplied pre-generation validator, looked up per dialect.
+     * Runs **after** [validator] passes the dialect-agnostic gate and
+     * **before** [generatorLookup] is asked to render DDL — the same
+     * slot the SQLite-Seq-Emulation plan-doc §3.4 reserves for
+     * mode-specific checks. Defaults to a no-op lookup so existing
+     * wirings keep compiling without change; the SQLite branch hooks
+     * `SqlitePreGenerationValidator` in via `SqliteDriver.preGenerationValidator()`.
+     */
+    private val preGenerationValidatorLookup: (DatabaseDialect) -> PreGenerationValidator =
+        { PreGenerationValidator.NoOp },
     private val reportWriter: (Path, DdlResult, SchemaDefinition, String, Path, String?, DdlGenerationOptions) -> Unit,
     private val fileWriter: (Path, String) -> Unit =
         { path, content ->
             path.parent?.let { Files.createDirectories(it) }
             path.writeText(content)
         },
-    private val formatJsonOutput: (DdlResult, SchemaDefinition, String, SplitMode, MysqlNamedSequenceMode?) -> String,
+    private val formatJsonOutput: (
+        DdlResult,
+        SchemaDefinition,
+        String,
+        SplitMode,
+        MysqlNamedSequenceMode?,
+        SqliteNamedSequenceMode?,
+    ) -> String,
     private val sidecarPath: (Path, String) -> Path,
     private val rollbackPath: (Path) -> Path,
     private val splitPath: (Path, dev.dmigrate.driver.DdlPhase) -> Path,
@@ -79,7 +103,6 @@ class SchemaGenerateRunner(
         data class Ok(
             val dialect: DatabaseDialect,
             val options: DdlGenerationOptions,
-            val mysqlSeqMode: MysqlNamedSequenceMode?,
         ) : Preflight
         data class Exit(val code: Int) : Preflight
     }
@@ -91,7 +114,6 @@ class SchemaGenerateRunner(
         }
         val dialect = pre.dialect
         val options = pre.options
-        val mysqlSeqMode = pre.mysqlSeqMode
 
         val schema = try {
             schemaReader(request.source)
@@ -106,6 +128,20 @@ class SchemaGenerateRunner(
             return 3
         }
 
+        // Driver-supplied pre-generation gate: lets a dialect emit
+        // mode-specific blockers (e.g. SQLite helper_table E059 for
+        // PK + SequenceNextVal) without polluting the dialect-agnostic
+        // SchemaValidator. NoOp for drivers that have no such rules.
+        val preGenErrors = preGenerationValidatorLookup(dialect).validate(schema, options)
+        if (preGenErrors.isNotEmpty()) {
+            printValidationResult(
+                ValidationResult(errors = preGenErrors),
+                schema,
+                request.source.toString(),
+            )
+            return 3
+        }
+
         val generator = generatorLookup(dialect)
         val result = generator.generate(schema, options)
 
@@ -114,7 +150,7 @@ class SchemaGenerateRunner(
 
         printNotes(result, request.verbose)
 
-        return routeOutput(request, result, schema, generator, dialect, options, mysqlSeqMode)
+        return routeOutput(request, result, schema, generator, dialect, options)
     }
 
     private fun validateAndResolveOptions(request: SchemaGenerateRequest): Preflight {
@@ -148,19 +184,30 @@ class SchemaGenerateRunner(
         }
 
         val mysqlSeqMode = resolveMysqlSeqMode(request, dialect) ?: return Preflight.Exit(2)
+        val sqliteSeqMode = resolveSqliteSeqMode(request, dialect) ?: return Preflight.Exit(2)
         val generatedAt = resolveGeneratedAt(request) ?: return Preflight.Exit(2)
+        val dialectContext: DdlDialectContext = when (dialect) {
+            DatabaseDialect.MYSQL -> DdlDialectContext.MySql(
+                namedSequenceMode = mysqlSeqMode.value ?: MysqlNamedSequenceMode.ACTION_REQUIRED,
+            )
+            DatabaseDialect.SQLITE -> DdlDialectContext.Sqlite(
+                namedSequenceMode = sqliteSeqMode.value ?: SqliteNamedSequenceMode.ACTION_REQUIRED,
+            )
+            else -> DdlDialectContext.None
+        }
         val options = DdlGenerationOptions(
             spatialProfile = spatialProfile,
-            mysqlNamedSequenceMode = mysqlSeqMode.value,
+            dialectContext = dialectContext,
             generatedAt = generatedAt.value,
             deterministic = request.deterministic,
             deferForeignKeys = request.splitMode == SplitMode.PRE_POST && dialect == DatabaseDialect.POSTGRESQL,
         )
 
-        return Preflight.Ok(dialect, options, mysqlSeqMode.value)
+        return Preflight.Ok(dialect, options)
     }
 
     private data class OptionalMode(val value: MysqlNamedSequenceMode?)
+    private data class OptionalSqliteMode(val value: SqliteNamedSequenceMode?)
     private data class OptionalInstant(val value: Instant?)
 
     private fun resolveGeneratedAt(request: SchemaGenerateRequest): OptionalInstant? {
@@ -204,6 +251,32 @@ class SchemaGenerateRunner(
         else OptionalMode(null)
     }
 
+    private fun resolveSqliteSeqMode(request: SchemaGenerateRequest, dialect: DatabaseDialect): OptionalSqliteMode? {
+        if (request.sqliteNamedSequences != null) {
+            if (dialect != DatabaseDialect.SQLITE) {
+                printError(
+                    "--sqlite-named-sequences is only valid with --target sqlite, " +
+                        "not ${dialect.name.lowercase()}. " +
+                        "Allowed values for SQLite: action_required, helper_table.",
+                    request.source.toString(),
+                )
+                return null
+            }
+            val mode = SqliteNamedSequenceMode.fromCliName(request.sqliteNamedSequences)
+            if (mode == null) {
+                printError(
+                    "Unknown --sqlite-named-sequences value '${request.sqliteNamedSequences}'. " +
+                        "Allowed: action_required, helper_table",
+                    request.source.toString(),
+                )
+                return null
+            }
+            return OptionalSqliteMode(mode)
+        }
+        return if (dialect == DatabaseDialect.SQLITE) OptionalSqliteMode(SqliteNamedSequenceMode.ACTION_REQUIRED)
+        else OptionalSqliteMode(null)
+    }
+
     private fun validateSplitModePreflight(request: SchemaGenerateRequest): Int? {
         if (request.splitMode != SplitMode.PRE_POST) return null
         if (request.generateRollback) {
@@ -235,7 +308,6 @@ class SchemaGenerateRunner(
         generator: DdlGenerator,
         dialect: DatabaseDialect,
         options: DdlGenerationOptions,
-        mysqlSeqMode: MysqlNamedSequenceMode?,
     ): Int {
         val dialectName = dialect.name.lowercase()
         val splitModeStr = if (request.splitMode == SplitMode.PRE_POST) "pre-post" else null
@@ -254,14 +326,26 @@ class SchemaGenerateRunner(
                 outputWriter.writeSplitFileOutput(request, result, schema, dialectName, splitModeStr, options)
             }
             if (request.outputFormat == "json") {
-                stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
+                stdout(
+                    formatJsonOutput(
+                        result, schema, dialectName, request.splitMode,
+                        options.mysqlContext?.namedSequenceMode,
+                        options.sqliteContext?.namedSequenceMode,
+                    ),
+                )
             }
             if (request.output == null && request.outputFormat != "json") return 2
         } else {
             val ddl = result.render()
             when {
                 request.outputFormat == "json" ->
-                    stdout(formatJsonOutput(result, schema, dialectName, request.splitMode, mysqlSeqMode))
+                    stdout(
+                    formatJsonOutput(
+                        result, schema, dialectName, request.splitMode,
+                        options.mysqlContext?.namedSequenceMode,
+                        options.sqliteContext?.namedSequenceMode,
+                    ),
+                )
                 request.output != null -> {
                     val gen = GeneratedDdl(generator, schema, result, dialect, ddl, options)
                     outputWriter.writeFileOutput(request, gen, splitModeStr)

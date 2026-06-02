@@ -63,7 +63,7 @@ class QuotaReservationSweeperTest : FunSpec({
         delegate.reserve(key, 0L).shouldBeInstanceOf<QuotaOutcome.Granted>().newCurrent shouldBe 2L
     }
 
-    test("sweep refunded NICHT, wenn Eintrag bereits COMMITTED ist (Plan §7.9 line 1311)") {
+    test("sweep refunded NICHT, wenn Eintrag bereits COMMITTED ist (LF-012 / LN-011 / LN-017 / LN-027)") {
         val now0 = Instant.parse("2026-05-05T12:00:00Z")
         val clock = ManualClock(now0)
         val delegate = DefaultQuotaService(InMemoryQuotaStore()) { 5L }

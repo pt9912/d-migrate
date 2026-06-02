@@ -10,7 +10,7 @@ import java.nio.file.Path
 import kotlin.io.path.deleteIfExists
 
 /**
- * Tests für [ExportOutput.resolve] — die CLI-Auflösungsmatrix aus Plan §6.9.
+ * Tests für [ExportOutput.resolve] — die CLI-Auflösungsmatrix aus LF-008 / LF-009.
  */
 class ExportOutputTest : FunSpec({
 
@@ -104,7 +104,7 @@ class ExportOutputTest : FunSpec({
         ExportOutput.fileNameFor("users", DataExportFormat.JSON) shouldBe "users.json"
     }
 
-    test("fileNameFor schema-qualified table preserves the schema (Plan §6.9)") {
+    test("fileNameFor schema-qualified table preserves the schema (LF-008 / LF-009)") {
         ExportOutput.fileNameFor("public.orders", DataExportFormat.CSV) shouldBe "public.orders.csv"
         ExportOutput.fileNameFor("reporting.orders", DataExportFormat.YAML) shouldBe "reporting.orders.yaml"
     }

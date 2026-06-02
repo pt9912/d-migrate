@@ -9,6 +9,12 @@ dependencies {
     testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))
+    // F.2 round-trip smoke: SchemaMigrateRunner / SchemaRollbackRunner +
+    // request DTOs / ResolvedSchemaOperand live in the application layer.
+    testImplementation(project(":hexagon:application"))
+    // `executeAgainstPool` (mirror of the CLI-internal JdbcMigrationExecutor)
+    // is shared with integration-mysql via hexagon:application's testFixtures.
+    testImplementation(testFixtures(project(":hexagon:application")))
 
     testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
     testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")

@@ -7,7 +7,7 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
 /**
  * SQLite [dev.dmigrate.driver.data.DataReader].
  *
- * SQLite-Spezifika (siehe Plan §3.4 und §6.13):
+ * LF-008 / LN-009 / LN-010: SQLite-Spezifika:
  * - Kein echtes Cursor-Streaming nötig — SQLite hält die DB ohnehin im
  *   Prozess; ein einfacher ResultSet-Iterator reicht.
  * - `setAutoCommit(false)` ist nicht zwingend notwendig, schadet aber auch

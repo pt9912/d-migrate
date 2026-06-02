@@ -22,14 +22,14 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.4 checkpoint guard for the profiling pipeline:
+ * LF-012 / LN-011 / LN-017 / LN-027 checkpoint guard for the profiling pipeline:
  * - cancel before `listTables` halts before the first introspection call
  * - cancel between table iterations starts no further table profiling
  * - cancel between column iterations starts no further column profiling
  * - cancel between `data.*` queries starts no further query
  *
  * Cancel surfaces as [OperationCancelledException], never as
- * `ProfilingQueryError` or `SchemaIntrospectionError` (Plan §4.5, §6.2).
+ * `ProfilingQueryError` or `SchemaIntrospectionError` (LF-012 / LN-011 / LN-017 / LN-027).
  */
 class ProfileServiceCancelCheckpointTest : FunSpec({
 

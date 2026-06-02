@@ -1,4 +1,4 @@
-// adapters:driven:connection-config — Plan-D §8 / §10.10 adapter
+// adapters:driven:connection-config — LF-012 / LN-038 / §10.10 adapter
 // für den secret-freien Connection-Reference-Bootstrap. Lädt
 // Connection-Refs aus Projekt-/Server-YAML und liefert
 // ausschliesslich diskursive Metadaten (kein JDBC-URL, kein

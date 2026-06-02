@@ -1,5 +1,7 @@
 package dev.dmigrate.core.diff
 
+import dev.dmigrate.core.diff.routine.RoutineBodyNormalizer
+import dev.dmigrate.core.diff.routine.RoutineIdentityNormalizer
 import dev.dmigrate.core.model.*
 
 class SchemaComparator {
@@ -66,7 +68,15 @@ class SchemaComparator {
 
     // --- Generic map-diff helper ---
 
-    private data class DiffResult<N, D>(
+    /**
+     * Generic per-object-map diff used by the comparator helpers.
+     *
+     * Renamed from `DiffResult` (0.9.7 Migrate Phase A) so the
+     * `DiffResult` name stays free for the upcoming migration-plan
+     * contract that turns a [SchemaDiff] into a runnable operation
+     * plan. This type is purely an internal collection split.
+     */
+    private data class CollectionDiff<N, D>(
         val added: List<N>,
         val removed: List<N>,
         val changed: List<D>,
@@ -77,7 +87,7 @@ class SchemaComparator {
         rightMap: Map<String, T>,
         wrapNamed: (String, T) -> N,
         compareDetail: (String, T, T) -> D?,
-    ): DiffResult<N, D> {
+    ): CollectionDiff<N, D> {
         val leftNames = leftMap.keys
         val rightNames = rightMap.keys
 
@@ -87,7 +97,7 @@ class SchemaComparator {
             compareDetail(name, leftMap.getValue(name), rightMap.getValue(name))
         }
 
-        return DiffResult(added, removed, changed)
+        return CollectionDiff(added, removed, changed)
     }
 
     // --- Detail comparisons per object type ---
@@ -123,6 +133,7 @@ class SchemaComparator {
             materialized = valueChangeOrNull(left.materialized, right.materialized),
             refresh = valueChangeOrNull(left.refresh, right.refresh),
             query = valueChangeOrNull(left.query, right.query),
+            columnsChanged = left.columns != right.columns,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
         )
         return if (diff.hasChanges()) diff else null
@@ -150,6 +161,21 @@ class SchemaComparator {
         left: FunctionDefinition,
         right: FunctionDefinition,
     ): FunctionDiff? {
+        // E.1 Slice A: body comparison runs through the normaliser
+        // so trivial whitespace / trailing-semicolon / line-ending
+        // changes do not trip a spurious ReplaceFunction. Identity
+        // additionally covers security / definer / searchPath /
+        // sqlMode — any divergence there triggers Replace even when
+        // bodies are byte-identical, because those attributes change
+        // privilege scope and resolution rules.
+        val leftBodyHash = RoutineBodyNormalizer.hash(left.body)
+        val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
+        val bodyChange = if (leftBodyHash == rightBodyHash) null
+            else ValueChange(left.body, right.body)
+        val leftSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(left.searchPath)
+        val rightSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(right.searchPath)
+        val leftSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(left.sqlMode)
+        val rightSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(right.sqlMode)
         val diff = FunctionDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
@@ -157,8 +183,12 @@ class SchemaComparator {
             returns = valueChangeOrNull(left.returns, right.returns),
             language = valueChangeOrNull(left.language, right.language),
             deterministic = valueChangeOrNull(left.deterministic, right.deterministic),
-            body = valueChangeOrNull(left.body, right.body),
+            body = bodyChange,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
+            security = valueChangeOrNull(left.security, right.security),
+            definer = valueChangeOrNull(left.definer, right.definer),
+            searchPath = valueChangeOrNull(leftSearchPath, rightSearchPath),
+            sqlMode = valueChangeOrNull(leftSqlMode, rightSqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }
@@ -168,13 +198,32 @@ class SchemaComparator {
         left: ProcedureDefinition,
         right: ProcedureDefinition,
     ): ProcedureDiff? {
+        // E.1 Slice B: same identity contract as Slice A's function
+        // comparator — body equality runs through the normaliser so
+        // trivial whitespace / trailing-semicolon / line-ending
+        // changes do not trip a spurious ReplaceProcedure. Identity
+        // additionally covers security / definer / searchPath /
+        // sqlMode; any divergence there triggers Replace even when
+        // bodies are byte-identical.
+        val leftBodyHash = RoutineBodyNormalizer.hash(left.body)
+        val rightBodyHash = RoutineBodyNormalizer.hash(right.body)
+        val bodyChange = if (leftBodyHash == rightBodyHash) null
+            else ValueChange(left.body, right.body)
+        val leftSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(left.searchPath)
+        val rightSearchPath = RoutineIdentityNormalizer.normalizePostgresSearchPath(right.searchPath)
+        val leftSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(left.sqlMode)
+        val rightSqlMode = RoutineIdentityNormalizer.normalizeMysqlSqlMode(right.sqlMode)
         val diff = ProcedureDiff(
             name = name,
             parameters = if (left.parameters == right.parameters) null
                 else ValueChange(left.parameters, right.parameters),
             language = valueChangeOrNull(left.language, right.language),
-            body = valueChangeOrNull(left.body, right.body),
+            body = bodyChange,
             sourceDialect = valueChangeOrNull(left.sourceDialect, right.sourceDialect),
+            security = valueChangeOrNull(left.security, right.security),
+            definer = valueChangeOrNull(left.definer, right.definer),
+            searchPath = valueChangeOrNull(leftSearchPath, rightSearchPath),
+            sqlMode = valueChangeOrNull(leftSqlMode, rightSqlMode),
         )
         return if (diff.hasChanges()) diff else null
     }

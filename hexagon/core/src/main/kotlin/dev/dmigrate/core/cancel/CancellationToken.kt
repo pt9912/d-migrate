@@ -4,7 +4,7 @@ package dev.dmigrate.core.cancel
  * Adapter-neutral cooperative cancellation handle observed by long-running
  * runners and adapters.
  *
- * Phase E0 contract (see implementation-plan-0.9.6 §5.1):
+ * LF-012 / LN-011 / LN-017 / LN-027 contract (see implementation-plan-0.9.6 §5.1):
  * - thread-/task-safe; a cancel from any worker thread, coroutine context or
  *   job controller becomes visible to every observing runner with
  *   atomic-/volatile-equivalent semantics

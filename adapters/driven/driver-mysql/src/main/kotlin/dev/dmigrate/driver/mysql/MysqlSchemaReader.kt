@@ -29,7 +29,12 @@ class MysqlSchemaReader(
             val scope = ReverseScope(catalogName = metaDb, schemaName = metaDb)
 
             val tables = readTables(session, metaDb, lctn, notes)
-            val views = if (options.includeViews) routineReader.readViews(session, metaDb) else emptyMap()
+            val visibleFunctionNames = if (options.includeViews) {
+                routineReader.readFunctionNames(session, metaDb)
+            } else {
+                emptySet()
+            }
+            val views = if (options.includeViews) routineReader.readViews(session, metaDb, visibleFunctionNames) else emptyMap()
             val functions = if (options.includeFunctions) routineReader.readFunctions(session, metaDb) else emptyMap()
             val procedures = if (options.includeProcedures) routineReader.readProcedures(session, metaDb) else emptyMap()
             val triggers = if (options.includeTriggers) routineReader.readTriggers(session, metaDb) else emptyMap()
@@ -59,7 +64,22 @@ class MysqlSchemaReader(
                 sequences = d2Result.sequences,
             )
 
-            return SchemaReadResult(schema = schemaDef, notes = notes, skippedObjects = skipped)
+            // E.1 Slice C.2: best-effort server-version probe.
+            // `VERSION()` is a public scalar on standard MySQL/MariaDB
+            // installs, but a restricted introspection role or proxy
+            // may reject it; if so, fall back to `null` so the
+            // routine renderer treats it as "unknown live version"
+            // rather than failing the entire schema read.
+            val serverVersion = runCatching {
+                MysqlMetadataQueries.readServerVersion(session)
+            }.getOrNull()
+
+            return SchemaReadResult(
+                schema = schemaDef,
+                notes = notes,
+                skippedObjects = skipped,
+                mysqlServerVersion = serverVersion,
+            )
         }
     }
 

@@ -3,10 +3,10 @@ package dev.dmigrate.server.application.audit.prompt
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase G § 5.3 + § 7.3 (G.4) — Ergebnis einer
+ * LF-017 / LF-024 / LN-030 / LN-031— Ergebnis einer
  * [PromptHygieneService.sanitize]-Anfrage.
  *
- * Tool-Handler (G.6) verwerten:
+ * Tool-Handler (LF-017 / LF-024 / LN-030 / LN-031) verwerten:
  *
  * - [Allow] → Caller darf den Provider-Aufruf machen. Die
  *   `sanitizedPrompt` und `sanitizedPayloadJson` sind die einzigen
@@ -14,10 +14,10 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
  *   und in den `payloadFingerprint` einfließen dürfen — der Tool-
  *   Handler darf keine eigene Modifikation mehr drauflegen.
  * - [Block] → der Handler antwortet sofort mit
- *   `PROMPT_HYGIENE_BLOCKED` (Plan §7.3) und schreibt den
+ *   `PROMPT_HYGIENE_BLOCKED` (LF-012 / LN-011 / LN-017 / LN-027) und schreibt den
  *   strukturierten [Block.reason] ins Audit-Event. Der Caller
  *   sieht eine generische Begründung über [Block.publicMessage]
- *   (kein Echo des Eingabetextes — Plan §6 G.4 Akzeptanz:
+ *   (kein Echo des Eingabetextes — LF-012 / LN-011 / LN-017 / LN-027 LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz:
  *   "Fehlerdetails enthalten keine Secrets").
  */
 sealed interface PromptHygieneResult {
@@ -51,7 +51,7 @@ sealed interface PromptHygieneResult {
 }
 
 /**
- * Plan §6 G.4: maschinenlesbare Block-Gründe für Audit + Metrik.
+ * LF-012 / LN-011 / LN-017 / LN-027 LF-017 / LF-024 / LN-030 / LN-031: maschinenlesbare Block-Gründe für Audit + Metrik.
  */
 enum class PromptHygieneBlockReason {
     /** Eines oder mehrere Secret-Pattern haben gematcht. */
@@ -77,7 +77,7 @@ enum class PromptHygieneBlockReason {
 
     /**
      * Der Prompt enthält einen externen URL (`http://`/`https://`),
-     * der weder Resource-Ref noch Provider-Endpoint ist. Plan §4.6
+     * der weder Resource-Ref noch Provider-Endpoint ist. LF-012 / LN-011 / LN-017 / LN-027
      * fordert Ressourcen statt freier Externals im Modellkontext.
      */
     EXTERNAL_URL_DETECTED,
@@ -85,7 +85,7 @@ enum class PromptHygieneBlockReason {
 
 /**
  * Strukturierte Markierung dessen, was die Hygiene gefunden hat.
- * Plan §5.3 Akzeptanz: "erkannte und entfernte Secret-Klassen" —
+ * LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz: "erkannte und entfernte Secret-Klassen" —
  * der Wert selbst landet **nie** im Audit, nur die Klasse.
  */
 enum class DetectedSecretClass {

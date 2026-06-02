@@ -4,7 +4,7 @@ import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
 import com.github.ajalt.clikt.core.subcommands
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeNormalizationMode
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -54,12 +54,12 @@ class CliI18nContextTest : FunSpec({
     }
 
     // ────────────────────────────────────────────────────────────
-    // 0.9.0 Phase A (docs/ImpPlan-0.9.0-A.md §4.1 / §4.2 / §4.5):
+    // LF-006 / LN-022 / LN-023:
     // --lang ist jetzt ein aktiver Override mit Produktsprachen-
     // Validierung; Unsupported-Werte mappen auf Exit 2.
     // ────────────────────────────────────────────────────────────
 
-    test("Phase A §4.1: --lang de gewinnt gegen System-Locale") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: --lang de gewinnt gegen System-Locale") {
         lateinit var captured: CliContext
         val cli = DMigrate(
             envLookup = { null },
@@ -72,7 +72,7 @@ class CliI18nContextTest : FunSpec({
         captured.locale shouldBe Locale.of("de")
     }
 
-    test("Phase A §4.1: --lang en-US wird kanonisch aufgeloest und gewinnt gegen Env") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: --lang en-US wird kanonisch aufgeloest und gewinnt gegen Env") {
         lateinit var captured: CliContext
         val cli = DMigrate(
             envLookup = { if (it == "D_MIGRATE_LANG") "de" else null },
@@ -85,7 +85,7 @@ class CliI18nContextTest : FunSpec({
         captured.locale shouldBe Locale.of("en", "US")
     }
 
-    test("Phase A §4.2 / §4.5: unsupported --lang fr endet mit Exit 2") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: unsupported --lang fr endet mit Exit 2") {
         var commandRan = false
         val cli = DMigrate(
             envLookup = { null },
@@ -101,7 +101,7 @@ class CliI18nContextTest : FunSpec({
         commandRan shouldBe false
     }
 
-    test("Phase A §4.2: generischer Env-Locale (fr) bleibt ohne --lang zulaessig") {
+    test("LF-006 / LF-007 / LN-022 / LN-023: generischer Env-Locale (fr) bleibt ohne --lang zulaessig") {
         lateinit var captured: CliContext
         val cli = DMigrate(
             envLookup = { if (it == "LANG") "fr_FR.UTF-8" else null },

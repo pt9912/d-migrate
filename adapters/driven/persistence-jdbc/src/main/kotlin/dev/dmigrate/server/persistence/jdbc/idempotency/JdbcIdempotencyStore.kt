@@ -19,15 +19,15 @@ import java.time.Instant
 /**
  * Postgres-/JDBC-Implementierung des [IdempotencyStore]-Vertrags.
  *
- * SQL-Patterns: Plan § 6.1–§ 6.6 in
- * `docs/planning/done/ImpPlan-0.9.6-E2.md`. Atomicity:
+ * SQL-Patterns: LF-012 / LN-011 / LN-017 / LN-027–§ 6.6 in
+ * `docs/planning/done/LF-012 / LN-011 / LN-017 / LN-027`. Atomicity:
  * INSERT…ON CONFLICT DO NOTHING fuer den Hot-Path; SELECT…FOR UPDATE
  * fuer Recovery- und Claim-Pfade; CAS via `WHERE state IN (...)
  * AND expires_at <= ?` im Recovery-UPDATE.
  *
  * Dieser Pfad implementiert NICHT [reserveInitResume] — der Init-
  * Resume-Pfad lebt in einer separaten Tabelle (`init_resume_reservations`)
- * und kommt in AP E2.4 (`JdbcInitResumeStore`).
+ * und kommt in AP LF-012 / LN-011 / LN-017 / LN-027 (`JdbcInitResumeStore`).
  */
 class JdbcIdempotencyStore(
     private val transactionRunner: JdbcTransactionRunner,
@@ -44,13 +44,13 @@ class JdbcIdempotencyStore(
         payloadFingerprint: String,
         now: Instant,
     ): IdempotencyReserveOutcome = transactionRunner.inTransaction { conn ->
-        // Plan § 6.1 (1): try insert-if-absent.
+        // LF-012 / LN-011 / LN-017 / LN-027 (1): try insert-if-absent.
         val inserted = conn.tryInsertPending(scope, payloadFingerprint, now)
         if (inserted != null) {
             return@inTransaction IdempotencyReserveOutcome.Reserved(scope, inserted)
         }
 
-        // Plan § 6.1 (2): existing row — lock + dispatch.
+        // LF-012 / LN-011 / LN-017 / LN-027 (2): existing row — lock + dispatch.
         val existing = conn.lockExisting(scope) ?: error(
             "Race: insert returned no row but SELECT FOR UPDATE found nothing for $scope",
         )
@@ -181,7 +181,7 @@ class JdbcIdempotencyStore(
         sessionId: String,
         now: Instant,
     ): InitResumeOutcome = transactionRunner.inTransaction { conn ->
-        // Plan §6.2 (1): try insert-if-absent; bei Erfolg sofort Reserved.
+        // LF-012 / LN-011 / LN-017 / LN-027 (1): try insert-if-absent; bei Erfolg sofort Reserved.
         val expiresAt = now.plusSeconds(initResumeSeconds)
         val inserted = conn.querySingle(
             sql = """
@@ -202,7 +202,7 @@ class JdbcIdempotencyStore(
             return@inTransaction InitResumeOutcome.Reserved(scope, inserted.sessionId, inserted.expiresAt)
         }
 
-        // Plan §6.2 (2): existing row — dispatch by fingerprint.
+        // LF-012 / LN-011 / LN-017 / LN-027 (2): existing row — dispatch by fingerprint.
         val existing = conn.querySingle(
             sql = """
                 SELECT session_id, payload_fingerprint, expires_at
@@ -321,7 +321,7 @@ class JdbcIdempotencyStore(
     }
 
     /**
-     * Plan E2 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
+     * Plan LF-012 / LN-011 / LN-017 / LN-027 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
      * [JdbcJobStartTransaction] das `commit` UND ein `JobStore.save`
      * in derselben DB-TX auszufuehren. Caller MUSS im
      * `JdbcTransactionRunner.inTransaction`-Block sein und die
@@ -409,7 +409,7 @@ class JdbcIdempotencyStore(
     }
 
     override fun cleanupExpired(now: Instant): Int = transactionRunner.inTransaction { conn ->
-        // Plan § 6.6: regulaerer Pfad loescht NUR terminale Eintraege
+        // LF-012 / LN-011 / LN-017 / LN-027: regulaerer Pfad loescht NUR terminale Eintraege
         // der idempotency_reservations. Abgelaufene PENDING/
         // AWAITING_APPROVAL bleiben fuer Recovery erhalten — sie werden
         // im naechsten reserve(...) recovered.
@@ -421,7 +421,7 @@ class JdbcIdempotencyStore(
             """.trimIndent(),
             now,
         )
-        // Plan § 6.6: InitResume hat keinen Recovery-Pfad — abgelaufene
+        // LF-012 / LN-011 / LN-017 / LN-027: InitResume hat keinen Recovery-Pfad — abgelaufene
         // Eintraege werden direkt geloescht.
         val deletedInit = conn.executeUpdate(
             "DELETE FROM init_resume_reservations WHERE expires_at < ?",

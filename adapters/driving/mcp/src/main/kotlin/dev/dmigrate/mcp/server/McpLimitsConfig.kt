@@ -1,10 +1,10 @@
 package dev.dmigrate.mcp.server
 
 /**
- * Numeric Phase-C limit set per `ImpPlan-0.9.6-C.md` §4.2.
+ * Numeric LF-012 / LN-038 limit set per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Single source of truth for every byte/findings cap the read-only
- * tools advertise via `capabilities_list` and (later, AP 6.13)
+ * tools advertise via `capabilities_list` and (later, LF-012 / LN-027 / LN-028 / LN-038)
  * enforce on responses.
  */
 data class McpLimitsConfig(
@@ -17,14 +17,14 @@ data class McpLimitsConfig(
     val maxInlineFindings: Int = 200,
     val maxArtifactUploadBytes: Long = 209_715_200L,
     /**
-     * AP D7 / Plan-D §5.2: hard upper bound on the serialised
+     * LF-012 / LN-038: hard upper bound on the serialised
      * `resources/read` response (content array + metadata). Keeps the
      * `resources/read` envelope under the same 64 KiB ceiling
      * `tools/call` enforces.
      */
     val maxResourceReadResponseBytes: Int = 65_536,
     /**
-     * AP D7 / Plan-D §5.2: per-content inline UTF-8 body cap. A
+     * LF-012 / LN-038: per-content inline UTF-8 body cap. A
      * resolver may inline a text/JSON body only when its UTF-8 byte
      * count is `<=` this limit AND the resulting envelope fits under
      * [maxResourceReadResponseBytes]. Larger bodies surface as an

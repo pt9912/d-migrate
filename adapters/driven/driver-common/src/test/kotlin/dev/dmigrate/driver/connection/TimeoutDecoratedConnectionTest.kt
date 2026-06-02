@@ -8,7 +8,7 @@ import java.sql.DriverManager
 import java.sql.ResultSet
 
 /**
- * Phase E0.7.3 unit tests for [TimeoutDecoratedConnection]. Use a real
+ * LN-010 unit tests for [TimeoutDecoratedConnection]. Use a real
  * SQLite in-memory connection as the delegate so the decorator is
  * exercised against an actual JDBC driver — no hand-rolled fakes.
  */

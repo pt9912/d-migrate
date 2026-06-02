@@ -61,13 +61,16 @@ wird.
 
 ### Lokale Befehle
 
-| Befehl                 | Zweck                               |
-| ---------------------- | ----------------------------------- |
-| `make coverage-gate`   | Fuehrt `test koverVerify` aus       |
-| `make coverage-report` | Erzeugt Kover-HTML- und XML-Reports |
+| Befehl                              | Zweck                                                  |
+| ----------------------------------- | ------------------------------------------------------ |
+| `make docker-coverage-gate`         | Fuehrt das Kover-Gate im Dockerfile aus                |
+| `make docker-coverage`              | Baut das Image fuer den Kover-HTML-Report              |
+| `make docker-coverage-json`         | Baut das Image fuer den aggregierten Kover-JSON-Report |
+| `make docker-coverage-modules-html` | Extrahiert ausgewählte per-Modul-Kover-HTML-Reports   |
 
-Die Docker-Stages `coverage`, `coverage-json` und `coverage-verify` sind in
-der [README](../../README.md) beschrieben. Das erledigte Analyse-Dokument
+Die Docker-Stages `coverage`, `coverage-json`, `coverage-verify` und
+`docker-coverage-modules-html` sind in der [README](../../README.md)
+beschrieben. Das erledigte Analyse-Dokument
 [`test-coverage.md`](../planning/done/test-coverage.md) enthaelt Befehle, um
 Pakete und Klassen unterhalb der 90%-Grenze aus dem JSON-Report zu ermitteln.
 

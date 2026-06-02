@@ -14,11 +14,11 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
 import java.time.Clock
 
 /**
- * Phase E §3.1 / §7.6: `schema_reverse_start` — startet einen
+ * LF-012 / LN-011 / LN-017 / LN-027: `schema_reverse_start` — startet einen
  * Schema-Reverse-Engineering-Job gegen eine tenant-scoped Connection-Ref.
  *
  * Die fachliche Reverse-Pipeline (Reader, Artefakt-Publish, …) bleibt
- * AP E.7 vorbehalten; dieser Handler legt nur den Job in `QUEUED` an
+ * LF-012 / LN-011 / LN-017 / LN-027 vorbehalten; dieser Handler legt nur den Job in `QUEUED` an
  * und konfiguriert Idempotency, Policy und Approval-Flow.
  */
 internal class SchemaReverseStartHandler(
@@ -33,7 +33,7 @@ internal class SchemaReverseStartHandler(
         val idempotencyKey = args.optString("idempotencyKey")
         val approvalToken = args.optString("approvalToken")
         // includes/excludes werden in den Fingerprint einbezogen (sind
-        // Teil der Tool-Args), aber ansonsten erst in AP E.7 ausgewertet.
+        // Teil der Tool-Args), aber ansonsten erst in LF-012 / LN-011 / LN-017 / LN-027 ausgewertet.
         JobStartHandlerSupport.optStringArray(args, "includes")
         JobStartHandlerSupport.optStringArray(args, "excludes")
 

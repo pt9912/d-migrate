@@ -40,7 +40,7 @@ data class ArtifactUploadMetadata(
     val bundleFormat: String? = null,
     /**
      * Follow-up AP 2: Pfad der Manifest-Datei innerhalb des Bundles
-     * (Plan §4 "Manifest-Datei im Bundle ist Pflicht"). Pfadnormalisiert
+     * (LF-010 / LF-013 / LN-009 / LN-011 "Manifest-Datei im Bundle ist Pflicht"). Pfadnormalisiert
      * (`/`-Separator, kein führender `/`, kein `..`). `null` für
      * Single-File-Artefakte.
      */

@@ -1,20 +1,23 @@
 package dev.dmigrate.server.application.fingerprint
 
-import dev.dmigrate.cli.i18n.UnicodeNormalizationMode
-import dev.dmigrate.cli.i18n.UnicodeNormalizer
+import dev.dmigrate.text.UnicodeNormalizationMode
+import dev.dmigrate.text.UnicodeTextService
 
 /**
  * RFC 8785 (JCS) compliant canonicalization for the [JsonValue] AST.
- * Phase A restriction: numbers are integer-only ([JsonValue.Num.value]
+ * LF-012 / LN-038 restriction: numbers are integer-only ([JsonValue.Num.value]
  * is `Long`); floats and big-integers cannot enter this canonicalizer
  * because they have no representation in the AST.
  *
- * Unicode normalization goes through [UnicodeNormalizer] so that the
- * planned `UnicodeTextService` port migration (see
- * `docs/refactoring-icu4j.md`) only needs to swap a single seam — this
- * file does not import `com.ibm.icu.*` directly.
+ * Unicode normalization goes through [UnicodeTextService] (injected),
+ * so the canonicalizer no longer references any concrete normalization
+ * library directly. The composition root supplies an
+ * `IcuUnicodeTextService` for production; tests use
+ * `FakeUnicodeTextService` from the `hexagon:ports-common` test fixtures.
  */
-internal object JsonCanonicalizer {
+internal class JsonCanonicalizer(
+    private val unicodeText: UnicodeTextService,
+) {
 
     fun canonicalize(value: JsonValue): String {
         val sb = StringBuilder()
@@ -74,11 +77,13 @@ internal object JsonCanonicalizer {
     }
 
     private fun nfc(value: String): String =
-        UnicodeNormalizer.normalize(value, UnicodeNormalizationMode.NFC)
+        unicodeText.normalize(value, UnicodeNormalizationMode.NFC)
 
     private fun escapeControl(ch: Char): String =
         "\\u" + ch.code.toString(HEX_RADIX).padStart(UNICODE_ESCAPE_DIGITS, '0')
 
-    private const val HEX_RADIX = 16
-    private const val UNICODE_ESCAPE_DIGITS = 4
+    private companion object {
+        private const val HEX_RADIX = 16
+        private const val UNICODE_ESCAPE_DIGITS = 4
+    }
 }

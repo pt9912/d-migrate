@@ -7,13 +7,11 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.DatabaseDriverRegistry
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
  * Integration tests for MysqlDataReader / MysqlTableLister against a
@@ -23,7 +21,7 @@ private val IntegrationTag = NamedTag("integration")
  * (build.gradle.kts root config). Run with `./gradlew test -PintegrationTests`
  * or via `.github/workflows/integration.yml`.
  *
- * Verifies (Plan §4 Phase B Schritt 12 + 13):
+ * Verifies (LF-008):
  * - Lifecycle (single-use ChunkSequence, idempotent close, connection return)
  * - Empty-table contract from §6.17
  * - Multi-chunk streaming with chunkSize splitting
@@ -33,7 +31,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class MysqlDataReaderIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

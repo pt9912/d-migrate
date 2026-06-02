@@ -227,7 +227,7 @@ JSON/YAML-Report. Design: [profiling.md](../../../spec/profiling.md).
 > beschriebene semantische Analyse ist bewusst **nicht** Teil von 0.7.5.
 > Zuerst wird das deterministische Kern-Profiling stabilisiert; die opt-in
 > LLM-Erweiterung folgt später auf Basis der allgemeinen KI-Provider-
-> Infrastruktur in [1.1.0](#milestone-110--ki-integration).
+> Infrastruktur in [1.5.5](#milestone-155--ki-integration).
 
 ### Milestone 0.8.0 — Internationalisierung ✅ (2026-04-16)
 
@@ -415,36 +415,117 @@ ueber das Model Context Protocol gesteuert werden. 0.9.6 implementiert
 kontrollierter Write-Tools, KI-naher Spezialtools und MCP-Prompts. Details:
 [`ki-mcp.md`](../../../spec/ki-mcp.md).
 
-### Milestone 0.9.7 — REST-API
+### Milestone 0.9.7 — Refactoring, Hardening, Diff-basierte Migrationen und SQLite-Sequence-Emulation ✅ (2026-06-02)
 
-| Bereich | Aufgabe                                                                                          | LF-Ref |
-| ------- | ------------------------------------------------------------------------------------------------ | ------ |
-| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
-| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
-| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
-| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
-| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
-| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
-| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
+| Bereich  | Aufgabe                                                                                                                                                                                                                                                                                                          | LF-Ref |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Refactor | ✅ (2026-05-08) ICU4J hinter einen Hexagon-Port — `hexagon:application` haengt nicht mehr direkt von `com.ibm.icu:icu4j` ab; Unicode-Normalisierung und Grapheme-Counting laufen ueber adapterneutrale Abstraktion. Details: [`refactoring-icu4j.md`](../done/refactoring-icu4j.md)                                | —      |
+| Refactor | ✅ (2026-05-09) SHA-256 / Hex-Encoding konsolidiert — `ByteArray.toHex()` + `sha256Hex(...)` in `hexagon/core/util/HexEncoding.kt`; alle ~20 Fundstellen migriert (urspruenglich 11 + 8 mcp-Handler). Details: [`refactoring-sha256Hex.md`](../done/refactoring-sha256Hex.md) | —      |
+| Hardening | ✅ (2026-05-09) RFC-7662 Client-Auth fuer Token-Introspection — `--introspection-client-id`/`--introspection-client-secret` setzen jetzt einen RFC 6749 §2.3.1 Basic-`Authorization`-Header am Introspection-POST; `McpServerConfig.validate()` lehnt XOR-Konfiguration (nur eins von beiden) ab. | LN-025, LN-028 |
+| Hardening | ✅ (2026-05-09) Idempotenter Replay fuer read-only Schema-Staging-Uploads — `UploadSessionStore.findActiveSchemaStagingByChecksum(...)`-Vertrag plus In-Memory-Impl; `ArtifactUploadInitHandler` foldet same-checksum Retries auf die Bestands-Session, ohne neue Quota-Reservierungen. AP 6.13 / `ImpPlan-0.9.6-B §5.3.5`. | —      |
+| Docs    | ✅ (2026-05-09) Migrate Phase A: Spezifikations- und Namensbereinigung — `spec/cli-spec.md` §6.1 schema migrate/rollback voll spezifiziert, Exit-Code `8 = MIGRATION_BLOCKED` ergaenzt; `spec/design.md` §7.2 mit DiffResult-Glossar; `SchemaComparator.DiffResult<N,D>` → `CollectionDiff<N,D>`; CHECK/EXCLUDE-Constraint-Detector als Phase-A-Entscheidung im Plan-Doc | —      |
+| Core    | ✅ (2026-05-09) Migrate Phase B: Core-Vertrag — `DiffResult` / `DiffOperation` (31 Subtypen) / `DiffObjectRef` / `DiffPhase` / `Reversibility` / `OperationRisks` / `OperationIdFactory` (Slice 1); `ReverseMarkerNormalizer` + `MigrationFingerprint` v1 (Slice 2). `hexagon:core` 94.4%. | —      |
+| Core    | ✅ (2026-05-09) Migrate Phase C: Planner — `DiffPlanner` orchestriert `OperationMapper` (SchemaDiff → 31 Operationen mit deterministischen IDs), `DependencyAnalyzer` (FK / View-Edges) und `TopologicalSorter` (`DiffPhase` als Tie-Breaker); `DiffOperation.withDependencies(deps)` ueber sealed interface; `CONSTRAINT_NOT_DIFFABLE`-Blocker aus Phase A umgesetzt; `hexagon:core` 95.3%.                  | —      |
+| Driver  | ✅ (2026-05-09) Migrate Phase D: Dialekt-DDL erste Matrix — D.1 `MigrationDdlPort` (`hexagon:ports-read`), D.2 `PostgresDiffDdlGenerator` (Plan §6.2), D.3 `MysqlDiffDdlGenerator` (Plan §6.3, `DROP FOREIGN KEY`/`DROP INDEX … ON tbl`-Syntax), D.4.a SQLite simple-op + D.4.b RebuildTable-Pipeline (Plan §6.4: PRAGMA foreign_keys-Wrapping, BEGIN IMMEDIATE, deterministische Temp-Namen, Spaltenmapping mit CAST/DEFAULT/NULL-Fill, NOT-NULL-Backfill-Blocker, foreign_key_check). Down-Rebuild auf D.5 verschoben.                                                                                                                | —      |
+| CLI     | ✅ (2026-05-09) Migrate Phase E: `SchemaMigrateRunner` und `SchemaRollbackRunner` — E.1 File-zu-File, E.2 Live-DB-Operanden, E.3 `--generate-rollback` mit `d-migrate rollback-sql v1`-Metadatenblock, E.4 `--execute` mit Post-Compare und Trace, E.5 strikter Rollback-Parser + dialekt/state Verifikation, E.6 Clikt-Wiring `schema migrate`/`schema rollback` + JdbcMigrationExecutor + Renderer-Registry. Recovery-Rollback-Artefakt und SQLite-Rebuild-Atomic-Execution sind als Phase-F-Carve-Outs dokumentiert.                                                          | —      |
+| Test    | ✅ (2026-06-02 audit) Migrate Phase F: Tests und Smokes — Round-Trip Soll→DB (`{Postgres,Mysql,Sqlite}MigrateRoundTripIntegrationTest`), Drift-Pruefung (`MysqlDiffSequenceOpsDriftGateTest`, `SqliteSequenceCompareIntegrationTest`, `MatrixSweepTest`-Drift-Pfade), SQLite-Rebuild-Smoke (`SqliteRebuildH3a/H3b/H4Test`, `SqliteRebuildRendererTest`, `SqliteRebuildPlannerTest`), Cross-Dialekt-Matrix (`test/cross-dialect-matrix` mit `MatrixSweepTest` + Quality-Coverage-Expansion Phase B, `3545b646`/`3ae1bb20`)                                                                                             | —      |
+| Driver  | SQLite-Seq Phase A: Vertrag — `--sqlite-named-sequences action_required\|helper_table` Option, Ledger fuer SQLite-spezifische Warn-Codes (analog W114–W117), `spec/ddl-generation-rules.md` §7 erweitern. ✅ Pre-Code-Kläurungen (§11 des Plan-Docs) abgeschlossen 2026-05-27: Min-SQLite-Version 3.35.0, `DefaultValue.SequenceNextVal` vorhanden, W114-Vertrag via ADR-0003, Zwei-Trigger-Body gegen SQLite 3.53.1 prototyp-validiert. CLI-Plumbing (`SqliteNamedSequenceMode`-Enum + Flag) ist Teil von Phase B.1.       | —      |
+| Driver  | SQLite-Seq Phase B: Generator — `helper_table`-Modus mit `dmg_sequences` und Trigger-basierter `nextval`-Emulation (kein Stored Function — Logik im Trigger-Body), `BEFORE INSERT`-Trigger pro Spalte. ✅ B.0 `DdlDialectContext`-Refactor (`48c7f01c`) + B.1 `SqliteNamedSequenceMode` + CLI-Plumbing (`84ba7ab7`) abgeschlossen 2026-05-27. ✅ B.2 Validator-Regeln abgeschlossen 2026-05-28: SequenceDefinition-internal-Regeln (`E125`, `25f59f73`) im `SchemaSequenceValidationRules` und helper_table-PK-Gate (`E059`, `09068f79`) über neuen `PreGenerationValidator`-Port (`SqliteHelperTableSequenceValidator` + `SqlitePreGenerationValidator`-Bridge, verdrahtet in `SchemaGenerateRunner` + `ToolExportRunner`). ✅ B.3 helper_table-DDL + `_bi`/`_ai`-Trigger-Paar (inkl. CHECK-`IS NOT NULL`-Auto-Suppression nach Plan-Doc §3.4) abgeschlossen 2026-05-29 plus Review-Findings 1/2/4/5a/5b/7/9/11/13 plus Scope-Carve-outs W121 (Conflict-Gap-INFO) und W122 (UPDATE-Trigger-Interferenz WARNING, konservativ wegen fehlender `UPDATE OF`-Modellierung): `SqliteSequenceDdlSupport` (state-pattern analog MySQL) mit `SqliteSequenceNaming` + `SqliteSequenceEmulationTemplates`; W114/W115/W117/W119/W121/W122, E056/E057/E124 verdrahtet; SqliteCapabilityDdlSupport delegiert; golden masters auf neue ManualActionRequired-Texte gezogen. ✅ B.4 `SequenceCapabilityDefaults.SQLite` flippen abgeschlossen 2026-05-29: 5 Render-Fidelity-Flags von `false` auf `true` (NamedSequences/Start/MinMaxValue/Cycle/Cache), `emitsCachePreallocationWarning` auf `true` (Single-Writer/W114-Vertrag analog MySQL); `supportsCurrentValuePreserve` bleibt `false`, `supportsOwnedBy` bleibt `false` (SQLite hat kein Ownership-Konzept). ✅ C Tests + Golden-Master für `helper_table`-Pfad abgeschlossen 2026-05-29: `full-featured.sqlite.helper-table{,.pre-data,.post-data}.sql`-Goldens; `SchemaGenerateRunnerErrorTest` deckt invalid-`--sqlite-named-sequences`-Wert; neuer `SqliteSequenceHelperTableIntegrationTest` mit 9 Tests gegen :memory:-SQLite (INSERT-Semantik Fall 1-4, Multi-Sequence, Boundary, Cycle, Erschöpfung, RAISE-Fehlerpfade). ✅ D Reverse abgeschlossen 2026-05-29: `SqliteSequenceReverseSupport` (Marker-Parser + Token-Body-Scanner + Snapshot-Pipeline) verdrahtet in `SqliteSchemaReader`. dmg_sequences-Erkennung, Trigger-Paar-Klassifikation primary/secondary/user, W116/W120/W124-Diagnosen, Filter der Hilfsobjekte aus dem neutralen Schema, Rekonstruktion sequence-getragener Spalten als `DefaultValue.SequenceNextVal`. 29 Unit-Tests + 3 Round-Trip-Integrationstests. ✅ E Compare + Stabilisierung abgeschlossen 2026-05-29: 4 Compare-Integrationstests (reverse-vs-reverse Round-Trip-Stabilität, sequencesChanged-Drift, Multi-Sequence-Disjunktion, Shared-Sequence). User-Doku in `docs/user/guide.md` ergänzt. SQLite-Sequence-Emulation-Plan damit komplett.       | —      |
+| Test    | SQLite-Seq Phase C: Unit-Tests, Golden Masters und Integrationstests fuer beide Modi                                                                                                                          | —      |
+| Driver  | SQLite-Seq Phase D: Reverse-Engineering — `dmg_sequences`-Tabelle, kanonische Trigger und Spalten-Defaults zurueck auf `SequenceDefinition`/`SequenceNextVal` falten                                           | —      |
+| Core    | SQLite-Seq Phase E: Compare-Stabilisierung — Operandseitige Diagnose (analog `W116` MySQL), Hilfsobjekte aus dem Diff filtern                                                                                  | —      |
 
-**Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
-programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
-[`rest-service.md`](../../../spec/rest-service.md).
+**Ergebnis**: Zwei verzahnte Schwerpunkte. (1) `schema migrate` liest
+Ist-Zustand (DB oder Schema-Datei), diffed gegen Soll-Schema, plant
+einen migrationsfaehigen Operationsplan (`DiffResult`) und rendert
+dialektbewusste Up-DDL. `schema rollback` fuehrt den Down-Plan gegen
+die Datenbank aus, mit Driftpruefung und Audit-Reports. Details:
+[`diffresult-migration-plan-2.md`](../done/diffresult-migration-plan-2.md).
+(2) `schema generate --target sqlite` kann benannte Sequences optional
+ueber kanonische Hilfsobjekte (`dmg_sequences` plus Trigger-basierte
+Logik ohne Stored Functions) emulieren statt sie mit `E056` zu
+ueberspringen. Reverse-Engineering und Compare folgen dem MySQL-0.9.4-
+Muster. Details:
+[`sqlite-sequence-emulation-plan.md`](../done/sqlite-sequence-emulation-plan.md).
 
-### Milestone 0.9.8 — gRPC-API
+> Hinweis Migrate-Matrix: Tabellen/Spalten/Constraints/Indizes und
+> einfache Views. Nicht enthalten: vollstaendige Routine-/Trigger-
+> Migration, Sequence-Migrationen und automatische Daten-Transformationen.
 
-| Bereich | Aufgabe                                                                          | LF-Ref |
-| ------- | -------------------------------------------------------------------------------- | ------ |
-| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung    | —      |
-| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume | —      |
-| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling         | —      |
-| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs           | —      |
-| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen | —      |
-| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes      | —      |
+> Hinweis SQLite-Sequence: Die Vollvariante ersetzt nicht
+> `INTEGER PRIMARY KEY AUTOINCREMENT` (das bleibt direkt ueber
+> `NeutralType.Identifier`) und migriert keine handgeschriebenen
+> SQLite-Sequence-Loesungen.
 
-**Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
-Low-Latency-Integration und Streaming-Szenarien. Details:
-[`grpc-service.md`](../../../spec/grpc-service.md).
+#### Abschlussstand 0.9.7 (2026-06-02)
+
+0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 abgeschlossen.
+Die Tabelle fasst alle 22 Workstreams zusammen — alle Zeilen sind ✅
+geliefert. Closure-Plan-Docs liegen in `docs/planning/done/`
+(insbesondere `done/diffresult-migration-plan-2.md`,
+`done/sequence-preserve-atomic-lock-plan.md`,
+`done/atomic-preserve-followups.md` plus 20 ImpPlan-0.9.7-*-Slice-
+Closures).
+
+| Workstream | Kurzbeschreibung | Status |
+| ---------- | ---------------- | ------ |
+| G | KI-nahe MCP-Tools / Prompts / Provider-Quotas | ✅ erledigt seit 2026-05-08 |
+| A | Migrate-Spezifikation und Namensbereinigung | ✅ erledigt seit 2026-05-08 |
+| B | PostgreSQL-`USING`-Overlays binden Up/Down getrennt, `PG_USING_OVERLAY_MISSING` blockiert ohne Nutzer-Overlay, `expressionSource` ist allowlist-beschraenkt; SQLite-Live-Cast-Preflight schreibt strukturierte `sqliteCastPreflights` in den Report | ✅ erledigt (2026-05-13) |
+| C.1 Install-Policy | Konservative Extension-Install-Policy umgesetzt; MISSING/UNKNOWN/Privilege-Diagnostik separat unter C.1 Rest | ✅ erledigt seit 2026-05-08 |
+| C.1 Rest | Renderer-Diagnostics trennen `EXTENSION_DEPENDENCY_MISSING` / `UNKNOWN` / `EXTENSION_INSTALL_PRIVILEGE_MISSING` / `_UNVERIFIED`; PostgreSQL-Reverse-Pfad trennt Installationsbefund (`R400`) vom Objektbefund (`R401`) | ✅ erledigt (2026-05-13) |
+| C.2 | Planner-/Dependency-Slice | ✅ erledigt seit 2026-05-08 |
+| D.1/D.2/D.3a | Erste dialektspezifische DDL-Matrix fuer PostgreSQL, MySQL und SQLite-Simple/Rebuild | ✅ erledigt seit 2026-05-08 |
+| D.3b | Materialized-View-Migrationsvertrag vollstaendig implementiert: PG rendert Create/Replace/Drop diff-basiert; MySQL/SQLite blocken mit `MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`; Report und Dependency-Blocker sind umgesetzt | ✅ erledigt (2026-05-17) |
+| E.1 | Routine-Migration fuer PostgreSQL/MySQL inklusive Body-Normalisierung, Scrubbing und Dependency-Sortierung. MySQL-Routine-Identity-Reverse-Read (`security`/`definer`/`sqlMode`) ✅ (2026-05-22, `41c62fe8`; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-routine-identity-reverse-read.md`). | ✅ erledigt (2026-05-15/16, MySQL-Identity-Reverse-Read als E.1-Folge-Slice am 2026-05-22) |
+| E.2 | Trigger-Rendering fuer PostgreSQL, MySQL und SQLite inklusive Strict-Gap-Wiring, Body-Validierung, Namens-Kollisionsschutz und SQLite-Rebuild-Klassifikation | ✅ erledigt (2026-05-18) |
+| E.3 | Erster PostgreSQL-Sequence-Slice; Preserve-/aktueller-Wert-Policy und Cross-Dialect-Sequencing-Schirm abgeschlossen (Sub-Slices A/B.0/B.1/C/D/E + Review-Findings; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`, ADR `docs/adr/0003-cross-dialect-sequencing.md`) | ✅ erledigt (2026-05-27) |
+| E Rest | MySQL-Sequence-Diff-Migration ✅ (2026-05-20, Sub-Slices A–E; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-diff-migration.md`). MySQL-Sequence-Drift-Check ✅ (2026-05-20, Sub-Slices A–F + Review-Follow-ups 1–4; Live-DB-Probe-Adapter analog F.5 E.3; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`). Sequence-preserveCurrentValue ✅ (2026-05-21, Sub-Slices A–E: Foundations + PG/MySQL-Renderer in A, PG-Probe in B, MySQL-Probe in C, Pipeline-Integration + Planner-Emit + CLI in D, Schema-Doku + Closing in E; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-sequence-preserve-current-value.md`). **SQLite-preserveCurrentValue-Folge-Slice ✅ (2026-05-29, Phasen A–F; commit `ff9fcc71`; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`):** neuer `SqliteSequenceCurrentValueProbe`-Adapter (`dmg_sequences.next_value`-Read mit `managed_by`/`format_version`-Guard); `SequencePreserveStage` listet SQLite in der Allowlist und blockt ohne `--sqlite-named-sequences helper_table` mit dem neuen `SEQUENCE_PRESERVE_OPT_IN_REQUIRED`-Code (Classifier `MANUAL_ACTION_REQUIRED`) vor der Probe-Connection; `SqliteDiffSequenceOps.renderAlterSequenceCurrentValue` Down rendert deterministisch `UPDATE dmg_sequences SET next_value = <restoreValue> WHERE name = <probeRef>` statt No-Op; `SequenceCapabilityDefaults.SQLite.supportsCurrentValuePreserve` von `false` auf `true` geflippt; neue `--sqlite-named-sequences`-Option auf `schema migrate`. SQLite-Trigger-Reverse-Read ✅ (2026-05-22, Sub-Slices A–E: token-basierter `SqliteTriggerSqlParser` in A, SchemaReader-Routing + Löschen des Substring-Pfads in B, Round-Trip-Idempotenz in C, Live-DB-Integration in D, Closing in E; Plan-Doc `docs/planning/done/ImpPlan-0.9.7-sqlite-trigger-reverse-read.md`). SQLite-Sequence-Emulation komplett abgeschlossen 2026-05-29 (Phasen A bis E, Plan-Doc `docs/planning/done/sqlite-sequence-emulation-plan.md`): Phase A § 11 Pre-Code-Klärungen + ADR-0003-Anbindung; Phase B.0 `DdlDialectContext`-Refactor (`48c7f01c`) + B.1 `SqliteNamedSequenceMode` CLI-Plumbing (`84ba7ab7`) + B.2 Validator-Regeln (`E125`, `E059`) + B.3 helper_table-DDL + `_bi`/`_ai`-Trigger-Paar (`bce28e03`) + Review-2 Followup (`83124a3b`) + B.4 SequenceCapabilityDefaults-Flip (`89bd91b0`); Phase C Golden-Master + Runner + 9 Integration-Tests (`050f305a`); Phase D Reverse-Engineering mit Marker-Parser/Token-Body-Scanner/Pairing/W116/W120/W124 + 29 Unit + 3 Round-Trip-Integration (`92a5eb8b`); Phase E Compare + Stabilisierung + User-Doku. Carve-outs: W123 (Attached-DB-Rollback-Gate) bleibt plan-übergreifend offen; **atomare Probe + Restore unter Lock** Folge-Slice (`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`) hat 2026-05-31 mit Phase A (Vertraege + Klassifier + Capability-Defaults: `SEQUENCE_PRESERVE_LOCK_TIMEOUT` + `SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED`-Codes, `supportsAtomicPreserve` / `supportsAtomicPreserveAllInPlan` / `transactionalProtectedSequenceOperations`-Felder mit per-Dialekt-Defaults; commit `6fa67e45`) und Phase B (B.1 `hexagon:ports-execute`-Modul + `AtomicSequencePreserveExecutor`-Port + Batch/Request/Result-Vertragstypen + `ProtectedOperationId`-Value-Class, commit `833d1796`; B.2 `PostgresAtomicSequencePreserveExecutor` mit `pg_advisory_xact_lock(hashtext(...))` nach Plan-Doc-Korrektur §4.1 — `LOCK TABLE` ist auf PG-Sequenzen nicht erlaubt, Risiko 8 dokumentiert die residuelle App-`nextval`-Race als bewusste Plan-Carve-out; commit `dc6d2ad6`; B.3 `MysqlAtomicSequencePreserveExecutor` mit `SELECT FOR UPDATE` auf `dmg_sequences`-Zeile + `SET SESSION innodb_lock_wait_timeout`, commit `24eb6e17`; B.4 `SqliteAtomicSequencePreserveExecutor` mit `BEGIN IMMEDIATE` + `PRAGMA busy_timeout` ueber raw-SQL-Transaktion bei `autoCommit=true`, commit `e882bcb1`) angefangen — alle drei Executoren mit je 5 Live-Container-/in-process-IT-Tests (Applied/Multi-Seq-Sort/NotFound/LockTimeout/Session-Timeout-Restore). Phase C ist abgeschlossen 2026-06-01 (Sub-Slices in Re-Cut-Reihenfolge C.2→C.4→C.3→C.1→C.5 + CI-Fix + Coverage-Puffer; Master ist auf dem Atomic-Runner-Pfad, 12/12 E2E-Live-IT pro Dialekt grün, `SequenceCurrentValueProbeRunner`-Dispatcher und `sequenceCurrentValueProbe`-Slot entfernt; Probe-Adapter-Implementierungen bleiben als toter Code für eigenen Dead-Code-Cleanup-Folge-Slice): `SequencePreserveStage` baut `AtomicSequencePreserveBatch` mit `renderRestore`-Closures + Capability-Gate (`SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` bei kind-Allowlist-Miss); `ExecutableSegment`-Hierarchie in `:hexagon:ports-execute` mit `segmentForExecute(statements, atomicBatch)`-Projektion; `AtomicSequencePreserveDispatcher` + `AtomicSequencePreserveRunner` als CLI-Wiring-Slots; `SegmentAwareMigrationExecutor` als Execute-Runner mit Result-Mapping `Applied/NotFound/LockTimeout/Failed → ExecutionTrace`; Connection-Owner-Vertrag im Port-Companion (`requireOwnedConnection`, autoCommit=true required); `SchemaMigrateRequest.mysqlNamedSequences` analog zu `sqliteNamedSequences` plumbed; `AlterSequenceCurrentValue`-Follow-up bleibt als Audit-Marker mit `ATOMIC_PRESERVE_SENTINEL_CURRENT_VALUE = 0L` (no breaking core-API change); MySQL+SQLite Race-Reproducer auf Atomic-Pfad-positiv-Proof migriert; PG-Race-Test (Phase-D-Follow-up 2026-06-01) ebenfalls auf den `PostgresAtomicSequencePreserveExecutor` migriert und pinnt die residuelle App-`nextval`-Race als negativen Vertragstest (Risiko Nr. 8 — `pg_advisory_xact_lock` blockt App-`nextval` nicht). Phase D (2026-06-01) ergänzt drei Cross-Plan-Deadlock-Tests (`PostgresAtomicPreserveCrossPlanDeadlockTest`, `MysqlAtomicPreserveCrossPlanDeadlockTest`, `SqliteAtomicPreserveCrossPlanDeadlockTest` — PG/MySQL mit positivem Run + negativem Smoke via invertierter manueller Lock-Order; SQLite nur positiv, da DB-weite RESERVED-Lock Deadlock-Diamant konstruktiv unmöglich macht), flippt `supportsAtomicPreserveAllInPlan = true` pro Dialekt, und ergänzt den Stage-AllInPlan-Gate (`SEQUENCE_PRESERVE_ATOMIC_UNSUPPORTED` bei Multi-Seq-Plan + `false`-Flag; Unit-Test mit synthetischer Capability-Override). Phase E (2026-06-01) ist reine Docs-Sync: CHANGELOG-Entry für 0.9.7 (A+B+C-Sub-Phasen + Carve-Out-Sektion), User-Guide-Update („preserveCurrentValue atomar seit 0.9.7" inkl. PG-`nextval`-Race-Restrisiko + §3.2-Carve-Out-Liste), KDoc-Sync auf `SequencePreserveStage` (Restrictions-Block), `SequenceCapability` (C.4-Verweis korrigiert + neuer §3.2-Out-of-Scope-Block + Phase-D-AllInPlan-Update) und `SequenceCurrentValueProbe` (Status-Header: dead-code seit Phase C, Cleanup eigener Slice). Folge-Backlog in `docs/planning/in-progress/atomic-preserve-followups.md` (6 Code-Review-Findings + Dead-Code-Cleanup Probe-Adapter). | ✅ erledigt (2026-05-29); Folge-Slice atomic-preserve A+B+C+D+E komplett (2026-06-01); Followups in `in-progress/atomic-preserve-followups.md` |
+| F.0-F.3 | Versionierte Plan-/Overlay-Vertraege, Reversibilitaets-Summaries, Rollback-v2-Header, Overlay-Secret-Diagnostik und `DataTransformationContract`-Default `NONE`; echte automatische Backfills bleiben Phase-1.x-Material | ✅ erste Slices erledigt |
+| F.4 | Dependency-Re-Projection nach Rename ist vollstaendig (FK-Targets, View-/Trigger-/Index-/Default-Bindungen); View-/Trigger-/Routine-/Sequence-Renames sind ueber alle drei Dialekte umgesetzt | ✅ erledigt (2026-05-19) |
+| F.4 G | Artefact-Producer-Wiring: `--plan-artefact <path>` emittiert signierte `migration-plan.v1`-JSON; `MigrationPlanArtifactBuilder` + Sink-Write + Runner-Emission live; `transactionScope`-Drift im Contract-Test gefixt; §E.3 DoD-Checkliste + §11 DoD Box (d) abgehakt. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-G-artefact-producer-wiring.md` | ✅ erledigt (2026-05-19) |
+| F.5 | CHECK-/EXCLUDE-Erstscheibe mit konservativem SQL-Textvergleich; unveraenderte Constraints blocken Tabellenops nicht mehr | ✅ erledigt (2026-05-19, Erstscheibe via Sub-Slice A) |
+| F.5 Vollscheibe | Sub-Slices A–G der CHECK-/EXCLUDE-Vollscheibe abgeschlossen (Foundation + PG-/MySQL-/SQLite-Renderer + Daten-Preflight inkl. Probes + Stage + Pipeline + Report + CLI + Reversibility/Replace-Vertrag + Closing). PG rendert CHECK/EXCLUDE nativ und blockt nicht-whitelisted Operator-Klassen via `ExcludeOperatorClassGate`; MySQL gated CHECK ueber `MysqlCheckEnforcementCapability` + blockt EXCLUDE; SQLite faedelt CHECK durch Rebuild + blockt EXCLUDE. Live-Daten-Preflight liefert PASSED/FAILED/PROBE_RUNTIME_ERROR pro Op und der Renderer-Gate `CheckPreflightGate` setzt sie um. Replace-Paare (`DropConstraint + AddConstraint`) tragen eine gemeinsame `replacePairId` (Op-IDs bleiben eindeutig); Down-Pass surfaceiert `ROLLBACK_NOT_POSSIBLE` wenn die alte Expression fehlt. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.5-check-exclude-vollscheibe.md`. | ✅ erledigt (2026-05-20) |
+| Telemetry/Observability | Adaptervertrag, Gates und Port-Grenzen dokumentiert; produktives Metrics-/Tracing-Wiring ausserhalb 0.9.7 | ✅ Plan erledigt seit 2026-05-08 |
+| Coverage/QA | MySQL-`AlterColumnNullability` ist als bewusster Blocker umgesetzt; Artifact-Compatibility (`UNKNOWN_FORMAT_VERSION` / `HASH_MISMATCH` / Secret-Scrubbing) + Overlay-Compatibility seit G-Slices vollstaendig gepinnt. **§11 DoD Box (a) Positiv+Blocker pro Workstream** ist ueber 22 Workstreams audit-sweep abgehakt (2026-05-19). **§11 DoD Box (b) Report-/Exit-Code-Erwartungen** ist mit Per-Exit-Code-Evidenz-Tabelle abgehakt (2026-05-19, alle sieben CLI-spec-Exit-Codes 0/2/3/4/5/7/8 pinned plus alle sieben primaryBlockedReason-Werte inkl. `OBJECT_RENAME_UNSUPPORTED` nach `PlannerBlockerClassifier`-Bridge). **§11 DoD Box (c) Rollback-Tests pro Workstream** ist mit Per-Workstream-Evidenz-Tabelle abgehakt (2026-05-19, 22 Workstreams; 15 Positiv-Down-Pfade + 5 NOT_REVERSIBLE-/ROLLBACK_NOT_POSSIBLE-Blocker-Pfade + 5 strukturelle Carve-outs wo der Blocker IST der Rollback-Vertrag, kein Rollback-Artefakt emittierbar). **§11 DoD ist damit komplett (a/b/c/d/e alle abgehakt).** **Quality-Coverage-Expansion** (Plan-Doc `docs/planning/done/quality-coverage-expansion-plan.md`) komplett 2026-05-31: Phasen A + A-Vervollst + Review-Fixes (`af59567d`/`2e62370c`/`9c369d94`), B + B-Vervollst (`3545b646`/`3ae1bb20`), C + C-MCP (`a2195313`/`1bea5bed`), D N=100/1000 (`67d93ef8`) am 2026-05-30 gelandet; Phase E in vier Sub-Slices nachgezogen — E-Scaffold (`27db7cf4`), E.1 Disposition-Vertrag (`648beec6`), E.2 TBD-Promotion auf `docs/planning/open/adapter-coverage-uplift.md` (`68f917f9`), E.3 Aggregat-Asymmetrie geschlossen (`b3b7105f`), E.3-Review-Fixes (`8ceb2653`); F als Closure (`<dieser Commit>`). Geliefert: `PerfMeasure`/`PerfReport`-Lib in `hexagon:profiling` mit drei Phase-A-Hotpaths (SchemaMigrateRenderPipeline / DiffPlanner / RollbackArtefactBuilder-Roundtrip) + Bestands-Migration formats/streaming, `test/cross-dialect-matrix`-Sweep mit 7 gepinnten + 15+ permanenten Carve-outs (alle mit `ownerTests`-Verifikation), `test/integration-concurrency`-Race-Reproducer fuer PG/MySQL/SQLite (`knownRace=true` Legacy-Gate), `test:e2e-cli`-OperationalHarness gegen file-SQLite via `AiMcpRegistries.defaultComponents(AiMcpWiring(OperationalMcpWiring(...)))`-Override, `test/perf-large-schema`-Scales N=100/1000, Kover-Excludes-Ledger mit `Disposition`-Pflichtspalte (3-Wert-Vokabular + geschlossenes Token-Set fuer `permanent:` und `aggregate-carveout:`) und `make coverage-excludes-check` in `make docs-check`. D-N10k (N=10000 Nightly-Only) bleibt opt-in-Folge-Thema; `adapter-coverage-uplift` ist eigenes Folge-Plan-Doc in `open/`. | ✅ erledigt (2026-05-31) |
+| F.4 Renderer-Blocker-Bridge | `PlannerBlockerClassifier` mappt `DiffDiagnostic.code → MigrationBlockedReason`; PG/MySQL/SQLite-Renderer gruppieren planner-blockers per Reason; F.4-Mapper-Blocker surfacen jetzt als `primaryBlockedReason = OBJECT_RENAME_UNSUPPORTED` statt pauschal `DIALECT_UNSUPPORTED_OPERATION`. Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-F.4-renderer-blocker-bridge.md` | ✅ erledigt (2026-05-19) |
+
+### Milestone 0.9.8 — Analytics- und Storage-Anschluss (Evaluierungen + BI-Demo)
+
+| Bereich | Aufgabe                                                                                                                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| Arch    | Parquet: JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten pruefen                                                                                              | —      |
+| Formats | Parquet: `ParquetChunkWriter`-Prototyp fuer `data export` mit minimalem Typmapping (Decimal, Temporal, Binary, UUID, JSON, Arrays, Geometry-Sidecar)                             | —      |
+| Test    | Parquet: Prototyp gegen DuckDB lesen lassen (`read_parquet`) und Typen inspizieren                                                                                               | —      |
+| Formats | Parquet: Importpfad (`ParquetChunkReader`) pruefen, chunk-weises Streaming und Schema-/Nullability-Erhalt validieren                                                             | —      |
+| Arch    | Parquet: Manifest-Format fuer Multi-Table-Exports skizzieren (stabile Dateinamen, Schema-Sidecar)                                                                                | —      |
+| Docs    | Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope                                                                                                         | —      |
+| Arch    | Object-Storage: Bestehende Artefakt- und Checkpoint-Pfade inventarisieren, minimalen `ArtifactStore`-Port entwerfen, File-Implementierung als Referenz                           | —      |
+| Arch    | Object-Storage: S3-kompatible Implementierung evaluieren, Konfigurations-/Security-Regeln skizzieren, Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen         | —      |
+| Demo    | BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + MinIO (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten             | —      |
+| Demo    | BI-Demo: Smoke-Script fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
+
+**Ergebnis**: Drei verzahnte Anschluss-Tracks fuer Phase 4 vorbereitet.
+(1) Parquet-Evaluierung liefert Prototyp, DuckDB-Kompatibilitaetsbeleg und
+Entscheidungsvorlage fuer eine spaetere Vollumsetzung. Dies ist bewusst
+keine Lakehouse-Implementierung — Iceberg/Delta/Hudi bleiben ausserhalb
+des Scopes (siehe
+[`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md) §3.2).
+(2) Object-Storage-ArtifactStore-Plan erstellt einen minimalen
+`ArtifactStore`-Port mit File-Referenz und S3-kompatibler Evaluierung,
+plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
+Artifact-Refs (siehe
+[`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)).
+(3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
+komponierbaren Analytics-Stack mit PostgreSQL, Metabase und MinIO als
+gemeinsamem Object-Storage-Endpunkt — als reproduzierbares Beispiel,
+nicht als Enterprise-BI-Plattform (siehe
+[`bi-demo-compose.md`](../next/bi-demo-compose.md)).
+
+> Hinweis: Positive Parquet-Evaluierung fuehrt zu einem Folge-
+> Implementierungsmilestone in Phase 4 (vermutlich neben 1.6.0 Metadata
+> Catalog und Lakehouse Targets). Object-Storage- und BI-Demo-Plaene
+> bilden die Grundlage fuer Storage- und Showcase-Pfade ab Phase 3/4.
 
 ### Milestone 0.9.9 — Dokumentation und Pilot-Validierung
 
@@ -454,8 +535,6 @@ Low-Latency-Integration und Streaming-Szenarien. Details:
 | Docs    | Administrationshandbuch                   | —      |
 | Docs    | Migrations-Leitfaden                      | —      |
 | Docs    | API-Dokumentation                         | —      |
-| Arch    | Parquet-Export/-Import evaluieren, um DuckDB-, Arrow- und Lakehouse-Anschlussfähigkeit zu prüfen — siehe [`parquet-export-import-evaluation.md`](../open/parquet-export-import-evaluation.md) | —      |
-| Arch    | Object-Storage-ArtifactStore fuer Checkpoints, Reports und grosse Exporte planen — siehe [`object-storage-artifact-store.md`](../open/object-storage-artifact-store.md) | —      |
 | QA      | Performance-Benchmarks dokumentiert       | —      |
 | QA      | Pilotanwender-Tests (mindestens 5 Tester) | 9.2    |
 
@@ -520,7 +599,67 @@ das System gegen reale Datenbestände getestet. Bereit für den 1.0.0-RC-Cut.
 
 **Ziel**: Feature-Completeness und Ökosystem-Wachstum
 
-### Milestone 1.1.0 — KI-Integration
+### Milestone 1.1.8 — gRPC-API
+
+| Bereich | Aufgabe                                                                          | LF-Ref |
+| ------- | -------------------------------------------------------------------------------- | ------ |
+| Server  | Schema-Service: Validate, Generate, Reverse, Compare mit Protobuf-Typisierung    | —      |
+| Server  | Bidirektionales Artefakt-Streaming: Upload mit Chunk-Acknowledgements und Resume | —      |
+| Server  | Job-Watching: Fortschritt und Events ueber WatchJob-Stream statt Polling         | —      |
+| Server  | Fuenf Services: Health, Schema, Data, Job, Artifact mit separaten RPCs           | —      |
+| Server  | Data-Service: Export, Import, Transfer, Profile als Jobs mit Artefakt-Referenzen | —      |
+| Test    | gRPC-Integrationstests und Protobuf-Error-Mapping mit d-migrate-Fehlercodes      | —      |
+
+**Ergebnis**: d-migrate bietet eine performante gRPC-API fuer
+Low-Latency-Integration und Streaming-Szenarien. Details:
+[`grpc-service.md`](../../../spec/grpc-service.md).
+
+### Milestone 1.2.0 — REST-API
+
+| Bereich | Aufgabe                                                                                          | LF-Ref |
+| ------- | ------------------------------------------------------------------------------------------------ | ------ |
+| Server  | Synchrone Schema-Endpoints: Validate und Generate DDL mit Groessenlimit                          | LF-022 |
+| Server  | Asynchrones Job-Modell: Reverse, Compare, Profile, Export mit 202-Acceptance und Location-Header | LF-022 |
+| Server  | Idempotency: Alle Job-Start-Endpoints mit Idempotency-Key fuer Deduplizierung                    | LF-022 |
+| Server  | Artefakt-Handling: Upload, Download, Register mit Multipart und Remote-Storage                   | LF-022 |
+| Server  | Datenoperationen: Import, Export, Transfer, Profile als Jobs mit Filter-DSL (kein rohes SQL)     | LF-022 |
+| Server  | Tool-Exports: Flyway, Liquibase, Django, Knex als async Jobs mit Artefakt-Ergebnis               | LF-022 |
+| Test    | REST-API-Integrationstests und OpenAPI-Spec-Validierung                                          | LF-022 |
+
+**Ergebnis**: d-migrate bietet eine vollstaendige REST-API fuer
+programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
+[`rest-service.md`](../../../spec/rest-service.md).
+
+### Milestone 1.3.0 — Testdaten-Generierung
+
+| Bereich | Aufgabe                                                 | LF-Ref |
+| ------- | ------------------------------------------------------- | ------ |
+| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | LF-024 |
+| AI      | KI-gestützte Testdaten-Generierung (optional)           | LF-024 |
+| Core    | Seed-basierte Reproduzierbarkeit                        | LF-024 |
+| Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | LF-024 |
+| CLI     | `d-migrate data seed` Kommando                          | LF-024 |
+
+**Ergebnis**: Automatische Generierung realistischer Testdaten.
+
+### Milestone 1.4.0 — Erweiterte Features
+
+| Bereich | Aufgabe                                                  | LF-Ref         |
+| ------- | -------------------------------------------------------- | -------------- |
+| Core    | Datenmaskierung / Pseudonymisierung beim Export          | LF-021, LF-026 |
+| Core    | Teil-Replikation (selektive Tabellen/Datensätze)         | LF-025         |
+| Core    | Automatische Dokumentationsgenerierung (ER-Diagramme)    | LF-016         |
+| Build   | Docker-Images mit vordefinierter DB-Struktur + Testdaten | LF-023         |
+
+### Milestone 1.5.0 — Oekosystem-Integrationen
+
+| Bereich     | Aufgabe                                                                                         | LF-Ref |
+| ----------- | ----------------------------------------------------------------------------------------------- | ------ |
+| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md) | —      |
+| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../next/orchestrator-examples.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../next/bi-demo-compose.md) | —      |
+
+### Milestone 1.5.5 — KI-Integration
 
 | Bereich | Aufgabe                                                                                                                   | LF-Ref         |
 | ------- | ------------------------------------------------------------------------------------------------------------------------- | -------------- |
@@ -550,35 +689,6 @@ Validierung deterministisch im Profiling-Kern bleiben.
 > Vorschläge. Rohe Daten müssen dafür nicht an das Modell gegeben werden; der
 > Input bleibt auf verdichtete Profil-Summaries begrenzt, konsistent mit
 > Privacy-by-Design und der Trennung aus `spec/profiling.md` §10.
-
-### Milestone 1.3.0 — Testdaten-Generierung
-
-| Bereich | Aufgabe                                                 | LF-Ref |
-| ------- | ------------------------------------------------------- | ------ |
-| Core    | Regelbasierte Testdaten-Generierung (Faker-Integration) | LF-024 |
-| AI      | KI-gestützte Testdaten-Generierung (optional)           | LF-024 |
-| Core    | Seed-basierte Reproduzierbarkeit                        | LF-024 |
-| Core    | Mehrsprachige Testdaten (Namen, Adressen, etc.)         | LF-024 |
-| CLI     | `d-migrate data seed` Kommando                          | LF-024 |
-
-**Ergebnis**: Automatische Generierung realistischer Testdaten.
-
-### Milestone 1.4.0 — Erweiterte Features
-
-| Bereich | Aufgabe                                                  | LF-Ref         |
-| ------- | -------------------------------------------------------- | -------------- |
-| Core    | Datenmaskierung / Pseudonymisierung beim Export          | LF-021, LF-026 |
-| Core    | Teil-Replikation (selektive Tabellen/Datensätze)         | LF-025         |
-| Core    | Automatische Dokumentationsgenerierung (ER-Diagramme)    | LF-016         |
-| Build   | Docker-Images mit vordefinierter DB-Struktur + Testdaten | LF-023         |
-
-### Milestone 1.5.0 — Oekosystem-Integrationen
-
-| Bereich     | Aufgabe                                                                                         | LF-Ref |
-| ----------- | ----------------------------------------------------------------------------------------------- | ------ |
-| Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../open/profiling-data-quality-export.md) | —      |
-| Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../open/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../open/bi-demo-compose.md) | —      |
 
 ### Milestone 1.6.0 — Metadata Catalog und Lakehouse Targets
 
@@ -667,6 +777,6 @@ Datenbanksystem.
 
 ---
 
-**Version**: 3.42
-**Stand**: 2026-05-08
-**Status**: Milestone 0.1.0–0.9.6 abgeschlossen — der MCP-Server-Milestone ist veröffentlicht. Geplant: 0.9.7, 0.9.8, 0.9.9
+**Version**: 3.52
+**Stand**: 2026-06-02
+**Status**: Milestone 0.1.0–0.9.7 abgeschlossen — 0.9.7 ist mit dem Release-Tag `v0.9.7` am 2026-06-02 veröffentlicht. Inhalte 0.9.7: Refactoring/Hardening, Migrate A-E, erste PostgreSQL-Sequence-Abdeckung, konservative Extension-Install-Policy, Overlay-/Plan-Vertraege, CHECK-/EXCLUDE-Blocker, Telemetry-Plan-Gates, **D.3b Materialized-View-Vollscheibe (Sub-Slices A/B/C)**, **E.2 Trigger-Rendering-Vollscheibe (Sub-Slices A.1/A.2/A.3/B/C)**, **SQLite-Trigger-Reverse-Read (Sub-Slices A–E)** und **MySQL-Routine-Identity-Reverse-Read** sind umgesetzt; **Quality-Coverage-Expansion** komplett 2026-05-31 (Phasen A/B/C/D am 2026-05-30, E in vier Sub-Slices + Review-Fixes am 2026-05-31, F als Closure): `PerfMeasure`-Lib + 3 Hotpath-PerfSpecs + Bestands-Migration, Cross-Dialekt-Matrix-Sweep mit 7 gepinnten + permanenten Carve-outs (Phase F2 ergaenzt um `Kind.REPORT`/`ROLLBACK`/`FILE_MODE`), PG/MySQL/SQLite Sequence-Preserve-Race-Reproducer, Operational-MCP-Harness gegen file-SQLite mit `schema_compare_start` + MCP `resources/read` (Phase F1), Large-Schema-Scales N=100/1000 mit `HeapDumpOnOutOfMemoryError`-jvmArgs (Phase F5), Kover-Excludes-Ledger mit Disposition-Pflichtspalte + geschlossenem Token-Vokabular + fail-closed-Gradle-Scanner auf unbekannte Selectoren (Phase F4) + Formats-PerfTest-Migration auf `PerfMeasure`/`PerfReport` (Phase F3). D-N10k (N=10000 Nightly) bleibt opt-in-Folge-Thema. **Atomic-Preserve-Folge-Slice** zur 0.9.7-`preserveCurrentValue`-Serie ist 2026-06-01 mit Phasen A + B + C + D + E komplett geliefert: Probe + Restore + protected DDL in einer einzigen Transaktion unter Per-Dialekt-Lock (`pg_advisory_xact_lock` / `SELECT FOR UPDATE` / `BEGIN IMMEDIATE`), drei Cross-Plan-Deadlock-Tests pinnen die deterministische Lock-Reihenfolge, `supportsAtomicPreserveAllInPlan = true` pro Dialekt, Stage-AllInPlan-Gate, CHANGELOG + User-Guide + KDoc-Sync. Backlog-Tracker `docs/planning/in-progress/atomic-preserve-followups.md` mit allen 6 Code-Review-Findings + Dead-Code-Cleanup (Interface gelöscht, Adapter-Singletons live) ebenfalls abgehakt — wandert zusammen mit dem Plan-Doc zum 0.9.7-Release-Tag nach `done/`. Restpunkte siehe "Aktueller Arbeitsstand 0.9.7". Danach geplant: 0.9.8 (Parquet-Evaluierung + Object-Storage-Plan + BI-Demo), 0.9.9 (Doku/Pilot), 1.0.0-RC, 1.0.0; danach Phase 4 mit gRPC-API (1.1.8), REST-API (1.2.0), Testdaten (1.3.0), erweiterte Features (1.4.0), Oekosystem-Integrationen (1.5.0), KI-Integration (1.5.5), Metadata-Catalog (1.6.0), MS SQL Server (1.7.0), Oracle (1.8.0).

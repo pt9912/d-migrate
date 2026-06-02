@@ -1,18 +1,18 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.2 + § 6 G.3 — produktive [AiProviderRegistry] mit
+ * LF-017 / LF-024 / LN-030 / LN-031— produktive [AiProviderRegistry] mit
  * Validierung und Default-Garantie.
  *
  * Bootstrap-Vertrag:
  *
  * 1. Konstruktor validiert jede [AiProviderConfig] über
  *    [AiProviderConfigValidator]. Der erste Fehler lässt den
- *    Server fail-closed starten (Plan §6 G.3: "Die Registry darf
+ *    Server fail-closed starten (LF-017 / LF-024 / LN-030 / LN-031: "Die Registry darf
  *    nicht mit invalider Config laufen").
  * 2. Wenn keine Config für [AiProviderId.NOOP] geliefert wurde,
  *    fügt die Registry einen NoOp-Default ein
- *    ([AiProviderConfig.noOpDefault]). Damit ist Plan §4.1
+ *    ([AiProviderConfig.noOpDefault]). Damit ist LF-017 / LF-024 / LN-030 / LN-031
  *    erfüllt: NoOp ist immer verfügbar.
  * 3. Pro Config-Eintrag muss ein passender [AiProviderPort] in
  *    [ports] vorhanden sein. Fehlt der Port, schlägt der
@@ -45,7 +45,7 @@ class DefaultAiProviderRegistry(
                 "duplicate provider config for ${c.providerId}"
             }
         }
-        // Plan §4.1: NoOp ist immer verfügbar — fehlt er in der
+        // LF-017 / LF-024 / LN-030 / LN-031: NoOp ist immer verfügbar — fehlt er in der
         // gelieferten Liste, fällt die Registry auf den Default
         // zurück.
         if (AiProviderId.NOOP !in byId) {
@@ -85,9 +85,9 @@ class DefaultAiProviderRegistry(
     }
 
     /**
-     * Discovery-Hilfe für `capabilities_list`-Erweiterung in G.8:
+     * Discovery-Hilfe für `capabilities_list`-Erweiterung in LF-017 / LF-024 / LN-030 / LN-031:
      * liefert Provider-IDs + Modell-Whitelisten ohne Endpoint und
-     * ohne `secretRef`. Plan §5.2 Z. 611-612: Secrets nie in
+     * ohne `secretRef`. LF-017 / LF-024 / LN-030 / LN-031: Secrets nie in
      * Capabilities.
      */
     fun describe(): List<AiProviderDescription> = configById.values
@@ -106,7 +106,7 @@ class DefaultAiProviderRegistry(
     companion object {
 
         /**
-         * Plan §4.1 Akzeptanz: Tests und CI nutzen einen
+         * LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: Tests und CI nutzen einen
          * Bootstrap, der **nur** den NoOp-Provider kennt — keine
          * externen Provider, keine Secrets. Bequemer Factory-
          * Helfer, damit Tests nicht jeweils die Default-Config
@@ -121,8 +121,8 @@ class DefaultAiProviderRegistry(
 }
 
 /**
- * Plan §5.2 + § 8.2: secret-freie Provider-Beschreibung für
- * `capabilities_list` (G.8). Endpoint und `secretRef` werden
+ * LF-017 / LF-024 / LN-030 / LN-031: secret-freie Provider-Beschreibung für
+ * `capabilities_list` (LF-017 / LF-024 / LN-030 / LN-031). Endpoint und `secretRef` werden
  * **nicht** projeziert.
  */
 data class AiProviderDescription(

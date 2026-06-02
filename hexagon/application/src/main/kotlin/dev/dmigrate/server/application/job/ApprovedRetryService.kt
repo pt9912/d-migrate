@@ -19,8 +19,7 @@ import java.time.Duration
 import java.time.Instant
 
 /**
- * Phase E §7.5 Approved-Retry-Orchestrator.
- *
+ * LF-012 / LN-011 / LN-017 / LN-027 *
  * Verbindet die drei atomaren Bausteine fuer den genehmigten Retry aus
  * `AWAITING_APPROVAL`:
  *
@@ -37,7 +36,7 @@ import java.time.Instant
  *    fuer spaeteres Cancel-Signal verkabelt.
  *
  * Symmetrisch zu [JobStartService.start] gibt der Service [JobStartOutcome]
- * zurueck — die Tool-Handler aus AP E.6 koennen beide Pfade auf dieselben
+ * zurueck — die Tool-Handler aus LF-012 / LN-011 / LN-017 / LN-027 koennen beide Pfade auf dieselben
  * Wire-Antworten mappen.
  */
 class ApprovedRetryService(
@@ -49,11 +48,10 @@ class ApprovedRetryService(
     private val cancellationSourceFactory: () -> CancellationTokenSource =
         { CancellationTokenSource.create() },
     /**
-     * Phase E §7.9 Quota-Integration (Review-Fix Blocker #2). Wenn null,
-     * ueberspringt der ApprovedRetryService die Quota-Reservierung —
-     * sinnvoll fuer Bestands-Tests. Production-Wiring (PhaseEWiring)
+     * LF-012 / LN-011 / LN-017 / LN-027     * ueberspringt der ApprovedRetryService die Quota-Reservierung —
+     * sinnvoll fuer Bestands-Tests. Production-Wiring (OperationalMcpWiring)
      * setzt eine echte Instanz. Approved-Retry erzeugt einen NEUEN Job
-     * (Plan §7.9 line 1264) und MUSS daher die aktive-Job-Quota
+     * (LF-012 / LN-011 / LN-017 / LN-027) und MUSS daher die aktive-Job-Quota
      * reservieren, bevor JobStartTransaction.commit laeuft.
      */
     private val quotaService: OwnerAwareQuotaService? = null,
@@ -92,7 +90,7 @@ class ApprovedRetryService(
         now: Instant,
         jobBuilder: (jobId: String, createdAt: Instant) -> JobRecord,
     ): JobStartOutcome {
-        // Phase E §7.9 (Review-Fix Blocker #2): quota.reserve VOR commit.
+        // LF-012 / LN-011 / LN-017 / LN-027: quota.reserve VOR commit.
         // Approved-Retry erzeugt einen NEUEN Job, also MUSS Quota
         // reserviert werden — analog zum primären-Start-Pfad im
         // Orchestrator.

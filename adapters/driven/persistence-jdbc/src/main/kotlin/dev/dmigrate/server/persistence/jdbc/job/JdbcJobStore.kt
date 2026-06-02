@@ -19,7 +19,7 @@ import java.time.Instant
 
 /**
  * Postgres-/JDBC-Implementierung des [JobStore]-Vertrags. SQL-Patterns:
- * Plan § 6.7 in `docs/planning/done/ImpPlan-0.9.6-E2.md`.
+ * LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Atomicity: alle Statusuebergaenge laufen ueber `SELECT … FOR UPDATE`
  * + UPDATE in einer TX (siehe `transitionStatus`/`markCancelRequested`).
@@ -40,7 +40,7 @@ class JdbcJobStore(
     }
 
     /**
-     * Plan E2 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
+     * Plan LF-012 / LN-011 / LN-017 / LN-027 § 3.5 + § 6.5 Cross-Store-Komposition: erlaubt
      * [JdbcJobStartTransaction] das `save` und ein `IdempotencyStore.commit`
      * in derselben DB-TX auszufuehren. Caller MUSS im
      * `JdbcTransactionRunner.inTransaction`-Block sein und die
@@ -115,7 +115,7 @@ class JdbcJobStore(
             operationFilter = filter.operation,
             createdAfter = filter.createdAfter,
             createdBefore = filter.createdBefore,
-            // Plan §6.3 default sort: createdAt DESC, jobId ASC.
+            // LF-012 / LN-011 / LN-017 / LN-027 default sort: createdAt DESC, jobId ASC.
             sortDescending = true,
         )
         paginate(items, page)
@@ -205,7 +205,7 @@ class JdbcJobStore(
         if (locked.managedJob.status.terminal) {
             return@inTransaction JobTransitionOutcome.IllegalTransition(locked.managedJob.status)
         }
-        // Plan § 7.2 Idempotenz: bei bereits requested = TRUE keine
+        // LF-012 / LN-011 / LN-017 / LN-027 Idempotenz: bei bereits requested = TRUE keine
         // Reason-/Source-Ueberschreibung — ersten Wert behalten.
         if (locked.managedJob.cancelRequest.requested) {
             return@inTransaction JobTransitionOutcome.Applied(locked)

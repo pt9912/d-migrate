@@ -10,7 +10,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Phase-D §6.3 + §10.4 filter for `job_list`. Every field is
+ * LF-012 / LN-038 filter for `job_list`. Every field is
  * optional; an empty filter selects every job in the tenant.
  *
  * Time window: `createdAfter` is INCLUSIVE, `createdBefore` is
@@ -38,7 +38,7 @@ interface JobStore {
     ): PageResult<JobRecord>
 
     /**
-     * Phase-D filtered list. Default sort:
+     * LF-012 / LN-038 filtered list. Default sort:
      *   1. `managedJob.createdAt` DESC
      *   2. `managedJob.jobId` ASC (stable id tiebreaker)
      */
@@ -51,7 +51,7 @@ interface JobStore {
     fun deleteExpired(now: Instant): Int
 
     /**
-     * Phase E §7.2: Compare-and-set-Statusübergang. Liest den aktuellen
+     * LF-012 / LN-011 / LN-017 / LN-027: Compare-and-set-Statusübergang. Liest den aktuellen
      * [JobRecord] atomar aus dem Store, prüft dass der heutige Status in
      * [allowedFromStatuses] enthalten ist, und schreibt den durch
      * [transformer] erzeugten neuen [ManagedJob]. [transformer] empfängt
@@ -65,7 +65,7 @@ interface JobStore {
      * Statuswechsel; reines `save(...)` ist für das Erstanlegen reserviert
      * und überschreibt nicht.
      *
-     * Ergebnis-Outcomes (Plan §7.2):
+     * Ergebnis-Outcomes (LF-012 / LN-011 / LN-017 / LN-027):
      * - [JobTransitionOutcome.Applied] mit dem geschriebenen
      *   [JobRecord], wenn der Übergang stattgefunden hat.
      * - [JobTransitionOutcome.IllegalTransition] mit `currentStatus`,
@@ -82,7 +82,7 @@ interface JobStore {
     ): JobTransitionOutcome
 
     /**
-     * Phase E §7.2: durable Cancel-Request-Markierung. Setzt
+     * LF-012 / LN-011 / LN-017 / LN-027: durable Cancel-Request-Markierung. Setzt
      * [ManagedJob.cancelRequest].`requested = true` mit den übergebenen
      * Metadaten, ohne den Status-Übergang nach `CANCELLED` selbst
      * auszulösen — dieser kommt erst nach Worker-Ack via
@@ -91,7 +91,7 @@ interface JobStore {
      * Idempotenz: wenn `cancelRequest.requested` bereits `true` ist,
      * MUSS der Store den ersten Reason und die ersten Request-Metadaten
      * UNVERÄNDERT lassen und [JobTransitionOutcome.Applied] mit dem
-     * unveränderten Record liefern. Das ist Plan §7.2: "Retry nach
+     * unveränderten Record liefern. Das ist LF-012 / LN-011 / LN-017 / LN-027: "Retry nach
      * durablem `cancelRequested*`, aber vor Worker-Ack ... ohne Reason
      * oder Request-Metadaten zu überschreiben".
      *
@@ -109,7 +109,7 @@ interface JobStore {
 }
 
 /**
- * Phase E §7.2 Statusübergangs-Ergebnis. Pinned in
+ * LF-012 / LN-011 / LN-017 / LN-027 Statusübergangs-Ergebnis. Pinned in
  * [JobStore.transitionStatus] und [JobStore.markCancelRequested].
  */
 sealed interface JobTransitionOutcome {

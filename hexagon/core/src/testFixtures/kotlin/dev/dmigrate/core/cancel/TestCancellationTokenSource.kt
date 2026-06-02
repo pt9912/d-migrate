@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Deterministic cancel token for runner/checkpoint tests (Phase E0.1).
+ * Deterministic cancel token for runner/checkpoint tests (LF-012 / LN-011 / LN-017 / LN-027).
  *
  * Wraps [CancellationTokenSource.create] and exposes hooks that fire on the
  * Nth call to [CancellationToken.throwIfCancellationRequested]. The wrapped

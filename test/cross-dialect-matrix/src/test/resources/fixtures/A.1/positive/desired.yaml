@@ -1,0 +1,14 @@
+schema_format: "1.0"
+name: "matrix-A1-desired"
+version: "1.0.0"
+
+tables:
+  inventory:
+    columns:
+      sku:
+        type: identifier
+        auto_increment: true
+      qty:
+        type: integer
+        required: true
+    primary_key: [sku]

@@ -33,7 +33,7 @@ import java.time.Instant
 import java.util.UUID
 
 /**
- * Phase F § 5.1 + § 8.3 (F.3 3/4) — Orchestrator fuer den
+ * LF-010 / LF-013 / LN-009 / LN-011— Orchestrator fuer den
  * policy-pflichtigen `artifact_upload_init`-Pfad.
  *
  * Pipeline:
@@ -54,7 +54,7 @@ import java.util.UUID
  * 5. [PolicyService.decide]:
  *    - `Denied` -> Claim freigeben, `PolicyDenied`.
  *    - `RequiresApproval` -> Claim freigeben, `PolicyRequired` ohne
- *      Session/Quota (Plan § 8.3 "no-side-effect").
+ *      Session/Quota (LF-010 / LF-013 / LN-009 / LN-011 "no-side-effect").
  *    - `Allowed` -> Session durabel erzeugen.
  * 6. [UploadSessionStore.save] mit `approvalKey`/`approvalFingerprint`/
  *    `targetTable` durabel auf der Session.
@@ -174,7 +174,7 @@ class UploadInitOrchestrator(
                 UploadInitOutcome.PolicyDenied(decision.reasonCode)
             }
             is PolicyDecision.RequiresApproval -> {
-                // Plan § 8.3: POLICY_REQUIRED -> KEINE Session, KEINE
+                // LF-010 / LF-013 / LN-009 / LN-011: POLICY_REQUIRED -> KEINE Session, KEINE
                 // Upload-Berechtigung, KEINE Quota-Reservierung.
                 claimStore.release(claimScope, claimId)
                 UploadInitOutcome.PolicyRequired(
@@ -379,10 +379,10 @@ sealed interface UploadInitOutcome {
     /** Aktiver Single-Writer-Claim eines anderen Pipelines auf demselben Scope. */
     data class InProgress(val claimLeaseExpiresAt: Instant) : UploadInitOutcome
 
-    /** Gleicher Scope, abweichender Payload — Plan § 5.1 IDEMPOTENCY_CONFLICT. */
+    /** Gleicher Scope, abweichender Payload — LF-010 / LF-013 / LN-009 / LN-011 IDEMPOTENCY_CONFLICT. */
     data class IdempotencyConflict(val existingFingerprint: String) : UploadInitOutcome
 
-    /** Plan § 8.3: POLICY_REQUIRED ohne Session, ohne Berechtigung, ohne Quota. */
+    /** LF-010 / LF-013 / LN-009 / LN-011: POLICY_REQUIRED ohne Session, ohne Berechtigung, ohne Quota. */
     data class PolicyRequired(
         val approvalRequestId: String,
         val correlationKind: ApprovalCorrelationKind,

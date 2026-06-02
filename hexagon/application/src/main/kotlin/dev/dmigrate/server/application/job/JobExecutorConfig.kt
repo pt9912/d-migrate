@@ -3,15 +3,14 @@ package dev.dmigrate.server.application.job
 import java.time.Duration
 
 /**
- * Adapter-neutrale Konfiguration fuer den Phase-E Job-Executor (Plan
- * §3.4 + §10 Q2 in `ImpPlan-0.9.6-E3.md`). YAML-/Env-Aufloesung lebt im
+ * Adapter-neutrale Konfiguration fuer den LF-012 / LN-011 / LN-017 / LN-027 Job-Executor. YAML-/Env-Aufloesung lebt im
  * Host-/Adapter-Scope; `JobExecutorConfig` selbst kennt nur die
  * typisierten Felder.
  *
  * Validierung (z.B. `coreThreads > 0`, `maxThreads >= coreThreads`,
- * `queueCapacity > 0`) gehoert zu AP E3.2 — diese Datenklasse ist die
+ * `queueCapacity > 0`) gehoert zu AP LF-012 / LN-011 / LN-017 / LN-027 — diese Datenklasse ist die
  * reine Struktur, die [BoundedAsyncJobExecutor] und
- * [BoundedAsyncJobDispatchAdmission] in E3.1 verbrauchen.
+ * [BoundedAsyncJobDispatchAdmission] in LF-012 / LN-011 / LN-017 / LN-027 verbrauchen.
  */
 sealed interface JobExecutorConfig {
 
@@ -20,7 +19,7 @@ sealed interface JobExecutorConfig {
     /**
      * Bounded `ThreadPoolExecutor`-Konfiguration mit fester Pool-Groesse
      * (`coreThreads == maxThreads` als Default), bounded `ArrayBlockingQueue`
-     * und konfigurierbarem Reject-Retry. Defaults gemaess Plan §3.2 + §10
+     * und konfigurierbarem Reject-Retry. Defaults gemaess LF-012 / LN-011 / LN-017 / LN-027
      * Q1: fixed `4` Threads (kein CPU-skalierter Default), `1024`
      * Queue-Kapazitaet, `1s` Retry-After.
      */

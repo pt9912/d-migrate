@@ -1,7 +1,7 @@
 package dev.dmigrate.format.data
 
 /**
- * Unterstützte Datenexport-Formate (Plan §6.15).
+ * Unterstützte Datenexport-Formate (LF-009).
  *
  * Wird vom CLI über `--format json|yaml|csv` als Pflicht-Argument
  * eingegeben und vom [DataChunkWriterFactory] in den passenden

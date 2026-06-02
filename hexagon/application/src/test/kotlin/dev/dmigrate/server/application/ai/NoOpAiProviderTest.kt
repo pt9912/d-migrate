@@ -11,7 +11,7 @@ import java.security.MessageDigest
 import java.time.Duration
 
 /**
- * Phase G § 5.1 (G.2) — Akzeptanztests fuer den deterministischen
+ * LF-017 / LF-024 / LN-030 / LN-031— Akzeptanztests fuer den deterministischen
  * Default-Provider und den umgebenden Vertrag (Request/Result/Error).
  */
 class NoOpAiProviderTest : FunSpec({
@@ -35,7 +35,7 @@ class NoOpAiProviderTest : FunSpec({
         maxOutputBytes = maxOutputBytes,
     )
 
-    test("Plan §6 G.2: NoOp liefert deterministische Outputs") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: NoOp liefert deterministische Outputs") {
         // Akzeptanz "NoOp liefert deterministische Ergebnisse":
         // gleiche Eingabe → byte-identischer Output + identischer
         // outputFingerprint.
@@ -46,7 +46,7 @@ class NoOpAiProviderTest : FunSpec({
         second.outputFingerprint shouldBe first.outputFingerprint
     }
 
-    test("Plan §6 G.2: unterschiedliche Eingaben liefern unterschiedliche Outputs") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unterschiedliche Eingaben liefern unterschiedliche Outputs") {
         val provider = NoOpAiProvider()
         val withPromptA = provider.invoke(request(promptFp = sampleFingerprint))
             .shouldBeInstanceOf<AiProviderResult.Success>()
@@ -56,7 +56,7 @@ class NoOpAiProviderTest : FunSpec({
         withPromptB.outputFingerprint shouldNotBe withPromptA.outputFingerprint
     }
 
-    test("Plan §6 G.2: NoOp ruft kein Netzwerk und liest kein externes Secret") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: NoOp ruft kein Netzwerk und liest kein externes Secret") {
         // Strukturzusage: NoOp's Output enthaelt nur die Eingabe-
         // Fingerprints + Provider-Marker. Kein URL-, Endpoint-,
         // Token-, oder Pfad-Hinweis.
@@ -69,7 +69,7 @@ class NoOpAiProviderTest : FunSpec({
         output shouldNotContain "secret"
     }
 
-    test("Plan §6 G.2: providerMeta traegt Provider-Identitaet, kein Endpoint") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: providerMeta traegt Provider-Identitaet, kein Endpoint") {
         val provider = NoOpAiProvider()
         val meta = (provider.invoke(request(model = "noop:test-model")) as AiProviderResult.Success).providerMeta
         meta.providerName shouldBe "noop"
@@ -87,10 +87,10 @@ class NoOpAiProviderTest : FunSpec({
         success.outputFingerprint shouldBe expected
     }
 
-    test("Plan §6 G.2: ueberdimensioniertes Output liefert OUTPUT_TOO_LARGE statt Truncation") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: ueberdimensioniertes Output liefert OUTPUT_TOO_LARGE statt Truncation") {
         // maxOutputBytes=8 ist hart unterhalb der Marker-Form;
         // NoOp respektiert die Cap und liefert Failure statt
-        // gekuerztes Output (Plan §5.1 Akzeptanz: keine
+        // gekuerztes Output (LF-017 / LF-024 / LN-030 / LN-031 Akzeptanz: keine
         // halben Outputs).
         val provider = NoOpAiProvider()
         val outcome = provider.invoke(request(maxOutputBytes = 8))
@@ -99,8 +99,8 @@ class NoOpAiProviderTest : FunSpec({
         failure.retryable shouldBe false
     }
 
-    test("Plan §7.2: AiProviderError.defaultRetryable trennt retryable und terminal sauber") {
-        // Plan §7.2 Mappings — wir pinnen sie hier strukturell,
+    test("LF-017 / LF-024 / LN-030 / LN-031: AiProviderError.defaultRetryable trennt retryable und terminal sauber") {
+        // LF-017 / LF-024 / LN-030 / LN-031 Mappings — wir pinnen sie hier strukturell,
         // damit eine spaetere Aenderung am Enum auffaellt.
         AiProviderError.TIMEOUT.defaultRetryable shouldBe true
         AiProviderError.RATE_LIMITED.defaultRetryable shouldBe true
@@ -113,7 +113,7 @@ class NoOpAiProviderTest : FunSpec({
     }
 
     test("AiProviderResult.Failure erlaubt Retryable-Override pro Aufruf") {
-        // Plan §5.1: Caller (AiToolOutcomeStore) darf den
+        // LF-017 / LF-024 / LN-030 / LN-031: Caller (AiToolOutcomeStore) darf den
         // defaultRetryable-Wert ueberschreiben, wenn der Kontext
         // es rechtfertigt — etwa "Provider-Quota ist hartem
         // Tenant-Limit, nicht retryable".

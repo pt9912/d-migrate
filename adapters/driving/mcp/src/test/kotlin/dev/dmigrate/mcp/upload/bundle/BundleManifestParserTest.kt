@@ -7,11 +7,11 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeInstanceOf
 
 /**
- * Follow-up AP 2 — Acceptance-Tests für [BundleManifestParser].
+ * LF-010 / LF-013 / LN-009 / LN-011 — Acceptance-Tests für [BundleManifestParser].
  *
- * Plan §4 fordert stabile Wire-Codes für jede Manifest-Sicherheitsfehler.
+ * LF-010 / LF-013 / LN-009 / LN-011 fordert stabile Wire-Codes für jede Manifest-Sicherheitsfehler.
  * Diese Tests sichern: kein Code-Pfad führt zu IllegalArgumentException
- * (alle Fehler werden als `Invalid` gemeldet), und alle Plan-§4-
+ * (alle Fehler werden als `Invalid` gemeldet), und alle LF-010 / LF-013 / LN-009 / LN-011-
  * Sicherheitsfälle werden abgewiesen.
  */
 class BundleManifestParserTest : FunSpec({

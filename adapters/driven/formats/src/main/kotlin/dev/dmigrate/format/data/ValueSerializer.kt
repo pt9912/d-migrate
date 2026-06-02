@@ -20,13 +20,13 @@ import java.util.Base64
 import java.util.UUID
 
 /**
- * Implementiert die Java-Klasse → Format-Repräsentation Mapping-Tabelle aus
- * Plan §6.4.1 vollständig.
+ * LF-009 / LF-013: implementiert das Mapping von Java/JDBC-Werten auf eine
+ * formatneutrale Repräsentation.
  *
  * Konvertiert einen rohen JDBC-Wert in einen "neutralen" [SerializedValue],
  * den die drei Format-Writer (JSON/YAML/CSV) format-spezifisch encoden.
  *
- * Das Type-Routing geschieht über `value::class` zur Laufzeit (siehe §6.4).
+ * Das Type-Routing geschieht über `value::class` zur Laufzeit.
  *
  * **Warnings**:
  * - **W201** — bekannter, aber nicht oder nur best-effort unterstützter
@@ -47,7 +47,7 @@ class ValueSerializer(
     private val warningSink: ((Warning) -> Unit)? = null,
 ) {
 
-    /** Eine Warnung aus dem Mapping-Pfad. Siehe Plan §6.4.1. */
+    /** Eine Warnung aus dem Mapping-Pfad. */
     data class Warning(
         val code: String,
         val table: String,
@@ -220,7 +220,7 @@ class ValueSerializer(
  * Format-neutrale Repräsentation eines Werts.
  *
  * Die drei Format-Writer (JSON/YAML/CSV) interpretieren das in ihrer eigenen
- * Output-Form — siehe Plan §6.4.1 für die vollständige Mapping-Tabelle.
+ * Output-Form.
  */
 sealed class SerializedValue {
     /** SQL NULL → JSON `null`, YAML `null`/`~`, CSV `csvNullString`. */
@@ -236,7 +236,7 @@ sealed class SerializedValue {
     data class FloatingPoint(val value: Double) : SerializedValue()
 
     /**
-     * BigInteger — Plan §6.4.1: JSON-String (Präzisionsschutz),
+     * BigInteger — LF-009 / LF-013: JSON-String (Präzisionsschutz),
      * YAML-Number, CSV dezimal.
      *
      * Wir tragen das raw [java.math.BigInteger] mit, sodass YAML es als
@@ -246,7 +246,7 @@ sealed class SerializedValue {
     data class PreciseInteger(val value: java.math.BigInteger) : SerializedValue()
 
     /**
-     * BigDecimal — Plan §6.4.1: JSON-String, YAML-String, CSV unformatiert
+     * BigDecimal — LF-009 / LF-013: JSON-String, YAML-String, CSV unformatiert
      * (kein Double-Roundtrip).
      *
      * Wir tragen den `toPlainString()`-Wert, weil weder JSON noch YAML
@@ -258,7 +258,7 @@ sealed class SerializedValue {
     data class Text(val value: String) : SerializedValue()
 
     /**
-     * Sequence (rekursiv) — F29 / Plan §6.4.1 für `java.sql.Array`:
+     * Sequence (rekursiv) — LF-009 / LF-013 für `java.sql.Array`:
      * - JSON  → JSON-Array `[v1, v2, ...]`
      * - YAML  → YAML-Sequence (block oder flow style)
      * - CSV   → wird vom CsvChunkWriter durch `null` + W201 ersetzt

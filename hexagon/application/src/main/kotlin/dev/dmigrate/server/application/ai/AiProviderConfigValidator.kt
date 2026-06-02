@@ -3,12 +3,12 @@ package dev.dmigrate.server.application.ai
 import java.net.URI
 
 /**
- * Phase G § 5.2 — semantische Validierung einer
+ * LF-017 / LF-024 / LN-030 / LN-031— semantische Validierung einer
  * [AiProviderConfig] vor der Aufnahme in die [AiProviderRegistry].
  *
  * Form-Invarianten (Pflichtfeld-Längen, positive Caps, Whitespace)
  * werden bereits vom [AiProviderConfig]-Konstruktor durchgesetzt.
- * Diese Stufe prüft die *kontextabhängigen* Regeln aus Plan §5.2:
+ * Diese Stufe prüft die *kontextabhängigen* Regeln aus LF-017 / LF-024 / LN-030 / LN-031:
  *
  * - `NOOP`: kein Endpoint, kein `secretRef`,
  *   `allowExternalNetwork=false`.
@@ -87,7 +87,7 @@ object AiProviderConfigValidator {
                 reason = "must be false for kind=LOCAL_LOOPBACK",
             )
         }
-        // Plan §5.2: secretRef ist für lokale, nicht-auth-pflichtige
+        // LF-017 / LF-024 / LN-030 / LN-031: secretRef ist für lokale, nicht-auth-pflichtige
         // Provider explizit absent/null erlaubt — keine
         // Pflicht-Prüfung hier.
     }
@@ -152,7 +152,7 @@ object AiProviderConfigValidator {
 /**
  * Strukturierter Konfigurationsfehler. Wird vom Bootstrap in die
  * Server-Logs / Start-Failure-Message gespiegelt; **nie** über die
- * MCP-Wire-Schicht ausgegeben (Plan §4.8 + §7.2: keine Server-
+ * MCP-Wire-Schicht ausgegeben (LF-017 / LF-024 / LN-030 / LN-031: keine Server-
  * Konfig-Details an Caller).
  */
 data class AiProviderConfigError(

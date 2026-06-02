@@ -12,10 +12,9 @@ import java.io.InputStream
 
 /**
  * Contract-level tests for the [DataChunkReader] / [DataChunkReaderFactory]
- * interfaces. The concrete JSON/YAML/CSV readers land in Phase B — this
+ * interfaces. The concrete JSON/YAML/CSV readers live in the format adapter; this
  * suite exercises a **Fake** reader that documents the required contract
- * shape so Phase-D streaming tests can build against the same semantics
- * before the Phase-B readers exist.
+ * shape so streaming tests can build against the same semantics.
  */
 class DataChunkReaderTest : FunSpec({
 
@@ -88,7 +87,7 @@ class DataChunkReaderTest : FunSpec({
         reader.close() // must not throw
         // After close, a subsequent nextChunk() call on the fake surfaces the
         // "closed" state as an IllegalStateException — concrete readers MAY
-        // instead return null, but the fake is stricter so Phase-D tests can
+        // instead return null, but the fake is stricter so streaming tests can
         // assert the stricter behavior when they want to.
         shouldThrow<IllegalStateException> { reader.nextChunk() }
     }
@@ -125,7 +124,7 @@ class DataChunkReaderTest : FunSpec({
 
 // ──────────────────────────────────────────────────────────────────────
 // In-memory Fake implementing the DataChunkReader contract — used by the
-// Phase-A contract tests and (in Phase D) as a cheap stand-in for the
+// test fixture contract tests and (in streaming) as a cheap stand-in for the
 // StreamingImporter-level tests.
 // ──────────────────────────────────────────────────────────────────────
 
@@ -177,7 +176,7 @@ private class FakeChunkReaderFactory(
         options: FormatReadOptions,
     ): DataChunkReader {
         require(chunkSize > 0) { "chunkSize must be > 0, got $chunkSize" }
-        // Input stream is intentionally ignored by the fake; concrete Phase-B
+        // Input stream is intentionally ignored by the fake; concrete format reader
         // readers wrap it in EncodingDetector.detectOrFallback(...) first.
         return FakeChunkReader(header, rows, chunkSize, table)
     }

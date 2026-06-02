@@ -8,18 +8,15 @@ import dev.dmigrate.driver.postgresql.PostgresDriver
 import dev.dmigrate.profiling.model.DeterminationStatus
 import dev.dmigrate.profiling.types.LogicalType
 import dev.dmigrate.profiling.types.TargetLogicalType
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
 import org.testcontainers.postgresql.PostgreSQLContainer
 
-private val IntegrationTag = NamedTag("integration")
 
 class PostgresProfilingIntegrationTest : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("profiling_test")
@@ -127,7 +124,7 @@ class PostgresProfilingIntegrationTest : FunSpec({
         }
     }
 
-    // ── Security: malicious identifiers (0.9.1 Phase A §5.4) ───
+    // ── LN-009 / LN-043: malicious identifiers ─────────────────
 
     test("security: table with embedded double-quote is profiled safely") {
         pool().use { p ->

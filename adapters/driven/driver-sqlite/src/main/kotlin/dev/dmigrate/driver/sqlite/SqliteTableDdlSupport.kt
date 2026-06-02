@@ -6,6 +6,7 @@ import dev.dmigrate.driver.*
 internal class SqliteTableDdlSupport(
     private val quoteIdentifier: (String) -> String,
     private val columnConstraintHelper: SqliteColumnConstraintHelper,
+    private val sequenceSupport: SqliteSequenceDdlSupport,
 ) {
 
     fun generateTable(
@@ -16,6 +17,14 @@ internal class SqliteTableDdlSupport(
         deferredConstraints: Set<Pair<String, String>>,
         options: DdlGenerationOptions,
     ): List<DdlStatement> {
+        // Defensive: drop any sequence-support notes that survived the
+        // previous `generateTable` call (e.g. through a future early
+        // return that bypasses the end-of-method drain). Pre-existing
+        // notes belong to the previous table and would be wrong to
+        // attach here; the contract is "every `generateTable` start
+        // begins from a clean note slate".
+        sequenceSupport.drainPendingNotes()
+
         val geometryColumns = table.columns.filter { it.value.type is NeutralType.Geometry }
         val isSpatiaLite = geometryColumns.isNotEmpty() && options.spatialProfile == SpatialProfile.SPATIALITE
 
@@ -38,6 +47,7 @@ internal class SqliteTableDdlSupport(
         }
 
         val tableSql = "CREATE TABLE ${quoteIdentifier(name)} (\n${columnLines.joinToString(",\n") { "    $it" }}\n);"
+        notes += sequenceSupport.drainPendingNotes()
         val statements = mutableListOf(DdlStatement(tableSql, notes))
         if (isSpatiaLite) statements += generateSpatiaLiteColumns(name, geometryColumns)
         return statements
@@ -95,7 +105,8 @@ internal class SqliteTableDdlSupport(
         }
         for (constraint in table.constraints) {
             if ((name to constraint.name) in deferredConstraints) continue
-            lines += columnConstraintHelper.generateConstraintClause(constraint, notes)
+            val clause = columnConstraintHelper.generateConstraintClause(constraint, notes, name)
+            if (clause != null) lines += clause
         }
         val skipPrimaryKey = table.primaryKey.size == 1 && table.primaryKey.all { primaryKey ->
             val column = table.columns[primaryKey]

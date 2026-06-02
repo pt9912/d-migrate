@@ -17,7 +17,7 @@ import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E0.4 checkpoint guard for the reverse pipeline. Cancel at any of the
+ * LF-012 / LN-011 / LN-017 / LN-027 checkpoint guard for the reverse pipeline. Cancel at any of the
  * three runner-level checkpoints must (a) prevent the next side effect and
  * (b) surface as exit 130 — never as the generic exit 4/7 path
  * (implementation-plan-0.9.6 §4.5, §6.1, §7.4).

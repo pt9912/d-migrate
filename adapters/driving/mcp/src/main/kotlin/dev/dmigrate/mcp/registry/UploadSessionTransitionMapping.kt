@@ -13,7 +13,7 @@ import java.time.Instant
 
 /**
  * Shared `transition → typed lifecycle exception` mapping for the
- * upload-session handlers (AP 6.8 `artifact_upload`, AP 6.10
+ * upload-session handlers (LF-012 / LN-027 / LN-028 / LN-038 `artifact_upload`, LF-012 / LN-027 / LN-028 / LN-038
  * `artifact_upload_abort`, and any future expiry sweeper). Surfaces
  * race outcomes (the session changed state between the handler's
  * pre-check and the store transition) as the matching typed
@@ -43,7 +43,7 @@ internal fun UploadSessionStore.transitionOrThrow(
             UploadSessionState.COMPLETED -> IdempotencyConflictException(
                 existingFingerprint = UploadFingerprint.sessionCompleted(session.uploadSessionId),
             )
-            // AP 6.22 C1: a competing completing call that lost the
+            // LF-010 / LF-013 / LN-009 / LN-011 C1: a competing completing call that lost the
             // FINALIZING claim sees the session mid-finalisation and
             // gets the same retryable Conflict surface as a COMPLETED
             // replay. C4 may refine the diagnostic when the streaming

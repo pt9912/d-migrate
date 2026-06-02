@@ -6,7 +6,7 @@ import dev.dmigrate.server.core.principal.TenantId
 /**
  * Eine deklarative Regel der [ConfiguredPolicyService]. Match-Felder
  * (`null` = Wildcard) plus [effect]. Erste passende Regel gewinnt
- * (Plan §7.4 — deterministische Allowlist).
+ * (LF-012 / LN-011 / LN-017 / LN-027 — deterministische Allowlist).
  */
 data class PolicyRule(
     val tenantId: TenantId? = null,

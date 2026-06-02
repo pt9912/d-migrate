@@ -11,7 +11,7 @@ import java.time.Clock
 
 /**
  * Postgres-/JDBC-Implementierung des [QuotaStore]-Vertrags. SQL-Patterns:
- * Plan § 6.8 in `docs/planning/done/ImpPlan-0.9.6-E2.md`.
+ * LF-012 / LN-011 / LN-017 / LN-027.
  *
  * Atomicity:
  * - `reserve` nutzt `INSERT … ON CONFLICT DO UPDATE WHERE limit-check`,
@@ -19,9 +19,16 @@ import java.time.Clock
  *   serialisiert die Konflikt-Updates auf der PK-Zeile).
  * - `release` floored bei 0 via `GREATEST(used - ?, 0)`.
  *
- * Cross-TX-Komposition: jede Methode hat eine `*OnConnection`-Variante
- * (internal), die [JdbcOwnerAwareQuotaService] in einer geteilten
- * DB-TX aufruft. Plan § 6.9: Counter-Decrement und Owner-Status-CAS
+ * Cross-TX-Komposition: jede Methode hat eine `*OnConnection`-Variante,
+ * die [JdbcOwnerAwareQuotaService] in einer geteilten DB-TX aufruft.
+ * `reserveOnConnection` / `currentOnConnection` bleiben `internal` —
+ * Cross-Modul-Aufrufer haben keinen legitimen Bedarf an
+ * Connection-bewussten Reserve-/Read-Pfaden ohne den OwnerAware-Service.
+ * `releaseOnConnection` ist `open` (public), weil
+ * `:test:integration-persistence-jdbc.JdbcOwnerAwareQuotaServiceTest`
+ * sie ueber Modul-Grenze als Failure-Injection-Hook ueberschreibt
+ * (Crash-Window zwischen Owner-markReleased und Counter-Decrement).
+ * LF-012 / LN-011 / LN-017 / LN-027: Counter-Decrement und Owner-Status-CAS
  * MUESSEN gemeinsam atomar sein.
  */
 open class JdbcQuotaStore(
@@ -39,7 +46,7 @@ open class JdbcQuotaStore(
         transactionRunner.inTransaction { conn -> currentOnConnection(conn, key) }
 
     /**
-     * Plan § 6.8 atomarer Reserve-Pfad: INSERT-or-UPDATE mit Limit-Check
+     * LF-012 / LN-011 / LN-017 / LN-027 atomarer Reserve-Pfad: INSERT-or-UPDATE mit Limit-Check
      * im SQL. 0 affected rows ⇒ Limit ueberschritten ⇒ RateLimited mit
      * Follow-up SELECT fuer den aktuellen Counter-Wert.
      */
@@ -76,14 +83,18 @@ open class JdbcQuotaStore(
     }
 
     /**
-     * Plan § 6.8 release: floored UPDATE. Bei fehlender Zeile (kein
+     * LF-012 / LN-011 / LN-017 / LN-027 release: floored UPDATE. Bei fehlender Zeile (kein
      * Counter angelegt) liefert die Funktion 0 — das ist die im Contract
      * geforderte „release fuer unbekannten Key ist no-op".
      *
-     * `open` fuer Failure-Injection-Tests aus Plan § 7.9 Akzeptanz (d)
-     * (Crash-Window zwischen Owner-markX und Counter-Decrement).
+     * `open` fuer Failure-Injection-Tests aus LF-012 / LN-011 / LN-017 / LN-027 Akzeptanz (d)
+     * (Crash-Window zwischen Owner-markX und Counter-Decrement). Public,
+     * weil JdbcOwnerAwareQuotaService die Funktion fuer Cross-Store-
+     * Transaction-Composition aufruft und der Failure-Injection-Test
+     * (:test:integration-persistence-jdbc) sie ueber Modul-Grenze
+     * ueberschreibt.
      */
-    internal open fun releaseOnConnection(conn: Connection, key: QuotaKey, amount: Long): Long {
+    open fun releaseOnConnection(conn: Connection, key: QuotaKey, amount: Long): Long {
         val keyText = QuotaJson.keyToText(key)
         val now = clock.instant()
         val updated = conn.querySingle(

@@ -134,15 +134,15 @@ abstract class AbstractJdbcDataReader : DataReader {
         buildSelectQuery(table, filter, resumeMarker = null)
 
     /**
-     * 0.9.0 Phase C.2: Overload mit optionalem [resumeMarker]. Wenn
-     * gesetzt, wird dem bestehenden WHERE-Baum eine Marker-Cascade
+     * LF-013 / LN-006 / LN-012: Overload mit optionalem [resumeMarker].
+     * Wenn gesetzt, wird dem bestehenden WHERE-Baum eine Marker-Cascade
      * angehaengt und die Projektion zusaetzlich deterministisch
      * sortiert (`ORDER BY markerColumn, tieBreakers...` in ASC).
      *
      * Treiber, die [buildSelectQuery] ueberschreiben, koennen diese
      * Overload ebenfalls ueberschreiben oder sich auf die
      * Default-Delegation verlassen (ohne Marker-Pfad bleibt das SQL
-     * identisch zum 0.3.0/0.4.0-Vertrag).
+     * identisch zum Basis-Streaming-Vertrag).
      */
     protected open fun buildSelectQuery(
         table: String,

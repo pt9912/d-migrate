@@ -6,7 +6,7 @@ dependencies {
     implementation(project(":hexagon:core"))
     implementation(project(":hexagon:ports"))
 
-    // Phase E0.1 cancel-test fixtures (TestCancellationTokenSource).
+    // LF-012 / LN-011 / LN-017 / LN-027 cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
 }
 

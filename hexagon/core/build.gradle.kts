@@ -1,6 +1,6 @@
 // d-migrate-core: Pure domain model and validation
 // ZERO external dependencies — only Kotlin stdlib (test fixtures may add
-// kotest for shared test helpers; see Phase E0.1 cancel-contract fixture).
+// kotest for shared test helpers; see LF-012 / LN-011 / LN-017 / LN-027 cancel-contract fixture).
 
 plugins {
     `java-library`
@@ -9,6 +9,13 @@ plugins {
 
 dependencies {
     testFixturesApi("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+
+    // Quality-Coverage-Expansion Phase A: PerfMeasure/PerfReport for the
+    // opt-in `perf`-tagged DiffPlanner hotpath spec (Sub-Slice A-
+    // Vervollständigung). Test-only dep — hexagon:profiling already
+    // depends on hexagon:core, but the inverse arrow is confined to
+    // test sourcesets so no production cycle is introduced.
+    testImplementation(project(":hexagon:profiling"))
 }
 
 kover {
@@ -47,7 +54,7 @@ kover {
                     "dev.dmigrate.core.diff.NamedTrigger",
                     // Validation result DTOs (data carriers)
                     "dev.dmigrate.core.validation.ValidationWarning",
-                    // Server-core (0.9.6 phase A) — pure data carriers
+                    // Server-core (LF-012 / LN-011 / LN-017 / LN-027) — pure data carriers
                     "dev.dmigrate.server.core.principal.PrincipalContext",
                     "dev.dmigrate.server.core.principal.TenantId",
                     "dev.dmigrate.server.core.principal.PrincipalId",
@@ -65,9 +72,9 @@ kover {
                     "dev.dmigrate.server.core.pagination.PageRequest",
                     "dev.dmigrate.server.core.pagination.PageResult",
                     "dev.dmigrate.server.core.execution.ExecutionMeta",
-                    "dev.dmigrate.server.core.approval.ApprovalGrant",
-                    "dev.dmigrate.server.core.approval.ApprovalCorrelationKind",
-                    // Server-core idempotency outcomes (0.9.6 phase A AP 6.2).
+                    // ApprovalGrant + ApprovalCorrelationKind covered by
+                    // ApprovalGrantTest as of 2026-05 — exclude removed.
+                    // Server-core idempotency outcomes (LF-012 / LN-011 / LN-017 / LN-027).
                     // Wildcards cover the outer sealed-interface marker plus
                     // every nested data-class subtype in one shot.
                     "dev.dmigrate.server.core.idempotency.IdempotencyKey",
@@ -83,26 +90,9 @@ kover {
                     "dev.dmigrate.server.core.idempotency.SyncEffectReserveOutcome\$*",
                     "dev.dmigrate.server.core.idempotency.InitResumeOutcome",
                     "dev.dmigrate.server.core.idempotency.InitResumeOutcome\$*",
-                    // Server-core audit (AP 6.2 minimal seed; expanded in AP 6.8)
-                    "dev.dmigrate.server.core.audit.AuditEvent",
-                    "dev.dmigrate.server.core.audit.AuditOutcome",
-                    // Server-core AI types (0.9.6 Phase G G.6.a/b) —
-                    // Datentraeger fuer Outcome-Lifecycle und KI-Artefakt-
-                    // Provenance. Init-Blocks pruefen Form-Invarianten;
-                    // semantische Pfade sind in adapters/driving/mcp und
-                    // hexagon/application abgedeckt. Wildcards umfassen
-                    // den sealed-Marker plus jeden Sub-Typ.
-                    "dev.dmigrate.server.core.ai.AiToolScope",
-                    "dev.dmigrate.server.core.ai.AiToolClaimId",
-                    "dev.dmigrate.server.core.ai.AiToolOutcome",
-                    "dev.dmigrate.server.core.ai.AiToolOutcome\$*",
-                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome",
-                    "dev.dmigrate.server.core.ai.AiToolAcquireOutcome\$*",
-                    "dev.dmigrate.server.core.ai.AiArtifactMetadata",
-                    "dev.dmigrate.server.core.ai.AiArtifactProvenance",
-                    "dev.dmigrate.server.core.ai.AiArtifactProvenance\$*",
-                    "dev.dmigrate.server.core.ai.AiWireArtifactKind",
-                    "dev.dmigrate.server.core.ai.AiIntent",
+                    // AuditEvent / AuditOutcome covered by AuditEventTest
+                    // as of 2026-05 — exclude removed.
+
                 )
             }
         }

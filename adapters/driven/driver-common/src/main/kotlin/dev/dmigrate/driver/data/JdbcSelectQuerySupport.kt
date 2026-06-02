@@ -22,7 +22,7 @@ internal data class WhereFragment(val sql: String, val params: List<Any?>)
 internal object JdbcSelectQuerySupport {
 
     /**
-     * 0.9.0 Phase C.2 §4.1: erzeugt den Composite-Marker-Filter fuer
+     * LF-013 / LN-006 / LN-012: erzeugt den Composite-Marker-Filter fuer
      * `(markerColumn, tieBreakers...) > (lastMarkerValue, lastTieBreakerValues...)`
      * in lexikografischer Reihenfolge. Ohne Tie-Breaker entartet der
      * Ausdruck zu einem strikten `markerColumn > ?`.

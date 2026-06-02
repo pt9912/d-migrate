@@ -109,7 +109,7 @@ class ResponseLimitEnforcerTest : FunSpec({
         }
 
         test("oversized success response is moved to an artefact with a truncated envelope (non-schema-aware tool)") {
-            // AP 6.23: schema-aware tools (schema_validate etc.) are
+            // LF-012 / LN-027 / LN-028 / LN-038: schema-aware tools (schema_validate etc.) are
             // never wrapped by the generic envelope; this test uses a
             // tool that has no per-output schema (artifact_chunk_get).
             val limits = McpLimitsConfig(maxToolResponseBytes = 64)
@@ -134,8 +134,8 @@ class ResponseLimitEnforcerTest : FunSpec({
             String(stored, Charsets.UTF_8) shouldBe bigText
         }
 
-        test("AP 6.23: oversized response from a schema-aware tool surfaces INTERNAL_AGENT_ERROR") {
-            // Plan §6.23: the generic {summary, artifactRef, truncated}
+        test("LF-012 / LN-027 / LN-028 / LN-038: oversized response from a schema-aware tool surfaces INTERNAL_AGENT_ERROR") {
+            // LF-012 / LN-027 / LN-028 / LN-038: the generic {summary, artifactRef, truncated}
             // envelope does not match the per-tool output schemas of
             // schema_validate / schema_compare / schema_generate /
             // job_status_get. An oversize response from one of these
@@ -169,7 +169,7 @@ class ResponseLimitEnforcerTest : FunSpec({
         }
 
         test("multi-content (or non-text) success outcomes pass through unchanged") {
-            // Forward-compat hedge: every Phase-C handler today emits
+            // Forward-compat hedge: every LF-012 / LN-038 handler today emits
             // a single-text frame, so this branch is dead in production.
             // We pin the pass-through anyway so a future multi-frame
             // handler doesn't trip the enforcer on a payload it can't
@@ -207,7 +207,7 @@ class ResponseLimitEnforcerTest : FunSpec({
                 ),
             )
             val ex = shouldThrow<dev.dmigrate.server.application.error.InternalAgentErrorException> {
-                // AP 6.23: use a non-schema-aware tool so the spill
+                // LF-012 / LN-027 / LN-028 / LN-038: use a non-schema-aware tool so the spill
                 // path runs (schema-aware tools short-circuit to
                 // InternalAgentError without a PayloadTooLarge cause).
                 sut.enforceResponseSize("artifact_chunk_get", PRINCIPAL, outcome)

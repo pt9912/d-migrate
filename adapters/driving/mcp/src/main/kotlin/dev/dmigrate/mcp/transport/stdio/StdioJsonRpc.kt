@@ -9,17 +9,17 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * stdio JSON-RPC dispatcher per `ImpPlan-0.9.6-B.md` §12.1 + §12.4.
+ * stdio JSON-RPC dispatcher per LF-012 / LN-027 / LN-028 / LN-038.
  *
  * Wires an [NdjsonMessageProducer] (reads NDJSON from [input]) to an
  * lsp4j `RemoteEndpoint` that dispatches to [service] and writes
  * responses through an [NdjsonMessageConsumer] on [output]. The reader
  * loop runs on a daemon thread; [stop] unblocks the loop.
  *
- * @param principalResolution AP 6.7 — the bound stdio principal (or
+ * @param principalResolution LF-012 / LN-027 / LN-028 / LN-038 — the bound stdio principal (or
  *  the reason no principal could be derived). Initialize itself does
  *  not require a principal (parallel to HTTP §12.14 — `initialize` is
- *  exempt from auth). Tool-/resource-dispatch in Phase C/D MUST consult
+ *  exempt from auth). Tool-/resource-dispatch in LF-012 / LN-038 MUST consult
  *  this field and translate `AuthRequired` into `AUTH_REQUIRED`. The
  *  field is `null` only for tests / internal use that explicitly
  *  bypass principal binding.

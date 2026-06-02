@@ -6,7 +6,6 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.connection.PoolSettings
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import io.kotest.matchers.longs.shouldBeLessThan
@@ -14,10 +13,9 @@ import io.kotest.matchers.shouldBe
 import org.testcontainers.postgresql.PostgreSQLContainer
 import java.sql.SQLException
 
-private val IntegrationTag = NamedTag("integration")
 
 /**
- * Phase E0.7.4 Bench-Test: belegt empirisch, dass das Cancel-Reaktions-
+ * LF-012 / LN-011 / LN-017 / LN-027 Bench-Test: belegt empirisch, dass das Cancel-Reaktions-
  * Budget aus implementation-plan-0.9.6 §4.1 (`<= statementTimeoutMs`) für
  * langlaufende PostgreSQL-Queries respektiert wird, ohne Connection-Leak.
  *
@@ -27,7 +25,6 @@ private val IntegrationTag = NamedTag("integration")
  */
 class E07PostgresTimeoutBench : FunSpec({
 
-    tags(IntegrationTag)
 
     val container = PostgreSQLContainer("postgres:16-alpine")
         .withDatabaseName("dmigrate_test")

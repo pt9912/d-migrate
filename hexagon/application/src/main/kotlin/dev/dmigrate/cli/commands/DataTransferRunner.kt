@@ -61,7 +61,7 @@ class DataTransferRunner(
         return try {
             executeWithCancel(request, cancellationToken)
         } catch (_: OperationCancelledException) {
-            // Plan §4.5 — Cancel maps to CLI exit 130, never to the generic
+            // LF-008 / LF-009 / LF-013 — Cancel maps to CLI exit 130, never to the generic
             // 4 (schema read) or 5 (transfer error) paths.
             CANCELLED_EXIT_CODE
         }
@@ -152,7 +152,7 @@ class DataTransferRunner(
                 if (!request.quiet && !request.noProgress) userFacingStderr("  Transferred: $table")
             }
         } catch (e: OperationCancelledException) {
-            // Plan §4.5: Cancel must travel through this catch-all boundary
+            // LF-008 / LF-009 / LF-013: Cancel must travel through this catch-all boundary
             // unmodified so the runner can map it to exit 130 instead of the
             // generic 5 path.
             throw e

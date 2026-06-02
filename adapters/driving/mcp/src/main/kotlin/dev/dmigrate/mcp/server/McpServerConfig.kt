@@ -10,7 +10,7 @@ import java.time.Duration
 enum class AuthMode { DISABLED, JWT_JWKS, JWT_INTROSPECTION }
 
 /**
- * Verbindlicher Feldsatz aus `ImpPlan-0.9.6-B.md` §12.12. Defaults
+ * Verbindlicher Feldsatz aus LF-012 / LN-027 / LN-028 / LN-038 defaults
  * sind fail-closed: `JWT_JWKS` ohne issuer/jwksUrl/audience ist
  * absichtlich invalid — Konfiguration muss explizit gesetzt werden,
  * sonst startet der Server nicht (§5.2).
@@ -24,6 +24,18 @@ data class McpServerConfig(
     val issuer: URI? = null,
     val jwksUrl: URI? = null,
     val introspectionUrl: URI? = null,
+    /**
+     * RFC 7662 / RFC 6749 §2.3.1 client authentication for the
+     * introspection endpoint. Both [introspectionClientId] and
+     * [introspectionClientSecret] must be set together — leaving
+     * either side null disables client auth (acceptable for
+     * loopback dev setups, never for production deployments
+     * authenticated via `client_credentials`). The pair is encoded
+     * as HTTP Basic in the `Authorization` header (per RFC 6749
+     * §2.3.1: each component URL-encoded before joining and Base64).
+     */
+    val introspectionClientId: String? = null,
+    val introspectionClientSecret: String? = null,
     val audience: String? = null,
     val algorithmAllowlist: Set<String> = DEFAULT_ALGORITHMS,
     val clockSkew: Duration = Duration.ofSeconds(60),
@@ -58,35 +70,62 @@ data class McpServerConfig(
  * §12.15 explicitly says stdio ignores `authMode`, so stdio callers
  * use [validateForStdio] which skips the auth-mode block.
  */
-@Suppress("CyclomaticComplexMethod")
 fun McpServerConfig.validate(): List<String> {
     val errors = sharedErrors().toMutableList()
-
     val bindIsLoopback = bindIsLoopback()
 
-    when (authMode) {
-        AuthMode.DISABLED -> {
-            if (!bindIsLoopback) {
-                errors += "authMode=DISABLED requires loopback bind address (got '$bindAddress')"
-            }
-            if (publicBaseUrl != null) {
-                errors += "authMode=DISABLED forbids publicBaseUrl"
-            }
-        }
-        AuthMode.JWT_JWKS -> {
-            if (issuer == null) errors += "authMode=JWT_JWKS requires issuer"
-            if (audience == null) errors += "authMode=JWT_JWKS requires audience"
-            if (jwksUrl == null) errors += "authMode=JWT_JWKS requires jwksUrl"
-        }
-        AuthMode.JWT_INTROSPECTION -> {
-            if (issuer == null) errors += "authMode=JWT_INTROSPECTION requires issuer"
-            if (audience == null) errors += "authMode=JWT_INTROSPECTION requires audience"
-            if (introspectionUrl == null) errors += "authMode=JWT_INTROSPECTION requires introspectionUrl"
-        }
-    }
+    errors += authModeErrors(bindIsLoopback)
+    errors += bindAndOriginErrors(bindIsLoopback)
 
+    return errors
+}
+
+private fun McpServerConfig.authModeErrors(bindIsLoopback: Boolean): List<String> = when (authMode) {
+    AuthMode.DISABLED -> disabledAuthErrors(bindIsLoopback)
+    AuthMode.JWT_JWKS -> jwksAuthErrors()
+    AuthMode.JWT_INTROSPECTION -> introspectionAuthErrors(bindIsLoopback)
+}
+
+private fun McpServerConfig.disabledAuthErrors(bindIsLoopback: Boolean): List<String> = buildList {
+    if (!bindIsLoopback) {
+        add("authMode=DISABLED requires loopback bind address (got '$bindAddress')")
+    }
+    if (publicBaseUrl != null) {
+        add("authMode=DISABLED forbids publicBaseUrl")
+    }
+}
+
+private fun McpServerConfig.jwksAuthErrors(): List<String> = buildList {
+    if (issuer == null) add("authMode=JWT_JWKS requires issuer")
+    if (audience == null) add("authMode=JWT_JWKS requires audience")
+    if (jwksUrl == null) add("authMode=JWT_JWKS requires jwksUrl")
+}
+
+private fun McpServerConfig.introspectionAuthErrors(bindIsLoopback: Boolean): List<String> = buildList {
+    if (issuer == null) add("authMode=JWT_INTROSPECTION requires issuer")
+    if (audience == null) add("authMode=JWT_INTROSPECTION requires audience")
+    if (introspectionUrl == null) add("authMode=JWT_INTROSPECTION requires introspectionUrl")
+    if ((introspectionClientId == null) != (introspectionClientSecret == null)) {
+        add("introspectionClientId and introspectionClientSecret must both be set or both be null")
+    }
+    // LN-025 / LN-028: production HTTP deployments (non-loopback bind)
+    // MUST authenticate the introspection POST per RFC 6749 §2.3.1.
+    // Loopback dev setups can keep both creds null.
+    if (!bindIsLoopback &&
+        introspectionClientId == null &&
+        introspectionClientSecret == null
+    ) {
+        add(
+            "authMode=JWT_INTROSPECTION on non-loopback bind '$bindAddress' " +
+                "requires introspectionClientId and introspectionClientSecret " +
+                "(RFC 6749 §2.3.1 client authentication)",
+        )
+    }
+}
+
+private fun McpServerConfig.bindAndOriginErrors(bindIsLoopback: Boolean): List<String> = buildList {
     if (!bindIsLoopback && allowedOrigins == McpServerConfig.DEFAULT_LOOPBACK_ORIGINS) {
-        errors += "non-loopback bind '$bindAddress' requires explicit allowedOrigins"
+        add("non-loopback bind '$bindAddress' requires explicit allowedOrigins")
     }
     // §4.4 + §5.2: non-loopback HTTP MUST advertise a canonical
     // HTTPS URI in Protected Resource Metadata. Falling back to the
@@ -96,11 +135,11 @@ fun McpServerConfig.validate(): List<String> {
     // set when the bind address is non-loopback so the canonical
     // URI is build-time stable.
     if (!bindIsLoopback && publicBaseUrl == null) {
-        errors += "non-loopback bind '$bindAddress' requires publicBaseUrl " +
-            "(canonical HTTPS URI per §4.4)"
+        add(
+            "non-loopback bind '$bindAddress' requires publicBaseUrl " +
+                "(canonical HTTPS URI per §4.4)",
+        )
     }
-
-    return errors
 }
 
 /**
@@ -159,7 +198,7 @@ private const val MAX_PORT = 65535
 
 /**
  * §12.9 verbindliche Scope-Tabelle. Alle 0.9.6-Tools sind enthalten,
- * auch wenn Phase B die meisten nur als Registry-Eintrag (ohne
+ * auch wenn LF-012 / LN-038 die meisten nur als Registry-Eintrag (ohne
  * Handler) liefert — die Tabelle ist Vertrag fuer Protected Resource
  * Metadata (§4.4).
  */
@@ -178,8 +217,8 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "resources/list" to read,
         "resources/templates/list" to read,
         "resources/read" to read,
-        // Phase G § 6 G.7: prompts/list und prompts/get sind
-        // Read-Pfade — Plan §6 G.7 verlangt explizit dmigrate:read,
+        // LF-017 / LF-024 / LN-030 / LN-031: prompts/list und prompts/get sind
+        // Read-Pfade — LF-017 / LF-024 / LN-030 / LN-031 verlangt explizit dmigrate:read,
         // nicht den fail-closed Fallback dmigrate:admin.
         "prompts/list" to read,
         "prompts/get" to read,
@@ -199,12 +238,12 @@ private fun buildDefaultScopeMapping(): Map<String, Set<String>> {
         "schema_compare_start" to jobStart,
         "data_profile_start" to jobStart,
         // Upload session — single segment tool with implicit
-        // finalisation per spec/ki-mcp.md §5.3 + ImpPlan-0.9.6-C.md
+        // finalisation per spec/ki-mcp.md + LF-012 / LN-027 / LN-028 / LN-038
         // §12.4. The completing segment returns the final
         // artifactId/sha256 in the same response; there is no
         // separate `artifact_upload_complete` tool.
         //
-        // Phase F § 8.4 (F.4 1/3): das method-level Gate fuer
+        // LF-010 / LF-013 / LN-009 / LN-011: das method-level Gate fuer
         // `artifact_upload_init` und `artifact_upload` sind method-level
         // `dmigrate:read`, weil `schema_staging_readonly` ohne Write-
         // Policy startbar sein muss. Intent-abhaengige Write-Gates

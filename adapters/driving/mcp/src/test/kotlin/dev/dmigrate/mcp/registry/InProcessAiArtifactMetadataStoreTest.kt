@@ -16,7 +16,7 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Instant
 
 /**
- * Phase G § 5.4 + § 6 G.6 (G.6.b 2/2) — Akzeptanz für den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanz für den
  * In-Process-Provenance-Store.
  */
 class InProcessAiArtifactMetadataStoreTest : FunSpec({
@@ -48,7 +48,7 @@ class InProcessAiArtifactMetadataStoreTest : FunSpec({
         ),
         providerName = "noop",
         model = "noop:default",
-        modelVersion = "0.9.6",
+        modelVersion = "0.9.7",
         outputFingerprint = "a".repeat(64),
         createdAt = now,
     )
@@ -88,7 +88,7 @@ class InProcessAiArtifactMetadataStoreTest : FunSpec({
         val conflict = outcome.shouldBeInstanceOf<SaveAiArtifactMetadataOutcome.Conflict>()
         conflict.existing shouldBe first
         conflict.attempted shouldBe second
-        // Existing-Eintrag wird nicht ueberschrieben (Plan §5.4: Provenance ist immutable).
+        // Existing-Eintrag wird nicht ueberschrieben (LF-017 / LF-024 / LN-030 / LN-031: Provenance ist immutable).
         store.findByArtifactId(tenant, first.artifactId) shouldBe first
     }
 

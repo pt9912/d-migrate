@@ -8,6 +8,7 @@ internal class SqliteColumnConstraintHelper(
     private val typeMapper: TypeMapper,
     private val columnSql: (String, String, ColumnDefinition, SchemaDefinition) -> String,
     private val referentialActionSql: (ReferentialAction) -> String,
+    private val sequenceSupport: SqliteSequenceDdlSupport,
 ) {
 
     fun generateColumnSql(
@@ -110,10 +111,16 @@ internal class SqliteColumnConstraintHelper(
 
     fun generateConstraintClause(
         constraint: ConstraintDefinition,
-        notes: MutableList<TransformationNote>
-    ): String {
+        notes: MutableList<TransformationNote>,
+        tableName: String = "",
+    ): String? {
         return when (constraint.type) {
             ConstraintType.CHECK -> {
+                if (tableName.isNotEmpty() &&
+                    sequenceSupport.shouldSuppressCheckConstraint(tableName, constraint.expression ?: "")
+                ) {
+                    return null
+                }
                 "CONSTRAINT ${quoteIdentifier(constraint.name)} CHECK (${constraint.expression})"
             }
             ConstraintType.UNIQUE -> {

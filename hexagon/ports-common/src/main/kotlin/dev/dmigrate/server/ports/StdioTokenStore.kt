@@ -5,8 +5,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Token-Registry fuer den stdio-Transport per
- * `docs/ImpPlan-0.9.6-B.md` §4.2 + §12.10.
+ * Token-Registry fuer den stdio-Transport (LF-012 / LN-027 / LN-028 / LN-038).
  *
  * Der MCP-stdio-Transport leitet Principals NICHT aus OS-User,
  * Parent-Prozess oder ungeprueften ENV-Daten ab. Stattdessen wird

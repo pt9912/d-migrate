@@ -10,12 +10,12 @@ enum class QuotaDimension {
     UPLOAD_BYTES,
     PARALLEL_SEGMENT_WRITES,
     /**
-     * Phase F § 8.9 (F.9 1/3): persistierte Artefakt-Bytes nach
+     * LF-010 / LF-013 / LN-009 / LN-011: persistierte Artefakt-Bytes nach
      * erfolgreicher Finalisierung. Die [ACTIVE_UPLOAD_SESSIONS]-
      * und [UPLOAD_BYTES]-Reservierungen aus Init werden auf
      * `COMPLETED` freigegeben; die Bytes wandern in diese Dimension,
      * sodass ein Tenant nur fuer den durablen Bestand bezahlt (nicht
-     * fuer in-flight + durabel doppelt). Plan § 8.9 wortlaeufig:
+     * fuer in-flight + durabel doppelt). LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig:
      * "COMPLETED bucht gespeicherte Artefaktbytes genau einmal und
      * gibt reservierte Upload-Bytes frei".
      */
@@ -61,13 +61,13 @@ sealed interface QuotaOutcome {
         val current: Long,
         val limit: Long,
         /**
-         * Phase E §7.9 line 1294-1295: `RATE_LIMITED`-Details muessen
+         * LF-012 / LN-011 / LN-017 / LN-027 line 1294-1295: `RATE_LIMITED`-Details muessen
          * `retryAfter` enthalten. Fuer Window-Rate-Limits aus dem
          * naechsten Window-Reset; fuer aktive Jobquoten aus einem
          * konfigurierten Retry-Hint, weil Slot-Freigabe ereignisgetrieben
          * ist. Default ist [DEFAULT_ACTIVE_JOB_RETRY_AFTER] — Wert > 0,
          * damit das Idempotency-Lease auf maximal `now + retryAfter`
-         * gesetzt werden kann (Plan §7.9 line 1295).
+         * gesetzt werden kann (LF-012 / LN-011 / LN-017 / LN-027 line 1295).
          */
         val retryAfter: Duration = DEFAULT_ACTIVE_JOB_RETRY_AFTER,
     ) : QuotaOutcome
@@ -84,7 +84,7 @@ sealed interface QuotaOutcome {
 }
 
 /**
- * Tracks raw quota counters. The application-layer `QuotaService` (AP 6.6)
+ * Tracks raw quota counters. The application-layer `QuotaService` (LF-012 / LN-027 / LN-028 / LN-038)
  * wraps reserve/commit/release/refund semantics on top of these primitives.
  */
 interface QuotaStore {

@@ -1,0 +1,344 @@
+package dev.dmigrate.driver.mysql
+
+import dev.dmigrate.core.diff.NamedTrigger
+import dev.dmigrate.core.diff.SchemaComparator
+import dev.dmigrate.core.diff.SchemaDiff
+import dev.dmigrate.core.diff.migration.DiffDiagnostic
+import dev.dmigrate.core.diff.migration.DiffOperation
+import dev.dmigrate.core.diff.migration.DiffPlanner
+import dev.dmigrate.core.diff.migration.TriggerPlanningContext
+import dev.dmigrate.core.diff.migration.TriggerReplaceMode
+import dev.dmigrate.core.diff.routine.RoutineBodyScrubber
+import dev.dmigrate.core.model.ColumnDefinition
+import dev.dmigrate.core.model.NeutralType
+import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.model.TableDefinition
+import dev.dmigrate.core.model.TriggerDefinition
+import dev.dmigrate.core.model.TriggerEvent
+import dev.dmigrate.core.model.TriggerForEach
+import dev.dmigrate.core.model.TriggerTiming
+import dev.dmigrate.driver.DdlGenerationOptions
+import dev.dmigrate.driver.migration.MigrationBlockedReason
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
+import io.kotest.matchers.collections.shouldHaveSize
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.string.shouldNotContain
+
+/**
+ * E.2 Trigger-Migration Sub-Slice B: MySQL trigger renderer pins.
+ * Covers Create/Drop, Replace via Drop+Create (MySQL has no
+ * `CREATE OR REPLACE TRIGGER`), the strict-gap lift, and the
+ * MySQL-specific rejections for `WHEN` and `FOR EACH STATEMENT`.
+ */
+class MysqlTriggerDdlHelperTest : FunSpec({
+
+    val planner = DiffPlanner()
+    val gen = MysqlDiffDdlGenerator()
+
+    fun ordersTable() = TableDefinition(
+        columns = mapOf(
+            "id" to ColumnDefinition(type = NeutralType.Integer, required = true),
+        ),
+    )
+
+    fun schemaWith(triggers: Map<String, TriggerDefinition>): SchemaDefinition =
+        SchemaDefinition(
+            name = "App",
+            version = "1",
+            tables = mapOf("orders" to ordersTable()),
+            triggers = triggers,
+        )
+
+    val sampleTrigger = TriggerDefinition(
+        table = "orders",
+        event = TriggerEvent.INSERT,
+        timing = TriggerTiming.BEFORE,
+        forEach = TriggerForEach.ROW,
+        body = "SET NEW.created_at = NOW()",
+    )
+
+    val lenientOptions = DdlGenerationOptions()
+    val strictOptions = DdlGenerationOptions(strictGapOperations = true)
+
+    val fallbackContext = TriggerPlanningContext(TriggerReplaceMode.DROP_CREATE_FALLBACK)
+
+    test("CreateTrigger Up emits CREATE TRIGGER with timing/event/ON table/FOR EACH ROW + inline body") {
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", sampleTrigger)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to sampleTrigger)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        val sql = r.statements.single().sql
+        sql.shouldContain("CREATE TRIGGER `audit_log`")
+        sql.shouldContain("BEFORE INSERT")
+        sql.shouldContain("ON `orders`")
+        sql.shouldContain("FOR EACH ROW")
+        sql.shouldContain("SET NEW.created_at = NOW();")
+        // No `EXECUTE FUNCTION` wrapper — MySQL body is inline.
+        sql.shouldNotContain("EXECUTE FUNCTION")
+    }
+
+    test("CreateTrigger body without trailing semicolon gets one appended") {
+        val noSemi = sampleTrigger.copy(body = "SET NEW.created_at = NOW()")
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", noSemi)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to noSemi)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.statements.single().sql.trimEnd().endsWith(";") shouldBe true
+    }
+
+    test("CreateTrigger body with BEGIN/END block renders as inline statement") {
+        val begin = sampleTrigger.copy(body = "BEGIN INSERT INTO audit VALUES (NEW.id); END")
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", begin)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to begin)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        val sql = r.statements.single().sql
+        sql.shouldContain("BEGIN INSERT INTO audit VALUES (NEW.id); END")
+        // No MySQL `DELIMITER //` wrapper in the artefact.
+        sql.shouldNotContain("DELIMITER")
+    }
+
+    test("DropTrigger Up emits `DROP TRIGGER <name>` without table qualifier") {
+        val current = schemaWith(mapOf("audit_log" to sampleTrigger))
+        val desired = SchemaDefinition(name = "App", version = "1", tables = current.tables)
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldBe "DROP TRIGGER `audit_log`;"
+        // Critical: no `<table>.<name>` qualifier — that is a MySQL
+        // syntax error. The renderer drops only the bare trigger name.
+        r.statements.single().sql.shouldNotContain("orders.audit_log")
+        r.statements.single().sql.shouldNotContain("`orders`.`audit_log`")
+    }
+
+    test("CreateTrigger Down inverts to DROP TRIGGER bare name") {
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", sampleTrigger)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to sampleTrigger)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateDown(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements.single().sql shouldBe "DROP TRIGGER `audit_log`;"
+    }
+
+    test("ReplaceTrigger Up renders Drop+Create and emits W_TRIGGER_REPLACE_GAP warning") {
+        val before = sampleTrigger
+        val after = sampleTrigger.copy(body = "SET NEW.created_at = UTC_TIMESTAMP()")
+        val current = schemaWith(mapOf("audit_log" to before))
+        val desired = schemaWith(mapOf("audit_log" to after))
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements shouldHaveSize 2
+        r.statements[0].sql shouldBe "DROP TRIGGER `audit_log`;"
+        r.statements[1].sql.shouldContain("CREATE TRIGGER `audit_log`")
+        r.statements[1].sql.shouldContain("UTC_TIMESTAMP()")
+        val gapWarning = r.diagnostics.single { it.code == "W_TRIGGER_REPLACE_GAP" }
+        gapWarning.severity shouldBe DiffDiagnostic.Severity.WARNING
+    }
+
+    test("ReplaceTrigger Down without before body blocks with ROUTINE_DOWN_BODY_UNKNOWN") {
+        val before = sampleTrigger.copy(body = null)
+        val after = sampleTrigger.copy(body = "SET NEW.created_at = UTC_TIMESTAMP()")
+        val current = schemaWith(mapOf("audit_log" to before))
+        val desired = schemaWith(mapOf("audit_log" to after))
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateDown(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.ROLLBACK_NOT_POSSIBLE
+        r.diagnostics.any { it.code == "ROUTINE_DOWN_BODY_UNKNOWN" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("CreateTrigger with WHEN condition blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val withWhen = sampleTrigger.copy(condition = "NEW.amount > 100")
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", withWhen)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to withWhen)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.diagnostics.any { it.code == "MYSQL_TRIGGER_CONDITION_UNSUPPORTED" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("CreateTrigger with INSTEAD OF blocks DIALECT_UNSUPPORTED_OPERATION") {
+        // INSTEAD OF is PostgreSQL-only — MySQL must surface this as a
+        // structured blocker, not let the server reject it at apply time.
+        val insteadOf = sampleTrigger.copy(timing = TriggerTiming.INSTEAD_OF)
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", insteadOf)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to insteadOf)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.diagnostics.any { it.code == "MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("CreateTrigger with BEGIN/END body emits exactly one MigrationDdlStatement") {
+        // Pin: the renderer must not pre-split a multi-statement
+        // BEGIN..END body on embedded semicolons; the JDBC pathway
+        // executes the full body via a single Statement.execute(...).
+        val begin = sampleTrigger.copy(
+            body = "BEGIN INSERT INTO audit VALUES (NEW.id); UPDATE counters SET n = n + 1; END",
+        )
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", begin)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to begin)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements shouldHaveSize 1
+        val sql = r.statements.single().sql
+        sql.shouldContain("INSERT INTO audit")
+        sql.shouldContain("UPDATE counters SET n = n + 1")
+    }
+
+    test("CreateTrigger without body blocks ROUTINE_BODY_UNKNOWN (non-Replace path)") {
+        val noBody = sampleTrigger.copy(body = null)
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", noBody)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to noBody)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.diagnostics.any { it.code == "ROUTINE_BODY_UNKNOWN" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("ReplaceTrigger with cross-table move renders DROP unqualified + CREATE referencing after.table") {
+        // Trigger T sat on `orders` in current and on `customers` in
+        // desired. The bare-name DROP is independent of the table, the
+        // new CREATE must reference `customers`.
+        val customersTable = TableDefinition(
+            columns = mapOf("id" to ColumnDefinition(type = NeutralType.Integer, required = true)),
+        )
+        val before = sampleTrigger.copy(table = "orders")
+        val after = sampleTrigger.copy(table = "customers")
+        val current = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("orders" to ordersTable(), "customers" to customersTable),
+            triggers = mapOf("audit_log" to before),
+        )
+        val desired = SchemaDefinition(
+            name = "App", version = "1",
+            tables = mapOf("orders" to ordersTable(), "customers" to customersTable),
+            triggers = mapOf("audit_log" to after),
+        )
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        r.statements shouldHaveSize 2
+        r.statements[0].sql shouldBe "DROP TRIGGER `audit_log`;"
+        r.statements[1].sql.shouldContain("ON `customers`")
+        r.statements[1].sql.shouldNotContain("ON `orders`")
+    }
+
+    test("CreateTrigger with FOR EACH STATEMENT blocks DIALECT_UNSUPPORTED_OPERATION") {
+        val stmtLevel = sampleTrigger.copy(forEach = TriggerForEach.STATEMENT)
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", stmtLevel)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to stmtLevel)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.DIALECT_UNSUPPORTED_OPERATION
+        r.diagnostics.any { it.code == "MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED" } shouldBe true
+        r.statements.shouldBeEmpty()
+    }
+
+    test("Trigger execution-plane keeps raw body; standalone scrubber call masks PASSWORD literals") {
+        // The renderer itself does NOT scrub — the Execution-Plane DDL
+        // (the statement the runner sends to the DB) must contain the
+        // raw body, otherwise the trigger logic would not work. The
+        // Display-Plane scrubber kicks in only when
+        // `SchemaMigrateReportBuilder` writes a report. This test pins
+        // both halves of the contract: the renderer's output stays
+        // raw, and the shared `RoutineBodyScrubber` recognises a
+        // PASSWORD literal inside a trigger statement when invoked by
+        // the report builder downstream. The Report-Builder
+        // integration itself lives in
+        // `SchemaMigrateReportBuilderTest` (hexagon-application) and
+        // is not duplicated here.
+        val withSecret = sampleTrigger.copy(
+            body = "CALL audit_with_password(NEW.id, PASSWORD 'hunter2');",
+        )
+        val diff = SchemaDiff(triggersAdded = listOf(NamedTrigger("audit_log", withSecret)))
+        val plan = planner.plan(
+            SchemaDefinition(name = "App", version = "1"),
+            schemaWith(mapOf("audit_log" to withSecret)),
+            diff,
+            triggerPlanningContext = fallbackContext,
+        )
+        val r = gen.generateUp(plan, lenientOptions)
+        r.isBlocked shouldBe false
+        val rendered = r.statements.single().sql
+        // Execution-Plane keeps the raw body — the runner needs it.
+        rendered.shouldContain("PASSWORD 'hunter2'")
+        // Display-Plane scrubber removes the literal.
+        val scrubbed = RoutineBodyScrubber.scrub(rendered)
+        scrubbed.scrubbingApplied shouldBe true
+        scrubbed.text.shouldNotContain("hunter2")
+    }
+
+    test("ReplaceTrigger with strict mode blocks MANUAL_ACTION_REQUIRED and emits no statements / no gap warning") {
+        val before = sampleTrigger
+        val after = sampleTrigger.copy(body = "SET NEW.created_at = UTC_TIMESTAMP()")
+        val current = schemaWith(mapOf("audit_log" to before))
+        val desired = schemaWith(mapOf("audit_log" to after))
+        val diff = SchemaComparator().compare(current, desired)
+        val plan = planner.plan(current, desired, diff, triggerPlanningContext = fallbackContext)
+        // Sanity: the Mapper set hasGap on the ReplaceTrigger op.
+        val op = plan.operations.single { it is DiffOperation.ReplaceTrigger } as DiffOperation.ReplaceTrigger
+        op.risks.up.hasGap shouldBe true
+
+        val r = gen.generateUp(plan, strictOptions)
+        r.isBlocked shouldBe true
+        r.blockers.single().reason shouldBe MigrationBlockedReason.MANUAL_ACTION_REQUIRED
+        r.statements.shouldBeEmpty()
+        r.diagnostics.none { it.code == "W_TRIGGER_REPLACE_GAP" } shouldBe true
+        r.diagnostics.any { it.code == "OPERATION_HAS_GAP_STRICT_BLOCKED" } shouldBe true
+    }
+})

@@ -5,8 +5,9 @@ data class ViewDiff(
     val materialized: ValueChange<Boolean>? = null,
     val refresh: ValueChange<String?>? = null,
     val query: ValueChange<String?>? = null,
+    val columnsChanged: Boolean = false,
     val sourceDialect: ValueChange<String?>? = null,
 ) {
     fun hasChanges(): Boolean =
-        materialized != null || refresh != null || query != null || sourceDialect != null
+        materialized != null || refresh != null || query != null || columnsChanged || sourceDialect != null
 }

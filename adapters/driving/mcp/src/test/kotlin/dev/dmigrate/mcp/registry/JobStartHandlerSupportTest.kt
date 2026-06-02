@@ -234,7 +234,7 @@ class JobStartHandlerSupportTest : FunSpec({
 
     test("toToolCallOutcome: Failed mit Hyphen-Separator policy-denied -> POLICY_DENIED (Re-Review B1)") {
         // Bestands-Code emittiert auch "policy-denied", "validation-error"
-        // statt der Phase-E-`:`-Konvention. Alle Schreibweisen muessen auf
+        // statt der LF-012 / LN-011 / LN-017 / LN-027-`:`-Konvention. Alle Schreibweisen muessen auf
         // den korrekten Wire-Code mappen, sonst wuerden legitime
         // Validierungs-/Policy-Fehler hinter INTERNAL_AGENT_ERROR
         // versteckt.
@@ -266,7 +266,7 @@ class JobStartHandlerSupportTest : FunSpec({
         keyed["retryAfter"] shouldBe "45"
         keyed["current"] shouldBe "3"
         keyed["limit"] shouldBe "3"
-        // Plan E3 § 3.5 / § 10 Q5: reason ist immer im Wire, Default ACTIVE_JOBS_QUOTA.
+        // LF-012 / LN-011 / LN-017 / LN-027: reason ist immer im Wire, Default ACTIVE_JOBS_QUOTA.
         keyed["reason"] shouldBe "ACTIVE_JOBS_QUOTA"
     }
 

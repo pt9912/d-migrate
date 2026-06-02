@@ -7,6 +7,7 @@ import dev.dmigrate.server.application.approval.ApprovalGrantValidator
 import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.application.quota.DefaultQuotaService
@@ -38,12 +39,12 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * AP E.9 (3/3) End-to-End-Akzeptanz-Pins fuer Plan §7.9 ueber den
+ * LF-012 / LN-011 / LN-017 / LN-027 End-to-End-Akzeptanz-Pins ueber den
  * vollen Orchestrator → Dispatcher → JobCancelService-Pfad mit
  * InMemory-Stores. Komplementiert die Wire-Tests aus
- * `McpPhaseEStartScenarioTest` und die Sweeper-Tests aus AP E.9 (1/3).
+ * `McpJobStartScenarioTest` und die Sweeper-Tests aus LF-012 / LN-011 / LN-017 / LN-027.
  *
- * Plan §7.9-Tests, die hier abgedeckt werden:
+ * LF-012 / LN-011 / LN-017 / LN-027-Tests, die hier abgedeckt werden:
  *
  * - aktive Jobquote ueberschritten -> `RATE_LIMITED` (line 1301)
  * - `RATE_LIMITED` entsteht VOR jobBuilder-Aufruf — kein Secret-/
@@ -56,7 +57,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Bewusst NICHT abgedeckt:
  *
- * - Start-Timeout / Runner-Timeout (Plan §7.9 line 1296-1297, 1314-
+ * - Start-Timeout / Runner-Timeout (LF-012 / LN-011 / LN-017 / LN-027, 1314-
  *   1316). Synchroner Worker-Pfad ohne echte Preemption macht den
  *   Timeout-Test wenig aussagekraeftig; sobald async-Executor
  *   Production-mode hat, kommt das in einer Follow-up-AP.
@@ -103,7 +104,7 @@ class JobQuotaScenarioTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyEffect),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
             quotaService = quotaService,
         )
@@ -155,7 +156,7 @@ class JobQuotaScenarioTest : FunSpec({
         copy(scopes = setOf("dmigrate:admin"), isAdmin = true)
 
     test("Jobquote ueberschritten -> RateLimited mit retryAfter; jobBuilder NIE aufgerufen") {
-        // Plan §7.9 line 1270-1273: RATE_LIMITED muss VOR Secret-Reads,
+        // LF-012 / LN-011 / LN-017 / LN-027: RATE_LIMITED muss VOR Secret-Reads,
         // Pool-Init, Runner-Materialisierung entstehen. Test pin't das,
         // indem jobBuilder NIE aufgerufen wird.
         val fx = Fixture(jobLimit = 1L)
@@ -169,7 +170,7 @@ class JobQuotaScenarioTest : FunSpec({
         val builderCallsBefore = fx.jobBuilderCalls
         val second = fx.orchestrator.start(fx.startRequest("k-2"))
         second.shouldBeInstanceOf<JobStartHandlerOutcome.RateLimited>()
-        // Plan §7.9 line 1270-1273: jobBuilder NICHT aufgerufen,
+        // LF-012 / LN-011 / LN-017 / LN-027: jobBuilder NICHT aufgerufen,
         // also keine Secret-Materialisierung.
         fx.jobBuilderCalls shouldBe builderCallsBefore
         // retryAfter ist Pflicht; Default 30s.
@@ -177,7 +178,7 @@ class JobQuotaScenarioTest : FunSpec({
     }
 
     test("Deduplizierter Retry (gleicher idempotencyKey + fingerprint) verbraucht keine neue Quote") {
-        // Plan §7.9 line 1307: deduplizierter Retry verbraucht keine
+        // LF-012 / LN-011 / LN-017 / LN-027: deduplizierter Retry verbraucht keine
         // neue Quote.
         val fx = Fixture(jobLimit = 1L)
 
@@ -200,7 +201,7 @@ class JobQuotaScenarioTest : FunSpec({
     }
 
     test("Slot wird nach SUCCEEDED freigegeben (Dispatcher-Release-Pfad)") {
-        // Plan §7.9 line 1313: Slot wird nach succeeded/failed/cancelled
+        // LF-012 / LN-011 / LN-017 / LN-027: Slot wird nach succeeded/failed/cancelled
         // freigegeben.
         val fx = Fixture(jobLimit = 1L)
         val started = fx.orchestrator.start(fx.startRequest()) as JobStartHandlerOutcome.Started
@@ -239,7 +240,7 @@ class JobQuotaScenarioTest : FunSpec({
         fx.ownerStore.findById(ownerId)!!.status shouldBe QuotaReservationStatus.RELEASED
     }
 
-    test("Queued-Cancel via JobCancelService gibt Slot frei (Plan §7.9 line 1291-1292)") {
+    test("Queued-Cancel via JobCancelService gibt Slot frei (LF-012 / LN-011 / LN-017 / LN-027)") {
         // Spezialfall: queued-Cancel laeuft NICHT durch den Dispatcher.
         // JobCancelService selbst muss den Slot freigeben.
         val fx = Fixture(jobLimit = 1L)
@@ -261,8 +262,8 @@ class JobQuotaScenarioTest : FunSpec({
             .shouldBeInstanceOf<JobStartHandlerOutcome.Started>()
     }
 
-    test("RUNNER_TIMEOUT-Source -> Failed(OPERATION_TIMEOUT) + Slot freigegeben (Plan §7.9 line 1314-1316)") {
-        // Plan §7.9 line 1315-1316: Runner-Timeout setzt Jobstatus
+    test("RUNNER_TIMEOUT-Source -> Failed(OPERATION_TIMEOUT) + Slot freigegeben (LF-012 / LN-011 / LN-017 / LN-027)") {
+        // LF-012 / LN-011 / LN-017 / LN-027: Runner-Timeout setzt Jobstatus
         // failed(error.code=OPERATION_TIMEOUT) UND gibt aktive Slots frei.
         val fx = Fixture(jobLimit = 1L)
         val started = fx.orchestrator.start(fx.startRequest()) as JobStartHandlerOutcome.Started
@@ -277,12 +278,12 @@ class JobQuotaScenarioTest : FunSpec({
         outcome.shouldBeInstanceOf<JobWorkerOutcome.Failed>()
         outcome.errorCode shouldBe JobDispatcher.ERROR_CODE_OPERATION_TIMEOUT
 
-        // Slot freigegeben (Plan §7.9 line 1316: "gibt aktive Slots frei").
+        // Slot freigegeben (LF-012 / LN-011 / LN-017 / LN-027: "gibt aktive Slots frei").
         val ownerId = "${tenant.value}:${principal.value}:schema_reverse_start:k1"
         fx.ownerStore.findById(ownerId)!!.status shouldBe QuotaReservationStatus.RELEASED
     }
 
-    test("Idempotency-Replay (existing Committed) ruft weder reserve noch refund (Plan §7.9 line 1312)") {
+    test("Idempotency-Replay (existing Committed) ruft weder reserve noch refund (LF-012 / LN-011 / LN-017 / LN-027)") {
         // Erste Start: Quota reserve + commit.
         val fx = Fixture(jobLimit = 1L)
         val first = fx.orchestrator.start(fx.startRequest("k-replay")) as JobStartHandlerOutcome.Started

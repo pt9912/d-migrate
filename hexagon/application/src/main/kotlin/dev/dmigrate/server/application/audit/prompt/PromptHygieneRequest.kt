@@ -6,7 +6,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import dev.dmigrate.server.core.resource.ServerResourceUri
 
 /**
- * Phase G § 5.3 (G.4) — Eingabe für den [PromptHygieneService].
+ * LF-017 / LF-024 / LN-030 / LN-031— Eingabe für den [PromptHygieneService].
  *
  * Bündelt alles, was der Hygiene-Service prüft:
  *
@@ -17,15 +17,15 @@ import dev.dmigrate.server.core.resource.ServerResourceUri
  *   gehasht,
  * - die Liste der erlaubten Resource-/Artifact-Refs — Refs im
  *   Prompt, die nicht in der Liste stehen, werden geblockt
- *   (Plan §4.6: "Ressourcen statt Rohdaten im Modellkontext"),
+ *   (LF-012 / LN-011 / LN-017 / LN-027: "Ressourcen statt Rohdaten im Modellkontext"),
  * - der Zielprovider — Hygiene darf für externe Provider strenger
- *   sein als für `noop` (Plan §4.3 Z. 263-265),
+ *   sein als für `noop` (LF-012 / LN-011 / LN-017 / LN-027 Z. 263-265),
  * - Limits — überschreitet Prompt oder Payload das Cap, blockt
  *   die Hygiene ohne Provider-Aufruf.
  *
  * **Bewusst NICHT enthalten**: `approvalKey`, `approvalToken`,
  * `idempotencyKey`, `requestId`. Diese Control-Felder werden vor
- * dem Hygiene-Aufruf vom Tool-Handler entfernt (Plan §6 G.6
+ * dem Hygiene-Aufruf vom Tool-Handler entfernt (LF-012 / LN-011 / LN-017 / LN-027 LF-017 / LF-024 / LN-030 / LN-031
  * Z. 1016-1019).
  */
 data class PromptHygieneRequest(

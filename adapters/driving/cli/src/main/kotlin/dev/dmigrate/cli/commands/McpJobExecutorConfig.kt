@@ -9,7 +9,7 @@ import java.time.Duration
 import java.util.Locale
 
 /**
- * Phase E3 (E3.5) host-/CLI-Aufloesung des `server.jobs.executor`-
+ * LF-012 / LN-011 / LN-017 / LN-027 host-/CLI-Aufloesung des `server.jobs.executor`-
  * Bereichs aus der MCP-Server-Config + Env-Overrides. Liefert die
  * adapter-neutrale [JobExecutorConfig] (Sync oder Async), die der
  * Bootstrap an [dev.dmigrate.server.application.job.JobExecutorFactory]

@@ -7,7 +7,7 @@ import dev.dmigrate.driver.connection.JdbcUrlBuilder
 /**
  * MySQL [JdbcUrlBuilder].
  *
- * Default-Parameter (Plan §3.3 / §6.13):
+ * LF-008 / LN-009 / LN-010: Default-Parameter fuer MySQL-Streaming:
  * - `useCursorFetch=true` — serverseitiger Cursor für sauberes Streaming.
  *   **Bewusst gegen `Statement.setFetchSize(Integer.MIN_VALUE)`** wegen
  *   row-by-row Protokoll-Overhead und HikariCP-Inkompatibilität.

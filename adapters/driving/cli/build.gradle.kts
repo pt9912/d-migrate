@@ -51,13 +51,14 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:formats"))
     implementation(project(":adapters:driven:integrations"))
-    // Phase E2: persistent MCP server-state adapters for production
+    // LF-012 / LN-011 / LN-017 / LN-027: persistent MCP server-state adapters for production
     // metadata (IdempotencyStore, JobStore, JobStartTransaction, Quota).
     implementation(project(":adapters:driven:persistence-jdbc"))
     implementation(project(":adapters:driven:streaming"))
     implementation(project(":adapters:driven:audit-logging"))
-    // AP D10: Plan-D §8 + §10.10 secret-freier Connection-Bootstrap.
-    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliPhaseCWiring)
+    implementation(project(":adapters:driven:text-icu"))
+    // LF-012 / LN-038: secret-freier Connection-Bootstrap.
+    // Sowohl der CLI- als auch der MCP-Pfad (über McpCliRuntimeWiring)
     // konsumieren denselben YamlConnectionReferenceLoader.
     implementation(project(":adapters:driven:connection-config"))
     // §6.11: `mcp serve`-Subkommando wrappt McpServerBootstrap.
@@ -66,35 +67,20 @@ dependencies {
     // uploads (`FileBackedUploadSegmentStore`) and artefact content
     // (`FileBackedArtifactContentStore`) under the resolved state dir.
     implementation(project(":adapters:driven:storage-file"))
-    // AP 6.21 + Phase E2: default metadata stores still come from
+    // AP 6.21 + LF-012 / LN-011 / LN-017 / LN-027: default metadata stores still come from
     // `:hexagon:ports-common` testFixtures, while `server.state.*`
-    // opt-in switches Phase-E Job/Quota/Idempotency metadata to JDBC.
+    // opt-in switches server-state Job/Quota/Idempotency metadata to JDBC.
     implementation(testFixtures(project(":hexagon:ports-common")))
     implementation("com.github.ajalt.clikt:clikt:${rootProject.properties["cliktVersion"]}")
     implementation("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     implementation("org.slf4j:slf4j-api:${rootProject.properties["slf4jVersion"]}")
-    // .d-migrate.yaml-Loader (Plan §6.14 — minimaler NamedConnectionResolver)
+    // .d-migrate.yaml-Loader (LF-012 / LN-038 — minimaler NamedConnectionResolver)
     implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
-
-    // Phase F (0.3.0): Testcontainers-basierte E2E-Tests für `data export`
-    // gegen PostgreSQL und MySQL. Markiert mit Kotest's NamedTag("integration"),
-    // läuft nur mit `-PintegrationTests` (siehe Plan §6.16).
-    // 2.0.0 hat alle Module umbenannt: `org.testcontainers:postgresql` →
-    // `org.testcontainers:testcontainers-postgresql` etc.
-    testImplementation("org.testcontainers:testcontainers:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-postgresql:${rootProject.properties["testcontainersVersion"]}")
-    testImplementation("org.testcontainers:testcontainers-mysql:${rootProject.properties["testcontainersVersion"]}")
-
-    // AP 6.24: integration-test harnesses build JSON-RPC payloads with Gson.
-    // The mcp module uses Gson internally (transitive via lsp4j) but does
-    // not re-export it; the CLI test source-set declares it explicitly.
     testImplementation("com.google.code.gson:gson:2.14.0")
 
-    // AP 6.24 E8: validate Phase-C tool runtime outputs against the
-    // PhaseBToolSchemas output schemas (JSON Schema 2020-12). Test-
-    // scope only — the production server publishes the schemas via
-    // tools/list but does not validate dispatch responses against them.
-    testImplementation("com.networknt:json-schema-validator:1.5.4")
+    // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
+    // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli
+    // ausgelagert (Phase C des Specs-Move).
 }
 
 tasks.named<ProcessResources>("processResources") {
@@ -183,8 +169,8 @@ kover {
     reports {
         filters {
             excludes {
-                // Thin Clikt command shells — all logic is in the Runners
-                // (tested via *RunnerTest). Commands only parse flags and
+                // Thin Clikt command shells — all logic is in Runners and/or
+                // Clikt-free Wiring objects. Commands only parse flags and
                 // delegate. Tested via CliHelpAndBootstrapTest (help reachability).
                 classes(
                     "dev.dmigrate.cli.commands.DataProfileCommand*",
@@ -198,23 +184,47 @@ kover {
                     "dev.dmigrate.cli.commands.SchemaCompareCommand*",
                     "dev.dmigrate.cli.commands.SchemaValidateCommand*",
                     "dev.dmigrate.cli.commands.SchemaGenerateCommand*",
+                    "dev.dmigrate.cli.commands.SchemaMigrateCommand*",
+                    "dev.dmigrate.cli.commands.SchemaRollbackCommand*",
+                    // Phase E.6: thin wiring helpers — Hikari + JDBC integration-bound;
+                    // tested via :test:integration-server-state in Phase F.
+                    "dev.dmigrate.cli.commands.JdbcMigrationExecutor*",
+                    "dev.dmigrate.cli.commands.MigrateRendererRegistry*",
                     "dev.dmigrate.cli.commands.DataExportCommand*",
                     "dev.dmigrate.cli.commands.DataImportCommand*",
                     "dev.dmigrate.cli.commands.DataTransferCommand*",
                     "dev.dmigrate.cli.commands.SchemaCommand*",
                     "dev.dmigrate.cli.commands.DataCommand*",
+                    // Hikari/Flyway/Postgres-Default — pro Definition
+                    // integrationstest-bound (Hikari validiert beim
+                    // Konstruktor mit `initializationFailTimeout=1ms`).
+                    // Tests substituieren diese Factory mit Fakes via
+                    // `McpServeWiring(serverStateFactory = ...)`. Real-Coverage
+                    // entsteht im :test:integration-server-state-Modul.
+                    "dev.dmigrate.cli.commands.DefaultServerStateFactory*",
+                    // SQLite live probes open real JDBC/Hikari connections;
+                    // runner-stage behaviour is unit-tested in :hexagon:application,
+                    // connection behaviour belongs to integration coverage.
+                    "dev.dmigrate.cli.commands.SqliteLiveCatalogProbeRunner*",
+                    "dev.dmigrate.cli.commands.SqliteCastPreflightProbeRunner*",
+                    // 0.9.7 preserve-current-value Sub-Slice D: thin
+                    // dialect-dispatcher that opens a Hikari pool per
+                    // probe call and routes to PG/MySQL probe adapters.
+                    // Routing logic + skip behaviour is unit-tested in
+                    // :hexagon:application (SequencePreserveStageTest /
+                    // SchemaMigrateRunnerSequencePreserveTest); the
+                    // pool + dialect dispatch itself belongs to
+                    // integration coverage like its SQLite analogues.
+                    "dev.dmigrate.cli.commands.SequenceCurrentValueProbeRunner*",
+                    // Private data class for the excluded ExportCommand*
+                    // shells; carries no behaviour beyond field accessors.
+                    "dev.dmigrate.cli.commands.ExportParams*",
                 )
             }
         }
         verify {
             rule {
-                // 80%: The CLI module contains ~15% thin Clikt command shells
-                // (DataProfileCommand, ExportCommands, SchemaReverseCommand etc.)
-                // whose logic lives in the corresponding *Runner classes (tested
-                // at 90%+). Kover class excludes do not reliably filter these in
-                // CI (Gradle Actions cache interaction). The effective testable
-                // code coverage is 95%+ when command shells are excluded.
-                minBound(80)
+                minBound(90)
             }
         }
     }

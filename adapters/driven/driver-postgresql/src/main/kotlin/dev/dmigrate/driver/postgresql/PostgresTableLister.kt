@@ -12,7 +12,7 @@ import java.sql.Connection
  * the actual table listing, filtered on the current schema.
  *
  * Borrows a connection from the pool and returns it immediately after
- * the listing (Plan §6.18).
+ * the listing (LF-008 / LN-010).
  */
 class PostgresTableLister(
     private val jdbcFactory: (Connection) -> JdbcOperations = ::JdbcMetadataSession,

@@ -26,10 +26,10 @@ import dev.dmigrate.server.ports.quota.QuotaKey
 import java.time.Clock
 
 /**
- * Phase F § 5.3 + § 8.6 (F.6 3/3) — Pipeline fuer administrative /
+ * LF-010 / LF-013 / LN-009 / LN-011 — Pipeline fuer administrative /
  * fremde `artifact_upload_abort`-Aufrufe.
  *
- * Pflicht-Sequence (Plan-Wortlaut):
+ * Pflicht-Sequence (Vertragswortlaut):
  *
  * 1. Pre-Abort-Approval-Fingerprint via [AbortApprovalFingerprint]
  *    aus Pre-Abort-Session-Zustand + Caller + Pre-Abort-Bytes +
@@ -48,12 +48,12 @@ import java.time.Clock
  * 4. Session-Status auf `ABORTED` transitionieren, Segmente
  *    loeschen, Init-Quotas freigeben (idempotent).
  * 5. [AbortOutcomeStore.save] mit dem berechneten Fingerprint;
- *    Conflict ist ein internes Drift-Signal (Plan: Save-Conflict
+ *    Conflict ist ein internes Drift-Signal (Vertrag: Save-Conflict
  *    -> der gespeicherte Outcome bleibt unangetastet, neuer
  *    Versuch liefert IDEMPOTENCY_CONFLICT).
  * 6. [SyncEffectIdempotencyStore.commit] mit dem `resultRef`
  *    erst nach durablem ABORTED + Cleanup + Quota-Release
- *    (Plan § 5.3 wortlaeufig).
+ *    (LF-012 / LN-011 / LN-017 / LN-027 wortlaeufig).
  *
  * Der `resultRef` ist deterministisch der Pre-Abort-Fingerprint
  * selbst — gleicher Approval-Grant + gleicher Pre-Abort-Zustand
@@ -162,7 +162,7 @@ internal class AdministrativeAbortPipeline(
         val aborted = sessionStore.transitionOrThrow(session, UploadSessionState.ABORTED, now)
         // Best-effort cleanup; quota-release laeuft dennoch, sonst
         // bleibt der Tenant nach einem I/O-Fehler beim Segment-Delete
-        // unfair belastet (Plan: Quota-Release idempotent).
+        // unfair belastet (Vertrag: Quota-Release idempotent).
         try {
             segmentStore.deleteAllForSession(session.uploadSessionId)
         } finally {
@@ -177,7 +177,7 @@ internal class AdministrativeAbortPipeline(
             completedAt = now,
             reason = reason,
         )
-        // Plan § 5.3: terminaler Erfolgs-resultRef erst NACH durablem
+        // LF-012 / LN-011 / LN-017 / LN-027: terminaler Erfolgs-resultRef erst NACH durablem
         // ABORTED + Cleanup + Quota-Release. Save liefert Stored fuer
         // den ersten Versuch; AlreadyStored fuer einen Replay vom
         // gleichen Fingerprint; Conflict ist ein internes Drift-
@@ -194,7 +194,7 @@ internal class AdministrativeAbortPipeline(
     }
 
     private fun releaseInitQuotas(session: UploadSession) {
-        // Plan § 5.3 / § 8.6: gleiche Quota-Keys wie Owner-Self-Abort
+        // LF-012 / LN-011 / LN-017 / LN-027: gleiche Quota-Keys wie Owner-Self-Abort
         // (ACTIVE_UPLOAD_SESSIONS=1, UPLOAD_BYTES=session.sizeBytes),
         // adressiert ueber den ORIGINALEN Session-Owner — der Caller
         // (Admin) hat die Reservierungen nicht selbst gemacht.

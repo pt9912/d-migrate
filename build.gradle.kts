@@ -16,7 +16,7 @@ fun normalizedReleaseVersion(raw: String?): String? {
     return normalized.takeIf { semverLike.matches(it) }
 }
 
-val defaultProjectVersion = "0.9.6"
+val defaultProjectVersion = "0.9.7"
 val resolvedProjectVersion =
     normalizedReleaseVersion(findProperty("releaseVersion")?.toString())
         ?: normalizedReleaseVersion(System.getenv("DMIGRATE_VERSION"))
@@ -71,34 +71,35 @@ subprojects {
         // SLF4J-Provider für Tests, damit Testcontainers-Diagnostics nicht im
         // NOP-Logger verschwinden. Ohne dieses Fragment ist die
         // Strategy-Detection-Fehlermeldung "Could not find a valid Docker
-        // environment" nicht diagnostizierbar (siehe Phase F Debug-Session).
+        // environment" nicht diagnostizierbar (siehe LF-008 / LF-009 / LF-013 Debug-Session).
         "testRuntimeOnly"("ch.qos.logback:logback-classic:${rootProject.properties["logbackVersion"]}")
     }
 
+    // Sub-Projekte unter :test:integration-* + :test:e2e-cli starten ihre
+    // Test-Tasks nur unter -PintegrationTests. Strukturell aequivalent zum
+    // Kotest-Tag-Filter weiter unten, aber spart Test-JVM-Startup und
+    // Test-Discovery, wenn die Property fehlt.
+    val isIntegrationProject = path.startsWith(":test:integration-") || path == ":test:e2e-cli"
+
     tasks.withType<Test> {
+        if (isIntegrationProject) {
+            onlyIf("requires -PintegrationTests") { project.hasProperty("integrationTests") }
+        }
         useJUnitPlatform()
         val explicitKotestTags = System.getProperty("kotest.tags")
-        // Per default integration-Tests ausschließen — sie brauchen Docker
-        // (Testcontainers) und überschreiten das 5-Minuten-CI-Budget des
-        // Default-Workflows. Aktivieren via `./gradlew test -PintegrationTests`
-        // (siehe .github/workflows/integration.yml und Plan §6.16).
-        //
-        // Wir verwenden Kotest's natives Tag-System (System-Property
-        // `kotest.tags`), weil JUnit Jupiter's `excludeTags`/`@Tag` Discovery
-        // nicht mit Kotest's Spec-Lifecycle zusammenspielt — ohne das hier
-        // würden Specs mit @Tags("integration") trotzdem instanziiert und
-        // beforeSpec ausgeführt.
-        //
-        // Perf-Spikes (`perf`) sind ebenfalls opt-in und laufen nur, wenn
+        // Perf-Spikes (`perf`) sind opt-in und laufen nur, wenn
         // `-Dkotest.tags=perf` (oder ein anderes explizites Tag-Filter) gesetzt
         // wird. Ein explizit gesetzter `kotest.tags`-Wert gewinnt immer gegen
         // den Default hier.
+        //
+        // Integration-Tests sind nicht mehr per Kotest-Tag gefiltert —
+        // sie leben strukturell in :test:integration-* und :test:e2e-cli
+        // und werden via Sub-Projekt-onlyIf nur unter -PintegrationTests
+        // ausgefuehrt (siehe oben).
         if (explicitKotestTags == null) {
-            if (project.hasProperty("integrationTests")) {
-                systemProperty("kotest.tags", "!perf")
-            } else {
-                systemProperty("kotest.tags", "!integration & !perf")
-            }
+            systemProperty("kotest.tags", "!perf")
+        } else {
+            systemProperty("kotest.tags", explicitKotestTags)
         }
 
         // Forked Test-JVM Heap: Default ~512 MB reicht fuer die schnellen
@@ -117,12 +118,38 @@ subprojects {
         outputs.cacheIf { false }
 
         // Forward UPDATE_GOLDEN to the forked test JVM so golden-pinned
-        // tests (PhaseBToolSchemasGoldenTest, AP-6.24-Goldens, …)
+        // tests (McpToolSchemasGoldenTest, AP-6.24-Goldens, …)
         // regenerate via `gradle -DUPDATE_GOLDEN=true ...` without manual
         // env wiring per task.
         val updateGolden = System.getProperty("UPDATE_GOLDEN") ?: System.getenv("UPDATE_GOLDEN")
         if (updateGolden != null) {
             systemProperty("UPDATE_GOLDEN", updateGolden)
+        }
+
+        // Quality-Coverage-Expansion Phase A: forward the `perfGate`
+        // Gradle project property (from `make docker-perf PERF_GATE=true`
+        // / `-PperfGate=true`) into the forked test JVM as the system
+        // property `d-migrate.perf.gate`. PerfReport.write reads this
+        // property and turns baselineMs into a hard assertion. Without
+        // this bridge the operator-visible PERF_GATE switch is a
+        // silent no-op — review finding #1.
+        if (project.hasProperty("perfGate")) {
+            systemProperty("d-migrate.perf.gate", project.property("perfGate").toString())
+        }
+
+        // Surface full assertion messages on failure across every test
+        // task in the project. Default Gradle test logging only prints
+        // "AssertionFailedError at File.kt:NN" without the message,
+        // which makes Kotest `withClue { }` text and any structured
+        // diagnostic carried in an exception body opaque — F.4's
+        // SQLite-rebuild round-trip drift was the forcing function for
+        // wiring this up. `events("failed")` keeps passing runs quiet.
+        testLogging {
+            events("failed")
+            showExceptions = true
+            showCauses = true
+            showStackTraces = true
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         }
     }
 
@@ -148,6 +175,7 @@ dependencies {
     kover(project(":hexagon:ports-common"))
     kover(project(":hexagon:ports-read"))
     kover(project(":hexagon:ports-write"))
+    kover(project(":hexagon:ports-execute"))
     kover(project(":hexagon:ports"))
     kover(project(":hexagon:application"))
     kover(project(":hexagon:core"))
@@ -164,27 +192,24 @@ dependencies {
     kover(project(":adapters:driven:persistence-jdbc"))
     kover(project(":adapters:driven:storage-file"))
     kover(project(":adapters:driven:streaming"))
+    kover(project(":adapters:driven:text-icu"))
     kover(project(":adapters:driving:cli"))
     kover(project(":adapters:driving:mcp"))
     kover(project(":test:integration-postgresql"))
     kover(project(":test:integration-mysql"))
+    kover(project(":test:integration-sqlite"))
     kover(project(":test:integration-server-state"))
+    kover(project(":test:integration-persistence-jdbc"))
+    kover(project(":test:integration-integrations"))
     kover(project(":test:consumer-read-probe"))
-}
-
-// Root-level aggregated koverVerify: when run with -PintegrationTests
-// this verifies the FULL codebase (including JDBC-only profiling
-// adapters that are excluded from per-module unit-test koverVerify)
-// at 90%. The integration CI (.github/workflows/integration.yml and
-// scripts/test-integration-docker.sh) runs :koverVerify explicitly.
-kover {
-    reports {
-        verify {
-            rule {
-                minBound(90)
-            }
-        }
-    }
+    kover(project(":test:e2e-cli"))
+    // Quality-Coverage-Expansion Sub-Slice E.3:
+    // :test:cross-dialect-matrix, :test:integration-concurrency und
+    // :test:perf-large-schema sind bewusst NICHT aggregiert
+    // (file-mode sweep / opt-in concurrency / tag-gated perf — kein
+    // produktiver Code, nur Regressions-/Reproducer-Pfade). Begruendung
+    // im `aggregate-carveout:`-Block von
+    // `docs/coverage/excludes-ledger.md`.
 }
 
 tasks.register("resolveAllDependencies") {

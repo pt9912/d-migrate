@@ -8,9 +8,9 @@ import dev.dmigrate.server.application.error.ValidationErrorException
 import dev.dmigrate.server.application.error.ValidationViolation
 
 /**
- * Tiny Gson-tree helpers shared by Phase-C tool handlers
- * (`schema_validate` AP 6.4, `schema_generate` AP 6.5,
- * `schema_compare` AP 6.6, `job_status_get` AP 6.12).
+ * Tiny Gson-tree helpers shared by LF-012 / LN-038 tool handlers
+ * (`schema_validate` LF-012 / LN-027 / LN-028 / LN-038, `schema_generate` LF-012 / LN-027 / LN-028 / LN-038,
+ * `schema_compare` LF-012 / LN-027 / LN-028 / LN-038, `job_status_get` LF-012 / LN-027 / LN-028 / LN-038).
  *
  * Centralising here avoids each handler reinventing the
  * `JsonNull`-as-absent rule and the cast-to-`JsonObject` defence.
@@ -89,7 +89,7 @@ internal object JsonArgs {
 
     /**
      * Required-integer accessor with a `>= min` constraint. Used by
-     * Phase-C handlers that take typed numeric arguments (e.g.
+     * LF-012 / LN-038 handlers that take typed numeric arguments (e.g.
      * segmentIndex, expectedSizeBytes) — see `ArtifactUploadHandler`
      * and `ArtifactUploadInitHandler`.
      */

@@ -6,9 +6,8 @@ import io.kotest.matchers.shouldBe
 import java.time.Instant
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §6): Vertragstests fuer das
- * Manifest-Grundmodell. Prueft die init-Validierungen, die spaetere Phasen
- * und Adapter als gegeben voraussetzen.
+ * LF-013 / LN-012 / LN-013: Vertragstests fuer das Manifest-Grundmodell.
+ * Prueft die init-Validierungen, die Adapter als gegeben voraussetzen.
  */
 class CheckpointManifestTest : FunSpec({
 

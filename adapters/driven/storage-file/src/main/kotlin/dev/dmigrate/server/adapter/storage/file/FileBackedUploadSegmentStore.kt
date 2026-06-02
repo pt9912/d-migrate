@@ -24,7 +24,7 @@ class FileBackedUploadSegmentStore(private val root: Path) : UploadSegmentStore 
     // concurrency" guarantee with `Files.move(... ATOMIC_MOVE)` —
     // POSIX rename(2) silently overwrites, so without serialization
     // two writers could publish a (sidecar, data) pair from different
-    // payloads. Phase A is single-process; cross-process locking
+    // payloads. LF-010 / LF-013 / LN-009 / LN-011 is single-process; cross-process locking
     // would land with a real persistent store.
     private val keyLocks = ConcurrentHashMap<Pair<String, Int>, ReentrantLock>()
 

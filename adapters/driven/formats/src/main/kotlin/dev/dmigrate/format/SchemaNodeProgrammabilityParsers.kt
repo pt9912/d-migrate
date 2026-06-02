@@ -12,6 +12,10 @@ internal fun parseProcedures(node: JsonNode?): Map<String, ProcedureDefinition> 
             body = childNode.optionalText("body"),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
+            security = childNode.optionalText("security")?.toRoutineSecurity(),
+            definer = childNode.optionalText("definer"),
+            searchPath = childNode["search_path"]?.toStringListOrNull(),
+            sqlMode = childNode.optionalText("sql_mode"),
         )
     }
 
@@ -26,8 +30,18 @@ internal fun parseFunctions(node: JsonNode?): Map<String, FunctionDefinition> =
             body = childNode.optionalText("body"),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
+            security = childNode.optionalText("security")?.toRoutineSecurity(),
+            definer = childNode.optionalText("definer"),
+            searchPath = childNode["search_path"]?.toStringListOrNull(),
+            sqlMode = childNode.optionalText("sql_mode"),
         )
     }
+
+private fun JsonNode.toStringListOrNull(): List<String>? =
+    if (isArray) map { it.asText() } else null
+
+private fun String.toRoutineSecurity(): RoutineSecurity =
+    RoutineSecurity.valueOf(uppercase())
 
 private fun parseParameters(node: JsonNode?): List<ParameterDefinition> {
     if (node == null || !node.isArray) return emptyList()
@@ -56,10 +70,25 @@ internal fun parseViews(node: JsonNode?): Map<String, ViewDefinition> =
             materialized = childNode.boolOrDefault("materialized", false),
             refresh = childNode.optionalText("refresh"),
             query = childNode.optionalText("query"),
+            columns = parseViewColumns(childNode["columns"]),
             dependencies = parseDependencies(childNode["dependencies"]),
             sourceDialect = childNode.optionalText("source_dialect"),
         )
     }
+
+private fun parseViewColumns(node: JsonNode?): List<ViewColumnDefinition>? {
+    if (node == null || !node.isArray) return null
+    return node.map { childNode ->
+        if (childNode.isObject) {
+            ViewColumnDefinition(
+                name = childNode.requiredText("name"),
+                type = childNode.optionalText("type"),
+            )
+        } else {
+            ViewColumnDefinition(name = childNode.asText())
+        }
+    }
+}
 
 internal fun parseTriggers(node: JsonNode?): Map<String, TriggerDefinition> =
     parseNamedObjectMap(node) { childNode ->
@@ -86,6 +115,7 @@ internal fun parseSequences(node: JsonNode?): Map<String, SequenceDefinition> =
             maxValue = childNode.optionalLong("max_value"),
             cycle = childNode.boolOrDefault("cycle", false),
             cache = childNode.optionalInt("cache"),
+            preserveCurrentValue = childNode.boolOrDefault("preserve_current_value", false),
         )
     }
 
@@ -100,5 +130,23 @@ private fun parseDependencies(node: JsonNode?): DependencyInfo? {
         views = node["views"]?.toStringList() ?: emptyList(),
         columns = columns,
         functions = node["functions"]?.toStringList() ?: emptyList(),
+        sequences = node["sequences"]?.toStringList() ?: emptyList(),
+        // Phase G.2: `projection_complete` is omitted when `true`
+        // (the default) so hand-written schema files stay terse. An
+        // explicit `false` survives a dump→load roundtrip and keeps
+        // the planner's `VIEW_DEPENDENCY_PROJECTION_INCOMPLETE`
+        // block effective.
+        projectionComplete = node["projection_complete"]?.asBoolean(true) ?: true,
+        tableProjectionStatus = node["table_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        columnProjectionStatus = node["column_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        routineProjectionStatus = node["routine_projection_status"]?.asText()
+            ?.toDependencyProjectionStatus() ?: DependencyProjectionStatus.COMPLETE,
+        projectionSources = node["projection_sources"]?.toStringList() ?: emptyList(),
+        projectionErrorClass = node.optionalText("projection_error_class"),
     )
 }
+
+private fun String.toDependencyProjectionStatus(): DependencyProjectionStatus =
+    DependencyProjectionStatus.valueOf(uppercase())

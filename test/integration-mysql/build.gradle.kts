@@ -7,6 +7,10 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql-profiling"))
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":hexagon:application"))
+    // F.3 round-trip smoke: shared `executeAgainstPool` helper (mirror of
+    // the CLI-internal JdbcMigrationExecutor) lives in hexagon:application's
+    // testFixtures so PG and MySQL round-trip tests share one executor.
+    testImplementation(testFixtures(project(":hexagon:application")))
     testImplementation(project(":hexagon:profiling"))
     testImplementation(project(":hexagon:core"))
     testImplementation(project(":hexagon:ports"))

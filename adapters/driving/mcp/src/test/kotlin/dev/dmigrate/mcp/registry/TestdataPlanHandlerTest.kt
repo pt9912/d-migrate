@@ -46,7 +46,7 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase G § 5.6 + § 6 G.6 (G.6.f) — Akzeptanztests für den
+ * LF-017 / LF-024 / LN-030 / LN-031 — Akzeptanztests für den
  * `testdata_plan`-Handler.
  */
 class TestdataPlanHandlerTest : FunSpec({
@@ -152,7 +152,7 @@ class TestdataPlanHandlerTest : FunSpec({
         auditFields = auditFields,
     )
 
-    test("Plan §5.6 happy path: schemaRef + targetDialect -> Success mit testdataPlanArtifactId") {
+    test("LF-017 / LF-024 / LN-030 / LN-031 happy path: schemaRef + targetDialect -> Success mit testdataPlanArtifactId") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(
@@ -168,7 +168,7 @@ class TestdataPlanHandlerTest : FunSpec({
         )
         val success = outcome.shouldBeInstanceOf<ToolCallOutcome.Success>()
         val json = JsonParser.parseString(success.content.single().text!!).asJsonObject
-        // Plan §5.6: Wire-Form heisst testdataPlanArtifactId +
+        // LF-017 / LF-024 / LN-030 / LN-031: Wire-Form heisst testdataPlanArtifactId +
         // testdataPlanResourceUri.
         json.get("testdataPlanArtifactId").asString shouldStartWith "art-"
         json.get("testdataPlanResourceUri").asString shouldStartWith "dmigrate://tenants/acme/artifacts/art-"
@@ -184,7 +184,7 @@ class TestdataPlanHandlerTest : FunSpec({
         md.provenance.shouldBeInstanceOf<AiArtifactProvenance.TestdataPlan>()
     }
 
-    test("Plan §5.6: optional profileRef wird in sourceRefs aufgenommen") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: optional profileRef wird in sourceRefs aufgenommen") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         fx.seedProfile("profile-1")
@@ -208,7 +208,7 @@ class TestdataPlanHandlerTest : FunSpec({
         md.sourceRefs.map { it.kind } shouldBe listOf(ResourceKind.SCHEMAS, ResourceKind.PROFILES)
     }
 
-    test("Plan §6 G.5: fehlender approvalKey -> VALIDATION_ERROR") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender approvalKey -> VALIDATION_ERROR") {
         val fx = Fixture()
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(
@@ -219,14 +219,14 @@ class TestdataPlanHandlerTest : FunSpec({
         }.violations.first().field shouldBe "approvalKey"
     }
 
-    test("Plan §6 G.5: fehlendes schemaRef -> VALIDATION_ERROR(schemaRef)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlendes schemaRef -> VALIDATION_ERROR(schemaRef)") {
         val fx = Fixture()
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(ctx("""{"approvalKey":"k","targetDialect":"POSTGRESQL"}"""))
         }.violations.first().field shouldBe "schemaRef"
     }
 
-    test("Plan §6 G.5: fehlendes targetDialect -> VALIDATION_ERROR(targetDialect)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlendes targetDialect -> VALIDATION_ERROR(targetDialect)") {
         val fx = Fixture()
         shouldThrow<ValidationErrorException> {
             fx.handler.handle(
@@ -264,7 +264,7 @@ class TestdataPlanHandlerTest : FunSpec({
         }.violations.first().field shouldBe "profileRef"
     }
 
-    test("Plan §6 G.6: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: fehlender dmigrate:ai:execute-Scope -> ForbiddenPrincipalException") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val readOnly = principal.copy(scopes = setOf("dmigrate:read"))
@@ -322,7 +322,7 @@ class TestdataPlanHandlerTest : FunSpec({
             ToolErrorCode.RESOURCE_NOT_FOUND
     }
 
-    test("Plan §6 G.6: PolicyDenied -> POLICY_DENIED") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyDenied -> POLICY_DENIED") {
         val fx = Fixture(policyDefault = PolicyEffect.Deny("policy:testdata-blocked"))
         fx.seedSchema("schema-1")
         val outcome = fx.handler.handle(
@@ -335,7 +335,7 @@ class TestdataPlanHandlerTest : FunSpec({
             ToolErrorCode.POLICY_DENIED
     }
 
-    test("Plan §6 G.6: idempotenter Retry -> selber testdataPlanArtifactId") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: idempotenter Retry -> selber testdataPlanArtifactId") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         val args = """{"approvalKey":"k-replay","targetDialect":"POSTGRESQL",""" +
@@ -351,7 +351,7 @@ class TestdataPlanHandlerTest : FunSpec({
             .get("summary").asString shouldBe "replayed testdata plan"
     }
 
-    test("Plan §6 G.6: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: gleicher approvalKey + abweichender Payload -> IDEMPOTENCY_CONFLICT") {
         val fx = Fixture()
         fx.seedSchema("schema-1")
         fx.seedSchema("schema-2")
@@ -371,7 +371,7 @@ class TestdataPlanHandlerTest : FunSpec({
             ToolErrorCode.IDEMPOTENCY_CONFLICT
     }
 
-    test("Follow-up AP 1: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: PolicyRequiresApproval -> POLICY_REQUIRED mit aggregierten Challenge-Details") {
         val providerCalls = AtomicInteger(0)
         val countingProvider = AiProviderPort {
             providerCalls.incrementAndGet()
@@ -405,7 +405,7 @@ class TestdataPlanHandlerTest : FunSpec({
         providerCalls.get() shouldBe 0
     }
 
-    test("Follow-up AP 1: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: approvalToken validiert durable Challenge und fuehrt zweiten Aufruf aus") {
         val fx = Fixture(policyDefault = PolicyEffect.Challenge(setOf("ai.execute")))
         fx.seedSchema("schema-1")
         val args = """{"approvalKey":"k-approved","targetDialect":"POSTGRESQL",""" +

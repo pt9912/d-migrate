@@ -6,8 +6,8 @@ package dev.dmigrate.driver.data
  * Lebt in `hexagon:ports` (nicht in `hexagon:core`), weil [jdbcType] semantisch
  * JDBC-coupled ist. `core.ColumnDescriptor` bleibt JDBC-frei (L15).
  *
- * Die Konversion zu `formats.JdbcTypeHint` erfolgt im Phase-D
- * `StreamingImporter`, der beide Module kennt.
+ * Die Konversion zu `formats.JdbcTypeHint` erfolgt im `StreamingImporter`,
+ * der beide Module kennt.
  *
  * @property name Spaltenname
  * @property nullable Ob die Spalte NULL erlaubt

@@ -1,7 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.1 (G.2 4/4) — adapterneutraler Provider-Port.
+ * LF-017 / LF-024 / LN-030 / LN-031— adapterneutraler Provider-Port.
  *
  * Implementierungen:
  *
@@ -9,12 +9,12 @@ package dev.dmigrate.server.application.ai
  *   Netzwerkzugriffe, keine externen Secrets. Wird in jedem
  *   Default- und Test-Pfad verwendet.
  * - lokale Provider (`OllamaAiProvider`, `LmStudioAiProvider` —
- *   G.3): nur über erlaubte Loopback-Endpunkte, ohne
+ *   LF-017 / LF-024 / LN-030 / LN-031): nur über erlaubte Loopback-Endpunkte, ohne
  *   `secretRef`-Pflicht.
- * - externe Provider (G.3): nur mit explizit konfiguriertem
+ * - externe Provider (LF-017 / LF-024 / LN-030 / LN-031): nur mit explizit konfiguriertem
  *   `secretRef`, erlaubender Policy und Audit-Pflicht-Metadaten.
  *
- * Vertrag (Plan §6 G.2 + §7.2):
+ * Vertrag (LF-017 / LF-024 / LN-030 / LN-031 + §7.2):
  *
  * 1. Der Aufruf liefert genau eines: [AiProviderResult.Success]
  *    oder [AiProviderResult.Failure]. Provider-spezifische
@@ -27,14 +27,14 @@ package dev.dmigrate.server.application.ai
  *    Truncation des Strings (Caller bekommt eine konsistente
  *    Failure-Antwort, kein halbes Output).
  * 4. Der Port führt keine Output-Hygiene durch — das ist
- *    Tool-Handler-/G.4-Concern. Der Port garantiert nur, dass
+ *    Tool-Handler-/LF-017 / LF-024 / LN-030 / LN-031-Concern. Der Port garantiert nur, dass
  *    der **Input** bereits hygienisiert ist (siehe
  *    [AiProviderRequest]).
  *
  * Sync-Aufruf (kein `suspend`) — passt zur d-migrate-Konvention
  * (vgl. `JobInputFinalizer`, `UploadInitOrchestrator`). Caller,
  * die einen Provider asynchron orchestrieren wollen, wrappen den
- * Aufruf in `CompletableFuture.supplyAsync` (Phase E `JobExecutor`-
+ * Aufruf in `CompletableFuture.supplyAsync` (LF-012 / LN-011 / LN-017 / LN-027 `JobExecutor`-
  * Pattern).
  */
 fun interface AiProviderPort {

@@ -9,8 +9,10 @@ import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.nulls.shouldBeNull
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.slot
 
 class MysqlMetadataQueriesTest : FunSpec({
 
@@ -221,27 +223,57 @@ class MysqlMetadataQueriesTest : FunSpec({
 
     // ── listFunctions ──────────────────────────────
 
-    test("listFunctions returns function maps") {
+    test("listFunctions returns function maps including identity columns") {
         every { jdbc.queryList(match { it.contains("routine_type = 'FUNCTION'") }, any()) } returns listOf(
             mapOf("routine_name" to "my_func", "routine_type" to "FUNCTION",
                 "data_type" to "int", "dtd_identifier" to "int",
                 "routine_definition" to "RETURN 1;", "is_deterministic" to "YES",
-                "routine_body" to "SQL"),
+                "routine_body" to "SQL",
+                "security_type" to "DEFINER", "definer" to "'alice'@'%'",
+                "sql_mode" to "STRICT_ALL_TABLES,NO_ZERO_DATE"),
         )
         val result = MysqlMetadataQueries.listFunctions(jdbc, "mydb")
         result shouldHaveSize 1
         result[0]["routine_name"] shouldBe "my_func"
+        result[0]["security_type"] shouldBe "DEFINER"
+        result[0]["definer"] shouldBe "'alice'@'%'"
+        result[0]["sql_mode"] shouldBe "STRICT_ALL_TABLES,NO_ZERO_DATE"
+    }
+
+    test("listFunctions SELECT projects security_type, definer, sql_mode") {
+        // Pin the SQL surface so a SELECT-list drift surfaces as a
+        // test diff instead of a silent reverse-read regression.
+        val captured = slot<String>()
+        every { jdbc.queryList(capture(captured), any()) } returns emptyList()
+        MysqlMetadataQueries.listFunctions(jdbc, "mydb")
+        captured.captured shouldContain "security_type"
+        captured.captured shouldContain "definer"
+        captured.captured shouldContain "sql_mode"
     }
 
     // ── listProcedures ─────────────────────────────
 
-    test("listProcedures returns procedure maps") {
+    test("listProcedures returns procedure maps including identity columns") {
         every { jdbc.queryList(match { it.contains("routine_type = 'PROCEDURE'") }, any()) } returns listOf(
             mapOf("routine_name" to "my_proc", "routine_type" to "PROCEDURE",
-                "routine_definition" to "BEGIN END;", "routine_body" to "SQL"),
+                "routine_definition" to "BEGIN END;", "routine_body" to "SQL",
+                "security_type" to "INVOKER", "definer" to "'bob'@'localhost'",
+                "sql_mode" to "ANSI_QUOTES"),
         )
         val result = MysqlMetadataQueries.listProcedures(jdbc, "mydb")
         result shouldHaveSize 1
+        result[0]["security_type"] shouldBe "INVOKER"
+        result[0]["definer"] shouldBe "'bob'@'localhost'"
+        result[0]["sql_mode"] shouldBe "ANSI_QUOTES"
+    }
+
+    test("listProcedures SELECT projects security_type, definer, sql_mode") {
+        val captured = slot<String>()
+        every { jdbc.queryList(capture(captured), any()) } returns emptyList()
+        MysqlMetadataQueries.listProcedures(jdbc, "mydb")
+        captured.captured shouldContain "security_type"
+        captured.captured shouldContain "definer"
+        captured.captured shouldContain "sql_mode"
     }
 
     // ── listRoutineParameters ──────────────────────
@@ -293,7 +325,7 @@ class MysqlMetadataQueriesTest : FunSpec({
         MysqlMetadataQueries.listTableRefs(jdbc, "empty").shouldBeEmpty()
     }
 
-    // ── Sequence-support queries (0.9.4 AP 6.1) ──────────
+    // ── Sequence-support queries (LF-004 / LF-013) ──────────
 
     test("checkSupportTableExists returns true when dmg_sequences is present") {
         every { jdbc.querySingle(match { "table_name = ?" in it }, any(), any()) } returns
@@ -516,5 +548,28 @@ class MysqlMetadataQueriesTest : FunSpec({
         val result = MysqlMetadataQueries.listPotentialSupportTriggers(jdbc, "mydb")
         result.accessible shouldBe false
         result.triggers.shouldBeEmpty()
+    }
+
+    // ── readServerVersion (E.1 Slice C.1.a) ────────────────────────
+
+    test("readServerVersion parses MySQL VERSION() result into MysqlServerVersion") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns
+            mapOf("version" to "8.0.36-log")
+        val v = MysqlMetadataQueries.readServerVersion(jdbc)
+        v?.major shouldBe 8
+        v?.minor shouldBe 0
+        v?.patch shouldBe 36
+        v?.vendor shouldBe "log"
+    }
+
+    test("readServerVersion returns null when VERSION() yields no row") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns null
+        MysqlMetadataQueries.readServerVersion(jdbc).shouldBeNull()
+    }
+
+    test("readServerVersion returns null on unparsable version string") {
+        every { jdbc.querySingle(match { it.contains("VERSION()") }) } returns
+            mapOf("version" to "unknown")
+        MysqlMetadataQueries.readServerVersion(jdbc).shouldBeNull()
     }
 })

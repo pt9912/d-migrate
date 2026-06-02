@@ -64,7 +64,6 @@ open class ProfileTableService(
         )
     }
 
-    @Suppress("LongParameterList")
     private fun profileColumn(
         pool: ConnectionPool,
         table: String,

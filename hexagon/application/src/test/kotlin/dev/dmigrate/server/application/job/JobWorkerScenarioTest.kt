@@ -12,6 +12,7 @@ import dev.dmigrate.server.application.approval.DefaultApprovalGrantService
 import dev.dmigrate.server.application.connection.ConnectionMaterializer
 import dev.dmigrate.server.application.fingerprint.DefaultPayloadFingerprintService
 import dev.dmigrate.server.application.fingerprint.JsonValue
+import dev.dmigrate.text.FakeUnicodeTextService
 import dev.dmigrate.server.application.policy.ConfiguredPolicyService
 import dev.dmigrate.server.application.policy.PolicyEffect
 import dev.dmigrate.server.core.job.JobRecord
@@ -38,11 +39,11 @@ import java.time.ZoneOffset
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
- * Phase E §7.7 End-to-End Integration: JobStartOrchestrator (E.6 (3a))
- * → JobDispatcher (E.7 (1-2)) → konkreter JobWorker (E.7 (3-5)).
+ * LF-012 / LN-011 / LN-017 / LN-027: JobStartOrchestrator
+ * → JobDispatcher → konkreter JobWorker.
  *
- * Verbindet alle E.6-/E.7-Bausteine in einer realen Aufruf-Sequenz und
- * belegt Plan §7.7-Akzeptanzpunkte:
+ * Verbindet alle Job-Start- und Dispatch-Bausteine in einer realen Aufruf-Sequenz und
+ * belegt LF-012 / LN-011 / LN-017 / LN-027-Akzeptanzpunkte:
  *
  * - Erfolgreicher Reverse-Job publiziert Artefakt + JobRecord wechselt
  *   QUEUED → RUNNING → SUCCEEDED.
@@ -53,8 +54,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *
  * Bewusst NICHT in diesem Test:
  *
- * - MCP-Tool-Handler-Pfad (das deckt McpPhaseEStartScenarioTest aus
- *   E.6 (4/4) ab; der hier testet die rein application-seitige Kette).
+ * - MCP-Tool-Handler-Pfad (das deckt McpJobStartScenarioTest aus
+ *   LF-012 / LN-011 / LN-017 / LN-027 ab; der hier testet die rein application-seitige Kette).
  * - Produktive ConnectionMaterializer-/JobArtifactPublisher-Adapter
  *   (Stub-Lambdas reichen fuer den Wire-Beweis).
  */
@@ -89,7 +90,7 @@ class JobWorkerScenarioTest : FunSpec({
             approvalGrantStore = approvalGrantStore,
             approvedRetryService = approvedRetryService,
             policyService = ConfiguredPolicyService(rules = emptyList(), defaultEffect = policyEffect),
-            payloadFingerprintService = DefaultPayloadFingerprintService(),
+            payloadFingerprintService = DefaultPayloadFingerprintService(FakeUnicodeTextService()),
             jobIdFactory = { "job_${jobIdSeq.incrementAndGet()}" },
         )
         val dispatcher = JobDispatcher(jobStore = jobStore, clock = clock)
@@ -205,7 +206,7 @@ class JobWorkerScenarioTest : FunSpec({
         outcome.errorCode shouldBe JobDispatcher.ERROR_CODE_OPERATION_TIMEOUT
 
         val final = fx.jobStore.findById(tenant, started.jobId)!!
-        // Plan §7.7: RUNNER_TIMEOUT nicht als CANCELLED gemapped.
+        // LF-012 / LN-011 / LN-017 / LN-027: RUNNER_TIMEOUT nicht als CANCELLED gemapped.
         final.managedJob.status shouldBe JobStatus.FAILED
         final.managedJob.error?.code shouldBe "OPERATION_TIMEOUT"
         final.managedJob.cancelRequest.signalAcked shouldBe false
@@ -226,7 +227,7 @@ class JobWorkerScenarioTest : FunSpec({
     }
 
     test("End-to-End mit Compare-Worker: Cancel zwischen Source- und Target-Load verhindert Diff/Publish") {
-        // Plan §7.7 Test "Cancel vor oder waehrend Compare-Materialisierung
+        // LF-012 / LN-011 / LN-017 / LN-027 Test "Cancel vor oder waehrend Compare-Materialisierung
         // verhindert Diff- und Artefakt-Publish".
         val fx = Fixture(policyEffect = PolicyEffect.Allow)
         val started = fx.orchestrator.start(

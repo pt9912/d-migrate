@@ -78,9 +78,10 @@ d-migrate data export --source staging --format json
 | `2` | `USAGE_ERROR` | Ungültige Argumente oder Flags | Fehlender Pflicht-Parameter |
 | `3` | `VALIDATION_ERROR` | Schema- oder Daten-Validierung fehlgeschlagen | FK referenziert nicht-existierende Tabelle |
 | `4` | `CONNECTION_ERROR` | Datenbankverbindung fehlgeschlagen | DB nicht erreichbar, Credentials falsch |
-| `5` | `MIGRATION_ERROR` | Fehler während Daten-Migration | Constraint-Verletzung beim Import |
+| `5` | `MIGRATION_ERROR` | Fehler während Daten- oder Schema-Migration nach Beginn der Ausführung | Constraint-Verletzung beim Import; DDL-Anweisung schlägt nach Beginn von `schema migrate --execute` fehl |
 | `6` | `AI_ERROR` | KI-Provider nicht erreichbar oder Transformation fehlgeschlagen | Ollama nicht gestartet |
 | `7` | `LOCAL_ERROR` | Lokaler Konfigurations-, Parse-, Datei-, I/O-, Render- oder Kollisionsfehler | Ungültiges YAML in `.d-migrate.yaml`, Schema-Datei nicht lesbar, Ausgabepfad nicht beschreibbar |
+| `8` | `MIGRATION_BLOCKED` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar (vor Ausführung) | `schema migrate` ohne `--allow-destructive` mit destruktivem Up; `--generate-rollback` mit nicht-reversibler Operation; Ziel-Dialekt rendert geplante Operation nicht |
 | `130` | `INTERRUPTED` | Durch Benutzer abgebrochen (Ctrl+C) | SIGINT empfangen |
 
 ### 2.1 Exit-Code-Regeln
@@ -269,6 +270,7 @@ W200 - W299: Performance-Warnungen
 | W103 | Materialized View not supported, using regular View |
 | W104 | XML type not supported, using TEXT fallback |
 | W113 | View dependencies could not be fully topologically sorted; original order is used for the remaining views |
+| W114 | Sequence cache value persisted as metadata only; helper-table mode does not emulate runtime preallocation |
 | W120 | SRID could not be fully transferred to target dialect (spatial best-effort, `schema generate`) |
 
 ### 4.6 Kompatibilitätsfehler (E050-E069)
@@ -284,6 +286,29 @@ Nicht-automatisch auflösbare Inkompatibilitäten. Der Prozess stoppt mit Hinwei
 | E056 | Named sequence cannot be generated natively and needs emulation/manual handling |
 | E120 | Unknown `geometry_type` value (schema validation) |
 | E121 | `srid` must be greater than 0 (schema validation) |
+
+### 4.7 Sequence-Cross-Dialect-Blocker (string codes, 0.9.7)
+
+String-codierte Blocker-Diagnostiken aus dem Sequence-Render-Pfad
+(`schema migrate`). Sie ergänzen die E0xx-Kompatibilitätsfehler aus
+§4.6 um Codes, die spezifisch für den Cross-Dialect-Transfer von
+Sequenzen sind. Alle Codes mappen via `PlannerBlockerClassifier` auf
+genau ein `MigrationBlockedReason`; das Mapping ist Teil des
+0.9.7-Schirms (siehe `docs/planning/done/ImpPlan-0.9.7-cross-dialect-sequencing.md`,
+sobald geschlossen) und der zugehörigen ADR `docs/adr/0003-cross-dialect-sequencing.md`.
+
+| Code | Reason | Emittiert in | Bedeutung |
+|---|---|---|---|
+| `SEQUENCE_PRESERVE_PROBE_FAILED` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | Live-DB-Probe für `preserve_current_value` schlug fehl; kein deterministischer Vor-Zustand für Up/Down. |
+| `SEQUENCE_PRESERVE_CONFIG_INVALID` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value`-Konfiguration (CLI/YAML) ist strukturell ungültig. |
+| `SEQUENCE_PRESERVE_REQUIRES_DB_TARGET` | `MANUAL_ACTION_REQUIRED` | `SequencePreserveStage` | `preserve_current_value` verlangt `--execute` mit DB-Target; File-Mode blockiert vor Render. |
+| `SEQUENCE_PRESERVE_NOT_SUPPORTED_BY_DIALECT` | `DIALECT_UNSUPPORTED_OPERATION` | `SequencePreserveStage` | Ziel-Dialekt hat heute keine Sequence-Emulation (aktuell SQLite). Kein Operator-Eingriff löst das, bis die helper-table-Emulation landet. |
+| `SEQUENCE_ATTRIBUTE_NOT_SUPPORTED_BY_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | Per-Attribut-Mismatch im Cross-Dialect-Transfer (z. B. künftiger SQLite-Renderer ohne `cycle`-Support). Heute kein Renderer-Pfad — der OP-level-Block für SQLite bleibt `DIALECT_UNSUPPORTED_OPERATION`, weil `supportsNamedSequences=false`. |
+| `SEQUENCE_OWNED_BY_NOT_REPRESENTABLE_IN_DIALECT` | `MANUAL_ACTION_REQUIRED` | *(forward-compat, 0.9.7 B.0)* | PG-`OWNED BY` ist nicht im Target abbildbar. Heute kein Renderer-Pfad — der PG-Reader filtert `pg_depend.deptype IN ('a','i')` aus `schema.sequences`, sodass owned sequences gar nicht ins neutrale Modell landen. Erst eine Neutralmodell-Erweiterung mit Ownership-Feld aktiviert die Emission. |
+
+`MYSQL_SEQUENCE_DRIFT_*` (E124-Familie aus Sub-Slice F der
+MySQL-Sequence-Drift-Check-Tranche) sind separat in §6.1 dokumentiert
+und nicht Teil des Cross-Dialect-Capability-Vertrags.
 
 ---
 
@@ -574,45 +599,606 @@ d-migrate schema compare --source file:schema.yaml --target db:staging
 d-migrate schema compare --source db:staging --target db:postgresql://localhost/prod
 ```
 
-#### `schema migrate` *(geplant: späterer Milestone)*
+#### `schema migrate` *(0.9.7 in Arbeit)*
 
-Generiert Migrationsskript (Up + optional Down) aus Schema-Diff.
-
-```
-d-migrate schema migrate --source <path> --target <url> [--generate-rollback]
-```
-
-| Flag | Pflicht | Typ | Beschreibung |
-|---|---|---|---|
-| `--source` | Ja | Pfad | Soll-Schema (YAML) |
-| `--target` | Ja | URL | Ist-Datenbank |
-| `--output` | Nein | Pfad | Migrationsskript-Ausgabe |
-| `--generate-rollback` | Nein | Boolean | Down-Migration erzeugen |
-
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern.
-
-Hinweis: Nicht Teil von 0.7.0. `schema migrate` wird diff-basiert auf
-`DiffResult` arbeiten und ist bewusst von `export flyway|liquibase|django|knex`
-(baseline-/full-state-Export aus einem einzelnen Schema) abgegrenzt.
-
-#### `schema rollback` *(geplant: späterer Milestone)*
-
-Führt ein Rollback-Migrationsskript gegen eine Datenbank aus.
+Plant einen migrationsfähigen Operationsplan aus dem Diff zwischen Soll-
+und Ist-Schema und rendert dialektspezifisches Up-DDL — optional inklusive
+Down-DDL — und führt es bei Bedarf gegen das Ziel-Datenbank-System aus.
 
 ```
-d-migrate schema rollback --source <path> --target <url>
+d-migrate schema migrate --source <desired> --target <current> \
+  [--dialect <id>] [--output <up.sql>] \
+  [--generate-rollback --rollback-output <down.sql>] \
+  [--plan-only] [--report <report.yaml>] \
+  [--execute] [--allow-destructive] [--allow-extension-install] \
+  [--migration-overlay <overlay.json>]... [--dry-run]
 ```
 
 | Flag | Pflicht | Typ | Beschreibung |
 |---|---|---|---|
-| `--source` | Ja | Pfad | Rollback-SQL-Datei (Down-Migration) |
-| `--target` | Ja | URL | Ziel-Datenbank |
-| `--dry-run` | Nein | Boolean | Nur anzeigen, nicht ausführen |
+| `--source` | Ja | Operand | Soll-Schema (Datei) |
+| `--target` | Ja | Operand | Ist-Zustand: `db:<url-or-alias>` oder `file:<current.yaml>` |
+| `--dialect` | Bedingt | Dialekt | Pflicht bei Datei-zu-Datei-Modus; aus Connection ableitbar bei DB-Target |
+| `--output` | Nein | Pfad | Up-SQL-Ausgabe; ohne Flag bei renderbarem Dry-Run nach `stdout` |
+| `--rollback-output` | Bedingt | Pfad | Down-SQL-Ausgabe; Pflicht bei `--generate-rollback` ohne `--plan-only` |
+| `--generate-rollback` | Nein | Boolean | Down-Plan erzeugen und prüfen. Bei Routine-Replace (`ReplaceFunction`/`ReplaceProcedure`) blockt der Renderer mit `ROUTINE_DOWN_BODY_UNKNOWN` und `primaryBlockedReason = ROLLBACK_NOT_POSSIBLE`, wenn der alte Routine-Body nicht vollstaendig bekannt ist. Bei Datei-zu-DB darf der Reverse-Pfad alte Bodies aus der Live-DB lesen; bei Datei-zu-Datei muss der Operator den Vorbody im Schema-File mitliefern oder ohne `--generate-rollback` migrieren. Verwandte Render-Blocker ohne `--generate-rollback`-Bezug: `ROUTINE_BODY_UNKNOWN` (Up-Body fehlt), `ROUTINE_REPLACE_UP_BODY_UNKNOWN` (Replace-Up-Body fehlt), `ROUTINE_BODY_DOLLAR_TAG_COLLISION` (Body enthaelt den Renderer-Dollar-Tag `$body$`) |
+| `--plan-only` | Nein | Boolean | Nur Plan-/Risiko-Report, kein SQL; in dieser Kombination ist `--rollback-output` unzulässig |
+| `--report` | Bedingt | Pfad | Strukturierter Plan-/Risiko-Report; **Pflicht bei `--execute`** |
+| `--plan-artefact` | Nein | Pfad | Signierter `migration-plan.v1`-JSON wird atomar an diesen Pfad geschrieben (additiv zu `--report`/`--output`/`--rollback-output`). Der Artefakt-Vertrag ist im Abschnitt **migration-plan.v1 Artefakt** unten beschrieben. Wird auch im `--plan-only`- und Exit-8-Pfad emittiert, sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler beendet mit Exit 7. |
+| `--execute` | Nein | Boolean | Up-DDL nach erfolgreichem Rendern gegen DB-Target ausführen; nur mit DB-Target zulässig |
+| `--allow-destructive` | Nein | Boolean | Destruktive Up-Operationen erlauben |
+| `--allow-extension-install` | Nein | Boolean | PostgreSQL darf benoetigte `CREATE EXTENSION IF NOT EXISTS ...`-Prerequisites fuer extension-abhaengige Migrationen rendern; ohne Flag blockieren nicht verifizierte Extensions |
+| `--migration-overlay` | Nein | Pfad, wiederholbar | Versioniertes Migrations-Overlay-JSON nach `migration-overlay.v1`; vor dem Rendern gegen Quell-/Ziel-Fingerprint, Dialekt und `overlayHash` validiert |
+| `--rename-table` | Nein | `<from>:<to>`, wiederholbar | Inline-Shortcut fuer Tabellen-Rename; CLI baut daraus ein synthetisches `rename-mapping`-Overlay mit `source = "cli-inline"`. Bewusst NICHT artefaktstabil — Inline-Overlays werden nicht in `migration-plan.v1` serialisiert. Fuer langlebige Plaene `--migration-overlay` mit Datei nutzen |
+| `--rename-column` | Nein | `<table>.<from>:<table>.<to>`, wiederholbar | Inline-Shortcut fuer Spalten-Rename; gleiche Bedingungen wie `--rename-table`. Tabellen-Prefix muss beidseitig identisch sein, sonst Exit 2 |
+| `--dry-run` | Nein | Boolean | Plan/SQL erzeugen, aber nichts ausführen; gegenseitig exklusiv mit `--execute` |
+| `--debug-body` | Nein | Boolean | **UNSAFE-Override** für die Display-/Diagnostic-Plane: Routine-Bodies erscheinen unmaskiert im Report und im `--output`-Artefakt (Default ist `bodyDisplay = SCRUBBED_ONLY` über `RoutineBodyScrubber.preview(...)`; das Artefakt enthält dann gescrubbten Body-Text, und der Report die `{sqlHash, sqlLength, scrubbedPreview, scrubbingApplied}`-Metadaten plus gescrubbtem `sql`-Feld). Execution-Plane (die Statements, die der `--execute`-Pfad gegen die DB schickt) bleibt unverändert mit Rohbody; das Display-Artefakt `--output` ist explizit eine Anzeige-/Diagnoseausgabe und folgt der Display-Plane-Regel. Für Pipelines, die das `--output`-Artefakt zur Re-Execution brauchen, MUSS `--debug-body` gesetzt werden. Logging-/Runner-Trace- und DB-Adapter-Pfade greifen den `RoutineBodyLogRedactor`-Hook, der den Flag berücksichtigt — ohne `--debug-body` wird kein unmaskierter Body in Diagnostic-Logs sichtbar. Nutzung nur in kontrollierter Debug-Session sinnvoll. |
+| `--routine-capability` | Nein | `<kind>:<key>=<value>[,<key>=<value>...]`, wiederholbar | Operator-Override fuer die Per-Routine-Kind-Capability von Stored Functions/Procedures. Erlaubte `<kind>`: `function`, `procedure`; erlaubte Keys: `enabled`, `minServerVersion`. Praezedenz, YAML-Aequivalent und Fehler-Routing siehe Abschnitt **Routine-Rendering** unten. |
+| `--strict-gap-operations` | Nein | Boolean | Blockt Operationen, die ueber einen Multi-Statement-Fallback mit Sichtbarkeitsluecke gerendert wuerden (heute: `ReplaceTrigger` via Drop+Create auf PostgreSQL < 14, MySQL und SQLite). Default `false` (lenient): der Pfad emittiert die Drop+Create-Statements und meldet die Luecke als `W_TRIGGER_REPLACE_GAP`-Warning im Report. Mit Flag wechselt der Renderer zu `MANUAL_ACTION_REQUIRED` (Exit `8`) und gibt keine Statements fuer die betroffene Operation aus. Wirkt allgemein auf `OperationRisk.hasGap = true`-Operationen; aktuell setzt nur der Trigger-Mapper diesen Flag. |
+| `--sqlite-named-sequences` | Nein | `action_required` / `helper_table` | SQLite-Sequence-Strategie fuer den `--execute`-Pfad (Default: `action_required`). Identisch zur gleichnamigen Option auf `schema generate`, aber hier auf der Migrate-Seite: nur mit `helper_table` aktiviert sich der `SequencePreserveStage`-Probe-Pfad fuer SQLite (`SqliteSequenceCurrentValueProbe` liest `dmg_sequences.next_value`); ohne Opt-in blockt jede `preserveCurrentValue`-Kandidat-Op vor der Probe-Connection mit `SEQUENCE_PRESERVE_OPT_IN_REQUIRED` (`primaryBlockedReason = MANUAL_ACTION_REQUIRED`). Plan-Doc: `docs/planning/done/ImpPlan-0.9.7-sqlite-sequence-preserve-current-value.md`. |
 
-Exit: `0` bei Erfolg, `4` bei Verbindungsfehlern, `5` bei Migrationsfehlern.
+Begriffe (vollständig in `spec/design.md`):
 
-Hinweis: Nicht Teil des 0.5.0-MVP-Releases; wird zusammen mit dem
-Migrations-/Rollback-Pfad in einem späteren Milestone konkretisiert.
+- **`SchemaDiff`** — struktureller Unterschied zwischen zwei Schemas
+- **`DiffView`** — stabile, primitive-only Compare-Ausgabe für `schema compare`
+- **`DiffResult`** — migrationsfähiger Operationsplan (Phasen, Reversibilität, Risiko)
+- **`MigrationDdlResult`** — gerenderte Up-/Down-DDL plus Metadaten
+
+Modi:
+
+| Modus | `--source` | `--target` | `--dialect` | `--execute` |
+|---|---|---|---|---|
+| Datei-zu-DB | Soll-Schema | `db:<url-or-alias>` | optional, muss zur DB passen | erlaubt |
+| Datei-zu-Datei | Soll-Schema | `file:<current.yaml>` | Pflicht | nicht erlaubt (Exit `2`) |
+
+Ausgabevertrag:
+
+- **Up-SQL**: Mit `--output` in Datei (atomar geschrieben), ohne `--output` bei renderbarem Dry-Run nach `stdout`. Bei `--execute` ohne `--output` keine Persistierung — die Ausführung gegen die DB ist das Artefakt.
+- **Down-SQL**: Nur über `--rollback-output`. Wird nie nach `stdout` geschrieben und nie als zweiter Block in das Up-SQL-Artefakt eingebettet.
+- **Report**: Mit `--report` in Datei, ohne bei `--plan-only` nach `stdout`. `--execute` ohne `--report` ist Exit `2` (auditpflichtig).
+- **Atomare Finalisierung**: Up-SQL, Down-SQL und Reports werden in eine temporäre Datei im Zielverzeichnis geschrieben und erst nach erfolgreichem Planning, Rendering und Blocker-Check atomar verschoben. Bei Render- oder Ausführungsfehlern bleiben bestehende Zielpfade unverändert.
+
+Routine-Rendering:
+
+- PostgreSQL rendert Routine-Replace fuer Functions und Procedures ueber `CREATE OR REPLACE`, sofern der jeweilige Body bekannt und der Dollar-Tag konfliktfrei ist.
+- MySQL-Familie unterscheidet Oracle MySQL und MariaDB. Der neutrale Datei-zu-Datei-Dialekt `mysql` verwendet Oracle-MySQL-Semantik: Stored-Routine-Replace darf kein `CREATE OR REPLACE` erzeugen und nutzt nur bei sicherem Dependency-Guard `DROP` + `CREATE`, sonst `MANUAL_ACTION_REQUIRED`. Bei Datei-zu-DB aktiviert ein live erkannter MariaDB-Vendor-String `CREATE OR REPLACE` fuer Functions/Procedures.
+- **MySQL Sequence Diff-Migration** *(E.3 Sub-Slices A–I,
+  2026-05-20)*: `schema migrate` rendert jetzt
+  `CreateSequence` / `AlterSequence` / `DropSequence` /
+  `RenameSequence` gegen die helper-table-Emulation aus 0.9.4
+  (`dmg_sequences` + `dmg_nextval` / `dmg_setval` + per-Spalte-
+  Trigger). Mode-Gate: nur mit `--mysql-named-sequences
+  helper_table` aktiv; im Default `action_required`-Modus blockt
+  jede Sequence-Diff-Op mit Diagnostic-Code `E056` →
+  `MigrationBlockedReason.MANUAL_ACTION_REQUIRED`, kein SQL wird
+  emittiert. Im `helper_table`-Modus emittieren die Renderer:
+    - `CreateSequence` UP: Bootstrap einmalig pro Migrations-
+      Richtung. Der Bootstrap-Block ist idempotent:
+      `CREATE TABLE IF NOT EXISTS dmg_sequences (...)` + jeweils
+      `DROP FUNCTION IF EXISTS dmg_nextval;` /
+      `dmg_setval;` gefolgt von `CREATE FUNCTION ...`. Damit
+      kollidiert eine Migration gegen eine DB, die bereits
+      Helper-Objekte aus einem früheren Lauf trägt, nicht beim
+      Bootstrap-Schritt. Spaltensignatur-Drift der bestehenden
+      `dmg_sequences` ist nicht abgesichert (Out-of-Scope dieses
+      Slice, siehe Folge-Plan). Anschließend
+      `INSERT INTO dmg_sequences (...) VALUES (...)`. Wer mit
+      `--generate-rollback` Up + Down erzeugt, sieht den
+      Bootstrap-Block in beiden Artefakten — UP und DOWN tracken
+      separat. DOWN: nur
+      `DELETE FROM dmg_sequences WHERE name = ...`.
+    - `AlterSequence` UP/DOWN: `UPDATE dmg_sequences SET ...` auf
+      den deklarativen Feldern, die sich tatsächlich zwischen
+      `before` und `after` unterscheiden (`increment_by`,
+      `min_value`, `max_value`, `cycle_enabled`, `cache_size`);
+      `start` / `next_value` (Laufzeitstatus) bleiben unangetastet
+      und sind Out-of-Scope für diesen Slice
+      (`preserveCurrentValue` ist ein eigener Cross-Dialect-Plan).
+    - `DropSequence` UP: `DROP TRIGGER IF EXISTS …` pro per-Spalte
+      gebundenem Sequence-Trigger (aus `currentSchema` ermittelt
+      durch `SequenceNextVal`-Default-Walk) + `DELETE FROM
+      dmg_sequences`. DOWN: Bootstrap (einmalig pro Down-Richtung)
+      + `INSERT` + alle gebundenen Trigger wiederherstellen. **Beide
+      Richtungen lesen die Trigger-Bindungen aus `currentSchema`**
+      (Pre-Up-State, einziger Ort, an dem die Bindungen leben);
+      `desiredSchema` ist Post-Up und enthält die Bindungen nicht
+      mehr — analoger Reviews-Fix dokumentiert das ausdrücklich.
+    - `RenameSequence`: kommt unter Normalbetrieb nicht durch —
+      `MysqlObjectRenamePolicy.classify(SEQUENCE, ...)` liefert
+      `RenameSupport.DropCreateFallback`, der Mapper zerlegt die
+      Rename in `DropSequence(from)` + `CreateSequence(to)` mit
+      gemeinsamer `RenameProvenance`. Der `SequenceDefaultReprojector`
+      schreibt `SequenceNextVal("from")`-Referenzen in
+      `CreateTable` / `AddColumn` / `AlterColumnDefault`-Ops auf
+      `"to"` um; der `DependencyAnalyzer` setzt die Kante auf das
+      Fallback-`CreateSequence`. Ein direkt emittierter
+      `RenameSequence`-Op (planner regression / artefact replay)
+      fällt auf eine defensive Implementierung zurück, die
+      `UPDATE dmg_sequences SET name = …` plus
+      `DROP TRIGGER IF EXISTS` + `CREATE TRIGGER` (mit neuem
+      Body-Literal `dmg_nextval('to')`) emittiert.
+    - **Spalten mit `SequenceNextVal`-Default** (Sub-Slice F):
+      `CreateTable` / `AddColumn` / `AlterColumnDefault` mit
+      `SequenceNextVal("...")`-Default werden nicht über
+      `MysqlTypeMapper.toDefaultSql` geroutet (würde crashen),
+      sondern lassen den `DEFAULT`-Token in der Spaltenzeile
+      aus und emittieren stattdessen einen per-Spalte
+      BEFORE-INSERT-Trigger (`dmg_seq_<table16>_<column16>_<hash10>_bi`)
+      über `MysqlSequenceEmulationTemplates.sequenceTriggerSql`,
+      der `dmg_nextval('<seq>')` aufruft wenn der Insert-Wert
+      NULL ist. Der Mode-Gate (`E056`) gilt auch für diesen
+      Pfad: ohne `--mysql-named-sequences helper_table` wird die
+      Op blockiert, bevor irgendein `CREATE TABLE` / `ADD COLUMN`
+      emittiert wird. `AlterColumnDefault` wechselt zwischen
+      Sequence- und Konstant-Defaults sauber (DROP TRIGGER vor
+      `SET DEFAULT`; bzw. `DROP DEFAULT` + CREATE TRIGGER). Das
+      DOWN von `DROP COLUMN` lässt MySQL den kanonisch
+      benannten Trigger implizit cascadieren — kein extra DROP
+      TRIGGER nötig.
+    - **`AlterSequence` mit nur Runtime-State-Delta**: wenn die
+      einzige Änderung der `start`-Wert ist (managed-Felder
+      `increment`/`minValue`/`maxValue`/`cycle`/`cache` bleiben
+      gleich), emittiert der Renderer keinen `UPDATE`, sondern
+      einen INFO-severity-Diagnostic
+      `MYSQL_SEQUENCE_RUNTIME_STATE_NO_OP` mit Hinweis auf den
+      `preserveCurrentValue`-Folge-Slice. Die Op wird im Report
+      als skipped + Info dokumentiert, ohne Migration-Blocker.
+  DELIMITER-Konvention *(Sub-Slice H, 2026-05-20)*:
+  Der `schema migrate --execute`-Pfad emittiert Routinen + Trigger
+  **delimiterfrei** als ein einzelnes JDBC-Statement (BEGIN…END
+  ist eine logische MySQL-Anweisung; die internen `;` sind Teil
+  des Bodies). Der `schema generate --output file.sql`-Pfad
+  wickelt die gleichen Templates mit `DELIMITER //…DELIMITER ;` für
+  mysql-CLI-Konsum. Vor Sub-Slice H emittierte der Diff-Pfad die
+  DELIMITER-gewickelte Variante — JDBC kennt `DELIMITER` nicht und
+  hätte mit `SQLException` abgelehnt; der Bug ist seit `d248cd11`
+  gefixt.
+  Out of scope dieses Slice (eigener Folge-Slice
+  `docs/planning/done/ImpPlan-0.9.7-mysql-sequence-drift-check.md`):
+  Live-DB-Drift-Check gegen bestehende `dmg_sequences`-Rows
+  (E124-Kollisionsprüfung gegen vorgefundene Werte und Trigger-
+  Body-Marker) — analog F.5 E.3's `CheckPreflightProbe` braucht
+  das einen separaten Probe-Adapter (Port + Adapter + Stage +
+  Gate + Renderer-Integration, 6 Sub-Slices). Der heutige Renderer
+  prüft nur die Mode-Gate-Bedingung (`E056`); die Bootstrap-
+  Idempotenz (`CREATE TABLE IF NOT EXISTS` + `DROP FUNCTION IF
+  EXISTS`) schützt vor wiederholten Migrations-Läufen, fängt aber
+  keine Drift zwischen erwarteten und tatsächlichen Helper-Objekt-
+  Definitionen. Solche Live-Inkonsistenzen führen heute zu
+  Runtime-Fehlern im `--execute`-Pfad; der Folge-Slice surfaceiert
+  sie als `E124`-Block.
+- Operatoren koennen die Defaults pro Routine-Kind ueberschreiben — via wiederholbarer `--routine-capability`-Flag oder via `.d-migrate.yaml`-Sektion `routineCapability:`. Format des YAML-Eintrags:
+
+  ```yaml
+  routineCapability:
+    function:
+      enabled: true
+      minServerVersion: "8.0.0"   # nur MySQL relevant; muss quoted bleiben, damit SnakeYAML nicht zu Double coerciert
+    procedure:
+      enabled: false
+  ```
+
+  CLI-Flag-Beispiel (entspricht dem YAML-Snippet, repeatable):
+
+  ```
+  --routine-capability=function:enabled=true,minServerVersion=8.0.0 \
+  --routine-capability=procedure:enabled=false
+  ```
+
+  Praezedenz pro Routine-Kind: CLI > YAML > Dialekt-/Server-Version-Defaults. Das Merging ist **feldweise**: jedes der Felder `enabled` und `minServerVersion` wird einzeln aufgeloest. Eine CLI-Angabe wie `--routine-capability=function:minServerVersion=8.0.0` ohne `enabled` ist gueltig — `enabled` faellt dann auf den YAML-Eintrag oder, falls auch dieser keinen Wert traegt, auf den Dialekt-/Server-Version-Default zurueck. Eine fehlende Top-Level-Sektion ist gleichwertig mit "keine Override" und faellt komplett auf die Defaults zurueck. Pro `<kind>` ist maximal eine `--routine-capability`-Angabe erlaubt; doppelter Eintrag, unbekannter `<kind>`, unbekannter Key, unparsable `enabled` oder unparsable `minServerVersion` produzieren `EffectiveRoutineCapability.Invalid(reason)`, welches der MySQL-Renderer als `ROUTINE_CAPABILITY_CONFIG_INVALID` + `MANUAL_ACTION_REQUIRED` (Exit `8`) ausweist; der Reason landet als Suffix in der Diagnostik-Message. Identische Wirkung haben semantisch invalide YAML-Eintraege (z. B. unquoted Float `minServerVersion: 8.0` — SnakeYAML coerciert zu `Double`, der Parser verlangt einen quoted String wie `"8.0.0"`). Strukturell invalide YAML (`routineCapability: true`) blockiert frueher mit `ConfigResolveException`.
+
+Trigger-Rendering (0.9.7 E.2):
+
+- PostgreSQL rendert `CreateTrigger`/`ReplaceTrigger`/`DropTrigger` als native `CREATE TRIGGER ... EXECUTE FUNCTION <ref>;` / `DROP TRIGGER <name> ON <table>;`. Der Body **muss** eine strikte `[schema.]identifier([arg, ...])`-Funktionsreferenz sein — inline PL/pgSQL blockt der Renderer mit `TRIGGER_BODY_NOT_FUNCTION_REFERENCE` (Exit `8`). Replace nutzt natives `CREATE OR REPLACE TRIGGER` ab PG-14, sonst Drop+Create-Fallback.
+- MySQL rendert `CREATE TRIGGER <name> <timing> <event> ON <table> FOR EACH ROW <body>;` mit inline-Body **ohne** `DELIMITER`-Wrapper (analog Routine-Rendering); `DROP TRIGGER <name>;` mit bare Triggername (`<table>.<name>` ist MySQL-Syntaxfehler, `<schema>.<name>` waere die einzige zulaessige Qualifikation und ist ein Folge-Slice). Replace ist immer Drop+Create. Pre-Flight-Blocker je nach Modellfeld (Validator-Reihenfolge: INSTEAD-OF zuerst, dann `condition`, dann `forEach`, dann leerer Body): `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED` (PG-only), `MYSQL_TRIGGER_CONDITION_UNSUPPORTED` (MySQL kennt kein `WHEN` — Modellfeld `condition != null`), `MYSQL_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `ROUTINE_BODY_UNKNOWN` (leerer Body).
+- SQLite rendert `CREATE TRIGGER ... BEGIN <body> END;` mit impliziter `FOR EACH ROW`-Orientierung; `DROP TRIGGER <name>;` mit bare Triggername (SQLite-Trigger sind global). Replace ist immer Drop+Create. Pre-Flight-Blocker: `SQLITE_TRIGGER_STATEMENT_LEVEL_UNSUPPORTED` (nur Row-Trigger), `SQLITE_TRIGGER_BODY_NOT_RENDERABLE` (`sourceDialect` ungleich `sqlite`). Trigger auf einer Tabelle, die ueber `AlterColumnType` / `AlterColumnNullability` / `AlterConstraint` einen Rebuild ausloest, werden von `SqliteRebuildPlanner` in den Rebuild-Block absorbiert; der Standalone-Renderer rendert nur Trigger ohne Rebuild-Betroffenheit.
+- **Gap-Vertrag**: jede Drop+Create-Replace traegt
+  `OperationRisk.hasGap = true` und emittiert einen
+  `W_TRIGGER_REPLACE_GAP`-WARNING-Diagnostic im Report. Den Flag setzt
+  der Mapper anhand der dialekt- und (fuer PostgreSQL) server-version-
+  abhaengigen Capability, **bevor** der Renderer laeuft — damit ist
+  jeder Renderer-Pfad authoritativ via `op.risks.<direction>.hasGap`
+  und nicht via eigene Capability-Lookup. Mit `--strict-gap-operations`
+  hebt der Renderer-Pre-Emit-Guard die Operation auf
+  `MANUAL_ACTION_REQUIRED` (Exit `8`) — keine Statements werden
+  emittiert, kein Gap-Warning, statt dessen ein
+  `OPERATION_HAS_GAP_STRICT_BLOCKED`-Diagnostic. Architekturdetail in
+  `docs/planning/done/ImpPlan-0.9.7-E.2-A.3-hasgap-strict.md`
+  (`TriggerPlanningContext`, `TriggerCapability`,
+  `TriggerPlanningContextFactory`).
+- **Identitaets-Kollision**: zwei Trigger mit gleichem Namen auf verschiedenen Tabellen blockt der `TriggerNameCollisionDetector` mit `TRIGGER_NAME_COLLISION` (Exit `8`). Der Reader-Pfad konsultiert den Detektor vor der Map-Materialisierung; YAML-Files-mit-doppeltem-Map-Key blocken ueber Jacksons `FAIL_ON_READING_DUP_TREE_KEY` bereits im Codec.
+- Body-Sanitisation findet im Renderer **nicht** statt. Display-/Report-Plane scrubbt Trigger-Bodies ueber den gemeinsamen `RoutineBodyScrubber` (E.1) — `PASSWORD '...'`-Literale und andere bekannte Patterns sind im Report maskiert, im `--output`-Artefakt scrubbed und im Live-`--execute`-Pfad raw.
+
+Carve-outs aus E.2: MySQL DEFINER-Rendering und MySQL `INSTEAD OF`-Trigger (Modellfeld blockt mit `MYSQL_TRIGGER_INSTEAD_OF_UNSUPPORTED`, da MySQL keine INSTEAD-OF-Trigger kennt — PG-only); SQLite `INSTEAD OF`-Trigger (rendert as-is, weil SQLite das View-bezogen akzeptiert; der Renderer prueft Tabelle-vs-View nicht vor, weil das neutrale Modell den Unterschied am Trigger-Target heute nicht ausweist); schemaqualifizierter `DROP TRIGGER` und SQLite-Trigger-Reverse-Read aus `sqlite_master` bleiben Folge-Slices. `TriggerDefinition`-Modellerweiterung (`events`-Liste mit Spaltenliste, `enabledState`) ebenfalls Folge-Slice.
+
+Report-Felder für Materialized Views:
+
+- `operations[].objectType` ist `MATERIALIZED_VIEW`, wenn die zugrunde
+  liegende View-Operation `materialized: true` trägt oder eine der neuen
+  `CreateMaterializedView` / `DropMaterializedView`-Ops vorliegt.
+- `materializedViews[]` enthält pro betroffener Operation
+  `operationId`, `action`, `path`, `dialect`, `status`,
+  `stalenessAfterUp`, `refreshSteps`, `locking`, `rollback` und das
+  optionale `primaryBlockedReason` (`null` bei `status=READY`).
+- Plan-2 §8 D.3b Sub-Slice A — PostgreSQL Create/Drop sind diff-basiert
+  renderbar; das Vertrags-Mapping läuft wie folgt:
+
+  | Op + Renderer-Ausgang | `status` | `stalenessAfterUp` | `refreshSteps` | `locking` | `rollback` |
+  |---|---|---|---|---|---|
+  | PG `CreateMaterializedView` rendert | `READY` | `FRESH_AFTER_INITIAL_REFRESH` | `[INITIAL_REFRESH_VIA_CREATE]` | `ACCESS_EXCLUSIVE` | `DROP_CREATED_MATERIALIZED_VIEW_REFRESH_NOT_REQUIRED` |
+  | PG `ReplaceMaterializedView` rendert (Sub-Slice B) | `READY` | `FRESH_AFTER_REPLACE_REFRESH` | `[DROP_CREATE_INITIAL_REFRESH]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
+  | PG `DropMaterializedView` rendert, `query` bekannt | `READY` | `NOT_APPLICABLE_DROP` | `[]` | `ACCESS_EXCLUSIVE` | `SOURCE_QUERY_AVAILABLE_REFRESH_CONTRACT_REQUIRED` |
+  | MySQL/SQLite Create/Drop | `BLOCKED_DIALECT_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_DIALECT_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Refresh-Contract verlangt `CONCURRENTLY` | `BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONCURRENT_REFRESH_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `schema refresh materialized-view`-Intent | `BLOCKED_SCHEMA_REFRESH_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_SCHEMA_REFRESH_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `ViewDefinition.refresh` ist gesetzt | `BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED` | `UNKNOWN_BLOCKED` | `[BLOCKED_VIEW_DEFINITION_REFRESH_UNSPECIFIED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Live-Reverse-Read-Metadaten fehlen | `BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_MATERIALIZED_VIEW_METADATA_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Create ohne `query` (Planner-Blocker) | `BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Drop ohne `query` (Planner-Blocker) | `BLOCKED_DOWN_QUERY_UNKNOWN` | `UNKNOWN_BLOCKED` | `[BLOCKED_DOWN_QUERY_UNKNOWN]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Replace ohne `before.query` (Down-Body fehlt) | `BLOCKED_REPLACE_DOWN_BODY_UNKNOWN` | `UNKNOWN_BLOCKED` | `[BLOCKED_REPLACE_DOWN_BODY_UNKNOWN]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | Drop/Replace/Column-Alter einer Tabelle/View/Routine ohne MV-Drop/Replace (orphaning) | `BLOCKED_DEPENDENCY_UNRESOLVED` | `UNKNOWN_BLOCKED` | `[BLOCKED_DEPENDENCY_UNRESOLVED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+  | `View`↔`MaterializedView`-Konversion | `BLOCKED_CONVERSION_UNSUPPORTED` | `UNKNOWN_BLOCKED` | `[BLOCKED_CONVERSION_UNSUPPORTED]` | `UNKNOWN_BLOCKED` | `ROLLBACK_NOT_POSSIBLE` |
+
+  Die Präzedenz folgt §5 des Implementierungsplans: Dialect-Block schlägt
+  Concurrent-Refresh, das wiederum Schema-Refresh, View-Definition-Refresh,
+  Metadata-Unsupported und Conversion schlägt; Diff-Metadata- und Down-Query-
+  Blocker rangieren am unteren Ende der Priorität. `primaryBlockedReason`
+  folgt den Codes aus §6.4.1 (`MATERIALIZED_VIEW_NOT_SUPPORTED_BY_DIALECT`,
+  `MATERIALIZED_VIEW_CONCURRENT_REFRESH_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_SCHEMA_REFRESH_UNSUPPORTED`,
+  `VIEW_DEFINITION_REFRESH_SEMANTICS_UNSPECIFIED`,
+  `MATERIALIZED_VIEW_METADATA_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_CONVERSION_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_DIFF_METADATA_UNSUPPORTED`,
+  `MATERIALIZED_VIEW_REPLACE_DOWN_BODY_UNKNOWN`,
+  `MATERIALIZED_VIEW_DOWN_QUERY_UNKNOWN`,
+  `MATERIALIZED_VIEW_DEPENDENCY_UNRESOLVED`).
+- Bei `BLOCKED_DEPENDENCY_UNRESOLVED` enthält der `materializedViews[]`-
+  Eintrag zusätzlich ein `dependencyBlockers`-Subfield. Jeder Eintrag
+  listet `droppingOperationId`, `droppingPath` und `droppingKind`
+  (`TABLE`, `VIEW`, `MATERIALIZED_VIEW`, `FUNCTION`, `PROCEDURE`). Wenn
+  die MV selbst keine Operation im Plan hat (rein verwaiste MV),
+  emittiert der Builder einen synthetischen Eintrag mit `action=ORPHAN`
+  und `operationId` der droppenden Operation, damit der Operator den
+  Orphan in der Report-Datei sieht.
+
+Report-Felder für `--execute`:
+
+- Bestehende Felder `execution.started`, `execution.completed`,
+  `execution.statementsAttempted`, `execution.lastStatementOperationIds`,
+  `execution.transactionRolledBack`, `execution.sideEffectsPossible` und
+  `execution.executionError` bleiben unveraendert.
+- `execution.statementGroups[]` enthaelt pro ausgefuehrter Statement-Gruppe
+  `statementGroupId`, `operationIds`, `statementStartInclusive`,
+  `statementEndExclusive`, `transactionScope` und `transactionBoundary`.
+  Statement-Indizes sind nullbasiert und end-exklusiv.
+- `transactionBoundary` ist `BEFORE`, `INSIDE`, `AFTER` oder `NONE` relativ
+  zur effektiven Runner- oder Stream-Transaktion.
+- Nach Execute-Fehlern enthaelt `execution.recoverability` eine konservative
+  Einschaetzung: `FULL_ROLLBACK_CONFIRMED`, `ROLLBACK_ATTEMPTED`,
+  `PARTIAL_STATE_POSSIBLE` oder `UNKNOWN`. Bei erfolgreichem Execute ist das
+  Feld `null`.
+- Gemischte oder nicht unterstuetzte Transaction-Scope-Streams blockieren vor
+  dem ersten Statement mit `primaryBlockedReason=TRANSACTION_SCOPE_UNSUPPORTED`
+  und Exit `8`.
+
+Report-Felder für Rename-Projection (F.4):
+
+- `renameProjections[]` enthält pro Overlay-Eintrag genau einen Eintrag,
+  unabhängig davon, ob die Faltung erfolgreich war oder auf Drop+Create
+  zurückfiel. Jeder Eintrag trägt:
+  - `candidateId`, `objectType`
+    (`table` / `column` / `view` / `trigger` / `function` / `procedure` /
+    `sequence`), `fromPath`, `toPath`
+  - Overlay-Provenance: `overlaySource`, `overlayEntryId`, optional `overlayHash`.
+    `overlayEntryId` ist die stabile Schlüsselgrundlage: mehrere Einträge
+    teilen denselben `overlayHash`, nur `overlayEntryId` identifiziert den
+    autorisierenden Eintrag.
+  - `renameOperationId`: bei erfolgreicher Faltung die ID der emittierten
+    `RenameTable`/`RenameColumn`/`RenameView`/`RenameTrigger`/
+    `RenameFunction`/`RenameProcedure`/`RenameSequence`-Operation. Bei
+    Drop+Create-Fallback `null`.
+  - `fallbackOperationIds`: bei Fallback die deterministischen IDs der
+    regulär emittierten `Drop*`/`Create*`-Paare (resp.
+    `DropColumn`+`AddColumn`). Leer bei erfolgreicher Faltung.
+  - `fallbackReason`: kurze, menschenlesbare Begründung bei Fallback.
+  - `automatic[]`: vom Engine ohne Folge-Operation projizierte
+    Dependencies — `kind` (`FK`, `INDEX`, ...), `path`, `rationale`.
+  - `explicit[]`: vom Projector emittierte Folge-Operationen (T5
+    View-Reprojection: `kind = VIEW_DROP` / `VIEW_CREATE`, `path` mit
+    View-Name, `operationId` auf die emittierte `DropView` / `CreateView`).
+  - `blockers[]`: Projector-Blocker mit `code`, `candidateId`, `path`,
+    `message`, `severity`. Heutige Policies emittieren ausschließlich
+    `severity = WARNING` (Drop+Add-Fallback ist immer renderbar). Eine
+    spätere Tranche kann `severity = BLOCKER` für Fälle einführen, in
+    denen auch der Fallback nicht renderbar ist; der Migrate-Lauf
+    endet dann mit Exit `8`.
+- Report-Consumer rekonstruieren `renameProjections`-Einträge nicht aus
+  `diagnostics`, Operation-IDs oder Renderer-Nebenwirkungen. Das Feld ist
+  der einzige verbindliche Carrier.
+
+Workflow für Renames jenseits von Tabelle/Spalte (F.4 routine-trigger-view-renames,
+2026-05-19):
+
+- Overlay-`objectType`-Whitelist ist seit 2026-05-18 erweitert auf
+  `{table, column, view, trigger, function, procedure, sequence}`.
+  `materialized_view` bleibt blockiert (Materialized-View-Rename folgt
+  einem eigenen D.3b-Vertrag).
+- Kanonische Keys sind für `trigger` und `function`/`procedure` pflicht:
+  - `objectType=trigger`: `fromName` und `toName` MÜSSEN das Format
+    `table::name` haben (`ObjectKeyCodec.triggerKey`). Cross-Table-Moves
+    (`orders::audit_old → users::audit_new`) sind kein Rename und werden
+    pre-plan blockiert mit `RENAME_OVERLAY_TRIGGER_CROSS_TABLE_REJECTED`.
+    Fehlt das `::`-Trennzeichen → `RENAME_OVERLAY_TRIGGER_KEY_INVALID`.
+  - `objectType=function` / `procedure`: kanonische Form
+    `name(direction:type,...)` auf beiden Seiten
+    (`ObjectKeyCodec.routineKey`). Unterschiedliche Signaturen zwischen
+    `fromName` und `toName` sind eine Objektänderung, kein Rename, und
+    werden pre-plan blockiert mit
+    `RENAME_OVERLAY_ROUTINE_SIGNATURE_MISMATCH`. Fehlende Klammern
+    → `RENAME_OVERLAY_ROUTINE_KEY_INVALID`.
+  - `objectType=view` / `sequence`: sichtbare Namen ohne kanonischen
+    Wrapper (analog zu `table` / `column`).
+- Per-Dialekt-Verhalten (`ObjectRenamePolicy`):
+  - **PostgreSQL**: View, Sequence, Trigger, Function, Procedure
+    haben native `ALTER … RENAME`-Templates; der Renderer emittiert
+    direkt ein `Rename*`. Materialized-View-Rename bleibt blockiert
+    (`OBJECT_RENAME_UNSUPPORTED`). Body-Drift (View/Trigger/Routine
+    mit unterschiedlichen Bodies vor/nach Rename) blockiert ebenfalls
+    mit `OBJECT_RENAME_UNSUPPORTED`.
+  - **MySQL**: View nutzt `RENAME TABLE` (Views liegen im Tabellen-
+    Namespace). Trigger, Function, Procedure haben kein
+    `ALTER … RENAME` und fallen auf Drop+Create+`RenameProvenance`
+    zurück, sofern beide Bodies bekannt und identisch sind; fehlender
+    Body oder Drift blockiert. Sequences fallen seit E.3 MySQL-
+    Sequence-Diff (2026-05-20) ebenfalls auf
+    Drop+Create+`RenameProvenance` zurück (helper-table-Emulation —
+    siehe MySQL-Sequence-Diff-Block weiter unten).
+  - **SQLite**: View und Trigger fallen immer auf
+    Drop+Create+`RenameProvenance` zurück (kein natives Rename); gleiche
+    Body-Bekanntheits-Regeln wie MySQL. Function/Procedure blockieren
+    (SQLite hat kein Routinen-Modell). Sequence-Rename bleibt blockiert
+    bis der E.3 SQLite-Sequence-Vertrag steht.
+- Sequence-Default-Reprojection: `RenameSequence(old → new)` schreibt
+  `DefaultValue.SequenceNextVal("old")`-Referenzen in
+  `CreateTable`/`AddColumn`/`AlterColumnDefault`-Ops desselben Plans
+  auf `"new"` um. Der `DependencyAnalyzer` erkennt `RenameSequence`
+  als Sequence-Provider, sodass die topologische Sortierung den
+  Rename strikt vor jeder Spalten-Op platziert. Spalten, die nur in
+  der Live-Datenbank existieren und vom Plan nicht berührt werden,
+  brauchen keine textuelle Reprojection — PostgreSQL speichert
+  `nextval('seq')`-Defaults als OID-Referenzen und folgt dem Rename
+  automatisch.
+- Plan-Artefakt (`migration-plan.v1`) trägt seit 2026-05-19 ein
+  optionales `renameProjections[]`-Feld mit denselben Rename-Provenance-
+  Informationen (`candidateId`, `objectType`, `from/toPath`,
+  Overlay-Provenance, `renameOperationId` oder
+  `fallbackOperationIds`+`fallbackReason`). Producer MÜSSEN
+  `"rename-projections.v1"` in `semanticExtensions` setzen
+  (Convenience: `MigrationPlanArtifact.withRenameProjectionExtension()`),
+  sonst blockt der Validator mit
+  `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION`. Consumer ohne
+  Support für die Extension lehnen das Artefakt mit
+  `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` ab — alte Consumer dürfen
+  Drop+Create-Fallbacks NICHT als gewöhnliche destruktive Operationen
+  ausführen.
+- CLI-Eingang: für die fünf neuen `objectType`-Werte gibt es heute
+  keine `--rename-{view,trigger,…}`-Inline-Shortcuts; Renames müssen
+  über `--migration-overlay <file>` mit einem `rename-mapping`-Overlay
+  eingebracht werden. Die kanonischen Keys (Trigger / Routine) sind in
+  einer Overlay-Datei besser handhabbar als auf der Kommandozeile.
+
+Exit-Codes:
+
+| Exit | Bedeutung |
+|---|---|
+| `0` | Erfolg (auch No-op-Lauf ohne Diff oder erfolgreicher `--plan-only`) |
+| `2` | Ungültige CLI-Argumente (z.B. `--execute` mit Datei-Target, `--execute` + `--dry-run`, `--plan-only` + `--rollback-output`) |
+| `3` | Schema-Validierungsfehler |
+| `4` | Verbindungsfehler |
+| `5` | DDL-Ausführungsfehler nach Beginn von `--execute` (`MIGRATION_ERROR`) |
+| `7` | Lokale I/O-, Planungs-, Render- oder Artefaktfehler |
+| `8` | Migration durch Risiko-, Rollback- oder Dialektblocker nicht renderbar (`MIGRATION_BLOCKED`) |
+
+Exit `8` muss im strukturierten Fehler eine vollständige `blockers`-Liste und einen optionalen `primaryBlockedReason` enthalten. Mindestens unterscheidbare Fälle:
+
+- destruktive Up-Operation ohne `--allow-destructive`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist `NOT_REVERSIBLE`
+- `--generate-rollback` angefordert, aber mindestens eine Operation ist `MANUAL_REQUIRED`
+- Ziel-Dialekt kann eine geplante Operation nicht rendern
+- gerenderter Execute-Stream mischt nicht gemeinsam ausfuehrbare
+  `transactionScope`-Werte (`TRANSACTION_SCOPE_UNSUPPORTED`)
+- F.5 CHECK / EXCLUDE-Vollscheibe (2026-05-20): sieben dedizierte
+  Diagnostic-Codes pro Blocker, alle ueber den
+  `PlannerBlockerClassifier` auf einen `MigrationBlockedReason`
+  abgebildet (`hexagon:ports-read`):
+  - `CHECK_PREFLIGHT_VIOLATIONS` → `MANUAL_ACTION_REQUIRED`: der
+    `--execute`-Preflight-Probe (`SELECT count(*) FROM <t>
+    WHERE NOT (<expr>)`) findet existierende Zeilen, die die neue
+    restriktive CHECK verletzen. Operator muss die Daten bereinigen
+    oder die Constraint locker schreiben.
+  - `CHECK_PREFLIGHT_RUNTIME_ERROR` → `MANUAL_ACTION_REQUIRED`: der
+    Preflight-Probe selbst wirft (Privilegien, Netzwerk, malformierter
+    Expression-Text). Fehlertext steht im Report-Feld
+    `checkPreflights[].problem`.
+  - `EXCLUDE_NOT_SUPPORTED_BY_DIALECT` →
+    `DIALECT_UNSUPPORTED_OPERATION`: EXCLUDE ist PostgreSQL-only;
+    MySQL- und SQLite-Renderer blocken den Op (auch im
+    SQLite-Rebuild-Pfad, der ein bereits in der Tabelle vorhandenes
+    EXCLUDE nicht durch den Rebuild rutschen lassen darf).
+  - `MYSQL_CHECK_NOT_ENFORCED_BEFORE_8_0_16` →
+    `MANUAL_ACTION_REQUIRED`: MySQL < 8.0.16 (bzw. MariaDB < 10.2.1)
+    parst die CHECK-Klausel, evaluiert sie aber nie. Der Renderer
+    weigert sich, Silent-No-Op-DDL zu emittieren; Operator muss
+    upgraden oder die Constraint manuell verwalten.
+  - `MYSQL_CHECK_ENFORCEMENT_UNKNOWN` → `MANUAL_ACTION_REQUIRED`:
+    `mysqlServerVersion` konnte nicht ermittelt werden (Privilegien,
+    Offline-Modus); ohne diese Information wird kein
+    Default-Enforcement angenommen.
+  - `CHECK_EXPRESSION_CROSS_TABLE_UNSUPPORTED` →
+    `MANUAL_ACTION_REQUIRED`: konservative Heuristik findet im
+    CHECK-Ausdruck Subquery-Marker (`SELECT`, `EXISTS`, `IN (...
+    SELECT`). False positives sind moeglich (Spalte heisst
+    `selection_count`) — Operator kann den Slice via Out-of-Scope-
+    Workstream (Trigger-basierte-CHECK) loesen.
+  - `EXCLUDE_OPERATOR_CLASS_NOT_SUPPORTED` →
+    `MANUAL_ACTION_REQUIRED`: die EXCLUDE-Element-Whitelist
+    akzeptiert bare oder quoted Identifier bzw. balancierte
+    `(expr)`-Ausdruecke vor `WITH`; custom Operator-Klassen,
+    `COLLATE`, `ASC`/`DESC` und `NULLS …` blocken. Operator kann die
+    Constraint mit Standard-Operator-Klassen umschreiben.
+
+  Zusätzlich surfacieren die PostgreSQL- und MySQL-Renderer einen
+  fehlenden `expression`-String beim Down-Pass von
+  `DropConstraint(CHECK/EXCLUDE)` als `ROLLBACK_NOT_POSSIBLE`
+  (Diagnostic-Code `CONSTRAINT_ROLLBACK_EXPRESSION_MISSING`); SQLite
+  fällt im Rebuild-Pfad über den existierenden `NOT_REVERSIBLE`-Gate
+  auf dieselbe Reason zurueck. Damit ist die Replace-Reversibilität
+  als drei-stufiger Vertrag pro Op gepinnt
+  (`AUTOMATIC` → `AUTOMATIC_WITH_DATA_RISK` → `NOT_REVERSIBLE`).
+- Rename-Overlay strukturell ungueltig (`primaryBlockedReason =
+  RENAME_MAPPING_INVALID`): stale Fingerprint
+  (`OVERLAY_RENAME_MAPPING_STALE_FINGERPRINT`), mehrdeutige
+  Source-/Target-Namen (`OVERLAY_RENAME_MAPPING_AMBIGUOUS`),
+  Case-Konflikt (`OVERLAY_RENAME_MAPPING_CASE_CONFLICT`), Chain-Rename
+  im selben Slice (`OVERLAY_RENAME_MAPPING_CHAIN_UNSUPPORTED`),
+  doppelter Eintrag (`OVERLAY_RENAME_MAPPING_DUPLICATE`) oder
+  unfreigeschalteter `rename-mapping.objectType` ausserhalb der
+  aktuellen Whitelist `{table, column, view, trigger, function,
+  procedure, sequence}` (`OVERLAY_UNKNOWN_ENTRY_KIND`, getaggt mit
+  Rename-Kontext; `materialized_view` bleibt blockiert). Der
+  Reason ist additiv: bestehende Reports mit
+  `MANUAL_ACTION_REQUIRED` fuer dieselben Codes bleiben semantisch
+  als blockiert dokumentiert. Generische Overlay-Probleme ohne
+  Rename-Bezug behalten `MANUAL_ACTION_REQUIRED`.
+
+**`migration-plan.v1`-Artefakt** *(F.4 Sub-Slice G.2, 2026-05-19)*:
+
+Mit `--plan-artefact <path>` schreibt `schema migrate` einen signierten
+`migration-plan.v1`-JSON neben den anderen Artefakten. Das Feld ist
+opt-in und additiv zu `--report` / `--output` / `--rollback-output`;
+der Artefakt wird auch im `--plan-only`- und Exit-8-Pfad emittiert,
+sofern der Plan ueberhaupt berechnet werden konnte. Schreibfehler
+beendet mit Exit `7` (lokaler I/O-Fehler).
+
+Top-Level-Felder (kanonisierte JSON-Reihenfolge):
+
+| Feld | Typ | Inhalt |
+|---|---|---|
+| `formatVersion` | String | Konstant `"migration-plan.v1"` |
+| `dMigrateVersion` | String | Erzeuger-Version (`SchemaMigrateRunner.createdByVersion`) |
+| `sourceFingerprint` / `targetFingerprint` | String | Schema-Fingerprints aus dem Diff |
+| `dialect` | String | Lowercase-Dialektname (`postgresql` / `mysql` / `sqlite`) |
+| `operations[]` | Array | Pro `DiffOperation`: `id`, `kind` (Subtype-Klassenname), `objectType`, `objectPath`, `phase`, `reversibility`, `upRisk`, optionales `downRisk` |
+| `diagnostics[]` | Array | Pro Diagnostic: `code`, `severity`, optionales `operationId` |
+| `reversibilitySummary` | Object | `fullyReversible`, `manualRequiredOperationIds[]`, `notReversibleOperationIds[]` |
+| `requiredFeatures` | Array | Versionierte Pflichtfeatures, die Consumer unterstuetzen MUESSEN |
+| `semanticExtensions` | Array (konditional) | Versionierte erweiternde Semantiken (z.B. `"rename-projections.v1"`); Consumer ohne Support REJECTen |
+| `renderedStatements[]` | Array (konditional) | Pro Statement: `statementId` (`stmt-1`, `stmt-2`, ...), `operationIds[]`, `sqlHash`, `transactionScope` (Enum-Name: `RUNNER_OWNED` / `STREAM_OWNED` / `NO_TRANSACTION`) |
+| `renameProjections[]` | Array (konditional, Gate `rename-projections.v1`) | Pro Overlay-Rename-Eintrag: `candidateId`, `objectType`, `fromPath`, `toPath`, Overlay-Provenance, `renameOperationId` ODER `fallbackOperationIds` + `fallbackReason` |
+| `createdAt` | String | ISO-8601 UTC |
+| `producerMetadata` | Object (konditional) | Dekorative Producer-Felder; reservierte Praefixe (`execution.`, `risk.`, `rollback.`, `locking.`, `preflights.`, `secrets.`, `sql.`) blocken; Secret-Marker (`password`, `token`, `jdbc:`, ...) blocken |
+| `artifactHash` | String | SHA-256 ueber den signed Payload (ohne `artifactHash` selbst) |
+
+Semantic-Extension-Gates (Producer setzt automatisch, Consumer muss in
+`MigrationPlanArtifactValidationContext.supportedSemanticExtensions`
+listen):
+
+- `"rename-projections.v1"`: aktiv wenn `renameProjections[]` nicht
+  leer. Producer-Convenience:
+  `MigrationPlanArtifact.withRenameProjectionExtension()`. Alte
+  Consumer ohne diesen Eintrag im Supported-Set lehnen den Artefakt
+  ueber `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` ab — vermeidet,
+  dass ein Drop+Create-Fallback als gewoehnlicher destruktiver Change
+  ausgefuehrt wird.
+
+Validator-Codes (`MigrationPlanArtifactDiagnostics`):
+
+| Code | Bedingung |
+|---|---|
+| `PLAN_ARTIFACT_REQUIRED_FIELD_MISSING` | Pflichtfeld ist blank |
+| `PLAN_ARTIFACT_UNKNOWN_FORMAT_VERSION` | `formatVersion` nicht in `supportedFormatVersions` |
+| `PLAN_ARTIFACT_HASH_MISSING` | `artifactHash` fehlt |
+| `PLAN_ARTIFACT_HASH_MISMATCH` | `artifactHash` weicht vom Re-Hash des Payloads ab |
+| `PLAN_ARTIFACT_UNKNOWN_REQUIRED_FEATURE` | `requiredFeatures` enthaelt unbekannten Eintrag |
+| `PLAN_ARTIFACT_UNKNOWN_SEMANTIC_EXTENSION` | `semanticExtensions` enthaelt unbekannten Eintrag |
+| `PLAN_ARTIFACT_RENAME_PROJECTIONS_REQUIRE_EXTENSION` | `renameProjections` non-empty aber Gate `"rename-projections.v1"` fehlt — Producer-Bug |
+| `PLAN_ARTIFACT_RESERVED_PRODUCER_METADATA` | `producerMetadata`-Key matched reserviertes Praefix |
+| `PLAN_ARTIFACT_SECRET_BEARING_PRODUCER_METADATA` | Key oder Wert enthaelt Secret-Marker |
+| `PLAN_ARTIFACT_REVERSIBILITY_SUMMARY_MISMATCH` | `reversibilitySummary` widerspricht den Operations-`reversibility`-Werten |
+| `PLAN_ARTIFACT_UNKNOWN_REVERSIBILITY_OPERATION` | `reversibilitySummary` referenziert nicht-existente `operationId` |
+
+Verbindlich: Drop+Create-Operationen, die ueber einen
+`renameProjections[]`-Eintrag mit gefuelltem `fallbackOperationIds`
+referenziert werden, sind Teil einer logischen Rename-Faltung und
+duerfen vom Consumer NICHT als gewoehnliche destruktive Operation
+ausgefuehrt werden. Die Drop+Create-Ops selbst tragen optional ein
+internes `renameProvenance`-Metadatum (nicht im Artefakt seriell
+exponiert); die fuer Consumer verbindliche Quelle bleibt
+`renameProjections[]`.
+
+Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md`](../docs/planning/done/diffresult-migration-plan.md).
+
+Abgrenzung gegen `export flyway|liquibase|django|knex`: jene Tools-Adapter erzeugen baseline-/full-state-Exports aus einem einzelnen Schema; `schema migrate` arbeitet diff-basiert (`current → desired`).
+
+#### `schema rollback` *(0.9.7 in Arbeit)*
+
+Validiert und führt das von `schema migrate --generate-rollback` erzeugte
+Down-SQL-Artefakt gegen eine Datenbank aus. Führt keine Live-Diff-Berechnung
+durch — der Down-Plan stammt aus dem zur Migration erzeugten Artefakt.
+
+```
+d-migrate schema rollback --source <down.sql> --target <db> \
+  [--execute] [--allow-destructive] [--dry-run]
+```
+
+| Flag | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `--source` | Ja | Pfad | Down-SQL aus `schema migrate --generate-rollback` |
+| `--target` | Ja | Operand | Ziel-Datenbank (`db:<url-or-alias>`) |
+| `--execute` | Nein | Boolean | Down-SQL gegen `--target` ausführen; gegenseitig exklusiv mit `--dry-run` |
+| `--allow-destructive` | Nein | Boolean | Destruktive Down-Operationen erlauben |
+| `--allow-partial-rollback` | Nein | Boolean | Bewusst partielle Rollback-Artefakte ausführen |
+| `--dry-run` | Nein | Boolean | Validierung/Preview, keine Ausführung |
+
+Vor jeder Ausführung prüft der Runner strikt den im Artefakt eingebetteten
+`d-migrate rollback-sql`-Metadatenblock (kanonisches JSON, `artifactHash`,
+`postUpFingerprint`/`allowedPostUpFingerprints`, `dialect`, Risiko-Felder).
+Eine Abweichung führt vor jedem DB-Zugriff zu Exit `7` (Artefakt ungültig).
+
+Neue Rollback-Artefakte verwenden `rollback-sql v2` mit
+`formatVersion=v2`. Der Kommentar-Metadatenblock enthält zusätzlich
+`statementIndex[]`, `rollbackComplete`, `partialRollback` und
+`skippedOperationIds[]`; jeder `statementIndex`-Eintrag beschreibt genau einen
+ausführbaren Body-Slice mit `index`, `operationIds`, `phase`,
+`transactionScope`, Risiko-Feldern, `startInclusive`, `endExclusive` und
+`sha256`. Ranges beziehen sich auf UTF-8-Bytes des LF-normalisierten
+SQL-Bodys nach dem End-Delimiter. `schema rollback --execute` führt bei v2
+ausschließlich die validierten Body-Slices aus und darf Statements nicht per
+Leerzeilen-Split rekonstruieren. Alte `rollback-sql v1`-Artefakte bleiben
+lesbar als Legacy-Pfad.
+
+Bei `--execute`:
+
+1. Artefakt-Hash neu berechnen und gegen den im Block gespeicherten Wert prüfen.
+2. Dialekt der Ziel-Connection mit dem im Block gespeicherten Dialekt vergleichen → Exit `8` (`TARGET_DIALECT_MISMATCH`) bei Abweichung.
+3. Aktuellen Zielzustand introspizieren und gegen `postUpFingerprint` (oder `allowedPostUpFingerprints` bei Recovery-Artefakten) prüfen → Exit `8` (`TARGET_STATE_MISMATCH`) bei Drift.
+4. `--allow-partial-rollback` verlangen, falls `partialRollback=true` gesetzt ist → Exit `8` ohne Flag.
+5. `--allow-destructive` verlangen, falls Metadatenblock destruktive Down-Operationen ausweist → Exit `8` ohne Flag.
+6. Down-SQL gegen `--target` ausführen → Exit `5` bei Statement-Fehler.
+
+Exit-Codes:
+
+| Exit | Bedeutung |
+|---|---|
+| `0` | Erfolg |
+| `2` | Ungültige CLI-Argumente |
+| `4` | Verbindungsfehler |
+| `5` | DDL-Ausführungsfehler nach Beginn von `--execute` |
+| `7` | Artefakt ungültig (Hash, Format, Pflichtfelder, fehlender Metadatenblock) |
+| `8` | Drift-, Dialekt- oder Freigabe-Blocker (`TARGET_STATE_MISMATCH`, `TARGET_DIALECT_MISMATCH`, fehlendes `--allow-destructive`) |
+
+Detaillierter Implementierungs-Plan: [`docs/planning/done/diffresult-migration-plan.md §7.2`](../docs/planning/done/diffresult-migration-plan.md).
 
 ### 6.2 data
 

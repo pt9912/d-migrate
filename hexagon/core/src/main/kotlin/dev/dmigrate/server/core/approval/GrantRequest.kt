@@ -5,9 +5,8 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Phase E §7.4 Input fuer einen Grant-Aussteller.
- *
- * Die Felder spiegeln die Bindungen aus Plan §5.5: jeder ausgestellte
+ * LF-012 / LN-011 / LN-017 / LN-027 *
+ * Die Felder spiegeln die Bindungen aus LF-012 / LN-011 / LN-017 / LN-027: jeder ausgestellte
  * [ApprovalGrant] erbt sie 1:1, damit der spaetere
  * [dev.dmigrate.server.application.approval.ApprovalGrantValidator]-Check
  * deterministisch ist. [approvalRequestId] kommt aus

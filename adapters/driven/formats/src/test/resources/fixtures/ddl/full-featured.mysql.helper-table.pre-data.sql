@@ -5,7 +5,7 @@
 -- [E054] Composite type 'address' is not supported in MySQL and was skipped.
 -- Hint: Consider restructuring the data model to avoid composite types.
 
-CREATE TABLE `dmg_sequences` (
+CREATE TABLE IF NOT EXISTS `dmg_sequences` (
     `managed_by` VARCHAR(32) NOT NULL,
     `format_version` VARCHAR(32) NOT NULL,
     `name` VARCHAR(255) NOT NULL,

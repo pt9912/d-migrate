@@ -146,14 +146,14 @@ class CapabilitiesListHandlerTest : FunSpec({
         scopeTable.entrySet().size shouldBe 1
     }
 
-    test("payload includes every supported dialect (AP 6.2)") {
+    test("payload includes every supported dialect (LF-012 / LN-027 / LN-028 / LN-038)") {
         val sut = CapabilitiesListReadOnlyHandler(emptyList(), emptyMap())
         val dialects = JsonParser.parseString(invoke(sut)).asJsonObject
             .getAsJsonArray("dialects").map { it.asString }.toSet()
         dialects shouldBe DatabaseDialect.entries.map { it.name }.toSet()
     }
 
-    test("payload formats align with SchemaFileResolver.SUPPORTED_FORMATS (AP 6.2)") {
+    test("payload formats align with SchemaFileResolver.SUPPORTED_FORMATS (LF-012 / LN-027 / LN-028 / LN-038)") {
         // Defense-in-depth: if the formats module ever adds a codec
         // and the handler default isn't updated (or vice-versa), this
         // catches the drift before it reaches a client.
@@ -186,7 +186,7 @@ class CapabilitiesListHandlerTest : FunSpec({
     }
 
     test("executionMeta echoes the requestId from the dispatched ToolCallContext") {
-        // AP 6.20: handlers no longer mint their own requestId; they
+        // LF-012 / LN-027 / LN-028 / LN-038: handlers no longer mint their own requestId; they
         // surface whatever McpServiceImpl puts into context.requestId
         // so an operator can correlate the wire response with the
         // matching audit event.

@@ -3,12 +3,12 @@ package dev.dmigrate.server.ports
 import dev.dmigrate.server.core.upload.AbortOutcome
 
 /**
- * Phase F § 5.3 + § 8.6 (F.6 2/3) — strukturiertes Outcome-Repository
+ * LF-010 / LF-013 / LN-009 / LN-011 — strukturiertes Outcome-Repository
  * fuer administrative / fremde `artifact_upload_abort`-Aufrufe.
  *
  * Indiziert ueber den von [SyncEffectIdempotencyStore] vergebenen
  * `resultRef`-String, der beim Abort-Commit zurueckgegeben wird.
- * Plan § 5.3: "Existiert bereits SyncEffectReserveOutcome.Existing(
+ * LF-012 / LN-011 / LN-017 / LN-027: "Existiert bereits SyncEffectReserveOutcome.Existing(
  * resultRef), wird resultRef in einem `AbortOutcomeStore` auf einen
  * strukturierten Abort-Outcome-Record aufgeloest."
  *
@@ -41,7 +41,7 @@ interface AbortOutcomeStore {
 
         /**
          * Identischer `resultRef`, aber abweichender Fingerprint —
-         * Plan § 5.3 "abweichende Request-Felder liefern
+         * LF-012 / LN-011 / LN-017 / LN-027 "abweichende Request-Felder liefern
          * IDEMPOTENCY_CONFLICT". Der Caller darf den alten Outcome
          * NICHT zurueckgeben.
          */

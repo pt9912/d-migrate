@@ -14,10 +14,9 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 
 /**
- * 0.8.0 Phase E — Kontraktabdeckung fuer [TemporalFormatPolicy].
+ * LF-006 / LN-022 / LN-023: Kontraktabdeckung fuer [TemporalFormatPolicy].
  *
- * Referenz: `docs/ImpPlan-0.8.0-E.md` Abschnitt 4 (Leitlinien) und
- * Abschnitt 6 (Teststrategie).
+ * Referenz: LF-006 / LN-022 / LN-023.
  */
 class TemporalFormatPolicyTest : FunSpec({
 
@@ -161,7 +160,7 @@ class TemporalFormatPolicyTest : FunSpec({
         }
 
         // §4.1 Lesepfad-Toleranz: die JDK-ISO-Profile akzeptieren bewusst
-        // reduzierte Zeitformen (z.B. ohne Sekunden). Phase E garantiert das
+        // reduzierte Zeitformen (z.B. ohne Sekunden). LF-007 garantiert das
         // nur *lesend* — der Schreibpfad bleibt kanonisch mit Sekunden.
         test("§4.1 Minuten-Praezision ohne Sekunden -> LocalDateTime (Lesepfad)") {
             val result = TemporalFormatPolicy.parseSinceLiteral("2026-01-01T10:15")

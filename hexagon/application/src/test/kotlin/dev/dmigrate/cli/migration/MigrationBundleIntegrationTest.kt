@@ -23,7 +23,7 @@ import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.string.shouldNotContain
 
 /**
- * End-to-end integration test that walks the complete Phase B path:
+ * End-to-end integration test that walks the complete LF-011 path:
  * Resolver → Validator → SlugNormalizer → DdlNormalizer → Bundle → CollisionChecker.
  *
  * Individual components are unit-tested elsewhere; this test verifies

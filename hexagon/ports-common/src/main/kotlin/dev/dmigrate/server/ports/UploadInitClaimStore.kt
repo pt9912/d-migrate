@@ -5,7 +5,7 @@ import dev.dmigrate.server.core.principal.TenantId
 import java.time.Instant
 
 /**
- * Phase F § 5.1 + § 8.3 (F.3 2/4) — atomarer Single-Writer-Claim
+ * LF-010 / LF-013 / LN-009 / LN-011 — atomarer Single-Writer-Claim
  * fuer den policy-pflichtigen `artifact_upload_init`-Pfad.
  *
  * Zweck: zwischen `SyncEffectIdempotencyStore.reserve(...)` und der
@@ -15,7 +15,7 @@ import java.time.Instant
  * `(approvalKey, payloadFingerprint)`-Retries kollidieren am Claim und
  * liefern `InProgress` mit derselben aktiven Lease — nur der Claim-
  * Inhaber darf weiter materialisieren. Damit fuellt der Store die
- * Luecke aus Plan § 8.3, dass `SyncEffectIdempotencyStore.reserve`
+ * Luecke aus LF-012 / LN-011 / LN-017 / LN-027, dass `SyncEffectIdempotencyStore.reserve`
  * gleiche pending-Reserves nicht als `AlreadyClaimed` unterscheidet.
  *
  * Lease-Vertrag:
@@ -27,7 +27,7 @@ import java.time.Instant
  *   MUSS vor weiterer Materialisierung nach durablem Session-/
  *   Outcome-Record suchen und ggf. den SyncEffect-Commit replayen.
  * - Negative Clock-Jumps verlaengern keine bestehende Lease (siehe
- *   Plan-Wortlaut „Negative Clock-Jumps duerfen Leases nicht
+ *   Vertragswortlaut „Negative Clock-Jumps duerfen Leases nicht
  *   verlaengern").
  */
 data class UploadInitClaimScope(
@@ -61,7 +61,7 @@ sealed interface UploadInitClaimOutcome {
      * Lease des bestehenden Claims ist abgelaufen; der neue Claim wurde
      * uebernommen. Der reclaim-Inhaber MUSS vor weiterer Session-
      * Materialisierung pruefen, ob bereits ein durabler Outcome-Record
-     * existiert (Plan § 8.3).
+     * existiert (LF-012 / LN-011 / LN-017 / LN-027).
      */
     data class Reclaimed(
         val claim: UploadInitClaim,

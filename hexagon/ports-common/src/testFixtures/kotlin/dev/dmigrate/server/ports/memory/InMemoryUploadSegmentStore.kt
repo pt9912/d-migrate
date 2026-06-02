@@ -6,7 +6,7 @@ import dev.dmigrate.server.ports.UploadSegmentStore
 import dev.dmigrate.server.ports.WriteSegmentOutcome
 import java.io.ByteArrayInputStream
 import java.io.InputStream
-import java.security.MessageDigest
+import dev.dmigrate.core.util.sha256Hex
 import java.util.concurrent.ConcurrentHashMap
 
 class InMemoryUploadSegmentStore : UploadSegmentStore {
@@ -80,8 +80,4 @@ class InMemoryUploadSegmentStore : UploadSegmentStore {
         return toRemove.size
     }
 
-    private fun sha256Hex(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        return digest.joinToString(separator = "") { byte -> "%02x".format(byte) }
-    }
 }

@@ -3,20 +3,20 @@ package dev.dmigrate.server.core.resource
 import dev.dmigrate.server.core.principal.TenantId
 
 /**
- * Sealed ADT for every URI shape Phase D's `resources/read` and the
- * Discovery dispatchers must accept per `ImpPlan-0.9.6-D.md` §10.1.
+ * Sealed ADT for every URI shape LF-012 / LN-038's `resources/read` and the
+ * Discovery dispatchers must accept per LF-012 / LN-038
  *
  * Three variants:
  *  - [TenantResourceUri] — the existing tenant-scoped record URI:
  *    `dmigrate://tenants/<tenantId>/<kind>/<id>`. Used for jobs,
  *    artefacts, schemas, profiles, diffs, connections, and the
  *    upload-sessions kind (the upload-sessions kind stays parseable
- *    here but is classified as a Phase-D-blocked resource at the
- *    resolver layer in AP D2; not listed by `resources/list` /
+ *    here but is classified as a LF-012 / LN-038-blocked resource at the
+ *    resolver layer in LF-012 / LN-038; not listed by `resources/list` /
  *    `resources/templates/list`).
  *  - [ArtifactChunkResourceUri] — the four-segment chunked-read URI
  *    `dmigrate://tenants/<tenantId>/artifacts/<artifactId>/chunks/<chunkId>`.
- *    Phase D's `artifact_chunk_get` resolves these directly so a
+ *    LF-012 / LN-038's `artifact_chunk_get` resolves these directly so a
  *    `nextChunkUri` from a previous response can round-trip without
  *    string-handling at the call site.
  *  - [GlobalCapabilitiesResourceUri] — the tenantless
@@ -24,9 +24,9 @@ import dev.dmigrate.server.core.principal.TenantId
  *    exactly one capabilities document per server instance.
  *
  * The legacy [ServerResourceUri] data class continues to exist as
- * the carrier shape for `TenantResourceUri`; AP D2 migrates the
- * Phase-B/-C call sites onto this ADT through the resolver
- * dispatcher. AP D1 is the additive type-only delivery.
+ * the carrier shape for `TenantResourceUri`; LF-012 / LN-038 migrates the
+ * LF-012 / LN-038 call sites onto this ADT through the resolver
+ * dispatcher. LF-012 / LN-038 is the additive type-only delivery.
  *
  * Parsing returns a [McpResourceUriParseResult]; reasons are
  * enumerated so the resolver can map every grammar failure into a
@@ -41,7 +41,7 @@ sealed interface McpResourceUri {
     companion object {
         const val SCHEME: String = "dmigrate"
 
-        /** `dmigrate://capabilities` — the only tenantless URI Phase D supports. */
+        /** `dmigrate://capabilities` — the only tenantless URI LF-012 / LN-038 supports. */
         const val CAPABILITIES_URI: String = "dmigrate://capabilities"
 
         private const val TENANT_PREFIX: String = "dmigrate://tenants/"
@@ -58,7 +58,7 @@ sealed interface McpResourceUri {
 
         fun parse(input: String): McpResourceUriParseResult {
             // Tenantless: only `dmigrate://capabilities` is allowed
-            // in Phase D. Every other tenantless URI is invalid.
+            // in LF-012 / LN-038. Every other tenantless URI is invalid.
             if (input == CAPABILITIES_URI) {
                 return McpResourceUriParseResult.Valid(GlobalCapabilitiesResourceUri)
             }
@@ -132,11 +132,11 @@ sealed interface McpResourceUri {
 
 /**
  * Tenant-scoped resource URI for jobs, artefacts, schemas, profiles,
- * diffs, connections and (parseable but not listed in Phase D)
+ * diffs, connections and (parseable but not listed in LF-012 / LN-038)
  * upload-sessions.
  *
  * Mirrors the existing [ServerResourceUri] data class on purpose —
- * AP D2 will migrate Phase-B/-C call sites onto this ADT. Until
+ * LF-012 / LN-038 will migrate LF-012 / LN-038 call sites onto this ADT. Until
  * then both types coexist; conversion goes through [toLegacy] /
  * [fromLegacy].
  */

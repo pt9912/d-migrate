@@ -576,24 +576,6 @@ class SchemaComparatorTest : FunSpec({
         diff.isEmpty() shouldBe true
     }
 
-    test("CHECK and EXCLUDE constraints are silently ignored") {
-        val left = schema(tables = mapOf("t" to table(
-            columns = mapOf("c" to col()),
-            constraints = listOf(
-                ConstraintDefinition(name = "chk", type = ConstraintType.CHECK,
-                    expression = "c > 0"),
-                ConstraintDefinition(name = "excl", type = ConstraintType.EXCLUDE,
-                    columns = listOf("c")),
-            ),
-        )))
-        val right = schema(tables = mapOf("t" to table(
-            columns = mapOf("c" to col()),
-        )))
-
-        val diff = comparator.compare(left, right)
-        diff.isEmpty() shouldBe true
-    }
-
     test("schema metadata name change") {
         val left = schema(name = "old")
         val right = schema(name = "new")

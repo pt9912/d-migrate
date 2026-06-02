@@ -13,13 +13,13 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 
 /**
- * File-backed [StdioTokenStore] per `ImpPlan-0.9.6-B.md` §12.10.
+ * File-backed [StdioTokenStore] per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Akzeptiert `.json`, `.yaml` und `.yml`. Das Datenformat ist gleich
  * (Jackson-tree); Format-Erkennung geht ueber die Datei-Endung. Beim
  * Konstruieren wird die Datei einmal eingelesen und in eine immutable
  * Map projiziert. Ueberschreiben zur Laufzeit ist nicht vorgesehen —
- * Token-Rotation erfordert einen Server-Neustart (Phase B Scope).
+ * Token-Rotation erfordert einen Server-Neustart (LF-012 / LN-038 Scope).
  *
  * Erwartetes Wurzelobjekt:
  * ```yaml

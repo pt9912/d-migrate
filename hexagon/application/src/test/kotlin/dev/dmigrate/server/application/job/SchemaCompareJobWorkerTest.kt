@@ -154,7 +154,7 @@ class SchemaCompareJobWorkerTest : FunSpec({
         ex.source shouldBe OperationCancelSource.RUNNER_TIMEOUT
     }
 
-    test("Loader bekommt Tenant + Token weitergereicht (Multi-Tenant-Defense + E0-Token)") {
+    test("Loader bekommt Tenant + Token weitergereicht (Multi-Tenant-Defense + Cancel-Token)") {
         var seenTenant: TenantId? = null
         var seenToken: CancellationToken? = null
         val tokenSource = CancellationTokenSource.create()

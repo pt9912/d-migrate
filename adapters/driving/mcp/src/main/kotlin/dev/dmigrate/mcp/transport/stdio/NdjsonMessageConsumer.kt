@@ -6,7 +6,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Message
 import java.io.OutputStream
 
 /**
- * NDJSON `MessageConsumer` per `ImpPlan-0.9.6-B.md` §12.4.
+ * NDJSON `MessageConsumer` per LF-012 / LN-027 / LN-028 / LN-038
  *
  * Serializes outbound JSON-RPC messages with [jsonHandler] (Gson),
  * appends exactly one `\n` (LF) and writes the bytes to [output] as

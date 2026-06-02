@@ -10,10 +10,10 @@ import io.kotest.matchers.types.shouldBeInstanceOf
 import java.time.Duration
 
 /**
- * Phase G § 5.2 + § 6 G.3 — Registry-Verhalten:
+ * LF-017 / LF-024 / LN-030 / LN-031— Registry-Verhalten:
  *
- * - NoOp-Default ist immer da (Plan §4.1).
- * - Resolve-Outcomes mappen die Plan-§-7.2-Fehler.
+ * - NoOp-Default ist immer da (LF-017 / LF-024 / LN-030 / LN-031).
+ * - Resolve-Outcomes mappen die LF-017 / LF-024 / LN-030 / LN-031-Fehler.
  * - Fail-closed bei invaliden Configs.
  */
 class DefaultAiProviderRegistryTest : FunSpec({
@@ -40,7 +40,7 @@ class DefaultAiProviderRegistryTest : FunSpec({
         auditMode = AiProviderAuditMode.FULL,
     )
 
-    test("Plan §4.1: noOpOnly() factory liefert lauffaehige Registry mit NoOp") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: noOpOnly() factory liefert lauffaehige Registry mit NoOp") {
         val registry = DefaultAiProviderRegistry.noOpOnly()
         val outcome = registry.resolve(AiProviderId.NOOP, "noop:default")
         outcome.shouldBeInstanceOf<AiProviderResolveOutcome.Resolved>()
@@ -48,9 +48,9 @@ class DefaultAiProviderRegistryTest : FunSpec({
         outcome.port shouldBe noOpPort.let { /* nur Form-Check */ outcome.port }
     }
 
-    test("Plan §4.1: NoOp-Default wird automatisch ergaenzt, wenn er fehlt") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: NoOp-Default wird automatisch ergaenzt, wenn er fehlt") {
         // Nur ein externer Provider konfiguriert — Registry zieht NoOp
-        // automatisch hinzu (Plan §4.1: "NoOp ist immer verfuegbar").
+        // automatisch hinzu (LF-017 / LF-024 / LN-030 / LN-031: "NoOp ist immer verfuegbar").
         val registry = DefaultAiProviderRegistry(
             configs = listOf(externalConfig()),
             ports = mapOf(
@@ -62,14 +62,14 @@ class DefaultAiProviderRegistryTest : FunSpec({
             .shouldBeInstanceOf<AiProviderResolveOutcome.Resolved>()
     }
 
-    test("Plan §6 G.3: unbekannter Provider liefert NotConfigured (nicht ServerMisconfigured)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: unbekannter Provider liefert NotConfigured (nicht ServerMisconfigured)") {
         val registry = DefaultAiProviderRegistry.noOpOnly()
         val outcome = registry.resolve(AiProviderId("anthropic"), "claude-opus-4-7")
         val notConfigured = outcome.shouldBeInstanceOf<AiProviderResolveOutcome.NotConfigured>()
         notConfigured.requested shouldBe AiProviderId("anthropic")
     }
 
-    test("Plan §6 G.3: Provider mit enabled=false liefert Disabled (Caller sieht es als 403)") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: Provider mit enabled=false liefert Disabled (Caller sieht es als 403)") {
         val registry = DefaultAiProviderRegistry(
             configs = listOf(externalConfig().copy(enabled = false)),
             ports = mapOf(
@@ -81,7 +81,7 @@ class DefaultAiProviderRegistryTest : FunSpec({
             .shouldBeInstanceOf<AiProviderResolveOutcome.Disabled>()
     }
 
-    test("Plan §6 G.5: nicht-whitelisted Modell liefert UnknownModel mit allowedModels-Liste") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: nicht-whitelisted Modell liefert UnknownModel mit allowedModels-Liste") {
         val registry = DefaultAiProviderRegistry(
             configs = listOf(externalConfig(model = "gpt-4o")),
             ports = mapOf(
@@ -95,7 +95,7 @@ class DefaultAiProviderRegistryTest : FunSpec({
         unknown.allowedModels shouldContainExactly setOf("gpt-4o")
     }
 
-    test("Plan §6 G.3: invalide Config laesst Server fail-closed scheitern") {
+    test("LF-017 / LF-024 / LN-030 / LN-031: invalide Config laesst Server fail-closed scheitern") {
         // EXTERNAL ohne secretRef -> Validator-Fehler ->
         // IllegalStateException am Konstruktor.
         val ex = shouldThrow<IllegalStateException> {
@@ -136,7 +136,7 @@ class DefaultAiProviderRegistryTest : FunSpec({
         ex.message!! shouldContain "no port wired"
     }
 
-    test("describe() projeziert Provider-Liste OHNE Endpoint und secretRef (Plan §5.2)") {
+    test("describe() projeziert Provider-Liste OHNE Endpoint und secretRef (LF-017 / LF-024 / LN-030 / LN-031)") {
         val registry = DefaultAiProviderRegistry(
             configs = listOf(externalConfig()),
             ports = mapOf(

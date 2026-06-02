@@ -8,16 +8,13 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.driver.data.UnsupportedTriggerModeException
 import io.kotest.assertions.throwables.shouldThrow
-import io.kotest.core.NamedTag
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import org.testcontainers.mysql.MySQLContainer
 
-private val MysqlSchemaSyncIntegrationTag = NamedTag("integration")
 
 class MysqlSchemaSyncIntegrationTest : FunSpec({
 
-    tags(MysqlSchemaSyncIntegrationTag)
 
     val container = MySQLContainer("mysql:8.0")
         .withDatabaseName("dmigrate_test")

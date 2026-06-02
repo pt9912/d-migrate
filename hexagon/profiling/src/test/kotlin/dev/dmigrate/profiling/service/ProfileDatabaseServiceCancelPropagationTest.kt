@@ -17,7 +17,7 @@ import io.kotest.matchers.shouldBe
 import java.sql.Connection
 
 /**
- * Phase E0.3 propagation guard: a token passed to [ProfileDatabaseService.profile]
+ * LF-012 / LN-011 / LN-017 / LN-027 propagation guard: a token passed to [ProfileDatabaseService.profile]
  * must reach [ProfileTableService.profile] for every iterated table without being
  * swallowed at the outer service.
  */

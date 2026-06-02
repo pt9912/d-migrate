@@ -9,7 +9,7 @@ import org.slf4j.LoggerFactory
  * Writes one INFO log line per [AuditEvent] to the `dev.dmigrate.audit`
  * logger. Output is a single-line JSON object so log aggregators can
  * parse it directly. `null` fields are omitted to keep aggregator
- * indexes clean. Persistent sinks (DB, file) follow in Phase B.
+ * indexes clean. Persistent sinks (DB, file) follow via LN-027 adapters.
  *
  * The JSON is hand-formatted to keep this module dependency-free
  * beyond SLF4J — no Jackson, no kotlinx.serialization.

@@ -5,7 +5,7 @@
 -- [E054] Composite type 'address' is not supported in MySQL and was skipped.
 -- Hint: Consider restructuring the data model to avoid composite types.
 
-CREATE TABLE `dmg_sequences` (
+CREATE TABLE IF NOT EXISTS `dmg_sequences` (
     `managed_by` VARCHAR(32) NOT NULL,
     `format_version` VARCHAR(32) NOT NULL,
     `name` VARCHAR(255) NOT NULL,
@@ -71,6 +71,8 @@ CREATE OR REPLACE VIEW `monthly_stats` AS
 SELECT COUNT(*) FROM orders
 ;
 
+DROP FUNCTION IF EXISTS `dmg_nextval`;
+
 DELIMITER //
 CREATE FUNCTION `dmg_nextval`(seq_name VARCHAR(255))
 RETURNS BIGINT
@@ -84,6 +86,8 @@ BEGIN
     RETURN val;
 END //
 DELIMITER ;
+
+DROP FUNCTION IF EXISTS `dmg_setval`;
 
 DELIMITER //
 CREATE FUNCTION `dmg_setval`(seq_name VARCHAR(255), new_value BIGINT)

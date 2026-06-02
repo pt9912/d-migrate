@@ -9,7 +9,7 @@ import dev.dmigrate.server.ports.ProfileIndexEntry
 import dev.dmigrate.server.ports.SchemaIndexEntry
 
 /**
- * Phase-D §6.4 + §10.5 list-item projections per discovery tool.
+ * LF-012 / LN-038 list-item projections per discovery tool.
  *
  * Each projector takes a record from the underlying store and
  * returns the JSON map the list-tool wire shape requires. Every
@@ -55,10 +55,10 @@ internal object ListItemProjector {
             "sizeBytes" to record.managedArtifact.sizeBytes,
             "contentType" to SecretScrubber.scrub(record.managedArtifact.contentType),
             "resourceUri" to record.resourceUri.render(),
-            // Phase-D §6.4 chunk-template surfaces the per-artifact
+            // LF-012 / LN-038 chunk-template surfaces the per-artifact
             // chunk URI shape so clients can build the next-chunk
             // address without out-of-band knowledge of the path
-            // grammar. AP D7's resources/read recognises this URI
+            // grammar. LF-012 / LN-038's resources/read recognises this URI
             // pattern.
             "chunkTemplate" to "dmigrate://tenants/$tenant/artifacts/$id/chunks/{chunkId}",
             "createdAt" to record.managedArtifact.createdAt.toString(),
@@ -74,10 +74,10 @@ internal object ListItemProjector {
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
         "jobId" to entry.jobRef,
-        // Plan-D §6.4 mindestfelder: `format`, `origin`, `sizeBytes`,
+        // LF-012 / LN-038 mindestfelder: `format`, `origin`, `sizeBytes`,
         // optional `hash`. Wire-shape declares them required + nullable
         // because the producer may not record every field
-        // (Phase-E start tools will fill them all).
+        // (LF-012 / LN-011 / LN-017 / LN-027 start tools will fill them all).
         "format" to entry.format,
         "origin" to entry.origin,
         "sizeBytes" to entry.sizeBytes,
@@ -93,7 +93,7 @@ internal object ListItemProjector {
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
         "jobId" to entry.jobRef,
-        // Plan-D §6.4: connection identity + profiling scope are
+        // LF-012 / LN-038: connection identity + profiling scope are
         // mindestfelder. SecretScrubber on `scope` because operator-
         // supplied free text could carry an embedded URL/token.
         "connectionRef" to entry.connectionRef,
@@ -109,7 +109,7 @@ internal object ListItemProjector {
         "displayName" to SecretScrubber.scrub(entry.displayName),
         "artifactRef" to entry.artifactRef,
         "resourceUri" to entry.resourceUri.render(),
-        // Plan-D §6.4 wire-names: leftSchemaId / rightSchemaId
+        // LF-012 / LN-038 wire-names: leftSchemaId / rightSchemaId
         // (the model field is `sourceRef` / `targetRef` for
         // backward-compatibility with the staging helpers).
         "leftSchemaId" to entry.sourceRef,

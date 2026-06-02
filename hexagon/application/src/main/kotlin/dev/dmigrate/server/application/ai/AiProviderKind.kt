@@ -1,7 +1,7 @@
 package dev.dmigrate.server.application.ai
 
 /**
- * Phase G § 5.2 — Provider-Kategorisierung für Konfiguration und
+ * LF-017 / LF-024 / LN-030 / LN-031— Provider-Kategorisierung für Konfiguration und
  * Endpoint-Validierung.
  *
  * - [NOOP] — der deterministische Default-Provider. Kein Endpoint,
@@ -11,7 +11,7 @@ package dev.dmigrate.server.application.ai
  *   explizit erlaubtes lokales Netzwerkziel sein.
  *   `secretRef` ist optional (lokal nicht auth-pflichtig).
  * - [EXTERNAL] — Cloud-Provider wie OpenAI, Anthropic. Endpoint
- *   MUSS HTTPS sein, `secretRef` ist Pflicht (Plan §5.2).
+ *   MUSS HTTPS sein, `secretRef` ist Pflicht (LF-017 / LF-024 / LN-030 / LN-031).
  *   `allowExternalNetwork=true` Pflicht im Config.
  */
 enum class AiProviderKind {

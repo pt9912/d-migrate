@@ -13,7 +13,7 @@ import java.nio.charset.Charset
 /**
  * Golden-Master-Tests für JsonChunkWriter (DSL-JSON).
  *
- * Plan §4 Phase D Schritt 22: "Unit-Tests pro Writer mit Golden-Master-Output
+ * LF-009 / LF-013: "Unit-Tests pro Writer mit Golden-Master-Output
  * (inkl. leerer Tabelle, §6.17)". Wir verwenden exakte Inline-Strings statt
  * externer Fixture-Files, weil die Writer-Outputs überschaubar sind und
  * der Diff bei Test-Failure direkt im IDE-Test-Runner sichtbar wird.

@@ -20,11 +20,11 @@ import java.nio.file.StandardCopyOption
 import java.time.Instant
 
 /**
- * 0.9.0 Phase B (`docs/ImpPlan-0.9.0-B.md` §4.1 / §4.6): dateibasierter
- * Erstadapter fuer den [CheckpointStore]-Port. Serialisiert [CheckpointManifest]
+ * LF-013 / LN-012 / LN-013: dateibasierter Adapter fuer den
+ * [CheckpointStore]-Port. Serialisiert [CheckpointManifest]
  * als kompaktes YAML-Dokument.
  *
- * **Atomarer Schreibpfad (§4.6)**: `save()` schreibt zuerst in eine
+ * **Atomarer Schreibpfad**: `save()` schreibt zuerst in eine
  * `<operationId>.checkpoint.yaml.tmp`-Datei und ersetzt die Zieldatei
  * anschliessend atomar per `Files.move(..., ATOMIC_MOVE, REPLACE_EXISTING)`.
  * Dadurch kann ein abgebrochener Schreiber keine halb-valide
@@ -38,7 +38,7 @@ class FileCheckpointStore(
     /**
      * Zielverzeichnis fuer Checkpoint-Dateien. Wird beim ersten
      * [save]-Aufruf angelegt, falls es noch nicht existiert. Der Caller
-     * (Phase C/D) mergt CLI- und Config-Werte vorher ueber
+     * mergt CLI- und Config-Werte vorher ueber
      * [dev.dmigrate.streaming.CheckpointConfig.merge].
      */
     private val directory: Path,
@@ -166,8 +166,8 @@ class FileCheckpointStore(
                     "chunksProcessed" to slice.chunksProcessed,
                     "lastMarker" to slice.lastMarker,
                 ).also { map ->
-                    // 0.9.0 Phase C.2 §5.2: Composite-Marker-Position wird
-                    // nur geschrieben, wenn gesetzt — alte Phase-B-Laeufe
+                    // LF-013 / LN-006: Composite-Marker-Position wird
+                    // nur geschrieben, wenn gesetzt — alte Laeufe
                     // bleiben ohne das Feld.
                     slice.resumePosition?.let { pos ->
                         map["resumePosition"] = linkedMapOf<String, Any?>(
@@ -177,9 +177,9 @@ class FileCheckpointStore(
                             "tieBreakerValues" to pos.tieBreakerValues,
                         )
                     }
-                    // 0.9.0 Phase D.4 §5.4: `inputFile` wird nur fuer
+                    // LF-010 / LF-013 / LN-009: `inputFile` wird nur fuer
                     // Directory-Importe gesetzt — Stdin/SingleFile
-                    // bleiben ohne das Feld, Phase-B/C-Manifeste bleiben
+                    // bleiben ohne das Feld, alte Manifeste bleiben
                     // bytegleich ladbar.
                     slice.inputFile?.let { map["inputFile"] = it }
                 }

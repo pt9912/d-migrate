@@ -8,7 +8,7 @@ import dev.dmigrate.core.data.DataChunk
  * Erlaubt sowohl `for (chunk in stream) { ... }` als auch
  * `stream.use { it.forEach { ... } }`.
  *
- * **Vertrag (siehe docs/archive/implementation-plan-0.3.0.md §6.1):**
+ * **Vertrag (LF-008 / LN-010):**
  *
  * - Eine `ChunkSequence` darf **genau einmal** iteriert werden. Eine zweite
  *   Iteration wirft `IllegalStateException` — JDBC-Cursors sind nicht
@@ -18,7 +18,7 @@ import dev.dmigrate.core.data.DataChunk
  * - Der Caller MUSS die Sequence vollständig konsumieren ODER via `use {}`
  *   schließen, sonst leakt die Connection im Pool. [close] ist idempotent.
  * - [close] führt vor dem Connection-Return immer `rollback()` und
- *   `setAutoCommit(true)` aus (siehe §6.12 Transaktions-Lifecycle).
+ *   `setAutoCommit(true)` aus.
  */
 interface ChunkSequence : Sequence<DataChunk>, AutoCloseable {
     override fun close()

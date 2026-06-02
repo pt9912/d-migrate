@@ -7,7 +7,7 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
 /**
  * PostgreSQL [dev.dmigrate.driver.data.DataReader].
  *
- * PostgreSQL-Spezifika (siehe Plan §3.2 + §6.13):
+ * LF-008 / LN-009 / LN-010: PostgreSQL-Spezifika:
  * - Cursor-basiertes Streaming via `Statement#setFetchSize(N)` +
  *   `setAutoCommit(false)` — beides setzt der [AbstractJdbcDataReader]
  *   automatisch, weil [needsAutoCommitFalse] hier `true` bleibt.
@@ -16,8 +16,9 @@ import dev.dmigrate.driver.data.AbstractJdbcDataReader
  *   [dev.dmigrate.driver.connection.HikariConnectionPoolFactory] über die
  *   `ApplicationName`-URL-Property gesetzt.
  *
- * Tests laufen im `@Tag("integration")`-Workflow gegen einen Testcontainers-
- * PostgreSQL — siehe `.github/workflows/integration.yml` und Plan §6.16.
+ * Tests fuer den Live-DB-Pfad leben in `:test:integration-postgresql`
+ * und laufen unter `-PintegrationTests` gegen einen Testcontainers-
+ * PostgreSQL — siehe `.github/workflows/integration.yml`.
  */
 class PostgresDataReader : AbstractJdbcDataReader() {
 
