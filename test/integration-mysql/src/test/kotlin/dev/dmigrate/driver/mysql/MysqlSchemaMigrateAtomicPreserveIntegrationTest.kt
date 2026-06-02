@@ -126,7 +126,7 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
             },
             comparator = { a, b -> SchemaComparator().compare(a, b) },
             rendererFor = { d -> if (d == DatabaseDialect.MYSQL) MysqlDiffDdlGenerator() else null },
-            executor = { _, _, segments, lockTimeoutMs ->
+            executor = { _, _, segments, lockTimeoutMs, _ ->
                 executeSegmentsAgainstPool(pool, segments, atomicExecutorOverride, lockTimeoutMs)
             },
             renderReport = { r, _ -> r.toString() },
@@ -279,11 +279,13 @@ class MysqlSchemaMigrateAtomicPreserveIntegrationTest : FunSpec({
                 connection: Connection,
                 batch: AtomicSequencePreserveBatch,
                 lockTimeoutMillis: Long,
+                cancellationToken: dev.dmigrate.core.cancel.CancellationToken,
                 executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
             ): AtomicSequencePreserveResult = real.execute(
                 connection = connection,
                 batch = batch,
                 lockTimeoutMillis = lockTimeoutMillis,
+                cancellationToken = cancellationToken,
                 executeProtectedOperations = { _, _ ->
                     throw RuntimeException("simulated DDL failure inside protected ops")
                 },

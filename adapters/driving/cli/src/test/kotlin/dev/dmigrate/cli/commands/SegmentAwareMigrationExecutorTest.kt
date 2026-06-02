@@ -68,7 +68,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = emptyList(),
             plainExecutor = { _, _, _ -> error("must not be called for empty segments") },
-            atomicRunner = { _, _, _, _, _ -> error("must not be called for empty segments") },
+            atomicRunner = { _, _, _, _, _, _ -> error("must not be called for empty segments") },
         )
         trace.executionStarted shouldBe true
         trace.executionCompleted shouldBe true
@@ -93,7 +93,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
                 plainCalls.add(s)
                 expected
             },
-            atomicRunner = { _, _, _, _, _ -> error("atomic runner must not be called for plain segments") },
+            atomicRunner = { _, _, _, _, _, _ -> error("atomic runner must not be called for plain segments") },
         )
         plainCalls shouldBe listOf(statements)
         trace.executionCompleted shouldBe true
@@ -109,7 +109,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, _ -> AtomicSequencePreserveResult.Applied(listOf(pgSeq)) },
+            atomicRunner = { _, _, _, _, _, _ -> AtomicSequencePreserveResult.Applied(listOf(pgSeq)) },
         )
         trace.executionCompleted shouldBe true
         trace.statementsAttempted shouldBe 2
@@ -124,7 +124,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, _ -> AtomicSequencePreserveResult.NotFound(listOf(pgSeq)) },
+            atomicRunner = { _, _, _, _, _, _ -> AtomicSequencePreserveResult.NotFound(listOf(pgSeq)) },
         )
         trace.executionCompleted shouldBe false
         trace.transactionRolledBack shouldBe true
@@ -140,7 +140,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, _ -> AtomicSequencePreserveResult.LockTimeout(listOf(pgSeq)) },
+            atomicRunner = { _, _, _, _, _, _ -> AtomicSequencePreserveResult.LockTimeout(listOf(pgSeq)) },
         )
         trace.executionCompleted shouldBe false
         trace.transactionRolledBack shouldBe true
@@ -156,7 +156,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, _ ->
+            atomicRunner = { _, _, _, _, _, _ ->
                 AtomicSequencePreserveResult.Failed(ref = pgSeq, cause = RuntimeException("boom"))
             },
         )
@@ -173,7 +173,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, _ ->
+            atomicRunner = { _, _, _, _, _, _ ->
                 AtomicSequencePreserveResult.Failed(ref = pgSeq, cause = IllegalStateException())
             },
         )
@@ -209,7 +209,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, executeProtectedOps, _ ->
+            atomicRunner = { _, _, _, executeProtectedOps, _, _ ->
                 // Invoke the runner-built callback against our mocked
                 // connection to verify the filter.
                 val result = executeProtectedOps(conn, segment.batch.protectedOperationIds)
@@ -240,7 +240,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
                     lastStatementOperationIds = s.last().operationIds,
                 )
             },
-            atomicRunner = { _, _, _, _, _ ->
+            atomicRunner = { _, _, _, _, _, _ ->
                 callOrder.add("atomic")
                 AtomicSequencePreserveResult.Applied(listOf(pgSeq))
             },
@@ -271,7 +271,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
                     lastStatementOperationIds = s.last().operationIds,
                 )
             },
-            atomicRunner = { _, _, _, _, _ ->
+            atomicRunner = { _, _, _, _, _, _ ->
                 callOrder.add("atomic")
                 AtomicSequencePreserveResult.LockTimeout(listOf(pgSeq))
             },
@@ -303,7 +303,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
                     recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
                 )
             },
-            atomicRunner = { _, _, _, _, _ ->
+            atomicRunner = { _, _, _, _, _, _ ->
                 callOrder.add("atomic")
                 error("atomic must not be called after a failing plain segment")
             },
@@ -321,7 +321,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             configPath = null,
             segments = listOf(segment),
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, lockTimeoutMillis ->
+            atomicRunner = { _, _, _, _, lockTimeoutMillis, _ ->
                 capturedTimeout = lockTimeoutMillis
                 AtomicSequencePreserveResult.Applied(listOf(pgSeq))
             },
@@ -347,6 +347,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
                 configPath = null,
                 segments = listOf(segment),
                 lockTimeoutMillis = AtomicSequencePreserveRunner.DEFAULT_LOCK_TIMEOUT_MILLIS,
+                cancellationToken = dev.dmigrate.core.cancel.CancellationToken.none(),
             )
         }
     }
@@ -387,7 +388,7 @@ class SegmentAwareMigrationExecutorTest : FunSpec({
             segments = listOf(segment),
             lockTimeoutMillis = 7777L,
             plainExecutor = { _, _, _ -> error("must not be called") },
-            atomicRunner = { _, _, _, _, lockTimeoutMillis ->
+            atomicRunner = { _, _, _, _, lockTimeoutMillis, _ ->
                 capturedTimeout = lockTimeoutMillis
                 AtomicSequencePreserveResult.Applied(listOf(pgSeq))
             },

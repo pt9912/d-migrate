@@ -407,7 +407,7 @@ private fun sqliteMigrateRunner(
     rendererFor = { d ->
         if (d == DatabaseDialect.SQLITE) SqliteDiffDdlGenerator() else null
     },
-    executor = { _, _, segments, _ -> executeAgainstPool(pool, segments.flatMap { it.statements }) },
+    executor = { _, _, segments, _, _ -> executeAgainstPool(pool, segments.flatMap { it.statements }) },
     renderReport = { r, _ -> r.toString() },
     printError = { msg, src -> errorSink += "[$src] $msg" },
 )

@@ -163,7 +163,7 @@ class SchemaMigrateRunnerArtefactProtectionTest : FunSpec({
                         fakeRendered()
                 }
             },
-            executor = { _, _, _, _ ->
+            executor = { _, _, _, _, _ ->
                 ExecutionTrace(
                     executionStarted = true,
                     executionCompleted = true,

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.postgresql
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.SequenceCurrentValueProbeResult
@@ -52,6 +53,7 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         connection: Connection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
@@ -74,6 +76,12 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         }
         AtomicSequencePreserveExecutor.requireOwnedConnection(connection)
 
+        // Service-Mode Sub-Slice E checkpoint 1 (pre-BEGIN): no
+        // transaction state to revert yet, so just short-circuit.
+        if (cancellationToken.isCancellationRequested) {
+            return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+        }
+
         val previousAutoCommit = connection.autoCommit
         connection.autoCommit = false
         try {
@@ -85,8 +93,23 @@ class PostgresAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
                 val ref = request.sequenceRef
                 lockAndProbe(connection, ref, probeResults)?.let { earlyExit -> return earlyExit }
             }
+            // Service-Mode Sub-Slice E checkpoint 2 (post-probe,
+            // pre-protected-operations): rollback releases the
+            // advisory locks acquired above.
+            if (cancellationToken.isCancellationRequested) {
+                runCatching { connection.rollback() }
+                return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+            }
             runProtected(connection, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
                 ?.let { earlyExit -> return earlyExit }
+            // Service-Mode Sub-Slice E checkpoint 3 (post-protected,
+            // pre-restore): rollback undoes the protected-operation
+            // statements so the sequence state is unchanged for the
+            // caller-observed cancellation.
+            if (cancellationToken.isCancellationRequested) {
+                runCatching { connection.rollback() }
+                return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+            }
             for (request in sortedRequests) {
                 restore(connection, request, probeResults.getValue(request.sequenceRef))
                     ?.let { earlyExit -> return earlyExit }

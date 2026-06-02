@@ -91,7 +91,13 @@ internal class SchemaMigrateExecutionStage(
             // the constructor field (which defaults to
             // DEFAULT_LOCK_TIMEOUT_MILLIS for the CLI wiring).
             val effectiveLockTimeoutMs = request.lockTimeoutMillis ?: lockTimeoutMillis
-            exec(dbOperand, request.cliConfigPath, segments, effectiveLockTimeoutMs)
+            // Service-Mode Sub-Slice E: forward the cancellation
+            // token down to the executor lambda so the dialect
+            // adapter can roll back the atomic transaction if the
+            // caller cancels. CLI passes `CancellationToken.none()`
+            // by default; MCP/REST/gRPC composition roots inject a
+            // live token from the request-cancellation channel.
+            exec(dbOperand, request.cliConfigPath, segments, effectiveLockTimeoutMs, cancellationToken)
                 .withG3Defaults(statementGroups)
         } catch (e: IllegalStateException) {
             // `segmentForExecute` contract violation — the atomic-

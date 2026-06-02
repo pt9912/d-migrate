@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.migration.ExecutionRecoverability
 import dev.dmigrate.driver.migration.MigrationDdlStatement
@@ -36,6 +37,7 @@ internal typealias AtomicRunnerFn = (
     batch: AtomicSequencePreserveBatch,
     executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     lockTimeoutMillis: Long,
+    cancellationToken: CancellationToken,
 ) -> AtomicSequencePreserveResult
 
 /**
@@ -65,6 +67,7 @@ internal object SegmentAwareMigrationExecutor {
         configPath: Path?,
         segments: List<ExecutableSegment>,
         lockTimeoutMillis: Long = AtomicSequencePreserveRunner.DEFAULT_LOCK_TIMEOUT_MILLIS,
+        cancellationToken: CancellationToken = CancellationToken.none(),
         plainExecutor: PlainExecutorFn = JdbcMigrationExecutor::execute,
         atomicRunner: AtomicRunnerFn = ::defaultAtomicRunner,
     ): ExecutionTrace {
@@ -87,6 +90,7 @@ internal object SegmentAwareMigrationExecutor {
                     segment = segment,
                     atomicRunner = atomicRunner,
                     lockTimeoutMillis = lockTimeoutMillis,
+                    cancellationToken = cancellationToken,
                 )
             }
             attempted += segmentTrace.statementsAttempted
@@ -123,6 +127,7 @@ internal object SegmentAwareMigrationExecutor {
         segment: AtomicPreserveSegment,
         atomicRunner: AtomicRunnerFn,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
     ): ExecutionTrace {
         // Internal follow-ups (the AlterSequenceCurrentValue audit
         // markers) are NOT executed standalone in the live-execute
@@ -148,6 +153,7 @@ internal object SegmentAwareMigrationExecutor {
             segment.batch,
             executeProtectedOps,
             lockTimeoutMillis,
+            cancellationToken,
         )
         return mapAtomicResultToTrace(
             result = result,
@@ -198,6 +204,21 @@ internal object SegmentAwareMigrationExecutor {
                 (result.cause.message ?: result.cause::class.java.simpleName),
             recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
         )
+        // Service-Mode Sub-Slice E (2026-06-02): caller-requested
+        // cancellation. The atomic executor rolled back at one of the
+        // three cancel checkpoints, so no protected-statement work
+        // persisted; the trace mirrors the LockTimeout / NotFound
+        // shape (full rollback confirmed, zero attempts).
+        is AtomicSequencePreserveResult.Cancelled -> ExecutionTrace(
+            executionStarted = true,
+            executionCompleted = false,
+            statementsAttempted = 0,
+            transactionRolledBack = true,
+            executionError = "Atomic preserve cancelled" +
+                (result.reason?.let { " ($it)" } ?: "") +
+                ": " + result.refs.joinToString(", ") { it.name },
+            recoverability = ExecutionRecoverability.FULL_ROLLBACK_CONFIRMED,
+        )
     }
 
     private fun defaultAtomicRunner(
@@ -206,12 +227,14 @@ internal object SegmentAwareMigrationExecutor {
         batch: AtomicSequencePreserveBatch,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
     ): AtomicSequencePreserveResult = AtomicSequencePreserveRunner.execute(
         target = target,
         configPath = configPath,
         batch = batch,
         executeProtectedOperations = executeProtectedOperations,
         lockTimeoutMillis = lockTimeoutMillis,
+        cancellationToken = cancellationToken,
     )
 
     /**
@@ -228,10 +251,12 @@ internal object SegmentAwareMigrationExecutor {
         configPath: Path?,
         segments: List<ExecutableSegment>,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
     ): ExecutionTrace = execute(
         target = target,
         configPath = configPath,
         segments = segments,
         lockTimeoutMillis = lockTimeoutMillis,
+        cancellationToken = cancellationToken,
     )
 }

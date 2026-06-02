@@ -87,7 +87,7 @@ class SchemaMigrateExecutionStagePlanShapeTest : FunSpec({
         // The executor must NOT be reached — if segmentForExecute
         // throws before it runs, calling it would mean the catch
         // missed.
-        val executor: SegmentAwareExecutorFn = { _, _, _, _ ->
+        val executor: SegmentAwareExecutorFn = { _, _, _, _, _ ->
             throw AssertionError("executor must not be reached on contiguity failure")
         }
 

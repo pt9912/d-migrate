@@ -928,6 +928,7 @@ typealias SegmentAwareExecutorFn = (
     configPath: Path?,
     segments: List<dev.dmigrate.driver.migration.preserve.ExecutableSegment>,
     lockTimeoutMillis: Long,
+    cancellationToken: CancellationToken,
 ) -> ExecutionTrace
 
 /**

@@ -1,5 +1,6 @@
 package dev.dmigrate.driver.mysql
 
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.core.diff.migration.SequenceObjectRef
 import dev.dmigrate.driver.MysqlSequenceSupportNaming
 import dev.dmigrate.driver.ProtectedOperationId
@@ -58,6 +59,7 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         connection: Connection,
         batch: AtomicSequencePreserveBatch,
         lockTimeoutMillis: Long,
+        cancellationToken: CancellationToken,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
     ): AtomicSequencePreserveResult {
         require(lockTimeoutMillis > 0) {
@@ -72,6 +74,13 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
         }
         AtomicSequencePreserveExecutor.requireOwnedConnection(connection)
 
+        // Service-Mode Sub-Slice E checkpoint 1 (pre-BEGIN): no
+        // transaction or session-timeout override yet; short-circuit
+        // without touching the connection.
+        if (cancellationToken.isCancellationRequested) {
+            return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+        }
+
         val previousAutoCommit = connection.autoCommit
         val previousLockWaitTimeout = readLockWaitTimeout(connection)
         applyLockWaitTimeout(connection, ceilDivToSeconds(lockTimeoutMillis))
@@ -82,8 +91,23 @@ class MysqlAtomicSequencePreserveExecutor : AtomicSequencePreserveExecutor {
                 val ref = request.sequenceRef
                 lockAndProbe(connection, ref, probeResults)?.let { earlyExit -> return earlyExit }
             }
+            // Service-Mode Sub-Slice E checkpoint 2: rollback
+            // releases the `SELECT … FOR UPDATE` row-locks acquired
+            // above on `dmg_sequences`.
+            if (cancellationToken.isCancellationRequested) {
+                runCatching { connection.rollback() }
+                return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+            }
             runProtected(connection, batch.protectedOperationIds, executeProtectedOperations, sortedRefs)
                 ?.let { earlyExit -> return earlyExit }
+            // Service-Mode Sub-Slice E checkpoint 3: rollback undoes
+            // the protected-operation statements so `dmg_sequences`
+            // and any sequence-bearing tables are unchanged after
+            // the caller-observed cancellation.
+            if (cancellationToken.isCancellationRequested) {
+                runCatching { connection.rollback() }
+                return AtomicSequencePreserveResult.Cancelled(sortedRefs, cancellationToken.cancellationReason)
+            }
             for (request in sortedRequests) {
                 restore(connection, request, probeResults.getValue(request.sequenceRef))
                     ?.let { earlyExit -> return earlyExit }

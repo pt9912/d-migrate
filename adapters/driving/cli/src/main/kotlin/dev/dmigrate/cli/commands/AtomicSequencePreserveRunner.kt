@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.cli.config.NamedConnectionResolver
+import dev.dmigrate.core.cancel.CancellationToken
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.ProtectedOperationId
 import dev.dmigrate.driver.connection.ConnectionPool
@@ -60,6 +61,7 @@ internal object AtomicSequencePreserveRunner {
         batch: AtomicSequencePreserveBatch,
         executeProtectedOperations: (Connection, List<ProtectedOperationId>) -> AtomicProtectedExecutionResult,
         lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS,
+        cancellationToken: CancellationToken = CancellationToken.none(),
         dispatcher: (DatabaseDialect) -> AtomicSequencePreserveExecutor =
             AtomicSequencePreserveDispatcher::executorFor,
         acquireConnection: (CompareOperand.Database, Path?) -> AcquiredPool = ::defaultAcquireConnection,
@@ -71,7 +73,7 @@ internal object AtomicSequencePreserveRunner {
         val executor = dispatcher(acquired.dialect)
         return acquired.pool.use { pool ->
             pool.borrow().use { conn ->
-                executor.execute(conn, batch, lockTimeoutMillis, executeProtectedOperations)
+                executor.execute(conn, batch, lockTimeoutMillis, cancellationToken, executeProtectedOperations)
             }
         }
     }
