@@ -61,10 +61,38 @@ serialisiert der Server auf Pool-Exhaustion statt auf DB-Locks, mit
 unsichtbarem Latency-Effekt und falscher Lock-Timeout-Semantik
 (Pool-Borrow-Timeout statt DB-Lock-Timeout).
 
-**Offen**: Sollte der Service einen dedizierten Sub-Pool für
-Atomic-Migrate-Calls vorhalten, oder beim Borrow die
-`SchemaMigrateExecutionStage.DEFAULT_LOCK_TIMEOUT_MILLIS` plus
-Borrow-Timeout strikt voneinander unterscheiden?
+**Heutiger Stand im Code:**
+- `hexagon/ports-common/.../driver/connection/PoolSettings.kt:20`
+  hält die Defaults: `maximumPoolSize = 10`, `minimumIdle = 2`,
+  `connectionTimeoutMs = 10_000`. **Pro Named-Connection** ein Pool
+  via `HikariConnectionPoolFactory.create`; SQLite-Sonderpfad
+  überschreibt `maximumPoolSize = 1` (Z. 33).
+- `AtomicSequencePreserveRunner.defaultAcquireConnection`
+  (`adapters/driving/cli/...`) ist im CLI-Pfad der Single-Borrow-
+  Point. Im CLI-Prozess gibt es genau einen Migrate-Call → keine
+  Pool-Konkurrenz.
+
+**Offen — konkrete Sub-Fragen:**
+- Soll der Server pro `schema_migrate`-Tool-Call eine **dedizierte
+  Mini-Pool**-Instanz öffnen (Borrow-Lifecycle = Request-
+  Lifecycle), oder den existierenden Named-Connection-Pool
+  teilen? Letzteres benötigt eine explizite Reservation, damit
+  parallele Migrate-Calls + parallele Data-Worker
+  (`data_transfer_start`) sich nicht gegenseitig auf Pool-
+  Exhaustion blocken.
+- Default `maximumPoolSize = 10` ist für CLI-Last gewählt — für
+  einen Service mit AI-Agenten als Clients vermutlich zu klein
+  (jeder Atomic-Preserve hält eine Connection für die Dauer der
+  Lock-/Probe-/Restore-Transaktion).
+- `connectionTimeoutMs = 10_000` (Hikari-Borrow-Timeout) ist heute
+  **getrennt** vom Lock-Timeout (5 s in
+  `SchemaMigrateExecutionStage`). Sobald sie kollidieren — Pool
+  voll, Borrow-Timeout läuft 10 s — sieht der Client
+  `SQLException: Connection is not available` statt einer
+  Lock-/Timeout-Diagnostik. **Vertrag fehlt**: Service muss
+  Borrow-Timeout-Failures separat klassifizieren
+  (`SERVICE_POOL_EXHAUSTED` o. ä.) statt sie als generischen DB-
+  Fehler durchzureichen.
 
 ### 2. Request-Cancellation
 
@@ -84,6 +112,43 @@ die Atomic-Transaktion läuft?
   Gleiches Problem mit größerem Blast-Radius (alle anderen
   Schreiber blocken).
 
+**Heutiger Stand im Code (Cancellation-Pattern aus dem
+data-Pfad):**
+- `adapters/driving/mcp/.../registry/JobCancelHandler.kt:35` ist
+  der MCP-Handler für `job_cancel`. Outcome-Mapping ist über
+  einen `service.cancel(...)`-Call (Z. 69), der ein
+  `cancelRequest`-Feld in der `ManagedJob` setzt
+  (`cancelRequested=true`, `cancelAckPending=true`,
+  Z. 122-129). Der Worker pollt diesen Wert.
+- `adapters/driven/streaming/.../StreamingImporterCancelPropagationTest.kt`
+  + Verwandte zeigen, wie das Cancel-Signal im Data-Pfad bis zum
+  JDBC-Importer durchgereicht wird (Checkpoint-Cancellation).
+- **Atomic-Preserve-Pfad** hat **kein** äquivalentes
+  Cancel-Polling — der `AtomicSequencePreserveExecutor.execute`-
+  Aufruf ist ein synchroner Block, der erst zurückkehrt, wenn
+  die Transaktion committed oder rolled-back ist.
+
+**Offen — konkrete Sub-Fragen:**
+- Soll der `AtomicSequencePreserveExecutor`-Port um einen
+  optionalen `cancellationToken: CancellationToken`-Parameter
+  erweitert werden, den der Executor zwischen Probe und Restore
+  prüfen kann? Risiko: Cancel zwischen Probe und Restore lässt
+  die Sequenz in einem inkonsistenten Zustand (Probe gelesen,
+  Restore nicht geschrieben).
+- Alternative: Cancel **deactivates** die Connection (Hikari
+  `evictConnection` + manueller Rollback), Server gibt
+  `CANCELLED` an den Client zurück. Sequenzzustand: Probe ohne
+  Restore = ursprünglicher Wert bleibt (advisory-Lock wird mit
+  Rollback freigegeben → keine Sperre für nachfolgende
+  Calls). Das ist sauber, weil DB-side Lock-Rollback alle drei
+  Dialekte automatisch beherrschen.
+- REST-Disconnect-Detection: HTTP-Servlets bekommen typischerweise
+  kein Pre-Cancel-Signal; erst beim nächsten `write()` auf den
+  Response-Stream wird der Broken-Pipe sichtbar. Für lange
+  Atomic-Operationen (mehrere Sekunden) braucht es entweder
+  einen Polling-Watchdog oder ein expliziteres Cancel-Frame
+  (SSE / WebSocket / gRPC bidi).
+
 ### 3. Backpressure / Rate-Limiting
 
 100 parallele migrate-Calls von einem Angreifer (oder einem
@@ -91,10 +156,35 @@ schlecht konfigurierten AI-Client) können den Pool erschöpfen →
 DoS auf den Schreib-Pfad. CLI hat diesen Vektor nicht, weil jeder
 Aufruf einen eigenen Prozess + eigenen Pool bedeutet.
 
-**Offen**: Server-Mode braucht Per-Tenant-/Per-Schema-Rate-Limit
-auf migrate-Calls. Idealerweise auf Application-Level vor dem
-Pool-Borrow, damit Pool-Exhaustion nie der erste Rate-Limiter
-ist.
+**Heutiger Stand im Code (Quota-Pattern aus dem data-Pfad):**
+- `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt` ist
+  der bestehende Quota-Port. Sub-Ports + Tests sind in
+  `hexagon/ports-common/src/testFixtures/.../QuotaStoreContractTests.kt`
+  spezifiziert. Es gibt `InMemoryQuotaStore` (Tests) +
+  `JdbcQuotaStore`-Adapter (produktiv).
+- `hexagon/application/.../server/application/job/JobQuotaScenarioTest.kt`
+  zeigt den End-to-End-Pfad: Job-Worker reserviert eine Quota,
+  arbeitet, gibt sie frei (oder lässt sie expiren via
+  `QuotaReservationSweeper`).
+- `test/integration-server-state/.../QuotaReservationSweeperE2ETest.kt`
+  belegt den Sweeper-Vertrag.
+- **Atomic-Preserve-Pfad** ist **nicht** an `QuotaStore`
+  angeschlossen — der Executor wird direkt aus
+  `SchemaMigrateExecutionStage` aufgerufen, ohne Tenant-/Schema-
+  Reservierung davor.
+
+**Offen — konkrete Sub-Fragen:**
+- Reservierungsschlüssel: `QuotaScope("schema_migrate",
+  tenant=<tenant>, schema=<target_schema>)`? Oder grobgranularer
+  pro Connection-Pool?
+- Sweep-Granularität: `QuotaReservationSweeper` läuft heute
+  periodisch (Sekunden-Skala). Atomic-Migrate ist typisch < 5 s;
+  Sweep muss schnell genug sein, um nicht zur Latency-Quelle zu
+  werden.
+- Layered Defense: Application-Level-Rate-Limit (Token-Bucket
+  pro Tenant) **vor** Pool-Borrow ist die saubere Reihenfolge.
+  Pool-Borrow-Timeout als Fail-Safe darunter, mit eigener
+  Diagnostik.
 
 ### 4. Lock-Timeout-Tuning
 
@@ -107,6 +197,32 @@ Ein Service braucht möglicherweise:
   AI-Agenten weniger oft Timeout-Blocker sehen.
 - **Per-Tenant-Override** via Config.
 
+**Heutiger Stand im Code:**
+- `SchemaMigrateExecutionStage.lockTimeoutMillis` ist `private
+  val` mit Default `DEFAULT_LOCK_TIMEOUT_MILLIS = 5_000L`. Keine
+  CLI-Option überschreibt den Default; der Lambda-Vertrag
+  `SegmentAwareExecutorFn` trägt den Parameter aber durch
+  (`SchemaMigrateRunner.kt:899-904`).
+- Test-Override-Pattern: die Live-IT-Tests
+  (`{Mysql,Sqlite}SchemaMigrateAtomicPreserveIntegrationTest`)
+  verwenden Executor-Decorator-Wrapper (`tightTimeoutExecutor` /
+  `freshConnExecutorWithTimeout`), die den durchgereichten
+  Lambda-Parameter ignorieren und ein eigenes `budgetMillis`
+  injizieren — als Workaround, weil weder Runner noch Stage
+  einen Konstruktor-Parameter dafür haben.
+
+**Offen — konkrete Sub-Fragen:**
+- Sauberer Refactor: `SchemaMigrateRunner`-Konstruktor um
+  `lockTimeoutMillis: Long = DEFAULT_LOCK_TIMEOUT_MILLIS`
+  erweitern, Stage liest aus dem Request. Damit entfällt der
+  Test-Decorator-Workaround (verlinkt mit Finding #6 aus
+  `done/atomic-preserve-followups.md` §8.2).
+- Server-seitige Default-Strategie: festes Default vs.
+  Config-Datei (`d-migrate.yaml` Block
+  `server.atomic_preserve.lock_timeout_ms`)?
+- Per-Request-Override-Signatur: MCP-Tool-Argument
+  `lockTimeoutMs?` mit Validation (10 ms ≤ x ≤ 60 s)?
+
 ### 5. Idempotency-Replay
 
 MCP-Tool-Calls und gRPC-RPCs dürfen retried werden. Die
@@ -117,10 +233,39 @@ ausgeführt; ein Replay nach erfolgreichem Apply würde gegen das
 schon-angewendete Schema laufen und voraussichtlich mit
 Drift-Diagnostic blockieren).
 
-**Offen**: Brauchen wir einen `idempotency-key`-Vertrag auf dem
-Migrate-Tool-Call analog zu `data_transfer_start`'s
-`IdempotencyStore`-Vertrag (`adapters/driven/persistence-jdbc`
-`JdbcIdempotencyStore`)?
+**Heutiger Stand im Code:**
+- `hexagon/ports-common/.../server/ports/IdempotencyStore.kt:28`
+  spezifiziert den Vertrag. Schlüssel-API:
+  `reserve(scope: IdempotencyScope, payloadFingerprint: String,
+  now: Instant)`. Sub-Variante:
+  `SyncEffectIdempotencyStore.kt` für Reservation+Effect-In-One-Step.
+- Adapter:
+  `adapters/driven/persistence-jdbc/.../idempotency/JdbcIdempotencyStore.kt`.
+- Tests:
+  `hexagon/ports-common/src/testFixtures/.../IdempotencyStoreContractTests.kt`
+  pinnt das Vertrags-Verhalten (Replay-Detect via
+  payloadFingerprint, Expiry, Erst-Reservation vs. Replay).
+- Bestehender Konsument: `data_transfer_start` /
+  `data_import_start` haken über den Job-Worker-Pfad an den
+  `IdempotencyStore` an.
+
+**Offen — konkrete Sub-Fragen:**
+- `IdempotencyScope("schema_migrate", target_database_ref)` +
+  `payloadFingerprint = MigrationFingerprint.compute(targetSchema)`
+  (Wiederverwendung der bestehenden Migration-Fingerprint-
+  Logik)? Damit erkennt der Store ein „selber Plan, schon
+  ausgeführt"-Replay sauber.
+- Replay-Outcome: Server gibt `200 OK` + `replay: true` zurück
+  mit dem Original-`ExecutionTrace`? Oder `409 Conflict` mit
+  Hinweis, dass das Apply schon stattgefunden hat?
+- Edge-Case: Replay nach **fehlgeschlagenem** Apply (z. B.
+  partieller Rollback). Der bestehende
+  `IdempotencyStoreContractTests`-Pfad „failed-effect"
+  beschreibt das — übernehmbar.
+- Lifetime der Reservation: für `data_transfer_start` ist sie
+  job-lebenslang. Für `schema_migrate` ist die Transaktion
+  kürzer (~ s), aber Replay-Window sollte größer sein (~ min
+  bis h), damit ein retry nach Netzwerk-Fehler greift.
 
 ---
 
@@ -139,8 +284,30 @@ Migrate-Tool-Call analog zu `data_transfer_start`'s
   Bestehende Schreib-Tools (`data_transfer_start`,
   `data_import_start`) haben Policy-Gates aus
   `done/ImpPlan-0.9.6-F.md` als Referenz-Pattern.
-- Idempotency-Infrastruktur: `JdbcIdempotencyStore` existiert für
-  Data-Worker-Jobs; nicht verdrahtet auf Schema-Pfad.
+
+## Reuse-Kandidaten
+
+Pattern, die im Server-Pfad schon existieren und für
+`schema_migrate` rekombiniert werden können:
+
+| Vertrag | Bestandsteil | Pfad |
+| ------- | ------------ | ---- |
+| Connection-Pool | `HikariConnectionPoolFactory` + `PoolSettings` | `adapters/driven/driver-common/.../connection/HikariConnectionPoolFactory.kt`; `hexagon/ports-common/.../driver/connection/PoolSettings.kt` |
+| Cancellation (data-Pfad) | `JobCancelHandler` + Worker-Cancel-Polling | `adapters/driving/mcp/.../registry/JobCancelHandler.kt`; `adapters/driven/streaming/.../StreamingImporterCancelPropagationTest.kt` |
+| Quota / Rate-Limit | `QuotaStore` + `JdbcQuotaStore` + `QuotaReservationSweeper` | `hexagon/ports-common/.../server/ports/quota/QuotaStore.kt`; `JobQuotaScenarioTest.kt`; `QuotaReservationSweeperE2ETest.kt` |
+| Idempotency | `IdempotencyStore` + `JdbcIdempotencyStore` | `hexagon/ports-common/.../server/ports/IdempotencyStore.kt`; `adapters/driven/persistence-jdbc/.../idempotency/JdbcIdempotencyStore.kt`; `IdempotencyStoreContractTests.kt` |
+| Policy-Gate | `data_transfer_start`-Wiring | `done/ImpPlan-0.9.6-F.md` |
+| Migration-Fingerprint (für Idempotency-Key) | `MigrationFingerprint.compute` | `hexagon/core/.../diff/migration/MigrationFingerprint.kt` |
+
+**Konsequenz**: Wenn der Trigger feuert, ist der Promote-nach-
+`next/`-Slice **vermutlich keine Neubau-Übung**, sondern eine
+**Komposition** der oben genannten Ports + ein dünner
+`schema_migrate`-Handler oben drauf. Die Sub-Slice-Sequenz wäre
+vermutlich: (a) `SchemaMigrateRunner.lockTimeoutMillis`-Refactor
+(siehe Finding #6, Vertrag 4), (b) Idempotency-Hook auf den
+Schema-Pfad, (c) Connection-Sub-Pool-Plumbing, (d) Quota-Plumbing,
+(e) Cancellation-Token im Executor-Port, (f)
+`schema_migrate`-Handler im MCP-Adapter.
 
 ---
 
