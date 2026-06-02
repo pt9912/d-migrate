@@ -269,7 +269,7 @@ Plans):
 
 - **Atomare Probe + Restore unter Lock** — die Probe→Restore-Lücke
   bleibt nicht-atomar; eigener Draft-Plan in
-  [`docs/planning/in-progress/sequence-preserve-atomic-lock-plan.md`](../in-progress/sequence-preserve-atomic-lock-plan.md).
+  [`docs/planning/done/sequence-preserve-atomic-lock-plan.md`](./sequence-preserve-atomic-lock-plan.md).
 - **W123 (Attached-DB-Rollback-Gate)** bleibt plan-uebergreifend
   offen und ist in der SQLite-Sequence-Emulation-Roadmap als
   Carve-out notiert.

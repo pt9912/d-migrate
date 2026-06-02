@@ -440,7 +440,7 @@ Ist-Zustand (DB oder Schema-Datei), diffed gegen Soll-Schema, plant
 einen migrationsfaehigen Operationsplan (`DiffResult`) und rendert
 dialektbewusste Up-DDL. `schema rollback` fuehrt den Down-Plan gegen
 die Datenbank aus, mit Driftpruefung und Audit-Reports. Details:
-[`diffresult-migration-plan-2.md`](./diffresult-migration-plan-2.md).
+[`diffresult-migration-plan-2.md`](../done/diffresult-migration-plan-2.md).
 (2) `schema generate --target sqlite` kann benannte Sequences optional
 ueber kanonische Hilfsobjekte (`dmg_sequences` plus Trigger-basierte
 Logik ohne Stored Functions) emulieren statt sie mit `E056` zu

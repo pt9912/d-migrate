@@ -29,7 +29,7 @@
 - **`develop`** — aktiver Entwicklungsbranch, hier landen alle Features
 - **`main`** — enthält ausschließlich Release-Stände, jeder Merge entspricht einem Release
 - **Tags** `vX.Y.Z` werden auf den Merge-Commit auf `main` gesetzt
-- **Versionierung** folgt [SemVer 2.0](https://semver.org/spec/v2.0.0.html); zwischen Releases trägt `build.gradle.kts` ein `-SNAPSHOT`-Suffix
+- **Versionierung** folgt [SemVer 2.0](https://semver.org/spec/v2.0.0.html); zwischen Releases trägt [`build.gradle.kts`](../../build.gradle.kts) ein `-SNAPSHOT`-Suffix
 
 Beispiel aus 0.1.0:
 
@@ -64,13 +64,18 @@ main:     ... → "Merge develop into main for release 0.1.0"  ← tag v0.1.0
 ### 3.1 Vollständiger Build & Test im Docker-Container
 
 ```bash
-DOCKER_BUILDKIT=1 docker build -t d-migrate:pre-release .
+IMAGE_TAG=pre-release make docker-build 2>&1 | tee /tmp/build.log
 ```
 
 Das schließt `./gradlew build :adapters:driving:cli:installDist` ein und führt alle
-Tests aller Module aus. Erwartetes Ergebnis: `BUILD SUCCESSFUL`.
+Tests aller Module aus. Erwartetes Ergebnis: `BUILD SUCCESSFUL`. Der
+Image-Tag wird gezielt auf `d-migrate:pre-release` gesetzt (Default
+wäre `d-migrate:dev`), damit die DB-Smokes in §3.3 konsistent
+darauf laufen.
 
-Für eine garantiert frische Test-Ausführung ohne Build-Cache:
+Für eine garantiert frische Test-Ausführung ohne Build-Cache (Spezialfall,
+deshalb direkter Docker-Aufruf statt `make docker-test` — letzteres
+nutzt den Cache):
 
 ```bash
 docker run --rm \
@@ -92,20 +97,18 @@ Temp-Pfade im Container gesetzt.
 ### 3.2 Lokaler Preflight der Release-Assets
 
 ```bash
-docker build --target build \
-  --build-arg GRADLE_TASKS="build :adapters:driving:cli:assembleReleaseAssets --rerun-tasks" \
-  -t d-migrate:release-assets .
-
-rm -rf ./release && mkdir -p ./release
-
-docker create --name d-migrate-release-assets d-migrate:release-assets
-docker cp d-migrate-release-assets:/src/adapters/driving/cli/build/release ./release
-docker rm d-migrate-release-assets
+make release-assets 2>&1 | tee /tmp/release-assets.log
 
 ls -1 ./release
 cat ./release/*.sha256
 java -jar ./release/*-all.jar --help
 ```
+
+`make release-assets` baut das `release-assets`-Stage-Image
+(Default-Tag `d-migrate:release-assets`), erzeugt im Container die
+ZIP-/TAR-/Fat-JAR-/SHA256-Assets über
+`:adapters:driving:cli:assembleReleaseAssets` und kopiert sie nach
+`./release/` (Verzeichnis wird vorher geleert).
 
 Wichtig:
 
@@ -303,14 +306,14 @@ Smokes nur als Dateierzeugung, nicht als Runtime-Ausführung validiert.
 
 Drei CI-Workflows tragen den Release:
 
-- `.github/workflows/build.yml` — Build, Tests, Coverage-Verify,
+- [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build, Tests, Coverage-Verify,
   Release-Asset-Upload als Workflow-Artefakt
-- `.github/workflows/release-homebrew.yml` — GitHub-Release-Publikation,
+- [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release-Publikation,
   `homebrew-releaser`-Push in den Tap `pt9912/homebrew-d-migrate`,
   macOS-Smoke über `verify-homebrew`
-- `.github/workflows/verify-homebrew-formula.yml` — macOS-Verifikation der
+- [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der
   repo-lokalen Formula nach einer Änderung an
-  `packaging/homebrew/d-migrate.rb`
+  [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
 
 Vor jedem Release prüfen:
 
@@ -318,9 +321,9 @@ Vor jedem Release prüfen:
 - baut der Tag-Workflow `:adapters:driving:cli:assembleReleaseAssets`?
 - lädt der Tag-Workflow das Artefakt `release-assets` hoch?
 - bleibt der `homebrew-releaser`-`install:`-Block in
-  `release-homebrew.yml` deckungsgleich mit
-  `packaging/homebrew/d-migrate.rb`?
-- ist der `verify-homebrew`-Job in `release-homebrew.yml` und der
+  [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) deckungsgleich mit
+  [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)?
+- ist der `verify-homebrew`-Job in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) und der
   `verify-homebrew-formula`-Workflow unverändert einsatzbereit?
 
 ```bash
@@ -334,13 +337,13 @@ identifizieren. Befehle und jq-Filter: siehe
 
 ### 3.6 Dokumentations- und Packaging-Konsistenz
 
-- `README.md` „Current Status"-Block auf den neuen Release umstellen
-- `docs/planning/roadmap.md` Milestone als ✅ markieren, Footer-Stand aktualisieren
-- `docs/user/guide.md` auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
+- [`README.md`](../../README.md) „Current Status"-Block auf den neuen Release umstellen
+- [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone als ✅ markieren, Footer-Stand aktualisieren
+- [`docs/user/guide.md`](guide.md) auf den aktuellen Funktionsumfang prüfen und ggf. aktualisieren
   (Modulliste, Beispielausgaben, neue CLI-Kommandos/Optionen)
-- `spec/cli-spec.md`, `spec/architecture.md` und `docs/user/releasing.md` auf den
+- [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf den
   tatsächlichen Vertrag prüfen
-- `packaging/homebrew/d-migrate.rb` muss ZIP-basierte Installation, Java 21 und
+- [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und
   `bin/d-migrate`-Link konsistent beschreiben
 - Falls `AbstractDdlGenerator.getVersion()` hart kodiert ist: Wert prüfen
 
@@ -359,21 +362,21 @@ Alle folgenden Dateien anpassen:
 
 | Datei                                                                            | Änderung                                                                                                          |
 | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `build.gradle.kts`                                                               | `version = "X.Y.Z-SNAPSHOT"` → `"X.Y.Z"`                                                                          |
-| `CHANGELOG.md`                                                                   | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
-| `README.md`                                                                      | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen           |
-| `docs/user/guide.md`, `spec/cli-spec.md`, `spec/architecture.md`, `docs/user/releasing.md` | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert                      |
-| `docs/planning/roadmap.md`                                                                | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen                                       |
-| `adapters/driven/driver-common/.../AbstractDdlGenerator.kt`                      | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen                                                       |
+| [`build.gradle.kts`](../../build.gradle.kts)                                                               | `version = "X.Y.Z-SNAPSHOT"` → `"X.Y.Z"`                                                                          |
+| [`CHANGELOG.md`](../../CHANGELOG.md)                                             | `[Unreleased]` und neue Sektion `[X.Y.Z] - YYYY-MM-DD` einfügen, alle Einträge unter den neuen Header verschieben |
+| [`README.md`](../../README.md)                                                                      | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen           |
+| [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert                      |
+| [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                                                                | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen                                       |
+| [`adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`](../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt) | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen                                                       |
 
 Hinweis: `Main.kt` braucht **nicht** manuell angepasst zu werden — die
-CLI-Version wird zur Build-Zeit aus `build.gradle.kts` via
+CLI-Version wird zur Build-Zeit aus [`build.gradle.kts`](../../build.gradle.kts) via
 `dmigrate-version.properties` injiziert.
 
 ### 4.2 Release-Commit auf `develop`
 
 ```bash
-git add build.gradle.kts CHANGELOG.md README.md docs/planning/roadmap.md
+git add build.gradle.kts CHANGELOG.md README.md docs/planning/in-progress/roadmap.md
 git add docs/user/guide.md spec/cli-spec.md spec/architecture.md docs/user/releasing.md
 # Falls AbstractDdlGenerator.kt angepasst wurde:
 git add adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt
@@ -405,7 +408,7 @@ git push origin vX.Y.Z
 ```
 
 **Was die CI beim Tag-Push automatisch tut**
-(`.github/workflows/build.yml`):
+([`.github/workflows/build.yml`](../../.github/workflows/build.yml)):
 
 1. Build + Tests gegen den Tag-Commit
 2. Coverage-Verify
@@ -475,7 +478,7 @@ fi
 ```
 
 **Wichtig: Zuerst prüfen, ob der Release bereits existiert.** Der
-`release-homebrew.yml`-Workflow erstellt den GitHub-Release automatisch beim
+[`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Workflow erstellt den GitHub-Release automatisch beim
 Tag-Push. `gh release create` schlägt fehl, wenn der Release schon da ist.
 
 ```bash
@@ -496,7 +499,7 @@ fi
 
 ### 4.7 Homebrew-Formula auf finale URL und SHA bringen
 
-Die Formula unter `packaging/homebrew/d-migrate.rb` muss auf das publizierte ZIP
+Die Formula unter [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss auf das publizierte ZIP
 zeigen:
 
 - URL: `https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip`
@@ -508,7 +511,7 @@ zeigen:
 ZIP-SHA **aus dem tatsächlich publizierten Release-Asset** ziehen — nicht
 aus `./release-assets/*.sha256`: der `build.yml`-Workflow lädt sein eigenes
 Artefakt mit eigener SHA hoch, während der publizierte ZIP aus dem
-separaten `release-homebrew.yml`-Lauf stammt und daher eine andere SHA hat:
+separaten [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)-Lauf stammt und daher eine andere SHA hat:
 
 ```bash
 curl -sL "https://github.com/pt9912/d-migrate/releases/download/vX.Y.Z/d-migrate-X.Y.Z.zip" \
@@ -522,7 +525,7 @@ Nach dem Publish muss die Formula auf einem Host mit `brew` real verifiziert
 werden. Modernes Homebrew lehnt `brew install --formula <path.rb>` ab und
 verlangt, dass die Formula in einem Tap liegt — deshalb über einen lokalen
 Ephemeral-Tap installieren (derselbe Mechanismus, den der Workflow
-`verify-homebrew-formula.yml` benutzt):
+[`verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) benutzt):
 
 ```bash
 brew tap-new local/d-migrate-verify --no-git
@@ -576,14 +579,14 @@ Danach:
 
 | Datei                             | Änderung                                                                                                                             |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `build.gradle.kts`                | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"`                                                       |
-| `CHANGELOG.md`                    | Neuen leeren `## [Unreleased]`-Block einfügen                                                                                        |
-| `docs/planning/roadmap.md`                 | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren                                                                  |
-| `packaging/homebrew/d-migrate.rb` | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
+| [`build.gradle.kts`](../../build.gradle.kts)                | `version = "X.Y.Z"` → nächste Entwicklungsversion, z.B. `"X.(Y+1).0-SNAPSHOT"`                                                       |
+| [`CHANGELOG.md`](../../CHANGELOG.md)                    | Neuen leeren `## [Unreleased]`-Block einfügen                                                                                        |
+| [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                 | Falls bereits geplant: nächsten Milestone als „in Arbeit" markieren                                                                  |
+| [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) | verifizierten URL-/SHA-Stand des zuletzt publizierten Releases nachziehen, falls die Formula erst nach dem Publish finalisiert wurde |
 | `docs/implementation-plan-X.Y.md` | Optional: neuen Plan für nächste Minor-Version anlegen                                                                               |
 
 ```bash
-git add build.gradle.kts CHANGELOG.md docs/planning/roadmap.md
+git add build.gradle.kts CHANGELOG.md docs/planning/in-progress/roadmap.md
 git add packaging/homebrew/d-migrate.rb
 git commit -m "Bump version to X.(Y+1).0-SNAPSHOT for next development cycle"
 git push origin develop
@@ -649,25 +652,25 @@ Für jeden Release abhaken:
 - [ ] `develop` und `main` auf Remote-Stand
 - [ ] Working-Tree sauber
 - [ ] Alle Milestone-PRs gemerged
-- [ ] `docker build -t d-migrate:pre-release .` grün
+- [ ] `IMAGE_TAG=pre-release make docker-build` grün
 - [ ] lokaler Asset-Preflight für `assembleReleaseAssets` grün
 - [ ] `./release` enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Fat JAR aus dem lokalen Preflight startet mit `--help`
 - [ ] Smoke-Tests gegen Fixture-Schemas grün (generate, compare file/file)
 - [ ] DB-basierte Smoke-Tests grün (reverse, compare file/db + db/db, transfer)
 - [ ] CHANGELOG `[Unreleased]` reviewed
-- [ ] `docs/user/guide.md`, `spec/cli-spec.md`, `spec/architecture.md` und `docs/user/releasing.md` auf aktuellem Funktionsstand
+- [ ] [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md) und [`docs/user/releasing.md`](releasing.md) auf aktuellem Funktionsstand
 - [ ] `koverVerify`, `assembleReleaseAssets` und `release-assets` sind im Workflow korrekt verdrahtet
-- [ ] `verify-homebrew` (in `release-homebrew.yml`) und `verify-homebrew-formula.yml` sind unverändert verdrahtet
-- [ ] `homebrew-releaser`-`install:`-Block in `release-homebrew.yml` entspricht `packaging/homebrew/d-migrate.rb`
+- [ ] `verify-homebrew` (in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) und [`verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) sind unverändert verdrahtet
+- [ ] `homebrew-releaser`-`install:`-Block in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) entspricht [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
 - [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
 
 **Version-Bump auf `develop`**
-- [ ] `build.gradle.kts` Version
-- [ ] `CHANGELOG.md` Sektion + Datum
-- [ ] `README.md` Current-Status-Block
-- [ ] `docs/user/guide.md`, `spec/cli-spec.md`, `spec/architecture.md`, `docs/user/releasing.md` falls nötig angepasst
-- [ ] `docs/planning/roadmap.md` Milestone-Status + Footer
+- [ ] [`build.gradle.kts`](../../build.gradle.kts) Version
+- [ ] [`CHANGELOG.md`](../../CHANGELOG.md) Sektion + Datum
+- [ ] [`README.md`](../../README.md) Current-Status-Block
+- [ ] [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) falls nötig angepasst
+- [ ] [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) Milestone-Status + Footer
 - [ ] Commit `Release X.Y.Z` gepusht
 - [ ] CI auf `develop` grün
 
@@ -683,12 +686,12 @@ Für jeden Release abhaken:
 - [ ] Geprüft ob Release bereits existiert (`gh release view vX.Y.Z`), dann `edit`+`upload --clobber` statt `create`
 - [ ] Release enthält ZIP, TAR, Fat JAR und SHA256
 - [ ] Image-Smoke-Test gegen `ghcr.io/pt9912/d-migrate:X.Y.Z` ok
-- [ ] `packaging/homebrew/d-migrate.rb` auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
+- [ ] [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) auf finale ZIP-URL und ZIP-SHA (aus dem publizierten Asset, nicht aus `release-assets/*.sha256`) gebracht
 - [ ] `verify-homebrew`-Job des Tag-Builds grün (macOS-Install aus dem Tap)
 - [ ] `verify-homebrew-formula`-Workflow auf dem Post-Release-Commit grün (macOS-Install aus der repo-lokalen Formula)
 
 **Post-Release**
-- [ ] `build.gradle.kts` zurück auf nächste SNAPSHOT-Version (z.B. `X.(Y+1).0-SNAPSHOT`)
+- [ ] [`build.gradle.kts`](../../build.gradle.kts) zurück auf nächste SNAPSHOT-Version (z.B. `X.(Y+1).0-SNAPSHOT`)
 - [ ] Neuer leerer `[Unreleased]`-Block in CHANGELOG
 - [ ] Formula-Änderung als Repo-Stand nachgezogen, falls sie erst nach Publish finalisiert wurde
 - [ ] Commit `Bump version to X.(Y+1).0-SNAPSHOT for next development cycle` gepusht
@@ -698,10 +701,10 @@ Für jeden Release abhaken:
 ## 8. Referenzen
 
 - [`CHANGELOG.md`](../../CHANGELOG.md) — Keep-a-Changelog Format
-- [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md) — Milestone-Übersicht
+- [[`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)](../planning/in-progress/roadmap.md) — Milestone-Übersicht
 - [`.github/workflows/build.yml`](../../.github/workflows/build.yml) — Build/Test/Coverage/Release-Assets-CI
 - [`.github/workflows/release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) — GitHub-Release + Homebrew-Tap-Publikation + macOS-Verify
 - [`.github/workflows/verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) — macOS-Verifikation der repo-lokalen Homebrew-Formula
-- [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
+- [[`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)](../../packaging/homebrew/d-migrate.rb) — Homebrew-Formula-Template
 - [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 - [Semantic Versioning 2.0](https://semver.org/spec/v2.0.0.html)

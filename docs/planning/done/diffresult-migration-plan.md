@@ -26,7 +26,7 @@
 > Live-Daten-Preflight fuer Casts, PostgreSQL ReplaceView Visible-
 > Spaltensignatur-Compatibility, F.4-1/F.4-2 Artefakt-/Runner-
 > Vertraege) sind in
-> [`docs/planning/in-progress/diffresult-migration-plan-2.md`](../in-progress/diffresult-migration-plan-2.md)
+> [`docs/planning/done/diffresult-migration-plan-2.md`](./diffresult-migration-plan-2.md)
 > verfolgt; dessen Workstreams G.1 und A.1 sind bereits umgesetzt
 > (2026-05-12).
 >
