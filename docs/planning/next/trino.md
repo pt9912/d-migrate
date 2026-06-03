@@ -139,17 +139,64 @@ Treiber-Versionssprüngen ist die Tabelle vor dem Bump zu verifizieren):
 | `trustStorePassword=<pw>` | `SSLTrustStorePassword=<pw>` | |
 | `keystorePath=<path>` | `SSLKeyStorePath=<path>` | |
 | `keystorePassword=<pw>` | `SSLKeyStorePassword=<pw>` | |
-| `session.<name>=<value>` *(je Eintrag)* | gesammelt in `sessionProperties=<n1>:<v1>;<n2>:<v2>` | URL-encoded; Reihenfolge deterministisch (lexikografisch). |
-| `user`, `password` (aus `userinfo`/`DM_TRINO_PASSWORD`) | `user`, `password` | |
+| `session.<name>=<value>` *(je Eintrag)* | gesammelt in `sessionProperties=<n1>:<v1>;<n2>:<v2>` | Werte delimiter-sicher (siehe unten). Reihenfolge deterministisch (lexikografisch). |
+| `user`, `password` (aus `userinfo`/`DM_TRINO_PASSWORD`) | über `java.util.Properties`, **nicht** in der JDBC-URL | siehe Secret-Transportregel unten. |
 
 Regeln:
 
 - Properties außerhalb dieser Tabelle und ohne Phase-1-Allowlist-Eintrag
-  werden vor dem Bau der JDBC-URL abgelehnt (`cli_config_error`).
+  werden vor dem Bau der JDBC-URL abgelehnt (`LOCAL_ERROR`).
 - Der Trino-Builder benutzt **nicht** den generischen Roh-Merge;
   `ConnectionConfig.params` bleibt für andere Dialekte unverändert.
+
+**Delimiter-Schutz für `session.<name>`-Werte:**
+
+Trino-`sessionProperties` ist ein flacher Key-Value-Stream mit
+Property-Separator `;` und Key-Value-Separator `:`. Würden d-migrate
+einen dekodierten Wert mit `;` oder `:` direkt einbetten, könnte ein
+Eintrag wie `session.tag=foo;query_max_run_time=1ms` weitere
+Pseudo-Properties einschleusen und die Allowlist (die nur Keys prüft)
+umgehen.
+
+Phase-1-Regel:
+
+- Nach Percent-Dekodierung darf jeder `session.<name>`-Wert weder `;`
+  noch `:` enthalten. Verstoß → `LOCAL_ERROR` (Exit 7), inkl. Hinweis
+  „Trino session value must not contain `;` or `:` (use a different
+  representation)".
+- Encoded Varianten (`%3B`, `%3A`, `%3b`, `%3a`, Mixed-Case) sind nach
+  Decodierung identisch zu blockieren — DoD 1b enthält explizite Tests
+  für diese Sequenzen.
+- Phase 2 evaluiert, ob ein Quoting-Schema (z. B. JDBC-Properties-API
+  statt URL-Inlining) den Restriktionsschritt ersetzen kann; Phase 1
+  wählt bewusst die strikte Variante.
+
+**Secret-Transportregel:**
+
+Sensitive Trino-Properties dürfen **nicht** als URL-Bestandteil in der
+finalen `jdbcUrl` landen, sondern werden ausschließlich über die
+`java.util.Properties`-Instanz an `DriverManager.getConnection(url,
+props)` bzw. die Hikari-`addDataSourceProperty(...)`-API übergeben.
+
+Betroffen:
+
+- `user` (nicht-sensitiv, aber konsistent über Properties)
+- `password` (aus `userinfo`/`DM_TRINO_PASSWORD`)
+- `accessToken`
+- `SSLTrustStorePassword`, `SSLKeyStorePassword`
+
+In der finalen JDBC-URL erscheinen ausschließlich nicht-sensitive
+Konfigurationswerte (`SSL`, `SSLTrustStorePath`, `SSLKeyStorePath`,
+`sessionProperties`-Stream).
+
+DoD-Anforderungen:
+
+- DoD-Tranche-1b: Test verifiziert, dass die zusammengesetzte
+  `jdbcUrl` keine Secret-Werte enthält (`accessToken`, `password`,
+  `*Password`).
 - DoD-Tranche-2: Smoke-Test verifiziert, dass die Mapping-Tabelle
-  tatsächlich greift (mind. ein TLS-Pfad + ein Session-Property).
+  tatsächlich greift (mind. ein TLS-Pfad + ein Session-Property + ein
+  Secret über Properties statt URL).
 
 ## 5) Kontrakt: Dialekt und Connection-URL
 
@@ -261,8 +308,10 @@ Interpretation:
       Query-Property (`key`/`value`) nach der Initial-Pfadeinordnung percent-dekodiert.
   - Nach der Decodierung werden Query-Properties normalisiert:
     - Alle Property-Keys und -Values werden zunächst getrimmt.
-    - `session.<name>` wird zusätzlich wie in Abschnitt *Session-Forwarding-Liste* normalisiert
-      (Lowercase, Musterprüfung, Name-Auflösung).
+    - `session.<name>` wird zusätzlich wie in Abschnitt *Session-Forwarding-Liste*
+      strikt validiert (Musterprüfung gegen `v1`-Regex, Name-Auflösung). Es
+      findet **keine** Case-Normalisierung statt; Großbuchstaben im `<name>`
+      werden als `LOCAL_ERROR` abgelehnt.
     - Andere Property-Schlüssel (`ssl`, `httpScheme`, `accessToken`,
       `trustStorePath`, `trustStorePassword`, `keystorePath`, `keystorePassword`) werden
       ausschließlich nach Decodierung gegen die erlaubte Property-Liste geprüft (Case-sensitiv
@@ -338,8 +387,13 @@ Konfiguration der Session-Forwarding-Liste:
   gesetzt werden.
 - Format: komma-separierte Liste von Session-Keys in Kleinbuchstaben, z. B.
   `query_max_run_time,query_max_cpu_time`
-- Normalisierung:
-  - Whitespace wird getrimmt, leere Tokens verworfen, Kleinbuchstaben erzwungen.
+- Normalisierung (Phase 1 = strikt):
+  - Whitespace wird getrimmt, leere Tokens verworfen.
+  - **Keine Case-Normalisierung.** Eingaben müssen bereits in
+    Kleinbuchstaben vorliegen. Großbuchstaben oder Mixed-Case führen
+    deterministisch zu `LOCAL_ERROR` (Exit 7); es findet keine implizite
+    Konvertierung statt. Begründung: Ein expliziter Konfigurationsfehler
+    ist sichtbarer als eine stille Umformung.
   - Reihenfolge wird deterministisch sortiert und Duplikate dedupliziert.
   - Jeder Eintrag muss dem Phase-1-Muster `v1` entsprechen:
     - Kleinbuchstaben, Ziffern, Unterstrich, Bindestrich; optionale
@@ -352,13 +406,15 @@ Konfiguration der Session-Forwarding-Liste:
     - `query_max_run_time`
     - `query-max-cpu-time`
     - `hive.s3_staging_directory`
-  - Abgelehnte Beispiele:
+  - Abgelehnte Beispiele (alle → `LOCAL_ERROR`):
     - `token.` (leeres Segment am Ende)
     - `a..b` (leeres Segment in der Mitte)
-    - `Query_Max_Run_Time` (Großbuchstaben vor Normalisierung — Normalisierung
-      hebt dies auf; aber direkte Allowlist-Konfiguration mit Großbuchstaben
-      wird als `action_required` abgelehnt, wenn `v1`-Striktprüfung aktiv ist)
+    - `Query_Max_Run_Time` (Großbuchstaben — werden **nicht** normalisiert,
+      sondern deterministisch abgelehnt)
     - `_query` (führender Underscore), `-query` (führender Bindestrich)
+  - Dieselbe Strikt-Regel gilt für `session.<name>` aus der URL-Query:
+    Großbuchstaben im `<name>`-Teil werden abgelehnt, statt nach unten zu
+    konvertieren.
   - Referenzimplementierung des `v1`-Regex (Kotlin-Raw-String):
     `^[a-z](?:[a-z0-9_-]*[a-z0-9_])?(?:\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)*$`
   - Der Regex wird bei Bedarf über eine neue
@@ -388,14 +444,27 @@ Vor allen Guard-Schritten gelten die Parser-Schichten aus §5.2.2:
    dekodierten `catalog`/`schema`) brechen sofort mit `action_required`,
    noch bevor irgendein Guard läuft.
 
-Danach gilt diese Reihenfolge explizit:
+Danach gilt diese Reihenfolge explizit. **Die Reihenfolge ist verbindlich**
+für Implementierung und Tests, damit die erste reproduzierbare
+Fehlerklasse stabil ist (keine implementation-defined Race zwischen Auth
+und Capability):
 
-1. Runtime-Profil-Auflösung
+1. **CLI-Capability-Gate** (Source/Target-Pfad)
+- Prüft vor jedem Trino-spezifischen Guard, ob das Kommando den
+  Trino-Pfad als Source oder Target überhaupt erlaubt (siehe §5.6).
+- Verbotene Zielpfade (`data transfer --target trino://...`,
+  `schema generate --target trino://...` in Phase 1, `data import` …)
+  brechen sofort mit `USAGE_ERROR` (Exit 2) ab — **vor** URL-Parsing,
+  Profil- oder Secret-Guards. Tests können sich darauf verlassen, dass
+  Auth-Fehler in diesen Konstellationen nicht beobachtet werden, auch
+  wenn die URL kein Passwort/Token enthält.
+
+2. Runtime-Profil-Auflösung
 - `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` > Default `production`.
 - Jeder ungültige Profilwert (inkl. unbekannte Tokens) führt sofort zu `action_required`.
 - Fehlt die Profilangabe vollständig, wird deterministisch `production` wirksam.
 
-2. Transport-Guards
+3. Transport-Guards
 - Inkompatible Kombinationen (`ssl=true` + `httpScheme=http`, `ssl=false` + `httpScheme=https`) werden
   sofort hart mit `action_required` abgelehnt.
 - Transportauflösung erfolgt deterministisch aus den normalisierten Query-Properties.
@@ -408,20 +477,25 @@ Danach gilt diese Reihenfolge explizit:
   anderen Werte aktivieren die Ausnahme nicht und führen bei gefordertem unsicherem Transport
   zu `action_required`.
 
-3. Secrets-Guards
+4. Secrets-Guards
 - `production`: harte Blockade für `user:password`, `accessToken`, `trustStorePassword`,
   `keystorePassword` ohne Ausnahme.
 - `non_production`: diese Werte nur mit aktiver Legacy-Geheimnis-Ausnahme erlaubt
   (`--allow-legacy-trino-secrets` oder `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`).
 - `session.<name>` bleibt in beiden Profilen ausschließlich allowlist-gesteuert.
+- Auth-Pflicht (`DM_TRINO_PASSWORD` oder `accessToken`) wird hier geprüft —
+  **erst nach** dem CLI-Capability-Gate (Schritt 1) und den Transport-Guards.
 
-4. Session-Forwarding-Quelle
+5. Session-Forwarding-Quelle
 - Präzedenz: explizit gesetztes CLI-Flag > Umgebungsvariable > leerer Default.
 - Bei aktivem CLI-Override wird die Env-Quelle (inkl. `DM_TRINO_SESSION_ALLOWLIST_V`) vollständig
   ignoriert; ungültige Env-Versionen werden nur gewarnt, aber nicht blockiert.
 
-5. Fehlerverhalten
+6. Fehlerverhalten
 - Alle obigen Verstoßfälle sind reproduzierbar als `action_required` (ohne Retry-/Transient-Pfade).
+- Die in §5.4.0 dokumentierten Exit-Codes folgen der Schritt-Nummer: Schritt 1
+  → `USAGE_ERROR`, Schritte 0/2–5 → `LOCAL_ERROR`. Test-Assertions prüfen
+  Exit-Code und Konventions-Präfix.
 
 #### 5.2.6 Credential-Modell (Phase 1)
 
@@ -725,8 +799,9 @@ Regel:
 
 **Ziel:** sicherer Trino-Lesepfad ohne Schreib-Risiko.
 
-Phase 1 ist in drei Tranchen geschnitten, damit das umfangreiche
-Security-Modell nicht den ersten lauffähigen Read-Pfad blockiert:
+Phase 1 ist in vier Tranchen geschnitten (1a, 1b, 2, 3), damit das
+umfangreiche Security-Modell nicht den ersten lauffähigen Read-Pfad
+blockiert:
 
 - **Tranche 1a** — Build-fähiges Minimum: `TRINO`-Enum,
   `DialectCapabilities`, kanonisches URL-Parsing, Source-only-Guards,
@@ -1204,6 +1279,14 @@ Permutations-Tests abgesichert.
 - [ ] Test-Matrix abgedeckt: `--trino-session-allowlist` Tri-State ×
   `DM_TRINO_SESSION_ALLOWLIST` × `DM_TRINO_SESSION_ALLOWLIST_V` × `session.<name>`
   Validität.
+- [ ] `session.<name>`-Werte mit `;` oder `:` (auch percent-encoded:
+  `%3B`/`%3A`/`%3b`/`%3a`) werden nach Decodierung reproduzierbar mit
+  `LOCAL_ERROR` (Exit 7) abgelehnt. Test deckt sowohl Direkt- als auch
+  Encoded-Varianten ab.
+- [ ] Test verifiziert, dass die zusammengesetzte `jdbcUrl` keine
+  Secret-Werte enthält (`password`, `accessToken`,
+  `SSLTrustStorePassword`, `SSLKeyStorePassword`). Secrets fließen
+  ausschließlich über `java.util.Properties` an den Treiber.
 - [ ] Modul-Coverage `hexagon/ports-common` bleibt ≥ 90 %.
 
 ### DoD — Phase 1, Tranche 2 (Read-Infrastruktur)
@@ -1251,10 +1334,13 @@ Voraussetzung: Tranche 2 vollständig abgeschlossen.
   `--allow-metadata-gaps`.
 - [ ] `schema compare --source db:trino://... --target file:...` liefert dieselben
   Coverage-/Warnungs- und Dokumentationsregeln konsistent.
-- [ ] `data profile --source trino://...` ist lauffähig (mit Profiling-Modul).
-- [ ] `data profile --source trino://...` ohne Modul liefert
-  `USAGE_ERROR` (Exit 2) mit Hinweis auf das fehlende
-  `driver-trino-profiling`-Modul.
+- [ ] `data profile --source trino://...` ist lauffähig;
+  `driver-trino-profiling` ist als feste Treiber-Standardabhängigkeit
+  verkabelt (kein Modul-Opt-in, kein „Modul fehlt"-Zustand in der
+  ausgelieferten Konfiguration).
+- [ ] Verkabelungs-Test: bei aktivem `driver-trino` ist das
+  Profiling-Modul automatisch resolved (Gradle-Dependency-Test gegen
+  `settings.gradle.kts` und Modul-`build.gradle.kts`).
 - [ ] Source-only-Regel für Trino ist technisch und dokumentiert durchgesetzt.
 - [ ] `data transfer --target trino://...` liefert `USAGE_ERROR` (Exit 2)
   mit Konventions-Präfix.
