@@ -20,21 +20,20 @@ Auch [`done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expans
 (Zeile 384): „Ein MCP-Migrate-Tool (`schema_migrate` oder
 `schema_migrate_start`) wäre ein eigener Produkt-/Contract-Slice."
 
-Das Doc trägt den Sub-Slice-Schnitt F.1-F.6 (§5), den Wire-Vertrag
+Das Doc trägt den Sub-Slice-Schnitt F.1-F.5 (§5), den Wire-Vertrag
 V1 (§2) und einen Strawman zu den acht Produkt-/Vertrags-Fragen
 (§3). Es ist damit bereit, sobald C oder D aus
 [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 dran ist, in `in-progress/` zu wandern und die Sub-Slices F.1-F.6
+§5 dran ist, in `in-progress/` zu wandern und die Sub-Slices F.1-F.5
 nacheinander zu liefern.
 
 **Aktivierungsbedingung** (Move nach `in-progress/`): F.1
-(Tool-Schema + Discovery), F.2 (dryRun-Handler) und F.3
-(Approval-Wiring) sind alle drei ohne Service-Mode-Vorarbeit
-implementierbar und können sofort starten. F.4 (Pool-Wiring im
-Worker) blockiert auf C; F.5 (Apply mit Quota+Lock+Cancel)
-blockiert auf A + D + E (alle aus
+(Tool-Schema + Discovery) und F.2 (dryRun-Handler) sind ohne
+Service-Mode-Vorarbeit implementierbar und können sofort starten.
+F.3 (Pool-Wiring im Worker) blockiert auf C; F.4 (Apply mit
+Approval+Quota+Lock+Cancel) blockiert auf A + D + E (alle aus
 [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5). F.6 (E2E) hängt an F.5.
+§5). F.5 (E2E) hängt an F.4.
 
 ---
 
@@ -194,10 +193,12 @@ Handler (analog
   ist `approvalToken` egal — der Pfad geht keine Job-Start-Pipeline
   durch.
 
-### 2.2 Response — `dryRun: true`
+### 2.2 Response — Dry-Run-Envelope
 
 Sync-Antwort, kein Job-Start. Liefert das Plan-Artefakt samt
-Fingerprints, ohne `BEGIN`/Dialekt-Lock/Probe/Apply/Restore:
+Fingerprints, ohne `BEGIN`/Dialekt-Lock/Probe/Apply/Restore. Das
+Pflichtfeld `dryRun: true` ist Self-Discriminator für das
+Output-`oneOf` (siehe §F.1):
 
 ```jsonc
 {
@@ -227,11 +228,13 @@ Fingerprints, ohne `BEGIN`/Dialekt-Lock/Probe/Apply/Restore:
 optional. `tenant` und `principal` leben ausschließlich im
 Audit-Trail und im Job-Resource-URI, nicht im Wire-Envelope.
 
-### 2.3 Response — `dryRun: false` (Apply)
+### 2.3 Response — Apply-Job-Start-Envelope
 
 Symmetrischer Job-Start-Envelope wie `data_transfer_start`
 ([`spec/mcp-server.md`](../../../spec/mcp-server.md) §661ff). Der
-Caller pollt Status über `resources/read` am `resourceUri`:
+Caller pollt Status über `resources/read` am `resourceUri`. Das
+Pflichtfeld `jobId` (zusammen mit der Abwesenheit eines
+`dryRun`-Felds) ist Self-Discriminator für das Output-`oneOf`:
 
 ```jsonc
 {
@@ -469,14 +472,23 @@ Reverse-/Plan-Inhalte. Er entsteht:
 
 - Im `dryRun: true`-Sync-Antwortpfad: Handler führt Reverse + Diff +
   Plan-Validate und gibt den Fingerprint im Antwort-Envelope zurück.
-- Im Apply-Worker (F.5): Worker reverst, berechnet den Plan,
+- Im Apply-Worker (F.4): Worker reverst, berechnet den Plan,
   schreibt `planFingerprint` in den Job-Status und ins Audit, **ohne
   ihn nachträglich in den `payloadFingerprint` zu falten**.
 
-`lockTimeoutMs` ist ein Lieferungsparameter, kein
-Identitätsparameter — Replay desselben Migrate-Jobs mit anderem
-Lock-Timeout bleibt semantisch derselbe Job und verändert den
-`payloadFingerprint` nicht.
+**Alle side-effect-relevanten Optionen sind Identitäts-Eingaben**,
+auch `lockTimeoutMs`. Ein Replay mit gleichem `idempotencyKey`,
+aber `lockTimeoutMs = 10` vs. `60000`, würde sonst auf denselben
+Job zurückmappen, obwohl sich Worker-Verhalten und
+Erfolgswahrscheinlichkeit (Lock-Acquire-Race) materiell ändern.
+Konkret in `canonical(options)`-Eingabe gehören:
+
+- `lockTimeoutMs`
+- `options.preserveSequences`
+- `options.atomicPreserve`
+- alle künftigen Optionen mit Worker-Wirkung (Default-Position:
+  **rein**, es sei denn die Option ist explizit als reiner
+  Telemetrie-Parameter dokumentiert).
 
 `approvalToken` geht nicht in den Fingerprint — bestehender
 Token-Challenge-Flow aus
@@ -565,10 +577,10 @@ Log-Kontext und erscheinen nie im Wire-Envelope.
 Die Sub-Slices wachsen nicht entlang der DDL-Phasen, sondern entlang
 der Job-Start-Tool-Architektur aus
 [`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md):
-Tool-Schema → Handler-Skeleton → Policy-Gate → Pool/Cancel-Wiring →
-Apply-Job → E2E. Das verteilt das Risiko der Atomic-Preserve-
-Garantie auf einen einzigen Sub-Slice (F.5) statt es über mehrere zu
-streuen.
+Tool-Schema → Handler-Skeleton (dryRun) → Pool-Wiring (Worker) →
+Apply-Job (Approval+Quota+Lock+Cancel) → E2E. Das verteilt das
+Risiko der Atomic-Preserve-Garantie auf einen einzigen Sub-Slice
+(F.4) statt es über mehrere zu streuen.
 
 ### 4.2 `dryRun` vor Apply bauen
 
@@ -589,7 +601,7 @@ Konsumenten-Profil; er ersetzt keinen.
 
 ## 5. Geplante Arbeitspakete
 
-Die Sub-Slices F.1-F.6 schließen den Service-Mode-Vertrags-Track
+Die Sub-Slices F.1-F.5 schließen den Service-Mode-Vertrags-Track
 ab. Sie konsumieren die JVM-Verträge C/D/E aus
 [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
 §5 und liefern den MCP-Konsumenten.
@@ -609,10 +621,14 @@ mit Title/Description/ErrorCodes versorgt.
   - **Input** = das Request-Schema aus §2.1 (Draft 2020-12,
     `additionalProperties: false`, `oneOf` für Source-Variante,
     Bounds für `lockTimeoutMs`).
-  - **Output** = `oneOf` aus dem `dryRun: true`-Envelope (§2.2)
-    und dem Job-Start-Envelope (§2.3). Discriminator ist das
-    `dryRun`-Feld im Request: `dryRun=true` → dryRun-Response,
-    sonst Job-Start-Response.
+  - **Output** = `oneOf` aus dem dryRun-Envelope (§2.2) und dem
+    Job-Start-Envelope (§2.3). Das Output-JSON-Schema kann den
+    Request nicht sehen — die Antwort selbst muss diskriminierbar
+    sein: der dryRun-Envelope führt `dryRun: { const: true }` als
+    Pflichtfeld; der Apply-Envelope führt `jobId` und
+    `resourceUri` als Pflichtfelder (und kein `dryRun`-Feld). Im
+    JSON-Schema realisiert über zwei disjunkte `required`-Sets
+    plus `additionalProperties: false`.
 - [ ] Schema-Validator-Test pinnt sechs Reject-Cases (Draft-07-
   Forbidden-Keyword wie `definitions` zusätzlich zu den fünf aus
   Runde 1: fehlende Pflichtfelder, beide Source-Felder gesetzt,
@@ -623,7 +639,14 @@ mit Title/Description/ErrorCodes versorgt.
   Happy-Path mit `sourceConnectionRef`, minimaler Happy-Path mit
   `sourceSchemaRef`.
 - [ ] Neuer Eintrag in `McpServerConfig.DEFAULT_SCOPE_MAPPING`:
-  `"schema_migrate_start" to jobStart`. Vertragstest:
+  `"schema_migrate_start" to dataWrite` — analog
+  `data_import_start` und `data_transfer_start`
+  ([`McpServerConfig.kt:256-258`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/server/McpServerConfig.kt)).
+  Schema-Mutationen am Target sind klar schreibend; `jobStart`
+  reicht als Scope **nicht**. `dryRun: true` läuft unter
+  demselben Scope; Plan-only-Sicht ohne Schreibrechte ist Scope
+  für einen späteren `schema_migrate_plan`-Read-Tool, nicht für
+  diesen Slice. Vertragstest:
   `tools/list` listet das neue Tool inkl. `requiredScopes`,
   `inputSchema`, `outputSchema`.
 - [ ] Neue Einträge in `McpContractRegistries`:
@@ -652,6 +675,26 @@ mit Title/Description/ErrorCodes versorgt.
   `RESOURCE_NOT_FOUND`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `UNSUPPORTED_TOOL_OPERATION`) werden wiederverwendet — siehe
   §3.8.
+- [ ] Drei neue `ApplicationException`-Subtypen anlegen, weil
+  [`AppExceptionHierarchyTest`](../../../hexagon/application/src/test/kotlin/dev/dmigrate/server/application/error/AppExceptionHierarchyTest.kt)
+  (`§6.7`-Invariante) für jeden Enum-Wert genau ein Subtyp
+  verlangt:
+  - `SchemaMigrateLockTimeoutException`
+  - `ServicePoolExhaustedException`
+  - `SchemaMigrateAtomicFailureException`
+- [ ] `ApplicationExceptionFixtures` um Fixture-Einträge für die
+  drei neuen Codes erweitert; `AppExceptionHierarchyTest` läuft
+  ohne manuelle Eingriffe transitiv durch.
+- [ ] `ToolErrorEnvelopeTest`
+  ([`hexagon/core/src/test/kotlin/.../ToolErrorEnvelopeTest.kt:36`](../../../hexagon/core/src/test/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelopeTest.kt))
+  pinnt aktuell exakt 18 Codes; Pin auf 21 erhöhen und die drei
+  neuen Codes in das Erwartungs-Set aufnehmen. Test-Header-
+  Kommentar `// 18 codes mandated by docs/ki-mcp.md` auf 21
+  aktualisieren.
+- [ ] [`spec/mcp-server.md`](../../../spec/mcp-server.md) +
+  [`spec/ki-mcp.md`](../../../spec/ki-mcp.md) Error-Code-Liste
+  um die drei neuen Werte ergänzen (Job-Result-Detail-
+  Klassifikation).
 - [ ] `make ci` grün.
 
 **Betroffene Dateien**:
@@ -659,15 +702,22 @@ mit Title/Description/ErrorCodes versorgt.
 - `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/server/McpServerConfig.kt`
 - `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/McpContractRegistries.kt`
 - `hexagon/core/src/main/kotlin/dev/dmigrate/server/core/error/ToolErrorCode.kt`
+- `hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt`
+  (drei neue Subtypen)
+- `hexagon/application/src/test/kotlin/dev/dmigrate/server/application/error/ApplicationExceptionFixtures.kt`
+  (drei neue Fixture-Einträge)
+- `hexagon/core/src/test/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelopeTest.kt`
+  (Pin auf 21 erhöhen)
+- `spec/mcp-server.md`, `spec/ki-mcp.md` (Code-Liste)
 - Neuer Test: `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/schema/SchemaMigrateStartSchemaTest.kt`
 - Erweiterung an `McpToolsListContractTest.kt` (oder Pendant) für
   den `tools/list`-Vertrag.
 
 **Dependencies**: keine.
 
-**Risiken**: niedrig — alle vier Eingriffe sind mechanisch und
-folgen den bestehenden Job-Start-Tool-Pattern aus
-`data_transfer_start` / `data_import_start` / `schema_reverse_start`.
+**Risiken**: niedrig — alle Eingriffe sind mechanisch und folgen
+dem bestehenden 1:1-Mapping `ToolErrorCode` ↔
+`ApplicationException`-Subtyp.
 
 ### Sub-Slice F.2 — Handler-Skeleton (dryRun-only)
 
@@ -703,7 +753,7 @@ NOT_IMPLEMENTED.
   Fingerprints, ExecutionMeta). Kein DB-Connection-Borrow für den
   Target-Apply, kein Dialekt-Lock, keine Job-Worker-Pipeline.
 - [ ] `dryRun: false` liefert vorerst `UNSUPPORTED_TOOL_OPERATION`
-  (bestehender Code) — Apply-Pfad kommt mit F.3/F.4/F.5.
+  (bestehender Code) — Apply-Pfad kommt mit F.3/F.4.
 - [ ] Handler registriert in `OperationalMcpRegistries`.
 - [ ] Handler-Unit-Test pinnt sieben Pfade:
   Happy-dryRun-mit-ConnectionRef, Happy-dryRun-mit-SchemaRef,
@@ -727,49 +777,7 @@ NOT_IMPLEMENTED.
 Plan-Validate zusammen; der Fingerprint-Vertrag aus §3.7 muss
 deterministisch gegen Reverse-Hashes pinnen.
 
-### Sub-Slice F.3 — Approval-Wiring (Pre-Apply)
-
-**Ziel**: Approval-Token-Validierung für den Apply-Pfad. Replaced
-nicht den Apply-Stub aus F.2 — F.5 liefert sowohl Quota-Reservation
-als auch den Job-Start atomar.
-
-**Begründung für den Schnitt**:
-[`JobStartOrchestrator.start`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/JobStartOrchestrator.kt)
-führt `reserveQuota` (Zeile 260) und `jobStartTransaction.commit`
-(Zeile 276) im selben kritischen Pfad aus — RateLimited gibt vor dem
-Commit sofort zurück, ohne Job-Erzeugung. Es gibt also keinen
-sicheren „Quota reservieren, aber keinen Job starten"-Pfad. Approval
-und Quota werden deshalb getrennt: Approval ist Pre-Job-Start
-(Token-Challenge), Quota ist Teil des Job-Starts in F.5.
-
-**Akzeptanzkriterien**:
-- [ ] `dryRun: false` ohne passenden `approvalToken` →
-  `POLICY_REQUIRED` mit `details` (`approvalRequestId`,
-  `correlationKind`, `correlationKey`, `payloadFingerprint`,
-  `requiredScopes`, `reasons`) — exakt der Pfad aus
-  [`JobStartHandlerSupport.toToolCallOutcome`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt).
-- [ ] `dryRun: false` mit gültigem `approvalToken` → weiter zum
-  Apply-Stub `UNSUPPORTED_TOOL_OPERATION` (F.5 ersetzt den Stub).
-- [ ] Audit-Eintrag pinnt `payloadFingerprint`, `planFingerprint`,
-  `tenant`, `principal`, `approvalToken`-Redaktion — analog
-  bestehender Start-Tools.
-- [ ] Handler-Test pinnt drei Pfade: Pre-Approval-Reject
-  (`POLICY_REQUIRED`), Approval-OK + Apply-Stub
-  (`UNSUPPORTED_TOOL_OPERATION`), und ein
-  `dryRun: true` ignoriert den Token-Pfad komplett.
-- [ ] `make ci` grün.
-
-**Betroffene Dateien**:
-- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/SchemaMigrateStartHandler.kt`
-- `adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/audit/...`
-
-**Dependencies**: F.2. Keine Abhängigkeit zu `atomic-preserve` §5
-D — die kommt erst in F.5 (Quota im Commit-Pfad).
-
-**Risiken**: niedrig — Approval-Token-Flow ist Bestands-Pattern,
-keine neue Verdrahtung.
-
-### Sub-Slice F.4 — Connection-Sub-Pool-Wiring (Worker)
+### Sub-Slice F.3 — Connection-Sub-Pool-Wiring (Worker)
 
 **Ziel**: Der **Apply-Job-Worker** least eine eigene Connection
 aus dem MigratePoolFactory (Sub-Slice C). Der MCP-Handler selbst
@@ -806,28 +814,42 @@ brechen.
 **Risiken**: niedrig — Worker-seitiges Borrow ist Bestands-Pattern
 für Job-Worker (siehe `data_transfer_start`-Worker).
 
-### Sub-Slice F.5 — Apply-Pfad (Quota + Job-Start + Worker)
+### Sub-Slice F.4 — Apply-Pfad (Approval + Quota + Job-Start + Worker)
 
-**Ziel**: Apply ist ein echter Job-Start. Quota-Reservation, Commit
-und Worker-Dispatch laufen atomar im
+**Ziel**: Apply ist ein echter Job-Start. Approval-Token-Validierung,
+Quota-Reservation, Commit und Worker-Dispatch laufen atomar im
 [`JobStartOrchestrator`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/JobStartOrchestrator.kt)-
-Pfad. Der Worker führt den Plan in einer Transaktion unter
-Dialekt-Lock aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures
-mappen auf §3.8.
+Pfad bzw. dem
+[`ApprovedRetryService`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/ApprovedRetryService.kt).
+Der Worker führt den Plan in einer Transaktion unter Dialekt-Lock
+aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
+§3.8.
 
 **Akzeptanzkriterien**:
 - [ ] Handler ersetzt den `UNSUPPORTED_TOOL_OPERATION`-Stub aus
-  F.3 durch einen `JobStartRequest`, der den
+  F.2 durch einen `JobStartRequest`, der den
   bestehenden `JobStartOrchestrator.start`-Pfad fährt.
+- [ ] Apply ohne `approvalToken` → `POLICY_REQUIRED` mit
+  `details` (`approvalRequestId`, `correlationKind`,
+  `correlationKey`, `payloadFingerprint`, `requiredScopes`,
+  `reasons`) aus
+  [`JobStartHandlerSupport.toToolCallOutcome`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt).
+- [ ] Apply mit gültigem `approvalToken` → `ApprovedRetryService`
+  validiert, claimed Idempotency-Slot, reserviert Quota,
+  committet den Job atomar (Zeile 67ff). Approval-Wiring ist
+  damit **untrennbar** an den Job-Start gebunden — kein
+  „Approval-only"-Pfad nötig.
 - [ ] Quota-Reservation läuft synchron im Commit-Pfad mit
   `QuotaKey(tenantId, ACTIVE_JOBS, principalId,
   operation="schema_migrate_start")`. RateLimited liefert
   vor dem Commit `RATE_LIMITED` (synchroner Start-Tool-Fehler,
   kein Job).
+- [ ] Audit-Eintrag pinnt `payloadFingerprint`, `planFingerprint`,
+  `tenant`, `principal`, `approvalToken`-Redaktion.
 - [ ] Job-Start liefert bei Erfolg die Antwort aus §2.3
   (`jobId`, `resourceUri`, `executionMeta`).
 - [ ] Job-Worker komponiert `SchemaMigrateRunner` mit
-  `lockTimeoutMs` aus dem Request, dem Pool-Lease aus F.4 und
+  `lockTimeoutMs` aus dem Request, dem Pool-Lease aus F.3 und
   dem CancellationToken aus `JobCancelHandler`.
 - [ ] Job-Status-Updates fließen über `resources/read` analog
   `data_transfer_start`.
@@ -856,16 +878,16 @@ mappen auf §3.8.
 - Job-Worker-Wiring (Pool + Cancel + Apply-Sequenz)
 - IT-Tests pro Dialekt
 
-**Dependencies**: F.2 + F.3 + F.4 plus
+**Dependencies**: F.2 + F.3 plus
 [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
 §5 A (Lock-Timeout), §5 D (Quota-Plumbing), §5 E
 (Cancellation-Token).
 
 **Risiken**: hoch — zusammengesetzter Atomicity-Vertrag
-(Quota+Commit+Worker), Cancel-Mid-Apply, Failure-Klassen-Mapping.
-Wichtigster Slice für Sub-Phase-Reviews.
+(Approval+Quota+Commit+Worker), Cancel-Mid-Apply,
+Failure-Klassen-Mapping. Wichtigster Slice für Sub-Phase-Reviews.
 
-### Sub-Slice F.6 — E2E-Scenario-Test
+### Sub-Slice F.5 — E2E-Scenario-Test
 
 **Ziel**: `McpSchemaMigrateStartScenarioTest` gegen file-SQLite
 (Operational-MCP-Harness aus Quality-Coverage-Expansion Phase F1)
@@ -905,29 +927,33 @@ mechanische Komposition.
 ## 6. Dependency-Graph
 
 ```
-F.1 (Tool-Schema + Discovery)   ──→ F.2 (dryRun-Handler) ──→ F.3 (Approval-Wiring)
-                                                                       │
-atomic-preserve C (Sub-Pool)    ──────→ F.4 (Pool-Wiring im Worker) ──┐│
-                                                                      ↓↓
-atomic-preserve A (Lock-Timeout)                                   F.5 (Apply: Quota+Lock+Worker)
-atomic-preserve D (Quota-Plumbing)  ──→                                │
-atomic-preserve E (Cancel-Token)                                        ↓
-                                                                   F.6 (E2E)
+F.1 (Tool-Schema + Discovery)   ──→ F.2 (dryRun-Handler)
+                                            │
+atomic-preserve C (Sub-Pool)    ──→ F.3 (Pool-Wiring im Worker)
+                                            │
+atomic-preserve A (Lock-Timeout)            ↓
+atomic-preserve D (Quota-Plumbing)  ──→ F.4 (Apply: Approval+Quota+Worker)
+atomic-preserve E (Cancel-Token)            │
+                                            ↓
+                                        F.5 (E2E)
 ```
 
-- **F.1 → F.2 → F.3** läuft sofort, **ohne** Abhängigkeit zu
-  atomic-preserve. F.3 ist Approval-Wiring (POLICY_REQUIRED-
-  Challenge); Quota bleibt bis F.5 aus dem Pfad.
-- **F.4** hängt an F.2 und an atomic-preserve C
-  (`MigratePoolFactory`). Kann parallel zu F.3 laufen.
-- **F.5** ist die Synthese und hängt an F.2 + F.3 + F.4 plus
+- **F.1 → F.2** läuft sofort, **ohne** Abhängigkeit zu
+  atomic-preserve. F.2 stellt den dryRun-Pfad fertig; Apply
+  liefert `UNSUPPORTED_TOOL_OPERATION`.
+- **F.3** hängt an F.2 und an atomic-preserve C
+  (`MigratePoolFactory`).
+- **F.4** ist die Synthese und hängt an F.2 + F.3 plus
   atomic-preserve A + D + E (Lock-Timeout, Quota-Plumbing,
-  Cancellation-Token).
-- **F.6** ist die E2E-Pinnung; hängt an F.5.
+  Cancellation-Token). Approval-Token-Validierung lebt hier
+  zusammen mit Quota und Job-Start, weil
+  [`ApprovedRetryService`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/ApprovedRetryService.kt)
+  diese Schritte atomar koppelt.
+- **F.5** ist die E2E-Pinnung; hängt an F.4.
 
-Natürliche Reihenfolge: **F.1 → F.2 → F.3** (ohne externe
-Trigger). Sobald atomic-preserve C geliefert ist, **F.4** parallel
-zu F.3. Sobald A + D + E geliefert sind, **F.5 → F.6**.
+Natürliche Reihenfolge: **F.1 → F.2** (ohne externe Trigger).
+Sobald atomic-preserve C geliefert ist, **F.3**. Sobald A + D + E
+geliefert sind, **F.4 → F.5**.
 
 ## 7. Risiken
 
@@ -962,7 +988,7 @@ zu F.3. Sobald A + D + E geliefert sind, **F.5 → F.6**.
    Mapping am Wire.** Operator-Werkzeuge müssen `detail.kind`
    parsen, um zwischen `PROBE_FAILED`, `RESTORE_FAILED`,
    `LOCK_ESCALATION` etc. zu unterscheiden. Mitigation:
-   `detail.kind`-Vokabular ist in §3.8 dokumentiert; F.6 pinnt
+   `detail.kind`-Vokabular ist in §3.8 dokumentiert; F.5 pinnt
    mindestens drei Varianten.
 5. **Quota-Granularität nicht targetRef-spezifisch.** Der MVP
    benutzt das bestehende `ACTIVE_JOBS`-Quota
