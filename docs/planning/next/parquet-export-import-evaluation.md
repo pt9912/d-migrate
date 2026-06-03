@@ -4,7 +4,7 @@
 >
 > Status: Entwurf (2026-05-01)
 >
-> Referenzen: `docs/planning/roadmap.md`, `spec/architecture.md`,
+> Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`
 
 ---
@@ -51,7 +51,7 @@ einem neuen fachlichen Migrationsmodell.
 - Abbildung des neutralen `DataChunk`-Modells auf Parquet-Spalten
 - Umgang mit Decimal, Temporal, Binary, UUID, JSON, Arrays und Geometry
 - Multi-Table-Export mit stabilen Dateinamen
-- Kompatibilitaetsprobe mit DuckDB (`read_parquet`)
+- Kompatibilitaetsprobe mit DuckDB (`read_parquet`) und Apache Arrow
 - Entscheidungsvorlage fuer einen spaeteren Implementierungsplan
 
 ### 3.2 Nicht in Scope
@@ -97,6 +97,7 @@ nicht in den ersten Parquet-Schnitt hineingezogen werden.
 | Wie wird Geometry serialisiert? | WKB bevorzugt, optional WKT als spaeterer Modus |
 | Wie wird JSON serialisiert? | String vs. Binary/JSON logical type, DuckDB-Kompatibilitaet |
 | Wie wird Schema-Metadatenverlust vermieden? | Sidecar mit neutralem Schema oder TableManifest |
+| Wie liest `data import` Parquet-Metadaten? | Manifest-Preflight vs. reiner `DataChunkReader`-Headervertrag |
 
 ---
 
@@ -106,13 +107,16 @@ Der bestehende Format-Parameter koennte erweitert werden:
 
 ```text
 d-migrate data export --source prod --tables users,orders \
-  --format parquet --output out/export
+  --format parquet --output out/export --split-files
 
 d-migrate data import --target staging \
-  --format parquet --input out/export
+  --format parquet --source out/export
 ```
 
-Fuer Multi-Table-Exporte sollte `--output` ein Verzeichnis sein:
+Fuer Multi-Table-Exporte muss der bestehende CLI-Vertrag erhalten bleiben:
+`--output` ist gemeinsam mit `--split-files` ein Verzeichnis. Der Parquet-Plan
+sollte nicht heimlich einen zweiten Directory-Modus neben `--split-files`
+einfuehren.
 
 ```text
 out/export/
@@ -121,20 +125,38 @@ out/export/
   orders.parquet
 ```
 
+Fuer Single-Table-Exporte ist zu pruefen, ob Parquet den heutigen stdout- und
+Single-File-Vertrag technisch sauber erfuellen kann. Falls die gewaehlte
+Bibliothek einen seekbaren File-Output oder Footer-Finalisierung verlangt,
+sollte Parquet file-only dokumentiert und als formatspezifische CLI-Regel
+validiert werden.
+
 Das Manifest enthaelt mindestens:
 
 - Formatversion
 - Tabellenliste
+- explizites Mapping `Tabelle -> Datei`, inklusive schema-qualifizierter
+  Tabellen und Kollisionsschutz
 - Spaltenreihenfolge
 - neutrale Typinformationen, soweit verfuegbar
+- Nullability pro Spalte
 - Exportzeitpunkt
 - optional SHA-256 pro Datei
+
+Der Importpfad braucht dafuer einen expliziten Preflight-Vertrag: Heute liefert
+der `DataChunkReader` file-derived Header und Rows, waehrend Typen aus dem
+Ziel-JDBC-Schema kommen. Parquet darf Typ- und Nullability-Informationen daher
+nicht nur implizit im Reader verstecken. Die Evaluierung muss entscheiden, ob
+ein `ParquetManifestReader` vor dem Streaming-Import eingebunden wird oder ob
+der generische Importvertrag um formatseitige Schema-Metadaten erweitert wird.
 
 ---
 
 ## 7. Akzeptanzkriterien fuer die Evaluierung
 
 - Ein Beispiel-Export kann mit DuckDB gelesen werden.
+- Der Beispiel-Export kann mit Arrow-Werkzeugen oder Arrow-Java-Metadaten
+  inspiziert werden.
 - Ein Round-trip `PostgreSQL -> Parquet -> PostgreSQL` bleibt fuer
   Kern-Datentypen verlustfrei.
 - Ein Round-trip `MySQL -> Parquet -> SQLite` dokumentiert erwartete
@@ -150,9 +172,11 @@ Das Manifest enthaelt mindestens:
 1. JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten pruefen.
 2. Prototyp fuer `ParquetChunkWriter` mit minimalem Typmapping bauen.
 3. Prototyp gegen DuckDB lesen lassen und Typen inspizieren.
-4. Importpfad fuer denselben Prototyp pruefen.
-5. Manifest-Format skizzieren.
-6. Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope erstellen.
+4. Prototyp gegen Arrow-Werkzeuge oder Arrow-Java-Metadateninspektion pruefen.
+5. Importpfad fuer denselben Prototyp pruefen.
+6. Manifest-Format inklusive `Tabelle -> Datei`-Mapping und Import-Preflight
+   skizzieren.
+7. Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope erstellen.
 
 ---
 
@@ -161,6 +185,8 @@ Das Manifest enthaelt mindestens:
 - Parquet-Bibliotheken koennen die GraalVM-Native-Image-Planung erschweren.
 - Komplexe Typen wie Geometry, JSON und Arrays koennen ohne Sidecar
   semantische Informationen verlieren.
+- Ohne klaren Manifest-Preflight kann der Importpfad Parquet-Typinformationen
+  ignorieren und nur gegen das Ziel-JDBC-Schema importieren.
 - Parquet ist spaltenorientiert; sehr kleine Tabellen profitieren kaum.
 - Eine zu fruehe Lakehouse-Abstraktion wuerde den bestehenden Format-Adapter
   unnoetig verkomplizieren.
@@ -169,4 +195,3 @@ Das Manifest enthaelt mindestens:
   sollte klaeren, ob Chunks innerhalb einer Datei pro Tabelle akkumuliert
   werden oder ob ein adaptives Commit-Muster (Mindestbatchgroesse vor Flush)
   noetig wird, sobald der Writer-Pfad streamingnah arbeitet.
-
