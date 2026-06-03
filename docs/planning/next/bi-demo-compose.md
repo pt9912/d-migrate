@@ -191,19 +191,40 @@ Cloud-Abhaengigkeit einzufuehren.
   `.env.example`
 - **Prefix fuer Laeufe**: `runs/<timestamp-or-operation-id>/`
 - **Bucket-Init**: separater `minio-init`-Service (one-shot
-  `restart: "no"`), der `minio/mc` startet und
-  `mc mb --ignore-existing local/dmigrate-demo` ausfuehrt. Service
-  setzt `depends_on.minio: { condition: service_healthy }`.
-- **Healthcheck**:
+  `restart: "no"`), der `minio/mc` startet und mit eingebautem
+  Retry auf MinIO wartet (`mc alias set` retry-Schleife oder
+  `mc ready local`), anschliessend `mc mb --ignore-existing
+  local/dmigrate-demo` ausfuehrt. Konkretes Pattern:
 
   ```yaml
-  healthcheck:
-    test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
-    interval: 10s
-    timeout: 5s
-    retries: 12
-    start_period: 5s
+  minio-init:
+    image: minio/mc:RELEASE.2025-09-07T16-13-09Z
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 \
+        $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
+      do
+        echo 'waiting for minio…'; sleep 2
+      done;
+      mc mb --ignore-existing local/$${MINIO_BUCKET}
+      "
+    restart: "no"
   ```
+
+- **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
+  `minio`-Service. Das offizielle `minio/minio`-Image enthaelt
+  weder `curl` noch `wget` verlaesslich
+  ([minio/minio#18389](https://github.com/minio/minio/issues/18389)),
+  und ein `mc`-Check wuerde einen zweiten Container im selben
+  Compose-Service brauchen. Stattdessen wartet `minio-init` selbst
+  bis zum erfolgreichen `mc alias set`; alle weiteren Services
+  (z. B. `dmigrate`) haengen via `depends_on:
+  minio-init: { condition: service_completed_successfully }` an
+  diesem Init-Service statt am MinIO-Server direkt. Damit ist
+  „MinIO ist nutzbar" eindeutig pinbar, ohne auf Image-interne
+  HTTP-Tools angewiesen zu sein.
 
 Der erste Demo-Schnitt muss noch keine produktive S3-Integration in
 `d-migrate` voraussetzen. Solange der Object-Storage-ArtifactStore noch nicht
@@ -235,8 +256,12 @@ POSTGRES_PASSWORD=demo-pg-pw-change-me
 POSTGRES_PORT=55432
 
 # MinIO — Demo-only credentials, NOT for production
+# Defaults absichtlich auf den MinIO-Bekanntwert minioadmin/minioadmin,
+# damit die Copy-Paste-Befehle in §6 und im README ohne env-Resolver
+# laufen. README warnt explizit, dass diese Werte vor jedem nicht-
+# lokalen Lauf zu ersetzen sind.
 MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=demo-minio-pw-change-me
+MINIO_ROOT_PASSWORD=minioadmin
 MINIO_API_PORT=59000
 MINIO_CONSOLE_PORT=59001
 MINIO_BUCKET=dmigrate-demo
@@ -245,28 +270,34 @@ MINIO_BUCKET=dmigrate-demo
 METABASE_PORT=3000
 ```
 
-Konvention: Passwoerter aller Services tragen den `change-me`-Suffix
-als sichtbaren Marker, dass sie Demo-Defaults sind. `.gitignore`
-muss `.env` (ohne `.example`) ausschliessen.
+Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix als
+sichtbaren Marker. MinIO-Defaults sind bewusst `minioadmin`/
+`minioadmin`, damit `mc alias set local http://localhost:59000
+$MINIO_ROOT_USER $MINIO_ROOT_PASSWORD` (siehe §6) ohne
+zusaetzliches Lookup laeuft. `.gitignore` muss `.env` (ohne
+`.example`) ausschliessen; README dokumentiert das Risiko explizit.
 
 ### 5.6 `.d-migrate.yaml` (Skeleton)
 
+`.d-migrate.yaml` wird vom CLI-Resolver
+([`NamedConnectionResolver.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
+Zeile 46) als `database.connections.<name>: "<scheme>://..."`-
+**String-URL** gelesen, **nicht** als objektfoermiger Eintrag. Das
+URL-Schema folgt
+[`ConnectionUrlParser`](../../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionUrlParser.kt)
+(Zeile 12ff): `postgresql://` (nicht `jdbc:postgresql://`).
+`${ENV_VAR}`-Substitution ist Bestand der Resolver-Konvention.
+
 ```yaml
-connections:
-  demo_pg:
-    driver: postgresql
-    url: jdbc:postgresql://localhost:55432/dmigrate_demo
-    user: dmigrate
-    # Demo-only — read from env (`${POSTGRES_PASSWORD}`) statt
-    # hier hartzukodieren. Resolver-Konvention siehe
-    # `docs/user/guide.md` Connection-Refs-Block.
-    password: ${POSTGRES_PASSWORD}
+database:
+  connections:
+    demo_pg: "postgresql://dmigrate:${POSTGRES_PASSWORD}@localhost:55432/dmigrate_demo"
 ```
 
 Wenn die Demo aus dem Container-CLI-Pfad (§5.4) laeuft, ersetzt der
-Compose-Service-Eintrag die `url` durch
-`jdbc:postgresql://postgres:5432/dmigrate_demo`. README dokumentiert
-beide Varianten.
+Compose-Service-Eintrag den Host-Teil durch
+`postgresql://dmigrate:${POSTGRES_PASSWORD}@postgres:5432/dmigrate_demo`.
+README dokumentiert beide Varianten.
 
 ---
 
@@ -275,14 +306,20 @@ beide Varianten.
 Ein minimaler Demo-Ablauf:
 
 ```text
-docker compose up -d
+set -a; source examples/bi-demo/.env; set +a
+docker compose -f examples/bi-demo/docker-compose.yml up -d
 d-migrate schema reverse --source demo_pg --output out/reverse.yaml
 d-migrate data profile --source demo_pg --output out/profile.json
 d-migrate schema generate --source out/reverse.yaml --target postgresql
-mc alias set local http://localhost:59000 minioadmin minioadmin
-mc mb --ignore-existing local/dmigrate-demo
-mc cp --recursive out/ local/dmigrate-demo/runs/manual/
+mc alias set local "http://localhost:${MINIO_API_PORT}" \
+   "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
+mc mb --ignore-existing "local/${MINIO_BUCKET}"
+mc cp --recursive out/ "local/${MINIO_BUCKET}/runs/manual/"
 ```
+
+Hinweis: `minio-init` (siehe §5.3) faehrt den `mc mb`-Schritt schon
+beim Compose-Start aus; der manuelle `mc mb` oben ist daher
+idempotent und nur fuer den Copy-Paste-Flow explizit aufgefuehrt.
 
 Danach kann Metabase im Browser auf die Demo-DB zeigen und einfache Fragen
 beantworten:
@@ -306,17 +343,36 @@ Der Demo-Datenbestand sollte klein, aber realistisch sein:
   ~165/Tag)
 
 Volumen ist bewusst klein (`docker compose up` < 30 s gesamt),
-deckt aber Profiling-Signale ab:
+deckt aber die heutigen Profiling-Signale ab. Die genauen
+Warning-Codes sind durch
+[`WarningCode`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/types/WarningCode.kt)
++ [`WarningRules`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/rules/WarningRules.kt)
+festgelegt; der Report rendert pro Spalte `nullCount` /
+`distinctCount` / `numericStats.{min,max,avg,sum}` etc., **kein**
+`null_ratio`-Feld.
 
 - Fremdschluessel `orders.customer_id → customers.id`,
   `order_items.{order_id,product_id}`
 - Datentypen-Mix: `int`, `text`, `timestamp with time zone`,
   `numeric(10,2)`, `boolean`, optional `jsonb` fuer eine
   Stored-Procedure-Demo
-- ~5% `NULL`-Werte in `customers.middle_name` und
-  `orders.notes` (fuer Profiling-`null_ratio`-Reports)
-- ~2 bewusst auffaellige Outlier in `order_items.unit_price`
-  (fuer Profiling-`outlier`-Warnungen)
+- Sichtbare NULL-Verteilung: `customers.middle_name` und
+  `orders.notes` mit ~5% NULL, sichtbar im
+  `column.nullCount`-Feld. (`HIGH_NULL_RATIO` feuert erst ab
+  ≥ 50% — siehe `HighNullRatioRule.threshold = 0.5`; eine
+  zusaetzliche Spalte mit ≥ 50% NULL ist optional, wenn die
+  Demo ein Warning explizit pinnen will.)
+- Bewusste Outlier in `order_items.unit_price` (z. B. ein
+  Wert > 99 999, der die `numericStats.max` sichtbar von
+  `numericStats.avg` abhebt). Ein eigener Outlier-Warning-Code
+  existiert heute **nicht** — siehe Risk #8 und BD.6+ als
+  Folge-Slice fuer Outlier-Rule.
+- `customers.email` mit ~5% leerem String fuer
+  `CONTAINS_EMPTY_STRINGS`-Warning.
+- `customers.middle_name` mit „N/A"-Eintraegen fuer
+  `POSSIBLE_PLACEHOLDER_VALUES`-Warning.
+- `products.category` als Low-Cardinality-Spalte (3-4 distinkte
+  Werte ueber ~30 Zeilen) fuer `LOW_CARDINALITY`-Warning.
 - `orders.status` deckt {`pending`, `paid`, `cancelled`,
   `refunded`} ab (fuer BI-Charts „Bestellungen pro Status")
 - ausreichend Daten fuer sinnvolle BI-Charts, aber schnell startbar
@@ -451,10 +507,18 @@ Container-CLI-Variante dokumentiert.
   liefert eine valide Reverse-Definition (alle 5 Tabellen, FKs,
   Datentypen).
 - [ ] `d-migrate data profile --source demo_pg --output out/profile.json`
-  liefert einen Profile-Report; die ~2 Outlier in
-  `order_items.unit_price` und die `null_ratio`-Reports auf
-  `customers.middle_name` / `orders.notes` sind explizit
-  sichtbar (Profile-Test pinnt sie).
+  liefert einen Profile-Report. BD.4 pinnt drei sichtbare
+  Profiling-Signale entlang heutiger
+  [`WarningCode`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/types/WarningCode.kt):
+  - `column.nullCount > 0` fuer `customers.middle_name` und
+    `orders.notes` (~5% NULL aus §7 — keine Warning, aber im
+    Report sichtbar).
+  - `numericStats.max` >> `numericStats.avg` fuer
+    `order_items.unit_price` (Outlier aus §7).
+  - Mindestens drei Warning-Codes im Report:
+    `CONTAINS_EMPTY_STRINGS` (auf `customers.email`),
+    `POSSIBLE_PLACEHOLDER_VALUES` (auf `customers.middle_name`),
+    `LOW_CARDINALITY` (auf `products.category`).
 - [ ] `d-migrate schema generate --source out/reverse.yaml --target postgresql`
   rendert eine valide DDL.
 - [ ] `mc cp --recursive out/ local/dmigrate-demo/runs/manual/`
@@ -489,15 +553,22 @@ ohne menschlichen Browser-Schritt prueft.
   prueft Container-Health (`docker compose ps --format json |
   jq …`), faehrt mindestens den d-migrate-Reverse + Profile
   Workflow aus BD.4, prueft MinIO-Upload via
-  `mc ls local/dmigrate-demo/runs/`.
+  `docker compose run --rm minio-init mc ls "local/$MINIO_BUCKET/runs/"`.
+  **mc wird via Compose-One-Shot** statt Host-Binary aufgerufen,
+  damit Demo ohne Host-`mc` laeuft; `jq` ist Host-Voraussetzung
+  (siehe README-Prereqs).
 - [ ] `examples/bi-demo/README.md` vollstaendig:
-  - Voraussetzungen (Docker, Compose, d-migrate-CLI)
+  - **Voraussetzungen (Host)**: Docker (≥ 24), Docker Compose
+    (≥ v2.20), `jq` (fuer Smoke-Script-`ps`-Parsing), d-migrate-
+    CLI. `mc` ist **keine** Host-Voraussetzung — der
+    `minio-init`-Container liefert ihn via `docker compose run`.
   - Start/Stop-Block (mit/ohne `-v`)
   - Metabase-Erstkonfiguration (Screenshot oder Schritt-fuer-Schritt)
   - d-migrate-Workflow aus BD.4 als Copy-Paste-Block
   - Cleanup-Block
   - Troubleshooting (Port-Konflikte, Healthcheck-Timeouts,
-    Metabase-`start_period`)
+    Metabase-`start_period`, MinIO via
+    `docker compose run --rm minio-init mc …`)
 - [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
   `scripts/smoke.sh` ohne Metabase-Browser-Schritt im CI
   ausfuehrt (Best-Effort, kann anfangs als
@@ -559,6 +630,16 @@ BD.1 (Compose+Healthchecks)
    der Zeit Sicherheits-Updates nicht ein. Mitigation: BD.5 + ggf.
    spaeterer „BD-Tag-Refresh"-Slice; Dependabot/Renovate-Pfad
    ausserhalb dieses Plans.
+8. **Profiling-Outlier-Code fehlt heute**.
+   [`WarningCode`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/types/WarningCode.kt)
+   kennt keinen `OUTLIER`-Code; `HIGH_NULL_RATIO` feuert erst ab
+   50%. Mitigation: BD.4-Akzeptanz beschraenkt sich auf die heute
+   verfuegbaren Codes (`CONTAINS_EMPTY_STRINGS`,
+   `POSSIBLE_PLACEHOLDER_VALUES`, `LOW_CARDINALITY`) plus
+   sichtbare `nullCount`/`numericStats.max`-Werte. Eine
+   `OUTLIER`-Rule oder ein abgesenkter `HIGH_NULL_RATIO`-
+   Threshold ist Profiling-Folge-Slice (BD.6+ oder eigener
+   `profiling-data-quality-export.md`-Sub-Slice).
 
 ---
 
