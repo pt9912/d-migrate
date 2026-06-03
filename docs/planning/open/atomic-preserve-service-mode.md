@@ -11,7 +11,7 @@
 > erfüllt:
 > - MCP-Produkt-Vertrag für `schema_migrate`-Tool (Parameter,
 >   Policy-Gates, Tenant-Modell) — eigene Vorabklärung läuft in
->   [`mcp-schema-migrate-tool.md`](mcp-schema-migrate-tool.md).
+>   [`../next/mcp-schema-migrate-tool.md`](../next/mcp-schema-migrate-tool.md).
 > - REST 1.2.0-Spezifikation für den Migrate-Pfad
 > - gRPC 1.1.8-Spezifikation für den Migrate-Pfad
 >
