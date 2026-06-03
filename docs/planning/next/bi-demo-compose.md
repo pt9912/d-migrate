@@ -122,9 +122,16 @@ examples/bi-demo/
 PostgreSQL dient als relationale Quelle fuer `d-migrate` und als Datenquelle
 fuer Metabase.
 
-- **Image**: `postgres:17-alpine` (Alpine-Variante fuer Disk-Footprint;
-  17 ist der zum Doc-Refresh aktuelle LTS-Track). Tag in
-  `docker-compose.yml` explizit pinnen, **kein** `:latest`.
+- **Image**: `postgres:17-alpine` (Alpine-Variante fuer
+  Disk-Footprint; Stand 2026-06-03 sind 17.x und 18.x beide
+  aktuell supportet — siehe
+  [PostgreSQL Release-Hinweise 18.4 / 17.10 / 16.14 / 15.18 / 14.23](https://www.postgresql.org/about/news/postgresql-184-1710-1614-1518-and-1423-released-3297/)
+  und [Docker Hub `postgres`](https://hub.docker.com/_/postgres) —;
+  17 ist die juengere stabile Reihe mit groesserer
+  Treiber-/Tooling-Vertraeglichkeit als die ganz frische 18er-Linie
+  und bewusst auf 17 statt 18 gepinnt, bis 18 in BD-Tag-Refresh
+  durchgepruft ist). Tag in `docker-compose.yml` explizit pinnen,
+  **kein** `:latest`.
 - **Datenbank**: `dmigrate_demo`
 - **User**: `dmigrate`
 - **Passwort**: nur Demo-Secret aus `.env.example`, nicht produktiv
@@ -191,9 +198,8 @@ Cloud-Abhaengigkeit einzufuehren.
   `.env.example`
 - **Prefix fuer Laeufe**: `runs/<timestamp-or-operation-id>/`
 - **Bucket-Init**: separater `minio-init`-Service (one-shot
-  `restart: "no"`), der `minio/mc` startet und mit eingebautem
-  Retry auf MinIO wartet (`mc alias set` retry-Schleife oder
-  `mc ready local`), anschliessend `mc mb --ignore-existing
+  `restart: "no"`), der `minio/mc` startet, mit eingebautem
+  Retry auf MinIO wartet und `mc mb --ignore-existing
   local/dmigrate-demo` ausfuehrt. Konkretes Pattern:
 
   ```yaml
@@ -212,6 +218,32 @@ Cloud-Abhaengigkeit einzufuehren.
       "
     restart: "no"
   ```
+
+- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service
+  **ohne** `entrypoint`-Override, damit
+  `docker compose run --rm mc-tools mc <cmd>` direkt das Image-
+  Default-Entrypoint nutzt. Service ist via `profiles: ["tools"]`
+  vom `up -d`-Default ausgeschlossen, damit er bei
+  `docker compose up` nicht startet, sondern nur bei
+  expliziten `compose run`-Aufrufen erzeugt wird:
+
+  ```yaml
+  mc-tools:
+    image: minio/mc:RELEASE.2025-09-07T16-13-09Z
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    profiles: ["tools"]
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    volumes:
+      - ./out:/work
+  ```
+
+  Damit laeuft `docker compose run --rm mc-tools mc ls
+  local/$MINIO_BUCKET/` ohne `--entrypoint`-Override und ohne
+  Host-`mc`. Das `out/`-Mount macht `mc cp` aus dem Repo-Root
+  reproduzierbar.
 
 - **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
   `minio`-Service. Das offizielle `minio/minio`-Image enthaelt
@@ -271,11 +303,13 @@ METABASE_PORT=3000
 ```
 
 Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix als
-sichtbaren Marker. MinIO-Defaults sind bewusst `minioadmin`/
-`minioadmin`, damit `mc alias set local http://localhost:59000
-$MINIO_ROOT_USER $MINIO_ROOT_PASSWORD` (siehe §6) ohne
-zusaetzliches Lookup laeuft. `.gitignore` muss `.env` (ohne
-`.example`) ausschliessen; README dokumentiert das Risiko explizit.
+sichtbaren Marker. MinIO-Defaults sind bewusst
+`minioadmin`/`minioadmin` — der MinIO-Bekanntwert — damit der
+`mc-tools`-Service (§5.3) ohne Demo-spezifisches Lookup laeuft
+und der Compose-Stack direkt mit dem aus dem Image bekannten
+Default startet. Das ist **keine** Production-Konvention; README
+dokumentiert das Risiko explizit. `.gitignore` muss `.env` (ohne
+`.example`) ausschliessen.
 
 ### 5.6 `.d-migrate.yaml` (Skeleton)
 
@@ -306,20 +340,31 @@ README dokumentiert beide Varianten.
 Ein minimaler Demo-Ablauf:
 
 ```text
+cp examples/bi-demo/.env.example examples/bi-demo/.env  # einmalig
 set -a; source examples/bi-demo/.env; set +a
 docker compose -f examples/bi-demo/docker-compose.yml up -d
+
+export D_MIGRATE_CONFIG=examples/bi-demo/.d-migrate.yaml
 d-migrate schema reverse --source demo_pg --output out/reverse.yaml
 d-migrate data profile --source demo_pg --output out/profile.json
 d-migrate schema generate --source out/reverse.yaml --target postgresql
-mc alias set local "http://localhost:${MINIO_API_PORT}" \
-   "${MINIO_ROOT_USER}" "${MINIO_ROOT_PASSWORD}"
-mc mb --ignore-existing "local/${MINIO_BUCKET}"
-mc cp --recursive out/ "local/${MINIO_BUCKET}/runs/manual/"
+
+docker compose -f examples/bi-demo/docker-compose.yml run --rm mc-tools \
+    mc cp --recursive /work/ "local/${MINIO_BUCKET}/runs/manual/"
 ```
 
-Hinweis: `minio-init` (siehe §5.3) faehrt den `mc mb`-Schritt schon
-beim Compose-Start aus; der manuelle `mc mb` oben ist daher
-idempotent und nur fuer den Copy-Paste-Flow explizit aufgefuehrt.
+Hinweise:
+
+- `examples/bi-demo/.d-migrate.yaml` liegt **nicht** im Repo-Root;
+  ohne `D_MIGRATE_CONFIG` (oder `--config examples/bi-demo/.d-migrate.yaml`)
+  findet der CLI-Resolver die Datei nicht — Fallback ist nur
+  `./.d-migrate.yaml`
+  ([`NamedConnectionResolver.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
+  Zeile 36).
+- `minio-init` (siehe §5.3) erzeugt den Bucket beim Compose-Start;
+  ad-hoc `mc`-Aufrufe laufen ueber den separaten `mc-tools`-Service
+  (§5.3), der das `out/`-Verzeichnis als `/work` mountet. Damit ist
+  `mc` **keine** Host-Voraussetzung.
 
 Danach kann Metabase im Browser auf die Demo-DB zeigen und einfache Fragen
 beantworten:
@@ -406,18 +451,32 @@ geschnitten, dass nach jedem Slice ein nutzbarer Zustand entsteht
 ### Sub-Slice BD.1 — Compose-Skeleton + Healthchecks
 
 **Ziel**: `docker compose up -d` startet PostgreSQL, MinIO und den
-`minio-init`-One-Shot stabil. Healthchecks gruen.
+`minio-init`-One-Shot stabil. Pro Service ein passender Erreichbarkeits-
+Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
 
 **Akzeptanzkriterien**:
 
-- [ ] `examples/bi-demo/docker-compose.yml` mit den drei Services
-  aus §5.1 + §5.3 (Postgres, MinIO, minio-init) und gepinnten
-  Image-Tags.
+- [ ] `examples/bi-demo/docker-compose.yml` mit den vier Services
+  aus §5.1 + §5.3 (Postgres, MinIO, minio-init, mc-tools) und
+  gepinnten Image-Tags.
 - [ ] `examples/bi-demo/.env.example` aus §5.5; `.env` ist via
   `examples/bi-demo/.gitignore` ausgeschlossen.
-- [ ] Healthchecks aus §5.1 + §5.3 in Compose-Block; nach
-  `docker compose up -d` erreichen alle Services
-  `state=healthy` innerhalb von 90 s.
+- [ ] Nach `docker compose up -d` (ohne Profile) gilt innerhalb
+  von 90 s:
+  - **Postgres**: `state=healthy` via `pg_isready`-Healthcheck
+    aus §5.1.
+  - **MinIO-Server**: keine Healthcheck-Bedingung. Erreichbarkeit
+    wird **nicht** direkt am Container gemessen, sondern indirekt
+    via `minio-init`.
+  - **minio-init**: `state=exited (0)`, d. h.
+    `service_completed_successfully` — Bucket-Init lief grun und
+    der mc-Retry hat MinIO als nutzbar bestaetigt.
+  - **mc-tools**: nicht gestartet (steht unter
+    `profiles: ["tools"]` und wird nur durch
+    `docker compose run mc-tools …` materialisiert).
+- [ ] Smoke-Check fuer „MinIO ist nutzbar":
+  `docker compose run --rm mc-tools mc ls local/` exited 0 und
+  listet den Demo-Bucket.
 - [ ] `docker compose down -v` raeumt Named-Volumes komplett ab
   (Idempotenz-Test).
 - [ ] `make ci` grün (keine zusätzlichen Tests, aber Doc-Linting
@@ -521,11 +580,14 @@ Container-CLI-Variante dokumentiert.
     `LOW_CARDINALITY` (auf `products.category`).
 - [ ] `d-migrate schema generate --source out/reverse.yaml --target postgresql`
   rendert eine valide DDL.
-- [ ] `mc cp --recursive out/ local/dmigrate-demo/runs/manual/`
-  laed die Artefakte in MinIO (Smoke-Vertrag aus §5.3).
-- [ ] README dokumentiert Container-CLI-Variante als optional
-  (mit `docker-compose.yml`-Service-Eintrag oder
-  `docker run --rm --network bi-demo_default ...`).
+- [ ] `docker compose run --rm mc-tools mc cp --recursive
+  /work/ "local/${MINIO_BUCKET}/runs/manual/"` laed die Artefakte
+  in MinIO (Smoke-Vertrag aus §5.3; `out/` ist im `mc-tools`-
+  Service als `/work` gemountet). Host-`mc` ist nicht
+  erforderlich.
+- [ ] README dokumentiert Container-CLI-Variante fuer
+  d-migrate als optional (mit `docker-compose.yml`-Service-
+  Eintrag oder `docker run --rm --network bi-demo_default ...`).
 - [ ] `make ci` grün.
 
 **Betroffene Dateien**:
@@ -553,22 +615,23 @@ ohne menschlichen Browser-Schritt prueft.
   prueft Container-Health (`docker compose ps --format json |
   jq …`), faehrt mindestens den d-migrate-Reverse + Profile
   Workflow aus BD.4, prueft MinIO-Upload via
-  `docker compose run --rm minio-init mc ls "local/$MINIO_BUCKET/runs/"`.
-  **mc wird via Compose-One-Shot** statt Host-Binary aufgerufen,
-  damit Demo ohne Host-`mc` laeuft; `jq` ist Host-Voraussetzung
-  (siehe README-Prereqs).
+  `docker compose run --rm mc-tools mc ls "local/${MINIO_BUCKET}/runs/"`.
+  **`mc` wird ausschliesslich ueber den `mc-tools`-Service
+  (§5.3) aufgerufen**, damit die Demo ohne Host-`mc` laeuft; `jq`
+  ist Host-Voraussetzung (siehe README-Prereqs).
 - [ ] `examples/bi-demo/README.md` vollstaendig:
   - **Voraussetzungen (Host)**: Docker (≥ 24), Docker Compose
     (≥ v2.20), `jq` (fuer Smoke-Script-`ps`-Parsing), d-migrate-
     CLI. `mc` ist **keine** Host-Voraussetzung — der
-    `minio-init`-Container liefert ihn via `docker compose run`.
+    `mc-tools`-Service (§5.3) liefert ihn via
+    `docker compose run`.
   - Start/Stop-Block (mit/ohne `-v`)
   - Metabase-Erstkonfiguration (Screenshot oder Schritt-fuer-Schritt)
   - d-migrate-Workflow aus BD.4 als Copy-Paste-Block
   - Cleanup-Block
   - Troubleshooting (Port-Konflikte, Healthcheck-Timeouts,
     Metabase-`start_period`, MinIO via
-    `docker compose run --rm minio-init mc …`)
+    `docker compose run --rm mc-tools mc …`)
 - [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
   `scripts/smoke.sh` ohne Metabase-Browser-Schritt im CI
   ausfuehrt (Best-Effort, kann anfangs als
@@ -620,9 +683,16 @@ BD.1 (Compose+Healthchecks)
    `random()` kann ueber PG-Major-Versionen leicht variieren.
    Mitigation: Image-Tag `postgres:17-alpine` pinnen; bei
    Major-Update Seed-Regeneration testen.
-5. **Demo-Credentials in Produktion**. Mitigation: `change-me`-
-   Suffix auf allen Default-Passworten (§5.5), README warnt
-   explizit, `.env` ist gitignored.
+5. **Demo-Credentials in Produktion**. Mitigation: PostgreSQL-
+   Default-Passwort traegt `change-me`-Suffix als sichtbaren
+   Marker (§5.5). MinIO laeuft bewusst auf den MinIO-Default-
+   Credentials `minioadmin`/`minioadmin`, damit `mc-tools` und
+   Compose-Stack ohne Demo-spezifische Substitution starten —
+   das ist eine Demo-Konvention, nicht ein versehentlicher
+   `change-me`-Verlust. README warnt explizit fuer beide Faelle
+   (PG-Passwort vor jedem nicht-lokalen Run ersetzen; MinIO-
+   Default vor jedem nicht-lokalen Run ersetzen UND
+   `mc-tools`-`MC_HOST_local` neu setzen). `.env` ist gitignored.
 6. **Port-Konflikte mit Host-Diensten**. Mitigation: Ports
    bewusst hoch gewaehlt (`55432`, `59000`, `59001`, `3000`);
    README-Troubleshooting-Block deckt Anpassung ab.
