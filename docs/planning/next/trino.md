@@ -3,7 +3,7 @@
 > Dokumenttyp: Architektur- und Umsetzungsplan  
 > Status: Entwurf (2026-05-15, Review-Update 2026-06-03)  
 > Roadmap-Slot: Kandidat für 1.x (nicht Teil 0.9.x-Milestones)  
-> Referenzen: `spec/architecture.md`, `spec/cli-spec.md`, `spec/connection-config-spec.md`, `docs/planning/roadmap.md`
+> Referenzen: `spec/architecture.md`, `spec/cli-spec.md`, `spec/connection-config-spec.md`, `docs/planning/in-progress/roadmap.md`
 
 ## Kurzfassung
 
@@ -111,6 +111,43 @@ Verbindlich für Tranche 1:
 
 Diese Architekturentscheidung ist **DoD-Pflicht in Tranche 1a** (siehe §6).
 
+### 4.2 Mapping d-migrate-URL-Properties → Trino-JDBC-Properties
+
+Der generische `JdbcUrlBuilder` merged `ConnectionConfig.params` roh in
+die JDBC-URL
+(`hexagon/ports-common/.../JdbcUrlBuilder.kt`). Trinos JDBC-Treiber
+verlangt jedoch **case-sensitive** Property-Namen (`SSL` statt `ssl`,
+`SSLTrustStorePath` statt `trustStorePath`, `sessionProperties` als
+gemeinsame Map etc.). Ohne explizites Mapping würden korrekt
+dokumentierte d-migrate-URLs vom Trino-Treiber ignoriert.
+
+Phase 1 liefert daher einen **dedizierten Trino-`JdbcUrlBuilder`** im
+`driver-trino`-Modul mit folgender Übersetzungstabelle (Quelle:
+<https://trino.io/docs/current/client/jdbc.html>; bei
+Treiber-Versionssprüngen ist die Tabelle vor dem Bump zu verifizieren):
+
+| d-migrate-URL-Property | Trino-JDBC-Property | Anmerkung |
+| --- | --- | --- |
+| `ssl=true\|false` | `SSL=true\|false` | Pflicht in `production`. |
+| `httpScheme=https\|http` | (kein Direct-Mapping) | Wird in `SSL=true/false` aufgelöst (§5.2.3). |
+| `requestTimeoutMs=<n>` | `requestTimeout=<n>ms` | Trino-Treiber erwartet Java-Duration-String. |
+| `accessToken=<token>` | `accessToken=<token>` | camelCase im Trino-Treiber, deckt sich mit d-migrate. |
+| `trustStorePath=<path>` | `SSLTrustStorePath=<path>` | |
+| `trustStorePassword=<pw>` | `SSLTrustStorePassword=<pw>` | |
+| `keystorePath=<path>` | `SSLKeyStorePath=<path>` | |
+| `keystorePassword=<pw>` | `SSLKeyStorePassword=<pw>` | |
+| `session.<name>=<value>` *(je Eintrag)* | gesammelt in `sessionProperties=<n1>:<v1>;<n2>:<v2>` | URL-encoded; Reihenfolge deterministisch (lexikografisch). |
+| `user`, `password` (aus `userinfo`/`DM_TRINO_PASSWORD`) | `user`, `password` | |
+
+Regeln:
+
+- Properties außerhalb dieser Tabelle und ohne Phase-1-Allowlist-Eintrag
+  werden vor dem Bau der JDBC-URL abgelehnt (`cli_config_error`).
+- Der Trino-Builder benutzt **nicht** den generischen Roh-Merge;
+  `ConnectionConfig.params` bleibt für andere Dialekte unverändert.
+- DoD-Tranche-2: Smoke-Test verifiziert, dass die Mapping-Tabelle
+  tatsächlich greift (mind. ein TLS-Pfad + ein Session-Property).
+
 ## 5) Kontrakt: Dialekt und Connection-URL
 
 ### 5.1 Dialekt
@@ -130,8 +167,18 @@ Kanonische Form:
 trino://user@host:port/catalog/schema
 ```
 
-Das Format ist absichtlich ohne `db:`-Prefix; es folgt dem etablierten
-d-migrate-URL-Schema (`<dialect>://...`) aus `spec/connection-config-spec.md`.
+Die **URL-Form selbst** trägt keinen `db:`-Prefix; sie folgt dem etablierten
+d-migrate-URL-Schema (`<dialect>://...`) aus `spec/connection-config-spec.md`
+und wird auch ohne Prefix von `--source`/`--target` der meisten Kommandos
+(`schema reverse`, `data export`, `data transfer`, `data profile`) akzeptiert.
+
+Hinweis zur Operand-Notation von `schema compare`:
+
+`schema compare` parst prefixlose Operanden gemäß
+`CompareOperandParser` als **Dateipfade**. Trino-Quellen/-Ziele müssen
+deshalb dort mit dem CLI-Operand-Prefix `db:` notiert werden, also
+`db:trino://...`. Siehe `spec/cli-spec.md`, Abschnitt „Operand-Notation".
+Andere Kommandos brauchen den Prefix nicht.
 
 Beispiele:
 
@@ -491,6 +538,31 @@ Hinweis zu Phase-1-Allowlist:
 
 ### 5.4 Fehler- und Signalisationsregeln
 
+#### 5.4.0 Begriffsabgrenzung „action_required"
+
+In `spec/cli-spec.md` ist `action_required` ein **Sidecar-Report-Status**
+für übersprungene Schema-Objekte bei `schema generate` — Exit 0, kein
+Abbruch. Das Trino-Plan verwendet den Begriff jedoch zusätzlich für
+**harte Guard-/Parser-Verweigerungen**. Damit dieser Doppel-Sinn nicht
+kollidiert, gilt für die Trino-Implementierung dieses Mapping:
+
+| Anlass | Fehlerklasse | Exit-Code | Wo dokumentiert |
+| --- | --- | --- | --- |
+| URL-Parse-Fehler (kanonische Form, Pfadsegmente, Percent-Decoding) | `cli_config_error` | 7 | spec/cli-spec.md §7 |
+| Nicht erlaubte Query-Properties / Duplikate / ungültige Werte | `cli_config_error` | 7 | spec/cli-spec.md §7 |
+| Verstoß gegen Runtime-Profil-/Transport-/Secret-Guards | `cli_config_error` | 7 | dieser Plan §5.2.3–5.3 |
+| Capability-Verweigerung (`data transfer --target trino://...`) | `cli_usage_error` | 2 | spec/cli-spec.md §7 |
+| `schema compare` mit `metadata_coverage=missing` ohne `--allow-metadata-gaps` | `MANUAL_ACTION_REQUIRED` als Compare-Reason, Exit ≥ 1 | siehe Compare-Sidecar | spec/cli-spec.md §14.3 |
+| `schema generate`/`data import` für TRINO in Phase 1 | `cli_usage_error` | 2 | dieser Plan §5.6 |
+
+Wo nachfolgend „`action_required`" steht, ist das die **Trino-spezifische
+Guard-Klasse mit Exit-Code 7 oder 2** (siehe Tabelle), nicht der
+Sidecar-Status der DDL-Generierung. Implementierungen müssen diese
+Differenzierung in Fehlermeldungen explizit machen (z. B. Präfix
+`trino: cli_config_error: ...`).
+
+
+
 - fehlendes oder unklar formatiertes `catalog` -> deterministische Fehlermeldung mit
   Beispiel-URL.
 - fehlendes oder leeres `schema` -> parse-time `action_required` mit Hinweis auf kanonische
@@ -519,7 +591,7 @@ Hinweis zu Phase-1-Allowlist:
 - Nicht unterstützte URL-Properties -> sofortiger Abbruch via `action_required`.
 - Doppelte Query-Properties -> sofortiger Abbruch via `action_required`.
 - Trino ist in Phase 1 ein **write-freier** Adapter; alle write-Pfade sind für
-  Target/Sink gesperrt. `schema compare --target trino://...` bleibt als
+  Target/Sink gesperrt. `schema compare --target db:trino://...` bleibt als
   read-only Pfad explizit erlaubt.
   Nicht erlaubte Zielpfade brechen deterministisch mit `action_required` ab.
 - Capability- oder Guard-Fehler sind dauerhaft reproduzierbar und damit als
@@ -619,12 +691,15 @@ Connector-Freigabe deaktiviert; die Tabelle bildet die einzige Ausnahmeliste ab.
 Regel:
 
 - `Target` für Trino ist in Phase 1 standardmäßig gesperrt.
-- `schema compare --target trino://...` bleibt erlaubt, weil semantisch read-only.
+- `schema compare --target db:trino://...` bleibt erlaubt, weil semantisch read-only.
 - Write-/Generate-Funktionen erfordern immer einen expliziten Capability-Review je
   Connector.
 
-- `data profile` ist in Phase 1 Source-only; Zielseite mit Trino (`--target trino://...`) ist
-  nicht erlaubt.
+- `data profile` ist in Phase 1 Source-only. Das ist strukturell durch
+  die CLI-Definition durchgesetzt — `data profile` hat keine
+  `--target`-Option. Eine spätere Ergänzung dieser Option würde gegen
+  diesen Plan verstoßen; der CLI-Help-Snapshot-Test in Tranche 1a
+  detektiert eine solche Änderung.
 
 ## 6) Umsetzungsphasen
 
@@ -663,13 +738,15 @@ Validierungsregeln:
 
 - `schema reverse --source trino://... --output ...` ist lauffähig.
 - `data transfer --target trino://...` startet nicht.
-- `data profile --target trino://...` startet nicht (Source-only-Regel).
+- `data profile` kennt per CLI-Definition keine `--target`-Option;
+  Source-only ist strukturell durchgesetzt und durch Snapshot-Test gegen
+  die CLI-Help abgesichert.
 - `data profile --source trino://...` ist nur mit aktivem Profiling-Modul möglich.
 - `data profile --source trino://...` ohne Modul endet mit `action_required` + Hinweis.
 - Nicht erlaubte Query-Properties liefern reproduzierbar `action_required`.
 - Doppelte Query-Properties liefern reproduzierbar `action_required` (auch bei unterschiedlich
   kodierten Doppelungen).
-- `schema compare --target trino://...` dokumentiert `metadata_coverage` pro
+- `schema compare --target db:trino://...` dokumentiert `metadata_coverage` pro
   Objektklasse.
 
 ### 6.1 Phase-1-Abnahmekriterien
@@ -684,7 +761,7 @@ Validierungsregeln:
 - Security:
   - Secret-Maskierung in Logs, Fehlermeldungen und Hilfetexten ist verifiziert.
 - Compare:
-  - `schema compare --target trino://...` liefert `metadata_coverage`.
+  - `schema compare --target db:trino://...` liefert `metadata_coverage`.
   - Transport-/URL-Randfälle:
     - `ssl=true` + `httpScheme=http` und `ssl=false` + `httpScheme=https` liefern
       `action_required`.
@@ -745,52 +822,74 @@ Write-Pfade nur bei expliziter Fähigkeit je Connector:
 
 ## 8) CLI-Beispiele
 
+Hinweise vorab:
+
+- `schema compare` braucht den CLI-Operand-Prefix `db:` für Trino
+  (siehe §5.2.1); andere Kommandos akzeptieren die rohe URL.
+- Produktivbeispiele setzen einen HTTPS-Endpoint voraus (z. B. Port 8443
+  hinter TLS-Termination). Der Default-Transport ist `ssl=true`/`https`.
+- Lokale `localhost:8080`-Beispiele zeigen ausschließlich den
+  `non_production`-Pfad mit aktiver Insecure-Transport-Signatur. Ohne diese
+  Signatur lehnt der Adapter `httpScheme=http`/`ssl=false` ab.
+
+### 8.1 Produktive Setups (HTTPS-Default)
+
 ```bash
 d-migrate schema reverse \
-  --source trino://analyst@localhost:8080/iceberg/default \
+  --source trino://analyst@trino.internal:8443/iceberg/default \
   --output lakehouse.yaml
 
 d-migrate schema compare \
   --source file:lakehouse.yaml \
-  --target trino://analyst@localhost:8080/postgresql/public
-
-# Trino verwendet implizit den Production-Modus, wenn kein Runtime-Profil gesetzt ist.
-d-migrate schema reverse \
-  --source trino://analyst@localhost:8080/iceberg/default \
-  --output lakehouse.yaml
+  --target db:trino://analyst@trino.internal:8443/postgresql/public
 
 d-migrate data export \
-  --source trino://analyst@localhost:8080/iceberg/default \
+  --source trino://analyst@trino.internal:8443/iceberg/default \
   --tables orders,customers \
   --format csv
 
-# Unsicherer Transport nur explizit in non_production mit zusätzlicher Signatur aktiv.
+# mit aktivem driver-trino-profiling
+d-migrate data profile \
+  --source trino://analyst@trino.internal:8443/hive/default \
+  --tables orders,customers
+
+d-migrate data transfer \
+  --source trino://analyst@trino.internal:8443/iceberg/default \
+  --target postgresql://app@db.internal:5432/app \
+  --tables customers
+```
+
+### 8.2 Lokale Entwicklung (non_production, HTTP auf 8080)
+
+```bash
+# Komplette Signatur erforderlich: CLI-Flag + ENV + httpScheme=http
+DM_TRINO_ALLOW_INSECURE_TRANSPORT=true \
 d-migrate schema reverse \
   --trino-runtime-profile=non_production \
   --allow-insecure-trino-transport \
-  DM_TRINO_ALLOW_INSECURE_TRANSPORT=true \
-  --source trino://analyst@localhost:8080/iceberg/default?httpScheme=http \
+  --source 'trino://analyst@localhost:8080/iceberg/default?httpScheme=http' \
   --output lakehouse.yaml
 
-# mit aktivem driver-trino-profiling
+DM_TRINO_ALLOW_INSECURE_TRANSPORT=true \
+d-migrate schema compare \
+  --trino-runtime-profile=non_production \
+  --allow-insecure-trino-transport \
+  --source file:lakehouse.yaml \
+  --target 'db:trino://analyst@localhost:8080/postgresql/public?httpScheme=http'
+```
+
+### 8.3 Bewusst blockierte Pfade (Phase 1)
+
+```bash
+# Profiling-Modul nicht aktiv → Tranche-3-Guard blockiert mit MANUAL_ACTION_REQUIRED
 d-migrate data profile \
-  --source trino://analyst@localhost:8080/hive/default \
+  --source trino://analyst@trino.internal:8443/hive/default \
   --tables orders,customers
 
-# ohne Profiling-Modul in Phase 1 (blockiert)
-d-migrate data profile \
-  --source trino://analyst@localhost:8080/hive/default \
-  --tables orders,customers
-
+# data transfer → trino (Sink) ist Source-only in Phase 1
 d-migrate data transfer \
-  --source trino://analyst@localhost:8080/iceberg/default \
-  --target postgresql://app@localhost:5432/app \
-  --tables customers
-
-# Wird in Phase 1 geblockt
-d-migrate data transfer \
-  --source postgresql://app@localhost:5432/app \
-  --target trino://analyst@localhost:8080/iceberg/default \
+  --source postgresql://app@db.internal:5432/app \
+  --target trino://analyst@trino.internal:8443/iceberg/default \
   --tables customers
 ```
 
@@ -868,7 +967,7 @@ Hinweise:
 - `adapters:driven:driver-trino` (neu)
 - `adapters:driven:driver-trino-profiling` (Phase-1-Pflicht; siehe §4)
 - `hexagon`-Ports bei späteren Phasen (Capability-Guards)
-- `docs/planning/roadmap.md` (Trino als 1.x-Kandidat eintragen)
+- `docs/planning/in-progress/roadmap.md` (Trino als 1.x-Kandidat eintragen)
 - ggf. User-Dokumentation
 
 ## 11) Akzeptanzkriterien (gesamt)
@@ -882,9 +981,9 @@ Hinweise:
 - `data transfer` ist Phase 1 Source-only.
 - `data transfer --target trino://...` blockiert reproduzierbar mit `action_required`.
 - `schema generate --target trino://...` bleibt bis Phase 3 deaktiviert.
-- `schema compare --source file... --target trino://...` listet
+- `schema compare --source file:... --target db:trino://...` listet
   Connector-Grenzen explizit (`oid`/Constraints/Indexes/Procedures).
-- `schema compare --source trino://... --target file...` liefert dieselben
+- `schema compare --source db:trino://... --target file:...` liefert dieselben
   `metadata_coverage`-/Grenzwarnungen und Dokumentationen konsistent zur
   Objektklasse.
 - URL-Properties außerhalb der Allowlist liefern reproduzierbar `action_required`.
@@ -940,7 +1039,13 @@ URL-Parsing/Capabilities von der Härtung in 1b.
   liefert deterministisch `action_required`.
 - [ ] `data transfer --target trino://...` bricht mit klarer
   Guard-Fehlermeldung ab (rein Source-only).
-- [ ] `data profile --target trino://...` ist als Source-only klar abgelehnt.
+- [ ] Source-only von `data profile` ist strukturell durchgesetzt: das
+  Kommando hat per CLI-Spec keine `--target`-Option
+  (`adapters/driving/cli/.../DataProfileCommand.kt`). Tranche-1a-DoD
+  prüft, dass diese Eigenschaft per Test gegen die CLI-Definition
+  reproduzierbar verifiziert wird (Snapshot-/CLI-Help-Test), damit eine
+  spätere `--target`-Ergänzung nicht unbemerkt einen Trino-Schreibpfad
+  öffnen kann.
 - [ ] `ConnectionSecretMasker.sensitiveQueryKeys` ist um `accessToken`,
   `trustStorePassword`, `keystorePassword` (case-sensitive camelCase)
   erweitert. `session.*`-Werte werden im selben Pass maskiert.
@@ -1060,17 +1165,17 @@ Voraussetzung: Tranche 1a und 1b vollständig abgeschlossen.
 Ziel: Qualitätsregeln und Fehlermeldungen sind für Produktivbetrieb stabil.
 Voraussetzung: Tranche 2 vollständig abgeschlossen.
 
-- [ ] `schema compare --source file... --target trino://...` ist lauffähig.
-- [ ] `schema compare --source file... --target trino://...` veröffentlicht
+- [ ] `schema compare --source file:... --target db:trino://...` ist lauffähig.
+- [ ] `schema compare --source file:... --target db:trino://...` veröffentlicht
   `metadata_coverage` nach Objektklasse.
 - [ ] **Default-Connector-Coverage-Map** (`iceberg`, `v1`) ist im
-  `driver-trino` mitgeliefert und greift, wenn `--target trino://.../iceberg/...`
+  `driver-trino` mitgeliefert und greift, wenn `--target db:trino://.../iceberg/...`
   verwendet wird. Andere Connectoren liefern für nicht-Basis-Klassen
   `missing`.
 - [ ] `schema compare` nutzt bei `metadata_coverage=missing` standardmäßig
   `action_required`; mit dokumentierter Risikoannahme optional via
   `--allow-metadata-gaps`.
-- [ ] `schema compare --source trino://... --target file...` liefert dieselben
+- [ ] `schema compare --source db:trino://... --target file:...` liefert dieselben
   Coverage-/Warnungs- und Dokumentationsregeln konsistent.
 - [ ] `data profile --source trino://...` ist lauffähig (mit Profiling-Modul).
 - [ ] `data profile --source trino://...` ohne Modul liefert `action_required`
