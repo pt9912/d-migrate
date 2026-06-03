@@ -1,6 +1,6 @@
 # MCP-Tool `schema_migrate` / `schema_migrate_start`
 
-**Status**: Vorabklärung
+**Status**: Vorabklärung (Strawman §3 ergänzt 2026-06-03)
 
 **Trigger**: Die Service-Mode-JVM-Verträge in
 [`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md)
@@ -19,12 +19,14 @@ Auch [`done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expans
 `schema_migrate_start`) wäre ein eigener Produkt-/Contract-Slice."
 
 Diese Datei ist die Erstanlage genau dafür — sie führt **noch keinen**
-Scope, sondern sammelt offene Produkt-/Vertrags-Fragen, die geklärt
-sein müssen, bevor der Slice nach `next/` wandern kann.
+aktivierbaren Scope, sondern dokumentiert den aktuellen Strawman zu
+den Produkt-/Vertrags-Fragen, die geklärt sein müssen, bevor der Slice
+nach `next/` wandern kann.
 
 **Aktivierungsbedingung** (Move nach `next/`): die unter §3
-gelisteten offenen Fragen sind beantwortet, ein Wire-Vertrag-Entwurf
-analog [`spec/mcp-server.md`](../../../spec/mcp-server.md) §
+skizzierten Entscheidungen sind bestätigt oder korrigiert, ein
+Wire-Vertrag-Entwurf analog
+[`spec/mcp-server.md`](../../../spec/mcp-server.md) §
 „`data_import_start` und `data_transfer_start`" liegt vor, und ein
 Sub-Slice-Schnitt für Handler + Tool-Schema + Policy-Gate + E2E-Test
 ist skizziert.
@@ -38,14 +40,14 @@ Aus dem bestehenden Service-Mode-Plan und dem
 fixieren — sie sind Konsequenzen schon-getroffener Architektur-
 Entscheidungen, keine Produkt-Fragen mehr:
 
-- **Job-Worker-Pattern statt Sync-Tool.** Schema-Migrate-Calls
+- **Job-Worker-Pattern für den Apply-Pfad.** Schema-Migrate-Applys
   dauern Sekunden bis Minuten (Lock-Acquire + Probe + Protected DDL
-  + Restore). Das MCP-Tool ist konsequent als
+  + Restore). Der nicht-`dryRun`-Pfad ist konsequent als
   `schema_migrate_start` strukturiert: liefert sofort
   `{ jobId, resourceUri, executionMeta.requestId }`-Envelope,
   Status-Updates fließen über `resources/read` am Job-Resource-Pfad
   analog `data_transfer_start` ([`spec/mcp-server.md`](../../../spec/mcp-server.md)
-  §661ff).
+  §661ff). `dryRun: true` ist die Plan-only-Ausnahme aus §3.1.
 - **Idempotency-Wiring direkt am Handler** (gefaltete Sub-Slice B
   aus `atomic-preserve-service-mode` §5 B). Der bestehende
   [`IdempotencyStore`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt)
@@ -55,11 +57,12 @@ Entscheidungen, keine Produkt-Fragen mehr:
   [`OperationalMcpRegistries`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/OperationalMcpRegistries.kt)
   konsumiert, `resultRef` ist die `jobId` (nicht der
   `ExecutionTrace`).
-- **Connection-Resolution analog `data_transfer_start`.** Source
+- **Connection-Resolution analog `data_transfer_start`.** Live-Source
   und Target werden als tenant-scoped
   `dmigrate://tenants/<tenant>/connections/<name>`-URIs
-  übergeben; die JDBC-URLs leben nie im Wire-Vertrag (siehe
-  Fingerprint-Vertrag §700ff).
+  übergeben; alternativ kann die Source aus einem tenant-scoped
+  Schema-Artefakt kommen. Die JDBC-URLs leben nie im Wire-Vertrag
+  (siehe Fingerprint-Vertrag §700ff).
 - **Cancel über `JobCancelHandler`-Polling.** Sub-Slice E hat den
   `CancellationToken` schon bis in den Dialekt-Adapter durchgezogen
   (commit `7e6f39ae`); der Handler füttert ihn aus dem
@@ -84,122 +87,167 @@ Ausgangsbasis für die Spec-Diskussion:
 // schema_migrate_start (Skizze, kein Vertrag)
 {
   "idempotencyKey": "smg-2026-06-03-acme-warehouse-v3",
+  "tenant": "acme",
   "sourceConnectionRef": "dmigrate://tenants/acme/connections/legacy-pg",
+  // oder, exakt eine Source muss gesetzt sein:
+  // "sourceArtifactRef": "dmigrate://tenants/acme/artifacts/schema-legacy-pg-20260603",
   "targetConnectionRef": "dmigrate://tenants/acme/connections/warehouse",
-  "schemaRef":           "dmigrate://tenants/acme/schemas/orders-v3",
+  "dryRun": false,
   "lockTimeoutMs": 30000,
-  "tenant": "acme"
+  "options": {
+    "preserveSequences": true,
+    "atomicPreserve": true
+  }
 }
 ```
 
-Bei Erfolg: symmetrischer Job-Start-Envelope (`jobId`,
+Bei `dryRun: false`: symmetrischer Job-Start-Envelope (`jobId`,
 `resourceUri`, `executionMeta.requestId`) — exakt wie
 `data_transfer_start`.
 
-## 3. Offene Produkt-/Vertrags-Fragen
+Bei `dryRun: true`: Plan-only-Antwort mit Plan-Artefakt,
+Per-Objekt-Sichtbarkeit, `payloadFingerprint` und `planFingerprint`;
+kein `BEGIN`, kein Dialekt-Lock, kein Probe/Apply/Restore.
 
-Die folgenden Fragen blockieren den Move nach `next/`:
+## 3. Strawman zu den Produkt-/Vertrags-Fragen
 
-### 3.1 Scope-Variante: `schema_migrate_start` oder zweistufig?
+Die folgenden Antworten sind ein Entscheidungsvorschlag, noch kein
+implementierter Vertrag. Sie ersetzen den reinen Fragenkatalog durch
+konservative Defaults, an denen der spätere `next/`-Scope geschnitten
+werden kann.
 
-`data_transfer_start` ist single-step (Caller startet einen Job,
-Worker tut alles). Schema-Migrate hat eine natürliche Trennung
-zwischen **Plan-Erzeugung** (Reverse + Diff + Plan-Validate) und
-**Plan-Anwendung** (Protected-Lock + Probe + Restore). Optionen:
+### 3.1 Scope-Variante — Einstufig + `dryRun`
 
-- **(a)** Einstufig: `schema_migrate_start` macht Plan + Anwendung
-  als ein Job. Idempotency-Key deckt beides.
-- **(b)** Zweistufig: `schema_migrate_plan_start` liefert ein
-  Plan-Artefakt; `schema_migrate_apply_start` konsumiert das
-  Artefakt + Approval. Erlaubt explizites Operator-Sign-off
-  zwischen Plan und Apply (analog `procedure_transform_plan` /
-  `procedure_transform_execute`).
+`schema_migrate_start` bleibt einstufig. Der Apply-Pfad
+erzeugt den Plan und wendet ihn im selben Job an; Idempotency-Key,
+Approval, Quota und Audit beziehen sich auf diesen einen Job.
 
-Option (b) ist konsistent mit dem KI-Tool-Pattern in
-[`spec/ki-mcp.md`](../../../spec/ki-mcp.md), passt aber schlechter
-zur „atomic Probe+Apply"-Garantie aus
-[`done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md).
+Begründung:
 
-### 3.2 Schema-Quelle: Inline, ConnectionRef oder ArtifactRef?
+- Die Atomic-Preserve-Garantie aus
+  [`done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md)
+  ist Probe + Apply in einer Transaktion. Ein getrenntes
+  `plan_start`/`apply_start`-Paar würde zulassen, dass ein
+  Plan-Artefakt zwischen Planung und Anwendung gegen Source- oder
+  Target-Drift veraltet.
+- `data_transfer_start` ist ebenfalls einstufig; `schema_migrate_start`
+  bleibt damit im etablierten Start-Tool-Pattern.
+- Operator-Sichtbarkeit läuft über `dryRun: true`: der Handler liefert
+  das Plan-Artefakt samt Fingerprints zurück, beginnt aber keine
+  Transaktion, nimmt keinen Dialekt-Lock und führt keinen Apply aus.
 
-`data_transfer_start` referenziert Connections, nicht Schemas. Für
-Migrate kommen mindestens drei Quell-Varianten in Frage:
+### 3.2 Schema-Quelle — `sourceConnectionRef` oder `sourceArtifactRef`
 
-- **`sourceConnectionRef`** — Reverse-Read live, kein
-  Pre-Materialisieren. Konsistent mit Transfer-Pattern.
-- **`sourceArtifactRef`** — ein vorher exportiertes
-  Schema-Artefakt (`d-migrate export schema`-Output) wird
-  konsumiert. Erlaubt Plan-Stabilität über Source-Drift.
-- **`schemaRef`** — eine tenant-scoped Schema-URI (würde einen
-  neuen Resource-Namespace `dmigrate://…/schemas/…` brauchen).
+Der primäre Pfad ist Live-Reverse über `sourceConnectionRef`,
+konsistent mit `data_transfer_start`.
 
-Die Wahl beeinflusst Fingerprint-Vertrag (§5.2 unten) und
-Idempotency-Replay-Semantik direkt.
+`sourceArtifactRef` ist die optionale Alternative für ein vorher
+exportiertes Schema. Das pins ein Source-Schema gegen Drift und ist
+nützlich, wenn Source und Target bewusst mit einer drift-toleranten
+Migrate-Strategie betrieben werden.
 
-### 3.3 Tenant-Modell
+`schemaRef` mit neuem `dmigrate://.../schemas/...`-Namespace wird für
+diesen Slice verworfen. Der zusätzliche Resource-Resolution-Pfad bringt
+heute keinen Nutzen und würde neues Wiring erzwingen.
 
-Sub-Slice D plant `tenant = "default"`-Konvention als Übergang
+Validierung:
+
+- `targetConnectionRef` ist Pflicht.
+- Exakt eine Source ist Pflicht: entweder `sourceConnectionRef` oder
+  `sourceArtifactRef`.
+- Beide Source-Felder gesetzt oder beide fehlend liefert
+  `INVALID_REQUEST`.
+
+### 3.3 Tenant-Modell — Explizit + Konsistenz-Check gegen URI
+
+Das `tenant`-Feld bleibt im Wire-Vertrag explizit, analog zum
+`data_transfer_start`-Pattern. Der Handler validiert, dass `tenant`
+mit dem Tenant-Segment aller Resource-Refs übereinstimmt:
+`sourceConnectionRef` oder `sourceArtifactRef` sowie
+`targetConnectionRef`.
+
+Ein Mismatch liefert `TENANT_SCOPE_MISMATCH`, nicht einen generischen
+Validation- oder Authorization-Fehler. Im Single-Tenant-Default gilt
+bis zu einem echten Tenant-Modell die Konvention `tenant: "default"`
 ([`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md)
-§5 D Risiken). Vor dem Move nach `next/` muss klar sein:
+§5 D Risiken).
 
-- Ist der `tenant`-Parameter im Wire-Vertrag explizit oder leitet
-  ihn der Handler aus dem `Principal` ab?
-- Welcher `tenant`-Wert gilt im Single-Tenant-Default-Mode?
-- Wie verträgt sich das mit dem `dmigrate://tenants/<tenant>/…`-
-  URI-Schema (Tenant ist dort schon Bestandteil der Resource-URI)?
+### 3.4 Approval-Granularität — Single-Approval + Plan-Fingerprint
 
-### 3.4 Approval-Granularität
+Der Apply-Pfad nutzt ein einzelnes Approval pro Migrate-Job. Weil §3.1
+bewusst einstufig bleibt, gibt es keinen belastbaren getrennten
+„Plan-Sign-off vor Apply"-Zeitpunkt.
 
-`data_transfer_start` nutzt einen einzelnen Approval-Key pro Job.
-Schema-Migrate berührt potenziell viele Objekte (Tabellen,
-Sequences, Constraints) — ein einzelner Approval-Key gibt
-Operatoren wenig Sichtbarkeit auf den Diff. Optionen:
+Operator-Sichtbarkeit geht trotzdem nicht verloren:
 
-- **(a)** Single-Approval pro Migrate-Job — einfach, aber
-  „blind unterzeichnet".
-- **(b)** Plan-Artefakt enthält Per-Objekt-Sichtbarkeit, Approval
-  bezieht sich auf den Plan-Fingerprint — bedingt zweistufige
-  Variante aus §3.1.
+- `dryRun: true` liefert das Plan-Artefakt, Objektliste,
+  `payloadFingerprint` und `planFingerprint`.
+- Der Audit-Trail des Apply-Jobs speichert denselben
+  `payloadFingerprint`, den erzeugten `planFingerprint` und die
+  redigierte Per-Objekt-Zusammenfassung.
+- Approval-Grants binden wie bei den bestehenden Start-Tools an
+  Principal, Tenant, Tool, Approval-Key und `payloadFingerprint`.
 
-### 3.5 Concurrency-Modell pro `targetConnectionRef`
+### 3.5 Concurrency pro `targetConnectionRef` — `maximumPoolSize=1`
 
-Sub-Slice C (Connection-Sub-Pool) plant `maximumPoolSize = 4` als
-Default für den Schreib-Pfad. Offene Frage: sollen parallele
-Migrate-Jobs gegen denselben `targetConnectionRef` zulässig sein,
-oder serialisiert der Handler sie über einen explizit beschränkten
-Pool (`maximumPoolSize = 1` pro `targetConnectionRef`)?
+Für den Migrate-Sub-Pool gilt als Default
+`maximumPoolSize = 1` pro `targetConnectionRef`.
 
-`pg_advisory_xact_lock` / MySQL `SELECT FOR UPDATE` / SQLite
-`BEGIN IMMEDIATE` würden sie auf DB-Seite ohnehin serialisieren,
-aber Pool-Borrow-Timeout-Verhalten ist anders als
-`SCHEMA_MIGRATE_LOCK_CONTENDED`-Fehler.
+Die DB-seitigen Locks (`pg_advisory_xact_lock`, MySQL
+`SELECT FOR UPDATE`, SQLite `BEGIN IMMEDIATE`) bleiben die
+Korrektheitsgrenze. Der App-Layer-Pool liefert aber früheres und
+klareres Feedback: ein konkurrierender Writer endet mit
+`SERVICE_POOL_EXHAUSTED` nach Borrow-Timeout, statt erst eine
+Connection zu blockieren und anschließend im DB-Lock-Wait zu hängen.
 
-### 3.6 Quota-Bucket-Schema
+Der Default ist pro `targetConnectionRef`-Konfiguration
+überschreibbar, falls ein Betreiber bewusst mehrere parallele
+Schreiber zulassen will.
 
-Sub-Slice D plant
-`QuotaScope("schema_migrate", tenant=<tenant>, schema=<targetRef>)`.
-Offene Frage:
+### 3.6 Quota-Bucket-Schema — Concurrency-MVP
 
-- Reicht ein Concurrency-Quota („max N parallele Migrate-Jobs pro
-  Tenant pro `targetRef`"), oder braucht es zusätzlich einen
-  Time-Window-Quota („max N Migrate-Jobs pro Stunde pro Tenant")?
-- Wie greift das Quota in der zweistufigen Variante (§3.1 b) — auf
-  `plan_start` oder `apply_start` oder beide?
+Der MVP nutzt nur ein Concurrency-Quota:
+`QuotaScope("schema_migrate", tenant=<tenant>, schema=<targetRef>)`
+mit „max N parallele Migrate-Jobs" pro Ziel-Scope.
 
-### 3.7 Fingerprint-Eingaben
+Time-Window-Quotas („max N Migrate-Jobs pro Stunde") bleiben
+deferred, bis Betreiberfeedback sie verlangt. Für die einstufige
+Variante ist die Semantik lokal: das Quota greift bei Job-Start vor
+dem Pool-Borrow und wird beim terminalen Job-Status oder durch einen
+Sweeper wieder freigegeben.
+
+### 3.7 Fingerprint-Eingaben — Reverse-Hashes + kanonische Optionen
 
 Der Fingerprint-Vertrag aus
 [`spec/mcp-server.md`](../../../spec/mcp-server.md) §700ff
-verbietet rohe SQL/Filter-Strings ohne Kanonisierung. Für Migrate:
+verbietet rohe SQL/Filter-Strings ohne Kanonisierung. Für
+`schema_migrate_start` gibt es zwei getrennte Fingerprints:
 
-- Geht der **Plan** (kanonisierte DDL-Sequenz) in den Fingerprint,
-  oder die **Eingabe-Schemas** (Source-Reverse-Hash +
-  Target-Reverse-Hash)?
-- Wie wird `lockTimeoutMs` behandelt — Fingerprint-Pflichtfeld
-  oder nicht (es ändert das Ergebnis bei Lock-Timeout-Fall, nicht
-  beim Happy-Path)?
+- `payloadFingerprint` ist die Idempotency-/Approval-Identität.
+- `planFingerprint` ist Operator- und Audit-Sichtbarkeit für den
+  erzeugten Plan, aber nicht die Replay-Identität.
 
-### 3.8 Failure-Klassifikation am Wire
+Der `payloadFingerprint` besteht aus:
+
+- `sha256(sourceReverse)` bei `sourceConnectionRef`, oder dem
+  kanonischen Schema-Hash des `sourceArtifactRef`.
+- `sha256(targetReverse)`.
+- `sourceConnectionRef` oder `sourceArtifactRef`.
+- `targetConnectionRef`.
+- `tenant`.
+- `principal`.
+- `canonical(options)`.
+
+Die Plan-DDL selbst ist Konsequenz dieser Eingaben, nicht Eingabe des
+Jobs. Sie gehört deshalb nicht in den `payloadFingerprint`; sie kann
+aber in den `planFingerprint` eingehen.
+
+`lockTimeoutMs` ist ein Lieferungsparameter, kein
+Identitätsparameter. Ein Replay desselben Migrate-Jobs mit anderem
+Lock-Timeout bleibt semantisch derselbe Job und verändert den
+`payloadFingerprint` nicht.
+
+### 3.8 Failure-Klassifikation am Wire — Vier Codes + Atomic-Bucket
 
 Der Migrate-Pfad kennt mindestens vier Failure-Klassen, die der
 Caller unterscheidbar zurückbekommen muss:
@@ -210,8 +258,16 @@ Caller unterscheidbar zurückbekommen muss:
 - `SERVICE_RATE_LIMITED` — Quota-Exhaustion (Sub-Slice D).
 
 Plus die bestehenden Klassen aus dem Atomic-Preserve-Pfad
-(`AtomicSequencePreserveResult.Failure`-Varianten). Müssen alle in
-den MCP-Job-Status-Envelope mappen, ohne Stacktrace-Leak.
+(`AtomicSequencePreserveResult.Failure`-Varianten). Diese Varianten
+werden nicht als eigene MCP-Code-Familie aufgefächert, sondern mappen
+auf einen Sammelcode:
+
+- `SCHEMA_MIGRATE_ATOMIC_FAILURE` mit
+  `detail: { "kind": "...", ... }`, z. B. `PROBE_FAILED`,
+  `RESTORE_FAILED`, `LOCK_ESCALATION`.
+
+Stacktraces bleiben ausschließlich server-side im Audit- oder
+Log-Kontext und erscheinen nie im Wire-Envelope.
 
 ## 4. Was bewusst **kein** Teil dieser Vorabklärung ist
 
@@ -224,10 +280,10 @@ den MCP-Job-Status-Envelope mappen, ohne Stacktrace-Leak.
   ([`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md)
   §4.3) und ohne Job-Worker. Ein zukünftiger Service-Mode-CLI-
   Adapter wäre ein eigener Slice.
-- **Schema-Versionierung / Schema-Drift-Detection.** Falls
-  Variante (b) aus §3.1 gewählt wird, könnte ein Plan-Artefakt
-  veralten, bevor Apply läuft. Behandlung gehört in einen
-  Schema-Versioning-Slice, nicht hierher.
+- **Schema-Versionierung / Schema-Drift-Detection.** `sourceArtifactRef`
+  pins nur die Source-Sicht. Eine allgemeine Drift-Strategie für
+  Source/Target-Versionen, Plan-Verfall oder drift-tolerante Apply-
+  Regeln gehört in einen Schema-Versioning-Slice, nicht hierher.
 
 ## 5. Verweise
 
@@ -239,7 +295,8 @@ den MCP-Job-Status-Envelope mappen, ohne Stacktrace-Leak.
   Analogie.
 - [`spec/ki-mcp.md`](../../../spec/ki-mcp.md) — zweistufiges
   Pattern (`procedure_transform_plan` /
-  `procedure_transform_execute`) als Diskussionsbasis für §3.1 (b).
+  `procedure_transform_execute`) als bewusst nicht übernommene
+  Kontrastfolie zu §3.1.
 - [`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md) —
   Policy-Gate-Architektur (Approval + Audit + Quota), die
   `schema_migrate_start` übernehmen kann.
