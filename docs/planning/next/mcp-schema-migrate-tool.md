@@ -122,15 +122,15 @@ und Apply, gemeinsamer Error-Envelope.
     },
     "sourceConnectionRef": {
       "type": "string",
-      "pattern": "^dmigrate://tenants/[a-z0-9-]+/connections/[A-Za-z0-9._-]+$"
+      "pattern": "^dmigrate://tenants/[^/]+/connections/[^/]+$"
     },
     "sourceSchemaRef": {
       "type": "string",
-      "pattern": "^dmigrate://tenants/[a-z0-9-]+/schemas/[A-Za-z0-9._-]+$"
+      "pattern": "^dmigrate://tenants/[^/]+/schemas/[^/]+$"
     },
     "targetConnectionRef": {
       "type": "string",
-      "pattern": "^dmigrate://tenants/[a-z0-9-]+/connections/[A-Za-z0-9._-]+$"
+      "pattern": "^dmigrate://tenants/[^/]+/connections/[^/]+$"
     },
     "dryRun": { "type": "boolean", "default": false },
     "lockTimeoutMs": {
@@ -167,6 +167,16 @@ sind durch
 [`JsonSchemaDialect.DRAFT_07_FORBIDDEN_KEYWORDS`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/JsonSchemaDialect.kt)
 verboten.
 
+Die Ref-Patterns prüfen **strukturell** das URI-Skelett
+(`scheme://tenants/<segment>/<kind>/<segment>`), nicht das
+Tenant-/ID-Zeichenset. Der zentrale Parser
+[`ServerResourceUri.parse`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/server/core/resource/ServerResourceUri.kt)
+erzwingt anschließend `^[A-Za-z0-9_\-]+$` für beide Segmente. Diese
+Aufteilung vermeidet Schema-vs-Parser-Drift: Schema-Verstöße liefern
+`VALIDATION_ERROR` mit struktureller Begründung, semantische
+Verstöße (verbotene Sonderzeichen) liefern denselben Fehlercode aus
+dem Parser-Pfad.
+
 `tenant` ist **kein** Wire-Feld — analog
 [`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
 liest der Handler `context.principal.effectiveTenantId` und prüft
@@ -185,13 +195,15 @@ Handler (analog
   [`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
   Zeile 292ff). Eine semantisch passendere
   `TENANT_SCOPE_DENIED`-Migration ist Risk #8.
-- Approval-Flow folgt dem bestehenden Job-Start-Pattern: ohne
-  passenden `approvalToken` liefert der Handler
-  `POLICY_REQUIRED` mit Challenge-`details` (analog
-  [`JobStartHandlerSupport.toToolCallOutcome`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt)).
+- Approval-Flow folgt dem bestehenden Job-Start-Pattern aus
+  [`JobStartHandlerSupport.toToolCallOutcome`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt):
+  fehlender oder noch nicht ausgestellter `approvalToken` →
+  `POLICY_REQUIRED` mit Challenge-`details` (Zeile 131-146);
+  vorhandener, aber ungültiger Token →
+  `POLICY_DENIED` via `PolicyDeniedException` (Zeile 147-148).
   Der Caller reicht den Token im Folge-Call nach. Bei `dryRun=true`
-  ist `approvalToken` egal — der Pfad geht keine Job-Start-Pipeline
-  durch.
+  ist `approvalToken` egal — der Pfad geht keine Job-Start-
+  Pipeline durch.
 
 ### 2.2 Response — Dry-Run-Envelope
 
@@ -264,16 +276,24 @@ Der Wire-Envelope passt 1:1 auf den bestehenden
 `code: ToolErrorCode`, `message: String`,
 `details: List<ToolErrorDetail>` (jeder
 [`ToolErrorDetail`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelope.kt)
-ist `{ key, value }` mit String-Wert), `requestId: String?`. Beispiel
-für einen Lock-Timeout:
+ist `{ key, value }` mit String-Wert), `requestId: String?`. Er ist
+**ausschließlich** für synchrone Tool-Result-Codes (§3.8) reserviert;
+Worker-Failures (Lock-Timeout, Pool-Exhaustion, Atomic-Failure)
+erscheinen als Job-Status-Detail über `resources/read` und **nicht**
+hier. Beispiel für die häufigste synchrone Apply-Antwort
+(`POLICY_REQUIRED`-Challenge):
 
 ```jsonc
 {
-  "code":    "SCHEMA_MIGRATE_LOCK_TIMEOUT",
-  "message": "Acquiring dialect lock exceeded lockTimeoutMs=30000",
+  "code":    "POLICY_REQUIRED",
+  "message": "Policy approval required",
   "details": [
-    { "key": "lockTimeoutMs", "value": "30000" },
-    { "key": "dialect",       "value": "postgresql" }
+    { "key": "approvalRequestId",   "value": "appr-…" },
+    { "key": "correlationKind",     "value": "MIGRATE_START" },
+    { "key": "correlationKey",      "value": "smg-2026-06-03-…" },
+    { "key": "payloadFingerprint",  "value": "sha256:…" },
+    { "key": "requiredScopes",      "value": "dmigrate:data:write" },
+    { "key": "reasons",             "value": "no-active-grant" }
   ],
   "requestId": "req-…"
 }
@@ -380,10 +400,12 @@ Zeitpunkt.
 Der Flow folgt dem bestehenden Token-Challenge-Pattern aus
 [`JobStartHandlerSupport.toToolCallOutcome`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt):
 
-- `dryRun: false` ohne passenden `approvalToken` →
+- `dryRun: false` ohne `approvalToken` →
   `POLICY_REQUIRED`-Antwort mit `details` (`approvalRequestId`,
   `correlationKind`, `correlationKey`, `payloadFingerprint`,
-  `requiredScopes`, `reasons`). Der Caller reicht den Token im
+  `requiredScopes`, `reasons`).
+- `dryRun: false` mit ungültigem `approvalToken` →
+  `POLICY_DENIED`-Antwort (Grant invalid). Der Caller reicht den Token im
   Folge-Call nach.
 - Approval-Grants binden an `principal`, `tenant`, `tool`,
   `correlationKey` und `payloadFingerprint`. Replay mit anderem
@@ -537,10 +559,14 @@ Enum-Werte hinzu (F.1).
   `requestedTenant` aus
   `TenantScopeDeniedException`
   ([`ApplicationException.kt:149`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)).
-- `POLICY_REQUIRED` — Apply ohne `approvalToken` oder mit
-  ungültigem Token. `details` enthalten `approvalRequestId`,
+- `POLICY_REQUIRED` — Apply ohne `approvalToken` (Challenge-
+  Antwort). `details` enthalten `approvalRequestId`,
   `correlationKind`, `correlationKey`, `payloadFingerprint`,
   `requiredScopes`, `reasons` (§3.4).
+- `POLICY_DENIED` — Apply mit vorhandenem, aber ungültigem
+  `approvalToken` (z. B. abgelaufener Grant, anderer Principal,
+  abweichender `payloadFingerprint`). `details` enthalten
+  `policyName` und `reason` aus `PolicyDeniedException`.
 - `IDEMPOTENCY_CONFLICT` — Replay mit gleichem
   `idempotencyKey`, aber abweichendem `payloadFingerprint`.
 - `RATE_LIMITED` — `JobStartOrchestrator.reserveQuota` liefert
@@ -655,10 +681,10 @@ mit Title/Description/ErrorCodes versorgt.
   - `ERROR_CODES["schema_migrate_start"]` enthält **nur die
     Tool-Result-Codes** aus §3.8 — die der Tool-Call selbst
     synchron emittieren kann:
-    `POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
-    `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND`,
+    `POLICY_REQUIRED`, `POLICY_DENIED`, `IDEMPOTENCY_CONFLICT`,
+    `RATE_LIMITED`, `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND`,
     `TENANT_SCOPE_DENIED` (für SchemaRef-Tenant-Mismatch),
-    `UNSUPPORTED_TOOL_OPERATION` (Pre-F.5-Stub).
+    `UNSUPPORTED_TOOL_OPERATION` (Pre-F.4-Stub).
     Worker-Failure-Codes (`SCHEMA_MIGRATE_LOCK_TIMEOUT`,
     `SERVICE_POOL_EXHAUSTED`, `SCHEMA_MIGRATE_ATOMIC_FAILURE`)
     erscheinen ausschließlich im Job-Status-Detail und gehören
@@ -671,8 +697,9 @@ mit Title/Description/ErrorCodes versorgt.
   `SCHEMA_MIGRATE_ATOMIC_FAILURE`. Sie werden zwar dem Enum
   hinzugefügt (für Job-Result-Failure-Klassifikation), aber **nicht**
   in `ERROR_CODES["schema_migrate_start"]` aufgenommen. Bestehende
-  Codes (`POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
-  `RESOURCE_NOT_FOUND`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
+  Codes (`POLICY_REQUIRED`, `POLICY_DENIED`,
+  `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`, `RESOURCE_NOT_FOUND`,
+  `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `UNSUPPORTED_TOOL_OPERATION`) werden wiederverwendet — siehe
   §3.8.
 - [ ] Drei neue `ApplicationException`-Subtypen anlegen, weil
@@ -839,6 +866,11 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
   committet den Job atomar (Zeile 67ff). Approval-Wiring ist
   damit **untrennbar** an den Job-Start gebunden — kein
   „Approval-only"-Pfad nötig.
+- [ ] Apply mit ungültigem `approvalToken` (Grant invalid,
+  anderer Principal, abweichender `payloadFingerprint`) →
+  `POLICY_DENIED` via `PolicyDeniedException`
+  ([`JobStartHandlerSupport.kt`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt)
+  Zeile 147). Kein Job-Start, kein Quota-Reservation.
 - [ ] Quota-Reservation läuft synchron im Commit-Pfad mit
   `QuotaKey(tenantId, ACTIVE_JOBS, principalId,
   operation="schema_migrate_start")`. RateLimited liefert
@@ -900,8 +932,12 @@ pinnt das volle Vertragsbündel.
   (`JobStartHandlerOutcome.AlreadyStarted`).
 - [ ] Scenario 4: Replay mit fremdem `payloadFingerprint` →
   `IDEMPOTENCY_CONFLICT`.
-- [ ] Scenario 5: Quota-Exhaustion → synchroner `RATE_LIMITED`
+- [ ] Scenario 5a: Quota-Exhaustion → synchroner `RATE_LIMITED`
   (kein Job).
+- [ ] Scenario 5b: Apply ohne `approvalToken` → `POLICY_REQUIRED`
+  mit Challenge-Details.
+- [ ] Scenario 5c: Apply mit ungültigem `approvalToken` →
+  `POLICY_DENIED`.
 - [ ] Scenario 6: Cancel-Mid-Apply → Job-Status `CANCELLED` via
   `resources/read` + Rollback (kein Wire-Error vom Start-Tool).
 - [ ] Scenario 7: Lock-Timeout → Job-Status `FAILED` mit
@@ -919,7 +955,7 @@ pinnt das volle Vertragsbündel.
 - Neuer Test:
   `adapters/driving/mcp/src/test/kotlin/dev/dmigrate/mcp/integration/McpSchemaMigrateStartScenarioTest.kt`
 
-**Dependencies**: F.5.
+**Dependencies**: F.4.
 
 **Risiken**: niedrig — Harness existiert, das Test-Profil ist
 mechanische Komposition.
