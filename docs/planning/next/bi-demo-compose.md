@@ -122,8 +122,13 @@ examples/bi-demo/
 PostgreSQL dient als relationale Quelle fuer `d-migrate` und als Datenquelle
 fuer Metabase.
 
-- **Image**: `postgres:17-trixie` (Debian-13-Trixie-Basis,
-  **nicht** `-alpine`, **nicht** `-bookworm`).
+- **Image**: `postgres:17.10-trixie` (Debian-13-Trixie-Basis,
+  **nicht** `-alpine`, **nicht** `-bookworm`). Tag bewusst mit
+  Patch-Komponente — `postgres:17-trixie` driftet mit jedem
+  17.x-Update und ist deshalb fuer den Seed-Determinismus aus
+  §7/§10 Risk #4 ungeeignet. Optional zusaetzlich Image-Digest
+  (`@sha256:…`) pinnen, sobald Docker-Hub-Digest stabil
+  reproduzierbar ist.
 
   Begruendung — Alpine vs. Debian: Alpine setzt auf `musl`
   libc, das unter Multi-Thread-Last (parallele Backends,
@@ -174,9 +179,16 @@ fuer Metabase.
 Metabase ist fuer die erste Demo geeigneter als Superset, weil es schnell
 startet und wenig Initialkonfiguration braucht.
 
-- **Image**: `metabase/metabase:v0.52.10.4` (zum Doc-Refresh aktueller
-  stable-Track; bei Pflege auf neueren stable umstellen). Explizit
-  pinnen, **kein** `:latest`.
+- **Image**: `metabase/metabase:v0.55.13` (zum Doc-Refresh
+  juengste 0.55er-Patch-Release; bewusst auf die 0.55-Linie
+  gepinnt statt auf die ganz aktuelle 0.61er, weil 0.55 die
+  juengste durchgepruefte UI-stabile Reihe fuer Schritt-fuer-
+  Schritt-Screenshots im README ist — siehe
+  [Metabase Releases](https://github.com/metabase/metabase/releases)
+  und [Docker Hub `metabase/metabase`](https://hub.docker.com/r/metabase/metabase)).
+  Bei BD-Tag-Refresh ein eigener Slice: Screenshots fuer
+  aktuelle stable einsammeln, dann Tag-Update + README-Folge.
+  Explizit pinnen, **kein** `:latest`.
 - **Port**: lokal `3000`
 - **State-Volume**: Named-Volume `metabase-data` fuer das interne
   H2-State-File (Demo-Default; eine produktive Metabase-Deployment-
@@ -206,9 +218,20 @@ MinIO dient als lokaler S3-kompatibler Speicher fuer Demo-Artefakte. Der
 Service macht die Zero-Disk-Richtung greifbar, ohne direkt eine echte
 Cloud-Abhaengigkeit einzufuehren.
 
-- **Image**: `minio/minio:RELEASE.2025-09-07T16-13-09Z` (Server) +
-  `minio/mc:RELEASE.2025-09-07T16-13-09Z` (Client). Pinning auf die
-  selben RELEASE-Tags, damit Server + Client zusammenpassen.
+- **Image (Server)**: `minio/minio:RELEASE.2025-09-07T16-13-09Z` —
+  zum Doc-Refresh juengster verfuegbarer Server-Tag.
+- **Image (Client `mc`)**: `minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1` —
+  bewusst nicht der gleiche Tag wie der Server, weil das
+  `minio/mc`-Repo auf Docker Hub aktuell auf
+  `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes sichtbares
+  Tag stehen bleibt (siehe Risk #9).
+- **Server-Service braucht `env_file: .env`**: ohne Container-
+  Env startet der MinIO-Server zwar, antwortet aber mit
+  `Default credentials are deprecated`-Modus oder lehnt
+  Logins ab. Das `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`-Paar
+  muss aus dem env_file in den Server-Container kommen
+  (Compose-Interpolation allein reicht **nicht**, weil sie nur
+  `$VAR`-Substitution im YAML macht, nicht im Container).
 - **API-Port**: lokal `59000`
 - **Console-Port**: lokal `59001`
 - **Bucket**: `dmigrate-demo`
@@ -222,9 +245,11 @@ Cloud-Abhaengigkeit einzufuehren.
 
   ```yaml
   minio-init:
-    image: minio/mc:RELEASE.2025-09-07T16-13-09Z
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
     depends_on:
       - minio
+    env_file:
+      - .env
     entrypoint: >
       /bin/sh -c "
       until mc alias set local http://minio:9000 \
@@ -237,31 +262,45 @@ Cloud-Abhaengigkeit einzufuehren.
     restart: "no"
   ```
 
+  Wichtig: `env_file: .env` ist **Pflicht**. `$${VAR}` im
+  Shell-Skript bezieht sich auf die **Container-Env**, die
+  Compose nur dann setzt, wenn `env_file:` oder explizites
+  `environment:` da ist. Ohne diesen Block schickt `mc alias
+  set` leere Strings als Credentials — die Container-Init
+  startet zwar, scheitert aber beim Login (siehe Risk #10).
+
 - **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service
-  **ohne** `entrypoint`-Override, damit
-  `docker compose run --rm mc-tools mc <cmd>` direkt das Image-
-  Default-Entrypoint nutzt. Service ist via `profiles: ["tools"]`
-  vom `up -d`-Default ausgeschlossen, damit er bei
+  ohne `entrypoint`-Override. **Wichtig**: das `minio/mc`-
+  Image hat `mc` bereits als `ENTRYPOINT`, der `docker compose
+  run`-Befehl uebergibt `mc` damit nur das **Subkommando** plus
+  Argumente — **kein** `mc`-Praefix:
+  `docker compose run --rm mc-tools ls local/`, nicht
+  `mc ls local/`. Service ist via `profiles: ["tools"]` vom
+  `up -d`-Default ausgeschlossen, damit er bei
   `docker compose up` nicht startet, sondern nur bei
   expliziten `compose run`-Aufrufen erzeugt wird:
 
   ```yaml
   mc-tools:
-    image: minio/mc:RELEASE.2025-09-07T16-13-09Z
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
     depends_on:
       minio-init:
         condition: service_completed_successfully
     profiles: ["tools"]
+    env_file:
+      - .env
     environment:
       MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
     volumes:
       - ./out:/work
   ```
 
-  Damit laeuft `docker compose run --rm mc-tools mc ls
-  local/$MINIO_BUCKET/` ohne `--entrypoint`-Override und ohne
-  Host-`mc`. Das `out/`-Mount macht `mc cp` aus dem Repo-Root
-  reproduzierbar.
+  Damit laeuft `docker compose run --rm mc-tools ls
+  "local/$MINIO_BUCKET/"` ohne `--entrypoint`-Override und ohne
+  Host-`mc`. Das `out/`-Mount macht `cp` aus dem Repo-Root
+  reproduzierbar. Tag auf `RELEASE.2025-08-13T08-35-41Z-cpuv1`
+  ist bewusst der **juengste auf Docker Hub publizierte
+  `minio/mc`-Tag** (siehe Risk #9).
 
 - **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
   `minio`-Service. Das offizielle `minio/minio`-Image enthaelt
@@ -368,7 +407,7 @@ d-migrate data profile --source demo_pg --output out/profile.json
 d-migrate schema generate --source out/reverse.yaml --target postgresql
 
 docker compose -f examples/bi-demo/docker-compose.yml run --rm mc-tools \
-    mc cp --recursive /work/ "local/${MINIO_BUCKET}/runs/manual/"
+    cp --recursive /work/ "local/${MINIO_BUCKET}/runs/manual/"
 ```
 
 Hinweise:
@@ -493,7 +532,7 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
     `profiles: ["tools"]` und wird nur durch
     `docker compose run mc-tools …` materialisiert).
 - [ ] Smoke-Check fuer „MinIO ist nutzbar":
-  `docker compose run --rm mc-tools mc ls local/` exited 0 und
+  `docker compose run --rm mc-tools ls local/` exited 0 und
   listet den Demo-Bucket.
 - [ ] `docker compose down -v` raeumt Named-Volumes komplett ab
   (Idempotenz-Test).
@@ -598,11 +637,12 @@ Container-CLI-Variante dokumentiert.
     `LOW_CARDINALITY` (auf `products.category`).
 - [ ] `d-migrate schema generate --source out/reverse.yaml --target postgresql`
   rendert eine valide DDL.
-- [ ] `docker compose run --rm mc-tools mc cp --recursive
+- [ ] `docker compose run --rm mc-tools cp --recursive
   /work/ "local/${MINIO_BUCKET}/runs/manual/"` laed die Artefakte
   in MinIO (Smoke-Vertrag aus §5.3; `out/` ist im `mc-tools`-
   Service als `/work` gemountet). Host-`mc` ist nicht
-  erforderlich.
+  erforderlich. **Wichtig**: kein `mc`-Praefix — das Image hat
+  `mc` als Entrypoint (§5.3).
 - [ ] README dokumentiert Container-CLI-Variante fuer
   d-migrate als optional (mit `docker-compose.yml`-Service-
   Eintrag oder `docker run --rm --network bi-demo_default ...`).
@@ -633,7 +673,7 @@ ohne menschlichen Browser-Schritt prueft.
   prueft Container-Health (`docker compose ps --format json |
   jq …`), faehrt mindestens den d-migrate-Reverse + Profile
   Workflow aus BD.4, prueft MinIO-Upload via
-  `docker compose run --rm mc-tools mc ls "local/${MINIO_BUCKET}/runs/"`.
+  `docker compose run --rm mc-tools ls "local/${MINIO_BUCKET}/runs/"`.
   **`mc` wird ausschliesslich ueber den `mc-tools`-Service
   (§5.3) aufgerufen**, damit die Demo ohne Host-`mc` laeuft; `jq`
   ist Host-Voraussetzung (siehe README-Prereqs).
@@ -649,7 +689,8 @@ ohne menschlichen Browser-Schritt prueft.
   - Cleanup-Block
   - Troubleshooting (Port-Konflikte, Healthcheck-Timeouts,
     Metabase-`start_period`, MinIO via
-    `docker compose run --rm mc-tools mc …`)
+    `docker compose run --rm mc-tools <subcmd> …` — kein
+    `mc`-Praefix, §5.3)
 - [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
   `scripts/smoke.sh` ohne Metabase-Browser-Schritt im CI
   ausfuehrt (Best-Effort, kann anfangs als
@@ -699,8 +740,9 @@ BD.1 (Compose+Healthchecks)
    PostgreSQL + MinIO + Metabase.
 4. **PG-Version-Drift bei Seed-Determinismus**. `setseed()` +
    `random()` kann ueber PG-Major-Versionen leicht variieren.
-   Mitigation: Image-Tag `postgres:17-trixie` pinnen; bei
-   Major-Update Seed-Regeneration testen.
+   Mitigation: Image-Tag `postgres:17.10-trixie` pinnen
+   (Patch-Komponente Pflicht, sonst driftet der Tag mit
+   17.x-Updates); bei Major-Update Seed-Regeneration testen.
 5. **Demo-Credentials in Produktion**. Mitigation: PostgreSQL-
    Default-Passwort traegt `change-me`-Suffix als sichtbaren
    Marker (§5.5). MinIO laeuft bewusst auf den MinIO-Default-
@@ -728,6 +770,30 @@ BD.1 (Compose+Healthchecks)
    `OUTLIER`-Rule oder ein abgesenkter `HIGH_NULL_RATIO`-
    Threshold ist Profiling-Folge-Slice (BD.6+ oder eigener
    `profiling-data-quality-export.md`-Sub-Slice).
+9. **MinIO Community Edition ist source-only, `minio/mc`-Image
+   archived**. Docker Hub
+   [`minio/mc`](https://hub.docker.com/r/minio/mc) zeigt
+   `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes Tag und ist
+   als archived markiert; das offizielle MinIO-Repository pflegt
+   die Legacy-Binaries nicht weiter (CE ist Source-Only).
+   Mitigation: Tag explizit gepinnt (§5.3); BD.1-Akzeptanz
+   verlangt `docker compose pull` vor `up -d`, damit ein nicht
+   mehr publizierter Tag sofort scheitert; spaeterer Tag-Refresh
+   bzw. Migration auf ein selbstgebautes `mc`-Image (z. B. aus
+   den offiziellen GitHub-Sources mit
+   `docker build` im Repo) ist eigener Slice. Solange die
+   Demo lokal lauft, ist das Risiko Operations-bezogen, nicht
+   funktional.
+10. **`env_file` im Compose-Container vergessen**. Compose-
+    `.env`-Interpolation ist YAML-Substitution (`${VAR}` im
+    Compose-File selbst), **nicht** Container-Env. Wer
+    `$${MINIO_ROOT_USER}` im `entrypoint`-Skript verwendet,
+    aber keinen `env_file:`- oder `environment:`-Block setzt,
+    kriegt leere Variablen und schweigende
+    `mc alias set`-Fehler.
+    Mitigation: §5.3-Skeletons zeigen `env_file: .env` als
+    Pflichtfeld fuer `minio`, `minio-init` und `mc-tools`;
+    BD.1-Akzeptanz pinnt das durch den Smoke-Check.
 
 ---
 
