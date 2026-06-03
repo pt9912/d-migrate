@@ -194,9 +194,27 @@ startet und wenig Initialkonfiguration braucht.
   dann Tag-Update + README-Folge. Explizit pinnen, **kein**
   `:latest`.
 - **Port**: lokal `3000`
-- **State-Volume**: Named-Volume `metabase-data` fuer das interne
-  H2-State-File (Demo-Default; eine produktive Metabase-Deployment-
-  Backplane via Postgres ist explizit out-of-scope).
+- **State-Persistenz**: Named-Volume `metabase-data`, gemountet
+  auf `/metabase-data` im Container; `MB_DB_FILE=/metabase-data/metabase.db`
+  zeigt Metabase auf die H2-Datei im Volume. Ohne expliziten
+  `MB_DB_FILE` schreibt Metabase die H2-DB unter
+  `/metabase.db/...` im Container-FS — der State waere nach
+  `docker compose down` weg. Konkretes Pattern:
+
+  ```yaml
+  metabase:
+    # ... image/healthcheck/depends_on ...
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    volumes:
+      - metabase-data:/metabase-data
+
+  volumes:
+    metabase-data:
+  ```
+
+  Demo-Default; eine produktive Metabase-Deployment-Backplane
+  via Postgres (`MB_DB_TYPE=postgres`) ist explizit out-of-scope.
 - **Erstkonfiguration**: manuell im Browser; README dokumentiert die
   Schritte (Admin-User anlegen, Datenquelle `demo_pg` einrichten).
 - **Healthcheck**:
@@ -391,13 +409,26 @@ URL-Schema folgt
 ```yaml
 database:
   connections:
-    demo_pg: "postgresql://dmigrate:${POSTGRES_PASSWORD}@localhost:55432/dmigrate_demo"
+    demo_pg: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}"
 ```
 
-Wenn die Demo aus dem Container-CLI-Pfad (§5.4) laeuft, ersetzt der
-Compose-Service-Eintrag den Host-Teil durch
-`postgresql://dmigrate:${POSTGRES_PASSWORD}@postgres:5432/dmigrate_demo`.
-README dokumentiert beide Varianten.
+Alle vier Bestandteile werden aus `.env` substituiert (§5.5). Damit
+funktioniert die Demo auch, wenn der User einen Port-Konflikt mit
+`POSTGRES_PORT=55433` umgeht (§10 Risk #6) — die `.d-migrate.yaml`
+bleibt unveraendert.
+
+Wenn die Demo aus dem Container-CLI-Pfad (§5.4) laeuft, nutzt der
+Compose-Service-Eintrag eine zweite Connection mit Container-DNS
+und Container-Port:
+
+```yaml
+database:
+  connections:
+    demo_pg_container: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+```
+
+Container-CLI ruft `--source demo_pg_container`; Host-CLI ruft
+`--source demo_pg`. README dokumentiert beide Varianten.
 
 ---
 
@@ -528,8 +559,10 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
 - [ ] `examples/bi-demo/docker-compose.yml` mit den vier Services
   aus §5.1 + §5.3 (Postgres, MinIO, minio-init, mc-tools) und
   gepinnten Image-Tags.
-- [ ] `examples/bi-demo/.env.example` aus §5.5; `.env` ist via
-  `examples/bi-demo/.gitignore` ausgeschlossen.
+- [ ] `examples/bi-demo/.env.example` aus §5.5;
+  `examples/bi-demo/.gitignore` schliesst `.env` **und** `out/`
+  aus (Demo-Workflow schreibt CLI-Artefakte nach
+  `examples/bi-demo/out/`, siehe §5.3 + §6).
 - [ ] **Pre-Start**: `docker compose pull` zieht alle gepinnten
   Tags und scheitert sofort, wenn ein Image auf Docker Hub
   nicht mehr verfuegbar ist (siehe Risk #9).
@@ -544,9 +577,13 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
     `service_completed_successfully` — Bucket-Init lief gruen
     und der mc-Retry hat MinIO als nutzbar bestaetigt. Pinnung
     via `docker compose ps --all --format json minio-init |
-    jq -e '.State == "exited" and .ExitCode == 0'`
-    (`--all` ist Pflicht — `docker compose ps` ohne Flag
-    listet beendete Container **nicht**).
+    jq -e 'map(select(.Service == "minio-init")) | .[0].State
+    == "exited" and .[0].ExitCode == 0'`. **Wichtig**:
+    `--format json` liefert ein **Array**, nicht ein einzelnes
+    Objekt; deshalb der `map(select(...)) | .[0]`-Pfad, der
+    auch dann robust ist, wenn Compose-Versionen das Filter-
+    Verhalten leicht aendern. `--all` ist Pflicht — `docker
+    compose ps` ohne Flag listet beendete Container **nicht**.
   - **mc-tools**: nicht gestartet (steht unter
     `profiles: ["tools"]` und wird nur durch
     `docker compose run mc-tools …` materialisiert).
@@ -610,7 +647,11 @@ gegen `demo_pg` ist im README dokumentiert.
 - [ ] `metabase`-Service aus §5.2 in `docker-compose.yml` (inkl.
   `start_period: 60s`-Healthcheck).
 - [ ] Named-Volume `metabase-data` ueberlebt `down` (aber **nicht**
-  `down -v` — siehe BD.1).
+  `down -v` — siehe BD.1). Konkreter Smoke: Admin-User anlegen +
+  `demo_pg`-Datenquelle einrichten, dann `docker compose down`,
+  dann `docker compose up -d`, dann im Browser pruefen, dass
+  Login + Datenquelle weiter da sind (`MB_DB_FILE`-Mount aus
+  §5.2 wirkt).
 - [ ] README dokumentiert: Admin-User-Anlage, Datenquelle
   `demo_pg` einrichten (Host: `postgres`, Port: `5432`,
   Datenbank/User/Passwort aus `.env`).
@@ -694,10 +735,13 @@ ohne menschlichen Browser-Schritt prueft.
 **Akzeptanzkriterien**:
 
 - [ ] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
-  prueft Container-Health (`docker compose ps --all --format
-  json | jq …` — `--all` ist Pflicht, sonst fehlt `minio-init`
-  im exited-State), faehrt mindestens den d-migrate-Reverse +
-  Profile Workflow aus BD.4, prueft MinIO-Upload via
+  prueft Container-Health via `docker compose ps --all --format
+  json | jq -e 'map(select(.Service == "minio-init")) | .[0].State
+  == "exited" and .[0].ExitCode == 0'` (`--all` ist Pflicht,
+  sonst fehlt `minio-init` im exited-State; `map(select(...))`
+  ist Pflicht, weil `--format json` ein Array liefert — siehe
+  BD.1), faehrt mindestens den d-migrate-Reverse + Profile
+  Workflow aus BD.4, prueft MinIO-Upload via
   `docker compose run --rm mc-tools ls "local/${MINIO_BUCKET}/runs/"`.
   **`mc` wird ausschliesslich ueber den `mc-tools`-Service
   (§5.3) aufgerufen**, damit die Demo ohne Host-`mc` laeuft; `jq`
