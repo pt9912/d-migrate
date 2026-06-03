@@ -240,8 +240,16 @@ MinIO dient als lokaler S3-kompatibler Speicher fuer Demo-Artefakte. Der
 Service macht die Zero-Disk-Richtung greifbar, ohne direkt eine echte
 Cloud-Abhaengigkeit einzufuehren.
 
-- **Image (Server)**: `minio/minio:RELEASE.2025-09-07T16-13-09Z` —
-  zum Doc-Refresh juengster verfuegbarer Server-Tag.
+- **Image (Server)**: `minio/minio:RELEASE.2025-10-15T17-29-55Z` —
+  Upstream-Security-Release nach
+  `RELEASE.2025-09-07T16-13-09Z`. Das aeltere Tag traegt
+  bekannte CVEs; BD.1-Akzeptanz fordert deshalb explizit den
+  Security-Release plus `docker compose pull` (siehe Risk #9).
+  Falls der Tag aus der MinIO-CE-Source-Only-Politik nicht mehr
+  auf Docker Hub publiziert ist, ist das Self-Build-Pattern aus
+  Risk #9 Pflicht — BD.1 darf **kein** bekannt-verwundbares
+  Image einbauen, nur weil ein Self-Build-Slice noch nicht
+  geliefert ist.
 - **Image (Client `mc`)**: `minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1` —
   bewusst nicht der gleiche Tag wie der Server, weil das
   `minio/mc`-Repo auf Docker Hub aktuell auf
@@ -482,7 +490,12 @@ Der Demo-Datenbestand sollte klein, aber realistisch sein:
 
 - `customers` — ~50 Zeilen
 - `products` — ~30 Zeilen
-- `orders` — ~500 Zeilen (verteilt ueber 90 Tage)
+- `orders` — ~500 Zeilen (verteilt ueber 90 Tage; deterministisch
+  via fester Anker-Konstante `:demo_start_date := DATE
+  '2026-01-01'` plus `orders.created_at := :demo_start_date +
+  ((row_number * random()) || ' days')::interval` — **kein**
+  `current_date`, **kein** `now()`, sonst flippt der Datums-
+  Korridor bei jedem Build.)
 - `order_items` — ~1500 Zeilen (3:1 zu `orders`)
 - optional `events` fuer Zeitreihen — ~10.000 Zeilen (60 Tage,
   ~165/Tag)
@@ -615,14 +628,24 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
 - [ ] `sql/001_schema.sql` mit den 5 Tabellen aus §7 (inklusive
   Fremdschluessel + Datentypen-Mix + optional `jsonb`-Spalte).
 - [ ] `sql/002_seed.sql` mit den Volumen-/Verteilungs-Vorgaben aus
-  §7. Insbesondere die ~2 Outlier in `order_items.unit_price`
-  und die ~5% `NULL`-Werte sind deterministisch reproduzierbar
-  (fester Seed in PL/pgSQL-`setseed`).
+  §7. Determinismus-Vertrag (alle drei zusammen, sonst kein
+  byte-identisches Replay):
+  - Festes `setseed(0.42)` am Skript-Beginn.
+  - Festes Datums-Anker `:demo_start_date := DATE '2026-01-01'`
+    fuer alle zeit-abhaengigen Werte. **Keine** Verwendung von
+    `current_date` / `now()` / `clock_timestamp()` im Seed.
+  - Stabiler Insert-Order: jede `INSERT INTO ... SELECT ...
+    FROM ... ORDER BY <natural-key>` mit explizitem `ORDER BY`,
+    damit die physische Reihenfolge in der Tabelle reproduzierbar
+    ist (relevant fuer Idempotenz-Hashes und Profiling-Output).
 - [ ] Mount-Punkt
   `examples/bi-demo/sql/:/docker-entrypoint-initdb.d/`-Mount in
   `docker-compose.yml`.
 - [ ] Idempotenz: `docker compose down -v && docker compose up -d`
-  produziert byte-identische Tabelleninhalte.
+  produziert byte-identische Tabelleninhalte. Pinnung via
+  Hash-Vergleich: `pg_dump --data-only --no-comments --no-sync
+  -F p -t "*" $POSTGRES_DB | sha256sum` muss zwischen zwei
+  fresh-up-Runs identisch sein.
 - [ ] `make ci` grün.
 
 **Betroffene Dateien**:
@@ -644,6 +667,12 @@ gegen `demo_pg` ist im README dokumentiert.
 
 **Akzeptanzkriterien**:
 
+- [ ] Konkreter Image-Tag-Pin: `metabase/metabase:v0.55.<patch>`
+  in §5.2 ersetzt durch den real verfuegbaren juengsten
+  0.55er-Patch zum Implementierungs-Zeitpunkt. Vor Merge muss
+  der Tag in `docker-compose.yml` gepinnt sein und
+  `docker compose pull metabase` belegt durchlaufen
+  (analog dem Pre-Start-Pull aus BD.1).
 - [ ] `metabase`-Service aus §5.2 in `docker-compose.yml` (inkl.
   `start_period: 60s`-Healthcheck).
 - [ ] Named-Volume `metabase-data` ueberlebt `down` (aber **nicht**
@@ -839,20 +868,37 @@ BD.1 (Compose+Healthchecks)
    `OUTLIER`-Rule oder ein abgesenkter `HIGH_NULL_RATIO`-
    Threshold ist Profiling-Folge-Slice (BD.6+ oder eigener
    `profiling-data-quality-export.md`-Sub-Slice).
-9. **MinIO Community Edition ist source-only, `minio/mc`-Image
-   archived**. Docker Hub
-   [`minio/mc`](https://hub.docker.com/r/minio/mc) zeigt
-   `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes Tag und ist
-   als archived markiert; das offizielle MinIO-Repository pflegt
-   die Legacy-Binaries nicht weiter (CE ist Source-Only).
-   Mitigation: Tag explizit gepinnt (§5.3); BD.1-Akzeptanz
-   verlangt `docker compose pull` vor `up -d`, damit ein nicht
-   mehr publizierter Tag sofort scheitert; spaeterer Tag-Refresh
-   bzw. Migration auf ein selbstgebautes `mc`-Image (z. B. aus
-   den offiziellen GitHub-Sources mit
-   `docker build` im Repo) ist eigener Slice. Solange die
-   Demo lokal lauft, ist das Risiko Operations-bezogen, nicht
-   funktional.
+9. **MinIO Community Edition ist source-only; Docker-Hub-Tags
+   driften gegenueber Upstream-Security-Releases**. Stand
+   2026-06-03:
+   - `minio/mc` ist auf
+     [Docker Hub](https://hub.docker.com/r/minio/mc) archiviert
+     und zeigt `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes
+     Tag; das offizielle MinIO-Repository pflegt die
+     Legacy-Binaries nicht weiter (CE ist Source-Only).
+   - `minio/minio` veroeffentlicht weiterhin Tags, aber Upstream
+     hat nach `RELEASE.2025-09-07T16-13-09Z` eine
+     Security-/CVE-Release `RELEASE.2025-10-15T17-29-55Z`
+     gefolgt; Demos und Reproduzier-Setups duerfen **nicht** auf
+     das aeltere Tag zurueckfallen.
+
+   Mitigation:
+   - Server-Tag in §5.3 ist auf den Security-Release
+     `RELEASE.2025-10-15T17-29-55Z` gesetzt.
+   - BD.1-Akzeptanz verlangt `docker compose pull` vor `up -d`;
+     fehlt der Tag auf Docker Hub, scheitert BD.1 sofort, statt
+     in eine veraltete Version zurueckzufallen.
+   - **Pflicht-Fallback bei nicht-publiziertem Tag**: BD.1 darf
+     **kein** bekannt-verwundbares Image einbauen — wenn der
+     Security-Tag aus der CE-Source-Only-Politik nicht erreichbar
+     ist, ist `examples/bi-demo/dockerfiles/minio.Dockerfile` mit
+     Self-Build aus offiziellen MinIO-GitHub-Sources
+     (`FROM golang:1.23` → `go install
+     github.com/minio/minio@<sha>`) Pflicht-Lieferung des Slices.
+     Self-Build-Image-Pinning per Digest im Compose-File.
+   - `mc`-Self-Build aus offiziellen GitHub-Sources analog;
+     Tag-Refresh bleibt eigener BD-Slice fuer den Fall, dass
+     MinIO upstream wieder Container-Releases publiziert.
 10. **`env_file` im Compose-Container vergessen**. Compose-
     `.env`-Interpolation ist YAML-Substitution (`${VAR}` im
     Compose-File selbst), **nicht** Container-Env. Wer
