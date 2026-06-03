@@ -3,7 +3,6 @@ import org.gradle.api.GradleException
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.bundling.Zip
-import org.gradle.language.jvm.tasks.ProcessResources
 import java.io.File
 import java.security.MessageDigest
 
@@ -81,13 +80,6 @@ dependencies {
     // Testcontainers-, Gson- und JSON-Schema-Validator-Test-Dependencies
     // wurden mit den E2E- und MCP-Scenario-Specs nach :test:e2e-cli
     // ausgelagert (Phase C des Specs-Move).
-}
-
-tasks.named<ProcessResources>("processResources") {
-    filteringCharset = "UTF-8"
-    filesMatching("dmigrate-version.properties") {
-        expand("projectVersion" to project.version.toString())
-    }
 }
 
 tasks.named<Zip>("distZip") {

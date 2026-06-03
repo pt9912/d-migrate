@@ -345,7 +345,14 @@ identifizieren. Befehle und jq-Filter: siehe
   tatsächlichen Vertrag prüfen
 - [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb) muss ZIP-basierte Installation, Java 21 und
   `bin/d-migrate`-Link konsistent beschreiben
-- Falls `AbstractDdlGenerator.getVersion()` hart kodiert ist: Wert prüfen
+- Seit der Versions-Quelle-Zentralisierung (2026-06-03) liest der
+  gesamte Produktiv- und Test-Pfad seine Version über
+  `dev.dmigrate.core.version.VersionInfo.PRODUCT_VERSION` aus
+  [`hexagon/core/src/main/resources/dmigrate-version.properties`](../../hexagon/core/src/main/resources/dmigrate-version.properties).
+  Diese Datei wird zur Build-Zeit aus [`build.gradle.kts`](../../build.gradle.kts)
+  (`defaultProjectVersion`) befüllt — Hardcodes in
+  `AbstractDdlGenerator`, `SchemaGenerateHelpers`,
+  `TransformationReportWriter` und `NoOpAiProvider` gibt es nicht mehr.
 
 ---
 
@@ -367,19 +374,21 @@ Alle folgenden Dateien anpassen:
 | [`README.md`](../../README.md)                                                                      | „Current Status"-Block: alte SNAPSHOT-Notiz durch released-Eintrag mit Link auf den GitHub-Tag ersetzen           |
 | [`docs/user/guide.md`](guide.md), [`spec/cli-spec.md`](../../spec/cli-spec.md), [`spec/architecture.md`](../../spec/architecture.md), [`docs/user/releasing.md`](releasing.md) | falls der Release neue Kommandos, Flags, Distributionen oder Packaging-Schritte dokumentiert                      |
 | [`docs/planning/in-progress/roadmap.md`](../planning/in-progress/roadmap.md)                                                                | Milestone-Datum aktualisieren, Footer `**Stand**:` und `**Status**:` bumpen                                       |
-| [`adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt`](../../adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt) | Falls `getVersion()` hart kodiert ist, neuen Wert eintragen                                                       |
 
-Hinweis: `Main.kt` braucht **nicht** manuell angepasst zu werden — die
-CLI-Version wird zur Build-Zeit aus [`build.gradle.kts`](../../build.gradle.kts) via
-`dmigrate-version.properties` injiziert.
+Hinweis: Kein einziger Kotlin-Pfad muss manuell angepasst werden —
+sowohl CLI als auch alle Produktiv-Konsumenten (`AbstractDdlGenerator`,
+`SchemaGenerateHelpers`, `TransformationReportWriter`,
+`NoOpAiProvider`) lesen ihre Version über
+`VersionInfo.PRODUCT_VERSION` aus dem zur Build-Zeit befüllten
+`dmigrate-version.properties` in `:hexagon:core`. Einzige zu pflegende
+Versions-Quelle ist [`build.gradle.kts`](../../build.gradle.kts) /
+`defaultProjectVersion`.
 
 ### 4.2 Release-Commit auf `develop`
 
 ```bash
 git add build.gradle.kts CHANGELOG.md README.md docs/planning/in-progress/roadmap.md
 git add docs/user/guide.md spec/cli-spec.md spec/architecture.md docs/user/releasing.md
-# Falls AbstractDdlGenerator.kt angepasst wurde:
-git add adapters/driven/driver-common/src/main/kotlin/dev/dmigrate/driver/AbstractDdlGenerator.kt
 git commit -m "Release X.Y.Z"
 git push origin develop
 ```
@@ -663,7 +672,10 @@ Für jeden Release abhaken:
 - [ ] `koverVerify`, `assembleReleaseAssets` und `release-assets` sind im Workflow korrekt verdrahtet
 - [ ] `verify-homebrew` (in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml)) und [`verify-homebrew-formula.yml`](../../.github/workflows/verify-homebrew-formula.yml) sind unverändert verdrahtet
 - [ ] `homebrew-releaser`-`install:`-Block in [`release-homebrew.yml`](../../.github/workflows/release-homebrew.yml) entspricht [`packaging/homebrew/d-migrate.rb`](../../packaging/homebrew/d-migrate.rb)
-- [ ] `AbstractDdlGenerator.getVersion()` zeigt auf neue Version
+- [ ] `VersionInfo.PRODUCT_VERSION` liefert die neue Version (kein
+      `getVersion()`-Hardcode mehr; das `processResources`-Filtering
+      in [`hexagon/core/build.gradle.kts`](../../hexagon/core/build.gradle.kts)
+      ist intakt)
 
 **Version-Bump auf `develop`**
 - [ ] [`build.gradle.kts`](../../build.gradle.kts) Version

@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.DdlStatement
@@ -429,13 +430,13 @@ class SchemaGenerateHelpersTest : FunSpec({
 
     // ─── 0.9.3 AP 6.2: mysql_named_sequences + generator version ──
 
-    test("formatJsonOutput includes generator version 0.9.7") {
+    test("formatJsonOutput includes the current d-migrate generator version") {
         val json = SchemaGenerateHelpers.formatJsonOutput(
             DdlResult(listOf(DdlStatement("SELECT 1"))),
             SchemaDefinition(name = "T", version = "1"),
             "postgresql",
         )
-        json shouldContain "\"generator\": \"d-migrate 0.9.7\""
+        json shouldContain "\"generator\": \"d-migrate ${VersionInfo.PRODUCT_VERSION}\""
     }
 
     test("formatJsonOutput with HELPER_TABLE includes mysql_named_sequences") {

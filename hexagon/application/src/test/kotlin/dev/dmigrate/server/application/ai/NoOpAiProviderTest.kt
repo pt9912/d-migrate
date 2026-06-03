@@ -80,6 +80,15 @@ class NoOpAiProviderTest : FunSpec({
         meta.requestId shouldBe null
     }
 
+    // Silent-Fallback-Guard: das `shouldBe DEFAULT_MODEL_VERSION` oben
+    // vergleicht beide Seiten gegen denselben VersionInfo-Singleton.
+    // Wenn :hexagon:core's dmigrate-version.properties hier vom
+    // Classpath verschwindet, würde der obige Test mit "unknown" ==
+    // "unknown" still passen. Dieser Guard fängt das.
+    test("DEFAULT_MODEL_VERSION resolves on the application classpath") {
+        NoOpAiProvider.DEFAULT_MODEL_VERSION shouldNotBe "unknown"
+    }
+
     test("outputFingerprint ist SHA-256 ueber output-Bytes") {
         val provider = NoOpAiProvider()
         val success = provider.invoke(request()) as AiProviderResult.Success

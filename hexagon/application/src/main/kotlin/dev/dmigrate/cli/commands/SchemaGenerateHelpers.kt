@@ -1,6 +1,7 @@
 package dev.dmigrate.cli.commands
 
 import dev.dmigrate.core.model.SchemaDefinition
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.DdlPhase
 import dev.dmigrate.driver.DdlResult
 import dev.dmigrate.driver.NoteType
@@ -102,7 +103,7 @@ object SchemaGenerateHelpers {
             appendLine("""  "command": "schema.generate",""")
             appendLine("""  "status": "completed",""")
             appendLine("""  "exit_code": 0,""")
-            appendLine("""  "generator": "d-migrate 0.9.7",""")
+            appendLine("""  "generator": "d-migrate ${VersionInfo.PRODUCT_VERSION}",""")
             appendLine("""  "target": "$dialect",""")
             if (mysqlNamedSequenceMode != null) {
                 appendLine("""  "mysql_named_sequences": "${mysqlNamedSequenceMode.cliName}",""")

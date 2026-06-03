@@ -4,6 +4,7 @@ import dev.dmigrate.core.model.SchemaDefinition
 import dev.dmigrate.core.validation.ValidationError
 import dev.dmigrate.core.validation.ValidationResult
 import dev.dmigrate.core.validation.ValidationWarning
+import dev.dmigrate.core.version.VersionInfo
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.DdlGenerator
 import dev.dmigrate.driver.DdlResult
@@ -662,9 +663,9 @@ class SchemaGenerateRunnerErrorTest : FunSpec({
         h.stdout.joined() shouldNotContain "sqlite_named_sequences"
     }
 
-    test("JSON output includes generator version 0.9.7") {
+    test("JSON output includes the current d-migrate generator version") {
         val h = harness()
         h.runner().execute(request(outputFormat = "json")) shouldBe 0
-        h.stdout.joined() shouldContain "\"generator\": \"d-migrate 0.9.7\""
+        h.stdout.joined() shouldContain "\"generator\": \"d-migrate ${VersionInfo.PRODUCT_VERSION}\""
     }
 })

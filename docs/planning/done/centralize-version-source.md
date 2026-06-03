@@ -1,6 +1,46 @@
 # Zentrale Versions-Quelle statt verstreuter `"0.9.x"`-Literale
 
-**Status**: Vorabklärung
+**Status**: Done — implementiert 2026-06-03 (open → done in einem
+Schritt, weil der Refactor in einer Sitzung machbar war).
+
+Implementierung:
+
+- `dmigrate-version.properties` von
+  `adapters/driving/cli/src/main/resources/` nach
+  `hexagon/core/src/main/resources/` verschoben (Resource +
+  `processResources`-Filter-Block wandern gemeinsam mit dem Loader).
+- `dev.dmigrate.core.version.VersionInfo` (Singleton, lazy)
+  liest die Resource via Classloader, mit
+  `unknown`-Fallback + Placeholder-Detection (`$`, `{`, `}`),
+  exakt wie der frühere `Main.cliVersion()`.
+- Vier Produktiv-Konsumenten umgestellt:
+  `AbstractDdlGenerator.getVersion()`,
+  `SchemaGenerateHelpers.formatJsonOutput` (`generator`-Feld),
+  `TransformationReportWriter.render` (YAML `generator`-Feld),
+  `NoOpAiProvider.DEFAULT_MODEL_VERSION`.
+- `Main.cliVersion()` bleibt als dünner Adapter
+  `= VersionInfo.PRODUCT_VERSION` erhalten — CLI-Testoberfläche
+  unverändert, aber Lade-Logik lebt nur einmal.
+- Acht Produktiv-Output-Tests (`AbstractDdlGeneratorTest`,
+  `SchemaGenerateHelpersTest`, `SchemaGenerateRunnerErrorTest`,
+  `TransformationReportWriterTest` 2×, `CliGenerateTestPart2` 3×)
+  asserieren jetzt gegen `VersionInfo.PRODUCT_VERSION` statt das
+  Literal.
+- `docs/user/releasing.md` §3 + §4.1 + §6 Checkliste auf die
+  einzige Versions-Quelle `build.gradle.kts` /
+  `defaultProjectVersion` reduziert.
+
+Bewusst **nicht** umgestellt (Begründung im ursprünglichen Plan
+§4 unten):
+
+- 4× MCP-IT `clientInfo.version` (`McpAi*IT`, `McpHttp*IT`,
+  `McpStdio*IT`) — Test-Client-Identität, nicht d-migrate-Version.
+- 7× MCP-Test `modelVersion = "0.9.7"` (Handler/Resource/Store-
+  Fixtures) — AI-Metadata-Fixture, nicht release-coupled.
+- 2× CLI Lock-Payload-Tests (`McpStateDirLockTest`,
+  `LockPayloadIoTest`) — Lock-Vertrag-Fixtures.
+
+---
 
 **Trigger**: Der 0.9.7-Release-Commit
 [`a991480d`](https://github.com/pt9912/d-migrate/commit/a991480d)
