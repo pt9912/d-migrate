@@ -27,12 +27,14 @@ V1 (§2) und einen Strawman zu den acht Produkt-/Vertrags-Fragen
 §5 dran ist, in `in-progress/` zu wandern und die Sub-Slices F.1-F.6
 nacheinander zu liefern.
 
-**Aktivierungsbedingung** (Move nach `in-progress/`): mindestens
-einer der C/D-Sub-Slices aus
+**Aktivierungsbedingung** (Move nach `in-progress/`): F.1
+(Tool-Schema + Discovery), F.2 (dryRun-Handler) und F.3
+(Approval-Wiring) sind alle drei ohne Service-Mode-Vorarbeit
+implementierbar und können sofort starten. F.4 (Pool-Wiring im
+Worker) blockiert auf C; F.5 (Apply mit Quota+Lock+Cancel)
+blockiert auf A + D + E (alle aus
 [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 startet — F.3 hängt an D, F.4 hängt an C. F.1 (Tool-Schema) und
-F.2 (dryRun-Handler) sind ohne Service-Mode-Vorarbeit
-implementierbar und können bei Bedarf vorgezogen werden.
+§5). F.6 (E2E) hängt an F.5.
 
 ---
 
@@ -64,8 +66,21 @@ Entscheidungen, keine Produkt-Fragen mehr:
   und Target werden als tenant-scoped
   `dmigrate://tenants/<tenant>/connections/<name>`-URIs
   übergeben; alternativ kann die Source aus einem tenant-scoped
-  Schema-Artefakt kommen. Die JDBC-URLs leben nie im Wire-Vertrag
+  `dmigrate://tenants/<tenant>/schemas/<schemaId>`-Eintrag im
+  SchemaStore kommen. Die JDBC-URLs leben nie im Wire-Vertrag
   (siehe Fingerprint-Vertrag §700ff).
+- **`payloadFingerprint` wird pre-Job-Start aus dem Wire-Payload
+  gebildet.**
+  [`JobStartOrchestrator.start`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/JobStartOrchestrator.kt)
+  Zeile 157 ruft
+  `payloadFingerprintService.fingerprint(scope=START_TOOL,
+  payload=request.payload, …)` synchron vor Idempotency- und
+  Policy-Check. Reverse-Hashes der Source-/Target-DB sind damit
+  **nicht** Teil des Idempotency-Identitäts-Fingerprints; sie würden
+  einen synchronen Live-Reverse im Handler erzwingen und das
+  Job-Start-Pattern brechen. Plan-Inhalt und Reverse-Hashes fließen
+  ausschließlich in den `planFingerprint`, der im `dryRun`-Antwort-
+  Pfad bzw. im Apply-Worker entsteht.
 - **Cancel über `JobCancelHandler`-Polling.** Sub-Slice E hat den
   `CancellationToken` schon bis in den Dialekt-Adapter durchgezogen
   (commit `7e6f39ae`); der Handler füttert ihn aus dem
@@ -201,12 +216,16 @@ Fingerprints, ohne `BEGIN`/Dialekt-Lock/Probe/Apply/Restore:
     "warningCount": 0
   },
   "executionMeta": {
-    "requestId": "req-…",
-    "tenant":    "acme",
-    "principal": "did:dmigrate:user:…"
+    "requestId": "req-…"
   }
 }
 ```
+
+`executionMeta` ist 1:1 das Format aus
+[`executionMetaJobField`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/McpToolSchemas.kt)
+(Zeile 722) — nur `requestId` ist Pflicht, Cancel-Felder sind
+optional. `tenant` und `principal` leben ausschließlich im
+Audit-Trail und im Job-Resource-URI, nicht im Wire-Envelope.
 
 ### 2.3 Response — `dryRun: false` (Apply)
 
@@ -219,12 +238,16 @@ Caller pollt Status über `resources/read` am `resourceUri`:
   "jobId":       "job-…",
   "resourceUri": "dmigrate://tenants/acme/jobs/job-…",
   "executionMeta": {
-    "requestId": "req-…",
-    "tenant":    "acme",
-    "principal": "did:dmigrate:user:…"
+    "requestId": "req-…"
   }
 }
 ```
+
+`executionMeta` folgt 1:1 dem Schema aus §2.2 — nur `requestId`
+ist Pflicht; Cancel-bezogene Felder
+(`cancelRequested`/`cancelAckPending`/…) sind optional und werden
+beim Job-Status über `resources/read` projiziert, nicht im
+Start-Envelope.
 
 Idempotency-Replay (gleicher `idempotencyKey` + gleicher
 `payloadFingerprint`) liefert denselben Envelope mit derselben
@@ -312,23 +335,28 @@ Validierung:
 - Beide Source-Felder gesetzt oder beide fehlend liefert
   `VALIDATION_ERROR`.
 
-### 3.3 Tenant-Modell — Principal-Ableitung + URI-Konsistenz-Check
+### 3.3 Tenant-Modell — Principal-Ableitung + Per-Ref-Typ-Mapping
 
 `tenant` ist **kein** Wire-Feld. Der Handler liest
 `context.principal.effectiveTenantId` als Single-Source-of-Truth und
-prüft `sourceConnectionRef` oder `sourceSchemaRef` sowie
-`targetConnectionRef` gegen diesen Tenant — exakt wie
-[`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
-Zeile 75-84.
+prüft beide Resource-Refs gegen diesen Tenant.
 
-Tenant-Segment der URI passt nicht zum Principal-Tenant →
-`VALIDATION_ERROR` mit `tenant prefix mismatch`-Violation. Dieser
-Pfad spiegelt 1:1 das Verhalten von `DataTransferStartHandler`
-Zeile 292ff: die `ValidationErrorException`-Klasse
-([`ApplicationException.kt:73`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt))
-mappt jeden Resource-Ref-Tenant-Mismatch auf den
-`VALIDATION_ERROR`-Code. Ein eigener `TENANT_SCOPE_DENIED`-Pfad ist
-**bewusst nicht** Teil dieses Slices — siehe Risk #8.
+Der Wire-Code für einen Mismatch hängt vom Ref-Typ ab und folgt
+dabei jeweils dem bestehenden Bestands-Pattern:
+
+- **`sourceConnectionRef` / `targetConnectionRef`** — analog
+  [`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
+  Zeile 292ff: `ValidationErrorException` mit
+  `tenant prefix mismatch`-Violation → `VALIDATION_ERROR`.
+- **`sourceSchemaRef`** — analog
+  [`SchemaSourceResolver`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/SchemaSourceResolver.kt)
+  Zeile 108: `TenantScopeDeniedException`
+  ([`ApplicationException.kt:149`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt))
+  → `TENANT_SCOPE_DENIED`.
+
+Diese Asymmetrie ist Bestand; ein einheitliches Mapping (alle
+Start-Tools auf `TENANT_SCOPE_DENIED`) ist eigener Folge-Slice —
+siehe Risk #8.
 
 Bis ein echtes Tenant-Modell kommt, bedient der Single-Tenant-Default
 das Pattern transparent: der Principal trägt
@@ -414,35 +442,72 @@ verbietet rohe SQL/Filter-Strings ohne Kanonisierung. Für
 - `planFingerprint` ist Operator- und Audit-Sichtbarkeit für den
   erzeugten Plan, aber nicht die Replay-Identität.
 
-Der `payloadFingerprint` besteht aus:
+Der `payloadFingerprint` wird **synchron vor dem Job-Start** aus
+dem Wire-Payload gebildet
+([`JobStartOrchestrator.start`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/job/JobStartOrchestrator.kt)
+Zeile 157, `scope = START_TOOL`). Er besteht ausschließlich aus
+schnellen Eingaben:
 
-- `sha256(sourceReverse)` bei `sourceConnectionRef`, oder
-  `SchemaIndexEntry.hash` bei `sourceSchemaRef` (kommt direkt aus
-  dem SchemaStore — keine erneute Reverse-Berechnung).
-- `sha256(targetReverse)`.
 - `sourceConnectionRef` oder `sourceSchemaRef`.
 - `targetConnectionRef`.
-- `tenant` (aus dem Principal abgeleitet, kein Wire-Feld; siehe §3.3).
-- `principal`.
+- `tenant` (aus dem Principal abgeleitet via `BindContext`).
+- `principal` (aus dem Principal über `BindContext.callerId`).
 - `canonical(options)`.
 
-Die Plan-DDL selbst ist Konsequenz dieser Eingaben, nicht Eingabe des
-Jobs. Sie gehört deshalb nicht in den `payloadFingerprint`; sie kann
-aber in den `planFingerprint` eingehen.
+`SchemaIndexEntry.hash` ist als Identitäts-Eingabe für
+`sourceSchemaRef` **erlaubt**, weil der SchemaStore-Lookup schnell
+ist und vor dem Fingerprint-Service stattfindet. Reverse-Hashes der
+Source- oder Target-DB sind dagegen **nicht** Bestandteil:
+`sourceConnectionRef` adressiert Identität über die ConnectionRef,
+nicht über den Live-Schema-Snapshot. Sonst müsste der Handler vor
+jedem Replay-Check einen Live-Reverse fahren — das bricht das
+schnelle Job-Start-Pattern und verschiebt Replay-Identität auf einen
+Zeitpunkt nach DB-IO.
+
+Der `planFingerprint` ist davon getrennt und enthält die
+Reverse-/Plan-Inhalte. Er entsteht:
+
+- Im `dryRun: true`-Sync-Antwortpfad: Handler führt Reverse + Diff +
+  Plan-Validate und gibt den Fingerprint im Antwort-Envelope zurück.
+- Im Apply-Worker (F.5): Worker reverst, berechnet den Plan,
+  schreibt `planFingerprint` in den Job-Status und ins Audit, **ohne
+  ihn nachträglich in den `payloadFingerprint` zu falten**.
 
 `lockTimeoutMs` ist ein Lieferungsparameter, kein
-Identitätsparameter. Ein Replay desselben Migrate-Jobs mit anderem
+Identitätsparameter — Replay desselben Migrate-Jobs mit anderem
 Lock-Timeout bleibt semantisch derselbe Job und verändert den
 `payloadFingerprint` nicht.
 
-### 3.8 Failure-Klassifikation am Wire — Bestehende Codes + drei Neue
+`approvalToken` geht nicht in den Fingerprint — bestehender
+Token-Challenge-Flow aus
+[`JobStartHandlerSupport`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/JobStartHandlerSupport.kt)
+bindet ihn an Approval-Grant + Principal, nicht an die Payload-
+Identität.
 
-Wo immer möglich, mappt der Migrate-Pfad auf die existierenden
-[`ToolErrorCode`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/server/core/error/ToolErrorCode.kt)-
-Werte; nur die migrate-spezifischen Klassen kommen als neue Codes
-hinzu (Enum-Erweiterung als Akzeptanzkriterium von F.1).
+### 3.8 Failure-Klassifikation am Wire — Tool-Result vs. Job-Result
 
-**Bestehende Codes:**
+Der Migrate-Pfad führt Failures auf **zwei getrennten Achsen**, weil
+das Job-Start-Pattern aus
+[`spec/mcp-server.md`](../../../spec/mcp-server.md) §661ff den Tool-
+Call vom Job-Worker entkoppelt:
+
+- **Tool-Result-Codes**: synchrone Antwort auf den `tools/call`
+  selbst. Sie fließen über
+  [`ToolErrorEnvelope`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/server/core/error/ToolErrorEnvelope.kt)
+  und tauchen in
+  [`ToolDescriptor.errorCodes`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/ToolDescriptor.kt)
+  auf — Bestand: „Tool-Result-Envelope-Codes".
+- **Job-Result-Codes**: erscheinen ausschließlich im
+  Job-Status-Projection über `resources/read`, mit demselben
+  `ToolErrorCode`-Vokabular im Failure-Detail. Sie kommen **nicht**
+  in `ToolDescriptor.errorCodes`, weil der Tool-Call selbst längst
+  erfolgreich mit Job-Start-Envelope geantwortet hat.
+
+Wo möglich, werden bestehende Codes wiederverwendet; nur die
+migrate-spezifischen Job-Result-Klassen kommen als neue
+Enum-Werte hinzu (F.1).
+
+**Tool-Result-Codes (synchron auf den Tool-Call):**
 
 - `VALIDATION_ERROR` — Schema-Verstoß: fehlendes Pflichtfeld,
   `additionalProperties`-Reject, ungültige Bounds (`lockTimeoutMs`
@@ -450,9 +515,16 @@ hinzu (Enum-Erweiterung als Akzeptanzkriterium von F.1).
   fehlend.
 - `RESOURCE_NOT_FOUND` — `sourceConnectionRef`,
   `sourceSchemaRef` oder `targetConnectionRef` löst nicht auf.
-- `VALIDATION_ERROR` für Tenant-Mismatch — Tenant-Segment einer
-  Ref ≠ `principal.effectiveTenantId`. Details: einer
-  `ValidationViolation` mit `field`/`reason` (§3.3, Risk #8).
+- `VALIDATION_ERROR` für ConnectionRef-Tenant-Mismatch —
+  Tenant-Segment von `sourceConnectionRef` oder
+  `targetConnectionRef` ≠ `principal.effectiveTenantId`. Details:
+  eine `ValidationViolation` mit `field`/`reason` (§3.3, Risk #8).
+- `TENANT_SCOPE_DENIED` für SchemaRef-Tenant-Mismatch —
+  Tenant-Segment von `sourceSchemaRef` ≠
+  `principal.effectiveTenantId`. Details:
+  `requestedTenant` aus
+  `TenantScopeDeniedException`
+  ([`ApplicationException.kt:149`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)).
 - `POLICY_REQUIRED` — Apply ohne `approvalToken` oder mit
   ungültigem Token. `details` enthalten `approvalRequestId`,
   `correlationKind`, `correlationKey`, `payloadFingerprint`,
@@ -463,7 +535,8 @@ hinzu (Enum-Erweiterung als Akzeptanzkriterium von F.1).
   `RateLimited` (§3.6). `details` enthalten `retryAfter`,
   `current`, `limit` — wie alle anderen Start-Tools.
 
-**Neue Codes (Enum-Erweiterung in F.1):**
+**Job-Result-Codes (Status-Projection via `resources/read`,
+Enum-Erweiterung in F.1):**
 
 - `SCHEMA_MIGRATE_LOCK_TIMEOUT` — Dialekt-Lock-Acquire-Timeout
   (Sub-Slice A). `details`: `lockTimeoutMs`, `dialect`.
@@ -476,11 +549,11 @@ hinzu (Enum-Erweiterung als Akzeptanzkriterium von F.1).
   `RESTORE_FAILED`, `LOCK_ESCALATION`, …) plus
   varianten-spezifische Felder.
 
-**Cancel ist kein Wire-Error.** Externer Cancel via
-`job_cancel` setzt den Job-Status auf `CANCELLED`; der Apply-Caller
-sieht das ausschließlich über `resources/read` am `resourceUri` (wie
-bei `data_transfer_start`). Es gibt **keinen**
-`SCHEMA_MIGRATE_CANCELLED`-Code im Start-Tool-Envelope.
+**Cancel ist weder Tool-Result- noch Job-Result-Failure-Code.**
+Externer Cancel via `job_cancel` setzt den Job-Status auf
+`CANCELLED`; der Apply-Caller sieht das ausschließlich über
+`resources/read` am `resourceUri` (wie bei `data_transfer_start`).
+Es gibt **keinen** `SCHEMA_MIGRATE_CANCELLED`-Code.
 
 Stacktraces bleiben ausschließlich server-side im Audit- oder
 Log-Kontext und erscheinen nie im Wire-Envelope.
@@ -556,19 +629,27 @@ mit Title/Description/ErrorCodes versorgt.
 - [ ] Neue Einträge in `McpContractRegistries`:
   - `TITLES["schema_migrate_start"]`
   - `DESCRIPTIONS["schema_migrate_start"]`
-  - `ERROR_CODES["schema_migrate_start"]` mit dem Set aus §3.8
-    (`POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
+  - `ERROR_CODES["schema_migrate_start"]` enthält **nur die
+    Tool-Result-Codes** aus §3.8 — die der Tool-Call selbst
+    synchron emittieren kann:
+    `POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
     `VALIDATION_ERROR`, `RESOURCE_NOT_FOUND`,
-    `SCHEMA_MIGRATE_LOCK_TIMEOUT`, `SERVICE_POOL_EXHAUSTED`,
-    `SCHEMA_MIGRATE_ATOMIC_FAILURE`,
-    `UNSUPPORTED_TOOL_OPERATION` für den Pre-F.5-Pfad).
+    `TENANT_SCOPE_DENIED` (für SchemaRef-Tenant-Mismatch),
+    `UNSUPPORTED_TOOL_OPERATION` (Pre-F.5-Stub).
+    Worker-Failure-Codes (`SCHEMA_MIGRATE_LOCK_TIMEOUT`,
+    `SERVICE_POOL_EXHAUSTED`, `SCHEMA_MIGRATE_ATOMIC_FAILURE`)
+    erscheinen ausschließlich im Job-Status-Detail und gehören
+    laut [`ToolDescriptor`-Vertrag](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/ToolDescriptor.kt)
+    **nicht** hierher.
 - [ ] `ToolErrorCode`-Enum
   ([`hexagon/core/src/main/kotlin/.../ToolErrorCode.kt`](../../../hexagon/core/src/main/kotlin/dev/dmigrate/server/core/error/ToolErrorCode.kt))
   um die drei migrate-spezifischen Werte erweitert:
   `SCHEMA_MIGRATE_LOCK_TIMEOUT`, `SERVICE_POOL_EXHAUSTED`,
-  `SCHEMA_MIGRATE_ATOMIC_FAILURE`. Bestehende Codes
-  (`POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
-  `RESOURCE_NOT_FOUND`, `VALIDATION_ERROR`,
+  `SCHEMA_MIGRATE_ATOMIC_FAILURE`. Sie werden zwar dem Enum
+  hinzugefügt (für Job-Result-Failure-Klassifikation), aber **nicht**
+  in `ERROR_CODES["schema_migrate_start"]` aufgenommen. Bestehende
+  Codes (`POLICY_REQUIRED`, `IDEMPOTENCY_CONFLICT`, `RATE_LIMITED`,
+  `RESOURCE_NOT_FOUND`, `VALIDATION_ERROR`, `TENANT_SCOPE_DENIED`,
   `UNSUPPORTED_TOOL_OPERATION`) werden wiederverwendet — siehe
   §3.8.
 - [ ] `make ci` grün.
@@ -606,10 +687,16 @@ NOT_IMPLEMENTED.
   [`SchemaStore`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/SchemaStagingFinalizer.kt)-
   Lookup → `SchemaIndexEntry` mit `hash`, `format`, `tenantId`.
   Beide gegen den aus dem Principal abgeleiteten Tenant.
-- [ ] Mismatch zwischen URI-Tenant und Principal-Tenant liefert
-  `VALIDATION_ERROR` mit `tenant prefix mismatch`-Violation
-  (§3.3, Bestands-Pattern via
-  [`ValidationErrorException`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)).
+- [ ] ConnectionRef-Tenant-Mismatch (`sourceConnectionRef` oder
+  `targetConnectionRef`) liefert `VALIDATION_ERROR` mit
+  `tenant prefix mismatch`-Violation via
+  [`ValidationErrorException`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt).
+- [ ] SchemaRef-Tenant-Mismatch (`sourceSchemaRef`) liefert
+  `TENANT_SCOPE_DENIED` via
+  [`TenantScopeDeniedException`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)
+  (§3.3, bestehendes
+  [`SchemaSourceResolver`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/SchemaSourceResolver.kt)-
+  Pattern Zeile 108).
 - [ ] Unauflösbare Refs liefern `RESOURCE_NOT_FOUND` via
   `ResourceNotFoundException`.
 - [ ] `dryRun: true` liefert die Antwort aus §2.2 (Plan-Objekte,
@@ -618,10 +705,11 @@ NOT_IMPLEMENTED.
 - [ ] `dryRun: false` liefert vorerst `UNSUPPORTED_TOOL_OPERATION`
   (bestehender Code) — Apply-Pfad kommt mit F.3/F.4/F.5.
 - [ ] Handler registriert in `OperationalMcpRegistries`.
-- [ ] Handler-Unit-Test pinnt sechs Pfade: Happy-dryRun-mit-
-  ConnectionRef, Happy-dryRun-mit-SchemaRef, Tenant-Mismatch
-  (`VALIDATION_ERROR`), fehlender `targetConnectionRef`
-  (`VALIDATION_ERROR`), Apply-Stub
+- [ ] Handler-Unit-Test pinnt sieben Pfade:
+  Happy-dryRun-mit-ConnectionRef, Happy-dryRun-mit-SchemaRef,
+  ConnectionRef-Tenant-Mismatch (`VALIDATION_ERROR`),
+  SchemaRef-Tenant-Mismatch (`TENANT_SCOPE_DENIED`), fehlender
+  `targetConnectionRef` (`VALIDATION_ERROR`), Apply-Stub
   (`UNSUPPORTED_TOOL_OPERATION`), unauflösbarer Source-Ref
   (`RESOURCE_NOT_FOUND`).
 - [ ] `make ci` grün.
@@ -799,8 +887,10 @@ pinnt das volle Vertragsbündel.
 - [ ] Scenario 8: Pool-Exhaustion (parallele Apply-Jobs gegen
   denselben Target) → zweiter Job `FAILED` mit
   `SERVICE_POOL_EXHAUSTED` im Failure-Detail.
-- [ ] Scenario 9: Tenant-Mismatch → `VALIDATION_ERROR` mit
-  `tenant prefix mismatch`-Violation.
+- [ ] Scenario 9a: ConnectionRef-Tenant-Mismatch →
+  `VALIDATION_ERROR` mit `tenant prefix mismatch`-Violation.
+- [ ] Scenario 9b: SchemaRef-Tenant-Mismatch → `TENANT_SCOPE_DENIED`
+  mit `requestedTenant`-Detail.
 - [ ] `make ci` grün.
 
 **Betroffene Dateien**:
@@ -815,33 +905,29 @@ mechanische Komposition.
 ## 6. Dependency-Graph
 
 ```
-F.1 (Tool-Schema)                ──┐
-                                   ├──→ F.2 (dryRun-Handler)
-atomic-preserve A (Lock-Timeout)   │           │
-atomic-preserve E (Cancel-Token)   │           │
-                                   │           ↓
-atomic-preserve C (Sub-Pool)       ├──→ F.4 (Pool-Wiring)
-                                   │           │
-atomic-preserve D (Quota)          ├──→ F.3 (Policy-Gate)
-                                   │           │
-                                   │           ↓
-                                   └──→ F.5 (Apply-Pfad) ──→ F.6 (E2E)
+F.1 (Tool-Schema + Discovery)   ──→ F.2 (dryRun-Handler) ──→ F.3 (Approval-Wiring)
+                                                                       │
+atomic-preserve C (Sub-Pool)    ──────→ F.4 (Pool-Wiring im Worker) ──┐│
+                                                                      ↓↓
+atomic-preserve A (Lock-Timeout)                                   F.5 (Apply: Quota+Lock+Worker)
+atomic-preserve D (Quota-Plumbing)  ──→                                │
+atomic-preserve E (Cancel-Token)                                        ↓
+                                                                   F.6 (E2E)
 ```
 
-- F.1 ist unabhängig — Start-Slice.
-- F.2 hängt an F.1.
-- F.3 und F.4 sind unabhängig voneinander, hängen aber an F.2 und
-  jeweils an einem atomic-preserve-Sub-Slice. Sie können parallel
-  laufen, sobald die jeweiligen Service-Mode-Verträge geliefert
-  sind.
-- F.5 ist die Synthese; sie hängt an allen vier
-  Service-Mode-Slices (A/C/D/E) und an F.2 + F.3 + F.4.
-- F.6 ist die E2E-Pinnung.
+- **F.1 → F.2 → F.3** läuft sofort, **ohne** Abhängigkeit zu
+  atomic-preserve. F.3 ist Approval-Wiring (POLICY_REQUIRED-
+  Challenge); Quota bleibt bis F.5 aus dem Pfad.
+- **F.4** hängt an F.2 und an atomic-preserve C
+  (`MigratePoolFactory`). Kann parallel zu F.3 laufen.
+- **F.5** ist die Synthese und hängt an F.2 + F.3 + F.4 plus
+  atomic-preserve A + D + E (Lock-Timeout, Quota-Plumbing,
+  Cancellation-Token).
+- **F.6** ist die E2E-Pinnung; hängt an F.5.
 
-Damit ergibt sich als natürliche Reihenfolge **F.1 → F.2 → (F.3 ‖
-F.4) → F.5 → F.6**. Das ist auch die Reihenfolge, in der die
-atomic-preserve-Sub-Slices C/D dran sein müssen, bevor F.3 und F.4
-starten können.
+Natürliche Reihenfolge: **F.1 → F.2 → F.3** (ohne externe
+Trigger). Sobald atomic-preserve C geliefert ist, **F.4** parallel
+zu F.3. Sobald A + D + E geliefert sind, **F.5 → F.6**.
 
 ## 7. Risiken
 
@@ -850,22 +936,28 @@ starten können.
    ([`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
    §5 D Risiken). Mitigation: Tenant kommt durchgängig aus
    `principal.effectiveTenantId` (§3.3, kein Wire-Feld), und der
-   URI-Konsistenz-Check liefert `VALIDATION_ERROR` (Risk #8) —
+   URI-Konsistenz-Check liefert `VALIDATION_ERROR` für ConnectionRefs
+   bzw. `TENANT_SCOPE_DENIED` für SchemaRefs (Risk #8) —
    beides übersteht den Wechsel auf ein echtes Tenant-Modell ohne
    Wire-Änderung.
 2. **Source-Schema-Drift bei `sourceSchemaRef`.** Ein gepinntes
    Source-Schema kann gegen Target-Drift veralten zwischen Plan
-   (oder Approval) und Apply. Mitigation: `planFingerprint`
-   speichert die Reverse-Hashes; der Apply-Pfad vergleicht den
-   Target-Reverse-Hash zum Apply-Zeitpunkt gegen den im Plan
-   eingefrorenen — Drift → `SCHEMA_MIGRATE_ATOMIC_FAILURE` mit
-   `details.kind = TARGET_DRIFT_DETECTED`.
-3. **Approval-Replay-Drift.** Wenn Source- oder Target-Reverse
-   zwischen Approval und Apply driftet, ändert sich
-   `payloadFingerprint`, und der Approval-Grant wird ungültig →
-   `IDEMPOTENCY_CONFLICT`. Das ist gewollt — neue Reverse =
-   neuer Job. Mitigation auf Operator-Seite: kurze
-   Approval-/Apply-Fenster oder `dryRun`-Refresh vor Apply.
+   (oder Approval) und Apply. Mitigation: der Apply-Worker
+   berechnet beim Apply den `planFingerprint` neu und vergleicht den
+   Target-Reverse-Hash gegen den im Plan eingefrorenen — Drift →
+   `SCHEMA_MIGRATE_ATOMIC_FAILURE` mit
+   `details.kind = TARGET_DRIFT_DETECTED`. Da der
+   `payloadFingerprint` keine Reverse-Hashes enthält (§3.7), bleibt
+   die Identität des Replay-Jobs stabil — Drift wird als
+   Job-Failure und nicht als IDEMPOTENCY_CONFLICT propagiert.
+3. **Approval-Replay-Drift.** Approval-Grants binden an Principal
+   + Tenant + Tool + `payloadFingerprint` (also refs + options).
+   Solange Caller dieselbe Source-/Target-Ref + dieselben Options
+   beibehält, bleibt der Grant über DB-Drift gültig — Drift wird
+   sichtbar im `planFingerprint` und im Apply-Job-Status (Risk #2),
+   nicht im Token-Replay. Operatoren, die jedes Mal explizite
+   Plan-Sign-offs wollen, müssen vor Apply einen `dryRun`-Refresh
+   einplanen.
 4. **Atomic-Preserve-Failure-Bucket erlaubt nur ein generisches
    Mapping am Wire.** Operator-Werkzeuge müssen `detail.kind`
    parsen, um zwischen `PROBE_FAILED`, `RESTORE_FAILED`,
@@ -894,19 +986,24 @@ starten können.
    Mitigation: F.1 verifiziert das JSON-Schema-Set, F.2 verifiziert
    die Handler-Validation-Set; Reject-Cases-Tests in beiden
    Sub-Slices.
-8. **Tenant-Mismatch über `VALIDATION_ERROR` statt
-   `TENANT_SCOPE_DENIED`.** Konsistent mit dem Bestand
-   ([`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
-   Zeile 292ff: `ValidationErrorException` wirft `VALIDATION_ERROR`
-   für jeden Tenant-Prefix-Mismatch). Semantisch wäre
-   `TENANT_SCOPE_DENIED` präziser, aber der bestehende
-   `ApplicationException`-Baum
-   ([`ApplicationException.kt`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt))
-   kennt keine `TenantScopeDeniedException`. Migration ist ein
-   eigenständiger Folge-Slice, der `data_transfer_start`,
-   `data_import_start`, `data_profile_start` und
-   `schema_reverse_start` gleichzeitig mitnimmt — sonst entsteht
-   Wire-Inkonsistenz zwischen den Start-Tools.
+8. **Asymmetrisches Tenant-Mismatch-Mapping.** ConnectionRefs
+   liefern `VALIDATION_ERROR` über
+   [`ValidationErrorException`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)
+   (Bestand:
+   [`DataTransferStartHandler`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/registry/DataTransferStartHandler.kt)
+   Zeile 292ff); SchemaRefs liefern `TENANT_SCOPE_DENIED` über die
+   bereits existierende
+   [`TenantScopeDeniedException`](../../../hexagon/application/src/main/kotlin/dev/dmigrate/server/application/error/ApplicationException.kt)
+   (Bestand:
+   [`SchemaSourceResolver`](../../../adapters/driving/mcp/src/main/kotlin/dev/dmigrate/mcp/schema/SchemaSourceResolver.kt)
+   Zeile 108). Beide Pfade sind Bestands-Pattern, aber **Wire-
+   Inkonsistenz** zwischen den Start-Tools-Familien. Eine
+   einheitliche Migration aller ConnectionRef-Pfade auf
+   `TenantScopeDeniedException` ist ein eigener Folge-Slice
+   (`data_transfer_start`, `data_import_start`,
+   `data_profile_start`, `schema_reverse_start` gleichzeitig
+   mitziehen), um nicht eine zweite Inkonsistenz zwischen Familien
+   einzuführen.
 
 ## 8. Was bewusst **kein** Teil dieser Vorabklärung ist
 
