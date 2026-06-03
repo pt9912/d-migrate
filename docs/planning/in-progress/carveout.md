@@ -110,7 +110,7 @@ Quelldokument:
 | --------- | ------ | ---------------- | ------------ |
 | Produktives Metrics-/Tracing-Wiring außerhalb 0.9.7 | Provisional | Trigger: Telemetry-Adapter-Slice. Plan existiert in `next/`. | [`../next/telemetry-observability-port.md`](../next/telemetry-observability-port.md) |
 | MCP-Server-Last-Tests | Provisional | Trigger: eigene Last-Strategie, gehört zum `spec/mcp-server.md`-Vertrag. | `../../../spec/mcp-server.md` |
-| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Service-Mode-Verträge sind Vorabklärung. | [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md), quality-coverage-expansion-plan §3.2 + §9 |
+| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Service-Mode-Verträge sind Vorabklärung. Eigene Open-Vorabklärung 2026-06-03 angelegt. | [`../open/mcp-schema-migrate-tool.md`](../open/mcp-schema-migrate-tool.md), [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md), quality-coverage-expansion-plan §3.2 + §9 |
 | App-Layer-Replay für Concurrent-Writer-Tests | Permanent | Anwendungssache, nicht d-migrate-Scope. | quality-coverage-expansion-plan §9 |
 | Mutation-Testing (PIT/Stryker) | Provisional | Trigger: stabile Coverage-Baseline + konsolidierte Excludes. | quality-coverage-expansion-plan §9 |
 
