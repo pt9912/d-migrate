@@ -15,7 +15,7 @@
 > - `/code-review` 2026-06-01, Commit-Range `9d6dcba3..d72e572f`.
 > - `hexagon/ports-read/src/main/kotlin/dev/dmigrate/driver/SequenceCapability.kt`
 >   (Ziel der KDoc-Sync-Arbeit).
-> - `docs/planning/open/atomic-preserve-service-mode.md`
+> - `docs/planning/next/atomic-preserve-service-mode.md`
 >   (Service-Mode-Folge-Thema aus §6 Cross-JVM-Carve-Out).
 
 ---
@@ -214,7 +214,7 @@ Dead-Code-Cleanup adressiert.
   JVM-seitige Verträge (Connection-Pool, Cancellation,
   Rate-Limit, Lock-Timeout-Tuning, Idempotency-Replay) hängen
   als Vorabklärung in
-  [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md).
+  [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md).
 
 ---
 
@@ -257,7 +257,7 @@ Release-Tag, analog zum Move des Quelldokuments
   §6 dokumentiert.
 - **Service-Mode-Verträge** (MCP/REST/gRPC-Exposition von
   `schema_migrate`): aus §6 abgespalten in eigene Vorabklärung
-  `docs/planning/open/atomic-preserve-service-mode.md`. Fünf
+  `docs/planning/next/atomic-preserve-service-mode.md`. Fünf
   JVM-seitige Verträge: Connection-Pool, Cancellation,
   Rate-Limit, Lock-Timeout-Tuning, Idempotency-Replay.
 - **Probe-Adapter-Implementierungen löschen** (`{Postgres,Mysql,

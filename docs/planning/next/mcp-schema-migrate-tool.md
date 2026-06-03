@@ -5,14 +5,14 @@
 nach `next/`).
 
 **Trigger**: Die Service-Mode-JVM-Verträge in
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
 hängen seit 2026-06-02 mit Sub-Slices A+E geliefert in der Luft —
 C (Connection-Sub-Pool), D (Quota-Plumbing) und F
 (`schema_migrate`-Handler-Skeleton) warten explizit auf eine
 Produkt-/Contract-Spezifikation für das MCP-Tool selbst. Solange
 diese Spec fehlt, gibt es keinen Konsumenten für C/D, und F kann
-nicht starten. Plan `atomic-preserve-service-mode` selbst sagt in
-§3.3: „C/D/F warten effektiv auf den externen Trigger und liefern
+nicht starten. Plan `atomic-preserve-service-mode` selbst sagt im Header:
+„C/D/F warten effektiv auf den externen Trigger und liefern
 erst in einer späteren Tranche, wenn `schema_migrate` als Tool
 geplant wird."
 
@@ -23,8 +23,8 @@ Auch [`done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expans
 Das Doc trägt den Sub-Slice-Schnitt F.1-F.5 (§5), den Wire-Vertrag
 V1 (§2) und einen Strawman zu den acht Produkt-/Vertrags-Fragen
 (§3). Es ist damit bereit, sobald C oder D aus
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 dran ist, in `in-progress/` zu wandern und die Sub-Slices F.1-F.5
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§4 dran ist, in `in-progress/` zu wandern und die Sub-Slices F.1-F.5
 nacheinander zu liefern.
 
 **Aktivierungsbedingung** (Move nach `in-progress/`): F.1
@@ -32,7 +32,7 @@ nacheinander zu liefern.
 Service-Mode-Vorarbeit implementierbar und können sofort starten.
 F.3 (Pool-Wiring im Worker) blockiert auf C; F.4 (Apply mit
 Approval+Quota+Lock+Cancel) blockiert auf A + D + E (alle aus
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
 §5). F.5 (E2E) hängt an F.4.
 
 ---
@@ -53,7 +53,7 @@ Entscheidungen, keine Produkt-Fragen mehr:
   analog `data_transfer_start` ([`spec/mcp-server.md`](../../../spec/mcp-server.md)
   §661ff). `dryRun: true` ist die Plan-only-Ausnahme aus §3.1.
 - **Idempotency-Wiring direkt am Handler** (gefaltete Sub-Slice B
-  aus `atomic-preserve-service-mode` §5 B). Der bestehende
+  aus `atomic-preserve-service-mode` §3 Sub-Slice B, gefaltet in F gemäß done/ImpPlan-0.9.8-atomic-preserve-AE.md). Der bestehende
   [`IdempotencyStore`](../../../hexagon/ports-common/src/main/kotlin/dev/dmigrate/server/ports/IdempotencyStore.kt)
   +
   [`JdbcIdempotencyStore`](../../../adapters/driven/persistence-jdbc/src/main/kotlin/dev/dmigrate/server/persistence/jdbc/idempotency/JdbcIdempotencyStore.kt)
@@ -387,8 +387,8 @@ das Pattern transparent: der Principal trägt
 `dmigrate://tenants/default/...`. Sobald das Tenant-Modell erweitert
 wird, ändert sich nichts am Wire-Vertrag — der Principal liefert den
 neuen Tenant
-([`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 D Risiken).
+([`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§6 Risk #4).
 
 ### 3.4 Approval-Granularität — Single-Approval + Plan-Fingerprint
 
@@ -620,17 +620,19 @@ verifizierten Plan-Vertrag.
 ### 4.3 CLI-Pfad bleibt regressionsfrei
 
 Genau wie
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§4.3: jede F.\*-Änderung muss die bestehenden Live-IT-Tests am
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§3.3: jede F.\*-Änderung muss die bestehenden Live-IT-Tests am
 CLI-Pfad grün lassen. Der MCP-Handler liefert ein neues
 Konsumenten-Profil; er ersetzt keinen.
 
 ## 5. Geplante Arbeitspakete
 
 Die Sub-Slices F.1-F.5 schließen den Service-Mode-Vertrags-Track
-ab. Sie konsumieren die JVM-Verträge C/D/E aus
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 und liefern den MCP-Konsumenten.
+ab. Sie konsumieren die JVM-Verträge C, D (offen in
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§4) und A, E (geliefert in
+[`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md))
+und liefern den MCP-Konsumenten.
 
 ### Sub-Slice F.1 — Tool-Schema + Discovery-Wiring
 
@@ -835,8 +837,8 @@ brechen.
 - IT-Test: `McpSchemaMigratePoolExhaustionIT.kt`
 
 **Dependencies**: F.2 plus
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 C (Connection-Sub-Pool).
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§4 Sub-Slice C (Connection-Sub-Pool).
 
 **Risiken**: niedrig — Worker-seitiges Borrow ist Bestands-Pattern
 für Job-Worker (siehe `data_transfer_start`-Worker).
@@ -891,8 +893,8 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
   `resources/read` (§3.8).
 - [ ] Cancel zwischen Probe und Restore → Job-Status `CANCELLED`
   mit Rollback (Vertrag aus
-  [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-  §5 E).
+  [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+  §4 Sub-Slice E, geliefert in done/ImpPlan-0.9.8-atomic-preserve-AE.md).
 - [ ] Lock-Acquire-Timeout → Job-Status `FAILED` mit
   Failure-Detail `code = SCHEMA_MIGRATE_LOCK_TIMEOUT` (und
   `details.lockTimeoutMs`/`dialect`) im Job-Result.
@@ -911,9 +913,10 @@ aus; Cancel + Lock-Timeout + Atomic-Preserve-Failures mappen auf
 - IT-Tests pro Dialekt
 
 **Dependencies**: F.2 + F.3 plus
-[`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-§5 A (Lock-Timeout), §5 D (Quota-Plumbing), §5 E
-(Cancellation-Token).
+[`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+§4 Sub-Slice D (Quota-Plumbing) plus
+[`../done/ImpPlan-0.9.8-atomic-preserve-AE.md`](../done/ImpPlan-0.9.8-atomic-preserve-AE.md)
+§2 (Lock-Timeout, geliefert) + §4 (Cancellation-Token, geliefert).
 
 **Risiken**: hoch — zusammengesetzter Atomicity-Vertrag
 (Approval+Quota+Commit+Worker), Cancel-Mid-Apply,
@@ -995,8 +998,8 @@ geliefert sind, **F.4 → F.5**.
 
 1. **Tenant-Modell-Drift.** Der MVP fährt mit `tenant: "default"`
    bis ein echtes Tenant-Modell kommt
-   ([`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-   §5 D Risiken). Mitigation: Tenant kommt durchgängig aus
+   ([`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+   §6 Risk #4). Mitigation: Tenant kommt durchgängig aus
    `principal.effectiveTenantId` (§3.3, kein Wire-Feld), und der
    URI-Konsistenz-Check liefert `VALIDATION_ERROR` für ConnectionRefs
    bzw. `TENANT_SCOPE_DENIED` für SchemaRefs (Risk #8) —
@@ -1040,8 +1043,8 @@ geliefert sind, **F.4 → F.5**.
 6. **Sub-Pool pro `targetConnectionRef` kann viele Pools
    erzeugen.** Bei vielen Tenants × vielen Targets explodiert die
    Pool-Anzahl. Mitigation: Pool-Lifecycle aus
-   [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-   §5 C (Idle-Eviction) ist Pflicht-Akzeptanzkriterium.
+   [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+   §4 Sub-Slice C (Idle-Eviction) ist Pflicht-Akzeptanzkriterium.
 7. **JSON-Schema vs. Handler-Validation-Split.** Manche Constraints
    leben im JSON-Schema (Pflichtfelder, Bounds), andere im Handler
    (Tenant-Match, ConnectionRef-Resolution, Approval-Token).
@@ -1075,8 +1078,8 @@ geliefert sind, **F.4 → F.5**.
   eigenen Vorabklärungen, sobald 1.1.8 / 1.2.0 dran sind.
 - **CLI-`schema migrate --execute --service-mode`-Subkommando.**
   Der CLI-Pfad bleibt regressionsfrei
-  ([`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
-  §4.3) und ohne Job-Worker. Ein zukünftiger Service-Mode-CLI-
+  ([`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
+  §3.3) und ohne Job-Worker. Ein zukünftiger Service-Mode-CLI-
   Adapter wäre ein eigener Slice.
 - **Schema-Versionierung / Schema-Drift-Detection.** `sourceSchemaRef`
   pins nur die Source-Sicht über den bestehenden SchemaStore. Eine
@@ -1086,9 +1089,9 @@ geliefert sind, **F.4 → F.5**.
 
 ## 9. Verweise
 
-- [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md)
+- [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md)
   — Service-Mode-JVM-Verträge, die diese Tool-Spec konsumieren.
-  §5 C/D/F sind die Sub-Slices, die ohne diese Spec nicht starten.
+  §4 Sub-Slices C/D/F sind die Sub-Slices, die ohne diese Spec nicht starten.
 - [`spec/mcp-server.md`](../../../spec/mcp-server.md) §661ff —
   `data_transfer_start`/`data_import_start`-Pattern als nächste
   Analogie.
