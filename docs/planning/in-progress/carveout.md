@@ -59,7 +59,7 @@ Quelldokumente:
 | SQLite WAL `BEGIN CONCURRENT` Optimierung | Provisional | Trigger: SQLite-Floor-Hebung auf 3.42+. Bis dahin `BEGIN IMMEDIATE`. | sequence-preserve-atomic-lock-plan §7 |
 | PG App-`nextval`-Race während Preserve | Permanent | PG-Sequenzen sind by-design lock-free; `pg_advisory_xact_lock` blockt App-`nextval` nicht. Residuelles Restrisiko ist als negativer Vertragstest (`PostgresSequencePreserveRaceTest`) gepinnt. | sequence-preserve-atomic-lock-plan §6 Risk 8 |
 | Cross-JVM-Stresstest (CLI-Pfad) | Permanent | DB-side Lock-Verhalten identisch zu Same-JVM-Two-Threads-Setup. ProcessBuilder-Aufbau lohnt nicht. | atomic-preserve-followups §6 |
-| Cross-JVM-Service-Mode-Verträge (MCP/REST/gRPC) | Promoted | Trigger: `schema_migrate` als Tool/Endpoint exponiert. Fünf JVM-Verträge (Pool, Cancellation, Rate-Limit, Lock-Timeout-Tuning, Idempotency-Replay). | [`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md) |
+| Cross-JVM-Service-Mode-Verträge (MCP/REST/gRPC) | Promoted | Trigger: `schema_migrate` als Tool/Endpoint exponiert. Fünf JVM-Verträge (Pool, Cancellation, Rate-Limit, Lock-Timeout-Tuning, Idempotency-Replay). | [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md) |
 | Probe-Adapter-Implementierungen löschen | Permanent | §4.2-Scope-Korrektur 2026-06-01: Adapter-Klassen werden von Atomic-Executoren direkt aufgerufen; bleiben live. | atomic-preserve-followups §8.3 |
 
 ---
@@ -110,7 +110,7 @@ Quelldokument:
 | --------- | ------ | ---------------- | ------------ |
 | Produktives Metrics-/Tracing-Wiring außerhalb 0.9.7 | Provisional | Trigger: Telemetry-Adapter-Slice. Plan existiert in `next/`. | [`../next/telemetry-observability-port.md`](../next/telemetry-observability-port.md) |
 | MCP-Server-Last-Tests | Provisional | Trigger: eigene Last-Strategie, gehört zum `spec/mcp-server.md`-Vertrag. | `../../../spec/mcp-server.md` |
-| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Service-Mode-Verträge sind Vorabklärung. | [`atomic-preserve-service-mode.md`](atomic-preserve-service-mode.md), quality-coverage-expansion-plan §3.2 + §9 |
+| MCP-Migrate-Tool (`schema_migrate`/`_start`) | Promoted | Neues Produkt-/Contract-Thema. Service-Mode-Verträge sind Vorabklärung. | [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md), quality-coverage-expansion-plan §3.2 + §9 |
 | App-Layer-Replay für Concurrent-Writer-Tests | Permanent | Anwendungssache, nicht d-migrate-Scope. | quality-coverage-expansion-plan §9 |
 | Mutation-Testing (PIT/Stryker) | Provisional | Trigger: stabile Coverage-Baseline + konsolidierte Excludes. | quality-coverage-expansion-plan §9 |
 

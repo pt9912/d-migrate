@@ -214,7 +214,7 @@ Dead-Code-Cleanup adressiert.
   JVM-seitige Verträge (Connection-Pool, Cancellation,
   Rate-Limit, Lock-Timeout-Tuning, Idempotency-Replay) hängen
   als Vorabklärung in
-  [`../in-progress/atomic-preserve-service-mode.md`](../in-progress/atomic-preserve-service-mode.md).
+  [`../open/atomic-preserve-service-mode.md`](../open/atomic-preserve-service-mode.md).
 
 ---
 

@@ -1,13 +1,18 @@
 # Plan: Atomic-Preserve Service-Mode (MCP / REST / gRPC)
 
-> Status: In Progress (2026-06-02) — Vorzieh-Entscheidung trotz
-> nicht erfüllter externer Aktivierungsbedingungen (MCP-Migrate-
-> Tool, gRPC 1.1.8, REST 1.2.0). Begründung: die Sub-Slices A/E
-> haben eigenständigen Wert (Refactor-Schulden + Test-Hygiene +
-> Port-Erweiterung), unabhängig davon ob das `schema_migrate`-Tool
-> jemals exponiert wird. **B** (Idempotency-Hook) ist nach
-> Code-Audit 2026-06-02 als eigenständiger Slice deferred — siehe
-> Sub-Slice-Status unten.
+> Status: **Trigger-Watch** (2026-06-03 zurück nach `open/`
+> verschoben). Die eigenständig wertvollen Sub-Slices A und E sind
+> geliefert (siehe unten); **B** ist in F gefaltet; C/D/F warten
+> auf externe Aktivierungsbedingungen. Aktuelle Slice-Arbeit ruht
+> — das Doc dient als Trigger-Watch für den Service-Mode.
+>
+> **Aktivierungsbedingung** (Move nach `next/` bzw.
+> `in-progress/`): Mindestens einer der drei externen Trigger ist
+> erfüllt:
+> - MCP-Produkt-Vertrag für `schema_migrate`-Tool (Parameter,
+>   Policy-Gates, Tenant-Modell)
+> - REST 1.2.0-Spezifikation für den Migrate-Pfad
+> - gRPC 1.1.8-Spezifikation für den Migrate-Pfad
 >
 > Lifecycle:
 > - open/-Vorabklärung (commits `7ae4114a` Initial + `98ca9ff1`
@@ -16,6 +21,11 @@
 >   (commit `0e9d2a1a`).
 > - Promote nach in-progress/ mit Sub-Slice A Start
 >   (2026-06-02).
+> - Demote zurück nach open/ am 2026-06-03 nach Lieferung A+E+SIGINT
+>   und Deferral B in F. Keine aktive Slice-Arbeit mehr; weiter mit
+>   C/D/F sobald ein externer Trigger zieht (ADR-0004 §"Optionen":
+>   `open/` für Trigger-Watches statt `in-progress/` ohne aktive
+>   Slice-Arbeit).
 >
 > Sub-Slice Status:
 > - **A** (Lock-Timeout-Refactor) — implementiert 2026-06-02
