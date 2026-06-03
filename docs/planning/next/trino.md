@@ -1,7 +1,8 @@
 # Plan: Trino-Support in d-migrate (Read-first Federation-Adapter)
 
 > Dokumenttyp: Architektur- und Umsetzungsplan  
-> Status: Entwurf (2026-05-15)  
+> Status: Entwurf (2026-05-15, Review-Update 2026-06-03)  
+> Roadmap-Slot: Kandidat für 1.x (nicht Teil 0.9.x-Milestones)  
 > Referenzen: `spec/architecture.md`, `spec/cli-spec.md`, `spec/connection-config-spec.md`, `docs/planning/roadmap.md`
 
 ## Kurzfassung
@@ -75,11 +76,40 @@ adapters:driven:driver-trino
   └─ TrinoDataReader
 ```
 
-Optionale Erweiterungen:
+Module-Erweiterungen:
 
-- `adapters:driven:driver-trino-profiling` (Feature-Flag in Phase 1 optional,
-  in Phase 2 standardmäßig aktiv)
-- `test:integration-trino` (später)
+- `adapters:driven:driver-trino-profiling` ist **Phase-1-Pflicht** für
+  `data profile --source trino://...`. Ohne aktives Modul bleibt der
+  Profiling-Pfad mit `action_required` blockiert. In Phase 2 wird es als
+  Standard-Abhängigkeit der Trino-Treiber verkabelt.
+- `test:integration-trino` (Tranche-2-Smoke gegen Testcontainers;
+  Vollausbau ab Phase 2).
+
+### 4.1 Integration in ports-common (`ConnectionConfig`, Dialect-Context)
+
+Trinos URL-Modell mit `catalog`+`schema` lässt sich nicht sauber auf das
+bestehende einfeldrige `database: String` von
+`hexagon/ports-common/.../ConnectionConfig.kt` mappen. Wir folgen daher dem
+etablierten Muster für dialektspezifische Felder (siehe ADR-Memory
+`feedback_hexagon_dialect_context`): **keine nullable `trino*`-Felder am
+generischen Port**, sondern ein sealed Dialect-Context.
+
+Verbindlich für Tranche 1:
+
+- `ConnectionConfig.database` bleibt der kanonische String-Slot; für Trino
+  hält er ausschließlich den **Schema-Namen** (zweites Pfadsegment).
+- Der **Katalog** und alle Trino-spezifischen Parser-Felder (z. B.
+  `httpScheme`, `requestTimeoutMs`, Session-Allowlist-Snapshot) landen in
+  einem neuen `TrinoConnectionContext` als Variante eines sealed
+  `DialectConnectionContext` (parallel zum bestehenden
+  `DdlDialectContext`).
+- `ConnectionConfig` erhält ein optionales `dialectContext:
+  DialectConnectionContext?`-Feld; für PG/MySQL/SQLite bleibt es `null`.
+- Maskierungspflichtige Felder (Token, Passwörter, `session.<name>`-Werte)
+  liegen ausschließlich im Trino-Context und werden dort
+  per-`toString()` als `***` gerendert.
+
+Diese Architekturentscheidung ist **DoD-Pflicht in Tranche 1a** (siehe §6).
 
 ## 5) Kontrakt: Dialekt und Connection-URL
 
@@ -99,6 +129,9 @@ Kanonische Form:
 ```text
 trino://user@host:port/catalog/schema
 ```
+
+Das Format ist absichtlich ohne `db:`-Prefix; es folgt dem etablierten
+d-migrate-URL-Schema (`<dialect>://...`) aus `spec/connection-config-spec.md`.
 
 Beispiele:
 
@@ -226,7 +259,6 @@ Interpretation:
     zu `action_required` inkl. fehlender Signaturbestandteile
     (`--trino-runtime-profile`, `--allow-insecure-trino-transport`, `DM_TRINO_ALLOW_INSECURE_TRANSPORT`).
 - Die Ausführung wird bei aktivem `insecure_transport` als `insecure_transport=true` markiert.
-- Format ist absichtlich ohne `db:`-Prefix.
 
 #### 5.2.4 Session-Forwarding-Liste und Versionierung
 
@@ -250,13 +282,29 @@ Konfiguration der Session-Forwarding-Liste:
 - Normalisierung:
   - Whitespace wird getrimmt, leere Tokens verworfen, Kleinbuchstaben erzwungen.
   - Reihenfolge wird deterministisch sortiert und Duplikate dedupliziert.
-  - Jeder Eintrag muss das Muster `^&#91;a-z&#93;(?:&#91;a-z0-9_-&#93;*&#91;a-z0-9_&#93;)?(?:\\.&#91;a-z0-9&#93;(?:&#91;a-z0-9_-&#93;*&#91;a-z0-9_&#93;)?)*$`
-    erfüllen. Die HTML-Entities vermeiden, dass der Docs-Link-Checker
-    Regex-Gruppen irrtümlich als Markdown-Link interpretiert.
-  - Das Muster verbietet leere Segmente (z. B. `token.`, `a..b`).
-  - Der Regex wird bei Bedarf über eine neue `DM_TRINO_SESSION_ALLOWLIST_V`-Version erweitert;
-    aktuelle Schreibweise bleibt deterministisch (kleinbuchstabig, Punkt-/Unterstrich-/Bindestrich-Zulässig).
-  - Dotted Session-Keys sind erlaubt (z. B. `hive.s3_staging_directory`), sofern das Muster passt.
+  - Jeder Eintrag muss dem Phase-1-Muster `v1` entsprechen:
+    - Kleinbuchstaben, Ziffern, Unterstrich, Bindestrich; optionale
+      Punkt-getrennte Segmente.
+    - Erstes Zeichen pro Segment muss ein Kleinbuchstabe sein; in
+      Dot-Segmenten zusätzlich Ziffern erlaubt.
+    - Letztes Zeichen pro Segment darf kein Bindestrich sein.
+    - Leere Segmente sind verboten.
+  - Akzeptierte Beispiele:
+    - `query_max_run_time`
+    - `query-max-cpu-time`
+    - `hive.s3_staging_directory`
+  - Abgelehnte Beispiele:
+    - `token.` (leeres Segment am Ende)
+    - `a..b` (leeres Segment in der Mitte)
+    - `Query_Max_Run_Time` (Großbuchstaben vor Normalisierung — Normalisierung
+      hebt dies auf; aber direkte Allowlist-Konfiguration mit Großbuchstaben
+      wird als `action_required` abgelehnt, wenn `v1`-Striktprüfung aktiv ist)
+    - `_query` (führender Underscore), `-query` (führender Bindestrich)
+  - Referenzimplementierung des `v1`-Regex (Kotlin-Raw-String):
+    `^[a-z](?:[a-z0-9_-]*[a-z0-9_])?(?:\.[a-z0-9](?:[a-z0-9_-]*[a-z0-9_])?)*$`
+  - Der Regex wird bei Bedarf über eine neue
+    `DM_TRINO_SESSION_ALLOWLIST_V`-Version erweitert; aktuelle Schreibweise
+    bleibt deterministisch.
 - Versionierung:
   - `DM_TRINO_SESSION_ALLOWLIST_V` ist optionaler Versionsmarker.
   - Unterstützte Werte: `v1` (Default bei fehlender Angabe).
@@ -273,7 +321,15 @@ Konfiguration der Session-Forwarding-Liste:
 
 #### 5.2.5 Entscheidungs-Matrix für Guard-Flows (Phase 1)
 
-Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
+Vor allen Guard-Schritten gelten die Parser-Schichten aus §5.2.2:
+
+0. **Strukturelles Parsen** (`scheme://`, Authority, Pfad, Query-Teil)
+   und **Percent-Decodierung** aller URL-Komponenten und Query-Werte.
+   Ungültige Encodings oder verbotene Pfadbestandteile (z. B. `/` im
+   dekodierten `catalog`/`schema`) brechen sofort mit `action_required`,
+   noch bevor irgendein Guard läuft.
+
+Danach gilt diese Reihenfolge explizit:
 
 1. Runtime-Profil-Auflösung
 - `--trino-runtime-profile` > `DM_TRINO_RUNTIME_PROFILE` > Default `production`.
@@ -316,19 +372,27 @@ Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
 - `userinfo`-Parsing (Phase 1):
   - Grammatik nach Decodierung: `userinfo = user [ ":" password ]`
 - `user` ist Phase 1 verpflichtend und muss vorhanden und nicht leer sein.
-  `accessToken` ergänzt in dieser Phase ein zusätzliches Auth-Zusatzfeld; es ersetzt
-  **nicht** die Pflicht zur URL-`userinfo` und kann nur mit vorhandenem `user` genutzt werden.
-- Wenn `:` vorhanden ist, muss `password` nach Decodierung/Trim existieren und darf nicht
-  leer sein.
+- Authentifizierungs-Modi für Phase 1 (mindestens **einer** muss erfüllt sein):
+  - **URL-embedded Passwort** (`user:password@...`) — nur in `non_production`
+    mit aktivierter Legacy-Geheimnis-Ausnahme.
+  - **`DM_TRINO_PASSWORD`** als Umgebungs-Secret — in beiden Profilen erlaubt,
+    Standardweg für `production`.
+  - **`accessToken`** als Query-Property — ergänzt `user`, ersetzt aber nicht
+    die Pflicht zu vorhandenem `user` in der URL. In `production` hart
+    blockiert; in `non_production` nur mit Legacy-Geheimnis-Ausnahme.
+- Wenn `:` in `userinfo` vorhanden ist, muss `password` nach Decodierung/Trim
+  existieren und darf nicht leer sein.
 - Bei vorhandenem `:` gilt `password` als URL-embedded Secret.
   - Leeres Passwort (`user:` oder Äquivalent nach Decodierung) wird in allen Profilen
     deterministisch mit `action_required` abgelehnt.
   - URL-embedded Secret ist in `production` hart blockiert.
   - In `non_production` ist URL-embedded Secret nur mit aktivierter
     Legacy-Geheimnis-Ausnahme erlaubt.
-  - Nur wenn kein `:` vorhanden ist (`user` ohne Passwort), darf `DM_TRINO_PASSWORD` als
-    Fallback für das Passwort genutzt werden. Ist `DM_TRINO_PASSWORD` nicht gesetzt oder leer,
-    ist dies ein deterministischer Guard-Fehler (`action_required`) in allen Profilen.
+- Fallback-Auflösung, wenn kein `:` in `userinfo`:
+  - Vorhandenes `accessToken` deckt die Auth-Pflicht bereits ab; `DM_TRINO_PASSWORD`
+    ist dann **nicht erforderlich**.
+  - Ohne `accessToken` ist `DM_TRINO_PASSWORD` Pflicht. Fehlend oder leer →
+    deterministischer Guard-Fehler (`action_required`) in allen Profilen.
 - URL-Embedded `user:password` ist in `production` hart blockiert.
   In `non_production` ist es für den Legacy-URL-Secret-Modus nur erlaubt, wenn
   die Legacy-Geheimnis-Ausnahme aktiv ist:
@@ -340,8 +404,11 @@ Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
     `production` oder fehlender Legacy-Ausnahme) sofort mit
     `action_required` abgelehnt.
   - Kein generischer Connector-Parameter-Bypass; nur explizit erlaubte Properties.
+- Trino-spezifische Bekannte Phase-1-Einschränkung: Es wird kein
+  Kerberos-/OIDC-Auth-Flow unterstützt. Token-basierte Auth läuft
+  ausschließlich über `accessToken` mit gesetztem `user`. Siehe Risiko 9.5.
 
-#### 5.3 Security, Secrets und Maskierung
+### 5.3 Security, Secrets und Maskierung
 
 - Security-Matrix (Phase 1):
   - `production`: URL-Embedding und folgende Sensitive-Parameter sind hart blockiert:
@@ -359,19 +426,25 @@ Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
         die Ausnahme nicht.
       - Präzedenz: CLI-Flag > Umgebungsvariable.
     - In allen Legacy-Secret-Fällen ist ein klarer, maskierter Warnhinweis erforderlich.
-  - `session.<name>` bleibt in beiden Profilen erlaubt, sofern die Allowlist-Regel
-    greift; Werte werden als Secret behandelt und maskiert.
-    Die Allowlist-Entscheidung hat Vorrang vor Laufzeit- oder Profil-Gates.
-  - Schwere Secret-Parameter:
-    - `user:password`
-    - `accessToken`
-    - `trustStorePassword`
-    - `keystorePassword`
-    - `session.<name>`-Werte (maskierungspflichtig)
-  - Nicht-sensible Konfigurationsfelder:
-    - `trustStorePath`
-    - `keystorePath`
-    bleiben als Pfad-/Dateiangaben nutzbar.
+
+- Klassifikation der Sensitive-Parameter:
+
+  | Klasse | Parameter | Profil-Gate | Allowlist | Maskierung |
+  | --- | --- | --- | --- | --- |
+  | **Profil-blockiert** | `user:password`, `accessToken`, `trustStorePassword`, `keystorePassword` | `production` hart blockiert; `non_production` nur mit Legacy-Geheimnis-Ausnahme | – | immer `***` |
+  | **Allowlist-gesteuert** | `session.<name>`-Werte | kein Profil-Gate | Pflicht (`v1`-Muster) | Phase 1: pauschal `***` |
+  | **Nicht-sensibel** | `trustStorePath`, `keystorePath` | – | – | nicht maskiert |
+
+  Hinweise:
+
+  - `session.<name>` ist **nicht** profil-blockiert: Die Allowlist-Entscheidung
+    hat Vorrang vor Laufzeit- oder Profil-Gates. In beiden Profilen erlaubt,
+    sofern Name in der angewandten Allowlist liegt.
+  - Phase-1-Entscheidung zur Session-Wert-Maskierung: **pauschal `***`**, weil
+    Allowlist-Einträge keine Klassifikation (`public` vs. `secret`) tragen.
+    Diagnostische Klartext-Werte (`query_max_run_time=10m`) sind dadurch in
+    Phase 1 nicht sichtbar. Phase 2 verfeinert dies via
+    Allowlist-Eintragsklassifikation (`name:public`/`name:secret`).
 
 - In produktiven Setups sind URL-Embedding und sensible URL-/Query-Secret-Parameter
   (`user:password`, `accessToken`, `trustStorePassword`, `keystorePassword`)
@@ -397,6 +470,11 @@ Zur Vermeidung von Inkonsistenzen gilt diese Reihenfolge explizit:
     - HMAC/SHA-256 auf normalisierten Verbindungsdaten mit einem stabilen
       `DM_TRINO_CACHE_SALT` (deploymentspezifisch) zur Reproduzierbarkeit.
     - Ergebnis-Digests dürfen keine Klartext-Geheimnisse enthalten.
+    - Fehlt `DM_TRINO_CACHE_SALT`, gilt **fail-secure**: kein
+      generierter Default-Salt, sondern `action_required` mit Hinweis auf die
+      Pflicht-Variable. Die Begründung: Ein impliziter Salt verleitet zur
+      Wieder-Verwendung über Deployments hinweg und unterläuft die
+      Cache-Trennung.
   - Session-Property-Regel:
     - `session.<name>` darf nur dann weitergereicht werden, wenn `<name>` in der expliziten
       Allowlist für Phase 1 und der angewandten Konfiguration enthalten ist.
@@ -468,7 +546,9 @@ Objektklassen (Phase-1-Vertrag):
 - `function`
 - `udf`
 - `sequence`
-- `oid`
+- `oid` *(PG-spezifische Identitäts-Spalte; behalten, weil im
+  Compare-Pfad PG↔Trino die Identitätskonsistenz separat berichtet
+  werden soll. In Trino immer `missing`.)*
 - `other` (Fallback-Klasse für nicht explizit definierte Objektklassen)
 
 Hinweis zur Coverage-Auswertung:
@@ -484,6 +564,42 @@ Interpretation:
   `action_required`. Nur bei explizit gesetztem `--allow-metadata-gaps`
   kann der Vergleich fortgesetzt werden; die betroffene Klasse wird weiterhin
   mit `metadata_coverage=missing` und dokumentierter Risikoannahme gemeldet.
+
+#### 5.5.1 Per-Connector-Coverage-Vertrag (Phase-1-Minimum)
+
+Damit `metadata_coverage` deterministisch ist, dokumentiert Phase 1
+eine **statische Coverage-Map je Trino-Connector** (`iceberg`, `hive`,
+`postgresql`, `mysql`). Diese Map ist im Adapter mitgeliefert und
+versionsiert (`DM_TRINO_COVERAGE_MAP_V`, Default `v1`).
+
+Verbindlich für Phase 1:
+
+- Mindestens **ein Default-Connector mit vollständiger Coverage-Map**
+  ist Voraussetzung für `schema compare` (Vorschlag: `iceberg` als
+  Tranche-3-DoD-Baseline).
+- Connectoren ohne Map liefern `metadata_coverage=missing` für alle
+  Klassen außer `table`/`view`/`column` (diese sind via Trino-JDBC immer
+  lesbar) und brechen ohne `--allow-metadata-gaps` ab.
+- Map-Format (YAML, klasseweise):
+  ```yaml
+  connector: iceberg
+  version: v1
+  classes:
+    table: full
+    view: full
+    column: full
+    index: missing
+    constraint: missing
+    trigger: missing
+    procedure: missing
+    function: missing
+    udf: missing
+    sequence: missing
+    oid: missing
+    other: missing
+  ```
+- Phase 2 ergänzt eine Connector-Test-Matrix (`hive` vs. `iceberg`)
+  und dynamische Coverage-Erkennung.
 
 ### 5.6 Capability-Governance für Trino
 
@@ -515,6 +631,20 @@ Regel:
 ### Phase 1 — Read-only MVP
 
 **Ziel:** sicherer Trino-Lesepfad ohne Schreib-Risiko.
+
+Phase 1 ist in drei Tranchen geschnitten, damit das umfangreiche
+Security-Modell nicht den ersten lauffähigen Read-Pfad blockiert:
+
+- **Tranche 1a** — Build-fähiges Minimum: `TRINO`-Enum,
+  `DialectCapabilities`, kanonisches URL-Parsing, Source-only-Guards,
+  Basis-Maskierung. Endet mit grünem Build und blockiertem `--target`.
+- **Tranche 1b** — Vollständiges Security-Modell: Runtime-Profile,
+  Insecure-Transport-Dreifach-Signatur, Legacy-Geheimnis-Ausnahme,
+  Session-Allowlist + Versionierung, Cache-Salt-Pflicht.
+- **Tranche 2** — Read-Infrastruktur inkl. Testcontainers-Smoke-Test.
+- **Tranche 3** — `schema compare`, `data profile`, Coverage-Map.
+
+Funktionaler Scope (über alle Tranchen):
 
 1. Dialekt + URL-Alias implementieren.
 2. Adapter/JDBC hinzufügen:
@@ -694,6 +824,22 @@ Hinweise:
 - Gegenmaßnahme: ein verbindliches Modell (Canonical-URL, Source/Target-Regeln,
   Guard-Fehlerklassen).
 
+### 9.5 Auth-Modell-Reichweite (Phase 1)
+
+- Risiko: Phase 1 bietet ausschließlich URL-Passwort, `DM_TRINO_PASSWORD`
+  und `accessToken` (JWT). Setups mit Kerberos, OAuth-Code-Flow oder
+  externem Credential-Provider sind nicht unterstützt.
+- Gegenmaßnahme: explizite, sichtbare Phase-1-Einschränkung im
+  README/Adapter-Doc; Aufnahme erweiterter Auth-Modi in den Phase-2-Scope.
+
+### 9.6 Session-Wert-Maskierung erschwert Diagnose
+
+- Risiko: Pauschale `***`-Maskierung aller `session.<name>`-Werte (siehe
+  §5.3) verbirgt unkritische Diagnose-Werte (z. B. `query_max_run_time`).
+- Gegenmaßnahme: Phase 2 liefert klassifizierte Allowlist-Einträge
+  (`name:public`/`name:secret`); in Phase 1 wird die Einschränkung in der
+  CLI-Hilfe sichtbar gemacht.
+
 ## 10) Betroffene Artefakte
 
 - `spec/architecture.md` (Adapterposition)
@@ -701,12 +847,28 @@ Hinweise:
 - `spec/connection-config-spec.md` (URL-Form)
 - `settings.gradle.kts` (Modulverkabelung)
 - `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DatabaseDialect.kt`
+  → Enum-Wert `TRINO` + `fromString`-Alias `trino`.
 - `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionUrlParser.kt`
+  → Trino-URL-Form (`trino://user@host:port/catalog/schema`); Query-Property-Allowlist.
+- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionConfig.kt`
+  → optionales `dialectContext: DialectConnectionContext?`-Feld (sealed; siehe §4.1).
+- `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/connection/ConnectionSecretMasker.kt`
+  → `sensitiveQueryKeys` um Trino-Sensitive-Keys erweitern:
+  `accessToken`, `trustStorePassword`, `keystorePassword`,
+  `session.*`-Wertmaskierung (case-sensitive, Phase 1 pauschal).
 - `hexagon/ports-common/src/main/kotlin/dev/dmigrate/driver/DialectCapabilities.kt`
+  → exhaustiver `when` muss um `TRINO`-Variante erweitert werden (Build bricht
+  sonst). Read-only-Voreinstellung:
+  - `supportsViews = true`, `supportsFunctions = false`,
+    `supportsProcedures = false`, `supportsTriggers = false`,
+    `supportsSequences = false`, `supportsCustomTypes = false`,
+    `supportsPartitioning = false`, `supportsRoutineRewrite = false`,
+    `supportsDisableFkChecks = false`, `supportsTriggerDisable = false`,
+    `supportsTriggerStrict = false`, `supportsSchemaParameter = true`.
 - `adapters:driven:driver-trino` (neu)
-- `adapters:driven:driver-trino-profiling` (falls `data profile` in Phase 1)
+- `adapters:driven:driver-trino-profiling` (Phase-1-Pflicht; siehe §4)
 - `hexagon`-Ports bei späteren Phasen (Capability-Guards)
-- `docs/planning/roadmap.md`
+- `docs/planning/roadmap.md` (Trino als 1.x-Kandidat eintragen)
 - ggf. User-Dokumentation
 
 ## 11) Akzeptanzkriterien (gesamt)
@@ -734,6 +896,10 @@ Hinweise:
   Vergleich standardmäßig mit `action_required`; mit `--allow-metadata-gaps`
   wird der Vergleich kontrolliert mit dokumentierter Risikoannahme fortgeführt.
 - Secrets werden in allen Ausgaben maskiert und nicht persistiert/geloggt.
+- Mindest-Coverage je Trino-Modul ≥ 90 % (`hexagon/ports-common`,
+  `adapters:driven:driver-trino`, `adapters:driven:driver-trino-profiling`).
+- Tranche-1-Split (1a/1b) ist in DoD verankert; Tranche 2 enthält einen
+  Testcontainers-Smoke gegen `trinodb/trino` mit Default-Connector.
 
 ## 12) Empfehlung
 
@@ -742,84 +908,152 @@ Keine Vermischung mit klassischen OLTP-Migrationspfaden.
 
 ## Definition of Done
 
-### DoD — Phase 1, Tranche 1 (Basiskontrakt, URL-Parsing, Security)
+### DoD — Phase 1, Tranche 1a (Build-fähiges Minimum)
 
-Ziel: `trino://...` ist vollständig verifiziert und sicher genug, um Trino-Infrastruktur zu bauen.
-Voraussetzung für Phase 1, Tranche 2.
+Ziel: `TRINO`-Dialekt + kanonisches URL-Parsing existieren, der Build bleibt
+grün, und nicht-erlaubte Zielpfade brechen reproduzierbar ab. Diese Tranche
+ist deutlich kleiner als das vollständige Security-Modell und entkoppelt
+URL-Parsing/Capabilities von der Härtung in 1b.
 
-- [ ] `DatabaseDialect.TRINO` vorhanden.
-- [ ] Alias `trino` in Dialektauflösung und URL-Parsing verankert.
-- [ ] URL-Parsing ist deterministisch für `catalog`/`schema` (inkl. fehlendes/ungültiges Schema).
-- [ ] Trino-URL erlaubt nur die Phase-1-Property-Liste; nicht erlaubte Properties
-  (`foo=bar`) brechen reproduzierbar mit `action_required` ab.
-- [ ] `requestTimeoutMs` wird als positive Ganzzahl strikt validiert; nicht parsebare,
-  nicht-positive oder leere Werte führen zu `action_required`.
+- [ ] `DatabaseDialect.TRINO` vorhanden; `fromString("trino") → TRINO`.
+- [ ] `DialectCapabilities.forDialect(TRINO)` liefert die in §10 fixierten
+  Read-only-Werte; exhaustiver `when` ohne `else` bleibt grün.
+- [ ] `ConnectionConfig` um optionales `dialectContext: DialectConnectionContext?`
+  erweitert; sealed `TrinoConnectionContext` mit `catalog`, normalisierter
+  Property-Map, Session-Allowlist-Snapshot. `toString()` maskiert
+  Trino-Secret-Felder mit `***` (siehe §4.1).
+- [ ] `ConnectionUrlParser` akzeptiert `trino://user@host:port/catalog/schema`
+  inkl. IPv6 in eckigen Klammern; `database` wird mit `schema` befüllt,
+  `catalog` landet im Trino-Context.
+- [ ] URL-Parsing ist deterministisch für `catalog`/`schema` (inkl.
+  fehlendes/ungültiges Schema; `/` nach Dekodierung verboten).
+- [ ] Trino-URL erlaubt nur die Phase-1-Property-Liste; nicht erlaubte
+  Properties (`foo=bar`) brechen reproduzierbar mit `action_required` ab.
+- [ ] `requestTimeoutMs` wird als positive Ganzzahl strikt validiert; nicht
+  parsebare, nicht-positive oder leere Werte führen zu `action_required`.
 - [ ] Transport-Konflikte werden hart blockiert:
   - `ssl=true` + `httpScheme=http`
   - `ssl=false` + `httpScheme=https`
-- [ ] `--trino-session-allowlist` ist als Tri-State implementiert und folgt der Präzedenzregel
-  (explizites CLI-Set > Env > leerer Default).
-- [ ] `DM_TRINO_SESSION_ALLOWLIST_V` ist bei aktivierter Env-Quelle versioniert:
-  - Bei invaliden Env-Versionen wird `action_required` erzeugt.
-  - Bei aktivem CLI-Override wird eine ungültige Env-Version nicht blockierend als Warnung
-    dokumentiert und vollständig vom Env-Source-Parsing entkoppelt.
-- [ ] `--trino-session-allowlist=""` wird als explizit gesetzter CLI-Override mit leerer
-  Allowlist ausgewertet (ohne Env-Fallback).
-- [ ] Leeres URL-embedded Passwort (`trino://user:@host:...`) wird in allen Profilen
-  reproduzierbar mit `action_required` abgelehnt.
-- [ ] `data transfer --target trino://...` bricht in Tranche 1 mit klarer
+- [ ] Doppelte Query-Properties werden nach vollständiger
+  Percent-Dekodierung erkannt und mit `action_required` abgelehnt.
+- [ ] Fehlerhafte Percent-Dekodierung in URL-Komponenten und Query-Werten
+  liefert deterministisch `action_required`.
+- [ ] `data transfer --target trino://...` bricht mit klarer
   Guard-Fehlermeldung ab (rein Source-only).
-- [ ] `data profile --target trino://...` ist in Tranche 1 als Source-only klar abgelehnt.
-- [ ] Keine Secret-Ausgaben in Logs/Fehlern/Debug-Meldungen.
-- [ ] Ungültige Runtime-Profile (`DM_TRINO_RUNTIME_PROFILE` / `--trino-runtime-profile`) führen
-  in allen Pfaden zu `action_required`.
-- [ ] In `production` sind `user:password`-URLs sowie `accessToken`, `trustStorePassword`,
-  `keystorePassword` als Secret-Properties hart blockiert (`action_required`), unabhängig vom
-  aktiven Modul.
-- [ ] Leere Werte bei explizit gesetzten Secret-Parametern (`accessToken`, `trustStorePassword`,
-  `keystorePassword`, `user:password`, `session.<name>-Werte`) führen in allen Profilen deterministisch zu
-  `action_required`.
+- [ ] `data profile --target trino://...` ist als Source-only klar abgelehnt.
+- [ ] `ConnectionSecretMasker.sensitiveQueryKeys` ist um `accessToken`,
+  `trustStorePassword`, `keystorePassword` (case-sensitive camelCase)
+  erweitert. `session.*`-Werte werden im selben Pass maskiert.
+- [ ] Basis-Maskierung in Logs/Fehlern/Debug-Meldungen verifiziert (keine
+  Klartext-Secrets in `toString()` von `ConnectionConfig`/Trino-Context).
+- [ ] Mindest-Dokumentation ergänzt: `spec/cli-spec.md`,
+  `spec/connection-config-spec.md` (URL-Form, Property-Allowlist,
+  Source-only-Regel).
+
+**Test-Coverage (1a):**
+
+- [ ] `hexagon/ports-common` bleibt ≥ 90 % Coverage (Memory-Vorgabe).
+- [ ] Eigene Testklasse pro Trino-Parser-Regel: kanonische URL, fehlendes
+  Schema, IPv6, leere Pfadsegmente, nicht erlaubte Properties, doppelte
+  Properties, ungültige Percent-Decodierung.
+
+### DoD — Phase 1, Tranche 1b (Vollständiges Security-Modell)
+
+Ziel: alle Runtime-/Profil-/Transport-/Secret-Guards sind aktiv und durch
+Permutations-Tests abgesichert.
+
+- [ ] `--trino-runtime-profile` und `DM_TRINO_RUNTIME_PROFILE` sind
+  implementiert; Default = `production`. Ungültige Werte → `action_required`.
+- [ ] In `production` sind `user:password`-URLs sowie `accessToken`,
+  `trustStorePassword`, `keystorePassword` als Secret-Properties hart
+  blockiert (`action_required`), unabhängig vom aktiven Modul.
+- [ ] In `non_production` werden `user:password`, `accessToken`,
+  `trustStorePassword`, `keystorePassword` als Übergangsmodus akzeptiert —
+  nur bei effektivem `non_production`-Profil, aktivierter
+  `allow-legacy-trino-secrets`-Ausnahme (CLI-Flag oder Env-Variante) und
+  mit deterministisch maskierter Warnung.
 - [ ] Legacy-Geheimnis-Ausnahme (`--allow-legacy-trino-secrets` oder
-  `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`) ist in Phase 1 nur in `non_production`
-  verfügbar und erforderlich, damit Sensitive URL-/Query-Parameter in diesen Modus gelangen.
-- [ ] `user` ohne URL-Embedded-Password erfordert bei fehlendem `DM_TRINO_PASSWORD` in allen
-  Profilen deterministisch `action_required`.
-- [ ] In `non_production` werden `user:password`, `accessToken`, `trustStorePassword`,
-  `keystorePassword` als Übergangsmodus akzeptiert, nur bei effektivem
-  `non_production`-Profil, aktivierter `allow-legacy-trino-secrets`-Ausnahme
-  (entweder CLI-Flag oder Env-Variante) und mit deterministisch maskierter Warnung.
-- [ ] Geheimnisse werden in Hilfetexten/Fehlern/diagnostischen Cache-IDs und Telemetrie
-  deterministisch maskiert.
-- [ ] Interne Runtime-Caches (Connection-/Metadaten-Cache) sind deterministisch gehashed
-  (z. B. HMAC/SHA-256 mit `DM_TRINO_CACHE_SALT`) und enthalten keine Geheimnisse im Klartext.
+  `DM_TRINO_ALLOW_LEGACY_TRINO_SECRETS=true`) ist nur in `non_production`
+  verfügbar; Präzedenz CLI > Env.
+- [ ] Leeres URL-embedded Passwort (`trino://user:@host:...`) wird in allen
+  Profilen reproduzierbar mit `action_required` abgelehnt.
+- [ ] Leere Werte bei explizit gesetzten Secret-Parametern (`accessToken`,
+  `trustStorePassword`, `keystorePassword`, `user:password`,
+  `session.<name>`-Werte) führen in allen Profilen deterministisch zu
+  `action_required`.
+- [ ] `user` ohne URL-Embedded-Password und ohne `accessToken` erfordert
+  `DM_TRINO_PASSWORD`; fehlend/leer → `action_required` in allen Profilen.
+- [ ] Mit gesetztem `accessToken` (und nicht-blockierendem Profil) ist
+  `DM_TRINO_PASSWORD` nicht erforderlich.
 - [ ] Insecure-Transport-Ausnahme ist nur aktiv bei exakt:
-  - `DM_TRINO_RUNTIME_PROFILE=non_production` oder `--trino-runtime-profile=non_production`
-    (Vorrang: CLI-Flag > Env),
+  - effektives Profil `non_production`,
   - `--allow-insecure-trino-transport`,
   - `DM_TRINO_ALLOW_INSECURE_TRANSPORT=true`;
-  in allen `production`-Fällen wird `httpScheme=http`/`ssl=false` mit `action_required` blockiert.
-- [ ] `DM_TRINO_ALLOW_INSECURE_TRANSPORT` wird streng als String `true` validiert.
-  Nicht-`true`-Werte sind bei Anfrage unsicherer Transportoptionen deterministisch mit
-  `action_required` belegt.
-- [ ] Doppelte Query-Properties werden nach vollständiger Percent-Dekodierung erkannt
-  und mit `action_required` abgelehnt.
-- [ ] Fehlerhafte Percent-Dekodierung in URL-Komponenten und Query-Werten liefert deterministisch
-  `action_required`.
-- [ ] Mindest-Dokumentation ergänzt: `spec/cli-spec.md`,
-  `spec/connection-config-spec.md`.
+  in allen `production`-Fällen wird `httpScheme=http`/`ssl=false` mit
+  `action_required` blockiert.
+- [ ] `DM_TRINO_ALLOW_INSECURE_TRANSPORT` wird streng als String `true`
+  validiert. Nicht-`true`-Werte sind bei Anfrage unsicherer
+  Transportoptionen deterministisch mit `action_required` belegt.
+- [ ] `--trino-session-allowlist` ist als Tri-State implementiert und folgt
+  der Präzedenzregel (explizites CLI-Set > Env > leerer Default).
+- [ ] `--trino-session-allowlist=""` wird als explizit gesetzter
+  CLI-Override mit leerer Allowlist ausgewertet (ohne Env-Fallback).
+- [ ] `DM_TRINO_SESSION_ALLOWLIST_V` ist bei aktivierter Env-Quelle
+  versioniert:
+  - Bei invaliden Env-Versionen wird `action_required` erzeugt.
+  - Bei aktivem CLI-Override wird eine ungültige Env-Version nicht
+    blockierend als Warnung dokumentiert und vollständig vom
+    Env-Source-Parsing entkoppelt.
+- [ ] `session.<name>` wird gegen den `v1`-Regex aus §5.2.4 geprüft; Werte
+  außerhalb der Allowlist brechen mit `action_required`.
+- [ ] Geheimnisse werden in Hilfetexten/Fehlern/diagnostischen Cache-IDs
+  und Telemetrie deterministisch maskiert.
+- [ ] Interne Runtime-Caches (Connection-/Metadaten-Cache) sind
+  deterministisch gehashed (HMAC/SHA-256 mit `DM_TRINO_CACHE_SALT`) und
+  enthalten keine Geheimnisse im Klartext.
+- [ ] Fehlt `DM_TRINO_CACHE_SALT`, ist das ein deterministischer Guard-Fehler
+  (`action_required`); kein implizit generierter Default-Salt.
+
+**Test-Coverage (1b) — Guard-Permutationen:**
+
+- [ ] Test-Matrix abgedeckt: `{production, non_production}` × `{ssl=true, ssl=false,
+  unset}` × `{httpScheme=http, httpScheme=https, unset}` × `{insecure-Signatur
+  vollständig, teilweise, fehlend}`. Jede Kombination liefert deterministisch
+  `permit` oder `action_required`.
+- [ ] Test-Matrix abgedeckt: `{production, non_production}` × `{URL-PW,
+  DM_TRINO_PASSWORD, accessToken, keiner}` × `{Legacy-Ausnahme aktiv, inaktiv}`.
+- [ ] Test-Matrix abgedeckt: `--trino-session-allowlist` Tri-State ×
+  `DM_TRINO_SESSION_ALLOWLIST` × `DM_TRINO_SESSION_ALLOWLIST_V` × `session.<name>`
+  Validität.
+- [ ] Modul-Coverage `hexagon/ports-common` bleibt ≥ 90 %.
 
 ### DoD — Phase 1, Tranche 2 (Read-Infrastruktur)
 
-Ziel: Kernread-Funktionalität ist produktiv startfähig.
-Voraussetzung: Tranche 1 vollständig abgeschlossen.
+Ziel: Kernread-Funktionalität ist produktiv startfähig **und** gegen ein
+echtes Trino verifiziert.
+Voraussetzung: Tranche 1a und 1b vollständig abgeschlossen.
 
 - [ ] `adapters:driven:driver-trino` in `settings.gradle.kts` aufgenommen.
 - [ ] Trino-Connection-Factory/JDBC-Pool lauffähig.
 - [ ] `TrinoSchemaReader`, `TrinoTableLister`, `TrinoDataReader` implementiert.
 - [ ] `schema reverse --source trino://...` ist lauffähig.
 - [ ] `data export --source trino://...` ist lauffähig.
-- [ ] `data transfer` erkennt Source-only in der Trino-Runtime (kein erfolgreicher
-  Zielausführungsweg Richtung `trino://...`).
+- [ ] `data transfer` erkennt Source-only in der Trino-Runtime (kein
+  erfolgreicher Zielausführungsweg Richtung `trino://...`).
+
+**Test-Coverage (2):**
+
+- [ ] `test:integration-trino` als Gradle-Sub-Projekt vorhanden.
+- [ ] Testcontainers-basierter Smoke-Test gegen `trinodb/trino` mit
+  mindestens einem Default-Connector (Vorschlag: in-Memory-Connector für
+  Bootstrap, `iceberg` für die Compare-Baseline).
+- [ ] Smoke-Test verifiziert:
+  - kanonische URL parst, Connection-Pool öffnet sich,
+  - `TrinoSchemaReader` listet Tabellen aus `system.runtime`/Test-Schema,
+  - `TrinoDataReader` liefert deterministische Zeilen,
+  - `data transfer --target trino://...` bricht weiterhin mit
+    `action_required` ab.
+- [ ] `adapters:driven:driver-trino` ≥ 90 % Coverage (Unit + Integration).
 
 ### DoD — Phase 1, Tranche 3 (Vergleich, Profiling, Guard-Robustheit)
 
@@ -829,19 +1063,31 @@ Voraussetzung: Tranche 2 vollständig abgeschlossen.
 - [ ] `schema compare --source file... --target trino://...` ist lauffähig.
 - [ ] `schema compare --source file... --target trino://...` veröffentlicht
   `metadata_coverage` nach Objektklasse.
+- [ ] **Default-Connector-Coverage-Map** (`iceberg`, `v1`) ist im
+  `driver-trino` mitgeliefert und greift, wenn `--target trino://.../iceberg/...`
+  verwendet wird. Andere Connectoren liefern für nicht-Basis-Klassen
+  `missing`.
 - [ ] `schema compare` nutzt bei `metadata_coverage=missing` standardmäßig
   `action_required`; mit dokumentierter Risikoannahme optional via
   `--allow-metadata-gaps`.
 - [ ] `schema compare --source trino://... --target file...` liefert dieselben
   Coverage-/Warnungs- und Dokumentationsregeln konsistent.
 - [ ] `data profile --source trino://...` ist lauffähig (mit Profiling-Modul).
-- [ ] `data profile --source trino://...` ohne Modul liefert `action_required` und
-  klare Anleitung.
+- [ ] `data profile --source trino://...` ohne Modul liefert `action_required`
+  und klare Anleitung.
 - [ ] Source-only-Regel für Trino ist technisch und dokumentiert durchgesetzt.
-- [ ] `data transfer --target trino://...` liefert klare Fehlerklasse `action_required`.
+- [ ] `data transfer --target trino://...` liefert klare Fehlerklasse
+  `action_required`.
 - [ ] Keine generische Transferschreib-Route in Richtung Trino aktiv.
 - [ ] `schema generate` und `data import` sind für TRINO in Phase 1 deaktiviert.
-- [ ] Trino-Metadaten-Lücken/Unbekannte werden explizit als Warnungen (nicht als stiller Fallback) ausgegeben.
+- [ ] Trino-Metadaten-Lücken/Unbekannte werden explizit als Warnungen (nicht
+  als stiller Fallback) ausgegeben.
+
+**Test-Coverage (3):**
+
+- [ ] Compare-Tests gegen Testcontainers-Trino mit Iceberg-Connector:
+  `full`-/`partial`-/`missing`-Pfade werden je Objektklasse durchlaufen.
+- [ ] `adapters:driven:driver-trino-profiling` ≥ 90 % Coverage.
 
 ### DoD — Phase 2
 
