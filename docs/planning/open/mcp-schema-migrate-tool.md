@@ -14,7 +14,7 @@ nicht starten. Plan `atomic-preserve-service-mode` selbst sagt in
 erst in einer späteren Tranche, wenn `schema_migrate` als Tool
 geplant wird."
 
-Auch `done/quality-coverage-expansion-plan.md` §3.2 + §9 hält fest
+Auch [`done/quality-coverage-expansion-plan.md`](../done/quality-coverage-expansion-plan.md) §3.2 + §9 hält fest
 (Zeile 384): „Ein MCP-Migrate-Tool (`schema_migrate` oder
 `schema_migrate_start`) wäre ein eigener Produkt-/Contract-Slice."
 
@@ -70,7 +70,7 @@ Entscheidungen, keine Produkt-Fragen mehr:
   geliefert (commit `2fcb3846`); das Tool-Schema reicht diesen
   Override durch.
 - **Policy-Gate-Architektur** ist durch
-  `done/ImpPlan-0.9.6-F.md` (Phase F Job-Start-Tools) etabliert:
+  [`done/ImpPlan-0.9.6-F.md`](../done/ImpPlan-0.9.6-F.md) (Phase F Job-Start-Tools) etabliert:
   Approval-Flow + Audit-Trail + Quota-basiertes Rate-Limit. Es
   existiert bereits — neu ist nur die Anwendung auf
   `schema_migrate_start`.
@@ -118,7 +118,7 @@ zwischen **Plan-Erzeugung** (Reverse + Diff + Plan-Validate) und
 Option (b) ist konsistent mit dem KI-Tool-Pattern in
 [`spec/ki-mcp.md`](../../../spec/ki-mcp.md), passt aber schlechter
 zur „atomic Probe+Apply"-Garantie aus
-`done/atomic-preserve-followups.md`.
+[`done/atomic-preserve-followups.md`](../done/atomic-preserve-followups.md).
 
 ### 3.2 Schema-Quelle: Inline, ConnectionRef oder ArtifactRef?
 
