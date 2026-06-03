@@ -179,16 +179,20 @@ fuer Metabase.
 Metabase ist fuer die erste Demo geeigneter als Superset, weil es schnell
 startet und wenig Initialkonfiguration braucht.
 
-- **Image**: `metabase/metabase:v0.55.13` (zum Doc-Refresh
-  juengste 0.55er-Patch-Release; bewusst auf die 0.55-Linie
-  gepinnt statt auf die ganz aktuelle 0.61er, weil 0.55 die
-  juengste durchgepruefte UI-stabile Reihe fuer Schritt-fuer-
-  Schritt-Screenshots im README ist — siehe
-  [Metabase Releases](https://github.com/metabase/metabase/releases)
-  und [Docker Hub `metabase/metabase`](https://hub.docker.com/r/metabase/metabase)).
+- **Image**: `metabase/metabase:v0.55.<patch>` — bewusst auf
+  die 0.55-Linie gepinnt statt auf die ganz aktuelle 0.61er,
+  weil 0.55 als juengste durchgepruefte UI-stabile Reihe fuer
+  Schritt-fuer-Schritt-Screenshots im README dient. Der konkrete
+  Patch-Tag ist beim Implementierungs-Slice BD.3 zu setzen
+  (juengster verfuegbarer 0.55er-Patch zum Zeitpunkt der
+  Screenshot-Aufnahme), damit die README-Screenshots gegen
+  einen konsistenten Tag pinnen. Quellen:
+  [Metabase Releases](https://github.com/metabase/metabase/releases),
+  [Docker Hub `metabase/metabase`](https://hub.docker.com/r/metabase/metabase).
   Bei BD-Tag-Refresh ein eigener Slice: Screenshots fuer
-  aktuelle stable einsammeln, dann Tag-Update + README-Folge.
-  Explizit pinnen, **kein** `:latest`.
+  aktuellen 0.55er-Patch (oder spaeter 0.61er) neu einsammeln,
+  dann Tag-Update + README-Folge. Explizit pinnen, **kein**
+  `:latest`.
 - **Port**: lokal `3000`
 - **State-Volume**: Named-Volume `metabase-data` fuer das interne
   H2-State-File (Demo-Default; eine produktive Metabase-Deployment-
@@ -297,8 +301,13 @@ Cloud-Abhaengigkeit einzufuehren.
 
   Damit laeuft `docker compose run --rm mc-tools ls
   "local/$MINIO_BUCKET/"` ohne `--entrypoint`-Override und ohne
-  Host-`mc`. Das `out/`-Mount macht `cp` aus dem Repo-Root
-  reproduzierbar. Tag auf `RELEASE.2025-08-13T08-35-41Z-cpuv1`
+  Host-`mc`. **Wichtig zum Mount-Pfad**: relative Bind-Mounts
+  loest Compose **gegen das Verzeichnis der Compose-Datei** auf,
+  nicht gegen das Working Directory des Aufrufers. `./out` ist
+  damit `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der
+  Demo-Flow §6 + BD.4 schreiben CLI-Output deshalb konsequent
+  nach `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt
+  `/work/` im Container. Tag auf `RELEASE.2025-08-13T08-35-41Z-cpuv1`
   ist bewusst der **juengste auf Docker Hub publizierte
   `minio/mc`-Tag** (siehe Risk #9).
 
@@ -402,9 +411,12 @@ set -a; source examples/bi-demo/.env; set +a
 docker compose -f examples/bi-demo/docker-compose.yml up -d
 
 export D_MIGRATE_CONFIG=examples/bi-demo/.d-migrate.yaml
-d-migrate schema reverse --source demo_pg --output out/reverse.yaml
-d-migrate data profile --source demo_pg --output out/profile.json
-d-migrate schema generate --source out/reverse.yaml --target postgresql
+d-migrate schema reverse --source demo_pg \
+    --output examples/bi-demo/out/reverse.yaml
+d-migrate data profile --source demo_pg \
+    --output examples/bi-demo/out/profile.json
+d-migrate schema generate --source examples/bi-demo/out/reverse.yaml \
+    --target postgresql
 
 docker compose -f examples/bi-demo/docker-compose.yml run --rm mc-tools \
     cp --recursive /work/ "local/${MINIO_BUCKET}/runs/manual/"
@@ -518,6 +530,9 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
   gepinnten Image-Tags.
 - [ ] `examples/bi-demo/.env.example` aus §5.5; `.env` ist via
   `examples/bi-demo/.gitignore` ausgeschlossen.
+- [ ] **Pre-Start**: `docker compose pull` zieht alle gepinnten
+  Tags und scheitert sofort, wenn ein Image auf Docker Hub
+  nicht mehr verfuegbar ist (siehe Risk #9).
 - [ ] Nach `docker compose up -d` (ohne Profile) gilt innerhalb
   von 90 s:
   - **Postgres**: `state=healthy` via `pg_isready`-Healthcheck
@@ -525,9 +540,13 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
   - **MinIO-Server**: keine Healthcheck-Bedingung. Erreichbarkeit
     wird **nicht** direkt am Container gemessen, sondern indirekt
     via `minio-init`.
-  - **minio-init**: `state=exited (0)`, d. h.
-    `service_completed_successfully` — Bucket-Init lief grun und
-    der mc-Retry hat MinIO als nutzbar bestaetigt.
+  - **minio-init**: `state=exited`, `ExitCode=0`,
+    `service_completed_successfully` — Bucket-Init lief gruen
+    und der mc-Retry hat MinIO als nutzbar bestaetigt. Pinnung
+    via `docker compose ps --all --format json minio-init |
+    jq -e '.State == "exited" and .ExitCode == 0'`
+    (`--all` ist Pflicht — `docker compose ps` ohne Flag
+    listet beendete Container **nicht**).
   - **mc-tools**: nicht gestartet (steht unter
     `profiles: ["tools"]` und wird nur durch
     `docker compose run mc-tools …` materialisiert).
@@ -619,10 +638,14 @@ Container-CLI-Variante dokumentiert.
 **Akzeptanzkriterien**:
 
 - [ ] `examples/bi-demo/.d-migrate.yaml` aus §5.6.
-- [ ] `d-migrate schema reverse --source demo_pg --output out/reverse.yaml`
-  liefert eine valide Reverse-Definition (alle 5 Tabellen, FKs,
-  Datentypen).
-- [ ] `d-migrate data profile --source demo_pg --output out/profile.json`
+- [ ] `d-migrate schema reverse --source demo_pg --output
+  examples/bi-demo/out/reverse.yaml` liefert eine valide
+  Reverse-Definition (alle 5 Tabellen, FKs, Datentypen). **Output-
+  Pfad ist `examples/bi-demo/out/...`**, nicht Repo-Root-`out/`
+  — der `mc-tools`-Bind-Mount `./out:/work` loest gegen das
+  Compose-Datei-Verzeichnis auf (§5.3).
+- [ ] `d-migrate data profile --source demo_pg --output
+  examples/bi-demo/out/profile.json`
   liefert einen Profile-Report. BD.4 pinnt drei sichtbare
   Profiling-Signale entlang heutiger
   [`WarningCode`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/types/WarningCode.kt):
@@ -635,8 +658,9 @@ Container-CLI-Variante dokumentiert.
     `CONTAINS_EMPTY_STRINGS` (auf `customers.email`),
     `POSSIBLE_PLACEHOLDER_VALUES` (auf `customers.middle_name`),
     `LOW_CARDINALITY` (auf `products.category`).
-- [ ] `d-migrate schema generate --source out/reverse.yaml --target postgresql`
-  rendert eine valide DDL.
+- [ ] `d-migrate schema generate --source
+  examples/bi-demo/out/reverse.yaml --target postgresql` rendert
+  eine valide DDL.
 - [ ] `docker compose run --rm mc-tools cp --recursive
   /work/ "local/${MINIO_BUCKET}/runs/manual/"` laed die Artefakte
   in MinIO (Smoke-Vertrag aus §5.3; `out/` ist im `mc-tools`-
@@ -670,9 +694,10 @@ ohne menschlichen Browser-Schritt prueft.
 **Akzeptanzkriterien**:
 
 - [ ] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
-  prueft Container-Health (`docker compose ps --format json |
-  jq …`), faehrt mindestens den d-migrate-Reverse + Profile
-  Workflow aus BD.4, prueft MinIO-Upload via
+  prueft Container-Health (`docker compose ps --all --format
+  json | jq …` — `--all` ist Pflicht, sonst fehlt `minio-init`
+  im exited-State), faehrt mindestens den d-migrate-Reverse +
+  Profile Workflow aus BD.4, prueft MinIO-Upload via
   `docker compose run --rm mc-tools ls "local/${MINIO_BUCKET}/runs/"`.
   **`mc` wird ausschliesslich ueber den `mc-tools`-Service
   (§5.3) aufgerufen**, damit die Demo ohne Host-`mc` laeuft; `jq`
