@@ -122,16 +122,34 @@ examples/bi-demo/
 PostgreSQL dient als relationale Quelle fuer `d-migrate` und als Datenquelle
 fuer Metabase.
 
-- **Image**: `postgres:17-alpine` (Alpine-Variante fuer
-  Disk-Footprint; Stand 2026-06-03 sind 17.x und 18.x beide
+- **Image**: `postgres:17-trixie` (Debian-13-Trixie-Basis,
+  **nicht** `-alpine`, **nicht** `-bookworm`).
+
+  Begruendung — Alpine vs. Debian: Alpine setzt auf `musl`
+  libc, das unter Multi-Thread-Last (parallele Backends,
+  hoehere Konkurrenz beim Profiling-Scan) deutlich schlechter
+  skaliert als die `glibc` aus der Debian-Variante. Fuer eine
+  Demo, die Profiling-Workloads zeigt, ist konsistente
+  Multi-Thread-Performance wichtiger als der Disk-Footprint.
+
+  Begruendung — Trixie vs. Bookworm: Trixie (Debian 13) ist
+  seit 2025-08-09 stable und der aktuelle Debian-Stable-
+  Track; Bookworm wird parallel als oldstable weitergefuehrt.
+  Pinning auf `-trixie` haelt den Stack auf der aktuellen
+  glibc-Linie und vermeidet die Lebenszyklus-Vermischung mit
+  dem Default-Tag (`postgres:17` zeigt aktuell noch auf
+  Bookworm; das wechselt im Lauf des Trixie-Adopts, ohne dass
+  unser Pin sich aendert).
+
+  Stand 2026-06-03 sind PostgreSQL 17.x und 18.x beide
   aktuell supportet — siehe
   [PostgreSQL Release-Hinweise 18.4 / 17.10 / 16.14 / 15.18 / 14.23](https://www.postgresql.org/about/news/postgresql-184-1710-1614-1518-and-1423-released-3297/)
-  und [Docker Hub `postgres`](https://hub.docker.com/_/postgres) —;
+  und [Docker Hub `postgres`](https://hub.docker.com/_/postgres);
   17 ist die juengere stabile Reihe mit groesserer
-  Treiber-/Tooling-Vertraeglichkeit als die ganz frische 18er-Linie
-  und bewusst auf 17 statt 18 gepinnt, bis 18 in BD-Tag-Refresh
-  durchgepruft ist). Tag in `docker-compose.yml` explizit pinnen,
-  **kein** `:latest`.
+  Treiber-/Tooling-Vertraeglichkeit als die ganz frische
+  18er-Linie und bewusst auf 17 statt 18 gepinnt, bis 18 in
+  BD-Tag-Refresh durchgepruft ist. Tag in `docker-compose.yml`
+  explizit pinnen, **kein** `:latest`.
 - **Datenbank**: `dmigrate_demo`
 - **User**: `dmigrate`
 - **Passwort**: nur Demo-Secret aus `.env.example`, nicht produktiv
@@ -681,7 +699,7 @@ BD.1 (Compose+Healthchecks)
    PostgreSQL + MinIO + Metabase.
 4. **PG-Version-Drift bei Seed-Determinismus**. `setseed()` +
    `random()` kann ueber PG-Major-Versionen leicht variieren.
-   Mitigation: Image-Tag `postgres:17-alpine` pinnen; bei
+   Mitigation: Image-Tag `postgres:17-trixie` pinnen; bei
    Major-Update Seed-Regeneration testen.
 5. **Demo-Credentials in Produktion**. Mitigation: PostgreSQL-
    Default-Passwort traegt `change-me`-Suffix als sichtbaren
