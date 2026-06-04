@@ -1,31 +1,9 @@
-# BI-Demo Compose-Stack
+# BI-Demo Compose-Stack — Spec: docs/planning/in-progress/bi-demo-compose.md
 #
-# Spec: docs/planning/in-progress/bi-demo-compose.md
-#
-# Sub-Slice BD.1 — Compose-Skeleton + Healthchecks:
-# - Postgres mit pg_isready-Healthcheck
-# - seaweed-config (one-shot) rendert s3.json aus .env in ein
-#   Named Volume — eliminiert die Drift zwischen .env und einer
-#   hartkodierten s3.json (siehe Plan §5.3); bash-Parameter-
-#   Expansion fuer JSON-Safety (`"` und `\` werden escaped)
-# - SeaweedFS (Server) liest die gerenderte s3.json read-only
-# - seaweed-init als one-shot mit eingebautem aws-CLI-Retry
-# - aws-tools nur via `profiles: ["tools"]` (kein up-d-Default);
-#   Entrypoint-Wrapper setzt --endpoint-url default und reicht
-#   das User-Subkommando weiter
-#
-# S3-Client: amazon/aws-cli statt minio/mc — neutraler S3-Standard-
-# Pfad, offizielles Amazon-Image, aktive Versionspflege. Siehe
-# Plan §5.3 "S3-Client-Wahl".
-#
-# Object-Storage-Server: SeaweedFS statt MinIO. Begruendung +
-# Auswahl-Tabelle in Plan §5.3 (MinIO CE archiviert 2025-Q3,
-# Risk #9 RESOLVED).
-#
-# Spaetere Slices erweitern:
-# - BD.2: sql/-Mount fuer Postgres-Init
-# - BD.3: metabase-Service
-# - BD.4: optionaler dmigrate-Service
+# Aktuelle Services (BD.1): postgres, seaweed-config (one-shot),
+# seaweed, seaweed-init (one-shot), aws-tools (profile=tools).
+# Spaetere Slices ergaenzen sql/-Init (BD.2), metabase (BD.3),
+# optionalen dmigrate-Container (BD.4).
 
 services:
   postgres:
