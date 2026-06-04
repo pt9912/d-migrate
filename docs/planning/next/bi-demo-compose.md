@@ -2,9 +2,15 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: Next (verfeinert 2026-06-03 — Sub-Slice-Schnitt BD.1-BD.5,
-> Image-Pinning, Healthcheck-Verträge, Skeletons; Entwurf-Stand
-> 2026-05-01 weitergeschrieben).
+> Status: Next (verfeinert 2026-06-04 — Review-Runde 5:
+> `minio`-Server-Skeleton, Bind-Adressen `127.0.0.1`, psql-`\set`-
+> Korrektur in §7/BD.2, `minio-init`-Entrypoint auf Literal-Block,
+> kombinierte `.d-migrate.yaml`, BD.4 fuenf Warning-Codes,
+> Make-Targets, URL-Encoding-Caveat fuer `MC_HOST_local`,
+> `out/`-`mkdir`-Pflicht in §6/BD.1. Vorheriger Stand 2026-06-03 —
+> Sub-Slice-Schnitt BD.1-BD.5, Image-Pinning, Healthcheck-
+> Verträge, Skeletons; Entwurf-Stand 2026-05-01
+> weitergeschrieben).
 >
 > **Aktivierungsbedingung** (Move nach `in-progress/`): Maintainer-
 > Ressourcen + BD.1 wird begonnen. BD.1-BD.5 sind ohne externe
@@ -159,7 +165,10 @@ fuer Metabase.
 - **User**: `dmigrate`
 - **Passwort**: nur Demo-Secret aus `.env.example`, nicht produktiv
 - **Port**: lokal `55432`, um Konflikte mit vorhandenen
-  PostgreSQL-Instanzen zu reduzieren
+  PostgreSQL-Instanzen zu reduzieren. Bind explizit auf
+  `127.0.0.1:${POSTGRES_PORT}:5432` (kein Default-`0.0.0.0`),
+  damit das Demo-Passwort aus §5.5 nicht versehentlich nach LAN
+  exponiert ist.
 - **Init-Scripts**: `sql/001_schema.sql` + `sql/002_seed.sql` werden via
   `/docker-entrypoint-initdb.d/`-Mount idempotent beim Erststart
   geladen
@@ -193,7 +202,9 @@ startet und wenig Initialkonfiguration braucht.
   aktuellen 0.55er-Patch (oder spaeter 0.61er) neu einsammeln,
   dann Tag-Update + README-Folge. Explizit pinnen, **kein**
   `:latest`.
-- **Port**: lokal `3000`
+- **Port**: lokal `3000`, Bind explizit auf
+  `127.0.0.1:${METABASE_PORT}:3000` (analog §5.1, damit die
+  Browser-Setup-Phase nicht offen im LAN haengt)
 - **State-Persistenz**: Named-Volume `metabase-data`, gemountet
   auf `/metabase-data` im Container; `MB_DB_FILE=/metabase-data/metabase.db`
   zeigt Metabase auf die H2-Datei im Volume. Ohne expliziten
@@ -262,12 +273,38 @@ Cloud-Abhaengigkeit einzufuehren.
   muss aus dem env_file in den Server-Container kommen
   (Compose-Interpolation allein reicht **nicht**, weil sie nur
   `$VAR`-Substitution im YAML macht, nicht im Container).
-- **API-Port**: lokal `59000`
-- **Console-Port**: lokal `59001`
+- **API-Port**: lokal `59000`, Bind
+  `127.0.0.1:${MINIO_API_PORT}:9000`
+- **Console-Port**: lokal `59001`, Bind
+  `127.0.0.1:${MINIO_CONSOLE_PORT}:9001`
 - **Bucket**: `dmigrate-demo`
 - **Access Key / Secret Key**: nur Demo-Credentials aus
   `.env.example`
 - **Prefix fuer Laeufe**: `runs/<timestamp-or-operation-id>/`
+- **Server-Service**: konkretes Pattern fuer den `minio`-Service.
+  Bind explizit auf `127.0.0.1`, damit das Default-Passwort
+  `minioadmin`/`minioadmin` aus §5.5 nicht versehentlich nach
+  LAN exponiert ist; Healthcheck am Server entfaellt bewusst
+  (Begruendung weiter unten unter „Server-Healthcheck"):
+
+  ```yaml
+  minio:
+    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+
+  volumes:
+    minio-data:
+  ```
+
+  `env_file: .env` ist Pflicht (siehe oben + Risk #10) — ohne
+  Container-Env startet der Server zwar, lehnt aber Logins ab.
 - **Bucket-Init**: separater `minio-init`-Service (one-shot
   `restart: "no"`), der `minio/mc` startet, mit eingebautem
   Retry auf MinIO wartet und `mc mb --ignore-existing
@@ -280,17 +317,29 @@ Cloud-Abhaengigkeit einzufuehren.
       - minio
     env_file:
       - .env
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 \
-        $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}
-      do
-        echo 'waiting for minio…'; sleep 2
-      done;
-      mc mb --ignore-existing local/$${MINIO_BUCKET}
-      "
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        until mc alias set local http://minio:9000 \
+            "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        do
+          echo 'waiting for minio…'
+          sleep 2
+        done
+        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
     restart: "no"
   ```
+
+  **YAML-Form bewusst array + Literal-Block (`|`)**: ein
+  folded scalar (`>`) wuerde die Newlines zu Spaces falten und
+  damit die Backslash-Line-Continuation `\\` zu `\ ` (escaped
+  space) machen — funktioniert zufaellig im Shell, ist aber
+  eine bruechige Maintenance-Falle. Die array-Form macht
+  `/bin/sh -c <script>` explizit und der Literal-Block (`|`)
+  haelt Newlines, sodass die Continuation wirklich
+  Continuation ist.
 
   Wichtig: `env_file: .env` ist **Pflicht**. `$${VAR}` im
   Shell-Skript bezieht sich auf die **Container-Env**, die
@@ -325,8 +374,22 @@ Cloud-Abhaengigkeit einzufuehren.
       - ./out:/work
   ```
 
+  **Caveat fuer Custom-Credentials**: `MC_HOST_local` wird aus
+  `${MINIO_ROOT_USER}` und `${MINIO_ROOT_PASSWORD}` als URL
+  zusammengesetzt — Demo-Defaults `minioadmin`/`minioadmin`
+  sind url-safe; sobald ein User die Defaults durch ein Passwort
+  mit `:`, `@`, `/`, `?`, `#` oder anderen URL-reservierten
+  Zeichen ersetzt, kippt die Authentifizierung still
+  (`mc` liest die URL falsch, `mc alias set` aus
+  `minio-init` faellt allerdings sauber, weil dort User/Passwort
+  als separate Argumente uebergeben werden). README muss diese
+  Bedingung als „Demo-Credentials duerfen keine URL-reservierten
+  Zeichen enthalten" festhalten; eine korrekte Aufloesung via
+  getrennte Env-Vars / `mc alias set`-basierten Init in
+  `mc-tools` ist Folge-Slice (BD.6+).
+
   Damit laeuft `docker compose run --rm mc-tools ls
-  "local/$MINIO_BUCKET/"` ohne `--entrypoint`-Override und ohne
+  "local/${MINIO_BUCKET}/"` ohne `--entrypoint`-Override und ohne
   Host-`mc`. **Wichtig zum Mount-Pfad**: relative Bind-Mounts
   loest Compose **gegen das Verzeichnis der Compose-Datei** auf,
   nicht gegen das Working Directory des Aufrufers. `./out` ist
@@ -418,25 +481,26 @@ URL-Schema folgt
 database:
   connections:
     demo_pg: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}"
+    demo_pg_container: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
 ```
 
-Alle vier Bestandteile werden aus `.env` substituiert (§5.5). Damit
+Alle ENV-Werte werden aus `.env` substituiert (§5.5). Damit
 funktioniert die Demo auch, wenn der User einen Port-Konflikt mit
 `POSTGRES_PORT=55433` umgeht (§10 Risk #6) — die `.d-migrate.yaml`
 bleibt unveraendert.
 
-Wenn die Demo aus dem Container-CLI-Pfad (§5.4) laeuft, nutzt der
-Compose-Service-Eintrag eine zweite Connection mit Container-DNS
-und Container-Port:
+Die zwei Eintraege decken die beiden Betriebsarten aus §5.4 ab:
 
-```yaml
-database:
-  connections:
-    demo_pg_container: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
-```
+- **Host-CLI** ruft `--source demo_pg` (geht ueber Host-Port
+  `localhost:${POSTGRES_PORT}` aus dem `127.0.0.1:…:5432`-Bind
+  in §5.1).
+- **Container-CLI** ruft `--source demo_pg_container` (geht
+  ueber das Compose-Default-Netz und den Container-Port
+  `postgres:5432`; der Host-Port-Bind ist hier irrelevant).
 
-Container-CLI ruft `--source demo_pg_container`; Host-CLI ruft
-`--source demo_pg`. README dokumentiert beide Varianten.
+README dokumentiert beide Varianten in einem einzigen Copy-
+Paste-Block, damit der User nicht zwischen zwei `.d-migrate.yaml`-
+Versionen umschalten muss.
 
 ---
 
@@ -446,6 +510,7 @@ Ein minimaler Demo-Ablauf:
 
 ```text
 cp examples/bi-demo/.env.example examples/bi-demo/.env  # einmalig
+mkdir -p examples/bi-demo/out                           # Host-Owner
 set -a; source examples/bi-demo/.env; set +a
 docker compose -f examples/bi-demo/docker-compose.yml up -d
 
@@ -473,6 +538,12 @@ Hinweise:
   ad-hoc `mc`-Aufrufe laufen ueber den separaten `mc-tools`-Service
   (§5.3), der das `out/`-Verzeichnis als `/work` mountet. Damit ist
   `mc` **keine** Host-Voraussetzung.
+- `examples/bi-demo/out/` muss vor dem ersten `compose run`
+  existieren (deshalb das `mkdir -p`-Praefix). Sonst legt der
+  Docker-Daemon das Bind-Mount-Ziel als `root:root` an und der
+  nachfolgende Host-CLI-Schreibzugriff im `d-migrate schema
+  reverse --output examples/bi-demo/out/reverse.yaml`-Schritt
+  scheitert mit `Permission denied`.
 
 Danach kann Metabase im Browser auf die Demo-DB zeigen und einfache Fragen
 beantworten:
@@ -491,11 +562,16 @@ Der Demo-Datenbestand sollte klein, aber realistisch sein:
 - `customers` — ~50 Zeilen
 - `products` — ~30 Zeilen
 - `orders` — ~500 Zeilen (verteilt ueber 90 Tage; deterministisch
-  via fester Anker-Konstante `:demo_start_date := DATE
-  '2026-01-01'` plus `orders.created_at := :demo_start_date +
-  ((row_number * random()) || ' days')::interval` — **kein**
+  via festem Datums-Anker `'2026-01-01'::date`, eingebracht per
+  psql-`\set demo_start_date '2026-01-01'` und referenziert als
+  `DATE :'demo_start_date'`; daraus `orders.created_at :=
+  DATE :'demo_start_date' + ((i * random()) || ' days')::interval`
+  aus `generate_series(1, 500) AS s(i)` — **kein**
   `current_date`, **kein** `now()`, sonst flippt der Datums-
-  Korridor bei jedem Build.)
+  Korridor bei jedem Build. `\set` funktioniert, weil das
+  offizielle Postgres-Image `.sql`-Dateien aus
+  `/docker-entrypoint-initdb.d/` via `psql -f` ausfuehrt — siehe
+  Determinismus-Vertrag in BD.2.)
 - `order_items` — ~1500 Zeilen (3:1 zu `orders`)
 - optional `events` fuer Zeitreihen — ~10.000 Zeilen (60 Tage,
   ~165/Tag)
@@ -528,9 +604,26 @@ festgelegt; der Report rendert pro Spalte `nullCount` /
 - `customers.email` mit ~5% leerem String fuer
   `CONTAINS_EMPTY_STRINGS`-Warning.
 - `customers.middle_name` mit „N/A"-Eintraegen fuer
-  `POSSIBLE_PLACEHOLDER_VALUES`-Warning.
+  `POSSIBLE_PLACEHOLDER_VALUES`-Warning (Rule matcht
+  case-insensitiv gegen Placeholder-Set `{n/a, na, null, none,
+  -, --, tbd, unknown, test, xxx, dummy}`, siehe
+  [`PlaceholderValuesRule`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/rules/WarningRules.kt)
+  Z.158).
+- `orders.notes` zusaetzlich zu ~5% NULL noch ~3%
+  Whitespace-only-Eintraege (`'   '`, drei Spaces) fuer
+  `CONTAINS_BLANK_STRINGS`-Warning. Rule feuert bei
+  `blankStringCount > 0` auf STRING-Spalten
+  ([`BlankStringsRule`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/rules/WarningRules.kt)
+  Z.81).
 - `products.category` als Low-Cardinality-Spalte (3-4 distinkte
-  Werte ueber ~30 Zeilen) fuer `LOW_CARDINALITY`-Warning.
+  Werte ueber ~30 Zeilen) fuer `LOW_CARDINALITY`-Warning (Rule
+  feuert bei `distinctCount in 1..5` und `nonNullCount >= 10`,
+  [`LowCardinalityRule`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/rules/WarningRules.kt)
+  Z.114); liefert zusaetzlich `DUPLICATE_VALUES`-Warning, weil
+  ~30 Zeilen ueber nur 3-4 distinkte Werte zwangslaeufig viele
+  Duplikate ergeben und
+  [`DuplicateValuesRule`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/rules/WarningRules.kt)
+  Z.128 bei `duplicateValueCount > 0` feuert.
 - `orders.status` deckt {`pending`, `paid`, `cancelled`,
   `refunded`} ab (fuer BI-Charts „Bestellungen pro Status")
 - ausreichend Daten fuer sinnvolle BI-Charts, aber schnell startbar
@@ -576,6 +669,14 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
   `examples/bi-demo/.gitignore` schliesst `.env` **und** `out/`
   aus (Demo-Workflow schreibt CLI-Artefakte nach
   `examples/bi-demo/out/`, siehe §5.3 + §6).
+- [ ] `examples/bi-demo/out/.gitkeep` ist mitcommitted **oder**
+  README + Smoke-Script praefixieren `mkdir -p
+  examples/bi-demo/out` vor dem ersten `compose run`.
+  Hintergrund: der `mc-tools`-Bind-Mount `./out:/work` legt das
+  Host-Verzeichnis sonst beim ersten `compose run` als
+  `root:root` an, was den Host-CLI-Schreibzugriff in BD.4
+  (`d-migrate ... --output examples/bi-demo/out/…`) mit
+  `Permission denied` bricht.
 - [ ] **Pre-Start**: `docker compose pull` zieht alle gepinnten
   Tags und scheitert sofort, wenn ein Image auf Docker Hub
   nicht mehr verfuegbar ist (siehe Risk #9).
@@ -630,10 +731,18 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
 - [ ] `sql/002_seed.sql` mit den Volumen-/Verteilungs-Vorgaben aus
   §7. Determinismus-Vertrag (alle drei zusammen, sonst kein
   byte-identisches Replay):
-  - Festes `setseed(0.42)` am Skript-Beginn.
-  - Festes Datums-Anker `:demo_start_date := DATE '2026-01-01'`
-    fuer alle zeit-abhaengigen Werte. **Keine** Verwendung von
-    `current_date` / `now()` / `clock_timestamp()` im Seed.
+  - Festes `SELECT setseed(0.42);` am Skript-Beginn.
+  - Festes Datums-Anker `'2026-01-01'::date`, eingebracht via
+    psql-Meta-Befehl `\set demo_start_date '2026-01-01'` und
+    referenziert als `DATE :'demo_start_date'`. **Keine**
+    Verwendung von `current_date` / `now()` /
+    `clock_timestamp()` im Seed. Hintergrund: das offizielle
+    Postgres-Image fuehrt `.sql`-Dateien aus
+    `/docker-entrypoint-initdb.d/` via `psql -f` aus — `\set`
+    und `:'var'`-Substitution sind damit Bestandteil der
+    Demo-Toolchain. (Pure-SQL-Alternative: CTE `WITH params AS
+    (SELECT '2026-01-01'::date AS demo_start)`, falls ein
+    spaeterer Refactor die psql-Abhaengigkeit eliminieren will.)
   - Stabiler Insert-Order: jede `INSERT INTO ... SELECT ...
     FROM ... ORDER BY <natural-key>` mit explizitem `ORDER BY`,
     damit die physische Reihenfolge in der Tabelle reproduzierbar
@@ -716,7 +825,7 @@ Container-CLI-Variante dokumentiert.
   Compose-Datei-Verzeichnis auf (§5.3).
 - [ ] `d-migrate data profile --source demo_pg --output
   examples/bi-demo/out/profile.json`
-  liefert einen Profile-Report. BD.4 pinnt drei sichtbare
+  liefert einen Profile-Report. BD.4 pinnt sichtbare
   Profiling-Signale entlang heutiger
   [`WarningCode`](../../../hexagon/profiling/src/main/kotlin/dev/dmigrate/profiling/types/WarningCode.kt):
   - `column.nullCount > 0` fuer `customers.middle_name` und
@@ -724,10 +833,15 @@ Container-CLI-Variante dokumentiert.
     Report sichtbar).
   - `numericStats.max` >> `numericStats.avg` fuer
     `order_items.unit_price` (Outlier aus §7).
-  - Mindestens drei Warning-Codes im Report:
+  - Mindestens fuenf Warning-Codes im Report:
     `CONTAINS_EMPTY_STRINGS` (auf `customers.email`),
+    `CONTAINS_BLANK_STRINGS` (auf `orders.notes`,
+    Whitespace-only-Eintraege aus §7),
     `POSSIBLE_PLACEHOLDER_VALUES` (auf `customers.middle_name`),
-    `LOW_CARDINALITY` (auf `products.category`).
+    `LOW_CARDINALITY` (auf `products.category`),
+    `DUPLICATE_VALUES` (auf `products.category`, das durch seine
+    Low-Cardinality automatisch viele Duplikate ueber ~30 Zeilen
+    erzeugt — siehe §7).
 - [ ] `d-migrate schema generate --source
   examples/bi-demo/out/reverse.yaml --target postgresql` rendert
   eine valide DDL.
@@ -764,17 +878,29 @@ ohne menschlichen Browser-Schritt prueft.
 **Akzeptanzkriterien**:
 
 - [ ] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
-  prueft Container-Health via `docker compose ps --all --format
-  json | jq -e 'map(select(.Service == "minio-init")) | .[0].State
-  == "exited" and .[0].ExitCode == 0'` (`--all` ist Pflicht,
-  sonst fehlt `minio-init` im exited-State; `map(select(...))`
-  ist Pflicht, weil `--format json` ein Array liefert — siehe
-  BD.1), faehrt mindestens den d-migrate-Reverse + Profile
-  Workflow aus BD.4, prueft MinIO-Upload via
-  `docker compose run --rm mc-tools ls "local/${MINIO_BUCKET}/runs/"`.
-  **`mc` wird ausschliesslich ueber den `mc-tools`-Service
-  (§5.3) aufgerufen**, damit die Demo ohne Host-`mc` laeuft; `jq`
-  ist Host-Voraussetzung (siehe README-Prereqs).
+  beginnt mit `mkdir -p "$(dirname "$0")/../out"` (Bind-Mount-
+  Owner, siehe §6 + BD.1), prueft Container-Health via
+  `docker compose ps --all --format json | jq -e
+  'map(select(.Service == "minio-init")) | .[0].State == "exited"
+  and .[0].ExitCode == 0'` (`--all` ist Pflicht, sonst fehlt
+  `minio-init` im exited-State; `map(select(...))` ist Pflicht,
+  weil `--format json` ein Array liefert — siehe BD.1), faehrt
+  mindestens den d-migrate-Reverse + Profile Workflow aus BD.4,
+  prueft MinIO-Upload via `docker compose run --rm mc-tools ls
+  "local/${MINIO_BUCKET}/runs/"`. **`mc` wird ausschliesslich
+  ueber den `mc-tools`-Service (§5.3) aufgerufen**, damit die
+  Demo ohne Host-`mc` laeuft; `jq` ist Host-Voraussetzung
+  (siehe README-Prereqs).
+- [ ] `Makefile`-Targets im Repo-Root (Konsistenz mit der
+  Make-Konvention dieses Repos): `bi-demo-pull` (Pre-Start-Pull
+  aus BD.1), `bi-demo-up`, `bi-demo-down` (mit/ohne `-v` als
+  zwei separate Targets `bi-demo-down` und `bi-demo-purge`),
+  `bi-demo-smoke` (ruft `examples/bi-demo/scripts/smoke.sh`).
+  Kapseln den langen `docker compose -f
+  examples/bi-demo/docker-compose.yml ...`-Pfad. README +
+  Smoke-Script verwenden ausschliesslich Make-Targets als
+  Top-Level-Befehle; die zugrunde liegenden `docker compose`-
+  Kommandos stehen nur im Troubleshooting-Block.
 - [ ] `examples/bi-demo/README.md` vollstaendig:
   - **Voraussetzungen (Host)**: Docker (≥ 24), Docker Compose
     (≥ v2.20), `jq` (fuer Smoke-Script-`ps`-Parsing), d-migrate-
@@ -800,6 +926,7 @@ ohne menschlichen Browser-Schritt prueft.
 
 - Neu: `examples/bi-demo/scripts/smoke.sh`
 - Update: `examples/bi-demo/README.md`
+- Update: `Makefile` (Repo-Root) — `bi-demo-*`-Targets
 - Optional neu: `.github/workflows/bi-demo-smoke.yml`
 
 **Dependencies**: BD.1-BD.4.
