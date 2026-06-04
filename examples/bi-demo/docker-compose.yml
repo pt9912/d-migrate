@@ -113,6 +113,20 @@ services:
             s3api create-bucket --bucket "$${S3_BUCKET}"
     restart: "no"
 
+  dmigrate:
+    image: d-migrate:dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      D_MIGRATE_CONFIG: /work/.d-migrate.yaml
+    volumes:
+      - .:/work
+    working_dir: /work
+
   aws-tools:
     image: amazon/aws-cli:2.34.61
     depends_on:

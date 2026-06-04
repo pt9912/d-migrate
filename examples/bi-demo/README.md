@@ -14,11 +14,20 @@ Auf dem Host:
 - Docker (≥ 24)
 - Docker Compose (≥ v2.20; getestet gegen v5.1.4)
 - `jq` (fuer Smoke-Script-Status-Parsing, kommt mit BD.5)
-- `d-migrate` CLI (kommt mit BD.4)
 
-`aws` und `mc` sind **keine** Host-Voraussetzung — der
+`aws`/`mc` sind **keine** Host-Voraussetzung — der
 `aws-tools`-Service kapselt die AWS-CLI samt
 `--endpoint-url`-Wrapper.
+
+Fuer den `d-migrate`-Workflow (siehe unten) wird das lokale
+Runtime-Image `d-migrate:dev` erwartet. Bauen aus dem
+Repo-Root:
+
+```bash
+make docker-build IMAGE_TAG=dev
+```
+
+Das ist eine einmalige Investition pro Branch-Stand.
 
 ## Start
 
@@ -114,6 +123,102 @@ deterministischen Seed.
 Erwartung: Top-10-Kunden-IDs aus dem zyklischen
 `customer_id`-Assignment im Seed.
 
+## d-migrate-Workflow (Container-CLI)
+
+Der `dmigrate`-Service kapselt das Runtime-Image und reicht
+Subkommandos durch. Standard-Variante (Container-CLI, geht
+ueber das Compose-Netz an `postgres:5432`):
+
+```bash
+# 1) Reverse-Engineer das Schema in eine YAML-Definition
+docker compose -f examples/bi-demo/docker-compose.yml run --rm \
+    dmigrate schema reverse \
+    --source demo_pg_container \
+    --output /work/out/reverse.yaml
+
+# 2) Profile die Daten (Statistik + Quality-Warnings)
+docker compose -f examples/bi-demo/docker-compose.yml run --rm \
+    dmigrate data profile \
+    --source demo_pg_container \
+    --output /work/out/profile.json
+
+# 3) Generiere PostgreSQL-DDL aus der Reverse-Definition
+docker compose -f examples/bi-demo/docker-compose.yml run --rm \
+    dmigrate schema generate \
+    --source /work/out/reverse.yaml \
+    --target postgresql \
+    --output /work/out/generated.sql
+
+# 4) Lade die Artefakte in den SeaweedFS-Bucket
+docker compose -f examples/bi-demo/docker-compose.yml run --rm \
+    aws-tools s3 cp --recursive /work/ \
+    "s3://${S3_BUCKET}/runs/manual/"
+```
+
+Output landet auf dem Host unter `examples/bi-demo/out/` (Bind-
+Mount des `dmigrate`-Service) und wird von `aws-tools` ueber das
+gleiche Verzeichnis (dort als `/work/`) hochgeladen.
+
+### Was zu erwarten ist
+
+Nach Schritt 1-2 enthaelt `examples/bi-demo/out/`:
+
+| Datei                   | Inhalt                                              |
+| ----------------------- | --------------------------------------------------- |
+| `reverse.yaml`          | YAML-Schema-Definition mit 5 Tabellen + FKs         |
+| `reverse.report.yaml`   | Reverse-Run-Metadaten                               |
+| `profile.json`          | Profil-Report (Stats + Warnings + Type-Compat)      |
+| `generated.sql`         | 5 `CREATE TABLE`-Statements fuer PostgreSQL         |
+| `generated.report.yaml` | Generate-Run-Metadaten                              |
+
+Im Profil sind die fuenf Warning-Codes aus dem Seed sichtbar:
+
+- `CONTAINS_EMPTY_STRINGS` (auf `customers.email`, ids 1-3)
+- `CONTAINS_BLANK_STRINGS` (auf `orders.notes`, ~3% whitespace)
+- `POSSIBLE_PLACEHOLDER_VALUES` (auf `customers.middle_name`,
+  `'N/A'` und `'tbd'`)
+- `LOW_CARDINALITY` (u. a. `products.category`, drei Werte)
+- `DUPLICATE_VALUES` (mehrere Spalten mit Wiederholungen)
+
+Plus `numericStats.max = 99999.99` auf `products.unit_price`
+(id=15) und `order_items.unit_price` (id=42) als Outlier-Signal.
+
+### Host-CLI-Variante (alternativ)
+
+Wer `d-migrate` lokal installiert hat, kann den Workflow auch
+host-seitig fahren:
+
+```bash
+set -a; source examples/bi-demo/.env; set +a
+export D_MIGRATE_CONFIG=examples/bi-demo/.d-migrate.yaml
+
+d-migrate schema reverse  --source demo_pg \
+    --output examples/bi-demo/out/reverse.yaml
+d-migrate data profile    --source demo_pg \
+    --output examples/bi-demo/out/profile.json
+d-migrate schema generate --source examples/bi-demo/out/reverse.yaml \
+    --target postgresql \
+    --output examples/bi-demo/out/generated.sql
+```
+
+`demo_pg` statt `demo_pg_container` — die Host-CLI geht ueber
+den Compose-Port-Bind `127.0.0.1:${POSTGRES_PORT}` an Postgres.
+
+### Bekannte d-migrate-Quirks im Profil-Output
+
+Stand 0.9.8-SNAPSHOT (Befund im BD.4-Smoke 2026-06-04):
+
+- `profile.json` enthaelt im `targetCompatibility`-Block doppelte
+  Anfuehrungszeichen (`"INTEGER""`, `"50""`) — Parser brechen.
+- `profile.yaml` enthaelt leere Strings als nicht-quotierte
+  Elemente in `exampleInvalidValues` (`[, customer10@...]`) —
+  Parser brechen.
+
+Workaround fuer Maschinen-Konsum: `grep -E 'code:'` auf das
+Raw-File extrahiert die Warning-Codes zuverlaessig. Sauberer Fix
+ist in der `:hexagon:profiling`-Pipeline aufgehoben (separater
+Slice).
+
 ## Stoppen / Aufraeumen
 
 ```bash
@@ -182,7 +287,7 @@ docker compose -f examples/bi-demo/docker-compose.yml up -d
 - BD.1 (Compose-Skeleton + Healthchecks) — done
 - BD.2 (Schema + deterministischer Seed) — done
 - BD.3 (Metabase-Integration) — done
-- BD.4 (d-migrate-Smoke) — pending
+- BD.4 (d-migrate-Smoke + `.d-migrate.yaml`) — done
 - BD.5 (Smoke-Script + Make-Targets + CI) — pending
 
 Spec + Sub-Slice-Akzeptanzkriterien:

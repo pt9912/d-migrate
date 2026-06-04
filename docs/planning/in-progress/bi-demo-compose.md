@@ -49,7 +49,14 @@
 > - BD.3 — Metabase-Integration: **done** (Tag `v0.55.24.1`,
 >   `/api/health` = `{"status":"ok"}`, `metabase-data`-Volume
 >   ueberlebt `down`, README mit drei Beispiel-Fragen)
-> - BD.4-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
+> - BD.4 — d-migrate-Smoke: **done** (`dmigrate`-Service im
+>   `tools`-Profil + `.d-migrate.yaml` mit zwei Connections;
+>   reverse/profile/generate end-to-end gegen Demo-Postgres,
+>   alle 5 Tabellen + 5 Warning-Codes + Outlier verifiziert;
+>   `aws s3 cp` lud 5 Artefakte in `s3://dmigrate-demo/runs/manual/`;
+>   zwei `profile.json`/`profile.yaml`-Quirks im `targetCompatibility`-
+>   Serializer als Folge-Slice abgelegt)
+> - BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
 >   implementierbar. Für vollständige Demo-Story
 >   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
 >   Erweiterungen aus §8 an
