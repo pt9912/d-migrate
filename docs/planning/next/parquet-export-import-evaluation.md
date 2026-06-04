@@ -2,11 +2,12 @@
 
 > Dokumenttyp: Evaluierungs- und Architekturplan
 >
-> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04)
+> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04, AP2-Update 2026-06-04)
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
-> `parquet-libraries.md` (AP1-Bibliothekssichtung)
+> `parquet-libraries.md` (AP1-Bibliothekssichtung),
+> `parquet-schema-source.md` (AP2-Schemaquelle)
 
 ---
 
@@ -297,6 +298,9 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
 2. Exportseitige Schemaquelle festlegen: SchemaReader, JDBC-Metadaten oder
    separates formatseitiges Schemaobjekt; dabei leere Tabellen,
    `NULL`-Spalten, Decimal-Precision/Scale und Temporal-Typen pruefen.
+   Ausgearbeitet als Sub-Doc `parquet-schema-source.md` (Stand 2026-06-04).
+   Vorentscheidung: formatseitiges `ChunkSchema` mit JDBC-Metadaten als
+   Primaer- und `NeutralType` als Ergaenzungsquelle; final nach AP3.
 3. Prototyp fuer `ParquetChunkWriter` mit minimalem, explizitem Typmapping
    bauen.
 4. Prototyp gegen DuckDB lesen lassen und Typen inspizieren.
