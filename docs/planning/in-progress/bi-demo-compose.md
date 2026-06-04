@@ -441,12 +441,39 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   `seaweed-config`, `seaweed-init` und `aws-tools` relevant (alle drei
   brauchen die Keys aus `env_file:` als Container-Env).
 
-  **Rebuild-Vertrag**: weil das Named Volume `seaweed-config`
-  beim `compose up -d` ohne `-v` ueberlebt, rendert
-  `seaweed-config` die Datei nur beim ersten `up`; spaetere
-  Anpassungen in `.env` greifen erst nach `compose down -v &&
-  compose up -d`. README dokumentiert das im Troubleshooting-
-  Block.
+  **Rebuild-Vertrag** (korrigiert im BD.1 v4-Review nach
+  empirischer Beobachtung):
+  - `seaweed-config` re-rennt bei **jedem** `compose run` oder
+    `compose up`, weil die `depends_on:
+    service_completed_successfully`-Kette ihn als Voraussetzung
+    fuer `seaweed`/`seaweed-init`/`aws-tools` immer wieder
+    re-evaluiert (Compose v5.x setzt die One-Shots bei jedem
+    Trigger neu auf). Das Named Volume `seaweed-config` ueberlebt
+    `compose up -d` ohne `-v`, der Inhalt wird dabei aber **jedes
+    Mal aus der aktuellen `.env` neu geschrieben** — der
+    Container-Eintrag im `docker ps --all`-Output zeigt jeweils
+    einen neuen `StartedAt`-Timestamp.
+  - **Effekt fuer Credential-Aenderungen**: `.env` editieren
+    reicht **nicht** allein. Der `seaweed`-Server liest seine
+    `s3.json` nur beim Container-Start in den Memory und haelt
+    die Identity dann persistent. Eine geaenderte `.env`
+    triggert zwar das Re-Render der `s3.json` im Volume, der
+    laufende `seaweed`-Server bemerkt das aber nicht.
+  - **Korrekte Rebuild-Sequenz** je nach Zielzustand:
+    - **Credentials aktualisieren, Daten behalten**:
+      `compose down && compose up -d` (ohne `-v`). Postgres-
+      Daten + SeaweedFS-Bucket-Inhalt bleiben, `seaweed`
+      restartet und liest die neue `s3.json`.
+    - **Komplett-Reset (Demo zuruecksetzen)**: `compose down
+      -v && compose up -d`. Verwirft Postgres-Daten +
+      Bucket-Inhalt + s3.json-Volume; alle Init-Schritte
+      laufen frisch.
+  - **Was `-v` wirklich loescht**: alle drei Named Volumes
+    (`postgres-data`, `seaweed-data`, `seaweed-config`).
+    Bucket-Inhalt geht damit weg — das ist meistens **nicht**
+    erwuenscht, wenn nur Credentials aktualisiert werden
+    sollen. README muss das im Troubleshooting-Block klar
+    trennen.
 
 - **Bucket-Init**: separater `seaweed-init`-Service (one-shot
   `restart: "no"`), der `amazon/aws-cli` startet, mit eingebautem
@@ -1179,10 +1206,13 @@ BD.1 (Compose+Healthchecks)
    gebunden (§5.3); README warnt explizit fuer beide Faelle
    (PG-Passwort vor jedem nicht-lokalen Run ersetzen;
    SeaweedFS-Credentials in `.env` ersetzen — `seaweed-config`
-   rendert die `s3.json` beim naechsten `compose down -v &&
-   compose up -d` neu; ausserdem von 127.0.0.1 abruecken nur,
-   wenn Multi-Identity-IAM via BD.6+ kommt). `.env` ist
-   gitignored.
+   rendert die `s3.json` bei jedem `compose run` neu, aber der
+   laufende `seaweed`-Server liest sie nur beim Start; korrekte
+   Rebuild-Sequenz fuer Credential-Updates ist deshalb `compose
+   down && compose up -d` (ohne `-v`, damit Bucket-/Postgres-
+   Daten bleiben — siehe §5.3 Rebuild-Vertrag-Block). Von
+   127.0.0.1 abruecken nur, wenn Multi-Identity-IAM via BD.6+
+   kommt. `.env` ist gitignored.
 6. **Port-Konflikte mit Host-Diensten**. Mitigation: Ports
    bewusst hoch gewaehlt (`55432`, `59000`, `59001`, `3000`);
    README-Troubleshooting-Block deckt Anpassung ab.
