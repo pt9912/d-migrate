@@ -189,7 +189,7 @@ Stand **2026-06-02**:
 - **0.9.8 Analytics- und Storage-Anschluss (Evaluierungen +
   BI-Demo)** · `Geplant`: Parquet-Evaluierung,
   Object-Storage-`ArtifactStore`-Port, BI-Demo-Compose-Stack
-  (Postgres + Metabase + MinIO).
+  (Postgres + Metabase + SeaweedFS).
 - **0.9.9 Dokumentation + Pilot-Validierung** · `Geplant`.
 - **1.0.0 Stable Release** · `Geplant`.
 

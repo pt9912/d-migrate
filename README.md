@@ -175,7 +175,7 @@ As of **2026-06-02**:
   live-data preflight.
 - **0.9.8 Analytics + storage anchor (evaluations + BI demo)** ·
   `Planned`: Parquet evaluation, object-storage `ArtifactStore`
-  port, BI-demo Compose stack (Postgres + Metabase + MinIO).
+  port, BI-demo Compose stack (Postgres + Metabase + SeaweedFS).
 - **0.9.9 Documentation + pilot validation** · `Planned`.
 - **1.0.0 Stable release** · `Planned`.
 

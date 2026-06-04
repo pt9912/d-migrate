@@ -502,7 +502,7 @@ Closures).
 | Docs    | Parquet: Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope                                                                                                         | —      |
 | Arch    | Object-Storage: Bestehende Artefakt- und Checkpoint-Pfade inventarisieren, minimalen `ArtifactStore`-Port entwerfen, File-Implementierung als Referenz                           | —      |
 | Arch    | Object-Storage: S3-kompatible Implementierung evaluieren, Konfigurations-/Security-Regeln skizzieren, Migration des MCP-/REST-/gRPC-Jobvertrags auf Artifact-Refs planen         | —      |
-| Demo    | BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + MinIO (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten             | —      |
+| Demo    | BI-Demo unter `examples/bi-demo/` mit Docker Compose: PostgreSQL + Metabase + SeaweedFS (S3-kompatibel) + optional `d-migrate`-CLI-Container, Beispiel-Schema, Seed-Daten           | —      |
 | Demo    | BI-Demo: Smoke-Script fuer Start, Healthcheck und minimale Demo-Kommandos (Reverse, Profiling, Transfer)                                                                         | —      |
 | Refactor| ✅ (2026-06-02) Atomic-Preserve Service-Mode Sub-Slice A: `SchemaMigrateRunner.lockTimeoutMillis`-Konstruktor-Parameter + `SchemaMigrateRequest.lockTimeoutMillis`-Per-Request-Override + CLI-Flag `--lock-timeout-ms` mit Validation [10, 60_000] + Test-Decorator-Workaround (Finding #6) aus MySQL/SQLite-Atomic-Preserve-IT entfernt. Plan-Doc: [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md) §5 A. | — |
 | Refactor| ✅ (2026-06-02) Atomic-Preserve Service-Mode Sub-Slice E: `AtomicSequencePreserveExecutor.execute()` lernt optionalen `cancellationToken: CancellationToken`-Parameter (Default `none()`); neuer `AtomicSequencePreserveResult.Cancelled`-Sealed-Variant; drei Cancel-Checkpoints pro Dialekt-Adapter (pre-BEGIN / post-probe / post-protected) mit Rollback-Vertrag; Lambda-Plumbing durch `SegmentAwareExecutorFn` / `SegmentAwareMigrationExecutor` / `AtomicSequencePreserveRunner`; 6 IT-Cancel-Tests (PG/MySQL/SQLite × {pre-BEGIN, cancel-in-callback}); CLI-Pfad regressionsfrei via `CancellationToken.none()`. Plan-Doc: [`../next/atomic-preserve-service-mode.md`](../next/atomic-preserve-service-mode.md) §5 E. | — |
@@ -522,8 +522,9 @@ plus die Migrationsskizze fuer MCP-/REST-/gRPC-Jobvertraege auf
 Artifact-Refs (siehe
 [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)).
 (3) BI-Demo-Umgebung unter `examples/bi-demo/` zeigt `d-migrate` in einem
-komponierbaren Analytics-Stack mit PostgreSQL, Metabase und MinIO als
-gemeinsamem Object-Storage-Endpunkt — als reproduzierbares Beispiel,
+komponierbaren Analytics-Stack mit PostgreSQL, Metabase und SeaweedFS
+(S3-kompatibel) als gemeinsamem Object-Storage-Endpunkt — als
+reproduzierbares Beispiel,
 nicht als Enterprise-BI-Plattform (siehe
 [`bi-demo-compose.md`](bi-demo-compose.md)).
 
