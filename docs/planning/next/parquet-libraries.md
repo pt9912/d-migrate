@@ -84,9 +84,19 @@ Operationalisiert aus dem Hauptplan:
   zugaenglich.
 - Row-Group-Steuerung ueber `withRowGroupSize`, `withPageSize`, Validierungs-
   und Compression-Flags; deckt das Puffermodell aus Hauptplan Abschnitt 9 ab.
+- Compression-Codecs: `parquet-hadoop:1.17.1` zieht `snappy-java` und
+  `zstd-jni` als Compile-Dependencies. Beide laden plattformspezifische
+  Native-Bibliotheken per JNI aus dem JAR. Damit ist die Aussage „reines
+  JVM" nur richtig, wenn der Default-Codec `SNAPPY` (parquet-default) durch
+  einen reinen JVM-Codec ersetzt und die JNI-Artefakte ausgeschlossen
+  werden. Vorschlag fuer d-migrate: Default-Compression auf `GZIP`
+  (`java.util.zip`) oder `UNCOMPRESSED` setzen und `snappy-java`/`zstd-jni`
+  excluden; siehe Abschnitt 8.
 - GraalVM: Reflection-/Service-Loader-Lasten bestehen
   (z.B. Codec-Registrierung). Machbar mit Reachability-Metadaten;
-  parquet-avro waere ein Risiko und wird hier nicht benoetigt.
+  parquet-avro waere ein Risiko und wird hier nicht benoetigt. JNI-Pfade
+  fuer Native-Codecs sind nur dann ein Thema, wenn diese nicht
+  ausgeschlossen werden.
 
 ### 3.2 `parquet-carpet` (jerolba)
 
@@ -112,8 +122,8 @@ Operationalisiert aus dem Hauptplan:
 
 ### 3.3 `parquet-floor` (strategicblue)
 
-- Apache 2.0; aktuelle Release-Linie auf Maven Central
-  (`blue.strategic.parquet:parquet-floor`). Die Release-Kadenz ist
+- Apache 2.0; aktuelle Version laut Maven Central
+  (`blue.strategic.parquet:parquet-floor:2.1`). Die Release-Kadenz ist
   ueberschaubar, aber neuer als zunaechst angenommen; das frueher
   formulierte „Wartungssignal schwach" ist nicht belastbar.
 - Hadoop-Aussage praezisiert: parquet-floor verzichtet auf
@@ -192,20 +202,24 @@ Bewertung fuer d-migrate:
 | K3a Writer-Streaming | `PositionOutputStream` ueber eigene `OutputFile`; nicht-seekbar moeglich (stdout-tauglich) | `OutputStream` direkt im Record-Pfad | nur `File` | dateibasiert + JNI | nur JDBC-`COPY` |
 | K3b Reader-Streaming | `SeekableInputStream` ueber eigene `InputFile`; reine `InputStream`-Quellen brauchen Temp-Spool | Reader dateibasiert | nur `File` | dateibasiert + JNI | nur JDBC-`COPY` |
 | K4 Hadoop-Abhaengigkeit | `parquet-hadoop`-Artefakt bleibt; Hadoop-Runtime entfaellt via `LocalOutputFile` + `PlainParquetConfiguration` | zieht `parquet-hadoop` und `hadoop-common` als Compile-Deps | kein `hadoop-common`, aber `parquet-hadoop` bleibt laut POM Dependency | nicht relevant (eigene Stack) | nicht relevant |
-| K5 GraalVM | machbar mit Reachability-Metadaten | Reflection-/Record-getrieben, zusaetzliches Risiko | machbar, aber unverifiziert | JNI, deutlich aufwendiger | JNI, Quarkus-Beispiele existieren |
+| K5 GraalVM | machbar mit Reachability-Metadaten; JNI-Compression-Codecs (snappy-java, zstd-jni) muessen ausgeschlossen oder bewusst konfiguriert werden | Reflection-/Record-getrieben, zusaetzliches Risiko; gleicher JNI-Codec-Pfad wie parquet-java | machbar, aber unverifiziert; gleicher JNI-Codec-Pfad | JNI, deutlich aufwendiger | JNI, Quarkus-Beispiele existieren |
 | K6 Dynamische Schemaerzeugung | nativ ueber `MessageType` | Record-zentriert, fuer d-migrate ungeeignet | typbeschraenkt | moeglich, aber schwergewichtig | implizit, ausserhalb d-migrate-Kontrolle |
 | K7 Typabdeckung | vollstaendig kontrollierbar | dokumentiert, Decimal/Temporal konfigurierbar | beschraenkt laut README | umfassend | DuckDB-typsystem-gebunden |
 | K8 Footer-Key-Value-Metadaten | direkt ueber Builder/Reader | nicht prominent | nicht dokumentiert | indirekt | nicht direkt, nur via COPY-Optionen |
 | K9 Row-Group-Steuerung | `withRowGroupSize`, `withPageSize` | unterhalb Carpet identisch zu parquet-java | unklar | Scanner-Batches | abhaengig von DuckDB |
-| K10 Binaerfussabdruck | mittel, reines JVM | mittel | mittel (parquet-hadoop bleibt, ohne hadoop-common) | gross, plattform-spezifisches JNI | gross, plattform-spezifisches JNI |
+| K10 Binaerfussabdruck | mittel, JVM-Klassen plus snappy-java/zstd-jni-Native-JARs (excludable bei GZIP/Uncompressed-Default) | mittel, plus identische native Codec-JARs | mittel, plus parquet-hadoop-Pfad und Codec-JARs | gross, plattform-spezifisches JNI | gross, plattform-spezifisches JNI |
 
 ---
 
 ## 5. Vorentscheidung
 
 Bibliothek der ersten Wahl fuer den Prototyp ist **`parquet-java` 1.17.1**,
-eingesetzt ohne Hadoop-Runtime ueber eigene `OutputFile`/`InputFile`-
-Implementierungen und `PlainParquetConfiguration`. Grund:
+eingesetzt ohne Hadoop-Installation (kein HDFS, kein Cluster-Connector)
+ueber eigene `OutputFile`/`InputFile`-Implementierungen und
+`PlainParquetConfiguration`. Hadoop-API-Klassen aus `hadoop-common` bleiben
+als Compile-Dependency vorhanden, weil das Artefakt `parquet-hadoop`
+direkt darauf verweist; sie werden in Abschnitt 8 gepinnt und in AP3
+gegen GraalVM-Reachability geschnitten. Grund fuer die Wahl:
 
 - Es ist die einzige Option, die K3a (Writer-Streaming ueber `PositionOutputStream`,
   inklusive stdout), K3b (Reader-Streaming ueber `SeekableInputStream` mit
@@ -296,6 +310,57 @@ spaeter einen seekbaren Adapter rechtfertigt (Object-Storage), kommt er
 als zusaetzliche Adapter-Implementierung, nicht als Aufweichung des
 CLI-Vertrags.
 
+### 7.1 Port- und Resolver-Vertrag (interne Konsequenz)
+
+Hauptplan Abschnitt 6 fordert: wenn der Reader nicht ueber den
+bestehenden `InputStream`-Port abbildbar ist, muss ein konkreter
+dateibasierter Port- bzw. Resolver-Vertrag vorliegen. Aus der
+CLI-Entscheidung oben folgt fuer den Importpfad:
+
+- **Bestehender `DataChunkReaderFactory.create(InputStream, ...)` bleibt
+  unveraendert** und wird weiter von JSON/YAML/CSV genutzt.
+- **Neuer komplementaerer Port `SeekableDataChunkReaderFactory` in
+  `hexagon:ports-read`**, der eine seekbare Quelle annimmt:
+
+  ```text
+  package dev.dmigrate.ports.read
+
+  interface SeekableDataChunkReaderFactory {
+      fun create(
+          format: DataExportFormat,
+          source: SeekableChunkSource,
+          schema: ChunkSchema,
+          options: FormatReadOptions
+      ): DataChunkReader
+  }
+
+  sealed interface SeekableChunkSource {
+      data class Local(val path: java.nio.file.Path) : SeekableChunkSource
+      // Spaetere Adapter (Object-Storage, gemounteter Cache) implementieren
+      // diese Sealed-Hierarchie. Reine InputStream-Quellen werden bewusst
+      // nicht gewrappt.
+  }
+  ```
+
+- **Import-Resolver entscheidet pro Format**: JSON/YAML/CSV gehen ueber
+  `DataChunkReaderFactory` (Stream), Parquet ueber
+  `SeekableDataChunkReaderFactory` (Pfad). Es gibt keinen Fallback aus
+  einem Pfad zu einem `InputStream` und keinen Fallback aus einem
+  `InputStream` zu einem Pfad. Der Resolver lehnt im Preflight ab, wenn
+  die Format-zu-Quelle-Kombination nicht passt.
+- **`ImportInput.Directory`** wird nicht ersetzt, sondern bleibt fuer
+  Directory-Bundle-Imports der DTO-Vertrag (vgl. Hauptplan Abschnitt 6 zu
+  `Tabelle -> Pfad`-Bindings).
+- **Symmetrie auf der Writer-Seite ist nicht noetig**: `DataChunkWriter`
+  bleibt stream-basiert; der Parquet-Writer wraps den bestehenden
+  `OutputStream` in einen eigenen `PositionOutputStream`/`OutputFile`-
+  Adapter (zaehlend, nicht-seekbar, stdout-tauglich).
+
+AP3 implementiert diesen Vertrag, entdeckt ihn nicht. Konkret: AP1.c
+liefert die Port-Skizze, AP2.d adaptiert die `DataChunkWriter`-Seite (in
+`parquet-schema-source.md` Abschnitt 6.2 bereits beschlossen),
+und AP3 realisiert beide Reader-Pfade samt Resolver-Spiegelung.
+
 ---
 
 ## 8. Gradle-Dependency-Skizze (AP1-Artefakt)
@@ -309,11 +374,13 @@ Hadoop-API-Klassen tatsaechlich gebraucht werden.
 dependencies {
     implementation("org.apache.parquet:parquet-hadoop:1.17.1")
     implementation("org.apache.parquet:parquet-column:1.17.1")
-    // hadoop-common ist Compile-Zeit-Bedarf von parquet-hadoop:
-    // AP3 prueft, ob ein schmaler Subset reicht oder ob hadoop-common
-    // vollstaendig gezogen werden muss; vor dem Audit wird konservativ
-    // hadoop-common eingebunden.
-    implementation("org.apache.hadoop:hadoop-common:3.4.x") {
+
+    // hadoop-common ist Compile-Zeit-Bedarf von parquet-hadoop
+    // (org.apache.hadoop.fs.Path, Configuration etc.). Pinnung auf eine
+    // konkrete, stabile Hadoop-3.4-Patchversion; AP3 prueft, ob der
+    // Subset reicht oder ob ein eigener Hadoop-API-Shim die Dependency
+    // komplett ersetzen kann.
+    implementation("org.apache.hadoop:hadoop-common:3.4.1") {
         // typische Schwergewichte rausziehen, sofern nicht referenziert
         exclude(group = "log4j")
         exclude(group = "org.slf4j", module = "slf4j-log4j12")
@@ -340,7 +407,22 @@ dependencies {
         }
     }
 }
+
+// Native-Compression-Codecs werden bewusst ausgeschlossen, weil sie JNI-
+// Bibliotheken aus dem JAR extrahieren und laden. Default-Compression fuer
+// d-migrate-Parquet ist GZIP (java.util.zip, rein JVM) bzw. UNCOMPRESSED.
+// SNAPPY/ZSTD koennen spaeter bewusst zugelassen werden, dann mit
+// passender GraalVM-Reachability-Konfiguration.
+configurations.all {
+    exclude(group = "org.xerial.snappy", module = "snappy-java")
+    exclude(group = "com.github.luben",  module = "zstd-jni")
+}
 ```
+
+Begleitende Code-Vorgabe: Der `ParquetChunkWriter` setzt den Codec
+explizit auf `CompressionCodecName.GZIP` (oder `UNCOMPRESSED` per
+Konfiguration), nie auf den Parquet-Default `SNAPPY`. Damit kollidieren
+die obigen Exclusions nicht mit dem Default-Codec.
 
 Erwartete Folge-Aufgaben fuer AP3:
 
@@ -351,6 +433,9 @@ Erwartete Folge-Aufgaben fuer AP3:
   kann, oder ob das aufwaendiger ist als der Subset-Pull.
 - GraalVM-Reachability-Metadaten genau auf die tatsaechlich genutzten
   Hadoop-Klassen schneiden, nicht auf das gesamte hadoop-common-Modul.
+- Smoke-Roundtrip mit `CompressionCodecName.GZIP` plus DuckDB
+  `read_parquet` zeigt, dass die Codec-Wahl mit Standard-Lesetools
+  kompatibel ist.
 
 ---
 
@@ -379,12 +464,19 @@ nur noch prototyp-getriebene Verifikationen:
 
 ## 10. Risiken dieser Vorentscheidung
 
-- `parquet-java` ohne Hadoop-Runtime ist gut moeglich, aber die
+- `parquet-java` ohne Hadoop-Installation ist gut moeglich, aber die
   `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade sind juenger als die
   Hadoop-Pfade; der Prototyp muss das auf den Zielplattformen verifizieren.
-  Auch ohne Hadoop-Runtime bleibt das `parquet-hadoop`-Artefakt im Klassenpfad
-  und bringt Hadoop-API-Klassen mit; der GraalVM- und Distributions-
-  Footprint ist deshalb nicht das eines „pure column module".
+  `parquet-hadoop` plus eine gepinnte `hadoop-common`-Version bleiben
+  Compile-Dependencies. Der Runtime-Footprint ist damit nicht der eines
+  „pure column module"; ein eigener Hadoop-API-Shim koennte das spaeter
+  reduzieren (Folge-Aufgabe AP3).
+- Native-Compression-Codecs (`snappy-java`, `zstd-jni`) bringen JNI-
+  Bibliotheken pro Plattform mit. d-migrate setzt die Default-
+  Compression deshalb auf `GZIP` (rein JVM) und excluded beide Codec-
+  Artefakte (Abschnitt 8). Wer spaeter `SNAPPY` oder `ZSTD` braucht,
+  muss die Codec-Module bewusst zulassen und die GraalVM-Reachability-
+  Konfiguration nachziehen — das ist explizit, nicht versehentlich.
 - parquet-avro ist auch bei Versionspflege weiterhin Angriffs- und
   Reflection-Flaeche. Bei strikter Pinnung auf 1.17.1 sind CVE-2025-30065
   und CVE-2025-46762 zwar geschlossen, aber die Empfehlung lautet,
