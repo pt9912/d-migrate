@@ -205,21 +205,6 @@ d-migrate schema generate --source examples/bi-demo/out/reverse.yaml \
 `demo_pg` statt `demo_pg_container` — die Host-CLI geht ueber
 den Compose-Port-Bind `127.0.0.1:${POSTGRES_PORT}` an Postgres.
 
-### Bekannte d-migrate-Quirks im Profil-Output
-
-Stand 0.9.8-SNAPSHOT (Befund im BD.4-Smoke 2026-06-04):
-
-- `profile.json` enthaelt im `targetCompatibility`-Block doppelte
-  Anfuehrungszeichen (`"INTEGER""`, `"50""`) — Parser brechen.
-- `profile.yaml` enthaelt leere Strings als nicht-quotierte
-  Elemente in `exampleInvalidValues` (`[, customer10@...]`) —
-  Parser brechen.
-
-Workaround fuer Maschinen-Konsum: `grep -E 'code:'` auf das
-Raw-File extrahiert die Warning-Codes zuverlaessig. Sauberer Fix
-ist in der `:hexagon:profiling`-Pipeline aufgehoben (separater
-Slice).
-
 ## End-to-End-Smoke
 
 ```bash

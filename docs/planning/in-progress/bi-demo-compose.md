@@ -54,8 +54,10 @@
 >   reverse/profile/generate end-to-end gegen Demo-Postgres,
 >   alle 5 Tabellen + 5 Warning-Codes + Outlier verifiziert;
 >   `aws s3 cp` lud 5 Artefakte in `s3://dmigrate-demo/runs/manual/`;
->   zwei `profile.json`/`profile.yaml`-Quirks im `targetCompatibility`-
->   Serializer als Folge-Slice abgelegt)
+>   zwei `ProfileReportWriter`-Serializer-Bugs im
+>   `targetCompatibility`-Block (doppelte JSON-Quotes; un-quotierte
+>   Whitespace-Strings im YAML) im BD.5-Review-Sweep gefixt + mit
+>   Parser-basierten Tests gegen Jackson/YAMLMapper abgesichert)
 > - BD.5 — README + Smoke-Script + Make-Targets + CI: **done**
 >   (`examples/bi-demo/scripts/smoke.sh` end-to-end gruen
 >   verifiziert; Repo-Root `Makefile` hat `bi-demo-{pull,up,down,
