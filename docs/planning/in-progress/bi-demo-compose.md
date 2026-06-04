@@ -46,7 +46,10 @@
 >   `cc1a5179`, `f6a185d8`, `8626b6a5`, `317adff6` + Polish-Folge)
 > - BD.2 — Schema + Seed-Daten: **done** (5-Tabellen-Schema,
 >   deterministischer Seed, Idempotenz empirisch verifiziert)
-> - BD.3-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
+> - BD.3 — Metabase-Integration: **done** (Tag `v0.55.24.1`,
+>   `/api/health` = `{"status":"ok"}`, `metabase-data`-Volume
+>   ueberlebt `down`, README mit drei Beispiel-Fragen)
+> - BD.4-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
 >   implementierbar. Für vollständige Demo-Story
 >   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
 >   Erweiterungen aus §8 an
@@ -1032,12 +1035,10 @@ gegen `demo_pg` ist im README dokumentiert.
 
 **Akzeptanzkriterien**:
 
-- [ ] Konkreter Image-Tag-Pin: `metabase/metabase:v0.55.<patch>`
-  in §5.2 ersetzt durch den real verfuegbaren juengsten
-  0.55er-Patch zum Implementierungs-Zeitpunkt. Vor Merge muss
-  der Tag in `docker-compose.yml` gepinnt sein und
-  `docker compose pull metabase` belegt durchlaufen
-  (analog dem Pre-Start-Pull aus BD.1).
+- [x] Konkreter Image-Tag-Pin: `metabase/metabase:v0.55.24.1`
+  (juengster 0.55er-Patch auf Docker Hub Stand 2026-06-04,
+  publiziert 2026-05-08). `docker compose pull metabase`
+  belegt durchgelaufen.
 - [ ] `metabase`-Service aus §5.2 in `docker-compose.yml` (inkl.
   `start_period: 60s`-Healthcheck).
 - [ ] Named-Volume `metabase-data` ueberlebt `down` (aber **nicht**
