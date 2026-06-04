@@ -978,15 +978,19 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
     Demo-Toolchain. (Pure-SQL-Alternative: CTE `WITH params AS
     (SELECT '2026-01-01'::date AS demo_start)`, falls ein
     spaeterer Refactor die psql-Abhaengigkeit eliminieren will.)
-  - `SET LOCAL timezone = 'UTC';` am Skript-Beginn — sonst
-    haengt die `timestamptz`-Repraesentation von der
-    Container-Default-Zeitzone ab und die `pg_dump`-Ausgabe
-    driftet.
-  - `SET LOCAL max_parallel_workers_per_gather = 0;` — zwingt
+  - `SET timezone = 'UTC';` am Skript-Beginn — sonst haengt die
+    `timestamptz`-Repraesentation von der Container-Default-
+    Zeitzone ab und die `pg_dump`-Ausgabe driftet. **Wichtig**:
+    plain `SET`, kein `SET LOCAL`. Das offizielle Postgres-Image
+    fuehrt `.sql`-Files via `psql -f` ohne explizite Transaktion
+    aus; `SET LOCAL` waere ein No-op mit WARNING (`SET LOCAL can
+    only be used in transaction blocks`). Session-scope reicht
+    fuer die Skript-Laufzeit.
+  - `SET max_parallel_workers_per_gather = 0;` — zwingt
     Single-Thread-Ausfuehrung. Mit Parallel-Scans waere die
     Reihenfolge der `random()`-Aufrufe nicht garantiert, was den
     Seed wert-mutiert (gleiche Sequenz, aber andere Zuordnung
-    zu Zeilen). Empirisch im BD.2-Smoke verifiziert.
+    zu Zeilen). Auch hier plain `SET` aus dem gleichen Grund.
   - Stabiler Insert-Order: jede `INSERT INTO ... SELECT ...
     FROM ... ORDER BY <natural-key>` mit explizitem `ORDER BY`,
     damit die physische Reihenfolge in der Tabelle reproduzierbar

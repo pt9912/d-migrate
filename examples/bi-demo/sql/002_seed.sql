@@ -5,14 +5,19 @@
 --   1. SELECT setseed(0.42) am Skript-Beginn
 --   2. \set demo_start_date '2026-01-01' + DATE :'demo_start_date'
 --      als zeit-Anker (kein current_date, kein now())
---   3. SET LOCAL timezone = 'UTC' fuer timestamptz-Konsistenz
---   4. max_parallel_workers_per_gather = 0 zwingt single-thread,
---      damit random()-Konsum reproduzierbar ist
+--   3. SET timezone = 'UTC' fuer timestamptz-Konsistenz
+--   4. SET max_parallel_workers_per_gather = 0 zwingt
+--      single-thread, damit random()-Konsum reproduzierbar ist
 --   5. Jede INSERT mit explizitem ORDER BY damit die physische
 --      Heap-Reihenfolge stabil bleibt (relevant fuer pg_dump-Hash)
+--
+-- WICHTIG: kein SET LOCAL — das offizielle Postgres-Image fuehrt
+-- /docker-entrypoint-initdb.d/-Files via `psql -f` ohne explizite
+-- Transaktion aus; SET LOCAL waere ein No-op mit WARNING. Plain
+-- SET reicht (session-scope == Skript-Laufzeit).
 
-SET LOCAL timezone = 'UTC';
-SET LOCAL max_parallel_workers_per_gather = 0;
+SET timezone = 'UTC';
+SET max_parallel_workers_per_gather = 0;
 SELECT setseed(0.42);
 \set demo_start_date '2026-01-01'
 
