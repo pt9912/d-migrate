@@ -6,14 +6,19 @@
 # - Postgres mit pg_isready-Healthcheck
 # - seaweed-config (one-shot) rendert s3.json aus .env in ein
 #   Named Volume — eliminiert die Drift zwischen .env und einer
-#   hartkodierten s3.json (siehe Plan §5.3)
+#   hartkodierten s3.json (siehe Plan §5.3); bash-Parameter-
+#   Expansion fuer JSON-Safety (`"` und `\` werden escaped)
 # - SeaweedFS (Server) liest die gerenderte s3.json read-only
-# - seaweed-init als one-shot mit eingebautem mc-alias-Retry
-# - mc-tools nur via `profiles: ["tools"]` (kein up-d-Default);
-#   Entrypoint-Wrapper macht `mc alias set` mit Keys als separate
-#   Argumente (kein URL-Embedding fuer Credentials mehr)
+# - seaweed-init als one-shot mit eingebautem aws-CLI-Retry
+# - aws-tools nur via `profiles: ["tools"]` (kein up-d-Default);
+#   Entrypoint-Wrapper setzt --endpoint-url default und reicht
+#   das User-Subkommando weiter
 #
-# Object-Storage-Provider: SeaweedFS statt MinIO. Begruendung +
+# S3-Client: amazon/aws-cli statt minio/mc — neutraler S3-Standard-
+# Pfad, offizielles Amazon-Image, aktive Versionspflege. Siehe
+# Plan §5.3 "S3-Client-Wahl".
+#
+# Object-Storage-Server: SeaweedFS statt MinIO. Begruendung +
 # Auswahl-Tabelle in Plan §5.3 (MinIO CE archiviert 2025-Q3,
 # Risk #9 RESOLVED).
 #
@@ -39,13 +44,13 @@ services:
       start_period: 10s
 
   seaweed-config:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: amazon/aws-cli:2.34.61
     env_file:
       - .env
     volumes:
       - seaweed-config:/etc/seaweed
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
@@ -86,42 +91,52 @@ services:
       - seaweed-config:/etc/seaweed:ro
 
   seaweed-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: amazon/aws-cli:2.34.61
     depends_on:
       - seaweed
     env_file:
       - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
-        until mc alias set local http://seaweed:8333 \
-            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
+        until aws --endpoint-url http://seaweed:8333 s3api list-buckets > /dev/null 2>&1
         do
           echo 'waiting for seaweed s3…'
           sleep 2
         done
-        mc mb --ignore-existing "local/$${S3_BUCKET}"
+        aws --endpoint-url http://seaweed:8333 \
+            s3api head-bucket --bucket "$${S3_BUCKET}" 2>/dev/null \
+          || aws --endpoint-url http://seaweed:8333 \
+            s3api create-bucket --bucket "$${S3_BUCKET}"
     restart: "no"
 
-  mc-tools:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+  aws-tools:
+    image: amazon/aws-cli:2.34.61
     depends_on:
       seaweed-init:
         condition: service_completed_successfully
     profiles: ["tools"]
     env_file:
       - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
-        mc alias set local http://seaweed:8333 \
-            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" > /dev/null
-        exec mc "$$@"
-      - sh
+        exec aws --endpoint-url http://seaweed:8333 "$$@"
+      - bash
     volumes:
       - ./out:/work
 

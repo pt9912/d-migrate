@@ -2,15 +2,22 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: In Progress (2026-06-04 — BD.1 v3: zusaetzlich
-> bash-Parameter-Expansion in `seaweed-config` fuer
-> JSON-Safety. Damit faellt auch die letzte verbleibende
-> `.env`-Restriktion (`"`/`\\` im Key) — empirisch mit
-> `foo"bar\\baz/qux@quux` als Secret verifiziert. Davor: BD.1
-> v2 (Commit `f6a185d8`) — `seaweed-config`-One-Shot rendert
+> Status: In Progress (2026-06-04 — BD.1 v4: S3-Client von
+> `minio/mc` auf `amazon/aws-cli:2.34.61` umgestellt. Letzte
+> MinIO-Branding-Referenz aus dem Stack entfernt; Compose nutzt
+> drei `aws-cli`-Container (seaweed-config, seaweed-init,
+> aws-tools — Letzterer ersetzt `mc-tools`). Credentials nun
+> via `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`-Env-Vars
+> (statt URL/Positions-Argument). `seaweed-init` nutzt
+> `head-bucket || create-bucket`-Pattern. Empirisch verifiziert
+> inkl. Stresstest mit `foo"bar\\baz/qux@quux#hash` als Secret.
+> Davor: BD.1 v3 (Commit `8626b6a5`) — bash-Parameter-
+> Expansion in `seaweed-config` fuer JSON-Safety. Damit fiel die
+> `.env`-Restriktion (`"`/`\\` im Key). Davor: BD.1 v2 (Commit
+> `f6a185d8`) — `seaweed-config`-One-Shot rendert
 > `s3.json` aus `.env` in ein Named Volume (eliminiert die
 > `.env`/`s3.json`-Drift, die der BD.1-Review als
-> Maintenance-Falle markiert hatte); `mc-tools`-Service erhaelt
+> Maintenance-Falle markiert hatte); `aws-tools`-Service erhaelt
 > Entrypoint-Wrapper mit `mc alias set` und separaten
 > Argumenten (eliminiert das `MC_HOST_local`-URL-Embedding und
 > damit den URL-reserved-Char-Caveat). `config/seaweed-s3.json`
@@ -296,12 +303,28 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   auf Docker Hub (2026-06-02). Tag in `docker-compose.yml` explizit
   pinnen, **kein** `:latest`. Tag-Refresh ist eigener BD-Slice analog
   Risk #7.
-- **Image (Client `mc`)**: `minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1`
-  — `mc` bleibt als generischer S3-Client unveraendert, weil das CLI
-  gegen jede S3-API arbeitet (nicht gegen ein MinIO-Admin-API). Das
-  `minio/mc`-Docker-Hub-Repo ist eingefroren, der gepinnte Tag bleibt
-  verfuegbar. Sobald `mc` upstream verschwindet, ist eine Migration auf
-  `aws-cli` / `s5cmd` Folge-Slice (BD-Tag-Refresh).
+- **Image (S3-Client)**: `amazon/aws-cli:2.34.61` — offizielles
+  AWS-CLI-Image (Amazon-Linux-2023-basiert) als neutraler
+  S3-Standard-Pfad. Damit fallen drei MinIO-Client-Container weg
+  (BD.1 v3 nutzte noch `minio/mc`); der CLI-Pfad ist universell
+  AWS-kompatibel und immun gegen das MinIO-CE-Source-Only-Risiko.
+  Verglichene Alternativen im Implementierungs-Sweep 2026-06-04:
+
+  | Kandidat                          | Größe   | Stand              | Befund              |
+  | --------------------------------- | ------- | ------------------ | ------------------- |
+  | **`amazon/aws-cli:2.34.61`**      | ~250 MB | aktiv (2026-06-03) | **gewaehlt**        |
+  | `peakcom/s5cmd:v2.3.0`            | ~20 MB  | Dec 2024, eingefroren | abgelehnt: Pflege-Stagnation analog `minio/mc` |
+  | `rclone/rclone:1.x`               | ~50 MB  | aktiv              | abgelehnt: Multi-Backend-Tool, S3-Fokus nicht idiomatisch |
+  | `minio/mc:RELEASE.2025-08-13…`    | ~50 MB  | eingefroren (CE-Source-Only) | **historisch** (BD.1 v1-v3) |
+
+  AWS-CLI wird via `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+  konfiguriert (in BD.1 aus `S3_ACCESS_KEY` / `S3_SECRET_KEY` der
+  `.env` gemappt), `AWS_DEFAULT_REGION=us-east-1` als
+  SeaweedFS-Konventions-Region, `AWS_EC2_METADATA_DISABLED=true`
+  um den EC2-Instanz-Metadata-Probe-Pfad zu sparen
+  (vermeidet ~6s Hang in Nicht-AWS-Umgebungen). Endpoint via
+  `--endpoint-url http://seaweed:8333` pro Aufruf; im Tools-
+  Service kapselt ein Bash-Wrapper das Flag.
 - **API-Port**: lokal `59000`, Bind `127.0.0.1:${S3_API_PORT}:8333`.
   SeaweedFS-S3-API laeuft default auf Container-Port 8333.
 - **Master-UI-Port**: lokal `59001`, Bind
@@ -328,18 +351,19 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   zwischen `.env` und einer hartkodierten JSON eliminiert (war
   Befund des BD.1-Sicherheitsreviews — Pflicht-Konvention war
   Maintenance-Falle). Konkretes Pattern via Heredoc im
-  Compose-File, basierend auf dem ohnehin gepullten `minio/mc`-
-  Image (kein zusaetzliches Image noetig):
+  Compose-File, basierend auf dem ohnehin gepullten
+  `amazon/aws-cli`-Image (kein zusaetzliches Image noetig — das
+  AWS-CLI-Image ist Amazon-Linux-2023, enthaelt `bash`):
 
   ```yaml
   seaweed-config:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: amazon/aws-cli:2.34.61
     env_file:
       - .env
     volumes:
       - seaweed-config:/etc/seaweed
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
@@ -376,14 +400,14 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   **JSON-Safety via Bash-Parameter-Expansion**: die zwei
   `${var//pattern/replacement}`-Konstrukte vor dem Heredoc
   escapen erst `\` zu `\\` und dann `"` zu `\"`. Das ist
-  bash-Builtin (kein externes `sed`/`jq` noetig, weil das
-  `minio/mc`-Image — RHEL-UBI-basiert — nur `bash` + coreutils
-  enthaelt). Damit gibt es **keine** Zeichen-Restriktion mehr in
-  `.env`: jeder Wert, den ein Password-Manager erzeugt, wird
-  korrekt fuer JSON eskapiert. Empirisch verifiziert mit
-  `S3_SECRET_KEY=foo"bar\\baz/qux@quux` im BD.1-Stresstest
-  (Output: `"secretKey": "foo\\"bar\\\\baz/qux@quux"` — valides
-  JSON, korrekt parsbar).
+  bash-Builtin (kein externes `sed`/`jq` noetig). Damit gibt es
+  **keine** Zeichen-Restriktion in `.env`: jeder Wert, den ein
+  Password-Manager erzeugt, wird korrekt fuer JSON eskapiert.
+  Empirisch verifiziert mit
+  `S3_SECRET_KEY=foo"bar\\baz/qux@quux#hash` im BD.1
+  v4-Stresstest (Output: `"secretKey":
+  "foo\\"bar\\\\baz/qux@quux#hash"` — valides JSON, korrekt
+  parsbar, aws-cli authentifiziert erfolgreich).
 
 - **Server-Service**: konkretes Pattern fuer den `seaweed`-Service. Bind
   explizit auf `127.0.0.1`; Server-Healthcheck entfaellt bewusst (gleiche
@@ -414,7 +438,7 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   ausschliesslich aus dem via `-s3.config=...` referenzierten
   JSON-File. Das ist anders als bei MinIO, womit Risk #10 fuer den
   Server-Container entfaellt; die Risk-Note bleibt fuer
-  `seaweed-config`, `seaweed-init` und `mc-tools` relevant (alle drei
+  `seaweed-config`, `seaweed-init` und `aws-tools` relevant (alle drei
   brauchen die Keys aus `env_file:` als Container-Env).
 
   **Rebuild-Vertrag**: weil das Named Volume `seaweed-config`
@@ -425,124 +449,136 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   Block.
 
 - **Bucket-Init**: separater `seaweed-init`-Service (one-shot
-  `restart: "no"`), der `minio/mc` startet, mit eingebautem Retry auf
-  die S3-API wartet und `mc mb --ignore-existing local/dmigrate-demo`
-  ausfuehrt. Konkretes Pattern:
+  `restart: "no"`), der `amazon/aws-cli` startet, mit eingebautem
+  Retry auf die S3-API wartet und den Bucket idempotent anlegt
+  (head-bucket || create-bucket). Konkretes Pattern:
 
   ```yaml
   seaweed-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    image: amazon/aws-cli:2.34.61
     depends_on:
       - seaweed
     env_file:
       - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
-        until mc alias set local http://seaweed:8333 \
-            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
+        until aws --endpoint-url http://seaweed:8333 \
+            s3api list-buckets > /dev/null 2>&1
         do
           echo 'waiting for seaweed s3…'
           sleep 2
         done
-        mc mb --ignore-existing "local/$${S3_BUCKET}"
+        aws --endpoint-url http://seaweed:8333 \
+            s3api head-bucket --bucket "$${S3_BUCKET}" 2>/dev/null \
+          || aws --endpoint-url http://seaweed:8333 \
+            s3api create-bucket --bucket "$${S3_BUCKET}"
     restart: "no"
   ```
 
-  Das `mc alias set` arbeitet gegen die S3-API (nicht gegen ein
-  MinIO-Admin-Endpoint), funktioniert also gegen jeden S3-kompatiblen
-  Server. Die uebergebenen Keys (aus `env_file: .env`) muessen mit
-  der von `seaweed-config` gerenderten Demo-Identity uebereinstimmen
-  — was per Konstruktion gilt, weil beide Container aus derselben
-  `.env` lesen. Ohne diese Uebereinstimmung scheitert der spaetere
-  `mc mb`-Call mit SigV4-Fehler.
+  Das `aws s3api list-buckets` ist der Readiness-Probe (statt eines
+  Health-Endpunkts am Server). Die anschliessende
+  `head-bucket || create-bucket`-Kette ist idempotent, weil
+  `head-bucket` mit ExitCode != 0 bei nicht existierendem Bucket
+  scheitert und dann der `create-bucket`-Pfad greift. Die `aws`-
+  CLI liest die Credentials aus `AWS_ACCESS_KEY_ID` /
+  `AWS_SECRET_ACCESS_KEY` (gemappt aus `.env`), keine
+  URL-Embedding-Fragwuerdigkeiten mehr.
 
-  **YAML-Form bewusst array + Literal-Block (`|`)**: ein folded scalar
-  (`>`) wuerde die Newlines zu Spaces falten und damit die
-  Backslash-Line-Continuation `\\` zu `\ ` (escaped space) machen —
-  funktioniert zufaellig im Shell, ist aber eine bruechige
-  Maintenance-Falle. Die array-Form macht `/bin/sh -c <script>`
-  explizit und der Literal-Block (`|`) haelt Newlines, sodass die
-  Continuation wirklich Continuation ist.
+  **`AWS_DEFAULT_REGION=us-east-1`** ist Pflicht: aws-cli weigert
+  sich, ohne Region zu arbeiten; SeaweedFS ignoriert die Region
+  S3-API-seitig, akzeptiert aber `us-east-1` als kanonischen
+  Default. **`AWS_EC2_METADATA_DISABLED=true`** spart einen 6s-
+  Hang beim ersten Aufruf in Nicht-EC2-Umgebungen, weil aws-cli
+  sonst versucht, IAM-Rollen vom EC2-Metadata-Service zu lesen.
 
-  Wichtig: `env_file: .env` ist am `seaweed-init`-Container **Pflicht**.
-  `$${VAR}` im Shell-Skript bezieht sich auf die **Container-Env**, die
-  Compose nur dann setzt, wenn `env_file:` oder explizites
-  `environment:` da ist. Ohne diesen Block schickt `mc alias set` leere
-  Strings als Credentials — das Aliasing scheitert beim spaeteren
-  MakeBucket-Call (siehe Risk #10).
+  **YAML-Form bewusst array + Literal-Block (`|`)**: ein folded
+  scalar (`>`) wuerde die Newlines zu Spaces falten und damit die
+  Backslash-Line-Continuation `\\` zu `\ ` (escaped space) machen.
+  Die array-Form macht `/bin/bash -c <script>` explizit und der
+  Literal-Block (`|`) haelt Newlines, sodass die Continuation
+  wirklich Continuation ist.
 
-- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service mit
-  Entrypoint-Wrapper, der das `mc alias set` vor dem eigentlichen
-  User-Kommando ausfuehrt — Credentials gehen als **separate
-  Argumente** an `mc`, nicht als URL-eingebettete Werte. Damit
-  faellt der frueher noetige `MC_HOST_local`-URL-Encoding-Caveat
-  weg (war Befund des BD.1-Sicherheitsreviews als Maintenance-
-  Falle bei Custom-Credentials).
+  Wichtig: `env_file: .env` ist am `seaweed-init`-Container
+  **Pflicht** (siehe Risk #10). Die zusaetzlichen `environment:`-
+  Eintraege fuer `AWS_*`-Variablen sind YAML-Substitutionen aus der
+  Compose-Shell-Env (nicht `$${...}`-Escapes), weil sie zur
+  Container-Build-Zeit fix gesetzt werden sollen — anders als die
+  Heredoc-Variablen, die zur Runtime aus der Container-Env
+  expandieren.
 
-  Service ist via `profiles: ["tools"]` vom `up -d`-Default
-  ausgeschlossen; nur durch expliziten `compose run`-Aufruf
-  materialisiert:
+- **Ad-hoc-Tools-Service**: zusaetzlicher `aws-tools`-Service mit
+  Entrypoint-Wrapper, der `--endpoint-url` als Default voranstellt
+  und das User-Subkommando per `exec` weiterreicht. Service ist
+  via `profiles: ["tools"]` vom `up -d`-Default ausgeschlossen;
+  nur durch expliziten `compose run`-Aufruf materialisiert:
 
   ```yaml
-  mc-tools:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+  aws-tools:
+    image: amazon/aws-cli:2.34.61
     depends_on:
       seaweed-init:
         condition: service_completed_successfully
     profiles: ["tools"]
     env_file:
       - .env
+    environment:
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY}
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     entrypoint:
-      - /bin/sh
+      - /bin/bash
       - -c
       - |
         set -eu
-        mc alias set local http://seaweed:8333 \
-            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" > /dev/null
-        exec mc "$$@"
-      - sh
+        exec aws --endpoint-url http://seaweed:8333 "$$@"
+      - bash
     volumes:
       - ./out:/work
   ```
 
-  **Mechanik des Entrypoint-Wrappers**: das `minio/mc`-Image hat
-  `mc` als Default-`ENTRYPOINT`; das Override hier ersetzt das
-  durch ein `sh -c`-Script, das (a) den Alias konfiguriert und
-  (b) per `exec mc "$@"` das vom User uebergebene Subkommando
-  weiterreicht. Der trailing `sh`-Eintrag als letztes
-  Listenelement ist das Sentinel-`$0` fuer `sh -c`; Compose
-  uebergibt dann `compose run`-Args als `$1`, `$2`, ... in den
-  Script. Damit verhalten sich Aufrufe wie
-  `docker compose run --rm mc-tools ls "local/${S3_BUCKET}/"`
-  exakt so, als waere `mc` der Direkt-Entrypoint — User merken
-  den Wrapper nicht.
+  **Mechanik des Entrypoint-Wrappers**: das `amazon/aws-cli`-Image
+  hat `aws` als Default-`ENTRYPOINT`; das Override hier ersetzt das
+  durch ein `bash -c`-Script, das per `exec aws --endpoint-url …
+  "$@"` das vom User uebergebene Subkommando weiterreicht. Der
+  trailing `bash`-Eintrag als letztes Listenelement ist das
+  Sentinel-`$0` fuer `bash -c`; Compose uebergibt dann
+  `compose run`-Args als `$1`, `$2`, ... in den Script. Damit
+  verhalten sich Aufrufe wie
+  `docker compose run --rm aws-tools s3 ls s3://${S3_BUCKET}/`
+  exakt so, als waere `aws --endpoint-url=…` der Direkt-Entrypoint
+  — User merken den Wrapper nicht.
 
-  **Sicherheits-Effekt**: die Credentials erscheinen nirgends
-  mehr in einer URL (weder in der YAML noch in der Container-
-  Env als `MC_HOST_*`-Variable). Sie kommen ausschliesslich via
-  `env_file: .env` als reine Shell-Variablen rein und werden an
-  `mc alias set` als zwei Positions-Argumente uebergeben. URL-
-  reservierte Zeichen (`:`, `@`, `/`, `?`, `#`) in den Demo-Keys
-  sind damit unkritisch — der Restriktions-Hinweis war ein
-  Artefakt des frueheren `MC_HOST_local`-URL-Encodings.
+  **Sicherheits-Effekt**: Credentials erscheinen ausschliesslich
+  als Env-Vars (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`),
+  nicht in URLs, nicht in Argumenten. URL-reservierte Zeichen
+  (`:`, `@`, `/`, `?`, `#`) und JSON-Special-Chars (`"`, `\`) in
+  den Demo-Keys sind alle unkritisch (Stresstest mit
+  `foo"bar\\baz/qux@quux#hash` als Secret empirisch verifiziert).
 
   **Wichtig zum Mount-Pfad**: relative Bind-Mounts loest Compose
   **gegen das Verzeichnis der Compose-Datei** auf, nicht gegen
   das Working Directory des Aufrufers. `./out` ist damit
   `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der
   Demo-Flow §6 + BD.4 schreiben CLI-Output deshalb konsequent
-  nach `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt
+  nach `examples/bi-demo/out/...`; die `aws s3 cp`-Quelle bleibt
   `/work/` im Container.
 
 - **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
   `seaweed`-Service. Zwar enthaelt das SeaweedFS-Image `wget`, der
   konkrete Healthcheck-Endpunkt-Vertrag ist aber zwischen
   SeaweedFS-Versionen nicht stabil dokumentiert. Stattdessen wartet
-  `seaweed-init` selbst bis zum erfolgreichen `mc alias set` + `mc mb`;
-  alle weiteren Services (z. B. `dmigrate`) haengen via `depends_on:
+  `seaweed-init` selbst bis zum erfolgreichen `aws s3api
+  list-buckets` + `head-bucket||create-bucket`-Vertrag; alle
+  weiteren Services (z. B. `dmigrate`) haengen via `depends_on:
   seaweed-init: { condition: service_completed_successfully }` an
   diesem Init-Service statt am SeaweedFS-Server direkt. Damit ist
   „S3-API ist nutzbar" eindeutig pinbar — strikter als ein
@@ -554,9 +590,9 @@ Der erste Demo-Schnitt muss noch keine produktive S3-Integration in
 nicht implementiert ist
 ([`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)),
 kann das Smoke-Script Artefakte lokal erzeugen und sie mit dem
-`mc`-Client in den Demo-Bucket kopieren. Sobald `d-migrate` `s3://`-
-Artefaktziele unterstuetzt, wird dieser Zwischenschritt durch direkte
-Ausgabe nach SeaweedFS ersetzt.
+`aws s3 cp`-Client (im `aws-tools`-Service, §5.3) in den Demo-Bucket
+kopieren. Sobald `d-migrate` `s3://`-Artefaktziele unterstuetzt, wird
+dieser Zwischenschritt durch direkte Ausgabe nach SeaweedFS ersetzt.
 
 ### 5.4 d-migrate
 
@@ -580,15 +616,15 @@ POSTGRES_PORT=55432
 
 # SeaweedFS S3 API — Demo-only credentials, NOT for production.
 # Single Source of Truth: der `seaweed-config`-One-Shot rendert
-# die SeaweedFS-`s3.json` aus diesen Werten, `seaweed-init` und
-# `mc-tools` reichen sie an `mc alias set` weiter (separate
-# Argumente, kein URL-Embedding). Keine Spiegelung in einer
-# zweiten Datei mehr noetig.
+# die SeaweedFS-`s3.json` aus diesen Werten; `seaweed-init` und
+# `aws-tools` mappen sie auf `AWS_ACCESS_KEY_ID` /
+# `AWS_SECRET_ACCESS_KEY` fuer die AWS CLI (Env-Var-basiert,
+# kein URL-Embedding, keine Argument-Positionierung).
 #
-# Constraint: KEIN `"` und KEIN `\` in den Keys — wuerde die
-# JSON-Syntax im seaweed-config-Heredoc kippen (siehe §5.3).
-# `:`, `@`, `/`, `?`, `#` sind jetzt erlaubt (URL-Encoding-Caveat
-# der vorherigen Iteration ist eliminiert).
+# Keine Zeichen-Restriktion: `"` und `\` werden vor dem JSON-
+# Heredoc bash-parameter-expanded; `:` `@` `/` `?` `#` gehen
+# als Env-Var-Wert ohne URL-Kontext. Jeder Password-Manager-
+# generierte Wert akzeptiert (Stresstest §5.3).
 S3_ACCESS_KEY=demoaccesskey
 S3_SECRET_KEY=demosecretkey
 S3_API_PORT=59000
@@ -602,12 +638,13 @@ METABASE_PORT=3000
 Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix
 als sichtbaren Marker. SeaweedFS S3-Keys sind Demo-Strings; sie
 sind Single Source of Truth fuer die zur Laufzeit gerenderte
-`s3.json` und werden von `mc` als separate Argumente verarbeitet
-— **keine** Spiegelung in einer zweiten Datei, **kein**
-URL-reserved-Char-Caveat, **keine** JSON-Special-Char-
-Restriktion (bash-Parameter-Expansion in `seaweed-config`
-escaped `"` und `\\` JSON-konform, siehe §5.3). Damit ist jeder
-Password-Manager-generierte Wert akzeptiert. Das ist trotzdem
+`s3.json` und werden von der AWS CLI als `AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`-Env-Vars verarbeitet — **keine**
+Spiegelung in einer zweiten Datei, **kein** URL-reserved-Char-
+Caveat, **keine** JSON-Special-Char-Restriktion (bash-Parameter-
+Expansion in `seaweed-config` escaped `"` und `\\` JSON-konform,
+siehe §5.3). Damit ist jeder Password-Manager-generierte Wert
+akzeptiert. Das ist trotzdem
 **keine** Production-Konvention; eine echte Multi-Identity-
 IAM-Loesung mit IAM-Policies pro User bleibt Folge-Slice
 (BD.6+). README dokumentiert die Demo-Natur explizit.
@@ -669,8 +706,8 @@ d-migrate data profile --source demo_pg \
 d-migrate schema generate --source examples/bi-demo/out/reverse.yaml \
     --target postgresql
 
-docker compose -f examples/bi-demo/docker-compose.yml run --rm mc-tools \
-    cp --recursive /work/ "local/${S3_BUCKET}/runs/manual/"
+docker compose -f examples/bi-demo/docker-compose.yml run --rm aws-tools \
+    s3 cp --recursive /work/ "s3://${S3_BUCKET}/runs/manual/"
 ```
 
 Hinweise:
@@ -682,9 +719,11 @@ Hinweise:
   ([`NamedConnectionResolver.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
   Zeile 36).
 - `seaweed-init` (siehe §5.3) erzeugt den Bucket beim Compose-Start;
-  ad-hoc `mc`-Aufrufe laufen ueber den separaten `mc-tools`-Service
-  (§5.3), der das `out/`-Verzeichnis als `/work` mountet. Damit ist
-  `mc` **keine** Host-Voraussetzung.
+  ad-hoc `aws s3`-Aufrufe laufen ueber den separaten
+  `aws-tools`-Service (§5.3), der das `out/`-Verzeichnis als
+  `/work` mountet und `--endpoint-url=http://seaweed:8333` via
+  Entrypoint-Wrapper voranstellt. Damit ist `aws`/`mc` **keine**
+  Host-Voraussetzung.
 - `examples/bi-demo/out/` muss vor dem ersten `compose run`
   existieren (deshalb das `mkdir -p`-Praefix). Sonst legt der
   Docker-Daemon das Bind-Mount-Ziel als `root:root` an und der
@@ -813,7 +852,7 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
 
 - [ ] `examples/bi-demo/docker-compose.yml` mit den fuenf
   Services aus §5.1 + §5.3 (Postgres, seaweed-config, SeaweedFS,
-  seaweed-init, mc-tools) und gepinnten Image-Tags. Keine
+  seaweed-init, aws-tools) und gepinnten Image-Tags. Keine
   versionierte `config/seaweed-s3.json` — `seaweed-config`
   rendert sie aus `.env` in ein Named Volume (siehe §5.3).
 - [ ] `examples/bi-demo/.env.example` aus §5.5;
@@ -823,7 +862,7 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
 - [ ] `examples/bi-demo/out/.gitkeep` ist mitcommitted **oder**
   README + Smoke-Script praefixieren `mkdir -p
   examples/bi-demo/out` vor dem ersten `compose run`.
-  Hintergrund: der `mc-tools`-Bind-Mount `./out:/work` legt das
+  Hintergrund: der `aws-tools`-Bind-Mount `./out:/work` legt das
   Host-Verzeichnis sonst beim ersten `compose run` als
   `root:root` an, was den Host-CLI-Schreibzugriff in BD.4
   (`d-migrate ... --output examples/bi-demo/out/…`) mit
@@ -844,7 +883,7 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
     sondern indirekt via `seaweed-init`.
   - **seaweed-init**: `state=exited`, `ExitCode=0`,
     `service_completed_successfully` — Bucket-Init lief gruen
-    und der mc-Retry hat die S3-API als nutzbar bestaetigt.
+    und der aws-CLI-Retry hat die S3-API als nutzbar bestaetigt.
     Pinnung via `docker compose ps --all --format json | jq -s
     -e 'map(select(.Service == "seaweed-init")) | .[0].State
     == "exited" and .[0].ExitCode == 0'`. **Wichtig**:
@@ -858,12 +897,12 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
     `-s` scheitert die jq-Expression mit „Cannot index string
     with string"). `--all` ist Pflicht — `docker compose ps`
     ohne Flag listet beendete Container **nicht**.
-  - **mc-tools**: nicht gestartet (steht unter
+  - **aws-tools**: nicht gestartet (steht unter
     `profiles: ["tools"]` und wird nur durch
-    `docker compose run mc-tools …` materialisiert).
+    `docker compose run aws-tools …` materialisiert).
 - [ ] Smoke-Check fuer „S3-API ist nutzbar":
-  `docker compose run --rm mc-tools ls local/` exited 0 und
-  listet den Demo-Bucket.
+  `docker compose run --rm aws-tools s3 ls` exited 0 und
+  listet `dmigrate-demo` als Bucket.
 - [ ] `docker compose down -v` raeumt Named-Volumes komplett ab
   (Idempotenz-Test).
 - [ ] `make ci` grün (keine zusätzlichen Tests, aber Doc-Linting
@@ -981,7 +1020,7 @@ Container-CLI-Variante dokumentiert.
   examples/bi-demo/out/reverse.yaml` liefert eine valide
   Reverse-Definition (alle 5 Tabellen, FKs, Datentypen). **Output-
   Pfad ist `examples/bi-demo/out/...`**, nicht Repo-Root-`out/`
-  — der `mc-tools`-Bind-Mount `./out:/work` loest gegen das
+  — der `aws-tools`-Bind-Mount `./out:/work` loest gegen das
   Compose-Datei-Verzeichnis auf (§5.3).
 - [ ] `d-migrate data profile --source demo_pg --output
   examples/bi-demo/out/profile.json`
@@ -1005,12 +1044,13 @@ Container-CLI-Variante dokumentiert.
 - [ ] `d-migrate schema generate --source
   examples/bi-demo/out/reverse.yaml --target postgresql` rendert
   eine valide DDL.
-- [ ] `docker compose run --rm mc-tools cp --recursive
-  /work/ "local/${S3_BUCKET}/runs/manual/"` laed die Artefakte
+- [ ] `docker compose run --rm aws-tools s3 cp --recursive
+  /work/ "s3://${S3_BUCKET}/runs/manual/"` laed die Artefakte
   in den SeaweedFS-Bucket (Smoke-Vertrag aus §5.3; `out/` ist im
-  `mc-tools`-Service als `/work` gemountet). Host-`mc` ist nicht
-  erforderlich. **Wichtig**: kein `mc`-Praefix — das Image hat
-  `mc` als Entrypoint (§5.3).
+  `aws-tools`-Service als `/work` gemountet). Host-`aws` / `mc`
+  ist nicht erforderlich. **Wichtig**: kein `aws`-Praefix — der
+  Entrypoint-Wrapper stellt `aws --endpoint-url=…` automatisch
+  voran (§5.3).
 - [ ] README dokumentiert Container-CLI-Variante fuer
   d-migrate als optional (mit `docker-compose.yml`-Service-
   Eintrag oder `docker run --rm --network bi-demo_default ...`).
@@ -1047,10 +1087,10 @@ ohne menschlichen Browser-Schritt prueft.
   `--format json` je nach Compose-Version JSONL oder Array
   liefert — siehe BD.1), faehrt
   mindestens den d-migrate-Reverse + Profile Workflow aus BD.4,
-  prueft S3-Upload via `docker compose run --rm mc-tools ls
-  "local/${S3_BUCKET}/runs/"`. **`mc` wird ausschliesslich
-  ueber den `mc-tools`-Service (§5.3) aufgerufen**, damit die
-  Demo ohne Host-`mc` laeuft; `jq` ist Host-Voraussetzung
+  prueft S3-Upload via `docker compose run --rm aws-tools s3 ls
+  "s3://${S3_BUCKET}/runs/"`. **`aws` wird ausschliesslich
+  ueber den `aws-tools`-Service (§5.3) aufgerufen**, damit die
+  Demo ohne Host-`aws` laeuft; `jq` ist Host-Voraussetzung
   (siehe README-Prereqs).
 - [ ] `Makefile`-Targets im Repo-Root (Konsistenz mit der
   Make-Konvention dieses Repos): `bi-demo-pull` (Pre-Start-Pull
@@ -1065,8 +1105,8 @@ ohne menschlichen Browser-Schritt prueft.
 - [ ] `examples/bi-demo/README.md` vollstaendig:
   - **Voraussetzungen (Host)**: Docker (≥ 24), Docker Compose
     (≥ v2.20), `jq` (fuer Smoke-Script-`ps`-Parsing), d-migrate-
-    CLI. `mc` ist **keine** Host-Voraussetzung — der
-    `mc-tools`-Service (§5.3) liefert ihn via
+    CLI. `aws`/`mc` sind **keine** Host-Voraussetzung — der
+    `aws-tools`-Service (§5.3) liefert die AWS CLI via
     `docker compose run`.
   - Start/Stop-Block (mit/ohne `-v`)
   - Metabase-Erstkonfiguration (Screenshot oder Schritt-fuer-Schritt)
@@ -1074,8 +1114,8 @@ ohne menschlichen Browser-Schritt prueft.
   - Cleanup-Block
   - Troubleshooting (Port-Konflikte, Healthcheck-Timeouts,
     Metabase-`start_period`, S3 via
-    `docker compose run --rm mc-tools <subcmd> …` — kein
-    `mc`-Praefix, §5.3)
+    `docker compose run --rm aws-tools <aws-subcmd> …` — kein
+    `aws`-Praefix, §5.3)
 - [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
   `scripts/smoke.sh` ohne Metabase-Browser-Schritt im CI
   ausfuehrt (Best-Effort, kann anfangs als
@@ -1191,20 +1231,27 @@ BD.1 (Compose+Healthchecks)
    GitHub-Tree, eine Self-Build-Strategie waere nur ein
    Verzoegerer der gleichen Source-Only-Falle.
 
-   `mc` bleibt als generischer S3-Client unveraendert (arbeitet
-   gegen jede S3-API; das `minio/mc`-Repo ist eingefroren aber
-   funktional). Migration auf `aws-cli` / `s5cmd` bleibt eigener
-   BD-Tag-Refresh-Slice.
+   Auch der S3-Client wurde im BD.1 v4-Sweep (2026-06-04) auf
+   `amazon/aws-cli:2.34.61` umgestellt — die vorherige Wahl
+   `minio/mc` waere als „bleibt funktional" durchgegangen, aber:
+   das `minio/mc`-Repo ist auf Docker Hub eingefroren (CE-Source-
+   Only) und steht im selben Sustainability-Risiko wie der
+   Server-Tag, vor dem Risk #9 schuetzt. AWS CLI ist der
+   neutrale S3-Standard-Pfad mit offiziellem Amazon-Image und
+   aktiver Versionspflege. Verglichene Alternativen: s5cmd
+   (technisch passend, aber 2024-12-Release als juengstes
+   Update — analoge Stagnation), rclone (Multi-Backend-Tool,
+   S3-Fokus weniger idiomatisch).
 10. **`env_file` im Compose-Container vergessen**. Compose-
     `.env`-Interpolation ist YAML-Substitution (`${VAR}` im
     Compose-File selbst), **nicht** Container-Env. Wer
     `$${S3_ACCESS_KEY}` im `entrypoint`-Skript verwendet,
     aber keinen `env_file:`- oder `environment:`-Block setzt,
-    kriegt leere Variablen und schweigende
-    `mc alias set`-Fehler.
+    kriegt leere Variablen und schweigende AWS-CLI-Fehler
+    (`Unable to locate credentials` oder vergleichbar).
     Mitigation: §5.3-Skeletons zeigen `env_file: .env` als
     Pflichtfeld fuer `seaweed-config`, `seaweed-init` und
-    `mc-tools` (alle drei Container brauchen `S3_ACCESS_KEY`/
+    `aws-tools` (alle drei Container brauchen `S3_ACCESS_KEY`/
     `S3_SECRET_KEY` / `S3_BUCKET` als Container-Env). Der
     `seaweed`-Server-Container braucht **kein** `env_file:`,
     weil er Credentials ausschliesslich aus der via
@@ -1218,8 +1265,8 @@ BD.1 (Compose+Healthchecks)
 
 - **[`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)**:
   bringt nativen `s3://`-Artifakt-Output. Solange noch nicht
-  geliefert, faellt BD.4 auf den `mc cp`-Zwischenschritt zurueck
-  (§5.3). Sobald geliefert, ist ein BD.6-Slice „Direkte
+  geliefert, faellt BD.4 auf den `aws s3 cp`-Zwischenschritt
+  zurueck (§5.3). Sobald geliefert, ist ein BD.6-Slice „Direkte
   s3://-Ausgabe nach SeaweedFS" sinnvoll.
 - **[`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md)**:
   Parquet-Artifakte sind in §8 als spaetere Erweiterung gelistet;
