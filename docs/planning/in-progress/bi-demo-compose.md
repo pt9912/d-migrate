@@ -903,16 +903,16 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
 
 **Akzeptanzkriterien**:
 
-- [ ] `examples/bi-demo/docker-compose.yml` mit den fuenf
+- [x] `examples/bi-demo/docker-compose.yml` mit den fuenf
   Services aus §5.1 + §5.3 (Postgres, seaweed-config, SeaweedFS,
   seaweed-init, aws-tools) und gepinnten Image-Tags. Keine
   versionierte `config/seaweed-s3.json` — `seaweed-config`
   rendert sie aus `.env` in ein Named Volume (siehe §5.3).
-- [ ] `examples/bi-demo/.env.example` aus §5.5;
+- [x] `examples/bi-demo/.env.example` aus §5.5;
   `examples/bi-demo/.gitignore` schliesst `.env` **und** `out/`
   aus (Demo-Workflow schreibt CLI-Artefakte nach
   `examples/bi-demo/out/`, siehe §5.3 + §6).
-- [ ] `examples/bi-demo/out/.gitkeep` ist mitcommitted **oder**
+- [x] `examples/bi-demo/out/.gitkeep` ist mitcommitted **oder**
   README + Smoke-Script praefixieren `mkdir -p
   examples/bi-demo/out` vor dem ersten `compose run`.
   Hintergrund: der `aws-tools`-Bind-Mount `./out:/work` legt das
@@ -920,10 +920,10 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
   `root:root` an, was den Host-CLI-Schreibzugriff in BD.4
   (`d-migrate ... --output examples/bi-demo/out/…`) mit
   `Permission denied` bricht.
-- [ ] **Pre-Start**: `docker compose pull` zieht alle gepinnten
+- [x] **Pre-Start**: `docker compose pull` zieht alle gepinnten
   Tags und scheitert sofort, wenn ein Image auf Docker Hub
   nicht mehr verfuegbar ist (siehe Risk #9).
-- [ ] Nach `docker compose up -d` (ohne Profile) gilt innerhalb
+- [x] Nach `docker compose up -d` (ohne Profile) gilt innerhalb
   von 90 s:
   - **Postgres**: `state=healthy` via `pg_isready`-Healthcheck
     aus §5.1.
@@ -953,12 +953,12 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
   - **aws-tools**: nicht gestartet (steht unter
     `profiles: ["tools"]` und wird nur durch
     `docker compose run aws-tools …` materialisiert).
-- [ ] Smoke-Check fuer „S3-API ist nutzbar":
+- [x] Smoke-Check fuer „S3-API ist nutzbar":
   `docker compose run --rm aws-tools s3 ls` exited 0 und
   listet `dmigrate-demo` als Bucket.
-- [ ] `docker compose down -v` raeumt Named-Volumes komplett ab
+- [x] `docker compose down -v` raeumt Named-Volumes komplett ab
   (Idempotenz-Test).
-- [ ] `make ci` grün (keine zusätzlichen Tests, aber Doc-Linting
+- [x] `make ci` grün (keine zusätzlichen Tests, aber Doc-Linting
   muss laufen).
 
 **Betroffene Dateien**:
@@ -978,9 +978,9 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
 
 **Akzeptanzkriterien**:
 
-- [ ] `sql/001_schema.sql` mit den 5 Tabellen aus §7 (inklusive
+- [x] `sql/001_schema.sql` mit den 5 Tabellen aus §7 (inklusive
   Fremdschluessel + Datentypen-Mix + optional `jsonb`-Spalte).
-- [ ] `sql/002_seed.sql` mit den Volumen-/Verteilungs-Vorgaben aus
+- [x] `sql/002_seed.sql` mit den Volumen-/Verteilungs-Vorgaben aus
   §7. Determinismus-Vertrag (alle Bausteine zusammen, sonst kein
   byte-identisches Replay):
   - Festes `SELECT setseed(0.42);` am Skript-Beginn.
@@ -1012,10 +1012,10 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
     FROM ... ORDER BY <natural-key>` mit explizitem `ORDER BY`,
     damit die physische Reihenfolge in der Tabelle reproduzierbar
     ist (relevant fuer Idempotenz-Hashes und Profiling-Output).
-- [ ] Mount-Punkt
+- [x] Mount-Punkt
   `examples/bi-demo/sql/:/docker-entrypoint-initdb.d/`-Mount in
   `docker-compose.yml`.
-- [ ] Idempotenz: `docker compose down -v && docker compose up -d`
+- [x] Idempotenz: `docker compose down -v && docker compose up -d`
   produziert byte-identische Tabelleninhalte. Pinnung via
   Hash-Vergleich:
   `pg_dump --data-only --no-comments --no-sync -U dmigrate
@@ -1028,7 +1028,7 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
   Hashes trotz byte-identischer Daten — empirisch im
   BD.2-Smoke 2026-06-04 verifiziert (Datendiff jenseits dieser
   zwei Zeilen war leer).
-- [ ] `make ci` grün.
+- [x] `make ci` grün.
 
 **Betroffene Dateien**:
 
@@ -1053,21 +1053,21 @@ gegen `demo_pg` ist im README dokumentiert.
   (juengster 0.55er-Patch auf Docker Hub Stand 2026-06-04,
   publiziert 2026-05-08). `docker compose pull metabase`
   belegt durchgelaufen.
-- [ ] `metabase`-Service aus §5.2 in `docker-compose.yml` (inkl.
+- [x] `metabase`-Service aus §5.2 in `docker-compose.yml` (inkl.
   `start_period: 60s`-Healthcheck).
-- [ ] Named-Volume `metabase-data` ueberlebt `down` (aber **nicht**
+- [x] Named-Volume `metabase-data` ueberlebt `down` (aber **nicht**
   `down -v` — siehe BD.1). Konkreter Smoke: Admin-User anlegen +
   `demo_pg`-Datenquelle einrichten, dann `docker compose down`,
   dann `docker compose up -d`, dann im Browser pruefen, dass
   Login + Datenquelle weiter da sind (`MB_DB_FILE`-Mount aus
   §5.2 wirkt).
-- [ ] README dokumentiert: Admin-User-Anlage, Datenquelle
+- [x] README dokumentiert: Admin-User-Anlage, Datenquelle
   `demo_pg` einrichten (Host: `postgres`, Port: `5432`,
   Datenbank/User/Passwort aus `.env`).
-- [ ] README dokumentiert mindestens drei Beispiel-Fragen
+- [x] README dokumentiert mindestens drei Beispiel-Fragen
   (Umsatz/Tag, Bestellungen/Status, Top-Kunden) als Schritt-fuer-
   Schritt-Anleitung.
-- [ ] `make ci` grün.
+- [x] `make ci` grün.
 
 **Betroffene Dateien**:
 
@@ -1087,14 +1087,14 @@ Container-CLI-Variante dokumentiert.
 
 **Akzeptanzkriterien**:
 
-- [ ] `examples/bi-demo/.d-migrate.yaml` aus §5.6.
-- [ ] `d-migrate schema reverse --source demo_pg --output
+- [x] `examples/bi-demo/.d-migrate.yaml` aus §5.6.
+- [x] `d-migrate schema reverse --source demo_pg --output
   examples/bi-demo/out/reverse.yaml` liefert eine valide
   Reverse-Definition (alle 5 Tabellen, FKs, Datentypen). **Output-
   Pfad ist `examples/bi-demo/out/...`**, nicht Repo-Root-`out/`
   — der `aws-tools`-Bind-Mount `./out:/work` loest gegen das
   Compose-Datei-Verzeichnis auf (§5.3).
-- [ ] `d-migrate data profile --source demo_pg --output
+- [x] `d-migrate data profile --source demo_pg --output
   examples/bi-demo/out/profile.json`
   liefert einen Profile-Report. BD.4 pinnt sichtbare
   Profiling-Signale entlang heutiger
@@ -1113,20 +1113,20 @@ Container-CLI-Variante dokumentiert.
     `DUPLICATE_VALUES` (auf `products.category`, das durch seine
     Low-Cardinality automatisch viele Duplikate ueber ~30 Zeilen
     erzeugt — siehe §7).
-- [ ] `d-migrate schema generate --source
+- [x] `d-migrate schema generate --source
   examples/bi-demo/out/reverse.yaml --target postgresql` rendert
   eine valide DDL.
-- [ ] `docker compose run --rm aws-tools s3 cp --recursive
+- [x] `docker compose run --rm aws-tools s3 cp --recursive
   /work/ "s3://${S3_BUCKET}/runs/manual/"` laed die Artefakte
   in den SeaweedFS-Bucket (Smoke-Vertrag aus §5.3; `out/` ist im
   `aws-tools`-Service als `/work` gemountet). Host-`aws` / `mc`
   ist nicht erforderlich. **Wichtig**: kein `aws`-Praefix — der
   Entrypoint-Wrapper stellt `aws --endpoint-url=…` automatisch
   voran (§5.3).
-- [ ] README dokumentiert Container-CLI-Variante fuer
+- [x] README dokumentiert Container-CLI-Variante fuer
   d-migrate als optional (mit `docker-compose.yml`-Service-
   Eintrag oder `docker run --rm --network bi-demo_default ...`).
-- [ ] `make ci` grün.
+- [x] `make ci` grün.
 
 **Betroffene Dateien**:
 
@@ -1149,7 +1149,7 @@ ohne menschlichen Browser-Schritt prueft.
 
 **Akzeptanzkriterien**:
 
-- [ ] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
+- [x] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
   beginnt mit `mkdir -p "$(dirname "$0")/../out"` (Bind-Mount-
   Owner, siehe §6 + BD.1), prueft Container-Health via
   `docker compose ps --all --format json | jq -s -e
@@ -1164,7 +1164,7 @@ ohne menschlichen Browser-Schritt prueft.
   ueber den `aws-tools`-Service (§5.3) aufgerufen**, damit die
   Demo ohne Host-`aws` laeuft; `jq` ist Host-Voraussetzung
   (siehe README-Prereqs).
-- [ ] `Makefile`-Targets im Repo-Root (Konsistenz mit der
+- [x] `Makefile`-Targets im Repo-Root (Konsistenz mit der
   Make-Konvention dieses Repos): `bi-demo-pull` (Pre-Start-Pull
   aus BD.1), `bi-demo-up`, `bi-demo-down` (mit/ohne `-v` als
   zwei separate Targets `bi-demo-down` und `bi-demo-purge`),
@@ -1174,7 +1174,7 @@ ohne menschlichen Browser-Schritt prueft.
   Smoke-Script verwenden ausschliesslich Make-Targets als
   Top-Level-Befehle; die zugrunde liegenden `docker compose`-
   Kommandos stehen nur im Troubleshooting-Block.
-- [ ] `examples/bi-demo/README.md` vollstaendig:
+- [x] `examples/bi-demo/README.md` vollstaendig:
   - **Voraussetzungen (Host)**: Docker (≥ 24), Docker Compose
     (≥ v2.20), `jq` (fuer Smoke-Script-`ps`-Parsing), d-migrate-
     CLI. `aws`/`mc` sind **keine** Host-Voraussetzung — der
@@ -1188,11 +1188,11 @@ ohne menschlichen Browser-Schritt prueft.
     Metabase-`start_period`, S3 via
     `docker compose run --rm aws-tools <aws-subcmd> …` — kein
     `aws`-Praefix, §5.3)
-- [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
+- [x] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
   `scripts/smoke.sh` ohne Metabase-Browser-Schritt im CI
   ausfuehrt (Best-Effort, kann anfangs als
   `continue-on-error: true` markiert sein).
-- [ ] `make ci` grün; manueller Demo-Run dokumentiert in
+- [x] `make ci` grün; manueller Demo-Run dokumentiert in
   Commit-Message des BD.5-Slices.
 
 **Betroffene Dateien**:

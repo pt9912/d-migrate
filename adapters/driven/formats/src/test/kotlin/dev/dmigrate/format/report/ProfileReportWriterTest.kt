@@ -167,4 +167,96 @@ class ProfileReportWriterTest : FunSpec({
             io.kotest.assertions.withClue("YAML missing: $field") { yaml shouldContain field }
         }
     }
+
+    test("rendered JSON parses as valid JSON (regression: targetCompatibility serializer)") {
+        // Vor BD.4-Smoke-Befund (2026-06-04) emittierte renderTargetCompatibilityJson
+        // doppelte Anfuehrungszeichen (`"INTEGER""`, `"50""`) durch fehlerhafte
+        // Raw-String-Verkettung. Die alten substring-Assertions liefen trotzdem
+        // gruen, weil "INTEGER" als Substring vorhanden bleibt.
+        val rich = DatabaseProfile(
+            databaseProduct = "PostgreSQL",
+            tables = listOf(
+                TableProfile(
+                    name = "customers",
+                    rowCount = 50,
+                    columns = listOf(
+                        ColumnProfile(
+                            name = "id", dbType = "integer", logicalType = LogicalType.INTEGER,
+                            nullable = false, rowCount = 50, nonNullCount = 50, nullCount = 0,
+                            distinctCount = 50, duplicateValueCount = 0,
+                            targetCompatibility = listOf(
+                                dev.dmigrate.profiling.model.TargetTypeCompatibility(
+                                    targetType = dev.dmigrate.profiling.types.TargetLogicalType.INTEGER,
+                                    checkedValueCount = 50, compatibleCount = 50, incompatibleCount = 0,
+                                    determinationStatus = dev.dmigrate.profiling.model.DeterminationStatus.FULL_SCAN,
+                                ),
+                                dev.dmigrate.profiling.model.TargetTypeCompatibility(
+                                    targetType = dev.dmigrate.profiling.types.TargetLogicalType.DATE,
+                                    checkedValueCount = 50, compatibleCount = 0, incompatibleCount = 50,
+                                    exampleInvalidValues = listOf("1", "10", "11"),
+                                    determinationStatus = dev.dmigrate.profiling.model.DeterminationStatus.FULL_SCAN,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val json = writer.renderJson(rich)
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val parsed = mapper.readTree(json)
+        parsed.get("tables").get(0).get("columns").get(0).get("targetCompatibility").size() shouldBe 2
+
+        val first = parsed.get("tables").get(0).get("columns").get(0).get("targetCompatibility").get(0)
+        first.get("targetType").asText() shouldBe "INTEGER"
+        first.get("checkedValueCount").asInt() shouldBe 50
+        first.get("compatibleCount").asInt() shouldBe 50
+        first.get("determinationStatus").asText() shouldBe "FULL_SCAN"
+
+        val second = parsed.get("tables").get(0).get("columns").get(0).get("targetCompatibility").get(1)
+        second.get("targetType").asText() shouldBe "DATE"
+        second.get("exampleInvalidValues").map { it.asText() } shouldBe listOf("1", "10", "11")
+    }
+
+    test("rendered YAML parses as valid YAML with empty-string elements (regression: exampleInvalidValues)") {
+        // Vor BD.4-Smoke-Befund (2026-06-04) emittierte renderColumnYaml leere
+        // Strings in exampleInvalidValues als unquoted Element (`[, customer10@...]`).
+        // SnakeYAML schlaegt darueber fehl.
+        val rich = DatabaseProfile(
+            databaseProduct = "PostgreSQL",
+            tables = listOf(
+                TableProfile(
+                    name = "customers",
+                    rowCount = 50,
+                    columns = listOf(
+                        ColumnProfile(
+                            name = "email", dbType = "text", logicalType = LogicalType.STRING,
+                            nullable = false, rowCount = 50, nonNullCount = 50, nullCount = 0,
+                            distinctCount = 47, duplicateValueCount = 3,
+                            emptyStringCount = 3,
+                            targetCompatibility = listOf(
+                                dev.dmigrate.profiling.model.TargetTypeCompatibility(
+                                    targetType = dev.dmigrate.profiling.types.TargetLogicalType.INTEGER,
+                                    checkedValueCount = 50, compatibleCount = 0, incompatibleCount = 50,
+                                    exampleInvalidValues = listOf("", "   ", "customer10@example.com"),
+                                    determinationStatus = dev.dmigrate.profiling.model.DeterminationStatus.FULL_SCAN,
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val yaml = writer.renderYaml(rich)
+        val yamlMapper = com.fasterxml.jackson.dataformat.yaml.YAMLMapper()
+        val parsed = yamlMapper.readTree(yaml)
+        val examples = parsed.get("tables").get(0).get("columns").get(0)
+            .get("targetCompatibility").get(0).get("exampleInvalidValues")
+        examples.size() shouldBe 3
+        examples.get(0).asText() shouldBe ""
+        examples.get(1).asText() shouldBe "   "
+        examples.get(2).asText() shouldBe "customer10@example.com"
+    }
 })

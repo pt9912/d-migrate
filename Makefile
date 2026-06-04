@@ -56,7 +56,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
 
 help:
 	@printf '%s\n' \
@@ -275,15 +275,17 @@ clean:
 # IMAGE_TAG=dev` (baut das d-migrate:dev-Runtime-Image).
 BI_DEMO_COMPOSE := docker compose -f examples/bi-demo/docker-compose.yml
 
-bi-demo-pull:
-	$(BI_DEMO_COMPOSE) pull
-
-bi-demo-up:
+bi-demo-env:
 	@if [ ! -f examples/bi-demo/.env ]; then \
 	  cp examples/bi-demo/.env.example examples/bi-demo/.env; \
-	  echo "[bi-demo-up] created examples/bi-demo/.env from .env.example"; \
+	  echo "[bi-demo] created examples/bi-demo/.env from .env.example"; \
 	fi
 	@mkdir -p examples/bi-demo/out
+
+bi-demo-pull: bi-demo-env
+	$(BI_DEMO_COMPOSE) pull
+
+bi-demo-up: bi-demo-env
 	$(BI_DEMO_COMPOSE) up -d
 
 bi-demo-down:

@@ -215,23 +215,20 @@ class ProfileReportWriter {
     private fun renderTemporalStatsJson(stats: TemporalStats): String =
         """{"minTimestamp": ${jsonStr(stats.minTimestamp)}, "maxTimestamp": ${jsonStr(stats.maxTimestamp)}}"""
 
-    private fun renderTargetCompatibilityJson(compatibility: TargetTypeCompatibility): String {
-        val examples = if (compatibility.exampleInvalidValues.isNotEmpty()) {
-            val rendered = compatibility.exampleInvalidValues.joinToString(", ") { jsonStr(it) }
-            """, "exampleInvalidValues": [$rendered]"""
-        } else {
-            ""
-        }
-        return buildString {
-            append("""{"targetType": "${compatibility.targetType}"""")
-            append("""", "checkedValueCount": ${compatibility.checkedValueCount}""")
-            append("""", "compatibleCount": ${compatibility.compatibleCount}""")
-            append("""", "incompatibleCount": ${compatibility.incompatibleCount}""")
-            append("""", "determinationStatus": "${compatibility.determinationStatus}"""")
-            append(examples)
+    private fun renderTargetCompatibilityJson(compatibility: TargetTypeCompatibility): String =
+        buildString {
+            append("{")
+            append("\"targetType\": ${jsonStr(compatibility.targetType.toString())}, ")
+            append("\"checkedValueCount\": ${compatibility.checkedValueCount}, ")
+            append("\"compatibleCount\": ${compatibility.compatibleCount}, ")
+            append("\"incompatibleCount\": ${compatibility.incompatibleCount}, ")
+            append("\"determinationStatus\": ${jsonStr(compatibility.determinationStatus.toString())}")
+            if (compatibility.exampleInvalidValues.isNotEmpty()) {
+                val rendered = compatibility.exampleInvalidValues.joinToString(", ") { jsonStr(it) }
+                append(", \"exampleInvalidValues\": [$rendered]")
+            }
             append("}")
         }
-    }
 
     private fun yamlStr(s: String?): String {
         if (s == null) return "null"
@@ -241,7 +238,13 @@ class ProfileReportWriter {
     }
 
     private fun needsYamlQuoting(value: String): Boolean =
-        value.contains(":") ||
+        // Whitespace-only Werte (inkl. "") muessen quotiert werden, sonst kollabieren
+        // sie in YAML-Flow-Collections (z. B. `[, item]` statt `["", item]`).
+        // Edge-Whitespace ist ambiguos zur YAML-Indentation.
+        value.isBlank() ||
+            value.first().isWhitespace() ||
+            value.last().isWhitespace() ||
+            value.contains(":") ||
             value.contains("#") ||
             value.contains("\"") ||
             value.contains("'") ||
