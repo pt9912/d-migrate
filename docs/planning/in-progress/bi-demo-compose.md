@@ -2,33 +2,40 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: Next (verfeinert 2026-06-04 — Review-Runde 5:
-> `minio`-Server-Skeleton, Bind-Adressen `127.0.0.1`, psql-`\set`-
-> Korrektur in §7/BD.2, `minio-init`-Entrypoint auf Literal-Block,
-> kombinierte `.d-migrate.yaml`, BD.4 fuenf Warning-Codes,
-> Make-Targets, URL-Encoding-Caveat fuer `MC_HOST_local`,
-> `out/`-`mkdir`-Pflicht in §6/BD.1. Vorheriger Stand 2026-06-03 —
-> Sub-Slice-Schnitt BD.1-BD.5, Image-Pinning, Healthcheck-
-> Verträge, Skeletons; Entwurf-Stand 2026-05-01
-> weitergeschrieben).
+> Status: In Progress (2026-06-04 — BD.1 begonnen: Compose-
+> Skeleton mit Postgres, SeaweedFS, `seaweed-init`, `mc-tools`,
+> `.env.example`, `.gitignore`, `out/.gitkeep`. Object-Storage-
+> Provider von MinIO auf SeaweedFS umgestellt (Risk #9 RESOLVED:
+> MinIO CE archiviert, Docker-Hub-Tag-Pflege beendet; Auswahl-
+> Tabelle in §5.3). Vorheriger Stand: Review-Runde 5 (2026-06-04,
+> Commit `480e2489`) — Server-Skeleton, Bind-Adressen
+> `127.0.0.1`, psql-`\set`-Korrektur in §7/BD.2, init-Service-
+> Entrypoint auf Literal-Block, kombinierte `.d-migrate.yaml`,
+> BD.4 fuenf Warning-Codes, Make-Targets, URL-Encoding-Caveat
+> fuer `MC_HOST_local`, `out/`-`mkdir`-Pflicht in §6/BD.1. Davor
+> Review-Runde 4 (2026-06-03) — Sub-Slice-Schnitt BD.1-BD.5,
+> Image-Pinning, Healthcheck-Verträge, Skeletons; Entwurf-Stand
+> 2026-05-01).
 >
-> **Aktivierungsbedingung** (Move nach `in-progress/`): Maintainer-
-> Ressourcen + BD.1 wird begonnen. BD.1-BD.5 sind ohne externe
-> Abhängigkeit implementierbar. Für vollständige Demo-Story
-> (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
-> Erweiterungen aus §8 an
-> [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
-> bzw.
-> [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md);
-> der MVP-Schnitt (BD.1-BD.5) kommt ohne diese aus.
+> **Slice-Fortschritt**:
+>
+> - BD.1 — Compose-Skeleton + Healthchecks: **in progress**
+> - BD.2-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
+>   implementierbar. Für vollständige Demo-Story
+>   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
+>   Erweiterungen aus §8 an
+>   [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)
+>   bzw.
+>   [`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md);
+>   der MVP-Schnitt (BD.1-BD.5) kommt ohne diese aus.
 >
 > Referenzen:
 >
-> - [`../in-progress/roadmap.md`](../in-progress/roadmap.md)
-> - [`orchestrator-examples.md`](orchestrator-examples.md)
-> - [`profiling-data-quality-export.md`](profiling-data-quality-export.md)
-> - [`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)
-> - [`object-storage-artifact-store.md`](object-storage-artifact-store.md)
+> - [`roadmap.md`](roadmap.md)
+> - [`orchestrator-examples.md`](../next/orchestrator-examples.md)
+> - [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)
+> - [`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md)
+> - [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)
 > - [The Evolution of Business Intelligence: From Monolithic to Composable Architecture](https://www.pracdata.io/p/the-evolution-of-business-intelligence-stack)
 > - [Open Source Data Engineering Landscape 2025](https://www.pracdata.io/p/open-source-data-engineering-landscape-2025)
 
@@ -45,7 +52,7 @@ Der erste Schnitt soll bewusst einfach bleiben:
 
 - PostgreSQL als relationale Demo-Datenbank
 - Metabase als schnell nutzbares BI-Frontend
-- MinIO als S3-kompatibler Object-Storage fuer Demo-Artefakte
+- SeaweedFS als S3-kompatibler Object-Storage fuer Demo-Artefakte
 - optional ein `d-migrate`-CLI-Container oder Host-CLI-Kommandos
 - Beispiel-Schema und Seed-Daten
 - Smoke-Script fuer Start, Healthcheck und minimale Demo-Kommandos
@@ -75,7 +82,8 @@ welche Rolle `d-migrate` in diesem Stack spielt:
 - `examples/bi-demo/docker-compose.yml`
 - PostgreSQL-Service mit initialem Demo-Schema
 - Metabase-Service mit persistenter lokaler Demo-Konfiguration
-- MinIO-Service mit initialem Demo-Bucket fuer `d-migrate`-Artefakte
+- SeaweedFS-Service (S3-kompatibel) mit initialem Demo-Bucket fuer
+  `d-migrate`-Artefakte
 - `.d-migrate.yaml` fuer benannte Verbindungen
 - README fuer Demo-Start und typische Kommandos
 - Smoke-Script fuer grundlegende Verfuegbarkeit
@@ -102,8 +110,8 @@ examples/bi-demo/
   sql/
     001_schema.sql
     002_seed.sql
-  minio/
-    init-bucket.sh
+  config/
+    seaweed-s3.json  # SeaweedFS Single-Identity-Demo-Config (BD.1)
   scripts/
     smoke.sh
 ```
@@ -245,76 +253,125 @@ startet und wenig Initialkonfiguration braucht.
 Automatisches Dashboard-Provisioning kann spaeter folgen, wenn der
 Demo-Datenbestand stabil ist.
 
-### 5.3 MinIO / S3-kompatibler Object Storage
+### 5.3 S3-kompatibler Object Storage (SeaweedFS)
 
-MinIO dient als lokaler S3-kompatibler Speicher fuer Demo-Artefakte. Der
-Service macht die Zero-Disk-Richtung greifbar, ohne direkt eine echte
+SeaweedFS dient als lokaler S3-kompatibler Speicher fuer Demo-Artefakte.
+Der Service macht die Zero-Disk-Richtung greifbar, ohne direkt eine echte
 Cloud-Abhaengigkeit einzufuehren.
 
-- **Image (Server)**: `minio/minio:RELEASE.2025-10-15T17-29-55Z` —
-  Upstream-Security-Release nach
-  `RELEASE.2025-09-07T16-13-09Z`. Das aeltere Tag traegt
-  bekannte CVEs; BD.1-Akzeptanz fordert deshalb explizit den
-  Security-Release plus `docker compose pull` (siehe Risk #9).
-  Falls der Tag aus der MinIO-CE-Source-Only-Politik nicht mehr
-  auf Docker Hub publiziert ist, ist das Self-Build-Pattern aus
-  Risk #9 Pflicht — BD.1 darf **kein** bekannt-verwundbares
-  Image einbauen, nur weil ein Self-Build-Slice noch nicht
-  geliefert ist.
-- **Image (Client `mc`)**: `minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1` —
-  bewusst nicht der gleiche Tag wie der Server, weil das
-  `minio/mc`-Repo auf Docker Hub aktuell auf
-  `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes sichtbares
-  Tag stehen bleibt (siehe Risk #9).
-- **Server-Service braucht `env_file: .env`**: ohne Container-
-  Env startet der MinIO-Server zwar, antwortet aber mit
-  `Default credentials are deprecated`-Modus oder lehnt
-  Logins ab. Das `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`-Paar
-  muss aus dem env_file in den Server-Container kommen
-  (Compose-Interpolation allein reicht **nicht**, weil sie nur
-  `$VAR`-Substitution im YAML macht, nicht im Container).
-- **API-Port**: lokal `59000`, Bind
-  `127.0.0.1:${MINIO_API_PORT}:9000`
-- **Console-Port**: lokal `59001`, Bind
-  `127.0.0.1:${MINIO_CONSOLE_PORT}:9001`
+**Provider-Wahl SeaweedFS statt MinIO** — verglichene Alternativen im
+Implementierungs-Sweep 2026-06-04 (Live-Befund Docker Hub + GitHub):
+
+| Kandidat                                 | Tag-Pin                       | Lizenz     | Demo-Fit                                | Befund                              |
+| ---------------------------------------- | ----------------------------- | ---------- | --------------------------------------- | ----------------------------------- |
+| **SeaweedFS** `chrislusf/seaweedfs:4.31` | Semver, 2026-06-02            | Apache-2.0 | Single-Container `weed server -s3`      | **gewaehlt**                        |
+| Garage `dxflrs/garage`                   | nur SHA-Tags auf Docker Hub   | AGPL-3.0   | OK, aber SHA-Pin-Reibung mit Plan-Stil  | abgelehnt: Pin-Konvention           |
+| RustFS `rustfs/rustfs:1.0.0-beta.6`      | Semver Beta                   | Apache-2.0 | OK, aber pre-1.0 API-Breaking-Risiko    | abgelehnt: Beta-Status              |
+| Ceph RGW `quay.io/ceph/ceph:v19.2.4`     | Semver                        | LGPL       | Multi-Komponenten-Stack, ~2 GB RAM      | abgelehnt: overhead fuer Demo       |
+
+Hintergrund der MinIO-Abloese: MinIO Community Edition wurde 2025-Q3
+archiviert; Docker-Hub-Tag-Pflege endete mit
+`RELEASE.2025-09-07T16-13-09Z` (bekannt-CVE-anfaellig), der
+Upstream-Security-Release `2025-10-15T17-29-55Z` ist nur als Quelltext
+verfuegbar. Self-Build aus archiviertem Repo ist keine nachhaltige
+Demo-Loesung — siehe Risk #9 (RESOLVED).
+
+- **Image (Server)**: `chrislusf/seaweedfs:4.31` — aktueller Semver-Tag
+  auf Docker Hub (2026-06-02). Tag in `docker-compose.yml` explizit
+  pinnen, **kein** `:latest`. Tag-Refresh ist eigener BD-Slice analog
+  Risk #7.
+- **Image (Client `mc`)**: `minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1`
+  — `mc` bleibt als generischer S3-Client unveraendert, weil das CLI
+  gegen jede S3-API arbeitet (nicht gegen ein MinIO-Admin-API). Das
+  `minio/mc`-Docker-Hub-Repo ist eingefroren, der gepinnte Tag bleibt
+  verfuegbar. Sobald `mc` upstream verschwindet, ist eine Migration auf
+  `aws-cli` / `s5cmd` Folge-Slice (BD-Tag-Refresh).
+- **API-Port**: lokal `59000`, Bind `127.0.0.1:${S3_API_PORT}:8333`.
+  SeaweedFS-S3-API laeuft default auf Container-Port 8333.
+- **Master-UI-Port**: lokal `59001`, Bind
+  `127.0.0.1:${SEAWEED_MASTER_PORT}:9333`. Master-UI zeigt
+  Cluster-Status + Volume-Allocations; Demo-nuetzlich fuer Debugging,
+  ist kein Auth-relevanter Endpunkt.
 - **Bucket**: `dmigrate-demo`
-- **Access Key / Secret Key**: nur Demo-Credentials aus
-  `.env.example`
+- **Access Key / Secret Key**: Demo-Credentials aus `.env.example`,
+  **gespiegelt in** `examples/bi-demo/config/seaweed-s3.json`.
+  Hintergrund (empirisch festgestellt im BD.1-Smoke 2026-06-04):
+  SeaweedFS startet ohne `-s3.config=...` zwar, akzeptiert aber
+  Objekt-Operationen wie `PutObject` mit der Meldung „Signed
+  request requires setting up SeaweedFS S3 authentication" nur
+  noch dann, wenn eine `s3.json` mit konkreter Identity konfiguriert
+  ist. Bucket-Operationen wirken zwar anonym, ueberleben aber den
+  Container-Restart nicht. BD.1 mountet deshalb eine
+  Demo-Identity-Config (siehe `seaweed-s3.json`-Block weiter unten).
+  Die `S3_ACCESS_KEY`/`S3_SECRET_KEY`-Vars in `.env` **muessen** mit
+  `accessKey`/`secretKey` in `seaweed-s3.json` uebereinstimmen —
+  README + Skeleton dokumentieren das als Konvention. Eine echte
+  IAM-Aufloesung mit Env-Var-Substitution in die `s3.json` (statt
+  Hardcoded-Werte) ist Folge-Slice (BD.6+).
 - **Prefix fuer Laeufe**: `runs/<timestamp-or-operation-id>/`
-- **Server-Service**: konkretes Pattern fuer den `minio`-Service.
-  Bind explizit auf `127.0.0.1`, damit das Default-Passwort
-  `minioadmin`/`minioadmin` aus §5.5 nicht versehentlich nach
-  LAN exponiert ist; Healthcheck am Server entfaellt bewusst
-  (Begruendung weiter unten unter „Server-Healthcheck"):
+- **Server-Service**: konkretes Pattern fuer den `seaweed`-Service. Bind
+  explizit auf `127.0.0.1`; Server-Healthcheck entfaellt bewusst (gleiche
+  Argumentation wie zuvor bei MinIO — `seaweed-init` ist der
+  Erreichbarkeits-Vertrag, siehe Block weiter unten):
 
   ```yaml
-  minio:
-    image: minio/minio:RELEASE.2025-10-15T17-29-55Z
-    command: server /data --console-address ":9001"
-    env_file:
-      - .env
+  seaweed:
+    image: chrislusf/seaweedfs:4.31
+    command: server -dir=/data -s3 -s3.config=/etc/seaweed/s3.json
     ports:
-      - "127.0.0.1:${MINIO_API_PORT}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT}:9001"
+      - "127.0.0.1:${S3_API_PORT}:8333"
+      - "127.0.0.1:${SEAWEED_MASTER_PORT}:9333"
     volumes:
-      - minio-data:/data
+      - seaweed-data:/data
+      - ./config/seaweed-s3.json:/etc/seaweed/s3.json:ro
 
   volumes:
-    minio-data:
+    seaweed-data:
   ```
 
-  `env_file: .env` ist Pflicht (siehe oben + Risk #10) — ohne
-  Container-Env startet der Server zwar, lehnt aber Logins ab.
-- **Bucket-Init**: separater `minio-init`-Service (one-shot
-  `restart: "no"`), der `minio/mc` startet, mit eingebautem
-  Retry auf MinIO wartet und `mc mb --ignore-existing
-  local/dmigrate-demo` ausfuehrt. Konkretes Pattern:
+  **Kein `env_file: .env`** am Server: SeaweedFS liest auch im
+  konfigurierten Modus keine Credentials aus dem Environment, sondern
+  ausschliesslich aus dem via `-s3.config=...` referenzierten
+  JSON-File. Das ist anders als bei MinIO, womit Risk #10 fuer den
+  Server-Container entfaellt; die Risk-Note bleibt fuer den
+  `seaweed-init`- und `mc-tools`-Container relevant (dort braucht `mc`
+  die Keys lokal).
+
+  **Begleit-File** `examples/bi-demo/config/seaweed-s3.json` —
+  Single-Identity-Demo-Config:
+
+  ```json
+  {
+    "identities": [
+      {
+        "name": "demo",
+        "credentials": [
+          {
+            "accessKey": "demoaccesskey",
+            "secretKey": "demosecretkey"
+          }
+        ],
+        "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+      }
+    ]
+  }
+  ```
+
+  **Pflicht-Konvention**: `accessKey`/`secretKey` in dieser Datei
+  spiegeln `S3_ACCESS_KEY`/`S3_SECRET_KEY` aus `.env`. Wer die
+  Demo-Credentials anpasst, **muss beide Stellen aktualisieren** —
+  sonst kippt der `mc`-SigV4-Check beim ersten Bucket-/Objekt-Call.
+
+- **Bucket-Init**: separater `seaweed-init`-Service (one-shot
+  `restart: "no"`), der `minio/mc` startet, mit eingebautem Retry auf
+  die S3-API wartet und `mc mb --ignore-existing local/dmigrate-demo`
+  ausfuehrt. Konkretes Pattern:
 
   ```yaml
-  minio-init:
+  seaweed-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
     depends_on:
-      - minio
+      - seaweed
     env_file:
       - .env
     entrypoint:
@@ -322,105 +379,105 @@ Cloud-Abhaengigkeit einzufuehren.
       - -c
       - |
         set -eu
-        until mc alias set local http://minio:9000 \
-            "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        until mc alias set local http://seaweed:8333 \
+            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
         do
-          echo 'waiting for minio…'
+          echo 'waiting for seaweed s3…'
           sleep 2
         done
-        mc mb --ignore-existing "local/$${MINIO_BUCKET}"
+        mc mb --ignore-existing "local/$${S3_BUCKET}"
     restart: "no"
   ```
 
-  **YAML-Form bewusst array + Literal-Block (`|`)**: ein
-  folded scalar (`>`) wuerde die Newlines zu Spaces falten und
-  damit die Backslash-Line-Continuation `\\` zu `\ ` (escaped
-  space) machen — funktioniert zufaellig im Shell, ist aber
-  eine bruechige Maintenance-Falle. Die array-Form macht
-  `/bin/sh -c <script>` explizit und der Literal-Block (`|`)
-  haelt Newlines, sodass die Continuation wirklich
-  Continuation ist.
+  Das `mc alias set` arbeitet gegen die S3-API (nicht gegen ein
+  MinIO-Admin-Endpoint), funktioniert also gegen jeden S3-kompatiblen
+  Server. Bei konfigurierter SeaweedFS-Identity (siehe `seaweed-s3.json`
+  oben) muessen die uebergebenen Keys mit den Demo-Credentials im
+  JSON uebereinstimmen, sonst scheitert der spaetere `mc mb`-Call mit
+  SigV4-Fehler.
 
-  Wichtig: `env_file: .env` ist **Pflicht**. `$${VAR}` im
-  Shell-Skript bezieht sich auf die **Container-Env**, die
+  **YAML-Form bewusst array + Literal-Block (`|`)**: ein folded scalar
+  (`>`) wuerde die Newlines zu Spaces falten und damit die
+  Backslash-Line-Continuation `\\` zu `\ ` (escaped space) machen —
+  funktioniert zufaellig im Shell, ist aber eine bruechige
+  Maintenance-Falle. Die array-Form macht `/bin/sh -c <script>`
+  explizit und der Literal-Block (`|`) haelt Newlines, sodass die
+  Continuation wirklich Continuation ist.
+
+  Wichtig: `env_file: .env` ist am `seaweed-init`-Container **Pflicht**.
+  `$${VAR}` im Shell-Skript bezieht sich auf die **Container-Env**, die
   Compose nur dann setzt, wenn `env_file:` oder explizites
-  `environment:` da ist. Ohne diesen Block schickt `mc alias
-  set` leere Strings als Credentials — die Container-Init
-  startet zwar, scheitert aber beim Login (siehe Risk #10).
+  `environment:` da ist. Ohne diesen Block schickt `mc alias set` leere
+  Strings als Credentials — das Aliasing scheitert beim spaeteren
+  MakeBucket-Call (siehe Risk #10).
 
-- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service
-  ohne `entrypoint`-Override. **Wichtig**: das `minio/mc`-
-  Image hat `mc` bereits als `ENTRYPOINT`, der `docker compose
-  run`-Befehl uebergibt `mc` damit nur das **Subkommando** plus
-  Argumente — **kein** `mc`-Praefix:
-  `docker compose run --rm mc-tools ls local/`, nicht
+- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service ohne
+  `entrypoint`-Override. **Wichtig**: das `minio/mc`-Image hat `mc`
+  bereits als `ENTRYPOINT`, der `docker compose run`-Befehl uebergibt
+  `mc` damit nur das **Subkommando** plus Argumente — **kein**
+  `mc`-Praefix: `docker compose run --rm mc-tools ls local/`, nicht
   `mc ls local/`. Service ist via `profiles: ["tools"]` vom
-  `up -d`-Default ausgeschlossen, damit er bei
-  `docker compose up` nicht startet, sondern nur bei
-  expliziten `compose run`-Aufrufen erzeugt wird:
+  `up -d`-Default ausgeschlossen, damit er bei `docker compose up`
+  nicht startet, sondern nur bei expliziten `compose run`-Aufrufen
+  erzeugt wird:
 
   ```yaml
   mc-tools:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
     depends_on:
-      minio-init:
+      seaweed-init:
         condition: service_completed_successfully
     profiles: ["tools"]
     env_file:
       - .env
     environment:
-      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+      MC_HOST_local: http://${S3_ACCESS_KEY}:${S3_SECRET_KEY}@seaweed:8333
     volumes:
       - ./out:/work
   ```
 
   **Caveat fuer Custom-Credentials**: `MC_HOST_local` wird aus
-  `${MINIO_ROOT_USER}` und `${MINIO_ROOT_PASSWORD}` als URL
-  zusammengesetzt — Demo-Defaults `minioadmin`/`minioadmin`
-  sind url-safe; sobald ein User die Defaults durch ein Passwort
-  mit `:`, `@`, `/`, `?`, `#` oder anderen URL-reservierten
-  Zeichen ersetzt, kippt die Authentifizierung still
-  (`mc` liest die URL falsch, `mc alias set` aus
-  `minio-init` faellt allerdings sauber, weil dort User/Passwort
-  als separate Argumente uebergeben werden). README muss diese
-  Bedingung als „Demo-Credentials duerfen keine URL-reservierten
-  Zeichen enthalten" festhalten; eine korrekte Aufloesung via
-  getrennte Env-Vars / `mc alias set`-basierten Init in
-  `mc-tools` ist Folge-Slice (BD.6+).
+  `${S3_ACCESS_KEY}` und `${S3_SECRET_KEY}` als URL zusammengesetzt —
+  Demo-Defaults sind url-safe gewaehlt; sobald ein User die Defaults
+  durch Werte mit `:`, `@`, `/`, `?`, `#` oder anderen
+  URL-reservierten Zeichen ersetzt, kippt die URL-Konstruktion (`mc`
+  liest die URL falsch, `mc alias set` aus `seaweed-init` faellt
+  allerdings sauber, weil dort User/Passwort als separate Argumente
+  uebergeben werden). README muss diese Bedingung als „Demo-Credentials
+  duerfen keine URL-reservierten Zeichen enthalten" festhalten; eine
+  korrekte Aufloesung via getrennte Env-Vars / `mc alias set`-basierten
+  Init in `mc-tools` ist Folge-Slice (BD.6+).
 
   Damit laeuft `docker compose run --rm mc-tools ls
-  "local/${MINIO_BUCKET}/"` ohne `--entrypoint`-Override und ohne
-  Host-`mc`. **Wichtig zum Mount-Pfad**: relative Bind-Mounts
-  loest Compose **gegen das Verzeichnis der Compose-Datei** auf,
-  nicht gegen das Working Directory des Aufrufers. `./out` ist
-  damit `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der
-  Demo-Flow §6 + BD.4 schreiben CLI-Output deshalb konsequent
-  nach `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt
-  `/work/` im Container. Tag auf `RELEASE.2025-08-13T08-35-41Z-cpuv1`
-  ist bewusst der **juengste auf Docker Hub publizierte
-  `minio/mc`-Tag** (siehe Risk #9).
+  "local/${S3_BUCKET}/"` ohne `--entrypoint`-Override und ohne
+  Host-`mc`. **Wichtig zum Mount-Pfad**: relative Bind-Mounts loest
+  Compose **gegen das Verzeichnis der Compose-Datei** auf, nicht gegen
+  das Working Directory des Aufrufers. `./out` ist damit
+  `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der Demo-Flow §6
+  + BD.4 schreiben CLI-Output deshalb konsequent nach
+  `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt `/work/` im
+  Container.
 
 - **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
-  `minio`-Service. Das offizielle `minio/minio`-Image enthaelt
-  weder `curl` noch `wget` verlaesslich
-  ([minio/minio#18389](https://github.com/minio/minio/issues/18389)),
-  und ein `mc`-Check wuerde einen zweiten Container im selben
-  Compose-Service brauchen. Stattdessen wartet `minio-init` selbst
-  bis zum erfolgreichen `mc alias set`; alle weiteren Services
-  (z. B. `dmigrate`) haengen via `depends_on:
-  minio-init: { condition: service_completed_successfully }` an
-  diesem Init-Service statt am MinIO-Server direkt. Damit ist
-  „MinIO ist nutzbar" eindeutig pinbar, ohne auf Image-interne
-  HTTP-Tools angewiesen zu sein.
+  `seaweed`-Service. Zwar enthaelt das SeaweedFS-Image `wget`, der
+  konkrete Healthcheck-Endpunkt-Vertrag ist aber zwischen
+  SeaweedFS-Versionen nicht stabil dokumentiert. Stattdessen wartet
+  `seaweed-init` selbst bis zum erfolgreichen `mc alias set` + `mc mb`;
+  alle weiteren Services (z. B. `dmigrate`) haengen via `depends_on:
+  seaweed-init: { condition: service_completed_successfully }` an
+  diesem Init-Service statt am SeaweedFS-Server direkt. Damit ist
+  „S3-API ist nutzbar" eindeutig pinbar — strikter als ein
+  HTTP-Status-Endpunkt-Check, weil der Vertrag eine echte
+  S3-Operation deckt.
 
 Der erste Demo-Schnitt muss noch keine produktive S3-Integration in
-`d-migrate` voraussetzen. Solange der Object-Storage-ArtifactStore noch nicht
-implementiert ist
-([`object-storage-artifact-store.md`](object-storage-artifact-store.md)),
-kann das Smoke-Script Artefakte lokal erzeugen und sie mit
-dem MinIO-Client in den Demo-Bucket kopieren. Sobald `d-migrate` `s3://`-
-Artefaktziele unterstuetzt, wird dieser Zwischenschritt durch direkte Ausgabe
-nach MinIO ersetzt.
+`d-migrate` voraussetzen. Solange der Object-Storage-ArtifactStore noch
+nicht implementiert ist
+([`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)),
+kann das Smoke-Script Artefakte lokal erzeugen und sie mit dem
+`mc`-Client in den Demo-Bucket kopieren. Sobald `d-migrate` `s3://`-
+Artefaktziele unterstuetzt, wird dieser Zwischenschritt durch direkte
+Ausgabe nach SeaweedFS ersetzt.
 
 ### 5.4 d-migrate
 
@@ -442,29 +499,33 @@ POSTGRES_USER=dmigrate
 POSTGRES_PASSWORD=demo-pg-pw-change-me
 POSTGRES_PORT=55432
 
-# MinIO — Demo-only credentials, NOT for production
-# Defaults absichtlich auf den MinIO-Bekanntwert minioadmin/minioadmin,
-# damit die Copy-Paste-Befehle in §6 und im README ohne env-Resolver
-# laufen. README warnt explizit, dass diese Werte vor jedem nicht-
-# lokalen Lauf zu ersetzen sind.
-MINIO_ROOT_USER=minioadmin
-MINIO_ROOT_PASSWORD=minioadmin
-MINIO_API_PORT=59000
-MINIO_CONSOLE_PORT=59001
-MINIO_BUCKET=dmigrate-demo
+# SeaweedFS S3 API — Demo-only credentials, NOT for production.
+# Pflicht-Konvention: die Werte hier muessen mit
+# `accessKey`/`secretKey` in `config/seaweed-s3.json`
+# uebereinstimmen — Server liest die Identity ausschliesslich
+# aus dem JSON, `mc` baut SigV4-Requests aus diesen .env-Vars.
+#
+# Caveat: bei eigenen Credentials KEINE URL-reservierten Zeichen
+# (`:` `@` `/` `?` `#`) verwenden — MC_HOST_local wird daraus als
+# URL zusammengesetzt (siehe §5.3 mc-tools-Caveat).
+S3_ACCESS_KEY=demoaccesskey
+S3_SECRET_KEY=demosecretkey
+S3_API_PORT=59000
+SEAWEED_MASTER_PORT=59001
+S3_BUCKET=dmigrate-demo
 
 # Metabase
 METABASE_PORT=3000
 ```
 
 Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix als
-sichtbaren Marker. MinIO-Defaults sind bewusst
-`minioadmin`/`minioadmin` — der MinIO-Bekanntwert — damit der
-`mc-tools`-Service (§5.3) ohne Demo-spezifisches Lookup laeuft
-und der Compose-Stack direkt mit dem aus dem Image bekannten
-Default startet. Das ist **keine** Production-Konvention; README
-dokumentiert das Risiko explizit. `.gitignore` muss `.env` (ohne
-`.example`) ausschliessen.
+sichtbaren Marker. SeaweedFS S3-Keys sind Demo-Strings ohne
+URL-reservierte Zeichen; sie **muessen** mit
+`config/seaweed-s3.json` uebereinstimmen (Pflicht-Konvention, siehe
+§5.3). Das ist **keine** Production-Konvention; eine echte
+IAM-Aufloesung mit Env-Var-Substitution in die `s3.json` ist
+Folge-Slice (BD.6+). README dokumentiert das Risiko explizit.
+`.gitignore` muss `.env` (ohne `.example`) ausschliessen.
 
 ### 5.6 `.d-migrate.yaml` (Skeleton)
 
@@ -523,7 +584,7 @@ d-migrate schema generate --source examples/bi-demo/out/reverse.yaml \
     --target postgresql
 
 docker compose -f examples/bi-demo/docker-compose.yml run --rm mc-tools \
-    cp --recursive /work/ "local/${MINIO_BUCKET}/runs/manual/"
+    cp --recursive /work/ "local/${S3_BUCKET}/runs/manual/"
 ```
 
 Hinweise:
@@ -534,7 +595,7 @@ Hinweise:
   `./.d-migrate.yaml`
   ([`NamedConnectionResolver.kt`](../../../adapters/driving/cli/src/main/kotlin/dev/dmigrate/cli/config/NamedConnectionResolver.kt)
   Zeile 36).
-- `minio-init` (siehe §5.3) erzeugt den Bucket beim Compose-Start;
+- `seaweed-init` (siehe §5.3) erzeugt den Bucket beim Compose-Start;
   ad-hoc `mc`-Aufrufe laufen ueber den separaten `mc-tools`-Service
   (§5.3), der das `out/`-Verzeichnis als `/work` mountet. Damit ist
   `mc` **keine** Host-Voraussetzung.
@@ -638,8 +699,8 @@ Nach dem ersten Metabase/PostgreSQL-Schnitt koennen weitere Varianten folgen:
 - ClickHouse als OLAP-Ziel fuer schnelle Dashboards
 - DuckDB fuer lokale Analyse exportierter Artefakte
 - Parquet-Ausgabe, sobald der Parquet-Plan umgesetzt ist
-- direkte `s3://`-Ausgabe nach MinIO, sobald der Object-Storage-
-  ArtifactStore umgesetzt ist
+- direkte `s3://`-Ausgabe nach SeaweedFS, sobald der Object-
+  Storage-ArtifactStore umgesetzt ist
 - Data-Quality-Export aus Profiling-Reports
 - Catalog-Publishing von Demo-Schema und Profiling-Artefakten
 
@@ -656,15 +717,21 @@ geschnitten, dass nach jedem Slice ein nutzbarer Zustand entsteht
 
 ### Sub-Slice BD.1 — Compose-Skeleton + Healthchecks
 
-**Ziel**: `docker compose up -d` startet PostgreSQL, MinIO und den
-`minio-init`-One-Shot stabil. Pro Service ein passender Erreichbarkeits-
-Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
+**Ziel**: `docker compose up -d` startet PostgreSQL, SeaweedFS
+und den `seaweed-init`-One-Shot stabil. Pro Service ein passender
+Erreichbarkeits-Vertrag (siehe §5.3: SeaweedFS hat **keinen**
+Server-Healthcheck, `seaweed-init` ist der Readiness-Vertrag).
 
 **Akzeptanzkriterien**:
 
 - [ ] `examples/bi-demo/docker-compose.yml` mit den vier Services
-  aus §5.1 + §5.3 (Postgres, MinIO, minio-init, mc-tools) und
-  gepinnten Image-Tags.
+  aus §5.1 + §5.3 (Postgres, SeaweedFS, seaweed-init, mc-tools)
+  und gepinnten Image-Tags.
+- [ ] `examples/bi-demo/config/seaweed-s3.json` mit der
+  Single-Identity-Demo-Config aus §5.3 (`accessKey`/`secretKey`
+  identisch zu `S3_ACCESS_KEY`/`S3_SECRET_KEY` aus
+  `.env.example`); Bind-Mount `./config/seaweed-s3.json:/etc/
+  seaweed/s3.json:ro` am `seaweed`-Service.
 - [ ] `examples/bi-demo/.env.example` aus §5.5;
   `examples/bi-demo/.gitignore` schliesst `.env` **und** `out/`
   aus (Demo-Workflow schreibt CLI-Artefakte nach
@@ -684,24 +751,29 @@ Vertrag (siehe §5.3: MinIO hat **keinen** Server-Healthcheck).
   von 90 s:
   - **Postgres**: `state=healthy` via `pg_isready`-Healthcheck
     aus §5.1.
-  - **MinIO-Server**: keine Healthcheck-Bedingung. Erreichbarkeit
-    wird **nicht** direkt am Container gemessen, sondern indirekt
-    via `minio-init`.
-  - **minio-init**: `state=exited`, `ExitCode=0`,
+  - **SeaweedFS-Server**: keine Healthcheck-Bedingung.
+    Erreichbarkeit wird **nicht** direkt am Container gemessen,
+    sondern indirekt via `seaweed-init`.
+  - **seaweed-init**: `state=exited`, `ExitCode=0`,
     `service_completed_successfully` — Bucket-Init lief gruen
-    und der mc-Retry hat MinIO als nutzbar bestaetigt. Pinnung
-    via `docker compose ps --all --format json minio-init |
-    jq -e 'map(select(.Service == "minio-init")) | .[0].State
+    und der mc-Retry hat die S3-API als nutzbar bestaetigt.
+    Pinnung via `docker compose ps --all --format json | jq -s
+    -e 'map(select(.Service == "seaweed-init")) | .[0].State
     == "exited" and .[0].ExitCode == 0'`. **Wichtig**:
-    `--format json` liefert ein **Array**, nicht ein einzelnes
-    Objekt; deshalb der `map(select(...)) | .[0]`-Pfad, der
-    auch dann robust ist, wenn Compose-Versionen das Filter-
-    Verhalten leicht aendern. `--all` ist Pflicht — `docker
-    compose ps` ohne Flag listet beendete Container **nicht**.
+    `--format json` liefert je nach Compose-Version
+    **JSONL** (eine JSON-Zeile pro Service, Compose v2.24+
+    inkl. v5.x) oder ein **Array** (aelteres v2.20-v2.23) —
+    `jq -s` (slurp) schiebt beides in ein Array, danach ist
+    der `map(select(...)) | .[0]`-Pfad ueber beide Formate
+    robust. Empirisch im BD.1-Smoke 2026-06-04 gegen Compose
+    v5.1.4 verifiziert (das `-s` ist gegen v5.x Pflicht; ohne
+    `-s` scheitert die jq-Expression mit „Cannot index string
+    with string"). `--all` ist Pflicht — `docker compose ps`
+    ohne Flag listet beendete Container **nicht**.
   - **mc-tools**: nicht gestartet (steht unter
     `profiles: ["tools"]` und wird nur durch
     `docker compose run mc-tools …` materialisiert).
-- [ ] Smoke-Check fuer „MinIO ist nutzbar":
+- [ ] Smoke-Check fuer „S3-API ist nutzbar":
   `docker compose run --rm mc-tools ls local/` exited 0 und
   listet den Demo-Bucket.
 - [ ] `docker compose down -v` raeumt Named-Volumes komplett ab
@@ -846,9 +918,9 @@ Container-CLI-Variante dokumentiert.
   examples/bi-demo/out/reverse.yaml --target postgresql` rendert
   eine valide DDL.
 - [ ] `docker compose run --rm mc-tools cp --recursive
-  /work/ "local/${MINIO_BUCKET}/runs/manual/"` laed die Artefakte
-  in MinIO (Smoke-Vertrag aus §5.3; `out/` ist im `mc-tools`-
-  Service als `/work` gemountet). Host-`mc` ist nicht
+  /work/ "local/${S3_BUCKET}/runs/manual/"` laed die Artefakte
+  in den SeaweedFS-Bucket (Smoke-Vertrag aus §5.3; `out/` ist im
+  `mc-tools`-Service als `/work` gemountet). Host-`mc` ist nicht
   erforderlich. **Wichtig**: kein `mc`-Praefix — das Image hat
   `mc` als Entrypoint (§5.3).
 - [ ] README dokumentiert Container-CLI-Variante fuer
@@ -880,14 +952,15 @@ ohne menschlichen Browser-Schritt prueft.
 - [ ] `examples/bi-demo/scripts/smoke.sh` mit `set -euo pipefail`,
   beginnt mit `mkdir -p "$(dirname "$0")/../out"` (Bind-Mount-
   Owner, siehe §6 + BD.1), prueft Container-Health via
-  `docker compose ps --all --format json | jq -e
-  'map(select(.Service == "minio-init")) | .[0].State == "exited"
+  `docker compose ps --all --format json | jq -s -e
+  'map(select(.Service == "seaweed-init")) | .[0].State == "exited"
   and .[0].ExitCode == 0'` (`--all` ist Pflicht, sonst fehlt
-  `minio-init` im exited-State; `map(select(...))` ist Pflicht,
-  weil `--format json` ein Array liefert — siehe BD.1), faehrt
+  `seaweed-init` im exited-State; `jq -s` ist Pflicht, weil
+  `--format json` je nach Compose-Version JSONL oder Array
+  liefert — siehe BD.1), faehrt
   mindestens den d-migrate-Reverse + Profile Workflow aus BD.4,
-  prueft MinIO-Upload via `docker compose run --rm mc-tools ls
-  "local/${MINIO_BUCKET}/runs/"`. **`mc` wird ausschliesslich
+  prueft S3-Upload via `docker compose run --rm mc-tools ls
+  "local/${S3_BUCKET}/runs/"`. **`mc` wird ausschliesslich
   ueber den `mc-tools`-Service (§5.3) aufgerufen**, damit die
   Demo ohne Host-`mc` laeuft; `jq` ist Host-Voraussetzung
   (siehe README-Prereqs).
@@ -912,7 +985,7 @@ ohne menschlichen Browser-Schritt prueft.
   - d-migrate-Workflow aus BD.4 als Copy-Paste-Block
   - Cleanup-Block
   - Troubleshooting (Port-Konflikte, Healthcheck-Timeouts,
-    Metabase-`start_period`, MinIO via
+    Metabase-`start_period`, S3 via
     `docker compose run --rm mc-tools <subcmd> …` — kein
     `mc`-Praefix, §5.3)
 - [ ] Optional: GitHub-Actions-Workflow `bi-demo-smoke.yml`, der
@@ -962,7 +1035,7 @@ BD.1 (Compose+Healthchecks)
    ein eigener Slice.
 3. **Service-Wildwuchs**. Superset, ClickHouse und DuckDB sollten
    erst nach der Basisdemo optional hinzukommen (§8). MVP =
-   PostgreSQL + MinIO + Metabase.
+   PostgreSQL + SeaweedFS + Metabase.
 4. **PG-Version-Drift bei Seed-Determinismus**. `setseed()` +
    `random()` kann ueber PG-Major-Versionen leicht variieren.
    Mitigation: Image-Tag `postgres:17.10-trixie` pinnen
@@ -970,14 +1043,16 @@ BD.1 (Compose+Healthchecks)
    17.x-Updates); bei Major-Update Seed-Regeneration testen.
 5. **Demo-Credentials in Produktion**. Mitigation: PostgreSQL-
    Default-Passwort traegt `change-me`-Suffix als sichtbaren
-   Marker (§5.5). MinIO laeuft bewusst auf den MinIO-Default-
-   Credentials `minioadmin`/`minioadmin`, damit `mc-tools` und
-   Compose-Stack ohne Demo-spezifische Substitution starten —
-   das ist eine Demo-Konvention, nicht ein versehentlicher
-   `change-me`-Verlust. README warnt explizit fuer beide Faelle
-   (PG-Passwort vor jedem nicht-lokalen Run ersetzen; MinIO-
-   Default vor jedem nicht-lokalen Run ersetzen UND
-   `mc-tools`-`MC_HOST_local` neu setzen). `.env` ist gitignored.
+   Marker (§5.5). SeaweedFS S3-API laeuft mit einer
+   Single-Identity-Demo-Config (`config/seaweed-s3.json`); die
+   `S3_ACCESS_KEY`/`S3_SECRET_KEY`-Vars in `.env` muessen damit
+   uebereinstimmen, weil `mc` SigV4-signierte Requests baut. Der
+   Stack ist strikt an `127.0.0.1` gebunden (§5.3); README warnt
+   explizit fuer beide Faelle (PG-Passwort vor jedem nicht-
+   lokalen Run ersetzen; SeaweedFS-Identity in `seaweed-s3.json`
+   **und** `.env` synchron ersetzen, dazu `mc-tools`-
+   `MC_HOST_local` neu setzen, sobald der Stack ausserhalb
+   localhost erreichbar werden soll). `.env` ist gitignored.
 6. **Port-Konflikte mit Host-Diensten**. Mitigation: Ports
    bewusst hoch gewaehlt (`55432`, `59000`, `59001`, `3000`);
    README-Troubleshooting-Block deckt Anpassung ab.
@@ -995,65 +1070,73 @@ BD.1 (Compose+Healthchecks)
    `OUTLIER`-Rule oder ein abgesenkter `HIGH_NULL_RATIO`-
    Threshold ist Profiling-Folge-Slice (BD.6+ oder eigener
    `profiling-data-quality-export.md`-Sub-Slice).
-9. **MinIO Community Edition ist source-only; Docker-Hub-Tags
-   driften gegenueber Upstream-Security-Releases**. Stand
-   2026-06-03:
+9. **MinIO Community Edition archiviert — RESOLVED**
+   (2026-06-04 im BD.1-Implementierungs-Sweep). Befund:
    - `minio/mc` ist auf
-     [Docker Hub](https://hub.docker.com/r/minio/mc) archiviert
-     und zeigt `RELEASE.2025-08-13T08-35-41Z-cpuv1` als juengstes
-     Tag; das offizielle MinIO-Repository pflegt die
-     Legacy-Binaries nicht weiter (CE ist Source-Only).
-   - `minio/minio` veroeffentlicht weiterhin Tags, aber Upstream
-     hat nach `RELEASE.2025-09-07T16-13-09Z` eine
-     Security-/CVE-Release `RELEASE.2025-10-15T17-29-55Z`
-     gefolgt; Demos und Reproduzier-Setups duerfen **nicht** auf
-     das aeltere Tag zurueckfallen.
+     [Docker Hub](https://hub.docker.com/r/minio/mc) eingefroren
+     auf `RELEASE.2025-08-13T08-35-41Z-cpuv1` (CE ist
+     Source-Only seit 2025-Q3).
+   - `minio/minio` Docker-Hub-Tag-Pflege endete mit
+     `RELEASE.2025-09-07T16-13-09Z` (bekannt-CVE-anfaellig); der
+     Upstream-Security-Release `RELEASE.2025-10-15T17-29-55Z`
+     existiert auf GitHub (Fix fuer CVE-2025-62506), wurde aber
+     **nicht** auf Docker Hub publiziert.
+   - Empirisch verifiziert via Docker-Hub-Tags-API + GitHub
+     Releases-API am 2026-06-04 im BD.1-Implementierungs-Sweep:
+     `docker compose pull` mit dem 2025-10-15-Tag scheitert mit
+     `manifest unknown` (genau das vom Plan-Stand 2026-06-03
+     erwartete Verhalten).
 
-   Mitigation:
-   - Server-Tag in §5.3 ist auf den Security-Release
-     `RELEASE.2025-10-15T17-29-55Z` gesetzt.
-   - BD.1-Akzeptanz verlangt `docker compose pull` vor `up -d`;
-     fehlt der Tag auf Docker Hub, scheitert BD.1 sofort, statt
-     in eine veraltete Version zurueckzufallen.
-   - **Pflicht-Fallback bei nicht-publiziertem Tag**: BD.1 darf
-     **kein** bekannt-verwundbares Image einbauen — wenn der
-     Security-Tag aus der CE-Source-Only-Politik nicht erreichbar
-     ist, ist `examples/bi-demo/dockerfiles/minio.Dockerfile` mit
-     Self-Build aus offiziellen MinIO-GitHub-Sources
-     (`FROM golang:1.23` → `go install
-     github.com/minio/minio@<sha>`) Pflicht-Lieferung des Slices.
-     Self-Build-Image-Pinning per Digest im Compose-File.
-   - `mc`-Self-Build aus offiziellen GitHub-Sources analog;
-     Tag-Refresh bleibt eigener BD-Slice fuer den Fall, dass
-     MinIO upstream wieder Container-Releases publiziert.
+   Resolution: Object-Storage-Provider von MinIO auf SeaweedFS
+   umgestellt. Verglichene Alternativen siehe §5.3-Tabelle:
+   - **SeaweedFS** `chrislusf/seaweedfs:4.31` — gewaehlt
+     (Apache-2.0, Semver-Tag, aktiv gepflegt, single-Container).
+   - Garage — abgelehnt (Docker Hub nur SHA-Tags).
+   - RustFS — abgelehnt (1.0.0-Beta, API-Breaking-Risiko).
+   - Ceph RGW — abgelehnt (Multi-Komponenten-Overhead).
+
+   Self-Build aus archiviertem MinIO-GitHub-Repo (vorheriger
+   Plan-Stand 2026-06-03) wurde als nicht-nachhaltig verworfen:
+   gefixte CVEs wandern nicht zurueck in den eingefrorenen
+   GitHub-Tree, eine Self-Build-Strategie waere nur ein
+   Verzoegerer der gleichen Source-Only-Falle.
+
+   `mc` bleibt als generischer S3-Client unveraendert (arbeitet
+   gegen jede S3-API; das `minio/mc`-Repo ist eingefroren aber
+   funktional). Migration auf `aws-cli` / `s5cmd` bleibt eigener
+   BD-Tag-Refresh-Slice.
 10. **`env_file` im Compose-Container vergessen**. Compose-
     `.env`-Interpolation ist YAML-Substitution (`${VAR}` im
     Compose-File selbst), **nicht** Container-Env. Wer
-    `$${MINIO_ROOT_USER}` im `entrypoint`-Skript verwendet,
+    `$${S3_ACCESS_KEY}` im `entrypoint`-Skript verwendet,
     aber keinen `env_file:`- oder `environment:`-Block setzt,
     kriegt leere Variablen und schweigende
     `mc alias set`-Fehler.
     Mitigation: §5.3-Skeletons zeigen `env_file: .env` als
-    Pflichtfeld fuer `minio`, `minio-init` und `mc-tools`;
-    BD.1-Akzeptanz pinnt das durch den Smoke-Check.
+    Pflichtfeld fuer `seaweed-init` und `mc-tools`. Der
+    `seaweed`-Server-Container braucht **kein** `env_file:`,
+    weil er im Anonymous-Mode keine Credentials aus dem
+    Environment liest (§5.3). BD.1-Akzeptanz pinnt das durch
+    den Smoke-Check.
 
 ---
 
 ## 11. Dependencies zu anderen Plaenen
 
-- **[`object-storage-artifact-store.md`](object-storage-artifact-store.md)**:
+- **[`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)**:
   bringt nativen `s3://`-Artifakt-Output. Solange noch nicht
   geliefert, faellt BD.4 auf den `mc cp`-Zwischenschritt zurueck
   (§5.3). Sobald geliefert, ist ein BD.6-Slice „Direkte
-  s3://-Ausgabe nach MinIO" sinnvoll.
-- **[`parquet-export-import-evaluation.md`](parquet-export-import-evaluation.md)**:
+  s3://-Ausgabe nach SeaweedFS" sinnvoll.
+- **[`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md)**:
   Parquet-Artifakte sind in §8 als spaetere Erweiterung gelistet;
-  ein BD.7-Slice „Parquet-Demo gegen MinIO" haengt direkt daran.
-- **[`profiling-data-quality-export.md`](profiling-data-quality-export.md)**:
+  ein BD.7-Slice „Parquet-Demo gegen SeaweedFS" haengt direkt
+  daran.
+- **[`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)**:
   Data-Quality-Export aus Profiling-Reports ist §8 — Sub-Slice
   „BD.8 Data-Quality-Dashboard in Metabase" haengt am Export-Format
   dieses Plans.
-- **[`telemetry-observability-port.md`](telemetry-observability-port.md)**:
+- **[`telemetry-observability-port.md`](../next/telemetry-observability-port.md)**:
   Telemetrie ist nicht Teil der Basisdemo, aber ein zukuenftiger
   „BD-Telemetry"-Slice koennte OpenTelemetry-Collector als
   vierten Service zeigen.

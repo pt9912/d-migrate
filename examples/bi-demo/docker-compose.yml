@@ -1,0 +1,82 @@
+# BI-Demo Compose-Stack
+#
+# Spec: docs/planning/in-progress/bi-demo-compose.md
+#
+# Sub-Slice BD.1 — Compose-Skeleton + Healthchecks:
+# - Postgres mit pg_isready-Healthcheck
+# - SeaweedFS (Server) ohne Server-Healthcheck — seaweed-init
+#   ist der Readiness-Vertrag (siehe §5.3)
+# - seaweed-init als one-shot mit eingebautem mc-alias-Retry
+# - mc-tools nur via `profiles: ["tools"]` (kein `up -d`-Default)
+#
+# Object-Storage-Provider: SeaweedFS statt MinIO. Begruendung +
+# Auswahl-Tabelle in Plan §5.3 (MinIO CE archiviert 2025-Q3,
+# Risk #9 RESOLVED).
+#
+# Spaetere Slices erweitern:
+# - BD.2: sql/-Mount fuer Postgres-Init
+# - BD.3: metabase-Service
+# - BD.4: optionaler dmigrate-Service
+
+services:
+  postgres:
+    image: postgres:17.10-trixie
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dmigrate -d dmigrate_demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  seaweed:
+    image: chrislusf/seaweedfs:4.31
+    command: server -dir=/data -s3 -s3.config=/etc/seaweed/s3.json
+    ports:
+      - "127.0.0.1:${S3_API_PORT}:8333"
+      - "127.0.0.1:${SEAWEED_MASTER_PORT}:9333"
+    volumes:
+      - seaweed-data:/data
+      - ./config/seaweed-s3.json:/etc/seaweed/s3.json:ro
+
+  seaweed-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    depends_on:
+      - seaweed
+    env_file:
+      - .env
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        until mc alias set local http://seaweed:8333 \
+            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}"
+        do
+          echo 'waiting for seaweed s3…'
+          sleep 2
+        done
+        mc mb --ignore-existing "local/$${S3_BUCKET}"
+    restart: "no"
+
+  mc-tools:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    depends_on:
+      seaweed-init:
+        condition: service_completed_successfully
+    profiles: ["tools"]
+    env_file:
+      - .env
+    environment:
+      MC_HOST_local: http://${S3_ACCESS_KEY}:${S3_SECRET_KEY}@seaweed:8333
+    volumes:
+      - ./out:/work
+
+volumes:
+  postgres-data:
+  seaweed-data:

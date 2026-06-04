@@ -1,0 +1,14 @@
+{
+  "identities": [
+    {
+      "name": "demo",
+      "credentials": [
+        {
+          "accessKey": "demoaccesskey",
+          "secretKey": "demosecretkey"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
