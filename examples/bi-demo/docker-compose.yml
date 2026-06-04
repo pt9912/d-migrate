@@ -4,10 +4,14 @@
 #
 # Sub-Slice BD.1 — Compose-Skeleton + Healthchecks:
 # - Postgres mit pg_isready-Healthcheck
-# - SeaweedFS (Server) ohne Server-Healthcheck — seaweed-init
-#   ist der Readiness-Vertrag (siehe §5.3)
+# - seaweed-config (one-shot) rendert s3.json aus .env in ein
+#   Named Volume — eliminiert die Drift zwischen .env und einer
+#   hartkodierten s3.json (siehe Plan §5.3)
+# - SeaweedFS (Server) liest die gerenderte s3.json read-only
 # - seaweed-init als one-shot mit eingebautem mc-alias-Retry
-# - mc-tools nur via `profiles: ["tools"]` (kein `up -d`-Default)
+# - mc-tools nur via `profiles: ["tools"]` (kein up-d-Default);
+#   Entrypoint-Wrapper macht `mc alias set` mit Keys als separate
+#   Argumente (kein URL-Embedding fuer Credentials mehr)
 #
 # Object-Storage-Provider: SeaweedFS statt MinIO. Begruendung +
 # Auswahl-Tabelle in Plan §5.3 (MinIO CE archiviert 2025-Q3,
@@ -34,15 +38,48 @@ services:
       retries: 12
       start_period: 10s
 
+  seaweed-config:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    env_file:
+      - .env
+    volumes:
+      - seaweed-config:/etc/seaweed
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        cat > /etc/seaweed/s3.json <<EOF
+        {
+          "identities": [
+            {
+              "name": "demo",
+              "credentials": [
+                {
+                  "accessKey": "$${S3_ACCESS_KEY}",
+                  "secretKey": "$${S3_SECRET_KEY}"
+                }
+              ],
+              "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+            }
+          ]
+        }
+        EOF
+        chmod 444 /etc/seaweed/s3.json
+    restart: "no"
+
   seaweed:
     image: chrislusf/seaweedfs:4.31
+    depends_on:
+      seaweed-config:
+        condition: service_completed_successfully
     command: server -dir=/data -s3 -s3.config=/etc/seaweed/s3.json
     ports:
       - "127.0.0.1:${S3_API_PORT}:8333"
       - "127.0.0.1:${SEAWEED_MASTER_PORT}:9333"
     volumes:
       - seaweed-data:/data
-      - ./config/seaweed-s3.json:/etc/seaweed/s3.json:ro
+      - seaweed-config:/etc/seaweed:ro
 
   seaweed-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
@@ -72,11 +109,19 @@ services:
     profiles: ["tools"]
     env_file:
       - .env
-    environment:
-      MC_HOST_local: http://${S3_ACCESS_KEY}:${S3_SECRET_KEY}@seaweed:8333
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mc alias set local http://seaweed:8333 \
+            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" > /dev/null
+        exec mc "$$@"
+      - sh
     volumes:
       - ./out:/work
 
 volumes:
   postgres-data:
   seaweed-data:
+  seaweed-config:

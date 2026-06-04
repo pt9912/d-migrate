@@ -2,17 +2,22 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: In Progress (2026-06-04 — BD.1 begonnen: Compose-
-> Skeleton mit Postgres, SeaweedFS, `seaweed-init`, `mc-tools`,
-> `.env.example`, `.gitignore`, `out/.gitkeep`. Object-Storage-
-> Provider von MinIO auf SeaweedFS umgestellt (Risk #9 RESOLVED:
-> MinIO CE archiviert, Docker-Hub-Tag-Pflege beendet; Auswahl-
-> Tabelle in §5.3). Vorheriger Stand: Review-Runde 5 (2026-06-04,
-> Commit `480e2489`) — Server-Skeleton, Bind-Adressen
-> `127.0.0.1`, psql-`\set`-Korrektur in §7/BD.2, init-Service-
-> Entrypoint auf Literal-Block, kombinierte `.d-migrate.yaml`,
-> BD.4 fuenf Warning-Codes, Make-Targets, URL-Encoding-Caveat
-> fuer `MC_HOST_local`, `out/`-`mkdir`-Pflicht in §6/BD.1. Davor
+> Status: In Progress (2026-06-04 — BD.1 v2 nach Security-Review:
+> `seaweed-config`-One-Shot rendert `s3.json` aus `.env` in ein
+> Named Volume (eliminiert die `.env`/`s3.json`-Drift, die der
+> BD.1-Review als Maintenance-Falle markiert hatte); `mc-tools`-
+> Service erhaelt Entrypoint-Wrapper mit `mc alias set` und
+> separaten Argumenten (eliminiert das `MC_HOST_local`-URL-
+> Embedding und damit den URL-reserved-Char-Caveat).
+> `config/seaweed-s3.json` entfernt. Davor: BD.1 v1 (2026-06-04,
+> Commit `cc1a5179`) — Compose-Skeleton + Object-Storage-Wechsel
+> auf SeaweedFS (Risk #9 RESOLVED: MinIO CE archiviert,
+> Docker-Hub-Tag-Pflege beendet; Auswahl-Tabelle in §5.3).
+> Davor: Review-Runde 5 (2026-06-04, Commit `480e2489`) —
+> Server-Skeleton, Bind-Adressen `127.0.0.1`, psql-`\set`-
+> Korrektur in §7/BD.2, init-Service-Entrypoint auf Literal-
+> Block, kombinierte `.d-migrate.yaml`, BD.4 fuenf Warning-Codes,
+> Make-Targets, `out/`-`mkdir`-Pflicht in §6/BD.1. Davor
 > Review-Runde 4 (2026-06-03) — Sub-Slice-Schnitt BD.1-BD.5,
 > Image-Pinning, Healthcheck-Verträge, Skeletons; Entwurf-Stand
 > 2026-05-01).
@@ -110,11 +115,17 @@ examples/bi-demo/
   sql/
     001_schema.sql
     002_seed.sql
-  config/
-    seaweed-s3.json  # SeaweedFS Single-Identity-Demo-Config (BD.1)
   scripts/
     smoke.sh
 ```
+
+> Hinweis: die SeaweedFS-`s3.json` wird zur Laufzeit von einem
+> `seaweed-config`-One-Shot-Service aus `.env` in ein Named Volume
+> gerendert (siehe §5.3). Es gibt **keine** versionierte
+> `config/seaweed-s3.json` mehr — der vorherige Plan-Stand mit
+> hartkodierter Datei wurde im BD.1-Sicherheitsreview als
+> Maintenance-Falle markiert (Drift zwischen `.env` und JSON) und
+> ist in dieser Iteration eliminiert.
 
 Optional spaeter:
 
@@ -293,22 +304,72 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   Cluster-Status + Volume-Allocations; Demo-nuetzlich fuer Debugging,
   ist kein Auth-relevanter Endpunkt.
 - **Bucket**: `dmigrate-demo`
-- **Access Key / Secret Key**: Demo-Credentials aus `.env.example`,
-  **gespiegelt in** `examples/bi-demo/config/seaweed-s3.json`.
-  Hintergrund (empirisch festgestellt im BD.1-Smoke 2026-06-04):
-  SeaweedFS startet ohne `-s3.config=...` zwar, akzeptiert aber
-  Objekt-Operationen wie `PutObject` mit der Meldung „Signed
-  request requires setting up SeaweedFS S3 authentication" nur
-  noch dann, wenn eine `s3.json` mit konkreter Identity konfiguriert
-  ist. Bucket-Operationen wirken zwar anonym, ueberleben aber den
-  Container-Restart nicht. BD.1 mountet deshalb eine
-  Demo-Identity-Config (siehe `seaweed-s3.json`-Block weiter unten).
-  Die `S3_ACCESS_KEY`/`S3_SECRET_KEY`-Vars in `.env` **muessen** mit
-  `accessKey`/`secretKey` in `seaweed-s3.json` uebereinstimmen —
-  README + Skeleton dokumentieren das als Konvention. Eine echte
-  IAM-Aufloesung mit Env-Var-Substitution in die `s3.json` (statt
-  Hardcoded-Werte) ist Folge-Slice (BD.6+).
+- **Access Key / Secret Key**: Demo-Credentials **nur** aus
+  `.env.example`. Hintergrund (empirisch festgestellt im
+  BD.1-Smoke 2026-06-04): SeaweedFS startet ohne `-s3.config=...`
+  zwar, lehnt aber Objekt-Operationen wie `PutObject` ab —
+  „Signed request requires setting up SeaweedFS S3
+  authentication". BD.1 rendert deshalb eine Demo-Identity-Config
+  zur Laufzeit aus `.env` (siehe `seaweed-config`-Block weiter
+  unten); es gibt **keine** versionierte `seaweed-s3.json` mehr,
+  d.h. **kein** Sync-Vertrag zwischen `.env` und einer
+  hartkodierten JSON. Eine echte IAM-Loesung mit
+  Multi-Identity-Konfiguration (statt der gerenderten
+  Single-Identity-Demo) ist Folge-Slice (BD.6+).
 - **Prefix fuer Laeufe**: `runs/<timestamp-or-operation-id>/`
+- **Config-Render-Service**: ein `seaweed-config`-One-Shot
+  rendert die SeaweedFS-`s3.json` aus `.env` in ein Named Volume,
+  noch bevor der `seaweed`-Server startet. Damit ist die Drift
+  zwischen `.env` und einer hartkodierten JSON eliminiert (war
+  Befund des BD.1-Sicherheitsreviews — Pflicht-Konvention war
+  Maintenance-Falle). Konkretes Pattern via Heredoc im
+  Compose-File, basierend auf dem ohnehin gepullten `minio/mc`-
+  Image (kein zusaetzliches Image noetig):
+
+  ```yaml
+  seaweed-config:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z-cpuv1
+    env_file:
+      - .env
+    volumes:
+      - seaweed-config:/etc/seaweed
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        cat > /etc/seaweed/s3.json <<EOF
+        {
+          "identities": [
+            {
+              "name": "demo",
+              "credentials": [
+                {
+                  "accessKey": "$${S3_ACCESS_KEY}",
+                  "secretKey": "$${S3_SECRET_KEY}"
+                }
+              ],
+              "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+            }
+          ]
+        }
+        EOF
+        chmod 444 /etc/seaweed/s3.json
+    restart: "no"
+  ```
+
+  Heredoc mit `<<EOF` (unquoted) expandiert `${S3_ACCESS_KEY}` /
+  `${S3_SECRET_KEY}` aus der Container-Env (geliefert via
+  `env_file: .env`). Compose-Escape `$$` ist Pflicht, weil
+  Compose YAML-seitig `${VAR}` selbst substituieren wuerde; mit
+  `$$VAR` bleibt das Literal `$VAR` ueber, das die Shell dann
+  per `.env` aufloest.
+
+  **Constraint** (vom Heredoc-Pattern erzwungen): die Demo-Keys
+  in `.env` duerfen kein `"` oder `\` enthalten — sonst kippt
+  die JSON-Syntax. README warnt explizit; eine robuste Loesung
+  via `jq -n --arg`-Konstruktion ist Folge-Slice (BD.6+).
+
 - **Server-Service**: konkretes Pattern fuer den `seaweed`-Service. Bind
   explizit auf `127.0.0.1`; Server-Healthcheck entfaellt bewusst (gleiche
   Argumentation wie zuvor bei MinIO — `seaweed-init` ist der
@@ -317,50 +378,36 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   ```yaml
   seaweed:
     image: chrislusf/seaweedfs:4.31
+    depends_on:
+      seaweed-config:
+        condition: service_completed_successfully
     command: server -dir=/data -s3 -s3.config=/etc/seaweed/s3.json
     ports:
       - "127.0.0.1:${S3_API_PORT}:8333"
       - "127.0.0.1:${SEAWEED_MASTER_PORT}:9333"
     volumes:
       - seaweed-data:/data
-      - ./config/seaweed-s3.json:/etc/seaweed/s3.json:ro
+      - seaweed-config:/etc/seaweed:ro
 
   volumes:
     seaweed-data:
+    seaweed-config:
   ```
 
   **Kein `env_file: .env`** am Server: SeaweedFS liest auch im
   konfigurierten Modus keine Credentials aus dem Environment, sondern
   ausschliesslich aus dem via `-s3.config=...` referenzierten
   JSON-File. Das ist anders als bei MinIO, womit Risk #10 fuer den
-  Server-Container entfaellt; die Risk-Note bleibt fuer den
-  `seaweed-init`- und `mc-tools`-Container relevant (dort braucht `mc`
-  die Keys lokal).
+  Server-Container entfaellt; die Risk-Note bleibt fuer
+  `seaweed-config`, `seaweed-init` und `mc-tools` relevant (alle drei
+  brauchen die Keys aus `env_file:` als Container-Env).
 
-  **Begleit-File** `examples/bi-demo/config/seaweed-s3.json` —
-  Single-Identity-Demo-Config:
-
-  ```json
-  {
-    "identities": [
-      {
-        "name": "demo",
-        "credentials": [
-          {
-            "accessKey": "demoaccesskey",
-            "secretKey": "demosecretkey"
-          }
-        ],
-        "actions": ["Admin", "Read", "Write", "List", "Tagging"]
-      }
-    ]
-  }
-  ```
-
-  **Pflicht-Konvention**: `accessKey`/`secretKey` in dieser Datei
-  spiegeln `S3_ACCESS_KEY`/`S3_SECRET_KEY` aus `.env`. Wer die
-  Demo-Credentials anpasst, **muss beide Stellen aktualisieren** —
-  sonst kippt der `mc`-SigV4-Check beim ersten Bucket-/Objekt-Call.
+  **Rebuild-Vertrag**: weil das Named Volume `seaweed-config`
+  beim `compose up -d` ohne `-v` ueberlebt, rendert
+  `seaweed-config` die Datei nur beim ersten `up`; spaetere
+  Anpassungen in `.env` greifen erst nach `compose down -v &&
+  compose up -d`. README dokumentiert das im Troubleshooting-
+  Block.
 
 - **Bucket-Init**: separater `seaweed-init`-Service (one-shot
   `restart: "no"`), der `minio/mc` startet, mit eingebautem Retry auf
@@ -391,10 +438,11 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
 
   Das `mc alias set` arbeitet gegen die S3-API (nicht gegen ein
   MinIO-Admin-Endpoint), funktioniert also gegen jeden S3-kompatiblen
-  Server. Bei konfigurierter SeaweedFS-Identity (siehe `seaweed-s3.json`
-  oben) muessen die uebergebenen Keys mit den Demo-Credentials im
-  JSON uebereinstimmen, sonst scheitert der spaetere `mc mb`-Call mit
-  SigV4-Fehler.
+  Server. Die uebergebenen Keys (aus `env_file: .env`) muessen mit
+  der von `seaweed-config` gerenderten Demo-Identity uebereinstimmen
+  — was per Konstruktion gilt, weil beide Container aus derselben
+  `.env` lesen. Ohne diese Uebereinstimmung scheitert der spaetere
+  `mc mb`-Call mit SigV4-Fehler.
 
   **YAML-Form bewusst array + Literal-Block (`|`)**: ein folded scalar
   (`>`) wuerde die Newlines zu Spaces falten und damit die
@@ -411,15 +459,17 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
   Strings als Credentials — das Aliasing scheitert beim spaeteren
   MakeBucket-Call (siehe Risk #10).
 
-- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service ohne
-  `entrypoint`-Override. **Wichtig**: das `minio/mc`-Image hat `mc`
-  bereits als `ENTRYPOINT`, der `docker compose run`-Befehl uebergibt
-  `mc` damit nur das **Subkommando** plus Argumente — **kein**
-  `mc`-Praefix: `docker compose run --rm mc-tools ls local/`, nicht
-  `mc ls local/`. Service ist via `profiles: ["tools"]` vom
-  `up -d`-Default ausgeschlossen, damit er bei `docker compose up`
-  nicht startet, sondern nur bei expliziten `compose run`-Aufrufen
-  erzeugt wird:
+- **Ad-hoc-`mc`-Service**: zusaetzlicher `mc-tools`-Service mit
+  Entrypoint-Wrapper, der das `mc alias set` vor dem eigentlichen
+  User-Kommando ausfuehrt — Credentials gehen als **separate
+  Argumente** an `mc`, nicht als URL-eingebettete Werte. Damit
+  faellt der frueher noetige `MC_HOST_local`-URL-Encoding-Caveat
+  weg (war Befund des BD.1-Sicherheitsreviews als Maintenance-
+  Falle bei Custom-Credentials).
+
+  Service ist via `profiles: ["tools"]` vom `up -d`-Default
+  ausgeschlossen; nur durch expliziten `compose run`-Aufruf
+  materialisiert:
 
   ```yaml
   mc-tools:
@@ -430,33 +480,47 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
     profiles: ["tools"]
     env_file:
       - .env
-    environment:
-      MC_HOST_local: http://${S3_ACCESS_KEY}:${S3_SECRET_KEY}@seaweed:8333
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        mc alias set local http://seaweed:8333 \
+            "$${S3_ACCESS_KEY}" "$${S3_SECRET_KEY}" > /dev/null
+        exec mc "$$@"
+      - sh
     volumes:
       - ./out:/work
   ```
 
-  **Caveat fuer Custom-Credentials**: `MC_HOST_local` wird aus
-  `${S3_ACCESS_KEY}` und `${S3_SECRET_KEY}` als URL zusammengesetzt —
-  Demo-Defaults sind url-safe gewaehlt; sobald ein User die Defaults
-  durch Werte mit `:`, `@`, `/`, `?`, `#` oder anderen
-  URL-reservierten Zeichen ersetzt, kippt die URL-Konstruktion (`mc`
-  liest die URL falsch, `mc alias set` aus `seaweed-init` faellt
-  allerdings sauber, weil dort User/Passwort als separate Argumente
-  uebergeben werden). README muss diese Bedingung als „Demo-Credentials
-  duerfen keine URL-reservierten Zeichen enthalten" festhalten; eine
-  korrekte Aufloesung via getrennte Env-Vars / `mc alias set`-basierten
-  Init in `mc-tools` ist Folge-Slice (BD.6+).
+  **Mechanik des Entrypoint-Wrappers**: das `minio/mc`-Image hat
+  `mc` als Default-`ENTRYPOINT`; das Override hier ersetzt das
+  durch ein `sh -c`-Script, das (a) den Alias konfiguriert und
+  (b) per `exec mc "$@"` das vom User uebergebene Subkommando
+  weiterreicht. Der trailing `sh`-Eintrag als letztes
+  Listenelement ist das Sentinel-`$0` fuer `sh -c`; Compose
+  uebergibt dann `compose run`-Args als `$1`, `$2`, ... in den
+  Script. Damit verhalten sich Aufrufe wie
+  `docker compose run --rm mc-tools ls "local/${S3_BUCKET}/"`
+  exakt so, als waere `mc` der Direkt-Entrypoint — User merken
+  den Wrapper nicht.
 
-  Damit laeuft `docker compose run --rm mc-tools ls
-  "local/${S3_BUCKET}/"` ohne `--entrypoint`-Override und ohne
-  Host-`mc`. **Wichtig zum Mount-Pfad**: relative Bind-Mounts loest
-  Compose **gegen das Verzeichnis der Compose-Datei** auf, nicht gegen
+  **Sicherheits-Effekt**: die Credentials erscheinen nirgends
+  mehr in einer URL (weder in der YAML noch in der Container-
+  Env als `MC_HOST_*`-Variable). Sie kommen ausschliesslich via
+  `env_file: .env` als reine Shell-Variablen rein und werden an
+  `mc alias set` als zwei Positions-Argumente uebergeben. URL-
+  reservierte Zeichen (`:`, `@`, `/`, `?`, `#`) in den Demo-Keys
+  sind damit unkritisch — der Restriktions-Hinweis war ein
+  Artefakt des frueheren `MC_HOST_local`-URL-Encodings.
+
+  **Wichtig zum Mount-Pfad**: relative Bind-Mounts loest Compose
+  **gegen das Verzeichnis der Compose-Datei** auf, nicht gegen
   das Working Directory des Aufrufers. `./out` ist damit
-  `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der Demo-Flow §6
-  + BD.4 schreiben CLI-Output deshalb konsequent nach
-  `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt `/work/` im
-  Container.
+  `examples/bi-demo/out/`, nicht das Repo-Root-`out/`. Der
+  Demo-Flow §6 + BD.4 schreiben CLI-Output deshalb konsequent
+  nach `examples/bi-demo/out/...`; die `mc cp`-Quelle bleibt
+  `/work/` im Container.
 
 - **Server-Healthcheck**: bewusst **kein** Compose-Healthcheck am
   `seaweed`-Service. Zwar enthaelt das SeaweedFS-Image `wget`, der
@@ -500,14 +564,16 @@ POSTGRES_PASSWORD=demo-pg-pw-change-me
 POSTGRES_PORT=55432
 
 # SeaweedFS S3 API — Demo-only credentials, NOT for production.
-# Pflicht-Konvention: die Werte hier muessen mit
-# `accessKey`/`secretKey` in `config/seaweed-s3.json`
-# uebereinstimmen — Server liest die Identity ausschliesslich
-# aus dem JSON, `mc` baut SigV4-Requests aus diesen .env-Vars.
+# Single Source of Truth: der `seaweed-config`-One-Shot rendert
+# die SeaweedFS-`s3.json` aus diesen Werten, `seaweed-init` und
+# `mc-tools` reichen sie an `mc alias set` weiter (separate
+# Argumente, kein URL-Embedding). Keine Spiegelung in einer
+# zweiten Datei mehr noetig.
 #
-# Caveat: bei eigenen Credentials KEINE URL-reservierten Zeichen
-# (`:` `@` `/` `?` `#`) verwenden — MC_HOST_local wird daraus als
-# URL zusammengesetzt (siehe §5.3 mc-tools-Caveat).
+# Constraint: KEIN `"` und KEIN `\` in den Keys — wuerde die
+# JSON-Syntax im seaweed-config-Heredoc kippen (siehe §5.3).
+# `:`, `@`, `/`, `?`, `#` sind jetzt erlaubt (URL-Encoding-Caveat
+# der vorherigen Iteration ist eliminiert).
 S3_ACCESS_KEY=demoaccesskey
 S3_SECRET_KEY=demosecretkey
 S3_API_PORT=59000
@@ -518,14 +584,17 @@ S3_BUCKET=dmigrate-demo
 METABASE_PORT=3000
 ```
 
-Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix als
-sichtbaren Marker. SeaweedFS S3-Keys sind Demo-Strings ohne
-URL-reservierte Zeichen; sie **muessen** mit
-`config/seaweed-s3.json` uebereinstimmen (Pflicht-Konvention, siehe
-§5.3). Das ist **keine** Production-Konvention; eine echte
-IAM-Aufloesung mit Env-Var-Substitution in die `s3.json` ist
-Folge-Slice (BD.6+). README dokumentiert das Risiko explizit.
-`.gitignore` muss `.env` (ohne `.example`) ausschliessen.
+Konvention: PostgreSQL-Passwort traegt den `change-me`-Suffix
+als sichtbaren Marker. SeaweedFS S3-Keys sind Demo-Strings; sie
+sind Single Source of Truth fuer die zur Laufzeit gerenderte
+`s3.json` und werden von `mc` als separate Argumente verarbeitet
+— **keine** Spiegelung in einer zweiten Datei, **kein**
+URL-reserved-Char-Caveat mehr. Die einzige verbleibende
+Einschraenkung ist „kein `\"` und kein `\\` im Key" (JSON-Syntax-
+Schutz im Heredoc, siehe §5.3 `seaweed-config`-Block). Das ist
+**keine** Production-Konvention; eine echte Multi-Identity-IAM-
+Loesung ist Folge-Slice (BD.6+). README dokumentiert das Risiko
+explizit. `.gitignore` muss `.env` (ohne `.example`) ausschliessen.
 
 ### 5.6 `.d-migrate.yaml` (Skeleton)
 
@@ -718,20 +787,18 @@ geschnitten, dass nach jedem Slice ein nutzbarer Zustand entsteht
 ### Sub-Slice BD.1 — Compose-Skeleton + Healthchecks
 
 **Ziel**: `docker compose up -d` startet PostgreSQL, SeaweedFS
-und den `seaweed-init`-One-Shot stabil. Pro Service ein passender
-Erreichbarkeits-Vertrag (siehe §5.3: SeaweedFS hat **keinen**
-Server-Healthcheck, `seaweed-init` ist der Readiness-Vertrag).
+und die beiden One-Shots (`seaweed-config`, `seaweed-init`)
+stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
+§5.3: SeaweedFS hat **keinen** Server-Healthcheck,
+`seaweed-init` ist der Readiness-Vertrag).
 
 **Akzeptanzkriterien**:
 
-- [ ] `examples/bi-demo/docker-compose.yml` mit den vier Services
-  aus §5.1 + §5.3 (Postgres, SeaweedFS, seaweed-init, mc-tools)
-  und gepinnten Image-Tags.
-- [ ] `examples/bi-demo/config/seaweed-s3.json` mit der
-  Single-Identity-Demo-Config aus §5.3 (`accessKey`/`secretKey`
-  identisch zu `S3_ACCESS_KEY`/`S3_SECRET_KEY` aus
-  `.env.example`); Bind-Mount `./config/seaweed-s3.json:/etc/
-  seaweed/s3.json:ro` am `seaweed`-Service.
+- [ ] `examples/bi-demo/docker-compose.yml` mit den fuenf
+  Services aus §5.1 + §5.3 (Postgres, seaweed-config, SeaweedFS,
+  seaweed-init, mc-tools) und gepinnten Image-Tags. Keine
+  versionierte `config/seaweed-s3.json` — `seaweed-config`
+  rendert sie aus `.env` in ein Named Volume (siehe §5.3).
 - [ ] `examples/bi-demo/.env.example` aus §5.5;
   `examples/bi-demo/.gitignore` schliesst `.env` **und** `out/`
   aus (Demo-Workflow schreibt CLI-Artefakte nach
@@ -751,6 +818,10 @@ Server-Healthcheck, `seaweed-init` ist der Readiness-Vertrag).
   von 90 s:
   - **Postgres**: `state=healthy` via `pg_isready`-Healthcheck
     aus §5.1.
+  - **seaweed-config**: `state=exited`, `ExitCode=0` — Render
+    der `s3.json` ins Named Volume lief gruen. Selber
+    `jq -s`-Pinnungs-Pfad wie fuer `seaweed-init`, nur mit
+    `Service == "seaweed-config"`.
   - **SeaweedFS-Server**: keine Healthcheck-Bedingung.
     Erreichbarkeit wird **nicht** direkt am Container gemessen,
     sondern indirekt via `seaweed-init`.
@@ -1044,15 +1115,17 @@ BD.1 (Compose+Healthchecks)
 5. **Demo-Credentials in Produktion**. Mitigation: PostgreSQL-
    Default-Passwort traegt `change-me`-Suffix als sichtbaren
    Marker (§5.5). SeaweedFS S3-API laeuft mit einer
-   Single-Identity-Demo-Config (`config/seaweed-s3.json`); die
-   `S3_ACCESS_KEY`/`S3_SECRET_KEY`-Vars in `.env` muessen damit
-   uebereinstimmen, weil `mc` SigV4-signierte Requests baut. Der
-   Stack ist strikt an `127.0.0.1` gebunden (§5.3); README warnt
-   explizit fuer beide Faelle (PG-Passwort vor jedem nicht-
-   lokalen Run ersetzen; SeaweedFS-Identity in `seaweed-s3.json`
-   **und** `.env` synchron ersetzen, dazu `mc-tools`-
-   `MC_HOST_local` neu setzen, sobald der Stack ausserhalb
-   localhost erreichbar werden soll). `.env` ist gitignored.
+   Single-Identity-Demo-Config, die zur Laufzeit aus `.env` in
+   ein Named Volume gerendert wird (`seaweed-config`-One-Shot,
+   §5.3) — Single Source of Truth ist `.env`, keine Spiegelung
+   in einer JSON-Datei mehr. Der Stack ist strikt an `127.0.0.1`
+   gebunden (§5.3); README warnt explizit fuer beide Faelle
+   (PG-Passwort vor jedem nicht-lokalen Run ersetzen;
+   SeaweedFS-Credentials in `.env` ersetzen — `seaweed-config`
+   rendert die `s3.json` beim naechsten `compose down -v &&
+   compose up -d` neu; ausserdem von 127.0.0.1 abruecken nur,
+   wenn Multi-Identity-IAM via BD.6+ kommt). `.env` ist
+   gitignored.
 6. **Port-Konflikte mit Host-Diensten**. Mitigation: Ports
    bewusst hoch gewaehlt (`55432`, `59000`, `59001`, `3000`);
    README-Troubleshooting-Block deckt Anpassung ab.
@@ -1113,11 +1186,14 @@ BD.1 (Compose+Healthchecks)
     kriegt leere Variablen und schweigende
     `mc alias set`-Fehler.
     Mitigation: §5.3-Skeletons zeigen `env_file: .env` als
-    Pflichtfeld fuer `seaweed-init` und `mc-tools`. Der
+    Pflichtfeld fuer `seaweed-config`, `seaweed-init` und
+    `mc-tools` (alle drei Container brauchen `S3_ACCESS_KEY`/
+    `S3_SECRET_KEY` / `S3_BUCKET` als Container-Env). Der
     `seaweed`-Server-Container braucht **kein** `env_file:`,
-    weil er im Anonymous-Mode keine Credentials aus dem
-    Environment liest (§5.3). BD.1-Akzeptanz pinnt das durch
-    den Smoke-Check.
+    weil er Credentials ausschliesslich aus der via
+    `-s3.config=...` gemounteten JSON liest, nicht aus dem
+    Environment (§5.3). BD.1-Akzeptanz pinnt das durch den
+    Smoke-Check.
 
 ---
 
