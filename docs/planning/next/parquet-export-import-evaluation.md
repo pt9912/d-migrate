@@ -5,6 +5,16 @@
 > Status: Entwurf (2026-05-01, AP1-Update 2026-06-04, AP2-Update 2026-06-04,
 > AP10-Update 2026-06-04)
 >
+> **Aktivierungsbedingung** (Move nach `in-progress/`): erster
+> Parquet-Adapter-Spike unter
+> `adapters/driven/formats/...` (oder einem neuen
+> `adapters/driven/formats-parquet/`-Modul) mit Test commited,
+> der sich auf diesen Plan beruft. AP1/AP2/APx-Sub-Doc-Updates
+> alleine sind **kein** Trigger fuer den Move — sie sind die
+> Evaluierungs-Deliverables, die diese Plan-Doc als Vorarbeit
+> identifiziert. Solange nur Sub-Docs aktualisiert werden,
+> bleibt der Plan in `next/`.
+>
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
 > `parquet-libraries.md` (AP1-Bibliothekssichtung),
