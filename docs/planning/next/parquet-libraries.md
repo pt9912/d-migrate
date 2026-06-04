@@ -237,45 +237,147 @@ oder zurueckgenommen, sobald die folgenden offenen Punkte beantwortet sind.
 
 ---
 
-## 6. Offene Punkte fuer AP3 (bibliotheksbezogen)
+## 6. Pragmatische Reihenfolge
 
 AP2 (Schemaquelle, `ChunkSchema`, Mapping-Tabelle, Nullability-Resolver)
 ist als eigener Sub-Doc `parquet-schema-source.md` ausgearbeitet und
-liefert dem Prototyp einen stabilen Vertrag. Die folgende Liste deckt nur
-noch bibliotheks-, Streaming- und Distributions-Fragen ab, die direkt aus
-der Wahl von `parquet-java` 1.17.1 fallen.
+liefert dem Prototyp einen stabilen Schema-Vertrag. Damit AP3 auch
+bibliotheksseitig nicht gegen ein Provisorium laeuft, werden die
+verbleibenden Punkte aus dieser Sichtung in Vorbedingungen und
+Verifikationen getrennt:
 
-- AP3: Verifizieren, dass eine eigene `OutputFile`-Implementierung mit
-  `PositionOutputStream` fuer den d-migrate-`ExportOutput`-Pfad sauber zu
-  bauen ist (Footer-Finalisierung, kein Vollpuffer); insbesondere fuer
-  stdout-Schreiben.
-- AP3: Fuer den Importpfad entscheiden, wie reine `InputStream`-Quellen
-  behandelt werden: ablehnen (nur Datei/seekbare Quelle), seekbarer Adapter
-  oder explizit dokumentierter Temp-Spool. Hauptplan Abschnitt 6 spricht
-  bereits den Punkt an; AP3 muss den konkreten Vertrag fixieren.
-- AP3: Den tatsaechlichen Gradle-Dependency-Satz fuer den Writer-/Reader-Pfad
-  ermitteln (welche `parquet-*`-Artefakte, welche Hadoop-API-Klassen sind
-  unvermeidlich) und gegen GraalVM-Reachability sowie Distributionsgewicht
-  abgleichen. Annahme „nur parquet-column" ist vorab nicht haltbar.
-- AP3: Pruefen, ob `withExtraMetaData` zusammen mit
-  `ParquetFileReader#getFileMetaData().getKeyValueMetaData()` als
-  Single-File-Metadatenvertrag taugt. Falls ja, entfaellt der Sidecar fuer
-  Single-File-Exporte; falls nein, gilt der Sidecar-Vertrag aus Hauptplan
-  Abschnitt 6.
-- AP3: GraalVM-Reachability-Metadaten fuer `parquet-java` minimieren.
-  Insbesondere parquet-avro und parquet-protobuf ausschliessen, um
-  Avro-/Protobuf-Angriffsflaeche, unnoetige Reflection und Dependency-
-  Drift zu vermeiden. Versionsseitig ist 1.17.1 gegen CVE-2025-30065 und
-  CVE-2025-46762 bereits abgesichert; relevant sind Dependency-
-  Constraints, die alte parquet-avro-Versionen ausschliessen.
-- AP3: DuckDB `read_parquet` als Akzeptanzwerkzeug einbinden, ohne DuckDB
-  als Produktivpfad zu setzen.
-- AP3: Row-Group-Akkumulation aus `DataChunk`-Stroemen so umsetzen, dass die
-  konfigurierbare Obergrenze aus Hauptplan Abschnitt 9 eingehalten wird.
+1. **AP1.a — Gradle-Dependency-Skizze festschreiben.** Abschnitt 8 ist
+   der bindende Ausgangspunkt; AP3 verifiziert ihn via
+   `gradle dependencies` und schliesst Luecken (z.B. tatsaechlich
+   benoetigte `hadoop-common`-Klassen).
+2. **AP1.b — Dependency-Constraints gegen `parquet-avro` und
+   `parquet-protobuf` im Build festziehen.** Versionsseitig schliesst
+   1.17.1 CVE-2025-30065/46762; relevant ist, dass die Module gar nicht
+   eingezogen werden (kein Avro-/Protobuf-Reflection-Pfad im
+   Klassenpfad).
+3. **AP1.c — InputStream-Reader-Vertrag entscheiden und in CLI-Spec
+   spiegeln.** Abschnitt 7 dokumentiert die Vorentscheidung; AP3
+   implementiert sie, entdeckt sie nicht.
+4. **AP3 — Bibliotheksspezifischer Prototyp.** Implementiert
+   `ParquetChunkWriter`/-`Reader` gegen den stabilen Build-Stand und den
+   stabilen Port-Vertrag, verifiziert die Annahmen aus Abschnitten 7 und
+   8, und prueft die verbleibenden Verifikationsfragen in Abschnitt 9.
 
 ---
 
-## 7. Risiken dieser Vorentscheidung
+## 7. InputStream-Reader-Vertrag (AP1-Artefakt)
+
+Hauptplan Abschnitt 6 nennt drei moegliche Reader-Vertraege fuer
+nicht-seekbare Quellen: Ablehnen, seekbarer Adapter oder Temp-Spool. Die
+Vorentscheidung lautet:
+
+- **Parquet-Reader ist datei-/pfadbasiert; reine `InputStream`-Quellen
+  werden abgelehnt.** Akzeptiert sind nur seekbare Quellen, also Pfade
+  auf das lokale Dateisystem und kuenftige seekbare Adapter (z.B.
+  Object-Storage mit `SeekableInputStream`-Implementierung).
+- **Kein impliziter Temp-Spool.** Parquet-Dateien koennen mehrere
+  Gigabyte gross sein. Ein automatischer Disk- oder Heap-Spool wuerde
+  den Speicher-/IO-Vertrag des restlichen Imports brechen und ist
+  unsichtbar — wenn ein Aufrufer wirklich `InputStream` hat, soll er
+  vor dem Import explizit auf Disk stagen und den Pfad uebergeben.
+- **CLI-Spiegelung.** `data import --format parquet` akzeptiert nur
+  `--source <pfad>` (Datei oder Directory-Bundle). Stdin ist explizit
+  abgelehnt, mit klarer Fehlermeldung im Preflight (vgl. Hauptplan
+  Abschnitt 6, formatspezifische CLI-Regel). Format-Autodetection bleibt
+  wie im Hauptplan: Single-File ueber `.parquet`, Directory ueber
+  `manifest.yaml`.
+- **Writer-Seite bleibt unveraendert.** Stdout funktioniert via
+  `PositionOutputStream` (zaehlender Stream, kein Seek noetig); das ist
+  Teil der AP3-Verifikation.
+
+Diese Entscheidung ist die strenge Variante und priorisiert
+Vorhersagbarkeit ueber Bequemlichkeit. Falls ein konkreter Use-Case
+spaeter einen seekbaren Adapter rechtfertigt (Object-Storage), kommt er
+als zusaetzliche Adapter-Implementierung, nicht als Aufweichung des
+CLI-Vertrags.
+
+---
+
+## 8. Gradle-Dependency-Skizze (AP1-Artefakt)
+
+Bindende Ausgangs-Koordinaten fuer den Prototyp. AP3 verifiziert via
+`gradle dependencies`, ob die Liste vollstaendig ist und welche
+Hadoop-API-Klassen tatsaechlich gebraucht werden.
+
+```kotlin
+// adapters:driven:formats-parquet  (neues Modul, vgl. Abschnitt 5 Diskussion)
+dependencies {
+    implementation("org.apache.parquet:parquet-hadoop:1.17.1")
+    implementation("org.apache.parquet:parquet-column:1.17.1")
+    // hadoop-common ist Compile-Zeit-Bedarf von parquet-hadoop:
+    // AP3 prueft, ob ein schmaler Subset reicht oder ob hadoop-common
+    // vollstaendig gezogen werden muss; vor dem Audit wird konservativ
+    // hadoop-common eingebunden.
+    implementation("org.apache.hadoop:hadoop-common:3.4.x") {
+        // typische Schwergewichte rausziehen, sofern nicht referenziert
+        exclude(group = "log4j")
+        exclude(group = "org.slf4j", module = "slf4j-log4j12")
+        exclude(group = "javax.servlet")
+        exclude(group = "org.eclipse.jetty")
+    }
+}
+
+dependencies {
+    constraints {
+        // CVE- und Reflection-Vermeidung: parquet-avro/parquet-protobuf
+        // sollen NIE im Klassenpfad landen.
+        implementation("org.apache.parquet:parquet-avro") {
+            version { rejectAll() }
+            because("parquet-avro wird in d-migrate nicht benoetigt; Avro-" +
+                "Reflection-Pfade und CVE-2025-30065-Klasse aus dem " +
+                "Klassenpfad heraushalten.")
+        }
+        implementation("org.apache.parquet:parquet-protobuf") {
+            version { rejectAll() }
+            because("parquet-protobuf wird in d-migrate nicht benoetigt; " +
+                "Protobuf-Reflection und zusaetzliche Native-Image-Last " +
+                "vermeiden.")
+        }
+    }
+}
+```
+
+Erwartete Folge-Aufgaben fuer AP3:
+
+- `gradle :adapters:driven:formats-parquet:dependencies` als Lock-Datei
+  oder Checked-In-Snapshot, damit Drift sichtbar wird.
+- Pruefen, ob ein eigener Hadoop-API-Shim (eigene minimale
+  `org.apache.hadoop.fs`-Klassen) den `hadoop-common`-Block ersetzen
+  kann, oder ob das aufwaendiger ist als der Subset-Pull.
+- GraalVM-Reachability-Metadaten genau auf die tatsaechlich genutzten
+  Hadoop-Klassen schneiden, nicht auf das gesamte hadoop-common-Modul.
+
+---
+
+## 9. Offene Punkte fuer AP3 (Verifikation)
+
+Nach den Vorbedingungen in Abschnitten 6, 7 und 8 verbleiben fuer AP3
+nur noch prototyp-getriebene Verifikationen:
+
+- Eigene `OutputFile`-Implementierung mit `PositionOutputStream` baut
+  Parquet-Dateien sauber inklusive Footer-Finalisierung, auch fuer
+  stdout-Schreiben (kein Vollpuffer).
+- `withExtraMetaData` zusammen mit
+  `ParquetFileReader#getFileMetaData().getKeyValueMetaData()` traegt
+  einen Roundtrip fuer Single-File-Metadaten. Falls nein: Sidecar-Vertrag
+  aus Hauptplan Abschnitt 6 greift.
+- GraalVM-Reachability-Metadaten fuer den tatsaechlich verwendeten
+  `parquet-java`-/Hadoop-Subset minimieren; Build gegen
+  `nativeCompile` plus Smoketest erfolgreich.
+- DuckDB `read_parquet` als Akzeptanzwerkzeug einbinden (Hauptplan
+  Abschnitt 7), ohne DuckDB als Produktivpfad zu setzen.
+- Row-Group-Akkumulation aus `DataChunk`-Stroemen so umsetzen, dass die
+  konfigurierbare Obergrenze aus Hauptplan Abschnitt 9 eingehalten wird;
+  Mindestbatchgroesse vor Flush parametrisierbar.
+
+---
+
+## 10. Risiken dieser Vorentscheidung
 
 - `parquet-java` ohne Hadoop-Runtime ist gut moeglich, aber die
   `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade sind juenger als die

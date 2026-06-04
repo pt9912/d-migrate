@@ -2,7 +2,8 @@
 
 > Dokumenttyp: Evaluierungs- und Architekturplan
 >
-> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04, AP2-Update 2026-06-04)
+> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04, AP2-Update 2026-06-04,
+> AP10-Update 2026-06-04)
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -315,6 +316,11 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
 10. Stream-vs-Datei-Portentscheidung fuer Parquet klaeren: bestehende
    `InputStream`-/`OutputStream`-Factories, erweiterter dateibasierter
    Format-Port oder Parquet-spezifischer Resolver-/Adapterpfad.
+   Ausgearbeitet in `parquet-libraries.md` Abschnitt 7 (Stand 2026-06-04).
+   Vorentscheidung: Reader file-/pfadbasiert, reine `InputStream`-Quellen
+   werden abgelehnt, kein impliziter Temp-Spool; Writer-stdout bleibt via
+   `PositionOutputStream` erlaubt. CLI-Spiegelung: `data import --format
+   parquet` akzeptiert nur `--source <pfad>`. Final nach AP3.
 11. Single-File-Metadatenvertrag klaeren: Parquet-Footer-Key-Value-Metadaten,
    expliziter Sidecar oder bewusst eingeschraenkter Footer-/Ziel-Schema-Modus.
 12. CLI- und Factory-Wiring skizzieren: `DataExportFormat`, Clikt-Choices,
