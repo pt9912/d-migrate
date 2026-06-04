@@ -2,23 +2,41 @@
 
 > Dokumenttyp: Evaluierungs- und Architekturplan
 >
-> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04, AP2-Update 2026-06-04,
-> AP10-Update 2026-06-04)
+> Status: In Progress (2026-06-04 — AP3-Spike begonnen:
+> `adapters/driven/formats-parquet/` mit `ParquetSpike.kt`
+> + Round-Trip-Test; aktivierungsbedingung erfuellt, Plan
+> wandert von `next/` nach `in-progress/`).
 >
-> **Aktivierungsbedingung** (Move nach `in-progress/`): erster
-> Parquet-Adapter-Spike unter
-> `adapters/driven/formats/...` (oder einem neuen
-> `adapters/driven/formats-parquet/`-Modul) mit Test commited,
-> der sich auf diesen Plan beruft. AP1/AP2/APx-Sub-Doc-Updates
-> alleine sind **kein** Trigger fuer den Move — sie sind die
-> Evaluierungs-Deliverables, die diese Plan-Doc als Vorarbeit
-> identifiziert. Solange nur Sub-Docs aktualisiert werden,
-> bleibt der Plan in `next/`.
+> **AP3-Spike-Befunde** (zu praezisieren in AP4+ und in
+> `parquet-libraries.md` §5/§7/§8 zurueckspielen):
+> - **Hadoop-API-Kanal in 1.17.1**: `ParquetWriter.Builder.withConf` und
+>   `ParquetReader.builder` akzeptieren in 1.17.1 nur
+>   Hadoop-`Configuration` bzw. Hadoop-`Path` — die
+>   `PlainParquetConfiguration`/`InputFile`-Overloads aus dem
+>   AP1-Sub-Doc kommen erst mit parquet-java 1.18+. Spike
+>   nutzt Hadoop-`LocalFileSystem` fuer `file://`-URIs (rein
+>   NIO, kein Cluster, kein HDFS).
+> - **MapReduce-Compile-Dependency**:
+>   `ParquetReader.builder(GroupReadSupport, Path)` triggert
+>   das Laden von `org.apache.parquet.hadoop.ParquetInputFormat
+>   extends FileInputFormat`. Ohne
+>   `hadoop-mapreduce-client-core:3.4.1` (mit denselben
+>   Exclusions wie hadoop-common) bricht der Reader mit
+>   `NoClassDefFoundError`. parquet-libraries.md §8 listet
+>   nur hadoop-common — AP4+ muss den MapReduce-Block
+>   nachziehen oder einen Reader-Pfad ohne MapReduce-Bedarf
+>   identifizieren.
+> - **`.crc`-Sidecar**: Hadoop-`LocalFileSystem` schreibt
+>   neben `spike.parquet` automatisch eine
+>   `.spike.parquet.crc`-Checksum-Datei. Ein produktiver
+>   `ChunkWriter` muss das Sidecar entweder mit-aufraeumen
+>   oder `RawLocalFileSystem` verwenden.
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
 > `parquet-libraries.md` (AP1-Bibliothekssichtung),
-> `parquet-schema-source.md` (AP2-Schemaquelle)
+> `parquet-schema-source.md` (AP2-Schemaquelle),
+> `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
 
