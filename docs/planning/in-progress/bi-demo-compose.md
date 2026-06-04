@@ -2,15 +2,20 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: In Progress (2026-06-04 — BD.1 v2 nach Security-Review:
-> `seaweed-config`-One-Shot rendert `s3.json` aus `.env` in ein
-> Named Volume (eliminiert die `.env`/`s3.json`-Drift, die der
-> BD.1-Review als Maintenance-Falle markiert hatte); `mc-tools`-
-> Service erhaelt Entrypoint-Wrapper mit `mc alias set` und
-> separaten Argumenten (eliminiert das `MC_HOST_local`-URL-
-> Embedding und damit den URL-reserved-Char-Caveat).
-> `config/seaweed-s3.json` entfernt. Davor: BD.1 v1 (2026-06-04,
-> Commit `cc1a5179`) — Compose-Skeleton + Object-Storage-Wechsel
+> Status: In Progress (2026-06-04 — BD.1 v3: zusaetzlich
+> bash-Parameter-Expansion in `seaweed-config` fuer
+> JSON-Safety. Damit faellt auch die letzte verbleibende
+> `.env`-Restriktion (`"`/`\\` im Key) — empirisch mit
+> `foo"bar\\baz/qux@quux` als Secret verifiziert. Davor: BD.1
+> v2 (Commit `f6a185d8`) — `seaweed-config`-One-Shot rendert
+> `s3.json` aus `.env` in ein Named Volume (eliminiert die
+> `.env`/`s3.json`-Drift, die der BD.1-Review als
+> Maintenance-Falle markiert hatte); `mc-tools`-Service erhaelt
+> Entrypoint-Wrapper mit `mc alias set` und separaten
+> Argumenten (eliminiert das `MC_HOST_local`-URL-Embedding und
+> damit den URL-reserved-Char-Caveat). `config/seaweed-s3.json`
+> entfernt. Davor: BD.1 v1 (Commit `cc1a5179`) — Compose-
+> Skeleton + Object-Storage-Wechsel
 > auf SeaweedFS (Risk #9 RESOLVED: MinIO CE archiviert,
 > Docker-Hub-Tag-Pflege beendet; Auswahl-Tabelle in §5.3).
 > Davor: Review-Runde 5 (2026-06-04, Commit `480e2489`) —
@@ -338,6 +343,10 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
       - -c
       - |
         set -eu
+        esc_key="$${S3_ACCESS_KEY//\\/\\\\}"
+        esc_key="$${esc_key//\"/\\\"}"
+        esc_sec="$${S3_SECRET_KEY//\\/\\\\}"
+        esc_sec="$${esc_sec//\"/\\\"}"
         cat > /etc/seaweed/s3.json <<EOF
         {
           "identities": [
@@ -345,8 +354,8 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
               "name": "demo",
               "credentials": [
                 {
-                  "accessKey": "$${S3_ACCESS_KEY}",
-                  "secretKey": "$${S3_SECRET_KEY}"
+                  "accessKey": "$$esc_key",
+                  "secretKey": "$$esc_sec"
                 }
               ],
               "actions": ["Admin", "Read", "Write", "List", "Tagging"]
@@ -358,17 +367,23 @@ Demo-Loesung — siehe Risk #9 (RESOLVED).
     restart: "no"
   ```
 
-  Heredoc mit `<<EOF` (unquoted) expandiert `${S3_ACCESS_KEY}` /
-  `${S3_SECRET_KEY}` aus der Container-Env (geliefert via
-  `env_file: .env`). Compose-Escape `$$` ist Pflicht, weil
-  Compose YAML-seitig `${VAR}` selbst substituieren wuerde; mit
-  `$$VAR` bleibt das Literal `$VAR` ueber, das die Shell dann
-  per `.env` aufloest.
+  Heredoc mit `<<EOF` (unquoted) expandiert `${esc_key}` /
+  `${esc_sec}` aus der Container-Env. Compose-Escape `$$` ist
+  Pflicht, weil Compose YAML-seitig `${VAR}` selbst substituieren
+  wuerde; mit `$$VAR` bleibt das Literal `$VAR` ueber, das die
+  Shell dann per `.env` aufloest.
 
-  **Constraint** (vom Heredoc-Pattern erzwungen): die Demo-Keys
-  in `.env` duerfen kein `"` oder `\` enthalten — sonst kippt
-  die JSON-Syntax. README warnt explizit; eine robuste Loesung
-  via `jq -n --arg`-Konstruktion ist Folge-Slice (BD.6+).
+  **JSON-Safety via Bash-Parameter-Expansion**: die zwei
+  `${var//pattern/replacement}`-Konstrukte vor dem Heredoc
+  escapen erst `\` zu `\\` und dann `"` zu `\"`. Das ist
+  bash-Builtin (kein externes `sed`/`jq` noetig, weil das
+  `minio/mc`-Image — RHEL-UBI-basiert — nur `bash` + coreutils
+  enthaelt). Damit gibt es **keine** Zeichen-Restriktion mehr in
+  `.env`: jeder Wert, den ein Password-Manager erzeugt, wird
+  korrekt fuer JSON eskapiert. Empirisch verifiziert mit
+  `S3_SECRET_KEY=foo"bar\\baz/qux@quux` im BD.1-Stresstest
+  (Output: `"secretKey": "foo\\"bar\\\\baz/qux@quux"` — valides
+  JSON, korrekt parsbar).
 
 - **Server-Service**: konkretes Pattern fuer den `seaweed`-Service. Bind
   explizit auf `127.0.0.1`; Server-Healthcheck entfaellt bewusst (gleiche
@@ -589,12 +604,14 @@ als sichtbaren Marker. SeaweedFS S3-Keys sind Demo-Strings; sie
 sind Single Source of Truth fuer die zur Laufzeit gerenderte
 `s3.json` und werden von `mc` als separate Argumente verarbeitet
 — **keine** Spiegelung in einer zweiten Datei, **kein**
-URL-reserved-Char-Caveat mehr. Die einzige verbleibende
-Einschraenkung ist „kein `\"` und kein `\\` im Key" (JSON-Syntax-
-Schutz im Heredoc, siehe §5.3 `seaweed-config`-Block). Das ist
-**keine** Production-Konvention; eine echte Multi-Identity-IAM-
-Loesung ist Folge-Slice (BD.6+). README dokumentiert das Risiko
-explizit. `.gitignore` muss `.env` (ohne `.example`) ausschliessen.
+URL-reserved-Char-Caveat, **keine** JSON-Special-Char-
+Restriktion (bash-Parameter-Expansion in `seaweed-config`
+escaped `"` und `\\` JSON-konform, siehe §5.3). Damit ist jeder
+Password-Manager-generierte Wert akzeptiert. Das ist trotzdem
+**keine** Production-Konvention; eine echte Multi-Identity-
+IAM-Loesung mit IAM-Policies pro User bleibt Folge-Slice
+(BD.6+). README dokumentiert die Demo-Natur explizit.
+`.gitignore` muss `.env` (ohne `.example`) ausschliessen.
 
 ### 5.6 `.d-migrate.yaml` (Skeleton)
 

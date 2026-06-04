@@ -49,6 +49,10 @@ services:
       - -c
       - |
         set -eu
+        esc_key="$${S3_ACCESS_KEY//\\/\\\\}"
+        esc_key="$${esc_key//\"/\\\"}"
+        esc_sec="$${S3_SECRET_KEY//\\/\\\\}"
+        esc_sec="$${esc_sec//\"/\\\"}"
         cat > /etc/seaweed/s3.json <<EOF
         {
           "identities": [
@@ -56,8 +60,8 @@ services:
               "name": "demo",
               "credentials": [
                 {
-                  "accessKey": "$${S3_ACCESS_KEY}",
-                  "secretKey": "$${S3_SECRET_KEY}"
+                  "accessKey": "$$esc_key",
+                  "secretKey": "$$esc_sec"
                 }
               ],
               "actions": ["Admin", "Read", "Write", "List", "Tagging"]
