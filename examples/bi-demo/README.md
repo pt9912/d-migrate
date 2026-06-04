@@ -32,12 +32,13 @@ Das ist eine einmalige Investition pro Branch-Stand.
 ## Start
 
 ```bash
-cp examples/bi-demo/.env.example examples/bi-demo/.env
-mkdir -p examples/bi-demo/out
-
-docker compose -f examples/bi-demo/docker-compose.yml pull
-docker compose -f examples/bi-demo/docker-compose.yml up -d
+make bi-demo-pull   # einmalig pro Branch-Stand
+make bi-demo-up     # legt .env aus .env.example an, falls noch nicht da
 ```
+
+`make bi-demo-up` ist idempotent: bereits laufende Services
+bleiben, fehlende werden gestartet, das `out/`-Verzeichnis wird
+sichergestellt.
 
 Nach ~60 Sekunden sind alle Services bereit:
 
@@ -219,16 +220,27 @@ Raw-File extrahiert die Warning-Codes zuverlaessig. Sauberer Fix
 ist in der `:hexagon:profiling`-Pipeline aufgehoben (separater
 Slice).
 
+## End-to-End-Smoke
+
+```bash
+make bi-demo-smoke
+```
+
+Faehrt pull → up → state-pinnung → d-migrate-Workflow (reverse +
+profile + generate) → S3-Upload → Verifikation. Bei Erfolg endet
+mit `[smoke] SUCCESS — stack is up`. Der Stack bleibt danach
+**oben** — Cleanup explizit via `make bi-demo-down` oder
+`make bi-demo-purge`.
+
+Voraussetzung: das lokal gebaute `d-migrate:dev`-Image
+(`make docker-build IMAGE_TAG=dev` einmalig). Host-`jq` wird im
+Script fuer State-Pinnung verwendet.
+
 ## Stoppen / Aufraeumen
 
 ```bash
-# Nur Container stoppen (Volumes bleiben — naechster `up -d`
-# startet mit denselben Daten + Metabase-Konfig)
-docker compose -f examples/bi-demo/docker-compose.yml down
-
-# Komplett-Reset (verwirft Postgres-Daten, Metabase-Konfig,
-# SeaweedFS-Bucket-Inhalt — alle Named Volumes)
-docker compose -f examples/bi-demo/docker-compose.yml down -v
+make bi-demo-down    # Container stoppen, Named Volumes bleiben
+make bi-demo-purge   # Komplett-Reset (alle Named Volumes weg)
 ```
 
 **Persistenz-Modell**:
@@ -245,10 +257,14 @@ und der `seaweed`-Server liest sie beim Restart in den Memory.
 
 ## Troubleshooting
 
+Die unter den Make-Targets liegenden `docker compose`-Kommandos
+sind im naechsten Block aufgefuehrt — sie sind nur fuer Fehlersuche
+und Sonderfaelle relevant.
+
 ### Port belegt (55432, 59000, 59001, 3000)
 
 In `.env` einen anderen Port setzen (z. B. `POSTGRES_PORT=55433`)
-und `docker compose down && docker compose up -d` ausfuehren.
+und `make bi-demo-down && make bi-demo-up` ausfuehren.
 
 ### Metabase Health-Check schlaegt fehl
 
@@ -278,9 +294,18 @@ Der Seed ist deterministisch via `setseed(0.42)` +
 `\set demo_start_date '2026-01-01'`. Reset-Workflow:
 
 ```bash
-docker compose -f examples/bi-demo/docker-compose.yml down -v
-docker compose -f examples/bi-demo/docker-compose.yml up -d
+make bi-demo-purge && make bi-demo-up
 ```
+
+### Make-Targets entsprechen folgenden docker-Befehlen
+
+| Make-Target         | docker compose-Aequivalent                                                            |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `bi-demo-pull`      | `docker compose -f examples/bi-demo/docker-compose.yml pull`                          |
+| `bi-demo-up`        | `cp .env.example .env`, `mkdir -p out`, `docker compose ... up -d`                    |
+| `bi-demo-down`      | `docker compose -f examples/bi-demo/docker-compose.yml down`                          |
+| `bi-demo-purge`     | `docker compose -f examples/bi-demo/docker-compose.yml down -v`                       |
+| `bi-demo-smoke`     | `./examples/bi-demo/scripts/smoke.sh` (End-to-End-Smoke, siehe BD.5)                  |
 
 ## Slice-Status
 
@@ -288,7 +313,7 @@ docker compose -f examples/bi-demo/docker-compose.yml up -d
 - BD.2 (Schema + deterministischer Seed) — done
 - BD.3 (Metabase-Integration) — done
 - BD.4 (d-migrate-Smoke + `.d-migrate.yaml`) — done
-- BD.5 (Smoke-Script + Make-Targets + CI) — pending
+- BD.5 (Smoke-Script + Make-Targets + CI) — done
 
 Spec + Sub-Slice-Akzeptanzkriterien:
 [`bi-demo-compose.md`](../../docs/planning/in-progress/bi-demo-compose.md)

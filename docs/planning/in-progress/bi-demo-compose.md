@@ -56,8 +56,15 @@
 >   `aws s3 cp` lud 5 Artefakte in `s3://dmigrate-demo/runs/manual/`;
 >   zwei `profile.json`/`profile.yaml`-Quirks im `targetCompatibility`-
 >   Serializer als Folge-Slice abgelegt)
-> - BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
->   implementierbar. Für vollständige Demo-Story
+> - BD.5 — README + Smoke-Script + Make-Targets + CI: **done**
+>   (`examples/bi-demo/scripts/smoke.sh` end-to-end gruen
+>   verifiziert; Repo-Root `Makefile` hat `bi-demo-{pull,up,down,
+>   purge,smoke}`; README auf Make-Targets umgestellt mit
+>   docker-compose-Aequivalenztabelle im Troubleshooting;
+>   optionaler `.github/workflows/bi-demo-smoke.yml` mit
+>   `continue-on-error: true`)
+>
+> Basisdemo komplett**. Für vollständige Demo-Story
 >   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
 >   Erweiterungen aus §8 an
 >   [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)

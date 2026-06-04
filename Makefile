@@ -56,7 +56,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
 
 help:
 	@printf '%s\n' \
@@ -88,6 +88,13 @@ help:
 		'  make docker-full-gates Run docker-gates plus Docker-backed integration tests' \
 		'  make golden-update    Regenerate pinned tool-schema golden snapshots via Docker' \
 		'  make clean            Run Gradle clean' \
+		'' \
+		'BI-Demo (examples/bi-demo, Spec: docs/planning/in-progress/bi-demo-compose.md):' \
+		'  make bi-demo-pull     Pull pinned images (postgres + seaweed + aws-cli + metabase)' \
+		'  make bi-demo-up       Start the stack (creates .env from .env.example if missing)' \
+		'  make bi-demo-down     Stop containers (named volumes survive)' \
+		'  make bi-demo-purge    Stop containers and remove all named volumes' \
+		'  make bi-demo-smoke    End-to-end smoke (pull + up + d-migrate + S3-upload + verify)' \
 		'' \
 		'Variables:' \
 		'  GRADLE=./gradlew DOCKER=docker IMAGE=d-migrate IMAGE_TAG=dev' \
@@ -258,3 +265,32 @@ docker-full-gates: docker-gates integration
 
 clean:
 	$(GRADLE) clean
+
+# ── BI-Demo (examples/bi-demo) ─────────────────────────────────────
+#
+# Kapselt den langen `docker compose -f
+# examples/bi-demo/docker-compose.yml ...`-Pfad. Spec siehe
+# `docs/planning/in-progress/bi-demo-compose.md`. Voraussetzung
+# fuer den `dmigrate`-Service: einmaliger `make docker-build
+# IMAGE_TAG=dev` (baut das d-migrate:dev-Runtime-Image).
+BI_DEMO_COMPOSE := docker compose -f examples/bi-demo/docker-compose.yml
+
+bi-demo-pull:
+	$(BI_DEMO_COMPOSE) pull
+
+bi-demo-up:
+	@if [ ! -f examples/bi-demo/.env ]; then \
+	  cp examples/bi-demo/.env.example examples/bi-demo/.env; \
+	  echo "[bi-demo-up] created examples/bi-demo/.env from .env.example"; \
+	fi
+	@mkdir -p examples/bi-demo/out
+	$(BI_DEMO_COMPOSE) up -d
+
+bi-demo-down:
+	$(BI_DEMO_COMPOSE) down
+
+bi-demo-purge:
+	$(BI_DEMO_COMPOSE) down -v
+
+bi-demo-smoke:
+	./examples/bi-demo/scripts/smoke.sh
