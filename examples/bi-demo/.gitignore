@@ -5,7 +5,7 @@
 .env
 
 # CLI-Artefakte des Demo-Workflows (siehe §5.3 + §6) — landen
-# hier ueber den mc-tools-Bind-Mount `./out:/work`. Verzeichnis
+# hier ueber den aws-tools-Bind-Mount `./out:/work`. Verzeichnis
 # selbst via `.gitkeep` mitcommitted, damit Docker es nicht als
 # root-owned anlegt (siehe BD.1-Akzeptanz).
 out/*
