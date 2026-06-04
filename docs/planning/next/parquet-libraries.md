@@ -237,13 +237,14 @@ oder zurueckgenommen, sobald die folgenden offenen Punkte beantwortet sind.
 
 ---
 
-## 6. Offene Punkte fuer AP2 und AP3
+## 6. Offene Punkte fuer AP3 (bibliotheksbezogen)
 
-- AP2: Welche Schemaquelle versorgt den Writer mit Decimal-Precision/Scale,
-  Temporal-Timezone und Nullability, bevor die erste Row Group geschrieben
-  wird (SchemaReader, JDBC-Metadaten, separates Schemaobjekt)? Die
-  Bibliothekswahl ist damit verbunden, weil `parquet-java` keine
-  Typableitung leistet.
+AP2 (Schemaquelle, `ChunkSchema`, Mapping-Tabelle, Nullability-Resolver)
+ist als eigener Sub-Doc `parquet-schema-source.md` ausgearbeitet und
+liefert dem Prototyp einen stabilen Vertrag. Die folgende Liste deckt nur
+noch bibliotheks-, Streaming- und Distributions-Fragen ab, die direkt aus
+der Wahl von `parquet-java` 1.17.1 fallen.
+
 - AP3: Verifizieren, dass eine eigene `OutputFile`-Implementierung mit
   `PositionOutputStream` fuer den d-migrate-`ExportOutput`-Pfad sauber zu
   bauen ist (Footer-Finalisierung, kein Vollpuffer); insbesondere fuer
