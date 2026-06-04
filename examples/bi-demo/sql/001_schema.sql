@@ -1,5 +1,5 @@
 -- BI-Demo Schema (BD.2)
--- Spec: docs/planning/in-progress/bi-demo-compose.md §7
+-- Spec: docs/planning/done/bi-demo-compose.md §7
 
 CREATE TABLE customers (
     id           integer PRIMARY KEY,

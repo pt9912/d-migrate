@@ -76,7 +76,7 @@
 >
 > Referenzen:
 >
-> - [`roadmap.md`](roadmap.md)
+> - [`../in-progress/roadmap.md`](../in-progress/roadmap.md)
 > - [`orchestrator-examples.md`](../next/orchestrator-examples.md)
 > - [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)
 > - [`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md)
@@ -1360,3 +1360,57 @@ BD.1 (Compose+Healthchecks)
 
 Keine dieser Plaene ist **Voraussetzung** fuer BD.1-BD.5; alle sind
 Erweiterungsoptionen fuer BD.6+.
+
+---
+
+## Closure (2026-06-04)
+
+Alle Sub-Slices BD.1-BD.5 geliefert, Plan-Doc verlaesst
+`in-progress/` und wandert nach `done/`. Final-Stand pro Slice
+(in chronologischer Implementierungs-Reihenfolge):
+
+| Sub-Slice | Commits | Resultat |
+|---|---|---|
+| Plan-Refresh | `480e2489` | Review-Runde 5: Skeleton-Verfeinerung, `127.0.0.1`-Binds, psql-`\set`-Korrektur, `init`-Service-Entrypoint auf Literal-Block, kombinierte `.d-migrate.yaml`, BD.4 fuenf Warning-Codes, Make-Targets, `out/`-`mkdir`-Pflicht. |
+| BD.1 v1 | `cc1a5179` | Compose-Skeleton + **Risk #9 RESOLVED**: Object-Storage-Wechsel MinIO → SeaweedFS (Auswahl-Tabelle in §5.3); fuenf Services (postgres, seaweed, seaweed-init, mc-tools, plus seaweed-config in v2). |
+| BD.1 v2 | `f6a185d8` | `seaweed-config`-One-Shot rendert `s3.json` aus `.env` in Named Volume; `mc-tools` mit Entrypoint-Wrapper (`mc alias set` mit separaten Argumenten) eliminiert `MC_HOST_local`-URL-Embedding. Sicherheits-Review-Findings #1+#2 adressiert. |
+| BD.1 v3 | `8626b6a5` | Bash-Parameter-Expansion in `seaweed-config` fuer JSON-Safety (`"` und `\` escapen). Stresstest mit `foo"bar\baz/qux@quux#hash`. Letzte `.env`-Restriktion eliminiert. |
+| BD.1 v4 | `317adff6`, `108fdda0`, `e792857a`, `f09e1e07`, `55aca25c` | S3-Client von `minio/mc` auf `amazon/aws-cli:2.34.61` umgestellt (letzte MinIO-Branding-Referenz weg); `mc-tools` → `aws-tools`; Credentials via `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`-Env-Vars; `seaweed-init` mit `head-bucket || create-bucket`. Rebuild-Vertrag korrigiert. README/roadmap MinIO → SeaweedFS. Compose-Header eingedampft. env.example/gitignore-Kommentare auf `aws-tools` aktualisiert. |
+| Cross-cut | `57156015` | `verify-doc-refs.sh` strippt jetzt Inline-Code vor Link-Extraktion — fing False-Positive an Regex-Beispiel in `trino.md:461`. `make ci` wieder gruen. |
+| BD.2 | `9cc69350`, `f8aa55ea` | 5-Tabellen-Schema + deterministischer Seed (50/30/500/1500/10000 Zeilen). Idempotenz via `pg_dump | grep -v restrict | sha256sum`-Hash empirisch verifiziert (Hash `9c3c6964…3cc2`). Determinismus-Vertrag: `setseed(0.42)` + `\set demo_start_date` + `SET timezone='UTC'` + `SET max_parallel_workers_per_gather=0` (Fix `f8aa55ea` korrigiert `SET LOCAL`-No-op auf plain `SET`). |
+| BD.3 | `6bb3753a` | Metabase `v0.55.24.1` integriert; `/api/health` = `{"status":"ok"}`; `metabase-data`-Volume ueberlebt `down`. README mit Admin-/Datenquelle-Setup + drei Beispiel-Fragen. |
+| BD.4 | `ae2ad2c0` | `dmigrate`-Service (Image `d-migrate:dev`, Profile `tools`) + `.d-migrate.yaml` mit zwei Connections. End-to-End-Workflow `schema reverse` + `data profile` + `schema generate` gegen Demo-Postgres; `aws-tools s3 cp` lud fuenf Artefakte in `s3://dmigrate-demo/runs/manual/`. Fuenf Warning-Codes + `numericStats.max=99999.99`-Outlier empirisch verifiziert. Zwei `ProfileReportWriter`-Serializer-Bugs als BD.5-Folge-Slice markiert. |
+| BD.5 | `be39b2b8` | `examples/bi-demo/scripts/smoke.sh` (set -euo pipefail, `jq -s`-State-Pinnung, fuenf Schritte: pull/up/wait/d-migrate/upload/verify). Repo-Root-`Makefile`-Targets `bi-demo-{pull,up,down,purge,smoke}`. README auf Make-Targets umgestellt mit `docker-compose`-Aequivalenz-Tabelle im Troubleshooting. Optionaler `.github/workflows/bi-demo-smoke.yml` mit `continue-on-error: true`. |
+| BD.5-Review-Sweep | `75b3efcb`, `e1e68dba` | Drei Befunde aus dem BD.5-Review erledigt: (a) `ProfileReportWriter`-Serializer-Bugs gefixt (JSON-Doppelquote + YAML-Whitespace-Strings) + Parser-basierte Regressions-Tests; (b) Plan-Akzeptanz-Konsistenz: 30 `[ ]` → `[x]`; (c) `make bi-demo-pull` UX: neues internes `bi-demo-env`-Target eliminiert Compose-Warnings. Obsoleter „Bekannte Quirks"-Block im README entfernt. |
+| Closing | `cd5f8ad8` | `CHANGELOG.md` `[Unreleased]` aufgefuellt mit `Added`/`Fixed`/`Changed`-Bloecken (BD.1-BD.5, `ProfileReportWriter`, `verify-doc-refs.sh`). |
+
+**Aktiv offene Folge-Threads** (nicht Closing-relevant, ausserhalb
+BD.1-BD.5-Scope):
+
+- **Metabase-Dashboard-Auto-Provisioning** (Risk #1, §5.2). Manuelle
+  Browser-Konfiguration ist Demo-Default; automatische Provisionierung
+  ueber Metabase-API kann als BD.6+-Slice nachgeholt werden, sobald
+  der Demo-Datenbestand stabil ist.
+- **Multi-Identity-IAM in SeaweedFS** (§5.3, Risk #5). Aktuell laeuft
+  die `seaweed-config`-Rendering mit einer Single-Identity-Demo-
+  Config aus `.env`. Eine produktionsnahe IAM-Konfiguration mit
+  Multi-User + IAM-Policies pro User braucht ein eigenes Slice.
+- **`OUTLIER`-Warning-Code im Profiling** (Risk #8, §7). Heute deckt
+  `WarningCode` keinen Outlier-Code; `HIGH_NULL_RATIO` feuert erst
+  ab 50%. Eine `OUTLIER`-Rule bzw. ein abgesenkter Threshold sind
+  Folge-Slice in `:hexagon:profiling` (siehe
+  [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md)).
+- **Direkte `s3://`-Ausgabe aus `d-migrate`** (§11 BD.6). Solange
+  [`object-storage-artifact-store.md`](../next/object-storage-artifact-store.md)
+  nicht geliefert ist, faellt der BI-Demo-Workflow auf den
+  `aws s3 cp`-Zwischenschritt zurueck.
+- **Parquet-Demo gegen SeaweedFS** (§11 BD.7). Haengt an
+  [`parquet-export-import-evaluation.md`](../next/parquet-export-import-evaluation.md).
+- **Data-Quality-Dashboard in Metabase** (§11 BD.8). Haengt am
+  Export-Format aus
+  [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md).
+- **BD-Tag-Refresh-Slice** (Risk #7). Image-Pin-Updates fuer
+  postgres / seaweedfs / aws-cli / metabase. Ggf. Dependabot/Renovate-
+  Konfiguration; ausserhalb dieses Plans.
+
+Keiner dieser Threads blockt das BD.1-BD.5-Closing.

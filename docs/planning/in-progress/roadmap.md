@@ -526,7 +526,7 @@ komponierbaren Analytics-Stack mit PostgreSQL, Metabase und SeaweedFS
 (S3-kompatibel) als gemeinsamem Object-Storage-Endpunkt — als
 reproduzierbares Beispiel,
 nicht als Enterprise-BI-Plattform (siehe
-[`bi-demo-compose.md`](bi-demo-compose.md)).
+[`bi-demo-compose.md`](../done/bi-demo-compose.md)).
 
 > Hinweis: Positive Parquet-Evaluierung fuehrt zu einem Folge-
 > Implementierungsmilestone in Phase 4 (vermutlich neben 1.6.0 Metadata
@@ -663,7 +663,7 @@ programmatische Integration in CI/CD-Pipelines und Web-Frontends. Details:
 | ----------- | ----------------------------------------------------------------------------------------------- | ------ |
 | Profiling   | Profiling-Report-Exporter fuer Data-Quality-Tools wie Great Expectations, Soda und Pandera — siehe [`profiling-data-quality-export.md`](../next/profiling-data-quality-export.md) | —      |
 | Integration | Orchestrator-Beispiele fuer Airflow, Dagster und Prefect dokumentieren und als Smoke-Pfade testen — siehe [`orchestrator-examples.md`](../next/orchestrator-examples.md) | —      |
-| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](bi-demo-compose.md) | —      |
+| Demo        | BI-Demo-Umgebung unter `examples/bi-demo/` mit PostgreSQL, Metabase und d-migrate-Smoke-Pfad planen — siehe [`bi-demo-compose.md`](../done/bi-demo-compose.md) | —      |
 
 ### Milestone 1.5.5 — KI-Integration
 

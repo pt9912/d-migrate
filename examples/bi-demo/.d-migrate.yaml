@@ -1,5 +1,5 @@
 # BI-Demo Connection-Config (BD.4)
-# Spec: docs/planning/in-progress/bi-demo-compose.md §5.6
+# Spec: docs/planning/done/bi-demo-compose.md §5.6
 #
 # Zwei benannte Connections fuer die zwei CLI-Pfade:
 # - demo_pg            -> Host-CLI ueber den Compose-Port-Bind

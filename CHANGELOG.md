@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reproduzierbare Demo-Umgebung unter `examples/bi-demo/`, die
   `d-migrate` in einen komponierbaren Analytics-Stack einbettet.
   Sub-Slices BD.1-BD.5 nach Plan
-  [`docs/planning/in-progress/bi-demo-compose.md`](docs/planning/in-progress/bi-demo-compose.md):
+  [`docs/planning/done/bi-demo-compose.md`](docs/planning/done/bi-demo-compose.md):
 
   - **BD.1** — Compose-Skeleton mit fuenf Services: Postgres
     17.10, SeaweedFS 4.31 (S3-API-Server), `seaweed-config` +

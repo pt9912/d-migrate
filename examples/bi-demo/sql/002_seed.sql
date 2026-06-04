@@ -1,5 +1,5 @@
 -- BI-Demo Seed (BD.2)
--- Spec: docs/planning/in-progress/bi-demo-compose.md §7 + BD.2-Determinismus-Vertrag.
+-- Spec: docs/planning/done/bi-demo-compose.md §7 + BD.2-Determinismus-Vertrag.
 --
 -- Determinismus-Saeulen:
 --   1. SELECT setseed(0.42) am Skript-Beginn
