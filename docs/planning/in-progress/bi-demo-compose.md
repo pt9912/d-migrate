@@ -2,7 +2,13 @@
 
 > Dokumenttyp: Demo- und Integrationsplan
 >
-> Status: In Progress (2026-06-04 — BD.1 v4: S3-Client von
+> Status: In Progress (2026-06-04 — BD.2 done: 5-Tabellen-Schema +
+> deterministischer Seed (50/30/500/1500/10000 Zeilen), Mount
+> `./sql:/docker-entrypoint-initdb.d:ro`. Idempotenz pinnbar via
+> `pg_dump | grep -v restrict | sha256sum` (Run1 == Run2 empirisch
+> verifiziert; pg_dump-v17 setzt pro Invocation ein neues
+> `\restrict`-Token, das gefiltert werden muss — siehe BD.2-
+> Akzeptanz). Davor: BD.1 v4 — S3-Client von
 > `minio/mc` auf `amazon/aws-cli:2.34.61` umgestellt. Letzte
 > MinIO-Branding-Referenz aus dem Stack entfernt; Compose nutzt
 > drei `aws-cli`-Container (seaweed-config, seaweed-init,
@@ -36,8 +42,11 @@
 >
 > **Slice-Fortschritt**:
 >
-> - BD.1 — Compose-Skeleton + Healthchecks: **in progress**
-> - BD.2-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
+> - BD.1 — Compose-Skeleton + Healthchecks: **done** (Commits
+>   `cc1a5179`, `f6a185d8`, `8626b6a5`, `317adff6` + Polish-Folge)
+> - BD.2 — Schema + Seed-Daten: **done** (5-Tabellen-Schema,
+>   deterministischer Seed, Idempotenz empirisch verifiziert)
+> - BD.3-BD.5: pending. BD.1-BD.5 sind ohne externe Abhängigkeit
 >   implementierbar. Für vollständige Demo-Story
 >   (`s3://`-Artifakt-Output, Parquet-Schritt) hängen einzelne
 >   Erweiterungen aus §8 an
@@ -955,7 +964,7 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
 - [ ] `sql/001_schema.sql` mit den 5 Tabellen aus §7 (inklusive
   Fremdschluessel + Datentypen-Mix + optional `jsonb`-Spalte).
 - [ ] `sql/002_seed.sql` mit den Volumen-/Verteilungs-Vorgaben aus
-  §7. Determinismus-Vertrag (alle drei zusammen, sonst kein
+  §7. Determinismus-Vertrag (alle Bausteine zusammen, sonst kein
   byte-identisches Replay):
   - Festes `SELECT setseed(0.42);` am Skript-Beginn.
   - Festes Datums-Anker `'2026-01-01'::date`, eingebracht via
@@ -969,6 +978,15 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
     Demo-Toolchain. (Pure-SQL-Alternative: CTE `WITH params AS
     (SELECT '2026-01-01'::date AS demo_start)`, falls ein
     spaeterer Refactor die psql-Abhaengigkeit eliminieren will.)
+  - `SET LOCAL timezone = 'UTC';` am Skript-Beginn — sonst
+    haengt die `timestamptz`-Repraesentation von der
+    Container-Default-Zeitzone ab und die `pg_dump`-Ausgabe
+    driftet.
+  - `SET LOCAL max_parallel_workers_per_gather = 0;` — zwingt
+    Single-Thread-Ausfuehrung. Mit Parallel-Scans waere die
+    Reihenfolge der `random()`-Aufrufe nicht garantiert, was den
+    Seed wert-mutiert (gleiche Sequenz, aber andere Zuordnung
+    zu Zeilen). Empirisch im BD.2-Smoke verifiziert.
   - Stabiler Insert-Order: jede `INSERT INTO ... SELECT ...
     FROM ... ORDER BY <natural-key>` mit explizitem `ORDER BY`,
     damit die physische Reihenfolge in der Tabelle reproduzierbar
@@ -978,9 +996,17 @@ stabil. Pro Service ein passender Erreichbarkeits-Vertrag (siehe
   `docker-compose.yml`.
 - [ ] Idempotenz: `docker compose down -v && docker compose up -d`
   produziert byte-identische Tabelleninhalte. Pinnung via
-  Hash-Vergleich: `pg_dump --data-only --no-comments --no-sync
-  -F p -t "*" $POSTGRES_DB | sha256sum` muss zwischen zwei
-  fresh-up-Runs identisch sein.
+  Hash-Vergleich:
+  `pg_dump --data-only --no-comments --no-sync -U dmigrate
+  dmigrate_demo | grep -vE '^\\(un)?restrict ' | sha256sum`
+  muss zwischen zwei fresh-up-Runs identisch sein. Der
+  `\restrict`/`\unrestrict`-Filter ist ab Postgres-17-pg_dump
+  Pflicht, weil dieser pro Dump-Invocation ein frisches
+  Session-Restrict-Token generiert (Format-Artefakt, keine
+  Daten-Aenderung); ohne den Filter unterscheiden sich die
+  Hashes trotz byte-identischer Daten — empirisch im
+  BD.2-Smoke 2026-06-04 verifiziert (Datendiff jenseits dieser
+  zwei Zeilen war leer).
 - [ ] `make ci` grün.
 
 **Betroffene Dateien**:
