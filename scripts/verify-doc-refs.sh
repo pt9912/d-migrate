@@ -24,6 +24,12 @@ extract_local_markdown_links() {
     awk '
         {
             line = $0
+            # Strip single-backtick inline code spans before scanning for
+            # links. Without this, regex/code examples containing "]("
+            # patterns inside backticks (e.g. a Kotlin raw-string regex
+            # like `^[a-z](?:[a-z0-9_-]*[...])?`) get parsed as bogus
+            # markdown links and fail link verification.
+            gsub(/`[^`]*`/, "", line)
             while (match(line, /!?\[[^]]*\]\([^)]*\)/)) {
                 link = substr(line, RSTART, RLENGTH)
                 line = substr(line, RSTART + RLENGTH)
