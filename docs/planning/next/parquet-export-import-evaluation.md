@@ -2,10 +2,11 @@
 
 > Dokumenttyp: Evaluierungs- und Architekturplan
 >
-> Status: Entwurf (2026-05-01)
+> Status: Entwurf (2026-05-01, AP1-Update 2026-06-04)
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
-> `spec/cli-spec.md`, `spec/connection-config-spec.md`
+> `spec/cli-spec.md`, `spec/connection-config-spec.md`,
+> `parquet-libraries.md` (AP1-Bibliothekssichtung)
 
 ---
 
@@ -291,6 +292,8 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
 ## 8. Arbeitspakete
 
 1. JVM-Parquet-Bibliotheken gegen Lizenz, API und Streaming-Verhalten pruefen.
+   Erledigt als Sub-Doc `parquet-libraries.md` (Stand 2026-06-04). Vorentscheidung:
+   `parquet-java` ohne Hadoop-Runtime; final nach AP2 und AP3.
 2. Exportseitige Schemaquelle festlegen: SchemaReader, JDBC-Metadaten oder
    separates formatseitiges Schemaobjekt; dabei leere Tabellen,
    `NULL`-Spalten, Decimal-Precision/Scale und Temporal-Typen pruefen.
