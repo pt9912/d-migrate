@@ -7,6 +7,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **BI-Demo Compose-Stack** *(2026-06-04)* — vollstaendige
+  reproduzierbare Demo-Umgebung unter `examples/bi-demo/`, die
+  `d-migrate` in einen komponierbaren Analytics-Stack einbettet.
+  Sub-Slices BD.1-BD.5 nach Plan
+  [`docs/planning/in-progress/bi-demo-compose.md`](docs/planning/in-progress/bi-demo-compose.md):
+
+  - **BD.1** — Compose-Skeleton mit fuenf Services: Postgres
+    17.10, SeaweedFS 4.31 (S3-API-Server), `seaweed-config` +
+    `seaweed-init`-One-Shots (bash-Parameter-Expansion fuer
+    JSON-Safety der gerenderten `s3.json`), AWS-CLI 2.34.61 als
+    `aws-tools`-Service (Entrypoint-Wrapper mit
+    `--endpoint-url`-Default). Object-Storage von MinIO auf
+    SeaweedFS umgestellt (MinIO Community Edition 2025-Q3
+    archiviert), S3-Client von `minio/mc` auf `amazon/aws-cli`.
+    Healthcheck-Vertraege via `jq -s`-State-Pinnung (Compose
+    v2.24+ JSONL-Output-Konvention).
+  - **BD.2** — Demo-Schema mit fuenf Tabellen
+    (customers/products/orders/order_items/events;
+    50/30/500/1500/10000 Zeilen). Deterministischer Seed via
+    `setseed(0.42)` + `\set demo_start_date` +
+    `SET timezone='UTC'` +
+    `SET max_parallel_workers_per_gather=0`. Idempotenz
+    empirisch verifiziert via
+    `pg_dump | grep -v restrict | sha256sum`-Hash-Vergleich.
+  - **BD.3** — Metabase v0.55.24.1 als BI-Frontend mit
+    persistenter H2-Konfiguration im Named Volume; README
+    dokumentiert Erstkonfiguration + drei Beispiel-Fragen
+    (Umsatz/Tag, Bestellungen/Status, Top-Kunden).
+  - **BD.4** — `dmigrate`-Compose-Service (Image `d-migrate:dev`,
+    Profile=tools) +
+    [`examples/bi-demo/.d-migrate.yaml`](examples/bi-demo/.d-migrate.yaml)
+    mit zwei Named-Connections (Host-CLI + Container-CLI).
+    End-to-End-Workflow reverse/profile/generate gegen
+    Demo-Postgres + `aws s3 cp` zum S3-Bucket.
+  - **BD.5** —
+    [`examples/bi-demo/scripts/smoke.sh`](examples/bi-demo/scripts/smoke.sh)
+    fuer End-to-End-Smoke; Repo-Root-Makefile-Targets
+    `bi-demo-{env,pull,up,down,purge,smoke}` kapseln den
+    Compose-Pfad; optionaler
+    [`.github/workflows/bi-demo-smoke.yml`](.github/workflows/bi-demo-smoke.yml)
+    (Best-Effort, `continue-on-error: true`).
+
+  Verifiziert gegen Compose v5.1.4: postgres healthy,
+  seaweed-config/init exited(0), Metabase `/api/health` =
+  `{"status":"ok"}`, alle fuenf Tabellen reversed + profiled +
+  als DDL gerendert, fuenf BD.4-Warning-Codes im Profil-Report
+  (`CONTAINS_EMPTY_STRINGS`, `CONTAINS_BLANK_STRINGS`,
+  `POSSIBLE_PLACEHOLDER_VALUES`, `LOW_CARDINALITY`,
+  `DUPLICATE_VALUES`) + `numericStats.max=99999.99`-Outlier.
+
+### Fixed
+
+- **`ProfileReportWriter` JSON+YAML-Serializer-Bugs** *(2026-06-04)*
+  — zwei Befunde aus dem BD.4-Smoke (Stand 0.9.8-SNAPSHOT, in
+  BD.5-Review behoben):
+  - `renderTargetCompatibilityJson` haengte pro Feld einen
+    Extra-Quote an (`"INTEGER""`, `"50""`) durch fehlerhafte
+    Raw-String-Verkettung (5-fach-`"""`-Pattern, das Kotlin als
+    `"""`-open + content + `"""`-close + trail-`"` parst).
+    Rewrite mit klassischen Strings und `jsonStr()`-Helfer
+    eliminiert die Mehrdeutigkeit.
+  - `yamlStr` / `needsYamlQuoting` quotierte leere und
+    whitespace-only Strings nicht (`exampleInvalidValues:
+    [, customer10@..., ...]`), YAML-Parser brachen.
+    `isBlank()` und Edge-Whitespace-Check erzwingen jetzt das
+    Quoting.
+
+  Zwei neue Tests in `ProfileReportWriterTest` parsen die
+  gerenderten Outputs mit
+  `com.fasterxml.jackson.databind.ObjectMapper` bzw.
+  `com.fasterxml.jackson.dataformat.yaml.YAMLMapper` — vorher
+  liefen nur `shouldContain`-Substring-Checks, die den Bug nicht
+  fingen.
+
+### Changed
+
+- **`scripts/verify-doc-refs.sh`** *(2026-06-04)* — der awk-Filter
+  strippt jetzt Single-Backtick-Inline-Code-Spans bevor das
+  Markdown-Link-Pattern matched. Damit faengt der Doc-Link-Check
+  keine Regex-/Code-Beispiele mehr ein, die `](`-Patterns
+  innerhalb von Backticks enthalten (z. B. Kotlin-Raw-String-
+  Regex in `docs/planning/next/trino.md:461`).
+
 ## [0.9.7] - 2026-06-02
 
 ### Added
