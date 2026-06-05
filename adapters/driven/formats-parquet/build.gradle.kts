@@ -1,5 +1,5 @@
 // AP3-Spike — Parquet-Adapter (siehe Plan-Doc
-// docs/planning/in-progress/parquet-export-import-evaluation.md
+// docs/planning/done/parquet-export-import-evaluation.md
 // + parquet-libraries.md §8).
 //
 // Dependency-Skizze 1:1 aus parquet-libraries.md §8 uebernommen:
@@ -32,11 +32,13 @@ dependencies {
         exclude(group = "org.eclipse.jetty")
         exclude(group = "org.eclipse.jetty.websocket")
     }
-    // AP3-Befund: parquet-hadoop ParquetReader.builder triggert
+    // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
+    // parquet-hadoop ParquetReader.builder triggert das
     // ParquetInputFormat-Klassenladen (extends MapReduce FileInputFormat).
     // Ohne hadoop-mapreduce-client-core wirft das einen ClassNotFoundError.
-    // parquet-libraries.md §8 nennt das noch nicht; AP4+ muss klaeren ob
-    // ein dedizierter Reader-Pfad ohne MapReduce-Abhaengigkeit existiert.
+    // Cut-B-Folge-Aufgabe (parquet-libraries.md §8): pruefen, ob ein
+    // dedizierter Reader-Pfad ohne MapReduce-Abhaengigkeit existiert,
+    // oder den Block dauerhaft pinnen (z.B. via 1.18.x-Wechsel).
     implementation("org.apache.hadoop:hadoop-mapreduce-client-core:${rootProject.properties["hadoopVersion"]}") {
         exclude(group = "log4j")
         exclude(group = "org.slf4j", module = "slf4j-log4j12")

@@ -7,12 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Parquet-Plan-Doc nach `done/` migriert** *(2026-06-05)* —
+  per `in-progress/`-Konvention (ADR-0004) wandern
+  [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
+  und alle zehn Sub-Docs (AP1-AP13) nach
+  `docs/planning/done/`, weil die Evaluierungsphase mit
+  Stakeholder-Go fuer Cut B abgeschlossen ist. Hauptplan
+  bekommt eine `## Closure (2026-06-05)`-Sektion mit
+  Commit-Tabelle aller 16 Parquet-Commits in
+  chronologischer Reihenfolge (a9bf941e Plan-Refresh, 4
+  Code-Spike-Commits AP3-AP6, 10 Sub-Doc-Commits AP7-AP13
+  inkl. AP10-Befund-Rueckspiel, 1 Stakeholder-Entscheid
+  e7f3f714), funf verbleibenden Pre-Implementation-
+  Aufgaben (Engineering-Goal, Native-Image-Smoketest,
+  Sealed-`rg`-Sweep, Branch-Anlage, erster Cut-B-Commit)
+  und drei aktiven Folge-Threads (1.1.0, 1.2.0,
+  MCP-Spiegelung). Cross-Verweise auf den alten
+  `in-progress/`-Pfad sind in CHANGELOG, Spec,
+  Sub-Docs, AP3-Spike-Tests und `gradle.properties`
+  aktualisiert.
+
 ### Added
 
 - **Parquet-Evaluierung — Stakeholder-Entscheid: Go fuer
   Cut B als 1.0.0** *(2026-06-05)* — alle fuenf offenen
   Punkte aus
-  [`parquet-decision-template.md`](docs/planning/in-progress/parquet-decision-template.md)
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
   §6 sind beantwortet (durchgaengig nach AP13-Empfehlung):
   - **Release-Branch:** `feature/parquet-1.0` mit
     Schritt-fuer-Schritt-Commits, Merge in `develop` nach
@@ -44,7 +66,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP13 Entscheidungsvorlage**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-decision-template.md`](docs/planning/in-progress/parquet-decision-template.md)
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
   synthetisiert die AP1-AP12-Evaluierung in eine Go/No-Go-
   Vorlage. **Damit ist die Plan-Doc-Phase abgeschlossen.**
   Inhalt:
@@ -104,7 +126,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP12 CLI- und Factory-Wiring-Skizze**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-cli-wiring.md`](docs/planning/in-progress/parquet-cli-wiring.md)
+  [`parquet-cli-wiring.md`](docs/planning/done/parquet-cli-wiring.md)
   zieht alle AP1-AP11-Vorentscheidungen ins konkrete CLI- und
   Wiring-Bild. Implementierungsfertiges Skelett, das nach AP13
   (Entscheidungsvorlage) umgesetzt werden kann; trifft selbst
@@ -221,7 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP11 Single-File-Metadatenvertrag**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-single-file-metadata.md`](docs/planning/in-progress/parquet-single-file-metadata.md)
+  [`parquet-single-file-metadata.md`](docs/planning/done/parquet-single-file-metadata.md)
   fixiert den letzten Vertragspunkt vor AP12/AP13. Inhalt:
   - Drei Optionen aus Hauptplan §6 verglichen
     (Footer-KV vs. Sidecar vs. Footer-only); bindende Wahl
@@ -287,7 +309,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP10 Stream-vs-Datei-Portentscheidung**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-port-shape.md`](docs/planning/in-progress/parquet-port-shape.md)
+  [`parquet-port-shape.md`](docs/planning/done/parquet-port-shape.md)
   hebt die Vorentscheidung aus `parquet-libraries.md` §7 in eine
   bindende Reader-Port-Skizze. Inhalt:
   - Neuer Port `SeekableDataChunkReaderFactory` in
@@ -341,7 +363,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP9 Importpfad-Vertrag (bindende DTO-Wahl)**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-import-input-dto.md`](docs/planning/in-progress/parquet-import-input-dto.md)
+  [`parquet-import-input-dto.md`](docs/planning/done/parquet-import-input-dto.md)
   hebt die AP7-/AP8-Vorentscheidungen in die Implementierungs-
   Entscheidung. Inhalt:
   - Bindung auf neuen Sealed-Subtyp `ImportInput.ResolvedBundle`
@@ -410,14 +432,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     Port-Begriffe abgebildet werden.
   - **Begleitentscheidung 1** (AP2-Erweiterung): `SchemaOrigin`-
     Enum in
-    [`parquet-schema-source.md`](docs/planning/in-progress/parquet-schema-source.md)
+    [`parquet-schema-source.md`](docs/planning/done/parquet-schema-source.md)
     §4.4 um `MANIFEST_FALLBACK` erweitert (additiv,
     `hexagon:ports-common`). Semantisch verschieden von `MERGED`
     („aus mehreren Quellen kombiniert"); `MANIFEST_FALLBACK`
     markiert best-effort-Manifest-Typen ohne SchemaReader-/
     JDBC-Provenance.
   - **Begleitentscheidung 2** (AP1-Aufraeumung):
-    [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+    [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
     §7.1 Bullet 4 finalisiert. Die urspruengliche AP1-Aussage
     „`ImportInput.Directory` wird nicht ersetzt" ist praezisiert,
     nicht verworfen: `Directory` bleibt fuer JSON/YAML/CSV und
@@ -437,7 +459,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP8 manifestgebundene Directory-Import-
   Aufloesung** *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-directory-import.md`](docs/planning/in-progress/parquet-directory-import.md)
+  [`parquet-directory-import.md`](docs/planning/done/parquet-directory-import.md)
   als Resolver-Skizze fuer Bundle-Importe. Inhalt:
   - Aufloesungsmodell mit `ParquetBundleResolver`: Wrapper um
     `ResolvedParquetBundle`, `resolve()` liefert eine
@@ -514,7 +536,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP1 §7.1 ImportInput.Directory-Aussage
   als ueberstimmt markiert** *(2026-06-05)* —
-  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
   §7.1 Bullet 4 traegt jetzt einen Korrektur-Hinweis: AP7 §10.2
   und AP8 §10.1 empfehlen inzwischen einen neuen
   `ImportInput.ResolvedBundle`-Subtyp statt der urspruenglich
@@ -523,7 +545,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — AP7 Manifest-Format und Import-Preflight**
   *(2026-06-05)* — neuer Sub-Doc
-  [`parquet-manifest-format.md`](docs/planning/in-progress/parquet-manifest-format.md)
+  [`parquet-manifest-format.md`](docs/planning/done/parquet-manifest-format.md)
   als architektonische Skizze fuer Multi-Table-/Directory-Bundle-
   Exporte. Inhalt:
   - YAML-Schema von `manifest.yaml`: Pflichtfelder `formatVersion`,
@@ -610,7 +632,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — `.crc`-Sidecar-Mitigation in §7
   praezisiert** *(2026-06-05)* — AP6-Befund:
-  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
   §7 Bullet zum `.crc`-Sidecar ergaenzt. In Hadoop 3.4.1 reicht
   `fs.file.impl=RawLocalFileSystem` allein nicht; ohne
   `fs.file.impl.disable.cache=true` bedient der
@@ -619,7 +641,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Parquet-Evaluierung — `iceberg-parquet` als bewusst
   ausgeschlossener Kandidat dokumentiert** *(2026-06-05)* —
-  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
   §3.6 neu: `org.apache.iceberg:iceberg-parquet` ist ein Adapter
   zwischen Iceberg-Tabellen und Parquet-Dateien (nutzt intern
   `parquet-java`), nicht ein eigener Writer/Reader. Strukturell
@@ -634,7 +656,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *(2026-06-05)* — die drei Befunde aus dem AP3-Round-Trip-Spike
   (Commit `3b051ec`) sind aus dem Status-Header der Plan-Doc in die
   AP1-Bibliothekssichtung verschoben und damit final dokumentiert:
-  - [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  - [`parquet-libraries.md`](docs/planning/done/parquet-libraries.md)
     §5.1 (neu) — Hadoop-API-Kanal in 1.17.1 praezisiert
     (Hadoop-`Path`+`Configuration`+`LocalFileSystem` rein NIO; die
     `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade kommen erst
@@ -648,7 +670,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     nachgezogen, weil `ParquetReader.builder` ueber
     `ParquetInputFormat extends FileInputFormat` MapReduce-Klassen
     laedt.
-  - [`parquet-export-import-evaluation.md`](docs/planning/in-progress/parquet-export-import-evaluation.md)
+  - [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
     §8 Arbeitspaket 3 markiert AP3 als erledigt; Status-Block auf
     Pointer nach `parquet-libraries.md` reduziert. Naechste
     Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf), AP5 (Arrow-Inspektion).

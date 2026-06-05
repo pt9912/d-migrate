@@ -15,7 +15,7 @@ import java.util.Comparator
  * AP5-Akzeptanz: Arrow-Java-Metadateninspektion des Spike-Outputs.
  *
  * Bestaetigt das Akzeptanzkriterium aus
- * `docs/planning/in-progress/parquet-export-import-evaluation.md` §7
+ * `docs/planning/done/parquet-export-import-evaluation.md` §7
  * Bullet 2 ("Der Beispiel-Export kann mit Arrow-Werkzeugen oder
  * Arrow-Java-Metadaten inspiziert werden") gegen den AP3-Spike.
  *

@@ -2,7 +2,9 @@
 
 > Dokumenttyp: Evaluierungs-Sub-Doc zu `parquet-export-import-evaluation.md`
 >
-> Status: Entwurf (2026-06-04)
+> Status: Final (Stand 2026-06-04; AP3-Befund-Rueckspiel
+> 2026-06-05 via §5.1, §7 `.crc`-Block und §8 MapReduce-Dep;
+> Sub-Doc seit 2026-06-05 in `docs/planning/done/`).
 >
 > Referenzen: `parquet-export-import-evaluation.md` Abschnitt 8 Arbeitspaket 1,
 > `spec/architecture.md`, `spec/cli-spec.md`
@@ -238,7 +240,7 @@ Bewertung fuer d-migrate:
 | K2 Wartung | aktiv, CVE-Patches | aktiv | gepflegt, niedrige Release-Kadenz | sehr aktiv | sehr aktiv |
 | K3a Writer-Streaming | `PositionOutputStream` ueber eigene `OutputFile`; nicht-seekbar moeglich (stdout-tauglich) | `OutputStream` direkt im Record-Pfad | nur `File` | dateibasiert + JNI | nur JDBC-`COPY` |
 | K3b Reader-Streaming | `SeekableInputStream` ueber eigene `InputFile`; reine `InputStream`-Quellen brauchen Temp-Spool | Reader dateibasiert | nur `File` | dateibasiert + JNI | nur JDBC-`COPY` |
-| K4 Hadoop-Abhaengigkeit | `parquet-hadoop`-Artefakt bleibt; Hadoop-Runtime entfaellt via `LocalOutputFile` + `PlainParquetConfiguration` | zieht `parquet-hadoop` und `hadoop-common` als Compile-Deps | kein `hadoop-common`, aber `parquet-hadoop` bleibt laut POM Dependency | nicht relevant (eigene Stack) | nicht relevant |
+| K4 Hadoop-Abhaengigkeit | `parquet-hadoop`-Artefakt bleibt; Hadoop-Runtime in 1.17.1 via `LocalFileSystem` ueber `Configuration` (§5.1; `LocalOutputFile`+`PlainParquetConfiguration` kaeme erst mit 1.18+) | zieht `parquet-hadoop` und `hadoop-common` als Compile-Deps | kein `hadoop-common`, aber `parquet-hadoop` bleibt laut POM Dependency | nicht relevant (eigene Stack) | nicht relevant |
 | K5 GraalVM | machbar mit Reachability-Metadaten; JNI-Compression-Codecs (snappy-java, zstd-jni) muessen ausgeschlossen oder bewusst konfiguriert werden | Reflection-/Record-getrieben, zusaetzliches Risiko; gleicher JNI-Codec-Pfad wie parquet-java | machbar, aber unverifiziert; gleicher JNI-Codec-Pfad | JNI, deutlich aufwendiger | JNI, Quarkus-Beispiele existieren |
 | K6 Dynamische Schemaerzeugung | nativ ueber `MessageType` | Record-zentriert, fuer d-migrate ungeeignet | typbeschraenkt | moeglich, aber schwergewichtig | implizit, ausserhalb d-migrate-Kontrolle |
 | K7 Typabdeckung | vollstaendig kontrollierbar | dokumentiert, Decimal/Temporal konfigurierbar | beschraenkt laut README | umfassend | DuckDB-typsystem-gebunden |
@@ -249,6 +251,19 @@ Bewertung fuer d-migrate:
 ---
 
 ## 5. Vorentscheidung
+
+> **Verbindlicher Implementierungs-Pfad seit §5.1 (AP3-
+> Spike-Befund, 2026-06-05):** der unten beschriebene
+> Wortlaut „eigene `OutputFile`/`InputFile`-Implementierungen
+> ueber `PlainParquetConfiguration`" beschreibt den
+> parquet-java-1.18+-Pfad. In der gewaehlten Version 1.17.1
+> sind diese Overloads nicht ueber die oeffentliche Builder-
+> API erreichbar; AP3 hat die Vorentscheidung deshalb auf
+> die **Hadoop-API ueber `LocalFileSystem`** praezisiert (§5.1).
+> Die Bibliotheks-Wahl selbst (parquet-java 1.17.1 ohne
+> Hadoop-Cluster) bleibt unveraendert. Bewertung und Wortlaut
+> unten dokumentieren den ursprunglichen Entwurfsstand —
+> §5.1 ist die heutige Form.
 
 Bibliothek der ersten Wahl fuer den Prototyp ist **`parquet-java` 1.17.1**,
 eingesetzt ohne Hadoop-Installation (kein HDFS, kein Cluster-Connector)
@@ -552,6 +567,21 @@ Erwartete Folge-Aufgaben fuer AP4+ (AP3-Spike abgeschlossen):
 ---
 
 ## 9. Offene Punkte fuer AP3 (Verifikation)
+
+> **Stand 2026-06-05:** der AP3-Code-Spike (`ParquetSpike.kt`,
+> Commit `3b051ec`) verifiziert die Bibliotheks-Wahl und den
+> GZIP-Roundtrip — die unten gelisteten Punkte sind im
+> Spike **bewusst NICHT** gepruft (siehe Code-Kommentar dort:
+> „Nicht-Scope: Schema-Discovery, NeutralType-Mapping,
+> ChunkSchema-Vertrag, Streaming-Pages, Decimal-/Temporal-
+> Typen, Footer-Metadaten"). Sie wandern damit in den
+> Cut-B-Implementierungs-Pfad: AP12 §11.4 (DuckDB-/Arrow-KV-
+> Toleranz-Smoke), §11.1 (CLI-Preflight-Tests fuer
+> Footer-/Row-Group-/stdout-Wege) und §10
+> (GraalVM-Reachability beim `ParquetChunkReader`/`Writer`-
+> PR). Die hier gelisteten Punkte sind also nicht „AP3 ist
+> nicht fertig", sondern „Verifikation kommt mit dem
+> produktiven Reader/Writer in der Cut-B-Implementierung".
 
 Nach den Vorbedingungen in Abschnitten 6, 7 und 8 verbleiben fuer AP3
 nur noch prototyp-getriebene Verifikationen:

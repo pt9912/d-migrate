@@ -703,3 +703,86 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
   streamingnah arbeitet. Akzeptiert wird kein vollstaendiges Tabellenbuffering,
   sondern ein begrenzter Writer-/Row-Group-Puffer mit konfigurierbarer
   Obergrenze.
+
+---
+
+## Closure (2026-06-05)
+
+Per `in-progress/`-Konvention (ADR-0004) wandert die
+Umbrella-Plan-Doc samt aller zehn Sub-Docs nach `done/`,
+weil die Evaluierungsphase mit Stakeholder-Go fuer Cut B
+abgeschlossen ist. Die Implementierung selbst (Cut B,
+AP12 §12 Schritte 1-9, Brutto 27-45 PT) ist Folgearbeit
+auf einem `feature/parquet-1.0`-Branch.
+
+### Lieferumfang in chronologischer Commit-Reihenfolge
+
+| Commit | Inhalt |
+| ------ | ------ |
+| `a9bf941e` | Plan-Refresh: Aktivierungsbedingung explizit, Verschiebung von `next/` nach `in-progress/` vorbereitet. |
+| `3b051ecf` | AP3-Spike — `parquet-java` 1.17.1 Round-Trip im neuen Modul `adapters/driven/formats-parquet/` mit `ParquetSpike.kt`; Plan-Doc-Move nach `in-progress/`. |
+| `5ca1497f` | AP3-Befund-Rueckspiel nach `parquet-libraries.md` §5.1/§7/§8 (Hadoop-API-Kanal in 1.17.1, MapReduce-Dep, `.crc`-Sidecar). |
+| `d54831b6` | AP4 — DuckDB-Akzeptanzlauf via `ParquetSpikeDuckDbReadTest`; INTEGER/VARCHAR/BOOLEAN bestaetigt. |
+| `eea10793` | AP5 — Arrow-Java-Metadateninspektion via `parquet-arrow`; `Int(32)`/`Utf8`/`Bool`. |
+| `86e0e1b5` | `parquet-libraries.md` §3.6 — `iceberg-parquet` als bewusst ausgeschlossener Kandidat dokumentiert. |
+| `fd436b2e` | AP6 — Importpfad-Spike mit Footer-Schema, DataChunk-Mapping, `.crc`-Mitigation via `RawLocalFileSystem` + `fs.file.impl.disable.cache=true`. |
+| `72d6d63a` | AP7 — `parquet-manifest-format.md` Sub-Doc (YAML-Schema, Preflight-Vertrag, SHA-256, Versionierung). |
+| `bf2978e1` | AP8 — `parquet-directory-import.md` Sub-Doc (Resolver, ChunkSchema-Konstruktion, Resume-Fingerprint). |
+| `0481fbf7` | AP9 — `parquet-import-input-dto.md` Sub-Doc (bindende DTO-Wahl + AP2/AP1-Begleitentscheidungen). |
+| `04ce83ff` | AP10 — `parquet-port-shape.md` Sub-Doc (Reader-Port bindend). |
+| `f89e2920` | AP10 Befund-Rueckspiel (public Factory, `StreamingImporter`-Constructor, sealed-Regel, Footer-Check). |
+| `b0419527` | AP11 — `parquet-single-file-metadata.md` Sub-Doc (Footer-KV mit `d-migrate.manifest`). |
+| `199d279e` | AP12 — `parquet-cli-wiring.md` Sub-Doc (CLI-/Factory-Wiring komplett). |
+| `9bea4b55` | AP13 — `parquet-decision-template.md` Sub-Doc (Aufwand, Risiken, Cut-B-Empfehlung). |
+| `e7f3f714` | Stakeholder-Entscheid 2026-06-05 — Go fuer Cut B (1.0.0); alle fuenf AP13 §6-Punkte beantwortet. |
+
+16 Commits insgesamt: 4 Code-Commits (AP3/AP4/AP5/AP6), 11
+Plan-Doc-/Sub-Doc-Commits, 1 Stakeholder-Entscheid.
+
+### Verbleibende Pre-Implementation-Aufgaben
+
+Aus `parquet-decision-template.md` §7 (⏳-Marker, Stand
+2026-06-05):
+
+1. **Engineering-Goal-Commit fuer Cut B** — Zeitbudget
+   (Brutto 27-45 PT, 5-9 Kalenderwochen Vollzeit) und
+   Reviewer-Verfuegbarkeit beim 1.0-Sprint-Planning
+   festlegen.
+2. **Native-Image-Smoketest** als Pflichtteil von
+   AP12-Schritt 3 (`ParquetChunkReader`/`Writer`-PR)
+   verankern.
+3. **Sealed-`rg`-Sweep-Befehle** aus
+   `parquet-decision-template.md` §4.1 / AP12 §8 in die
+   PR-Checkliste oder einen Tooling-Hook aufnehmen
+   (`gradle assemble --warning-mode=fail` ist
+   zusaetzlich, ersetzt den Sweep nicht).
+4. **`feature/parquet-1.0`-Branch** anlegen.
+5. **Erster Implementierungs-Commit** kann mit
+   `parquet-cli-wiring.md` §12 Schritt 1
+   (`DataExportFormat.PARQUET` + Sealed-Sweeps) starten.
+
+### Aktive Folge-Threads ausserhalb der Cut-B-Linie
+
+- **1.1.0-Scope**: Single-File-Import + Single-File-
+  Export plus `--no-checkpoint`-Flag
+  (`parquet-single-file-metadata.md` §6.4 +
+  `parquet-cli-wiring.md` §4.2; 11-20 PT brutto).
+- **1.2.0-Scope**: Native-Image-Cut + optionaler
+  Hadoop-API-Shim
+  (`parquet-decision-template.md` §3.1; 10-25 PT).
+  Hier wird auch die Distributions-Cut-Variante
+  (Default-JAR vs. `--parquet`-Variante) reevaluiert.
+- **MCP-Server-Spiegelung**: Bundle-Pfad ueber MCP-Tools
+  exponieren — Entscheidung beim 1.1-Planning, frueheste
+  Lieferung 1.1 oder spaeter.
+
+### Wenn No-Go
+
+Sollte die Cut-B-Implementierung doch nicht starten
+(z.B. wegen Ressourcen-Konflikt), bleibt diese
+Plan-Closure in `done/` als nachvollziehbare
+Entscheidungs-Spur, und das Spike-Modul
+`adapters/driven/formats-parquet/` bleibt im Repo. Jeder
+Sub-Doc traegt sein Stand-Datum (2026-06-04/05) und
+Code-Anker — Reaktivierung jederzeit moeglich, ohne dass
+die Vorarbeit verloren ist.
