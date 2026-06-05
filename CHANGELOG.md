@@ -9,6 +9,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP12 CLI- und Factory-Wiring-Skizze**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-cli-wiring.md`](docs/planning/in-progress/parquet-cli-wiring.md)
+  zieht alle AP1-AP11-Vorentscheidungen ins konkrete CLI- und
+  Wiring-Bild. Implementierungsfertiges Skelett, das nach AP13
+  (Entscheidungsvorlage) umgesetzt werden kann; trifft selbst
+  **keine neuen Architekturentscheidungen**, verteilt die
+  bestehenden auf die richtigen Code-Stellen.
+
+  Inhalt (Sektionen 3-12):
+  - `DataExportFormat.PARQUET` als additive Enum-Erweiterung;
+    Clikt-`--format`-Choice automatisch ueber `entries.map
+    { cliName }`.
+  - Neue Parquet-Flags: `--manifest-sha256` (Export, opt-in,
+    aktiviert AP7-Per-Datei-SHA-256), `--no-checkpoint`
+    (Import, schaltet die Single-File-Content-Hash-
+    Berechnung in `phase1` aus und unterdrueckt alle
+    `FileCheckpointStore`-Schreiboperationen). Konflikt
+    `--no-checkpoint` + `--resume <ref>` -> Exit 2
+    (`CHECKPOINT_OPTIONS_CONFLICT`).
+  - CSV-Flag-Ablehnung bei `--format parquet`
+    (`CSV_FLAG_INVALID_FOR_PARQUET`): nur bei explizit
+    gesetzten Flags, nicht bei Default-Werten. Dafuer wird
+    `--csv-null-string` auf nullable `String?` umgestellt
+    (kein `.default("")`-Maskerade-Problem); ein
+    `null -> ""`-Mapping passiert an genau einer Stelle im
+    `CsvChunkReader`/`Writer`-Konstruktor.
+    `--encoding` silent-ignored (Skript-Kompatibilitaet,
+    Schluesselargument: Shell-Skripte iterieren oft mehrere
+    Formate mit globalem `--encoding`).
+  - Format-Auto-Detection-Reihenfolge:
+    `--format` > Verzeichnis-`manifest.yaml` >
+    Endungs-Inferenz (`.parquet` neu in
+    `EXTENSION_FORMAT_MAP`).
+  - `--table`-Precedence fuer Single-File-Parquet aus
+    AP11 §5.5 (Mismatch- und Required-Fehler).
+  - Factory-Wiring: `DataImportWiring` instanziiert
+    `DefaultDataChunkReaderFactory()` und
+    `ParquetSeekableDataChunkReaderFactory()`,
+    `StreamingImporter`-Constructor bekommt
+    `seekableReaderFactory` als Pflichtparameter
+    (AP10-Befund-Rueckspiel).
+    `DefaultDataChunkWriterFactory` bekommt
+    `PARQUET -> ParquetChunkWriter(...)`-Zweig.
+  - Bundle-/Single-File-Adapter-CLI-Skelette:
+    `ParquetBundlePreflight.run(bundleRoot,
+    requireSha256Verify = !request.resume.isNullOrBlank())`
+    + `ParquetBundleResolver` + `ParquetBundleAdapter.
+    toResolvedBundle(resolver)`. Single-File bekommt einen
+    **zwei-phasigen** Preflight: Phase 1 in `resolveRequest`
+    (vor DB-Connect) liest Footer-KV und macht
+    Tabellen-Resolution; Phase 2 in `runImport`
+    (nach `connect()`) baut die `ChunkSchema` mit Live-
+    Target-Schema-Zugriff. Neuer port-eigener Sealed-Subtyp
+    `ImportInput.ResolvedSingleFile(table, path, schema,
+    expectedSha256, resumeFingerprint)` analog zu
+    AP9-`ResolvedBundle`; macht `ResolvedTableInput.Seekable`
+    aus dem `ImportInputResolver` ableitbar ohne neuen
+    Schema-Slot in `SchemaPreflightResult` /
+    `ImportExecutionContext`.
+  - Writer-Wiring: separate `ParquetChunkWriterFactory` im
+    Parquet-Adapter-Modul plus `CompositeDataChunkWriterFactory`
+    im CLI-Modul. `DefaultDataChunkWriterFactory` in
+    `adapters:driven:formats` bleibt Hadoop-frei; der
+    generische formats-Stack zieht den Parquet-Adapter nicht
+    transitiv.
+  - Checkpoint-Persistenz:
+    `FileCheckpointStore.toMap`/`fromMap` serialisiert
+    `operationSpecific` mit `kind`-Diskriminator
+    (`parquet-bundle` -> `BundleCheckpointSpecifics`,
+    `parquet-single-file` -> `SingleFileCheckpointSpecifics`).
+    Kein Schema-Versionsbump (Feld optional,
+    pre-AP8-Checkpoints fuer JSON/YAML/CSV bleiben
+    funktional). `ImportCheckpointManager.validateManifest`
+    bekommt zwei neue Validierungsmethoden
+    (`validateBundleResume`, `validateSingleFileResume`),
+    der heutige Pfad bleibt fuer `operationSpecific == null`
+    erhalten — bricht aber bei Parquet-Bundle- bzw.
+    Single-File-Resume strukturell mit
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`.
+    `buildCallbacks`/`saveManifest` reicht den
+    Fingerprint bei jedem Update durch (AP9-Befund-
+    Rueckspiel).
+  - `InputContext` um `bundleExpectedSha256ByTable:
+    Map<String, String?>?` und `singleFileContentSha256:
+    String?` erweitert.
+  - Vollstaendige Sealed-Sweep-Liste fuer fuenf
+    Hierarchien (`ImportInput`, `SchemaOrigin`,
+    `SeekableChunkSource`, `CheckpointOperationSpecifics`,
+    `DataExportFormat`) mit konkretem `rg`-Suchmuster aus
+    AP9 §7.8 plus bekannten Stellen
+    (`ImportInputResolver`, `ImportPreflightValidator`
+    Z. 105/113/118).
+  - Exit-Code-Mapping fuer alle in AP7-AP11 definierten
+    Fehlerklassen, gruppiert in Familien
+    (Manifest/Bundle/Resume/SingleFile-Parquet/Reader/
+    Checkpoint/CLI-Flag) mit Begruendung pro Exit-Code-Wahl.
+  - Native-Image-Strategie: GraalVM-Reachability-Metadaten
+    sind Pflicht; eigener Hadoop-API-Shim (parquet-libraries.md
+    §8) ist erst nach GraalVM-Smoketest noetig — bis dahin
+    `hadoop-common`+`hadoop-mapreduce-client-core` belassen.
+    AP6-Befund `fs.file.impl.disable.cache=true` an genau
+    einer Stelle (`ParquetHadoopConfigBuilder`).
+  - Test-Strategie: sechs Pflicht-Familien (CLI-Preflight,
+    Format-Resolver mit `--format json`+`manifest.yaml`-
+    Vorrang, Resume-Akzeptanz, DuckDB-/Arrow-KV-Toleranz
+    erweitert die AP4/AP5-Linien, Sealed-Sweep als
+    Build-Zeit-Dokumentation).
+  - Bindender Implementierungsplan in neun entkoppelten
+    Schritten (Enum-Erweiterung > Port > Reader-/Writer-
+    Implementation > Single-File-Adapter > Bundle-Adapter
+    > CLI-Wiring > Resolver-Integration > Checkpoint >
+    Tests). Big-Bang-Commit explizit abgelehnt.
+
+  AP13 (Entscheidungsvorlage) entscheidet, welche der neun
+  Implementierungs-Schritte im 1.x-Cut zwingend sind.
+
 - **Parquet-Evaluierung — AP11 Single-File-Metadatenvertrag**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-single-file-metadata.md`](docs/planning/in-progress/parquet-single-file-metadata.md)

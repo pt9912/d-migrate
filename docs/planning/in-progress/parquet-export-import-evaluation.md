@@ -126,8 +126,32 @@
 > `d-migrate.manifest`-Key bleibt lesbar (best-effort
 > Footer-`MessageType` + Ziel-JDBC-Schema, CLI-Warnung).
 >
-> Naechstes Arbeitspaket: AP12 (CLI- und Factory-Wiring-
-> Skizze).
+> AP12 (CLI- und Factory-Wiring-Skizze) ist als Sub-Doc
+> `parquet-cli-wiring.md` festgenagelt (Stand 2026-06-05).
+> Zieht alle AP1-AP11-Vorentscheidungen ins konkrete
+> CLI-/Wiring-Bild: `DataExportFormat.PARQUET`-Erweiterung +
+> Clikt-Choice; neue Parquet-Flags
+> (`--manifest-sha256` Export, `--no-checkpoint` Import);
+> CSV-Flag-Ablehnung und `--encoding`-Silent-Ignore;
+> Format-Auto-Detection mit `manifest.yaml`-Hook;
+> Factory-Wiring fuer `SeekableDataChunkReaderFactory` und
+> `DefaultDataChunkWriterFactory`-Parquet-Zweig;
+> Bundle-Adapter- und Single-File-Adapter-CLI-Skelette;
+> Checkpoint-Persistenz (`FileCheckpointStore.toMap`/`fromMap`
+> mit `kind`-Diskriminator, `ImportCheckpointManager`
+> Bundle-/SingleFile-Resume-Pruefungen); vollstaendige
+> Sealed-Sweep-Liste fuer fuenf Hierarchien (`ImportInput`,
+> `SchemaOrigin`, `SeekableChunkSource`,
+> `CheckpointOperationSpecifics`, `DataExportFormat`);
+> Exit-Code-Mapping fuer alle Fehlerklassen aus AP7-AP11;
+> Native-Image-/Hadoop-API-Shim-Empfehlung
+> (Reachability-Metadaten Pflicht, eigener Shim erst nach
+> GraalVM-Smoketest); Test-Strategie mit sechs
+> Pflicht-Familien; bindender Implementierungsplan in neun
+> Schritten.
+>
+> Naechstes Arbeitspaket: AP13 (Entscheidungsvorlage —
+> Aufwand, Risiken, empfohlener Scope fuer 1.x).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -138,6 +162,7 @@
 > `parquet-import-input-dto.md` (AP9-Importpfad-Vertrag, bindend),
 > `parquet-port-shape.md` (AP10-Reader-Port-Vertrag, bindend),
 > `parquet-single-file-metadata.md` (AP11-Footer-KV-Vertrag, bindend),
+> `parquet-cli-wiring.md` (AP12-CLI-/Factory-Wiring-Skizze, bindend),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -566,7 +591,37 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
 12. CLI- und Factory-Wiring skizzieren: `DataExportFormat`, Clikt-Choices,
    Reader-/Writer-Factories, Format-Autodetection, CSV-Flag-Validierung,
    Encoding-Regel, Directory-Autodetection ueber Manifest und
-   Checkpoint-Fingerprint.
+   Checkpoint-Fingerprint. Ausgearbeitet als Sub-Doc
+   `parquet-cli-wiring.md` (Stand 2026-06-05). Bindender Inhalt:
+   `DataExportFormat.PARQUET` als additive Enum-Erweiterung;
+   neue Parquet-Flags (`--manifest-sha256` Export-only,
+   `--no-checkpoint` Import-only); CSV-Flag-Ablehnung bei
+   `--format parquet` (`CSV_FLAG_INVALID_FOR_PARQUET`);
+   `--encoding` silent-ignore (Skript-Kompatibilitaet);
+   Format-Auto-Detection-Regel
+   (`--format` > Verzeichnis-`manifest.yaml` > Endungs-Inferenz);
+   `StreamingImporter`-Constructor mit Pflichtparameter
+   `seekableReaderFactory`; `FileCheckpointStore.toMap`/`fromMap`
+   mit `operationSpecific.kind`-Diskriminator (`parquet-bundle`,
+   `parquet-single-file`); `ImportCheckpointManager` mit
+   getrennten Bundle-/SingleFile-Resume-Validierungen;
+   `InputContext` um `bundleExpectedSha256ByTable` und
+   `singleFileContentSha256` erweitert; vollstaendige
+   Sealed-Sweep-Liste fuer fuenf Hierarchien
+   (`ImportInput`/`SchemaOrigin`/`SeekableChunkSource`/
+   `CheckpointOperationSpecifics`/`DataExportFormat`);
+   Exit-Code-Familien (`MANIFEST_*` 4, `BUNDLE_*` 5,
+   `BUNDLE_RESUME_*` 3, `PARQUET_SINGLE_FILE_*` 4,
+   `BUNDLE_SCHEMA_PARQUET_MISMATCH` 4,
+   `CHECKPOINT_OPERATION_SPECIFICS_UNKNOWN_KIND` 3,
+   `CSV_FLAG_INVALID_FOR_PARQUET` 2); Native-Image- und
+   Hadoop-API-Shim-Empfehlung (Reachability-Metadaten Pflicht,
+   eigener Shim erst nach GraalVM-Smoketest); Test-Strategie
+   mit sechs Pflicht-Familien (CLI-Preflight, Format-Resolver,
+   Resume, DuckDB-/Arrow-KV-Toleranz, Sealed-Sweep, plus
+   bestehende AP4/AP5-Linien); bindender Implementierungsplan
+   in neun entkoppelten Schritten. AP13 entscheidet, welche
+   Schritte im 1.x-Cut zwingend sind.
 13. Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope erstellen.
 
 ---
