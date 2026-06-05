@@ -21,7 +21,15 @@
 > kompiliert (provided), 3.5.0 ist ungetestete Kombination und
 > lohnt sich erst mit dem 1.18-Wechsel.
 >
-> Naechstes Arbeitspaket: AP5 (Arrow-Inspektion).
+> AP5 (Arrow-Java-Metadateninspektion) ist mit
+> `ParquetSpikeArrowInspectTest` erledigt (Stand 2026-06-05);
+> `parquet-arrow` 1.17.1 (rein JVM, ohne `arrow-dataset`-JNI —
+> vgl. `parquet-libraries.md` §3.4) konvertiert das Parquet-
+> `MessageType` via `SchemaConverter#fromParquet` zu einem Arrow
+> `Schema` und der Test verifiziert die drei Spike-Spalten als
+> `Int(32, signed)`/`Utf8`/`Bool`.
+>
+> Naechstes Arbeitspaket: AP6 (Importpfad-Pruefung am Prototyp).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -339,6 +347,15 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    abgehakt; §7 Bullet 3 fuer das Spike-Schemafragment
    `int+UTF-8-string+boolean` implizit).
 5. Prototyp gegen Arrow-Werkzeuge oder Arrow-Java-Metadateninspektion pruefen.
+   Erledigt als `ParquetSpikeArrowInspectTest` im Spike-Modul
+   (Stand 2026-06-05). `parquet-arrow` 1.17.1 (testImplementation,
+   reines JVM-Modul — keine `arrow-dataset`-JNI-Last, vgl.
+   `parquet-libraries.md` §3.4) liest den Footer ueber
+   `ParquetFileReader`, konvertiert via
+   `SchemaConverter#fromParquet` zu Arrow `Schema` und der Test
+   verifiziert `Int(32, signed)`/`Utf8`/`Bool` plus
+   `isNullable=false` fuer die drei Spike-Spalten
+   (Akzeptanzkriterium §7 Bullet 2 abgehakt).
 6. Importpfad fuer denselben Prototyp pruefen.
 7. Manifest-Format inklusive `Tabelle -> Datei`-Mapping und Import-Preflight
    skizzieren.

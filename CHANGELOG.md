@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP5 Arrow-Metadateninspektion**
+  *(2026-06-05)* — neuer Test
+  [`ParquetSpikeArrowInspectTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeArrowInspectTest.kt)
+  im Spike-Modul. `parquet-arrow` 1.17.1 (ausschliesslich
+  `testImplementation`, an `parquetVersion` gekoppelt; bewusst nicht
+  `arrow-dataset` — vgl. `parquet-libraries.md` §3.4: JNI-frei,
+  kein produktiver Arrow-Pfad) liest den Datei-Footer ueber
+  `ParquetFileReader`, konvertiert das `MessageType` via
+  `SchemaConverter#fromParquet` zu einem Arrow `Schema` und der Test
+  verifiziert fuer die drei Spike-Spalten `Int(32, signed)`,
+  `Utf8`, `Bool` plus `isNullable=false`. Damit ist
+  Akzeptanzkriterium §7 Bullet 2 ("Beispiel-Export kann mit
+  Arrow-Werkzeugen oder Arrow-Java-Metadaten inspiziert werden")
+  abgehakt.
+
 - **Parquet-Evaluierung — AP4 DuckDB-Akzeptanzlauf** *(2026-06-05)* —
   neuer Test
   [`ParquetSpikeDuckDbReadTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeDuckDbReadTest.kt)

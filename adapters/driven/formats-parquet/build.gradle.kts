@@ -81,3 +81,15 @@ configurations.all {
 dependencies {
     testImplementation("org.duckdb:duckdb_jdbc:${rootProject.properties["duckdbJdbcVersion"]}")
 }
+
+// AP5 — Arrow-Metadateninspektion des Spike-Outputs. parquet-arrow
+// liefert den `SchemaConverter` (Parquet `MessageType` -> Arrow
+// `Schema`) und zieht transitiv `arrow-vector` (reines JVM-POJO
+// fuer die Schema-Klasse — kein JNI, vgl. parquet-libraries.md
+// §3.4 zur Abgrenzung gegen `arrow-dataset`). Versionslinie ist
+// an parquet-java gekoppelt, deshalb dieselbe parquetVersion.
+// Bewusst testImplementation: kein produktiver Arrow-Pfad in
+// d-migrate (parquet-libraries.md §3.4).
+dependencies {
+    testImplementation("org.apache.parquet:parquet-arrow:${rootProject.properties["parquetVersion"]}")
+}
