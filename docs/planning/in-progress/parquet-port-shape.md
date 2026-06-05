@@ -93,9 +93,30 @@ Begruendung:
 ### 3.2 `SeekableChunkSource` als Sealed-Hierarchie
 
 Bindend: die Quellabstraktion ist eine sealed interface mit
-einem konkreten Subtyp `Local(path: Path)`. Spaetere Adapter
-(Object-Storage, gemounteter Cache) implementieren die
-Hierarchie ohne Vertragsbruch.
+einem konkreten Subtyp `Local(path: Path)`. Sie lebt im
+selben Modul wie der Port (`hexagon:ports-read`).
+
+**Erweiterungsregel — bewusst Sealed:** Kotlin laesst direkte
+Sealed-Subtypen seit 1.5 nur im **selben Modul** zu. Ein
+externer Object-Storage-Adapter in einem Drittmodul kann
+`SeekableChunkSource` deshalb **nicht** selbst implementieren.
+Das ist gewollt:
+
+- Eine neue Variante (z.B. `ObjectStorage(url, credentials)`)
+  kommt als additiver Eintrag in `SeekableChunkSource.kt` im
+  Port-Modul dazu. Konsumenten mit exhaustive `when` brechen
+  bewusst — das ist der gewuenschte Sweep-Punkt.
+- Der konkrete Storage-Adapter lebt weiterhin in einem
+  separaten Modul (`adapters:driven:storage-objectstorage`
+  o.ae.) und liefert nur die Implementierung der
+  `SeekableInputStream`-Lese-Mechanik; die Variante selbst
+  wird im Port-Modul deklariert.
+
+Wer ein offenes Interface ohne `sealed` will, oeffnet damit
+die Tuer fuer beliebige (nicht-d-migrate-internen)
+Implementierungen ueber den `InputStream`-Pfad — genau das,
+was `parquet-libraries.md` §7 Bullet 2 explizit ablehnt.
+`sealed` ist also Teil des Vertrags, nicht ein Versehen.
 
 `InputStream`-Quellen werden **nicht** gewrappt und auch
 nicht in eine `Sealed`-Variante uebersetzt — das ist die
@@ -111,6 +132,35 @@ vom Preflight aufgeloest (AP7/AP8/AP9), der Reader muss es
 nicht aus dem Datei-Footer rekonstruieren. Damit ist der
 Vertrag dual zum bestehenden Reader (der das Schema heute aus
 dem File-Header zieht) und bricht ihn nicht.
+
+**Minimaler Footer-vs-ChunkSchema-Konsistenzcheck.** Der
+Reader liest den Parquet-Footer ohnehin (fuer Row-Group-
+Iteration). Vor dem ersten `nextChunk()` muss er deshalb
+einen billigen Sanity-Check fahren:
+
+- Spaltenanzahl im Footer-`MessageType` == `schema.columns.size`.
+- Spaltennamen in der Footer-Reihenfolge ==
+  `schema.columns.map { it.name }`.
+
+Mismatch ist Fehler `BUNDLE_SCHEMA_PARQUET_MISMATCH` mit
+Tabellen- und Spalten-Detail in der Diagnose. Das fuellt die
+Luecke, die der AP7-Live-Hash nicht abdeckt: ein vorhandener
+SHA-256 beweist nur Datei-Integritaet gegen
+`tables[].sha256`, nicht dass Manifest-Spaltendeklarationen
+zum Footer passen — und Bundles ohne `sha256` haben gar keinen
+Integritaetsschutz.
+
+Bewusst **keine** vollstaendige Typgleichheits-Pruefung
+(Decimal-Precision, LogicalType-Annotationen, Timezone): das
+neutrale `ChunkSchema`-`NeutralType` und der Parquet-
+Primitive-Typ stehen in einer N:M-Beziehung
+(`parquet-schema-source.md` §8 Mapping-Tabelle), eine 1:1-
+Validierung waere weder billig noch immer eindeutig. Reine
+Namens-/Anzahlpruefung ist die kostenguenstige Variante, die
+die haeufigsten Drift-Faelle (Spalte umbenannt, Spalte
+hinzugefuegt/entfernt) zuverlaessig faengt; semantisches Drift
+(Spalte Decimal(10,2) im Manifest, Decimal(12,4) in der Datei)
+ist akzeptiertes Restrisiko und wird in §7 nochmal benannt.
 
 ### 3.4 Writer-Seite bleibt stream-basiert
 
@@ -201,7 +251,13 @@ AP12 macht das Wiring; AP10 nennt nur Vertrag und Modulort:
 
 ```kotlin
 // adapters/driven/formats-parquet/src/main/kotlin/dev/dmigrate/format/parquet/ParquetSeekableDataChunkReaderFactory.kt
-internal class ParquetSeekableDataChunkReaderFactory : SeekableDataChunkReaderFactory {
+// Bewusst public (kein `internal`), parallel zur Konvention von
+// adapters/driven/formats/.../DefaultDataChunkReaderFactory.kt:
+// CLI/MCP-Wiring (z.B. `hexagon:application`-Service-Loader)
+// instanziiert die Factory direkt; ein `internal`-Sichtbarkeit
+// wuerde diesen Pfad zwingen, einen separaten Provider zu
+// halten, ohne semantischen Gewinn.
+class ParquetSeekableDataChunkReaderFactory : SeekableDataChunkReaderFactory {
 
     override fun create(
         format: DataExportFormat,
@@ -256,11 +312,37 @@ internal class ParquetSeekableDataChunkReaderFactory : SeekableDataChunkReaderFa
 
 ### 5.4 `adapters:driven:streaming`
 
-- `TableImporter` (vgl. AP8 §10.3 / AP9 §7.3) bekommt eine
-  zweite Factory-Referenz: heutige
-  `DataChunkReaderFactory` plus neue
-  `SeekableDataChunkReaderFactory`. Die Format-Verzweigung
-  ist dort und folgt dem `when (format)`-Schnitt:
+- **`StreamingImporter`-Constructor (StreamingImporter.kt:21)
+  bekommt die zweite Factory-Referenz.** Heute trifft der
+  Konstruktor nur `readerFactory: DataChunkReaderFactory` an;
+  der `TableImporter` wird **intern** in Z. 28 erzeugt
+  (`private var tableImporter: TableImporter = TableImporter(
+  readerFactory, onTableOpened)`). CLI- und MCP-Pfade
+  konstruieren `StreamingImporter(...)`, nicht den
+  `TableImporter` direkt — also muss die seekbare Factory
+  durch den `StreamingImporter`-Constructor durchgereicht
+  werden:
+
+  ```kotlin
+  class StreamingImporter(
+      private val readerFactory: DataChunkReaderFactory,
+      private val seekableReaderFactory: SeekableDataChunkReaderFactory,
+      private val writerLookup: (DatabaseDialect) -> DataWriter,
+      private val onTableOpened: (...) -> Unit = { _, _ -> },
+  ) {
+      internal var tableImporter: TableImporter =
+          TableImporter(readerFactory, seekableReaderFactory, onTableOpened)
+      ...
+  }
+  ```
+
+  Die Frage „Default-Wert oder Pflichtparameter" ist Sache
+  von AP12; AP10-Empfehlung ist Pflichtparameter, weil ein
+  `null`-Default bei einem `format=PARQUET`-Lauf zu einer
+  schlecht diagnostizierbaren NullPointerException fuehren
+  wuerde (siehe §7 Risiko 1).
+- `TableImporter` selbst (vgl. AP8 §10.3 / AP9 §7.3) faehrt
+  die `when (format)`-Verzweigung:
   `PARQUET -> seekableFactory.create(...)`, sonst
   `streamFactory.create(...)`.
 - `ImportInputResolver` bleibt fuer Stream-Pfad
@@ -327,20 +409,35 @@ Gruende:
   brechen dabei (vgl. AP9 §7.8 Sweep-Vorgabe). AP10
   setzt das nur als Vorbedingung, traegt selbst keinen
   Code dazu bei.
-- **`SeekableChunkSource`-Sealed in einer Library**:
-  Konsumenten ausserhalb des Repos koennten den Sealed-
-  Vertrag nicht erweitern, weil sealed in Kotlin
-  modulgrenzenseparat ist. Heute relevant nur fuer
-  d-migrate-internen Code; falls AP-spaeter ein
-  Object-Storage-Adapter aus einem anderen Modul kommt,
-  muss die Hierarchie in einem gemeinsamen Modul leben
-  (Verifikation: `hexagon:ports-read` ist Public-API
-  des Hexagons; das passt).
-- **Schema-Drift zwischen Reader und Manifest.** Der
-  Reader vertraut der `ChunkSchema`, die er aus dem
-  Bundle-Preflight bekommt. Wenn das Manifest und die
-  Parquet-Datei divergent sind (z.B. Datei nachtraeglich
-  ausgetauscht), faellt das im AP7 §7.4-Live-Hash-Check
-  auf. Reader selbst macht keine erneute Footer-
-  Konsistenzpruefung — das waere doppelte Arbeit und
-  AP10-out-of-scope.
+- **`SeekableChunkSource`-Sealed ist Modul-lokal.**
+  Kotlin laesst direkte Sealed-Subtypen seit 1.5 nur im
+  selben Modul zu. Ein zukuenftiger Object-Storage-Adapter
+  in einem separaten Gradle-Modul kann die Hierarchie
+  **nicht selbst erweitern** — die neue Variante muss
+  additiv im Port-Modul (`hexagon:ports-read`) eingefuegt
+  werden. Das ist bewusst, vgl. §3.2 zur
+  Erweiterungsregel: jede neue Variante ist ein
+  exhaustive-`when`-Sweep, der Konsumenten zwingt, das
+  neue Source-Format aktiv zu unterstuetzen. Ein offenes
+  Interface waere die naheliegende Alternative, oeffnet
+  aber die Tuer fuer beliebige nicht-d-migrate-interne
+  Implementierungen ueber den Stream-/Temp-Spool-Pfad
+  und widerspricht damit `parquet-libraries.md` §7
+  Bullet 2.
+- **Schema-Drift zwischen Manifest und Parquet-Footer.**
+  AP7-Live-Hash (`MANIFEST_SHA256_MISMATCH`) deckt nur
+  Datei-Integritaet gegen `tables[].sha256` — und ist nicht
+  einmal Pflicht (AP7 §7.1, opt-in). AP10 schliesst die
+  Luecke mit dem minimalen Footer-vs-ChunkSchema-Check aus
+  §3.3 (Spaltenanzahl + -namen, `BUNDLE_SCHEMA_PARQUET_MISMATCH`).
+  Akzeptiertes Restrisiko: **semantischer Drift** —
+  Spaltenname und -anzahl stimmen, aber der Typ in der Datei
+  weicht von `NeutralType` ab (z.B. Decimal(10,2) vs.
+  Decimal(12,4)). Eine vollstaendige Typgleichheits-Pruefung
+  ist nicht billig und nicht immer eindeutig
+  (`parquet-schema-source.md` §8 N:M-Mapping); sie wuerde
+  zudem `parquet-arrow` aus AP5 oder ein equivalentes
+  Typ-Mapping-Modul in den Reader-Pfad ziehen. Trade-off
+  ist bewusst zugunsten von „billiger Check faengt
+  haeufige Drifts, restliche Verantwortung liegt beim
+  Producer".

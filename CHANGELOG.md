@@ -36,10 +36,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Default-Implementation `ParquetSeekableDataChunkReaderFactory`
     lebt im `adapters:driven:formats-parquet`-Modul; nutzt
     parquet-java 1.17.1 plus die Hadoop-API-via-LocalFileSystem-
-    Befunde aus §5.1/§7/§8.
-  - Migrations-Analyse fuer sechs Module; `TableImporter` bekommt
-    eine zweite Factory-Referenz, Format-Verzweigung lebt dort
-    (AP9 §7.3). AP12 macht das Wiring.
+    Befunde aus §5.1/§7/§8. Bewusst `public class` (kein
+    `internal`), parallel zur Konvention von
+    `DefaultDataChunkReaderFactory`, damit CLI/MCP die Factory
+    direkt instanziieren koennen.
+  - Minimaler Footer-vs-ChunkSchema-Konsistenzcheck im Reader
+    (Spaltenanzahl + -namen) mit Fehler
+    `BUNDLE_SCHEMA_PARQUET_MISMATCH`; schliesst die Luecke, die
+    der opt-in AP7-Live-Hash nicht abdeckt. Vollstaendige
+    Typgleichheits-Pruefung bewusst nicht — akzeptiertes
+    Restrisiko (semantischer Drift).
+  - Sealed-Erweiterungsregel explizit: neue
+    `SeekableChunkSource`-Varianten kommen additiv ins
+    Port-Modul `hexagon:ports-read` und brechen
+    exhaustive `when`-Konsumenten bewusst. Externe Module
+    koennen die Sealed-Hierarchie nicht selbst erweitern;
+    das ist gewollt, weil ein offenes Interface den
+    InputStream-/Temp-Spool-Pfad wiedereroeffnen wuerde.
+  - Migrations-Analyse fuer sechs Module mit konkretem Sweep:
+    `StreamingImporter`-Constructor (Z. 21-28) bekommt die
+    zweite Factory-Referenz und reicht sie an den internen
+    `TableImporter` durch — Pflichtparameter (kein `null`-
+    Default), weil ein vergessenes Wiring bei `format=PARQUET`
+    zur Laufzeit eine schlecht diagnostizierbare NPE waere.
+    AP12 macht das Wiring.
 
   Implementierungscode folgt nach AP12.
 
