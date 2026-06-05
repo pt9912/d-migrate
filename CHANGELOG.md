@@ -9,6 +9,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — Stakeholder-Entscheid: Go fuer
+  Cut B als 1.0.0** *(2026-06-05)* — alle fuenf offenen
+  Punkte aus
+  [`parquet-decision-template.md`](docs/planning/in-progress/parquet-decision-template.md)
+  §6 sind beantwortet (durchgaengig nach AP13-Empfehlung):
+  - **Release-Branch:** `feature/parquet-1.0` mit
+    Schritt-fuer-Schritt-Commits, Merge in `develop` nach
+    Schritt 9. Begruendung: Schritt 1 (Enum) ohne
+    Schritt 6 (CLI-Wiring) hat keinen Funktionsnutzen.
+  - **Distributions-Cut:** Parquet immer im Default-JAR
+    (1.0/1.1). Eine separate Variante wird im 1.2-Cut
+    zusammen mit Native-Image reevaluiert.
+  - **DuckDB-/Arrow-Tests:** bleiben `testImplementation`
+    plus CI-Smoke-Lauf (AP4/AP5/§11.4); kein Heraufstufen
+    zu Pflicht-Tests.
+  - **MCP-Server-Spiegelung:** nicht in 1.0.0; eine
+    MCP-Exposition von Parquet-Bundle-Export/-Import wird
+    fruehestens beim 1.1-Planning entschieden.
+  - **Hadoop-API-Shim:** Entscheid „eigener Shim vs.
+    `hadoop-common`-Subset pinnen" wird zusammen mit dem
+    1.2-Cut anhand der Native-Image-Smoketest-Daten
+    getroffen — kein harter Vorab-Termin, Datengrundlage
+    zuerst.
+
+  Damit ist die Bedingung „offene Punkte beantwortet" aus
+  AP13 §7 erfuellt; verbleibende Pre-Implementation-Schritte
+  (Engineering-Zeitbudget-Commit, Native-Image-Smoketest in
+  AP12-Schritt 3 verankern, Sealed-`rg`-Sweep in
+  PR-Checkliste) sind Engineering-Aufgaben beim
+  Cut-B-Start, keine offenen Entscheidungsfragen. Plan-Doc
+  und Sub-Docs wandern bei Cut-B-Start nach
+  `docs/planning/done/`.
+
 - **Parquet-Evaluierung — AP13 Entscheidungsvorlage**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-decision-template.md`](docs/planning/in-progress/parquet-decision-template.md)

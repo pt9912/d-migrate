@@ -166,10 +166,20 @@
 > verworfen, weil das Wertversprechen gegenueber
 > `pg_dump | psql` ohne Resume zu duenn waere.
 >
-> **Damit ist die Evaluierung abgeschlossen.** Plan-Doc und
-> alle Sub-Docs wandern beim naechsten Schritt nach
-> `docs/planning/done/` oder verbleiben in `in-progress/`
-> bis der Go/No-Go-Entscheid getroffen ist (Cut B empfohlen).
+> **Damit ist die Evaluierung abgeschlossen. Stakeholder-
+> Entscheid 2026-06-05: Go fuer Cut B (Bundle-Pilot 1.0.0).**
+> Alle fuenf offenen Punkte aus AP13 §6 sind beantwortet
+> (`feature/parquet-1.0`-Branch, Parquet immer im
+> Default-JAR, DuckDB-/Arrow-Tests als CI-Smoke,
+> MCP-Spiegelung nicht in 1.0, Hadoop-API-Shim-Entscheid mit
+> 1.2-Cut zusammen). Verbleibende Pre-Implementation-
+> Schritte sind Engineering-/Prozess-Aufgaben beim
+> Cut-B-Start: Zeitbudget-Commit, Native-Image-Smoketest in
+> AP12-Schritt 3 verankern, Sealed-`rg`-Sweep in
+> PR-Checkliste. Plan-Doc und alle Sub-Docs wandern bei
+> Cut-B-Start nach `docs/planning/done/` (analog dem
+> BI-Demo-Plan-Pattern), oder verbleiben in `in-progress/`,
+> bis der erste Implementierungs-Commit gelandet ist.
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,

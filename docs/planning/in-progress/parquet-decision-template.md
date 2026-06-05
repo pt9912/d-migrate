@@ -387,43 +387,62 @@ gegenueber `pg_dump | psql` zu duenn ist.
 
 ---
 
-## 6. Offene Punkte vor der Implementierung
+## 6. Vor-Implementierungs-Punkte (Stand 2026-06-05: beantwortet)
 
-Diese muessen **vor** dem ersten Implementierungs-Commit
-geklaert sein, sonst entstehen Befund-Zyklen, die in §3.2
-schon eingerechnet sind, aber unter Druck schnell explodieren:
+Diese fuenf Punkte muessen **vor** dem ersten
+Implementierungs-Commit beantwortet sein. Stakeholder-
+Entscheid 2026-06-05 hat alle fuenf festgenagelt — jeweils
+mit der AP13-Empfehlung. Damit ist die Bedingung „offene
+Punkte beantwortet" aus §7 erfuellt.
 
-1. **Release-Branch-Strategie**: AP12 §12 fordert neun
-   entkoppelte Schritte. Sollen sie auf einem
-   `feature/parquet-1.0`-Branch landen (alle Schritte als
-   separate Commits, dann Merge ins `develop`), oder direkt
-   auf `develop` (jeder Schritt ein PR)? Empfehlung:
-   `feature/parquet-1.0`, weil Schritt 1 (Enum-Erweiterung)
-   ohne Schritt 6 (CLI-Wiring) keinen Funktionsnutzen hat.
-2. **Gradle-Distributions-Cut**: bleibt der Parquet-Adapter
-   im Default-Distributions-JAR oder gibt es eine
-   `--parquet`-Variante? Empfehlung: 1.0 immer drin
-   (Hadoop-Footprint als bewusstes Trade-off), 1.2-Cut
-   reevaluieren.
-3. **DuckDB-/Arrow-Test-Dependencies dauerhaft**: die AP4/
-   AP5-Tests sind heute opt-in (testImplementation). Soll
-   das so bleiben oder werden sie zu den Pflicht-Test-
-   Familien aus AP12 §11 erhoben? Empfehlung: bleiben
-   testImplementation, aber laufen in CI als Smoke.
-4. **MCP-Server-Spiegelung**: der MCP-Adapter
-   (`adapters:driving:mcp`) hat heute keine Parquet-Tools.
-   Wird der Bundle-Pfad ueber MCP-Tools exponiert (Cut B
-   plus MCP-Tools)? Empfehlung: nicht in 1.0; 1.1 oder
-   spaeter.
-5. **Hadoop-API-Shim als 1.x-Folge-Entscheidung**: AP12
-   §10 empfiehlt, den Shim erst nach Native-Image-Smoketest
-   zu bauen. Wenn 1.2 nicht kommt, bleibt der Shim ein
-   offener Punkt. Klares Datum/Quartal nennen, bis wann
-   die Entscheidung faellt.
+1. **Release-Branch-Strategie** — **`feature/parquet-1.0`-
+   Branch.** AP12 §12-Schritte landen als separate Commits
+   auf dem Feature-Branch und werden nach Schritt 9 in
+   `develop` gemergt. Begruendung: Schritt 1
+   (Enum-Erweiterung) ohne Schritt 6 (CLI-Wiring) hat
+   keinen Funktionsnutzen, und Zwischenmerges in `develop`
+   wuerden JSON/YAML/CSV-Tests gegen Half-State stoeren.
+2. **Gradle-Distributions-Cut** — **Parquet immer im
+   Default-JAR.** Hadoop-Footprint (mehrere MB) ist
+   bewusstes Trade-off fuer 1.0/1.1; eine separate
+   `--parquet`-Variante (Gradle-Flag oder Maven-Classifier)
+   wird im 1.2-Cut zusammen mit dem Native-Image-Sweep
+   reevaluiert.
+3. **DuckDB-/Arrow-Test-Dependencies** — **`testImplementation`
+   bleiben + CI-Smoke laufen lassen.** Tests sind weiterhin
+   Test-Only-Dependencies (kein Produktionspfad), laufen
+   aber in CI als Smoke-Familie, die die AP4-/AP5-Linien
+   plus AP12 §11.4 (Footer-KV-Toleranz) abdeckt. Heraufstufen
+   zu Pflicht-Tests wird verworfen, weil das den CI-Druck
+   ohne entsprechenden Korrektheitsgewinn erhoeht.
+4. **MCP-Server-Spiegelung** — **Nicht in 1.0.0.** Der
+   MCP-Adapter (`adapters:driving:mcp`) bleibt unangefasst,
+   Parquet ist 1.0/1.1 CLI-only. Eine MCP-Exposition des
+   Bundle-Export/-Import-Pfads kommt frueheste 1.1 oder
+   spaeter; die Entscheidung wird beim 1.1-Planning
+   getroffen.
+5. **Hadoop-API-Shim-Folge-Entscheidung** — **Mit dem
+   1.2.0-Cut zusammen entscheiden.** Cut B (1.0) und 1.1
+   nutzen unveraendert `hadoop-common +
+   hadoop-mapreduce-client-core` aus AP3-Spike-Befund. Der
+   1.2-Native-Image-Smoketest liefert die Daten, an denen
+   die Entscheidung „eigener Shim vs. Hadoop-Subset
+   pinnen" gefaellt wird: wenn Reachability-Metadaten
+   beherrschbar sind, bleibt der Block; wenn nicht, kommt
+   der Shim als 1.2-Folge-Refactor (5-10 PT, AP12 §10).
+   Kein harter Termin vorher — die Stakeholder-Praeferenz
+   ist „Datengrundlage zuerst, Entscheidung danach".
+
+Mit diesen fuenf Antworten ist die Bedingung „offene
+Punkte beantwortet" aus §7 erfuellt; die restlichen
+Bedingungen (Engineering-Goal-Commit, Native-Image-Smoketest
+in Schritt 3, Sealed-`rg`-Sweep in PR-Checkliste) sind
+Engineering-/Prozess-Implementierungs-Schritte beim
+Cut-B-Start.
 
 ---
 
-## 7. Empfehlung
+## 7. Empfehlung — Stand 2026-06-05: Go fuer Cut B
 
 **Go, mit Cut B (Bundle-Pilot) als 1.0.0.**
 
@@ -441,18 +460,29 @@ Begruendung in drei Saetzen:
   Folge-Engineering bei Bedarf an andere Personen
   uebergebbar.
 
-**Bedingungen fuer Go:**
+**Bedingungs-Status:**
 
-- Die fuenf offenen Punkte aus §6 sind beantwortet.
-- Cut B wird als Engineering-Goal explizit committed
-  (Zeitbudget, Reviewer-Verfuegbarkeit).
-- Native-Image-Smoketest ist Teil von Schritt 3 (nicht
-  spaeter).
-- Die Sealed-`when`-Sweep-Befehle aus §4.1 / AP12 §8 sind
-  in der PR-Checkliste verankert; `gradle assemble` mit
+- ✅ Die fuenf Punkte aus §6 sind beantwortet
+  (Stakeholder-Entscheid 2026-06-05; siehe §6 fuer die
+  einzelnen Festlegungen).
+- ⏳ Cut B als Engineering-Goal mit Zeitbudget + Reviewer-
+  Verfuegbarkeit committen — passiert beim 1.0-Sprint-
+  Planning.
+- ⏳ Native-Image-Smoketest in AP12-Schritt 3 verankern
+  (Pflichtteil der `ParquetChunkReader`/`Writer`-PR, nicht
+  ein separater Folge-Task).
+- ⏳ Sealed-`rg`-Sweep-Befehle aus §4.1 / AP12 §8 in die
+  PR-Checkliste aufnehmen (Tooling-Hook bevorzugt, sonst
+  dokumentierter Pflicht-Schritt). `gradle assemble` mit
   `allWarningsAsErrors` ist zusaetzlich aktiviert, ersetzt
   den Sweep aber nicht (Reflection-/Service-Loader-/
   Test-Code-Luecken).
+
+Die drei verbleibenden ⏳-Punkte sind Implementierungs-
+Schritte beim Cut-B-Start, keine offenen
+Entscheidungsfragen. Damit ist die Plan-Doc-Phase
+abgeschlossen; der Folge-Schritt ist die
+Branch-/Sprint-Vorbereitung.
 
 **Wenn Go nicht moeglich:** die Plan-Doc und Sub-Docs
 wandern unveraendert in `docs/planning/done/`, der
