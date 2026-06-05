@@ -377,6 +377,18 @@ Vorentscheidung lautet:
   entscheidet zwischen (a) und (b); bis dahin ist die Stdout-Variante
   davon nicht betroffen, weil sie ueber den eigenen `PositionOutputStream`
   laeuft, nicht ueber `LocalFileSystem`.
+- **AP6-Spike-Praezisierung zu Variante (a) (2026-06-05).** In
+  Hadoop 3.4.1 reicht `conf.set("fs.file.impl",
+  "org.apache.hadoop.fs.RawLocalFileSystem")` **nicht** aus: der
+  `FileSystem`-Service-Loader-Cache haelt eine vorinstanziierte
+  `LocalFileSystem` fuer das `file://`-Schema vor und bedient den
+  `ExampleParquetWriter`-Builder daraus, bevor die
+  `fs.file.impl`-Direktive greift. Die Mitigation muss `conf.set("fs.file.impl.disable.cache",
+  "true")` zusaetzlich setzen, dann waehlt Hadoop die in
+  `Configuration` deklarierte `RawLocalFileSystem`-Klasse und schreibt
+  keinen `.crc`-Sidecar. Verifiziert im Spike-Test
+  `ParquetSpikeImportPathTest`-`writeWithoutCrc unterdrueckt den
+  .crc-Sidecar`.
 
 Diese Entscheidung ist die strenge Variante und priorisiert
 Vorhersagbarkeit ueber Bequemlichkeit. Falls ein konkreter Use-Case

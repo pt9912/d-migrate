@@ -29,7 +29,18 @@
 > `Schema` und der Test verifiziert die drei Spike-Spalten als
 > `Int(32, signed)`/`Utf8`/`Bool`.
 >
-> Naechstes Arbeitspaket: AP6 (Importpfad-Pruefung am Prototyp).
+> AP6 (Importpfad-Pruefung am Prototyp) ist mit
+> `ParquetSpikeImportPathTest` erledigt (Stand 2026-06-05). Demonstriert
+> drei Bausteine am Spike: Footer-getriebene `ColumnDescriptor`-Liste
+> (`ParquetSpike.readSchemaFromFooter`), Round-Trip durch das
+> neutrale `DataChunk`-Modell (`readAsChunk`) und die `.crc`-Sidecar-
+> Mitigation via `fs.file.impl=RawLocalFileSystem`
+> + `fs.file.impl.disable.cache=true` (Variante (a) aus
+> `parquet-libraries.md` §7; AP6-Befund: beide Direktiven sind in
+> Hadoop 3.4.1 noetig, weil der `FileSystem`-Service-Loader-Cache
+> sonst die `LocalFileSystem`-Default-Instanz vorhaelt).
+>
+> Naechstes Arbeitspaket: AP7 (Manifest-Format und Import-Preflight).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -357,6 +368,20 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    `isNullable=false` fuer die drei Spike-Spalten
    (Akzeptanzkriterium §7 Bullet 2 abgehakt).
 6. Importpfad fuer denselben Prototyp pruefen.
+   Erledigt als `ParquetSpikeImportPathTest` im Spike-Modul
+   (Stand 2026-06-05). `ParquetSpike` um drei Bausteine erweitert:
+   `readSchemaFromFooter` mappt `MessageType`-Felder aus dem
+   `ParquetFileReader`-Footer zu neutralen
+   `dev.dmigrate.core.data.ColumnDescriptor`-Tupeln (name/nullable/
+   `sqlTypeName` als opaker Parquet-Originaltyp); `readAsChunk`
+   kombiniert das mit `ParquetReader`-Rows zu einem
+   `dev.dmigrate.core.data.DataChunk`; `writeWithoutCrc`
+   demonstriert die `.crc`-Sidecar-Mitigation aus
+   `parquet-libraries.md` §7 Variante (a) via
+   `fs.file.impl=RawLocalFileSystem` plus
+   `fs.file.impl.disable.cache=true` (AP6-Befund: die zweite
+   Direktive ist in Hadoop 3.4.1 noetig, sonst greift der
+   `FileSystem`-Service-Loader-Cache).
 7. Manifest-Format inklusive `Tabelle -> Datei`-Mapping und Import-Preflight
    skizzieren.
 8. Manifestgebundene Directory-Import-Aufloesung entwerfen, sodass der

@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP6 Importpfad-Spike** *(2026-06-05)* —
+  neuer Test
+  [`ParquetSpikeImportPathTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeImportPathTest.kt)
+  und drei neue `ParquetSpike`-Funktionen demonstrieren am Spike-
+  Output, dass der Footer als Schema-Quelle reicht und dass sich
+  Spike-Rows ueber das neutrale `DataChunk`-Modell leiten lassen:
+  - `readSchemaFromFooter` mappt `MessageType`-Felder aus dem
+    `ParquetFileReader`-Footer zu
+    `dev.dmigrate.core.data.ColumnDescriptor`-Tupeln
+    (name/nullable/`sqlTypeName` als opaker Parquet-Originaltyp).
+  - `readAsChunk` kombiniert das mit `ParquetReader`-Rows zu einem
+    `dev.dmigrate.core.data.DataChunk` (chunkIndex=0; Multi-Chunk-
+    Akkumulation ist Sache des produktiven Adapters).
+  - `writeWithoutCrc` demonstriert die `.crc`-Sidecar-Mitigation
+    aus `parquet-libraries.md` §7 Variante (a) via
+    `fs.file.impl=RawLocalFileSystem`. AP6-Befund: in Hadoop 3.4.1
+    ist `fs.file.impl.disable.cache=true` als zweite Direktive
+    noetig, sonst haelt der `FileSystem`-Service-Loader-Cache die
+    `LocalFileSystem`-Default-Instanz vor und der Sidecar bleibt.
+
 - **Parquet-Evaluierung — AP5 Arrow-Metadateninspektion**
   *(2026-06-05)* — neuer Test
   [`ParquetSpikeArrowInspectTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeArrowInspectTest.kt)
@@ -41,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   erst mit dem 1.18-Wechsel.
 
 ### Changed
+
+- **Parquet-Evaluierung — `.crc`-Sidecar-Mitigation in §7
+  praezisiert** *(2026-06-05)* — AP6-Befund:
+  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  §7 Bullet zum `.crc`-Sidecar ergaenzt. In Hadoop 3.4.1 reicht
+  `fs.file.impl=RawLocalFileSystem` allein nicht; ohne
+  `fs.file.impl.disable.cache=true` bedient der
+  `FileSystem`-Service-Loader-Cache den Writer aus einer
+  vorinstanziierten `LocalFileSystem` und der `.crc`-Sidecar bleibt.
 
 - **Parquet-Evaluierung — `iceberg-parquet` als bewusst
   ausgeschlossener Kandidat dokumentiert** *(2026-06-05)* —
