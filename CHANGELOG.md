@@ -42,6 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Parquet-Evaluierung — `iceberg-parquet` als bewusst
+  ausgeschlossener Kandidat dokumentiert** *(2026-06-05)* —
+  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  §3.6 neu: `org.apache.iceberg:iceberg-parquet` ist ein Adapter
+  zwischen Iceberg-Tabellen und Parquet-Dateien (nutzt intern
+  `parquet-java`), nicht ein eigener Writer/Reader. Strukturell
+  ausgeschlossen, weil Iceberg/Delta/Hudi laut Hauptplan §3.2
+  Nicht-Scope und ein Lakehouse-Adapter laut §4 explizit in einen
+  spaeteren Folge-Schritt verschoben ist; nicht in die
+  Bewertungsmatrix §4 aufgenommen, weil der Ausschluss strukturell
+  und nicht kriteriumsgetrieben ist. Natuerlicher Hauptkandidat
+  fuer den spaeteren Lakehouse-Folgeplan.
+
 - **Parquet-Evaluierung — AP3-Spike-Befunde zurueckgespielt**
   *(2026-06-05)* — die drei Befunde aus dem AP3-Round-Trip-Spike
   (Commit `3b051ec`) sind aus dem Status-Header der Plan-Doc in die

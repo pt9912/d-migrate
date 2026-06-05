@@ -191,6 +191,43 @@ Bewertung fuer d-migrate:
   Akzeptanzkriterium. DuckDB ist damit Validierungs-/Probierwerkzeug fuer
   Akzeptanz, nicht produktiver Writer/Reader.
 
+### 3.6 `iceberg-parquet` (2026-06-05 ergaenzt)
+
+- `org.apache.iceberg:iceberg-parquet` (aktive Release-Linie, Apache 2.0).
+- Funktional ein **Adapter zwischen Apache-Iceberg-Tabellen und
+  Parquet-Dateien**, nicht ein eigener Parquet-Writer/Reader: nutzt
+  intern `parquet-java` fuer die eigentliche Datei-IO, kapselt aber
+  Iceberg's Schema- und Tabellen-Modell (`org.apache.iceberg.Schema`,
+  `Types.NestedField`, Manifeste, Snapshots, Schema-Evolution).
+- Eigener Reader-/Writer-Builder (`Parquet.read()`, `Parquet.write()`),
+  modernes Streaming-Modell mit eigenen Iceberg-Konvertern und einer
+  Iceberg-`InputFile`-/`OutputFile`-Abstraktion. Bringt damit auf
+  Reader-Seite **keinen MapReduce-Klassenbedarf** wie der direkte
+  `ParquetReader.builder`-Pfad in 1.17.1 (siehe §5.1-Befund), zieht
+  dafuer transitiv `iceberg-core`/`iceberg-data`.
+- Bewertung fuer d-migrate:
+  - Iceberg-/Delta-/Hudi-Tabellenverwaltung ist im Hauptplan
+    `parquet-export-import-evaluation.md` §3.2 **explizit Nicht-Scope**.
+    iceberg-parquet ist der Einstieg in genau diese Welt — die
+    Iceberg-`Schema`/`Table`-Abstraktion ist nicht abschaltbar,
+    sondern der Kernzweck der Bibliothek.
+  - Hauptplan §4 verschiebt einen Lakehouse-Adapter explizit in einen
+    Folge-Schritt oberhalb des Format-Adapters; iceberg-parquet gehoert
+    strukturell genau dorthin.
+  - Wuerde ein drittes Typsystem zwischen `ChunkSchema`/`NeutralType`
+    und Parquet `MessageType` schieben (`org.apache.iceberg.Schema`),
+    ohne dass dessen Mehrwert (Tabellen-Versionierung, Snapshots,
+    Schema-Evolution) im aktuellen Schnitt benoetigt wird. Mehraufwand
+    ohne Gegenwert.
+  - GraalVM-/Distributionsfragen werden nicht besser: parquet-java
+    bleibt drunter, dazu kommt der Iceberg-Stack.
+- Konsequenz: **kein Kandidat fuer den ersten Parquet-Schnitt**, aber
+  natuerlicher Hauptkandidat fuer einen spaeteren Lakehouse-Folgeplan
+  (Iceberg-Tabellen schreiben, nicht nur Parquet-Dateien). Nicht in
+  die Bewertungsmatrix Abschnitt 4 aufgenommen, weil der Ausschluss
+  strukturell (Hauptplan §3.2/§4) und nicht kriteriumsgetrieben
+  (K1-K10) ist.
+
 ---
 
 ## 4. Bewertungsmatrix
