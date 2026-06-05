@@ -103,8 +103,31 @@
 > Wrapper im Adapter). TableImporter bekommt zwei Factory-
 > Referenzen; AP12 macht das Wiring.
 >
-> Naechstes Arbeitspaket: AP11 (Single-File-Metadatenvertrag —
-> Parquet-Footer-KV vs. Sidecar).
+> AP11 (Single-File-Metadatenvertrag) ist als Sub-Doc
+> `parquet-single-file-metadata.md` festgenagelt
+> (Stand 2026-06-05). Bindende Wahl: Option A — Footer-Key-
+> Value-Metadaten mit Key `d-migrate.manifest` (UTF-8-YAML-
+> Bytestrom als konditionell strikte Teilmenge des AP7-Bundle-
+> Manifests, genau ein `tables[]`-Eintrag, kein
+> `file`/`sha256`-Feld). Damit zog AP11 zwei kleine
+> Praezisierungen mit: AP7 §5.2 `tables[].file` ist jetzt
+> bedingt Pflicht (Bundle ja, Single-File nein); Single-File-
+> Resume nutzt einen Preflight-berechneten SHA-256 ueber den
+> gesamten Dateibytestrom, persistiert via neuer
+> `SingleFileCheckpointSpecifics`-Variante (Checkpoint-Schema
+> bleibt rueckwaertskompatibel). Footer-Parsing lebt
+> ausschliesslich im Parquet-Adapter (`ParquetSingleFilePreflight`),
+> der Streaming-Layer bleibt parquet-frei und sieht nur die
+> port-neutrale `ResolvedTableInput.Seekable`-Variante (AP10
+> §5.4). Sidecar (Option B) bewusst abgelehnt
+> (Single-Artefakt-Versprechen + zwei parallele Manifest-
+> Vertraege); Option C (Footer-only) abgelehnt, weil AP2
+> §4.4 Schema-vor-Chunk verletzt. Fremder Parquet-File ohne
+> `d-migrate.manifest`-Key bleibt lesbar (best-effort
+> Footer-`MessageType` + Ziel-JDBC-Schema, CLI-Warnung).
+>
+> Naechstes Arbeitspaket: AP12 (CLI- und Factory-Wiring-
+> Skizze).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -114,6 +137,7 @@
 > `parquet-directory-import.md` (AP8-Iterator und Directory-Aufloesung),
 > `parquet-import-input-dto.md` (AP9-Importpfad-Vertrag, bindend),
 > `parquet-port-shape.md` (AP10-Reader-Port-Vertrag, bindend),
+> `parquet-single-file-metadata.md` (AP11-Footer-KV-Vertrag, bindend),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -525,6 +549,20 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    bekommt eine zweite Factory-Referenz; AP12 macht das Wiring.
 11. Single-File-Metadatenvertrag klaeren: Parquet-Footer-Key-Value-Metadaten,
    expliziter Sidecar oder bewusst eingeschraenkter Footer-/Ziel-Schema-Modus.
+   Ausgearbeitet als Sub-Doc `parquet-single-file-metadata.md`
+   (Stand 2026-06-05). Bindende Wahl: Option A — Footer-KV mit
+   Key `d-migrate.manifest`, YAML-Bytestrom als strikte Teilmenge
+   des AP7-Bundle-Manifests (genau ein `tables[]`-Eintrag, kein
+   `file`/`sha256`-Feld, weil Datei sich selbst kennt und ein
+   Hash ueber den eigenen Bytestrom inkl. Hash zirkulaer waere).
+   Sidecar abgelehnt (Single-Artefakt-Versprechen, zwei parallele
+   Manifest-Vertraege); Footer-only abgelehnt (AP2 §4.4 Schema-
+   vor-Chunk-Vertragsbruch). Fremde Parquet-Dateien ohne den Key
+   bleiben lesbar als best-effort Footer-`MessageType` +
+   Ziel-JDBC-Schema (CLI-Warnung). Stdin-Single-File-Import bleibt
+   ausgeschlossen (`parquet-libraries.md` §7 + AP10 §3.3).
+   Implementierungscode (`ParquetSingleFileManifestWriter/Reader`,
+   `TableImporter`-SingleFile-Zweig) folgt nach AP12.
 12. CLI- und Factory-Wiring skizzieren: `DataExportFormat`, Clikt-Choices,
    Reader-/Writer-Factories, Format-Autodetection, CSV-Flag-Validierung,
    Encoding-Regel, Directory-Autodetection ueber Manifest und

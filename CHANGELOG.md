@@ -9,6 +9,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP11 Single-File-Metadatenvertrag**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-single-file-metadata.md`](docs/planning/in-progress/parquet-single-file-metadata.md)
+  fixiert den letzten Vertragspunkt vor AP12/AP13. Inhalt:
+  - Drei Optionen aus Hauptplan §6 verglichen
+    (Footer-KV vs. Sidecar vs. Footer-only); bindende Wahl
+    Option A — **Footer-Key-Value-Metadaten** mit Key
+    `d-migrate.manifest`. parquet-java 1.17.1 unterstuetzt das
+    verlaesslich via `withExtraMetaData`/`getKeyValueMetaData`
+    (`parquet-libraries.md` §3.1).
+  - Value-Format: UTF-8-YAML-Bytestrom als **strikte
+    Teilmenge** des AP7-Bundle-Manifests
+    (`parquet-manifest-format.md` §5). Genau ein
+    `tables[]`-Eintrag, ohne `file` (Datei kennt sich
+    selbst) und ohne `sha256` (Hash ueber den eigenen
+    Bytestrom inkl. Hash-Feld waere zirkulaer).
+  - Fremde Parquet-Dateien ohne `d-migrate.manifest`-Key
+    bleiben **lesbar als best-effort**: Reader baut die
+    `ChunkSchema` aus Footer-`MessageType` + Ziel-JDBC-
+    Schema; CLI-Warnung weist auf moeglichen Decimal-/
+    Temporal-Verlust hin. Damit kein Bruch mit Spark-/Hive-
+    erzeugten Parquet-Dateien.
+  - Sidecar (Option B) abgelehnt: bricht das Single-
+    Artefakt-Versprechen und fuehrt zwei parallele
+    Manifest-Vertraege ein. Footer-only (Option C) abgelehnt:
+    verletzt AP2 §4.4 (Schema-vor-Chunk).
+  - Stdin-Single-File-Import bleibt unzulaessig
+    (`parquet-libraries.md` §7); CLI-Preflight wirft
+    `PARQUET_STDIN_NOT_SUPPORTED` (AP12-Fehlercode).
+  - Code-Konsequenzen: neue Klassen
+    `ParquetSingleFileManifestWriter`/`Reader` plus
+    `ParquetSingleFilePreflight` im Parquet-Adapter. Der
+    Preflight ist die einzige Stelle mit Footer-Parsing —
+    der Streaming-Layer (`adapters:driven:streaming`)
+    bleibt parquet-frei und sieht nur die port-neutrale
+    `ResolvedTableInput.Seekable(table, source, schema,
+    expectedSha256)`-Variante (AP10 §5.4). Dadurch teilen
+    Bundle- und Single-File-Pfad denselben
+    `TableImporter`-Zweig.
+  - Tabellennamens-Aufloesung mit klarer Precedence:
+    `--table` gewinnt; bei vorhandenem Footer-KV +
+    Mismatch -> `PARQUET_SINGLE_FILE_TABLE_MISMATCH`; bei
+    `--table` fehlt + Footer-`tables[0].table` vorhanden
+    -> Footer-Wert wird mit `stderr`-Note uebernommen;
+    bei beidem fehlend -> `PARQUET_SINGLE_FILE_TABLE_REQUIRED`.
+    Die heutige `--table`-Pflicht fuer JSON/YAML/CSV-
+    Single-File bleibt unveraendert.
+  - Resume fuer Single-File: AP8 §8.1 verbietet Resume
+    ohne Datei-Hash. Da der Footer-KV keinen Hash tragen
+    kann (zirkulaer ueber den eigenen Bytestrom), wird der
+    SHA-256 ueber den **gesamten Dateibytestrom** im
+    Preflight berechnet und im Checkpoint via neuer
+    `SingleFileCheckpointSpecifics(bundleKind=
+    "parquet-single-file", contentSha256, table) :
+    CheckpointOperationSpecifics`-Variante persistiert.
+    Mismatch beim Resume ->
+    `PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT`.
+  - `parquet-manifest-format.md` §5.2 Korrektur:
+    `tables[].file` ist jetzt **bedingt** Pflicht — Pflicht
+    im Bundle-Manifest, optional im Single-File-Footer-KV.
+    Das macht das AP11-YAML zu einer konditionell strikten
+    Teilmenge des Bundle-YAML (ein Parser-Pfad,
+    Kontext-Validierungsregel statt zweites Schema).
+
+  Implementierungscode folgt nach AP12.
+
 - **Parquet-Evaluierung — AP10 Stream-vs-Datei-Portentscheidung**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-port-shape.md`](docs/planning/in-progress/parquet-port-shape.md)

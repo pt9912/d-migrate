@@ -199,7 +199,7 @@ tables:                          # M3, Pflicht, Sequenz
 | `schemaSource` | ja | enum: `schema-reader`, `jdbc-metadata`, `manifest-fallback` | M6 |
 | `tables` | ja | Sequenz | M3, M4 |
 | `tables[].table` | ja | String, optional schema-qualifiziert | M4, M15 |
-| `tables[].file` | ja | String, relativer Pfad im Bundle | M4, M12 |
+| `tables[].file` | bedingt | String, relativer Pfad im Bundle | M4, M12 — Pflicht im Bundle-Manifest, optional im Single-File-Footer-KV (AP11 §5.2) |
 | `tables[].rowCount` | nein | Integer (>= 0) | informativ; nicht im Preflight ausgewertet |
 | `tables[].sha256` | nein | String, 64 Hex-Zeichen | M10, M16 |
 | `tables[].columns` | ja | Sequenz | M5, M7, M8 |
