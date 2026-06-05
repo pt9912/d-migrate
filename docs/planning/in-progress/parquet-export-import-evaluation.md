@@ -150,8 +150,26 @@
 > Pflicht-Familien; bindender Implementierungsplan in neun
 > Schritten.
 >
-> Naechstes Arbeitspaket: AP13 (Entscheidungsvorlage —
-> Aufwand, Risiken, empfohlener Scope fuer 1.x).
+> AP13 (Entscheidungsvorlage) ist als Sub-Doc
+> `parquet-decision-template.md` festgenagelt
+> (Stand 2026-06-05). Synthetisiert AP1-AP12 zu Aufwand
+> (27-44 PT netto, 35-60 PT brutto fuer die neun AP12-
+> Implementierungs-Schritte; plus 5-15 PT Native-Image,
+> 5-10 PT optionaler Hadoop-API-Shim), Risiko-Gesamtbild
+> (vier Risiko-Kategorien) und drei gestaffelte Scope-Cuts.
+> Empfehlung: **Cut B (Bundle-Pilot ohne Single-File) als
+> 1.0.0**, mit Folge-Releases 1.1.0 (Single-File +
+> `--no-checkpoint`) und 1.2.0 (Native-Image-Cut + optionaler
+> Hadoop-API-Shim). Cut A (voller Vertrag in 1.0) ist
+> akzeptabel, traegt aber die volle Single-File-Phase-1/2-
+> Komplexitaet im 1.0-Risiko; Cut C (Bundle ohne Resume)
+> verworfen, weil das Wertversprechen gegenueber
+> `pg_dump | psql` ohne Resume zu duenn waere.
+>
+> **Damit ist die Evaluierung abgeschlossen.** Plan-Doc und
+> alle Sub-Docs wandern beim naechsten Schritt nach
+> `docs/planning/done/` oder verbleiben in `in-progress/`
+> bis der Go/No-Go-Entscheid getroffen ist (Cut B empfohlen).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -163,6 +181,7 @@
 > `parquet-port-shape.md` (AP10-Reader-Port-Vertrag, bindend),
 > `parquet-single-file-metadata.md` (AP11-Footer-KV-Vertrag, bindend),
 > `parquet-cli-wiring.md` (AP12-CLI-/Factory-Wiring-Skizze, bindend),
+> `parquet-decision-template.md` (AP13-Entscheidungsvorlage, Aufwand/Risiken/Scope),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -623,6 +642,24 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    in neun entkoppelten Schritten. AP13 entscheidet, welche
    Schritte im 1.x-Cut zwingend sind.
 13. Entscheidungsvorlage mit Aufwand, Risiken und empfohlenem Scope erstellen.
+   Ausgearbeitet als Sub-Doc `parquet-decision-template.md`
+   (Stand 2026-06-05). Aufwand pro AP12-Schritt
+   (27-44 PT netto, 35-60 PT brutto inkl. Review-Zyklen);
+   Risiko-Gesamtbild in vier Kategorien (wahrscheinlich-und-
+   aufwaendig: Native-Image, Hadoop-Footprint, Sweep-
+   Vollstaendigkeit; wahrscheinlich-und-billig:
+   CSV-Flag-Skript-Bruch, Auto-Detection-Falle,
+   pre-AP8-Checkpoint-Bruch; unwahrscheinlich-aber-teuer:
+   parquet-java 1.18-Wechsel, CVE; akzeptiertes Restrisiko:
+   semantischer Schema-Drift, Sealed-Modul-Lokalitaet,
+   Single-File-Bundle-Manifest-Asymmetrie). Drei gestaffelte
+   Scope-Cuts: A (voller Vertrag in 1.0), B (Bundle-Pilot in
+   1.0 + Single-File in 1.1, empfohlen), C (Bundle ohne
+   Resume in 1.0, verworfen). Empfehlung Cut B mit
+   Folge-Releases 1.1 und 1.2. Fuenf offene Punkte vor
+   Implementierung (Release-Branch-Strategie, Gradle-
+   Distributions-Cut, DuckDB-/Arrow-Test-Status, MCP-
+   Server-Spiegelung, Hadoop-API-Shim-Folge-Entscheidung).
 
 ---
 

@@ -9,6 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP13 Entscheidungsvorlage**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-decision-template.md`](docs/planning/in-progress/parquet-decision-template.md)
+  synthetisiert die AP1-AP12-Evaluierung in eine Go/No-Go-
+  Vorlage. **Damit ist die Plan-Doc-Phase abgeschlossen.**
+  Inhalt:
+  - Aufwandschaetzung pro AP12-Implementierungsschritt mit
+    Bundle-/Single-File-Split (elf Tabellen-Eintraege —
+    1, 2, 3, 3b neu fuer `ParquetManifestWriter` +
+    `StreamingExporter`-Bundle-Closure, 4, 5a Bundle, 5b
+    SingleFile, 6, 7, 8, 9a Bundle-Tests, 9b SingleFile-
+    Tests). Voll-Scope: 29.5-47 PT netto, 38-65 PT brutto
+    inkl. Review-Zyklen. **Cut B (Bundle-only): 20.5-32.5
+    PT netto, 27-45 PT brutto**. Plus Folgekosten:
+    5-15 PT Native-Image, 5-10 PT optionaler
+    Hadoop-API-Shim, 2-3 PT Doku.
+    Kalenderaufwand bei Vollzeit: Voll-Scope 8-15 Wochen,
+    Cut B 5-9 Wochen.
+  - Risiko-Gesamtbild in vier Gruppen:
+    - Wahrscheinlich-und-aufwaendig: Native-Image-Reachability,
+      Hadoop-Footprint im JAR, Sealed-Sweep-Vollstaendigkeit
+      (mit konkreten Lueckenkategorien — `else`-Zweige,
+      nicht-exhaustive `when` ohne Ausdruckszwang,
+      Reflection-/Service-Loader, Test-Code; `rg`-Sweep ist
+      Go-Bedingung, nicht durch `gradle assemble` ersetzbar).
+    - Wahrscheinlich-und-billig: CSV-Flag-Skript-Bruch,
+      Auto-Detection-Falle, pre-AP8-Checkpoint-Bruch.
+    - Unwahrscheinlich-aber-teuer: parquet-java 1.18-Wechsel
+      waehrend Umsetzung, CVE in parquet-hadoop.
+    - Akzeptierte Restrisiken: semantischer Schema-Drift,
+      Sealed-Modul-Lokalitaet, Single-File-Bundle-Manifest-
+      Asymmetrie.
+  - Drei gestaffelte Scope-Cuts mit klarer Empfehlung:
+    - **Cut A (1.0.0 voller Vertrag)** — alle neun Schritte;
+      maximaler Operator-Mehrwert, traegt die volle
+      Single-File-Phase-1/2-Komplexitaet im 1.0-Risiko.
+    - **Cut B (1.0.0 Bundle-Pilot, empfohlen)** —
+      Bundle-Export inklusive `ParquetManifestWriter` +
+      `StreamingExporter`-Bundle-Closure (Schritt 3b) +
+      Bundle-Import + Bundle-Resume, Single-File scheitert
+      mit `PARQUET_SINGLE_FILE_NOT_YET_SUPPORTED`;
+      `--no-checkpoint` nicht eingefuehrt. Folge-Release
+      1.1.0 (11-20 PT brutto) ergaenzt Single-File +
+      `--no-checkpoint`; 1.2.0 (10-25 PT) den
+      Native-Image-Cut + optionalen Hadoop-API-Shim.
+    - **Cut C (1.0.0 Bundle ohne Resume)** — schnellster
+      Pilot, aber Wertversprechen gegenueber
+      `pg_dump | psql` zu duenn; verworfen.
+  - Fuenf offene Punkte, die vor der Implementierung
+    geklaert sein muessen (Release-Branch-Strategie,
+    Gradle-Distributions-Cut, DuckDB-/Arrow-Test-Status in
+    CI, MCP-Server-Spiegelung, Hadoop-API-Shim-Folge-
+    Entscheidungsdatum).
+  - Empfehlung: **Go mit Cut B als 1.0.0**, unter den
+    Bedingungen: offene Punkte beantwortet,
+    Engineering-Goal committed, Native-Image-Smoketest in
+    Schritt 3 statt spaeter. Wenn No-Go: Plan-Doc und
+    Sub-Docs unveraendert nach
+    `docs/planning/done/`, Spike-Modul bleibt im Repo.
+
 - **Parquet-Evaluierung — AP12 CLI- und Factory-Wiring-Skizze**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-cli-wiring.md`](docs/planning/in-progress/parquet-cli-wiring.md)
