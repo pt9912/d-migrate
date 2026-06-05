@@ -434,19 +434,15 @@ CLI-Entscheidung oben folgt fuer den Importpfad:
   einem Pfad zu einem `InputStream` und keinen Fallback aus einem
   `InputStream` zu einem Pfad. Der Resolver lehnt im Preflight ab, wenn
   die Format-zu-Quelle-Kombination nicht passt.
-- **`ImportInput.Directory`** wird nicht ersetzt, sondern bleibt fuer
-  Directory-Bundle-Imports der DTO-Vertrag (vgl. Hauptplan Abschnitt 6 zu
-  `Tabelle -> Pfad`-Bindings).
-  - **Korrektur (2026-06-05, durch AP7/AP8 ueberstimmt).** Diese
-    AP1-Aussage gilt nicht mehr. `parquet-manifest-format.md` §10.2 und
-    `parquet-directory-import.md` §10.1 empfehlen jetzt einen neuen
-    `ImportInput.ResolvedBundle`-Subtyp. Gruende: der Bundle-Vertrag
-    traegt mehr Information (Tabellenbindings, Spaltenmetadaten,
-    Resume-Fingerprint) als ein generisches `Directory` semantisch
-    sauber mitfuehren kann, und Magic-Felder auf `Directory` wuerden
-    den Sealed-Vertrag unsauber machen. Die endgueltige Wahl ist
-    Sache von AP9; der Wortlaut hier wird beim AP9-Abschluss
-    aufgeraeumt.
+- **`ImportInput.Directory`** bleibt fuer JSON/YAML/CSV-Directory-
+  Imports und fuer kuenftige Single-File-Bundles (AP11) der DTO-Vertrag.
+  Multi-Table-/Directory-Bundles mit verpflichtendem `manifest.yaml`
+  laufen ueber den dedizierten Subtyp `ImportInput.ResolvedBundle`
+  (`parquet-import-input-dto.md` §4.1). Die urspruengliche AP1-Aussage
+  „Directory wird nicht ersetzt" ist damit prazisiert, nicht verworfen:
+  `Directory` traegt weiterhin Verzeichnis + optionale Filter/Order,
+  aber **nicht** die Manifest-getriebenen Tabellenbindings —
+  diese leben im neuen Subtyp.
 - **Symmetrie auf der Writer-Seite ist nicht noetig**: `DataChunkWriter`
   bleibt stream-basiert; der Parquet-Writer wraps den bestehenden
   `OutputStream` in einen eigenen `PositionOutputStream`/`OutputFile`-

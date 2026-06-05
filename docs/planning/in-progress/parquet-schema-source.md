@@ -147,7 +147,20 @@ data class ChunkColumnSchema(
     val neutralType: NeutralType
 )
 
-enum class SchemaOrigin { JDBC_METADATA, SCHEMA_READER, MERGED }
+enum class SchemaOrigin {
+    JDBC_METADATA,
+    SCHEMA_READER,
+    MERGED,
+    MANIFEST_FALLBACK,    // AP9 (2026-06-05): hinzugefuegt fuer
+                          // Bundle-Importe mit schemaSource =
+                          // "manifest-fallback" (AP8 §6.2 +
+                          // parquet-import-input-dto.md §5).
+                          // Semantisch verschieden von MERGED
+                          // ("aus mehreren Quellen kombiniert");
+                          // MANIFEST_FALLBACK markiert best-effort-
+                          // Manifest-Typen ohne SchemaReader-/
+                          // JDBC-Provenance.
+}
 ```
 
 `NeutralType` traegt bereits Decimal-Precision/Scale, DateTime-Timezone,

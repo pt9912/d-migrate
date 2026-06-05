@@ -9,6 +9,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP9 Importpfad-Vertrag (bindende DTO-Wahl)**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-import-input-dto.md`](docs/planning/in-progress/parquet-import-input-dto.md)
+  hebt die AP7-/AP8-Vorentscheidungen in die Implementierungs-
+  Entscheidung. Inhalt:
+  - Bindung auf neuen Sealed-Subtyp `ImportInput.ResolvedBundle`
+    statt Magic-Field-Erweiterung von `ImportInput.Directory`;
+    Kotlin-Skelett mit `ResolvedBundleTableBinding(table, path,
+    schema, expectedSha256)` und
+    `BundleResumeFingerprint(manifestSha256, formatVersion,
+    producerVersion, tableOrder)` in `hexagon:ports-write`.
+    Bewusst Parquet-frei im Vertrag — der Port spricht nur
+    „Bundle", Adapter befuellen format-spezifisch.
+  - Konkrete `BundleCheckpointSpecifics :
+    CheckpointOperationSpecifics`-Variante mit Pflichtfeld
+    `bundleKind: String` (z.B. `KIND_PARQUET = "parquet-bundle"`)
+    plus `fingerprint`. `bundleKind` ist der serialisierungs-
+    stabile YAML-Diskriminator; unbekannte Werte fuehren in
+    `fromMap` zu `CHECKPOINT_OPERATION_SPECIFICS_UNKNOWN_KIND`.
+  - Fingerprint-Konsistenz: `BundleResumeFingerprint.tableOrder`
+    wird im Translator aus `bindings.map { it.table }`
+    abgeleitet (nicht als separater Parameter angenommen);
+    damit koennen DTO-Order und Fingerprint-Order strukturell
+    nicht divergieren.
+  - Resume-Enforcement sitzt im `ImportCheckpointManager`, nicht
+    im DTO. `expectedSha256: String?` bleibt nullable
+    (Initial-Lauf ohne `--manifest-sha256` zulaessig); im
+    `--resume` prueft der Manager pro Tabelle und faellt sonst
+    auf `BUNDLE_RESUME_REQUIRES_FILE_HASHES`.
+  - `ImportCheckpointManager.buildCallbacks` / `saveManifest()`
+    muss `BundleCheckpointSpecifics` bei **jedem** Update
+    fortschreiben (heute baut `saveManifest()` ein neues
+    Manifest ohne `operationSpecific`-Feld, was den im
+    Initial-Lauf geschriebenen Fingerprint sofort
+    ueberschriebe). Fingerprint ist eine Bundle-Lauf-
+    Invariante.
+  - Sealed-Bruch ehrlich modelliert: `ImportPreflightValidator`
+    hat drei exhaustive `when (input)` (Z. 105-122,
+    `effectiveTables`/`inputTopology`/`inputPath`); AP12 muss
+    sie alle ergaenzen. DTO traegt deshalb `bundleRoot: Path`,
+    damit `inputPath` ohne externe Lookups ableitbar bleibt.
+    Sweep-Befehl als robustes `rg --type kotlin -n 'is
+    ImportInput\.' .` plus `rg --type kotlin -n 'when \(' . |
+    grep -F 'ImportInput'`; einfaches
+    `git grep "when.*ImportInput"` verfehlt Stellen wie
+    `when (val input = ctx.input) { is ImportInput.Stdin -> ... }`.
+  - Resume-Enforcement konkret verdrahtet:
+    `InputContext` (ImportRunnerTypes.kt:127) bekommt
+    `bundleExpectedSha256ByTable: Map<String, String?>?` — null
+    fuer JSON/YAML/CSV, Map mit Per-Tabellen-Hash-Status fuer
+    Bundles. `ImportCheckpointManager.validateManifest`
+    (Z. 93-124) erweitert um drei Bundle-Pruefungen:
+    `BundleCheckpointSpecifics`-Vorhandensein, Fingerprint-
+    Gleichheit, Per-Tabelle-Hash-Vorhandensein im Resume-Scope
+    (= IN_PROGRESS-Tabellen aus `tableSlices`). CLI-Resolver
+    aktiviert den AP7-Preflight-SHA256-Check beim `--resume`
+    zwangsweise (`requireSha256Verify = true`).
+  - AP7 `ResolvedParquetBundle`-DTO im Sub-Doc §4.4 mit
+    konkretem Mindestumfang skizziert
+    (`bundleRoot`, `manifestSha256`, `formatVersion`,
+    `producerVersion`, `schemaSource`, `tables`); diese
+    Adapter-internen Felder waren vorher implizit und werden
+    jetzt explizit referenzierbar gemacht (Translator-
+    Skelett §4.3 nutzt sie direkt).
+  - Adapter-Translator `ParquetBundleAdapter` im
+    `adapters:driven:formats-parquet`-Modul: einzige Stelle,
+    an der adapter-interne Manifest-Begriffe
+    (`ResolvedParquetBundle`, `schemaSource`, ...) auf
+    Port-Begriffe abgebildet werden.
+  - **Begleitentscheidung 1** (AP2-Erweiterung): `SchemaOrigin`-
+    Enum in
+    [`parquet-schema-source.md`](docs/planning/in-progress/parquet-schema-source.md)
+    §4.4 um `MANIFEST_FALLBACK` erweitert (additiv,
+    `hexagon:ports-common`). Semantisch verschieden von `MERGED`
+    („aus mehreren Quellen kombiniert"); `MANIFEST_FALLBACK`
+    markiert best-effort-Manifest-Typen ohne SchemaReader-/
+    JDBC-Provenance.
+  - **Begleitentscheidung 2** (AP1-Aufraeumung):
+    [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+    §7.1 Bullet 4 finalisiert. Die urspruengliche AP1-Aussage
+    „`ImportInput.Directory` wird nicht ersetzt" ist praezisiert,
+    nicht verworfen: `Directory` bleibt fuer JSON/YAML/CSV und
+    fuer Single-File-Bundles (AP11) erhalten, Multi-Table-
+    Bundles mit verpflichtendem `manifest.yaml` laufen ueber
+    `ImportInput.ResolvedBundle`. Die Korrektur-Notiz aus dem
+    AP8-Commit ist damit obsolet und entfernt.
+  - Migrations-/Impact-Analyse fuer sieben Module
+    (`hexagon:ports-write`, `hexagon:ports-common`,
+    `adapters:driven:streaming`,
+    `adapters:driven:streaming/checkpoint`,
+    `hexagon:application`, `adapters:driven:formats-parquet`,
+    `adapters:driving:cli`). JSON/YAML/CSV-Pfade bleiben
+    funktional unveraendert (additives `is ResolvedBundle`).
+
+  Implementierungscode folgt nach AP12.
+
 - **Parquet-Evaluierung — AP8 manifestgebundene Directory-Import-
   Aufloesung** *(2026-06-05)* — neuer Sub-Doc
   [`parquet-directory-import.md`](docs/planning/in-progress/parquet-directory-import.md)

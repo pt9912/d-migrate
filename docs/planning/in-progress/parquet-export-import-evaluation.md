@@ -74,8 +74,23 @@
 > (`ImportInput.ResolvedBundle`-Subtyp empfohlen; bewusst
 > Parquet-frei im Port, Adapter uebersetzt am Port-Eintritt).
 >
-> Naechstes Arbeitspaket: AP9 (Importpfad-Vertrag: bindende
-> DTO-Wahl).
+> AP9 (Importpfad-Vertrag: bindende DTO-Wahl) ist als Sub-Doc
+> `parquet-import-input-dto.md` festgenagelt (Stand 2026-06-05).
+> Macht die AP7-/AP8-Vorentscheidung verbindlich: neuer
+> `ImportInput.ResolvedBundle`-Subtyp mit
+> `ResolvedBundleTableBinding` und `BundleResumeFingerprint`
+> in `hexagon:ports-write`, neue
+> `BundleCheckpointSpecifics : CheckpointOperationSpecifics`,
+> Adapter-Translator `ParquetBundleAdapter` als einzige Stelle,
+> an der adapter-interne Manifest-Begriffe auf Port-Begriffe
+> abgebildet werden. Zieht zwei Begleitentscheidungen mit:
+> AP2 `SchemaOrigin` um `MANIFEST_FALLBACK` erweitert (additiv),
+> AP1 §7.1 Bullet zu `ImportInput.Directory` finalisiert
+> (Directory bleibt fuer JSON/YAML/CSV + Single-File-Bundles,
+> Multi-Table-Bundles laufen ueber `ResolvedBundle`).
+>
+> Naechstes Arbeitspaket: AP10 (Stream-vs-Datei-Portentscheidung;
+> die `SeekableDataChunkReaderFactory`-Signatur fixieren).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -83,6 +98,7 @@
 > `parquet-schema-source.md` (AP2-Schemaquelle),
 > `parquet-manifest-format.md` (AP7-Manifest-Format und Preflight),
 > `parquet-directory-import.md` (AP8-Iterator und Directory-Aufloesung),
+> `parquet-import-input-dto.md` (AP9-Importpfad-Vertrag, bindend),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -456,6 +472,23 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    Port-Eintritt).
 9. Importpfad-Vertrag fuer manifestseitige `Tabelle -> Pfad`-Bindings klaeren:
    neues resolved DTO oder Erweiterung von `ImportInput.Directory`.
+   Ausgearbeitet als Sub-Doc `parquet-import-input-dto.md`
+   (Stand 2026-06-05). Bindende Wahl: neuer Subtyp
+   `ImportInput.ResolvedBundle` mit
+   `ResolvedBundleTableBinding(table, path, schema,
+   expectedSha256)` und `BundleResumeFingerprint`(manifestSha256,
+   formatVersion, producerVersion, tableOrder) in
+   `hexagon:ports-write`. Begleit-Bausteine: neue
+   `BundleCheckpointSpecifics : CheckpointOperationSpecifics`
+   im selben Modul (AP8 §10.5 wird damit implementierbar),
+   Adapter-Translator `ParquetBundleAdapter` als einzige Stelle
+   adapter-interne -> Port-Begriffe. Zwei Begleitentscheidungen:
+   AP2 `SchemaOrigin` um `MANIFEST_FALLBACK` erweitert (additiv,
+   `hexagon:ports-common`), AP1 §7.1 ImportInput.Directory-
+   Aussage finalisiert (`Directory` bleibt fuer JSON/YAML/CSV
+   und Single-File-Bundles erhalten, Multi-Table-Bundles laufen
+   ueber `ResolvedBundle`). Migrations-/Impact-Analyse fuer
+   sieben Module enthalten; Implementierung folgt nach AP12.
 10. Stream-vs-Datei-Portentscheidung fuer Parquet klaeren: bestehende
    `InputStream`-/`OutputStream`-Factories, erweiterter dateibasierter
    Format-Port oder Parquet-spezifischer Resolver-/Adapterpfad.
