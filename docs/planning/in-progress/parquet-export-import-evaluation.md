@@ -48,14 +48,41 @@
 > Formatversionierung (`MAJOR.MINOR`, Start bei 1.0) fest. Die
 > finale Implementierungswahl haengt noch an AP8/AP9.
 >
-> Naechstes Arbeitspaket: AP8 (manifestgebundene Directory-Import-
-> Aufloesung).
+> AP8 (manifestgebundene Directory-Import-Aufloesung) ist als
+> Sub-Doc `parquet-directory-import.md` skizziert
+> (Stand 2026-06-05). Legt den `ParquetBundleResolver`-Vertrag
+> fest (`resolve(): List<ParquetTableBinding>`, kein one-shot
+> Iterator), klaert die Interaktion zwischen Manifest-
+> Tabellenordnung und `tableFilter`/`tableOrder`, definiert den
+> `ChunkSchema`-Aufbau pro Tabelle aus Manifest-Spaltenmetadaten
+> (Drei-Stufen-Aufloesung neutralType -> JDBC-Hint-Tupel ->
+> sqlTypeName-Heuristik; JDBC-Hints fliessen nur als Eingaben in
+> die NeutralType-Ableitung, nicht in `ChunkColumnSchema`),
+> waehlt strikte Mid-stream-Fehlerbehandlung, knuepft Resume an
+> die Vorbedingung „Datei-Hashes vorhanden"
+> (`BUNDLE_RESUME_REQUIRES_FILE_HASHES`) und trennt
+> Hash-Pruefungen strikt: AP7-Live-Preflight gegen
+> `tables[].sha256` erkennt Datei-Aenderungen
+> (`MANIFEST_SHA256_MISMATCH`), der Resume-Checkpoint
+> (`manifestSha256`, `formatVersion`, `producerVersion`,
+> effektive `tableOrder`) erkennt Manifest-Edits seit Checkpoint.
+> Per-Datei-Hash wird bewusst NICHT im Checkpoint persistiert
+> (waere redundant zu `manifestSha256`). Definiert die
+> Format-Autodetection ueber `manifest.yaml` plus die
+> Vorbedingung `DataExportFormat.PARQUET` und einen
+> `resolveFormat`-Hook. AP9 bestaetigt die DTO-Wahl
+> (`ImportInput.ResolvedBundle`-Subtyp empfohlen; bewusst
+> Parquet-frei im Port, Adapter uebersetzt am Port-Eintritt).
+>
+> Naechstes Arbeitspaket: AP9 (Importpfad-Vertrag: bindende
+> DTO-Wahl).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
 > `parquet-libraries.md` (AP1-Bibliothekssichtung inkl. AP3-Befund-Rueckspiel),
 > `parquet-schema-source.md` (AP2-Schemaquelle),
 > `parquet-manifest-format.md` (AP7-Manifest-Format und Preflight),
+> `parquet-directory-import.md` (AP8-Iterator und Directory-Aufloesung),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -406,6 +433,27 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    Vorentscheidungen final nach AP8/AP9.
 8. Manifestgebundene Directory-Import-Aufloesung entwerfen, sodass der
    Streaming-Import nicht wieder nur anhand von Dateinamen/Endungen inferiert.
+   Ausgearbeitet als Sub-Doc `parquet-directory-import.md`
+   (Stand 2026-06-05). Definiert den `ParquetBundleResolver`
+   (`resolve(): List<ParquetTableBinding>` ueber
+   `ResolvedParquetBundle.tables`, kein one-shot Iterable;
+   `StreamingImporter` braucht `.size` fuer Progress), Tabellenordnung
+   primaer aus Manifest mit `tableOrder`-Override,
+   `ChunkSchema`-Konstruktion in drei Stufen
+   (Manifest-`neutralType` -> JDBC-Hint-Tupel ->
+   `sqlTypeName`-Heuristik -> Fehler; JDBC-Hints nur als
+   Eingaben, nicht im `ChunkColumnSchema`), strikte
+   Mid-stream-Fehlerbehandlung (`BUNDLE_TABLE_IMPORT_FAILED`),
+   Resume-Vorbedingung "Datei-Hashes vorhanden"
+   (`BUNDLE_RESUME_REQUIRES_FILE_HASHES`) plus AP7-Live-Preflight
+   zwangsweise aktiv, Resume-Fingerprint mit `manifestSha256` +
+   `formatVersion` + `producerVersion` + effektiver `tableOrder`
+   (kein `fileSha256ByTable`, weil redundant zu `manifestSha256`),
+   Format-Autodetection ueber `manifest.yaml` mit Vorbedingung
+   `DataExportFormat.PARQUET` und `resolveFormat`-Hook, plus
+   Code-Konsequenzen mit port-eigenem, Parquet-freiem
+   `ImportInput.ResolvedBundle`-Subtyp (Adapter uebersetzt am
+   Port-Eintritt).
 9. Importpfad-Vertrag fuer manifestseitige `Tabelle -> Pfad`-Bindings klaeren:
    neues resolved DTO oder Erweiterung von `ImportInput.Directory`.
 10. Stream-vs-Datei-Portentscheidung fuer Parquet klaeren: bestehende

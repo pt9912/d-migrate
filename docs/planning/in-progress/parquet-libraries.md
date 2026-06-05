@@ -437,6 +437,16 @@ CLI-Entscheidung oben folgt fuer den Importpfad:
 - **`ImportInput.Directory`** wird nicht ersetzt, sondern bleibt fuer
   Directory-Bundle-Imports der DTO-Vertrag (vgl. Hauptplan Abschnitt 6 zu
   `Tabelle -> Pfad`-Bindings).
+  - **Korrektur (2026-06-05, durch AP7/AP8 ueberstimmt).** Diese
+    AP1-Aussage gilt nicht mehr. `parquet-manifest-format.md` §10.2 und
+    `parquet-directory-import.md` §10.1 empfehlen jetzt einen neuen
+    `ImportInput.ResolvedBundle`-Subtyp. Gruende: der Bundle-Vertrag
+    traegt mehr Information (Tabellenbindings, Spaltenmetadaten,
+    Resume-Fingerprint) als ein generisches `Directory` semantisch
+    sauber mitfuehren kann, und Magic-Felder auf `Directory` wuerden
+    den Sealed-Vertrag unsauber machen. Die endgueltige Wahl ist
+    Sache von AP9; der Wortlaut hier wird beim AP9-Abschluss
+    aufgeraeumt.
 - **Symmetrie auf der Writer-Seite ist nicht noetig**: `DataChunkWriter`
   bleibt stream-basiert; der Parquet-Writer wraps den bestehenden
   `OutputStream` in einen eigenen `PositionOutputStream`/`OutputFile`-

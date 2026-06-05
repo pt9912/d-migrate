@@ -9,6 +9,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP8 manifestgebundene Directory-Import-
+  Aufloesung** *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-directory-import.md`](docs/planning/in-progress/parquet-directory-import.md)
+  als Resolver-Skizze fuer Bundle-Importe. Inhalt:
+  - Aufloesungsmodell mit `ParquetBundleResolver`: Wrapper um
+    `ResolvedParquetBundle`, `resolve()` liefert eine
+    `List<ParquetTableBinding>` (kein one-shot `Iterable`, weil der
+    `StreamingImporter` `discoveredInputs.size` vor der
+    Per-Tabellen-Iteration braucht).
+  - Tabellenordnung primaer aus Manifest-`tables[]`-Reihenfolge,
+    optional von `tableOrder` aus `ImportInput` explizit
+    ueberschrieben (User > Producer). `tableFilter` ist Teilmenge
+    gegen Manifest-Bestand.
+  - `ChunkSchema`-Konstruktion pro Tabelle in drei Stufen
+    (Manifest-`neutralType` -> JDBC-Hint-Tupel -> `sqlTypeName`-
+    Heuristik -> `BUNDLE_SCHEMA_UNRESOLVED`); JDBC-Hints fliessen
+    NUR als Eingaben in die NeutralType-Ableitung ein und werden
+    nicht im neutralen `ChunkColumnSchema` persistiert (konsistent
+    mit `parquet-schema-source.md` §4.4).
+  - Strikte Mid-stream-Fehlerbehandlung
+    (`BUNDLE_TABLE_IMPORT_FAILED`): kein Skip-Modus, kein
+    Bundle-weiter Rollback (Atomic-Preserve ist Ziel-DB-Sache).
+  - Resume-Bedingung: erfordert manifestseitige Datei-Hashes
+    (`tables[].sha256`) fuer jede Tabelle im Resume-Scope; sonst
+    `BUNDLE_RESUME_REQUIRES_FILE_HASHES`. Begruendung: AP7 §7.1
+    laesst SHA-256 optional, ohne Hash kann eine Dateiaenderung
+    nicht erkannt werden. Resume macht zwei klar getrennte
+    Pruefungen: (P1) AP7-Preflight-SHA256 zwangsweise aktiv —
+    live-berechneter Datei-Digest gegen Manifest-`tables[].sha256`
+    erkennt Datei-Aenderungen als `MANIFEST_SHA256_MISMATCH`;
+    (P2) Checkpoint-Fingerprint (`manifestSha256`, `formatVersion`,
+    `producerVersion`, effektive `tableOrder`) erkennt Manifest-
+    Edits seit Checkpoint. `fileSha256ByTable` ist bewusst nicht
+    Teil des Checkpoints (redundant zu `manifestSha256`).
+  - Format-Autodetection: `data import --source <dir>` ohne
+    `--format` routet bei vorhandenem `manifest.yaml` automatisch
+    auf Parquet (`resolveFormat`-Hook vor
+    `inferFormatFromExtension`). Vorbedingung:
+    `DataExportFormat.PARQUET` muss eingefuehrt werden — heute
+    kennt der Enum nur JSON/YAML/CSV (AP12-Vorgriff, im Sub-Doc
+    explizit gemacht).
+  - Code-Konsequenzen: neuer port-eigener Subtyp
+    `ImportInput.ResolvedBundle` mit
+    `ResolvedBundleTableBinding(table, path, schema, expectedSha256)`
+    und `BundleResumeFingerprint` (`manifestSha256`,
+    `formatVersion`, `producerVersion`, `tableOrder`) — bewusst
+    Parquet-frei, damit `hexagon:ports-write` nicht von
+    `adapters:driven:formats-parquet` abhaengt. Adapter haelt sein
+    reichhaltigeres `ResolvedParquetBundle` intern und uebersetzt
+    am Port-Eintritt.
+  - Checkpoint-Persistenz (§10.5): neue konkrete Implementierung
+    `BundleCheckpointSpecifics : CheckpointOperationSpecifics`
+    wird im `hexagon:ports-write`-Modul gebraucht — bewusst
+    Parquet-frei im Klassennamen, konsistent zur §10.1-
+    Port-Sauberkeit; der YAML-`kind`-Diskriminator
+    `"parquet-bundle"` traegt den Adapter-Bezug.
+    `FileCheckpointStore` muss `operationSpecific` mit-serialisieren
+    (heute ignoriert), `ImportCheckpointManager.writeInitialManifest`
+    nimmt einen optionalen `BundleResumeFingerprint`-Parameter
+    durch — beides AP12-Wiring. Schema-Bump auf
+    `CURRENT_SCHEMA_VERSION=3` ist nicht noetig, weil das Feld
+    optional bleibt und pre-AP8-Checkpoints sich beim
+    Bundle-Resume strukturell mit dem neuen Code
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` abmelden
+    (eigener Code, nicht `BUNDLE_RESUME_REQUIRES_FILE_HASHES` —
+    das beschreibt das fehlende `tables[].sha256`, eine andere
+    Konstellation).
+  - `SchemaOrigin`-Mapping: AP2 §4.4 traegt heute nur
+    `JDBC_METADATA`/`SCHEMA_READER`/`MERGED`. Fuer
+    `schemaSource = manifest-fallback` ist `MERGED` semantisch
+    falsch (es bedeutet „aus mehreren Quellen kombiniert", nicht
+    „best-effort"). AP8 schlaegt eine vierte Variante
+    `MANIFEST_FALLBACK` vor; AP2 wird beim AP9-Abschluss
+    nachgezogen.
+
+  Bindende DTO-Wahl ist AP9; Implementierungscode folgt nach AP12.
+
+- **Parquet-Evaluierung — AP1 §7.1 ImportInput.Directory-Aussage
+  als ueberstimmt markiert** *(2026-06-05)* —
+  [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+  §7.1 Bullet 4 traegt jetzt einen Korrektur-Hinweis: AP7 §10.2
+  und AP8 §10.1 empfehlen inzwischen einen neuen
+  `ImportInput.ResolvedBundle`-Subtyp statt der urspruenglich
+  geplanten Beibehaltung von `ImportInput.Directory`. Endgueltiger
+  Wortlaut wird beim AP9-Abschluss aufgeraeumt.
+
 - **Parquet-Evaluierung — AP7 Manifest-Format und Import-Preflight**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-manifest-format.md`](docs/planning/in-progress/parquet-manifest-format.md)
