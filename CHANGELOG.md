@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Parquet-Evaluierung — AP4 DuckDB-Akzeptanzlauf** *(2026-06-05)* —
+  neuer Test
+  [`ParquetSpikeDuckDbReadTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeDuckDbReadTest.kt)
+  im Spike-Modul. DuckDB JDBC 1.5.3.0 (ausschliesslich
+  `testImplementation`, kein produktiver Pfad — vgl.
+  `parquet-libraries.md` §3.5) liest den GZIP-komprimierten
+  Spike-Output via `SELECT * FROM read_parquet(?)`, verifiziert den
+  Round-Trip aller drei Zeilen und meldet die Spalten als
+  `INTEGER`/`VARCHAR`/`BOOLEAN`. Damit ist Akzeptanzkriterium §7
+  Bullet 1 ("Beispiel-Export kann mit DuckDB gelesen werden") und
+  fuer das Spike-Schemafragment implizit Bullet 3
+  (Round-Trip-Typen) abgehakt. Hadoop bleibt bewusst auf 3.4.1:
+  parquet-hadoop 1.17.1 ist gegen Hadoop 3.3.0 (provided)
+  kompiliert, 3.5.0 ist ungetestete Kombination und lohnt sich
+  erst mit dem 1.18-Wechsel.
+
 ### Changed
 
 - **Parquet-Evaluierung — AP3-Spike-Befunde zurueckgespielt**

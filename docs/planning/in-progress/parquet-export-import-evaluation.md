@@ -13,8 +13,15 @@
 > `parquet-libraries.md` §5.1, §7 und §8 zurueckgespielt; das
 > Status-Header-Doppel hier ist damit obsolet.
 >
-> Naechste Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf gegen
-> Spike-Output) und AP5 (Arrow-Inspektion).
+> AP4 (DuckDB-Akzeptanzlauf gegen Spike-Output) ist mit
+> `ParquetSpikeDuckDbReadTest` erledigt (Stand 2026-06-05); DuckDB
+> JDBC 1.5.3.0 liest den Spike-Output erfolgreich und meldet die
+> Spike-Schema-Spalten als INTEGER/VARCHAR/BOOLEAN. Hadoop bleibt
+> bewusst auf 3.4.1 — parquet-hadoop 1.17.1 ist gegen 3.3.0
+> kompiliert (provided), 3.5.0 ist ungetestete Kombination und
+> lohnt sich erst mit dem 1.18-Wechsel.
+>
+> Naechstes Arbeitspaket: AP5 (Arrow-Inspektion).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -323,6 +330,14 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    Hadoop-API-Linie ueber `LocalFileSystem` statt auf
    `PlainParquetConfiguration` (1.18+-Pfad).
 4. Prototyp gegen DuckDB lesen lassen und Typen inspizieren.
+   Erledigt als `ParquetSpikeDuckDbReadTest` im Spike-Modul
+   (Stand 2026-06-05). DuckDB JDBC 1.5.3.0 (testImplementation,
+   nicht produktiv — vgl. `parquet-libraries.md` §3.5) liest den
+   GZIP-komprimierten Spike-Output via
+   `SELECT * FROM read_parquet(?)` und meldet die Spalten als
+   `INTEGER`/`VARCHAR`/`BOOLEAN` (Akzeptanzkriterium §7 Bullet 1
+   abgehakt; §7 Bullet 3 fuer das Spike-Schemafragment
+   `int+UTF-8-string+boolean` implizit).
 5. Prototyp gegen Arrow-Werkzeuge oder Arrow-Java-Metadateninspektion pruefen.
 6. Importpfad fuer denselben Prototyp pruefen.
 7. Manifest-Format inklusive `Tabelle -> Datei`-Mapping und Import-Preflight

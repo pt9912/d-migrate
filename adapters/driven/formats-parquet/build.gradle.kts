@@ -71,3 +71,13 @@ configurations.all {
     exclude(group = "org.xerial.snappy", module = "snappy-java")
     exclude(group = "com.github.luben", module = "zstd-jni")
 }
+
+// AP4 — DuckDB-Akzeptanzlauf gegen den Spike-Output. DuckDB JDBC
+// liest die Parquet-Datei via `SELECT * FROM read_parquet(?)` und
+// dient ausschliesslich als Inspektions-/Akzeptanztestwerkzeug
+// (parquet-libraries.md §3.5: kein produktiver Writer/Reader).
+// Bewusst nur testImplementation: das DuckDB-JNI darf nicht ins
+// Distributions-Artefakt wandern.
+dependencies {
+    testImplementation("org.duckdb:duckdb_jdbc:${rootProject.properties["duckdbJdbcVersion"]}")
+}
