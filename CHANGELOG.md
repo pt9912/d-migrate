@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP7 Manifest-Format und Import-Preflight**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-manifest-format.md`](docs/planning/in-progress/parquet-manifest-format.md)
+  als architektonische Skizze fuer Multi-Table-/Directory-Bundle-
+  Exporte. Inhalt:
+  - YAML-Schema von `manifest.yaml`: Pflichtfelder `formatVersion`,
+    `producer`, `producerVersion`, `exportedAt`, `schemaSource`,
+    `tables[].{table,file,columns}`; optionale Felder `rowCount`,
+    `sha256`, plus `NeutralType`-YAML-Repraesentation mit
+    `kind`-Diskriminator.
+  - Tabelle-zu-Datei-Aufloesung mit Default-Konvention
+    `<schema>.<table>.parquet` und Kollisionsschutz K1-K5 (doppelte
+    Tabelle/Datei, Pfadausbruch, fehlende und unreferenzierte
+    Dateien — letztere verhindern stillen Import laut Hauptplan §6).
+  - SHA-256-Verfahren als Opt-in: gehasht wird der fertige Parquet-
+    Bytestrom nach Writer-`close()`, Lowercase-Hex, kein Praefix.
+    Verifikation einmal im Preflight, nicht waehrend des Streamings.
+  - Formatversionierung `MAJOR.MINOR` mit Start bei `1.0`:
+    Major-Bump = inkompatibel und vom Reader abgelehnt; Minor-Bump
+    = additiv und mit Warnung tolerierbar.
+  - Preflight-Vertrag mit elf stabilen Fehlerklassen
+    (`MANIFEST_NOT_FOUND`, `MANIFEST_PARSE_ERROR`,
+    `MANIFEST_VERSION_INCOMPATIBLE`, `MANIFEST_FIELD_MISSING/INVALID`,
+    `MANIFEST_TABLE_DUPLICATE`, `MANIFEST_FILE_DUPLICATE/OUTSIDE_BUNDLE/MISSING/UNREFERENCED`,
+    `MANIFEST_SHA256_MISMATCH`).
+  - Konsequenzen: neue Klassen `ParquetBundleManifest`,
+    `ParquetManifestReader/Writer`, `ParquetBundlePreflight` im
+    `adapters:driven:formats-parquet`-Modul; Vorzugsoption fuer AP9
+    ist neuer `ResolvedParquetBundleInput`-Subtyp statt
+    Magic-Field-Erweiterung an `ImportInput.Directory`.
+
+  AP7-Vorentscheidungen werden in AP8 (Directory-Aufloesung) und AP9
+  (Importpfad-DTO) bestaetigt; Implementierungscode folgt nach AP12.
+
 - **Parquet-Evaluierung — AP6 Importpfad-Spike** *(2026-06-05)* —
   neuer Test
   [`ParquetSpikeImportPathTest`](adapters/driven/formats-parquet/src/test/kotlin/dev/dmigrate/format/parquet/spike/ParquetSpikeImportPathTest.kt)

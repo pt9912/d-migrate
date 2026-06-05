@@ -40,12 +40,22 @@
 > Hadoop 3.4.1 noetig, weil der `FileSystem`-Service-Loader-Cache
 > sonst die `LocalFileSystem`-Default-Instanz vorhaelt).
 >
-> Naechstes Arbeitspaket: AP7 (Manifest-Format und Import-Preflight).
+> AP7 (Manifest-Format und Import-Preflight) ist als Sub-Doc
+> `parquet-manifest-format.md` skizziert (Stand 2026-06-05); legt
+> das YAML-Schema von `manifest.yaml`, den Preflight-Vertrag
+> (Validierungen + stabile Fehlerklassen), die Tabelle-zu-Datei-
+> Aufloesung mit Kollisionsschutz, das SHA-256-Verfahren und die
+> Formatversionierung (`MAJOR.MINOR`, Start bei 1.0) fest. Die
+> finale Implementierungswahl haengt noch an AP8/AP9.
+>
+> Naechstes Arbeitspaket: AP8 (manifestgebundene Directory-Import-
+> Aufloesung).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
 > `parquet-libraries.md` (AP1-Bibliothekssichtung inkl. AP3-Befund-Rueckspiel),
 > `parquet-schema-source.md` (AP2-Schemaquelle),
+> `parquet-manifest-format.md` (AP7-Manifest-Format und Preflight),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -383,7 +393,17 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    Direktive ist in Hadoop 3.4.1 noetig, sonst greift der
    `FileSystem`-Service-Loader-Cache).
 7. Manifest-Format inklusive `Tabelle -> Datei`-Mapping und Import-Preflight
-   skizzieren.
+   skizzieren. Ausgearbeitet als Sub-Doc `parquet-manifest-format.md`
+   (Stand 2026-06-05). Legt das YAML-Schema von `manifest.yaml`
+   (`formatVersion`, `producer`, `exportedAt`, `schemaSource`,
+   `tables[].{table,file,sha256?,columns}`), die Tabelle-zu-Datei-
+   Aufloesung mit Kollisionsschutz K1-K5, das SHA-256-Verfahren
+   (opt-in, gehasht wird der fertige Parquet-Bytestrom nach
+   `close()`), die Formatversionierung (`MAJOR.MINOR`, Start bei
+   1.0, additive Minor-Bumps tolerieren unbekannte Felder) und den
+   Preflight-Vertrag mit elf stabilen Fehlerklassen
+   (`MANIFEST_NOT_FOUND` bis `MANIFEST_SHA256_MISMATCH`) fest.
+   Vorentscheidungen final nach AP8/AP9.
 8. Manifestgebundene Directory-Import-Aufloesung entwerfen, sodass der
    Streaming-Import nicht wieder nur anhand von Dateinamen/Endungen inferiert.
 9. Importpfad-Vertrag fuer manifestseitige `Tabelle -> Pfad`-Bindings klaeren:
