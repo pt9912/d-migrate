@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parquet-Evaluierung — AP10 Stream-vs-Datei-Portentscheidung**
+  *(2026-06-05)* — neuer Sub-Doc
+  [`parquet-port-shape.md`](docs/planning/in-progress/parquet-port-shape.md)
+  hebt die Vorentscheidung aus `parquet-libraries.md` §7 in eine
+  bindende Reader-Port-Skizze. Inhalt:
+  - Neuer Port `SeekableDataChunkReaderFactory` in
+    `hexagon:ports-read` parallel zur bestehenden
+    `DataChunkReaderFactory` — bewusst Format-agnostisch
+    (`PARQUET` heute, kuenftige seekable Formate ohne
+    Vertragsbruch). Kein vereinheitlichter Port, weil das
+    `InputStream`/`Path`-Variantenproblem dann den
+    Temp-Spool-Pfad wiedereroeffnen oder das schwaechere Schema-
+    Inferenz-Modell durchsetzen wuerde.
+  - `SeekableChunkSource` als sealed interface mit konkretem
+    `Local(path: Path)`-Subtyp; reine `InputStream`-Quellen sind
+    bewusst nicht Teil der Hierarchie (kein impliziter
+    Temp-Spool, `parquet-libraries.md` §7 Bullet 2).
+  - `ChunkSchema` ist Pflichtparameter der `create(...)`-Signatur;
+    der Reader vertraut dem Schema aus dem Bundle-Preflight und
+    rekonstruiert nicht aus dem Datei-Footer.
+  - Writer-Seite bleibt **unveraendert** stream-basiert; der
+    Parquet-Writer wraps den `OutputStream` intern in einen
+    `PositionOutputStream`/`OutputFile`-Adapter (stdout-tauglich).
+    Kein neuer Writer-Port.
+  - Default-Implementation `ParquetSeekableDataChunkReaderFactory`
+    lebt im `adapters:driven:formats-parquet`-Modul; nutzt
+    parquet-java 1.17.1 plus die Hadoop-API-via-LocalFileSystem-
+    Befunde aus §5.1/§7/§8.
+  - Migrations-Analyse fuer sechs Module; `TableImporter` bekommt
+    eine zweite Factory-Referenz, Format-Verzweigung lebt dort
+    (AP9 §7.3). AP12 macht das Wiring.
+
+  Implementierungscode folgt nach AP12.
+
 - **Parquet-Evaluierung — AP9 Importpfad-Vertrag (bindende DTO-Wahl)**
   *(2026-06-05)* — neuer Sub-Doc
   [`parquet-import-input-dto.md`](docs/planning/in-progress/parquet-import-input-dto.md)

@@ -89,8 +89,22 @@
 > (Directory bleibt fuer JSON/YAML/CSV + Single-File-Bundles,
 > Multi-Table-Bundles laufen ueber `ResolvedBundle`).
 >
-> Naechstes Arbeitspaket: AP10 (Stream-vs-Datei-Portentscheidung;
-> die `SeekableDataChunkReaderFactory`-Signatur fixieren).
+> AP10 (Stream-vs-Datei-Portentscheidung) ist als Sub-Doc
+> `parquet-port-shape.md` festgenagelt (Stand 2026-06-05).
+> Definiert die `SeekableDataChunkReaderFactory`-Signatur als
+> parallelen Port neben `DataChunkReaderFactory`, bewusst
+> Format-agnostisch (`PARQUET` heute, kuenftige seekable
+> Formate ohne Vertragsbruch); `SeekableChunkSource` als
+> Sealed-Hierarchie mit konkretem `Local(path)`-Subtyp; reine
+> `InputStream`-Quellen sind kein Bestandteil der Hierarchie
+> (kein Temp-Spool). `ChunkSchema` ist Pflichtparameter der
+> Factory (Schema kommt vom Preflight, nicht vom Datei-Footer).
+> Writer-Seite bleibt stream-basiert (PositionOutputStream-
+> Wrapper im Adapter). TableImporter bekommt zwei Factory-
+> Referenzen; AP12 macht das Wiring.
+>
+> Naechstes Arbeitspaket: AP11 (Single-File-Metadatenvertrag —
+> Parquet-Footer-KV vs. Sidecar).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
@@ -99,6 +113,7 @@
 > `parquet-manifest-format.md` (AP7-Manifest-Format und Preflight),
 > `parquet-directory-import.md` (AP8-Iterator und Directory-Aufloesung),
 > `parquet-import-input-dto.md` (AP9-Importpfad-Vertrag, bindend),
+> `parquet-port-shape.md` (AP10-Reader-Port-Vertrag, bindend),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
 ---
@@ -492,11 +507,22 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
 10. Stream-vs-Datei-Portentscheidung fuer Parquet klaeren: bestehende
    `InputStream`-/`OutputStream`-Factories, erweiterter dateibasierter
    Format-Port oder Parquet-spezifischer Resolver-/Adapterpfad.
-   Ausgearbeitet in `parquet-libraries.md` Abschnitt 7 (Stand 2026-06-04).
-   Vorentscheidung: Reader file-/pfadbasiert, reine `InputStream`-Quellen
-   werden abgelehnt, kein impliziter Temp-Spool; Writer-stdout bleibt via
-   `PositionOutputStream` erlaubt. CLI-Spiegelung: `data import --format
-   parquet` akzeptiert nur `--source <pfad>`. Final nach AP3.
+   Ausgearbeitet in `parquet-libraries.md` Abschnitt 7 (Vor-
+   entscheidung 2026-06-04) und als Sub-Doc `parquet-port-shape.md`
+   bindend gemacht (Stand 2026-06-05). Bindender Vertrag: neuer
+   Port `SeekableDataChunkReaderFactory` in `hexagon:ports-read`
+   parallel zu `DataChunkReaderFactory`; bewusst Format-agnostisch
+   (`PARQUET` heute, kuenftige seekable Formate ohne Vertragsbruch);
+   `SeekableChunkSource` als sealed mit `Local(path)`-Subtyp;
+   reine `InputStream`-Quellen werden NICHT in die Sealed-
+   Hierarchie aufgenommen (kein Temp-Spool). `ChunkSchema` ist
+   Pflichtparameter der `create(...)`-Signatur; das Schema kommt
+   vom Bundle-Preflight, nicht aus dem Datei-Footer. Writer-Seite
+   bleibt unveraendert stream-basiert; Parquet-Writer wraps den
+   `OutputStream` in einen `PositionOutputStream`-Adapter
+   (stdout-tauglich). CLI-Spiegelung: `data import --format
+   parquet` akzeptiert nur `--source <pfad>`. TableImporter
+   bekommt eine zweite Factory-Referenz; AP12 macht das Wiring.
 11. Single-File-Metadatenvertrag klaeren: Parquet-Footer-Key-Value-Metadaten,
    expliziter Sidecar oder bewusst eingeschraenkter Footer-/Ziel-Schema-Modus.
 12. CLI- und Factory-Wiring skizzieren: `DataExportFormat`, Clikt-Choices,
