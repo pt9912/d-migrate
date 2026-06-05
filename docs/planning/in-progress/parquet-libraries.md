@@ -249,6 +249,31 @@ gegen GraalVM-Reachability geschnitten. Grund fuer die Wahl:
 Diese Entscheidung ist nicht final. Sie wird in AP3 (Prototyp) bestaetigt
 oder zurueckgenommen, sobald die folgenden offenen Punkte beantwortet sind.
 
+### 5.1 Hadoop-API-Kanal in 1.17.1 (AP3-Spike-Praezisierung, 2026-06-05)
+
+Der AP3-Spike (`adapters/driven/formats-parquet/`,
+`ParquetSpike.kt`) hat die Vorentscheidung lauffaehig bestaetigt, aber
+zwei Praezisierungen gegenueber dem urspruenglichen Wortlaut noetig
+gemacht:
+
+- `ParquetWriter.Builder.withConf` und `ParquetReader.builder`
+  akzeptieren in 1.17.1 nur Hadoop-`Configuration` bzw. Hadoop-`Path`.
+  Die in PARQUET-1822 / PR 1111 erwaehnten
+  `PlainParquetConfiguration`-/`LocalOutputFile`-/`LocalInputFile`-
+  Overloads sind in `master` vorhanden, kommen aber erst mit
+  parquet-java 1.18+. In 1.17.1 sind sie nicht ueber die oeffentliche
+  Builder-API erreichbar.
+- Der Spike verwendet deshalb Hadoop-`Path` plus `Configuration(false)`
+  (ohne Default-Resources wie `core-site.xml`) und ueberlaesst
+  Hadoop-`LocalFileSystem` die Aufloesung von `file://`-URIs. Das ist
+  rein NIO unter der Haube; keine HDFS-/Cluster-Pfade werden geladen.
+- Die Vorentscheidung „kein Hadoop-Cluster, kein HDFS" bleibt damit
+  gueltig. Praeziser formuliert: der Adapter laeuft auf der **Hadoop-API
+  ueber LocalFileSystem**, nicht auf `PlainParquetConfiguration`. Bis
+  ein CVE-freies 1.18.x verfuegbar ist, behaelt AP4+ diesen Pfad und
+  dokumentiert ihn als bewusste 1.17.1-Variante; ein Upgrade auf 1.18.x
+  ist Folgeentscheidung, kein Vertragsbruch.
+
 ---
 
 ## 6. Pragmatische Reihenfolge
@@ -303,6 +328,18 @@ Vorentscheidung lautet:
 - **Writer-Seite bleibt unveraendert.** Stdout funktioniert via
   `PositionOutputStream` (zaehlender Stream, kein Seek noetig); das ist
   Teil der AP3-Verifikation.
+- **`.crc`-Sidecar (AP3-Spike-Befund, 2026-06-05).** Hadoop-
+  `LocalFileSystem` schreibt neben `<datei>.parquet` automatisch eine
+  versteckte `.<datei>.parquet.crc`-Checksum-Datei und prueft sie beim
+  Lesen mit. Der Spike toleriert das im Tempverzeichnis; ein produktiver
+  `ParquetChunkWriter` darf den Sidecar nicht stehen lassen. Verfuegbare
+  Optionen: (a) `RawLocalFileSystem` statt `LocalFileSystem` registrieren
+  (kein `.crc` geschrieben, aber auch kein Schutz vor stillen Datei-
+  Korruptionen), oder (b) den `.crc`-Sidecar nach `close()` aktiv
+  aufraeumen und beim Lesen ueber `RawLocalFileSystem` zugreifen. AP4+
+  entscheidet zwischen (a) und (b); bis dahin ist die Stdout-Variante
+  davon nicht betroffen, weil sie ueber den eigenen `PositionOutputStream`
+  laeuft, nicht ueber `LocalFileSystem`.
 
 Diese Entscheidung ist die strenge Variante und priorisiert
 Vorhersagbarkeit ueber Bequemlichkeit. Falls ein konkreter Use-Case
@@ -387,6 +424,20 @@ dependencies {
         exclude(group = "javax.servlet")
         exclude(group = "org.eclipse.jetty")
     }
+
+    // AP3-Spike-Befund (2026-06-05): ParquetReader.builder(
+    // GroupReadSupport, Path) triggert das Laden von
+    // org.apache.parquet.hadoop.ParquetInputFormat extends
+    // org.apache.hadoop.mapreduce.lib.input.FileInputFormat. Ohne
+    // hadoop-mapreduce-client-core bricht der Reader-Klassenladevorgang
+    // mit NoClassDefFoundError. Gleiche Hadoop-Patchversion wie
+    // hadoop-common, gleiche Exclusions.
+    implementation("org.apache.hadoop:hadoop-mapreduce-client-core:3.4.1") {
+        exclude(group = "log4j")
+        exclude(group = "org.slf4j", module = "slf4j-log4j12")
+        exclude(group = "javax.servlet")
+        exclude(group = "org.eclipse.jetty")
+    }
 }
 
 dependencies {
@@ -424,15 +475,21 @@ explizit auf `CompressionCodecName.GZIP` (oder `UNCOMPRESSED` per
 Konfiguration), nie auf den Parquet-Default `SNAPPY`. Damit kollidieren
 die obigen Exclusions nicht mit dem Default-Codec.
 
-Erwartete Folge-Aufgaben fuer AP3:
+Erwartete Folge-Aufgaben fuer AP4+ (AP3-Spike abgeschlossen):
 
 - `gradle :adapters:driven:formats-parquet:dependencies` als Lock-Datei
   oder Checked-In-Snapshot, damit Drift sichtbar wird.
 - Pruefen, ob ein eigener Hadoop-API-Shim (eigene minimale
   `org.apache.hadoop.fs`-Klassen) den `hadoop-common`-Block ersetzen
-  kann, oder ob das aufwaendiger ist als der Subset-Pull.
+  kann, oder ob das aufwaendiger ist als der Subset-Pull. Diese Pruefung
+  schliesst auch `hadoop-mapreduce-client-core` ein: AP4+ identifiziert
+  entweder einen Reader-Pfad ohne MapReduce-Klassenbedarf oder pinnt
+  den Block dauerhaft (z.B. via 1.18.x-Wechsel und reiner
+  `LocalInputFile`-Nutzung).
 - GraalVM-Reachability-Metadaten genau auf die tatsaechlich genutzten
   Hadoop-Klassen schneiden, nicht auf das gesamte hadoop-common-Modul.
+  Inklusive der MapReduce-FileInputFormat-Hierarchie, sofern der
+  Reader-Pfad sie weiterhin laedt.
 - Smoke-Roundtrip mit `CompressionCodecName.GZIP` plus DuckDB
   `read_parquet` zeigt, dass die Codec-Wahl mit Standard-Lesetools
   kompatibel ist.

@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Parquet-Evaluierung — AP3-Spike-Befunde zurueckgespielt**
+  *(2026-06-05)* — die drei Befunde aus dem AP3-Round-Trip-Spike
+  (Commit `3b051ec`) sind aus dem Status-Header der Plan-Doc in die
+  AP1-Bibliothekssichtung verschoben und damit final dokumentiert:
+  - [`parquet-libraries.md`](docs/planning/in-progress/parquet-libraries.md)
+    §5.1 (neu) — Hadoop-API-Kanal in 1.17.1 praezisiert
+    (Hadoop-`Path`+`Configuration`+`LocalFileSystem` rein NIO; die
+    `PlainParquetConfiguration`-/`LocalOutputFile`-Pfade kommen erst
+    mit 1.18+).
+  - §7 — `.crc`-Sidecar von Hadoop-`LocalFileSystem` als
+    Writer-Folgeentscheidung dokumentiert
+    (`RawLocalFileSystem` vs. aktives Aufraeumen; Stdout-Weg ueber
+    `PositionOutputStream` davon nicht betroffen).
+  - §8 — `hadoop-mapreduce-client-core:3.4.1` (mit denselben
+    Exclusions wie `hadoop-common`) als Reader-Compile-Dependency
+    nachgezogen, weil `ParquetReader.builder` ueber
+    `ParquetInputFormat extends FileInputFormat` MapReduce-Klassen
+    laedt.
+  - [`parquet-export-import-evaluation.md`](docs/planning/in-progress/parquet-export-import-evaluation.md)
+    §8 Arbeitspaket 3 markiert AP3 als erledigt; Status-Block auf
+    Pointer nach `parquet-libraries.md` reduziert. Naechste
+    Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf), AP5 (Arrow-Inspektion).
+
 ### Added
 
 - **BI-Demo Compose-Stack** *(2026-06-04)* — vollstaendige

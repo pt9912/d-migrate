@@ -2,39 +2,23 @@
 
 > Dokumenttyp: Evaluierungs- und Architekturplan
 >
-> Status: In Progress (2026-06-04 — AP3-Spike begonnen:
-> `adapters/driven/formats-parquet/` mit `ParquetSpike.kt`
-> + Round-Trip-Test; aktivierungsbedingung erfuellt, Plan
-> wandert von `next/` nach `in-progress/`).
+> Status: In Progress (Stand 2026-06-05).
 >
-> **AP3-Spike-Befunde** (zu praezisieren in AP4+ und in
-> `parquet-libraries.md` §5/§7/§8 zurueckspielen):
-> - **Hadoop-API-Kanal in 1.17.1**: `ParquetWriter.Builder.withConf` und
->   `ParquetReader.builder` akzeptieren in 1.17.1 nur
->   Hadoop-`Configuration` bzw. Hadoop-`Path` — die
->   `PlainParquetConfiguration`/`InputFile`-Overloads aus dem
->   AP1-Sub-Doc kommen erst mit parquet-java 1.18+. Spike
->   nutzt Hadoop-`LocalFileSystem` fuer `file://`-URIs (rein
->   NIO, kein Cluster, kein HDFS).
-> - **MapReduce-Compile-Dependency**:
->   `ParquetReader.builder(GroupReadSupport, Path)` triggert
->   das Laden von `org.apache.parquet.hadoop.ParquetInputFormat
->   extends FileInputFormat`. Ohne
->   `hadoop-mapreduce-client-core:3.4.1` (mit denselben
->   Exclusions wie hadoop-common) bricht der Reader mit
->   `NoClassDefFoundError`. parquet-libraries.md §8 listet
->   nur hadoop-common — AP4+ muss den MapReduce-Block
->   nachziehen oder einen Reader-Pfad ohne MapReduce-Bedarf
->   identifizieren.
-> - **`.crc`-Sidecar**: Hadoop-`LocalFileSystem` schreibt
->   neben `spike.parquet` automatisch eine
->   `.spike.parquet.crc`-Checksum-Datei. Ein produktiver
->   `ChunkWriter` muss das Sidecar entweder mit-aufraeumen
->   oder `RawLocalFileSystem` verwenden.
+> AP1 (Bibliothekssichtung) und AP2 (Schemaquelle) liegen als
+> Sub-Docs vor, AP3 (Round-Trip-Spike) ist mit
+> `adapters/driven/formats-parquet/` + `ParquetSpike.kt` und
+> Round-Trip-Test abgeschlossen. Die AP3-Befunde
+> (Hadoop-API-Kanal in 1.17.1, MapReduce-Reader-Dependency,
+> `.crc`-Sidecar bei `LocalFileSystem`) sind in
+> `parquet-libraries.md` §5.1, §7 und §8 zurueckgespielt; das
+> Status-Header-Doppel hier ist damit obsolet.
+>
+> Naechste Arbeitspakete: AP4 (DuckDB-Akzeptanzlauf gegen
+> Spike-Output) und AP5 (Arrow-Inspektion).
 >
 > Referenzen: `docs/planning/in-progress/roadmap.md`, `spec/architecture.md`,
 > `spec/cli-spec.md`, `spec/connection-config-spec.md`,
-> `parquet-libraries.md` (AP1-Bibliothekssichtung),
+> `parquet-libraries.md` (AP1-Bibliothekssichtung inkl. AP3-Befund-Rueckspiel),
 > `parquet-schema-source.md` (AP2-Schemaquelle),
 > `adapters/driven/formats-parquet/` (AP3-Spike-Modul).
 
@@ -331,7 +315,13 @@ auf extension-/dateinamensbasierte Erkennung zurueck.
    Vorentscheidung: formatseitiges `ChunkSchema` mit JDBC-Metadaten als
    Primaer- und `NeutralType` als Ergaenzungsquelle; final nach AP3.
 3. Prototyp fuer `ParquetChunkWriter` mit minimalem, explizitem Typmapping
-   bauen.
+   bauen. Erledigt als Spike-Modul `adapters/driven/formats-parquet/`
+   mit `ParquetSpike.kt` + Round-Trip-Test (Stand 2026-06-05).
+   Spike-Befunde sind in `parquet-libraries.md` §5.1, §7 und §8
+   eingearbeitet; AP1-Vorentscheidung (`parquet-java 1.17.1` ohne
+   Hadoop-Cluster) ist damit bestaetigt, allerdings auf der
+   Hadoop-API-Linie ueber `LocalFileSystem` statt auf
+   `PlainParquetConfiguration` (1.18+-Pfad).
 4. Prototyp gegen DuckDB lesen lassen und Typen inspizieren.
 5. Prototyp gegen Arrow-Werkzeuge oder Arrow-Java-Metadateninspektion pruefen.
 6. Importpfad fuer denselben Prototyp pruefen.
