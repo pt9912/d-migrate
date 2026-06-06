@@ -51,6 +51,15 @@ internal class ImportInputResolver {
                         schema = binding.schema,
                     )
                 }
+
+            is ImportInput.ResolvedSingleFile ->
+                listOf(
+                    ResolvedTableInput.Seekable(
+                        table = input.table,
+                        source = SeekableChunkSource.Local(input.path),
+                        schema = input.schema,
+                    )
+                )
         }
 
     private fun resolveDirectoryInputs(

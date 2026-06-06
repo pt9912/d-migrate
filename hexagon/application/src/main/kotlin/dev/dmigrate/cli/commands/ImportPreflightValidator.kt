@@ -102,30 +102,10 @@ internal class ImportPreflightValidator(
                 }
                 else -> null
             }
-        val effectiveTables: List<String> = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> listOf(input.table)
-            is ImportInput.SingleFile -> listOf(input.table)
-            is ImportInput.Directory -> directoryScan!!.map { it.table }
-            is ImportInput.ResolvedBundle -> input.tables.map { it.table }
-        }
-        val inputFilesByTable: Map<String, String> = when (val input = preparedImport.input) {
-            is ImportInput.ResolvedBundle -> input.tables.associate {
-                it.table to input.bundleRoot.relativize(it.path).toString()
-            }
-            else -> directoryScan?.associate { it.table to it.fileName } ?: emptyMap()
-        }
-        val inputTopology: String = when (preparedImport.input) {
-            is ImportInput.Stdin -> "stdin"
-            is ImportInput.SingleFile -> "single-file"
-            is ImportInput.Directory -> "directory"
-            is ImportInput.ResolvedBundle -> "bundle"
-        }
-        val inputPath: String = when (val input = preparedImport.input) {
-            is ImportInput.Stdin -> "<stdin>"
-            is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
-            is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
-            is ImportInput.ResolvedBundle -> input.bundleRoot.toAbsolutePath().normalize().toString()
-        }
+        val effectiveTables: List<String> = effectiveTablesFor(preparedImport.input, directoryScan)
+        val inputFilesByTable: Map<String, String> = inputFilesByTableFor(preparedImport.input, directoryScan)
+        val inputTopology: String = inputTopologyFor(preparedImport.input)
+        val inputPath: String = inputPathFor(preparedImport.input)
         val fingerprint = ImportOptionsFingerprint.compute(
             ImportOptionsFingerprint.Input(
                 format = request.format
@@ -149,5 +129,43 @@ internal class ImportPreflightValidator(
             )
         )
         return InputContextResult.Ok(InputContext(effectiveTables, inputFilesByTable, fingerprint))
+    }
+
+    private fun effectiveTablesFor(
+        input: ImportInput,
+        directoryScan: List<DirectoryImportScanner.ScannedTable>?,
+    ): List<String> = when (input) {
+        is ImportInput.Stdin -> listOf(input.table)
+        is ImportInput.SingleFile -> listOf(input.table)
+        is ImportInput.Directory -> directoryScan!!.map { it.table }
+        is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+        is ImportInput.ResolvedSingleFile -> listOf(input.table)
+    }
+
+    private fun inputFilesByTableFor(
+        input: ImportInput,
+        directoryScan: List<DirectoryImportScanner.ScannedTable>?,
+    ): Map<String, String> = when (input) {
+        is ImportInput.ResolvedBundle -> input.tables.associate {
+            it.table to input.bundleRoot.relativize(it.path).toString()
+        }
+        is ImportInput.ResolvedSingleFile -> mapOf(input.table to input.path.fileName.toString())
+        else -> directoryScan?.associate { it.table to it.fileName } ?: emptyMap()
+    }
+
+    private fun inputTopologyFor(input: ImportInput): String = when (input) {
+        is ImportInput.Stdin -> "stdin"
+        is ImportInput.SingleFile -> "single-file"
+        is ImportInput.Directory -> "directory"
+        is ImportInput.ResolvedBundle -> "bundle"
+        is ImportInput.ResolvedSingleFile -> "single-file"
+    }
+
+    private fun inputPathFor(input: ImportInput): String = when (input) {
+        is ImportInput.Stdin -> "<stdin>"
+        is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
+        is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
+        is ImportInput.ResolvedBundle -> input.bundleRoot.toAbsolutePath().normalize().toString()
+        is ImportInput.ResolvedSingleFile -> input.path.toAbsolutePath().normalize().toString()
     }
 }

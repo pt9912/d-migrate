@@ -67,6 +67,29 @@ sealed class ImportInput {
         val tables: List<ResolvedBundleTableBinding>,
         val resumeFingerprint: BundleResumeFingerprint,
     ) : ImportInput()
+
+    /**
+     * AP11 §6.2 / AP12 §5.1: bereits aufgeloester Single-File-Import
+     * (Parquet mit Footer-KV `d-migrate.manifest` oder Footer-Fallback,
+     * vgl. Parquet Cut A Umbrella §3 S5b). Bewusst Parquet-frei im
+     * Vertrag — der CLI-Resolver (S6) baut das DTO nach dem
+     * `ParquetSingleFilePreflight.phase1/phase2`-Lauf.
+     *
+     * - [table]: vom Preflight aufgeloester Tabellenname (AP11 §5.5
+     *   Precedence: CLI `--table` vor Footer-KV).
+     * - [path]: absolute, normalisierte Datei-Path.
+     * - [schema]: bereits aufgeloestes `ChunkSchema` (entweder aus dem
+     *   Footer-KV oder aus dem Phase-2-Target-JDBC-Fallback).
+     * - [contentSha256]: SHA-256 ueber den vollstaendigen Datei-Bytestrom
+     *   fuer Resume-Konsistenz (AP11 §6.4); `null` wenn der Initial-Lauf
+     *   ohne Resume-Aktivierung lief.
+     */
+    data class ResolvedSingleFile(
+        val table: String,
+        val path: Path,
+        val schema: ChunkSchema,
+        val contentSha256: String? = null,
+    ) : ImportInput()
 }
 
 /**

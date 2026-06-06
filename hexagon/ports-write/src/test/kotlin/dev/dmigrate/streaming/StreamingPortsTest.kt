@@ -197,6 +197,40 @@ class StreamingPortsTest : FunSpec({
         a shouldBe b
     }
 
+    test("ImportInput.ResolvedSingleFile carries table, path, schema, contentSha256") {
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "orders",
+            columns = listOf(
+                dev.dmigrate.format.data.ChunkColumnSchema(
+                    name = "id",
+                    nullable = false,
+                    neutralType = dev.dmigrate.core.model.NeutralType.BigInteger,
+                )
+            ),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val path = Path.of("/tmp/orders.parquet")
+        val sf = ImportInput.ResolvedSingleFile(
+            table = "orders", path = path, schema = schema, contentSha256 = "abc",
+        )
+        sf.table shouldBe "orders"
+        sf.path shouldBe path
+        sf.schema shouldBe schema
+        sf.contentSha256 shouldBe "abc"
+    }
+
+    test("ImportInput.ResolvedSingleFile equality + default contentSha256 null") {
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "t",
+            columns = emptyList(),
+            origin = dev.dmigrate.format.data.SchemaOrigin.JDBC_METADATA,
+        )
+        val a = ImportInput.ResolvedSingleFile("t", Path.of("/tmp/t.parquet"), schema)
+        val b = ImportInput.ResolvedSingleFile("t", Path.of("/tmp/t.parquet"), schema, contentSha256 = null)
+        a shouldBe b
+        a.contentSha256 shouldBe null
+    }
+
     test("ImportInput.SingleFile equality") {
         val a = ImportInput.SingleFile("t", Path.of("/tmp/a.json"))
         val b = ImportInput.SingleFile("t", Path.of("/tmp/a.json"))

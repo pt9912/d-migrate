@@ -71,6 +71,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.Directory -> listOf("t1")
             is dev.dmigrate.streaming.ImportInput.ResolvedBundle -> input.tables.map { it.table }
+            is dev.dmigrate.streaming.ImportInput.ResolvedSingleFile -> listOf(input.table)
         }
         val summaries = tables.map {
             TableImportSummary(
@@ -426,6 +427,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
                     is ImportInput.SingleFile -> input.table
                     is ImportInput.Directory -> "users"
                     is ImportInput.ResolvedBundle -> input.tables.first().table
+                    is ImportInput.ResolvedSingleFile -> input.table
                 }
                 callbacks.onTableOpened(
                     tableName,
@@ -504,6 +506,7 @@ class DataImportRunnerExitCodeTest : FunSpec({
                     is ImportInput.SingleFile -> listOf(input.table)
                     is ImportInput.Directory -> emptyList()
                     is ImportInput.ResolvedBundle -> input.tables.map { it.table }
+                    is ImportInput.ResolvedSingleFile -> listOf(input.table)
                 }
                 ImportResult(tables = emptyList(), totalRowsInserted = 0, totalRowsUpdated = 0,
                     totalRowsSkipped = 0, totalRowsUnknown = 0, totalRowsFailed = 0, durationMs = 0)
