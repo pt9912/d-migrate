@@ -218,6 +218,43 @@ S5b → S6 → S7 → S8 → S9a → S9b`. Slices innerhalb der
 gleichen Spalte (S5a/S5b, S9a/S9b) koennen parallel laufen,
 sind aber separate Plan-Closure-Docs.
 
+### 3.4 Slice-Status (Stand 2026-06-06)
+
+Pflege diese Tabelle mit Commit-Ref pro Slice-Closure;
+**S6/S7/S8/S9a/S9b** sind die offenen Punkte.
+
+| Slice | Status | Commit-Ref | Closure-Doc |
+| ----- | ------ | ---------- | ----------- |
+| S0    | closed | `9c840986` | [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](../done/ImpPlan-0.9.8-parquet-S0-chunk-schema.md) |
+| S0b   | closed | `7670a393` | [`ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md`](../done/ImpPlan-0.9.8-parquet-S0b-chunk-schema-migration.md) |
+| S2    | closed | `40d7c551` | [`ImpPlan-0.9.8-parquet-S2-seekable-port.md`](../done/ImpPlan-0.9.8-parquet-S2-seekable-port.md) |
+| S10a  | closed | `2b5826d8` + `c6a09cae` (Befund-Korrektur) | [`ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md`](../done/ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md) |
+| S3    | closed | `0a992c0c` | [`ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md`](../done/ImpPlan-0.9.8-parquet-S3-parquet-reader-writer.md) |
+| S10b  | closed | `9ba956ff` | [`ImpPlan-0.9.8-parquet-S10b-native-image-finding.md`](../done/ImpPlan-0.9.8-parquet-S10b-native-image-finding.md) |
+| S3b   | closed | `97c74757` | [`ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md`](../done/ImpPlan-0.9.8-parquet-S3b-bundle-manifest.md) |
+| S4    | closed | `28048ef2` | [`ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md`](../done/ImpPlan-0.9.8-parquet-S4-single-file-footer-kv.md) |
+| S5a   | closed | `24cbf4c5` | [`ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md`](../done/ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md) |
+| S5b   | closed | `4279c326` | [`ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md`](../done/ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md) |
+| S6    | offen  | —          | — |
+| S7    | offen  | —          | — |
+| S8    | offen  | —          | — |
+| S9a   | offen  | —          | — |
+| S9b   | offen  | —          | — |
+
+Die `[Unreleased]`-Sektion in `CHANGELOG.md` bekommt erst
+beim Umbrella-Closure (DoD §7 Punkt 4) die vollstaendige
+Slice-Commit-Tabelle als `[0.9.8]`-Eintrag — siehe AP13 §6.1
+zum Branch-Lifecycle (Merge in `develop` nach Schritt 9 =
+S9b-Abschluss).
+
+**Vor Mid-Stream-Review** (Engineering-Goal §5.1, von
+2026-06-06): die zehn Closed-Slices oben sind der
+naechste Review-Block; S6 und S7 hangen
+designtechnisch davon ab (Bundle-/Single-File-Adapter,
+seekableReaderFactory-Pfad), darum ist S5b der
+sinnvolle Pausepunkt fuer ein `/code-review` auf die
+Linie.
+
 ### 3.2 Verifikationsbefehle (Make/Docker)
 
 Direkte `./gradlew`-Aufrufe sind im Repo gesperrt
