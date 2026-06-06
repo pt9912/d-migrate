@@ -773,3 +773,149 @@ Auswahl der wichtigsten Bloecke; vollstaendige Listen in
 
 Diese drei Punkte gehoeren explizit nicht in den
 0.9.8-Cut.
+
+---
+
+## 12. Native-Image-Befund (S10b 2026-06-06)
+
+S10b ist nach AP13 §8.3 / Umbrella §4.2 **kein gruenes
+CI-Gate fuer 0.9.8**, sondern eine Sondierung — der
+GraalVM-Native-Image-Cut bleibt 1.0.0-Aufgabe. Diese
+Sektion sammelt die qualitativen Befunde, die das
+1.0.0-Planning braucht.
+
+S10b hat den Befund statisch erhoben (kein nativer Lauf):
+
+- GraalVM/`native-image` ist im Repo nicht verdrahtet
+  (kein Gradle-Plugin, kein Dockerfile-Stage). Das
+  Aufsetzen ist 1.0.0-Aufgabe.
+- Stattdessen: `grep`-basierte Code-Sondierung der in
+  S3 eingefuehrten Klassen + bekannte Reachability-
+  Schmerzpunkte der eingezogenen Bibliotheken.
+
+### 12.1 Eigener S3-Code
+
+Die in S3 eingefuehrten Klassen
+(`ChunkSchemaToParquetMessageType`,
+`OutputStreamOutputFile`, `ParquetChunkWriter`,
+`ParquetChunkReader`, `ParquetGroupValueReader/Writer`,
+`ParquetChunkWriterFactory`,
+`ParquetSeekableDataChunkReaderFactory`) enthalten:
+
+- **Keine** Aufrufe von `Class.forName` / `ClassLoader`-
+  Reflection.
+- **Keine** `ServiceLoader`-Lookups.
+- **Keine** JNI-/`System.load*`-Pfade.
+
+Der eigene Pfad ist damit native-image-clean.
+
+### 12.2 Transitive Reachability-Lasten (klassifiziert)
+
+Die produktiven Klassen rufen transitiv in `parquet-hadoop`
++ `hadoop-common` + `hadoop-mapreduce-client-core` plus
+den restlichen Footprint aus §11. Bekannte Schmerzpunkte
+fuer den 1.0.0-Native-Image-Cut, geordnet nach
+geschaetzter Loesungs-Schwierigkeit:
+
+**Manageable** (Standard-Reachability-Metadaten reichen):
+
+- `parquet-java` interne `PageReader`/`RecordReader`-
+  Allocation per Reflection. Loesung:
+  `reflect-config.json` mit den parquet-internal-
+  Klassen. Community-Beispiele existieren.
+- `CompressionCodecName.GZIP` -> `org.apache.hadoop.io.compress.GzipCodec`
+  via Reflection. Loesung: GzipCodec ins
+  `reflect-config.json` aufnehmen; reines JVM-Compression
+  (S10a bestaetigt: kein `snappy-java`/`zstd-jni`-JNI).
+- Netty: bringt seit 4.1+ vollstaendige
+  `META-INF/native-image/io.netty/*`-Konfiguration mit.
+  Aufwand effektiv null.
+
+**Moderate** (Reachability-Metadaten + Service-Loader-Hint
++ `unreachable`-Pruning noetig):
+
+- `Hadoop Configuration`: `Configuration(false)` (S3-
+  Default) schaltet Auto-Loading der `core-site.xml` aus,
+  aber `GroupWriteSupport.setSchema` und
+  `ExampleParquetWriter.builder` triggern intern weitere
+  Configuration-Lookups. Vermutlich braucht es
+  `--initialize-at-build-time` fuer
+  `org.apache.hadoop.conf.Configuration` plus
+  reflect-config-Eintraege fuer die intern referenzierten
+  `Configurable`-Subklassen.
+- `Hadoop FileSystem Service-Loader`:
+  `META-INF/services/org.apache.hadoop.fs.FileSystem`
+  listet 12+ FileSystem-Implementierungen. Wir brauchen
+  effektiv nur `LocalFileSystem` und
+  `RawLocalFileSystem`. Loesung: explizite
+  Service-Loader-Konfiguration (`--initialize-at-build-time`
+  + `service-config.json` mit Allowlist) reduziert die
+  Reachability deutlich. Direkter Nebeneffekt: HDFS-,
+  S3-, ABFS-, GCS-Pfade entfallen aus dem
+  Native-Image-Binary.
+- `slf4j-reload4j`: Service-Loader-Binding-Discovery.
+  Standard-Konfiguration fuer slf4j-Native-Image
+  vorhanden; Aufwand klein.
+
+**Hard** (potentielle Show-Stopper fuer 1.0.0):
+
+- `Jersey-1-Stack` (`com.sun.jersey:*` +
+  `com.github.pjfanning:jersey-json`): tief reflection-
+  getrieben (JAX-RS-Annotation-Discovery,
+  ResourceMethod-Dispatch). Nicht im d-migrate-Datenpfad
+  konsumiert — Reachability haengt davon ab, ob der
+  Native-Image-Analyzer den Jersey-Code als unreachable
+  prunen kann oder ob `hadoop-yarn-common` ihn forciert.
+  **Mitigation**: 1.0.0-Footprint-Cut (§11.4 — vor allem
+  Jersey-1-Stack-Exclude) macht diesen Punkt obsolet.
+- `Apache Curator` + `Zookeeper`: Service-Loader fuer
+  Watcher/Provider-Implementierungen + Reflection im
+  RPC-Pfad. Wieder: nicht im d-migrate-Datenpfad, aber
+  transitiv reachable. **Mitigation**: 1.0.0-Footprint-
+  Cut.
+- `Kerby` Crypto / `BouncyCastle`: JCE-Provider-
+  Registrierung via Reflection. Im d-migrate-Pfad nicht
+  benoetigt (keine Kerberos-Auth gegen HDFS). **Mitigation**:
+  1.0.0-Footprint-Cut.
+
+### 12.3 S10a-Delta
+
+S10a (Avro-Hygiene, Pfad A) hat einen direkten positiven
+Native-Image-Effekt:
+
+- `org.apache.avro:avro` ist nach S10a nicht mehr im
+  runtimeClasspath. Die Avro-Klassen sind reflection-heavy
+  (Schema-Resolution, GenericRecord-Allocation); ihr
+  Wegfall spart eine **eigene Reachability-Metadaten-
+  Datei**, die der 1.0.0-Cut sonst pflegen muesste.
+- `parquet-avro` und `parquet-protobuf` waren schon vor
+  S10a per Constraint geblockt; Native-Image ist hier
+  unveraendert (gleich Null).
+
+S10a ist netto eine kleine, aber konkrete Verbesserung
+der Native-Image-Ausgangslage fuer 1.0.0.
+
+### 12.4 Konsequenzen fuer 1.0.0
+
+- **Aufwand-Schaetzung in AP13 §3.1 bleibt gueltig**
+  (5-15 PT GraalVM-Reachability), aber mit deutlicher
+  Tendenz zum oberen Ende, sobald HDFS/YARN/Jersey/
+  Zookeeper im runtimeClasspath bleiben. Erst der
+  1.0.0-Footprint-Cut (§11.4) macht die Reachability
+  beherrschbar.
+- **Reihenfolge in 1.0.0**: zuerst Footprint-Minimierung
+  (HDFS/YARN/Jersey/Kerby/Zookeeper-Excludes), DANN
+  Native-Image-Reachability-Konfig auf den verbliebenen
+  Klassen. Der umgekehrte Weg (Reachability fuer den
+  vollen Stack konfigurieren) ist nicht sinnvoll.
+- **Optionaler Hadoop-API-Shim** (AP13 §8.3): wuerde die
+  Hadoop-Configuration-/FileSystem-Reachability-Lasten
+  komplett aufloesen. Sollte im 1.0.0-Planning als
+  Variante neben „Footprint-Excludes-only" bewertet
+  werden.
+
+S10b hat das Native-Image-Verhalten **nicht** durch einen
+echten Lauf belegt — das ist 1.0.0-Aufgabe. Aber die
+oben genannten Punkte sind reproduzierbar (via Code-
+Sichtung und Community-Doku) und ausreichend, um die
+Reihenfolge im 1.0.0-Planning zu schaerfen.
