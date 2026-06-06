@@ -667,44 +667,89 @@ selbst macht **keine** Excludes — Minimierung ist
 ausschliesslich 1.0.0-Aufgabe; in 0.9.8 bleibt der
 Default-JAR Parquet-tauglich (AP13 §6.2 / §8.4).
 
-### 11.1 Gesamtzahl
+### 11.1 Reproduzierbare Methode
 
-- `runtimeClasspath`-Eintraege fuer
-  `:adapters:driven:formats-parquet` nach S10a:
-  **142 unique Dependency-Koordinaten**.
-- Davon **~65 Hadoop-Transitive** (Gruppen
-  `org.apache.hadoop`, `com.sun.jersey`, `io.netty`,
-  `ch.qos.reload4j`, `com.google.inject*`,
-  `org.codehaus.jettison`, `org.apache.curator`,
-  `org.apache.kerby`, `javax.servlet`,
-  `com.github.pjfanning:jersey-json`,
-  `com.jcraft:jsch`, `com.nimbusds:nimbus-jose-jwt`,
-  `dnsjava`, Woodstox-Core), die der 1.0.0-Distributions-
-  Cut adressieren muss.
+Snapshot per `gradle :adapters:driven:formats-parquet:dependencies
+--configuration runtimeClasspath`. Indirekt via Docker
+(direkter `./gradlew`-Aufruf gesperrt):
 
-### 11.2 Beobachtete Hadoop-Footprint-Schwergewichte
+```bash
+docker build --no-cache --target build \
+  --build-arg GRADLE_TASKS=":adapters:driven:formats-parquet:dependencies --configuration runtimeClasspath" \
+  -t d-migrate:s10a-deps-snapshot .
+```
 
-Nicht-erschoepfende Liste, sortiert nach
-Pruefreihenfolge fuer den 1.0.0-Cut. Vollstaendiger
-Snapshot ist im S10a-Closure-Doc abgelegt.
+Zaehlmethode fuer die hier genannten Zahlen: aus dem
+Gradle-Dependency-Tree alle Zeilen mit Tree-Prefix
+`+--- ` oder `\\--- ` ziehen, Versionssuffix abschneiden,
+auf `group:artifact` deduplizieren. Konkrete Pipeline:
+`grep -oE '[+\\\\]--- [^ ]+:[^ ]+:'` plus `sort -u`. Die
+vollstaendige Liste (`group:artifact` ohne Version) ist in
+[`ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md`](ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md)
+§8 abgelegt.
+
+### 11.2 Gesamtzahl
+
+- **Resolved Runtime-Classpath**: **129 externe
+  `group:artifact`-Koordinaten** plus **4 interne
+  Projekt-Module** (`:hexagon:core`, `:hexagon:ports-common`,
+  `:hexagon:ports-read`, `:hexagon:ports-write`) =
+  **133 resolved Knoten** im Gesamtbaum.
+- Davon dem Hadoop-Footprint zugeordnet (verifizierte
+  Gruppen-Zaehlung mit derselben Methode):
+  - `org.apache.hadoop`: **8**
+    (`hadoop-annotations`, `hadoop-auth`,
+    `hadoop-common`, `hadoop-hdfs-client`,
+    `hadoop-mapreduce-client-core`, `hadoop-yarn-api`,
+    `hadoop-yarn-client`, `hadoop-yarn-common`).
+  - Jersey-1-Stack
+    (`com.sun.jersey*` + `com.github.pjfanning:jersey-json`
+    + `org.codehaus.jettison`): **7**.
+  - `io.netty`: **31** (Codec-Familien, Transports,
+    Resolver, Macos-Natives — vollstaendige Liste im
+    Closure-Doc §8).
+  - Guice/Servlet/JS-RS
+    (`com.google.inject*`, `javax.ws.rs`,
+    `javax.servlet.jsp`): **4**.
+  - Kerby/Auth
+    (`org.apache.kerby:*`, `com.nimbusds`, `com.jcraft`,
+    `dnsjava`): **10**.
+  - Zookeeper/Curator
+    (`org.apache.zookeeper:*`, `org.apache.curator:*`):
+    **5**.
+  - Logging-Legacy (`ch.qos.reload4j`): **1**.
+
+Zusammen: **66 Footprint-Eintraege**, die der
+1.0.0-Distributions-Cut adressieren muss.
+
+### 11.3 Hadoop-Footprint-Schwergewichte (Pruefreihenfolge)
+
+Auswahl der wichtigsten Bloecke; vollstaendige Listen in
+[`ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md`](ImpPlan-0.9.8-parquet-S10a-dependency-hygiene.md)
+§8.
 
 - HDFS-/Server-State-Pfad: `org.apache.hadoop:hadoop-hdfs-client`,
   `org.apache.curator:curator-{client,framework,recipes}`,
   `org.apache.zookeeper:zookeeper`, `org.apache.zookeeper:zookeeper-jute`.
-- YARN-Pfad (in Hadoop 3.4.1 transitiv mitgezogen):
-  `org.apache.hadoop:hadoop-yarn-common`,
+- YARN-Pfad (in Hadoop 3.4.1 transitiv ueber
+  `hadoop-mapreduce-client-core` mitgezogen — verifizierte
+  Module): `org.apache.hadoop:hadoop-yarn-api`,
   `org.apache.hadoop:hadoop-yarn-client`,
-  `org.apache.hadoop:hadoop-yarn-api`,
-  `org.apache.hadoop:hadoop-yarn-server-common`.
+  `org.apache.hadoop:hadoop-yarn-common`. Kein
+  `hadoop-yarn-server-common` im aktuellen
+  runtimeClasspath; in Hadoop 3.4.1 ist es **nicht**
+  transitiv praesent.
 - Jersey-1-Stack: `com.sun.jersey:jersey-{client,core,server,servlet}`,
   `com.sun.jersey.contribs:jersey-guice`,
   `com.github.pjfanning:jersey-json`,
   `org.codehaus.jettison:jettison`.
-- Netty: `io.netty:netty-all` + ~24 weitere
+- Netty: `io.netty:netty-all` plus 30 weitere
   `io.netty:netty-*`-Module (Codec-Familien, Transports,
-  Resolver, Macos-Natives).
-- Auth/Security: `org.apache.kerby:kerb-{core,server,client,
-  identity,util,common}`, `com.nimbusds:nimbus-jose-jwt`,
+  Resolver, Macos-Natives; vollstaendige Liste im
+  Closure-Doc §8).
+- Auth/Security: `org.apache.kerby:kerb-{core,crypto,util}`,
+  `org.apache.kerby:kerby-{asn1,config,pkix,util}`,
+  `com.nimbusds:nimbus-jose-jwt`,
   `com.jcraft:jsch`, `dnsjava:dnsjava`.
 - Container/Servlet: `com.google.inject:guice`,
   `com.google.inject.extensions:guice-servlet`.
@@ -712,7 +757,7 @@ Snapshot ist im S10a-Closure-Doc abgelegt.
   (`hadoop-common` zieht das mit, parallel zu unserer
   Logback-Linie).
 
-### 11.3 Erwartete 1.0.0-Maßnahmen
+### 11.4 Erwartete 1.0.0-Maßnahmen
 
 - **Distributions-Cut entscheiden** (AP13 §8.3): bleibt
   Default-JAR mit Parquet, kommt eine `--parquet`-
