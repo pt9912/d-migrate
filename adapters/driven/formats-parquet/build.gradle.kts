@@ -22,8 +22,20 @@ dependencies {
     api(project(":hexagon:ports-write"))
     implementation(project(":hexagon:core"))
 
+    // S3b (Parquet Cut A 2026-06-06): ParquetBundleClosure
+    // referenziert BundleClosureContext aus dem Streaming-Modul.
+    // implementation (kein api), weil das Wiring vom CLI ausgeht
+    // und formats-parquet keine Streaming-Typen weiter exponiert.
+    implementation(project(":adapters:driven:streaming"))
+
     implementation("org.apache.parquet:parquet-hadoop:${rootProject.properties["parquetVersion"]}")
     implementation("org.apache.parquet:parquet-column:${rootProject.properties["parquetVersion"]}")
+
+    // S3b (Parquet Cut A 2026-06-06): snakeyaml-engine fuer
+    // manifest.yaml-Serialisierung (AP7 §5; parquet-libraries.md §3.2).
+    // Bewusst dieselbe Bibliothek wie im JSON/YAML/CSV-Modul, damit
+    // wir keine zweite YAML-Toolchain ins Bundle ziehen.
+    implementation("org.snakeyaml:snakeyaml-engine:${rootProject.properties["snakeyamlEngineVersion"]}")
 
     implementation("org.apache.hadoop:hadoop-common:${rootProject.properties["hadoopVersion"]}") {
         exclude(group = "log4j")
