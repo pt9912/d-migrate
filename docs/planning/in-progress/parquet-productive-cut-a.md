@@ -155,11 +155,28 @@ Die Reihenfolge folgt grundsaetzlich
 §12, aber mit drei strukturellen Anpassungen gegenueber dem
 AP12-Vorschlag (Befund-Audit 2026-06-06):
 
-1. **S0 NEU vor S2**: AP2 `ChunkSchema`-Typ existiert im
-   Code noch nicht; `DataChunkWriter.begin` nimmt heute
-   `List<ColumnDescriptor>` statt eines Schemas. S2/S3
-   bauen auf `ChunkSchema` auf — ohne S0 sind sie nicht
-   buildbar.
+1. **S0 + S0b NEU vor S2** (Split eingefuehrt 2026-06-06,
+   Befund-Audit waehrend der S0-Vorbereitung): AP2 selbst
+   gibt die Reihenfolge AP2.a → AP2.b → AP2.c → AP2.d vor
+   ([`parquet-schema-source.md`](../done/parquet-schema-source.md)
+   §7); `ChunkColumnSchema.neutralType` ist non-null
+   (§6.1). Ein einzelner S0-Slice, der gleichzeitig
+   Typanlage und `begin`-Migration macht, wuerde
+   `StreamingExporter` zwingen, schon vor AP2.b/c einen
+   `NeutralType` pro Spalte zu erfinden — entweder per
+   `NeutralType.Text()`-Default (semantisch falsche Daten)
+   oder per nullable-Deviation am AP2-Vertrag. Beide
+   Wege widersprechen Memo [[no-carveouts]]. Stattdessen:
+   - **S0**: nur Typanlage (`ChunkSchema`,
+     `ChunkColumnSchema`, `SchemaOrigin` in
+     `hexagon:ports-common`) plus Dockerfile-Warmup-Fixup;
+     `DataChunkWriter.begin(table, columns)` bleibt
+     unveraendert.
+   - **S0b**: JDBC→`NeutralType`-Mapping (AP2.b),
+     Nullability-Resolver (AP2.c), `StreamingExporter`
+     baut `ChunkSchema` vor dem ersten Chunk, dann
+     `DataChunkWriter.begin(table, schema)`-Migration
+     (AP2.d) plus JSON/YAML/CSV-Writer-Anpassung.
 2. **S1 aus AP12 §12 entfaellt** als eigener Slice. AP12
    §12-Schritt 1 hatte „`DataExportFormat.PARQUET` +
    Sealed-when-Sweeps" als Vorbereitung; unter Cut A
@@ -180,7 +197,8 @@ diesem Umbrella per Commit-Tabelle referenziert.
 
 | Slice | Inhalt | Definition of Done |
 | ----- | ------ | ------------------ |
-| **S0** | **AP2 `ChunkSchema`-Typ + `DataChunkWriter.begin`-Migration** ([`parquet-schema-source.md`](../done/parquet-schema-source.md) §6.1) plus **Dockerfile-Warmup-Fixup fuer `formats-parquet`**. Neuer `ChunkSchema`-Typ in `hexagon:ports-common` (AP2 §6.1 ist bindend, keine Alternative); `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` wandert auf `begin(table, schema: ChunkSchema)`; JSON/YAML/CSV-Writer angepasst; bestehende Tests gruen. **Zusaetzlich** Dockerfile-Warmup-Block (`Dockerfile:75-95`) um die fehlende COPY-Zeile `adapters/driven/formats-parquet/build.gradle.kts` ergaenzen — `settings.gradle.kts:24` listet das Modul, der Warmup-Layer hatte es bisher nicht, was alle `make docker-* MODULES=":adapters:driven:formats-parquet"`-Aufrufe spaeterer Slices (S10a/S3/S9a/S9b) brechen wuerde. | `ChunkSchema` existiert in `hexagon:ports-common`; alle Writer-Implementierungen migriert; **Dockerfile-Warmup enthaelt `formats-parquet`-Buildfile**; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:formats-parquet"` gruen (letzteres Spike-Tests). |
+| **S0** | **AP2 ChunkSchema-Typ (nur AP2.a) + Dockerfile-Warmup-Fixup** ([`parquet-schema-source.md`](../done/parquet-schema-source.md) §6.1). `ChunkSchema` + `ChunkColumnSchema` + `SchemaOrigin` in `hexagon:ports-common` mit `neutralType: NeutralType` non-null (AP2 §6.1 bindend). `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` bleibt **unveraendert** — die Migration ist S0b. **Zusaetzlich** Dockerfile-Warmup-Block (`Dockerfile:75-95`) um die fehlende COPY-Zeile `adapters/driven/formats-parquet/build.gradle.kts` ergaenzen — `settings.gradle.kts:24` listet das Modul, der Warmup-Layer hatte es bisher nicht, was alle `make docker-* MODULES=":adapters:driven:formats-parquet"`-Aufrufe spaeterer Slices (S10a/S3/S9a/S9b) brechen wuerde. | `ChunkSchema`/`ChunkColumnSchema`/`SchemaOrigin` existieren in `hexagon:ports-common`; **Dockerfile-Warmup enthaelt `formats-parquet`-Buildfile**; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:formats-parquet"` gruen (letzteres Spike-Tests; verifiziert Dockerfile-Fixup). |
+| **S0b** | **AP2.b/c-Mapping + DataChunkWriter.begin-Migration (AP2.d)**. JDBC→`NeutralType`-Mapping (AP2.b Mapping-Tabelle aus [`parquet-schema-source.md`](../done/parquet-schema-source.md) §8) plus Nullability-Resolver mit Provenance (AP2.c §9); `StreamingExporter`/`TableExporter` bauen `ChunkSchema` aus `ResultSetMetaData` + optional `SchemaReader` vor dem ersten Chunk; `DataChunkWriter.begin(table, columns: List<ColumnDescriptor>)` wandert auf `begin(table, schema: ChunkSchema)`; JSON/YAML/CSV-Writer lesen nur Name/Nullability aus `schema.columns` (Verhalten unveraendert). | Mapping-Tabelle + Resolver in `:adapters:driven:streaming` umgesetzt; `DataChunkWriter`/JSON/YAML/CSV migriert; alle bestehenden Tests gruen; `make docker-check` (gesamtes Repo) gruen; `make docker-test MODULES=":adapters:driven:formats :adapters:driven:streaming"` gruen. |
 | S2 | **Port-only**: `SeekableDataChunkReaderFactory`-Port-Interface in `hexagon:ports-read` (AP10 §4, AP12 §5.3) **plus `ResolvedTableInput`-Sealed-Restrukturierung** (`adapters/driven/streaming/.../ResolvedTableInput.kt`): aus der heutigen `data class` werden `sealed class ResolvedTableInput` + `Stream` (Bestandsverhalten, `openInput`) + `Seekable` (AP10 §3.2 — Pfad + Footer-Metadaten). **Keine Default-Impl der `SeekableDataChunkReaderFactory`** in diesem Slice — die einzige produktive Impl ist `ParquetSeekableDataChunkReaderFactory` und wandert in S3 zusammen mit dem Reader. Default-Factories und JSON/YAML/CSV-Verbraucher konsumieren `.Stream`; `.Seekable`-Konsum kommt in S7. | Port existiert in `hexagon:ports-read` (keine Impl); `ResolvedTableInput`-Sealed-Struktur existiert; bestehende Stream-Konsumenten (`TableImporter` etc.) auf `.Stream`-Subtyp angepasst, Tests gruen. |
 | **S10a** | **Dependency-Hygiene + Footprint-Inventar** (siehe §4 unten) — Avro-Klemme aus Befund 3 nach Pfad A (Reject) **oder** Pfad B (akzeptierte Rest-Dependency) abschliessen; Footprint-Snapshot aus Befund 4 in `parquet-libraries.md` §8 als 1.0.0-Input zurueckspielen. **Keine** Excludes/Constraints fuer Hadoop-Footprint-Transitive (HDFS/YARN/Jersey/reload4j/Zookeeper/Netty) in 0.9.8; Avro-Excludes aus Pfad A sind davon **ausgenommen**. | Constraint-Block in `formats-parquet/build.gradle.kts` ist entweder nach Pfad A (`parquet-avro`/`parquet-protobuf` + `org.apache.avro:avro` rejecten, plus Excludes auf den Hadoop-Deps) oder nach Pfad B (nur `parquet-avro`/`parquet-protobuf` rejecten, `org.apache.avro:avro` mit `because(...)`-Dokumentation belassen) umgesetzt — nicht beides gemischt. Footprint-Inventar als 1.0.0-Input dokumentiert. Spike-Tests (AP3/AP4/AP5/AP6) gruen via `make docker-test MODULES=":adapters:driven:formats-parquet"`. |
 | S3 | `ParquetChunkReader` + `ParquetChunkWriter` produktiv (AP3-Spike-Linie + AP2 §6.1 + AP10 §3.3) plus **`ParquetChunkReaderFactory` + `ParquetChunkWriterFactory` + `ParquetSeekableDataChunkReaderFactory`** im Modul `adapters:driven:formats-parquet` (AP12 §5.2 bindend: `Default…Factory` bleibt Hadoop-/Parquet-frei) plus **`DataExportFormat.PARQUET`-Enum** plus **Contract-Branches in `DefaultDataChunkReaderFactory`/`WriterFactory`**: Reader-Seite `PARQUET -> error("DefaultDataChunkReaderFactory does not support Parquet; Parquet reads go through StreamingImporter's seekableReaderFactory (ParquetSeekableDataChunkReaderFactory)")` — Writer-Seite `PARQUET -> error("DefaultDataChunkWriterFactory does not support Parquet; use ParquetChunkWriterFactory via the CLI CompositeDataChunkWriterFactory")` — beide symmetrisch zu AP12 §5.2 `ParquetChunkWriterFactory.create`'s `require(format == PARQUET)`. Der Contract-Branch ist **keine Stopgap-Auslagerung an einen spaeteren Slice**, sondern dauerhafte Domain-Aussage: Default-Factory wird Parquet **nie** behandeln, der CLI-Composite (S6) routet `PARQUET` an die Parquet-Factory. Sealed-`when (format)`-Sweep aus AP12 §8 ist damit hier vollstaendig (Default-Factories + ggf. weitere `when (format)`-Stellen, die heute exhaustive sind). | Befund 1 (Enum) aufgeloest; produktive Reader/Writer-Klassen existieren neben dem AP3-Spike (siehe §3.3); Default-Factories haben den Contract-Branch, aber **keine** Parquet-/Hadoop-Imports oder -Dependencies (Beleg: `grep "parquet\|hadoop" adapters/driven/formats/build.gradle.kts` leer); `make docker-check` (gesamtes Repo) gruen; JSON/YAML/CSV-Tests bleiben gruen. |
@@ -195,7 +213,7 @@ diesem Umbrella per Commit-Tabelle referenziert.
 | S9a | Bundle-Tests: CLI-Preflight (Bundle-Codes), Format-Resolver (`manifest.yaml`-Hook), Bundle-Resume-Familie, DuckDB-/Arrow-Bundle-KV-Toleranz (AP12 §11). | Vier Test-Familien gruen via `make docker-test MODULES=":hexagon:application :adapters:driven:streaming :adapters:driven:formats-parquet :adapters:driving:cli"` (Preflight/Resume in `hexagon:application`, Resolver in `streaming`, KV-Toleranz in `formats-parquet`, CLI-Codes in `cli`). |
 | S9b | Single-File-Tests: CLI-Preflight (Single-File-Codes), Phase-1/2-Tests, Single-File-Resume, DuckDB-/Arrow-Single-File-KV-Toleranz (AP12 §11). | Vier Test-Familien gruen via `make docker-test MODULES=":hexagon:application :adapters:driven:streaming :adapters:driven:formats-parquet :adapters:driving:cli"` (Phase-1/2/Resume in `hexagon:application`, Resolver in `streaming`, KV-Toleranz in `formats-parquet`, CLI-Codes in `cli`). |
 
-Reihenfolge `S0 → S2 → S10a → S3 → S10b → S3b → S4 → S5a →
+Reihenfolge `S0 → S0b → S2 → S10a → S3 → S10b → S3b → S4 → S5a →
 S5b → S6 → S7 → S8 → S9a → S9b`. Slices innerhalb der
 gleichen Spalte (S5a/S5b, S9a/S9b) koennen parallel laufen,
 sind aber separate Plan-Closure-Docs.
@@ -208,7 +226,7 @@ DoD-Befehle pro Slice:
 
 - **Compile/Tasks pro Modul:**
   `make docker-check MODULES=":<modul>"` —
-  fuer **S0** (Writer-Signaturmigration) und **S3**
+  fuer **S0b** (Writer-Signaturmigration) und **S3**
   (Enum-Erweiterung) lohnt sich `MODULES=""` (kompletter
   Repo-Sweep, weil die Aenderungen in beliebigen Modulen
   Sealed-`when`-Folgen triggern koennen).
@@ -407,8 +425,10 @@ Pflege diese Liste mit Datum + Commit-Ref pro Abschluss:
   Make-Target aufgenommen — 2026-06-06, siehe §5.2.
 - [x] **PI-3** `feature/parquet-0.9.8`-Branch angelegt von
   diesem Commit aus — 2026-06-06.
-- [ ] **PI-4** Erster Implementierungs-Commit (S0 Start —
-  AP2 `ChunkSchema`).
+- [x] **PI-4** Erster Implementierungs-Commit S0 (AP2.a
+  `ChunkSchema`/`ChunkColumnSchema`/`SchemaOrigin` +
+  Dockerfile-Warmup-Fixup) — 2026-06-06, siehe
+  [`ImpPlan-0.9.8-parquet-S0-chunk-schema.md`](../done/ImpPlan-0.9.8-parquet-S0-chunk-schema.md).
 
 ### 5.1 Engineering Goal (PI-1, 2026-06-06)
 
@@ -500,8 +520,8 @@ Bestandteil von 0.9.8 wird (siehe AP13 §8.3).
 Der Umbrella wandert nach `docs/planning/done/`, wenn:
 
 1. Alle vier Pre-Impl-Aufgaben (§5) abgehakt.
-2. Alle Sub-Slices S0, S2, S10a, S3, S10b, S3b, S4, S5a,
-   S5b, S6, S7, S8, S9a, S9b mit Closure-Plan-Doc unter
+2. Alle Sub-Slices S0, S0b, S2, S10a, S3, S10b, S3b, S4,
+   S5a, S5b, S6, S7, S8, S9a, S9b mit Closure-Plan-Doc unter
    `docs/planning/done/ImpPlan-0.9.8-parquet-S<N>-…md`
    abgeschlossen.
 3. Befunde 1-3 aus §1.1 sind verifizierbar geschlossen

@@ -594,7 +594,8 @@ trennbar (Stopgap-`when`-Branches widersprechen dem
 Auto-Memory-Eintrag [[no-carveouts]]); zudem fehlt im Code
 heute der `ChunkSchema`-Typ, den S2/S3 voraussetzen. Die
 Sub-Slice-Reihenfolge des Umbrellas
-(`S0 → S2 → S10a → S3 → S10b → S3b → S4 → S5a → S5b → S6
-→ S7 → S8 → S9a → S9b`) supersededt damit AP12 §12 fuer
-diesen Cut. AP12 §12 selbst bleibt als Wiring-Sicht
+(`S0 → S0b → S2 → S10a → S3 → S10b → S3b → S4 → S5a → S5b
+→ S6 → S7 → S8 → S9a → S9b`; S0/S0b-Split am 2026-06-06,
+weil AP2.b/c-Mapping nicht in S0 stopgap-faehig ist)
+supersededt damit AP12 §12 fuer diesen Cut. AP12 §12 selbst bleibt als Wiring-Sicht
 gueltig.

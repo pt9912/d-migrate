@@ -80,6 +80,7 @@ COPY --chown=gradle:gradle adapters/driven/driver-mysql-profiling/build.gradle.k
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite/build.gradle.kts adapters/driven/driver-sqlite/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/driver-sqlite-profiling/build.gradle.kts adapters/driven/driver-sqlite-profiling/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/formats/build.gradle.kts adapters/driven/formats/build.gradle.kts
+COPY --chown=gradle:gradle adapters/driven/formats-parquet/build.gradle.kts adapters/driven/formats-parquet/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/audit-logging/build.gradle.kts adapters/driven/audit-logging/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/connection-config/build.gradle.kts adapters/driven/connection-config/build.gradle.kts
 COPY --chown=gradle:gradle adapters/driven/integrations/build.gradle.kts adapters/driven/integrations/build.gradle.kts
