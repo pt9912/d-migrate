@@ -106,19 +106,25 @@ internal class ImportPreflightValidator(
             is ImportInput.Stdin -> listOf(input.table)
             is ImportInput.SingleFile -> listOf(input.table)
             is ImportInput.Directory -> directoryScan!!.map { it.table }
+            is ImportInput.ResolvedBundle -> input.tables.map { it.table }
         }
-        val inputFilesByTable: Map<String, String> = directoryScan
-            ?.associate { it.table to it.fileName }
-            ?: emptyMap()
+        val inputFilesByTable: Map<String, String> = when (val input = preparedImport.input) {
+            is ImportInput.ResolvedBundle -> input.tables.associate {
+                it.table to input.bundleRoot.relativize(it.path).toString()
+            }
+            else -> directoryScan?.associate { it.table to it.fileName } ?: emptyMap()
+        }
         val inputTopology: String = when (preparedImport.input) {
             is ImportInput.Stdin -> "stdin"
             is ImportInput.SingleFile -> "single-file"
             is ImportInput.Directory -> "directory"
+            is ImportInput.ResolvedBundle -> "bundle"
         }
         val inputPath: String = when (val input = preparedImport.input) {
             is ImportInput.Stdin -> "<stdin>"
             is ImportInput.SingleFile -> input.path.toAbsolutePath().normalize().toString()
             is ImportInput.Directory -> input.path.toAbsolutePath().normalize().toString()
+            is ImportInput.ResolvedBundle -> input.bundleRoot.toAbsolutePath().normalize().toString()
         }
         val fingerprint = ImportOptionsFingerprint.compute(
             ImportOptionsFingerprint.Input(

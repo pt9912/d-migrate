@@ -1,6 +1,7 @@
 package dev.dmigrate.streaming
 
 import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.SeekableChunkSource
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.name
@@ -22,7 +23,7 @@ internal class ImportInputResolver {
     fun resolve(
         input: ImportInput,
         format: DataExportFormat,
-    ): List<ResolvedTableInput.Stream> =
+    ): List<ResolvedTableInput> =
         when (input) {
             is ImportInput.Stdin ->
                 listOf(
@@ -41,6 +42,15 @@ internal class ImportInputResolver {
                 )
 
             is ImportInput.Directory -> resolveDirectoryInputs(input, format)
+
+            is ImportInput.ResolvedBundle ->
+                input.tables.map { binding ->
+                    ResolvedTableInput.Seekable(
+                        table = binding.table,
+                        source = SeekableChunkSource.Local(binding.path),
+                        schema = binding.schema,
+                    )
+                }
         }
 
     private fun resolveDirectoryInputs(

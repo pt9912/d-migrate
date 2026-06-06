@@ -65,10 +65,26 @@ class StreamingImporter(
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
+            // S5a (2026-06-06): der ImportInputResolver liefert seit
+            // ResolvedBundle-Branch potenziell Seekable-Werte.
+            // End-to-End-Konsum durch TableImporter ist nach Umbrella §3
+            // explizit S7-Arbeit (`ParquetSeekableDataChunkReaderFactory`-
+            // Wiring im StreamingImporter-Constructor). Solange S7 nicht
+            // ausgeliefert ist, lehnen wir Seekable-Pfade hier hart ab —
+            // die Aussage ist nicht "kommt in Sub-Slice X", sondern
+            // "der Streaming-Layer braucht einen seekableReaderFactory-
+            // Pflichtparameter, der noch nicht im Constructor steht".
+            val streamInput = when (tableInput) {
+                is ResolvedTableInput.Stream -> tableInput
+                is ResolvedTableInput.Seekable -> error(
+                    "ResolvedTableInput.Seekable consumption is not yet wired into StreamingImporter; " +
+                        "S7 adds the seekableReaderFactory constructor parameter and the dispatch path."
+                )
+            }
             val summary = tableImporter.import(TableImportParams(
                 pool = pool,
                 writer = writer,
-                tableInput = tableInput,
+                tableInput = streamInput,
                 format = format,
                 options = options,
                 readOptions = readOptions,

@@ -69,6 +69,7 @@ class DataImportRunnerResumeTest : FunSpec({
             is dev.dmigrate.streaming.ImportInput.Stdin -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.SingleFile -> listOf(input.table)
             is dev.dmigrate.streaming.ImportInput.Directory -> listOf("t1")
+            is dev.dmigrate.streaming.ImportInput.ResolvedBundle -> input.tables.map { it.table }
         }
         val summaries = tables.map {
             TableImportSummary(

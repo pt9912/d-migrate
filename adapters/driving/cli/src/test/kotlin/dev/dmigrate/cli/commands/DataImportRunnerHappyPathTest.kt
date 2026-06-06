@@ -60,6 +60,7 @@ class DataImportRunnerHappyPathTest : FunSpec({
             is ImportInput.Stdin -> listOf(input.table)
             is ImportInput.SingleFile -> listOf(input.table)
             is ImportInput.Directory -> listOf("t1")
+            is ImportInput.ResolvedBundle -> input.tables.map { it.table }
         }
         val summaries = tables.map {
             TableImportSummary(
