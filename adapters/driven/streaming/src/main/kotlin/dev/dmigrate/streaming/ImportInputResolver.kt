@@ -1,7 +1,6 @@
 package dev.dmigrate.streaming
 
 import dev.dmigrate.format.data.DataExportFormat
-import java.io.InputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.name
@@ -12,17 +11,22 @@ import kotlin.io.path.name
  * Handles stdin, single-file, and directory inputs. For directories,
  * discovers matching files by format extension, validates filters and
  * ordering, and detects duplicate candidates.
+ *
+ * S2 Cut A (2026-06-06): Resolver liefert ausschliesslich
+ * [ResolvedTableInput.Stream]. Der [ResolvedTableInput.Seekable]-
+ * Pfad wird in S5a/S5b durch dedizierte Bundle-/Single-File-
+ * Resolver bedient (AP12 §5.1 / §7.3).
  */
 internal class ImportInputResolver {
 
     fun resolve(
         input: ImportInput,
         format: DataExportFormat,
-    ): List<ResolvedTableInput> =
+    ): List<ResolvedTableInput.Stream> =
         when (input) {
             is ImportInput.Stdin ->
                 listOf(
-                    ResolvedTableInput(
+                    ResolvedTableInput.Stream(
                         table = input.table,
                         openInput = { input.input },
                     )
@@ -30,7 +34,7 @@ internal class ImportInputResolver {
 
             is ImportInput.SingleFile ->
                 listOf(
-                    ResolvedTableInput(
+                    ResolvedTableInput.Stream(
                         table = input.table,
                         openInput = { Files.newInputStream(input.path) },
                     )
@@ -42,7 +46,7 @@ internal class ImportInputResolver {
     private fun resolveDirectoryInputs(
         input: ImportInput.Directory,
         format: DataExportFormat,
-    ): List<ResolvedTableInput> {
+    ): List<ResolvedTableInput.Stream> {
         require(Files.isDirectory(input.path)) {
             "ImportInput.Directory path '${input.path}' is not a directory"
         }
@@ -99,7 +103,7 @@ internal class ImportInputResolver {
         }
 
         return orderedTables.map { table ->
-            ResolvedTableInput(
+            ResolvedTableInput.Stream(
                 table = table,
                 openInput = { Files.newInputStream(candidates.getValue(table)) },
             )
@@ -121,7 +125,3 @@ internal class ImportInputResolver {
             .toList()
 }
 
-internal data class ResolvedTableInput(
-    val table: String,
-    val openInput: () -> InputStream,
-)

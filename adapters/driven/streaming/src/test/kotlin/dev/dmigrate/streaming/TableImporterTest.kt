@@ -58,7 +58,7 @@ class TableImporterTest : FunSpec({
             TableImportParams(
                 pool = ImporterNoopConnectionPool,
                 writer = writer,
-                tableInput = ResolvedTableInput("users") { ByteArrayInputStream("[]".toByteArray()) },
+                tableInput = ResolvedTableInput.Stream("users") { ByteArrayInputStream("[]".toByteArray()) },
                 format = DataExportFormat.JSON,
                 options = ImportOptions(truncate = true),
                 config = PipelineConfig(chunkSize = 100),
@@ -108,7 +108,7 @@ class TableImporterTest : FunSpec({
             TableImportParams(
                 pool = ImporterNoopConnectionPool,
                 writer = writer,
-                tableInput = ResolvedTableInput("users") { ByteArrayInputStream("[]".toByteArray()) },
+                tableInput = ResolvedTableInput.Stream("users") { ByteArrayInputStream("[]".toByteArray()) },
                 format = DataExportFormat.JSON,
                 options = ImportOptions(),
                 config = PipelineConfig(chunkSize = 100),

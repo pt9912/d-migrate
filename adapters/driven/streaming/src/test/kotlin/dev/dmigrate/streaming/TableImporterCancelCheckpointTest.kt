@@ -48,7 +48,7 @@ class TableImporterCancelCheckpointTest : FunSpec({
     ) = TableImportParams(
         pool = ImporterNoopConnectionPool,
         writer = FakeWriter(mapOf("users" to session)),
-        tableInput = ResolvedTableInput("users") { ByteArrayInputStream("[]".toByteArray()) },
+        tableInput = ResolvedTableInput.Stream("users") { ByteArrayInputStream("[]".toByteArray()) },
         format = DataExportFormat.JSON,
         options = ImportOptions(),
         config = PipelineConfig(chunkSize = 100),

@@ -17,7 +17,7 @@ import dev.dmigrate.format.data.FormatReadOptions
 internal data class TableImportParams(
     val pool: ConnectionPool,
     val writer: DataWriter,
-    val tableInput: ResolvedTableInput,
+    val tableInput: ResolvedTableInput.Stream,
     val format: DataExportFormat,
     val options: ImportOptions,
     val readOptions: FormatReadOptions = FormatReadOptions(),
