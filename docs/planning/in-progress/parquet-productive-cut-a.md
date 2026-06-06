@@ -405,7 +405,8 @@ Pflege diese Liste mit Datum + Commit-Ref pro Abschluss:
   Reviewer) — 2026-06-06, festgenagelt in §5.1.
 - [x] **PI-2** Sealed-`rg`-Sweep-Befehle in PR-Checkliste +
   Make-Target aufgenommen — 2026-06-06, siehe §5.2.
-- [ ] **PI-3** `feature/parquet-0.9.8`-Branch anlegen.
+- [x] **PI-3** `feature/parquet-0.9.8`-Branch angelegt von
+  diesem Commit aus — 2026-06-06.
 - [ ] **PI-4** Erster Implementierungs-Commit (S0 Start —
   AP2 `ChunkSchema`).
 
