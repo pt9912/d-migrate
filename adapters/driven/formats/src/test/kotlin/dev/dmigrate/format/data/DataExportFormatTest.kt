@@ -7,11 +7,12 @@ import io.kotest.matchers.string.shouldContain
 
 class DataExportFormatTest : FunSpec({
 
-    test("entries cover JSON, YAML, CSV") {
+    test("entries cover JSON, YAML, CSV, PARQUET") {
         DataExportFormat.entries.toSet() shouldBe setOf(
             DataExportFormat.JSON,
             DataExportFormat.YAML,
             DataExportFormat.CSV,
+            DataExportFormat.PARQUET,
         )
     }
 
@@ -19,18 +20,21 @@ class DataExportFormatTest : FunSpec({
         DataExportFormat.JSON.cliName shouldBe "json"
         DataExportFormat.YAML.cliName shouldBe "yaml"
         DataExportFormat.CSV.cliName shouldBe "csv"
+        DataExportFormat.PARQUET.cliName shouldBe "parquet"
     }
 
     test("fromCli accepts the canonical names") {
         DataExportFormat.fromCli("json") shouldBe DataExportFormat.JSON
         DataExportFormat.fromCli("yaml") shouldBe DataExportFormat.YAML
         DataExportFormat.fromCli("csv") shouldBe DataExportFormat.CSV
+        DataExportFormat.fromCli("parquet") shouldBe DataExportFormat.PARQUET
     }
 
     test("fromCli is case-insensitive") {
         DataExportFormat.fromCli("JSON") shouldBe DataExportFormat.JSON
         DataExportFormat.fromCli("Yaml") shouldBe DataExportFormat.YAML
         DataExportFormat.fromCli("CSV") shouldBe DataExportFormat.CSV
+        DataExportFormat.fromCli("Parquet") shouldBe DataExportFormat.PARQUET
     }
 
     test("fromCli rejects unknown formats with helpful message") {

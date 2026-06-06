@@ -10,7 +10,8 @@ package dev.dmigrate.format.data
 enum class DataExportFormat(val cliName: String, val fileExtensions: List<String>) {
     JSON("json", listOf("json")),
     YAML("yaml", listOf("yaml", "yml")),
-    CSV("csv", listOf("csv"));
+    CSV("csv", listOf("csv")),
+    PARQUET("parquet", listOf("parquet"));
 
     companion object {
         /** @throws IllegalArgumentException wenn der Name unbekannt ist. */

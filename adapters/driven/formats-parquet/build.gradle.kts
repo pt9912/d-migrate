@@ -111,6 +111,16 @@ dependencies {
     testImplementation("org.duckdb:duckdb_jdbc:${rootProject.properties["duckdbJdbcVersion"]}")
 }
 
+// S3 (Parquet Cut A 2026-06-06): Default-Factory-Contract-Branch-
+// Tests greifen auf DefaultDataChunkReader/WriterFactory aus
+// :adapters:driven:formats zu. Bewusst nur testImplementation —
+// kein produktiver Pfad von formats-parquet nach formats.
+dependencies {
+    testImplementation(project(":adapters:driven:formats"))
+    testImplementation("io.kotest:kotest-runner-junit5:${rootProject.properties["kotestVersion"]}")
+    testImplementation("io.kotest:kotest-assertions-core:${rootProject.properties["kotestVersion"]}")
+}
+
 // AP5 — Arrow-Metadateninspektion des Spike-Outputs. parquet-arrow
 // liefert den `SchemaConverter` (Parquet `MessageType` -> Arrow
 // `Schema`) und zieht transitiv `arrow-vector` (reines JVM-POJO
