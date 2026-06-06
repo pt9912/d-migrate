@@ -38,6 +38,17 @@ import java.io.OutputStream
  */
 class ParquetChunkWriter(
     private val output: OutputStream,
+    /**
+     * S4 Cut A (AP11 §6.1): optionaler Hook, der beim
+     * [begin]-Aufruf die `extraMetaData`-Map fuer den Parquet-
+     * Footer liefert. Single-File-Pfade verdrahten hier den
+     * `d-migrate.manifest`-Schluessel ueber
+     * [dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter];
+     * Bundle-Pfade lassen den Default (`{ emptyMap() }`)
+     * stehen, weil ihr Manifest extern in `manifest.yaml`
+     * lebt.
+     */
+    private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
 ) : DataChunkWriter {
 
     private var beginCalled: Boolean = false
@@ -54,11 +65,15 @@ class ParquetChunkWriter(
         val configuration = Configuration(false)
         GroupWriteSupport.setSchema(messageType, configuration)
         this.groupFactory = SimpleGroupFactory(messageType)
-        this.writer = ExampleParquetWriter.builder(OutputStreamOutputFile(output))
+        val extraMetaData = extraMetaDataProvider(schema)
+        val builder = ExampleParquetWriter.builder(OutputStreamOutputFile(output))
             .withConf(configuration)
             .withCompressionCodec(CompressionCodecName.GZIP)
             .withType(messageType)
-            .build()
+        if (extraMetaData.isNotEmpty()) {
+            builder.withExtraMetaData(extraMetaData)
+        }
+        this.writer = builder.build()
     }
 
     override fun write(chunk: DataChunk) {
