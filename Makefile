@@ -56,7 +56,7 @@ docker_perf_tasks  = $(if $(strip $(MODULES)),$(addsuffix :test,$(MODULES)),test
 
 .DEFAULT_GOAL := help
 
-.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
+.PHONY: help dev run integration docs-check coverage-excludes-check solid-suppression-gate parquet-sweep gates ci ci-build release-assets docker-resolve-deps docker-oci-build docker-build docker-check docker-test docker-detekt docker-coverage docker-coverage-gate docker-coverage-json docker-coverage-modules docker-coverage-modules-html docker-coverage-modules-summary docker-perf docker-smoke docker-gates docker-full-gates golden-update clean bi-demo-env bi-demo-pull bi-demo-up bi-demo-down bi-demo-purge bi-demo-smoke
 
 help:
 	@printf '%s\n' \
@@ -66,6 +66,7 @@ help:
 		'  make integration      Run Docker-backed integration tests' \
 		'  make docs-check       Verify Markdown links and coverage docs' \
 		'  make solid-suppression-gate  Fail on SOLID detekt suppressions in production Kotlin sources' \
+		'  make parquet-sweep     Run the Parquet Cut-A sealed-when sweep (AP13 §4.1)' \
 		'  make gates            Run Docker check, coverage and docs gates' \
 		'  make ci               Run Docker build, coverage and docs gates' \
 		'  make ci-build         Run CI build tasks inside the Docker build stage' \
@@ -131,6 +132,13 @@ coverage-excludes-check:
 
 solid-suppression-gate:
 	./scripts/solid-suppression-gate.sh
+
+# Parquet Cut-A (0.9.8) — Sealed-when-Sweep aus AP13 §4.1.
+# Pflicht-Lauf vor jedem Parquet-PR-Merge auf
+# feature/parquet-0.9.8 (Umbrella PI-2 +
+# docs/operations/parquet-pr-checklist.md).
+parquet-sweep:
+	./scripts/parquet-sealed-sweep.sh
 
 gates: docker-check docker-coverage-gate docs-check
 

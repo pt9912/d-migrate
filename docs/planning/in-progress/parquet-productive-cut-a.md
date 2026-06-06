@@ -403,8 +403,8 @@ Pflege diese Liste mit Datum + Commit-Ref pro Abschluss:
 
 - [x] **PI-1** Engineering-Goal-Commit (Zeitbudget,
   Reviewer) — 2026-06-06, festgenagelt in §5.1.
-- [ ] **PI-2** Sealed-`rg`-Sweep-Befehle in PR-Checkliste /
-  Hook aufnehmen.
+- [x] **PI-2** Sealed-`rg`-Sweep-Befehle in PR-Checkliste +
+  Make-Target aufgenommen — 2026-06-06, siehe §5.2.
 - [ ] **PI-3** `feature/parquet-0.9.8`-Branch anlegen.
 - [ ] **PI-4** Erster Implementierungs-Commit (S0 Start —
   AP2 `ChunkSchema`).
@@ -446,6 +446,31 @@ S5b, S6, S7, S8, S9a, S9b) landet als eigener PR auf
   werden direkt mit dem Slice-Commit gepushed, nicht
   asynchron nachgereicht — sonst verliert die Single-
   Session-Spur ihre Nachvollziehbarkeit.
+
+### 5.2 Sealed-`rg`-Sweep-Tooling (PI-2, 2026-06-06)
+
+Drei Artefakte tragen den Sweep aus AP13 §4.1
+([`parquet-decision-template.md`](../done/parquet-decision-template.md)
+Zeilen 227-237):
+
+- `scripts/parquet-sealed-sweep.sh` — Shell-Script faehrt
+  die acht `rg`-Patterns pro Sealed-Hierarchie
+  (`ImportInput`, `SchemaOrigin`, `SeekableChunkSource`,
+  `CheckpointOperationSpecifics`, `DataExportFormat`) und
+  druckt jeden Treffer-Block. Exit-Code immer 0 — Inventar,
+  kein Gate. Erkennt auch `else`-Zweige, Reflection-Pfade
+  und non-exhaustive `when`-Statements, die `gradle
+  assemble --warning-mode=fail` nicht faengt.
+- `make parquet-sweep` — Make-Target wraps das Script
+  (Memo [[prefer-make]]).
+- `docs/operations/parquet-pr-checklist.md` — PR-
+  Checkliste, die `make parquet-sweep` als Pflicht-Check
+  vor Merge auf `feature/parquet-0.9.8` benennt; pro
+  Treffer entscheidet der PR-Reviewer (exhaustive oder
+  begruendet `else`-belassen). Enthaelt zusaetzliche
+  Slice-spezifische Checks (S10a-Dependency-Belege,
+  S3-Hadoop-Freiheit, S6-Phase-2-Hook, S7-
+  `-PintegrationTests`-Pflicht).
 
 ---
 
