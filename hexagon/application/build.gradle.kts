@@ -20,6 +20,8 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-common"))
     testImplementation(project(":adapters:driven:streaming"))
     testImplementation(testFixtures(project(":hexagon:ports-common")))
+    // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
+    testImplementation(testFixtures(project(":hexagon:ports-write")))
 
     // LF-012 / LN-011 / LN-017 / LN-027 cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))

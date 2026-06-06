@@ -10,6 +10,8 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.data.ChunkSequence
 import dev.dmigrate.driver.data.DataReader
 import dev.dmigrate.driver.data.DataWriter
+import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.chunkSchemaOf
 import dev.dmigrate.driver.data.FinishTableResult
 import dev.dmigrate.driver.data.ImportOptions
 import dev.dmigrate.driver.data.TableImportSession
@@ -54,6 +56,9 @@ class TransferExecutorCancelCheckpointTest : FunSpec({
             streamCalls.incrementAndGet()
             val chunks = chunksByTable[table] ?: emptyList()
             return object : ChunkSequence {
+                override val schema: ChunkSchema = chunks.firstOrNull()?.let {
+                    chunkSchemaOf(it.table, it.columns)
+                } ?: chunkSchemaOf(table, emptyList())
                 override fun iterator() = chunks.iterator()
                 override fun close() = Unit
             }

@@ -2,8 +2,8 @@ package dev.dmigrate.format.data.csv
 
 import com.univocity.parsers.csv.CsvWriter
 import com.univocity.parsers.csv.CsvWriterSettings
-import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
@@ -49,10 +49,11 @@ class CsvChunkWriter(
      */
     private val sequenceWarnedColumns = HashSet<String>()
 
-    override fun begin(table: String, columns: List<ColumnDescriptor>) {
+    override fun begin(table: String, schema: ChunkSchema) {
         check(!beginCalled) { "begin() called twice on the same CsvChunkWriter" }
         beginCalled = true
-        columnNames = columns.map { it.name }
+        // AP2 §6.3: CSV liest aus schema.columns nur die Spaltennamen.
+        columnNames = schema.columns.map { it.name }
 
         // BOM-Bytes vor allem anderen schreiben (falls gewünscht).
         // uniVocity hat keine eingebaute BOM-Option — wir machen das selbst,
@@ -73,7 +74,7 @@ class CsvChunkWriter(
         csvWriter = CsvWriter(streamWriter, settings)
 
         if (options.csvHeader) {
-            csvWriter!!.writeHeaders(*columns.map { it.name }.toTypedArray())
+            csvWriter!!.writeHeaders(*columnNames.toTypedArray())
         }
     }
 

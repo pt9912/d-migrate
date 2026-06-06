@@ -1,6 +1,5 @@
 package dev.dmigrate.format.data
 
-import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 
 /**
@@ -35,11 +34,14 @@ import dev.dmigrate.core.data.DataChunk
 interface DataChunkWriter : AutoCloseable {
 
     /**
-     * Wird einmal vor dem ersten [write]-Aufruf aufgerufen. Gibt dem Writer
-     * die Tabellenmetadaten, mit denen er Header-Strukturen aufbauen kann
-     * (z.B. CSV-Spaltenüberschriften).
+     * Wird einmal vor dem ersten [write]-Aufruf aufgerufen. Gibt dem
+     * Writer das Tabellenschema (AP2 §6.1), mit dem er Header-Strukturen
+     * aufbaut (z.B. CSV-Spaltenüberschriften). JSON/YAML/CSV lesen aus
+     * [ChunkSchema.columns] nur Name und Nullability; Parquet konsumiert
+     * zusaetzlich `neutralType` fuer das `MessageType`-Mapping
+     * (AP2 §6.3).
      */
-    fun begin(table: String, columns: List<ColumnDescriptor>)
+    fun begin(table: String, schema: ChunkSchema)
 
     /**
      * Schreibt einen Chunk in den Output-Stream. Bei einem leeren Chunk

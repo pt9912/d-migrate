@@ -4,6 +4,7 @@ import com.dslplatform.json.DslJson
 import com.dslplatform.json.JsonWriter
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.SerializedValue
@@ -54,10 +55,14 @@ class JsonChunkWriter(
     private var closed: Boolean = false
     private var beginCalled: Boolean = false
 
-    override fun begin(table: String, columns: List<ColumnDescriptor>) {
+    override fun begin(table: String, schema: ChunkSchema) {
         check(!beginCalled) { "begin() called twice on the same JsonChunkWriter" }
         beginCalled = true
-        this.columns = columns
+        // AP2 §6.3: JSON liest aus schema.columns nur Name und Nullability;
+        // neutralType bleibt fuer dieses Format ungenutzt.
+        this.columns = schema.columns.map {
+            ColumnDescriptor(name = it.name, nullable = it.nullable, sqlTypeName = null)
+        }
         // Öffnender Bracket
         writer.writeByte('['.code.toByte())
     }

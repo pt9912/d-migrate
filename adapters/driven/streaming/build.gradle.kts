@@ -29,6 +29,9 @@ dependencies {
 
     // LN-011: cancel-test fixtures (TestCancellationTokenSource).
     testImplementation(testFixtures(project(":hexagon:core")))
+    // Parquet Cut A S0b: DataChunkWriter.begin(table, columns)-Bridge-Extension.
+    testImplementation(testFixtures(project(":hexagon:ports-write")))
+    testImplementation(testFixtures(project(":hexagon:ports-common")))
 }
 
 kover {

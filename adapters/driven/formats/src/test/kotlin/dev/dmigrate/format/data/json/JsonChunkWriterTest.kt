@@ -2,6 +2,7 @@ package dev.dmigrate.format.data.json
 
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
+import dev.dmigrate.format.data.begin
 import dev.dmigrate.format.data.ExportOptions
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe

@@ -63,7 +63,7 @@ internal class TableExporter(private val reader: DataReader) {
             sequence.use { seq ->
                 for (chunk in seq) {
                     if (!beginCalled) {
-                        writer.begin(table, chunk.columns)
+                        writer.begin(table, seq.schema)
                         beginCalled = true
                         val indices = resolveMarkerIndices(resumeMarker, chunk.columns)
                         markerIdx = indices.first

@@ -3,8 +3,12 @@ package dev.dmigrate.driver.data
 import dev.dmigrate.core.data.ColumnDescriptor
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.core.data.DataFilter
+import dev.dmigrate.core.model.NeutralType
 import dev.dmigrate.driver.DatabaseDialect
 import dev.dmigrate.driver.connection.ConnectionPool
+import dev.dmigrate.format.data.ChunkColumnSchema
+import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.SchemaOrigin
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -149,6 +153,12 @@ private class FakeReader : DataReader {
 
 private class FakeChunkSequence : ChunkSequence {
     private var used = false
+    override val schema: ChunkSchema = ChunkSchema(
+        table = "items",
+        columns = listOf(ChunkColumnSchema(name = "id", nullable = false, neutralType = NeutralType.Integer)),
+        origin = SchemaOrigin.JDBC_METADATA,
+    )
+
     override fun iterator(): Iterator<DataChunk> {
         check(!used) { "single-use" }
         used = true
