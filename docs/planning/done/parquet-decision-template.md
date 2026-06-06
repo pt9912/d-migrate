@@ -7,6 +7,14 @@
 > Scope-Vorschlag. Letzte Etappe vor Implementierungs-
 > Entscheidung.
 >
+> **Praezisierung 2026-06-06:** §5.4, §6 und §7 sind durch
+> §8 superseded. Cut B (Bundle-Pilot) wird auf Cut A
+> (Voll-Scope) erweitert; Zielversion wechselt von 1.0.0
+> auf 0.9.8. Stakeholder-Entscheid 2026-06-05 (Commit
+> e7f3f714) bleibt im Log und ist bis §8 die normative
+> Aussage. Umsetzung laeuft als Per-Feature-Umbrella
+> [`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md).
+>
 > Referenzen: alle AP1-AP12-Sub-Docs
 > (`parquet-libraries.md`, `parquet-schema-source.md`,
 > `parquet-manifest-format.md`, `parquet-directory-import.md`,
@@ -490,3 +498,103 @@ AP3-Spike bleibt im Repo als „untergeordnetes Modul
 ohne Konsumenten". Spaetere Reaktivierung ist
 unkompliziert: jeder AP1-AP12-Sub-Doc traegt seine
 Vorentscheidungen mit Code-Anker und Stand-Datum.
+
+---
+
+## 8. Praezisierung 2026-06-06 — Scope auf Cut A, Ziel 0.9.8
+
+Diese Sektion supersededt §5.4 (Empfehlung Cut B), §6
+(Vor-Implementierungs-Antworten in 1.0.0-Sprache) und §7
+(Empfehlung „Cut B als 1.0.0"). Stakeholder-Entscheid
+2026-06-05 (Commit e7f3f714) bleibt als historische
+Festlegung im Repo, ist aber durch diese Praezisierung
+abgeloest.
+
+### 8.1 Neue Festlegung
+
+**Cut A (Voller Vertrag) als 0.9.8**, mit den AP12 §12-
+Schritten 1, 2, 3, **3b**, **4**, **5a**, **5b**, 6
+(inkl. Phase-2-Hook), 7, 8 (Bundle + SingleFile), **9a**,
+**9b**. Aufwand laut §3.2: Brutto 35-60 PT, Netto Voll-
+Scope 29.5-47 PT.
+
+Release-Branch: `feature/parquet-0.9.8` (statt
+`feature/parquet-1.0`). Merge in `develop` nach Schritt 9
+analog AP13 §6.1.
+
+### 8.2 Begruendung
+
+Cut B war auf Risiko-Trennung optimiert (Bundle-Pfad
+sauber vom Single-File-Phase-1/2-Risiko isolieren) und
+auf einen klaren 1.0-Stamp. Mit Cut A wird die
+Single-File-Vertragsarbeit aus AP4/AP5b/AP6-Phase-2-Hook/
+AP8-SingleFile/AP9b in **dieselbe** Release-Linie gezogen,
+weil der Operator-Mehrwert (Spark-/Hive-/DuckDB-Dateien
+direkt importieren) Cut B zu eng macht, sobald der
+Bundle-Pfad steht.
+
+Die Versionsabsenkung auf 0.9.8 macht den 1.0-Stamp
+explizit zum Engineering-Reife-Punkt (Native-Image,
+Distributions-Cut, Footprint-Minimierung) statt zum
+Feature-Vollstaendigkeits-Stamp. Cut A landet damit in der
+laufenden 0.9.x-Linie und kann normal in einen
+0.9.x-Patch-Pfad anschliessen, ohne dass das 1.0-Versprechen
+durch noch nicht ausgereifte Native-Image-/Footprint-
+Themen blockiert wird.
+
+### 8.3 Folge-Releases (delta zu §5.4)
+
+- **1.0.0**: Native-Image-Cut + Distributions-Cut
+  (Default-JAR vs. `--parquet`-Variante) + optionaler
+  Hadoop-API-Shim + **Hadoop-Footprint-Minimierung**
+  (HDFS/YARN/Jersey/reload4j/Zookeeper/Netty-Excludes
+  und -Constraints; in 0.9.8 bewusst nur per S10a
+  inventarisiert, vgl. §8.2). Das ist der vormalige
+  1.2.0-Inhalt aus §5.4 plus die Distributions-Frage aus
+  §6.2 plus der aus dem 0.9.8-Umbrella herausgehaltene
+  Footprint-Cut.
+- **1.0.0+ / spaeter**: MCP-Server-Spiegelung des
+  Bundle-/Single-File-Pfads. Entscheidung beim
+  1.0-Planning oder spaeter.
+- Der vormalige **1.1.0-Single-File-Scope** entfaellt,
+  weil er Bestandteil von 0.9.8 wird.
+
+### 8.4 Was bleibt aus §6 normativ
+
+- §6.1 Release-Branch-Strategie — Aufbau bleibt
+  (Schritt-fuer-Schritt-Commits, kein Big-Bang-Merge), nur
+  der Branch-Name wechselt auf `feature/parquet-0.9.8`.
+- §6.2 Distributions-Cut — **Parquet immer im Default-JAR
+  fuer 0.9.8.** Eine separate `--parquet`-Variante wird mit
+  dem 1.0.0-Cut zusammen mit dem Native-Image-Sweep
+  reevaluiert (statt 1.2.0 wie urspruenglich in §6.2).
+- §6.3 DuckDB-/Arrow-Test-Dependencies — bleibt
+  (`testImplementation` + CI-Smoke).
+- §6.4 MCP-Server-Spiegelung — bleibt „nicht in dieser
+  Release-Linie", Verschiebung von „nicht in 1.0.0" auf
+  „nicht in 0.9.8"; Folge-Entscheidung weiterhin offen.
+- §6.5 Hadoop-API-Shim — bleibt Folge-Thread zusammen mit
+  dem 1.0.0-Cut.
+
+### 8.5 Bedingungs-Status (delta zu §7)
+
+Die fuenf ⏳-Punkte aus §7 bleiben offen und werden durch
+den Umbrella `parquet-productive-cut-a.md` §5 (PI-1 bis
+PI-5) gefuehrt.
+
+**Der erste Implementierungs-Commit ist nicht mehr
+AP12-Schritt 1**, sondern Slice **S0** des Umbrellas
+(AP2 `ChunkSchema`-Typ + `DataChunkWriter.begin`-Migration
+auf `ChunkSchema`). AP12 §12 Schritt 1
+(`DataExportFormat.PARQUET` + Sealed-Sweeps) ist in den
+Umbrella-Slice **S3** verschoben worden — Begruendung
+(Umbrella §3, Befund-Audit 2026-06-06): unter Cut A ist
+die Enum-Erweiterung von der Handler-Registrierung nicht
+trennbar (Stopgap-`when`-Branches widersprechen dem
+Auto-Memory-Eintrag [[no-carveouts]]); zudem fehlt im Code
+heute der `ChunkSchema`-Typ, den S2/S3 voraussetzen. Die
+Sub-Slice-Reihenfolge des Umbrellas
+(`S0 → S2 → S10a → S3 → S10b → S3b → S4 → S5a → S5b → S6
+→ S7 → S8 → S9a → S9b`) supersededt damit AP12 §12 fuer
+diesen Cut. AP12 §12 selbst bleibt als Wiring-Sicht
+gueltig.

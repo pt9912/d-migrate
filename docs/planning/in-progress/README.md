@@ -11,9 +11,18 @@ Zwei Typen leben hier:
      Resolved) mit Verweis aufs Quelldokument.
 2. **Per-Feature-Umbrella-Pläne**, die einen mehrphasigen Slice
    tragen, bei dem mindestens ein Commit den Plan referenziert:
-   *(keine aktiven Umbrella-Pläne — der 0.9.7-Atomic-Preserve-
-   Slice und seine Followups sind am 2026-06-02 als Ganzes nach
-   `../done/` migriert.)*
+   - [`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
+     — Cut A (Voll-Scope, 0.9.8) auf `feature/parquet-0.9.8`.
+     Trägt die produktive Umsetzung nach Scope-/Versions-
+     Korrektur 2026-06-06 (AP13 §8 supersededt §5.4/§7;
+     Stakeholder-Entscheid e7f3f714 abgelöst): alle neun
+     Wiring-Schritte aus AP12 §12 inklusive Single-File
+     (S3b/S4/S5b/S9b) plus S10a (Dependency-Hygiene +
+     Footprint-Inventar) und S10b (Native-Image-Befund).
+     Footprint-Minimierung und Native-Image-Cut sind
+     1.0.0-Folge-Aufgabe (AP13 §8.3), nicht Teil des
+     Umbrellas. Plan-Doc-Phase (AP1–AP13) ist in `../done/`
+     abgeschlossen; dieser Umbrella deckt die Code-Phase ab.
 
 Lebenszyklus und Verzeichnisstruktur sind in
 [`ADR 0004`](../../adr/0004-documentation-and-planning-structure.md)

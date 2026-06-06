@@ -9,25 +9,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Parquet-Plan-Doc nach `done/` migriert** *(2026-06-05)* —
+- **Parquet — Scope-/Versions-Korrektur: Cut A statt Cut B,
+  Ziel 0.9.8 statt 1.0.0** *(2026-06-06)* — AP13 §5.4 / §7
+  hatten am 2026-06-05 „Cut B (Bundle-only Pilot) als 1.0.0"
+  empfohlen; Stakeholder-Entscheid e7f3f714 folgte dieser
+  Empfehlung. Am 2026-06-06 wurde diese Empfehlung in
+  [`parquet-decision-template.md`](docs/planning/done/parquet-decision-template.md)
+  §8 superseded auf **Cut A (Voller Vertrag) als 0.9.8**.
+  Begruendung: Operator-Mehrwert (Spark-/Hive-/DuckDB-
+  Dateien direkt importieren) macht Cut B zu eng, sobald
+  der Bundle-Pfad steht; die Versionsabsenkung auf 0.9.8
+  macht den 1.0-Stamp explizit zum Engineering-Reife-Punkt
+  (Native-Image, Distributions-Cut, Hadoop-Footprint-
+  Minimierung) statt zum Feature-Vollstaendigkeits-Stamp.
+  Folge-Releases (AP13 §8.3): **1.0.0** = Native-Image-Cut
+  + Distributions-Cut (Default-JAR vs. `--parquet`-Variante)
+  + optionaler Hadoop-API-Shim + Hadoop-Footprint-
+  Minimierung (vormals 1.2.0-Scope plus §6.2-Distributions-
+  Frage plus der aus dem Umbrella herausgehaltene
+  Footprint-Cut); **1.0.0+ / spaeter** = MCP-Server-
+  Spiegelung; vormaliger 1.1.0-Single-File-Scope entfaellt
+  (Bestandteil von 0.9.8).
+- **Parquet-Plan-Doc nach `done/` migriert — nur
+  Evaluierungsphase abgeschlossen** *(2026-06-05)* —
   per `in-progress/`-Konvention (ADR-0004) wandern
   [`parquet-export-import-evaluation.md`](docs/planning/done/parquet-export-import-evaluation.md)
   und alle zehn Sub-Docs (AP1-AP13) nach
-  `docs/planning/done/`, weil die Evaluierungsphase mit
-  Stakeholder-Go fuer Cut B abgeschlossen ist. Hauptplan
+  `docs/planning/done/`, weil die **Evaluierungsphase**
+  abgeschlossen ist. Hauptplan
   bekommt eine `## Closure (2026-06-05)`-Sektion mit
   Commit-Tabelle aller 16 Parquet-Commits in
   chronologischer Reihenfolge (a9bf941e Plan-Refresh, 4
   Code-Spike-Commits AP3-AP6, 10 Sub-Doc-Commits AP7-AP13
   inkl. AP10-Befund-Rueckspiel, 1 Stakeholder-Entscheid
-  e7f3f714), funf verbleibenden Pre-Implementation-
+  e7f3f714), fuenf verbleibenden Pre-Implementation-
   Aufgaben (Engineering-Goal, Native-Image-Smoketest,
-  Sealed-`rg`-Sweep, Branch-Anlage, erster Cut-B-Commit)
-  und drei aktiven Folge-Threads (1.1.0, 1.2.0,
-  MCP-Spiegelung). Cross-Verweise auf den alten
-  `in-progress/`-Pfad sind in CHANGELOG, Spec,
-  Sub-Docs, AP3-Spike-Tests und `gradle.properties`
-  aktualisiert.
+  Sealed-`rg`-Sweep, Branch-Anlage, erster Implementierungs-
+  Commit) und Folge-Threads. Cross-Verweise auf den alten
+  `in-progress/`-Pfad sind in CHANGELOG, Spec, Sub-Docs,
+  AP3-Spike-Tests und `gradle.properties` aktualisiert.
+  **Wichtig:** die Closure deckt die Plan-Doc-/Spike-Phase
+  ab, nicht den produktiven Code; der Spike unter
+  `adapters/driven/formats-parquet/src/main/kotlin/.../spike/`
+  bleibt, der produktive Pfad
+  (`SeekableDataChunkReaderFactory`, `SeekableChunkSource`,
+  `ParquetChunkReader`/`Writer`, `DataExportFormat.PARQUET`,
+  CLI-`--format parquet`, Dependency-Hygiene, Hadoop-
+  Footprint-Inventar fuer 1.0.0-Input) laeuft als
+  Per-Feature-Umbrella
+  [`parquet-productive-cut-a.md`](docs/planning/in-progress/parquet-productive-cut-a.md)
+  unter `in-progress/`. Trigger sind vier Befunde aus
+  Code-Sichtung 2026-06-06 (`DataExportFormat.kt:10` ohne
+  `PARQUET`, `DataImportCommand.kt:41` `.choice("json", "yaml",
+  "csv")`, transitives `org.apache.avro:avro:1.9.2` ueber
+  Hadoop, restliche Hadoop-Transitive HDFS/YARN/Jersey/
+  reload4j/Zookeeper/Netty). Der Umbrella deckt nach AP13 §8
+  Cut A (Voll-Scope) ab.
 
 ### Added
 
