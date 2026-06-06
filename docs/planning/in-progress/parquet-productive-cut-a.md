@@ -401,12 +401,51 @@ DoD S10b:
 
 Pflege diese Liste mit Datum + Commit-Ref pro Abschluss:
 
-- [ ] **PI-1** Engineering-Goal-Commit (Zeitbudget, Reviewer).
+- [x] **PI-1** Engineering-Goal-Commit (Zeitbudget,
+  Reviewer) — 2026-06-06, festgenagelt in §5.1.
 - [ ] **PI-2** Sealed-`rg`-Sweep-Befehle in PR-Checkliste /
   Hook aufnehmen.
 - [ ] **PI-3** `feature/parquet-0.9.8`-Branch anlegen.
 - [ ] **PI-4** Erster Implementierungs-Commit (S0 Start —
   AP2 `ChunkSchema`).
+
+### 5.1 Engineering Goal (PI-1, 2026-06-06)
+
+**Zeitbudget: Single-Session-Durchzug, kein Sprint-
+Splitting.** Cut A wird in einem Rutsch (eine
+Arbeitssitzung mit pt9912 + Claude) von S0 bis S9b
+durchgezogen, ohne Kalender-Splitting. Die AP13 §3.2-
+Bandbreite (Brutto 35-60 PT) bleibt als **Referenz-
+Aufwand**, nicht als hartes PT-Budget — es gibt keinen
+Sprint-Counter, der herunterzaehlt. Stoppen-Bedingung
+ist nicht das Budget, sondern eine **Risiko-Eskalation
+gemaess §8** (Footprint-Ueberraschung, Plan-Doc-Drift,
+Single-File-Phase-1/2-Komplexitaet). Falls eine
+Eskalation triggert, gilt der Re-Scope-Pfad aus §8:
+explizite Entscheidung mit Versions-Bump und DoD-Update,
+kein stilles Cut-B-Fallback.
+
+**Reviewer: pt9912 + Claude `/code-review` pro Slice-PR.**
+Jeder Sub-Slice (S0, S2, S10a, S3, S10b, S3b, S4, S5a,
+S5b, S6, S7, S8, S9a, S9b) landet als eigener PR auf
+`feature/parquet-0.9.8`. Pro PR:
+
+- pt9912 Code-Review (final Approve),
+- `/code-review` Lauf pro PR; Level (`high` oder `ultra`)
+  wird pro Slice nach Risk-Profil gewaehlt — Default
+  `high`, `ultra` fuer die Integrations-Slices **S6, S7,
+  S8** und die Test-Slices **S9a, S9b**, weil sie
+  cross-modulare Wirkung haben.
+
+**Konsequenzen fuer die Sub-Slices:**
+
+- PI-3 (`feature/parquet-0.9.8`) wird sofort nach PI-2
+  angelegt, kein Sprint-Planning-Vorbehalt.
+- PI-4 (S0-Start) folgt unmittelbar nach PI-3.
+- Slice-Closure-Plan-Docs (`ImpPlan-0.9.8-parquet-S<N>-…md`)
+  werden direkt mit dem Slice-Commit gepushed, nicht
+  asynchron nachgereicht — sonst verliert die Single-
+  Session-Spur ihre Nachvollziehbarkeit.
 
 ---
 
