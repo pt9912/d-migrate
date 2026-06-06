@@ -346,6 +346,31 @@ Verifikationen getrennt:
    1.17.1 CVE-2025-30065/46762; relevant ist, dass die Module gar nicht
    eingezogen werden (kein Avro-/Protobuf-Reflection-Pfad im
    Klassenpfad).
+
+   **S10a-Befund-Rueckspiel (2026-06-06, Pfad A).**
+   `dependencyInsight --dependency org.apache.avro:avro
+   --configuration runtimeClasspath` gegen
+   `:adapters:driven:formats-parquet` zeigte vor S10a
+   `org.apache.avro:avro:1.9.2` transitiv ueber
+   `hadoop-common` **und**
+   `hadoop-mapreduce-client-core`. Die `parquet-avro`-
+   Constraint allein reichte also nicht — Avro kam ueber
+   Hadoop trotzdem in den Klassenpfad. S10a hat deshalb
+   den Constraint-Block erweitert:
+   - `org.apache.avro:avro` mit `rejectAll()` (zweigleisige
+     Absicherung gegen kuenftige neue Pfade),
+   - `exclude(group = "org.apache.avro")` auf beiden
+     Hadoop-Deps (`hadoop-common`,
+     `hadoop-mapreduce-client-core`).
+
+   AP3-Spike-Tests bleiben nach dem Exclude gruen (Beleg
+   im S10a-Closure-Doc), d.h. kein konsumierter
+   Hadoop-Code-Pfad referenziert Avro-Klassen.
+   `dependencyInsight` nach S10a liefert "No dependencies
+   matching given input were found"; die in der
+   urspruenglichen AP1.b-Aussage formulierte Garantie
+   ("kein Avro-Reflection-Pfad im Klassenpfad") ist damit
+   tatsaechlich erfuellt.
 3. **AP1.c — InputStream-Reader-Vertrag entscheiden und in CLI-Spec
    spiegeln.** Abschnitt 7 dokumentiert die Vorentscheidung; AP3
    implementiert sie, entdeckt sie nicht.
@@ -628,3 +653,78 @@ nur noch prototyp-getriebene Verifikationen:
 - GraalVM-Native-Image bleibt das groesste Restrisiko; eine spaete
   Migration auf einen anderen Writer waere ein Format-Adapter-Tausch,
   nicht ein Vertragsbruch fuer die Ports.
+
+---
+
+## 11. Footprint-Inventar (S10a-Befund 2026-06-06)
+
+S10a hat `dependencies --configuration runtimeClasspath`
+gegen `:adapters:driven:formats-parquet` aufgenommen, um
+das tatsaechliche Footprint-Bild als Input fuer den
+1.0.0-Cut (Distributions-Cut + Hadoop-Footprint-
+Minimierung, AP13 §8.3) festzuhalten. Dieses Inventar
+selbst macht **keine** Excludes — Minimierung ist
+ausschliesslich 1.0.0-Aufgabe; in 0.9.8 bleibt der
+Default-JAR Parquet-tauglich (AP13 §6.2 / §8.4).
+
+### 11.1 Gesamtzahl
+
+- `runtimeClasspath`-Eintraege fuer
+  `:adapters:driven:formats-parquet` nach S10a:
+  **142 unique Dependency-Koordinaten**.
+- Davon **~65 Hadoop-Transitive** (Gruppen
+  `org.apache.hadoop`, `com.sun.jersey`, `io.netty`,
+  `ch.qos.reload4j`, `com.google.inject*`,
+  `org.codehaus.jettison`, `org.apache.curator`,
+  `org.apache.kerby`, `javax.servlet`,
+  `com.github.pjfanning:jersey-json`,
+  `com.jcraft:jsch`, `com.nimbusds:nimbus-jose-jwt`,
+  `dnsjava`, Woodstox-Core), die der 1.0.0-Distributions-
+  Cut adressieren muss.
+
+### 11.2 Beobachtete Hadoop-Footprint-Schwergewichte
+
+Nicht-erschoepfende Liste, sortiert nach
+Pruefreihenfolge fuer den 1.0.0-Cut. Vollstaendiger
+Snapshot ist im S10a-Closure-Doc abgelegt.
+
+- HDFS-/Server-State-Pfad: `org.apache.hadoop:hadoop-hdfs-client`,
+  `org.apache.curator:curator-{client,framework,recipes}`,
+  `org.apache.zookeeper:zookeeper`, `org.apache.zookeeper:zookeeper-jute`.
+- YARN-Pfad (in Hadoop 3.4.1 transitiv mitgezogen):
+  `org.apache.hadoop:hadoop-yarn-common`,
+  `org.apache.hadoop:hadoop-yarn-client`,
+  `org.apache.hadoop:hadoop-yarn-api`,
+  `org.apache.hadoop:hadoop-yarn-server-common`.
+- Jersey-1-Stack: `com.sun.jersey:jersey-{client,core,server,servlet}`,
+  `com.sun.jersey.contribs:jersey-guice`,
+  `com.github.pjfanning:jersey-json`,
+  `org.codehaus.jettison:jettison`.
+- Netty: `io.netty:netty-all` + ~24 weitere
+  `io.netty:netty-*`-Module (Codec-Familien, Transports,
+  Resolver, Macos-Natives).
+- Auth/Security: `org.apache.kerby:kerb-{core,server,client,
+  identity,util,common}`, `com.nimbusds:nimbus-jose-jwt`,
+  `com.jcraft:jsch`, `dnsjava:dnsjava`.
+- Container/Servlet: `com.google.inject:guice`,
+  `com.google.inject.extensions:guice-servlet`.
+- Logging-Legacy: `ch.qos.reload4j:reload4j`
+  (`hadoop-common` zieht das mit, parallel zu unserer
+  Logback-Linie).
+
+### 11.3 Erwartete 1.0.0-Maßnahmen
+
+- **Distributions-Cut entscheiden** (AP13 §8.3): bleibt
+  Default-JAR mit Parquet, kommt eine `--parquet`-
+  Variante oder beides? Inventar oben ist der Input.
+- **Hadoop-Footprint-Minimierung** durch Excludes auf den
+  oben gelisteten Gruppen, soweit der Parquet-Reader-/
+  Writer-Pfad sie nicht ueber Code-Pfade verlangt
+  (analog zu Avro/Pfad A hier).
+- **Optionaler Hadoop-API-Shim** (AP13 §8.3): nur die
+  von `parquet-hadoop` referenzierten Hadoop-Klassen
+  reimplementieren, statt `hadoop-common` voll zu
+  ziehen.
+
+Diese drei Punkte gehoeren explizit nicht in den
+0.9.8-Cut.

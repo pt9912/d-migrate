@@ -31,6 +31,15 @@ dependencies {
         exclude(group = "javax.servlet")
         exclude(group = "org.eclipse.jetty")
         exclude(group = "org.eclipse.jetty.websocket")
+        // S10a (2026-06-06, Pfad A): Avro-Datenklassen aus dem
+        // runtimeClasspath verbannen. dependencyInsight zeigt
+        // org.apache.avro:avro:1.9.2 transitiv ueber hadoop-common.
+        // d-migrate konsumiert keinen Hadoop-Avro-Schreibpfad
+        // (AP3-Spike-Test als Beleg gegen geschaerften Classpath
+        // erbracht). Symmetrisch zum parquet-avro/protobuf-Reject
+        // unten — kein Avro-/Protobuf-Reflection-Pfad im
+        // runtimeClasspath.
+        exclude(group = "org.apache.avro")
     }
     // AP3-Befund (5ca1497f, in parquet-libraries.md §8 nachgezogen):
     // parquet-hadoop ParquetReader.builder triggert das
@@ -44,6 +53,10 @@ dependencies {
         exclude(group = "org.slf4j", module = "slf4j-log4j12")
         exclude(group = "javax.servlet")
         exclude(group = "org.eclipse.jetty")
+        // S10a (2026-06-06, Pfad A): siehe hadoop-common-Block.
+        // Avro kommt ueber hadoop-mapreduce-client-core ein zweites
+        // Mal transitiv rein; auch hier exclude.
+        exclude(group = "org.apache.avro")
     }
 }
 
@@ -62,6 +75,20 @@ dependencies {
             because(
                 "parquet-protobuf wird in d-migrate nicht benoetigt; " +
                     "Protobuf-Reflection und zusaetzliche Native-Image-Last vermeiden.",
+            )
+        }
+        // S10a (2026-06-06, Pfad A): zweigleisige Absicherung gegen
+        // org.apache.avro:avro. Excludes auf den Hadoop-Deps oben
+        // verbannen die heute beobachteten transitiven Pfade; der
+        // Constraint hier verhindert, dass ein spaeterer
+        // Dependency-Update versehentlich einen vierten Pfad
+        // einzieht (z.B. ueber hadoop-mapreduce-client-jobclient).
+        implementation("org.apache.avro:avro") {
+            version { rejectAll() }
+            because(
+                "S10a/Pfad A — kein Avro-Reflection-Pfad im runtimeClasspath. " +
+                    "d-migrate konsumiert keinen Hadoop-Avro-Code; AP3-Spike-Tests " +
+                    "bleiben gruen ohne diese Klasse (parquet-libraries.md §6 AP1.b).",
             )
         }
     }
