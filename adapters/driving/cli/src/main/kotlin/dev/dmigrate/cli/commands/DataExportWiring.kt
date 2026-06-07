@@ -49,6 +49,7 @@ internal data class DataExportOptions(
     val nullString: String,
     val resume: String?,
     val checkpointDir: Path?,
+    val manifestSha256: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -97,6 +98,7 @@ internal object DataExportWiring {
             noProgress = options.cliContext.noProgress,
             resume = options.resume,
             checkpointDir = options.checkpointDir,
+            manifestSha256 = options.manifestSha256,
         )
         val warnings = mutableListOf<ValueSerializer.Warning>()
         val runner = DataExportRunner(
@@ -141,6 +143,7 @@ internal object DataExportWiring {
                         // ignoriert Nicht-Parquet-Formate selbst (AP7 §10.1).
                         onBundleClosure = ParquetBundleClosure(
                             producerVersion = VersionInfo.PRODUCT_VERSION,
+                            manifestSha256 = request.manifestSha256,
                         )::invoke,
                     )
             },

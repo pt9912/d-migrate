@@ -111,6 +111,13 @@ class DataExportCommand : CliktCommand(name = "export") {
             "from the config file when set.",
     ).path()
 
+    val manifestSha256 by option(
+        "--manifest-sha256",
+        help = "Parquet bundles only: compute a SHA-256 digest per table file " +
+            "and record it in manifest.yaml. Adds a second read pass over " +
+            "every exported file; off by default.",
+    ).flag()
+
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val exitCode = DataExportWiring.execute(
@@ -131,6 +138,7 @@ class DataExportCommand : CliktCommand(name = "export") {
                 nullString = nullString,
                 resume = resume,
                 checkpointDir = checkpointDir,
+                manifestSha256 = manifestSha256,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

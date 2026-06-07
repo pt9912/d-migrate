@@ -48,6 +48,15 @@ data class DataExportRequest(
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
+    /**
+     * CLI-Flag `--manifest-sha256` (AP7 §5 / AP12 §4): wenn true, berechnet
+     * der Parquet-Bundle-Closure-Hook pro Tabelle einen SHA-256-Digest und
+     * traegt ihn in `manifest.yaml` ein. Standard `false` haelt Bundle-
+     * Exports schnell; bei sehr grossen Dateien spart das die zweite
+     * Lese-Passage. Wirkt nur fuer PARQUET-Bundles (Closure ignoriert
+     * andere Formate; Single-File hat keinen Closure-Hook).
+     */
+    val manifestSha256: Boolean = false,
 )
 
 /**
