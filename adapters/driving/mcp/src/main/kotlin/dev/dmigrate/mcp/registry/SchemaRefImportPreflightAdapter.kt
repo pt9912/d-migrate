@@ -30,10 +30,24 @@ internal object SchemaRefImportPreflightAdapter {
     ): SchemaPreflightResult {
         val schema = readSchema(schemaPath, schemaFormat)
         validateSchema(schemaPath, schema)
+        // Review-Finding A1: ResolvedBundle bekommt jetzt ebenfalls eine
+        // Schema-FK-Topo-Sortierung, symmetrisch zum CLI-Pfad
+        // (DataImportSchemaPreflight).
         val preparedInput = when (input) {
             is ImportInput.Directory -> input.copy(
                 tableOrder = ImportDirectoryResolver.resolveTableOrder(schemaPath, schema, input, format),
             )
+            is ImportInput.ResolvedBundle -> {
+                val orderedTableNames = ImportDirectoryResolver.resolveTopologicalOrder(
+                    schemaPath = schemaPath,
+                    schema = schema,
+                    candidateTables = input.tables.map { it.table },
+                )
+                val bindingsByTable = input.tables.associateBy { it.table }
+                input.copy(
+                    tables = orderedTableNames.map { bindingsByTable.getValue(it) },
+                )
+            }
             else -> input
         }
         return SchemaPreflightResult(input = preparedInput, schema = schema)

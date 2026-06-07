@@ -28,10 +28,26 @@ class DataImportSchemaPreflight(private val schemaCodec: SchemaCodec) {
         val schema = readSchema(schemaPath)
         validateSchema(schemaPath, schema)
 
+        // Review-Finding A1: Bundle-Tabellen ebenfalls per Schema-FK-Topology
+        // sortieren. Bisher fielen ResolvedBundle/ResolvedSingleFile in
+        // `else -> input` und behielten die Manifest-Reihenfolge, was zu
+        // FK-Verletzungen fuehrte, wenn der Bundle-Producer alphabetisch
+        // statt topologisch geschrieben hatte.
         val preparedInput = when (input) {
             is ImportInput.Directory -> input.copy(
                 tableOrder = ImportDirectoryResolver.resolveTableOrder(schemaPath, schema, input, format)
             )
+            is ImportInput.ResolvedBundle -> {
+                val orderedTableNames = ImportDirectoryResolver.resolveTopologicalOrder(
+                    schemaPath = schemaPath,
+                    schema = schema,
+                    candidateTables = input.tables.map { it.table },
+                )
+                val bindingsByTable = input.tables.associateBy { it.table }
+                input.copy(
+                    tables = orderedTableNames.map { bindingsByTable.getValue(it) },
+                )
+            }
             else -> input
         }
 

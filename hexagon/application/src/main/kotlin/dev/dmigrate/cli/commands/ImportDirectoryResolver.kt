@@ -21,6 +21,20 @@ object ImportDirectoryResolver {
         format: DataExportFormat,
     ): List<String> {
         val candidateTables = resolveCandidateTables(input, format)
+        return resolveTopologicalOrder(schemaPath, schema, candidateTables)
+    }
+
+    /**
+     * Review-Finding A1: Topo-Sort fuer eine bereits aufgeloeste
+     * Tabellenliste (z.B. aus `ImportInput.ResolvedBundle.tables`).
+     * Wendet dieselbe Schema-/FK-Pipeline an wie [resolveTableOrder],
+     * ohne ein Directory scannen zu muessen.
+     */
+    fun resolveTopologicalOrder(
+        schemaPath: Path,
+        schema: dev.dmigrate.core.model.SchemaDefinition,
+        candidateTables: List<String>,
+    ): List<String> {
         if (candidateTables.isEmpty()) return emptyList()
 
         val candidateToSchema = linkedMapOf<String, String>()
