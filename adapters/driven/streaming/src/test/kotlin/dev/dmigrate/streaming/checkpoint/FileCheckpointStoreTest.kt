@@ -582,4 +582,5 @@ class FileCheckpointStoreTest : FunSpec({
             dir.toFile().deleteRecursively()
         }
     }
+
 })

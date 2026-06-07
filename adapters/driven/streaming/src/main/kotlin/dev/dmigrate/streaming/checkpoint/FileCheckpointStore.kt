@@ -1,6 +1,9 @@
 package dev.dmigrate.streaming.checkpoint
 
+import dev.dmigrate.streaming.BundleResumeFingerprint
+import dev.dmigrate.streaming.checkpoint.BundleCheckpointSpecifics
 import dev.dmigrate.streaming.checkpoint.CheckpointManifest
+import dev.dmigrate.streaming.checkpoint.CheckpointOperationSpecifics
 import dev.dmigrate.streaming.checkpoint.CheckpointOperationType
 import dev.dmigrate.streaming.checkpoint.CheckpointReference
 import dev.dmigrate.streaming.checkpoint.CheckpointSliceStatus
@@ -8,6 +11,7 @@ import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
 import dev.dmigrate.streaming.checkpoint.CheckpointResumePosition
 import dev.dmigrate.streaming.checkpoint.CheckpointTableSlice
+import dev.dmigrate.streaming.checkpoint.SingleFileCheckpointSpecifics
 import dev.dmigrate.streaming.checkpoint.UnsupportedCheckpointVersionException
 import org.snakeyaml.engine.v2.api.Dump
 import org.snakeyaml.engine.v2.api.DumpSettings
@@ -185,7 +189,29 @@ class FileCheckpointStore(
                 }
             },
         )
+        // S8a (AP9 §7.1): optional fuer Parquet-Bundle/Single-File-Resume.
+        // Pre-AP8-Manifeste ohne den Block bleiben bytegleich ladbar
+        // (Feld ist nullable in CheckpointManifest).
+        manifest.operationSpecific?.let { put("operationSpecific", toOperationSpecificMap(it)) }
     }
+
+    private fun toOperationSpecificMap(specifics: CheckpointOperationSpecifics): Map<String, Any?> =
+        when (specifics) {
+            is BundleCheckpointSpecifics -> linkedMapOf(
+                "kind" to specifics.bundleKind,
+                "fingerprint" to linkedMapOf<String, Any?>(
+                    "manifestSha256" to specifics.fingerprint.manifestSha256,
+                    "formatVersion" to specifics.fingerprint.formatVersion,
+                    "producerVersion" to specifics.fingerprint.producerVersion,
+                    "tableOrder" to specifics.fingerprint.tableOrder,
+                ),
+            )
+            is SingleFileCheckpointSpecifics -> linkedMapOf(
+                "kind" to specifics.bundleKind,
+                "contentSha256" to specifics.contentSha256,
+                "table" to specifics.table,
+            )
+        }
 
     private fun fromMap(map: Map<*, *>, path: Path): CheckpointManifest {
         val schemaVersion = (map["schemaVersion"] as? Number)?.toInt()
@@ -225,7 +251,80 @@ class FileCheckpointStore(
             chunkSize = chunkSize,
             tableSlices = slices,
             optionsFingerprint = map["optionsFingerprint"] as? String,
+            operationSpecific = parseOperationSpecific(map["operationSpecific"], path),
         )
+    }
+
+    private fun parseOperationSpecific(value: Any?, path: Path): CheckpointOperationSpecifics? {
+        if (value == null) return null
+        val map = value as? Map<*, *>
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has non-mapping 'operationSpecific'"
+            )
+        val kind = (map["kind"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has operationSpecific without 'kind'"
+            )
+        return when (kind) {
+            BundleCheckpointSpecifics.BUNDLE_KIND ->
+                parseBundleSpecifics(map, path)
+            SingleFileCheckpointSpecifics.BUNDLE_KIND ->
+                parseSingleFileSpecifics(map, path)
+            else -> throw CheckpointStoreException(
+                // AP9 §4.2: CHECKPOINT_OPERATION_SPECIFICS_UNKNOWN_KIND
+                "Checkpoint manifest at $path has unknown operationSpecific.kind '$kind'"
+            )
+        }
+    }
+
+    private fun parseBundleSpecifics(map: Map<*, *>, path: Path): BundleCheckpointSpecifics {
+        val fpMap = map["fingerprint"] as? Map<*, *>
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has parquet-bundle operationSpecific without 'fingerprint'"
+            )
+        val manifestSha256 = (fpMap["manifestSha256"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has bundle fingerprint without 'manifestSha256'"
+            )
+        val formatVersion = (fpMap["formatVersion"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has bundle fingerprint without 'formatVersion'"
+            )
+        val producerVersion = (fpMap["producerVersion"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has bundle fingerprint without 'producerVersion'"
+            )
+        val tableOrder = (fpMap["tableOrder"] as? List<*>)?.mapNotNull { it as? String }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has bundle fingerprint without 'tableOrder'"
+            )
+        return BundleCheckpointSpecifics(
+            fingerprint = BundleResumeFingerprint(
+                manifestSha256 = manifestSha256,
+                formatVersion = formatVersion,
+                producerVersion = producerVersion,
+                tableOrder = tableOrder,
+            ),
+        )
+    }
+
+    private fun parseSingleFileSpecifics(map: Map<*, *>, path: Path): SingleFileCheckpointSpecifics {
+        val contentSha256 = (map["contentSha256"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has parquet-single-file operationSpecific without 'contentSha256'"
+            )
+        val table = (map["table"] as? String)?.takeIf { it.isNotBlank() }
+            ?: throw CheckpointStoreException(
+                "Checkpoint manifest at $path has parquet-single-file operationSpecific without 'table'"
+            )
+        return try {
+            SingleFileCheckpointSpecifics(contentSha256 = contentSha256, table = table)
+        } catch (t: IllegalArgumentException) {
+            throw CheckpointStoreException(
+                "Checkpoint manifest at $path has invalid parquet-single-file operationSpecific: ${t.message}",
+                cause = t,
+            )
+        }
     }
 
     private fun parseOperationType(value: Any?, path: Path): CheckpointOperationType {
