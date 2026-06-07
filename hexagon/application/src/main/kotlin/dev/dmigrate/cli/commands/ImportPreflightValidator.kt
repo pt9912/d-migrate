@@ -135,9 +135,24 @@ internal class ImportPreflightValidator(
                 fingerprint = fingerprint,
                 bundleExpectedSha256ByTable = bundleExpectedSha256ByTableFor(preparedImport.input),
                 singleFileContentSha256 = singleFileContentSha256For(preparedImport.input),
+                bundleResumeFingerprint = bundleResumeFingerprintFor(preparedImport.input),
             )
         )
     }
+
+    /**
+     * S8c (AP9 §4.2): leitet den Bundle-Resume-Fingerprint aus dem
+     * aufgeloesten [ImportInput.ResolvedBundle] ab. `null` fuer andere
+     * Quellen.
+     */
+    private fun bundleResumeFingerprintFor(input: ImportInput): dev.dmigrate.streaming.BundleResumeFingerprint? =
+        when (input) {
+            is ImportInput.ResolvedBundle -> input.resumeFingerprint
+            is ImportInput.ResolvedSingleFile,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
 
     /**
      * S8b (AP9 §7.5): leitet die Bundle-Per-Tabelle-SHA-Map aus dem

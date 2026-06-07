@@ -143,6 +143,14 @@ internal data class InputContext(
      * berechnet, siehe `ImportPreflightResolver.kt:76-79`).
      */
     val singleFileContentSha256: String? = null,
+    /**
+     * S8c (AP9 §4.2): Bundle-Resume-Fingerprint aus
+     * `ImportInput.ResolvedBundle.resumeFingerprint`. Wird beim
+     * Initial-Lauf in `BundleCheckpointSpecifics` persistiert und
+     * beim `--resume` gegen den frisch berechneten verglichen.
+     * `null` fuer Nicht-Bundle-Quellen.
+     */
+    val bundleResumeFingerprint: dev.dmigrate.streaming.BundleResumeFingerprint? = null,
 )
 
 internal sealed class InputContextResult {
