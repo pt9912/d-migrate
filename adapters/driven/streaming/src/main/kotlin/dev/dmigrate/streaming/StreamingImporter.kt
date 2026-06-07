@@ -17,17 +17,17 @@ import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
  * Orchestriert Input-Aufloesung ([ImportInputResolver]), Per-Tabelle-Import
  * ([TableImporter]) und Result-Aggregation.
  *
- * S6 (2026-06-07) / Review-Finding F4: [seekableReaderFactory] ist jetzt
- * Optional (Default `null`). Konsumenten, die keinen seekable Pfad
- * exponieren — heute MCP, viele Tests — koennen den Konstruktor ohne
- * weitere Imports rufen. Der `is ResolvedTableInput.Seekable -> error(...)`-
- * Stopgap in der Loop fasst das `null` ab und produziert eine
- * deterministische Fehlermeldung; S7 verdrahtet den echten Konsum
- * durch den TableImporter, wenn die Factory non-null ist.
+ * S7 (2026-06-08): [seekableReaderFactory] ist jetzt produktiv durch
+ * den [TableImporter] konsumiert. Der frueher hier sitzende Stopgap
+ * `is ResolvedTableInput.Seekable -> error("S7 ...")` ist entfallen;
+ * MCP und Test-Konsumenten ohne Seekable-Inputs lassen die Factory
+ * bei Default `null` und der neue Pre-Stream-Check faengt ein
+ * versehentliches Mischen (null-Factory + Seekable-Input) mit klarer
+ * Meldung ab, bevor der TableImporter erreicht wird (defense in depth
+ * gegen MCP-/Wiring-Drift).
  */
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
-    @Suppress("UnusedPrivateMember")
     private val seekableReaderFactory: SeekableDataChunkReaderFactory? = null,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
@@ -36,7 +36,11 @@ class StreamingImporter(
     /** Test seam: cancel-propagation tests swap this with a
      *  capturing override before invoking [import]. Production callers leave
      *  it at the default. */
-    internal var tableImporter: TableImporter = TableImporter(readerFactory, onTableOpened)
+    internal var tableImporter: TableImporter = TableImporter(
+        readerFactory = readerFactory,
+        onTableOpened = onTableOpened,
+        seekableReaderFactory = seekableReaderFactory,
+    )
 
     fun import(
         pool: ConnectionPool,
@@ -76,24 +80,23 @@ class StreamingImporter(
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
-            // S5a/S5b/S6 (2026-06-07): der ImportInputResolver liefert seit
-            // ResolvedBundle/ResolvedSingleFile-Branch potenziell
-            // Seekable-Werte. Der seekableReaderFactory-Konstruktor-
-            // Parameter ist seit S6 (AP12 §5.1) Pflicht; der Konsum durch
-            // TableImporter (Sealed-Sweep + Dispatch) ist explizit S7.
-            // Bis S7 ausgeliefert ist, lehnen wir Seekable-Pfade hier
-            // hart ab.
-            val streamInput = when (tableInput) {
-                is ResolvedTableInput.Stream -> tableInput
-                is ResolvedTableInput.Seekable -> error(
-                    "ResolvedTableInput.Seekable consumption is not yet wired into StreamingImporter; " +
-                        "S7 adds the TableImporter dispatch path via seekableReaderFactory."
+            // S7b Pre-Stream-Check (defense in depth): wenn der Konsument
+            // keine seekableReaderFactory verdrahtet hat aber dennoch
+            // Seekable-Inputs erzeugt (Wiring-Drift, z.B. MCP mit
+            // versehentlich aktivem Parquet-Phase-1-Hook), brechen wir
+            // hier mit klarer Meldung ab — der innere Elvis im
+            // TableImporter ist die zweite Linie.
+            if (tableInput is ResolvedTableInput.Seekable && seekableReaderFactory == null) {
+                error(
+                    "Seekable input requires seekableReaderFactory; " +
+                        "consumer should not produce ResolvedTableInput.Seekable " +
+                        "without wiring it (got Seekable input for table '${tableInput.table}')."
                 )
             }
             val summary = tableImporter.import(TableImportParams(
                 pool = pool,
                 writer = writer,
-                tableInput = streamInput,
+                tableInput = tableInput,
                 format = format,
                 options = options,
                 readOptions = readOptions,
