@@ -218,10 +218,10 @@ S5b → S6 → S7 → S8 → S9a → S9b`. Slices innerhalb der
 gleichen Spalte (S5a/S5b, S9a/S9b) koennen parallel laufen,
 sind aber separate Plan-Closure-Docs.
 
-### 3.4 Slice-Status (Stand 2026-06-07)
+### 3.4 Slice-Status (Stand 2026-06-08)
 
 Pflege diese Tabelle mit Commit-Ref pro Slice-Closure;
-**S7/S8/S9a/S9b** sind die offenen Punkte.
+**S8/S9a/S9b** sind die offenen Punkte.
 
 | Slice | Status | Commit-Ref | Closure-Doc |
 | ----- | ------ | ---------- | ----------- |
@@ -236,7 +236,7 @@ Pflege diese Tabelle mit Commit-Ref pro Slice-Closure;
 | S5a   | closed | `24cbf4c5` | [`ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md`](../done/ImpPlan-0.9.8-parquet-S5a-bundle-preflight.md) |
 | S5b   | closed | `4279c326` | [`ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md`](../done/ImpPlan-0.9.8-parquet-S5b-single-file-resolved.md) |
 | S6    | closed | `7759294d` (i) + `23377524` (ii) + `68d69350` (iii) + `988a41fb` (iv) + `7f79926d` (v) | [`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`](../done/ImpPlan-0.9.8-parquet-S6-cli-wiring.md) |
-| S7    | offen  | —          | — |
+| S7    | closed | `34eea7ce` (S7-0) + `a0dc2c5b` (a) + `5ff17e6f` (b) + `2f9cc38a` (c) + `a25722e5` (d) + S7e-Closeout | [`ImpPlan-0.9.8-parquet-S7-end-to-end.md`](../done/ImpPlan-0.9.8-parquet-S7-end-to-end.md) |
 | S8    | offen  | —          | — |
 | S9a   | offen  | —          | — |
 | S9b   | offen  | —          | — |

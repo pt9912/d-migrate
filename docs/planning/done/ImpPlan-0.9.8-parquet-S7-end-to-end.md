@@ -1,10 +1,25 @@
 # S7 — End-to-End-Integration Seekable-Pfad
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S7).
 >
-> Status: In Progress (v2 nach Plan-Review 2026-06-07).
+> Status: Closed (2026-06-08). Sieben Commits (ImpPlan +
+> sechs Sub-Slices):
+> - `8c218054` docs(parquet) — ImpPlan-Doc (v1, plus vier
+>   Review-Runden gegen Code-Realitaet).
+> - `34eea7ce` S7-0 — Export-Wiring (Footer-KV + Bundle-Closure) +
+>   `writerFactoryBuilder(ExportOutput)`-Signaturwechsel.
+> - `a0dc2c5b` S7a — TableImporter Sealed-Dispatch + Konstruktor-
+>   Param `seekableReaderFactory` (Position 3 hinten).
+> - `5ff17e6f` S7b — StreamingImporter-Stopgap entfernt + Pre-Stream-
+>   Check (defense in depth).
+> - `2f9cc38a` S7c — Fake-basierte Seekable-Dispatch-Tests inkl.
+>   Resume-Skip-Smoke (Plan-Review-v1 Punkt 8).
+> - `a25722e5` S7d — E2E-Fixture Single-File-Roundtrip
+>   (PG/Testcontainers, gated durch `-PintegrationTests`).
+> - S7e (mit diesem Closeout-Commit): E2E-Fixture Bundle-Roundtrip
+>   in derselben Klasse + Plan-Doc-Move + Umbrella-§3.4-Update.
 >
 > Loest den `is ResolvedTableInput.Seekable -> error("S7 ...")`-Stopgap
 > im `StreamingImporter` ab und verdrahtet den `TableImporter` so, dass

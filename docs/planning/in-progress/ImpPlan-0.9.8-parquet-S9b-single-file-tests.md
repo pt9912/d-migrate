@@ -105,13 +105,13 @@ vollen Plan ergaenzt.
 
 ## 5. Vorbedingungen
 
-- **S7** abgeschlossen (Stopgap entfaellt, Seekable-Dispatch
-  produktiv, Footer-KV/Bundle-Manifest werden geschrieben). Sonst
-  ist der „echte Parquet-Files"-Hand-off nicht implementierbar.
-- **S8** abgeschlossen
-  (`SingleFileCheckpointSpecifics(contentSha256)` persistiert, der
-  Phase-2-Hook bekommt den echten Resume-Sha). Sonst sind die
-  Resume-Familien-Tests rein synthetisch.
+- ✅ **S7 abgeschlossen** (2026-06-08, siehe Umbrella §3.4):
+  Stopgap entfaellt, Seekable-Dispatch produktiv, Footer-KV +
+  Bundle-Manifest werden produktiv geschrieben.
+- ⏳ **S8 ausstehend**: `SingleFileCheckpointSpecifics(contentSha256)`
+  persistiert, der Phase-2-Hook bekommt den echten Resume-Sha.
+  Solange S8 nicht durch ist, sind die Resume-Familien-Tests rein
+  synthetisch.
 
 ## 6. Naechste Schritte (bei Slice-Start)
 

@@ -20,8 +20,10 @@ import java.sql.DriverManager
  * [E2ERoundTripPostgresTest]. Beweist:
  *
  * 1. **Single-File-Roundtrip (S7d)**: `data export --format parquet
- *    --output users.parquet` schreibt eine Single-File mit
- *    `d-migrate.manifest`-Footer-KV (S7-0 + S4-Provider).
+ *    --output users.parquet --tables users` schreibt eine Single-
+ *    File mit `d-migrate.manifest`-Footer-KV (S7-0 + S4-Provider).
+ *    Der KV traegt den unqualifizierten Tabellennamen `users`
+ *    (Schema-Prefix-Stripping gibt es im Producer nicht).
  *    `data import --format parquet --source users.parquet` **ohne**
  *    `--table` laeuft durch die Footer-KV-Tabellennamen-Inferenz
  *    (Review-Finding A4) und schreibt die Zeilen in die vom Test
@@ -30,7 +32,9 @@ import java.sql.DriverManager
  * 2. **Bundle-Roundtrip (S7e)**: `data export --format parquet
  *    --output bundle/ --split-files --tables users,orders` schreibt
  *    `manifest.yaml` + zwei Parquet-Dateien via
- *    `onBundleClosure = ParquetBundleClosure(...)` (S7-0).
+ *    `onBundleClosure = ParquetBundleClosure(...)` (S7-0). Die
+ *    Bundle-Parquet-Dateien tragen KEINEN Footer-KV (S4 §2.2-
+ *    Invariante: Bundle-Pfad hat sein Manifest in `manifest.yaml`).
  *    `data import --format parquet --source bundle/` benutzt den
  *    Bundle-Preflight (S5a) + Seekable-Dispatch (S7a/b).
  *
@@ -138,9 +142,19 @@ class DataParquetRoundTripE2EPostgresTest : FunSpec({
     }
 
     afterSpec {
-        source.stop()
-        target.stop()
+        // Defense-in-depth (Plan-Review-v2 Finding 14): halb-initialisierte
+        // Container nicht erneut stoppen, sonst maskiert ein Cleanup-NPE den
+        // Start-Stack-Trace im Gradle-Report.
+        if (source.isRunning) source.stop()
+        if (target.isRunning) target.stop()
         DatabaseDriverRegistry.clear()
+    }
+
+    // Plan-Review-v2 Finding 13: Truncate-Hygiene als beforeTest, damit
+    // hinzukommende Cases nicht in id-Kollisionen rennen.
+    beforeTest {
+        truncate(target, "users")
+        truncate(target, "orders")
     }
 
     test("S7d Single-File-Roundtrip: parquet export → import ohne --table (Footer-KV-Inferenz)") {
@@ -148,7 +162,6 @@ class DataParquetRoundTripE2EPostgresTest : FunSpec({
         // createTempFile reserviert die Datei; export laesst der Writer
         // sie wieder neu schreiben.
         Files.deleteIfExists(tmpFile)
-        truncate(target, "users")
 
         try {
             // Export Single-File → tempFile. CLI-Wiring (S7-0):
@@ -167,10 +180,11 @@ class DataParquetRoundTripE2EPostgresTest : FunSpec({
             }
             Files.isRegularFile(tmpFile) shouldBe true
 
-            // Import ohne --table. Footer-KV traegt den Namen
-            // `public.users`, den ParquetSingleFilePreflight.phase1
-            // (AP11 §5.5) auflost und der UNRESOLVED_PARQUET_TABLE_SENTINEL-
-            // Pfad (Review-Finding A4) durchreicht.
+            // Import ohne --table. Footer-KV traegt den Tabellennamen
+            // `users` (unqualifiziert, weil `--tables users` ohne Schema-
+            // Prefix exportiert wurde), den ParquetSingleFilePreflight.phase1
+            // (AP11 §5.5) ueber den UNRESOLVED_PARQUET_TABLE_SENTINEL-Pfad
+            // (Review-Finding A4) aufloest.
             captureStdout {
                 cli().parse(
                     listOf(
@@ -191,6 +205,74 @@ class DataParquetRoundTripE2EPostgresTest : FunSpec({
             )
         } finally {
             Files.deleteIfExists(tmpFile)
+        }
+    }
+
+    test("S7e Bundle-Roundtrip: parquet --split-files export → bundle import schreibt manifest.yaml + N Parquet-Files") {
+        val tmpDir = Files.createTempDirectory("dmigrate-parquet-bundle-")
+        try {
+            // Export als Bundle (Multi-File). CLI-Wiring (S7-0):
+            //   onBundleClosure = ParquetBundleClosure(producerVersion = ...)
+            //   writerFactoryBuilder gibt ParquetChunkWriterFactory ohne
+            //   extraMetaDataProvider zurueck (S4 §2.2-Invariant: Bundle-Pfad
+            //   ohne Footer-KV; manifest.yaml uebernimmt diese Rolle).
+            captureStdout {
+                cli().parse(
+                    listOf(
+                        "--quiet",
+                        "data", "export",
+                        "--source", dmigUrl(source),
+                        "--format", "parquet",
+                        "--tables", "users,orders",
+                        "--output", tmpDir.toString(),
+                        "--split-files",
+                    )
+                )
+            }
+
+            // Bundle-Marker: manifest.yaml + per-Tabellen-Parquet-Dateien.
+            Files.isRegularFile(tmpDir.resolve("manifest.yaml")) shouldBe true
+            Files.isRegularFile(tmpDir.resolve("users.parquet")) shouldBe true
+            Files.isRegularFile(tmpDir.resolve("orders.parquet")) shouldBe true
+
+            // Import des Bundles. ImportPreflight erkennt `manifest.yaml`
+            // (Review-Finding A3 Sniff), `ParquetBundleResolver` baut die
+            // ResolvedBundle, Phase-1-Hook produziert
+            // `ImportInput.ResolvedBundle`. TableImporter dispatched
+            // pro Tabelle Seekable (S7a).
+            captureStdout {
+                cli().parse(
+                    listOf(
+                        "--quiet",
+                        "data", "import",
+                        "--target", dmigUrl(target),
+                        "--format", "parquet",
+                        "--source", tmpDir.toString(),
+                    )
+                )
+            }
+
+            queryAll(target, "users") shouldContainExactlyInAnyOrder listOf(
+                mapOf("id" to 1, "name" to "alice"),
+                mapOf("id" to 2, "name" to "bob"),
+                mapOf("id" to 3, "name" to "charlie"),
+            )
+            // orders.user_id ist nur INTEGER (kein REFERENCES — Bundle-FK-Ordering
+            // ist nicht Test-Gegenstand). Wir vergleichen amounts via Double-
+            // Aequivalenz, weil PG NUMERIC als BigDecimal zurueckkommt.
+            val orderRows = queryAll(target, "orders").map { row ->
+                mapOf(
+                    "id" to row["id"],
+                    "user_id" to row["user_id"],
+                    "amount" to (row["amount"] as java.math.BigDecimal).toPlainString(),
+                )
+            }
+            orderRows shouldContainExactlyInAnyOrder listOf(
+                mapOf("id" to 1, "user_id" to 1, "amount" to "99.95"),
+                mapOf("id" to 2, "user_id" to 2, "amount" to "42.00"),
+            )
+        } finally {
+            tmpDir.toFile().deleteRecursively()
         }
     }
 })
