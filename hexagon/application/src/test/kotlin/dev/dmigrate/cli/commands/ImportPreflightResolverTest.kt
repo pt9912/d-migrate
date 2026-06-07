@@ -57,15 +57,30 @@ class ImportPreflightResolverTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = { connectionConfig() },
         schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
             { _, input, _ -> SchemaPreflightResult(input) },
-        phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
+        inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
     ) = ImportPreflightResolver(
         targetResolver = targetResolver,
         urlParser = urlParser,
         schemaPreflight = schemaPreflight,
         stdinProvider = { ByteArrayInputStream("[]".toByteArray()) },
         stderr = stderr::add,
-        phase1Hook = phase1Hook,
+        inputResolutionHook = inputResolutionHook,
     )
+
+    fun hookWithResolveBeforeSchema(
+        resolve: (ImportInput, DataExportFormat, Boolean) -> ImportInput,
+    ): ImportInputResolutionHook = object : ImportInputResolutionHook {
+        override fun resolveBeforeSchema(
+            rawInput: ImportInput,
+            format: DataExportFormat,
+            computeContentSha256: Boolean,
+        ): ImportInput = resolve(rawInput, format, computeContentSha256)
+
+        override fun finalizeBeforePrepare(
+            input: ImportInput,
+            resumeExpectedSha256: String?,
+        ): ImportInput = input
+    }
 
     test("resolve returns preflight context for happy path") {
         val stderr = mutableListOf<String>()
@@ -144,7 +159,7 @@ class ImportPreflightResolverTest : FunSpec({
             )
             var capturedFormat: DataExportFormat? = null
             var capturedComputeSha: Boolean? = null
-            val hook = ImportInputPhase1Hook { raw, format, compute ->
+            val hook = hookWithResolveBeforeSchema { raw, format, compute ->
                 capturedFormat = format
                 capturedComputeSha = compute
                 // raw is the pre-hook ImportInput.SingleFile
@@ -154,7 +169,7 @@ class ImportPreflightResolverTest : FunSpec({
 
             val result = resolver(
                 stderr = stderr,
-                phase1Hook = hook,
+                inputResolutionHook = hook,
             ).resolve(
                 request(source = sourceFile.toString(), format = "parquet")
             )
@@ -179,14 +194,14 @@ class ImportPreflightResolverTest : FunSpec({
         }
         try {
             var capturedComputeSha: Boolean? = null
-            val hook = ImportInputPhase1Hook { raw, _, compute ->
+            val hook = hookWithResolveBeforeSchema { raw, _, compute ->
                 capturedComputeSha = compute
                 raw
             }
 
             resolver(
                 stderr = stderr,
-                phase1Hook = hook,
+                inputResolutionHook = hook,
             ).resolve(
                 request(source = sourceFile.toString(), format = "parquet").copy(resume = "run-123")
             )
@@ -204,14 +219,14 @@ class ImportPreflightResolverTest : FunSpec({
         }
         try {
             var capturedComputeSha: Boolean? = null
-            val hook = ImportInputPhase1Hook { raw, _, compute ->
+            val hook = hookWithResolveBeforeSchema { raw, _, compute ->
                 capturedComputeSha = compute
                 raw
             }
 
             resolver(
                 stderr = stderr,
-                phase1Hook = hook,
+                inputResolutionHook = hook,
             ).resolve(
                 request(source = sourceFile.toString(), format = "parquet").copy(noCheckpoint = true)
             )
@@ -228,13 +243,13 @@ class ImportPreflightResolverTest : FunSpec({
             Files.writeString(it, "")
         }
         try {
-            val hook = ImportInputPhase1Hook { _, _, _ ->
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
                 throw RuntimeException("PARQUET_SINGLE_FILE_TABLE_REQUIRED: missing --table")
             }
 
             val result = resolver(
                 stderr = stderr,
-                phase1Hook = hook,
+                inputResolutionHook = hook,
             ).resolve(
                 request(source = sourceFile.toString(), format = "parquet")
             )
@@ -252,13 +267,13 @@ class ImportPreflightResolverTest : FunSpec({
             Files.writeString(it, "")
         }
         try {
-            val hook = ImportInputPhase1Hook { _, _, _ ->
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
                 throw IllegalArgumentException("invalid --table override 'order'")
             }
 
             val result = resolver(
                 stderr = stderr,
-                phase1Hook = hook,
+                inputResolutionHook = hook,
             ).resolve(
                 request(source = sourceFile.toString(), format = "parquet")
             )
@@ -276,14 +291,14 @@ class ImportPreflightResolverTest : FunSpec({
             Files.writeString(it, "")
         }
         try {
-            val hook = ImportInputPhase1Hook { _, _, _ ->
+            val hook = hookWithResolveBeforeSchema { _, _, _ ->
                 throw dev.dmigrate.core.cancel.OperationCancelledException()
             }
 
             io.kotest.assertions.throwables.shouldThrow<dev.dmigrate.core.cancel.OperationCancelledException> {
                 resolver(
                     stderr = stderr,
-                    phase1Hook = hook,
+                    inputResolutionHook = hook,
                 ).resolve(
                     request(source = sourceFile.toString(), format = "parquet")
                 )

@@ -95,13 +95,12 @@ class DataImportRunner(
     private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
     /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
-    /** Parquet Cut A S6: parquet-freier Phase-1-Hook. Identity-Default fuer
-     *  Nicht-Parquet-Pfade; CLI verdrahtet die Parquet-Implementierung. */
-    private val phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
-    /** Parquet Cut A S6: parquet-freier Phase-2-Hook, der vor
-     *  [ImportExecutionPlanner.prepare] laeuft. Identity-Default; CLI
-     *  verdrahtet die Parquet-Implementierung. */
-    private val phase2Hook: ImportInputPhase2Hook = ImportInputPhase2Hook.IDENTITY,
+    /** Parquet Cut A S6 / Review-Finding F3: konsolidierter Hook mit zwei
+     *  Methoden (`resolveBeforeSchema`, `finalizeBeforePrepare`). Identity-
+     *  Default fuer Nicht-Parquet-Pfade; CLI verdrahtet die Parquet-
+     *  Implementierung. Ersetzt die in S6-iii eingefuehrten getrennten
+     *  ImportInputPhase1Hook/ImportInputPhase2Hook. */
+    private val inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
 ) {
     private val userFacingErrors = UserFacingErrors()
     private val userFacingStderr = userFacingErrors.stderrSink(stderr)
@@ -126,7 +125,7 @@ class DataImportRunner(
         schemaPreflight = schemaPreflight,
         stdinProvider = stdinProvider,
         stderr = userFacingStderr,
-        phase1Hook = phase1Hook,
+        inputResolutionHook = inputResolutionHook,
     )
 
     private val executionPlanner = ImportExecutionPlanner(
@@ -201,7 +200,10 @@ class DataImportRunner(
         //  - Andere RuntimeException → Exit 3 (Preflight-Failure,
         //    z.B. PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT).
         val finalizedInput = try {
-            phase2Hook.finalize(context.preparedImport.input, resumeExpectedSha256 = null)
+            inputResolutionHook.finalizeBeforePrepare(
+                input = context.preparedImport.input,
+                resumeExpectedSha256 = null,
+            )
         } catch (e: OperationCancelledException) {
             throw e
         } catch (e: IllegalArgumentException) {

@@ -1,0 +1,164 @@
+package dev.dmigrate.cli.commands
+
+import dev.dmigrate.format.data.ChunkSchema
+import dev.dmigrate.format.data.DataExportFormat
+import dev.dmigrate.format.data.SchemaOrigin
+import dev.dmigrate.streaming.BundleResumeFingerprint
+import dev.dmigrate.streaming.ImportInput
+import io.kotest.assertions.throwables.shouldThrow
+import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
+import io.kotest.matchers.types.shouldBeSameInstanceAs
+import java.io.ByteArrayInputStream
+import java.nio.file.Path
+
+class ParquetImportInputResolutionHookTest : FunSpec({
+
+    // Konsolidierte Tests fuer den vereinheitlichten
+    // ParquetImportInputResolutionHook (Review-Finding F3). Ersetzt die
+    // frueheren ParquetImportInputPhase{1,2}HookTest-Dateien.
+
+    val hook = ParquetImportInputResolutionHook()
+
+    // ── resolveBeforeSchema (frueher Phase-1) ─────────────────────
+
+    test("non-Parquet format short-circuits and returns the raw input untouched") {
+        val stdin = ImportInput.Stdin(table = "users", input = ByteArrayInputStream("[]".toByteArray()))
+
+        val result = hook.resolveBeforeSchema(stdin, DataExportFormat.JSON, computeContentSha256 = false)
+
+        result shouldBeSameInstanceAs stdin
+    }
+
+    test("non-Parquet format leaves Directory untouched") {
+        val dir = ImportInput.Directory(path = Path.of("/tmp/non-existent"))
+
+        val result = hook.resolveBeforeSchema(dir, DataExportFormat.CSV, computeContentSha256 = true)
+
+        result shouldBeSameInstanceAs dir
+    }
+
+    test("Parquet + already-resolved ResolvedBundle passes through (Idempotenz)") {
+        val bundle = ImportInput.ResolvedBundle(
+            bundleRoot = Path.of("/tmp/bundle"),
+            tables = emptyList(),
+            resumeFingerprint = BundleResumeFingerprint(
+                manifestSha256 = "deadbeef",
+                formatVersion = "1.0",
+                producerVersion = "test",
+                tableOrder = emptyList(),
+            ),
+        )
+
+        val result = hook.resolveBeforeSchema(bundle, DataExportFormat.PARQUET, computeContentSha256 = false)
+
+        result shouldBeSameInstanceAs bundle
+    }
+
+    test("Parquet + already-resolved ResolvedSingleFile passes through (Idempotenz)") {
+        val resolved = ImportInput.ResolvedSingleFile(
+            table = "users",
+            path = Path.of("/tmp/u.parquet"),
+            schema = ChunkSchema(
+                table = "users",
+                origin = SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            ),
+            contentSha256 = null,
+            manifestPresent = true,
+        )
+
+        val result = hook.resolveBeforeSchema(resolved, DataExportFormat.PARQUET, computeContentSha256 = false)
+
+        result shouldBeSameInstanceAs resolved
+    }
+
+    test("Parquet + Stdin throws explicitly (Review-Finding I1 defense-in-depth)") {
+        val stdin = ImportInput.Stdin(table = "users", input = ByteArrayInputStream("".toByteArray()))
+
+        val ex = shouldThrow<IllegalStateException> {
+            hook.resolveBeforeSchema(stdin, DataExportFormat.PARQUET, computeContentSha256 = false)
+        }
+        ex.message!! shouldContain "PARQUET_STDIN_NOT_SUPPORTED"
+    }
+
+    // ── finalizeBeforePrepare (frueher Phase-2) ───────────────────
+
+    test("Stdin/Directory/ResolvedBundle pass through unchanged at finalize") {
+        val stdin = ImportInput.Stdin(table = "users", input = ByteArrayInputStream("".toByteArray()))
+        val dir = ImportInput.Directory(path = Path.of("/tmp/somewhere"))
+        val bundle = ImportInput.ResolvedBundle(
+            bundleRoot = Path.of("/tmp/bundle"),
+            tables = emptyList(),
+            resumeFingerprint = BundleResumeFingerprint(
+                manifestSha256 = "deadbeef",
+                formatVersion = "1.0",
+                producerVersion = "test",
+                tableOrder = emptyList(),
+            ),
+        )
+
+        hook.finalizeBeforePrepare(stdin, resumeExpectedSha256 = null) shouldBeSameInstanceAs stdin
+        hook.finalizeBeforePrepare(dir, resumeExpectedSha256 = null) shouldBeSameInstanceAs dir
+        hook.finalizeBeforePrepare(bundle, resumeExpectedSha256 = null) shouldBeSameInstanceAs bundle
+    }
+
+    test("ResolvedSingleFile with null sha is identity-pass-through (kein Round-Trip-Allokation)") {
+        val resolved = ImportInput.ResolvedSingleFile(
+            table = "users",
+            path = Path.of("/tmp/u.parquet"),
+            schema = ChunkSchema(
+                table = "users",
+                origin = SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            ),
+            contentSha256 = "abcd",
+            manifestPresent = true,
+        )
+
+        val result = hook.finalizeBeforePrepare(resolved, resumeExpectedSha256 = null)
+
+        result shouldBeSameInstanceAs resolved
+    }
+
+    test("ResolvedSingleFile mit passender Sha256 ist Pass-Through-Ergebnis") {
+        val sha = "deadbeefcafebabe"
+        val resolved = ImportInput.ResolvedSingleFile(
+            table = "users",
+            path = Path.of("/tmp/u.parquet"),
+            schema = ChunkSchema(
+                table = "users",
+                origin = SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            ),
+            contentSha256 = sha,
+            manifestPresent = true,
+        )
+
+        val result = hook.finalizeBeforePrepare(resolved, resumeExpectedSha256 = sha)
+
+        result shouldBe resolved
+    }
+
+    test("ResolvedSingleFile mit Sha256-Mismatch wirft ParquetSingleFileResumeException") {
+        val resolved = ImportInput.ResolvedSingleFile(
+            table = "users",
+            path = Path.of("/tmp/u.parquet"),
+            schema = ChunkSchema(
+                table = "users",
+                origin = SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            ),
+            contentSha256 = "actual-hash",
+            manifestPresent = true,
+        )
+
+        val ex = shouldThrow<dev.dmigrate.format.parquet.ParquetSingleFileResumeException> {
+            hook.finalizeBeforePrepare(resolved, resumeExpectedSha256 = "expected-hash")
+        }
+        ex.message!!.let { msg ->
+            require("PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT" in msg)
+        }
+    }
+})

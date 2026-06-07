@@ -18,7 +18,7 @@ internal class ImportPreflightResolver(
     private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult,
     private val stdinProvider: () -> InputStream,
     private val stderr: (String) -> Unit,
-    private val phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
+    private val inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
 ) {
 
     fun resolve(request: DataImportRequest): ImportPreflightResolution {
@@ -78,7 +78,7 @@ internal class ImportPreflightResolver(
             is CheckpointMode.Enabled -> mode.resume != null
         }
         val importInput = try {
-            phase1Hook.maybeFinalize(
+            inputResolutionHook.resolveBeforeSchema(
                 rawInput = rawInput,
                 format = format,
                 computeContentSha256 = computeContentSha256,
