@@ -153,4 +153,61 @@ enum class CheckpointSliceStatus { PENDING, IN_PROGRESS, COMPLETED, FAILED }
  * Export- und Import-Resume befuellen konkrete Unterklassen, ohne das Manifest-
  * Kernmodell bei jedem Milestone neu aufzureissen.
  */
-sealed interface CheckpointOperationSpecifics
+sealed interface CheckpointOperationSpecifics {
+    /**
+     * Stabiler Diskriminator fuer YAML-Persistenz und cross-version-Reads.
+     * Wird vom `FileCheckpointStore` als `kind`-Schluessel persistiert
+     * (AP9 §4.2 / S8a) und beim Laden zum Sealed-when-Dispatch verwendet.
+     */
+    val bundleKind: String
+}
+
+/**
+ * AP9 §4.2 / §7.3 (S8-0): Resume-Vertrag fuer Parquet-Bundle-Importe.
+ * Wird vom `ImportCheckpointManager` beim Initial-Lauf aus dem aktuellen
+ * Bundle-Manifest persistiert und beim `--resume` gegen den frischen
+ * Fingerprint verglichen (`BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`
+ * / Fingerprint-Mismatch-Codes).
+ *
+ * [fingerprint] greift den existierenden [dev.dmigrate.streaming.BundleResumeFingerprint]
+ * (`ImportInput.kt:145`) wieder — kein duplizierter Typ.
+ */
+data class BundleCheckpointSpecifics(
+    val fingerprint: dev.dmigrate.streaming.BundleResumeFingerprint,
+) : CheckpointOperationSpecifics {
+    override val bundleKind: String = BUNDLE_KIND
+
+    companion object {
+        const val BUNDLE_KIND: String = "parquet-bundle"
+    }
+}
+
+/**
+ * AP11 §6.4 (S8-0): Resume-Vertrag fuer Parquet-Single-File-Importe.
+ * Wird vom `ImportCheckpointManager` beim Initial-Lauf mit dem
+ * Phase-1-Content-Hash persistiert und beim `--resume` gegen den
+ * frisch berechneten Hash verglichen.
+ *
+ * [contentSha256] ist der vollstaendige Datei-Bytestrom-Hash (lower-hex,
+ * 64 Zeichen), [table] der vom Phase-1-Lauf aufgeloeste Tabellenname
+ * (AP11 §5.5).
+ */
+data class SingleFileCheckpointSpecifics(
+    val contentSha256: String,
+    val table: String,
+) : CheckpointOperationSpecifics {
+    override val bundleKind: String = BUNDLE_KIND
+
+    init {
+        require(contentSha256.length == 64) {
+            "SingleFileCheckpointSpecifics.contentSha256 must be 64 hex chars, got ${contentSha256.length}"
+        }
+        require(table.isNotBlank()) {
+            "SingleFileCheckpointSpecifics.table must not be blank"
+        }
+    }
+
+    companion object {
+        const val BUNDLE_KIND: String = "parquet-single-file"
+    }
+}
