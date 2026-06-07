@@ -96,6 +96,17 @@ internal class McpDataImportJobWorker(
     override fun execute(job: JobRecord, token: dev.dmigrate.core.cancel.CancellationToken): JobWorkerOutcome {
         RuntimeBootstrap.initialize()
         token.throwIfCancellationRequested()
+        // Review-Finding B1: MCP exposes keine Parquet-Hooks (Phase-1/2
+        // bleiben Identity, kein CompositeDataChunkWriterFactory, keine
+        // ParquetSeekableDataChunkReaderFactory). Stoppt den Job sauber mit
+        // klarer Begruendung, statt erst tief im StreamingImporter / Default-
+        // Factory mit CLI-orientierter Fehlermeldung zu sterben.
+        if (isParquetFormat()) {
+            return JobWorkerOutcome.Failed(
+                "MCP_DATA_IMPORT_UNSUPPORTED_FORMAT",
+                "MCP imports do not currently expose Parquet; use the CLI for Parquet imports."
+            )
+        }
         val artifactId = artifactId(job)
         val artifact = dependencies.artifactStore.findById(job.tenantId, artifactId)
             ?: return JobWorkerOutcome.Failed("MCP_ARTIFACT_NOT_FOUND", "Artifact not found: $artifactId")
@@ -105,6 +116,9 @@ internal class McpDataImportJobWorker(
             executeSingleFileImport(job, artifactId, artifact.managedArtifact.sizeBytes, token)
         }
     }
+
+    private fun isParquetFormat(): Boolean =
+        string("format")?.equals("parquet", ignoreCase = true) == true
 
     private fun executeSingleFileImport(
         job: JobRecord,

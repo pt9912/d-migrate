@@ -144,7 +144,14 @@ class DataExportRunner(
         }
         // AP12 §4.1: Parquet braucht seekable Footer-Schreibzugriff und ist
         // damit Datei-/Verzeichnis-only — stdout (--output null) wird abgelehnt.
-        if (request.format.equals("parquet", ignoreCase = true) && request.output == null) {
+        // Review-Finding B5: Enum-typed-Check statt String-Compare, symmetrisch
+        // zur Import-Seite (DataImportHelpers.validateFormatPathRequirements).
+        val parsedFormat = try {
+            dev.dmigrate.format.data.DataExportFormat.fromCli(request.format)
+        } catch (_: IllegalArgumentException) {
+            null
+        }
+        if (parsedFormat == dev.dmigrate.format.data.DataExportFormat.PARQUET && request.output == null) {
             userFacingStderr(
                 "Error: --format parquet requires --output <file-or-dir>; " +
                     "stdout is not supported for Parquet."
