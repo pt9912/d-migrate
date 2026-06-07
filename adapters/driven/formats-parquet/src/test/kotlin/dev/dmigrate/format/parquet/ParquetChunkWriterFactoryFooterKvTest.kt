@@ -10,6 +10,7 @@ import dev.dmigrate.format.data.SchemaOrigin
 import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestReader
 import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.collections.shouldNotContain
 import io.kotest.matchers.shouldBe
 import org.apache.hadoop.conf.Configuration
@@ -82,12 +83,9 @@ class ParquetChunkWriterFactoryFooterKvTest : FunSpec({
             writeOneChunk(tmp, factory)
 
             val kv = footerKeyValueMetadata(tmp)
-            kv.keys shouldBe kv.keys.also {
-                // explizit pruefen, dass der Schluessel da ist
-                require(ParquetSingleFileManifestWriter.FOOTER_KEY in it) {
-                    "Expected ${ParquetSingleFileManifestWriter.FOOTER_KEY} in $it"
-                }
-            }
+            // Plan-Review-v2 Finding 6: shouldContain liefert sauberen
+            // Kotest-Diff bei Regression, kein opaker require()-Throw.
+            kv.keys shouldContain ParquetSingleFileManifestWriter.FOOTER_KEY
             val resolvedSchema = ParquetSingleFileManifestReader().readSchema(kv)
             resolvedSchema!!.table shouldBe "public.users"
             resolvedSchema.columns.map { it.name } shouldBe listOf("id", "name")

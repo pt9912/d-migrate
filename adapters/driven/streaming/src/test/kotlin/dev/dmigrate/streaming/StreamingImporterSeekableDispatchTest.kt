@@ -237,10 +237,17 @@ class StreamingImporterSeekableDispatchTest : FunSpec({
             resumeStateByTable = mapOf("users" to ImportTableResumeState(committedChunks = 2L)),
         )
 
-        // Mindestens 2 nextChunk()-Aufrufe sind der Skip-Loop;
-        // der erste committete Chunk hat chunkIndex = 2.
-        val totalCalls = nextChunkCalls.get()
-        require(totalCalls >= 2) { "expected >=2 nextChunk() calls (skip), got $totalCalls" }
+        // Plan-Review-v2 Finding 7: scharfe Assertions.
+        // Der erste committete Chunk hat chunkIndex = 2 (= post-skip).
+        // Es werden chunkIndex 2 + 3 committed. Genau 5 nextChunk()-Aufrufe:
+        // 2 Skip-Calls + 1 Pre-Loop-Read in prepareImport (firstChunk) +
+        // 2 Loop-Advances (eine liefert chunk3, die zweite returnt null
+        // und beendet die Loop). Die Stuetzpfeiler-Behauptung „Skip-Loop
+        // wurde ausgefuehrt" erschoepft sich damit in genau 2 Calls VOR
+        // dem ersten committedChunk; jede Verschiebung des
+        // skipCommittedChunks-Pfades faellt durch den Exakt-Count auf.
         session.writtenChunks.first().chunkIndex shouldBe 2L
+        session.writtenChunks.size shouldBe 2  // chunkIndex = 2 + 3 wurden geschrieben
+        nextChunkCalls.get() shouldBe 5
     }
 })

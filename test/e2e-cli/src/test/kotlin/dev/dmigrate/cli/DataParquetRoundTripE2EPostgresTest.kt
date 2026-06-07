@@ -180,6 +180,16 @@ class DataParquetRoundTripE2EPostgresTest : FunSpec({
             }
             Files.isRegularFile(tmpFile) shouldBe true
 
+            // Plan-Review-v2 Finding 10: Footer-KV direkt am exportierten
+            // File verifizieren, statt sich auf die spaete Inferenz-Exception
+            // zu verlassen. ParquetSingleFilePreflight.phase1 oeffnet die
+            // Datei, parst den Footer und exponiert manifestPresent — der
+            // sauberste Single-Call-Pfad ohne neuen Hadoop-Import.
+            val phase1Result = dev.dmigrate.format.parquet.ParquetSingleFilePreflight()
+                .phase1(path = tmpFile, explicitTable = null, computeContentSha256 = false)
+            phase1Result.manifestPresent shouldBe true
+            phase1Result.table shouldBe "users"
+
             // Import ohne --table. Footer-KV traegt den Tabellennamen
             // `users` (unqualifiziert, weil `--tables users` ohne Schema-
             // Prefix exportiert wurde), den ParquetSingleFilePreflight.phase1

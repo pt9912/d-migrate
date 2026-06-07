@@ -19,6 +19,10 @@ dependencies {
     testImplementation(project(":adapters:driven:driver-mysql"))
     testImplementation(project(":adapters:driven:driver-sqlite"))
     testImplementation(project(":adapters:driven:formats"))
+    // S7-Review-Fix Finding 10: erlaubt dem DataParquetRoundTripE2EPostgresTest,
+    // den Footer-KV der exportierten Parquet-Datei via
+    // ParquetSingleFileManifestReader direkt zu inspizieren.
+    testImplementation(project(":adapters:driven:formats-parquet"))
     testImplementation(project(":adapters:driven:integrations"))
     testImplementation(project(":adapters:driven:persistence-jdbc"))
     testImplementation(project(":adapters:driven:streaming"))
