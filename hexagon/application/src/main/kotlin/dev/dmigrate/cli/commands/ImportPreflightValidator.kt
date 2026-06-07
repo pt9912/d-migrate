@@ -146,12 +146,21 @@ internal class ImportPreflightValidator(
         input: ImportInput,
         directoryScan: List<DirectoryImportScanner.ScannedTable>?,
     ): Map<String, String> = when (input) {
+        // Path.relativize(...).toString() benutzt den Plattform-Separator
+        // ("/" auf Linux, "\\" auf Windows). Der Wert fliesst in den
+        // Resume-Fingerprint und das persistierte Manifest, daher muessen
+        // wir auf einen plattformneutralen "/"-Separator normalisieren,
+        // sonst bricht jeder Cross-OS- oder Cross-Container-Resume
+        // (Review-Finding A2).
         is ImportInput.ResolvedBundle -> input.tables.associate {
-            it.table to input.bundleRoot.relativize(it.path).toString()
+            it.table to input.bundleRoot.relativize(it.path).invariantSeparators()
         }
         is ImportInput.ResolvedSingleFile -> mapOf(input.table to input.path.fileName.toString())
         else -> directoryScan?.associate { it.table to it.fileName } ?: emptyMap()
     }
+
+    private fun java.nio.file.Path.invariantSeparators(): String =
+        toString().replace('\\', '/')
 
     private fun inputTopologyFor(input: ImportInput): String = when (input) {
         is ImportInput.Stdin -> "stdin"
