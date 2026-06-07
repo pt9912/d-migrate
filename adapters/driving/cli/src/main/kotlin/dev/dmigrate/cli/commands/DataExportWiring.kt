@@ -13,6 +13,7 @@ import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ValueSerializer
+import dev.dmigrate.format.parquet.ParquetChunkWriterFactory
 import dev.dmigrate.streaming.StreamingExporter
 import dev.dmigrate.streaming.checkpoint.FileCheckpointStore
 import java.nio.file.Path
@@ -101,7 +102,12 @@ internal object DataExportWiring {
             poolFactory = HikariConnectionPoolFactory::create,
             readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
-            writerFactoryBuilder = { DefaultDataChunkWriterFactory(warningSink = { warnings += it }) },
+            writerFactoryBuilder = {
+                CompositeDataChunkWriterFactory(
+                    defaultFactory = DefaultDataChunkWriterFactory(warningSink = { warnings += it }),
+                    parquetFactory = ParquetChunkWriterFactory(),
+                )
+            },
             collectWarnings = {
                 warnings.map {
                     "  ⚠ ${it.code} ${it.table}.${it.column} (${it.javaClass}): ${it.message}"
