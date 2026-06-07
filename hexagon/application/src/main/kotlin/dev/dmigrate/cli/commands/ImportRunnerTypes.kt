@@ -128,6 +128,21 @@ internal data class InputContext(
     val effectiveTables: List<String>,
     val inputFilesByTable: Map<String, String>,
     val fingerprint: String,
+    /**
+     * S8b (AP9 §7.5): per-Tabelle SHA-256-Map fuer Parquet-Bundle-
+     * Importe (Wert kann null sein, wenn der Producer den Hash nicht
+     * geschrieben hat — Live-Pruefung wird dann uebersprungen). `null`
+     * fuer Nicht-Bundle-Quellen, dient als „Parquet-Bundle-Lauf?"-
+     * Anker beim Pre-AP8-Branch in [ImportCheckpointManager].
+     */
+    val bundleExpectedSha256ByTable: Map<String, String?>? = null,
+    /**
+     * S8b (AP11 §6.4): Content-SHA-256 fuer Parquet-Single-File-
+     * Importe. `null` fuer Nicht-Single-File-Quellen oder bei
+     * `--no-checkpoint`/Fresh-Run (Hash wird erst beim `--resume`
+     * berechnet, siehe `ImportPreflightResolver.kt:76-79`).
+     */
+    val singleFileContentSha256: String? = null,
 )
 
 internal sealed class InputContextResult {

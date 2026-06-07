@@ -128,8 +128,46 @@ internal class ImportPreflightValidator(
                 inputFilesByTable = inputFilesByTable,
             )
         )
-        return InputContextResult.Ok(InputContext(effectiveTables, inputFilesByTable, fingerprint))
+        return InputContextResult.Ok(
+            InputContext(
+                effectiveTables = effectiveTables,
+                inputFilesByTable = inputFilesByTable,
+                fingerprint = fingerprint,
+                bundleExpectedSha256ByTable = bundleExpectedSha256ByTableFor(preparedImport.input),
+                singleFileContentSha256 = singleFileContentSha256For(preparedImport.input),
+            )
+        )
     }
+
+    /**
+     * S8b (AP9 §7.5): leitet die Bundle-Per-Tabelle-SHA-Map aus dem
+     * aufgeloesten [ImportInput.ResolvedBundle] ab. Andere Quellen
+     * liefern `null` — der Pre-AP8-Branch im Checkpoint-Manager nutzt
+     * das als „Bundle-Lauf?"-Anker.
+     */
+    private fun bundleExpectedSha256ByTableFor(input: ImportInput): Map<String, String?>? =
+        when (input) {
+            is ImportInput.ResolvedBundle -> input.tables.associate { it.table to it.expectedSha256 }
+            is ImportInput.ResolvedSingleFile,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
+
+    /**
+     * S8b (AP11 §6.4): leitet den Single-File-Content-SHA aus dem
+     * aufgeloesten [ImportInput.ResolvedSingleFile] ab. `null` fuer
+     * andere Quellen oder bei `--no-checkpoint`/Fresh-Run (siehe
+     * `ImportPreflightResolver.kt:76-79`).
+     */
+    private fun singleFileContentSha256For(input: ImportInput): String? =
+        when (input) {
+            is ImportInput.ResolvedSingleFile -> input.contentSha256
+            is ImportInput.ResolvedBundle,
+            is ImportInput.Stdin,
+            is ImportInput.SingleFile,
+            is ImportInput.Directory -> null
+        }
 
     private fun effectiveTablesFor(
         input: ImportInput,
