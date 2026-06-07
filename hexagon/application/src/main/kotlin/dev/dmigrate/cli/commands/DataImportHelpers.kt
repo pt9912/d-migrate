@@ -51,8 +51,15 @@ internal object DataImportHelpers {
         "parquet" to "parquet",
     )
 
-    /** AP12 §4.1 / AP9: Marker-Datei eines Parquet-Bundle-Verzeichnisses. */
-    private const val BUNDLE_MANIFEST_FILE = "manifest.yaml"
+    /**
+     * AP12 §4.1 / AP9: Marker-Datei eines Bundle-Verzeichnisses, referenziert
+     * vom Port (`ImportInput.ResolvedBundle.MANIFEST_FILE_NAME`). Lokaler
+     * Alias, weil `private const val` Kotlin-seitig nicht direkt aus einem
+     * `companion object` initialisiert werden kann, ohne die Inline-Konstante
+     * zu opfern.
+     */
+    private const val BUNDLE_MANIFEST_FILE: String =
+        dev.dmigrate.streaming.ImportInput.ResolvedBundle.MANIFEST_FILE_NAME
 
     fun inferFormatFromExtension(path: Path): String? {
         val fileName = path.fileName?.toString() ?: return null
@@ -61,14 +68,47 @@ internal object DataImportHelpers {
     }
 
     /**
-     * AP12 §4.1: Verzeichnis mit `manifest.yaml` ist die einzige
+     * AP12 §4.1: Verzeichnis mit Bundle-`manifest.yaml` ist die einzige
      * Parquet-Bundle-Auspraegung. Ohne explizites `--format` und ohne
      * Extension-Inferenz erkennt der Resolver Bundles am Marker.
+     *
+     * Reines Existieren von `manifest.yaml` reicht nicht — sonst werden
+     * Helm-Charts, Kustomize-Trees und alle anderen YAML-Tools als
+     * Parquet-Bundle klassifiziert (Review-Finding A3). Wir lesen die
+     * ersten Bytes und pruefen auf zwei Pflicht-Felder der Bundle-Form
+     * (`formatVersion:` und `tables:` aus `ParquetBundleManifest`); sind
+     * sie nicht beide vorhanden, faellt die Format-Inferenz zurueck auf
+     * den historischen "Cannot detect format"-Pfad.
      */
     private fun inferFormatFromDirectoryManifest(path: Path): String? {
         if (!Files.isDirectory(path)) return null
-        return if (Files.isRegularFile(path.resolve(BUNDLE_MANIFEST_FILE))) "parquet" else null
+        val manifestPath = path.resolve(BUNDLE_MANIFEST_FILE)
+        if (!Files.isRegularFile(manifestPath)) return null
+        return if (looksLikeParquetBundleManifest(manifestPath)) "parquet" else null
     }
+
+    private const val MANIFEST_SNIFF_BYTES = 4 * 1024
+
+    private fun looksLikeParquetBundleManifest(manifestPath: Path): Boolean {
+        val head = try {
+            Files.newInputStream(manifestPath).use { stream ->
+                val buf = ByteArray(MANIFEST_SNIFF_BYTES)
+                val read = stream.read(buf)
+                if (read <= 0) "" else String(buf, 0, read, java.nio.charset.StandardCharsets.UTF_8)
+            }
+        } catch (_: java.io.IOException) {
+            return false
+        }
+        // Pflichtfelder aus ParquetBundleManifest (siehe
+        // adapters/driven/formats-parquet/.../ParquetManifestWriter.kt). Wir
+        // pruefen das Vorkommen als YAML-Mapping-Key (`<name>:` am Zeilenanfang
+        // oder direkt nach Newline) statt YAML zu parsen.
+        return MANIFEST_REQUIRED_KEY_REGEX.containsMatchIn(head) &&
+            MANIFEST_TABLES_KEY_REGEX.containsMatchIn(head)
+    }
+
+    private val MANIFEST_REQUIRED_KEY_REGEX = Regex("(?m)^formatVersion:")
+    private val MANIFEST_TABLES_KEY_REGEX = Regex("(?m)^tables:")
 
     fun resolveFormat(
         request: DataImportRequest,

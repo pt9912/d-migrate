@@ -42,6 +42,7 @@ class ParquetBundlePreflight {
         bundleRoot: Path,
         tableFilter: List<String>? = null,
         tableOrder: List<String>? = null,
+        verifyContentSha256: Boolean = true,
     ): ResolvedParquetBundle {
         // Schritt 1
         if (!Files.isDirectory(bundleRoot)) {
@@ -74,15 +75,20 @@ class ParquetBundlePreflight {
         // Tabellenfilter + Order (AP8 §4.4)
         val effectiveTables = applyFilterAndOrder(manifest, tableFilter, tableOrder)
 
-        // Schritt 8 — Optional SHA-256
-        for (table in effectiveTables) {
-            val expected = table.sha256 ?: continue
-            val actual = Sha256DigestCalculator.compute(bundleRoot.resolve(table.file))
-            if (!expected.equals(actual, ignoreCase = true)) {
-                throw ParquetBundlePreflightException(
-                    "MANIFEST_SHA256_MISMATCH: table='${table.table}' file='${table.file}' " +
-                        "expected=$expected actual=$actual",
-                )
+        // Schritt 8 — Optional SHA-256. AP12 §4.2: --no-checkpoint
+        // unterdrueckt die Per-File-Hash-Pruefung symmetrisch zum
+        // Single-File-Pfad (Review-Finding A5), spart den vollen
+        // Bytestream-Read pro Tabelle bei abgeschaltetem Checkpoint.
+        if (verifyContentSha256) {
+            for (table in effectiveTables) {
+                val expected = table.sha256 ?: continue
+                val actual = Sha256DigestCalculator.compute(bundleRoot.resolve(table.file))
+                if (!expected.equals(actual, ignoreCase = true)) {
+                    throw ParquetBundlePreflightException(
+                        "MANIFEST_SHA256_MISMATCH: table='${table.table}' file='${table.file}' " +
+                            "expected=$expected actual=$actual",
+                    )
+                }
             }
         }
 
@@ -218,7 +224,13 @@ class ParquetBundlePreflight {
     }
 
     companion object {
-        const val MANIFEST_FILE_NAME: String = "manifest.yaml"
+        /**
+         * Alias der Port-Konstante [dev.dmigrate.streaming.ImportInput.ResolvedBundle.MANIFEST_FILE_NAME];
+         * hier zur API-Kompatibilitaet erhalten (S6 Cut A: Konstante an die
+         * Port-Definition gezogen, siehe Review-Finding C1).
+         */
+        const val MANIFEST_FILE_NAME: String =
+            dev.dmigrate.streaming.ImportInput.ResolvedBundle.MANIFEST_FILE_NAME
         private const val PARQUET_EXTENSION = ".parquet"
         private const val SUPPORTED_MAJOR = 1
         private const val DIGEST_BUFFER = 8 * 1024

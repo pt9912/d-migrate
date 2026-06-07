@@ -66,7 +66,17 @@ sealed class ImportInput {
         val bundleRoot: Path,
         val tables: List<ResolvedBundleTableBinding>,
         val resumeFingerprint: BundleResumeFingerprint,
-    ) : ImportInput()
+    ) : ImportInput() {
+        companion object {
+            /**
+             * AP9 §4.1: Marker-Datei eines Bundle-Verzeichnisses.
+             * Geteilte Konstante zwischen Adapter (Writer/Reader/Preflight)
+             * und CLI-Helpers (Format-Inferenz), damit ein Rename nicht
+             * an drei Stellen lockstep gepflegt werden muss.
+             */
+            const val MANIFEST_FILE_NAME: String = "manifest.yaml"
+        }
+    }
 
     /**
      * AP11 §6.2 / AP12 §5.1: bereits aufgeloester Single-File-Import

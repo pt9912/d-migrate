@@ -35,6 +35,10 @@ class ParquetImportInputPhase1Hook(
                 bundleRoot = rawInput.path,
                 tableFilter = rawInput.tableFilter,
                 tableOrder = rawInput.tableOrder,
+                // AP12 §4.2: --no-checkpoint deaktiviert die Per-File-Hash-
+                // Verifikation des Bundle-Preflights symmetrisch zum
+                // SingleFile-Pfad (Review-Finding A5).
+                verifyContentSha256 = computeContentSha256,
             )
             is ImportInput.SingleFile -> {
                 // AP11 §5.5: `--table` ist Override; ohne `--table` setzt

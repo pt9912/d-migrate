@@ -67,6 +67,12 @@ class ParquetBundleClosure(
     }
 
     companion object {
-        const val MANIFEST_FILE_NAME: String = "manifest.yaml"
+        /**
+         * Alias der Port-Konstante [dev.dmigrate.streaming.ImportInput.ResolvedBundle.MANIFEST_FILE_NAME];
+         * hier zur API-Kompatibilitaet erhalten (S6 Cut A: Konstante an die
+         * Port-Definition gezogen, siehe Review-Finding C1).
+         */
+        const val MANIFEST_FILE_NAME: String =
+            dev.dmigrate.streaming.ImportInput.ResolvedBundle.MANIFEST_FILE_NAME
     }
 }

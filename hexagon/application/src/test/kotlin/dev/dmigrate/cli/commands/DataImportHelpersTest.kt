@@ -104,11 +104,22 @@ class DataImportHelpersTest : FunSpec({
         stderr.shouldBeEmpty()
     }
 
-    test("resolveFormat infers parquet from directory with manifest.yaml") {
+    test("resolveFormat infers parquet from directory with bundle-shaped manifest.yaml") {
         val stderr = mutableListOf<String>()
         val bundleDir = Files.createTempDirectory("parquet-bundle-")
         try {
-            Files.writeString(bundleDir.resolve("manifest.yaml"), "schemaVersion: 1\n")
+            // Minimal bundle manifest with the two markers required by the
+            // false-positive-resistant sniffer (formatVersion + tables).
+            Files.writeString(
+                bundleDir.resolve("manifest.yaml"),
+                """
+                formatVersion: '1.0'
+                producer: d-migrate
+                tables:
+                  - table: users
+                    file: users.parquet
+                """.trimIndent()
+            )
 
             val format = DataImportHelpers.resolveFormat(
                 request(source = bundleDir.toString()),
@@ -121,6 +132,50 @@ class DataImportHelpersTest : FunSpec({
             stderr.shouldBeEmpty()
         } finally {
             bundleDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory with non-parquet manifest.yaml (Helm-style)") {
+        val stderr = mutableListOf<String>()
+        val helmDir = Files.createTempDirectory("helm-like-")
+        try {
+            // Stray manifest.yaml without the bundle marker fields.
+            Files.writeString(
+                helmDir.resolve("manifest.yaml"),
+                "apiVersion: v2\nname: my-chart\nversion: 0.1.0\n"
+            )
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = helmDir.toString()),
+                isStdin = false,
+                sourcePath = helmDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            helmDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory with empty manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val dir = Files.createTempDirectory("empty-manifest-")
+        try {
+            Files.writeString(dir.resolve("manifest.yaml"), "")
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = dir.toString()),
+                isStdin = false,
+                sourcePath = dir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            dir.toFile().deleteRecursively()
         }
     }
 

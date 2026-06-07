@@ -55,8 +55,9 @@ class ParquetBundleResolver(
         bundleRoot: java.nio.file.Path,
         tableFilter: List<String>? = null,
         tableOrder: List<String>? = null,
+        verifyContentSha256: Boolean = true,
     ): ImportInput.ResolvedBundle {
-        val bundle = preflight.run(bundleRoot, tableFilter, tableOrder)
+        val bundle = preflight.run(bundleRoot, tableFilter, tableOrder, verifyContentSha256)
         return ParquetBundleAdapter.toResolvedBundle(bundle)
     }
 }
