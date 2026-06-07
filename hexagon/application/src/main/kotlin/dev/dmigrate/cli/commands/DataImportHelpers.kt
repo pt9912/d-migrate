@@ -146,6 +146,10 @@ internal object DataImportHelpers {
             )
             return 2
         }
+        if (request.noCheckpoint && !request.resume.isNullOrBlank()) {
+            stderr("Error: --no-checkpoint and --resume are mutually exclusive.")
+            return 2
+        }
         return null
     }
 

@@ -126,6 +126,14 @@ class DataImportCommand : CliktCommand(name = "import") {
             "from the config file when set.",
     ).path()
 
+    // Parquet Cut A S6 (AP12 §4.2): explizit Checkpoint-Persistenz fuer den
+    // aktuellen Lauf abschalten. Konfliktet mit --resume (Exit 2 in
+    // validateCliFlags). Implizit: Phase-1 berechnet keinen contentSha256.
+    val noCheckpoint by option(
+        "--no-checkpoint",
+        help = "Disable checkpoint reads/writes for this run. Mutually exclusive with --resume.",
+    ).flag()
+
     override fun run() {
         val root = currentContext.parent?.parent?.command as? DMigrate
         val exitCode = DataImportWiring.execute(
@@ -148,6 +156,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 chunkSize = chunkSize,
                 resume = resume,
                 checkpointDir = checkpointDir,
+                noCheckpoint = noCheckpoint,
                 cliContext = root?.cliContext() ?: CliContext(),
                 configPath = root?.config,
             )

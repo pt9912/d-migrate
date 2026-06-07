@@ -592,6 +592,35 @@ class DataImportRunnerCallbackTest : FunSpec({
             capturedExecutorInputs.single() shouldBe resolvedSingleFile
         }
 
+        test("--no-checkpoint laesst den Phase-1-Hook computeContentSha256=false sehen und ruft den Store nicht") {
+            val capturedComputeSha = mutableListOf<Boolean>()
+            val phase1 = ImportInputPhase1Hook { raw, _, compute ->
+                capturedComputeSha += compute
+                raw
+            }
+            val storeFactoryCalls = java.util.concurrent.atomic.AtomicInteger(0)
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                phase1Hook = phase1,
+                checkpointStoreFactory = { _ ->
+                    storeFactoryCalls.incrementAndGet()
+                    error("checkpointStoreFactory must not be invoked when --no-checkpoint is active")
+                },
+                checkpointConfigResolver = { _ ->
+                    // Wenn der noCheckpoint-Pfad korrekt short-circuited,
+                    // bleibt auch dieser Resolver unangetastet.
+                    dev.dmigrate.streaming.CheckpointConfig(directory = Files.createTempDirectory("never-used-"))
+                },
+            )
+
+            val exit = runner.execute(request(format = "json").copy(noCheckpoint = true))
+
+            assertExit(exit, 0, stderr)
+            capturedComputeSha shouldBe listOf(false)
+            storeFactoryCalls.get() shouldBe 0
+        }
+
         test("Phase-2-Hook-Wurf liefert Exit 3 und schlaegt stderr durch") {
             val phase2 = ImportInputPhase2Hook { _, _ ->
                 throw RuntimeException("PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT: mismatch")

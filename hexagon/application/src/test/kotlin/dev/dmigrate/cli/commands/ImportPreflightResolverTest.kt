@@ -161,8 +161,30 @@ class ImportPreflightResolverTest : FunSpec({
         context.format shouldBe DataExportFormat.PARQUET
         context.preparedImport shouldBe SchemaPreflightResult(resolved)
         capturedFormat shouldBe DataExportFormat.PARQUET
-        capturedComputeSha shouldBe false
+        // Default: noCheckpoint = false → computeContentSha256 = true.
+        capturedComputeSha shouldBe true
         stderr shouldBe emptyList()
+    }
+
+    test("resolve passes computeContentSha256 = false to phase1Hook when --no-checkpoint is active") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-no-cp-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        var capturedComputeSha: Boolean? = null
+        val hook = ImportInputPhase1Hook { raw, _, compute ->
+            capturedComputeSha = compute
+            raw
+        }
+
+        resolver(
+            stderr = stderr,
+            phase1Hook = hook,
+        ).resolve(
+            request(source = sourceFile.toString(), format = "parquet").copy(noCheckpoint = true)
+        )
+
+        capturedComputeSha shouldBe false
     }
 
     test("resolve returns exit 3 when phase1Hook throws") {

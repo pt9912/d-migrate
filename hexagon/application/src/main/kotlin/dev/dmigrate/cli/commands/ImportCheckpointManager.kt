@@ -32,6 +32,13 @@ internal class ImportCheckpointManager(
 
     /** Merge CLI override and config default for checkpoint directory + store. */
     fun resolveCheckpointContext(request: DataImportRequest): ImportCheckpointContext? {
+        // Parquet Cut A S6 (AP12 §4.2): --no-checkpoint kappt das Resolving
+        // vor der CheckpointConfig-Aufloesung. Damit bleiben writeInitialManifest,
+        // buildCallbacks und der Resume-Pfad (per Konflikt-Check bereits
+        // abgewiesen) bei store=null no-op.
+        if (request.noCheckpoint) {
+            return ImportCheckpointContext(store = null, dir = null)
+        }
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {

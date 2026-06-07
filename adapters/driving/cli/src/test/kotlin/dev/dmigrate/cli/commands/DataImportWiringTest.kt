@@ -71,6 +71,7 @@ class DataImportWiringTest : FunSpec({
         chunkSize = chunkSize,
         resume = null,
         checkpointDir = checkpointDir,
+        noCheckpoint = false,
         cliContext = cliContext,
         configPath = configPath,
     )

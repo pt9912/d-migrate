@@ -44,6 +44,7 @@ internal data class DataImportOptions(
     val chunkSize: Int,
     val resume: String?,
     val checkpointDir: Path?,
+    val noCheckpoint: Boolean,
     val cliContext: CliContext,
     val configPath: Path?,
 )
@@ -153,6 +154,7 @@ internal object DataImportWiring {
             noProgress = options.cliContext.noProgress,
             resume = options.resume,
             checkpointDir = options.checkpointDir,
+            noCheckpoint = options.noCheckpoint,
         )
         val runner = DataImportRunner(
             targetResolver = bundle.targetResolver,

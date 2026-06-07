@@ -48,6 +48,12 @@ data class DataImportRequest(
     val resume: String? = null,
     /** Optional checkpoint directory. Overrides `pipeline.checkpoint.directory` from config. */
     val checkpointDir: Path? = null,
+    /** Parquet Cut A S6 (AP12 §4.2): disables checkpoint reads/writes for the
+     *  current run. Mutually exclusive with [resume] (Exit 2 in
+     *  `validateCliFlags`). When `true`, the Phase-1-Hook gets
+     *  `computeContentSha256 = false`, and the [ImportCheckpointManager]
+     *  returns a null store so the run never touches the on-disk manifest. */
+    val noCheckpoint: Boolean = false,
 )
 
 /**

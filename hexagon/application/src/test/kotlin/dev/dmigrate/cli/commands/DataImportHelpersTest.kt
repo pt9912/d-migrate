@@ -194,6 +194,30 @@ class DataImportHelpersTest : FunSpec({
         stderr.single() shouldContain "mutually exclusive"
     }
 
+    test("validateCliFlags rejects --no-checkpoint combined with --resume") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(resume = "run-123", noCheckpoint = true),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--no-checkpoint and --resume are mutually exclusive"
+    }
+
+    test("validateCliFlags accepts --no-checkpoint alone") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(noCheckpoint = true),
+            stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
     test("validateCliFlags rejects resume on stdin import") {
         val stderr = mutableListOf<String>()
 

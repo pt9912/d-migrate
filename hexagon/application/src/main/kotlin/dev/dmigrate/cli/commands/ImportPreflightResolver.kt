@@ -50,14 +50,15 @@ internal class ImportPreflightResolver(
         // Variante laesst nicht-Parquet-Pfade unveraendert; CLI verdrahtet
         // den Parquet-Hook, der Directory→ResolvedBundle und
         // SingleFile→ResolvedSingleFile transformiert.
-        // computeContentSha256 wird S6 (v) aus !request.noCheckpoint
-        // abgeleitet; in S6 (iii) ist der Default `false` (keine
-        // Specifics-Persistenz bis S8).
+        // computeContentSha256 spiegelt `!request.noCheckpoint`: ohne
+        // Checkpoint-Persistenz braucht der Phase-1-Pfad den Inhalts-
+        // Hash nicht zu berechnen (AP12 §4.2). Die echte Resume-Verifikation
+        // landet erst mit S8 (SingleFileCheckpointSpecifics).
         val importInput = try {
             phase1Hook.maybeFinalize(
                 rawInput = rawInput,
                 format = format,
-                computeContentSha256 = false,
+                computeContentSha256 = !request.noCheckpoint,
             )
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
