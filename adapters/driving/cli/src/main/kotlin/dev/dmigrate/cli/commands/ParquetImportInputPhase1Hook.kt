@@ -55,12 +55,26 @@ class ParquetImportInputPhase1Hook(
                     computeContentSha256 = computeContentSha256,
                 )
             }
-            // Stdin (von validateFormatPathRequirements bereits abgelehnt),
-            // ResolvedBundle/ResolvedSingleFile (kommen aus diesem Hook
-            // nicht doppelt durch) — Identity.
-            is ImportInput.Stdin,
+            // Review-Finding I1: Stdin+PARQUET wird upstream durch
+            // validateFormatPathRequirements abgelehnt. Falls eine
+            // Test- oder Bypass-Konstellation den Pfad doch erreicht,
+            // schlagen wir hier explizit fehl, statt den Stream weiterzureichen
+            // und tief im Reader zu sterben.
+            is ImportInput.Stdin -> error(
+                "PARQUET_STDIN_NOT_SUPPORTED: Parquet single-file imports require " +
+                    "a file path, not stdin."
+            )
+            // Review-Finding I2: Bereits aufgeloeste Sealed-Varianten sind
+            // idempotent — wir reichen sie durch, aber `check(format == PARQUET)`
+            // dokumentiert die Annahme.
             is ImportInput.ResolvedBundle,
-            is ImportInput.ResolvedSingleFile -> rawInput
+            is ImportInput.ResolvedSingleFile -> {
+                check(format == DataExportFormat.PARQUET) {
+                    "ParquetImportInputPhase1Hook reached with non-Parquet format=$format " +
+                        "on already-resolved input — wiring error."
+                }
+                rawInput
+            }
         }
     }
 }

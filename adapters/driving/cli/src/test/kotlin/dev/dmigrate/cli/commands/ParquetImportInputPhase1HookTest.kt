@@ -7,6 +7,7 @@ import dev.dmigrate.streaming.BundleResumeFingerprint
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
+import io.kotest.matchers.string.shouldContain
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import java.io.ByteArrayInputStream
 import java.nio.file.Path
@@ -72,16 +73,16 @@ class ParquetImportInputPhase1HookTest : FunSpec({
         result shouldBeSameInstanceAs resolved
     }
 
-    test("Parquet + Stdin passes through unchanged (validation upstream rejects)") {
+    test("Parquet + Stdin throws explicitly (defense-in-depth)") {
         // validateFormatPathRequirements lehnt Parquet+Stdin upstream mit
-        // Exit 2 ab; falls ein zukuenftiger Pfad das umgeht, soll der Hook
-        // den Input nicht stillschweigend verschlucken, sondern unveraendert
-        // weiterreichen — der bestehende Stream-Pfad im StreamingImporter
-        // produziert dann eine klare Fehlermeldung.
+        // Exit 2 ab. Falls ein zukuenftiger Pfad das umgeht, schlaegt der
+        // Hook hier explizit fehl, statt den Stream in den Reader laufen
+        // zu lassen (Review-Finding I1).
         val stdin = ImportInput.Stdin(table = "users", input = ByteArrayInputStream("".toByteArray()))
 
-        val result = hook.maybeFinalize(stdin, DataExportFormat.PARQUET, computeContentSha256 = false)
-
-        result shouldBe stdin
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalStateException> {
+            hook.maybeFinalize(stdin, DataExportFormat.PARQUET, computeContentSha256 = false)
+        }
+        ex.message!! shouldContain "PARQUET_STDIN_NOT_SUPPORTED"
     }
 })
