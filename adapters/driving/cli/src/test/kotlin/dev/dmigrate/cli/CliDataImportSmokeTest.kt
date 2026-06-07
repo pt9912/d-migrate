@@ -69,6 +69,47 @@ class CliDataImportSmokeTest : FunSpec({
         ex.statusCode shouldBe 2
     }
 
+    // Parquet Cut A S6 (AP12 §4.1): Parquet ist Pfad-only.
+    test("data import --format parquet --source - → Exit 2 (Stdin rejected)") {
+        val ex = shouldThrow<ProgramResult> {
+            cli().parse(
+                listOf(
+                    "data", "import",
+                    "--target", "sqlite:///tmp/d-migrate-cli-smoke.db",
+                    "--source", "-",
+                    "--format", "parquet",
+                    "--table", "users",
+                )
+            )
+        }
+        ex.statusCode shouldBe 2
+    }
+
+    // Parquet Cut A S6 (AP12 §4.2): --no-checkpoint und --resume schliessen
+    // sich aus.
+    test("data import --no-checkpoint --resume → Exit 2") {
+        val jsonFile = Files.createTempFile("d-migrate-smoke-noncp-", ".json")
+        Files.writeString(jsonFile, """[{"id":1}]""")
+        try {
+            val ex = shouldThrow<ProgramResult> {
+                cli().parse(
+                    listOf(
+                        "data", "import",
+                        "--target", "sqlite:///tmp/d-migrate-cli-smoke.db",
+                        "--source", jsonFile.toString(),
+                        "--format", "json",
+                        "--table", "users",
+                        "--no-checkpoint",
+                        "--resume", "run-123",
+                    )
+                )
+            }
+            ex.statusCode shouldBe 2
+        } finally {
+            Files.deleteIfExists(jsonFile)
+        }
+    }
+
     test("data import without --target and without default_target → Exit 2") {
         val jsonFile = Files.createTempFile("d-migrate-smoke-no-target-", ".json")
         Files.writeString(jsonFile, """[{"id":1,"name":"test"}]""")

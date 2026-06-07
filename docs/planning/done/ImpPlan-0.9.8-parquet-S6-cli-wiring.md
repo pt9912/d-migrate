@@ -1,10 +1,16 @@
 # S6 — CLI-Wiring fuer Import und Export
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S6).
 >
-> Status: In Progress.
+> Status: Closed (2026-06-07). Sechs Sub-Commits:
+> - `3423f2c2` docs(parquet) — ImpPlan-Doc.
+> - `7759294d` S6 (i)  — `StreamingImporter.seekableReaderFactory`-Pflicht-Param.
+> - `23377524` S6 (ii) — CLI parquet choice + `resolveFormat`/`manifest.yaml`-Hook + Pfad-only.
+> - `68d69350` S6 (iii) — Phase-1/2 Hook-Ports + Parquet-Impls.
+> - `988a41fb` S6 (iv) — `CompositeDataChunkWriterFactory` + Export-Wiring.
+> - `7f79926d` S6 (v)  — `--no-checkpoint` plumbing.
 >
 > Verdrahtet die in S3/S4/S5a/S5b gelieferten Bausteine im
 > CLI-Modul, ergaenzt `StreamingImporter` um den Pflicht-
