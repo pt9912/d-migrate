@@ -70,7 +70,13 @@ internal class ImportPreflightResolver(
         //  - OperationCancelledException wird REthrowed (Cancel-Pipeline → 130).
         //  - Andere RuntimeException → Exit 3 (Preflight-Failure, z.B.
         //    PARQUET_BUNDLE_MANIFEST_PARSE_ERROR).
-        val computeContentSha256 = !request.noCheckpoint && !request.resume.isNullOrBlank()
+        // Review-Finding F2/E1: SHA-Berechnung nur wenn der Checkpoint-Modus
+        // Enabled UND ein Resume-Anker gesetzt ist. Sealed-when statt
+        // verkettete Boolean-Operationen.
+        val computeContentSha256 = when (val mode = request.checkpointMode) {
+            CheckpointMode.Disabled -> false
+            is CheckpointMode.Enabled -> mode.resume != null
+        }
         val importInput = try {
             phase1Hook.maybeFinalize(
                 rawInput = rawInput,

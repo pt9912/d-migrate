@@ -32,13 +32,21 @@ internal class ImportCheckpointManager(
 
     /** Merge CLI override and config default for checkpoint directory + store. */
     fun resolveCheckpointContext(request: DataImportRequest): ImportCheckpointContext? {
-        // Parquet Cut A S6 (AP12 §4.2): --no-checkpoint kappt das Resolving
-        // vor der CheckpointConfig-Aufloesung. Damit bleiben writeInitialManifest,
-        // buildCallbacks und der Resume-Pfad (per Konflikt-Check bereits
-        // abgewiesen) bei store=null no-op.
-        if (request.noCheckpoint) {
-            return ImportCheckpointContext(store = null, dir = null)
+        // Parquet Cut A S6 (AP12 §4.2) / Review-Finding F2: schaltet auf
+        // die sealed [CheckpointMode]-Sicht. `Disabled` kappt das Resolving
+        // vor der CheckpointConfig-Aufloesung; `Enabled` faehrt den
+        // bestehenden Pfad. Ein zukuenftiger `ReadOnly`-Modus wuerde
+        // hier zwingend einen eigenen Branch erfordern (sealed-when).
+        return when (val mode = request.checkpointMode) {
+            CheckpointMode.Disabled -> ImportCheckpointContext(store = null, dir = null)
+            is CheckpointMode.Enabled -> resolveEnabledCheckpointContext(request, mode)
         }
+    }
+
+    private fun resolveEnabledCheckpointContext(
+        request: DataImportRequest,
+        @Suppress("UnusedPrivateMember") mode: CheckpointMode.Enabled,
+    ): ImportCheckpointContext? {
         val fromConfig: CheckpointConfig? = try {
             checkpointConfigResolver(request.cliConfigPath)
         } catch (e: Throwable) {
