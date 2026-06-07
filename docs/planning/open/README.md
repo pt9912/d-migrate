@@ -32,3 +32,12 @@ festgehalten.
 - Geliefert und geschlossen → `../done/`.
 - Verworfen / vollständig überholt → `docs/archive/` (existiert
   bei Bedarf, siehe ADR-0004).
+
+## Bestand
+
+| Datei | Typ | Gegenstand |
+| ----- | --- | ---------- |
+| [`adapter-coverage-uplift.md`](adapter-coverage-uplift.md) | Draft | Folge-Plan zu Quality-Coverage Phase E.2: Scope-Schnitt fuer heutige Kover-Excludes auf Live-JDBC- und Streaming-Adapter-Glue fehlt noch. |
+| [`beispiel-stored-procedure-migration.md`](beispiel-stored-procedure-migration.md) | Worked Example | Beispiel fuer KI-gestuetzte Stored-Procedure-Migration von PostgreSQL nach MySQL. |
+| [`d-browser-integration-coupling-assessment.md`](d-browser-integration-coupling-assessment.md) | Vorabklaerung | Bewertung sichtbarer Kopplungen zwischen `d-browser` und `d-migrate` vor einem dedizierten `source-d-migrate`-Adapter. |
+| [`test-database-candidates.md`](test-database-candidates.md) | Referenzsammlung | Externe Beispieldatenbanken fuer Smoke-, Regression-, Streaming-, Resume- und Integrationsverifikation. |
