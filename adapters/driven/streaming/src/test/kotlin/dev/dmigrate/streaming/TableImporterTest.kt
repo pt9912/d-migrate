@@ -53,7 +53,7 @@ class TableImporterTest : FunSpec({
         val commits = mutableListOf<ImportChunkCommit>()
         var openedColumns: List<TargetColumn>? = null
 
-        val importer = TableImporter(readerFactory) { _, columns -> openedColumns = columns }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, columns -> openedColumns = columns })
         val summary = importer.import(
             TableImportParams(
                 pool = ImporterNoopConnectionPool,
@@ -102,7 +102,7 @@ class TableImporterTest : FunSpec({
             finishResult = FinishTableResult.PartialFailure(listOf(adjustment), finishCause),
         )
         val writer = RecordingWriter(session)
-        val importer = TableImporter(readerFactory) { _, _ -> }
+        val importer = TableImporter(readerFactory, onTableOpened = { _, _ -> })
 
         val summary = importer.import(
             TableImportParams(
