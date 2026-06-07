@@ -1,5 +1,6 @@
 package dev.dmigrate.format.parquet
 
+import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DataExportFormat
@@ -25,10 +26,20 @@ import java.io.OutputStream
  * eine spaetere Parquet-Type-Coercion-Warnung schon vorbereitet —
  * das CLI-Composite leitet Default- und Parquet-Warnings dann ohne
  * weitere API-Aenderung in dieselbe `collectWarnings`-Liste.
+ *
+ * S7-0 / AP11 §6.1: [extraMetaDataProvider] reicht den Footer-KV-
+ * Provider an den [ParquetChunkWriter] durch. Default-Provider
+ * `{ emptyMap() }` haelt den Bundle-Modus unveraendert (S4
+ * §2.2-Invariant: nur Single-File-Exports tragen den
+ * `d-migrate.manifest`-KV); das CLI-Wiring (S7-0,
+ * `DataExportWiring`) waehlt zwischen
+ * `ParquetSingleFileManifestWriter(...).provider` (Single-File)
+ * und Default (Bundle).
  */
 class ParquetChunkWriterFactory(
     @Suppress("UnusedPrivateMember")
     private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
+    private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
 ) : DataChunkWriterFactory {
 
     override fun create(
@@ -39,6 +50,6 @@ class ParquetChunkWriterFactory(
         require(format == DataExportFormat.PARQUET) {
             "ParquetChunkWriterFactory does not support format=$format"
         }
-        return ParquetChunkWriter(output)
+        return ParquetChunkWriter(output, extraMetaDataProvider = extraMetaDataProvider)
     }
 }

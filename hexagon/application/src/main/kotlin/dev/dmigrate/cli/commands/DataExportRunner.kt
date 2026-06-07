@@ -71,7 +71,12 @@ class DataExportRunner(
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val readerLookup: (DatabaseDialect) -> DataReader,
     private val listerLookup: (DatabaseDialect) -> TableLister,
-    private val writerFactoryBuilder: () -> DataChunkWriterFactory,
+    /**
+     * S7-0: nimmt jetzt den aufgeloesten [ExportOutput] entgegen, damit der
+     * CLI-Composite-Builder zwischen Single-File-Modus (mit Footer-KV-Provider)
+     * und Bundle-Modus (ohne) unterscheiden kann (S4 §2.2-Invariant).
+     */
+    private val writerFactoryBuilder: (dev.dmigrate.streaming.ExportOutput) -> DataChunkWriterFactory,
     private val collectWarnings: () -> List<String>,
     private val exportExecutor: ExportExecutor,
     private val progressReporter: ProgressReporter = NoOpProgressReporter,

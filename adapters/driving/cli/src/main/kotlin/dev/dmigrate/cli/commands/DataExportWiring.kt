@@ -11,9 +11,14 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
+import dev.dmigrate.core.version.VersionInfo
+import dev.dmigrate.format.data.DataChunkWriterFactory
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
 import dev.dmigrate.format.data.ValueSerializer
 import dev.dmigrate.format.parquet.ParquetChunkWriterFactory
+import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
+import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
+import dev.dmigrate.streaming.ExportOutput
 import dev.dmigrate.streaming.StreamingExporter
 import dev.dmigrate.streaming.checkpoint.FileCheckpointStore
 import java.nio.file.Path
@@ -102,14 +107,8 @@ internal object DataExportWiring {
             poolFactory = HikariConnectionPoolFactory::create,
             readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
-            writerFactoryBuilder = {
-                // Review-Finding G1: Parquet bekommt denselben warningSink
-                // wie Default, sodass eine spaetere Parquet-Conversion-
-                // Warnung in dieselbe collectWarnings-Liste landet.
-                CompositeDataChunkWriterFactory(
-                    defaultFactory = DefaultDataChunkWriterFactory(warningSink = { warnings += it }),
-                    parquetFactory = ParquetChunkWriterFactory(warningSink = { warnings += it }),
-                )
+            writerFactoryBuilder = { exportOutput ->
+                buildWriterFactoryForOutput(exportOutput, warnings)
             },
             collectWarnings = {
                 warnings.map {
@@ -134,6 +133,14 @@ internal object DataExportWiring {
                         resumeMarkers = resume.resumeMarkers,
                         onChunkProcessed = callbacks.onChunkProcessed,
                         warningSink = callbacks.warningSink,
+                        // S7-0 / AP7 §10.1: parquet-Bundle-Closure schreibt
+                        // manifest.yaml nach Abschluss aller Tabellen-
+                        // Exporte. ParquetBundleClosure ignoriert
+                        // Nicht-Parquet-Formate selbst (siehe ParquetBundleClosure.kt:32),
+                        // also kein CLI-seitiges Format-Gating noetig.
+                        onBundleClosure = ParquetBundleClosure(
+                            producerVersion = VersionInfo.PRODUCT_VERSION,
+                        )::invoke,
                     )
             },
             progressReporter = ProgressRenderer(messages = MessageResolver(options.cliContext.locale)),
@@ -144,6 +151,40 @@ internal object DataExportWiring {
             primaryKeyLookup = pkLookupFromSchemaReader(),
         )
         return runner.execute(request)
+    }
+
+    /**
+     * S7-0: output-mode-aware Parquet-Factory-Builder.
+     *
+     * - [ExportOutput.SingleFile]: verdrahtet den Footer-KV-Provider
+     *   ([ParquetSingleFileManifestWriter.provider], AP11 §6.1), damit
+     *   `d-migrate.manifest` im Parquet-Footer landet.
+     * - [ExportOutput.FilePerTable] / [ExportOutput.Stdout]: Default-Provider
+     *   (`{ emptyMap() }`) — Bundle hat sein eigenes `manifest.yaml` via
+     *   `onBundleClosure`; Stdout ist defensiv (wird durch
+     *   `DataExportRunner.validateRequest` schon abgelehnt).
+     *
+     * Review-Finding G1: Parquet bekommt denselben warningSink wie Default.
+     */
+    private fun buildWriterFactoryForOutput(
+        exportOutput: ExportOutput,
+        warnings: MutableList<ValueSerializer.Warning>,
+    ): DataChunkWriterFactory {
+        val sink: (ValueSerializer.Warning) -> Unit = { warnings += it }
+        val parquetFactory = when (exportOutput) {
+            is ExportOutput.SingleFile -> ParquetChunkWriterFactory(
+                warningSink = sink,
+                extraMetaDataProvider = ParquetSingleFileManifestWriter(
+                    producerVersion = VersionInfo.PRODUCT_VERSION,
+                ).provider,
+            )
+            is ExportOutput.FilePerTable,
+            is ExportOutput.Stdout -> ParquetChunkWriterFactory(warningSink = sink)
+        }
+        return CompositeDataChunkWriterFactory(
+            defaultFactory = DefaultDataChunkWriterFactory(warningSink = sink),
+            parquetFactory = parquetFactory,
+        )
     }
 
     /**
