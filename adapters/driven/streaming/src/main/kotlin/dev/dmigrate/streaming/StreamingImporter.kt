@@ -17,15 +17,18 @@ import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
  * Orchestriert Input-Aufloesung ([ImportInputResolver]), Per-Tabelle-Import
  * ([TableImporter]) und Result-Aggregation.
  *
- * S6 (2026-06-07): [seekableReaderFactory] ist Pflicht-Parameter im
- * Konstruktor (AP12 §5.1), wird aber noch nicht konsumiert — der
- * `is ResolvedTableInput.Seekable -> error("S7 ...")`-Stopgap bleibt
- * aktiv. S7 verdrahtet den Konsum via TableImporter.
+ * S6 (2026-06-07) / Review-Finding F4: [seekableReaderFactory] ist jetzt
+ * Optional (Default `null`). Konsumenten, die keinen seekable Pfad
+ * exponieren — heute MCP, viele Tests — koennen den Konstruktor ohne
+ * weitere Imports rufen. Der `is ResolvedTableInput.Seekable -> error(...)`-
+ * Stopgap in der Loop fasst das `null` ab und produziert eine
+ * deterministische Fehlermeldung; S7 verdrahtet den echten Konsum
+ * durch den TableImporter, wenn die Factory non-null ist.
  */
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
     @Suppress("UnusedPrivateMember")
-    private val seekableReaderFactory: SeekableDataChunkReaderFactory,
+    private val seekableReaderFactory: SeekableDataChunkReaderFactory? = null,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {

@@ -91,7 +91,6 @@ class StreamingImporterReorderPerfTest : FunSpec({
             val writer = SqliteDataWriter()
             val importer = StreamingImporter(
                 readerFactory = DefaultDataChunkReaderFactory(),
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = { writer },
             )
 

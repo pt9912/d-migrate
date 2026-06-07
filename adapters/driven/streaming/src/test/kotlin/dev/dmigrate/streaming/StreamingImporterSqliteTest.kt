@@ -65,7 +65,6 @@ class StreamingImporterSqliteTest : FunSpec({
         val writer = SqliteDataWriter()
         return StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { writer },
         )
     }

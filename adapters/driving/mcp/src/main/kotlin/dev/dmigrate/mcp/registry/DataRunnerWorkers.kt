@@ -10,7 +10,6 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
-import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.core.connection.ConnectionReference
@@ -213,11 +212,13 @@ internal class McpDataImportJobWorker(
         val writerLookup = { dialect: dev.dmigrate.driver.DatabaseDialect ->
             DatabaseDriverRegistry.get(dialect).dataWriter()
         }
+        // Review-Finding F4: seekableReaderFactory ist Optional; MCP exponiert
+        // kein Parquet, also bleibt der Default `null`. Der StreamingImporter-
+        // Stopgap-Branch faengt jeden Seekable-Input mit klarer Meldung ab.
+        // Die MCP-seitige Parquet-Ablehnung passiert ohnehin frueher in
+        // McpDataImportJobWorker.execute (siehe isParquetFormat-Check, B1).
         StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported(
-                reason = "MCP imports do not currently expose Parquet; use the CLI for Parquet imports."
-            ),
             writerLookup = writerLookup,
             onTableOpened = callbacks.onTableOpened,
         ).import(

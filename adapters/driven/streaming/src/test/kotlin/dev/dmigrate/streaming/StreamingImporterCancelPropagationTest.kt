@@ -98,7 +98,6 @@ class StreamingImporterCancelPropagationTest : FunSpec({
         val capturer = CapturingTableImporter()
         val importer = StreamingImporter(
             readerFactory = emptyReaderFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
 
@@ -122,7 +121,6 @@ class StreamingImporterCancelPropagationTest : FunSpec({
         val capturer = CapturingTableImporter()
         val importer = StreamingImporter(
             readerFactory = emptyReaderFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
 

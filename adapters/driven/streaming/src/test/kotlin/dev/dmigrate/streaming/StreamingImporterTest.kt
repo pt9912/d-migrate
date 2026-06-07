@@ -70,7 +70,6 @@ class StreamingImporterTest : FunSpec({
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -107,7 +106,6 @@ class StreamingImporterTest : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to FakeTableImportSession(targetColumns = listOf(targetColumns.first())))) },
         )
 
@@ -133,7 +131,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf(
@@ -169,7 +166,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf(
@@ -205,7 +201,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf(
@@ -237,7 +232,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf("users" to FakeTableImportSession(targetColumns = listOf(targetColumns.first()))),
@@ -268,7 +262,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf("users" to FakeTableImportSession(targetColumns = listOf(targetColumns.first()))),
@@ -303,7 +296,6 @@ class StreamingImporterTest : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf(
@@ -346,7 +338,6 @@ class StreamingImporterTest : FunSpec({
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -383,7 +374,6 @@ class StreamingImporterTest : FunSpec({
         val session = FakeTableImportSession(targetColumns = targetColumns)
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
