@@ -212,11 +212,9 @@ internal class McpDataImportJobWorker(
         val writerLookup = { dialect: dev.dmigrate.driver.DatabaseDialect ->
             DatabaseDriverRegistry.get(dialect).dataWriter()
         }
-        // Review-Finding F4: seekableReaderFactory ist Optional; MCP exponiert
-        // kein Parquet, also bleibt der Default `null`. Der StreamingImporter-
-        // Stopgap-Branch faengt jeden Seekable-Input mit klarer Meldung ab.
-        // Die MCP-seitige Parquet-Ablehnung passiert ohnehin frueher in
-        // McpDataImportJobWorker.execute (siehe isParquetFormat-Check, B1).
+        // MCP exponiert kein Parquet → seekableReaderFactory bleibt `null`.
+        // Vier Verteidigungslinien sichern die Isolation; siehe
+        // `docs/adr/0007-mcp-parquet-isolation-defense-in-depth.md`.
         StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
             writerLookup = writerLookup,

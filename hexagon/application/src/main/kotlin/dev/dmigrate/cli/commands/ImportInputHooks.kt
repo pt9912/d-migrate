@@ -4,31 +4,21 @@ import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
 
 /**
- * AP12 §5 / Parquet Cut A Umbrella §3 S6 / Review-Finding F3:
- * konsolidierter Hook-Port fuer die Input-Aufloesung. Loest die in
- * S6-iii eingefuehrten getrennten `ImportInputPhase1Hook` und
- * `ImportInputPhase2Hook` zusammen, weil eine Adapter-Implementierung
- * (heute: Parquet) ohnehin in beiden Stellen tritt.
+ * Konsolidierter Hook-Port fuer Input-Aufloesung mit zwei
+ * Call-Sites entlang der Pipeline:
  *
- * Die zwei Methoden bleiben getrennt, weil sie an unterschiedlichen
- * Stellen der Pipeline laufen muessen:
- *
- * - [resolveBeforeSchema] ruft der `ImportPreflightResolver` zwischen
- *   `resolveImportInput` und `resolveSchemaPreflight`. Der Hook darf
+ * - [resolveBeforeSchema]: `ImportPreflightResolver` zwischen
+ *   `resolveImportInput` und `resolveSchemaPreflight`. Darf
  *   `ImportInput.SingleFile`/`Directory` in `ResolvedSingleFile`/
- *   `ResolvedBundle` transformieren, damit das Schema-Preflight bereits
- *   den finalisierten Input sieht (z.B. `tableOrder`-Sortierung des
- *   `ResolvedBundle`, Review-Finding A1).
- * - [finalizeBeforePrepare] ruft der `DataImportRunner.runImport` direkt
- *   vor `ImportExecutionPlanner.prepare`. Heute (S6) reicht der Runner
- *   `resumeExpectedSha256 = null`; sobald S8 den Resume-Hash aus
- *   `SingleFileCheckpointSpecifics` durchreicht, validiert der Hook den
- *   Content-Hash UND uebernimmt einen ggf. von Phase-2 zurueckgegebenen
- *   Schema-Fix-up verlustfrei (B3).
+ *   `ResolvedBundle` transformieren — Schema-Preflight sieht dann
+ *   den finalisierten Input.
+ * - [finalizeBeforePrepare]: `DataImportRunner.runImport` direkt
+ *   vor `ImportExecutionPlanner.prepare`. Heute mit
+ *   `resumeExpectedSha256 = null` ein Pass-Through; S8 plumbt den
+ *   echten Resume-Hash aus `SingleFileCheckpointSpecifics` durch.
  *
- * Modulgrenze: Implementierungen liegen in den jeweiligen Adaptern;
- * `:hexagon:application` haelt nur den Port + den Identity-Default
- * ([ImportInputResolutionHook.NoOp]).
+ * Modulgrenze: Implementierungen leben in den Adaptern;
+ * `:hexagon:application` haelt nur den Port + [NoOp]-Default.
  */
 interface ImportInputResolutionHook {
 

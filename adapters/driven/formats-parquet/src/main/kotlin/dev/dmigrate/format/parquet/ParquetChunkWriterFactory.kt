@@ -11,30 +11,17 @@ import java.io.OutputStream
 /**
  * `DataChunkWriterFactory`-Variante, die ausschliesslich
  * `DataExportFormat.PARQUET` bedient (AP10 §4.2 / AP12 §5.2).
+ * Symmetrisch `public` zu [dev.dmigrate.format.data.DefaultDataChunkWriterFactory];
+ * das CLI-Wiring uebergibt eine Instanz an den
+ * `CompositeDataChunkWriterFactory`-Adapter.
  *
- * Bewusst `public`, parallel zur Sichtbarkeit von
- * [dev.dmigrate.format.data.DefaultDataChunkWriterFactory]: das
- * CLI-Wiring (S6) instanziiert die Factory direkt und uebergibt
- * sie an den `CompositeDataChunkWriterFactory`-Adapter. Ein
- * `internal`-Sichtbarkeitsmodell wuerde einen zusaetzlichen
- * Provider erzwingen, ohne semantischen Gewinn.
- *
- * Review-Finding G1: `warningSink` ist symmetrisch zu
- * [dev.dmigrate.format.data.DefaultDataChunkWriterFactory] verfuegbar,
- * auch wenn ParquetChunkWriter heute (S6) keine
- * [ValueSerializer.Warning] emittiert. Damit ist der Sink-Pfad fuer
- * eine spaetere Parquet-Type-Coercion-Warnung schon vorbereitet —
- * das CLI-Composite leitet Default- und Parquet-Warnings dann ohne
- * weitere API-Aenderung in dieselbe `collectWarnings`-Liste.
- *
- * S7-0 / AP11 §6.1: [extraMetaDataProvider] reicht den Footer-KV-
- * Provider an den [ParquetChunkWriter] durch. Default-Provider
- * `{ emptyMap() }` haelt den Bundle-Modus unveraendert (S4
- * §2.2-Invariant: nur Single-File-Exports tragen den
- * `d-migrate.manifest`-KV); das CLI-Wiring (S7-0,
- * `DataExportWiring`) waehlt zwischen
- * `ParquetSingleFileManifestWriter(...).provider` (Single-File)
- * und Default (Bundle).
+ * - [warningSink] ist forward-compat; ParquetChunkWriter emittiert heute
+ *   keine [ValueSerializer.Warning].
+ * - [extraMetaDataProvider] reicht den `d-migrate.manifest`-Footer-KV-
+ *   Provider an [ParquetChunkWriter] durch. Single-File-Exports verdrahten
+ *   `ParquetSingleFileManifestWriter(...).provider`, Bundle-Exports
+ *   lassen den Default — die Output-Mode-Auswahl trifft das CLI-Wiring
+ *   gemaess `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
  */
 class ParquetChunkWriterFactory(
     @Suppress("UnusedPrivateMember")

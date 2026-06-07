@@ -58,3 +58,6 @@ argumentiert werden.
 | 0002 | [`UNSAFE_DEPENDENCY_PAIR` bleibt WARNING, kein BLOCKER](0002-unsafe-dependency-pair-warning-not-blocker.md) | accepted |
 | 0003 | [Cross-Dialect-Sequencing — Capability-Vertrag](0003-cross-dialect-sequencing.md) | accepted |
 | 0004 | [Lebenszyklus des Planungsverzeichnisses (`open/` → `next/` → `in-progress/` → `done/`)](0004-documentation-and-planning-structure.md) | accepted |
+| 0005 | [`writerFactoryBuilder`-Invariante: Output-Mode statt Output-Pfad](0005-writerfactorybuilder-output-mode-invariant.md) | accepted |
+| 0006 | [Wiring-Drift-Exception-Familie: `IllegalStateException` als gemeinsamer Typ](0006-wiring-drift-exception-family.md) | accepted |
+| 0007 | [MCP-Parquet-Isolation: vier Verteidigungslinien](0007-mcp-parquet-isolation-defense-in-depth.md) | accepted |

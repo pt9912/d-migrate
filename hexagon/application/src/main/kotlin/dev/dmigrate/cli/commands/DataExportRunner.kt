@@ -72,9 +72,11 @@ class DataExportRunner(
     private val readerLookup: (DatabaseDialect) -> DataReader,
     private val listerLookup: (DatabaseDialect) -> TableLister,
     /**
-     * S7-0: nimmt jetzt den aufgeloesten [ExportOutput] entgegen, damit der
+     * S7-0: nimmt den aufgeloesten [ExportOutput] entgegen, damit der
      * CLI-Composite-Builder zwischen Single-File-Modus (mit Footer-KV-Provider)
-     * und Bundle-Modus (ohne) unterscheiden kann (S4 §2.2-Invariant).
+     * und Bundle-Modus (ohne) unterscheiden kann (S4 §2.2-Invariante).
+     * Implementierungen duerfen nur auf die Subklasse verzweigen, nicht auf
+     * den Pfad — siehe `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
      */
     private val writerFactoryBuilder: (dev.dmigrate.streaming.ExportOutput) -> DataChunkWriterFactory,
     private val collectWarnings: () -> List<String>,

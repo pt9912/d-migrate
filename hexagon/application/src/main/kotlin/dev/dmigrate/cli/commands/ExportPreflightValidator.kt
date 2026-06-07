@@ -22,9 +22,9 @@ internal class ExportPreflightValidator(
     private val listerLookup: (DatabaseDialect) -> TableLister,
     /**
      * S7-0: nimmt den aufgeloesten [ExportOutput] entgegen (Single-File vs.
-     * FilePerTable vs. Stdout). Das CLI-Wiring nutzt diese Information, um
-     * den Parquet-Footer-KV-Provider nur im Single-File-Modus zu setzen
-     * (S4 §2.2-Invariant).
+     * FilePerTable vs. Stdout). Implementierungen duerfen nur auf die
+     * Subklasse verzweigen, nicht auf den Pfad — siehe
+     * `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
      */
     private val writerFactoryBuilder: (ExportOutput) -> DataChunkWriterFactory,
     private val stderr: (String) -> Unit,

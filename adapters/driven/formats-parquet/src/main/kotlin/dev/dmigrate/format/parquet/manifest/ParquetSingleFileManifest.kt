@@ -31,6 +31,13 @@ class ParquetSingleFileManifestWriter(
 ) {
 
     /**
+     * Einmal pro Writer-Instanz gefroren — spiegelt
+     * [dev.dmigrate.format.parquet.manifest.ParquetBundleClosure],
+     * das `exportedAt` ebenfalls einmal pro Hook-Aufruf capture't.
+     */
+    private val exportedAt: Instant = Instant.now(clock)
+
+    /**
      * Provider-Lambda zur Verwendung als
      * [dev.dmigrate.format.parquet.ParquetChunkWriter]-
      * Konstruktor-Argument.
@@ -42,7 +49,7 @@ class ParquetSingleFileManifestWriter(
             formatVersion = ParquetBundleManifest.CURRENT_FORMAT_VERSION,
             producer = ParquetBundleManifest.PRODUCER_LITERAL,
             producerVersion = producerVersion,
-            exportedAt = Instant.now(clock),
+            exportedAt = exportedAt,
             schemaSource = ManifestSchemaSource.fromSchemaOrigin(schema.origin),
             tables = listOf(
                 ManifestTable(

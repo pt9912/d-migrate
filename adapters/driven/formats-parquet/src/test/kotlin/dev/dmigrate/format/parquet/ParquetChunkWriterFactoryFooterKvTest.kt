@@ -23,15 +23,12 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * S7-0 / Review-Finding (Plan-Review-v3 Finding 2): die
- * [ParquetChunkWriterFactory] reicht den `extraMetaDataProvider`-
- * Konstruktor-Parameter verlustfrei an den [ParquetChunkWriter] durch.
- * Wir verifizieren das per echtem Footer-Round-Trip, weil der Provider
- * im Writer privat ist und nicht inspiziert werden kann.
- *
- * Bundle-Pfad-Invariante (S4 §2.2): wenn die Factory ohne Provider
- * konstruiert wurde, traegt die geschriebene Datei den
- * `d-migrate.manifest`-Schluessel NICHT.
+ * Verifiziert, dass [ParquetChunkWriterFactory] den
+ * `extraMetaDataProvider` an [ParquetChunkWriter] durchreicht — per
+ * Footer-Round-Trip, weil der Provider im Writer privat ist. Plus die
+ * Bundle-Invariante: Factory ohne Provider → keine
+ * `d-migrate.manifest`-Footer-KV (Output-Mode-Wahl gemaess
+ * `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`).
  */
 class ParquetChunkWriterFactoryFooterKvTest : FunSpec({
 

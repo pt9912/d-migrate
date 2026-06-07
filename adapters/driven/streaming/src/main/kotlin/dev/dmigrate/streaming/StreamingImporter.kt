@@ -17,14 +17,10 @@ import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
  * Orchestriert Input-Aufloesung ([ImportInputResolver]), Per-Tabelle-Import
  * ([TableImporter]) und Result-Aggregation.
  *
- * S7 (2026-06-08): [seekableReaderFactory] ist jetzt produktiv durch
- * den [TableImporter] konsumiert. Der frueher hier sitzende Stopgap
- * `is ResolvedTableInput.Seekable -> error("S7 ...")` ist entfallen;
- * MCP und Test-Konsumenten ohne Seekable-Inputs lassen die Factory
- * bei Default `null` und der neue Pre-Stream-Check faengt ein
- * versehentliches Mischen (null-Factory + Seekable-Input) mit klarer
- * Meldung ab, bevor der TableImporter erreicht wird (defense in depth
- * gegen MCP-/Wiring-Drift).
+ * Seekable-Pfad seit S7 (2026-06-08) produktiv via [TableImporter];
+ * Pre-Stream-Check unten ist die dritte von vier MCP-Parquet-
+ * Isolations-Linien, siehe
+ * `docs/adr/0007-mcp-parquet-isolation-defense-in-depth.md`.
  */
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
@@ -80,12 +76,8 @@ class StreamingImporter(
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
-            // S7b Pre-Stream-Check (defense in depth): wenn der Konsument
-            // keine seekableReaderFactory verdrahtet hat aber dennoch
-            // Seekable-Inputs erzeugt (Wiring-Drift, z.B. MCP mit
-            // versehentlich aktivem Parquet-Phase-1-Hook), brechen wir
-            // hier mit klarer Meldung ab — der innere Elvis im
-            // TableImporter ist die zweite Linie.
+            // Pre-Stream-Check (ADR-0007 Linie 3 / ADR-0006 Exception-Familie):
+            // null-Factory + Seekable-Input → Wiring-Drift, fail-fast.
             if (tableInput is ResolvedTableInput.Seekable && seekableReaderFactory == null) {
                 error(
                     "Seekable input requires seekableReaderFactory; " +

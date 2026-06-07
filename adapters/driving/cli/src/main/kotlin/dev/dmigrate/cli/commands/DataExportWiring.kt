@@ -133,11 +133,8 @@ internal object DataExportWiring {
                         resumeMarkers = resume.resumeMarkers,
                         onChunkProcessed = callbacks.onChunkProcessed,
                         warningSink = callbacks.warningSink,
-                        // S7-0 / AP7 §10.1: parquet-Bundle-Closure schreibt
-                        // manifest.yaml nach Abschluss aller Tabellen-
-                        // Exporte. ParquetBundleClosure ignoriert
-                        // Nicht-Parquet-Formate selbst (siehe ParquetBundleClosure.kt:32),
-                        // also kein CLI-seitiges Format-Gating noetig.
+                        // ParquetBundleClosure schreibt manifest.yaml und
+                        // ignoriert Nicht-Parquet-Formate selbst (AP7 §10.1).
                         onBundleClosure = ParquetBundleClosure(
                             producerVersion = VersionInfo.PRODUCT_VERSION,
                         )::invoke,
@@ -154,17 +151,10 @@ internal object DataExportWiring {
     }
 
     /**
-     * S7-0: output-mode-aware Parquet-Factory-Builder.
-     *
-     * - [ExportOutput.SingleFile]: verdrahtet den Footer-KV-Provider
-     *   ([ParquetSingleFileManifestWriter.provider], AP11 §6.1), damit
-     *   `d-migrate.manifest` im Parquet-Footer landet.
-     * - [ExportOutput.FilePerTable] / [ExportOutput.Stdout]: Default-Provider
-     *   (`{ emptyMap() }`) — Bundle hat sein eigenes `manifest.yaml` via
-     *   `onBundleClosure`; Stdout ist defensiv (wird durch
-     *   `DataExportRunner.validateRequest` schon abgelehnt).
-     *
-     * Review-Finding G1: Parquet bekommt denselben warningSink wie Default.
+     * Output-Mode-aware Parquet-Factory-Builder. Subklasse-Branching folgt
+     * `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`:
+     * Single-File bekommt den Footer-KV-Provider, FilePerTable/Stdout den
+     * Default. `warningSink` wird symmetrisch zur Default-Factory geteilt.
      */
     private fun buildWriterFactoryForOutput(
         exportOutput: ExportOutput,

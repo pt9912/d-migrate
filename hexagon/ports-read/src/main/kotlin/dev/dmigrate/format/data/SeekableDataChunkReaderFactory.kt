@@ -53,13 +53,13 @@ interface SeekableDataChunkReaderFactory {
 
     companion object {
         /**
-         * Review-Finding D5: Sentinel-Factory fuer Aufrufer, die
-         * [SeekableDataChunkReaderFactory] aus API-Gruenden konstruieren
-         * muessen, aber bewusst nicht unterstuetzen (heute: MCP-Import,
-         * der noch kein Parquet exponiert). Wirft beim ersten `create`-Call
-         * eine [UnsupportedOperationException] mit dem konfigurierten
-         * [reason]. Diskoverabel direkt am Port-Vertrag, ohne dass
-         * Konsumenten eine Adapter-Klasse importieren muessen.
+         * Sentinel-Factory fuer Aufrufer, die [SeekableDataChunkReaderFactory]
+         * aus API-Gruenden konstruieren muessen, aber bewusst nicht
+         * unterstuetzen (heute: MCP-Import, der noch kein Parquet exponiert).
+         * Wirft beim `create(...)`-Aufruf eine [IllegalStateException] mit
+         * dem konfigurierten [reason] — siehe
+         * `docs/adr/0006-wiring-drift-exception-family.md` zur Wahl des
+         * Exception-Typs.
          */
         fun unsupported(reason: String): SeekableDataChunkReaderFactory =
             UnsupportedSeekableDataChunkReaderFactory(reason)
@@ -84,8 +84,9 @@ private class UnsupportedSeekableDataChunkReaderFactory(
         chunkSize: Int,
         options: FormatReadOptions,
     ): DataChunkReader {
-        throw UnsupportedOperationException(
-            "SeekableDataChunkReaderFactory.create invoked but not supported: $reason"
-        )
+        // S7-Review-Fix R2 (#4): error(...) wirft IllegalStateException —
+        // konsistent mit der wiring-drift-Familie in StreamingImporter
+        // Pre-Stream-Check und TableImporter Elvis-Resolver.
+        error("SeekableDataChunkReaderFactory.create invoked but not supported: $reason")
     }
 }
