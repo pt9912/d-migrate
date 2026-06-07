@@ -8,6 +8,7 @@ import dev.dmigrate.driver.data.TargetColumn
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 
 /**
  * Pull-basierter Streaming-Importer. Liest Chunks aus einem Reader und
@@ -15,9 +16,16 @@ import dev.dmigrate.format.data.FormatReadOptions
  *
  * Orchestriert Input-Aufloesung ([ImportInputResolver]), Per-Tabelle-Import
  * ([TableImporter]) und Result-Aggregation.
+ *
+ * S6 (2026-06-07): [seekableReaderFactory] ist Pflicht-Parameter im
+ * Konstruktor (AP12 §5.1), wird aber noch nicht konsumiert — der
+ * `is ResolvedTableInput.Seekable -> error("S7 ...")`-Stopgap bleibt
+ * aktiv. S7 verdrahtet den Konsum via TableImporter.
  */
+@Suppress("UnusedPrivateMember")
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
+    private val seekableReaderFactory: SeekableDataChunkReaderFactory,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },
 ) {
@@ -65,20 +73,18 @@ class StreamingImporter(
         for ((index, tableInput) in discoveredInputs.withIndex()) {
             cancellationToken.throwIfCancellationRequested()
             if (tableInput.table in skippedTables) continue
-            // S5a (2026-06-06): der ImportInputResolver liefert seit
-            // ResolvedBundle-Branch potenziell Seekable-Werte.
-            // End-to-End-Konsum durch TableImporter ist nach Umbrella §3
-            // explizit S7-Arbeit (`ParquetSeekableDataChunkReaderFactory`-
-            // Wiring im StreamingImporter-Constructor). Solange S7 nicht
-            // ausgeliefert ist, lehnen wir Seekable-Pfade hier hart ab —
-            // die Aussage ist nicht "kommt in Sub-Slice X", sondern
-            // "der Streaming-Layer braucht einen seekableReaderFactory-
-            // Pflichtparameter, der noch nicht im Constructor steht".
+            // S5a/S5b/S6 (2026-06-07): der ImportInputResolver liefert seit
+            // ResolvedBundle/ResolvedSingleFile-Branch potenziell
+            // Seekable-Werte. Der seekableReaderFactory-Konstruktor-
+            // Parameter ist seit S6 (AP12 §5.1) Pflicht; der Konsum durch
+            // TableImporter (Sealed-Sweep + Dispatch) ist explizit S7.
+            // Bis S7 ausgeliefert ist, lehnen wir Seekable-Pfade hier
+            // hart ab.
             val streamInput = when (tableInput) {
                 is ResolvedTableInput.Stream -> tableInput
                 is ResolvedTableInput.Seekable -> error(
                     "ResolvedTableInput.Seekable consumption is not yet wired into StreamingImporter; " +
-                        "S7 adds the seekableReaderFactory constructor parameter and the dispatch path."
+                        "S7 adds the TableImporter dispatch path via seekableReaderFactory."
                 )
             }
             val summary = tableImporter.import(TableImportParams(

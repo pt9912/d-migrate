@@ -28,6 +28,7 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
 import dev.dmigrate.server.ports.ResolvedConnection
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.streaming.StreamingImporter
+import dev.dmigrate.streaming.UnsupportedSeekableDataChunkReaderFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -200,6 +201,9 @@ internal class McpDataImportJobWorker(
         }
         StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
+            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory(
+                reason = "MCP imports do not currently expose Parquet; use the CLI for Parquet imports."
+            ),
             writerLookup = writerLookup,
             onTableOpened = callbacks.onTableOpened,
         ).import(

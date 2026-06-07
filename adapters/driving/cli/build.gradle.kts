@@ -49,6 +49,11 @@ dependencies {
     implementation(project(":adapters:driven:driver-sqlite"))
     implementation(project(":adapters:driven:driver-sqlite-profiling"))
     implementation(project(":adapters:driven:formats"))
+    // Parquet Cut A S6: CLI wires ParquetSeekableDataChunkReaderFactory into
+    // StreamingImporter and ParquetChunkWriterFactory into the export
+    // composite (AP12 §5.1, §5.2). CLI is the production consumer of
+    // Parquet; MCP stays parquet-free until a dedicated milestone.
+    implementation(project(":adapters:driven:formats-parquet"))
     implementation(project(":adapters:driven:integrations"))
     // LF-012 / LN-011 / LN-017 / LN-027: persistent MCP server-state adapters for production
     // metadata (IdempotencyStore, JobStore, JobStartTransaction, Quota).

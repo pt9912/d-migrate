@@ -59,6 +59,7 @@ class StreamingImporterTestPart3 : FunSpec({
         val session = FakeTableImportSession(targetColumns = listOf(targetColumns.first()))
         val importer = StreamingImporter(
             readerFactory = readerFactory,
+            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -91,8 +92,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { events += it }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON, progressReporter = reporter)
 
             val runStarted = events.filterIsInstance<ProgressEvent.RunStarted>()
@@ -114,8 +118,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { events += it }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON, progressReporter = reporter)
 
             val types = events.map { it::class.simpleName }
@@ -144,8 +151,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { eventLog += "event:${it::class.simpleName}" }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON, progressReporter = reporter)
 
             val commitIdx = eventLog.indexOf("commit")
@@ -171,8 +181,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             // Use --on-error skip so commit failure doesn't abort, allowing TableFinished emission
-            val result = StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            val result = StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON,
                     options = ImportOptions(onError = OnError.SKIP),
                     progressReporter = reporter)
@@ -198,8 +211,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { events += it }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON,
                     options = ImportOptions(onError = OnError.SKIP),
                     progressReporter = reporter)
@@ -223,8 +239,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { events += it }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON,
                     options = ImportOptions(onError = OnError.SKIP),
                     progressReporter = reporter)
@@ -257,8 +276,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val reporter = ProgressReporter { events += it }
         val file = Files.createTempFile("prog-", ".json")
         try {
-            StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                .import(pool = pool, input = ImportInput.SingleFile("users", file),
+            StreamingImporter(
+                readerFactory = readerFactory,
+                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                writerLookup = { FakeWriter(mapOf("users" to session)) },
+            ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                     format = DataExportFormat.JSON, progressReporter = reporter)
 
             val finished = events.filterIsInstance<ProgressEvent.ImportTableFinished>().single()
@@ -284,8 +306,11 @@ class StreamingImporterTestPart3 : FunSpec({
         val file = Files.createTempFile("prog-", ".json")
         try {
             shouldThrow<RuntimeException> {
-                StreamingImporter(readerFactory, { FakeWriter(mapOf("users" to session)) })
-                    .import(pool = pool, input = ImportInput.SingleFile("users", file),
+                StreamingImporter(
+                    readerFactory = readerFactory,
+                    seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                    writerLookup = { FakeWriter(mapOf("users" to session)) },
+                ).import(pool = pool, input = ImportInput.SingleFile("users", file),
                         format = DataExportFormat.JSON, progressReporter = reporter)
             }
 
@@ -326,6 +351,7 @@ class StreamingImporterTestPart3 : FunSpec({
         }
         val importer = StreamingImporter(
             readerFactory = readerFactory,
+            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
             writerLookup = { writer },
         )
         val file = Files.createTempFile("streaming-import-truncate-guard-", ".json")
