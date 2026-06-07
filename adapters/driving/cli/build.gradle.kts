@@ -97,6 +97,11 @@ tasks.named<Tar>("distTar") {
 
 tasks.named<ShadowJar>("shadowJar") {
     archiveFileName.set(releaseJarName)
+    // Parquet/Hadoop-Transitive bringen den Fat-Jar ueber das 65535-
+    // Entries-Limit des klassischen ZIP-Headers. Zip64 ist von JDK 7+
+    // out-of-the-box lesbar; kein Kompat-Risiko fuer unsere
+    // Java-17-Min-Baseline.
+    isZip64 = true
     manifest {
         attributes["Main-Class"] = application.mainClass.get()
     }
