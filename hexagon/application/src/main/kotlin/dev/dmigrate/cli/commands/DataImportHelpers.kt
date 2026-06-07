@@ -156,10 +156,13 @@ internal object DataImportHelpers {
         isStdin: Boolean,
         stderr: (String) -> Unit,
     ): Int? {
-        if (format == DataExportFormat.PARQUET && isStdin) {
+        // Review-Finding F1: Capability-Check auf dem Enum, nicht
+        // PARQUET-hartkodierte Bedingung. Arrow IPC / ORC kommen damit
+        // ohne neuen Branch hier.
+        if (format.requiresSeekableInput && isStdin) {
             stderr(
-                "Error: --format parquet requires a file or directory source; " +
-                    "stdin (--source -) is not supported for Parquet."
+                "Error: --format ${format.cliName} requires a file or directory source; " +
+                    "stdin (--source -) is not supported for ${format.cliName}."
             )
             return 2
         }

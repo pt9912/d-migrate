@@ -142,19 +142,18 @@ class DataExportRunner(
             )
             return 2
         }
-        // AP12 §4.1: Parquet braucht seekable Footer-Schreibzugriff und ist
-        // damit Datei-/Verzeichnis-only — stdout (--output null) wird abgelehnt.
-        // Review-Finding B5: Enum-typed-Check statt String-Compare, symmetrisch
-        // zur Import-Seite (DataImportHelpers.validateFormatPathRequirements).
+        // AP12 §4.1 / Review-Finding F1: Capability-Check auf dem
+        // DataExportFormat-Enum statt PARQUET-hartkodiert. Neue
+        // seekable Formate (Arrow IPC/ORC) kommen ohne neuen Branch.
         val parsedFormat = try {
             dev.dmigrate.format.data.DataExportFormat.fromCli(request.format)
         } catch (_: IllegalArgumentException) {
             null
         }
-        if (parsedFormat == dev.dmigrate.format.data.DataExportFormat.PARQUET && request.output == null) {
+        if (parsedFormat?.requiresSeekableOutput == true && request.output == null) {
             userFacingStderr(
-                "Error: --format parquet requires --output <file-or-dir>; " +
-                    "stdout is not supported for Parquet."
+                "Error: --format ${parsedFormat.cliName} requires --output <file-or-dir>; " +
+                    "stdout is not supported for ${parsedFormat.cliName}."
             )
             return 2
         }
