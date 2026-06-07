@@ -99,6 +99,16 @@ sealed class ImportInput {
         val path: Path,
         val schema: ChunkSchema,
         val contentSha256: String? = null,
+        /**
+         * S6 Cut A / Review-Finding B2: gibt an, ob die Quell-Datei beim
+         * Phase-1-Lauf einen `d-migrate.manifest`-Footer-KV trug. Wird vom
+         * CLI-Phase-2-Hook gelesen (heute: nur an `ParquetSingleFilePreflight.phase2`
+         * durchgereicht; spaeter ab S8: relevant fuer AP11 §5.3
+         * Footer-Fallback vs. Manifest-Pfad). Default `true`, damit
+         * bestehende Test-Konstruktoren ohne Aenderung weiter funktionieren —
+         * der CLI-Resolver setzt den echten Wert explizit.
+         */
+        val manifestPresent: Boolean = true,
     ) : ImportInput()
 }
 

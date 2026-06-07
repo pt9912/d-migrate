@@ -1,32 +1,27 @@
 package dev.dmigrate.cli.commands
 
-import dev.dmigrate.format.parquet.ParquetSingleFilePreflight
-import dev.dmigrate.format.parquet.ResolvedParquetSingleFile
+import dev.dmigrate.format.parquet.preflight.ParquetSingleFileResolver
 import dev.dmigrate.streaming.ImportInput
 
 /**
  * Parquet Cut A S6 (AP11 §6.2 / AP12 §5): produktive
  * [ImportInputPhase2Hook]-Implementierung.
  *
- * - `ResolvedSingleFile` → ruft [ParquetSingleFilePreflight.phase2]
- *   mit einem aus dem Port-DTO rekonstruierten
- *   [ResolvedParquetSingleFile]. Heute (S6) reicht der Runner
- *   `resumeExpectedSha256 = null`, womit `phase2` ein Pass-Through
- *   ist. Sobald S8 den Resume-Hash aus
- *   `SingleFileCheckpointSpecifics` durchreicht, validiert dieselbe
- *   Methode den Content-Hash.
+ * - `ResolvedSingleFile` → ruft [ParquetSingleFileResolver.phase2], der
+ *   den Adapter wieder verlustfrei umkehrt und ggf. eine angereicherte
+ *   `ImportInput.ResolvedSingleFile` zurueckliefert. `manifestPresent`,
+ *   Schema und Content-Hash wandern hin und zurueck (Review-Findings
+ *   B2/B3/C2/D4). Heute (S6) reicht der Runner `resumeExpectedSha256
+ *   = null`, womit der Resolver einen schnellen Pass-Through faehrt.
+ *   Sobald S8 den Resume-Hash aus `SingleFileCheckpointSpecifics`
+ *   durchreicht, validiert derselbe Pfad den Content-Hash UND uebernimmt
+ *   einen ggf. von `phase2` zurueckgegebenen schema-Fixup verlustfrei.
  * - `ResolvedBundle`: Pass-Through (Bundle-Phase-1 ist via
  *   `ParquetBundleResolver` schon final, AP9 §4.3).
  * - Alles andere (Stdin, JSON/YAML/CSV-Pfade): Identity.
- *
- * Das `manifestPresent`-Flag wird beim Rekonstruieren auf `true`
- * gesetzt, weil [ParquetSingleFilePreflight.phase2] das Feld
- * heute nicht liest. Sollte sich das aendern, muss S8 die
- * Phase-1-Information durch den Hook tragen (z.B. via Side-Channel
- * auf [ImportInput.ResolvedSingleFile]).
  */
 class ParquetImportInputPhase2Hook(
-    private val preflight: ParquetSingleFilePreflight = ParquetSingleFilePreflight(),
+    private val singleFileResolver: ParquetSingleFileResolver = ParquetSingleFileResolver(),
 ) : ImportInputPhase2Hook {
 
     override fun finalize(
@@ -34,14 +29,9 @@ class ParquetImportInputPhase2Hook(
         resumeExpectedSha256: String?,
     ): ImportInput {
         if (input !is ImportInput.ResolvedSingleFile) return input
-        val phase1 = ResolvedParquetSingleFile(
-            path = input.path,
-            table = input.table,
-            schema = input.schema,
-            contentSha256 = input.contentSha256,
-            manifestPresent = true,
+        return singleFileResolver.phase2(
+            input = input,
+            resumeExpectedSha256 = resumeExpectedSha256,
         )
-        preflight.phase2(phase1, resumeExpectedSha256)
-        return input
     }
 }
