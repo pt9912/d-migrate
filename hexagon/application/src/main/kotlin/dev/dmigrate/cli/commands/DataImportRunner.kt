@@ -193,8 +193,20 @@ class DataImportRunner(
         // damit InputContext, Fingerprint, Resume-Context und Initialmanifest
         // gegen den finalisierten Input rechnen. resumeExpectedSha256 ist in
         // S6 immer null; der non-null-Pfad kommt mit S8 (SingleFileCheckpointSpecifics).
+        //
+        // Exit-Code-Mapping (symmetrisch zu ImportPreflightResolver):
+        //  - OperationCancelledException wird re-thrown → outer
+        //    executeWithCancel-Catch → CANCELLED_EXIT_CODE (130).
+        //  - IllegalArgumentException → Exit 2 (Hook-Input-Validierung).
+        //  - Andere RuntimeException → Exit 3 (Preflight-Failure,
+        //    z.B. PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT).
         val finalizedInput = try {
             phase2Hook.finalize(context.preparedImport.input, resumeExpectedSha256 = null)
+        } catch (e: OperationCancelledException) {
+            throw e
+        } catch (e: IllegalArgumentException) {
+            userFacingStderr("Error: ${e.message}")
+            return 2
         } catch (e: RuntimeException) {
             userFacingStderr("Error: ${e.message}")
             return 3

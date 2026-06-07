@@ -636,6 +636,38 @@ class DataImportRunnerCallbackTest : FunSpec({
             exit shouldBe 3
             stderr.joined() shouldContain "PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT"
         }
+
+        test("Phase-2-Hook IllegalArgumentException liefert Exit 2 (CLI-Validierung)") {
+            val phase2 = ImportInputPhase2Hook { _, _ ->
+                throw IllegalArgumentException("table 'orders' mismatch with --table override")
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                phase2Hook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe 2
+            stderr.joined() shouldContain "table 'orders' mismatch"
+        }
+
+        test("Phase-2-Hook OperationCancelledException liefert CANCELLED_EXIT_CODE (130)") {
+            val phase2 = ImportInputPhase2Hook { _, _ ->
+                throw dev.dmigrate.core.cancel.OperationCancelledException()
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                phase2Hook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe DataImportRunner.CANCELLED_EXIT_CODE
+            stderr.lines.shouldBeEmpty()
+        }
     }
 
     // ─── LF-010 / LF-013 / LN-009: Directory-Topologie ─────────────

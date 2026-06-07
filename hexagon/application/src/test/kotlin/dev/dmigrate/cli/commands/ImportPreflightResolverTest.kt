@@ -5,6 +5,7 @@ import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
@@ -192,19 +193,71 @@ class ImportPreflightResolverTest : FunSpec({
         val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
             Files.writeString(it, "")
         }
-        val hook = ImportInputPhase1Hook { _, _, _ ->
-            throw RuntimeException("PARQUET_SINGLE_FILE_TABLE_REQUIRED: missing --table")
+        try {
+            val hook = ImportInputPhase1Hook { _, _, _ ->
+                throw RuntimeException("PARQUET_SINGLE_FILE_TABLE_REQUIRED: missing --table")
+            }
+
+            val result = resolver(
+                stderr = stderr,
+                phase1Hook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            result shouldBe ImportPreflightResolution.Exit(3)
+            stderr.single() shouldContain "PARQUET_SINGLE_FILE_TABLE_REQUIRED"
+        } finally {
+            Files.deleteIfExists(sourceFile)
         }
+    }
 
-        val result = resolver(
-            stderr = stderr,
-            phase1Hook = hook,
-        ).resolve(
-            request(source = sourceFile.toString(), format = "parquet")
-        )
+    test("resolve returns exit 2 when phase1Hook throws IllegalArgumentException (CLI validation)") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-iae-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val hook = ImportInputPhase1Hook { _, _, _ ->
+                throw IllegalArgumentException("invalid --table override 'order'")
+            }
 
-        result shouldBe ImportPreflightResolution.Exit(3)
-        stderr.single() shouldContain "PARQUET_SINGLE_FILE_TABLE_REQUIRED"
+            val result = resolver(
+                stderr = stderr,
+                phase1Hook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            result shouldBe ImportPreflightResolution.Exit(2)
+            stderr.single() shouldContain "invalid --table override"
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve rethrows OperationCancelledException from phase1Hook (cancel pipeline)") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-cancel-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            val hook = ImportInputPhase1Hook { _, _, _ ->
+                throw dev.dmigrate.core.cancel.OperationCancelledException()
+            }
+
+            io.kotest.assertions.throwables.shouldThrow<dev.dmigrate.core.cancel.OperationCancelledException> {
+                resolver(
+                    stderr = stderr,
+                    phase1Hook = hook,
+                ).resolve(
+                    request(source = sourceFile.toString(), format = "parquet")
+                )
+            }
+            stderr.shouldBeEmpty()
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
     }
 
     test("resolve returns exit 7 when target URL parsing fails") {

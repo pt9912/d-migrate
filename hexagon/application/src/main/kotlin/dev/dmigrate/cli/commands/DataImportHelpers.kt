@@ -15,6 +15,22 @@ internal sealed interface ImportStep<out T> {
     data class Exit(val code: Int) : ImportStep<Nothing>
 }
 
+/**
+ * AP11 §5.5 / AP12 §4.1: Sentinel-Tabellenname, den `DataImportHelpers.resolveImportInput`
+ * fuer einen Parquet-Single-File-Import OHNE `--table` setzt. Der
+ * Parquet-Phase-1-Hook (CLI-Modul) erkennt den Sentinel und ueberlaesst
+ * die Tabellen-Aufloesung dem Parquet-Footer-KV `d-migrate.manifest`.
+ *
+ * Top-Level-`const` mit `public` Sichtbarkeit, damit Adapter (CLI/MCP)
+ * den Wert lesen koennen, ohne `DataImportHelpers` selbst zu oeffnen.
+ *
+ * Sichtbar bleibt der Sentinel nur zwischen `resolveImportInput` und
+ * dem Phase-1-Hook; danach ersetzt der Hook `ImportInput.SingleFile`
+ * durch `ImportInput.ResolvedSingleFile` mit dem aufgeloesten Namen.
+ * Validator-/Streaming-Pfade sehen den Sentinel nie.
+ */
+const val UNRESOLVED_PARQUET_TABLE_SENTINEL: String = "__d_migrate_parquet_table_unresolved__"
+
 internal data class ImportTargetContext(
     val resolvedUrl: String,
     val connectionConfig: ConnectionConfig,
@@ -146,8 +162,20 @@ internal object DataImportHelpers {
             )
             return 2
         }
+        // AP12 §4.2: --no-checkpoint koppelt drei Verhaltensaenderungen
+        // (kein Store-Read, kein Store-Write, keine Sha256-Berechnung) und
+        // konfliktet mit JEDEM Flag, das Checkpoint-Semantik annimmt.
+        // `isNullOrBlank()` behandelt --resume "" wie "kein Resume"; das ist
+        // Absicht und symmetrisch zum bestehenden Stdin-Resume-Check.
         if (request.noCheckpoint && !request.resume.isNullOrBlank()) {
             stderr("Error: --no-checkpoint and --resume are mutually exclusive.")
+            return 2
+        }
+        if (request.noCheckpoint && request.checkpointDir != null) {
+            stderr(
+                "Error: --no-checkpoint and --checkpoint-dir are mutually exclusive; " +
+                    "--no-checkpoint disables the checkpoint store entirely."
+            )
             return 2
         }
         return null
@@ -158,6 +186,7 @@ internal object DataImportHelpers {
         isStdin: Boolean,
         sourcePath: Path?,
         stdinProvider: () -> InputStream,
+        format: DataExportFormat? = null,
     ): ImportInput {
         if (isStdin) {
             val table = request.table
@@ -178,7 +207,18 @@ internal object DataImportHelpers {
         }
 
         val table = request.table
-            ?: throw IllegalArgumentException("--table is required when importing from a single file.")
+            ?: if (format == DataExportFormat.PARQUET) {
+                // AP11 §5.5: Parquet-Single-File darf --table aus dem
+                // Footer-KV ableiten. resolveImportInput setzt den
+                // Top-Level-Sentinel, den der Phase-1-Hook (CLI) durch
+                // den Footer-Namen ersetzt.
+                dev.dmigrate.cli.commands.UNRESOLVED_PARQUET_TABLE_SENTINEL
+            } else {
+                throw IllegalArgumentException(
+                    "--table is required when importing from a single file " +
+                        "(not required for --format parquet — the table name is read from the footer KV)."
+                )
+            }
         return ImportInput.SingleFile(table, sourcePath)
     }
 

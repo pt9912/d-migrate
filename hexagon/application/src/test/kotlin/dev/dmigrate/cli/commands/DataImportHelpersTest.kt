@@ -218,6 +218,47 @@ class DataImportHelpersTest : FunSpec({
         stderr.shouldBeEmpty()
     }
 
+    test("validateCliFlags rejects --no-checkpoint combined with --checkpoint-dir") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateCliFlags(
+            request().copy(noCheckpoint = true, checkpointDir = Path.of("/tmp/dummy")),
+            stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "--no-checkpoint and --checkpoint-dir are mutually exclusive"
+    }
+
+    test("resolveImportInput allows missing --table for Parquet single-file (sentinel placeholder)") {
+        val sourceFile = Path.of("/tmp/users.parquet")
+
+        val input = DataImportHelpers.resolveImportInput(
+            request(table = null, format = "parquet", source = sourceFile.toString()),
+            isStdin = false,
+            sourcePath = sourceFile,
+            stdinProvider = { ByteArrayInputStream("".toByteArray()) },
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+        )
+
+        input shouldBe ImportInput.SingleFile(UNRESOLVED_PARQUET_TABLE_SENTINEL, sourceFile)
+    }
+
+    test("resolveImportInput keeps --table for non-Parquet single-file") {
+        val sourceFile = Path.of("/tmp/users.json")
+        val ex = io.kotest.assertions.throwables.shouldThrow<IllegalArgumentException> {
+            DataImportHelpers.resolveImportInput(
+                request(table = null, format = "json", source = sourceFile.toString()),
+                isStdin = false,
+                sourcePath = sourceFile,
+                stdinProvider = { ByteArrayInputStream("".toByteArray()) },
+                format = dev.dmigrate.format.data.DataExportFormat.JSON,
+            )
+        }
+        ex.message!! shouldContain "--table is required when importing from a single file"
+        ex.message!! shouldContain "not required for --format parquet"
+    }
+
     test("validateCliFlags rejects resume on stdin import") {
         val stderr = mutableListOf<String>()
 

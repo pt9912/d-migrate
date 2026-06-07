@@ -37,9 +37,15 @@ class ParquetImportInputPhase1Hook(
                 tableOrder = rawInput.tableOrder,
             )
             is ImportInput.SingleFile -> {
+                // AP11 §5.5: `--table` ist Override; ohne `--table` setzt
+                // resolveImportInput den Sentinel, sodass phase1 den
+                // Tabellennamen aus dem Footer-KV `d-migrate.manifest`
+                // ableitet.
+                val explicitTable = rawInput.table
+                    .takeUnless { it == UNRESOLVED_PARQUET_TABLE_SENTINEL }
                 val phase1 = singleFilePreflight.phase1(
                     path = rawInput.path,
-                    explicitTable = rawInput.table,
+                    explicitTable = explicitTable,
                     computeContentSha256 = computeContentSha256,
                 )
                 ImportInput.ResolvedSingleFile(

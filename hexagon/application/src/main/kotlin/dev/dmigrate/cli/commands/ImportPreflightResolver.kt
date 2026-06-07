@@ -1,5 +1,6 @@
 package dev.dmigrate.cli.commands
 
+import dev.dmigrate.core.cancel.OperationCancelledException
 import dev.dmigrate.driver.connection.ConnectionConfig
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.streaming.ImportInput
@@ -40,7 +41,13 @@ internal class ImportPreflightResolver(
         }
 
         val rawInput = try {
-            DataImportHelpers.resolveImportInput(request, isStdin, sourcePath, stdinProvider)
+            DataImportHelpers.resolveImportInput(
+                request = request,
+                isStdin = isStdin,
+                sourcePath = sourcePath,
+                stdinProvider = stdinProvider,
+                format = format,
+            )
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
             return ImportPreflightResolution.Exit(2)
@@ -54,15 +61,23 @@ internal class ImportPreflightResolver(
         // Checkpoint-Persistenz braucht der Phase-1-Pfad den Inhalts-
         // Hash nicht zu berechnen (AP12 §4.2). Die echte Resume-Verifikation
         // landet erst mit S8 (SingleFileCheckpointSpecifics).
+        //
+        // Exit-Code-Mapping (symmetrisch zu resolveImportInput):
+        //  - IllegalArgumentException → Exit 2 (CLI-Validierung des Hook-Inputs).
+        //  - OperationCancelledException wird REthrowed (Cancel-Pipeline → 130).
+        //  - Andere RuntimeException → Exit 3 (Preflight-Failure, z.B.
+        //    PARQUET_BUNDLE_MANIFEST_PARSE_ERROR).
         val importInput = try {
             phase1Hook.maybeFinalize(
                 rawInput = rawInput,
                 format = format,
                 computeContentSha256 = !request.noCheckpoint,
             )
+        } catch (e: OperationCancelledException) {
+            throw e
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
-            return ImportPreflightResolution.Exit(3)
+            return ImportPreflightResolution.Exit(2)
         } catch (e: RuntimeException) {
             stderr("Error: ${e.message}")
             return ImportPreflightResolution.Exit(3)
