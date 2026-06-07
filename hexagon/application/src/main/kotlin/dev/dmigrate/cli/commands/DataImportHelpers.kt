@@ -32,12 +32,26 @@ internal object DataImportHelpers {
         "yaml" to "yaml",
         "yml" to "yaml",
         "csv" to "csv",
+        "parquet" to "parquet",
     )
+
+    /** AP12 §4.1 / AP9: Marker-Datei eines Parquet-Bundle-Verzeichnisses. */
+    private const val BUNDLE_MANIFEST_FILE = "manifest.yaml"
 
     fun inferFormatFromExtension(path: Path): String? {
         val fileName = path.fileName?.toString() ?: return null
         val ext = fileName.substringAfterLast('.', "").lowercase()
         return EXTENSION_FORMAT_MAP[ext]
+    }
+
+    /**
+     * AP12 §4.1: Verzeichnis mit `manifest.yaml` ist die einzige
+     * Parquet-Bundle-Auspraegung. Ohne explizites `--format` und ohne
+     * Extension-Inferenz erkennt der Resolver Bundles am Marker.
+     */
+    private fun inferFormatFromDirectoryManifest(path: Path): String? {
+        if (!Files.isDirectory(path)) return null
+        return if (Files.isRegularFile(path.resolve(BUNDLE_MANIFEST_FILE))) "parquet" else null
     }
 
     fun resolveFormat(
@@ -46,13 +60,18 @@ internal object DataImportHelpers {
         sourcePath: Path?,
         stderr: (String) -> Unit,
     ): DataExportFormat? {
-        val formatName = request.format ?: sourcePath?.let(::inferFormatFromExtension)
+        val formatName = request.format
+            ?: sourcePath?.let(::inferFormatFromExtension)
+            ?: sourcePath?.let(::inferFormatFromDirectoryManifest)
 
         if (formatName == null) {
             if (isStdin) {
                 stderr("Error: --format is required when reading from stdin (--source -).")
             } else {
-                stderr("Error: Cannot detect format from '${request.source}'. Use --format to specify json, yaml, or csv.")
+                stderr(
+                    "Error: Cannot detect format from '${request.source}'. " +
+                        "Use --format to specify json, yaml, csv, or parquet."
+                )
             }
             return null
         }
@@ -63,6 +82,27 @@ internal object DataImportHelpers {
             stderr("Error: ${e.message}")
             null
         }
+    }
+
+    /**
+     * AP12 §4.1: Pfad-only-Vertrag fuer seekable Formate (heute nur Parquet).
+     * Parquet braucht zufaelligen Footer-Zugriff und unterstuetzt damit weder
+     * Stdin-Quellen noch das implizite `--source -`. Wird vom CLI-Preflight
+     * direkt nach [resolveFormat] aufgerufen.
+     */
+    fun validateFormatPathRequirements(
+        format: DataExportFormat,
+        isStdin: Boolean,
+        stderr: (String) -> Unit,
+    ): Int? {
+        if (format == DataExportFormat.PARQUET && isStdin) {
+            stderr(
+                "Error: --format parquet requires a file or directory source; " +
+                    "stdin (--source -) is not supported for Parquet."
+            )
+            return 2
+        }
+        return null
     }
 
     fun validateCliFlags(

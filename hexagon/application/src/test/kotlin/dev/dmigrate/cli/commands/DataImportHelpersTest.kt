@@ -13,10 +13,12 @@ import dev.dmigrate.streaming.checkpoint.CheckpointReference
 import dev.dmigrate.streaming.checkpoint.CheckpointStore
 import dev.dmigrate.streaming.checkpoint.CheckpointStoreException
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.matchers.collections.shouldBeEmpty
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import java.io.ByteArrayInputStream
 import java.nio.charset.Charset
+import java.nio.file.Files
 import java.nio.file.Path
 
 class DataImportHelpersTest : FunSpec({
@@ -57,6 +59,7 @@ class DataImportHelpersTest : FunSpec({
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.json")) shouldBe "json"
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.yaml")) shouldBe "yaml"
         DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.csv")) shouldBe "csv"
+        DataImportHelpers.inferFormatFromExtension(Path.of("/tmp/users.parquet")) shouldBe "parquet"
     }
 
     test("resolveFormat reports missing stdin format") {
@@ -71,6 +74,112 @@ class DataImportHelpersTest : FunSpec({
 
         format shouldBe null
         stderr.single() shouldContain "--format is required"
+    }
+
+    test("resolveFormat error message lists parquet as a supported format") {
+        val stderr = mutableListOf<String>()
+
+        val format = DataImportHelpers.resolveFormat(
+            request(source = "/tmp/no-ext"),
+            isStdin = false,
+            sourcePath = Path.of("/tmp/no-ext"),
+            stderr = { stderr += it },
+        )
+
+        format shouldBe null
+        stderr.single() shouldContain "json, yaml, csv, or parquet"
+    }
+
+    test("resolveFormat infers parquet from .parquet extension") {
+        val stderr = mutableListOf<String>()
+
+        val format = DataImportHelpers.resolveFormat(
+            request(source = "/tmp/users.parquet"),
+            isStdin = false,
+            sourcePath = Path.of("/tmp/users.parquet"),
+            stderr = { stderr += it },
+        )
+
+        format shouldBe dev.dmigrate.format.data.DataExportFormat.PARQUET
+        stderr.shouldBeEmpty()
+    }
+
+    test("resolveFormat infers parquet from directory with manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val bundleDir = Files.createTempDirectory("parquet-bundle-")
+        try {
+            Files.writeString(bundleDir.resolve("manifest.yaml"), "schemaVersion: 1\n")
+
+            val format = DataImportHelpers.resolveFormat(
+                request(source = bundleDir.toString()),
+                isStdin = false,
+                sourcePath = bundleDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe dev.dmigrate.format.data.DataExportFormat.PARQUET
+            stderr.shouldBeEmpty()
+        } finally {
+            bundleDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("resolveFormat does not infer parquet from directory without manifest.yaml") {
+        val stderr = mutableListOf<String>()
+        val plainDir = Files.createTempDirectory("plain-dir-")
+        try {
+            val format = DataImportHelpers.resolveFormat(
+                request(source = plainDir.toString()),
+                isStdin = false,
+                sourcePath = plainDir,
+                stderr = { stderr += it },
+            )
+
+            format shouldBe null
+            stderr.single() shouldContain "Cannot detect format"
+        } finally {
+            plainDir.toFile().deleteRecursively()
+        }
+    }
+
+    test("validateFormatPathRequirements rejects parquet with stdin source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+            isStdin = true,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe 2
+        stderr.single() shouldContain "stdin"
+        stderr.single() shouldContain "parquet"
+    }
+
+    test("validateFormatPathRequirements passes for parquet with a path source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.PARQUET,
+            isStdin = false,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
+    test("validateFormatPathRequirements passes for non-parquet stdin source") {
+        val stderr = mutableListOf<String>()
+
+        val exit = DataImportHelpers.validateFormatPathRequirements(
+            format = dev.dmigrate.format.data.DataExportFormat.JSON,
+            isStdin = true,
+            stderr = stderr::add,
+        )
+
+        exit shouldBe null
+        stderr.shouldBeEmpty()
     }
 
     test("validateCliFlags rejects conflicting table selectors") {

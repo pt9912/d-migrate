@@ -34,8 +34,8 @@ class DataExportCommand : CliktCommand(name = "export") {
 
     val format by option(
         "--format",
-        help = "Output format (REQUIRED): json, yaml, csv",
-    ).choice("json", "yaml", "csv").required()
+        help = "Output format (REQUIRED): json, yaml, csv, parquet",
+    ).choice("json", "yaml", "csv", "parquet").required()
 
     val output by option(
         "--output", "-o",

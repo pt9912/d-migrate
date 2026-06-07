@@ -30,6 +30,9 @@ internal class ImportPreflightResolver(
         val format = DataImportHelpers.resolveFormat(request, isStdin, sourcePath, stderr)
             ?: return ImportPreflightResolution.Exit(2)
 
+        DataImportHelpers.validateFormatPathRequirements(format, isStdin, stderr)
+            ?.let { return ImportPreflightResolution.Exit(it) }
+
         if (sourcePath != null && !Files.exists(sourcePath)) {
             stderr("Error: Source path does not exist: $sourcePath")
             return ImportPreflightResolution.Exit(2)

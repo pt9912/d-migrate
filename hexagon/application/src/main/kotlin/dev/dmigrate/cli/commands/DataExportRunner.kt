@@ -142,6 +142,15 @@ class DataExportRunner(
             )
             return 2
         }
+        // AP12 §4.1: Parquet braucht seekable Footer-Schreibzugriff und ist
+        // damit Datei-/Verzeichnis-only — stdout (--output null) wird abgelehnt.
+        if (request.format.equals("parquet", ignoreCase = true) && request.output == null) {
+            userFacingStderr(
+                "Error: --format parquet requires --output <file-or-dir>; " +
+                    "stdout is not supported for Parquet."
+            )
+            return 2
+        }
         return null
     }
 

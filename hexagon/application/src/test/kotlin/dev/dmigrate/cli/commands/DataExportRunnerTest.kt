@@ -528,6 +528,15 @@ class DataExportRunnerTest : FunSpec({
         stderr.joined() shouldContain "--since-column value 'bad column' is not a valid identifier"
     }
 
+    test("Exit 2: --format parquet rejects stdout output") {
+        val stderr = StderrCapture()
+        val runner = newRunner(stderr)
+
+        runner.execute(request(format = "parquet", output = null)) shouldBe 2
+
+        stderr.joined() shouldContain "--format parquet requires --output"
+    }
+
     test("Exit 2: invalid --filter DSL throws FilterParseException at request construction") {
         // Since 0.9.3, filter parsing happens in the CLI layer (DataExportCommand)
         // before DataExportRequest is constructed. The Runner never sees invalid DSL.

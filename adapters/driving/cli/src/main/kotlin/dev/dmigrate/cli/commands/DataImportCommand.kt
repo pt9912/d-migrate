@@ -40,8 +40,9 @@ class DataImportCommand : CliktCommand(name = "import") {
 
     val format by option(
         "--format",
-        help = "Input format: json, yaml, csv (auto-detected from file extension if omitted)",
-    ).choice("json", "yaml", "csv")
+        help = "Input format: json, yaml, csv, parquet " +
+            "(auto-detected from file extension or directory manifest.yaml if omitted)",
+    ).choice("json", "yaml", "csv", "parquet")
 
     val schema by option(
         "--schema",
