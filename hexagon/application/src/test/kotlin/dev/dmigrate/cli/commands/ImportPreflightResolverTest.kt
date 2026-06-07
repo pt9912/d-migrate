@@ -130,41 +130,45 @@ class ImportPreflightResolverTest : FunSpec({
         val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
             Files.writeString(it, "")
         }
-        val schema = dev.dmigrate.format.data.ChunkSchema(
-            table = "users",
-            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
-            columns = emptyList(),
-        )
-        val resolved = ImportInput.ResolvedSingleFile(
-            table = "users",
-            path = sourceFile,
-            schema = schema,
-            contentSha256 = null,
-        )
-        var capturedFormat: DataExportFormat? = null
-        var capturedComputeSha: Boolean? = null
-        val hook = ImportInputPhase1Hook { raw, format, compute ->
-            capturedFormat = format
-            capturedComputeSha = compute
-            // raw is the pre-hook ImportInput.SingleFile
-            raw shouldBe ImportInput.SingleFile("users", sourceFile)
-            resolved
+        try {
+            val schema = dev.dmigrate.format.data.ChunkSchema(
+                table = "users",
+                origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                columns = emptyList(),
+            )
+            val resolved = ImportInput.ResolvedSingleFile(
+                table = "users",
+                path = sourceFile,
+                schema = schema,
+                contentSha256 = null,
+            )
+            var capturedFormat: DataExportFormat? = null
+            var capturedComputeSha: Boolean? = null
+            val hook = ImportInputPhase1Hook { raw, format, compute ->
+                capturedFormat = format
+                capturedComputeSha = compute
+                // raw is the pre-hook ImportInput.SingleFile
+                raw shouldBe ImportInput.SingleFile("users", sourceFile)
+                resolved
+            }
+
+            val result = resolver(
+                stderr = stderr,
+                phase1Hook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet")
+            )
+
+            val context = (result as ImportPreflightResolution.Ok).value
+            context.format shouldBe DataExportFormat.PARQUET
+            context.preparedImport shouldBe SchemaPreflightResult(resolved)
+            capturedFormat shouldBe DataExportFormat.PARQUET
+            // Default: noCheckpoint = false → computeContentSha256 = true.
+            capturedComputeSha shouldBe true
+            stderr shouldBe emptyList()
+        } finally {
+            Files.deleteIfExists(sourceFile)
         }
-
-        val result = resolver(
-            stderr = stderr,
-            phase1Hook = hook,
-        ).resolve(
-            request(source = sourceFile.toString(), format = "parquet")
-        )
-
-        val context = (result as ImportPreflightResolution.Ok).value
-        context.format shouldBe DataExportFormat.PARQUET
-        context.preparedImport shouldBe SchemaPreflightResult(resolved)
-        capturedFormat shouldBe DataExportFormat.PARQUET
-        // Default: noCheckpoint = false → computeContentSha256 = true.
-        capturedComputeSha shouldBe true
-        stderr shouldBe emptyList()
     }
 
     test("resolve passes computeContentSha256 = false to phase1Hook when --no-checkpoint is active") {
@@ -172,20 +176,24 @@ class ImportPreflightResolverTest : FunSpec({
         val sourceFile = Files.createTempFile("dmigrate-import-preflight-no-cp-", ".parquet").also {
             Files.writeString(it, "")
         }
-        var capturedComputeSha: Boolean? = null
-        val hook = ImportInputPhase1Hook { raw, _, compute ->
-            capturedComputeSha = compute
-            raw
+        try {
+            var capturedComputeSha: Boolean? = null
+            val hook = ImportInputPhase1Hook { raw, _, compute ->
+                capturedComputeSha = compute
+                raw
+            }
+
+            resolver(
+                stderr = stderr,
+                phase1Hook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet").copy(noCheckpoint = true)
+            )
+
+            capturedComputeSha shouldBe false
+        } finally {
+            Files.deleteIfExists(sourceFile)
         }
-
-        resolver(
-            stderr = stderr,
-            phase1Hook = hook,
-        ).resolve(
-            request(source = sourceFile.toString(), format = "parquet").copy(noCheckpoint = true)
-        )
-
-        capturedComputeSha shouldBe false
     }
 
     test("resolve returns exit 3 when phase1Hook throws") {

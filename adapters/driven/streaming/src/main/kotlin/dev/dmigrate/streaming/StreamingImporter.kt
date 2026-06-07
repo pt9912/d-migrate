@@ -22,9 +22,9 @@ import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
  * `is ResolvedTableInput.Seekable -> error("S7 ...")`-Stopgap bleibt
  * aktiv. S7 verdrahtet den Konsum via TableImporter.
  */
-@Suppress("UnusedPrivateMember")
 class StreamingImporter(
     private val readerFactory: DataChunkReaderFactory,
+    @Suppress("UnusedPrivateMember")
     private val seekableReaderFactory: SeekableDataChunkReaderFactory,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
     private val onTableOpened: (table: String, targetColumns: List<TargetColumn>) -> Unit = { _, _ -> },

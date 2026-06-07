@@ -103,9 +103,12 @@ internal object DataExportWiring {
             readerLookup = { DatabaseDriverRegistry.get(it).dataReader() },
             listerLookup = { DatabaseDriverRegistry.get(it).tableLister() },
             writerFactoryBuilder = {
+                // Review-Finding G1: Parquet bekommt denselben warningSink
+                // wie Default, sodass eine spaetere Parquet-Conversion-
+                // Warnung in dieselbe collectWarnings-Liste landet.
                 CompositeDataChunkWriterFactory(
                     defaultFactory = DefaultDataChunkWriterFactory(warningSink = { warnings += it }),
-                    parquetFactory = ParquetChunkWriterFactory(),
+                    parquetFactory = ParquetChunkWriterFactory(warningSink = { warnings += it }),
                 )
             },
             collectWarnings = {

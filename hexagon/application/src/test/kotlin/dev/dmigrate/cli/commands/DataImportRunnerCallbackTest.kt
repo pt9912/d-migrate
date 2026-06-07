@@ -609,8 +609,10 @@ class DataImportRunnerCallbackTest : FunSpec({
                 },
                 checkpointConfigResolver = { _ ->
                     // Wenn der noCheckpoint-Pfad korrekt short-circuited,
-                    // bleibt auch dieser Resolver unangetastet.
-                    dev.dmigrate.streaming.CheckpointConfig(directory = Files.createTempDirectory("never-used-"))
+                    // bleibt auch dieser Resolver unangetastet. Deterministischer
+                    // Pfad statt Files.createTempDirectory verhindert Temp-Dir-
+                    // Leaks bei Test-Regressionen (Review-Finding G6).
+                    dev.dmigrate.streaming.CheckpointConfig(directory = Path.of("/never-used-by-no-checkpoint"))
                 },
             )
 
