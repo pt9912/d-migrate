@@ -56,12 +56,14 @@ class ImportPreflightResolverTest : FunSpec({
         urlParser: (String) -> ConnectionConfig = { connectionConfig() },
         schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
             { _, input, _ -> SchemaPreflightResult(input) },
+        phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
     ) = ImportPreflightResolver(
         targetResolver = targetResolver,
         urlParser = urlParser,
         schemaPreflight = schemaPreflight,
         stdinProvider = { ByteArrayInputStream("[]".toByteArray()) },
         stderr = stderr::add,
+        phase1Hook = phase1Hook,
     )
 
     test("resolve returns preflight context for happy path") {
@@ -120,6 +122,67 @@ class ImportPreflightResolverTest : FunSpec({
 
         result shouldBe ImportPreflightResolution.Exit(3)
         stderr.single() shouldContain "schema mismatch"
+    }
+
+    test("resolve invokes phase1Hook with raw input and forwards its output") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        val schema = dev.dmigrate.format.data.ChunkSchema(
+            table = "users",
+            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+            columns = emptyList(),
+        )
+        val resolved = ImportInput.ResolvedSingleFile(
+            table = "users",
+            path = sourceFile,
+            schema = schema,
+            contentSha256 = null,
+        )
+        var capturedFormat: DataExportFormat? = null
+        var capturedComputeSha: Boolean? = null
+        val hook = ImportInputPhase1Hook { raw, format, compute ->
+            capturedFormat = format
+            capturedComputeSha = compute
+            // raw is the pre-hook ImportInput.SingleFile
+            raw shouldBe ImportInput.SingleFile("users", sourceFile)
+            resolved
+        }
+
+        val result = resolver(
+            stderr = stderr,
+            phase1Hook = hook,
+        ).resolve(
+            request(source = sourceFile.toString(), format = "parquet")
+        )
+
+        val context = (result as ImportPreflightResolution.Ok).value
+        context.format shouldBe DataExportFormat.PARQUET
+        context.preparedImport shouldBe SchemaPreflightResult(resolved)
+        capturedFormat shouldBe DataExportFormat.PARQUET
+        capturedComputeSha shouldBe false
+        stderr shouldBe emptyList()
+    }
+
+    test("resolve returns exit 3 when phase1Hook throws") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-parquet-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        val hook = ImportInputPhase1Hook { _, _, _ ->
+            throw RuntimeException("PARQUET_SINGLE_FILE_TABLE_REQUIRED: missing --table")
+        }
+
+        val result = resolver(
+            stderr = stderr,
+            phase1Hook = hook,
+        ).resolve(
+            request(source = sourceFile.toString(), format = "parquet")
+        )
+
+        result shouldBe ImportPreflightResolution.Exit(3)
+        stderr.single() shouldContain "PARQUET_SINGLE_FILE_TABLE_REQUIRED"
     }
 
     test("resolve returns exit 7 when target URL parsing fails") {

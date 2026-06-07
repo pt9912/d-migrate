@@ -17,6 +17,7 @@ internal class ImportPreflightResolver(
     private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult,
     private val stdinProvider: () -> InputStream,
     private val stderr: (String) -> Unit,
+    private val phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
 ) {
 
     fun resolve(request: DataImportRequest): ImportPreflightResolution {
@@ -38,11 +39,32 @@ internal class ImportPreflightResolver(
             return ImportPreflightResolution.Exit(2)
         }
 
-        val importInput = try {
+        val rawInput = try {
             DataImportHelpers.resolveImportInput(request, isStdin, sourcePath, stdinProvider)
         } catch (e: IllegalArgumentException) {
             stderr("Error: ${e.message}")
             return ImportPreflightResolution.Exit(2)
+        }
+
+        // Parquet Cut A S6: parquet-freier Phase-1-Hook. Die Identity-Default-
+        // Variante laesst nicht-Parquet-Pfade unveraendert; CLI verdrahtet
+        // den Parquet-Hook, der Directory→ResolvedBundle und
+        // SingleFile→ResolvedSingleFile transformiert.
+        // computeContentSha256 wird S6 (v) aus !request.noCheckpoint
+        // abgeleitet; in S6 (iii) ist der Default `false` (keine
+        // Specifics-Persistenz bis S8).
+        val importInput = try {
+            phase1Hook.maybeFinalize(
+                rawInput = rawInput,
+                format = format,
+                computeContentSha256 = false,
+            )
+        } catch (e: IllegalArgumentException) {
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(3)
+        } catch (e: RuntimeException) {
+            stderr("Error: ${e.message}")
+            return ImportPreflightResolution.Exit(3)
         }
 
         val preparedImport = when (

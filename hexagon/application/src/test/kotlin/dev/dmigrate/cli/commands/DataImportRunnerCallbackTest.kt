@@ -193,6 +193,8 @@ class DataImportRunnerCallbackTest : FunSpec({
         checkpointStoreFactory: ((Path) -> dev.dmigrate.streaming.checkpoint.CheckpointStore)? = null,
         checkpointConfigResolver: (Path?) -> dev.dmigrate.streaming.CheckpointConfig? = { null },
         clock: () -> java.time.Instant = java.time.Instant::now,
+        phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
+        phase2Hook: ImportInputPhase2Hook = ImportInputPhase2Hook.IDENTITY,
     ): DataImportRunner = DataImportRunner(
         targetResolver = targetResolver,
         urlParser = urlParser,
@@ -207,6 +209,8 @@ class DataImportRunnerCallbackTest : FunSpec({
         checkpointStoreFactory = checkpointStoreFactory,
         checkpointConfigResolver = checkpointConfigResolver,
         clock = clock,
+        phase1Hook = phase1Hook,
+        phase2Hook = phase2Hook,
     )
 
     // ─── Happy path (Exit 0) ──────────────────────────────────────
@@ -541,6 +545,67 @@ class DataImportRunnerCallbackTest : FunSpec({
             Files.list(storeDir).use { it.toList() }
                 .filter { it.fileName.toString().endsWith(".checkpoint.yaml") }
                 .size shouldBe 0
+        }
+    }
+
+    // ─── Parquet Cut A S6: Phase-1/Phase-2-Hook-Verdrahtung ────────
+    // ──────────────────────────────────────────────────────────────
+
+    context("S6 Phase-2-Hook") {
+
+        test("Phase-2-Hook laeuft mit resumeExpectedSha256 = null und liefert finalen Input an Executor") {
+            val capturedHookCalls = mutableListOf<Pair<ImportInput, String?>>()
+            val capturedExecutorInputs = mutableListOf<ImportInput>()
+            val resolvedSingleFile = ImportInput.ResolvedSingleFile(
+                table = "users",
+                path = tempJsonFile,
+                schema = dev.dmigrate.format.data.ChunkSchema(
+                    table = "users",
+                    origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                    columns = emptyList(),
+                ),
+                contentSha256 = null,
+            )
+            val phase2 = ImportInputPhase2Hook { input, expectedSha ->
+                capturedHookCalls += input to expectedSha
+                // Hook produces a new ResolvedSingleFile carrying the same path
+                resolvedSingleFile
+            }
+            val capturingExecutor: ImportExecutor = ImportExecutor { ctx, opts, resume, callbacks ->
+                capturedExecutorInputs += ctx.input
+                successExecutor.execute(ctx, opts, resume, callbacks)
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                importExecutor = capturingExecutor,
+                phase2Hook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            assertExit(exit, 0, stderr)
+            capturedHookCalls.single().let { (input, expected) ->
+                input shouldBe ImportInput.SingleFile("users", tempJsonFile)
+                expected shouldBe null
+            }
+            capturedExecutorInputs.single() shouldBe resolvedSingleFile
+        }
+
+        test("Phase-2-Hook-Wurf liefert Exit 3 und schlaegt stderr durch") {
+            val phase2 = ImportInputPhase2Hook { _, _ ->
+                throw RuntimeException("PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT: mismatch")
+            }
+            val stderr = StderrCapture()
+            val runner = newRunner(
+                stderr = stderr,
+                phase2Hook = phase2,
+            )
+
+            val exit = runner.execute(request(format = "json"))
+
+            exit shouldBe 3
+            stderr.joined() shouldContain "PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT"
         }
     }
 

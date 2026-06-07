@@ -165,6 +165,8 @@ internal object DataImportWiring {
             progressReporter = bundle.progressReporter,
             checkpointStoreFactory = bundle.checkpointStoreFactory,
             checkpointConfigResolver = bundle.checkpointConfigResolver,
+            phase1Hook = ParquetImportInputPhase1Hook(),
+            phase2Hook = ParquetImportInputPhase2Hook(),
         )
         return runner.execute(request)
     }

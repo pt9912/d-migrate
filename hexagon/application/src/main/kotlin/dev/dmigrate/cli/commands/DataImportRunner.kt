@@ -89,6 +89,13 @@ class DataImportRunner(
     private val checkpointConfigResolver: (Path?) -> CheckpointConfig? = { null },
     /** Clock for manifest `createdAt`/`updatedAt`. Separately injectable for deterministic tests. */
     private val clock: () -> Instant = Instant::now,
+    /** Parquet Cut A S6: parquet-freier Phase-1-Hook. Identity-Default fuer
+     *  Nicht-Parquet-Pfade; CLI verdrahtet die Parquet-Implementierung. */
+    private val phase1Hook: ImportInputPhase1Hook = ImportInputPhase1Hook.IDENTITY,
+    /** Parquet Cut A S6: parquet-freier Phase-2-Hook, der vor
+     *  [ImportExecutionPlanner.prepare] laeuft. Identity-Default; CLI
+     *  verdrahtet die Parquet-Implementierung. */
+    private val phase2Hook: ImportInputPhase2Hook = ImportInputPhase2Hook.IDENTITY,
 ) {
     private val userFacingErrors = UserFacingErrors()
     private val userFacingStderr = userFacingErrors.stderrSink(stderr)
@@ -113,6 +120,7 @@ class DataImportRunner(
         schemaPreflight = schemaPreflight,
         stdinProvider = stdinProvider,
         stderr = userFacingStderr,
+        phase1Hook = phase1Hook,
     )
 
     private val executionPlanner = ImportExecutionPlanner(
@@ -175,6 +183,21 @@ class DataImportRunner(
         pool: ConnectionPool,
         cancellationToken: CancellationToken,
     ): Int {
+        // Parquet Cut A S6: Phase-2-Hook laeuft **vor** ImportExecutionPlanner.prepare,
+        // damit InputContext, Fingerprint, Resume-Context und Initialmanifest
+        // gegen den finalisierten Input rechnen. resumeExpectedSha256 ist in
+        // S6 immer null; der non-null-Pfad kommt mit S8 (SingleFileCheckpointSpecifics).
+        val finalizedInput = try {
+            phase2Hook.finalize(context.preparedImport.input, resumeExpectedSha256 = null)
+        } catch (e: RuntimeException) {
+            userFacingStderr("Error: ${e.message}")
+            return 3
+        }
+        val preparedImport = if (finalizedInput === context.preparedImport.input) {
+            context.preparedImport
+        } else {
+            context.preparedImport.copy(input = finalizedInput)
+        }
         val executionPlan = when (
             val result = executionPlanner.prepare(
                 request = request,
@@ -182,7 +205,7 @@ class DataImportRunner(
                 resolvedUrl = context.resolvedUrl,
                 charset = context.charset,
                 format = context.format,
-                preparedImport = context.preparedImport,
+                preparedImport = preparedImport,
             )
         ) {
             is ImportExecutionPlanResult.Ok -> result.value
@@ -192,7 +215,7 @@ class DataImportRunner(
             val r = streamingInvoker.execute(
                 context.format,
                 pool,
-                context.preparedImport,
+                preparedImport,
                 executionPlan,
                 cancellationToken,
             )
