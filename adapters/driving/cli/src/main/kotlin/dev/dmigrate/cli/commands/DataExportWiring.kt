@@ -12,8 +12,11 @@ import dev.dmigrate.driver.connection.ConnectionPool
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.core.version.VersionInfo
+import dev.dmigrate.format.data.DataChunkWriter
 import dev.dmigrate.format.data.DataChunkWriterFactory
+import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.DefaultDataChunkWriterFactory
+import dev.dmigrate.format.data.ExportOptions
 import dev.dmigrate.format.data.ValueSerializer
 import dev.dmigrate.format.parquet.ParquetChunkWriterFactory
 import dev.dmigrate.format.parquet.manifest.ParquetBundleClosure
@@ -21,6 +24,7 @@ import dev.dmigrate.format.parquet.manifest.ParquetSingleFileManifestWriter
 import dev.dmigrate.streaming.ExportOutput
 import dev.dmigrate.streaming.StreamingExporter
 import dev.dmigrate.streaming.checkpoint.FileCheckpointStore
+import java.io.OutputStream
 import java.nio.file.Path
 
 /**
@@ -153,8 +157,13 @@ internal object DataExportWiring {
     /**
      * Output-Mode-aware Parquet-Factory-Builder. Subklasse-Branching folgt
      * `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`:
-     * Single-File bekommt den Footer-KV-Provider, FilePerTable/Stdout den
-     * Default. `warningSink` wird symmetrisch zur Default-Factory geteilt.
+     * Single-File bekommt den Footer-KV-Provider, FilePerTable den
+     * Default. Der Stdout-Zweig setzt eine Unreachable-Sentinel-Factory,
+     * weil `DataExportRunner.validateRequest` PARQUET+Stdout bereits via
+     * `requiresSeekableOutput` ablehnt — der Composite wuerde die
+     * Parquet-Factory hier nur erreichen, wenn ein zukuenftiger Refactor
+     * den Validator-Guard schwaecht. `warningSink` wird symmetrisch zur
+     * Default-Factory geteilt.
      */
     private fun buildWriterFactoryForOutput(
         exportOutput: ExportOutput,
@@ -168,12 +177,33 @@ internal object DataExportWiring {
                     producerVersion = VersionInfo.PRODUCT_VERSION,
                 ).provider,
             )
-            is ExportOutput.FilePerTable,
-            is ExportOutput.Stdout -> ParquetChunkWriterFactory(warningSink = sink)
+            is ExportOutput.FilePerTable -> ParquetChunkWriterFactory(warningSink = sink)
+            is ExportOutput.Stdout -> UnreachableParquetWriterFactory
         }
         return CompositeDataChunkWriterFactory(
             defaultFactory = DefaultDataChunkWriterFactory(warningSink = sink),
             parquetFactory = parquetFactory,
+        )
+    }
+
+    /**
+     * Fail-fast-Sentinel: PARQUET+Stdout wird upstream von
+     * `DataExportRunner.validateRequest` (requiresSeekableOutput) abgelehnt.
+     * Erreicht der Composite trotzdem diese Factory, ist die Validator-
+     * Invariante gebrochen — wir werfen IllegalStateException
+     * (ADR-0006 Wiring-Drift-Exception-Familie) statt eine halbgare
+     * Parquet-Datei nach stdout zu streamen.
+     */
+    private object UnreachableParquetWriterFactory : DataChunkWriterFactory {
+        override fun create(
+            format: DataExportFormat,
+            output: OutputStream,
+            options: ExportOptions,
+        ): DataChunkWriter = error(
+            "unreachable: PARQUET+Stdout is rejected by " +
+                "DataExportRunner.validateRequest (requiresSeekableOutput). " +
+                "If this throws, the validator guard was removed without " +
+                "updating buildWriterFactoryForOutput."
         )
     }
 

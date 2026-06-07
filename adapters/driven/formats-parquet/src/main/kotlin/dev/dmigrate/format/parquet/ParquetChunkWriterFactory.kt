@@ -24,7 +24,6 @@ import java.io.OutputStream
  *   gemaess `docs/adr/0005-writerfactorybuilder-output-mode-invariant.md`.
  */
 class ParquetChunkWriterFactory(
-    @Suppress("UnusedPrivateMember")
     private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
     private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
 ) : DataChunkWriterFactory {
@@ -37,6 +36,10 @@ class ParquetChunkWriterFactory(
         require(format == DataExportFormat.PARQUET) {
             "ParquetChunkWriterFactory does not support format=$format"
         }
-        return ParquetChunkWriter(output, extraMetaDataProvider = extraMetaDataProvider)
+        return ParquetChunkWriter(
+            output = output,
+            extraMetaDataProvider = extraMetaDataProvider,
+            warningSink = warningSink,
+        )
     }
 }

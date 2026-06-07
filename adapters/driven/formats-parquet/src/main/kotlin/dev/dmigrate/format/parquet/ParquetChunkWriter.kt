@@ -3,6 +3,7 @@ package dev.dmigrate.format.parquet
 import dev.dmigrate.core.data.DataChunk
 import dev.dmigrate.format.data.ChunkSchema
 import dev.dmigrate.format.data.DataChunkWriter
+import dev.dmigrate.format.data.ValueSerializer
 import org.apache.hadoop.conf.Configuration
 import org.apache.parquet.example.data.simple.SimpleGroupFactory
 import org.apache.parquet.hadoop.ParquetWriter
@@ -49,6 +50,14 @@ class ParquetChunkWriter(
      * lebt.
      */
     private val extraMetaDataProvider: (ChunkSchema) -> Map<String, String> = { emptyMap() },
+    /**
+     * Forward-compat: symmetrisch zur Default-Factory; ParquetChunkWriter
+     * emittiert heute keine [ValueSerializer.Warning], reicht den Sink
+     * aber durch, damit kuenftige Value-Konvertierungs-Warnings (z.B.
+     * NeutralType-Downcasts) nicht stillschweigend verloren gehen.
+     */
+    @Suppress("UnusedPrivateMember")
+    private val warningSink: ((ValueSerializer.Warning) -> Unit)? = null,
 ) : DataChunkWriter {
 
     private var beginCalled: Boolean = false
