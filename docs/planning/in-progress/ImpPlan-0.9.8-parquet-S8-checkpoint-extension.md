@@ -4,7 +4,34 @@
 > ([`parquet-productive-cut-a.md`](parquet-productive-cut-a.md)
 > §3 S8).
 >
-> Status: Draft (2026-06-08). Verdrahtet `BundleCheckpointSpecifics`
+> Status: In-progress (2026-06-09). Sub-Slices durch:
+> - `0df74427` ImpPlan v1 (Draft)
+> - `8cdae234` ImpPlan v2 — Plan-Review-Befunde eingearbeitet
+>   (drei parallele Multi-Angle-Reviews, zehn Drift-Korrekturen)
+> - `df733244` S8-0 — `BundleCheckpointSpecifics` +
+>   `SingleFileCheckpointSpecifics` Sealed-Subtypen in
+>   `hexagon:ports-write/.../CheckpointManifest.kt`
+>   (`BundleResumeFingerprint` wiederverwendet, kein neuer Typ)
+> - `a0b07d35` S8a — `FileCheckpointStore.toMap/fromMap`
+>   Persistenz from scratch + 14 Tests (Round-Trip, Pflicht-Felder,
+>   Unknown-Kind, Pre-AP8-Toleranz); Detekt-LargeClass per
+>   Klassen-Split (`FileCheckpointStoreOperationSpecificsTest`)
+> - `3e3c1692` S8b — `InputContext` mit
+>   `bundleExpectedSha256ByTable` + `singleFileContentSha256`,
+>   befuellt im `ImportPreflightValidator.resolveInputContext`
+>   per Sealed-when ueber `ImportInput`-Varianten
+> - `d6be9cc9` S8c — `validateManifest`-Erweiterung
+>   (Bundle/SingleFile/Pre-AP8-Branches), `operationSpecific`-
+>   Through in `writeInitialManifest` + `saveManifest`; plus
+>   `InputContext.bundleResumeFingerprint`-Nachschub fuer
+>   Bundle-Specifics-Konstruktion. 12 Tests fuer alle Pfade.
+>
+> Offen: S8d (Hash-Through-Plumbing in `DataImportRunner`/
+> `ParquetImportInputResolutionHook`), S8e (Verifikations-Slice
+> fuer `--no-checkpoint` × Single-File + Bundle), S8f
+> (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
+>
+> Initial-Status: Draft (2026-06-08). Verdrahtet `BundleCheckpointSpecifics`
 > (AP9 §4.2) und `SingleFileCheckpointSpecifics` (AP11 §6.4) in den
 > Resume-Pfad — `FileCheckpointStore` persistiert sie, der
 > `ImportCheckpointManager` validiert sie, und der `ImportInputResolver`
