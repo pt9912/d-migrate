@@ -163,9 +163,35 @@ class ImportPreflightResolverTest : FunSpec({
             context.format shouldBe DataExportFormat.PARQUET
             context.preparedImport shouldBe SchemaPreflightResult(resolved)
             capturedFormat shouldBe DataExportFormat.PARQUET
-            // Default: noCheckpoint = false → computeContentSha256 = true.
-            capturedComputeSha shouldBe true
+            // Review-Finding E1: ohne --resume wird kein contentSha256 berechnet,
+            // auch wenn der Checkpoint-Store aktiv ist.
+            capturedComputeSha shouldBe false
             stderr shouldBe emptyList()
+        } finally {
+            Files.deleteIfExists(sourceFile)
+        }
+    }
+
+    test("resolve passes computeContentSha256 = true when --resume and not --no-checkpoint") {
+        val stderr = mutableListOf<String>()
+        val sourceFile = Files.createTempFile("dmigrate-import-preflight-resume-", ".parquet").also {
+            Files.writeString(it, "")
+        }
+        try {
+            var capturedComputeSha: Boolean? = null
+            val hook = ImportInputPhase1Hook { raw, _, compute ->
+                capturedComputeSha = compute
+                raw
+            }
+
+            resolver(
+                stderr = stderr,
+                phase1Hook = hook,
+            ).resolve(
+                request(source = sourceFile.toString(), format = "parquet").copy(resume = "run-123")
+            )
+
+            capturedComputeSha shouldBe true
         } finally {
             Files.deleteIfExists(sourceFile)
         }

@@ -211,11 +211,12 @@ class DataImportRunner(
             userFacingStderr("Error: ${e.message}")
             return 3
         }
-        val preparedImport = if (finalizedInput === context.preparedImport.input) {
-            context.preparedImport
-        } else {
-            context.preparedImport.copy(input = finalizedInput)
-        }
+        // Review-Finding D3: Unconditional copy statt `===`-Identity-Check.
+        // Datenklassen-copy ist auf dem JVM-Hot-Path billig genug, dass die
+        // Micro-Optimierung den Wartungsoverhead nicht wert ist; ein zukunfts-
+        // sicherer Hook, der `input.copy(...)` zurueckliefert, landet dann nicht
+        // unbeabsichtigt im langsamen Pfad.
+        val preparedImport = context.preparedImport.copy(input = finalizedInput)
         val executionPlan = when (
             val result = executionPlanner.prepare(
                 request = request,

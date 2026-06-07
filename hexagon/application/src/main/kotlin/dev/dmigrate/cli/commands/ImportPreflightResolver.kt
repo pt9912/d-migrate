@@ -57,21 +57,25 @@ internal class ImportPreflightResolver(
         // Variante laesst nicht-Parquet-Pfade unveraendert; CLI verdrahtet
         // den Parquet-Hook, der Directory→ResolvedBundle und
         // SingleFile→ResolvedSingleFile transformiert.
-        // computeContentSha256 spiegelt `!request.noCheckpoint`: ohne
-        // Checkpoint-Persistenz braucht der Phase-1-Pfad den Inhalts-
-        // Hash nicht zu berechnen (AP12 §4.2). Die echte Resume-Verifikation
-        // landet erst mit S8 (SingleFileCheckpointSpecifics).
+        //
+        // Review-Finding E1: SHA-256 nur berechnen, wenn der Lauf einen
+        // konkreten Resume-Anker hat (`--resume` gesetzt) UND der Checkpoint-
+        // Store nicht abgeschaltet ist (`--no-checkpoint` aus). Fresh imports
+        // sparen damit den vollen Bytestream-Read; die spaeter (S8) hinzu-
+        // kommende Resume-Hash-Verifikation bekommt den Wert nur, wenn er
+        // ueberhaupt verglichen wird.
         //
         // Exit-Code-Mapping (symmetrisch zu resolveImportInput):
         //  - IllegalArgumentException → Exit 2 (CLI-Validierung des Hook-Inputs).
         //  - OperationCancelledException wird REthrowed (Cancel-Pipeline → 130).
         //  - Andere RuntimeException → Exit 3 (Preflight-Failure, z.B.
         //    PARQUET_BUNDLE_MANIFEST_PARSE_ERROR).
+        val computeContentSha256 = !request.noCheckpoint && !request.resume.isNullOrBlank()
         val importInput = try {
             phase1Hook.maybeFinalize(
                 rawInput = rawInput,
                 format = format,
-                computeContentSha256 = !request.noCheckpoint,
+                computeContentSha256 = computeContentSha256,
             )
         } catch (e: OperationCancelledException) {
             throw e

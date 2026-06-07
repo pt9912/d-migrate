@@ -16,6 +16,7 @@ import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -108,7 +109,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val reporter = ProgressReporter { reportEvents.incrementAndGet() }
         val importer = StreamingImporter(
             readerFactory = emptyReaderFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
 
@@ -138,7 +139,7 @@ class StreamingImporterCancelCheckpointTest : FunSpec({
         val source = TestCancellationTokenSource()
         val importer = StreamingImporter(
             readerFactory = emptyReaderFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = writerLookup,
         ).also { it.tableImporter = capturer }
 

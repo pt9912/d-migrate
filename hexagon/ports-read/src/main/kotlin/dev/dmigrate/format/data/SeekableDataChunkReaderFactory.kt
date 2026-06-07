@@ -50,4 +50,42 @@ interface SeekableDataChunkReaderFactory {
         chunkSize: Int,
         options: FormatReadOptions = FormatReadOptions(),
     ): DataChunkReader
+
+    companion object {
+        /**
+         * Review-Finding D5: Sentinel-Factory fuer Aufrufer, die
+         * [SeekableDataChunkReaderFactory] aus API-Gruenden konstruieren
+         * muessen, aber bewusst nicht unterstuetzen (heute: MCP-Import,
+         * der noch kein Parquet exponiert). Wirft beim ersten `create`-Call
+         * eine [UnsupportedOperationException] mit dem konfigurierten
+         * [reason]. Diskoverabel direkt am Port-Vertrag, ohne dass
+         * Konsumenten eine Adapter-Klasse importieren muessen.
+         */
+        fun unsupported(reason: String): SeekableDataChunkReaderFactory =
+            UnsupportedSeekableDataChunkReaderFactory(reason)
+    }
+}
+
+/**
+ * Package-private (per Konvention via Top-Level-Position im Port-Modul)
+ * Adapter-Klasse hinter [SeekableDataChunkReaderFactory.unsupported].
+ * Direkter Import in Anwender-Modulen ist nicht noetig; sie konstruieren
+ * Instanzen ueber die Companion-Factory.
+ */
+private class UnsupportedSeekableDataChunkReaderFactory(
+    private val reason: String,
+) : SeekableDataChunkReaderFactory {
+
+    override fun create(
+        format: DataExportFormat,
+        source: SeekableChunkSource,
+        table: String,
+        schema: ChunkSchema,
+        chunkSize: Int,
+        options: FormatReadOptions,
+    ): DataChunkReader {
+        throw UnsupportedOperationException(
+            "SeekableDataChunkReaderFactory.create invoked but not supported: $reason"
+        )
+    }
 }

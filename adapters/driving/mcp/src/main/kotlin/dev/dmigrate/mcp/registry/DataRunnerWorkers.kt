@@ -10,6 +10,7 @@ import dev.dmigrate.driver.DatabaseDriverRegistry
 import dev.dmigrate.driver.connection.ConnectionUrlParser
 import dev.dmigrate.driver.connection.HikariConnectionPoolFactory
 import dev.dmigrate.format.data.DefaultDataChunkReaderFactory
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import dev.dmigrate.server.application.bootstrap.RuntimeBootstrap
 import dev.dmigrate.server.application.fingerprint.JsonValue
 import dev.dmigrate.server.core.connection.ConnectionReference
@@ -28,7 +29,6 @@ import dev.dmigrate.server.ports.JobWorkerOutcome
 import dev.dmigrate.server.ports.ResolvedConnection
 import dev.dmigrate.server.ports.SchemaStore
 import dev.dmigrate.streaming.StreamingImporter
-import dev.dmigrate.streaming.UnsupportedSeekableDataChunkReaderFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -215,7 +215,7 @@ internal class McpDataImportJobWorker(
         }
         StreamingImporter(
             readerFactory = DefaultDataChunkReaderFactory(),
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory(
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported(
                 reason = "MCP imports do not currently expose Parquet; use the CLI for Parquet imports."
             ),
             writerLookup = writerLookup,

@@ -116,9 +116,14 @@ internal object DataImportHelpers {
         sourcePath: Path?,
         stderr: (String) -> Unit,
     ): DataExportFormat? {
-        val formatName = request.format
-            ?: sourcePath?.let(::inferFormatFromExtension)
-            ?: sourcePath?.let(::inferFormatFromDirectoryManifest)
+        // Review-Finding H1: leerstring-Override (z.B. `--format ""` aus
+        // MCP/Skript-Pfaden) wie "kein Override" behandeln. Sonst landet
+        // `""` in DataExportFormat.fromCli und wirft IAE statt in die
+        // Extension-/Manifest-Inferenz zu fallen.
+        // Review-Finding D6: ein einziger `sourcePath?.let`-Block mit
+        // interner `?:`-Kette, statt zwei separate `let`-Aufrufe.
+        val formatName = request.format?.takeIf { it.isNotBlank() }
+            ?: sourcePath?.let { inferFormatFromExtension(it) ?: inferFormatFromDirectoryManifest(it) }
 
         if (formatName == null) {
             if (isStdin) {

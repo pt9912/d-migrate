@@ -18,6 +18,7 @@ import dev.dmigrate.format.data.DataChunkReader
 import dev.dmigrate.format.data.DataChunkReaderFactory
 import dev.dmigrate.format.data.DataExportFormat
 import dev.dmigrate.format.data.FormatReadOptions
+import dev.dmigrate.format.data.SeekableDataChunkReaderFactory
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
@@ -67,7 +68,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -103,7 +104,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -141,7 +142,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -181,7 +182,7 @@ class StreamingImporterTestPart2 : FunSpec({
             )
             val importer = StreamingImporter(
                 readerFactory = readerFactory,
-                seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+                seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
                 writerLookup = {
                     FakeWriter(
                         mapOf(
@@ -237,7 +238,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -281,7 +282,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -315,7 +316,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -344,7 +345,7 @@ class StreamingImporterTestPart2 : FunSpec({
         )
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
@@ -374,7 +375,7 @@ class StreamingImporterTestPart2 : FunSpec({
         val session = FakeTableImportSession(targetColumns = listOf(targetColumns.first()))
         val importer = StreamingImporter(
             readerFactory = readerFactory,
-            seekableReaderFactory = UnsupportedSeekableDataChunkReaderFactory("test"),
+            seekableReaderFactory = SeekableDataChunkReaderFactory.unsupported("test"),
             writerLookup = { FakeWriter(mapOf("users" to session)) },
         )
         val file = Files.createTempFile("streaming-import-", ".json")
