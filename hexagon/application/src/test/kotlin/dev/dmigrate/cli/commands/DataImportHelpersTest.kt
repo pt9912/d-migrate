@@ -576,6 +576,81 @@ class DataImportHelpersTest : FunSpec({
         )
     }
 
+    test("assessCompletion emits BUNDLE_TABLE_IMPORT_FAILED for parquet-bundle per-table error (S9a-0.d)") {
+        val assessment = ImportCompletionSupport.assessCompletion(
+            ImportResult(
+                tables = listOf(
+                    TableImportSummary(
+                        table = "orders",
+                        rowsInserted = 0,
+                        rowsUpdated = 0,
+                        rowsSkipped = 0,
+                        rowsUnknown = 0,
+                        rowsFailed = 1,
+                        chunkFailures = emptyList(),
+                        sequenceAdjustments = emptyList(),
+                        targetColumns = emptyList(),
+                        triggerMode = TriggerMode.FIRE,
+                        error = "FK violation",
+                        durationMs = 1,
+                    )
+                ),
+                totalRowsInserted = 0,
+                totalRowsUpdated = 0,
+                totalRowsSkipped = 0,
+                totalRowsUnknown = 0,
+                totalRowsFailed = 1,
+                durationMs = 1,
+            ),
+            isParquetBundle = true,
+        )
+
+        assessment shouldBe ImportCompletionAssessment.Exit(
+            code = 5,
+            message = "Error: BUNDLE_TABLE_IMPORT_FAILED: table='orders' cause='FK violation'",
+        )
+    }
+
+    test("assessCompletion emits BUNDLE_TABLE_IMPORT_FAILED for parquet-bundle failed finish (S9a-0.d)") {
+        val assessment = ImportCompletionSupport.assessCompletion(
+            ImportResult(
+                tables = listOf(
+                    TableImportSummary(
+                        table = "users",
+                        rowsInserted = 10,
+                        rowsUpdated = 0,
+                        rowsSkipped = 0,
+                        rowsUnknown = 0,
+                        rowsFailed = 0,
+                        chunkFailures = emptyList(),
+                        sequenceAdjustments = emptyList(),
+                        targetColumns = emptyList(),
+                        triggerMode = TriggerMode.FIRE,
+                        failedFinish = FailedFinishInfo(
+                            adjustments = emptyList(),
+                            causeMessage = "trigger re-enable failed",
+                            causeClass = "SQLException",
+                        ),
+                        durationMs = 1,
+                    )
+                ),
+                totalRowsInserted = 10,
+                totalRowsUpdated = 0,
+                totalRowsSkipped = 0,
+                totalRowsUnknown = 0,
+                totalRowsFailed = 0,
+                durationMs = 1,
+            ),
+            isParquetBundle = true,
+        )
+
+        assessment shouldBe ImportCompletionAssessment.Exit(
+            code = 5,
+            message = "Error: BUNDLE_TABLE_IMPORT_FAILED: table='users' cause='trigger re-enable failed' " +
+                "(post-import finalization; data was committed - manual fix may be needed)",
+        )
+    }
+
 })
 
 private fun recordingCheckpointStore(

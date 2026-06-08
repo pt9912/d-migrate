@@ -261,6 +261,9 @@ class DataImportRunner(
             result,
             executionPlan.checkpointStore,
             executionPlan.resumeContext.operationId,
+            // S9a-0.d (AP8 §7.3): Per-Tabelle-Fehler eines Bundle-Laufs
+            // bekommen den stabilen Code BUNDLE_TABLE_IMPORT_FAILED.
+            isParquetBundle = preparedImport.input is ImportInput.ResolvedBundle,
         )
     }
 
@@ -270,6 +273,7 @@ class DataImportRunner(
         result: ImportResult,
         store: CheckpointStore?,
         operationId: String,
+        isParquetBundle: Boolean,
     ): Int {
         return ImportCompletionSupport.finalizeAndReport(
             request = request,
@@ -277,6 +281,7 @@ class DataImportRunner(
             store = store,
             operationId = operationId,
             stderr = userFacingStderr,
+            isParquetBundle = isParquetBundle,
         )
     }
 

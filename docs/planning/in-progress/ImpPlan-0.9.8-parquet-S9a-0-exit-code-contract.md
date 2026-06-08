@@ -85,7 +85,7 @@ Port-Signal.
 | **S9a-0.a** | Port-Exception `PreflightExitException` (exit-code-tragend) in `:hexagon:application`; `ImportPreflightResolver`-Catch davor verdrahtet (Reihenfolge s. §2.3). **Noch kein** Parquet-Mapping — nur das Gerüst + Unit-Test, dass `Exit(code)` durchgereicht wird (Fake-Hook wirft `PreflightExitException(4/5)`). | `make docker-test MODULES=":hexagon:application"` grün; Resolver mappt 4 und 5 korrekt. |
 | **S9a-0.b** | `MANIFEST_* → Exit 4`: CLI-Hook übersetzt `ParquetBundlePreflightException` → `PreflightExitException(4, …)`. Message-Wortlaut/Code-Präfix erhalten. | `make docker-test MODULES=":adapters:driving:cli"` grün; ein `MANIFEST_NOT_FOUND` durch die CLI ergibt Exit 4 (nicht 3). |
 | **S9a-0.c** | **Bundle-Resolver-Familie → Exit 5**: neue Exception in `:adapters:driven:formats-parquet`. Throw-Site ist **`ParquetBundlePreflight.applyFilterAndOrder`** (`ParquetBundlePreflight.kt:180-205`), nicht der dünne `ParquetBundleResolver`-Wrapper (`ParquetBundleAdapter.kt:50`, delegiert nur). Der Exception-Name folgt der Throw-Klasse (`ParquetBundlePreflightResolverException` o.ä.) — `…ResolverException` wäre irreführend, da der Resolver-Wrapper nicht wirft. Sie wirft die korrekten Codes (`BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`, `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE`) statt `IllegalArgumentException("MANIFEST_FILE_MISSING…")`. CLI-Hook übersetzt → `PreflightExitException(5, …)`. | Adapter-Tests in `ParquetBundleResolverTest` auf die neuen Codes umgestellt/ergänzt; `make docker-check` grün. |
-| **S9a-0.d** | `BUNDLE_SCHEMA_UNRESOLVED` (AP8 §6.2) + `BUNDLE_TABLE_IMPORT_FAILED` (AP8 §7.3): Throw-Sites bestimmen (Review-Frage §4.2) — `SCHEMA_UNRESOLVED` evtl. defensiv; `TABLE_IMPORT_FAILED` ist **Streaming-Phase** (bereits Exit 5), braucht nur die benannte Code-Zeile im stderr, **keine** Resolver-Änderung. | Entscheidung je Code dokumentiert; falls implementiert: Tests; `make docker-check` grün. |
+| **S9a-0.d** *(umgesetzt)* | **Entschieden (§4.2):** `BUNDLE_SCHEMA_UNRESOLVED` = ehrliches N/A (kein erreichbarer Pfad; fehlendes Schema = `MANIFEST_*`-Vertragsbruch; Folge-Scope falls echter SchemaReader-Pfad kommt). `BUNDLE_TABLE_IMPORT_FAILED` = umgesetzt: `assessCompletion(isParquetBundle)` gibt für Bundle-Läufe `BUNDLE_TABLE_IMPORT_FAILED: table='…' cause='…'` aus (`error` + `failedFinish`), Exit 5 unverändert, generischer Pfad unberührt. | Entscheidung je Code dokumentiert; 2 neue `assessCompletion`-Tests (Bundle per-table + failed-finish); `make docker-test MODULES=":hexagon:application"` grün; `make docker-check` grün. |
 | **S9a-0.e** | KDoc-`DataImportRunner` Exit-Code-Doku auf die erweiterte Bedeutung bringen (4 = Connection **oder** Parquet-Format-Vertragsbruch; 5 = Streaming **oder** Bundle-Resolver/Iteration). CHANGELOG-Notiz (`### Changed`: Bundle-Preflight-Exit-Codes nach AP12 §9). Closure-Doc-Move + Umbrella-Update. | KDoc + CHANGELOG aktualisiert; Doc nach `done/`; Umbrella §3.4 um S9a-0-Zeile ergänzt. |
 
 ---
@@ -111,13 +111,30 @@ wäre frühestens `8` und müsste die §8.1/§8.2-Mapping-Tabellen
 erweitern. Das spricht zusätzlich für die Kollisions-Akzeptanz.
 
 ### 4.2 Throw-Sites für `BUNDLE_SCHEMA_UNRESOLVED` / `BUNDLE_TABLE_IMPORT_FAILED`
-Heute kein expliziter Throw: `schemaSource` ist immer ein gültiger
-Enum-Wert (`ParquetBundlePreflight.kt:95-99`), und Table-Import-
-Failures laufen über den generischen Streaming-Exit-5-Pfad. **Review:**
-(a) `BUNDLE_SCHEMA_UNRESOLVED` als defensiven Code anlegen oder als
-„kommt erst mit echtem SchemaReader-Pfad" carve-outen; (b)
-`BUNDLE_TABLE_IMPORT_FAILED` nur als benannte stderr-Zeile im
-Streaming-Fehlerpfad, ohne Resolver-Änderung.
+**Entschieden (User pt9912, 2026-06-09):**
+
+- **`BUNDLE_SCHEMA_UNRESOLVED` → ehrliches N/A** (kein Code). Der
+  produktive Bundle-Pfad bindet `neutralType` aus dem Manifest;
+  `schemaSource` ist immer ein gültiger Enum (`ManifestReader`
+  validiert, `ParquetBundlePreflight.kt:95-99`). Fehlt das Schema, ist
+  das heute ein `MANIFEST_*`-Vertragsbruch (Exit 4), **kein**
+  gescheiterter Resolver — es gibt keinen dreistufigen
+  SchemaReader/JDBC-Hint/Fallback im Laufzeitpfad. Einen defensiven
+  Throw anzulegen wäre toter Code (gegen Memo
+  [[no-carveouts]] Regel 3: nur *echtes* dauerhaftes N/A, kein
+  „kommt später"-Platzhalter). **Folge-Scope:** falls je ein echter
+  Ableitungspfad gebaut wird, taucht `BUNDLE_SCHEMA_UNRESOLVED` *dort*
+  auf — ehrlich als neuer Scope, nicht jetzt verdeckt.
+- **`BUNDLE_TABLE_IMPORT_FAILED` → umgesetzt** (S9a-0.d). Realer,
+  erreichbarer Pfad (Tabelle scheitert in Reader/Writer/Commit/Finish).
+  Exit 5 war bereits korrekt; gefehlt hat die **benannte Diagnose**.
+  `ImportCompletionSupport.assessCompletion` bekommt ein
+  `isParquetBundle`-Flag (aus `DataImportRunner`,
+  `preparedImport.input is ImportInput.ResolvedBundle`) und gibt für
+  Bundle-Läufe `BUNDLE_TABLE_IMPORT_FAILED: table='…' cause='…'` aus
+  (Per-Tabelle-`error` **und** `failedFinish`). Generischer
+  JSON/YAML/CSV/Single-File-Pfad unverändert. Kein Modul-Coupling
+  (nur Boolean), keine Streaming-Reader-Änderung.
 
 ### 4.3 `BUNDLE_SCHEMA_PARQUET_MISMATCH` (AP10, Soll Exit 4)
 Tritt im **Streaming** auf (`ParquetChunkReader`), nicht im Preflight
