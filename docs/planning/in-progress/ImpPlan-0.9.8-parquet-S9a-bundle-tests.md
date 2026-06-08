@@ -4,15 +4,15 @@
 > ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
 > §3 S9a).
 >
-> Status: **Skeleton — Pending S8 completion** (S8 ist mit S8f
-> geschlossen, siehe Umbrella §3.4 — dieser Anker ist damit
-> startbereit).
+> Status: **Skeleton — startbereit fuer Plan-Ausbau** (S7/S8 sind
+> geschlossen, siehe Umbrella §3.4).
 >
-> Diese Datei ist ein Anker fuer die Folgeaufgaben, die in S5a, S6
-> und S7 explizit an S9a uebergeben wurden. Der volle Implementierungs-
-> plan (Sub-Slice-Schnitt, Code-Stellen, DoD-Detail, Test-Strategie)
-> wird geschrieben, wenn S9a in Angriff genommen wird — analog dem
-> Vorgehen bei S6 (ImpPlan-First → Review → Implementation).
+> Diese Datei ist ein Anker fuer die Folgeaufgaben, die in S5a, S6,
+> S7 und S8 explizit an S9a uebergeben wurden. Der volle
+> Implementierungsplan (Sub-Slice-Schnitt, Code-Stellen, DoD-Detail,
+> Test-Strategie) wird geschrieben, wenn S9a in Angriff genommen wird
+> — analog dem Vorgehen bei S6 (ImpPlan-First → Review →
+> Implementation).
 >
 > Diese Skeleton-Datei existiert ausschliesslich, damit die feinen
 > Hand-off-Anker aus den vorherigen Slices nicht in deren
@@ -42,18 +42,35 @@ werden muessen.
 
 - **CLI-Preflight-Codes** fuer Bundle: die `MANIFEST_*`-Fehlerklassen
   aus `ParquetBundlePreflight` (`ParquetBundlePreflightException`)
-  bekommen einen CLI-Test, der den exakten Exit-Code (vermutlich 3)
-  + die exakte stderr-Message verifiziert:
+  bekommen einen CLI-Test, der den AP12-Exit-Code **4** + die exakte
+  stderr-Message verifiziert:
   `MANIFEST_NOT_FOUND`, `MANIFEST_PARSE_ERROR`,
-  `MANIFEST_VERSION_INCOMPATIBLE`, `MANIFEST_TABLE_DUPLICATE`,
+  `MANIFEST_VERSION_INCOMPATIBLE`, `MANIFEST_FIELD_MISSING`,
+  `MANIFEST_FIELD_INVALID`, `MANIFEST_TABLE_DUPLICATE`,
   `MANIFEST_FILE_DUPLICATE`, `MANIFEST_FILE_MISSING`,
   `MANIFEST_FILE_OUTSIDE_BUNDLE`, `MANIFEST_FILE_UNREFERENCED`,
-  `MANIFEST_SHA256_MISMATCH`, `MANIFEST_FIELD_INVALID`.
+  `MANIFEST_SHA256_MISMATCH`.
   Heute sind diese nur als Adapter-Tests in
   `ParquetBundleResolverTest`/`ParquetBundleClosureTest` gedeckt;
-  S9a verbreitert das auf CLI-Ebene (Exit-Code + stderr).
+  S9a verbreitert das auf CLI-Ebene (Exit-Code + stderr). Falls der
+  Runner aktuell noch pauschal `RuntimeException` auf Exit 3 mappt,
+  ist das kein S9a-Sollwert, sondern ein separater Review-Batch/Mini-
+  Slice vor dem S9a-Gate.
 - **Kollisionsschutz K1–K5** (AP7 §6.2): jeder Branch in
   `runCollisionChecks` braucht einen produktiven Negativ-Test.
+- **Bundle-spezifische `BUNDLE_*`-Codes** aus AP8/AP12 duerfen nicht
+  hinter `MANIFEST_*` verschwinden. Der volle Plan muss pro Code aus
+  `parquet-directory-import.md` §5.2/§7.3/§8.4 und
+  `parquet-cli-wiring.md` §9 entscheiden: produktiver CLI-Test mit
+  AP12-Exit-Familie (Bundle-Resolver/Iteration → Exit 5,
+  Bundle-Resume → Exit 3) oder expliziter Production-Gap/Folge-Slice.
+  Mindestliste:
+  `BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`,
+  `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE`,
+  `BUNDLE_SCHEMA_UNRESOLVED`, `BUNDLE_TABLE_IMPORT_FAILED`,
+  `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`,
+  `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
+  `BUNDLE_TABLE_ORDER_CHANGED`.
 
 ### Aus S6-ImpPlan §5 (`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`)
 
@@ -75,6 +92,19 @@ werden muessen.
   der **kleine** Smoke landet schon im S7-E2E
   (`DataParquetRoundTripE2EPostgresTest`); S9a verbreitert das auf
   alle Edge-Cases.
+- **DuckDB-/Arrow-Bundle-KV-Toleranz**: Bundle-Exports schreiben
+  bewusst kein `d-migrate.manifest`-Footer-KV pro Parquet-Datei
+  (Bundle-Manifest.yaml ist die Quelle). S9a braucht trotzdem
+  produktive `:adapters:driven:formats-parquet`-Smokes, die ein
+  echtes Bundle mit `manifest.yaml` und mehreren `.parquet`-Dateien
+  erzeugen und belegen:
+  - DuckDB `read_parquet` liest die Bundle-Dateien trotz daneben
+    liegendem `manifest.yaml` normal.
+  - Arrow-Inspektion/`SchemaConverter` akzeptiert die produktiven
+    Bundle-Parquet-Dateien ohne d-migrate-Footer-KV.
+  - Es gibt einen Kontrast zur Single-File-KV-Toleranz aus S9b:
+    Bundle prueft Dateilesbarkeit + Manifest-Nebenlaeufigkeit,
+    Single-File prueft zusaetzlich den tolerierten Custom-Footer-Key.
 
 ### Aus S8 (`ImpPlan-0.9.8-parquet-S8-checkpoint-extension.md`)
 
@@ -118,7 +148,7 @@ vollen Plan ergaenzt.
 - ✅ **S7 abgeschlossen** (2026-06-08, siehe Umbrella §3.4):
   Seekable-Dispatch produktiv, Bundle-Manifest wird produktiv
   geschrieben.
-- ✅ **S8 abgeschlossen** (2026-06-09, S8f-Closeout):
+- ✅ **S8 abgeschlossen** (S8f-Closeout, siehe Umbrella §3.4):
   `BundleCheckpointSpecifics` persistiert + round-trippt (S8a),
   `validateBundleResume` aktiv (S8c), `--no-checkpoint`-Adapter-Pfad
   verifiziert (S8e). Die Bundle-Resume-Familie ist damit nicht mehr
