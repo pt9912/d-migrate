@@ -52,25 +52,30 @@ werden muessen.
   `MANIFEST_SHA256_MISMATCH`.
   Heute sind diese nur als Adapter-Tests in
   `ParquetBundleResolverTest`/`ParquetBundleClosureTest` gedeckt;
-  S9a verbreitert das auf CLI-Ebene (Exit-Code + stderr). Falls der
-  Runner aktuell noch pauschal `RuntimeException` auf Exit 3 mappt,
-  ist das kein S9a-Sollwert, sondern ein separater Review-Batch/Mini-
-  Slice vor dem S9a-Gate.
+  S9a verbreitert das auf CLI-Ebene (Exit-Code + stderr). **Soll-Exit
+  ist 4** — durch S9a-0.b hergestellt (`PreflightExitException`,
+  `MANIFEST_*` → Exit 4); das frühere pauschale `RuntimeException` →
+  Exit 3 ist abgelöst (keine offene Mini-Slice-Frage mehr).
 - **Kollisionsschutz K1–K5** (AP7 §6.2): jeder Branch in
   `runCollisionChecks` braucht einen produktiven Negativ-Test.
 - **Bundle-spezifische `BUNDLE_*`-Codes** aus AP8/AP12 duerfen nicht
-  hinter `MANIFEST_*` verschwinden. Der volle Plan muss pro Code aus
-  `parquet-directory-import.md` §5.2/§7.3/§8.4 und
-  `parquet-cli-wiring.md` §9 entscheiden: produktiver CLI-Test mit
-  AP12-Exit-Familie (Bundle-Resolver/Iteration → Exit 5,
-  Bundle-Resume → Exit 3) oder expliziter Production-Gap/Folge-Slice.
-  Mindestliste:
-  `BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`,
-  `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE`,
-  `BUNDLE_SCHEMA_UNRESOLVED`, `BUNDLE_TABLE_IMPORT_FAILED`,
-  `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`,
-  `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
-  `BUNDLE_TABLE_ORDER_CHANGED`.
+  hinter `MANIFEST_*` verschwinden. **S9a-0 hat den Vertrag bereits
+  hergestellt** (`parquet-directory-import.md` §5.2/§7.3/§8.4 +
+  `parquet-cli-wiring.md` §9) — für S9a bleibt **nur der CLI-Test
+  gegen die existierenden Codes**, keine Entscheidung mehr offen.
+  Soll-Exits in Klammern:
+  - Bundle-Resolver/Iteration → **Exit 5**:
+    `BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`,
+    `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE`
+    (S9a-0.c); `BUNDLE_TABLE_IMPORT_FAILED` (S9a-0.d).
+  - Bundle-Resume → **Exit 3**:
+    `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`,
+    `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
+    `BUNDLE_TABLE_ORDER_CHANGED` (S9a-0.f);
+    `BUNDLE_RESUME_REQUIRES_FILE_HASHES`,
+    `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` (S8c).
+  - `BUNDLE_SCHEMA_UNRESOLVED` — **N/A** (kein erreichbarer Pfad,
+    s. §5 / S9a-0 §4.2); **kein** Test, Folge-Scope.
 
 ### Aus S6-ImpPlan §5 (`ImpPlan-0.9.8-parquet-S6-cli-wiring.md`)
 
@@ -140,8 +145,28 @@ Umbrella-DoD ist die Quelle:
 > `streaming`, KV-Toleranz in `formats-parquet`, CLI-Codes in
 > `cli`).
 
-Konkrete Belegbefehle, DoD-Cases und Test-Datei-Liste werden im
-vollen Plan ergaenzt.
+**Achtung „Resolver" ist überladen** (vor dem Ausbau klären, sonst
+landet ein Test im falschen Modul): die Umbrella-DoD-Zeile „Resolver
+in `streaming`" meint den **Format-Resolver / `manifest.yaml`-Directory-
+Sniff** (`DataImportHelpers`/`ImportInputResolver`, §2 S6-Anker). Die
+**Bundle-Resolver-Familie** (`BUNDLE_FILTER_*`/`BUNDLE_ORDER_*`) wirft
+dagegen in `:adapters:driven:formats-parquet`
+(`ParquetBundlePreflight.applyFilterAndOrder`, verifiziert) und wird
+dort getestet (`ParquetBundleResolverTest`), **nicht** in `streaming`.
+Der volle Plan macht die DoD-Modul-Zuordnung **pro Code + Test-Datei**
+explizit (Tabelle), damit kein Resolver-Familien-Test fälschlich in
+`streaming` wandert:
+
+| Familie | Modul | Test-Datei (Richtung) |
+| --- | --- | --- |
+| CLI-Preflight `MANIFEST_*` → 4 | `:adapters:driving:cli` | Runner-/CLI-Exit-Code-Test |
+| Bundle-Resolver `BUNDLE_FILTER_*`/`BUNDLE_ORDER_*` → 5 | `:adapters:driven:formats-parquet` (+ CLI-Hook → `:cli`) | `ParquetBundleResolverTest` / Hook-Test |
+| Format-Sniff (`manifest.yaml`) | `:hexagon:application` (`DataImportHelpers`) / `:adapters:driven:streaming` (Directory-Resolver) | Helper-/Resolver-Test |
+| Bundle-Resume → 3 | `:hexagon:application` (Manager) + `:cli` (E2E-Flow) | `ImportCheckpointManagerOperationSpecificsTest` + CLI |
+| KV-Toleranz | `:adapters:driven:formats-parquet` | DuckDB-/Arrow-Bundle-Smoke |
+
+Konkrete Belegbefehle, DoD-Cases und die finale Test-Datei-Liste
+werden beim vollen Ausbau ergaenzt.
 
 ## 5. Vorbedingungen
 
