@@ -1,11 +1,40 @@
-# S9a — Bundle-Test-Familien (SKELETON)
+# S9a — Bundle-Test-Familien
 
 > Sub-Slice der Cut-A-Umsetzung
 > ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
 > §3 S9a).
 >
-> Status: **Skeleton — startbereit fuer Plan-Ausbau** (S7/S8 sind
-> geschlossen, siehe Umbrella §3.4).
+> Status: **Umgesetzt (2026-06-09)** — die vier Test-Familien sind direkt
+> aus diesem (review-entzerrten) Anker implementiert, ohne separaten
+> Voll-ImpPlan (User-Entscheid: Test-Slice, Vertrag durch S9a-0 fertig).
+> Commits auf `develop`:
+> - `31f1f6ef` **Familie 1** (CLI-Preflight-Codes) +
+>   `f3d386ca` **Familie 2** (manifest.yaml-Sniff) →
+>   `DataImportRunnerParquetBundlePreflightTest` (`:adapters:driving:cli`)
+> - `d3c286cf` **Familie 3** (Bundle-Resume, Zwei-Phasen) →
+>   `DataImportRunnerParquetBundleResumeTest` (`:adapters:driving:cli`)
+> - `4c216b4f` **Familie 4** (DuckDB/Arrow-KV-Toleranz) →
+>   `ParquetBundleCrossReaderToleranceTest` (`:adapters:driven:formats-parquet`)
+>
+> **Scope-Befunde aus der Umsetzung (Folge-Scope, kein S9a-Test):**
+> - **`BUNDLE_ORDER_*` ist produktiv CLI-unerreichbar.** S9a-0.c hat die
+>   Codes korrekt + adapter-getestet, aber es gibt **kein `--table-order`-
+>   CLI-Flag** (`DataImportHelpers.kt:251` setzt nur `tableFilter`); der
+>   ganze `tableOrder`-Override-Pfad ist dormant. → Eigener Produktiv-
+>   Folge-Slice (`--table-order`-Flag), falls gewünscht. Adapter-Ebene:
+>   `ParquetBundleResolverTest`.
+> - **Manager-vs-CLI-Aufteilung der Resume-Codes:** CLI-end-to-end
+>   getestet sind Happy-Path, `BUNDLE_MANIFEST_CHANGED` (Exit 3) und
+>   `MANIFEST_SHA256_MISMATCH` (Exit 4). `BUNDLE_FORMAT_VERSION_INCOMPATIBLE`
+>   (Closure schreibt immer `formatVersion=1.0`), `BUNDLE_TABLE_ORDER_CHANGED`
+>   / `BUNDLE_RESUME_REQUIRES_FILE_HASHES` (exakte manifestSha256-Übereinstimmung)
+>   und `BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT` (Pre-AP8) sind
+>   auf **Manager-Ebene** gedeckt (`ImportCheckpointManagerOperationSpecificsTest`,
+>   S8c/S9a-0.f) — `ImportOptionsFingerprint` ist `internal` zu
+>   `:hexagon:application`, daher kein vorab-gebautes Bundle-Manifest im CLI-Modul.
+>
+> `make docker-check` grün. Closure-Move nach `done/` + Umbrella-Update
+> stehen noch aus (siehe §6).
 >
 > Diese Datei ist ein Anker fuer die Folgeaufgaben, die in S5a, S6,
 > S7 und S8 explizit an S9a uebergeben wurden. Der volle
