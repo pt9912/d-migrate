@@ -74,9 +74,21 @@ internal class ImportPreflightResolver(
         // Review-Finding F2/E1: SHA-Berechnung nur wenn der Checkpoint-Modus
         // Enabled UND ein Resume-Anker gesetzt ist. Sealed-when statt
         // verkettete Boolean-Operationen.
+        // S9b-Fix (Single-File-Resume-Verdrahtung): den Content-Hash auch
+        // beim **Fresh-Run** berechnen, wenn ein Checkpoint-Store aktiv wird
+        // (`--checkpoint-dir` gesetzt). Sonst persistiert
+        // `operationSpecificFrom` mangels Hash KEIN SingleFileCheckpointSpecifics,
+        // und jeder spaetere `--resume` faellt auf den Pre-AP8-Branch
+        // (`BUNDLE_CHECKPOINT_MISSING_BUNDLE_FINGERPRINT`) statt
+        // `validateSingleFileResume`/`CONTENT_CHANGED` zu erreichen. Der
+        // Resume-Fall berechnet ihn ohnehin; die E1-Optimierung bleibt fuer
+        // checkpoint-lose Single-File-Importe erhalten.
+        // Bekannte Rest-Luecke: ein nur per Config (pipeline.checkpoint.directory)
+        // gesetztes Verzeichnis ist hier nicht sichtbar (der Resolver kennt nur
+        // den CLI-Override) — Folge-Scope, falls relevant.
         val computeContentSha256 = when (val mode = request.checkpointMode) {
             CheckpointMode.Disabled -> false
-            is CheckpointMode.Enabled -> mode.resume != null
+            is CheckpointMode.Enabled -> mode.resume != null || request.checkpointDir != null
         }
         val importInput = try {
             inputResolutionHook.resolveBeforeSchema(
