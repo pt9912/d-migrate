@@ -90,6 +90,60 @@ class ParquetSingleFileRoundTripTest : FunSpec({
         }
     }
 
+    test("phase1 ohne computeContentSha256 berechnet keinen contentSha256 (--no-checkpoint / Fresh-Skip)") {
+        // S8e (AP12 §7.1): der Single-File-`--no-checkpoint`-Pfad reicht
+        // computeContentSha256 = false durch (ImportPreflightResolver,
+        // CheckpointMode.Disabled). Hier wird verifiziert, dass phase1 den
+        // Flag respektiert und den vollen Bytestream-Read/SHA-256 ueberspringt:
+        // contentSha256 bleibt null, waehrend Tabelle/Schema normal aufloesen.
+        val tmp = Files.createTempFile("parquet-singlefile-nocp-", ".parquet")
+        Files.deleteIfExists(tmp)
+        try {
+            val schema = ChunkSchema(
+                table = "public.orders",
+                origin = SchemaOrigin.JDBC_METADATA,
+                columns = listOf(
+                    ChunkColumnSchema("id", false, NeutralType.BigInteger),
+                    ChunkColumnSchema("name", true, NeutralType.Text(maxLength = 200)),
+                ),
+            )
+            val fixedClock = Clock.fixed(Instant.parse("2026-06-06T10:00:00Z"), ZoneOffset.UTC)
+            val provider = ParquetSingleFileManifestWriter(
+                producerVersion = "0.9.8",
+                clock = fixedClock,
+            ).provider
+            Files.newOutputStream(tmp).use { out ->
+                ParquetChunkWriter(out, extraMetaDataProvider = provider).use { writer ->
+                    writer.begin("public.orders", schema)
+                    writer.write(
+                        DataChunk(
+                            table = "public.orders",
+                            columns = emptyList(),
+                            rows = listOf(arrayOf<Any?>(42L, "alice")),
+                            chunkIndex = 0L,
+                        )
+                    )
+                    writer.end()
+                }
+            }
+
+            val preflight = ParquetSingleFilePreflight()
+
+            // --no-checkpoint / kein --resume → kein SHA-256-Compute.
+            val skipped = preflight.phase1(tmp, explicitTable = null, computeContentSha256 = false)
+            skipped.contentSha256 shouldBe null
+            skipped.table shouldBe "public.orders"
+            skipped.schema.columns.map { it.name } shouldBe listOf("id", "name")
+
+            // Kontrast: mit aktivem Resume wird der Hash berechnet.
+            val computed = preflight.phase1(tmp, explicitTable = null, computeContentSha256 = true)
+            computed.contentSha256!!.length shouldBe 64
+            computed.contentSha256 shouldBe Sha256DigestCalculator.compute(tmp)
+        } finally {
+            Files.deleteIfExists(tmp)
+        }
+    }
+
     test("ParquetSingleFilePreflight ohne Footer-KV faellt auf Footer-MessageType") {
         val tmp = Files.createTempFile("parquet-no-manifest-", ".parquet")
         Files.deleteIfExists(tmp)

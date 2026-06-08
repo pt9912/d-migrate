@@ -149,6 +149,34 @@ class ParquetBundleResolverTest : FunSpec({
         }
     }
 
+    test("verifyContentSha256 = false ueberspringt Per-Tabelle-SHA-Vergleich (--no-checkpoint)") {
+        // S8e (AP12 §7.1): der Bundle-`--no-checkpoint`-Pfad reicht
+        // verifyContentSha256 = false durch (Hook: verifyContentSha256 =
+        // computeContentSha256). Eine nach dem Manifest manipulierte Datei
+        // darf dann weder einen MANIFEST_SHA256_MISMATCH werfen noch einen
+        // Re-Compute ausloesen — der gesamte if(verifyContentSha256)-Block
+        // wird uebersprungen (Spiegel zum MANIFEST_SHA256_MISMATCH-Test oben).
+        val dir = Files.createTempDirectory("parquet-nocp-skip-sha-")
+        try {
+            writeBundle(dir, sha256 = true)
+            // Users-Datei nach Manifest manipulieren — mit aktivem Hash-Check
+            // (Default true) wuerde das MANIFEST_SHA256_MISMATCH werfen.
+            Files.write(dir.resolve("users.parquet"), ByteArray(8))
+
+            val bundle = ParquetBundleResolver().resolve(
+                bundleRoot = dir,
+                verifyContentSha256 = false,
+            )
+
+            // Kein Throw; Bundle loest normal auf. expectedSha256 bleibt aus
+            // dem Manifest erhalten (nur der Live-Vergleich entfaellt).
+            bundle.tables.map { it.table } shouldContainExactly listOf("users", "orders")
+            bundle.tables.all { it.expectedSha256?.length == 64 } shouldBe true
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
     test("tableFilter wendet sich auf Bundle an") {
         val dir = Files.createTempDirectory("parquet-tablefilter-")
         try {

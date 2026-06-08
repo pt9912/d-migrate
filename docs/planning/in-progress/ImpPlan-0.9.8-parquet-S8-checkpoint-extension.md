@@ -25,11 +25,19 @@
 >   Through in `writeInitialManifest` + `saveManifest`; plus
 >   `InputContext.bundleResumeFingerprint`-Nachschub fuer
 >   Bundle-Specifics-Konstruktion. 12 Tests fuer alle Pfade.
+> - `566cb4df` S8d — **Re-Cut**: kein Hash-Through-Plumbing
+>   (Selbstvergleich-No-Op vermieden), nur Kommentar-/KDoc-/Plan-
+>   Korrektur. `resumeExpectedSha256` bleibt im Runner `null`; der
+>   Cross-Run-Gate ist S8c. Siehe §1.5 + Header-Re-Cut-Block.
+> - S8e — Verifikations-Slice (kein Production-Code): zwei neue Tests
+>   in `:adapters:driven:formats-parquet`, dass `--no-checkpoint`
+>   (`computeContentSha256 = false` / `verifyContentSha256 = false`)
+>   weder Single-File-`phase1` noch den Bundle-Per-Tabelle-SHA-
+>   Vergleich einen SHA-256-Compute ausloesen laesst. Die
+>   `--no-checkpoint`-Entscheidungsebene war schon in
+>   `ImportPreflightResolverTest` (`:hexagon:application`) getestet.
 >
-> Offen: S8d (**Re-Cut 2026-06-09** — kein Hash-Through-Plumbing
-> mehr; nur Kommentar-/Plan-Korrektur, siehe §1.5 + §2 unten),
-> S8e (Verifikations-Slice fuer `--no-checkpoint` × Single-File +
-> Bundle), S8f (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
+> Offen: S8f (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
 >
 > **S8d-Re-Cut-Entscheid (2026-06-09, User pt9912):** Das urspruenglich
 > geplante Hash-Through-Plumbing (`resumeExpectedSha256` aus
@@ -244,7 +252,7 @@ Folgeslices weiterlebt.
 | **S8b** | `InputContext`-Erweiterung um `bundleExpectedSha256ByTable` + `singleFileContentSha256` (beide mit `null`-Default). Befuellung in **`ImportPreflightValidator.resolveInputContext`** (Z. 80-132, nicht im Resolver — siehe §1.3 Klarstellung). Wert kommt aus `preparedImport.input` (`ResolvedBundle.tables[i].expectedSha256` bzw. `ResolvedSingleFile.contentSha256`). | `ImportPreflightValidatorTest` deckt beide neue Felder ab; bestehende `InputContext(...)`-Test-Konstruktoren bleiben kompatibel (default-Parameter); `make docker-test MODULES=":hexagon:application"` gruen. |
 | **S8c** | `ImportCheckpointManager.validateManifest` mit `validateBundleResume` + `validateSingleFileResume` + Pre-AP8-Branch. Einfuegung **nach** `inputFilesByTable`-Check (Z. 137), nicht davor — Diagnostik-Reihenfolge: input-File-Mismatch hat Vorrang. `writeInitialManifest` (Z. 171) **und** `saveManifest()` (Z. 231) reichen `operationSpecific` durch (beide Schreibpfade, sonst Early-Resume-Bug). | Manager-Tests decken (a) Bundle-OK, (b) Bundle-Pre-AP8-Bruch mit aktuellem Parquet-Bundle-Lauf, (c) Pre-AP8 + JSON/YAML/CSV-Lauf → OK-Pfad, (d) SingleFile-OK, (e) SingleFile-Hash-Mismatch; `make docker-test MODULES=":hexagon:application"` gruen. |
 | **S8d** | **Re-Cut 2026-06-09 — kein Hash-Through-Plumbing.** Statt `resumeExpectedSha256` aus `inputCtx.singleFileContentSha256` zu speisen (Selbstvergleich-No-Op, siehe §1.5), nur **Kommentar-/Doc-Korrektur**: der S6-TODO-Kommentar in `DataImportRunner.kt` und der KDoc in `ParquetImportInputResolutionHook.kt` werden auf „`resumeExpectedSha256` bleibt `null`; Cross-Run-Gate ist S8c" umgeschrieben; dieser Plan-Doc dokumentiert die Verwerfung + die Folge-Slice-Skizze. `resumeExpectedSha256` bleibt `null`. | Kommentare/KDoc korrigiert; Plan-Doc-Re-Cut dokumentiert; bestehende Hook-Tests (`ParquetImportInputResolutionHookTest`, decken Match-/Mismatch-Pfad isoliert bereits ab) bleiben gruen; `make docker-check` gruen (Kommentar-/MD-only, keine Verhaltensaenderung). |
-| **S8e** | **Verifikations-Slice** (kein neuer Production-Code): Die `--no-checkpoint`-Skip-Logik fuer Single-File-Phase-1 existiert seit S5b/S6 (`ImportPreflightResolver.kt:76-79` + `ParquetSingleFilePreflight.kt:99`). S8e fuegt **Tests** hinzu: (1) Single-File-`--no-checkpoint`-Pfad ruft Phase-1 ohne SHA-256 (Counting-Spy); (2) Bundle-`--no-checkpoint`-Pfad: `ParquetBundleResolver` mit `verifyContentSha256 = false` triggert weder Per-Tabelle-SHA-Vergleich noch Re-Compute. | `make docker-test MODULES=":hexagon:application :adapters:driven:formats-parquet :adapters:driving:cli"` gruen; beide neuen Tests deckt AP12 §7.1 vollstaendig ab. |
+| **S8e** *(umgesetzt)* | **Verifikations-Slice** (kein neuer Production-Code): Die `--no-checkpoint`-Skip-Logik fuer Single-File-Phase-1 existiert seit S5b/S6 (`ImportPreflightResolver.kt:76-79` + `ParquetSingleFilePreflight.kt:99`). S8e fuegt **zwei Tests** hinzu (beide `:adapters:driven:formats-parquet`): (1) `ParquetSingleFilePreflight.phase1(computeContentSha256 = false)` liefert `contentSha256 = null` (Kontrast: `true` → 64-hex) → `ParquetSingleFileRoundTripTest`; (2) `ParquetBundleResolver.resolve(verifyContentSha256 = false)` resolved selbst eine nach dem Manifest manipulierte Datei ohne `MANIFEST_SHA256_MISMATCH`/Re-Compute → `ParquetBundleResolverTest` (Spiegel zum bestehenden Mismatch-Test). Die `--no-checkpoint`-**Entscheidungsebene** (`computeContentSha256 = false`) war bereits in `ImportPreflightResolverTest` (`:hexagon:application`) gedeckt. | `make docker-test MODULES=":hexagon:application :adapters:driven:formats-parquet :adapters:driving:cli"` gruen; `make docker-check` gruen; beide neuen Tests decken AP12 §7.1 (Single-File + Bundle `--no-checkpoint`) ab. |
 | **S8f** | `CHANGELOG.md`-Eintrag in **neuer** `### Breaking`-Subsektion unter `[Unreleased]` (Plan-Review-Befund: bisher nur `### Changed` + `### Added` vorhanden). Closure-Doc-Move nach `done/`; Umbrella §3.4-Update. | Closure-Doc liegt in `done/`; Status-Tabelle aktualisiert; Plan-Doc-Closeout-Commit auf `develop` (laut User-Entscheid 2026-06-08: S8 laeuft direkt auf develop). |
 
 ---
