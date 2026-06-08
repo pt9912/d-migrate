@@ -190,15 +190,27 @@ class DataImportRunner(
     ): Int {
         // Parquet Cut A S6: Phase-2-Hook laeuft **vor** ImportExecutionPlanner.prepare,
         // damit InputContext, Fingerprint, Resume-Context und Initialmanifest
-        // gegen den finalisierten Input rechnen. resumeExpectedSha256 ist in
-        // S6 immer null; der non-null-Pfad kommt mit S8 (SingleFileCheckpointSpecifics).
+        // gegen den finalisierten Input rechnen.
+        //
+        // resumeExpectedSha256 bleibt bewusst `null` (S8d-Re-Cut 2026-06-09):
+        // Der produktive Cross-Run-Resume-Gate fuer Single-File-Parquet ist
+        // ImportCheckpointManager.validateSingleFileResume (S8c) — er vergleicht
+        // den im Checkpoint persistierten SingleFileCheckpointSpecifics.contentSha256
+        // gegen den frisch berechneten inputCtx.singleFileContentSha256. Den hier
+        // verfuegbaren input.contentSha256 als resumeExpectedSha256 zu reichen waere
+        // ein Selbstvergleich (gleiche Quelle auf beiden Seiten) — ein No-Op, der
+        // eine produktiv nicht existierende Sicherheitseigenschaft dokumentieren
+        // wuerde. Der echte erwartete Hash liegt im Resume-Manifest, das erst in
+        // prepare/resolveResumeContext geladen wird; ein non-null-Phase-2-Hash-
+        // Check braeuchte daher einen Orchestrierungs-Reorder (Manifest laden →
+        // Hash extrahieren → finalisieren → InputContext/Manifest/Callbacks auf
+        // finalem Input) und ist als eigener Folge-Slice zu planen, nicht hier.
         //
         // Exit-Code-Mapping (symmetrisch zu ImportPreflightResolver):
         //  - OperationCancelledException wird re-thrown → outer
         //    executeWithCancel-Catch → CANCELLED_EXIT_CODE (130).
         //  - IllegalArgumentException → Exit 2 (Hook-Input-Validierung).
-        //  - Andere RuntimeException → Exit 3 (Preflight-Failure,
-        //    z.B. PARQUET_SINGLE_FILE_CONTENT_CHANGED_SINCE_CHECKPOINT).
+        //  - Andere RuntimeException → Exit 3 (Preflight-Failure).
         val finalizedInput = try {
             inputResolutionHook.finalizeBeforePrepare(
                 input = context.preparedImport.input,

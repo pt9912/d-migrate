@@ -26,18 +26,39 @@
 >   `InputContext.bundleResumeFingerprint`-Nachschub fuer
 >   Bundle-Specifics-Konstruktion. 12 Tests fuer alle Pfade.
 >
-> Offen: S8d (Hash-Through-Plumbing in `DataImportRunner`/
-> `ParquetImportInputResolutionHook`), S8e (Verifikations-Slice
-> fuer `--no-checkpoint` × Single-File + Bundle), S8f
-> (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
+> Offen: S8d (**Re-Cut 2026-06-09** — kein Hash-Through-Plumbing
+> mehr; nur Kommentar-/Plan-Korrektur, siehe §1.5 + §2 unten),
+> S8e (Verifikations-Slice fuer `--no-checkpoint` × Single-File +
+> Bundle), S8f (CHANGELOG `### Breaking`-Sektion + Closure-Doc-Move).
+>
+> **S8d-Re-Cut-Entscheid (2026-06-09, User pt9912):** Das urspruenglich
+> geplante Hash-Through-Plumbing (`resumeExpectedSha256` aus
+> `inputCtx.singleFileContentSha256` in den Hook reichen) entfaellt.
+> Begruendung: `inputCtx.singleFileContentSha256` ist identisch mit
+> `input.contentSha256` des aktuellen Laufs (beide aus dem Phase-1-Scan).
+> `ParquetSingleFileResolver.phase2` vergleicht aber genau diesen Wert
+> gegen `resumeExpectedSha256` — derselbe Wert auf beiden Seiten ergibt
+> einen Selbstvergleich (produktiver No-Op), der eine nicht existierende
+> Sicherheitseigenschaft dokumentieren wuerde. Der **echte** Cross-Run-
+> Resume-Gate ist bereits S8c: `ImportCheckpointManager.validateSingleFileResume`
+> vergleicht den im Checkpoint persistierten
+> `SingleFileCheckpointSpecifics.contentSha256` gegen den frischen
+> `inputCtx.singleFileContentSha256` (Exit 3 bei Mismatch). Der echte
+> erwartete Hash liegt im Resume-Manifest, das erst in
+> `prepare`/`resolveResumeContext` geladen wird — *nach* dem Hook; ein
+> non-null-Phase-2-Hash-Check braeuchte einen Orchestrierungs-Reorder
+> und ist als **eigener Folge-Slice** zu planen (Skizze §1.5). `resumeExpectedSha256`
+> bleibt im Runner `null`.
 >
 > Initial-Status: Draft (2026-06-08). Verdrahtet `BundleCheckpointSpecifics`
 > (AP9 §4.2) und `SingleFileCheckpointSpecifics` (AP11 §6.4) in den
 > Resume-Pfad — `FileCheckpointStore` persistiert sie, der
-> `ImportCheckpointManager` validiert sie, und der `ImportInputResolver`
-> reicht den Resume-Hash an den `ImportInputResolutionHook` durch (loest
-> den seit S6 in `DataImportRunner.kt:194` markierten
-> „S6 immer null; der non-null-Pfad kommt mit S8"-TODO ab).
+> `ImportCheckpointManager` validiert sie. (Der urspruengliche Zusatz
+> „… und der Resolver reicht den Resume-Hash an den Hook durch" ist mit
+> dem S8d-Re-Cut hinfaellig — siehe oben; der seit S6 in
+> `DataImportRunner.kt` markierte „S6 immer null"-TODO wird durch die
+> korrigierte Kommentar-Erklaerung abgeloest, nicht durch ein non-null-
+> Plumbing.)
 >
 > S8 ist die exklusive Heimat der `CheckpointOperationSpecifics`-Sealed-
 > Subtypen, ihrer YAML-Round-Trip-Persistenz, des Resume-Hash-
@@ -140,21 +161,41 @@ Per Umbrella §3 S8-Cell und [`parquet-cli-wiring.md`](../done/parquet-cli-wirin
      Wichtig: **beide** Schreibpfade, sonst wuerde ein Resume vor dem
      ersten Chunk-Commit faelschlich auf den Pre-AP8-Branch fallen.
 
-5. **`ImportInputResolutionHook.finalizeBeforePrepare`-Hash-Through-
-   Plumbing** (Loest den S6-TODO in `DataImportRunner.kt:194` ab):
-   - `DataImportRunner.runImport` liest `inputCtx.singleFileContentSha256`
-     und reicht den Wert als `resumeExpectedSha256` in den Hook —
-     S6 hardcodiert hier `null`.
-   - Der `ParquetImportInputResolutionHook` validiert dann tatsaechlich
-     den Content-Hash (heute No-Op bei `null`-Hash). Re-Compute des
-     Hash ueber `ParquetSingleFileResolver.phase1(...)` (existierender
-     Aufruf, `ParquetSingleFileAdapter.kt:46`); Hook ruft den Resolver,
-     nicht `ParquetSingleFilePreflight` direkt.
-   - **Modulgrenze beachten**: `Sha256DigestCalculator` ist
-     `internal object` in `:adapters:driven:formats-parquet`
-     (`ParquetManifestWriter.kt:98`). Der Hash-Through darf
-     `:hexagon:application` nicht direkt darauf zugreifen lassen — der
-     vorhandene Resolver-Pfad ist die einzige zulaessige Brücke.
+5. **~~`ImportInputResolutionHook.finalizeBeforePrepare`-Hash-Through-
+   Plumbing~~ — gestrichen mit S8d-Re-Cut (2026-06-09).**
+   Das urspruengliche Vorhaben war: `DataImportRunner.runImport` liest
+   `inputCtx.singleFileContentSha256` und reicht den Wert als
+   `resumeExpectedSha256` in den Hook (statt des in S6 hartkodierten
+   `null`). **Verworfen**, weil `inputCtx.singleFileContentSha256` und
+   `input.contentSha256` dieselbe Quelle (Phase-1-Scan) sind und
+   `ParquetSingleFileResolver.phase2` genau diese beiden gegeneinander
+   vergleicht — der „Through" waere ein Selbstvergleich (produktiver
+   No-Op). Siehe Header-Block „S8d-Re-Cut-Entscheid".
+   - **Produktiver Gate bleibt S8c**: `ImportCheckpointManager.validateSingleFileResume`
+     vergleicht den persistierten `SingleFileCheckpointSpecifics.contentSha256`
+     gegen den frischen `inputCtx.singleFileContentSha256` (Exit 3 bei
+     Mismatch). Das ist die einzige Stelle, an der der Resume-Hash echt
+     geprueft wird; sie ist bereits fertig.
+   - **`resumeExpectedSha256` bleibt `null`** im Runner; der S6-TODO-
+     Kommentar in `DataImportRunner.kt` wird durch die korrigierte
+     Begruendung (Selbstvergleich-No-Op + Reorder-Hinweis) ersetzt, der
+     KDoc-Block in `ParquetImportInputResolutionHook` analog.
+
+   **Skizze fuer einen spaeteren echten Phase-2-Checkpoint-Hook**
+   (eigener Slice, falls je gebraucht — *nicht* Teil von S8): Damit
+   `phase2` einen echten Cross-Run-Check macht, muss der Hook den im
+   Resume-Manifest persistierten Hash (nicht den frisch gescannten)
+   als `resumeExpectedSha256` bekommen. Das erfordert eine
+   Orchestrierungs-Umordnung gegen den heutigen „Hook laeuft vor
+   `prepare`"-Ablauf: (1) Resume-Manifest laden, (2) erwarteten Hash
+   aus `SingleFileCheckpointSpecifics` extrahieren, (3) `finalizeBeforePrepare`
+   mit diesem Hash aufrufen, (4) `InputContext`/Manifest/Callbacks auf
+   dem finalen Input bauen. Bei einer Umsetzung weiter beachten:
+   `Sha256DigestCalculator` ist `internal object` in
+   `:adapters:driven:formats-parquet` (`ParquetManifestWriter.kt:98`) —
+   `:hexagon:application` darf nur ueber den vorhandenen Resolver-Pfad
+   darauf zugreifen, nicht direkt. (Dieser Reorder bringt aber kaum
+   Mehrwert ueber S8c hinaus und ist daher bewusst nicht geplant.)
 
 6. **`CheckpointMode.Disabled`-Pfad** (`--no-checkpoint`,
    `hexagon:application/.../CheckpointMode.kt:24`):
@@ -202,7 +243,7 @@ Folgeslices weiterlebt.
 | **S8a** | `FileCheckpointStore.toMap`/`fromMap` mit `kind`-Diskriminator + Unknown-Kind-Fail-fast. **Persistenz from scratch** — heute steht `operationSpecific` weder in toMap noch in fromMap. Round-Trip-Test fuer beide Subtypen + Negative-Test fuer unbekanntes `kind`. | `make docker-test MODULES=":adapters:driven:streaming"` gruen; Round-Trip-Test fuer `BundleCheckpointSpecifics` und `SingleFileCheckpointSpecifics`; YAML-Bytes deterministisch (Schluessel-Reihenfolge `kind` zuerst). |
 | **S8b** | `InputContext`-Erweiterung um `bundleExpectedSha256ByTable` + `singleFileContentSha256` (beide mit `null`-Default). Befuellung in **`ImportPreflightValidator.resolveInputContext`** (Z. 80-132, nicht im Resolver — siehe §1.3 Klarstellung). Wert kommt aus `preparedImport.input` (`ResolvedBundle.tables[i].expectedSha256` bzw. `ResolvedSingleFile.contentSha256`). | `ImportPreflightValidatorTest` deckt beide neue Felder ab; bestehende `InputContext(...)`-Test-Konstruktoren bleiben kompatibel (default-Parameter); `make docker-test MODULES=":hexagon:application"` gruen. |
 | **S8c** | `ImportCheckpointManager.validateManifest` mit `validateBundleResume` + `validateSingleFileResume` + Pre-AP8-Branch. Einfuegung **nach** `inputFilesByTable`-Check (Z. 137), nicht davor — Diagnostik-Reihenfolge: input-File-Mismatch hat Vorrang. `writeInitialManifest` (Z. 171) **und** `saveManifest()` (Z. 231) reichen `operationSpecific` durch (beide Schreibpfade, sonst Early-Resume-Bug). | Manager-Tests decken (a) Bundle-OK, (b) Bundle-Pre-AP8-Bruch mit aktuellem Parquet-Bundle-Lauf, (c) Pre-AP8 + JSON/YAML/CSV-Lauf → OK-Pfad, (d) SingleFile-OK, (e) SingleFile-Hash-Mismatch; `make docker-test MODULES=":hexagon:application"` gruen. |
-| **S8d** | `ImportInputResolutionHook.finalizeBeforePrepare`-Hash-Through. `DataImportRunner.runImport` liest `inputCtx.singleFileContentSha256` und reicht ihn an den Hook (heute `DataImportRunner.kt:194` hardcodiert `null`). `ParquetImportInputResolutionHook` validiert den Hash ueber den **bestehenden** `ParquetSingleFileResolver`-Pfad (`ParquetSingleFileAdapter.kt:46`), **nicht** durch direkten `Sha256DigestCalculator`-Aufruf (cross-module `internal`-Sichtbarkeit). | Runner-Tests: Hash-Match-Pfad gruen; Hash-Mismatch-Pfad wirft mit AP11-§6.4-Code; `make docker-check` gruen. |
+| **S8d** | **Re-Cut 2026-06-09 — kein Hash-Through-Plumbing.** Statt `resumeExpectedSha256` aus `inputCtx.singleFileContentSha256` zu speisen (Selbstvergleich-No-Op, siehe §1.5), nur **Kommentar-/Doc-Korrektur**: der S6-TODO-Kommentar in `DataImportRunner.kt` und der KDoc in `ParquetImportInputResolutionHook.kt` werden auf „`resumeExpectedSha256` bleibt `null`; Cross-Run-Gate ist S8c" umgeschrieben; dieser Plan-Doc dokumentiert die Verwerfung + die Folge-Slice-Skizze. `resumeExpectedSha256` bleibt `null`. | Kommentare/KDoc korrigiert; Plan-Doc-Re-Cut dokumentiert; bestehende Hook-Tests (`ParquetImportInputResolutionHookTest`, decken Match-/Mismatch-Pfad isoliert bereits ab) bleiben gruen; `make docker-check` gruen (Kommentar-/MD-only, keine Verhaltensaenderung). |
 | **S8e** | **Verifikations-Slice** (kein neuer Production-Code): Die `--no-checkpoint`-Skip-Logik fuer Single-File-Phase-1 existiert seit S5b/S6 (`ImportPreflightResolver.kt:76-79` + `ParquetSingleFilePreflight.kt:99`). S8e fuegt **Tests** hinzu: (1) Single-File-`--no-checkpoint`-Pfad ruft Phase-1 ohne SHA-256 (Counting-Spy); (2) Bundle-`--no-checkpoint`-Pfad: `ParquetBundleResolver` mit `verifyContentSha256 = false` triggert weder Per-Tabelle-SHA-Vergleich noch Re-Compute. | `make docker-test MODULES=":hexagon:application :adapters:driven:formats-parquet :adapters:driving:cli"` gruen; beide neuen Tests deckt AP12 §7.1 vollstaendig ab. |
 | **S8f** | `CHANGELOG.md`-Eintrag in **neuer** `### Breaking`-Subsektion unter `[Unreleased]` (Plan-Review-Befund: bisher nur `### Changed` + `### Added` vorhanden). Closure-Doc-Move nach `done/`; Umbrella §3.4-Update. | Closure-Doc liegt in `done/`; Status-Tabelle aktualisiert; Plan-Doc-Closeout-Commit auf `develop` (laut User-Entscheid 2026-06-08: S8 laeuft direkt auf develop). |
 
@@ -216,7 +257,8 @@ Pro Sub-Slice:
 make docker-check                                                  # gesamtes Repo
 make docker-test MODULES=":hexagon:ports-write"                    # S8-0
 make docker-test MODULES=":adapters:driven:streaming"              # S8a
-make docker-test MODULES=":hexagon:application"                    # S8b, S8c, S8d
+make docker-test MODULES=":hexagon:application"                    # S8b, S8c
+# S8d: Re-Cut (Kommentar-/Doc-only) — keine neuen Tests; `make docker-check` genuegt
 make docker-test MODULES=":hexagon:application :adapters:driving:cli"   # S8e
 ```
 
@@ -273,15 +315,19 @@ hinzufuegen, ist der `when`-Sweep verbindlich — bei jedem neuen
 `operationSpecific`-Touch (z.B. spaeterer Export-Resume-Slice) muss
 der Sweep wiederholt werden.
 
-### 4.4 Hash-Recompute-Kosten
+### 4.4 Hash-Recompute-Kosten (mit S8d-Re-Cut entschaerft)
 
-Der `ImportInputResolutionHook.finalizeBeforePrepare`-Hash-Through
-sieht harmlos aus, kostet aber bei Single-File-Resume einen kompletten
-Datei-Scan (`ParquetSingleFilePreflight.phase1` ruft
-`Sha256DigestCalculator.compute`). Heute akzeptabel — die Datei wird
-ohnehin von `ParquetChunkReader` vollstaendig gelesen. Bundle-Pfad ist
-nicht betroffen (per-Tabelle-Hash in `BundleCheckpointSpecifics.fingerprint`
-wird in S5a/S7 erzeugt, nicht in S8).
+Urspruenglich notiert fuer das S8d-Hash-Through: ein
+`finalizeBeforePrepare`-Hash-Through haette bei Single-File-Resume
+einen Datei-Scan (`Sha256DigestCalculator.compute`) bedeutet. **Mit
+dem S8d-Re-Cut (§1.5) entfaellt dieser zweite Scan ganz** — der
+Single-File-Hash wird ohnehin schon in der **Phase 1** berechnet
+(`ParquetSingleFilePreflight.phase1`, nur wenn `--resume` aktiv,
+siehe `ImportPreflightResolver.kt:76-79`) und vom S8c-Gate
+(`validateSingleFileResume`) konsumiert; es gibt keinen zusaetzlichen
+Recompute im Hook. Bundle-Pfad war ohnehin nicht betroffen
+(per-Tabelle-Hash in `BundleCheckpointSpecifics.fingerprint` wird in
+S5a/S7 erzeugt, nicht in S8).
 
 ### 4.5 Carve-Outs (was S8 NICHT macht)
 

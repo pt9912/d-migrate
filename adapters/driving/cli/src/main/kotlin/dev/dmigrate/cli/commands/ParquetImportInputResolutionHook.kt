@@ -24,10 +24,15 @@ import dev.dmigrate.streaming.ImportInput
  *   * Nicht-Parquet-Formate → Pass-Through.
  *
  * - [finalizeBeforePrepare] (AP11 §6.2 / AP12 §5):
- *   * `ResolvedSingleFile` → [ParquetSingleFileResolver.phase2] (heute
- *     Pass-Through bei `resumeExpectedSha256 == null`; ab S8 liefert
- *     der Resolver dann den Resume-Hash-Check + ggf. Target-JDBC-
- *     Schema-Fix-up).
+ *   * `ResolvedSingleFile` → [ParquetSingleFileResolver.phase2]:
+ *     Pass-Through bei `resumeExpectedSha256 == null`. Der Runner reicht
+ *     hier produktiv `null` (S8d-Re-Cut 2026-06-09) — der Cross-Run-
+ *     Resume-Hash-Gate lebt in `ImportCheckpointManager.validateSingleFileResume`
+ *     (S8c), nicht in diesem Hook. Ein non-null-Phase-2-Hash-Check
+ *     braeuchte den im Resume-Manifest persistierten Hash und damit einen
+ *     Orchestrierungs-Reorder (eigener Folge-Slice). Die Hook-Mechanik
+ *     bleibt erhalten, damit dieser Folge-Slice ohne Strukturumbau am Hook
+ *     umgesetzt werden kann.
  *   * Alles andere → Pass-Through.
  *
  * Modulgrenze: lebt im CLI-Modul, weil hier beide Parquet-Adapter

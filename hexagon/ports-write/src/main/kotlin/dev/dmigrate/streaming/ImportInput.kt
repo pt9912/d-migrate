@@ -103,8 +103,9 @@ sealed class ImportInput {
          * S6 Cut A / Review-Finding B2: gibt an, ob die Quell-Datei beim
          * Phase-1-Lauf einen `d-migrate.manifest`-Footer-KV trug. Wird vom
          * CLI-Phase-2-Hook gelesen (heute: nur an `ParquetSingleFilePreflight.phase2`
-         * durchgereicht; spaeter ab S8: relevant fuer AP11 §5.3
-         * Footer-Fallback vs. Manifest-Pfad). Default `true`, damit
+         * durchgereicht). Der AP11 §5.3 Footer-Fallback-vs-Manifest-Pfad-
+         * Fix-up bleibt ein bewusster Carve-Out (S8 §4.5: offen fuer
+         * S9a/S9b-Test-Familien bzw. Cut B), nicht S8. Default `true`, damit
          * bestehende Test-Konstruktoren ohne Aenderung weiter funktionieren —
          * der CLI-Resolver setzt den echten Wert explizit.
          */
