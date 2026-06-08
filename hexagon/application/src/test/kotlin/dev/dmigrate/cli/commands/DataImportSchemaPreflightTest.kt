@@ -159,6 +159,83 @@ class DataImportSchemaPreflightTest : FunSpec({
         }
     }
 
+    test("prepare skips topo-sort when explicit --table-order given (schema still validated)") {
+        val schemaFile = Files.createTempFile("dmigrate-prepare-bundle-order-", ".yaml")
+        Files.writeString(
+            schemaFile,
+            """
+            schema_format: "1.0"
+            name: "Bundle"
+            version: "1.0.0"
+            tables:
+              users:
+                columns:
+                  id:
+                    type: identifier
+              orders:
+                columns:
+                  id:
+                    type: identifier
+                  user_id:
+                    type: integer
+                    references:
+                      table: users
+                      column: id
+            """.trimIndent()
+        )
+        val bundleRoot = Files.createTempDirectory("bundle-order-")
+        val ordersPath = bundleRoot.resolve("orders.parquet").also { Files.writeString(it, "") }
+        val usersPath = bundleRoot.resolve("users.parquet").also { Files.writeString(it, "") }
+        try {
+            val bundle = ImportInput.ResolvedBundle(
+                bundleRoot = bundleRoot,
+                tables = listOf(
+                    dev.dmigrate.streaming.ResolvedBundleTableBinding(
+                        table = "orders",
+                        path = ordersPath,
+                        schema = dev.dmigrate.format.data.ChunkSchema(
+                            table = "orders",
+                            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                            columns = emptyList(),
+                        ),
+                    ),
+                    dev.dmigrate.streaming.ResolvedBundleTableBinding(
+                        table = "users",
+                        path = usersPath,
+                        schema = dev.dmigrate.format.data.ChunkSchema(
+                            table = "users",
+                            origin = dev.dmigrate.format.data.SchemaOrigin.MANIFEST_FALLBACK,
+                            columns = emptyList(),
+                        ),
+                    ),
+                ),
+                resumeFingerprint = dev.dmigrate.streaming.BundleResumeFingerprint(
+                    manifestSha256 = "deadbeef",
+                    formatVersion = "1.0",
+                    producerVersion = "test",
+                    tableOrder = listOf("orders", "users"),
+                ),
+            )
+
+            // explicitTableOrder gesetzt → FK-Topo-Sort uebersprungen; die
+            // Reihenfolge bleibt [orders, users] (NICHT auf [users, orders]
+            // re-sortiert). Das Schema wird trotzdem geparst + validiert.
+            val result = preflight.prepare(
+                schemaPath = schemaFile,
+                input = bundle,
+                format = DataExportFormat.PARQUET,
+                explicitTableOrder = listOf("orders", "users"),
+            )
+
+            val resolved = result.input as ImportInput.ResolvedBundle
+            resolved.tables.map { it.table } shouldBe listOf("orders", "users")
+            (result.schema != null) shouldBe true
+        } finally {
+            Files.deleteIfExists(schemaFile)
+            bundleRoot.toFile().deleteRecursively()
+        }
+    }
+
     test("prepare returns schema and preserves non-directory input") {
         val schemaFile = Files.createTempFile("dmigrate-prepare-single-", ".yaml")
         val dataFile = Files.createTempFile("dmigrate-prepare-single-", ".json")

@@ -55,8 +55,9 @@ class ImportPreflightResolverTest : FunSpec({
         stderr: MutableList<String>,
         targetResolver: (target: String?, configPath: Path?) -> String = { target, _ -> target ?: error("expected target") },
         urlParser: (String) -> ConnectionConfig = { connectionConfig() },
-        schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
-            { _, input, _ -> SchemaPreflightResult(input) },
+        schemaPreflight:
+            (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult =
+            { _, input, _, _ -> SchemaPreflightResult(input) },
         inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,
     ) = ImportPreflightResolver(
         targetResolver = targetResolver,
@@ -128,7 +129,7 @@ class ImportPreflightResolverTest : FunSpec({
 
         val result = resolver(
             stderr = stderr,
-            schemaPreflight = { _, _, _ -> throw ImportPreflightException("schema mismatch") },
+            schemaPreflight = { _, _, _, _ -> throw ImportPreflightException("schema mismatch") },
         ).resolve(
             request(
                 source = sourceFile.toString(),

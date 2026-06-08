@@ -199,6 +199,28 @@ internal object DataImportHelpers {
                 return 2
             }
         }
+        // --table-order: nur Flag-Usage + Syntax pruefen (Exit 2). Semantische
+        // Order-Fehler (Duplikate/unbekannt/incomplete) sind Sache der
+        // Format-Resolver → BUNDLE_ORDER_* / Exit 5 (AP12 §9).
+        if (request.table != null && !request.tableOrder.isNullOrEmpty()) {
+            stderr("Error: --table and --table-order are mutually exclusive (--table-order is for directory sources).")
+            return 2
+        }
+        if (!request.tableOrder.isNullOrEmpty() && request.source == "-") {
+            stderr("Error: --table-order is not supported for stdin import; it applies to directory sources only.")
+            return 2
+        }
+        if (!request.tableOrder.isNullOrEmpty()) {
+            val invalid = DataExportHelpers.firstInvalidTableIdentifier(request.tableOrder)
+            if (invalid != null) {
+                stderr(
+                    "Error: --table-order value '$invalid' is not a valid identifier. " +
+                        "Expected '<name>' or '<schema>.<name>' matching " +
+                        DataExportHelpers.TABLE_IDENTIFIER_PATTERN + "."
+                )
+                return 2
+            }
+        }
         if (request.truncate && request.onConflict == "abort") {
             stderr("Error: --truncate with explicit --on-conflict abort is contradictory.")
             return 2
@@ -251,6 +273,7 @@ internal object DataImportHelpers {
             return ImportInput.Directory(
                 path = sourcePath,
                 tableFilter = request.tables,
+                tableOrder = request.tableOrder,
             )
         }
 
@@ -274,13 +297,16 @@ internal object DataImportHelpers {
         request: DataImportRequest,
         importInput: ImportInput,
         format: DataExportFormat,
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult,
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult,
         stderr: (String) -> Unit,
     ): ImportStep<SchemaPreflightResult> {
         val schemaPath = request.schema ?: return ImportStep.Ok(SchemaPreflightResult(importInput))
 
         return try {
-            ImportStep.Ok(schemaPreflight(schemaPath, importInput, format))
+            // `--table-order` (request.tableOrder) ist beim Ordering authoritative:
+            // der Schema-Preflight ueberspringt dann den FK-Topo-Sort, validiert
+            // aber weiter (siehe DataImportSchemaPreflight.prepare).
+            ImportStep.Ok(schemaPreflight(schemaPath, importInput, format, request.tableOrder))
         } catch (e: ImportPreflightException) {
             stderr("Error: ${e.message}")
             ImportStep.Exit(3)

@@ -15,7 +15,8 @@ import java.nio.file.Path
 internal class ImportPreflightResolver(
     private val targetResolver: (target: String?, configPath: Path?) -> String,
     private val urlParser: (String) -> ConnectionConfig,
-    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult,
+    private val schemaPreflight:
+        (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult,
     private val stdinProvider: () -> InputStream,
     private val stderr: (String) -> Unit,
     private val inputResolutionHook: ImportInputResolutionHook = ImportInputResolutionHook.NoOp,

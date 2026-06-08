@@ -59,6 +59,13 @@ class DataImportCommand : CliktCommand(name = "import") {
         help = "Comma-separated list of tables to import (directory source only)",
     ).split(",")
 
+    val tableOrder by option(
+        "--table-order",
+        help = "Comma-separated explicit import order (directory source only). " +
+            "Authoritative over the --schema FK-topological sort; --schema then " +
+            "only validates. Must be a permutation of the imported tables.",
+    ).split(",")
+
     val onError by option(
         "--on-error",
         help = "Chunk error handling: abort (default), skip, log",
@@ -144,6 +151,7 @@ class DataImportCommand : CliktCommand(name = "import") {
                 schema = schema,
                 table = table,
                 tables = tables,
+                tableOrder = tableOrder,
                 onError = onError,
                 onConflict = onConflict,
                 triggerMode = triggerMode,

@@ -164,7 +164,7 @@ class DataImportRunnerHappyPathTestPart2 : FunSpec({
         urlParser: (String) -> ConnectionConfig = ConnectionUrlParser::parse,
         poolFactory: (ConnectionConfig) -> ConnectionPool = { FakeConnectionPool() },
         writerLookup: (DatabaseDialect) -> DataWriter = { FakeDataWriter() },
-        schemaPreflight: (Path, ImportInput, DataExportFormat) -> SchemaPreflightResult = { _, input, _ ->
+        schemaPreflight: (Path, ImportInput, DataExportFormat, List<String>?) -> SchemaPreflightResult = { _, input, _, _ ->
             SchemaPreflightResult(input)
         },
         schemaTargetValidator:

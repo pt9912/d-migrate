@@ -30,6 +30,11 @@ data class DataImportRequest(
     val schema: Path?,
     val table: String?,
     val tables: List<String>?,
+    /** Explizite Import-Reihenfolge (`--table-order`, nur Directory-Quelle).
+     *  Wenn gesetzt, ist sie beim Ordering authoritative: der Schema-FK-Topo-
+     *  Sort (`--schema`) wird uebersprungen, `--schema` validiert nur noch.
+     *  Praezedenz: `--table-order` > Schema-Topo-Sort > Discovery-Default. */
+    val tableOrder: List<String>? = null,
     val onError: String,
     val onConflict: String?,
     val triggerMode: String,
@@ -83,8 +88,9 @@ class DataImportRunner(
     private val urlParser: (String) -> ConnectionConfig,
     private val poolFactory: (ConnectionConfig) -> ConnectionPool,
     private val writerLookup: (DatabaseDialect) -> DataWriter,
-    private val schemaPreflight: (schemaPath: Path, input: ImportInput, format: DataExportFormat) -> SchemaPreflightResult =
-        { _, input, _ -> SchemaPreflightResult(input) },
+    private val schemaPreflight:
+        (schemaPath: Path, input: ImportInput, format: DataExportFormat, explicitTableOrder: List<String>?) -> SchemaPreflightResult =
+        { _, input, _, _ -> SchemaPreflightResult(input) },
     private val schemaTargetValidator: (schema: SchemaDefinition, table: String, targetColumns: List<TargetColumn>) -> Unit =
         { _, _, _ -> },
     private val importExecutor: ImportExecutor,

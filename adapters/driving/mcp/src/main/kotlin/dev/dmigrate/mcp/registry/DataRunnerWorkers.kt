@@ -199,7 +199,9 @@ internal class McpDataImportJobWorker(
         urlParser = ConnectionUrlParser::parse,
         poolFactory = HikariConnectionPoolFactory::create,
         writerLookup = { dialect -> DatabaseDriverRegistry.get(dialect).dataWriter() },
-        schemaPreflight = { schemaPath, input, importFormat ->
+        // MCP exponiert kein --table-order (Parquet-Isolation, ADR-0007) →
+        // explicitTableOrder ist immer null, der 4. Param wird ignoriert.
+        schemaPreflight = { schemaPath, input, importFormat, _ ->
             val schemaFormat = schema?.format ?: schemaPath.toString().substringAfterLast('.', "json")
             SchemaRefImportPreflightAdapter.prepare(schemaPath, schemaFormat, input, importFormat)
         },

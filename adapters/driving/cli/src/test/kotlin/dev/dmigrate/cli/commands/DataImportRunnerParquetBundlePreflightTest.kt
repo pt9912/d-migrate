@@ -37,13 +37,11 @@ import java.time.ZoneOffset
  * Format-Sniff ohne `--format` auf CLI-Ebene greift (Familie 2; vorher
  * nur Adapter-/Hook-/Helper-Ebene gedeckt).
  *
- * **Erreichbarkeits-Grenzen am CLI (verifiziert 2026-06-09):**
- * - `BUNDLE_ORDER_*` (Exit 5) sind hier **nicht** erreichbar: weder
- *   `DataImportRequest` noch `DataImportCommand` exponieren ein
- *   `--table-order`; `ImportInput.Directory.tableOrder` bleibt `null`
- *   (`DataImportHelpers.kt:251`). Diese Codes sind adapter-seitig in
- *   `ParquetBundleResolverTest` (S9a-0.c) gedeckt; CLI-Erreichbarkeit
- *   ist Folge-Scope (`--table-order`-Flag).
+ * **Erreichbarkeits-Hinweise am CLI (verifiziert 2026-06-09):**
+ * - `BUNDLE_ORDER_*` (Exit 5) sind seit dem `--table-order`-Flag
+ *   CLI-erreichbar (`request.tableOrder` → `ImportInput.Directory.tableOrder`
+ *   → Hook → `applyFilterAndOrder`). Die drei Tests unten beweisen das
+ *   end-to-end (löst die frühere „adapter-only"-Notiz auf).
  * - `MANIFEST_SHA256_MISMATCH` (Exit 4) ist nur mit aktivem `--resume`
  *   erreichbar (ohne Resume gilt `verifyContentSha256 = false`, S8e).
  *   Die Per-File-Hash-Verifikation ist Teil der Resume-Familie (S9a.3).
@@ -82,13 +80,19 @@ class DataImportRunnerParquetBundlePreflightTest : FunSpec({
         inputResolutionHook = ParquetImportInputResolutionHook(),
     )
 
-    fun request(source: String, tables: List<String>? = null, format: String? = "parquet") = DataImportRequest(
+    fun request(
+        source: String,
+        tables: List<String>? = null,
+        tableOrder: List<String>? = null,
+        format: String? = "parquet",
+    ) = DataImportRequest(
         target = "sqlite:///tmp/x.db",
         source = source,
         format = format,
         schema = null,
         table = null,
         tables = tables,
+        tableOrder = tableOrder,
         onError = "abort",
         onConflict = null,
         triggerMode = "fire",
@@ -178,6 +182,54 @@ class DataImportRunnerParquetBundlePreflightTest : FunSpec({
             lines.joinToString("\n").let { out ->
                 out shouldContain "BUNDLE_FILTER_UNKNOWN_TABLE"
                 out shouldContain "ghost"
+            }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    // ── --table-order: BUNDLE_ORDER_* jetzt CLI-erreichbar (Exit 5) ──
+
+    test("CLI bundle import: --table-order mit Duplikat → Exit 5 (BUNDLE_ORDER_DUPLICATE)") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a1-order-dup-")
+        try {
+            writeBundle(dir)
+            val code = newRunner(lines::add).execute(request(dir.toString(), tableOrder = listOf("users", "users")))
+            code shouldBe 5
+            lines.joinToString("\n") shouldContain "BUNDLE_ORDER_DUPLICATE"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("CLI bundle import: --table-order mit unbekannter Tabelle → Exit 5 (BUNDLE_ORDER_UNKNOWN_TABLE)") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a1-order-unknown-")
+        try {
+            writeBundle(dir)
+            val code = newRunner(lines::add)
+                .execute(request(dir.toString(), tableOrder = listOf("users", "orders", "ghost")))
+            code shouldBe 5
+            lines.joinToString("\n").let { out ->
+                out shouldContain "BUNDLE_ORDER_UNKNOWN_TABLE"
+                out shouldContain "ghost"
+            }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("CLI bundle import: partieller --table-order → Exit 5 (BUNDLE_ORDER_INCOMPLETE)") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a1-order-incomplete-")
+        try {
+            writeBundle(dir)
+            val code = newRunner(lines::add).execute(request(dir.toString(), tableOrder = listOf("users")))
+            code shouldBe 5
+            lines.joinToString("\n").let { out ->
+                out shouldContain "BUNDLE_ORDER_INCOMPLETE"
+                out shouldContain "orders"
             }
         } finally {
             dir.toFile().deleteRecursively()

@@ -249,6 +249,36 @@ class DataImportHelpersTest : FunSpec({
         stderr.single() shouldContain "mutually exclusive"
     }
 
+    test("validateCliFlags rejects --table combined with --table-order") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(table = "users").copy(tableOrder = listOf("users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe 2
+        stderr.single() shouldContain "--table and --table-order are mutually exclusive"
+    }
+
+    test("validateCliFlags rejects --table-order on stdin import") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(source = "-", table = null).copy(tableOrder = listOf("users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe 2
+        stderr.single() shouldContain "--table-order is not supported for stdin"
+    }
+
+    test("validateCliFlags accepts --table-order with valid identifiers on directory source") {
+        val stderr = mutableListOf<String>()
+        val exit = DataImportHelpers.validateCliFlags(
+            request(source = "/tmp/bundle", table = null).copy(tableOrder = listOf("public.users", "orders")),
+            stderr::add,
+        )
+        exit shouldBe null
+        stderr.shouldBeEmpty()
+    }
+
     test("validateCliFlags rejects --no-checkpoint combined with --resume") {
         val stderr = mutableListOf<String>()
 
@@ -333,7 +363,7 @@ class DataImportHelpersTest : FunSpec({
             request(schema = Path.of("/tmp/schema.yaml")),
             ImportInput.SingleFile("users", Path.of("/tmp/users.json")),
             format = dev.dmigrate.format.data.DataExportFormat.JSON,
-            schemaPreflight = { _, _, _ -> throw ImportPreflightException("schema mismatch") },
+            schemaPreflight = { _, _, _, _ -> throw ImportPreflightException("schema mismatch") },
             stderr = stderr::add,
         )
 

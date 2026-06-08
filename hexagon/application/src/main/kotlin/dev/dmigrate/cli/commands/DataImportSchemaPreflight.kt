@@ -20,10 +20,20 @@ import java.nio.file.Path
  */
 class DataImportSchemaPreflight(private val schemaCodec: SchemaCodec) {
 
+    /**
+     * @param explicitTableOrder `--table-order` (falls gesetzt). Ist die
+     *   Reihenfolge explizit vorgegeben, ist sie **authoritative**: der
+     *   FK-Topo-Sort wird uebersprungen, das Schema aber weiter validiert
+     *   (Praezedenz `--table-order` > Schema-Topo-Sort). Fuer `Directory`
+     *   traegt die explizite Reihenfolge bereits `input.tableOrder`; fuer
+     *   `ResolvedBundle` hat der Parquet-Hook sie schon in `input.tables`
+     *   eingebacken — darum hier das separate Signal.
+     */
     fun prepare(
         schemaPath: Path,
         input: ImportInput,
         format: DataExportFormat,
+        explicitTableOrder: List<String>? = null,
     ): SchemaPreflightResult {
         val schema = readSchema(schemaPath)
         validateSchema(schemaPath, schema)
@@ -34,20 +44,28 @@ class DataImportSchemaPreflight(private val schemaCodec: SchemaCodec) {
         // FK-Verletzungen fuehrte, wenn der Bundle-Producer alphabetisch
         // statt topologisch geschrieben hatte.
         val preparedInput = when (input) {
-            is ImportInput.Directory -> input.copy(
-                tableOrder = ImportDirectoryResolver.resolveTableOrder(schemaPath, schema, input, format)
-            )
-            is ImportInput.ResolvedBundle -> {
-                val orderedTableNames = ImportDirectoryResolver.resolveTopologicalOrder(
-                    schemaPath = schemaPath,
-                    schema = schema,
-                    candidateTables = input.tables.map { it.table },
+            is ImportInput.Directory ->
+                // --table-order authoritative → Topo-Sort ueberspringen
+                // (input.tableOrder traegt die explizite Reihenfolge).
+                if (input.tableOrder != null) input
+                else input.copy(
+                    tableOrder = ImportDirectoryResolver.resolveTableOrder(schemaPath, schema, input, format)
                 )
-                val bindingsByTable = input.tables.associateBy { it.table }
-                input.copy(
-                    tables = orderedTableNames.map { bindingsByTable.getValue(it) },
-                )
-            }
+            is ImportInput.ResolvedBundle ->
+                // Hook hat --table-order bereits in input.tables eingebacken
+                // (+ via applyFilterAndOrder validiert) → kein Re-Sort.
+                if (explicitTableOrder != null) input
+                else {
+                    val orderedTableNames = ImportDirectoryResolver.resolveTopologicalOrder(
+                        schemaPath = schemaPath,
+                        schema = schema,
+                        candidateTables = input.tables.map { it.table },
+                    )
+                    val bindingsByTable = input.tables.associateBy { it.table }
+                    input.copy(
+                        tables = orderedTableNames.map { bindingsByTable.getValue(it) },
+                    )
+                }
             else -> input
         }
 
