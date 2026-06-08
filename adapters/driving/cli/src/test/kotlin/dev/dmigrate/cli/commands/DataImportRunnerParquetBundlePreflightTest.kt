@@ -28,12 +28,14 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 /**
- * S9a.1 (Bundle-Test-Familie 1 — CLI-Preflight-Codes): fährt
- * [DataImportRunner.execute] end-to-end mit dem **echten**
- * [ParquetImportInputResolutionHook] gegen den in S9a-0 hergestellten
- * AP12-§9-Exit-Code-Vertrag. Belegt, dass Bundle-Preflight-Fehler am
- * CLI-Rand den korrekten Prozess-Exit-Code + den stabilen stderr-Code
- * tragen (vorher nur Adapter-/Hook-Ebene gedeckt).
+ * S9a Bundle-Test-Familien **1 (CLI-Preflight-Codes)** und
+ * **2 (manifest.yaml-Sniff)**: fährt [DataImportRunner.execute]
+ * end-to-end mit dem **echten** [ParquetImportInputResolutionHook] gegen
+ * den in S9a-0 hergestellten AP12-§9-Exit-Code-Vertrag. Belegt, dass
+ * Bundle-Preflight-Fehler am CLI-Rand den korrekten Prozess-Exit-Code +
+ * den stabilen stderr-Code tragen (Familie 1) und dass der Directory-
+ * Format-Sniff ohne `--format` auf CLI-Ebene greift (Familie 2; vorher
+ * nur Adapter-/Hook-/Helper-Ebene gedeckt).
  *
  * **Erreichbarkeits-Grenzen am CLI (verifiziert 2026-06-09):**
  * - `BUNDLE_ORDER_*` (Exit 5) sind hier **nicht** erreichbar: weder
@@ -80,10 +82,10 @@ class DataImportRunnerParquetBundlePreflightTest : FunSpec({
         inputResolutionHook = ParquetImportInputResolutionHook(),
     )
 
-    fun request(source: String, tables: List<String>? = null) = DataImportRequest(
+    fun request(source: String, tables: List<String>? = null, format: String? = "parquet") = DataImportRequest(
         target = "sqlite:///tmp/x.db",
         source = source,
-        format = "parquet",
+        format = format,
         schema = null,
         table = null,
         tables = tables,
@@ -177,6 +179,51 @@ class DataImportRunnerParquetBundlePreflightTest : FunSpec({
                 out shouldContain "BUNDLE_FILTER_UNKNOWN_TABLE"
                 out shouldContain "ghost"
             }
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    // ── S9a.2: manifest.yaml-Sniff (Format-Inferenz ohne --format) ──
+    // Belegt auf CLI-Ebene, dass DataImportHelpers.resolveFormat den
+    // Directory-Sniff anwendet (Helper-Ebene: DataImportHelpersTest).
+
+    test("CLI sniff: Bundle-Dir ohne --format wird als Parquet inferiert (Orphan → Exit 4)") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a2-infer-")
+        try {
+            writeBundle(dir)
+            Files.writeString(dir.resolve("orphan.parquet"), "not in manifest")
+            // Kein --format. Wäre der Sniff fehlgeschlagen, käme Exit 2
+            // (Format unbestimmbar) statt Exit 4 (Parquet-Bundle-Preflight lief).
+            val code = newRunner(lines::add).execute(request(dir.toString(), format = null))
+            code shouldBe 4
+            lines.joinToString("\n") shouldContain "MANIFEST_FILE_UNREFERENCED"
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("CLI sniff: Verzeichnis ohne manifest.yaml und ohne --format → Exit 2") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a2-no-manifest-")
+        try {
+            Files.writeString(dir.resolve("data.parquet"), "x")
+            val code = newRunner(lines::add).execute(request(dir.toString(), format = null))
+            code shouldBe 2
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    test("CLI sniff: Helm-Style-manifest.yaml ohne --format → Exit 2 (False-Positive-Resistenz)") {
+        val lines = mutableListOf<String>()
+        val dir = Files.createTempDirectory("s9a2-helm-")
+        try {
+            // Kein `formatVersion:`/`tables:` → Sniff lehnt ab (DataImportHelpersTest-Parität).
+            Files.writeString(dir.resolve("manifest.yaml"), "apiVersion: v2\nname: my-chart\nversion: 1.0.0\n")
+            val code = newRunner(lines::add).execute(request(dir.toString(), format = null))
+            code shouldBe 2
         } finally {
             dir.toFile().deleteRecursively()
         }
