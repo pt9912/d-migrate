@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- **Parquet — Bundle-Preflight-Exit-Codes folgen jetzt AP12 §9**
+  *(2026-06-09, Parquet Cut A S9a-0)* — die CLI-Exit-Codes fuer
+  Parquet-Bundle-Fehler entsprechen jetzt dem AP12-§9-Vertrag. Fuer
+  Skripte, die auf konkrete Exit-Codes pruefen, aendert sich:
+  - `MANIFEST_*`-Fehler (fehlendes/ungueltiges `manifest.yaml`,
+    SHA-256-Mismatch, Kollisionen) → **Exit 4** (vorher Exit 3).
+  - `tableFilter`/`tableOrder`-Fehler → **Exit 5** mit den stabilen
+    Codes `BUNDLE_FILTER_UNKNOWN_TABLE`, `BUNDLE_ORDER_DUPLICATE`,
+    `BUNDLE_ORDER_UNKNOWN_TABLE`, `BUNDLE_ORDER_INCOMPLETE` (vorher
+    Exit 2 mit irrefuehrendem Code `MANIFEST_FILE_MISSING`).
+  - Ein **partieller** `tableOrder` ist jetzt ein harter Fehler
+    (`BUNDLE_ORDER_INCOMPLETE`) statt stillschweigend nicht-gelistete
+    Tabellen zu droppen (Bugfix).
+  - Per-Tabelle-Importfehler eines Bundle-Laufs geben jetzt den
+    stabilen Code `BUNDLE_TABLE_IMPORT_FAILED: table='…' cause='…'`
+    aus (Exit 5 unveraendert). Die Exit-Codes 4/5 sind mit
+    Connection-/Streaming-Fehlern geteilt; der stderr-Code-Praefix
+    unterscheidet. JSON/YAML/CSV/Single-File-Importe sind **nicht**
+    betroffen.
 - **Parquet — Pre-0.9.8-Bundle-Checkpoints sind nach 0.9.8 nicht
   mehr wiederaufnehmbar** *(2026-06-09, Parquet Cut A S8)* —
   Pre-0.9.8-Parquet-Checkpoints fuer **Bundle**-Importe sind nach

@@ -153,6 +153,21 @@ vollen Plan ergaenzt.
   `validateBundleResume` aktiv (S8c), `--no-checkpoint`-Adapter-Pfad
   verifiziert (S8e). Die Bundle-Resume-Familie ist damit nicht mehr
   rein synthetisch.
+- ✅ **S9a-0 abgeschlossen** (2026-06-09, eigener Produktiv-Vor-Slice,
+  [`ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md`](../done/ImpPlan-0.9.8-parquet-S9a-0-exit-code-contract.md)):
+  der AP12-§9-Exit-Code-Vertrag ist hergestellt — `MANIFEST_*` → Exit 4,
+  Bundle-Resolver-Familie (`BUNDLE_FILTER_UNKNOWN_TABLE`,
+  `BUNDLE_ORDER_DUPLICATE/UNKNOWN_TABLE/INCOMPLETE`) → Exit 5,
+  `BUNDLE_TABLE_IMPORT_FAILED` benannt, Resume-Codes → Exit 3.
+  **Damit testet S9a gegen den korrigierten Vertrag** — die früheren
+  IST-Warnungen in §2 („falls der Runner pauschal Exit 3 mappt …") sind
+  durch S9a-0 aufgelöst. **Rest-Lücke** (eigener Check in S9a): die
+  Resume-Codes `BUNDLE_MANIFEST_CHANGED_SINCE_CHECKPOINT`,
+  `BUNDLE_FORMAT_VERSION_INCOMPATIBLE_WITH_CHECKPOINT`,
+  `BUNDLE_TABLE_ORDER_CHANGED` existieren noch nicht als benannte Codes
+  (heute generischer Fingerprint-Mismatch → Exit 3); `BUNDLE_SCHEMA_UNRESOLVED`
+  ist bewusst N/A (S9a-0 §4.2). Pro Code in S9a entscheiden:
+  produktiver Test gegen vorhandenen Code, oder dokumentierter Folge-Scope.
 
 ## 6. Naechste Schritte (bei Slice-Start)
 

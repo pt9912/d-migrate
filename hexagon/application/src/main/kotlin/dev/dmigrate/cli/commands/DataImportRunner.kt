@@ -66,9 +66,15 @@ data class DataImportRequest(
  * - 1 unexpected internal error
  * - 2 CLI validation error (incl. `--resume` on stdin import)
  * - 3 pre-flight failure (header/schema mismatch, strict trigger,
- *   semantically incompatible resume reference)
- * - 4 connection error
- * - 5 import streaming error (with --on-error abort) or post-chunk finalization
+ *   semantically incompatible resume reference; Parquet bundle/single-file
+ *   resume-contract mismatch — `BUNDLE_RESUME_*` / `BUNDLE_CHECKPOINT_MISSING_*`)
+ * - 4 connection error, OR — S9a-0 / AP12 §9 — Parquet format-contract
+ *   violation during preflight (`MANIFEST_*` bundle-manifest errors). The
+ *   exit code is intentionally shared; the stderr code prefix (`MANIFEST_*`
+ *   vs the connection error text) disambiguates.
+ * - 5 import streaming error (with --on-error abort) or post-chunk
+ *   finalization, OR — S9a-0 / AP12 §9 — Parquet bundle resolver/iteration
+ *   error (`BUNDLE_FILTER_*` / `BUNDLE_ORDER_*` / `BUNDLE_TABLE_IMPORT_FAILED`)
  * - 7 config / URL / registry error (incl. unreadable checkpoint file or
  *   unparseable manifest)
  */

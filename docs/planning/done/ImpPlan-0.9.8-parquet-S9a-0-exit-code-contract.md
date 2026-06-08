@@ -1,14 +1,15 @@
 # S9a-0 — AP12-§9-Exit-Code-Vertrag (Produktiv-Vor-Slice zu S9a)
 
 > Sub-Slice der Cut-A-Umsetzung
-> ([`parquet-productive-cut-a.md`](./parquet-productive-cut-a.md)
+> ([`parquet-productive-cut-a.md`](../in-progress/parquet-productive-cut-a.md)
 > §3 S9a).
 >
-> Status: **Draft (2026-06-09)** — ImpPlan-First, vor Implementierung
-> Review-Runde (analog S6/S7/S8).
+> Status: **Closed (2026-06-09)** — S9a-0.a/b/c/d/e durch, direkt auf
+> `develop`. Commits: `7808968c` (a) + `9af34212` (b) + `c9c0e989` (c)
+> + `c66ba012` (d) + S9a-0.e-Closeout. Doc nach `done/` migriert.
 >
 > **Anlass:** S9a-Scoping-Recherche (2026-06-09) hat aufgedeckt, dass
-> der in [`parquet-cli-wiring.md`](../done/parquet-cli-wiring.md) §9
+> der in [`parquet-cli-wiring.md`](parquet-cli-wiring.md) §9
 > (AP12) **bindend** vorgeschlagene Exit-Code-Vertrag im Produktivcode
 > **nicht** umgesetzt ist. S9a ist eine reine Test-Slice und darf
 > keine Tests schreiben, die das nicht-konforme IST-Verhalten
