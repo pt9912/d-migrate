@@ -40,8 +40,13 @@ Vier Test-Familien, die in den vier betroffenen Modulen (`:hexagon:application`,
   `ParquetSingleFilePreflight` (`ParquetSingleFileResumeException`,
   `ParquetSingleFileTableMismatchException`,
   `ParquetSingleFileTableRequiredException`) bekommen einen
-  CLI-Test, der den exakten Exit-Code (vermutlich 3) + die exakte
-  stderr-Message verifiziert.
+  CLI-Test, der den exakten Exit-Code + die exakte stderr-Message
+  verifiziert. **Exit-Code verifiziert = 3:** alle drei Klassen
+  erweitern `RuntimeException` (nicht `IllegalArgumentException`),
+  und der Runner mappt `IllegalArgumentException → Exit 2`, jeden
+  anderen Wurf `→ Exit 3` (`ImportPreflightResolver.kt:88-93`,
+  `DataImportRunner.kt:221`). `PARQUET_STDIN_NOT_SUPPORTED` (Single-
+  File ueber Stdin) gehoert ebenfalls in diese Familie.
 - **Format-Resolver-Hook-Edge-Cases**: `inferFormatFromExtension`
   fuer `.parquet`, `manifest.yaml`-Sniff-Pfad (Bundle vs.
   Non-Bundle vs. Mixed-Directory) — heute durch
@@ -63,10 +68,24 @@ Vier Test-Familien, die in den vier betroffenen Modulen (`:hexagon:application`,
   - Echte Parquet-Files (via `ParquetChunkWriter` provisioniert)
     fuer den `Directory → ResolvedBundle`- und
     `SingleFile → ResolvedSingleFile`-Pfad des Phase-1-Hooks.
-  - Echte Footer-KV-Files fuer den Phase-2-Hook, sodass
-    `ParquetSingleFilePreflight.phase2`'s Resume-Hash-Verifikation
+  - Echte Footer-KV-Files fuer den Phase-2-Hook, sodass die
+    Phase-2-Routing-Logik (`ParquetSingleFilePreflight.phase2`)
     gegen produktive Bytes laeuft (nicht nur gegen das
     rekonstruierte `ResolvedParquetSingleFile`).
+    **Achtung (S8d-Re-Cut, siehe §5):** Der produktive Resume-Hash-
+    Vergleich passiert **nicht** im Hook. Der Hook ruft
+    `phase2(resumeExpectedSha256 = null)` (Pass-Through); das echte
+    Cross-Run-Gate ist `validateSingleFileResume` im
+    `ImportCheckpointManager` (`ImportCheckpointManager.kt:192`).
+    Die `phase2`-Hash-Branch
+    (`PARQUET_SINGLE_FILE_CHECKPOINT_REQUIRES_HASH` /
+    `…CONTENT_CHANGED_SINCE_CHECKPOINT`) ist im Produktionspfad tot
+    und nur per **Unit-Test mit explizit gesetztem
+    `resumeExpectedSha256`** erreichbar — dieser Test muss
+    kommentieren, dass der Pfad produktiv nicht verdrahtet ist
+    (sonst liest er sich faelschlich als Resume-E2E-Beleg). Der
+    DoD-relevante Resume-Beleg laeuft ausschliesslich ueber die
+    Manager-Gate-Familie (Single-File-Resume, §4).
   - End-to-End: `data import --format parquet --source x.parquet`
     ohne `--table` → Footer-KV-Inferenz liefert den Tabellennamen
     (Review-Finding A4) — der **kleine** Smoke landet schon im
@@ -96,9 +115,25 @@ Vier Test-Familien, die in den vier betroffenen Modulen (`:hexagon:application`,
 Umbrella-DoD ist die Quelle:
 
 > Vier Test-Familien gruen via `make docker-test MODULES=":hexagon:application :adapters:driven:streaming :adapters:driven:formats-parquet :adapters:driving:cli"`
-> (Phase-1/2/Resume in `hexagon:application`, Resolver in
-> `streaming`, KV-Toleranz in `formats-parquet`, CLI-Codes in
-> `cli`).
+> (Phase-1/2 + Single-File-Resume in `hexagon:application`,
+> KV-Toleranz in `formats-parquet`, CLI-Preflight-Codes in `cli`;
+> `:adapters:driven:streaming` laeuft nur als Regressionsschutz
+> mit — **kein** Single-File-eigener Resolver, da der
+> `manifest.yaml`-Sniff Bundle-only ist (S9a) und
+> `inferFormatFromExtension` in `hexagon:application` sitzt).
+
+**Modul-Mapping-Korrektur (vs. urspruengliche Umbrella-Fassung):**
+Die alte DoD listete „Resolver in `streaming`" als eigene Single-
+File-Familie — das war ein Copy-Paste aus S9a. Single-File hat
+**keinen** `manifest.yaml`-Sniff (das ist Bundle/S9a); die einzige
+Single-File-Format-Inferenz ist `inferFormatFromExtension(.parquet)`
+in `hexagon/application/.../DataImportHelpers.kt`. Die
+`ImportInputResolver`-`SingleFile → ResolvedSingleFile`-when-Branch
+in `:adapters:driven:streaming` ist bereits durch S5b abgedeckt;
+ob S9b dort eine **eigene** Single-File-Resolver-Familie ergaenzt
+oder `streaming` rein als Regressionsschutz mitlaufen laesst, ist
+die offene Entscheidung in §7.1 — bis dahin behauptet die DoD
+**keine** Single-File-Familie in `streaming`.
 
 Konkrete Belegbefehle, DoD-Cases und Test-Datei-Liste werden im
 vollen Plan ergaenzt.
@@ -128,3 +163,41 @@ vollen Plan ergaenzt.
    Commit-Konvention.
 4. Plan-Doc nach `docs/planning/done/` migrieren + Umbrella §3.4-
    Status-Tabelle aktualisieren.
+
+## 7. Reconciliation-Punkte fuer den Vollausbau
+
+Bei der Skeleton-Review (2026-06-08) gegen die Code-Realitaet
+aufgedeckt. Punkte 7.2/7.3 sind im Skeleton bereits korrigiert,
+Punkt 7.1 ist eine offene Schnitt-Entscheidung fuer den vollen Plan.
+
+### 7.1 — `:adapters:driven:streaming` hat (noch) keine eigene Single-File-Familie [OFFEN]
+
+Die DoD nennt vier Familien, aber fuer Single-File mappt nur drei
+Module sauber auf eine Familie (`hexagon:application`,
+`formats-parquet`, `cli`). `:adapters:driven:streaming` traegt —
+anders als bei S9a (`manifest.yaml`-Sniff) — keine Single-File-
+eigene Resolver-Familie, weil es bei Single-File kein `manifest.yaml`
+gibt. Die `ImportInputResolver`-`SingleFile`-when-Branch im
+`streaming`-Modul ist schon durch S5b abgedeckt. **Entscheidung im
+vollen Plan:** entweder (a) eine dedizierte Single-File-Resolver-
+Familie in `streaming` ergaenzen (z.B. `Seekable`-Subtyp-Produktion
+fuer `ResolvedSingleFile`, KV-Toleranz-Edge-Cases auf Resolver-
+Ebene), oder (b) `streaming` explizit als reinen Regressionsschutz
+deklarieren. Kein stiller Scheinbeleg — wenn (b), dann muss die
+Test-Datei-Liste das so ausweisen.
+
+### 7.2 — Phase-2-Resume-Hash: Gate liegt im Manager, nicht im Hook [KORRIGIERT]
+
+Siehe §2 (S7-Anker) + §5. Der S7-Anker war vor dem S8d-Re-Cut
+geschrieben und beschrieb eine `phase2`-Resume-Hash-Verifikation,
+die produktiv nicht stattfindet (`resumeExpectedSha256 = null`).
+Korrigiert: Resume-Beleg laeuft ueber `validateSingleFileResume`
+im `ImportCheckpointManager`; die `phase2`-Hash-Branch ist nur per
+Unit-Test mit non-null-Arg erreichbar und als nicht-produktiv zu
+kommentieren.
+
+### 7.3 — CLI-Preflight-Exit-Codes verifiziert = 3 [KORRIGIERT]
+
+Siehe §2. Das urspruengliche „(vermutlich 3)" ist gegen den Code
+bestaetigt: `ParquetSingleFile{Resume,TableMismatch,TableRequired}Exception`
+erweitern `RuntimeException` → Runner-Mapping ergibt Exit 3.
